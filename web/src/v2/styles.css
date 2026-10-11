@@ -1941,8 +1941,19 @@
 .v2-approval-card { corner-shape: superellipse(1.5); }
 }
 
-:where([data-prayu-theme="glass"]) .v2-sidebar,
-:where([data-prayu-theme="glass"]) .v2-product-surface { backdrop-filter: blur(46px) saturate(100%); }
+:where([data-prayu-theme="dark"], [data-prayu-theme="glass"]) .v2-sidebar,
+:where([data-prayu-theme="dark"], [data-prayu-theme="glass"]) .v2-product-surface { backdrop-filter: blur(46px) saturate(100%); }
+
+/* Mist keeps the workspace backdrop visible without the composer's beveled sheen. */
+:where([data-prayu-theme="glass"]) .v2-composer-dock { background: transparent; }
+:where([data-prayu-theme="glass"]) .v2-composer-surface {
+  background: var(--prayu-glass-fill);
+  border-color: var(--v2-border);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--prayu-shadow) 35%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--prayu-glass-highlight) 50%, transparent);
+}
+:where([data-prayu-theme="glass"]) .v2-composer-surface:focus-within { border-color: var(--v2-border-strong); }
+:where([data-prayu-theme="glass"]) .v2-composer-surface::after { content: none; }
 
 .v2-sidebar-backdrop { display: none; }
 .v2-workspace-start { margin-left: auto; position: relative; }

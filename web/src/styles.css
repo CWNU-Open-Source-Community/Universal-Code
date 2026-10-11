@@ -2486,13 +2486,13 @@ body { background: transparent; }
    danger and source diff colors are the only chromatic semantic tokens. */
 :root,
 [data-prayu-theme="dark"] {
-  --prayu-window: rgb(16 16 16 / 90%);
-  --prayu-titlebar: rgb(20 20 20 / 94%);
-  --prayu-sidebar: rgb(20 20 20 / 92%);
-  --prayu-panel: rgb(24 24 24 / 92%);
-  --prayu-panel-strong: rgb(27 27 27 / 98%);
-  --prayu-control: rgb(44 44 44 / 94%);
-  --prayu-control-hover: rgb(54 54 54 / 98%);
+  --prayu-window: rgb(18 18 18 / 72%);
+  --prayu-titlebar: rgb(20 20 20 / 88%);
+  --prayu-sidebar: rgb(18 18 18 / 86%);
+  --prayu-panel: rgb(22 22 22 / 88%);
+  --prayu-panel-strong: rgb(26 26 26 / 96%);
+  --prayu-control: rgb(34 34 34 / 94%);
+  --prayu-control-hover: rgb(48 48 48 / 98%);
   --prayu-primary-bg: #ffffff;
   --prayu-primary-fg: #1b1b1b;
   --prayu-primary-hover: #f0f0f0;
@@ -2501,13 +2501,13 @@ body { background: transparent; }
   --prayu-selected: var(--prayu-primary-bg);
   --prayu-selected-ink: var(--prayu-primary-fg);
   --prayu-surface-solid: #1b1b1b;
-  --prayu-text: #f5f5f5;
-  --prayu-muted: #b5b5b5;
-  --prayu-border: rgb(255 255 255 / 16%);
-  --prayu-border-strong: rgb(255 255 255 / 28%);
-  --prayu-shadow: rgb(0 0 0 / 32%);
-  --prayu-focus: #eeeeee;
-  --prayu-accent: #eeeeee;
+  --prayu-text: #f8f8f8;
+  --prayu-muted: #c3c3c3;
+  --prayu-border: rgb(255 255 255 / 20%);
+  --prayu-border-strong: rgb(255 255 255 / 30%);
+  --prayu-shadow: rgb(0 0 0 / 28%);
+  --prayu-focus: #f4f4f4;
+  --prayu-accent: #f4f4f4;
   --prayu-danger: #ff9189;
   --prayu-danger-fill: #b42318;
   --prayu-on-danger: #ffffff;
@@ -2519,10 +2519,10 @@ body { background: transparent; }
   --prayu-diff-delete: var(--prayu-danger);
   --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
   --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
-  --prayu-glass-fill: rgb(28 28 28 / 92%);
-  --prayu-glass-fill-strong: rgb(30 30 30 / 98%);
-  --prayu-glass-highlight: rgb(255 255 255 / 24%);
-  --prayu-glass-shadow: rgb(0 0 0 / 34%);
+  --prayu-glass-fill: rgb(26 26 26 / 86%);
+  --prayu-glass-fill-strong: rgb(30 30 30 / 96%);
+  --prayu-glass-highlight: rgb(255 255 255 / 30%);
+  --prayu-glass-shadow: rgb(0 0 0 / 30%);
   --prayu-terminal-bg: #181818;
   --prayu-terminal-control: #222222;
   --prayu-terminal-control-hover: #303030;
@@ -2564,19 +2564,20 @@ body { background: transparent; }
 }
 
 [data-prayu-theme="glass"] {
-  --prayu-window: rgb(18 18 18 / 72%);
-  --prayu-titlebar: rgb(20 20 20 / 88%);
-  --prayu-sidebar: rgb(18 18 18 / 86%);
-  --prayu-panel: rgb(22 22 22 / 88%);
-  --prayu-panel-strong: rgb(26 26 26 / 96%);
-  --prayu-control: rgb(34 34 34 / 94%);
-  --prayu-control-hover: rgb(48 48 48 / 98%);
+  --prayu-window: rgb(8 12 18 / 14%);
+  --prayu-titlebar: rgb(20 25 33 / 24%);
+  --prayu-sidebar: color-mix(in srgb, rgb(18 24 32 / 22%) 82%, #dff3f4 18%);
+  --prayu-panel: rgb(18 24 32 / 30%);
+  /* Floating menus need their own readable surface above the translucent workspace. */
+  --prayu-panel-strong: rgb(18 24 32 / 90%);
+  --prayu-control: rgb(255 255 255 / 10%);
+  --prayu-control-hover: rgb(255 255 255 / 18%);
   --prayu-selected: var(--prayu-primary-bg);
   --prayu-selected-ink: var(--prayu-primary-fg);
-  --prayu-surface-solid: #1b1b1b;
-  --prayu-text: #f8f8f8;
-  --prayu-muted: #c3c3c3;
-  --prayu-border: rgb(255 255 255 / 20%);
+  --prayu-surface-solid: #202832;
+  --prayu-text: #f8f9fb;
+  --prayu-muted: #d5dae2;
+  --prayu-border: rgb(255 255 255 / 17%);
   --prayu-border-strong: rgb(255 255 255 / 30%);
   --prayu-shadow: rgb(0 0 0 / 28%);
   --prayu-focus: #f4f4f4;
@@ -2585,8 +2586,8 @@ body { background: transparent; }
   --prayu-success: var(--prayu-text);
   --prayu-warning: var(--prayu-text);
   --prayu-diff-add: #9cd4ae;
-  --prayu-glass-fill: rgb(26 26 26 / 86%);
-  --prayu-glass-fill-strong: rgb(30 30 30 / 96%);
+  --prayu-glass-fill: rgb(20 27 36 / 24%);
+  --prayu-glass-fill-strong: rgb(20 27 36 / 44%);
   --prayu-glass-highlight: rgb(255 255 255 / 30%);
   --prayu-glass-shadow: rgb(0 0 0 / 30%);
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
@@ -2722,6 +2723,8 @@ summary:focus-visible {
   background: var(--prayu-control-hover);
 }
 
+[data-prayu-theme="dark"] .prayu-shell .main-workspace,
+[data-prayu-theme="dark"] .prayu-shell .main-workspace.prayu-conversation-panel,
 [data-prayu-theme="glass"] .prayu-shell .main-workspace,
 [data-prayu-theme="glass"] .prayu-shell .main-workspace.prayu-conversation-panel {
   backdrop-filter: blur(46px);
@@ -4846,6 +4849,7 @@ samp {
     var(--prayu-window);
 }
 
+[data-prayu-theme="dark"] .connection-page,
 [data-prayu-theme="glass"] .connection-page {
   background: transparent;
 }

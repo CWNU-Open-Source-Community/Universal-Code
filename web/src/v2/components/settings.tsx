@@ -169,10 +169,10 @@ function AppearanceSettings() {
       <div className="v2-theme-options" role="group" aria-label="应用主题">
         {(["light", "dark", "glass"] as const).map((option) => <button aria-pressed={theme === option}
           key={option} onClick={() => select(option)} type="button">
-          <span className={`v2-theme-preview theme-${option}`}><i /><i /></span>
-          <strong>{option === "light" ? "浅色" : option === "dark" ? "深色" : "透明液态玻璃"}</strong>
+          <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
+          <strong>{option === "light" ? "浅色" : option === "dark" ? "深色" : "雾透"}</strong>
         </button>)}</div>
-      <p>玻璃模式让窗口背景透出柔和层次。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
+      <p>雾透让窗口背景透出柔和的灰蓝层次；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
     </div></section></>;
 }
 
