@@ -100,8 +100,37 @@ function Assert-ReadinessRejected {
     if ($caught -cne $ExpectedCode) { throw "Expected $ExpectedCode, observed $caught" }
 }
 
+function Invoke-SentinelRotation {
+    param([string]$Root, [string]$RemovedFile, [string]$Sentinel,
+        [string]$ReplacementFile = '')
+    $rotation = [pscustomobject]@{ done = $false }
+    # Rotate after enumeration, before the production scanner opens the file.
+    function Get-ChildItem {
+        param([string]$LiteralPath, [switch]$File, [switch]$Recurse, [switch]$Force)
+        $items = @(Microsoft.PowerShell.Management\Get-ChildItem @PSBoundParameters)
+        if (-not $rotation.done) {
+            $rotation.done = $true
+            [System.IO.File]::Delete($RemovedFile)
+            if ($ReplacementFile) {
+                [System.IO.File]::WriteAllText($ReplacementFile, $Sentinel)
+            }
+        }
+        return $items
+    }
+    [System.IO.File]::WriteAllText($RemovedFile, 'temporary cache data')
+    try {
+        return Test-SentinelPersisted -Roots @($Root) -Sentinels @($Sentinel)
+    } finally {
+        [System.IO.File]::Delete($RemovedFile)
+        if ($ReplacementFile) { [System.IO.File]::Delete($ReplacementFile) }
+    }
+}
+
 $root = Join-Path ([System.IO.Path]::GetTempPath()) ('packaged-readiness-' + [guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($root) | Out-Null
+$cacheRoot = Join-Path $root 'webview2'
+[System.IO.Directory]::CreateDirectory($cacheRoot) | Out-Null
+$cacheFile = Join-Path $cacheRoot 'rotating-cache.bin'
 $script:database = Join-Path $root 'stale.db'
 $sentinelFile = Join-Path $root 'sentinel-evidence.bin'
 $StartupTimeoutSeconds = 0.3
@@ -114,7 +143,10 @@ try {
     $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @(
         '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 30'
     ) -WindowStyle Hidden -PassThru
+    # Even an exhausted polling budget must classify the observed state.
+    $StartupTimeoutSeconds = 0
     Assert-ReadinessRejected $child 'candidate_window_timeout'
+    $StartupTimeoutSeconds = 0.3
     $passed.Add('stale_store_and_headless_process_rejected')
 
     $windows.Add([PackagedReadinessFixture]::CreateHiddenWindow('#32770', $false))
@@ -171,31 +203,55 @@ try {
     }
     $passed.Add('clean_sentinel_evidence_accepted')
 
-    foreach ($sharing in @([System.IO.FileShare]::Read, [System.IO.FileShare]::None)) {
-        $held = [System.IO.File]::Open($sentinelFile, [System.IO.FileMode]::Open,
-            [System.IO.FileAccess]::ReadWrite, $sharing)
-        try {
-            $readFailure = $null
-            try { $null = Test-SentinelPersisted -Roots @($root) -Sentinels @($sentinel) }
-            catch { $readFailure = $_.Exception }
-            if ($null -eq $readFailure -or
-                (Get-SafeFailureCode -Message $readFailure.Message) -cne 'sentinel_evidence_unreadable') {
-                throw 'Unreadable sentinel evidence was not rejected'
+    if (Invoke-SentinelRotation -Root $root -RemovedFile $cacheFile -Sentinel $sentinel) {
+        throw 'Removed WebView2 cache file reported a persisted sentinel'
+    }
+    $passed.Add('removed_webview2_cache_reenumerated')
+    if (-not (Invoke-SentinelRotation -Root $root -RemovedFile $cacheFile -Sentinel $sentinel `
+            -ReplacementFile (Join-Path $cacheRoot 'replacement-cache.bin'))) {
+        throw 'Sentinel in replacement WebView2 cache was missed'
+    }
+    $passed.Add('replacement_cache_sentinel_detected')
+    $rotationFailure = $null
+    try {
+        $null = Invoke-SentinelRotation -Root $root -RemovedFile (Join-Path $root 'evidence.bin') `
+            -Sentinel $sentinel
+    } catch { $rotationFailure = $_.Exception }
+    if ($null -eq $rotationFailure -or
+        (Get-SafeFailureCode -Message $rotationFailure.Message) -cne 'sentinel_evidence_unreadable') {
+        throw 'Missing non-cache evidence was not rejected'
+    }
+    $passed.Add('missing_non_cache_evidence_rejected')
+
+    [System.IO.File]::WriteAllText($cacheFile, 'no sentinel present')
+    foreach ($lockedFile in @($sentinelFile, $cacheFile)) {
+        foreach ($sharing in @([System.IO.FileShare]::Read, [System.IO.FileShare]::None)) {
+            $held = [System.IO.File]::Open($lockedFile, [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite, $sharing)
+            try {
+                $readFailure = $null
+                try { $null = Test-SentinelPersisted -Roots @($root) -Sentinels @($sentinel) }
+                catch { $readFailure = $_.Exception }
+                if ($null -eq $readFailure -or
+                    (Get-SafeFailureCode -Message $readFailure.Message) -cne 'sentinel_evidence_unreadable') {
+                    throw 'Unreadable sentinel evidence was not rejected'
+                }
+                $facts = $readFailure.Data['sentinel_evidence_read']
+                if ($null -eq $facts -or $facts.root_index -ne 0 -or
+                    $facts.webview2_data -ne ($lockedFile -eq $cacheFile) -or
+                    $facts.exception_type -cne 'System.IO.IOException' -or
+                    ($facts.hresult -band 0xffff) -ne 32 -or
+                    $facts.file_attributes -ne [int](Get-Item -LiteralPath $lockedFile).Attributes) {
+                    throw 'Unreadable sentinel evidence did not retain safe failure facts'
+                }
+                $json = $facts | ConvertTo-Json -Compress
+                if ($facts.PSObject.Properties.Name.Count -ne 5 -or
+                    $json.Contains($root) -or $json.Contains('sentinel-evidence.bin') -or $json.Contains($sentinel)) {
+                    throw 'Sentinel failure facts exposed raw details'
+                }
+            } finally {
+                $held.Dispose()
             }
-            $facts = $readFailure.Data['sentinel_evidence_read']
-            if ($null -eq $facts -or $facts.root_index -ne 0 -or $facts.webview2_data -or
-                $facts.exception_type -cne 'System.IO.IOException' -or
-                ($facts.hresult -band 0xffff) -ne 32 -or
-                $facts.file_attributes -ne [int](Get-Item -LiteralPath $sentinelFile).Attributes) {
-                throw 'Unreadable sentinel evidence did not retain safe failure facts'
-            }
-            $json = $facts | ConvertTo-Json -Compress
-            if ($facts.PSObject.Properties.Name.Count -ne 5 -or
-                $json.Contains($root) -or $json.Contains('sentinel-evidence.bin') -or $json.Contains($sentinel)) {
-                throw 'Sentinel failure facts exposed raw details'
-            }
-        } finally {
-            $held.Dispose()
         }
     }
     $passed.Add('shared_writer_and_exclusive_lock_fail_closed_with_redacted_facts')
@@ -212,5 +268,7 @@ try {
     # Only this invocation's known file and empty directory are removed.
     if (Test-Path -LiteralPath $script:database) { Remove-Item -LiteralPath $script:database -Force }
     if (Test-Path -LiteralPath $sentinelFile) { Remove-Item -LiteralPath $sentinelFile -Force }
+    if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force }
+    Remove-Item -LiteralPath $cacheRoot -Force
     Remove-Item -LiteralPath $root -Force
 }

@@ -273,7 +273,7 @@ function Wait-CandidateReady {
     $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
     $storeObserved = $false
     $windowObserved = $false
-    while ([DateTime]::UtcNow -lt $deadline) {
+    do {
         $Process.Refresh()
         if ($Process.HasExited) { throw "Packaged candidate exited during startup" }
         $storeObserved = (Test-Path -LiteralPath $script:database -PathType Leaf) -and
@@ -304,7 +304,7 @@ function Wait-CandidateReady {
             }
         }
         Start-Sleep -Milliseconds 100
-    }
+    } while ([DateTime]::UtcNow -lt $deadline)
     if (-not $storeObserved) { throw "Packaged candidate store startup timed out" }
     if (-not $windowObserved) { throw "Packaged candidate application window timed out" }
     throw "Packaged candidate application window remained unresponsive"
@@ -409,38 +409,49 @@ function Test-SentinelPersisted {
     }
     foreach ($root in $Roots) {
         if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
-        foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
-            $bytes = $null
-            for ($attempt = 1; $attempt -le 5; $attempt++) {
-                try {
-                    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-                    break
-                } catch {
-                    if ($attempt -eq 5) {
+        :rescan for ($scan = 1; $scan -le 5; $scan++) {
+            foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
+                $webview2Data = $file.FullName.StartsWith(
+                    (Join-Path $Roots[0] "webview2") + [System.IO.Path]::DirectorySeparatorChar,
+                    [System.StringComparison]::OrdinalIgnoreCase)
+                $bytes = $null
+                for ($attempt = 1; $attempt -le 5; $attempt++) {
+                    try {
+                        $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                        break
+                    } catch {
                         $readError = $_.Exception
                         while ($null -ne $readError.InnerException) {
                             $readError = $readError.InnerException
                         }
-                        $failure = [System.IO.IOException]::new("Sentinel evidence file remained unreadable")
-                        # Fixed categories and numeric error facts only: no local
-                        # path, file bytes, exception message or sentinel value.
-                        $failure.Data["sentinel_evidence_read"] = [pscustomobject][ordered]@{
-                            root_index = [array]::IndexOf($Roots, $root)
-                            webview2_data = $file.FullName.StartsWith(
-                                (Join-Path $Roots[0] "webview2") + [System.IO.Path]::DirectorySeparatorChar,
-                                [System.StringComparison]::OrdinalIgnoreCase)
-                            exception_type = $readError.GetType().FullName
-                            hresult = [int]$readError.HResult
-                            file_attributes = [int]$file.Attributes
+                        if ($webview2Data -and $scan -lt 5 -and
+                            ($readError -is [System.IO.FileNotFoundException] -or
+                             $readError -is [System.IO.DirectoryNotFoundException])) {
+                            # WebView2 can remove/rotate cache files after its host exits.
+                            # Re-enumerate the root so replacement files are also scanned.
+                            continue rescan
                         }
-                        throw $failure
+                        if ($attempt -eq 5) {
+                            $failure = [System.IO.IOException]::new("Sentinel evidence file remained unreadable")
+                            # Fixed categories and numeric error facts only: no local
+                            # path, file bytes, exception message or sentinel value.
+                            $failure.Data["sentinel_evidence_read"] = [pscustomobject][ordered]@{
+                                root_index = [array]::IndexOf($Roots, $root)
+                                webview2_data = $webview2Data
+                                exception_type = $readError.GetType().FullName
+                                hresult = [int]$readError.HResult
+                                file_attributes = [int]$file.Attributes
+                            }
+                            throw $failure
+                        }
+                        Start-Sleep -Milliseconds 200
                     }
-                    Start-Sleep -Milliseconds 200
+                }
+                foreach ($pattern in $patterns) {
+                    if (Test-ContainsBytePattern -Bytes $bytes -Pattern $pattern) { return $true }
                 }
             }
-            foreach ($pattern in $patterns) {
-                if (Test-ContainsBytePattern -Bytes $bytes -Pattern $pattern) { return $true }
-            }
+            break
         }
     }
     return $false
