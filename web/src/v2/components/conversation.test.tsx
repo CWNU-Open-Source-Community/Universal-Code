@@ -936,7 +936,7 @@ describe("V2Conversation", () => {
     expect(fileTrigger).toHaveFocus();
   });
 
-  it("docks without trapping Tab when space permits and restores a modal drawer when narrowed", async () => {
+  it("docks without trapping Tab and retains the selected file when narrowed", async () => {
     let width = 1140;
     let resize = () => {};
     const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get")
@@ -948,7 +948,12 @@ describe("V2Conversation", () => {
     });
     try {
       const user = userEvent.setup();
-      renderConversation(baseClient());
+      const client = baseClient({ fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }) });
+      const directory = await client.workspaceExplore("workspace-1", ".");
+      vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => path === "." ? directory : {
+        ...directory, path, kind: "file", entries: [], content: "export const value = 1;",
+      });
+      renderConversation(client);
       const trigger = await screen.findByRole("button", { name: "工作区文件" });
       await user.click(trigger);
       const dock = await screen.findByRole("complementary", { name: "工作区文件" });
@@ -956,11 +961,14 @@ describe("V2Conversation", () => {
       expect(dock).not.toHaveAttribute("aria-modal");
       await user.tab({ shift: true });
       expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
+      await user.click(await within(dock).findByRole("button", { name: /index.ts/u }));
+      expect(await within(dock).findByText("export const value = 1;")).toBeInTheDocument();
       await act(async () => { width = 800; resize(); });
       const modal = screen.getByRole("dialog", { name: "工作区文件" });
       expect(modal).toHaveAttribute("aria-modal", "true");
       expect(modal.parentElement?.parentElement).toBe(document.body);
       expect(document.querySelector(".v2-conversation")?.closest("[inert]")).not.toBeNull();
+      expect(await within(modal).findByText("export const value = 1;")).toBeInTheDocument();
       await user.keyboard("{Escape}");
       expect(screen.queryByRole("dialog", { name: "工作区文件" })).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();

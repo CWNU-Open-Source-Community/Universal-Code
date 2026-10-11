@@ -881,7 +881,7 @@ td code { font-size: 11px; }
 .explorer-file-line { display: flex; padding: 0 8px; }
 .explorer-file-line.is-highlighted { background: var(--prayu-control); font-weight: 600; }
 .explorer-line-number { min-width: 44px; user-select: none; color: var(--muted); text-align: right; padding-right: 14px; flex-shrink: 0; }
-.explorer-line-content { white-space: pre; flex: 1 1 auto; }
+.explorer-line-content { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; flex: 1 1 auto; }
 .explorer-line-warning { padding: 8px 12px; background: var(--prayu-control); color: var(--prayu-warning); border: 1px solid color-mix(in srgb, var(--prayu-border) 30%, transparent); border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
 .explorer-line-notice { padding: 8px 12px; background: var(--prayu-control); color: var(--prayu-text); border: 1px solid color-mix(in srgb, var(--prayu-border) 25%, transparent); border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
 .explorer-error-hint { color: var(--muted); font-size: 13px; margin: 6px 0 12px; }

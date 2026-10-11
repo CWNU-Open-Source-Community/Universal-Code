@@ -85,6 +85,7 @@ export function V2FileDrawer({
   runID,
   initialPath = ".",
   initialLine,
+  onPathChange,
   onClose,
   returnFocusRef,
   docked = false,
@@ -95,6 +96,7 @@ export function V2FileDrawer({
   runID: string;
   initialPath?: string;
   initialLine?: number;
+  onPathChange?: (path: string) => void;
   onClose: () => void;
   returnFocusRef: RefObject<HTMLElement | null>;
   docked?: boolean;
@@ -187,6 +189,7 @@ export function V2FileDrawer({
               runID={runID}
               initialPath={initialPath}
               initialLine={initialLine}
+              onPathChange={onPathChange}
             />
           )}
         </div>
@@ -840,6 +843,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       workspaceID={detail.thread.workspace_id ?? ""}
       runID={fileDrawerState.runID || currentRun.id} initialPath={fileDrawerState.path}
       initialLine={fileDrawerState.line} docked={docked}
+      onPathChange={(path) => setFileDrawerState((current) => ({ ...current, path, line: undefined }))}
       onClose={() => {
         setActivePane(null);
         if (fileReturnFocus.current?.isConnected) fileReturnFocus.current.focus();
