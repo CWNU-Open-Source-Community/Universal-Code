@@ -500,6 +500,8 @@ jobs:
       - name: Verify Windows Local Sandbox isolation and product gates
         shell: pwsh
         run: |
+          go test -v -count=1 -timeout 1m ./internal/sandboxtest -run '^TestAcquireHostMutexOpensExistingObject$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -v -count=1 -timeout 10m ./internal/app -run '^TestWindowsAPIServe'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $cliTests = @(

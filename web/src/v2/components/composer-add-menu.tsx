@@ -31,11 +31,13 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
     tabbingRef.current = false;
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
     (items[focusLastRef.current ? items.length - 1 : 0] ?? menuRef.current)?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!shellRef.current?.contains(event.target as Node)) setOpen(false);
+    const outside = (event: MouseEvent) => {
+      if (!shellRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
-    window.addEventListener("pointerdown", outside);
-    return () => window.removeEventListener("pointerdown", outside);
+    window.addEventListener("click", outside);
+    return () => window.removeEventListener("click", outside);
   }, [open]);
   if (actions.length === 0) return null;
   return <div className="v2-composer-add" ref={shellRef}>

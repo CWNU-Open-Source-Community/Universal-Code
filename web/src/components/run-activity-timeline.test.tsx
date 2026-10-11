@@ -70,7 +70,7 @@ describe("RunActivityTimeline", () => {
     renderTimeline(<RunActivityTimeline activity={value}
       liveCommentary={publicSnapshot()} liveStatus="live" />);
 
-    expect(screen.getByText("Universal Code")).toBeInTheDocument();
+    expect(screen.getByText("Universal-Code")).toBeInTheDocument();
     expect(screen.getByText("正在检查差异，下一步运行测试。")).toBeInTheDocument();
     expect(screen.getByText("临时")).toBeInTheDocument();
     expect(screen.getByText(/对话历史保存最终确认的内容/u)).toBeInTheDocument();

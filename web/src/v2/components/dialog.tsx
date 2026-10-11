@@ -1,5 +1,6 @@
 import { AlertTriangle, X } from "lucide-react";
 import type { RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { useLocale } from "../../lib/locale";
 
@@ -18,7 +19,7 @@ export function V2ConfirmDialog({ open, title, description, confirmLabel, danger
   const { t } = useLocale();
   const ref = useModalFocusTrap<HTMLElement>(open, onCancel, busy, undefined, { returnFocusRef });
   if (!open) return null;
-  return <div className="v2-overlay" role="presentation" onMouseDown={(event) => {
+  return createPortal(<div className="v2-overlay" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !busy) onCancel();
   }}>
     <section aria-labelledby="v2-confirm-title" aria-modal="true" className="v2-dialog"
@@ -35,5 +36,5 @@ export function V2ConfirmDialog({ open, title, description, confirmLabel, danger
         <button className={danger ? "danger" : "primary"} disabled={busy}
           onClick={onConfirm} type="button">{busy ? t("正在处理…", "Processing…") : confirmLabel}</button></footer>
     </section>
-  </div>;
+  </div>, document.body);
 }

@@ -69,6 +69,7 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape: () => void,
   escapeDisabled = false, initialFocusRef?: RefObject<HTMLElement | null>, options?: {
     isolateBackground?: boolean;
+    trapFocus?: boolean;
     returnFocusRef?: RefObject<HTMLElement | null>;
   }) {
   const dialogRef = useRef<T>(null);
@@ -99,7 +100,7 @@ export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape
         onEscapeRef.current();
         return;
       }
-      if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (options?.trapFocus === false || event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
       const currentCandidates = focusableElements(dialog);
       if (currentCandidates.length === 0) {
         event.preventDefault();
@@ -125,7 +126,7 @@ export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape
       if (returnFocus?.isConnected) returnFocus.focus();
       else if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
-  }, [open]);
+  }, [open, options?.isolateBackground, options?.trapFocus]);
 
   return dialogRef;
 }

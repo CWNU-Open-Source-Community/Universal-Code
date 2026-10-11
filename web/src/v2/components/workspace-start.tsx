@@ -64,7 +64,7 @@ export function V2WorkspaceStart({ client, onSelect }: {
       <form onSubmit={(event) => { event.preventDefault(); if (client.hasWorkspaceImport && directory.trim() && !importing.isPending)
         importing.mutate(directory.trim()); }}>
         <div className="v2-project-import-body">
-          <p id={descriptionID}>输入运行 Universal Code 服务的电脑上的文件夹完整路径。接入后可在这个目录中开始任务，文件保留在原位置，任务按你选择的权限执行。</p>
+          <p id={descriptionID}>输入运行 Universal-Code 服务的电脑上的文件夹完整路径。接入后可在这个目录中开始任务，文件保留在原位置，任务按你选择的权限执行。</p>
           {client.hasWorkspaceImport ? <label>项目文件夹路径<input autoComplete="off" disabled={importing.isPending}
             maxLength={4096} onChange={(event) => setDirectory(event.target.value)} placeholder="D:\Projects\my-project 或 /home/me/my-project"
             ref={input} required spellCheck={false} type="text" value={directory} /></label>

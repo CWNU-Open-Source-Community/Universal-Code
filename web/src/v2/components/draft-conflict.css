@@ -7,7 +7,7 @@
 
 /* Keep the Inspector controls inside their own scroll area when comparing
    tall drafts; its non-shrinking toolbar must not overflow into the editor. */
-.v2-conversation.is-inspector:has(.v2-draft-conflict) > .v2-inspector-content {
+.v2-conversation.is-inspector:has(.v2-draft-conflict) .v2-inspector-content {
   min-height: min(240px, 30dvh);
   overflow: auto;
   overscroll-behavior-y: contain;

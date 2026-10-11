@@ -592,7 +592,8 @@ func acquireHostMutex() (func() error, error) {
 		return nil, err
 	}
 	handle, err := windows.CreateMutex(nil, false, pointer)
-	if err != nil {
+	// An existing named mutex still returns a valid handle to wait on.
+	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		runtime.UnlockOSThread()
 		return nil, err
 	}

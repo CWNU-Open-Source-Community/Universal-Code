@@ -139,7 +139,7 @@ export function mergeThreadTranscriptItems(durableItems: ThreadTranscriptItemVie
         run_id: snapshot.call.run_id, run_ordinal: runOrdinal,
         sequence: Number.MAX_SAFE_INTEGER - 2, activity_type: "message",
         stage: liveStatus === "finalizing" ? "result" : "running",
-        kind: "model_update", source: "model", title: "Universal Code", detail: text,
+        kind: "model_update", source: "model", title: "Universal-Code", detail: text,
         status: liveStatus === "finalizing" ? "completed" : "running",
         verifiable: false, instruction_authorized: false,
         attempt_id: snapshot.call.attempt_id, model_attempt: snapshot.call.model_attempt,

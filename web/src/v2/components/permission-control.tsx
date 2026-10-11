@@ -52,17 +52,19 @@ function ThreadPermissionControl({ client, threadID, variant = "menu", onOpenMod
   useEffect(() => {
     if (!networkOpen || variant !== "menu") return;
     networkPanelRef.current?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!networkConfirmationOpenRef.current && !networkRef.current?.contains(event.target as Node)) setNetworkOpen(false);
+    const outside = (event: MouseEvent) => {
+      if (!networkConfirmationOpenRef.current && !networkRef.current?.contains(event.target as Node)) {
+        setNetworkOpen(false);
+      }
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || networkConfirmationOpenRef.current) return;
       event.preventDefault(); setNetworkOpen(false); networkTriggerRef.current?.focus();
     };
-    window.addEventListener("pointerdown", outside);
+    window.addEventListener("click", outside);
     window.addEventListener("keydown", escape);
     return () => {
-      window.removeEventListener("pointerdown", outside);
+      window.removeEventListener("click", outside);
       window.removeEventListener("keydown", escape);
     };
   }, [networkOpen, variant]);

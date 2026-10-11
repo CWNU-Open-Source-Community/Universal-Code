@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="assets/branding/traverse-board-mark.png" alt="Universal Code icon" width="180">
-  <h1>Universal Code</h1>
+  <img src="assets/branding/traverse-board-mark.png" alt="Universal-Code icon" width="180">
+  <h1>Universal-Code</h1>
   <p><strong>Work with AI in your local project: edit code, run commands, research, and review results.</strong></p>
   <p>
     <a href="README.md">简体中文</a> |

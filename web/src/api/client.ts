@@ -341,11 +341,11 @@ export class APIRequestError extends Error {
 function normalizeBaseURL(baseURL: string): string {
   const resolved = new URL(baseURL, window.location.origin);
   if (resolved.origin !== window.location.origin) {
-    throw new Error("Universal Code API must use the current browser origin");
+    throw new Error("Universal-Code API must use the current browser origin");
   }
   const path = resolved.pathname.replace(/\/+$/, "");
   if (path !== "/api/v1") {
-    throw new Error("Universal Code API base path must be /api/v1");
+    throw new Error("Universal-Code API base path must be /api/v1");
   }
   return path;
 }

@@ -22,6 +22,8 @@
 .v2-inspector-advanced summary:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
 .v2-inspector-advanced details > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .v2-conversation.is-inspector { display: flex; flex-direction: column; }
+.v2-conversation.is-inspector .v2-conversation-stage,
+.v2-conversation.is-inspector .v2-conversation-main-column { display: contents; }
 .v2-conversation.is-inspector > .v2-conversation-header { flex: 0 0 var(--v2-toolbar-height); }
 .v2-conversation.is-inspector > .v2-inspector-advanced { flex-shrink: 0; }
 .v2-conversation.is-inspector > .v2-task-navigation { flex-shrink: 0; }

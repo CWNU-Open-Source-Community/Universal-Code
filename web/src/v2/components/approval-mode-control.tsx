@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Check, ChevronDown, ShieldCheck, ShieldOff, UserCheck } from "lucide-react";
 import { useLocale } from "../../lib/locale";
 import type { ApprovalModeControlProps, ExecutionApprovalMode, FullActivationState } from "./approval-mode-contract";
@@ -63,11 +62,13 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
     tabbingRef.current = false;
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
     (items[focusLastRef.current ? items.length - 1 : 0] ?? menuRef.current)?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!shellRef.current?.contains(event.target as Node)) setOpen(false);
+    const outside = (event: MouseEvent) => {
+      if (!shellRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
-    window.addEventListener("pointerdown", outside);
-    return () => window.removeEventListener("pointerdown", outside);
+    window.addEventListener("click", outside);
+    return () => window.removeEventListener("click", outside);
   }, [open]);
 
   const closeMenu = (restoreFocus = false) => {
@@ -176,11 +177,11 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
     </section>}
     {pending && <span role="status">{t("正在更新权限…", "Updating permissions…")}</span>}
     {error && <p className="v2-inline-error" role="alert">{error.trim() || t("权限更新失败", "Failed to update permissions")}</p>}
-    {confirmationOpen && createPortal(<V2ConfirmDialog open busy={pending}
+    {confirmationOpen && <V2ConfirmDialog open busy={pending}
       confirmLabel={coldFull ? t("确认重新激活", "Confirm reactivation") : t("确认启用", "Confirm activation")} danger
       description={t("将请求无需逐次批准的文件、命令和网络访问，可能造成数据丢失或敏感信息泄露。实际可用范围仍受操作系统、供应商和运行环境限制。",
         "Requests file, command, and network access without per-operation approval. This may cause data loss or expose sensitive information. Actual access remains limited by the operating system, provider, and runtime.")}
       onCancel={cancel} onConfirm={confirm} returnFocusRef={returnFocusRef}
-      title={coldFull ? t("重新激活完全访问权限？", "Reactivate Full access?") : t("启用完全访问权限？", "Enable Full access?")} />, document.body)}
+      title={coldFull ? t("重新激活完全访问权限？", "Reactivate Full access?") : t("启用完全访问权限？", "Enable Full access?")} />}
   </div>;
 }

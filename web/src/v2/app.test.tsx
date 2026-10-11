@@ -96,6 +96,8 @@ function expectNoNavigationWrites(client: APIClient) {
 
 describe("V2Workbench inspector navigation", () => {
   it("opens the source task's GitHub delivery tool from connections while retaining the task draft", async () => {
+    // Exercise navigation after the settings chunk is ready, independent of CI module-load time.
+    await import("./components/settings");
     window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
     const client = navigationClient();
     vi.mocked(client.get).mockResolvedValue({ thread: createdThread,

@@ -9,7 +9,7 @@ export function PrayuBrand({ className = "", variant = "compact" }: {
 }) {
   const { locale } = useLocale();
   const iconOnly = variant === "icon";
-  const displayName = "Universal Code";
+  const displayName = "Universal-Code";
   return (
     <span aria-label={displayName} className={`prayu-brand prayu-brand-${variant} ${className}`.trim()}
       role="img">

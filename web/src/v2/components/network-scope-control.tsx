@@ -39,20 +39,22 @@ export function V2NetworkScopeControl({ mode, targets, disabled = false, onChang
     ? canonicalizeExactNetworkTargets(rawTargets) : [], [invalid.length, rawTargets]);
 
   useEffect(() => {
-    if (!open) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (!shellRef.current?.contains(event.target as Node)) setOpen(false);
+    if (!open || confirmOpen) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (!shellRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
-    window.addEventListener("pointerdown", closeOutside);
+    window.addEventListener("click", closeOutside);
     window.addEventListener("keydown", closeOnEscape);
     return () => {
-      window.removeEventListener("pointerdown", closeOutside);
+      window.removeEventListener("click", closeOutside);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [open, confirmOpen]);
 
   const disableNetwork = () => {
     onChange("disabled", []);

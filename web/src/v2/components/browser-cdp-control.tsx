@@ -179,7 +179,7 @@ export function V2BrowserCDPControl({ client, runID, permissionMode,
       {mutation.error instanceof Error ? mutation.error.message : "完整 CDP 更新失败"}
     </p>}
     <V2ConfirmDialog busy={mutation.isPending} confirmLabel="开启完整 CDP" danger
-      description={`完整 CDP 可以读取 Cookie、捕获和修改网络请求、重放请求并调用任意 CDP 方法。控制范围为 Universal Code 管理的隔离浏览器，系统浏览器和应用界面保持独立。此权限默认随完全访问或调试模式开启，关闭后重新开启需要确认。${client.hasFullCDPSessionControl
+      description={`完整 CDP 可以读取 Cookie、捕获和修改网络请求、重放请求并调用任意 CDP 方法。控制范围为 Universal-Code 管理的隔离浏览器，系统浏览器和应用界面保持独立。此权限默认随完全访问或调试模式开启，关闭后重新开启需要确认。${client.hasFullCDPSessionControl
         ? "启用后可在“应用预览”中打开独立浏览器。"
         : "当前连接尚未开放托管浏览器。使用支持此能力的连接后，可在“应用预览”中打开独立浏览器。"}`}
       onCancel={() => {
@@ -222,7 +222,7 @@ export function V2BrowserCDPControl({ client, runID, permissionMode,
       {session?.state === "closed" && <p className="v2-full-cdp-receipt">清理证明：CDP {session.cdp_closed ? "已关闭" : "未确认"} · 进程树 {session.process_tree_quiescent ? "已静止" : "未确认"} · Profile {session.profile_cleaned ? "已删除" : "待清理"}</p>}
     </section>}
     <V2ConfirmDialog busy={sessionMutation.isPending} confirmLabel="启动隔离浏览器" danger
-      description={`Universal Code 将启动一个使用临时 Profile 的独立无头浏览器，并在 5 分钟内向当前任务开放完整 CDP。目标限定为 ${normalizedTarget}；关闭、撤权、任务终止或超时都会回收进程树并删除临时 Profile。`}
+      description={`Universal-Code 将启动一个使用临时 Profile 的独立无头浏览器，并在 5 分钟内向当前任务开放完整 CDP。目标限定为 ${normalizedTarget}；关闭、撤权、任务终止或超时都会回收进程树并删除临时 Profile。`}
       onCancel={() => setSessionConfirmOpen(false)} onConfirm={() => sessionMutation.mutate()}
       open={sessionConfirmOpen} returnFocusRef={sessionTriggerRef} title="启动完整 CDP 会话？" />
   </div>;

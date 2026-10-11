@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="assets/branding/traverse-board-mark.png" alt="Universal Code 图标" width="180">
-  <h1>Universal Code</h1>
+  <img src="assets/branding/traverse-board-mark.png" alt="Universal-Code 图标" width="180">
+  <h1>Universal-Code</h1>
   <p><strong>在本地项目中，让 AI 帮你改代码、运行命令、查资料并审阅结果。</strong></p>
   <p>
     <a href="README.md">简体中文</a> |

@@ -85,7 +85,7 @@ export function AboutSettings({ desktop, health }: { desktop: boolean; health: H
   const { t } = useLocale();
   return <section className="settings-page-section about-prayu">
     <PrayuBrand className="about-mark" variant="icon" />
-    <h1>Universal Code</h1>
+    <h1>Universal-Code</h1>
     <p>{t("本地优先的 AI Agent 工作台", "Local-first AI Agent Workbench")}</p>
     <dl className="settings-row-list">
       <div><dt>{t("应用版本", "Application version")}</dt><dd>{health?.app_version ?? "dev"}</dd></div>

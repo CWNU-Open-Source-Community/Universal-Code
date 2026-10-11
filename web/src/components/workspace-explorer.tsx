@@ -8,13 +8,14 @@ import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { FileProposalEditor } from "./file-proposal-editor";
 
-export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath = ".", initialLine, onSelectReference }: {
+export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath = ".", initialLine, onSelectReference, onPathChange }: {
   client: APIClient;
   workspaceID: string;
   runID?: string;
   initialPath?: string;
   initialLine?: number;
   onSelectReference?: (file: WorkspaceExplorerView) => void;
+  onPathChange?: (path: string) => void;
 }) {
   const { t } = useLocale();
   const [path, setPath] = useState(initialPath);
@@ -60,6 +61,10 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     mutationFn: (sourcePath: string) => client.issueFileEditProposalSource(runID, sourcePath),
   });
   const parent = useMemo(() => parentPath(path), [path]);
+  const navigate = (nextPath: string) => {
+    setPath(nextPath);
+    onPathChange?.(nextPath);
+  };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -78,13 +83,13 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   if (query.isError || !query.data) return <div className="explorer-error"><ErrorState error={query.error} />
     <p className="explorer-error-hint" role="alert">{t("目标路径读取失败，请重试或返回上级目录确认文件位置。", "Reading this path failed. Retry or return to the parent directory to locate the file.")}</p>
     <button onClick={() => void query.refetch()} type="button">{t("重试文件读取", "Retry file read")}</button>
-    <button onClick={() => setPath(parent)} type="button">{t("返回上级目录", "Return to parent")}</button></div>;
+    <button onClick={() => navigate(parent)} type="button">{t("返回上级目录", "Return to parent")}</button></div>;
   const snapshot = query.data;
 
   return <section className="workspace-explorer" aria-label={t("工作区文件", "Workspace files")}>
     <header className="explorer-toolbar">
       <button aria-label={t("打开上级目录", "Open parent directory")} className="icon-button"
-        disabled={path === "." || query.isFetching} onClick={() => setPath(parent)}
+        disabled={path === "." || query.isFetching} onClick={() => navigate(parent)}
         title={t("上级目录", "Parent directory")} type="button">
         <ArrowLeft aria-hidden="true" size={16} />
       </button>
@@ -130,7 +135,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     </div>}
     {searchQuery && <WorkspaceSearchResults client={client} runID={runID}
       pending={attachment.isPending} query={search} onAttach={attach}
-      onClear={() => setSearchQuery("")} onOpen={(resultPath) => setPath(resultPath)} />}
+      onClear={() => setSearchQuery("")} onOpen={navigate} />}
     {snapshot.kind === "directory" && snapshot.entries.length === 0 &&
       <EmptyState>{t("目录为空", "Directory is empty")}</EmptyState>}
     {snapshot.kind === "directory" && snapshot.entries.length > 0 &&
@@ -139,7 +144,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
           const Icon = entry.kind === "directory" ? Folder : File;
           return <div key={entry.path} role="listitem">
             <button disabled={!entry.readable || query.isFetching}
-              onClick={() => setPath(entry.path)} type="button">
+              onClick={() => navigate(entry.path)} type="button">
               <Icon aria-hidden="true" size={16} />
               <span>{entry.name}</span>
               <small>{entry.kind === "file" ? formatBytes(entry.size_bytes) : entry.kind}</small>

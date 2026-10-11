@@ -103,7 +103,7 @@ describe("V2BrowserCDPControl", () => {
     expect(controls.postControl).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "开启完整 CDP 控制？" });
     expect(within(dialog).getByText(/读取 Cookie、捕获和修改网络请求/u)).toBeInTheDocument();
-    expect(within(dialog).getByText(/控制范围为 Universal Code 管理的隔离浏览器/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/控制范围为 Universal-Code 管理的隔离浏览器/u)).toBeInTheDocument();
     expect(within(dialog).getByText(/启用后可在“应用预览”中打开独立浏览器/u)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "开启完整 CDP" }));
 

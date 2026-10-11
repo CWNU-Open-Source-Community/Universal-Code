@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "Universal Code Local API",
+    "title": "Universal-Code Local API",
     "description": "Authenticated loopback-only API owned by the Go control plane. Read operations expose durable metadata; separately authorized control capabilities permit exact active-call cancellation, non-authorizing execution-profile selection, idempotent creation of a closed workspace-bound Run, durable Run-bound Session steering, idempotent Run lifecycle transitions, and bounded execution through the Go Supervisor.",
     "version": "api.v1",
     "license": {
@@ -66402,7 +66402,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "opaque",
-        "description": "Process-scoped read token; never persisted by Universal Code."
+        "description": "Process-scoped read token; never persisted by Universal-Code."
       },
       "ControlBearerAuth": {
         "type": "http",

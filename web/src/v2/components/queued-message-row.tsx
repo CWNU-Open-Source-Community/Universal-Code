@@ -119,17 +119,19 @@ function QueueMessageMenu({ trigger, message, editDisabled, onClose, onEdit, onD
     }
   }, [message.prepared, editDisabled]);
   useEffect(() => {
-    const outside = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) closeRef.current();
+    const outside = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) {
+        closeRef.current();
+      }
     };
     const move = (event: Event) => {
       if (!ref.current?.contains(event.target as Node)) { trigger.current?.focus({ preventScroll: true }); closeRef.current(); }
     };
-    window.addEventListener("pointerdown", outside);
+    window.addEventListener("click", outside);
     window.addEventListener("resize", move);
     window.addEventListener("scroll", move, true);
     return () => {
-      window.removeEventListener("pointerdown", outside);
+      window.removeEventListener("click", outside);
       window.removeEventListener("resize", move);
       window.removeEventListener("scroll", move, true);
     };

@@ -241,7 +241,7 @@ function provisionalActivityItem(activity: RunActivityView, snapshot: PublicMode
     sequence: activity.through_sequence + 1,
     kind: "model_update",
     source: "model",
-    title: "Universal Code",
+    title: "Universal-Code",
     detail: snapshot.text.trim(),
     status: status === "finalizing" ? "completed" : "running",
     verifiable: false,

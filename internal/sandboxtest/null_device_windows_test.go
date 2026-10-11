@@ -12,6 +12,26 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestAcquireHostMutexOpensExistingObject(t *testing.T) {
+	name, err := windows.UTF16PtrFromString(localSandboxHostMutexName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := windows.CreateMutex(nil, false, name)
+	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = windows.CloseHandle(handle) })
+
+	release, err := acquireHostMutex()
+	if err != nil {
+		t.Fatalf("open the existing host-test mutex: %v", err)
+	}
+	if err := release(); err != nil {
+		t.Fatalf("release the existing host-test mutex: %v", err)
+	}
+}
+
 func TestCanonicalRootReturnsStableFinalPath(t *testing.T) {
 	root, err := CanonicalRoot(t.TempDir())
 	if err != nil {

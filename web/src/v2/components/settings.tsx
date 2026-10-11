@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowRight, BookOpen, Monitor, Search, Trash2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
@@ -108,7 +109,7 @@ function FontLicenseControl() {
   return <>
     <button className="v2-setting-link" onClick={() => setOpen(true)} ref={triggerRef}
       type="button">查看许可</button>
-    {open && <div className="v2-overlay" onMouseDown={(event) => {
+    {open && createPortal(<div className="v2-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) close();
     }} role="presentation">
       <section aria-labelledby="v2-font-license-title" aria-modal="true"
@@ -124,7 +125,7 @@ function FontLicenseControl() {
         </div>
         <footer><button onClick={close} type="button">关闭</button></footer>
       </section>
-    </div>}
+    </div>, document.body)}
   </>;
 }
 
@@ -168,10 +169,10 @@ function AppearanceSettings() {
       <div className="v2-theme-options" role="group" aria-label="应用主题">
         {(["light", "dark", "glass"] as const).map((option) => <button aria-pressed={theme === option}
           key={option} onClick={() => select(option)} type="button">
-          <span className={`v2-theme-preview theme-${option}`}><i /><i /></span>
-          <strong>{option === "light" ? "浅色" : option === "dark" ? "深色" : "透明液态玻璃"}</strong>
+          <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
+          <strong>{option === "light" ? "浅色" : option === "dark" ? "深色" : "雾透"}</strong>
         </button>)}</div>
-      <p>玻璃模式让窗口背景透出柔和层次。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
+      <p>雾透让窗口背景透出柔和的灰蓝层次；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
     </div></section></>;
 }
 

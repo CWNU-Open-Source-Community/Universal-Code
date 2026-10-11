@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
 
-function Fixture({ disabled = false, referenceDisabled = false, onSelect = vi.fn(), onSubmit = vi.fn() }) {
+function Fixture({ disabled = false, referenceDisabled = false, onSelect = vi.fn(), onSubmit = vi.fn(), onNext = vi.fn() }) {
   const ref = useRef<HTMLButtonElement>(null);
   const actions: ComposerAddAction[] = [
     { id: "upload", label: "添加图片或文件", detail: "选择本机附件", icon: null, onSelect },
@@ -13,7 +13,7 @@ function Fixture({ disabled = false, referenceDisabled = false, onSelect = vi.fn
   return <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
     <textarea aria-label="草稿" defaultValue="保留要求" />
     <V2ComposerAddMenu actions={actions} disabled={disabled} triggerRef={ref} />
-    <button type="button">下一个操作</button>
+    <button type="button" onClick={onNext}>下一个操作</button>
   </form>;
 }
 
@@ -66,6 +66,20 @@ it("uses non-submit buttons even when the menu is inside the composer form", () 
   fireEvent.click(screen.getByRole("button", { name: "添加附件" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "引用项目文件" }));
   expect(onSelect).toHaveBeenCalledTimes(1); expect(onSubmit).not.toHaveBeenCalled();
+});
+
+it("activates the next control on the first outside click without losing the draft", async () => {
+  const user = userEvent.setup(); const onNext = vi.fn(); const onSelect = vi.fn();
+  render(<Fixture onNext={onNext} onSelect={onSelect} />);
+  await user.click(screen.getByRole("button", { name: "添加附件" }));
+  const next = screen.getByRole("button", { name: "下一个操作" });
+  await user.pointer({ keys: "[MouseLeft>]", target: next });
+  expect(onNext).not.toHaveBeenCalled();
+  await user.pointer({ keys: "[/MouseLeft]", target: next });
+  expect(onNext).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "草稿" })).toHaveValue("保留要求");
+  expect(onSelect).not.toHaveBeenCalled();
 });
 
 it("closes with a second trigger click and with Shift+Tab without reopening on blur", async () => {

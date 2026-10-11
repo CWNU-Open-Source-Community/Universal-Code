@@ -131,7 +131,7 @@ export function ConnectionGate() {
       <form className="connection-panel" onSubmit={submit}>
         <PrayuBrand className="connection-brand" variant="hero" />
         <div className="connection-heading">
-          <h1>{t("连接 Universal Code", "Connect to Universal Code")}</h1>
+          <h1>{t("连接 Universal-Code", "Connect to Universal-Code")}</h1>
           <p>{t("填写服务提供的访问令牌，打开项目和任务。", "Enter the access token supplied by your service to open projects and tasks.")}</p>
         </div>
         {connecting && desktopBridgeAvailable() &&
