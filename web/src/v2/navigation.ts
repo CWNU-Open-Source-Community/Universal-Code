@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { V2SettingsSection } from "./components/sidebar";
+import { useFileEditLeave } from "../components/file-edit-drafts";
 
 export type V2RunPane = "context" | "checkpoints" | "tools" | "ui-evidence";
 export type V2Route = { kind: "initial" | "new" | "thread" | "invalid";
@@ -56,6 +57,7 @@ function historyIndex() {
 }
 
 export function useV2Navigation() {
+  const leave = useFileEditLeave();
   const [location, setLocation] = useState(() => ({ route: readV2Route(window.location.hash, window.location.pathname), index: historyIndex() }));
   useEffect(() => {
     const sync = () => setLocation({ route: readV2Route(window.location.hash, window.location.pathname), index: historyIndex() });
@@ -66,16 +68,18 @@ export function useV2Navigation() {
   const navigate = useCallback((route: V2Route, replace = false) => {
     const hash = routeHash(route);
     if (hash === window.location.hash) return;
-    const index = historyIndex() + (replace ? 0 : 1);
-    const state = { ...window.history.state, v2NavigationIndex: index };
-    const url = window.location.pathname.startsWith("/legacy") ? `/${window.location.search}${hash}` : hash;
-    if (replace) window.history.replaceState(state, "", url);
-    else window.history.pushState(state, "", url);
-    setLocation({ route, index });
-  }, []);
+    leave(() => {
+      const index = historyIndex() + (replace ? 0 : 1);
+      const state = { ...window.history.state, v2NavigationIndex: index };
+      const url = window.location.pathname.startsWith("/legacy") ? `/${window.location.search}${hash}` : hash;
+      if (replace) window.history.replaceState(state, "", url);
+      else window.history.pushState(state, "", url);
+      setLocation({ route, index });
+    });
+  }, [leave]);
   const back = () => {
     if (location.route.section) navigate({ ...location.route, section: undefined }, true);
-    else if (location.index > 0) window.history.back();
+    else if (location.index > 0) leave(() => window.history.back());
     else if (location.route.view) navigate({ ...location.route, view: undefined, tool: undefined, resourceID: undefined, pane: undefined }, true);
   };
   return { route: location.route, navigate, back, canGoBack: location.index > 0 || Boolean(location.route.section || location.route.view) };

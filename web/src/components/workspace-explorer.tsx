@@ -7,6 +7,7 @@ import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { FileProposalEditor } from "./file-proposal-editor";
+import { useFileEditLeave } from "./file-edit-drafts";
 
 export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath = ".", initialLine, onSelectReference, onPathChange }: {
   client: APIClient;
@@ -18,6 +19,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   onPathChange?: (path: string) => void;
 }) {
   const { t } = useLocale();
+  const leave = useFileEditLeave();
   const [path, setPath] = useState(initialPath);
   const [highlightLine, setHighlightLine] = useState<number | undefined>(initialLine);
   const highlightedLineRef = useRef<HTMLDivElement>(null);
@@ -30,6 +32,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     setSearchInput("");
     setSearchQuery("");
     operationKeys.current.clear();
+    proposalSource.reset();
   }, [workspaceID, runID, initialPath, initialLine]);
   const query = useQuery({
     queryKey: ["workspace", workspaceID, "explore", path],
@@ -61,10 +64,11 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     mutationFn: (sourcePath: string) => client.issueFileEditProposalSource(runID, sourcePath),
   });
   const parent = useMemo(() => parentPath(path), [path]);
-  const navigate = (nextPath: string) => {
+  const navigate = (nextPath: string) => leave(() => {
+    proposalSource.reset();
     setPath(nextPath);
     onPathChange?.(nextPath);
-  };
+  });
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

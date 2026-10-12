@@ -39,6 +39,7 @@ import { usePagedResource } from "../hooks/use-paged-resource";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { RepositoryDiffPanel } from "./repository-diff-panel";
 import { WorkspaceExplorer } from "./workspace-explorer";
+import { useFileEditLeave } from "./file-edit-drafts";
 import { UserTerminalPanel } from "./user-terminal-panel";
 
 export type WorkbenchResourceKind = "thread" | "run" | "session";
@@ -92,6 +93,7 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
   const [bottomVisible, setBottomVisible] = useState(false);
   const [sidecarVisible, setSidecarVisible] = useState(false);
   const [sidecarTab, setSidecarTab] = useState<SidecarTab>("files");
+  const leaveFileEdit = useFileEditLeave();
   const [sidecarMenuOpen, setSidecarMenuOpen] = useState(false);
   const [terminalSessionID, setTerminalSessionID] = useState("");
   const context = useWorkbenchContext(client, resourceKind, runID, sessionID, threadID);
@@ -117,27 +119,27 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
         setBottomVisible((visible) => !visible);
       } else if (event.key.toLowerCase() === "g" && event.shiftKey && !event.altKey) {
         event.preventDefault();
-        setSidecarTab("review");
-        setSidecarVisible(true);
+        leaveFileEdit(() => { setSidecarTab("review"); setSidecarVisible(true); });
       } else if (event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey) {
         event.preventDefault();
         setSidecarTab("files");
         setSidecarVisible(true);
       } else if (event.key.toLowerCase() === "s" && event.altKey && !event.shiftKey) {
         event.preventDefault();
-        setSidecarTab("tasks");
-        setSidecarVisible(true);
+        leaveFileEdit(() => { setSidecarTab("tasks"); setSidecarVisible(true); });
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [leaveFileEdit]);
 
   const selectSidecar = (tab: SidecarTab) => {
     if (sidecarItems.find((item) => item.id === tab)?.availability !== "ready") return;
-    setSidecarTab(tab);
-    setSidecarVisible(true);
-    setSidecarMenuOpen(false);
+    leaveFileEdit(() => {
+      setSidecarTab(tab);
+      setSidecarVisible(true);
+      setSidecarMenuOpen(false);
+    });
   };
 
   return <main className="main-workspace prayu-conversation-panel">
@@ -162,7 +164,7 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
         </button>
         <button aria-label={t("显示或隐藏右侧栏", "Show or hide side panel")} aria-pressed={sidecarVisible}
           className={`workspace-panel-icon ${sidecarVisible ? "active" : ""}`}
-          onClick={() => setSidecarVisible((visible) => !visible)}
+          onClick={() => leaveFileEdit(() => setSidecarVisible((visible) => !visible))}
           title={t("显示或隐藏右侧栏", "Show or hide side panel")} type="button">
           <PanelRight aria-hidden="true" size={16} />
         </button>
@@ -206,7 +208,7 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
             </div>}
           </div>
           <button aria-label={t("关闭右侧栏", "Close side panel")} className="workspace-panel-icon"
-            onClick={() => setSidecarVisible(false)} title={t("关闭右侧栏", "Close side panel")} type="button">
+            onClick={() => leaveFileEdit(() => setSidecarVisible(false))} title={t("关闭右侧栏", "Close side panel")} type="button">
             <X aria-hidden="true" size={16} />
           </button>
         </header>
