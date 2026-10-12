@@ -55,6 +55,7 @@ func main() {
 			delete(value, "Env")
 			delete(value, "Volumes")
 			delete(value, "Labels")
+			if key == "config" { value["Labels"] = map[string]string{"org.traverse-board.project-actions": "1"} }
 		}
 	}
 	editedConfig, err := json.Marshal(config)

@@ -83,6 +83,14 @@ type sandboxApprovalObservedExecutor struct {
 	probe *sandboxApprovalProbe
 }
 
+// Preserve the production adapter's guest namespace and image/path pins while
+// observing timing. The wrapper must not fall back to native host resolution.
+func (e *sandboxApprovalObservedExecutor) NormalizeCommandRuntimeSpec(spec runner.CommandRuntimeSpec, root string) (runner.CommandRuntimeResolvedSpec, error) {
+	return e.CommandRuntimeSandboxExecutor.(interface {
+		NormalizeCommandRuntimeSpec(runner.CommandRuntimeSpec, string) (runner.CommandRuntimeResolvedSpec, error)
+	}).NormalizeCommandRuntimeSpec(spec, root)
+}
+
 func (e *sandboxApprovalObservedExecutor) Ready(ctx context.Context, runID string) (bool, error) {
 	start := time.Now()
 	defer e.probe.record("adapter_ready", start, 0)

@@ -30,11 +30,28 @@ powershell -ExecutionPolicy Bypass -File internal/sandbox/testdata/standard-code
 
 The script refuses missing/unpinned bases, disables build-step networking and pulling,
 chooses a random tag it owns, strips inherited environment, volume, and label config,
-and prints the exact digest for both product and opt-in test vars.
+and prints the exact digest for both product and opt-in test vars. It sets the
+single fixed `org.traverse-board.project-actions=1` image label after removing
+inherited labels.
 
 The current fixture contains `standard-code-docker-runner.v2`; rebuild it when
 upgrading from a v1 image. Durable v1 manifests remain readable as closed-stdin
 recovery evidence, but new execution always compiles the v2 contract.
+
+Project action support adds the installed npm package and its `npm` launcher to
+the fixed Node toolchain, and exposes the Go distribution's `gofmt` as a fixed
+toolchain. Rebuild the fixture with the command above, replace
+`CYBERAGENT_STANDARD_CODE_DOCKER_IMAGE_DIGEST` with the newly printed digest,
+and restart the application. Project actions inspect the exact image metadata;
+an older image without the fixed label keeps Go/Node test support but reports
+npm/gofmt unavailable with a rebuild instruction. This inspection starts no
+container and never pulls an image. The actual Job still determines whether
+the command succeeded.
+
+Command Runtime uses `docker-standard-code-guest.v1` executable identities for
+new Docker Jobs. Executable digests bind the installed image generation and
+fixed guest path rather than a host executable. Historical
+`docker-standard-code.v1` Job receipts retain their original digest semantics.
 
 ## Readiness and execution
 

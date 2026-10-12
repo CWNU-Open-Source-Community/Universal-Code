@@ -104,7 +104,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "inspect fixed Standard Code image config failed" }
   $config = $configJSON | ConvertFrom-Json
   if (($null -ne $config.Env -and @($config.Env).Count -ne 0) -or
-      $null -ne $config.Volumes -or $null -ne $config.Labels -or
+      $null -ne $config.Volumes -or $null -eq $config.Labels -or
+      @($config.Labels.PSObject.Properties).Count -ne 1 -or
+      $config.Labels.'org.traverse-board.project-actions' -ne '1' -or
       $config.User -ne "65532:65532" -or $config.WorkingDir -ne "/workspace" -or
       @($config.Entrypoint).Count -ne 1 -or
       $config.Entrypoint[0] -ne "/traverse-board/standard-code-runner") {

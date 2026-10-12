@@ -867,6 +867,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		CapabilityReadinessRuntime:            &capabilityReadinessRuntime,
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
+		ProjectActionsController:              application.NewProjectActionsService(stateStore, commandRuntime, commandRuntimeDrydocks),
 		RunCreationEnabled:                    config.RunCreationEnabled,
 		StandardCodePresetEnabled:             standardCodePreset != nil,
 		SessionMessageEnabled:                 config.SessionMessageEnabled,

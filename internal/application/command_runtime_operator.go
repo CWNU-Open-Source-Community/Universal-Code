@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"cyberagent-workbench/internal/apperror"
-	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/runmutation"
@@ -53,6 +52,10 @@ func operatorCommandOwnsStoppedRun(ctx context.Context, run domain.Run, lease do
 // A terminal receipt is readable without fresh authority. Any previous intent
 // without a conclusive result is never turned into another native start.
 func (s *CommandRuntimeService) RunOperatorCommand(ctx context.Context, request OperatorCommandRequest) (OperatorCommandResult, error) {
+	return s.runOperatorCommand(ctx, request, nil)
+}
+
+func (s *CommandRuntimeService) runOperatorCommand(ctx context.Context, request OperatorCommandRequest, started func(OperatorCommandResult)) (OperatorCommandResult, error) {
 	var result OperatorCommandResult
 	if s == nil || s.store == nil {
 		return result, apperror.New(apperror.CodeFailedPrecondition, "operator command store is unavailable")
@@ -69,8 +72,8 @@ func (s *CommandRuntimeService) RunOperatorCommand(ctx context.Context, request 
 	spec, invocationID := prepared.spec, prepared.invocationID
 	operationKey := commandRuntimeBatchOperationKey(prepared.operationKey, 0)
 	leaseStore, ok := s.store.(RunExecutionLeaseStore)
-	if !ok || s.adapter.Kind != commandruntimeadapter.KindHostUnsandboxed || s.capabilities.RuntimeAuthority == nil {
-		return result, apperror.New(apperror.CodeFailedPrecondition, "operator command requires the host command runtime and Run lease service")
+	if !ok || !s.adapter.Executable() || s.capabilities.RuntimeAuthority == nil {
+		return result, apperror.New(apperror.CodeFailedPrecondition, "operator command requires an installed command runtime and Run lease service")
 	}
 	run, err := s.store.GetRun(ctx, request.RunID)
 	if err != nil {
@@ -146,6 +149,12 @@ func (s *CommandRuntimeService) RunOperatorCommand(ctx context.Context, request 
 		}
 		value, err := s.ExecuteCommandRuntime(leaseCtx, scope, input)
 		if len(value.Jobs) == 1 {
+			if started != nil {
+				job, readErr := s.store.GetCommandRuntimeJob(context.WithoutCancel(leaseCtx), value.Jobs[0].ID)
+				if readErr == nil {
+					started(OperatorCommandResult{Job: job, Replayed: value.Replayed})
+				}
+			}
 			if err == nil {
 				err = s.waitForOperatorCommand(leaseCtx, value.Jobs[0].ID)
 			}

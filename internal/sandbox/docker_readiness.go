@@ -110,6 +110,17 @@ type DockerReadiness struct {
 	ReadinessFingerprint string    `json:"readiness_fingerprint"`
 }
 
+// This metadata read is bound to the configured immutable image digest. It
+// starts no container and preserves ordinary readiness for older images.
+func (probe DockerReadinessProbe) ProjectActionsAvailable(ctx context.Context, digest string) (bool, error) {
+	image, err := probe.Transport.InspectImage(ctx, digest)
+	if err != nil {
+		return false, err
+	}
+	image, err = image.Normalize(digest)
+	return err == nil && image.ProjectActionsVersion == "1", err
+}
+
 func (readiness DockerReadiness) Validate() error {
 	status, remediation, ok := dockerReadinessDisposition(readiness.ReasonCode)
 	if !ok || readiness.ProtocolVersion != DockerReadinessProtocolVersion ||

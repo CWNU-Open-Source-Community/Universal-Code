@@ -361,6 +361,7 @@ type Config struct {
 	ThreadReviewReader                    ThreadReviewReader
 	ThreadGitController                   ThreadGitController
 	ThreadApplicationServiceController    ThreadApplicationServiceController
+	ProjectActionsController              ProjectActionsController
 	ThreadPullRequestController           ThreadPullRequestController
 	StandardCodePresetController          StandardCodePresetController
 	StandardCodeDeliveryController        StandardCodeDeliveryController
@@ -465,6 +466,7 @@ type API struct {
 	threadReview                          ThreadReviewReader
 	threadGitController                   ThreadGitController
 	threadApplicationServiceController    ThreadApplicationServiceController
+	projectActionsController              ProjectActionsController
 	threadPullRequestController           ThreadPullRequestController
 	standardCodePresetController          StandardCodePresetController
 	standardCodeDeliveryController        StandardCodeDeliveryController
@@ -903,6 +905,7 @@ func New(store Store, config Config) (*API, error) {
 		agentBrowserController:              config.AgentBrowserController,
 		capabilityReadiness:                 capabilityReadiness,
 		commandRuntimeAdapters:              append([]commandruntimeadapter.Identity(nil), config.CommandRuntimeAdapters...),
+		projectActionsController:            config.ProjectActionsController,
 		commandActivitySource:               commandActivitySource,
 		capabilityReadinessRuntime:          readinessRuntime,
 		runLifecycleController:              config.RunLifecycleController,
@@ -1099,6 +1102,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if isDockerSandboxPath(request.URL.Path) {
 		a.serveDockerSandbox(tracked, request, requestID)
+		return
+	}
+	if runID, slot, jobID, matched := matchProjectActionsPath(request.URL.Path); matched {
+		a.serveProjectActions(tracked, request, requestID, runID, slot, jobID)
 		return
 	}
 	if threadID, jobID, stop, matched := matchThreadApplicationServicesPath(request.URL.Path); matched {

@@ -19,6 +19,7 @@ import { v2QueryKeys } from "../query-keys";
 import { TaskOverview } from "./task-overview";
 import { TaskGit } from "./task-git";
 import { TaskPullRequest } from "./task-pull-request";
+import { ProjectActions } from "./project-actions";
 import { TaskReviewTools, type TaskReviewToolMemory, type TaskReviewToolReviews } from "./task-review-tools";
 import type { WorkspaceView } from "../../api/types";
 import "./task-review.css";
@@ -245,6 +246,8 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
           </details>
         </>}
         {tab === "checks" && selectedRun && <>
+          <ProjectActions client={client} runID={reviewedRunID} threadID={detail.thread.id}
+            working={working} onFeedback={onRequestChange} />
           <section aria-label="编码环境与计划">
             <h2>编码环境与计划</h2>
             <p>查看所选执行的编码环境与计划。选择计划方向后进入交付，检查和执行进度可在对话与工作记录中查看。</p>
@@ -266,7 +269,7 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
           {client.hasWorkspaceCheckpointControl && client.hasStandardCodePreset && presetConfigured === true && reportIntent.data?.state !== "unknown" && <div className="v2-review-report-action">
             <button disabled={working || Boolean(reportIntent.data)} onClick={createReport} type="button">
               {reportIntent.data?.state === "pending" ? "正在生成报告…" : "生成当前交付报告"}</button>
-            <p>此执行已配置标准编码环境。交付报告汇总已有检查记录；需要补跑测试或提交代码时，请返回对话提出要求。</p>
+            <p>此执行已配置标准编码环境。交付报告汇总已有检查记录；可在上方运行项目测试，再核对报告。</p>
           </div>}
           {presetConfigured === false && !hasHistoricalReport && <>
             <p>此执行使用普通编码流程，下方可查看代码交接与已有命令结果。</p>

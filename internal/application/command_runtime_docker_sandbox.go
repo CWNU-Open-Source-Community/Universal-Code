@@ -38,7 +38,7 @@ func NewDockerSandboxCommandRuntimeExecutor(service *StandardCodeDockerService) 
 		return nil, err
 	}
 	identity := commandruntimeadapter.SandboxedWorkspace(
-		CommandRuntimeDockerSandboxBackend, "docker-standard-code.v1", generation)
+		CommandRuntimeDockerSandboxBackend, "docker-standard-code-guest.v1", generation)
 	if !identity.Executable() {
 		return nil, errors.New("Docker Standard Code Command Runtime identity is invalid")
 	}
@@ -187,6 +187,8 @@ func commandRuntimeDockerCommand(spec runner.CommandRuntimeResolvedSpec) (
 	switch base {
 	case "go", "go.exe":
 		toolchain = sandbox.DockerStandardCodeToolchainGo
+	case "gofmt", "gofmt.exe":
+		toolchain = sandbox.DockerStandardCodeToolchainGofmt
 	case "node", "node.exe":
 		toolchain = sandbox.DockerStandardCodeToolchainNode
 	case "python", "python.exe", "python3", "python3.exe":

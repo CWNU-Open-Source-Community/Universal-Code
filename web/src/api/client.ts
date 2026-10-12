@@ -1,4 +1,5 @@
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
+import { parseProjectActions, parseProjectActionResult, type ProjectActionSlot } from "./project-actions";
 import { consumeSSE } from "./sse";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
 import type { MCPCredentialBindingView, MCPCredentialRequestView, MCPCredentialStatusView } from "./types";
@@ -8288,6 +8289,27 @@ export class APIClient {
       throw new Error("A control bearer token is required for this operation");
     }
     return this.sendControlRequest<T>(path, body, signal, "", "DELETE");
+  }
+
+  async listProjectActions(runID: string, signal?: AbortSignal): Promise<import("./types").ProjectActionsView> {
+    if (!boundedIdentity(runID)) throw new Error("An exact Run is required");
+    return parseProjectActions(await this.get<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-actions", {}, signal), runID);
+  }
+
+  async runProjectAction(runID: string, slot: ProjectActionSlot, target: string, operationKey: string): Promise<import("./types").ProjectActionResultView> {
+    if (!this.hasControl || !this.hasRunExecution) throw new Error("Project actions require execution control");
+    if (!boundedIdentity(runID) || !boundedIdentity(operationKey) || !["test", "format"].includes(slot) ||
+      target.length > 4096 || /[\u0000-\u001f\u007f]/u.test(target)) throw new Error("Invalid project action");
+    return parseProjectActionResult(await this.sendControlRequest<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-actions/" + slot,
+      { version: "project-actions.v1", target, confirm_execution: true }, undefined, operationKey), runID, slot);
+  }
+
+  async getProjectActionJob(runID: string, jobID: string, signal?: AbortSignal): Promise<import("./types").ProjectActionResultView> {
+    if (!boundedIdentity(runID) || !boundedIdentity(jobID)) throw new Error("An exact Run and Job are required");
+    return parseProjectActionResult(await this.get<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-actions/jobs/" + encodeURIComponent(jobID), {}, signal), runID, undefined, jobID);
   }
 
   async previewTaskConfiguration(body: import("./types").TaskConfigurationRequest,

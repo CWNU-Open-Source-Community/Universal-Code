@@ -627,6 +627,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		CapabilityReadinessRuntime:            localReadinessRuntime,
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
+		ProjectActionsController:              application.NewProjectActionsService(a.store, commandRuntime, commandRuntimeDrydocks),
 		SkillInstallationEnabled:              controlToken != "",
 		EvidenceAttachmentEnabled:             controlToken != "",
 		VerificationEvidenceEnabled:           controlToken != "",

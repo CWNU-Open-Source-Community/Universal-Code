@@ -15785,6 +15785,322 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/runs/{run_id}/project-actions": {
+      "get": {
+        "operationId": "listProjectActions",
+        "summary": "Inspect configured project actions",
+        "description": "Reads pinned test/format action IDs and current runtime availability without creating execution authority or exposing host executable paths.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectActionsView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/runs/{run_id}/project-actions/jobs/{job_id}": {
+      "get": {
+        "operationId": "getProjectActionJob",
+        "summary": "Read a saved project action Job",
+        "description": "Reads bounded real output and status from an existing Run-owned project-action Job. It requires no new execution authority.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "description": "Saved project action Job",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectActionResultView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/runs/{run_id}/project-actions/{slot}": {
+      "post": {
+        "operationId": "runProjectAction",
+        "summary": "Run one configured project action",
+        "description": "Starts only the pinned test or format preset through the selected Command Runtime adapter and its existing permission and lease checks. Returns the saved Job promptly; retrying the same action key reads the original Job and never starts it again.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "slot",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "test",
+                "format"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque retry key; only a domain-separated digest is persisted",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectActionResultView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectActionRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/runs/{run_id}/project-instructions": {
       "get": {
         "operationId": "getRunProjectInstructions",
@@ -47565,6 +47881,207 @@
         "required": [
           "protocol_version",
           "items"
+        ],
+        "type": "object"
+      },
+      "ProjectActionJobView": {
+        "additionalProperties": false,
+        "properties": {
+          "can_stop": {
+            "type": "boolean"
+          },
+          "exit_code": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "prepared",
+              "running",
+              "stopping",
+              "completed",
+              "failed",
+              "timed_out",
+              "cancelled",
+              "killed",
+              "interrupted"
+            ],
+            "type": "string"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "stderr_truncated": {
+            "type": "boolean"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "stdout_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "stdout",
+          "stderr",
+          "stdout_truncated",
+          "stderr_truncated",
+          "can_stop"
+        ],
+        "type": "object"
+      },
+      "ProjectActionRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_execution": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "project-actions.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "target",
+          "confirm_execution"
+        ],
+        "type": "object"
+      },
+      "ProjectActionResultView": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "job": {
+            "$ref": "#/components/schemas/ProjectActionJobView"
+          },
+          "protocol_version": {
+            "enum": [
+              "project-actions.v1"
+            ],
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "slot": {
+            "enum": [
+              "test",
+              "format"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "run_id",
+          "slot",
+          "command_id",
+          "backend",
+          "replayed",
+          "job"
+        ],
+        "type": "object"
+      },
+      "ProjectActionView": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "command_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "slot": {
+            "enum": [
+              "test",
+              "format"
+            ],
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "directory",
+              "go_file"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "slot",
+          "command_id",
+          "configured",
+          "available",
+          "target_kind",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "ProjectActionsView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectActionView"
+            },
+            "type": "array"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "capability_grant": {
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "enum": [
+              "project-actions.v1"
+            ],
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "run_id",
+          "backend",
+          "actions",
+          "capability_grant"
         ],
         "type": "object"
       },

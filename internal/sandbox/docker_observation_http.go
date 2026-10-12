@@ -116,7 +116,7 @@ func (transport dockerEngineReadOnlyTransport) Info(ctx context.Context) (Docker
 	return DockerDaemonInfo{
 		ID: payload.ID, Name: payload.Name, DockerRootDir: payload.DockerRootDir,
 		ServerVersion: payload.ServerVersion, OperatingSystem: payload.OperatingSystem,
-		OSType: payload.OSType,
+		OSType:       payload.OSType,
 		Architecture: canonicalDockerArchitecture(payload.Architecture), Driver: payload.Driver,
 		CgroupDriver: payload.CgroupDriver, CgroupVersion: payload.CgroupVersion,
 		DefaultRuntime: payload.DefaultRuntime, NCPU: payload.NCPU,
@@ -145,6 +145,7 @@ func (transport dockerEngineReadOnlyTransport) InspectImage(ctx context.Context,
 			User    string                     `json:"User"`
 			Env     []string                   `json:"Env"`
 			Volumes map[string]json.RawMessage `json:"Volumes"`
+			Labels  map[string]string          `json:"Labels"`
 		} `json:"Config"`
 		RootFS struct {
 			Type string `json:"Type"`
@@ -162,6 +163,7 @@ func (transport dockerEngineReadOnlyTransport) InspectImage(ctx context.Context,
 		User: payload.Config.User, RootFSType: payload.RootFS.Type,
 		GraphDriver:      payload.GraphDriver.Name,
 		EnvironmentCount: len(payload.Config.Env), VolumeCount: len(payload.Config.Volumes),
+		ProjectActionsVersion: payload.Config.Labels[DockerStandardCodeProjectActionsLabel],
 	}, nil
 }
 

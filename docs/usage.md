@@ -1715,10 +1715,13 @@ before the first message is dispatched.
 
 Use `test_command_id: test.go` for `go test ./...`, `test_command_id: test.node`
 for native `node --test`, and `format_command_id: format.go` for native `gofmt -w`
-on one exact Go file. Ask in the task's chat to run its configured action and
-inspect the normal Job result. These presets currently require the offered host
-command runtime and installed native toolchain; config never changes runtime
-permissions or supplies executable/argv/shell text. The CLI uses the same service:
+on one exact Go file. In **Changes and delivery → Checks and delivery**, select
+an optional relative test directory or an exact Go file and run the configured
+action. The panel shows the selected backend, live Job output when available,
+and the actual terminal state and exit code. The action uses the current Host,
+Windows Local Sandbox, or Standard Code Docker runtime; configuration never
+changes permission or supplies executable/argv/shell text. The CLI uses the same
+command execution service.
 
 For npm scripts (including Vitest), use `test_command_id: test.npm`. It resolves
 the installed npm CLI through native Node, with offline/audit/fund settings and
@@ -1730,14 +1733,20 @@ distinct from Node's built-in test runner, and adds no Jest-specific flags.
 cyberagent run project-action <run-id> test --prepare
 cyberagent run project-action <run-id> test --path web --prepare
 cyberagent run project-action <run-id> format --path pkg/example.go --prepare
-cyberagent run project-action <run-id> test --operation-key test-001 --confirm-execution --confirm-full --confirm-non-sandboxed-host-execution --enable-permission-control --enable-danger-full-access
+cyberagent run project-action <run-id> test --operation-key project-test-001 --confirm-execution --confirm-full --confirm-non-sandboxed-host-execution --enable-permission-control --enable-danger-full-access
+cyberagent run project-action <local-run-id> test --path pkg --operation-key project-test-local --confirm-execution --enable-permission-control --enable-workspace-sandbox
+cyberagent run project-action <docker-run-id> format --path pkg/example.go --operation-key project-format-docker --confirm-execution --enable-permission-control --enable-workspace-sandbox --enable-docker-execution
 ```
 
-`--prepare` prints an inert typed intent. Execution retains existing native host
-acknowledgement, permission, approval and lease checks and produces an ordinary
-command Job. Read-only projects and excluded format targets are rejected during
-preparation. Typed Tool IDs without one of these presets do not become shell
-commands.
+`--prepare` prints an inert typed intent for the selected workspace backend.
+Execution retains existing permission, approval and lease checks and produces
+an ordinary command Job. Host execution retains its explicit acknowledgement;
+owned workspaces use their sandbox without host fallback. Test directories and
+format files are checked against the pinned excluded paths; read-only projects
+cannot be formatted. An existing UI operation key reads its original Job even
+after restart, without starting the action again. Docker needs the updated
+[fixed image](standard-code-docker.md#fixed-image) for npm and gofmt. Tool IDs
+without one of these presets do not become shell commands.
 
 ## Durable Context Continuity / 持久上下文连续性
 

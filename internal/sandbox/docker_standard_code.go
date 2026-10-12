@@ -13,6 +13,7 @@ const (
 	DockerStandardCodeRunnerProtocolVersion = "standard-code-docker-runner.v2"
 	dockerStandardCodeRunnerLegacyProtocol  = "standard-code-docker-runner.v1"
 	DockerStandardCodeRunnerExecutable      = "/traverse-board/standard-code-runner"
+	DockerStandardCodeProjectActionsLabel   = "org.traverse-board.project-actions"
 	DockerStandardCodeWorkspaceTarget       = "/workspace"
 	DockerStandardCodeGitMetadataTarget     = "/workspace/.git"
 	DockerStandardCodeGitMetadataMask       = "gitdir: .traverse-board-git-disabled\n"
@@ -33,6 +34,7 @@ const (
 	DockerStandardCodeCacheEntries                 = 16_384
 
 	DockerStandardCodeToolchainGo     = "go"
+	DockerStandardCodeToolchainGofmt  = "gofmt"
 	DockerStandardCodeToolchainNode   = "node"
 	DockerStandardCodeToolchainPython = "python"
 	DockerStandardCodeToolchainRust   = "rust"
@@ -112,7 +114,7 @@ func validDockerStandardCodeStdinPolicy(value string) bool {
 
 func validDockerStandardCodeToolchain(value string) bool {
 	switch value {
-	case DockerStandardCodeToolchainGo, DockerStandardCodeToolchainNode,
+	case DockerStandardCodeToolchainGo, DockerStandardCodeToolchainGofmt, DockerStandardCodeToolchainNode,
 		DockerStandardCodeToolchainPython, DockerStandardCodeToolchainRust:
 		return true
 	default:

@@ -17,7 +17,7 @@ func (s *AgentRunner) supervisorMessagesWithOriginalFiles(ctx context.Context, t
 	commandWorkspaceRoot := ""
 	if project, projectErr := projectconfig.Pinned(turn.Run.Config); projectErr != nil {
 		return nil, projectErr
-	} else if project != nil && project.TestCommandID == "test.npm" && runtime.Adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && len(runtime.Authority) != 0 {
+	} else if project != nil && project.TestCommandID == "test.npm" && (runtime.Adapter.Kind == commandruntimeadapter.KindHostUnsandboxed || runtime.Adapter.Backend == CommandRuntimeLocalSandboxBackend) && len(runtime.Authority) != 0 {
 		store, available := s.store.(RunFileWorkspaceStore)
 		if !available {
 			return nil, apperror.New(apperror.CodeFailedPrecondition, "project command workspace resolution is unavailable")

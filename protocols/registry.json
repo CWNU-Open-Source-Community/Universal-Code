@@ -1879,6 +1879,7 @@
         "operator_command_key.v1",
         "operator_command_request.v1",
         "permission_runtime_epoch.v1",
+        "project-actions.v1",
         "risk_escalation.v1",
         "risk_escalation_policy.v1",
         "risk_escalation_resume.v1",
@@ -2265,6 +2266,7 @@
         ]
       },
       "active_identifiers": [
+        "docker-standard-code-guest.v1",
         "docker-standard-code.v1",
         "docker_sandbox_admission.v1",
         "docker_sandbox_admission_operation.v1",
