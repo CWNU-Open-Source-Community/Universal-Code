@@ -65,11 +65,10 @@ export function useV2Navigation() {
     // Number hash-created entries so cancellation can restore the original entry.
     window.history.replaceState({ ...window.history.state, v2NavigationIndex: historyIndex() }, "");
     accepted.current.state = window.history.state;
-    const sync = (event: Event) => {
+    const sync = () => {
       const previous = accepted.current;
       if (window.location.href === previous.url) return;
       if (!Number.isSafeInteger(window.history.state?.v2NavigationIndex)) {
-        if (event.type === "popstate") return; // The matching hashchange numbers this new entry.
         window.history.replaceState({ ...window.history.state, v2NavigationIndex: previous.index + 1 }, "");
       }
       const next = { url: window.location.href, index: historyIndex(), state: window.history.state };
