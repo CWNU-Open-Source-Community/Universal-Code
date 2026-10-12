@@ -66,7 +66,7 @@ export type FileEditLeaveEntry = {
   path: string; dirty: boolean; busy: boolean; canSave: boolean;
   save: () => Promise<unknown>; keep: () => void; discard: () => void;
 };
-type LeaveRequest = (proceed: () => void) => void;
+type LeaveRequest = (proceed: () => void, cancel?: () => void) => void;
 type LeaveContext = {
   register: (id: string, entry: RefObject<FileEditLeaveEntry>) => () => void;
   request: LeaveRequest;
@@ -80,21 +80,21 @@ export function FileEditDraftProvider({ children }: { children: ReactNode }) {
   const { t } = useLocale();
   const entries = useRef(new Map<string, RefObject<FileEditLeaveEntry>>());
   const proceeding = useRef(false);
-  const [pending, setPending] = useState<{ entries: RefObject<FileEditLeaveEntry>[]; proceed: () => void } | null>(null);
+  const [pending, setPending] = useState<{ entries: RefObject<FileEditLeaveEntry>[]; proceed: () => void; cancel?: () => void } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const cancel = () => { if (!busy) { setPending(null); setError(""); } };
+  const cancel = () => { if (!busy) { pending?.cancel?.(); setPending(null); setError(""); } };
   const dialog = useModalFocusTrap<HTMLElement>(Boolean(pending), cancel, busy, undefined, { isolateBackground: true });
   const register = useCallback<LeaveContext["register"]>((id, entry) => {
     entries.current.set(id, entry);
     return () => { entries.current.delete(id); };
   }, []);
-  const request = useCallback<LeaveRequest>((proceed) => {
+  const request = useCallback<LeaveRequest>((proceed, cancel) => {
     if (proceeding.current) { proceed(); return; }
     const dirty = [...entries.current.values()].filter(({ current }) => current.dirty || current.busy);
     if (!dirty.length) { proceed(); return; }
     setError("");
-    setPending({ entries: dirty, proceed });
+    setPending({ entries: dirty, proceed, cancel });
   }, []);
   const context = useMemo(() => ({ register, request }), [register, request]);
   useEffect(() => {

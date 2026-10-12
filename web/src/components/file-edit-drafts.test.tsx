@@ -53,6 +53,7 @@ function EditorHarness({ client }: { client: APIClient }) {
     <button onClick={() => leave(() => setFile(file.path === source.path ? secondSource : source))}>Switch file</button>
     <button onClick={() => setOpen(true)}>Reopen editor</button>
     <button onClick={() => navigation.navigate({ kind: "new" })}>New conversation</button>
+    <a href="#/threads/another-thread">Other conversation link</a>
     <output aria-label="Route">{navigation.route.kind}</output>
     {open && <FileProposalEditor client={client} runID={file.run_id} source={file} onClose={() => setOpen(false)} />}
   </>;
@@ -111,6 +112,26 @@ it("blocks route changes until the user chooses and keeps a failed proposal edit
   await user.click(screen.getByText("New conversation"));
   await user.click(screen.getByText("Keep draft"));
   await waitFor(() => expect(window.location.hash).toBe("#/new"));
+});
+
+it("guards hash links and browser Back while preserving their history entries", async () => {
+  const client = fakeClient(); const user = userEvent.setup();
+  render(providers(client, <EditorHarness client={client} />));
+  fireEvent.change(await screen.findByLabelText("File editor"), { target: { value: "keep across history" } });
+  await user.click(screen.getByText("Other conversation link"));
+  expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  await user.click(screen.getByText("Continue editing"));
+  await waitFor(() => expect(window.location.hash).toBe(""));
+  expect(screen.getByLabelText("Route")).toHaveTextContent("initial");
+  await user.click(screen.getByText("Other conversation link"));
+  await screen.findByRole("dialog");
+  await user.click(screen.getByText("Keep draft"));
+  await waitFor(() => expect(screen.getByLabelText("Route")).toHaveTextContent("thread"));
+  window.history.back();
+  await screen.findByRole("dialog");
+  await user.click(screen.getByText("Continue editing"));
+  await waitFor(() => expect(window.location.hash).toBe("#/threads/another-thread"));
+  expect(screen.getByLabelText("File editor")).toHaveValue("keep across history");
 });
 
 it("discards only after an explicit choice and restores the original on reopen", async () => {
