@@ -20968,7 +20968,7 @@ export interface operations {
         };
         responses: {
             /** @description Control request accepted or idempotently replayed */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
