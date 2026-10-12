@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/session"
 )
 
 func pinActionConfig(value projectconfig.Effective) domain.RunConfig {
@@ -78,6 +79,28 @@ func projectActionsFixtureWithTestID(t *testing.T, readonly bool, testID string)
 		t.Fatal(err)
 	}
 	return f, NewProjectActionsService(f.st, f.service, nil)
+}
+
+type projectActionsUnavailableWorkspaceStore struct {
+	ProjectActionsStore
+}
+
+func (s projectActionsUnavailableWorkspaceStore) GetWorkspaceInfo(context.Context, string) (session.WorkspaceInfo, error) {
+	return session.WorkspaceInfo{}, apperror.New(apperror.CodeUnavailable, "workspace is unavailable")
+}
+
+func TestProjectActionsListWorkspaceFailureDisablesActions(t *testing.T) {
+	f, _ := projectActionsFixture(t, false)
+	service := NewProjectActionsService(projectActionsUnavailableWorkspaceStore{f.st}, f.service, nil)
+	view, err := service.List(t.Context(), f.run.ID)
+	if err != nil || len(view.Actions) != 2 {
+		t.Fatalf("unavailable workspace did not retain the action view: %+v %v", view, err)
+	}
+	for _, action := range view.Actions {
+		if !action.Configured || action.Available || action.Reason != "Run workspace is unavailable" {
+			t.Fatalf("workspace failure did not disable configured action: %+v", action)
+		}
+	}
 }
 
 func TestProjectActionsBackgroundJobSurvivesRequestAndStreamsBeforeStop(t *testing.T) {
@@ -264,4 +287,17 @@ func TestProjectActionDockerGuestNormalizerPinsGuestAndRejectsHostArguments(t *t
 	if err := f.service.projectPresetReady(t.Context(), "test.npm"); err == nil {
 		t.Fatal("old image claimed new npm capability")
 	}
+	t.Run("historical POSIX selector", func(t *testing.T) {
+		legacy := spec
+		legacy.Executable = "/usr/local/go/bin/go"
+		legacy.Arguments, legacy.Environment = []string{"version"}, []runner.CommandRuntimeEnvironment{}
+		resolved, err := f.service.normalizeCommandRuntimeSpec(legacy, f.owned.Path)
+		if err != nil || resolved.ExecutablePath != "/opt/toolchains/go/bin/go" || resolved.Spec.Executable != resolved.ExecutablePath || resolved.ExecutableIdentityKind != runner.CommandRuntimeExecutableTemplatePathSHA256 {
+			t.Fatalf("native selector acquired a host launch binding: %+v %v", resolved, err)
+		}
+		legacy.Executable = "/opt/toolchains/foreign/bin/go"
+		if _, err := f.service.normalizeCommandRuntimeSpec(legacy, f.owned.Path); err == nil {
+			t.Fatal("incorrect guest toolchain path was accepted")
+		}
+	})
 }

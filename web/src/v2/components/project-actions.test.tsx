@@ -90,14 +90,24 @@ it("keeps a late execution response with its original Run after switching runs",
   expect(screen.queryByText("expected true")).not.toBeInTheDocument();
 });
 
-it("reads an active Job and stops only that Job", async () => {
+it("reads and stops the active Job, then refreshes actions for the next execution", async () => {
   const { client, ui } = setup();
   const running = { ...result(), job: { ...result().job, state: "running", can_stop: true, exit_code: undefined } };
-  client.runProjectAction.mockResolvedValue(running);
-  client.getProjectActionJob.mockResolvedValue(running);
+  let started = false;
+  let finished = false;
+  client.listProjectActions.mockImplementation(async () => ({
+    ...actions(), actions: actions().actions.map((action) => ({ ...action, available: !started || finished })),
+  }));
+  client.runProjectAction.mockImplementation(async () => { started = true; return running; });
+  client.getProjectActionJob.mockImplementation(async () => finished ? result() : running);
+  client.stopThreadApplicationService.mockImplementation(async () => { finished = true; return {}; });
   render(ui());
   fireEvent.click(await screen.findByRole("button", { name: "运行测试" }));
+  await screen.findByRole("button", { name: "停止运行" });
+  await waitFor(() => expect(client.listProjectActions).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole("button", { name: "运行测试" })).toBeDisabled();
   fireEvent.click(await screen.findByRole("button", { name: "停止运行" }));
   await waitFor(() => expect(client.stopThreadApplicationService).toHaveBeenCalledWith("thread-1", "run-1", "job-run-1"));
   expect(client.getProjectActionJob).toHaveBeenCalledWith("run-1", "job-run-1", expect.any(AbortSignal));
+  await waitFor(() => expect(screen.getByRole("button", { name: "运行测试" })).toBeEnabled());
 });

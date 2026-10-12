@@ -38,7 +38,10 @@ func (e *DockerSandboxCommandRuntimeExecutor) NormalizeCommandRuntimeSpec(spec r
 	default:
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}
-	if strings.HasPrefix(intent.Executable, "/") && intent.Executable != guest {
+	// Historical callers use a native absolute toolchain path as the fixed
+	// toolchain selector, including POSIX hosts. It is never the launched path
+	// or the executable pin; new presets use the canonical guest path directly.
+	if (strings.HasPrefix(intent.Executable, "/opt/toolchains/") || strings.HasPrefix(intent.Executable, "/usr/local/cargo/")) && intent.Executable != guest {
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}
 	intent.Executable = guest

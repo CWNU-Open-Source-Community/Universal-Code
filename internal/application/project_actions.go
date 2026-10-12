@@ -226,12 +226,12 @@ func (s *ProjectActionsService) List(ctx context.Context, runID string) (Project
 			service = nil
 		} else {
 			root = files.Workspace.RootPath
-		}
-		if lease, found, leaseErr := service.store.GetRunExecutionLease(ctx, run.ID); leaseErr != nil {
-			return view, leaseErr
-		} else if found && lease.ActiveAt(time.Now().UTC()) {
-			reason = "Run is executing another operation"
-			service = nil
+			if lease, found, leaseErr := service.store.GetRunExecutionLease(ctx, run.ID); leaseErr != nil {
+				return view, leaseErr
+			} else if found && lease.ActiveAt(time.Now().UTC()) {
+				reason = "Run is executing another operation"
+				service = nil
+			}
 		}
 	}
 	for _, slot := range []string{"test", "format"} {

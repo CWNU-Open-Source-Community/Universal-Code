@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { projectActionIsRunning, type ProjectActionSlot } from "../../api/project-actions";
@@ -53,6 +53,13 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
     enabled: Boolean(attempt?.jobID), retry: false, refetchOnMount: "always",
     refetchInterval: (query) => query.state.data && projectActionIsRunning(query.state.data.job.state) ? 1500 : false });
   const result = job.data;
+  const terminalJobID = result && !projectActionIsRunning(result.job.state) ? result.job.id : undefined;
+  const baseURL = client.baseURL;
+  useEffect(() => {
+    if (!terminalJobID) return;
+    void queries.invalidateQueries({ queryKey: ["run", runID, "project-actions", baseURL], exact: true });
+    void queries.invalidateQueries({ queryKey: taskReviewKey(threadID) });
+  }, [terminalJobID, baseURL, runID, threadID, queries]);
   const active = Boolean(attempt && (!attempt.jobID || !result || projectActionIsRunning(result.job.state)));
   const saveAttempt = (value: ActionAttempt | null) => {
     store?.write(storageKey, value);
@@ -154,7 +161,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
     {execute.isError && <ErrorState error={execute.error} />}
     {attempt && !attempt.jobID && !execute.isPending && <div role="status">
       <p>{t("上次请求的运行结果尚未确认。", "The previous request's outcome is not confirmed.")}</p>
-      <button type="button" disabled={working || !client.hasRunExecution} onClick={() => submit(attempt)}>{t("确认上次运行", "Check previous execution")}</button>
+      <button type="button" disabled={working || !client.hasControl || !client.hasRunExecution} onClick={() => submit(attempt)}>{t("确认上次运行", "Check previous execution")}</button>
     </div>}
     {attempt?.jobID && job.isPending && <p role="status">{t("正在读取命令结果…", "Reading command results…")}</p>}
     {job.isError && <div role="alert"><p>{t("命令状态读取失败。", "Could not read command status.")}</p>
@@ -164,7 +171,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
         <StatusLabel status={job.isError ? "unknown" : failed ? "failed" : result.job.state} /></div>
       {result.job.exit_code !== undefined && <p>{t("退出码：", "Exit code: ")}{result.job.exit_code}</p>}
       <details><summary>{t("命令记录", "Command record")}</summary><p>Job <code>{result.job.id}</code></p><p>Run <code>{runID}</code></p></details>
-      {result.job.can_stop && <button type="button" disabled={stop.isPending || !client.hasRunExecution}
+      {result.job.can_stop && <button type="button" disabled={stop.isPending || !client.hasControl || !client.hasRunExecution}
         onClick={() => stop.mutate(result.job.id)}>{t("停止运行", "Stop execution")}</button>}
       {stop.isError && <ErrorState error={stop.error} />}
       <h4>{t("标准输出", "Standard output")}</h4><pre>{result.job.stdout || t("暂无输出。", "No output yet.")}</pre>
