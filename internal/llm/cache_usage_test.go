@@ -112,6 +112,30 @@ func TestAnthropicCacheUsageNormalization(t *testing.T) {
 	}
 }
 
+func TestAnthropicAbsentUsageRemainsUnknown(t *testing.T) {
+	usage, err := (anthropicUsage{}).normalized()
+	if err != nil || usage != (Usage{}) {
+		t.Fatalf("absent usage was rejected or reported as known: %+v %v", usage, err)
+	}
+	for _, raw := range []string{`{"input_tokens":2}`, `{"output_tokens":0}`, `{"cache_read_input_tokens":0}`} {
+		var wire anthropicUsage
+		if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wire.normalized(); err == nil {
+			t.Fatalf("partial usage accepted: %s", raw)
+		}
+	}
+	var wire anthropicUsage
+	if err := json.Unmarshal([]byte(`{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0}`), &wire); err != nil {
+		t.Fatal(err)
+	}
+	usage, err = wire.normalized()
+	if err != nil || !usage.CacheUsageReported {
+		t.Fatalf("explicit cache zero was treated as absent: %+v %v", usage, err)
+	}
+}
+
 func TestOpenAILegacyDeepSeekCacheUsage(t *testing.T) {
 	for _, test := range []struct {
 		name, cache string

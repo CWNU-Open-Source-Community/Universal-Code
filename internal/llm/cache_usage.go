@@ -37,6 +37,13 @@ type anthropicUsage struct {
 }
 
 func (wire anthropicUsage) normalized() (Usage, error) {
+	// Compatible providers historically may omit usage entirely. Preserve an
+	// unknown receipt so the existing budget path retains its reservation;
+	// do not confuse missing usage with reported cache zeroes.
+	if wire.InputTokens == nil && wire.OutputTokens == nil && wire.CacheReadTokens == nil &&
+		wire.CacheCreationTokens == nil && wire.CacheCreation == nil {
+		return Usage{}, nil
+	}
 	if wire.InputTokens == nil || wire.OutputTokens == nil {
 		return Usage{}, errors.New("Anthropic token count is missing")
 	}
