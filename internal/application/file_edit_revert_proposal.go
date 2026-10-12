@@ -117,6 +117,9 @@ func (s *FileEditProposalService) proposeRevertWithWriter(ctx context.Context,
 	if err != nil {
 		return CreateFileEditProposalResult{}, apperror.Normalize(err)
 	}
+	if err := checkRunProjectPaths(run, source.Path, source.DestinationPath); err != nil {
+		return CreateFileEditProposalResult{}, err
+	}
 	record, err := store.GetApprovalByProposal(ctx, source.ID)
 	if err != nil {
 		return CreateFileEditProposalResult{}, apperror.Normalize(err)

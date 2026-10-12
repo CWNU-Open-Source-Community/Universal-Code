@@ -402,9 +402,23 @@ func gatewayScriptProcessStatus(status scriptprocess.Status) (Status, bool) {
 }
 
 func toolBudgetRequest(call ToolCall, class ActionClass) toolbudget.ChargeRequest {
+	name := string(call.Name)
+	if call.Name == SpecialistTool {
+		input, _, err := NormalizeSpecialistToolPayload(call.Payload)
+		if err == nil {
+			name = input.Tool
+			switch ToolName(input.Tool) {
+			case WorkspaceChangeTool, WorkspaceApplyTool, "git_commit":
+				class = ClassWorkspaceWrite
+			case "verify":
+				class = ClassProcess
+			}
+		}
+	}
 	return toolbudget.ChargeRequest{
 		RunID: call.RunID, SessionID: call.SessionID, WorkspaceID: call.WorkspaceID,
-		ToolName: string(call.Name), ActionClass: string(class), LeaseID: call.LeaseID,
+		ToolName: name, ActionClass: string(class), LeaseID: call.LeaseID,
 		LeaseGeneration: call.LeaseGeneration, RequestedBy: call.RequestedBy,
+		AgentID: call.AgentID, AgentAttemptID: call.AgentAttemptID, ToolCallID: call.SpecialistToolCallID,
 	}
 }

@@ -78,9 +78,11 @@ export function parseTaskConfiguration(value: unknown, workspaceID?: string, pro
     if (value.rejections.length !== 0 || !digest(value.fingerprint) || budgetKeys.some((key) => !seen.has(`budget.${key}`)) || !budgetsMatch) throw new Error("任务预算绑定无效。");
     if (value.project_disposition === "applied") {
       const project = value.project;
-      if (!digest(value.project_fingerprint) || !record(project) || !keys(project, ["protocol", "read_only", "allowed_profiles", "excluded_path_count", "skill_suggestion_count", "test_command_id", "format_command_id"]) ||
+      if (!digest(value.project_fingerprint) || !record(project) || !keys(project, ["protocol", "read_only", "allowed_profiles", "excluded_path_count", "skill_suggestion_count", "skill_suggestions", "test_command_id", "format_command_id"]) ||
         project.protocol !== "project_config.v1" || typeof project.read_only !== "boolean" || !Array.isArray(project.allowed_profiles) || project.allowed_profiles.length > 4 ||
         project.allowed_profiles.some((item) => !profiles.includes(String(item))) || !integer(project.excluded_path_count, 0, 64) || !integer(project.skill_suggestion_count, 0, 16) ||
+        (project.skill_suggestions !== undefined && (!Array.isArray(project.skill_suggestions) || project.skill_suggestions.length !== project.skill_suggestion_count ||
+          project.skill_suggestions.some((ref) => typeof ref !== "string" || ref.length > 128 || !/^[a-z0-9.-]+@[a-z0-9.-]+$/u.test(ref)))) ||
         [project.test_command_id, project.format_command_id].some((item) => item !== undefined && (typeof item !== "string" || !/^[a-zA-Z0-9_.:-]{1,128}$/u.test(item)))) throw new Error("项目配置投影无效。");
     } else if (value.project !== undefined || value.project_fingerprint !== undefined) throw new Error("缺失项目配置却包含项目快照。");
   }

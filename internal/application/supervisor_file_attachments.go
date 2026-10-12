@@ -5,12 +5,33 @@ import (
 	"fmt"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/session"
 )
 
 func (s *AgentRunner) supervisorMessagesWithOriginalFiles(ctx context.Context, turn domain.SupervisorTurn, messages []llm.Message, runtime supervisorCommandRuntimeTools) ([]llm.Message, error) {
+	var err error
+	commandWorkspaceRoot := ""
+	if project, projectErr := projectconfig.Pinned(turn.Run.Config); projectErr != nil {
+		return nil, projectErr
+	} else if project != nil && project.TestCommandID == "test.npm" && runtime.Adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && len(runtime.Authority) != 0 {
+		store, available := s.store.(RunFileWorkspaceStore)
+		if !available {
+			return nil, apperror.New(apperror.CodeFailedPrecondition, "project command workspace resolution is unavailable")
+		}
+		files, resolveErr := ResolveRunFileWorkspace(ctx, store, turn.Run, turn.Mission, s.drydocks)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		commandWorkspaceRoot = files.Workspace.RootPath
+	}
+	messages, err = supervisorProjectCommands(turn.Run, messages, runtime, commandWorkspaceRoot)
+	if err != nil {
+		return nil, err
+	}
 	store, ok := s.store.(interface {
 		ListSupervisorFileAttachmentInputs(context.Context, domain.SupervisorCheckpoint) (domain.FileAttachmentInputSet, error)
 	})

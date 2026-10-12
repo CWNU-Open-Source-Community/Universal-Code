@@ -1296,6 +1296,29 @@ See [Workspace Checkpoints](workspace-checkpoints.md) for CLI, HTTP, Desktop, qu
 conflict, and recovery details, and [ADR 0118](adr/0118-transactional-workspace-checkpoints.md)
 for the protocol and threat model.
 
+### Independent child tools
+
+For an already admitted child, open **Inspector → Agents → Run child agent**.
+The child can read, list, glob and grep the current Run workspace and inspect saved
+GitHub review evidence. **Child tool receipts** shows its actual tool calls and
+results. The card retains an outstanding operation key across a page reload so a
+retry reads the original result rather than dispatching another model call.
+
+The CLI exposes the same execution:
+
+```text
+cyberagent run specialist-step <run-id> --agent <child-id> --operation-key <stable-key> --tools
+cyberagent run delegation schedule <proposal-id> --operation-key <stable-key> --tools
+```
+
+The parent Run must be running for new execution. Each child retains its own
+Agent, Session, turn/token limits and model accounting, and shares the Run tool
+budget. One turn supports at most 16 tool rounds, with up to four calls per round.
+Project exclusions come from the saved Run configuration. Ordinary child tools
+are for observation and review; use the Batch flow below for edits and validation.
+Schema v190 records tool bindings, rounds and receipts while preserving existing
+model and protocol-repair history.
+
 ### Deliverable child batches
 
 Schema v118 adds a separate `batch-delivery.v1` path for an operator-approved and
@@ -1305,6 +1328,13 @@ branches/worktrees and returns each narrowed owner token once. The token is not 
 by Desktop or recoverable from SQLite; if it is lost, rotate the exact expected
 generation from the child-delivery panel and hand the replacement to the trusted child
 worker.
+
+The current Desktop/API Batch worker uses the native child tool loop to discover
+and read files in its isolated worktree; it no longer depends on four preselected
+small file snapshots. It applies owned changes, commits, and runs the declared
+checks through `verify`. Submission reuses the successful recorded checks for the
+same final clean commit and Batch generation. A changed commit or missing receipt
+uses the existing validation path. Final review and merge remain explicit actions.
 
 The batch spec must copy each admitted task's ordinal, dependencies, turn/token/timeout
 budget, and expected artifacts exactly, then add non-overlapping file/directory
@@ -1669,6 +1699,45 @@ cyberagent project-config show <path-to-config.yaml> --profile code --max-turns 
 The file uses `project_config.v1` (JSON schema in `configs/project-config.schema.json`, example in `configs/project-config.example.yaml`). It is untrusted input: it can only reduce the operator/process/policy limits, never widen them. `budget.max_turns`/`budget.max_tool_calls` must be strictly lower than the requested ceiling; `allowed_profiles` may only shrink the set; `read_only: true` forbids write-capable profiles (`code`/`script`); `exclude_paths` are workspace-relative paths without escapes; `skill_suggestions` use the signed Skill identity contract (`name@version`); `test_command_id`/`format_command_id` may only reference registered Tool Gateway typed action IDs — never Shell text. Unknown fields, duplicate keys, type errors, YAML aliases/anchors, files over 64 KiB, nesting deeper than 32, more than 4096 nodes, symlinks/junctions/reparse points, and oversized path lists all fail closed. Any widening attempt aborts Run creation with the offending field named.
 
 At Run creation the normalized effective view and its SHA-256 fingerprint are pinned into the Run config snapshot; editing `.prayu/config.yaml` afterwards never changes a running Run.
+
+`exclude_paths` applies to file-tool reads/searches/edits, Batch files and CodeIntel
+evidence using root-relative `*`, `?`, character classes and whole `**` directory
+segments. Matching a directory excludes every descendant, even with hidden-file
+access or `.gitignore` negation. This filter does not sandbox arbitrary commands
+or language-server processes.
+
+In new-task configuration, choose exact `skill_suggestions` refs and confirm their
+context before sending. Built-ins must have the requested version; external
+packages must already be installed and eligible. Selection uses the existing
+Skill services and never installs a package or grants permission. Failed
+selection preserves the created task and draft; recovery retries the same request
+before the first message is dispatched.
+
+Use `test_command_id: test.go` for `go test ./...`, `test_command_id: test.node`
+for native `node --test`, and `format_command_id: format.go` for native `gofmt -w`
+on one exact Go file. Ask in the task's chat to run its configured action and
+inspect the normal Job result. These presets currently require the offered host
+command runtime and installed native toolchain; config never changes runtime
+permissions or supplies executable/argv/shell text. The CLI uses the same service:
+
+For npm scripts (including Vitest), use `test_command_id: test.npm`. It resolves
+the installed npm CLI through native Node, with offline/audit/fund settings and
+the runtime's fixed CI environment. The default package directory is the Run
+workspace; `--path web` selects an allowed relative package directory. This is
+distinct from Node's built-in test runner, and adds no Jest-specific flags.
+
+```powershell
+cyberagent run project-action <run-id> test --prepare
+cyberagent run project-action <run-id> test --path web --prepare
+cyberagent run project-action <run-id> format --path pkg/example.go --prepare
+cyberagent run project-action <run-id> test --operation-key test-001 --confirm-execution --confirm-full --confirm-non-sandboxed-host-execution --enable-permission-control --enable-danger-full-access
+```
+
+`--prepare` prints an inert typed intent. Execution retains existing native host
+acknowledgement, permission, approval and lease checks and produces an ordinary
+command Job. Read-only projects and excluded format targets are rejected during
+preparation. Typed Tool IDs without one of these presets do not become shell
+commands.
 
 ## Durable Context Continuity / 持久上下文连续性
 

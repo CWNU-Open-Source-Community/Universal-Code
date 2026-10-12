@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/store"
@@ -1075,7 +1076,7 @@ func prepareAcceptedBatchTextDeliveries(t *testing.T,
 }
 
 func newBatchDeliveryApplicationFixture(t *testing.T,
-	withDependency bool, mode domain.RunExecutionPermissionMode,
+	withDependency bool, mode domain.RunExecutionPermissionMode, projects ...*projectconfig.Effective,
 ) batchDeliveryApplicationFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -1120,8 +1121,13 @@ func newBatchDeliveryApplicationFixture(t *testing.T,
 		Name: "batch application", RootPath: repositoryRoot, CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
+	var project *projectconfig.Effective
+	if len(projects) != 0 {
+		project = projects[0]
+	}
 	_, run, err := NewRunService(state).Create(ctx, CreateRunRequest{
-		Goal: "deliver two isolated changes", Profile: "code", Surface: "code",
+		ProjectConfig: project,
+		Goal:          "deliver two isolated changes", Profile: "code", Surface: "code",
 		Phase: "deliver", WorkspaceID: workspaceID,
 		Budget: domain.Budget{MaxTurns: 20, MaxTokens: 100000, MaxToolCalls: 100},
 	})

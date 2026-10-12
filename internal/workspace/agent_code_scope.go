@@ -21,7 +21,7 @@ type AgentCodeScopePath struct {
 }
 
 func AgentCodeScopedGlobFiles(root, workspaceID, pattern, cursor string, limit int,
-	scopes []AgentCodeScopePath,
+	scopes []AgentCodeScopePath, policies ...AgentCodePathPolicy,
 ) (AgentCodeGlob, error) {
 	if err := validateAgentWorkspaceID(workspaceID); err != nil {
 		return AgentCodeGlob{}, err
@@ -34,7 +34,7 @@ func AgentCodeScopedGlobFiles(root, workspaceID, pattern, cursor string, limit i
 		return AgentCodeGlob{}, apperror.New(apperror.CodeInvalidArgument,
 			fmt.Sprintf("workspace glob limit must be between 1 and %d", MaxAgentCodePageSize))
 	}
-	workspace, err := openAgentWorkspace(root)
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return AgentCodeGlob{}, err
 	}
@@ -42,7 +42,7 @@ func AgentCodeScopedGlobFiles(root, workspaceID, pattern, cursor string, limit i
 	if err != nil {
 		return AgentCodeGlob{}, err
 	}
-	fingerprint := agentCursorFingerprint("scoped-glob", workspaceID,
+	fingerprint := workspace.cursorFingerprint("scoped-glob", workspaceID,
 		workspace.fingerprint, pattern, agentCodeScopeFingerprint(normalized))
 	after, err := decodeAgentCursor(cursor, fingerprint)
 	if err != nil {
@@ -77,7 +77,7 @@ func AgentCodeScopedGlobFiles(root, workspaceID, pattern, cursor string, limit i
 }
 
 func AgentCodeScopedGrepFiles(root, workspaceID, query, pattern, cursor string,
-	limit int, caseSensitive bool, scopes []AgentCodeScopePath,
+	limit int, caseSensitive bool, scopes []AgentCodeScopePath, policies ...AgentCodePathPolicy,
 ) (AgentCodeGrep, error) {
 	if err := validateAgentWorkspaceID(workspaceID); err != nil {
 		return AgentCodeGrep{}, err
@@ -99,7 +99,7 @@ func AgentCodeScopedGrepFiles(root, workspaceID, query, pattern, cursor string,
 		return AgentCodeGrep{}, apperror.New(apperror.CodeInvalidArgument,
 			fmt.Sprintf("workspace grep limit must be between 1 and %d", MaxAgentCodeGrepMatches))
 	}
-	workspace, err := openAgentWorkspace(root)
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return AgentCodeGrep{}, err
 	}
@@ -107,7 +107,7 @@ func AgentCodeScopedGrepFiles(root, workspaceID, query, pattern, cursor string,
 	if err != nil {
 		return AgentCodeGrep{}, err
 	}
-	fingerprint := agentCursorFingerprint("scoped-grep", workspaceID,
+	fingerprint := workspace.cursorFingerprint("scoped-grep", workspaceID,
 		workspace.fingerprint, query, pattern, fmt.Sprintf("case=%t", caseSensitive),
 		agentCodeScopeFingerprint(normalized))
 	after, err := decodeAgentCursor(cursor, fingerprint)
@@ -247,6 +247,9 @@ func (w agentWorkspace) scanScopedFiles(scopes []AgentCodeScopePath) ([]string, 
 	entriesSeen, directories := 0, 0
 	truncated := false
 	for _, scope := range scopes {
+		if w.policy.Excludes(scope.Path) {
+			continue
+		}
 		if w.blocked(scope.Path, scope.Directory, false) {
 			return nil, false, apperror.New(apperror.CodePolicyDenied,
 				"workspace search scope is hidden or ignored")

@@ -422,7 +422,7 @@ func RunBatchValidation(ctx context.Context, root, baseCommit string,
 		// not a prior success replayed from Go's test cache.
 		args = []string{"test", "-count=1", pattern}
 	case domain.BatchValidationNPMTest:
-		executable, args, err = batchNPMValidationCommand(root)
+		executable, args, err = NPMTestLauncher(root)
 		args = append(args, "test", "--", "--runInBand")
 	default:
 		return result, errors.New("unsupported batch validation requirement")
@@ -533,7 +533,10 @@ func canonicalBatchValidationWorkingRoot(root, scope string) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
-func batchNPMValidationCommand(root string) (string, []string, error) {
+// NPMTestLauncher resolves native Node plus the installed npm CLI entrypoint.
+// It never executes npm.cmd or a shell and rejects a launcher inside the workspace.
+// Batch validation and project action preparation share this exact resolver.
+func NPMTestLauncher(root string) (string, []string, error) {
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
 		return "", nil, err

@@ -6,6 +6,20 @@ import { V2RecoveryProvider } from "./recovery-storage";
 afterEach(() => window.localStorage.clear());
 const wrapper = ({ children }: { children: ReactNode }) => <V2RecoveryProvider client={{ baseURL: "/api/v1" }} scopeID="budget-drafts">{children}</V2RecoveryProvider>;
 
+it("retains exact Skill choices across budget edits and reopening without clearing a known rejection", () => {
+  const first = renderHook(() => useV2DraftTaskConfiguration("workspace-first"), { wrapper });
+  const choice = { refs: ["code@1.0.0"], confirmUntrustedContext: true };
+  act(() => { first.result.current.onValidityChange(false); first.result.current.onProjectSkillsChange(choice); });
+  act(() => first.result.current.onBudgetChange({ max_turns: 20 }));
+  expect(first.result.current.valid).toBe(false);
+  expect(first.result.current.projectSkills).toEqual(choice);
+  first.unmount();
+  const reopened = renderHook(() => useV2DraftTaskConfiguration("workspace-first"), { wrapper });
+  expect(reopened.result.current.projectSkills).toEqual(choice);
+  expect(reopened.result.current.budget).toEqual({ max_turns: 20 });
+  expect(reopened.result.current.valid).toBe(false);
+});
+
 it("retains each workspace's budget and rejection without letting an old callback update another workspace", () => {
   const view = renderHook(({ workspaceID }) => useV2DraftTaskConfiguration(workspaceID), { initialProps: { workspaceID: "workspace-first" }, wrapper });
   act(() => view.result.current.onBudgetChange({ max_turns: 20 }));

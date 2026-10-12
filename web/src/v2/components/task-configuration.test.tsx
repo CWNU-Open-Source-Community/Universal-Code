@@ -12,6 +12,23 @@ const view = (workspaceID = "workspace-1"): TaskConfigurationView => ({ version:
 const clientFixture = () => ({ previewTaskConfiguration: vi.fn().mockResolvedValue(view()), getRunTaskConfiguration: vi.fn().mockResolvedValue(view()), createThread: vi.fn() });
 
 describe("TaskConfiguration presentation fixtures", () => {
+  it("lets the operator choose exact recommended versions and confirms context before creation", async () => {
+    const client = clientFixture(), changed = vi.fn(), validity = vi.fn();
+    client.previewTaskConfiguration.mockResolvedValue({ ...view(), project: { ...view().project!, skill_suggestions: ["code@1.0.0"] } });
+    function Host() {
+      const [choice, setChoice] = useState({ refs: [] as string[], confirmUntrustedContext: false });
+      return <TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" projectSkills={choice}
+        onProjectSkillsChange={(next) => { changed(next); setChoice(next); }} onValidityChange={validity} />;
+    }
+    render(<Host />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "code@1.0.0" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["code@1.0.0"], confirmUntrustedContext: false });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("checkbox", { name: /确认使用所选技能上下文/ }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["code@1.0.0"], confirmUntrustedContext: true });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
   it("edits the bounded draft, resets defaults and displays Go-owned effective sources", async () => {
     const client = clientFixture(), changed = vi.fn();
     function Host() {
@@ -109,7 +126,7 @@ describe("TaskConfiguration presentation fixtures", () => {
     expect(screen.getByRole("spinbutton", { name: "Tool call limit" })).toHaveAttribute("placeholder", "Default 100");
     expect(screen.getByRole("spinbutton", { name: "Cost limit (USD)" })).toHaveAttribute("placeholder", "0 means unlimited");
     expect(screen.getByText(/check your provider's bill for actual charges/)).toBeInTheDocument();
-    expect(screen.getByText("Suggestions only; task permissions govern access")).toBeInTheDocument();
+    expect(screen.getByText("Applied to file-tool reads, searches and edits")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     client.getRunTaskConfiguration.mockResolvedValue({ ...view(), budget: { max_turns: 30, max_tool_calls: 0 }, sources: view().sources.map((source) => ({ ...source, source: "snapshot" })) });
     rerender(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" run={{ id: "run-legacy" } as RunView} />);

@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 const (
@@ -30,22 +31,31 @@ const (
 )
 
 type Request struct {
-	Tool                  string   `json:"tool"`
-	WorkspaceID           string   `json:"workspace_id"`
-	WorkspaceRoot         string   `json:"-"`
-	ServerID              string   `json:"server_id"`
-	ServerGeneration      string   `json:"server_generation"`
-	CapabilityFingerprint string   `json:"capability_fingerprint"`
-	Path                  string   `json:"path,omitempty"`
-	Query                 string   `json:"query,omitempty"`
-	Position              Position `json:"position,omitempty"`
-	Direction             string   `json:"direction,omitempty"`
-	IncludeDeclaration    bool     `json:"include_declaration,omitempty"`
-	Limit                 int      `json:"limit"`
-	Cursor                string   `json:"cursor,omitempty"`
+	PathPolicy            workspaceidentity.PathPolicy `json:"-"`
+	Tool                  string                       `json:"tool"`
+	WorkspaceID           string                       `json:"workspace_id"`
+	WorkspaceRoot         string                       `json:"-"`
+	ServerID              string                       `json:"server_id"`
+	ServerGeneration      string                       `json:"server_generation"`
+	CapabilityFingerprint string                       `json:"capability_fingerprint"`
+	Path                  string                       `json:"path,omitempty"`
+	Query                 string                       `json:"query,omitempty"`
+	Position              Position                     `json:"position,omitempty"`
+	Direction             string                       `json:"direction,omitempty"`
+	IncludeDeclaration    bool                         `json:"include_declaration,omitempty"`
+	Limit                 int                          `json:"limit"`
+	Cursor                string                       `json:"cursor,omitempty"`
 }
 
 func (r Request) Validate() error {
+	if err := r.PathPolicy.Validate(); err != nil {
+		return err
+	}
+	if r.Path != "" {
+		if err := r.PathPolicy.Check(r.Path); err != nil {
+			return err
+		}
+	}
 	if !validTool(r.Tool) || !validIdentity(r.WorkspaceID) ||
 		!validIdentity(r.ServerID) || !validDigest(r.ServerGeneration) ||
 		!validDigest(r.CapabilityFingerprint) || strings.TrimSpace(r.WorkspaceRoot) == "" ||
@@ -194,6 +204,7 @@ func (m *Manager) Execute(ctx context.Context, request Request) (Result, error) 
 	}
 
 	sortEvidence(items, edges)
+	items, edges = filterProjectEvidence(items, edges, request.PathPolicy)
 	paged, pagedEdges, page, err := paginateEvidence(items, edges, request.Cursor,
 		request.Limit, queryFingerprint)
 	if err != nil {
@@ -415,6 +426,11 @@ func requestFingerprint(request Request, workspace workspaceBinding,
 	if document != nil {
 		parts = append(parts, document.URI, document.SHA256, fmt.Sprint(document.Version))
 	}
+	if len(request.PathPolicy.ExcludePaths) != 0 {
+		patterns := append([]string(nil), request.PathPolicy.ExcludePaths...)
+		sort.Strings(patterns)
+		parts = append(parts, "project-exclusions", strings.Join(patterns, "\n"))
+	}
 	return digestStrings(parts...)
 }
 
@@ -555,4 +571,26 @@ func boundedWarnings(values []string) []string {
 		}
 	}
 	return result
+}
+
+func filterProjectEvidence(items []EvidenceItem, edges []GraphEdge, policy workspaceidentity.PathPolicy) ([]EvidenceItem, []GraphEdge) {
+	if len(policy.ExcludePaths) == 0 {
+		return items, edges
+	}
+	visible := make(map[string]bool, len(items))
+	filtered := make([]EvidenceItem, 0, len(items))
+	for _, item := range items {
+		if item.Path != "" && policy.Excludes(item.Path) {
+			continue
+		}
+		visible[item.ID] = true
+		filtered = append(filtered, item)
+	}
+	filteredEdges := make([]GraphEdge, 0, len(edges))
+	for _, edge := range edges {
+		if visible[edge.From] && visible[edge.To] {
+			filteredEdges = append(filteredEdges, edge)
+		}
+	}
+	return filtered, filteredEdges
 }

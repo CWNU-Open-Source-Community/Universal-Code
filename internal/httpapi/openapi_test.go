@@ -1273,13 +1273,14 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			if spec.OperationID == "getRunFindingReport" {
 				expectedStatus = http.StatusNotFound
 			} else if spec.OperationID == "cancelRunFanoutExecution" ||
+				spec.OperationID == "executeRunSpecialist" || spec.OperationID == "getRunSpecialistToolReceipts" ||
 				spec.OperationID == "reviewRunChildTaskProposal" ||
 				spec.OperationID == "admitRunChildTaskProposal" ||
 				strings.Contains(spec.OperationID, "RunBatchDelivery") ||
 				strings.Contains(spec.OperationID, "BatchWorkbench") ||
 				spec.OperationID == "prepareRunBatchDelivery" {
 				expectedStatus = http.StatusNotFound
-			} else if spec.OperationID == "getWorkspaceRepositoryCommitFilePreview" {
+			} else if spec.OperationID == "getWorkspaceRepositoryCommitFilePreview" || spec.OperationID == "selectProjectSkills" {
 				expectedStatus = http.StatusPreconditionFailed
 			}
 			if spec.OperationID == "discoverProviderModels" {
@@ -1327,7 +1328,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				response = previewConfigurationRequest(fixture.api, testAccessToken, `{"workspace_id":"`+fixture.workspace.ID+`"}`)
 			} else if spec.Control {
 				body := `{"profile":"docker"}`
-				if spec.Path == SandboxEnvironmentPath {
+				if spec.OperationID == "selectProjectSkills" {
+					body = `{"refs":["code@1.0.0"],"confirm_untrusted_context":false}`
+				} else if spec.Path == SandboxEnvironmentPath {
 					body = sandboxEnvironmentControlTestBody()
 				} else if spec.OperationID == "prepareBatchWorkbench" {
 					body = `{"version":"batch-delivery-workbench.v1","proposal_id":"proposal-openapi-missing-0001","tasks":[],"confirm":true}`

@@ -8303,6 +8303,20 @@ export class APIClient {
     return parseTaskConfiguration(await this.get<unknown>(`/runs/${encodeURIComponent(runID)}/task-configuration`, {}, signal), undefined, undefined, "snapshot");
   }
 
+  async selectProjectSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
+    if (!this.hasThreadControl || !boundedIdentity(runID) || runID.trim() !== runID || typeof choice.confirmUntrustedContext !== "boolean" || choice.refs.length === 0 || choice.refs.length > 16 ||
+      new Set(choice.refs).size !== choice.refs.length || choice.refs.some((ref) => ref.length > 128 || !/^[a-z0-9.-]+@[a-z0-9.-]+$/u.test(ref))) throw new Error("Exact project Skill references and task control are required");
+    const value = await this.sendControl<unknown>(`/runs/${encodeURIComponent(runID)}/project-skills/select`,
+      { refs: choice.refs, confirm_untrusted_context: choice.confirmUntrustedContext }, idempotencyKey, signal);
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Project Skill selection receipt is invalid");
+    const result = value as Record<string, unknown>;
+    if (!hasOnlyKeys(result, ["run_id", "refs", "builtin_selection_id", "external_selection_id", "replayed", "capability_grant"]) ||
+      result.run_id !== runID || result.capability_grant !== false || typeof result.replayed !== "boolean" || !Array.isArray(result.refs) ||
+      result.refs.length !== choice.refs.length || result.refs.some((ref) => typeof ref !== "string" || !choice.refs.includes(ref)) ||
+      new Set(result.refs).size !== result.refs.length || (!result.builtin_selection_id && !result.external_selection_id) ||
+      [result.builtin_selection_id, result.external_selection_id].some((id) => id !== undefined && !boundedIdentity(id))) throw new Error("Project Skill selection receipt does not match the request");
+  }
+
   async createRun(body: RunCreationControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<RunCreationControlView> {
     if (!this.hasRunCreation) {

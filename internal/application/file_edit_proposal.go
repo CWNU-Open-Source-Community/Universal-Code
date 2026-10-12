@@ -163,6 +163,9 @@ func (s *FileEditProposalService) issueSource(ctx context.Context, runID string,
 	if err != nil {
 		return FileEditProposalSource{}, err
 	}
+	if err := checkRunProjectPaths(binding.run, path); err != nil {
+		return FileEditProposalSource{}, err
+	}
 	snapshot, err := workspace.Explore(binding.workspace.RootPath,
 		binding.workspace.ID, path)
 	if err != nil {
@@ -253,6 +256,9 @@ func (s *FileEditProposalService) Recover(ctx context.Context, runID string,
 		return FileEditProposalRecovery{}, apperror.New(apperror.CodeFailedPrecondition,
 			"file edit proposal bodies cannot be recovered safely")
 	}
+	if err := checkRunProjectPaths(binding.run, edit.Path, edit.DestinationPath); err != nil {
+		return FileEditProposalRecovery{}, err
+	}
 	currentHash, err := fileedit.CurrentHash(binding.workspace.RootPath, edit.Path)
 	if err != nil {
 		return FileEditProposalRecovery{}, apperror.Normalize(err)
@@ -333,6 +339,9 @@ func (s *FileEditProposalService) Propose(ctx context.Context,
 	}
 	binding, err := s.loadBinding(ctx, request.RunID)
 	if err != nil {
+		return CreateFileEditProposalResult{}, err
+	}
+	if err := checkRunProjectPaths(binding.run, grant.path); err != nil {
 		return CreateFileEditProposalResult{}, err
 	}
 	if binding.session.ID != grant.sessionID || binding.workspace.ID != grant.workspaceID {

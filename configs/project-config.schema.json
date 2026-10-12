@@ -42,6 +42,7 @@
       }
     },
     "exclude_paths": {
+      "description": "Pinned root-relative file-tool exclusions. Supports *, ?, character classes and whole ** segments; matching directories excludes descendants. Not an OS command sandbox.",
       "type": "array",
       "items": {
         "type": "string",
@@ -50,19 +51,23 @@
       "maxItems": 64
     },
     "skill_suggestions": {
+      "description": "Exact built-in or already installed package refs offered for explicit task selection before the first turn. Never automatically installed or enabled.",
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[a-z0-9.-]+@[0-9.]+$"
+        "pattern": "^[a-z0-9.-]+@[a-z0-9.-]+$",
+        "maxLength": 128
       },
       "maxItems": 16
     },
     "test_command_id": {
+      "description": "Registered ID only. Executable native presets: test.go (go test ./...), test.node (node --test), test.npm (native Node plus installed npm CLI test script, optional relative package scope), using existing command runtime permissions and Job receipts.",
       "type": "string",
       "maxLength": 128,
       "pattern": "^\\S+$"
     },
     "format_command_id": {
+      "description": "Registered ID only. Executable format.go preset prepares gofmt -w for one exact allowed relative Go file; rejected for read-only projects.",
       "type": "string",
       "maxLength": 128,
       "pattern": "^\\S+$"

@@ -377,6 +377,7 @@ type Config struct {
 	PriceSnapshotController               PriceSnapshotController
 	FanoutExecutionController             FanoutExecutionController
 	ChildTaskControlController            ChildTaskControlController
+	SpecialistExecutionController         SpecialistExecutionController
 	ProviderCredentialController          ProviderCredentialController
 	FileEditReviewController              FileEditReviewController
 	FileEditProposalController            FileEditProposalController
@@ -480,6 +481,7 @@ type API struct {
 	priceSnapshotController               PriceSnapshotController
 	fanoutExecutionController             FanoutExecutionController
 	childTaskControlController            ChildTaskControlController
+	specialistExecutionController         SpecialistExecutionController
 	providerCredentialController          ProviderCredentialController
 	fileEditReviewController              FileEditReviewController
 	fileEditProposalController            FileEditProposalController
@@ -924,6 +926,7 @@ func New(store Store, config Config) (*API, error) {
 		priceSnapshotController:             config.PriceSnapshotController,
 		fanoutExecutionController:           config.FanoutExecutionController,
 		childTaskControlController:          config.ChildTaskControlController,
+		specialistExecutionController:       config.SpecialistExecutionController,
 		providerCredentialController:        config.ProviderCredentialController,
 		fileEditReviewController:            config.FileEditReviewController,
 		fileEditProposalController:          config.FileEditProposalController,
@@ -1082,6 +1085,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveTaskConfiguration(tracked, request, requestID, runID)
 		return
 	}
+	if runID, matched := matchProjectSkillSelectionPath(request.URL.Path); matched {
+		a.serveProjectSkillSelection(tracked, request, requestID, runID)
+		return
+	}
 	if request.URL.Path == DockerEnvironmentPath {
 		a.serveDockerEnvironment(tracked, request, requestID)
 		return
@@ -1104,6 +1111,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, action, matched := matchWorkspaceCheckpointPath(request.URL.Path); matched {
 		a.serveWorkspaceCheckpoint(tracked, request, requestID, runID, action)
+		return
+	}
+	if runID, agentID, attemptID, matched := matchSpecialistExecutionPath(request.URL.Path); matched {
+		a.serveSpecialistExecution(tracked, request, requestID, runID, agentID, attemptID)
 		return
 	}
 	if runID, matched := matchStandardCodeDeliveryPath(request.URL.Path); matched {

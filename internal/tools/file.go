@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 const (
@@ -24,6 +25,7 @@ type WorkspaceFS struct {
 	Root           string
 	MaxReadBytes   int
 	MaxListEntries int
+	PathPolicy     workspaceidentity.PathPolicy
 }
 
 func NewWorkspaceFS(root string) WorkspaceFS {
@@ -307,6 +309,15 @@ func (fs WorkspaceFS) resolveExisting(requested string) (string, error) {
 	if !withinRoot(root, candidate) {
 		return "", fmt.Errorf("path escapes workspace: %s", requested)
 	}
+	if len(fs.PathPolicy.ExcludePaths) != 0 {
+		relative, err := filepath.Rel(root, candidate)
+		if err != nil {
+			return "", err
+		}
+		if err := fs.PathPolicy.Check(filepath.ToSlash(relative)); err != nil {
+			return "", err
+		}
+	}
 	return candidate, nil
 }
 
@@ -314,6 +325,21 @@ func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) 
 	base, err := fs.resolveExistingDir(requested)
 	if err != nil {
 		return "", false, err
+	}
+	policyBase := requested
+	if len(fs.PathPolicy.ExcludePaths) != 0 {
+		root, err := filepath.Abs(fs.Root)
+		if err != nil {
+			return "", false, err
+		}
+		root, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			return "", false, err
+		}
+		policyBase, err = filepath.Rel(root, base)
+		if err != nil {
+			return "", false, err
+		}
 	}
 	var lines []string
 	truncated := false
@@ -334,6 +360,15 @@ func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) 
 		rel, err := filepath.Rel(base, path)
 		if err != nil {
 			return err
+		}
+		if len(fs.PathPolicy.ExcludePaths) != 0 {
+			projectPath := filepath.ToSlash(filepath.Join(policyBase, rel))
+			if err := fs.PathPolicy.Check(projectPath); err != nil {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 		}
 		depth := pathDepth(rel)
 		if depth > maxDepth {

@@ -27,7 +27,7 @@ const (
 )
 
 const specialistModelCallSelect = `SELECT agent_attempt_id, run_id, agent_id,
-	model_attempt_number, transport_attempt, max_attempts, protocol_repair, provider, model, status, outcome,
+	model_attempt_number, transport_attempt, max_attempts, protocol_repair, tool_round, provider, model, status, outcome,
 	input_fingerprint, action_fingerprint,
 	error_text, retry_after_millis, retry_planned, elapsed_millis, stream_events, stream_bytes,
 	input_tokens, output_tokens, total_tokens, usage_recorded, action_kind, report_outcome,
@@ -43,6 +43,7 @@ type specialistModelCallRecord struct {
 	TransportAttempt    int
 	MaxAttempts         int
 	ProtocolRepair      int
+	ToolRound           int
 	Provider            string
 	Model               string
 	InputFingerprint    string
@@ -82,6 +83,7 @@ type specialistModelTerminal struct {
 	actionFingerprint  string
 	repairStatus       domain.SpecialistProtocolRepairStatus
 	repairReason       string
+	toolResponse       *llm.ChatResponse
 }
 
 // NextSpecialistModelAttempt returns the next global model sequence, the next
@@ -111,7 +113,21 @@ func (s *SQLiteStore) NextSpecialistModelAttempt(ctx context.Context,
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	if protocolRepair == 0 && (attempt.UsageRecordedAt != nil || repairFound) {
+	toolMode, err := specialistToolsEnabledTx(ctx, tx, attempt.ID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	toolRound := 0
+	if toolMode {
+		toolRound, err = specialistToolRoundTx(ctx, tx, attempt.ID)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	if err = requireChildToolModeTx(ctx, tx, attempt.ID, toolRound); err != nil {
+		return 0, 0, 0, err
+	}
+	if protocolRepair == 0 && specialistToolModePrimaryCommitted(attempt.UsageRecordedAt != nil, toolMode, repairFound) {
 		return 0, 0, 0, apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist primary model phase was already committed")
 	}
@@ -122,9 +138,9 @@ func (s *SQLiteStore) NextSpecialistModelAttempt(ctx context.Context,
 	}
 	var count, phaseCount, started int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*),
-		COALESCE(SUM(CASE WHEN protocol_repair = ? THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN protocol_repair = ? AND tool_round = ? THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN status = 'started' THEN 1 ELSE 0 END), 0)
-		FROM specialist_model_calls WHERE agent_attempt_id = ?`, protocolRepair, attempt.ID).
+		FROM specialist_model_calls WHERE agent_attempt_id = ?`, protocolRepair, toolRound, attempt.ID).
 		Scan(&count, &phaseCount, &started); err != nil {
 		return 0, 0, 0, err
 	}
@@ -205,7 +221,14 @@ func (s *SQLiteStore) RecordSpecialistModelStarted(ctx context.Context,
 	if err != nil {
 		return false, err
 	}
-	if modelAttempt.ProtocolRepair == 0 && (attempt.UsageRecordedAt != nil || repairFound) {
+	toolMode, err := specialistToolsEnabledTx(ctx, tx, attempt.ID)
+	if err != nil {
+		return false, err
+	}
+	if err = requireChildToolModeTx(ctx, tx, attempt.ID, modelAttempt.ToolRound); err != nil {
+		return false, err
+	}
+	if modelAttempt.ProtocolRepair == 0 && specialistToolModePrimaryCommitted(attempt.UsageRecordedAt != nil, toolMode, repairFound) {
 		return false, apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist primary model phase was already committed")
 	}
@@ -216,9 +239,9 @@ func (s *SQLiteStore) RecordSpecialistModelStarted(ctx context.Context,
 	}
 	var count, phaseCount, active int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*),
-		COALESCE(SUM(CASE WHEN protocol_repair = ? THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN protocol_repair = ? AND tool_round = ? THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN status = 'started' THEN 1 ELSE 0 END), 0)
-		FROM specialist_model_calls WHERE agent_attempt_id = ?`, modelAttempt.ProtocolRepair, attempt.ID).
+		FROM specialist_model_calls WHERE agent_attempt_id = ?`, modelAttempt.ProtocolRepair, modelAttempt.ToolRound, attempt.ID).
 		Scan(&count, &phaseCount, &active); err != nil {
 		return false, err
 	}
@@ -230,10 +253,10 @@ func (s *SQLiteStore) RecordSpecialistModelStarted(ctx context.Context,
 	now := time.Now().UTC()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO specialist_model_calls
 		(agent_attempt_id, run_id, agent_id, model_attempt_number, transport_attempt,
-		max_attempts, protocol_repair, provider, model, status, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?)`, attempt.ID, attempt.RunID,
+		max_attempts, protocol_repair, tool_round, provider, model, status, started_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'started', ?)`, attempt.ID, attempt.RunID,
 		attempt.AgentID, modelAttempt.Number, modelAttempt.TransportNumber(), modelAttempt.MaxAttempts,
-		modelAttempt.ProtocolRepair, modelAttempt.Provider, modelAttempt.Model, ts(now)); err != nil {
+		modelAttempt.ProtocolRepair, modelAttempt.ToolRound, modelAttempt.Provider, modelAttempt.Model, ts(now)); err != nil {
 		return false, err
 	}
 	if err := commitSpecialistSkillContextTx(ctx, tx, run, attempt, child,
@@ -403,8 +426,10 @@ func (s *SQLiteStore) RecordSpecialistModelFailed(ctx context.Context,
 		usage = &copy
 	}
 	if usage != nil && modelAttempt.Outcome == llm.OutcomeInvalidResponse {
-		return domain.AgentAttempt{}, apperror.New(apperror.CodeFailedPrecondition,
-			"usage-bearing Specialist protocol failures require the repair ledger")
+		var modeCount int
+		if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings WHERE agent_attempt_id=?`, ref.AttemptID).Scan(&modeCount); err != nil || modeCount != 1 {
+			return domain.AgentAttempt{}, apperror.New(apperror.CodeFailedPrecondition, "usage-bearing Specialist protocol failures require the repair ledger")
+		}
 	}
 	return s.recordSpecialistModelTerminal(ctx, ref, modelAttempt, specialistModelTerminal{
 		status: "failed", usage: usage,
@@ -531,9 +556,20 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 	policyAllowed := -1
 	policyNeedsApproval := false
 	policyRisk, policyReason := "", ""
-	if terminal.action != nil && terminal.decision != nil {
-		actionKind = string(terminal.action.Kind)
-		if terminal.action.Report != nil {
+	if (terminal.action != nil || terminal.toolResponse != nil) && terminal.decision != nil {
+		assistantContent := ""
+		if terminal.toolResponse != nil {
+			actionKind = "tool_calls"
+			raw, encodeErr := json.Marshal(llm.Message{Role: "assistant", Content: terminal.toolResponse.Text, ToolCalls: terminal.toolResponse.ToolCalls})
+			if encodeErr != nil {
+				return domain.AgentAttempt{}, encodeErr
+			}
+			assistantContent = string(raw)
+		} else {
+			actionKind = string(terminal.action.Kind)
+			assistantContent = terminal.action.Message
+		}
+		if terminal.action != nil && terminal.action.Report != nil {
 			reportOutcome = string(terminal.action.Report.Outcome)
 		}
 		policyAllowed = 0
@@ -564,7 +600,7 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 				return domain.AgentAttempt{}, err
 			}
 			assistantMessage, err := saveSessionMessageTx(ctx, tx, session.Message{
-				SessionID: child.SessionID, Role: "assistant", Content: terminal.action.Message,
+				SessionID: child.SessionID, Role: "assistant", Content: assistantContent,
 				CreatedAt: now,
 			})
 			if err != nil {
@@ -596,6 +632,11 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 	if err := requireSingleAgentAttemptUpdate(result,
 		"Specialist model call changed before terminal commit"); err != nil {
 		return domain.AgentAttempt{}, err
+	}
+	if terminal.toolResponse != nil {
+		if err := insertSpecialistToolRoundTx(ctx, tx, ref, modelAttempt, *terminal.toolResponse, now); err != nil {
+			return domain.AgentAttempt{}, err
+		}
 	}
 	if err := resolveSpecialistModelCancellationTx(ctx, tx,
 		domain.AgentAttemptRef{RunID: attempt.RunID, AgentID: attempt.AgentID,
@@ -841,7 +882,7 @@ func validateSpecialistModelIdentity(attempt llm.ModelAttempt) error {
 		return apperror.Wrap(apperror.CodeInvalidArgument,
 			"Specialist model call identity is invalid", err)
 	}
-	if attempt.ToolRound != 0 || attempt.MaxAttempts > maxSpecialistModelTransportAttempts {
+	if attempt.ToolRound < 0 || attempt.ToolRound > domain.MaxSpecialistToolRounds || attempt.MaxAttempts > maxSpecialistModelTransportAttempts {
 		return apperror.New(apperror.CodeInvalidArgument,
 			"Specialist no-tool model call has an unsupported attempt shape")
 	}
@@ -868,6 +909,7 @@ func scanSpecialistModelCall(row scanner) (specialistModelCallRecord, error) {
 	var finishedAt sql.NullString
 	if err := row.Scan(&record.AgentAttemptID, &record.RunID, &record.AgentID,
 		&record.ModelAttempt, &record.TransportAttempt, &record.MaxAttempts, &record.ProtocolRepair,
+		&record.ToolRound,
 		&record.Provider, &record.Model, &record.Status, &outcome,
 		&record.InputFingerprint, &record.ActionFingerprint, &record.ErrorText,
 		&record.RetryAfterMillis, &retryPlanned, &record.ElapsedMillis,
@@ -899,7 +941,7 @@ func requireSpecialistModelIdentity(record specialistModelCallRecord,
 	attempt llm.ModelAttempt,
 ) error {
 	if record.ModelAttempt != attempt.Number || record.TransportAttempt != attempt.TransportNumber() ||
-		record.MaxAttempts != attempt.MaxAttempts || record.ProtocolRepair != attempt.ProtocolRepair ||
+		record.MaxAttempts != attempt.MaxAttempts || record.ProtocolRepair != attempt.ProtocolRepair || record.ToolRound != attempt.ToolRound ||
 		record.Provider != attempt.Provider ||
 		record.Model != attempt.Model {
 		return apperror.New(apperror.CodeConflict,
@@ -953,6 +995,10 @@ func requireSpecialistTerminalReplay(record specialistModelCallRecord,
 			record.PolicyReason != terminal.decision.Reason {
 			return apperror.New(apperror.CodeConflict,
 				"Specialist model action replay differs from its durable record")
+		}
+	} else if terminal.toolResponse != nil {
+		if record.InputFingerprint != terminal.inputFingerprint || record.ActionFingerprint != terminal.actionFingerprint || record.ActionKind != "tool_calls" {
+			return apperror.New(apperror.CodeConflict, "child tool response replay changed")
 		}
 	} else if record.InputFingerprint != "" || record.ActionFingerprint != "" {
 		return apperror.New(apperror.CodeConflict,

@@ -4,9 +4,10 @@ import type { RunDetailView, TaskBudgetSettings, ThreadDetailView } from "../../
 import { v2QueryKeys } from "../query-keys";
 import { TaskConfiguration } from "./task-configuration";
 import { useLocale } from "../../lib/locale";
+import type { ProjectSkillChoice } from "../../api/project-skills";
 
 export function TaskConfigurationSettings({ client, threadID, sourceRunID, draftWorkspaceID = "", draftBudget,
-  onDraftBudgetChange, onDraftValidityChange }: {
+  onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange }: {
   client: APIClient;
   threadID: string;
   sourceRunID?: string;
@@ -14,6 +15,8 @@ export function TaskConfigurationSettings({ client, threadID, sourceRunID, draft
   draftBudget?: TaskBudgetSettings;
   onDraftBudgetChange?: (budget: TaskBudgetSettings | undefined) => void;
   onDraftValidityChange?: (valid: boolean) => void;
+  draftProjectSkills?: ProjectSkillChoice;
+  onDraftProjectSkillsChange?: (choice: ProjectSkillChoice) => void;
 }) {
   const { t } = useLocale();
   const thread = useQuery({ queryKey: v2QueryKeys.thread(threadID), enabled: Boolean(threadID),
@@ -48,6 +51,7 @@ export function TaskConfigurationSettings({ client, threadID, sourceRunID, draft
       </div>
       : <TaskConfiguration key={`draft:${draftWorkspaceID}`} client={client} workspaceID={draftWorkspaceID} profile="code"
         budget={draftBudget} onBudgetChange={onDraftBudgetChange} onValidityChange={onDraftValidityChange}
+        projectSkills={draftProjectSkills} onProjectSkillsChange={onDraftProjectSkillsChange}
         disabled={!client.hasThreadControl || !draftWorkspaceID} />}
   </>;
 }

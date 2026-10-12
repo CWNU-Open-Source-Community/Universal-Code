@@ -370,8 +370,12 @@ func (a ModelAttempt) ValidateStarted() error {
 	if a.ProtocolRepair < 0 || a.ProtocolRepair > 1 {
 		return errors.New("model protocol repair number must be zero or one")
 	}
-	if a.ToolRound < 0 || a.ToolRound > 4 {
-		return errors.New("model tool round must be between zero and four")
+	maxToolRounds := 4
+	if a.SpecialistAttemptID != "" {
+		maxToolRounds = 16
+	}
+	if a.ToolRound < 0 || a.ToolRound > maxToolRounds {
+		return fmt.Errorf("model tool round must be between zero and %d", maxToolRounds)
 	}
 	if a.SteeringSequence < 0 {
 		return errors.New("model steering sequence cannot be negative")

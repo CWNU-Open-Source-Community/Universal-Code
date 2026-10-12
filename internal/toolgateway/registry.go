@@ -61,6 +61,12 @@ func buildToolRegistry() toolRegistry {
 	}
 
 	// This order is the existing model catalog order. Dynamic capability
+	add(toolRegistration{definition: SpecialistToolDefinition(false), valid: true,
+		normalize: func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
+			_, canonical, err := NormalizeSpecialistToolPayload(payload)
+			return canonical, err
+		},
+		preflight: requireExecutor("Specialist tool", func(g *Gateway, _ ToolCall) bool { return g.specialist != nil }), invoke: (*Gateway).invokeSpecialist})
 	// projections narrow or replace these definitions at the application boundary.
 	addSupervisor(StructuredMemoryToolDefinitions(), NormalizeStructuredMemoryPayload,
 		(*Gateway).invokeStructuredMemory,
@@ -265,6 +271,9 @@ func NormalizeSupervisorToolPayload(name ToolName, payload json.RawMessage) (jso
 // Model visibility and gateway validity do not expand this configuration set.
 func TypedActionIDs() map[string]struct{} {
 	ids := make(map[string]struct{})
+	for id := range projectCommandPresets {
+		ids[id] = struct{}{}
+	}
 	for _, registration := range registeredTools.ordered {
 		if registration.typedAction {
 			ids[string(registration.definition.Name)] = struct{}{}

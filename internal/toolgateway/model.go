@@ -136,6 +136,7 @@ type ToolCall struct {
 	RunID                       string                            `json:"run_id,omitempty"`
 	AgentID                     string                            `json:"agent_id,omitempty"`
 	AgentAttemptID              string                            `json:"-"`
+	SpecialistToolCallID        string                            `json:"-"`
 	SessionID                   string                            `json:"session_id,omitempty"`
 	WorkspaceID                 string                            `json:"workspace_id,omitempty"`
 	MissionID                   string                            `json:"mission_id,omitempty"`
@@ -175,6 +176,7 @@ func NormalizeToolCall(call ToolCall) (ToolCall, error) {
 	call.RunID = strings.TrimSpace(call.RunID)
 	call.AgentID = strings.TrimSpace(call.AgentID)
 	call.AgentAttemptID = strings.TrimSpace(call.AgentAttemptID)
+	call.SpecialistToolCallID = strings.TrimSpace(call.SpecialistToolCallID)
 	call.SessionID = strings.TrimSpace(call.SessionID)
 	call.WorkspaceID = strings.TrimSpace(call.WorkspaceID)
 	call.MissionID = strings.TrimSpace(call.MissionID)
@@ -202,7 +204,8 @@ func NormalizeToolCall(call ToolCall) (ToolCall, error) {
 		"invocation id": call.InvocationID, "operation key": call.OperationKey,
 		"run id": call.RunID, "agent id": call.AgentID,
 		"agent attempt id": call.AgentAttemptID, "session id": call.SessionID,
-		"workspace id": call.WorkspaceID, "lease id": call.LeaseID, "requester": call.RequestedBy,
+		"specialist tool call id": call.SpecialistToolCallID,
+		"workspace id":            call.WorkspaceID, "lease id": call.LeaseID, "requester": call.RequestedBy,
 		"mission id": call.MissionID, "root fingerprint": call.RootFingerprint,
 		"permission snapshot id":         call.PermissionSnapshotID,
 		"permission runtime epoch":       call.PermissionRuntimeEpoch,
@@ -312,6 +315,7 @@ func (c ToolCall) Validate() error {
 	if normalized.Name != c.Name || !bytes.Equal(normalized.Payload, c.Payload) || normalized.InvocationID != c.InvocationID ||
 		normalized.OperationKey != c.OperationKey || normalized.RunID != c.RunID ||
 		normalized.AgentID != c.AgentID || normalized.AgentAttemptID != c.AgentAttemptID ||
+		normalized.SpecialistToolCallID != c.SpecialistToolCallID ||
 		normalized.SessionID != c.SessionID ||
 		normalized.WorkspaceID != c.WorkspaceID || normalized.LeaseID != c.LeaseID ||
 		normalized.MissionID != c.MissionID || normalized.RootFingerprint != c.RootFingerprint ||

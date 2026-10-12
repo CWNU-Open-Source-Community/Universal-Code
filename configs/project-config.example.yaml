@@ -8,4 +8,6 @@ exclude_paths:
   - fixtures
   - "secrets/**"
 skill_suggestions:
-  - scan-aid@1.0.0
+  - code@1.3.0
+test_command_id: test.go
+format_command_id: format.go

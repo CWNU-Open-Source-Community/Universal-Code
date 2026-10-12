@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -18,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 const (
@@ -257,17 +257,7 @@ func (c Config) validate() error {
 }
 
 func validateRelativePath(value string) error {
-	if value == "" || len(value) > MaxPathBytes || strings.ContainsRune(value, 0) {
-		return errors.New("path must be a bounded non-empty value")
-	}
-	if filepath.IsAbs(value) || strings.Contains(value, "\\") || strings.Contains(value, "..") {
-		return errors.New("path must be a workspace-relative slash-separated path without escapes")
-	}
-	clean := path.Clean(value)
-	if clean != value || strings.HasPrefix(clean, "/") || clean == "." || clean == ".." {
-		return errors.New("path must be normalized without escapes")
-	}
-	return nil
+	return (workspaceidentity.PathPolicy{ExcludePaths: []string{value}}).Validate()
 }
 
 func validateSkillRef(value string) error {

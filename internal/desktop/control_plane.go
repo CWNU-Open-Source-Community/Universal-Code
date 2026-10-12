@@ -917,10 +917,11 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		PriceSnapshotController:               stateStore,
 		FanoutExecutionController: application.NewReadOnlyFanoutExecutionService(
 			stateStore, models.Router(), checker),
-		ChildTaskControlController:   application.NewChildTaskControlService(stateStore),
-		ProviderCredentialController: providerCredentialControl,
-		FileEditReviewController:     fileEditReview,
-		FileWorkspaceDrydocks:        commandRuntimeDrydocks,
+		ChildTaskControlController:    application.NewChildTaskControlService(stateStore),
+		SpecialistExecutionController: application.NewSpecialistExecutionService(stateStore, models.Router(), checker).WithRunWorktree(commandRuntimeDrydocks),
+		ProviderCredentialController:  providerCredentialControl,
+		FileEditReviewController:      fileEditReview,
+		FileWorkspaceDrydocks:         commandRuntimeDrydocks,
 		ThreadReviewReader: application.NewThreadReviewService(stateStore).WithRunWorktree(commandRuntimeDrydocks).
 			WithCodeHandoff(application.NewCodeHandoffService(stateStore).WithStandardCodeDelivery(standardCodeDelivery)),
 		FileEditProposalController:          fileEditProposal,
@@ -938,7 +939,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		ThreadPullRequestController:         application.NewThreadPullRequestService(stateStore, githubReview, threadGit),
 		GitHubReviewController:              githubReview,
 		BatchDeliveryController: application.NewBatchDeliveryWorkbenchService(batchDelivery).
-			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, stateStore, models.Router(), checker)),
+			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, stateStore, models.Router(), checker).WithNativeTools()),
 		ExtensionController:              extensionControl,
 		CodeIntelSource:                  codeIntelManager,
 		CodeIntelController:              codeIntelControl,

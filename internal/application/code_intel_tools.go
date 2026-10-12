@@ -8,6 +8,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/codeintel"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/toolgateway"
 )
 
@@ -45,8 +46,17 @@ func (e *CodeIntelToolExecutor) ExecuteCodeIntel(ctx context.Context,
 	if err != nil {
 		return toolgateway.CodeIntelExecutionResult{}, err
 	}
+	run, err := e.authority.store.GetRun(ctx, scope.RunID)
+	if err != nil {
+		return toolgateway.CodeIntelExecutionResult{}, apperror.Normalize(err)
+	}
+	pathPolicy, err := projectconfig.PathPolicy(run.Config)
+	if err != nil {
+		return toolgateway.CodeIntelExecutionResult{}, err
+	}
 	result, err := e.manager.Execute(ctx, codeintel.Request{
-		Tool: string(name), WorkspaceID: scope.WorkspaceID,
+		PathPolicy: pathPolicy,
+		Tool:       string(name), WorkspaceID: scope.WorkspaceID,
 		WorkspaceRoot: scope.WorkspaceRoot, ServerID: input.ServerID,
 		ServerGeneration:      input.ServerGeneration,
 		CapabilityFingerprint: input.CapabilityFingerprint,

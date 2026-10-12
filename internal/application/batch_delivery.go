@@ -728,8 +728,10 @@ func (s *BatchDeliveryService) Submit(ctx context.Context,
 				fmt.Sprintf("batch delivery changed unowned path %q", changed))
 		}
 	}
-	tests, err := s.runBatchDeliveryValidations(ctx, plan.RunID,
-		workspace.WorktreeRoot, workspace.BaseCommit, task.Validations)
+	tests, reused, err := s.reuseSpecialistBatchVerification(ctx, plan, workspace, task, inspection.HeadCommit)
+	if err == nil && !reused {
+		tests, err = s.runBatchDeliveryValidations(ctx, plan.RunID, workspace.WorktreeRoot, workspace.BaseCommit, task.Validations)
+	}
 	if err != nil {
 		return empty, false, err
 	}

@@ -9,21 +9,21 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 5 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
-| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 74 | true |
+| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 75 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 49 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 4 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
-| [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 111 | true |
+| [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 114 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 23 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 15 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 16 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 120 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 121 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 6 | true |
@@ -114,7 +114,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `agent-scheduling-delivery-ledgers-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>74 active identifiers</summary>
+<details><summary>75 active identifiers</summary>
 
 - `agent-code-edit.v1`
 - `agent_admission_operation.v1`
@@ -190,6 +190,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `specialist_delegation_application_request.v1`
 - `specialist_delegation_request.v1`
 - `specialist_delegation_review.v1`
+- `specialist_operator_step.v1`
 
 </details>
 
@@ -505,7 +506,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `provider-private-replay-envelope-reader` (`v1, v2, v3, v4`, active) at `internal/llm/provider_replay.go`
   - `provider-private-replay-kimi-v4-history-reader` (`v4`, active) at `internal/store/supervisor_assistant_replay.go`
 
-<details><summary>111 active identifiers</summary>
+<details><summary>114 active identifiers</summary>
 
 - `byte_identical.v1`
 - `data_store_scope.v1`
@@ -561,10 +562,13 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `specialist_model_cancellation_operation.v1`
 - `specialist_model_cancellation_request.v1`
 - `specialist_model_input.v1`
+- `specialist_native_tool_batch.v1`
 - `specialist_operator_schedule_request.v1`
 - `specialist_skill_assignment.v1`
 - `specialist_skill_context.v1`
 - `specialist_task_brief.v1`
+- `specialist_tool_result.v1`
+- `specialist_tool_schedule.v1`
 - `standard-code-backend-readiness.v1`
 - `standard-code-command-result.v1`
 - `standard-code-command.v1`
@@ -697,7 +701,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
 
-<details><summary>15 active identifiers</summary>
+<details><summary>16 active identifiers</summary>
 
 - `desktop_clipboard_files.v1`
 - `desktop_connection_bootstrap.v1`
@@ -713,6 +717,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_workspace_open.v1`
 - `prayu.run-navigation.v1`
 - `universal-code.batch-workbench.v1`
+- `universal-code.specialist.v1`
 - `v2_file_upload.v1`
 
 </details>
@@ -878,7 +883,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `http-openapi-contract-reader` (`v0, v1, v2`, active) at `web/src/api`
 
-<details><summary>120 active identifiers</summary>
+<details><summary>121 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -974,6 +979,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `session_steering_promotion.v1`
 - `session_steering_revision.v1`
 - `skill_package_installation.v1`
+- `specialist_tools.v1`
 - `standard_code_preset.v1`
 - `task_configuration.v1`
 - `thread.v1`

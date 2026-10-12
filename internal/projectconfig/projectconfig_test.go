@@ -7,8 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"cyberagent-workbench/internal/toolgateway"
 )
 
 func writeConfig(t *testing.T, dir, content string) string {
@@ -39,7 +37,7 @@ skill_suggestions: [scan-aid@1.0.0]
 		t.Fatalf("load: %v found=%t", err, found)
 	}
 	ceiling := Ceiling{AllowedProfiles: []string{"code", "review"}, MaxTurns: 100, MaxToolCalls: 100,
-		RegisteredCommands: toolgateway.TypedActionIDs()}
+		RegisteredCommands: map[string]struct{}{"test.go": {}}}
 	effective, rejections, err := config.Narrow(ceiling)
 	if err != nil || len(rejections) != 0 {
 		t.Fatalf("narrow: %v rejections=%v", err, rejections)
@@ -133,7 +131,7 @@ func TestLoadRejectsOversizedAndDeep(t *testing.T) {
 func TestNarrowRejectsWidening(t *testing.T) {
 	config := Config{Protocol: ProtocolVersion, Budget: &Budget{MaxTurns: 500}}
 	ceiling := Ceiling{AllowedProfiles: []string{"code"}, MaxTurns: 100, MaxToolCalls: 100,
-		RegisteredCommands: toolgateway.TypedActionIDs()}
+		RegisteredCommands: map[string]struct{}{"test.go": {}}}
 	_, rejections, err := config.Narrow(ceiling)
 	if err != nil {
 		t.Fatal(err)

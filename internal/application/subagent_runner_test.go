@@ -751,7 +751,7 @@ func newSubagentRunnerFixture(t testing.TB, provider llm.Provider, budget domain
 }
 
 func newSubagentRunnerFixtureWithExternal(t testing.TB, provider llm.Provider,
-	budget domain.Budget, turnLimit int64, tokenLimit int64, withExternal bool,
+	budget domain.Budget, turnLimit int64, tokenLimit int64, withExternal bool, workspaceRoots ...string,
 ) (*store.SQLiteStore, domain.Run, domain.AgentNode, *application.SubagentRunner) {
 	t.Helper()
 	home := t.TempDir()
@@ -762,9 +762,17 @@ func newSubagentRunnerFixtureWithExternal(t testing.TB, provider llm.Provider,
 	t.Cleanup(func() { _ = st.Close() })
 	ctx := context.Background()
 	service := application.NewRunService(st)
+	workspaceID := ""
+	if len(workspaceRoots) > 0 {
+		workspaceID = "specialist-workspace"
+		if err := st.SaveWorkspace(ctx, store.WorkspaceRecord{ID: workspaceID, Name: "specialist-workspace", RootPath: workspaceRoots[0], CreatedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	_, run, err := service.Create(ctx, application.CreateRunRequest{
 		Goal: "perform a bounded Specialist review", Profile: "code",
 		ModelRoute: provider.Name() + "/model", Budget: budget,
+		WorkspaceID: workspaceID,
 	})
 	if err != nil {
 		t.Fatal(err)

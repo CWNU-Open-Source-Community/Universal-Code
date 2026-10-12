@@ -64,6 +64,20 @@ func TestPlanDeliveryCLITextIsSingleLine(t *testing.T) {
 	}
 }
 
+func TestSpecialistCLIParsesToolsAfterPositionalIdentity(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	for _, args := range [][]string{
+		{"run", "specialist-step", "missing-run-for-parser", "--agent", "admitted-child", "--operation-key", "cli-tools-parse-0001", "--tools"},
+		{"run", "delegation", "schedule", "missing-proposal-for-parser", "--operation-key", "cli-tools-parse-0002", "--tools"},
+	} {
+		_, stderr, code := executeTestCommand(t, args...)
+		lookupFailure := strings.Contains(stderr, "not found") || strings.Contains(stderr, "no rows in result set")
+		if code == 0 || strings.Contains(stderr, "usage:") || strings.Contains(stderr, "flag provided but not defined") || !lookupFailure {
+			t.Fatalf("tools flag after identity did not reach lookup: args=%v code=%d stderr=%s", args, code, stderr)
+		}
+	}
+}
+
 func TestCLIHelpListsRunGraphAndLease(t *testing.T) {
 	stdout, stderr, code := executeTestCommand(t, "help")
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "checkpoint|graph|lease|finish") ||

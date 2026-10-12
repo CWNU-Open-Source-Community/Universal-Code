@@ -830,9 +830,19 @@ cyberagent api openapi
 cyberagent api openapi --output docs/openapi.json
 ```
 
-运行时的 `/api/v1/openapi.json` 返回同一份原始文档，仍要求 loopback 与 read Bearer 认证，不接受 query 或 body。它使用 `application/vnd.oai.openapi+json`，不套普通 `api.v1` envelope。当前契约有 169 个 path、188 个 operation 和 497 个 schema。测试逐条命中公开 handler，并确认普通 DTO 不包含 Workspace root、Artifact/Skill/Session 正文、模型输出、工具参数、私有 lifecycle、operation/fencing/lease owner、API key、Provider Base URL 或环境变量名。Web evidence DTO 还明确排除搜索片段、网页正文、citation claim、operation key 与私有网络 authority；batch delivery DTO 排除 child/integration root、owner-token digest 与 operation/request fingerprint。明文 owner token 只在 Prepare/rotation control 响应中返回一次。
+Project Skill selection uses `POST /api/v1/runs/{run_id}/project-skills/select`
+with the control bearer, `Idempotency-Key` and strict JSON
+`{"refs":["code@1.0.0"],"confirm_untrusted_context":false}`. Refs must exactly
+match the Run's pinned project suggestions. Built-ins require the exact compiled
+version; external refs require existing eligible installations and explicit
+untrusted-context confirmation. The response carries existing selection IDs,
+same-key replay status and `capability_grant=false`. No installation or first
+turn occurs here. Product draft creation completes selection before handing off
+the first message; failure leaves the Created task recoverable.
 
-The runtime `/api/v1/openapi.json` returns the same raw document under the loopback and read-bearer boundary and accepts neither a query nor a body. It uses `application/vnd.oai.openapi+json` rather than the ordinary `api.v1` envelope. The contract contains 169 paths, 188 operations, and 497 schemas. Tests exercise every handler and verify that ordinary DTOs omit Workspace roots, Artifact/Skill/Session bodies, model output, Tool arguments, private lifecycle, operation/fencing/lease-owner identities, API keys, Provider base URLs, and environment-variable names. Web-evidence DTOs additionally omit search snippets, page bodies, citation claims, operation keys, and private network authority. Batch-delivery DTOs omit child/integration roots, owner-token digests, and operation/request fingerprints; a plaintext owner token appears only once in a prepare/rotation control response.
+运行时的 `/api/v1/openapi.json` 返回同一份原始文档，仍要求 loopback 与 read Bearer 认证，不接受 query 或 body。它使用 `application/vnd.oai.openapi+json`，不套普通 `api.v1` envelope。当前契约有 254 个 path、280 个 operation 和 732 个 schema。测试逐条命中公开 handler，并确认普通 DTO 不包含 Workspace root、Artifact/Skill/Session 正文、模型输出、工具参数、私有 lifecycle、operation/fencing/lease owner、API key、Provider Base URL 或环境变量名。Web evidence DTO 还明确排除搜索片段、网页正文、citation claim、operation key 与私有网络 authority；batch delivery DTO 排除 child/integration root、owner-token digest 与 operation/request fingerprint。明文 owner token 只在 Prepare/rotation control 响应中返回一次。
+
+The runtime `/api/v1/openapi.json` returns the same raw document under the loopback and read-bearer boundary and accepts neither a query nor a body. It uses `application/vnd.oai.openapi+json` rather than the ordinary `api.v1` envelope. The contract contains 254 paths, 280 operations, and 732 schemas. Tests exercise every handler and verify that ordinary DTOs omit Workspace roots, Artifact/Skill/Session bodies, model output, Tool arguments, private lifecycle, operation/fencing/lease-owner identities, API keys, Provider base URLs, and environment-variable names. Web-evidence DTOs additionally omit search snippets, page bodies, citation claims, operation keys, and private network authority. Batch-delivery DTOs omit child/integration roots, owner-token digests, and operation/request fingerprints; a plaintext owner token appears only once in a prepare/rotation control response.
 
 ## 主动取消 / Active-Call Cancellation
 

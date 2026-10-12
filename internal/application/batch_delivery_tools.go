@@ -12,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runmutation"
@@ -102,6 +103,7 @@ type batchDeliveryToolBinding struct {
 	task         domain.BatchDeliveryTaskSpec
 	tokenDigest  string
 	operationKey string
+	pathPolicy   workspace.AgentCodePathPolicy
 }
 
 func (s *BatchDeliveryService) bindBatchDeliveryTool(ctx context.Context,
@@ -158,7 +160,15 @@ func (s *BatchDeliveryService) bindBatchDeliveryTool(ctx context.Context,
 	if err := s.requireBatchDependencies(ctx, plan, task); err != nil {
 		return binding, err
 	}
-	return batchDeliveryToolBinding{store: store, plan: plan, workspace: child,
+	run, err := s.store.GetRun(ctx, plan.RunID)
+	if err != nil {
+		return binding, err
+	}
+	pathPolicy, err := projectconfig.PathPolicy(run.Config)
+	if err != nil {
+		return binding, err
+	}
+	return batchDeliveryToolBinding{pathPolicy: pathPolicy, store: store, plan: plan, workspace: child,
 		task: task, tokenDigest: tokenDigest, operationKey: operationKey}, nil
 }
 
@@ -176,7 +186,7 @@ func (s *BatchDeliveryService) BatchList(ctx context.Context,
 			"batch child cannot list outside its owned directory scope")
 	}
 	value, err := workspace.AgentCodeListDirectory(binding.workspace.WorktreeRoot,
-		batchChildWorkspaceID(binding), request.Path, request.Cursor, request.Limit, false)
+		batchChildWorkspaceID(binding), request.Path, request.Cursor, request.Limit, false, binding.pathPolicy)
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
@@ -204,7 +214,7 @@ func (s *BatchDeliveryService) BatchRead(ctx context.Context,
 			"batch child cannot read outside its owned scope")
 	}
 	value, err := workspace.AgentCodeReadFile(binding.workspace.WorktreeRoot,
-		batchChildWorkspaceID(binding), request.Path, request.StartLine, request.EndLine, false)
+		batchChildWorkspaceID(binding), request.Path, request.StartLine, request.EndLine, false, binding.pathPolicy)
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
@@ -228,7 +238,7 @@ func (s *BatchDeliveryService) BatchGlob(ctx context.Context,
 	}
 	value, err := workspace.AgentCodeScopedGlobFiles(binding.workspace.WorktreeRoot,
 		batchChildWorkspaceID(binding), request.Pattern, request.Cursor, request.Limit,
-		batchDeliverySearchScopes(binding.task.OwnershipHints))
+		batchDeliverySearchScopes(binding.task.OwnershipHints), binding.pathPolicy)
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
@@ -253,7 +263,7 @@ func (s *BatchDeliveryService) BatchGrep(ctx context.Context,
 	value, err := workspace.AgentCodeScopedGrepFiles(binding.workspace.WorktreeRoot,
 		batchChildWorkspaceID(binding), request.Query, request.Pattern, request.Cursor,
 		request.Limit, request.CaseSensitive,
-		batchDeliverySearchScopes(binding.task.OwnershipHints))
+		batchDeliverySearchScopes(binding.task.OwnershipHints), binding.pathPolicy)
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
@@ -269,6 +279,9 @@ func (s *BatchDeliveryService) BatchProposeChange(ctx context.Context,
 	var result BatchDeliveryToolResult[fileedit.Preview]
 	binding, err := s.bindBatchDeliveryTool(ctx, request.Authority)
 	if err != nil {
+		return result, err
+	}
+	if err := binding.pathPolicy.Check(request.Path); err != nil {
 		return result, err
 	}
 	if !binding.workspace.ToolProfile.WorkspaceChange ||
@@ -309,7 +322,7 @@ func (s *BatchDeliveryService) BatchProposeChange(ctx context.Context,
 				"batch child patch request is invalid")
 		}
 		current, observed, readErr := workspace.AgentCodeReadMutationSource(
-			binding.workspace.WorktreeRoot, request.Path)
+			binding.workspace.WorktreeRoot, request.Path, binding.pathPolicy)
 		if readErr != nil {
 			return result, apperror.Normalize(readErr)
 		}
@@ -357,6 +370,9 @@ func (s *BatchDeliveryService) BatchApplyChange(ctx context.Context,
 	edit, err := binding.store.GetFileEdit(ctx, strings.TrimSpace(request.EditID))
 	if err != nil {
 		return result, apperror.Normalize(err)
+	}
+	if err := binding.pathPolicy.Check(edit.Path); err != nil {
+		return result, err
 	}
 	agent, err := binding.store.GetAgentNode(ctx, binding.workspace.AgentID)
 	if err != nil {

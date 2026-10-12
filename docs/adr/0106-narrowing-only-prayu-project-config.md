@@ -43,6 +43,10 @@ Run 创建时把规范化后的 Effective 视图与 fingerprint（SHA-256 of can
 
 ## 后果 / Consequences
 
+运行消费者与产品选择流程见 [ADR 0170](0170-task-budget-and-project-configuration.md)：
+排除路径作为固定快照应用于文件工具；Skill 建议由用户明确选择已安装或内置的准确
+版本；测试/格式化使用已注册 native preset 与现有 command_runtime Job，不自动执行。
+
 - 项目仓库可以附带安全默认值（更低预算、排除路径、Skill 建议），且无法借此提权。
 - 后续 PR：Desktop 的 global/user/project/Run 分层来源展示、被忽略/拒绝字段列表、
   HTTP/OpenAPI 与 JSON schema 校验接入。

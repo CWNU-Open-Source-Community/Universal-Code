@@ -3,6 +3,7 @@ import type { APIClient } from "../../api/client";
 import type { RunView, TaskBudgetSettings, TaskConfigurationView } from "../../api/types";
 import { normalizedTaskBudget } from "../../api/task-configuration";
 import { useLocale } from "../../lib/locale";
+import type { ProjectSkillChoice } from "../../api/project-skills";
 import "./task-configuration.css";
 
 export interface TaskConfigurationProps {
@@ -12,6 +13,8 @@ export interface TaskConfigurationProps {
   budget?: TaskBudgetSettings;
   onBudgetChange?: (budget: TaskBudgetSettings | undefined) => void;
   onValidityChange?: (valid: boolean) => void;
+  projectSkills?: ProjectSkillChoice;
+  onProjectSkillsChange?: (choice: ProjectSkillChoice) => void;
   run?: RunView | null;
   disabled?: boolean;
 }
@@ -36,13 +39,13 @@ type ReadState = { key: string; client: APIClient; view?: TaskConfigurationView;
 
 // Go owns effective configuration and admission. This component only edits
 // bounded draft inputs and presents safe read projections; previews grant no authority.
-export function TaskConfiguration({ client, workspaceID, profile = "code", budget, onBudgetChange, onValidityChange, run, disabled }: TaskConfigurationProps) {
+export function TaskConfiguration({ client, workspaceID, profile = "code", budget, onBudgetChange, onValidityChange, projectSkills, onProjectSkillsChange, run, disabled }: TaskConfigurationProps) {
   const { t, locale } = useLocale();
   const localizedFields = fields.map((field) => ({ ...field, label: t(field.label[0], field.label[1]), placeholder: t(field.placeholder[0], field.placeholder[1]) }));
   const sourceLabels: Record<string, string> = { default: t("产品默认", "Product defaults"), operator: t("任务设置", "Task settings"), project: t("项目收窄", "Project restrictions"), snapshot: t("已有执行快照", "Existing run snapshot") };
   const fieldLabels: Record<string, string> = {
     ...Object.fromEntries(localizedFields.map((field) => [`budget.${field.key}`, field.label])),
-    read_only: t("项目只读", "Read-only project"), allowed_profiles: t("允许的任务类型", "Allowed task types"), exclude_paths: t("排除路径建议", "Suggested excluded paths"), skill_suggestions: t("技能建议", "Skill suggestions"),
+    read_only: t("项目只读", "Read-only project"), allowed_profiles: t("允许的任务类型", "Allowed task types"), exclude_paths: t("排除路径", "Excluded paths"), skill_suggestions: t("技能建议", "Skill suggestions"),
     test_command_id: t("测试动作", "Test action"), format_command_id: t("格式化动作", "Format action"), project_config: t("项目配置文件", "Project configuration file"),
   };
   const errorLabel = (message: string) => t(message, errorEnglish[message] ?? message);
@@ -53,11 +56,14 @@ export function TaskConfiguration({ client, workspaceID, profile = "code", budge
   try { if (!run) normalizedTaskBudget(budget); } catch (error) { inputError = error instanceof Error ? error.message : "预算无效。"; }
   const current = state.key === requestKey && state.client === client ? state : undefined;
   const view = current?.view;
+  const suggestedRefs = Array.from(new Set(view?.project?.skill_suggestions ?? []));
+  const selectedRefs = projectSkills?.refs ?? [];
+  const choicesValid = selectedRefs.every((ref) => suggestedRefs.includes(ref)) && (!selectedRefs.length || projectSkills?.confirmUntrustedContext === true);
   useEffect(() => {
     if (inputError) onValidityChange?.(false);
-    else if (view) onValidityChange?.(view.project_disposition !== "rejected");
+    else if (view) onValidityChange?.(view.project_disposition !== "rejected" && (Boolean(run) || choicesValid));
     // An unfinished or failed read cannot clear a known project rejection.
-  }, [onValidityChange, inputError, view]);
+  }, [onValidityChange, inputError, view, run, choicesValid]);
 
   useEffect(() => {
     if (!workspaceID || inputError) return;
@@ -96,8 +102,13 @@ export function TaskConfiguration({ client, workspaceID, profile = "code", budge
         <h3>{run ? t("已保存的执行上限", "Saved execution limits") : t("生效的执行上限", "Effective execution limits")}</h3><dl>{localizedFields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{view.budget[field.key] || t("不限制", "Unlimited")}<small>{sourceLabels[view.sources.find((source) => source.field === `budget.${field.key}`)?.source ?? "snapshot"]}</small></dd></div>)}</dl>
         <h3>{t("项目配置", "Project configuration")}</h3><p>{view.project_disposition === "absent" ? view.sources.some((source) => source.source === "snapshot") ? t("未保存项目配置，使用已有执行快照。", "No project configuration is saved; the existing run snapshot applies.") : t("未发现项目配置，使用任务设置与产品默认值。", "No project configuration was found; task settings and product defaults apply.") : t("已应用 .prayu/config.yaml 的预算与任务类型收窄设置。", "Budget and task type restrictions from .prayu/config.yaml have been applied.")}</p>
         {view.sources.some((source) => source.source === "snapshot") ? <p>{t("历史执行沿用保存的上限；工具调用上限为 0 或省略时表示不限次数。", "Historical runs use their saved limits; a zero or omitted tool limit means unlimited.")}</p> : null}
-        {view.project ? <dl><div><dt>{fieldLabels.read_only}</dt><dd>{view.project.read_only ? t("已开启", "Enabled") : t("未额外限制", "No additional restriction")}</dd></div><div><dt>{fieldLabels.allowed_profiles}</dt><dd>{view.project.allowed_profiles.length ? view.project.allowed_profiles.join(locale === "zh-CN" ? "、" : ", ") : t("未额外限制", "No additional restriction")}</dd></div><div><dt>{fieldLabels.exclude_paths}</dt><dd>{view.project.excluded_path_count}{t(" 项", " items")}<small>{t("供参考，访问范围按任务权限处理", "Suggestions only; task permissions govern access")}</small></dd></div><div><dt>{fieldLabels.skill_suggestions}</dt><dd>{view.project.skill_suggestion_count}{t(" 项", " items")}<small>{t("已记录，待安装或启用", "Recorded; awaiting installation or activation")}</small></dd></div>
-          {view.project.test_command_id ? <div><dt>{fieldLabels.test_command_id}</dt><dd>{view.project.test_command_id}<small>{t("已记录，未执行", "Recorded; not executed")}</small></dd></div> : null}{view.project.format_command_id ? <div><dt>{fieldLabels.format_command_id}</dt><dd>{view.project.format_command_id}<small>{t("已记录，未执行", "Recorded; not executed")}</small></dd></div> : null}</dl> : null}
+        {view.project ? <dl><div><dt>{fieldLabels.read_only}</dt><dd>{view.project.read_only ? t("已开启", "Enabled") : t("未额外限制", "No additional restriction")}</dd></div><div><dt>{fieldLabels.allowed_profiles}</dt><dd>{view.project.allowed_profiles.length ? view.project.allowed_profiles.join(locale === "zh-CN" ? "、" : ", ") : t("未额外限制", "No additional restriction")}</dd></div><div><dt>{fieldLabels.exclude_paths}</dt><dd>{view.project.excluded_path_count}{t(" 项", " items")}<small>{t("已应用于文件工具的读取、搜索和修改", "Applied to file-tool reads, searches and edits")}</small></dd></div><div><dt>{fieldLabels.skill_suggestions}</dt><dd>{view.project.skill_suggestion_count}{t(" 项", " items")}<small>{t("由你选择已有的准确版本，首条消息前核对；不会自动安装", "Choose exact available versions; checked before the first message, without automatic installation")}</small></dd></div>
+          {view.project.test_command_id ? <div><dt>{fieldLabels.test_command_id}</dt><dd>{view.project.test_command_id}<small>{t("可在对话中要求运行；沿用命令权限并保存 Job 结果", "Ask in chat to run; existing command permissions and Job receipts apply")}</small></dd></div> : null}{view.project.format_command_id ? <div><dt>{fieldLabels.format_command_id}</dt><dd>{view.project.format_command_id}<small>{t("可在对话中要求格式化指定文件；只读项目不可执行", "Ask in chat to format a specific file; unavailable for read-only projects")}</small></dd></div> : null}</dl> : null}
+        {!run && onProjectSkillsChange && suggestedRefs.length > 0 && <fieldset className="v2-task-skill-choices" disabled={disabled}><legend>{t("选择本次任务的技能建议", "Select Skill recommendations for this task")}</legend>
+          {suggestedRefs.map((ref) => <label key={ref}><input type="checkbox" checked={selectedRefs.includes(ref)} onChange={(event) => onProjectSkillsChange({ refs: event.target.checked ? [...selectedRefs, ref] : selectedRefs.filter((item) => item !== ref), confirmUntrustedContext: false })} />{ref}</label>)}
+          {selectedRefs.length > 0 && <label><input type="checkbox" checked={projectSkills?.confirmUntrustedContext ?? false} onChange={(event) => onProjectSkillsChange({ refs: selectedRefs, confirmUntrustedContext: event.target.checked })} />{t("确认使用所选技能上下文；外部技能内容是不可信资料，不授予权限", "Use selected Skill context; external content is untrusted and grants no permission")}</label>}
+        </fieldset>}
+        {!run && selectedRefs.some((ref) => !suggestedRefs.includes(ref)) && <p role="alert">{t("保存的技能已不在当前建议中，请重新选择。", "Saved Skills are no longer current recommendations. Select again.")} <button type="button" onClick={() => onProjectSkillsChange?.({ refs: [], confirmUntrustedContext: false })}>{t("清除技能选择", "Clear Skill choices")}</button></p>}
         <details><summary>{t("字段来源与配置指纹", "Field sources and configuration fingerprints")}</summary><ul>{view.sources.map((source) => <li key={source.field}>{fieldLabels[source.field]}{t("：", ": ")}{sourceLabels[source.source]}</li>)}</ul><p>{t("配置指纹", "Configuration fingerprint")} <code>{view.fingerprint}</code></p>{view.project_fingerprint ? <p>{t("项目快照指纹", "Project snapshot fingerprint")} <code>{view.project_fingerprint}</code></p> : null}</details>
       </>}
     </>}

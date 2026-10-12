@@ -114,6 +114,7 @@ type agentWorkspace struct {
 	root        string
 	fingerprint string
 	ignore      []agentIgnoreRule
+	policy      AgentCodePathPolicy
 }
 
 func AgentCodeRootFingerprint(root string) (string, error) {
@@ -125,7 +126,7 @@ func AgentCodeRootFingerprint(root string) (string, error) {
 }
 
 func AgentCodeListDirectory(root, workspaceID, requested, cursor string, limit int,
-	includeHidden bool,
+	includeHidden bool, policies ...AgentCodePathPolicy,
 ) (AgentCodeList, error) {
 	if err := validateAgentWorkspaceID(workspaceID); err != nil {
 		return AgentCodeList{}, err
@@ -134,12 +135,15 @@ func AgentCodeListDirectory(root, workspaceID, requested, cursor string, limit i
 		return AgentCodeList{}, apperror.New(apperror.CodeInvalidArgument,
 			fmt.Sprintf("workspace list limit must be between 1 and %d", MaxAgentCodePageSize))
 	}
-	workspace, err := openAgentWorkspace(root)
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return AgentCodeList{}, err
 	}
 	relative, err := normalizeAgentPath(requested, true)
 	if err != nil {
+		return AgentCodeList{}, err
+	}
+	if err := workspace.policy.Check(relative); err != nil {
 		return AgentCodeList{}, err
 	}
 	target, info, err := workspace.resolve(relative, false)
@@ -150,7 +154,7 @@ func AgentCodeListDirectory(root, workspaceID, requested, cursor string, limit i
 		return AgentCodeList{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace list target is not a directory")
 	}
-	fingerprint := agentCursorFingerprint("list", workspaceID, workspace.fingerprint, relative,
+	fingerprint := workspace.cursorFingerprint("list", workspaceID, workspace.fingerprint, relative,
 		fmt.Sprintf("hidden=%t", includeHidden))
 	after, err := decodeAgentCursor(cursor, fingerprint)
 	if err != nil {
@@ -212,7 +216,7 @@ func AgentCodeListDirectory(root, workspaceID, requested, cursor string, limit i
 }
 
 func AgentCodeReadFile(root, workspaceID, requested string, startLine, endLine int,
-	includeHidden bool,
+	includeHidden bool, policies ...AgentCodePathPolicy,
 ) (AgentCodeRead, error) {
 	if err := validateAgentWorkspaceID(workspaceID); err != nil {
 		return AgentCodeRead{}, err
@@ -222,7 +226,7 @@ func AgentCodeReadFile(root, workspaceID, requested string, startLine, endLine i
 		return AgentCodeRead{}, apperror.New(apperror.CodeInvalidArgument,
 			fmt.Sprintf("workspace read line range must contain 1 to %d lines", MaxAgentCodeReadLines))
 	}
-	workspace, err := openAgentWorkspace(root)
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return AgentCodeRead{}, err
 	}
@@ -292,7 +296,7 @@ func AgentCodeReadFile(root, workspaceID, requested string, startLine, endLine i
 }
 
 func AgentCodeGlobFiles(root, workspaceID, pattern, cursor string, limit int,
-	includeHidden bool,
+	includeHidden bool, policies ...AgentCodePathPolicy,
 ) (AgentCodeGlob, error) {
 	if err := validateAgentWorkspaceID(workspaceID); err != nil {
 		return AgentCodeGlob{}, err
@@ -305,11 +309,11 @@ func AgentCodeGlobFiles(root, workspaceID, pattern, cursor string, limit int,
 		return AgentCodeGlob{}, apperror.New(apperror.CodeInvalidArgument,
 			fmt.Sprintf("workspace glob limit must be between 1 and %d", MaxAgentCodePageSize))
 	}
-	workspace, err := openAgentWorkspace(root)
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return AgentCodeGlob{}, err
 	}
-	fingerprint := agentCursorFingerprint("glob", workspaceID, workspace.fingerprint, pattern,
+	fingerprint := workspace.cursorFingerprint("glob", workspaceID, workspace.fingerprint, pattern,
 		fmt.Sprintf("hidden=%t", includeHidden))
 	after, err := decodeAgentCursor(cursor, fingerprint)
 	if err != nil {
@@ -346,7 +350,7 @@ func AgentCodeGlobFiles(root, workspaceID, pattern, cursor string, limit int,
 }
 
 func AgentCodeGrepFiles(root, workspaceID, query, pattern, cursor string, limit int,
-	caseSensitive, includeHidden bool,
+	caseSensitive, includeHidden bool, policies ...AgentCodePathPolicy,
 ) (AgentCodeGrep, error) {
 	if err := validateAgentWorkspaceID(workspaceID); err != nil {
 		return AgentCodeGrep{}, err
@@ -367,11 +371,11 @@ func AgentCodeGrepFiles(root, workspaceID, query, pattern, cursor string, limit 
 		return AgentCodeGrep{}, apperror.New(apperror.CodeInvalidArgument,
 			fmt.Sprintf("workspace grep limit must be between 1 and %d", MaxAgentCodeGrepMatches))
 	}
-	workspace, err := openAgentWorkspace(root)
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return AgentCodeGrep{}, err
 	}
-	fingerprint := agentCursorFingerprint("grep", workspaceID, workspace.fingerprint, query, pattern,
+	fingerprint := workspace.cursorFingerprint("grep", workspaceID, workspace.fingerprint, query, pattern,
 		fmt.Sprintf("case=%t", caseSensitive), fmt.Sprintf("hidden=%t", includeHidden))
 	after, err := decodeAgentCursor(cursor, fingerprint)
 	if err != nil {
@@ -480,18 +484,18 @@ func AgentCodeGrepFiles(root, workspaceID, query, pattern, cursor string, limit 
 // AgentCodeResolveWritePath applies the same strict path and redirect checks
 // used by model reads. The final component may be absent, but every parent
 // must exist and no component may be a symlink, junction, or case alias.
-func AgentCodeResolveWritePath(root, requested string, allowMissing bool) (string, string, error) {
-	return agentCodeResolveMutationPath(root, requested, allowMissing, false)
+func AgentCodeResolveWritePath(root, requested string, allowMissing bool, policies ...AgentCodePathPolicy) (string, string, error) {
+	return agentCodeResolveMutationPath(root, requested, allowMissing, false, policies...)
 }
 
 // AgentCodeResolveCreatePath verifies a create proposal without writing any
 // directory. Existing components, hidden paths and ignored paths remain closed.
-func AgentCodeResolveCreatePath(root, requested string) (string, string, error) {
-	return agentCodeResolveMutationPath(root, requested, true, true)
+func AgentCodeResolveCreatePath(root, requested string, policies ...AgentCodePathPolicy) (string, string, error) {
+	return agentCodeResolveMutationPath(root, requested, true, true, policies...)
 }
 
-func agentCodeResolveMutationPath(root, requested string, allowMissing, allowMissingParents bool) (string, string, error) {
-	workspace, err := openAgentWorkspace(root)
+func agentCodeResolveMutationPath(root, requested string, allowMissing, allowMissingParents bool, policies ...AgentCodePathPolicy) (string, string, error) {
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return "", "", err
 	}
@@ -501,7 +505,7 @@ func agentCodeResolveMutationPath(root, requested string, allowMissing, allowMis
 	}
 	if workspace.blocked(relative, false, false) {
 		return "", "", apperror.New(apperror.CodePolicyDenied,
-			"workspace mutation target is hidden or ignored")
+			"workspace mutation target is hidden, ignored, or excluded by project configuration")
 	}
 	target, _, err := workspace.resolvePath(relative, allowMissing, allowMissingParents)
 	if err != nil {
@@ -514,8 +518,8 @@ func agentCodeResolveMutationPath(root, requested string, allowMissing, allowMis
 // Go-owned proposal builder. It shares the model read path policy and verifies
 // that the opened handle is the same regular file that was resolved, closing the
 // resolve/open symlink-swap window before any patch text is derived.
-func AgentCodeReadMutationSource(root, requested string) (string, string, error) {
-	workspace, err := openAgentWorkspace(root)
+func AgentCodeReadMutationSource(root, requested string, policies ...AgentCodePathPolicy) (string, string, error) {
+	workspace, err := openAgentWorkspace(root, policies...)
 	if err != nil {
 		return "", "", err
 	}
@@ -525,7 +529,7 @@ func AgentCodeReadMutationSource(root, requested string) (string, string, error)
 	}
 	if workspace.blocked(relative, false, false) {
 		return "", "", apperror.New(apperror.CodePolicyDenied,
-			"workspace mutation source is hidden or ignored")
+			"workspace mutation source is hidden, ignored, or excluded by project configuration")
 	}
 	target, info, err := workspace.resolve(relative, false)
 	if err != nil {
@@ -581,7 +585,7 @@ func readAgentCodeFile(target string, expected os.FileInfo) ([]byte, error) {
 	return data, nil
 }
 
-func openAgentWorkspace(root string) (agentWorkspace, error) {
+func openAgentWorkspace(root string, policies ...AgentCodePathPolicy) (agentWorkspace, error) {
 	root = strings.TrimSpace(root)
 	if root == "" || !utf8.ValidString(root) {
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
@@ -614,6 +618,12 @@ func openAgentWorkspace(root string) (agentWorkspace, error) {
 			"workspace root identity could not be established")
 	}
 	workspace := agentWorkspace{root: canonical, fingerprint: fingerprint}
+	for _, policy := range policies {
+		workspace.policy.ExcludePaths = append(workspace.policy.ExcludePaths, policy.ExcludePaths...)
+	}
+	if err := workspace.policy.Validate(); err != nil {
+		return agentWorkspace{}, err
+	}
 	workspace.ignore = loadAgentIgnoreRules(canonical)
 	return workspace, nil
 }
@@ -764,6 +774,9 @@ func (w agentWorkspace) scanFiles(includeHidden bool) ([]string, bool, error) {
 }
 
 func (w agentWorkspace) blocked(relative string, directory, includeHidden bool) bool {
+	if w.policy.Excludes(relative) {
+		return true
+	}
 	if relative == ".git" || strings.HasPrefix(relative, ".git/") ||
 		strings.HasPrefix(path.Base(relative), ".cyberagent-edit-") {
 		return true
@@ -879,33 +892,7 @@ func normalizeAgentPattern(value string) (string, error) {
 }
 
 func agentGlobMatch(pattern, candidate string) bool {
-	patternParts := strings.Split(pattern, "/")
-	candidateParts := strings.Split(candidate, "/")
-	type state struct{ pattern, candidate int }
-	memo := make(map[state]bool)
-	seen := make(map[state]bool)
-	var match func(int, int) bool
-	match = func(patternIndex, candidateIndex int) bool {
-		current := state{patternIndex, candidateIndex}
-		if seen[current] {
-			return memo[current]
-		}
-		seen[current] = true
-		matched := false
-		switch {
-		case patternIndex == len(patternParts):
-			matched = candidateIndex == len(candidateParts)
-		case patternParts[patternIndex] == "**":
-			matched = match(patternIndex+1, candidateIndex) ||
-				(candidateIndex < len(candidateParts) && match(patternIndex, candidateIndex+1))
-		case candidateIndex < len(candidateParts):
-			segment, _ := path.Match(patternParts[patternIndex], candidateParts[candidateIndex])
-			matched = segment && match(patternIndex+1, candidateIndex+1)
-		}
-		memo[current] = matched
-		return matched
-	}
-	return match(0, 0)
+	return workspaceidentity.MatchPath(pattern, candidate)
 }
 
 func validateAgentWorkspaceID(value string) error {
