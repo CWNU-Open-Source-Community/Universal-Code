@@ -2083,14 +2083,17 @@ func openAPIPriceSnapshotDocument(t *testing.T) string {
 		ValidFrom:  now.Add(-time.Minute).Format(time.RFC3339),
 		ValidUntil: now.Add(time.Hour).Format(time.RFC3339),
 		Entries: []struct {
-			Provider                  string `json:"provider"`
-			Model                     string `json:"model"`
-			InputPerMillionMicros     int64  `json:"input_per_million_micros"`
-			OutputPerMillionMicros    int64  `json:"output_per_million_micros"`
-			CacheReadPerMillionMicros int64  `json:"cache_read_per_million_micros"`
-			ToolCallMicros            int64  `json:"tool_call_micros"`
+			Provider                        string `json:"provider"`
+			Model                           string `json:"model"`
+			InputPerMillionMicros           int64  `json:"input_per_million_micros"`
+			OutputPerMillionMicros          int64  `json:"output_per_million_micros"`
+			CacheReadPerMillionMicros       *int64 `json:"cache_read_per_million_micros,omitempty"`
+			CacheCreationPerMillionMicros   *int64 `json:"cache_creation_per_million_micros,omitempty"`
+			CacheCreation5mPerMillionMicros *int64 `json:"cache_creation_5m_per_million_micros,omitempty"`
+			CacheCreation1hPerMillionMicros *int64 `json:"cache_creation_1h_per_million_micros,omitempty"`
+			ToolCallMicros                  int64  `json:"tool_call_micros"`
 		}{{Provider: "mock", Model: "mock-code", InputPerMillionMicros: 1000000,
-			OutputPerMillionMicros: 2000000, CacheReadPerMillionMicros: 250000,
+			OutputPerMillionMicros: 2000000, CacheReadPerMillionMicros: func() *int64 { value := int64(250000); return &value }(),
 			ToolCallMicros: 50000}},
 	}
 	raw, err := json.Marshal(wire)

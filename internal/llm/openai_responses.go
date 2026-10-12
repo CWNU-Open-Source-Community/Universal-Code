@@ -650,7 +650,7 @@ func normalizeResponsesUsage(wire *openAIResponsesUsage) (Usage, error) {
 	if usage.TotalTokens != *wire.TotalTokens {
 		return Usage{}, errors.New("Responses token count is inconsistent")
 	}
-	return usage, usage.Validate()
+	return applyOpenAICacheUsage(usage, wire.InputTokensDetails)
 }
 
 func (p *OpenAIResponsesProvider) responsesEndpoint() string {
@@ -703,9 +703,10 @@ type openAIResponsesTextFormat struct {
 }
 
 type openAIResponsesUsage struct {
-	InputTokens  *int `json:"input_tokens"`
-	OutputTokens *int `json:"output_tokens"`
-	TotalTokens  *int `json:"total_tokens"`
+	InputTokens        *int                     `json:"input_tokens"`
+	OutputTokens       *int                     `json:"output_tokens"`
+	TotalTokens        *int                     `json:"total_tokens"`
+	InputTokensDetails *openAIInputTokenDetails `json:"input_tokens_details"`
 }
 
 type openAIResponsesContent struct {

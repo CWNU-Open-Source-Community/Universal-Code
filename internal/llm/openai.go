@@ -478,6 +478,19 @@ func (p *OpenAICompatibleProvider) normalizeResponse(defaultModel string, respon
 		return nil, openAIProtocolError(p.name, "returned an invalid model identity")
 	}
 	finishReason := openAIFinishReason(choice.FinishReason)
+	refusal, err := decodeOpenAIRefusal(choice.Message.Refusal)
+	if err != nil {
+		return &ChatResponse{Usage: usage, Model: defaultModel, Provider: p.name},
+			openAIProtocolError(p.name, "returned invalid refusal")
+	}
+	if refusal != "" {
+		if text != "" || len(choice.Message.ToolCalls) != 0 ||
+			(finishReason != FinishReasonStop && finishReason != FinishReasonRefusal) {
+			return &ChatResponse{Usage: usage, Model: defaultModel, Provider: p.name},
+				openAIProtocolError(p.name, "mixed a refusal with incompatible output")
+		}
+		finishReason = FinishReasonRefusal
+	}
 	var calls []ToolCall
 	if CompletionError(p.name, finishReason) == nil {
 		calls, err = normalizeOpenAIToolCalls(choice.Message.ToolCalls)
@@ -532,6 +545,26 @@ func normalizeOpenAIUsage(wire openAIUsage) (Usage, error) {
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	if *wire.TotalTokens != usage.TotalTokens {
 		return Usage{}, errors.New("inconsistent total token count")
+	}
+	usage, err := applyOpenAICacheUsage(usage, wire.PromptTokensDetails)
+	if err != nil {
+		return Usage{}, err
+	}
+	// DeepSeek's older usage form reports the same cache hit count at the
+	// top level. Accept it without adding it to the logical input total.
+	if wire.PromptCacheHitTokens != nil {
+		if wire.PromptTokensDetails != nil && wire.PromptTokensDetails.CachedTokens != nil &&
+			usage.CacheReadTokens != *wire.PromptCacheHitTokens {
+			return Usage{}, errors.New("conflicting cache hit token counts")
+		}
+		usage.CacheReadTokens = *wire.PromptCacheHitTokens
+		usage.CacheUsageReported = true
+	}
+	if wire.PromptCacheMissTokens != nil {
+		if !usage.CacheUsageReported || *wire.PromptCacheMissTokens < 0 || usage.CacheReadTokens < 0 ||
+			usage.CacheReadTokens > usage.InputTokens || *wire.PromptCacheMissTokens != usage.InputTokens-usage.CacheReadTokens {
+			return Usage{}, errors.New("inconsistent cache miss token count")
+		}
 	}
 	return usage, usage.Validate()
 }
@@ -781,6 +814,7 @@ type openAIMessage struct {
 	Parts            []openAIContentPart `json:"-"`
 	ExtraContent     json.RawMessage     `json:"extra_content,omitempty"`
 	ReasoningContent json.RawMessage     `json:"reasoning_content,omitempty"`
+	Refusal          json.RawMessage     `json:"refusal,omitempty"`
 	ContentRaw       json.RawMessage     `json:"-"`
 }
 
@@ -826,6 +860,7 @@ func (message *openAIMessage) UnmarshalJSON(raw []byte) error {
 	// Private native fields require exact wire spelling. encoding/json's
 	// case-insensitive fallback must not promote an unknown extension.
 	message.ReasoningContent = append(json.RawMessage(nil), fields["reasoning_content"]...)
+	message.Refusal = append(json.RawMessage(nil), fields["refusal"]...)
 	return nil
 }
 
@@ -861,9 +896,12 @@ type openAIStreamOptions struct {
 }
 
 type openAIUsage struct {
-	PromptTokens     *int `json:"prompt_tokens"`
-	CompletionTokens *int `json:"completion_tokens"`
-	TotalTokens      *int `json:"total_tokens"`
+	PromptTokens          *int                     `json:"prompt_tokens"`
+	CompletionTokens      *int                     `json:"completion_tokens"`
+	TotalTokens           *int                     `json:"total_tokens"`
+	PromptTokensDetails   *openAIInputTokenDetails `json:"prompt_tokens_details"`
+	PromptCacheHitTokens  *int                     `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens *int                     `json:"prompt_cache_miss_tokens"`
 }
 
 type openAIError struct {
@@ -893,6 +931,7 @@ type openAIStreamDelta struct {
 	ToolCalls        []openAIStreamToolCall `json:"tool_calls"`
 	ExtraContent     json.RawMessage        `json:"extra_content,omitempty"`
 	ReasoningContent json.RawMessage        `json:"reasoning_content,omitempty"`
+	Refusal          json.RawMessage        `json:"refusal,omitempty"`
 }
 
 func (delta *openAIStreamDelta) UnmarshalJSON(raw []byte) error {
@@ -907,6 +946,7 @@ func (delta *openAIStreamDelta) UnmarshalJSON(raw []byte) error {
 	}
 	*delta = openAIStreamDelta(value)
 	delta.ReasoningContent = append(json.RawMessage(nil), fields["reasoning_content"]...)
+	delta.Refusal = append(json.RawMessage(nil), fields["refusal"]...)
 	return nil
 }
 
@@ -947,6 +987,7 @@ type openAIStreamState struct {
 	finishReason   string
 	usage          *Usage
 	textBytes      int
+	refusalBytes   int
 	hasTextDelta   bool
 	textItemSeen   bool
 	tools          map[int]*openAIStreamToolState
@@ -1011,6 +1052,11 @@ func (s *openAIStreamState) consume(payload []byte) (*ChatChunk, error) {
 	if choice.Delta.Role != "" && choice.Delta.Role != "assistant" {
 		return nil, openAIProtocolError(s.provider, "returned an invalid stream role")
 	}
+	refusal, err := decodeOpenAIRefusal(choice.Delta.Refusal)
+	if err != nil || s.refusalBytes > MaxModelOutputBytes-len(refusal) {
+		return nil, openAIProtocolError(s.provider, "returned invalid streamed refusal")
+	}
+	s.refusalBytes += len(refusal)
 	if s.gemini != nil && s.gemini.capture(choice.Delta.ExtraContent, nil) != nil {
 		return nil, openAIProtocolError(s.provider, "stream returned invalid Gemini message signature")
 	}
@@ -1174,6 +1220,13 @@ func (s *openAIStreamState) finalChunk() (ChatChunk, error) {
 	}
 	finishReason := openAIFinishReason(s.finishReason)
 	usage := *s.usage
+	if s.refusalBytes > 0 {
+		if s.hasTextDelta || len(s.tools) != 0 ||
+			(finishReason != FinishReasonStop && finishReason != FinishReasonRefusal) {
+			return ChatChunk{}, openAIProtocolError(s.provider, "mixed a refusal with incompatible output")
+		}
+		finishReason = FinishReasonRefusal
+	}
 	if completionErr := CompletionError(s.provider, finishReason); completionErr != nil {
 		return ChatChunk{Done: false, Usage: &usage, Model: s.model, Provider: s.provider,
 			FinishReason: finishReason, Err: completionErr,
@@ -1294,9 +1347,14 @@ func (p *OpenAICompatibleProvider) readStream(ctx context.Context, body io.ReadC
 	stopped := false
 	sendError := func(err error) bool {
 		chunk := state.events.failureChunk(err)
-		if state.kimi != nil && state.usage != nil {
+		if state.usage != nil {
 			usage := *state.usage
 			chunk.Usage = &usage
+			for index := range chunk.Events {
+				if chunk.Events[index].Type == StreamResponseFailed || chunk.Events[index].Type == StreamResponseCancelled {
+					chunk.Events[index].Usage = &usage
+				}
+			}
 		}
 		return p.sendStreamChunk(ctx, chunks, chunk)
 	}

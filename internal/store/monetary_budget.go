@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -380,6 +381,13 @@ func (s *SQLiteStore) SettleModelCost(ctx context.Context,
 		return domain.MonetaryUsage{}, false, err
 	}
 	settledMicros := min(normalized.ActualMicros, reservation.ReservedMicros)
+	pricingStatus := normalized.PricingStatus
+	if pricingStatus == "" {
+		pricingStatus = domain.MonetaryPricingPriced
+		if normalized.ActualMicros == math.MaxInt64 {
+			pricingStatus = domain.MonetaryPricingUsageUnknown
+		}
+	}
 	releasedMicros := reservation.ReservedMicros - settledMicros
 	now := time.Now().UTC()
 	result, err := tx.ExecContext(ctx, `UPDATE run_monetary_usage SET
@@ -404,6 +412,7 @@ func (s *SQLiteStore) SettleModelCost(ctx context.Context,
 			"settled_micros": settledMicros, "released_micros": releasedMicros,
 			"actual_micros":   normalized.ActualMicros,
 			"under_reserved":  normalized.ActualMicros > reservation.ReservedMicros,
+			"pricing_status":  pricingStatus,
 			"estimate_source": reservation.EstimateSource})
 	if err != nil {
 		return domain.MonetaryUsage{}, false, err
@@ -724,6 +733,13 @@ func getMonetaryUsageTx(ctx context.Context, queryer interface {
 		Tracked: true, EstimateSource: pricing.SourceOperatorImport,
 	}
 	usage.RemainingMicros = max(0, capMicros-(usage.ReservedMicros-usage.ReleasedMicros))
+	if err := queryer.QueryRowContext(ctx, `SELECT COUNT(DISTINCT subject_id) FROM run_events
+		WHERE run_id=? AND source='monetary_budget' AND type=? AND
+		(json_extract(payload_json,'$.pricing_status') IN ('usage_unknown','price_missing','cache_price_missing')
+		OR (json_extract(payload_json,'$.pricing_status') IS NULL AND json_extract(payload_json,'$.actual_micros')=?))`,
+		runID, events.MonetaryBudgetSettledEvent, int64(math.MaxInt64)).Scan(&usage.UnpricedCalls); err != nil {
+		return domain.MonetaryUsage{}, err
+	}
 	if aggregate.ExhaustedAt.Valid {
 		exhausted, parseErr := parseMonetaryStoreTime(aggregate.ExhaustedAt.String)
 		if parseErr != nil {
@@ -790,6 +806,8 @@ func reconcileMonetaryReservationsTx(ctx context.Context, tx *sql.Tx, runID stri
 		}
 		settle := ((r.scope == domain.MonetaryScopeRoot || r.scope == domain.MonetaryScopeSpecialist) && !evidence.NotSent) || evidence.EventType == events.ModelCompletedEvent
 		settledMicros := int64(0)
+		pricingStatus := domain.MonetaryPricingUsageUnknown
+		actualMicros := int64(math.MaxInt64)
 		if settle {
 			// Even an invalid response can contain billable known usage. An
 			// absent/incomplete breakdown retains the reserved upper bound.
@@ -800,7 +818,20 @@ func reconcileMonetaryReservationsTx(ctx context.Context, tx *sql.Tx, runID stri
 					return err
 				}
 				if ok {
-					settledMicros = min(r.reservedMicros, entry.EstimateCost(int64(payload.Usage.InputTokens), int64(payload.Usage.OutputTokens), 0, int64(payload.ToolCallCount)))
+					cost, costErr := entry.UsageCost(pricing.TokenUsage{
+						InputTokens: int64(payload.Usage.InputTokens), OutputTokens: int64(payload.Usage.OutputTokens),
+						CacheReadTokens: int64(payload.Usage.CacheReadTokens), CacheCreationTokens: int64(payload.Usage.CacheCreationTokens),
+						CacheCreation5mTokens: int64(payload.Usage.CacheCreation5mTokens), CacheCreation1hTokens: int64(payload.Usage.CacheCreation1hTokens),
+						CacheCreationBreakdownKnown: payload.Usage.CacheCreationBreakdownKnown,
+					}, int64(payload.ToolCallCount))
+					if costErr == nil {
+						actualMicros, pricingStatus = cost, domain.MonetaryPricingPriced
+						settledMicros = min(r.reservedMicros, cost)
+					} else {
+						pricingStatus = domain.MonetaryPricingCachePriceMissing
+					}
+				} else {
+					pricingStatus = domain.MonetaryPricingPriceMissing
 				}
 			}
 		}
@@ -816,6 +847,22 @@ func reconcileMonetaryReservationsTx(ctx context.Context, tx *sql.Tx, runID stri
 		}
 		if err != nil {
 			return err
+		}
+		if settle {
+			var missionID string
+			if err := tx.QueryRowContext(ctx, `SELECT mission_id FROM runs WHERE id=?`, runID).Scan(&missionID); err != nil {
+				return err
+			}
+			event, err := events.New(runID, missionID, events.MonetaryBudgetSettledEvent, "monetary_budget", r.id,
+				map[string]any{"scope": r.scope, "settled_micros": settledMicros, "released_micros": releasedMicros,
+					"actual_micros": actualMicros, "under_reserved": actualMicros > r.reservedMicros,
+					"pricing_status": pricingStatus, "reconciled": true})
+			if err != nil {
+				return err
+			}
+			if _, err := insertRunEventTx(ctx, tx, event); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

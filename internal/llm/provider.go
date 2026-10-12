@@ -290,4 +290,14 @@ type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 	TotalTokens  int `json:"total_tokens"`
+	// InputTokens includes every logical input token. Cache categories are
+	// disjoint subsets, not additional tokens to add to this total.
+	CacheReadTokens       int `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens   int `json:"cache_creation_tokens,omitempty"`
+	CacheCreation5mTokens int `json:"cache_creation_5m_tokens,omitempty"`
+	CacheCreation1hTokens int `json:"cache_creation_1h_tokens,omitempty"`
+	// Aggregate-only creation leaves the TTL unknown. CacheUsageReported
+	// distinguishes omitted legacy fields from explicitly reported zeros.
+	CacheCreationBreakdownKnown bool `json:"cache_creation_breakdown_known,omitempty"`
+	CacheUsageReported          bool `json:"cache_usage_reported,omitempty"`
 }

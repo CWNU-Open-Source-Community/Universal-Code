@@ -9221,6 +9221,42 @@ export interface components {
             /** @enum {string} */
             version: "model_route_control.v1";
         };
+        ModelUsage: {
+            /** Format: int64 */
+            cache_creation_1h_tokens: number;
+            /** Format: int64 */
+            cache_creation_5m_tokens: number;
+            /** Format: int64 */
+            cache_creation_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_usage_reported_calls: number;
+            /** Format: int64 */
+            calls: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            total_tokens: number;
+        };
+        MonetaryUsageView: {
+            /** Format: int64 */
+            cap_micros: number;
+            currency: string;
+            /** Format: int64 */
+            released_micros: number;
+            /** Format: int64 */
+            remaining_micros: number;
+            /** Format: int64 */
+            reserved_micros: number;
+            /** Format: int64 */
+            settled_micros: number;
+            tracked: boolean;
+            /** Format: int64 */
+            unpriced_calls: number;
+        };
         Mount: {
             access: string;
             source: string;
@@ -9664,7 +9700,13 @@ export interface components {
         };
         PriceEntryView: {
             /** Format: int64 */
-            cache_read_per_million_micros: number;
+            cache_creation_1h_per_million_micros?: number;
+            /** Format: int64 */
+            cache_creation_5m_per_million_micros?: number;
+            /** Format: int64 */
+            cache_creation_per_million_micros?: number;
+            /** Format: int64 */
+            cache_read_per_million_micros?: number;
             /** Format: int64 */
             input_per_million_micros: number;
             model: string;
@@ -10526,6 +10568,8 @@ export interface components {
             external_skills?: components["schemas"]["ExternalSkillProjectionView"];
             mission: components["schemas"]["MissionView"];
             mode: components["schemas"]["RunModeView"];
+            model_usage?: components["schemas"]["ModelUsage"];
+            monetary_usage?: components["schemas"]["MonetaryUsageView"];
             operator_steering: components["schemas"]["OperatorSteeringQueueView"];
             plan_delivery?: components["schemas"]["PlanDeliveryStateView"];
             run: components["schemas"]["RunView"];

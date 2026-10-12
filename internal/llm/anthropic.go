@@ -288,13 +288,9 @@ func (p *AnthropicCompatibleProvider) Chat(ctx context.Context, req ChatRequest)
 		Model:        responseModel,
 		Provider:     p.name,
 		FinishReason: finishReason,
-		Usage: Usage{
-			InputTokens:  parsed.Usage.InputTokens,
-			OutputTokens: parsed.Usage.OutputTokens,
-			TotalTokens:  parsed.Usage.InputTokens + parsed.Usage.OutputTokens,
-		},
 	}
-	if err := result.Usage.Validate(); err != nil {
+	result.Usage, err = parsed.Usage.normalized()
+	if err != nil {
 		return nil, NewProviderError(OutcomeInvalidResponse, p.name, "returned invalid usage", err)
 	}
 	if completionErr := CompletionError(p.name, finishReason); completionErr != nil {
@@ -853,20 +849,14 @@ type anthropicStreamEvent struct {
 	Type    string `json:"type"`
 	Index   int    `json:"index"`
 	Message struct {
-		ID    string `json:"id"`
-		Model string `json:"model"`
-		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
+		ID    string         `json:"id"`
+		Model string         `json:"model"`
+		Usage anthropicUsage `json:"usage"`
 	} `json:"message"`
 	ContentBlock json.RawMessage `json:"content_block"`
 	Delta        json.RawMessage `json:"delta"`
-	Usage        struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
-	Error struct {
+	Usage        anthropicUsage  `json:"usage"`
+	Error        struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
@@ -874,8 +864,7 @@ type anthropicStreamEvent struct {
 
 type anthropicStreamState struct {
 	model          string
-	inputTokens    int
-	outputTokens   int
+	usage          anthropicUsage
 	toolBlocks     map[int]*anthropicStreamToolBlock
 	textBlocks     map[int]bool
 	privateBlocks  map[int]bool
@@ -928,8 +917,16 @@ func (s *anthropicStreamState) consume(payload []byte, provider string) (*ChatCh
 		s.model = model
 		s.events.model = model
 		s.messageStarted = true
-		s.inputTokens = event.Message.Usage.InputTokens
-		s.outputTokens = event.Message.Usage.OutputTokens
+		// Compatible streams may omit the initial output count before any
+		// output has been generated. Preserve this existing zero default.
+		if event.Message.Usage.OutputTokens == nil {
+			zero := 0
+			event.Message.Usage.OutputTokens = &zero
+		}
+		if _, err := event.Message.Usage.normalized(); err != nil {
+			return nil, false, NewProviderError(OutcomeInvalidResponse, provider, "returned invalid initial stream usage", nil)
+		}
+		s.usage = event.Message.Usage
 		return &ChatChunk{Events: []StreamEvent{s.events.start()}}, false, nil
 	case "content_block_start":
 		if !s.messageStarted || s.messageStopped || event.Index < 0 || event.Index >= MaxProviderOutputItems ||
@@ -1117,10 +1114,11 @@ func (s *anthropicStreamState) consume(payload []byte, provider string) (*ChatCh
 		if len(event.Delta) > 0 && json.Unmarshal(event.Delta, &delta) != nil {
 			return nil, false, NewProviderError(OutcomeInvalidResponse, provider, "returned an invalid message delta", nil)
 		}
-		if event.Usage.InputTokens != 0 {
-			s.inputTokens = event.Usage.InputTokens
+		merged, err := s.usage.merge(event.Usage)
+		if err != nil {
+			return nil, false, NewProviderError(OutcomeInvalidResponse, provider, "returned invalid cumulative stream usage", nil)
 		}
-		s.outputTokens = event.Usage.OutputTokens
+		s.usage = merged
 		if delta.StopReason != "" {
 			reason := anthropicFinishReason(delta.StopReason)
 			if s.finishReason != "" && s.finishReason != reason {
@@ -1205,12 +1203,10 @@ func (s *anthropicStreamState) blockExists(index int) bool {
 }
 
 func (s anthropicStreamState) finalChunk() ChatChunk {
-	totalTokens := -1
-	maxInt := int(^uint(0) >> 1)
-	if s.inputTokens >= 0 && s.outputTokens >= 0 && s.inputTokens <= maxInt-s.outputTokens {
-		totalTokens = s.inputTokens + s.outputTokens
+	usage, err := s.usage.normalized()
+	if err != nil {
+		usage = Usage{TotalTokens: -1}
 	}
-	usage := Usage{InputTokens: s.inputTokens, OutputTokens: s.outputTokens, TotalTokens: totalTokens}
 	return ChatChunk{Done: true, ToolCalls: append([]ToolCall(nil), s.toolCalls...), Usage: &usage, Model: s.model}
 }
 
@@ -1226,10 +1222,7 @@ type anthropicMessageResponse struct {
 	Model      string            `json:"model"`
 	StopReason string            `json:"stop_reason"`
 	Content    []json.RawMessage `json:"content"`
-	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	Usage      anthropicUsage    `json:"usage"`
 }
 
 func (r anthropicMessageResponse) ModelOrDefault(model string) string {

@@ -2355,6 +2355,9 @@ func providerApplicationError(providerErr *llm.ProviderError) error {
 	if providerErr.Reason == llm.ProviderFailureOutputLimit {
 		return apperror.Wrap(apperror.CodeResourceExhausted, providerErr.Error(), providerErr)
 	}
+	if providerErr.Reason == llm.ProviderFailureRefusal {
+		return apperror.Wrap(apperror.CodeFailedPrecondition, "模型拒绝请求。请调整要求后重试。", providerErr)
+	}
 	code := apperror.CodeFailedPrecondition
 	switch providerErr.Kind {
 	case llm.OutcomeRetryable:
