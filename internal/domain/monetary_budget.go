@@ -11,9 +11,13 @@ const (
 	// MonetaryScope values bind one reservation to the call path that created
 	// it. All scopes share the single run-level aggregate so concurrent model
 	// calls can never oversell the run total.
-	MonetaryScopeRoot           = "root"
-	MonetaryScopeSpecialist     = "specialist"
-	MonetaryScopeReadOnlyFanout = "readonly_fanout"
+	MonetaryScopeRoot                = "root"
+	MonetaryScopeSpecialist          = "specialist"
+	MonetaryScopeReadOnlyFanout      = "readonly_fanout"
+	MonetaryPricingPriced            = "priced"
+	MonetaryPricingUsageUnknown      = "usage_unknown"
+	MonetaryPricingPriceMissing      = "price_missing"
+	MonetaryPricingCachePriceMissing = "cache_price_missing"
 )
 
 // MonetaryUsage is the durable run-level aggregate for the monetary budget.
@@ -31,6 +35,7 @@ type MonetaryUsage struct {
 	UpdatedAt       time.Time
 	ExhaustedAt     *time.Time
 	Tracked         bool
+	UnpricedCalls   int64
 }
 
 func (u MonetaryUsage) Validate() error {
@@ -40,7 +45,7 @@ func (u MonetaryUsage) Validate() error {
 	if u.Currency != "USD" {
 		return errors.New("monetary usage currency is unsupported")
 	}
-	values := []int64{u.CapMicros, u.ReservedMicros, u.SettledMicros, u.ReleasedMicros, u.RemainingMicros}
+	values := []int64{u.CapMicros, u.ReservedMicros, u.SettledMicros, u.ReleasedMicros, u.RemainingMicros, u.UnpricedCalls}
 	for _, value := range values {
 		if value < 0 {
 			return errors.New("monetary usage counters cannot be negative")
@@ -115,6 +120,7 @@ type MonetarySettleRequest struct {
 	Scope         string
 	AttemptNumber int64
 	ActualMicros  int64
+	PricingStatus string
 }
 
 func (r MonetarySettleRequest) Normalize() (MonetarySettleRequest, error) {
@@ -122,6 +128,11 @@ func (r MonetarySettleRequest) Normalize() (MonetarySettleRequest, error) {
 	r.Scope = strings.TrimSpace(r.Scope)
 	if r.RunID == "" || r.AttemptNumber <= 0 || r.ActualMicros < 0 {
 		return MonetarySettleRequest{}, errors.New("monetary settle request is invalid")
+	}
+	switch r.PricingStatus {
+	case "", MonetaryPricingPriced, MonetaryPricingUsageUnknown, MonetaryPricingPriceMissing, MonetaryPricingCachePriceMissing:
+	default:
+		return MonetarySettleRequest{}, errors.New("monetary pricing status is invalid")
 	}
 	switch r.Scope {
 	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout:

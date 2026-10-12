@@ -1079,6 +1079,26 @@ func (a *API) run(request *http.Request, runID string) (any, *Page, error) {
 		view := checkpointView(checkpoint)
 		detail.Checkpoint = &view
 	}
+	if source, ok := a.store.(interface {
+		GetModelUsage(context.Context, string) (domain.ModelUsage, error)
+	}); ok {
+		usage, err := source.GetModelUsage(request.Context(), run.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		detail.ModelUsage = &usage
+	}
+	if source, ok := a.store.(interface {
+		GetMonetaryUsage(context.Context, string) (domain.MonetaryUsage, error)
+	}); ok {
+		usage, err := source.GetMonetaryUsage(request.Context(), run.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		detail.MonetaryUsage = &MonetaryUsageView{Tracked: usage.Tracked, Currency: usage.Currency,
+			CapMicros: usage.CapMicros, ReservedMicros: usage.ReservedMicros, SettledMicros: usage.SettledMicros,
+			ReleasedMicros: usage.ReleasedMicros, RemainingMicros: usage.RemainingMicros, UnpricedCalls: usage.UnpricedCalls}
+	}
 	lease, found, err := a.store.GetRunExecutionLease(request.Context(), run.ID)
 	if err != nil {
 		return nil, nil, err

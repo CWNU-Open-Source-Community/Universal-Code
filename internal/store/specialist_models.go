@@ -506,14 +506,24 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 		}
 	}
 	if call.Status != "started" {
-		var dispatch string
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json,'$.dispatch'),'') FROM run_events
+		var terminalJSON string
+		if err := tx.QueryRowContext(ctx, `SELECT payload_json FROM run_events
 			WHERE run_id=? AND source='specialist_model_gateway' AND type IN ('model.completed','model.failed') AND subject_id=?`,
-			ref.RunID, specialistModelSubject(ref.AttemptID, modelAttempt.Number)).Scan(&dispatch); err != nil {
+			ref.RunID, specialistModelSubject(ref.AttemptID, modelAttempt.Number)).Scan(&terminalJSON); err != nil {
 			return domain.AgentAttempt{}, err
 		}
-		if (dispatch == "not_sent") != terminal.notDispatched {
+		var saved struct {
+			Dispatch string     `json:"dispatch"`
+			Usage    *llm.Usage `json:"usage"`
+		}
+		if err := json.Unmarshal([]byte(terminalJSON), &saved); err != nil {
+			return domain.AgentAttempt{}, err
+		}
+		if (saved.Dispatch == "not_sent") != terminal.notDispatched {
 			return domain.AgentAttempt{}, apperror.New(apperror.CodeConflict, "Specialist dispatch receipt replay differs from its durable record")
+		}
+		if !sameModelCacheUsage(saved.Usage, terminal.usage) {
+			return domain.AgentAttempt{}, apperror.New(apperror.CodeConflict, "Specialist cache usage replay differs from its durable record")
 		}
 		if err := requireSpecialistTerminalReplay(call, modelAttempt, terminal); err != nil {
 			return domain.AgentAttempt{}, err
@@ -657,10 +667,19 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 	if terminal.notDispatched {
 		payload["dispatch"] = "not_sent"
 	}
+	var persistedUsage any
+	if terminal.usage != nil {
+		u := *terminal.usage
+		u.InputTokens, u.OutputTokens, u.TotalTokens = int(callUsage.InputTokens), int(callUsage.OutputTokens), int(callUsage.TotalTokens)
+		persistedUsage = struct {
+			llm.Usage
+			ExecutionMillis int64 `json:"execution_millis"`
+		}{u, elapsedMillis}
+	}
 	eventType := events.ModelFailedEvent
 	if terminal.status == "completed" {
 		eventType = events.ModelCompletedEvent
-		payload["usage"] = callUsage
+		payload["usage"] = persistedUsage
 		payload["action"] = actionKind
 		payload["report_outcome"] = reportOutcome
 		payload["policy_allowed"] = policyAllowed == 1
@@ -672,7 +691,7 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 		payload["retry_after_millis"] = modelAttempt.RetryAfter.Milliseconds()
 		payload["retry_planned"] = modelAttempt.RetryPlanned
 		if usageRecorded {
-			payload["usage"] = callUsage
+			payload["usage"] = persistedUsage
 		}
 	}
 	subject := specialistModelSubject(attempt.ID, modelAttempt.Number)

@@ -73,7 +73,7 @@ func (s *MonetaryBudgetService) ReserveModelCall(ctx context.Context, run domain
 		return domain.MonetaryUsage{}, apperror.New(apperror.CodeFailedPrecondition,
 			"monetary budget requires an explicit model output limit before reservation")
 	}
-	reserve := entry.EstimateCost(inputBytes, int64(maxTokens), 0, int64(len(request.Tools)))
+	reserve := entry.ReserveCost(inputBytes, int64(maxTokens), int64(len(request.Tools)))
 	if reserve <= 0 {
 		return domain.MonetaryUsage{}, apperror.New(apperror.CodeFailedPrecondition,
 			"the model price entry yields no positive cost bound")
@@ -104,6 +104,7 @@ func (s *MonetaryBudgetService) SettleModelCall(ctx context.Context, runID, scop
 		return s.SettleUnknownModelCall(ctx, runID, scope, attempt)
 	}
 	actual := int64(math.MaxInt64)
+	pricingStatus := domain.MonetaryPricingPriceMissing
 	var entry pricing.Entry
 	var priced bool
 	if pinned, ok := s.store.(monetaryReservationPriceStore); ok {
@@ -120,11 +121,21 @@ func (s *MonetaryBudgetService) SettleModelCall(ctx context.Context, runID, scop
 			"model identity differs from its monetary reservation")
 	}
 	if priced && toolCallCount >= 0 {
-		actual = entry.EstimateCost(int64(usage.InputTokens), int64(usage.OutputTokens), 0,
-			int64(toolCallCount))
+		cost, costErr := entry.UsageCost(pricing.TokenUsage{
+			InputTokens: int64(usage.InputTokens), OutputTokens: int64(usage.OutputTokens),
+			CacheReadTokens: int64(usage.CacheReadTokens), CacheCreationTokens: int64(usage.CacheCreationTokens),
+			CacheCreation5mTokens: int64(usage.CacheCreation5mTokens), CacheCreation1hTokens: int64(usage.CacheCreation1hTokens),
+			CacheCreationBreakdownKnown: usage.CacheCreationBreakdownKnown,
+		}, int64(toolCallCount))
+		if costErr == nil {
+			actual, pricingStatus = cost, domain.MonetaryPricingPriced
+		} else {
+			pricingStatus = domain.MonetaryPricingCachePriceMissing
+		}
 	}
 	return s.settle(ctx, domain.MonetarySettleRequest{
 		RunID: runID, Scope: scope, AttemptNumber: attempt.MonetaryAttemptNumber(), ActualMicros: actual,
+		PricingStatus: pricingStatus,
 	})
 }
 
@@ -135,7 +146,8 @@ func (s *MonetaryBudgetService) SettleUnknownModelCall(ctx context.Context, runI
 		return domain.MonetaryUsage{}, nil
 	}
 	return s.settle(ctx, domain.MonetarySettleRequest{RunID: runID, Scope: scope,
-		AttemptNumber: attempt.MonetaryAttemptNumber(), ActualMicros: math.MaxInt64})
+		AttemptNumber: attempt.MonetaryAttemptNumber(), ActualMicros: math.MaxInt64,
+		PricingStatus: domain.MonetaryPricingUsageUnknown})
 }
 
 func (s *MonetaryBudgetService) settle(ctx context.Context,

@@ -54,12 +54,15 @@ type PriceSnapshotItemView struct {
 }
 
 type PriceEntryView struct {
-	Provider                  string `json:"provider"`
-	Model                     string `json:"model"`
-	InputPerMillionMicros     int64  `json:"input_per_million_micros"`
-	OutputPerMillionMicros    int64  `json:"output_per_million_micros"`
-	CacheReadPerMillionMicros int64  `json:"cache_read_per_million_micros"`
-	ToolCallMicros            int64  `json:"tool_call_micros"`
+	Provider                        string `json:"provider"`
+	Model                           string `json:"model"`
+	InputPerMillionMicros           int64  `json:"input_per_million_micros"`
+	OutputPerMillionMicros          int64  `json:"output_per_million_micros"`
+	CacheReadPerMillionMicros       *int64 `json:"cache_read_per_million_micros,omitempty"`
+	CacheCreationPerMillionMicros   *int64 `json:"cache_creation_per_million_micros,omitempty"`
+	CacheCreation5mPerMillionMicros *int64 `json:"cache_creation_5m_per_million_micros,omitempty"`
+	CacheCreation1hPerMillionMicros *int64 `json:"cache_creation_1h_per_million_micros,omitempty"`
+	ToolCallMicros                  int64  `json:"tool_call_micros"`
 }
 
 type PriceSnapshotListView struct {
@@ -112,10 +115,13 @@ func (a *API) servePriceSnapshots(writer http.ResponseWriter, request *http.Requ
 			for _, entry := range snapshot.Entries {
 				item.Entries = append(item.Entries, PriceEntryView{
 					Provider: entry.Provider, Model: entry.Model,
-					InputPerMillionMicros:     entry.InputPerMillionMicros,
-					OutputPerMillionMicros:    entry.OutputPerMillionMicros,
-					CacheReadPerMillionMicros: entry.CacheReadPerMillionMicros,
-					ToolCallMicros:            entry.ToolCallMicros,
+					InputPerMillionMicros:           entry.InputPerMillionMicros,
+					OutputPerMillionMicros:          entry.OutputPerMillionMicros,
+					CacheReadPerMillionMicros:       entry.CacheReadPerMillionMicros,
+					CacheCreationPerMillionMicros:   entry.CacheCreationPerMillionMicros,
+					CacheCreation5mPerMillionMicros: entry.CacheCreation5mPerMillionMicros,
+					CacheCreation1hPerMillionMicros: entry.CacheCreation1hPerMillionMicros,
+					ToolCallMicros:                  entry.ToolCallMicros,
 				})
 			}
 			view.Items = append(view.Items, item)

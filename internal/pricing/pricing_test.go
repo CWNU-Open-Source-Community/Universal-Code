@@ -17,13 +17,13 @@ func validSnapshot(t *testing.T) Snapshot {
 		Entries: []Entry{
 			{Provider: "mock", Model: "mock-code",
 				InputPerMillionMicros: 150000, OutputPerMillionMicros: 600000,
-				CacheReadPerMillionMicros: 0, ToolCallMicros: 0},
+				CacheReadPerMillionMicros: testPrice(0), ToolCallMicros: 0},
 			{Provider: "deepseek", Model: "deepseek-v4-flash",
 				InputPerMillionMicros: 140000, OutputPerMillionMicros: 280000,
-				CacheReadPerMillionMicros: 14000, ToolCallMicros: 0},
+				CacheReadPerMillionMicros: testPrice(14000), ToolCallMicros: 0},
 			{Provider: "openai", Model: "gpt-4.1-mini",
 				InputPerMillionMicros: 40000, OutputPerMillionMicros: 160000,
-				CacheReadPerMillionMicros: 10000, ToolCallMicros: 1000},
+				CacheReadPerMillionMicros: testPrice(10000), ToolCallMicros: 1000},
 		},
 	}
 	snapshot.Fingerprint = Fingerprint(snapshot)
@@ -115,7 +115,7 @@ func TestPricingParseWireRejectsMalformedDocuments(t *testing.T) {
 	}{
 		{name: "unknown field", raw: strings.Replace(valid, `"id"`, `"secret_field"`, 1)},
 		{name: "duplicate entry", raw: strings.Replace(valid, `"tool_call_micros": 0`,
-			`"tool_call_micros": 0`, 1) + strings.Repeat("x", 0) },
+			`"tool_call_micros": 0`, 1) + strings.Repeat("x", 0)},
 		{name: "negative price", raw: strings.Replace(valid, "150000", "-5", 1)},
 		{name: "non-usd currency", raw: strings.Replace(valid, `"USD"`, `"EUR"`, 1)},
 		{name: "expired window", raw: strings.Replace(valid, "2026-08-16T12:00:00Z",
@@ -138,4 +138,3 @@ func TestPricingMaxMicrosBound(t *testing.T) {
 		t.Fatal("oversized price was accepted")
 	}
 }
-

@@ -591,6 +591,9 @@ func (s *SQLiteStore) CompleteReadOnlyFanoutExecutionShard(ctx context.Context,
 				apperror.CodeConflict,
 				"read-only fan-out completion replay differs from stored state")
 		}
+		if err := requireFanoutCacheUsageReplayTx(ctx, tx, lease.RunID, executionID, ordinal, attempt, &usage); err != nil {
+			return domain.ReadOnlyFanoutExecutionShard{}, err
+		}
 		if err := tx.Commit(); err != nil {
 			return domain.ReadOnlyFanoutExecutionShard{}, err
 		}
@@ -661,6 +664,7 @@ func (s *SQLiteStore) CompleteReadOnlyFanoutExecutionShard(ctx context.Context,
 			"execution_id": executionID, "plan_id": record.Execution.PlanID,
 			"shard": ordinal, "attempt": attempt, "provider": provider, "model": model,
 			"input_tokens": inputTokens, "output_tokens": outputTokens,
+			"usage":        usage,
 			"total_tokens": totalTokens, "elapsed_millis": elapsedMillis,
 			"report_digest": reportDigest, "finding_count": len(normalizedReport.Findings),
 		}); err != nil {
@@ -731,6 +735,9 @@ func (s *SQLiteStore) FailReadOnlyFanoutExecutionShard(ctx context.Context,
 				apperror.CodeConflict,
 				"read-only fan-out failure replay differs from stored state")
 		}
+		if err := requireFanoutCacheUsageReplayTx(ctx, tx, lease.RunID, executionID, ordinal, attempt, usage); err != nil {
+			return domain.ReadOnlyFanoutExecutionShard{}, err
+		}
 		if err := tx.Commit(); err != nil {
 			return domain.ReadOnlyFanoutExecutionShard{}, err
 		}
@@ -785,6 +792,7 @@ func (s *SQLiteStore) FailReadOnlyFanoutExecutionShard(ctx context.Context,
 			"shard": ordinal, "attempt": attempt, "provider": provider, "model": model,
 			"total_tokens": totalTokens, "elapsed_millis": elapsedMillis,
 			"error_code": errorCode,
+			"usage":      usage,
 		}); err != nil {
 		return domain.ReadOnlyFanoutExecutionShard{}, err
 	}

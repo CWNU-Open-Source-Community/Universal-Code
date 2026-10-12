@@ -995,12 +995,25 @@ type RunDetailView struct {
 	BrowserCDPPermission RunBrowserCDPPermissionView  `json:"browser_cdp_permission"`
 	ExecutionInteraction RunExecutionInteractionView  `json:"execution_interaction"`
 	Checkpoint           *SupervisorCheckpointView    `json:"checkpoint,omitempty"`
+	ModelUsage           *domain.ModelUsage           `json:"model_usage,omitempty"`
+	MonetaryUsage        *MonetaryUsageView           `json:"monetary_usage,omitempty"`
 	Lease                *RunExecutionLeaseView       `json:"execution_lease,omitempty"`
 	Steering             OperatorSteeringQueueView    `json:"operator_steering"`
 	ToolUsage            ToolUsageView                `json:"tool_usage"`
 	AgentCodeTools       AgentCodeCapabilitiesView    `json:"agent_code_tools"`
 	PlanDelivery         *PlanDeliveryStateView       `json:"plan_delivery,omitempty"`
 	ExternalSkills       *ExternalSkillProjectionView `json:"external_skills,omitempty"`
+}
+
+type MonetaryUsageView struct {
+	Tracked         bool   `json:"tracked"`
+	Currency        string `json:"currency"`
+	CapMicros       int64  `json:"cap_micros"`
+	ReservedMicros  int64  `json:"reserved_micros"`
+	SettledMicros   int64  `json:"settled_micros"`
+	ReleasedMicros  int64  `json:"released_micros"`
+	RemainingMicros int64  `json:"remaining_micros"`
+	UnpricedCalls   int64  `json:"unpriced_calls"`
 }
 
 type CapabilityReadinessOptionView struct {

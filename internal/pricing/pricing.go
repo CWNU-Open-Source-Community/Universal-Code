@@ -41,12 +41,15 @@ const (
 // Entry prices one exact provider/model pair. All prices are integer
 // micro-USD; per-million-token prices keep sub-cent precision without floats.
 type Entry struct {
-	Provider                  string
-	Model                     string
-	InputPerMillionMicros     int64
-	OutputPerMillionMicros    int64
-	CacheReadPerMillionMicros int64
-	ToolCallMicros            int64
+	Provider                        string
+	Model                           string
+	InputPerMillionMicros           int64
+	OutputPerMillionMicros          int64
+	CacheReadPerMillionMicros       *int64
+	CacheCreationPerMillionMicros   *int64 `json:",omitempty"`
+	CacheCreation5mPerMillionMicros *int64 `json:",omitempty"`
+	CacheCreation1hPerMillionMicros *int64 `json:",omitempty"`
+	ToolCallMicros                  int64
 }
 
 func (e Entry) Validate() error {
@@ -55,9 +58,19 @@ func (e Entry) Validate() error {
 	}
 	for label, value := range map[string]int64{
 		"input price": e.InputPerMillionMicros, "output price": e.OutputPerMillionMicros,
-		"cache read price": e.CacheReadPerMillionMicros, "tool call price": e.ToolCallMicros,
+		"tool call price": e.ToolCallMicros,
 	} {
 		if value < 0 || value > MaxMicros {
+			return fmt.Errorf("price entry %s is out of range", label)
+		}
+	}
+	for label, value := range map[string]*int64{
+		"cache read price":        e.CacheReadPerMillionMicros,
+		"cache creation price":    e.CacheCreationPerMillionMicros,
+		"5m cache creation price": e.CacheCreation5mPerMillionMicros,
+		"1h cache creation price": e.CacheCreation1hPerMillionMicros,
+	} {
+		if value != nil && (*value < 0 || *value > MaxMicros) {
 			return fmt.Errorf("price entry %s is out of range", label)
 		}
 	}
@@ -70,14 +83,88 @@ func (e Entry) EstimateCost(inputTokens, outputTokens, cacheReadTokens, toolCall
 	if inputTokens < 0 || outputTokens < 0 || cacheReadTokens < 0 || toolCalls < 0 {
 		return 0
 	}
-	cost := ceilTokens(inputTokens, e.InputPerMillionMicros) +
-		ceilTokens(outputTokens, e.OutputPerMillionMicros) +
-		ceilTokens(cacheReadTokens, e.CacheReadPerMillionMicros) +
-		checkedMul(toolCalls, e.ToolCallMicros)
-	if cost < 0 {
-		return math.MaxInt64
+	return addCosts(ceilTokens(inputTokens, e.InputPerMillionMicros),
+		ceilTokens(outputTokens, e.OutputPerMillionMicros),
+		ceilTokens(cacheReadTokens, optionalPrice(e.CacheReadPerMillionMicros)),
+		checkedMul(toolCalls, e.ToolCallMicros))
+}
+
+// TokenUsage uses the normalized input total, including its disjoint cache
+// subsets. Missing category prices differ from explicitly configured zero.
+type TokenUsage struct {
+	InputTokens, OutputTokens                    int64
+	CacheReadTokens, CacheCreationTokens         int64
+	CacheCreation5mTokens, CacheCreation1hTokens int64
+	CacheCreationBreakdownKnown                  bool
+}
+
+var ErrCachePriceMissing = errors.New("cache usage has no matching price in the reserved snapshot")
+
+func (e Entry) UsageCost(u TokenUsage, toolCalls int64) (int64, error) {
+	if u.InputTokens < 0 || u.OutputTokens < 0 || toolCalls < 0 ||
+		u.CacheReadTokens < 0 || u.CacheCreationTokens < 0 ||
+		u.CacheCreation5mTokens < 0 || u.CacheCreation1hTokens < 0 ||
+		u.CacheReadTokens > u.InputTokens || u.CacheCreationTokens > u.InputTokens-u.CacheReadTokens ||
+		u.CacheCreation5mTokens > u.CacheCreationTokens ||
+		u.CacheCreation1hTokens > u.CacheCreationTokens-u.CacheCreation5mTokens ||
+		(u.CacheCreationBreakdownKnown && u.CacheCreation5mTokens+u.CacheCreation1hTokens != u.CacheCreationTokens) {
+		return 0, errors.New("cache token usage is inconsistent")
 	}
-	return cost
+	if u.CacheReadTokens > 0 && e.CacheReadPerMillionMicros == nil {
+		return 0, ErrCachePriceMissing
+	}
+	creationCost := int64(0)
+	if u.CacheCreationTokens > 0 {
+		if u.CacheCreationBreakdownKnown {
+			if (u.CacheCreation5mTokens > 0 && e.CacheCreation5mPerMillionMicros == nil) ||
+				(u.CacheCreation1hTokens > 0 && e.CacheCreation1hPerMillionMicros == nil) {
+				return 0, ErrCachePriceMissing
+			}
+			creationCost = addCosts(ceilTokens(u.CacheCreation5mTokens, optionalPrice(e.CacheCreation5mPerMillionMicros)),
+				ceilTokens(u.CacheCreation1hTokens, optionalPrice(e.CacheCreation1hPerMillionMicros)))
+		} else {
+			if e.CacheCreationPerMillionMicros == nil {
+				return 0, ErrCachePriceMissing
+			}
+			creationCost = ceilTokens(u.CacheCreationTokens, *e.CacheCreationPerMillionMicros)
+		}
+	}
+	return addCosts(ceilTokens(u.InputTokens-u.CacheReadTokens-u.CacheCreationTokens, e.InputPerMillionMicros),
+		ceilTokens(u.OutputTokens, e.OutputPerMillionMicros),
+		ceilTokens(u.CacheReadTokens, optionalPrice(e.CacheReadPerMillionMicros)),
+		creationCost, checkedMul(toolCalls, e.ToolCallMicros)), nil
+}
+
+// ReserveCost uses the highest configured input-category price because the
+// eventual cache hit and creation split is unknown before dispatch.
+func (e Entry) ReserveCost(inputTokens, outputTokens, toolCalls int64) int64 {
+	inputRate := e.InputPerMillionMicros
+	for _, rate := range []*int64{e.CacheReadPerMillionMicros, e.CacheCreationPerMillionMicros,
+		e.CacheCreation5mPerMillionMicros, e.CacheCreation1hPerMillionMicros} {
+		if rate != nil {
+			inputRate = max(inputRate, *rate)
+		}
+	}
+	return addCosts(ceilTokens(inputTokens, inputRate), ceilTokens(outputTokens, e.OutputPerMillionMicros),
+		checkedMul(toolCalls, e.ToolCallMicros))
+}
+
+func optionalPrice(price *int64) int64 {
+	if price == nil {
+		return 0
+	}
+	return *price
+}
+
+func addCosts(costs ...int64) int64 {
+	var total int64
+	for _, cost := range costs {
+		if cost > math.MaxInt64-total {
+			return math.MaxInt64
+		}
+		total += cost
+	}
+	return total
 }
 
 func ceilTokens(tokens int64, perMillionMicros int64) int64 {
@@ -88,7 +175,14 @@ func ceilTokens(tokens int64, perMillionMicros int64) int64 {
 		return math.MaxInt64
 	}
 	product := tokens * perMillionMicros
-	return (product + MicrosPerUSD - 1) / MicrosPerUSD
+	return product/MicrosPerUSD + boolInt(product%MicrosPerUSD != 0)
+}
+
+func boolInt(value bool) int64 {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func checkedMul(a, b int64) int64 {
@@ -191,8 +285,25 @@ func Fingerprint(s Snapshot) string {
 		_, _ = hash.Write([]byte(entry.Model))
 		_, _ = hash.Write([]byte{0})
 		_, _ = hash.Write([]byte(fmt.Sprintf("%d,%d,%d,%d", entry.InputPerMillionMicros,
-			entry.OutputPerMillionMicros, entry.CacheReadPerMillionMicros, entry.ToolCallMicros)))
+			entry.OutputPerMillionMicros, optionalPrice(entry.CacheReadPerMillionMicros), entry.ToolCallMicros)))
 		_, _ = hash.Write([]byte{0})
+		// Retain the exact legacy hash when the legacy read price is present
+		// and no new creation rates were supplied. Historical tables stay valid.
+		if entry.CacheReadPerMillionMicros == nil {
+			_, _ = hash.Write([]byte("cache_read_missing\x00"))
+		}
+		for _, field := range []struct {
+			name  string
+			price *int64
+		}{
+			{"cache_creation", entry.CacheCreationPerMillionMicros},
+			{"cache_creation_5m", entry.CacheCreation5mPerMillionMicros},
+			{"cache_creation_1h", entry.CacheCreation1hPerMillionMicros},
+		} {
+			if field.price != nil {
+				_, _ = hash.Write([]byte(fmt.Sprintf("%s=%d\x00", field.name, *field.price)))
+			}
+		}
 	}
 	return hex.EncodeToString(hash.Sum(nil))
 }
@@ -236,12 +347,15 @@ type Wire struct {
 	ValidFrom       string `json:"valid_from"`
 	ValidUntil      string `json:"valid_until"`
 	Entries         []struct {
-		Provider                  string `json:"provider"`
-		Model                     string `json:"model"`
-		InputPerMillionMicros     int64  `json:"input_per_million_micros"`
-		OutputPerMillionMicros    int64  `json:"output_per_million_micros"`
-		CacheReadPerMillionMicros int64  `json:"cache_read_per_million_micros"`
-		ToolCallMicros            int64  `json:"tool_call_micros"`
+		Provider                        string `json:"provider"`
+		Model                           string `json:"model"`
+		InputPerMillionMicros           int64  `json:"input_per_million_micros"`
+		OutputPerMillionMicros          int64  `json:"output_per_million_micros"`
+		CacheReadPerMillionMicros       *int64 `json:"cache_read_per_million_micros,omitempty"`
+		CacheCreationPerMillionMicros   *int64 `json:"cache_creation_per_million_micros,omitempty"`
+		CacheCreation5mPerMillionMicros *int64 `json:"cache_creation_5m_per_million_micros,omitempty"`
+		CacheCreation1hPerMillionMicros *int64 `json:"cache_creation_1h_per_million_micros,omitempty"`
+		ToolCallMicros                  int64  `json:"tool_call_micros"`
 	} `json:"entries"`
 }
 
@@ -277,10 +391,13 @@ func ParseWire(raw []byte, now time.Time) (Snapshot, error) {
 	for _, entry := range wire.Entries {
 		snapshot.Entries = append(snapshot.Entries, Entry{
 			Provider: entry.Provider, Model: entry.Model,
-			InputPerMillionMicros:     entry.InputPerMillionMicros,
-			OutputPerMillionMicros:    entry.OutputPerMillionMicros,
-			CacheReadPerMillionMicros: entry.CacheReadPerMillionMicros,
-			ToolCallMicros:            entry.ToolCallMicros,
+			InputPerMillionMicros:           entry.InputPerMillionMicros,
+			OutputPerMillionMicros:          entry.OutputPerMillionMicros,
+			CacheReadPerMillionMicros:       entry.CacheReadPerMillionMicros,
+			CacheCreationPerMillionMicros:   entry.CacheCreationPerMillionMicros,
+			CacheCreation5mPerMillionMicros: entry.CacheCreation5mPerMillionMicros,
+			CacheCreation1hPerMillionMicros: entry.CacheCreation1hPerMillionMicros,
+			ToolCallMicros:                  entry.ToolCallMicros,
 		})
 	}
 	snapshot.Fingerprint = Fingerprint(snapshot)
@@ -292,4 +409,3 @@ func ParseWire(raw []byte, now time.Time) (Snapshot, error) {
 	}
 	return snapshot, nil
 }
-

@@ -2469,7 +2469,7 @@ func scanSupervisorCheckpoint(row scanner) (domain.SupervisorCheckpoint, error) 
 
 func supervisorUsage(usage llm.Usage) (int64, int64, int64, error) {
 	if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.TotalTokens < 0 {
-		return 0, 0, 0, apperror.New(apperror.CodeFailedPrecondition, "provider returned negative token usage")
+		return 0, 0, 0, apperror.New(apperror.CodeFailedPrecondition, "provider returned invalid token usage")
 	}
 	input := int64(usage.InputTokens)
 	output := int64(usage.OutputTokens)
@@ -2480,6 +2480,11 @@ func supervisorUsage(usage llm.Usage) (int64, int64, int64, error) {
 	}
 	if total < combined {
 		total = combined
+	}
+	normalized := usage
+	normalized.TotalTokens = int(total)
+	if normalized.Validate() != nil {
+		return 0, 0, 0, apperror.New(apperror.CodeFailedPrecondition, "provider returned invalid cache token usage")
 	}
 	return input, output, total, nil
 }

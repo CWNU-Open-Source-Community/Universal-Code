@@ -83,5 +83,19 @@ func (u Usage) Validate() error {
 	if u.InputTokens > maxInt-u.OutputTokens {
 		return errors.New("model usage counters overflow")
 	}
+	if u.CacheReadTokens < 0 || u.CacheCreationTokens < 0 ||
+		u.CacheCreation5mTokens < 0 || u.CacheCreation1hTokens < 0 {
+		return errors.New("model cache usage counters cannot be negative")
+	}
+	if u.CacheReadTokens > u.InputTokens || u.CacheCreationTokens > u.InputTokens-u.CacheReadTokens {
+		return errors.New("model cache usage exceeds total input")
+	}
+	if u.CacheCreation5mTokens > u.CacheCreationTokens ||
+		u.CacheCreation1hTokens > u.CacheCreationTokens-u.CacheCreation5mTokens {
+		return errors.New("model cache creation breakdown exceeds total creation")
+	}
+	if u.CacheCreationBreakdownKnown && u.CacheCreation5mTokens+u.CacheCreation1hTokens != u.CacheCreationTokens {
+		return errors.New("model cache creation breakdown does not match total creation")
+	}
 	return nil
 }

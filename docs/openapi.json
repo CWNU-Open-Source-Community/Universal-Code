@@ -45611,6 +45611,105 @@
         ],
         "type": "object"
       },
+      "ModelUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_creation_1h_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_creation_5m_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_creation_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_read_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_usage_reported_calls": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "calls": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "total_tokens",
+          "cache_read_tokens",
+          "cache_creation_tokens",
+          "cache_creation_5m_tokens",
+          "cache_creation_1h_tokens",
+          "cache_usage_reported_calls",
+          "calls"
+        ],
+        "type": "object"
+      },
+      "MonetaryUsageView": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "released_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "remaining_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reserved_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "settled_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tracked": {
+            "type": "boolean"
+          },
+          "unpriced_calls": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tracked",
+          "currency",
+          "cap_micros",
+          "reserved_micros",
+          "settled_micros",
+          "released_micros",
+          "remaining_micros",
+          "unpriced_calls"
+        ],
+        "type": "object"
+      },
       "Mount": {
         "additionalProperties": false,
         "properties": {
@@ -47404,6 +47503,18 @@
       "PriceEntryView": {
         "additionalProperties": false,
         "properties": {
+          "cache_creation_1h_per_million_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_creation_5m_per_million_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_creation_per_million_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
           "cache_read_per_million_micros": {
             "format": "int64",
             "type": "integer"
@@ -47432,7 +47543,6 @@
           "model",
           "input_per_million_micros",
           "output_per_million_micros",
-          "cache_read_per_million_micros",
           "tool_call_micros"
         ],
         "type": "object"
@@ -50882,6 +50992,12 @@
           },
           "mode": {
             "$ref": "#/components/schemas/RunModeView"
+          },
+          "model_usage": {
+            "$ref": "#/components/schemas/ModelUsage"
+          },
+          "monetary_usage": {
+            "$ref": "#/components/schemas/MonetaryUsageView"
           },
           "operator_steering": {
             "$ref": "#/components/schemas/OperatorSteeringQueueView"

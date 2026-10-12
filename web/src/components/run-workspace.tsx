@@ -103,6 +103,7 @@ import { UIEvidencePanel } from "./ui-evidence-panel";
 import { ThreadActivityToolDetailPanel } from "../v2/components/activity-detail";
 import { StandardCodeDeliveryPanel } from "./standard-code-delivery-panel";
 import "./inspector-workspace-navigation.css";
+import { ModelUsagePanel } from "./model-usage-panel";
 
 export type RunTab = "activity" | "overview" | "journey" | "actions" | "approvals" | "diffs" | "repository" | "files" | "evidence" | "verify" | "delivery" | "handoff" |
   "receipts" | "agents" | "delegations" | "fanout" | "findings" | "events" | "work" |
@@ -539,6 +540,7 @@ function RunOverview({ client, detail }: { client: APIClient; detail: RunDetailV
         <div><span>{t("工具调用", "Tool calls")}</span><strong>{formatNumber(usage.consumed)} / {formatNumber(usage.limit)}</strong></div>
         <div><span>{t("执行耗时", "Execution")}</span><strong>{formatNumber(checkpoint?.execution_millis)} ms</strong></div>
       </section>
+      <ModelUsagePanel detail={detail} />
       <section className="detail-section">
         <h2>目标与范围</h2>
         <dl className="detail-grid">
