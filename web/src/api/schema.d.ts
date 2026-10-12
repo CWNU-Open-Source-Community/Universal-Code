@@ -1252,6 +1252,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/agents/{agent_id}/attempts/{attempt_id}/tool-receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read durable child tool receipts
+         * @description Returns the child attempt's bounded native tool calls and results. Private provider replay is never returned.
+         */
+        get: operations["getRunSpecialistToolReceipts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/agents/{agent_id}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute one already admitted independent child
+         * @description Runs one bounded Specialist turn under its own identity, Session, usage and Run lease. Optional workspace_tools enables Go-scoped project reads/search; operator-confirmed Batch work uses its separate isolated authority. A stable operation key replays the recorded attempt without dispatching another model call.
+         */
+        post: operations["executeRunSpecialist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/analyzer-executions": {
         parameters: {
             query?: never;
@@ -2798,6 +2838,26 @@ export interface paths {
          * @description Confirms a diff bound to both the pinned and reviewed-live fingerprints. Files never alter an active Run silently, and refreshed instructions remain non-authorizing.
          */
         post: operations["refreshRunProjectInstructions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/project-skills/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select exact pinned project Skill recommendations
+         * @description Explicit selection before the first turn through the existing built-in and installed external Skill services. Refs must match the immutable project suggestions exactly, including version. External context requires confirmation. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.
+         */
+        post: operations["selectProjectSkills"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5141,6 +5201,16 @@ export interface components {
             tool_round: number;
             /** Format: int32 */
             transport_attempt: number;
+        };
+        AgentAttemptUsage: {
+            /** Format: int64 */
+            execution_millis: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            total_tokens: number;
         };
         AgentBrowserCloseRequestView: {
             session_id: string;
@@ -9647,6 +9717,7 @@ export interface components {
             read_only: boolean;
             /** Format: int32 */
             skill_suggestion_count: number;
+            skill_suggestions?: string[];
             test_command_id?: string;
         };
         ProjectInstructionState: {
@@ -9660,6 +9731,18 @@ export interface components {
             run_id: string;
             stale: boolean;
             workspace_id: string;
+        };
+        ProjectSkillSelectionRequestView: {
+            confirm_untrusted_context: boolean;
+            refs: string[];
+        };
+        ProjectSkillSelectionResult: {
+            builtin_selection_id?: string;
+            capability_grant: boolean;
+            external_selection_id?: string;
+            refs: string[];
+            replayed: boolean;
+            run_id: string;
         };
         ProviderAvailability: {
             ConfigurationError: boolean;
@@ -11600,6 +11683,27 @@ export interface components {
             untrusted: boolean;
             url: string;
         };
+        SpecialistExecutionRequestView: {
+            confirm_execute: boolean;
+            operation_key: string;
+            version: string;
+            workspace_tools: boolean;
+        };
+        SpecialistExecutionView: {
+            agent_id: string;
+            attempt_id: string;
+            /** Format: int32 */
+            model_attempts: number;
+            replayed: boolean;
+            run_id: string;
+            status: string;
+            /** Format: int32 */
+            tool_calls: number;
+            /** Format: int32 */
+            tool_rounds: number;
+            usage: components["schemas"]["AgentAttemptUsage"];
+            version: string;
+        };
         SpecialistModelCancellationView: {
             agent_id: string;
             attempt_id: string;
@@ -11612,6 +11716,24 @@ export interface components {
             run_id: string;
             /** @enum {string} */
             status: "pending" | "observed" | "resolved";
+        };
+        SpecialistToolCallView: {
+            call_id: string;
+            error_code?: string;
+            name: string;
+            result_json?: string;
+            status: string;
+        };
+        SpecialistToolReceiptsView: {
+            rounds: components["schemas"]["SpecialistToolRoundView"][];
+            version: string;
+        };
+        SpecialistToolRoundView: {
+            calls: components["schemas"]["SpecialistToolCallView"][];
+            /** Format: int32 */
+            model_attempt: number;
+            /** Format: int32 */
+            round: number;
         };
         StandardCodeBackendReadinessView: {
             available: boolean;
@@ -17207,6 +17329,94 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    getRunSpecialistToolReceipts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Specialist Agent identity */
+                agent_id: string;
+                /** @description Specialist attempt identity */
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SpecialistToolReceiptsView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    executeRunSpecialist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Specialist Agent identity */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialistExecutionRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SpecialistExecutionView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     executeEmbeddedAnalyzer: {
         parameters: {
             query?: never;
@@ -20717,6 +20927,54 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ProjectInstructionState"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    selectProjectSkills: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSkillSelectionRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectSkillSelectionResult"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

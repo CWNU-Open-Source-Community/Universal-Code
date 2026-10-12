@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/skills"
 )
@@ -96,6 +98,9 @@ type SpecialistTurnResult struct {
 	Model                   string
 	Usage                   domain.AgentAttemptUsage
 	ModelAttempts           int
+	ToolCalls               int
+	ToolRounds              int
+	Replayed                bool
 	ProtocolRepairs         int
 	ModelOutcome            llm.Outcome
 	StreamEvents            int
@@ -126,9 +131,10 @@ type specialistTurnLimits struct {
 	MaxExecutionMillis int64
 }
 
-// SubagentRunner is an opt-in no-tool child runtime. The operator schedule
-// service may construct it after durable application-bound authorization; no
-// HTTP, model, ordinary-tool, or spawn path can construct it.
+// SubagentRunner executes bounded child turns under their own Session, lease
+// and usage ledger. Operator services enable the Go-owned read/search profile;
+// the Batch adapter alone supplies isolated edit and verification authority.
+// Model text and ordinary tool calls cannot construct or widen these grants.
 type SubagentRunner struct {
 	store                    SubagentRunnerStore
 	router                   *llm.Router
@@ -144,6 +150,11 @@ type SubagentRunner struct {
 	// before dispatch. Keep the original Store so accounting and Skill extensions
 	// retain their interfaces.
 	validatePreparedContext func(domain.SpecialistContextBatch) error
+	workspaceTools          bool
+	batchTools              *BatchDeliveryService
+	batchAuthority          BatchDeliveryToolAuthority
+	operationKey            string
+	drydocks                *RunWorktreeService
 }
 
 func NewSubagentRunner(store SubagentRunnerStore, router *llm.Router,
@@ -235,21 +246,26 @@ func (r *SubagentRunner) Step(ctx context.Context, runID string,
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
-	if run.Status != domain.RunRunning {
-		return result, apperror.New(apperror.CodeFailedPrecondition,
-			fmt.Sprintf("run %s is %s; Specialist requires running", run.ID, run.Status))
-	}
 	child, err := r.store.GetAgentNode(ctx, result.AgentID)
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
-	if child.RunID != run.ID || child.Role != domain.AgentRoleSpecialist || child.ParentID == "" ||
-		(child.Status != domain.AgentReady && child.Status != domain.AgentRunning) {
+	if child.RunID != run.ID || child.Role != domain.AgentRoleSpecialist || child.ParentID == "" {
 		return result, apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist runner requires a ready child or a recoverable running child")
 	}
 	result.ParentAgentID = child.ParentID
 	result.SessionID = child.SessionID
+	if replayed, err := r.operationReplay(ctx, &result); replayed || err != nil {
+		return result, err
+	}
+	if run.Status != domain.RunRunning {
+		return result, apperror.New(apperror.CodeFailedPrecondition,
+			fmt.Sprintf("run %s is %s; Specialist requires running", run.ID, run.Status))
+	}
+	if child.Status != domain.AgentReady && child.Status != domain.AgentRunning {
+		return result, apperror.New(apperror.CodeFailedPrecondition, "Specialist runner requires a ready child or a recoverable running child")
+	}
 	err = withRunExecutionLease(ctx, r.store, run.ID, r.leaseOwner, r.leasePolicy,
 		func(leaseCtx context.Context, lease domain.RunExecutionLease) error {
 			return r.stepWithLease(leaseCtx, lease, &result)
@@ -265,6 +281,9 @@ func (r *SubagentRunner) stepWithLease(ctx context.Context,
 		return apperror.Normalize(err)
 	}
 	result.RecoveredAttempts = len(recovered)
+	if replayed, err := r.operationReplay(ctx, result); replayed || err != nil {
+		return err
+	}
 	return r.stepReadyWithLease(ctx, lease, result, specialistTurnLimits{})
 }
 
@@ -289,6 +308,9 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 			"Specialist is not ready after lease recovery")
 	}
 	attemptID := idgen.New("attempt")
+	if r.operationKey != "" {
+		attemptID = "attempt-" + runmutation.Fingerprint("specialist_operator_step.v1", child.RunID, child.ID, r.operationKey)
+	}
 	attempt, _, err := r.store.BeginSpecialistAttempt(ctx, domain.AgentAttemptStart{
 		AttemptID: attemptID, RunID: child.RunID, AgentID: child.ID,
 		ParentAgentID: child.ParentID, Lease: lease, StartedAt: time.Now().UTC(),
@@ -429,6 +451,9 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 		return r.failAttempt(ctx, result, ref, err)
 	}
 	contextAudit := supervisorModelContextAudit(contextSelection)
+	if r.workspaceTools {
+		return r.stepNativeTools(ctx, result, run, mission, child, attempt, contextBatch.TaskBrief, input, request, contextLayout, contextAudit, refModel, turnTokenLimit, turnExecutionLimit)
+	}
 	budgetState := specialistModelBudgetState{}
 	protocolRepair := 0
 	var safeAction domain.SpecialistAction
@@ -729,6 +754,12 @@ func (r *SubagentRunner) callModelWithRetry(ctx context.Context, run domain.Run,
 			MaxAttempts: retryPolicy.MaxAttempts, ProtocolRepair: protocolRepair,
 			Provider: modelRef.Provider, Model: modelRef.Model, Context: contextAudit,
 		}
+		if round := request.Metadata["tool_round"]; round != "" {
+			attempt.ToolRound, err = strconv.Atoi(round)
+			if err != nil {
+				return result, err
+			}
+		}
 		inserted, err := r.store.RecordSpecialistModelStarted(ctx, ref, attempt)
 		if err != nil {
 			return result, apperror.Normalize(err)
@@ -885,6 +916,7 @@ func streamSpecialistModel(ctx context.Context, router *llm.Router, ref llm.Mode
 			result.Response = &llm.ChatResponse{
 				Text: output.String(), ToolCalls: toolCalls, Usage: *chunk.Usage,
 				Provider: provider, Model: model, FinishReason: chunk.FinishReason,
+				Replay: chunk.Replay.Clone(),
 			}
 			return result, nil
 		}

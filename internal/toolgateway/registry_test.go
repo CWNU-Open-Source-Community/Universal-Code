@@ -86,12 +86,21 @@ func codeIntelCatalogNames() []ToolName {
 
 func TestToolRegistryDoesNotExpandTypedActionsOrRetiredExecution(t *testing.T) {
 	typedActions := TypedActionIDs()
+	if !SpecialistTool.Valid() || IsSupervisorTool(SpecialistTool) {
+		t.Fatal("child tool envelope must stay internal to the gateway")
+	}
+	if _, found := SupervisorToolDefinition(SpecialistTool); found {
+		t.Fatal("child tool envelope was exposed as a Supervisor tool")
+	}
+	if _, err := NormalizeSupervisorToolPayload(SpecialistTool, json.RawMessage(`{}`)); err == nil {
+		t.Fatal("Supervisor accepted the internal child tool envelope")
+	}
 	for _, name := range []ToolName{ReadFileTool, ListWorkspaceTool, ReplaceFileTool, ScriptProcessTool} {
 		if _, found := typedActions[string(name)]; !found || !name.Valid() || IsSupervisorTool(name) {
 			t.Fatalf("operator tool %q lost its existing configuration boundary", name)
 		}
 	}
-	for _, name := range []ToolName{ShellTool, DebugTerminalTool, CommandRuntimeTool, SkillCandidateProposeTool} {
+	for _, name := range []ToolName{ShellTool, DebugTerminalTool, CommandRuntimeTool, SkillCandidateProposeTool, SpecialistTool} {
 		if _, found := typedActions[string(name)]; found {
 			t.Fatalf("registry expanded typed actions to %q", name)
 		}

@@ -12,6 +12,7 @@ import type { V2TurnInput } from "./use-thread-turn";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validV2DraftVersion, type V2DraftVersion } from "./draft-version";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
+import { validProjectSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
 
 export interface CreationIntent {
   version: "v2_creation_recovery.v1";
@@ -21,6 +22,7 @@ export interface CreationIntent {
   files: V2FileReference[];
   images?: WorkspaceImageAttachment[];
   attachments?: WorkspaceFileAttachment[];
+  projectSkills?: ProjectSkillChoice;
   submittedDraft: string;
   draftVersion?: V2DraftVersion;
   createdAt: string;
@@ -60,7 +62,7 @@ function validRequest(value: unknown): value is ThreadCreationControlRequestView
 }
 
 function validIntent(value: unknown): value is CreationIntent {
-  if (!record(value) || Object.keys(value).some((key) => !["version", "operationID", "request", "content", "files", "images", "attachments", "submittedDraft", "draftVersion", "createdAt"].includes(key)) || value.version !== "v2_creation_recovery.v1" ||
+  if (!record(value) || Object.keys(value).some((key) => !["version", "operationID", "request", "content", "files", "images", "attachments", "projectSkills", "submittedDraft", "draftVersion", "createdAt"].includes(key)) || value.version !== "v2_creation_recovery.v1" ||
     !identity(value.operationID) || value.operationID.length > 128 || !validRequest(value.request) ||
     typeof value.content !== "string" || new TextEncoder().encode(value.content).byteLength > 16384 ||
     (!text(value.content) && !(Array.isArray(value.images) && value.images.length > 0) &&
@@ -68,6 +70,7 @@ function validIntent(value: unknown): value is CreationIntent {
     value.request.goal !== (value.content || (Array.isArray(value.images) && value.images.length > 0 ? "图片对话" : "文件对话")) || !validRecoveryFiles(value.files) ||
     (value.images !== undefined && !validImageAttachments(value.images, value.request.workspace_id)) ||
     (value.attachments !== undefined && !validFileAttachments(value.attachments, value.request.workspace_id)) ||
+    (value.projectSkills !== undefined && !validProjectSkillChoice(value.projectSkills)) ||
     (value.draftVersion !== undefined && !validV2DraftVersion(value.draftVersion, value.request.workspace_id)) ||
     typeof value.submittedDraft !== "string" || value.submittedDraft.trim() !== value.content.trim() ||
     typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) return false;
@@ -83,8 +86,8 @@ function canonical(value: unknown): string {
 }
 // A later edit can return to the same submitted body while its local draft ref
 // advances. Recover that original creation/key; its old ref only governs cleanup.
-const intentBody = ({ request, content, files, images, attachments, submittedDraft }: CreationIntent) =>
-  ({ request, content, files, images, attachments, submittedDraft });
+const intentBody = ({ request, content, files, images, attachments, projectSkills, submittedDraft }: CreationIntent) =>
+  ({ request, content, files, images, attachments, projectSkills, submittedDraft });
 
 function boundThread(value: unknown, workspaceID: string, expectedID?: string): ThreadView {
   if (!record(value) || value.protocol_version !== "thread.v1" || !identity(value.id) ||
@@ -103,7 +106,7 @@ type Observation = { thread?: ThreadView; message: string };
 export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   onRecovered: (thread: ThreadView, submittedDraft: string, files: V2FileReference[], input: V2TurnInput) => void,
 ): {
-  prepare(request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[]): CreationIntent;
+  prepare(request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice): CreationIntent;
   resolve(intent: CreationIntent): Promise<ThreadView>;
   handoff(intent: CreationIntent, thread: ThreadView): V2TurnInput;
   notice: ReactNode;
@@ -155,7 +158,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     for (const intent of saved) {
       void inspect(intent, abort.signal).then((thread) => {
         if (abort.signal.aborted) return;
-        if (thread) verifiedThreads.current.set(intent.operationID, thread);
+        if (thread && !intent.projectSkills?.refs.length) verifiedThreads.current.set(intent.operationID, thread);
         setObservations((current) => ({ ...current, [intent.operationID]: thread
           ? { thread, message: "已找到原对话。点击“打开原对话”查看首条消息的提交结果。" }
           : { message: "本次查询尚未找到创建记录。可点击“重新核对”；再次发送相同内容时会先核对原请求。" } }));
@@ -170,10 +173,11 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, client, workspaceID, refresh]);
 
-  const prepare = (request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[]): CreationIntent => {
+  const prepare = (request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice): CreationIntent => {
     const saved = loadIntents();
     const candidate: CreationIntent = { version: "v2_creation_recovery.v1", operationID: crypto.randomUUID(),
       request, content, files, ...(images?.length ? { images } : {}), ...(attachments?.length ? { attachments } : {}), submittedDraft,
+      ...(projectSkills?.refs.length ? { projectSkills } : {}),
       ...(draftVersion !== undefined ? { draftVersion } : {}), createdAt: new Date().toISOString() };
     if (!validIntent(candidate) || request.workspace_id !== workspaceID) throw invalid();
     const matched = saved.find((intent) => canonical(intentBody(intent)) === canonical(intentBody(candidate)));
@@ -190,12 +194,16 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
       // Recheck local ownership after the GET, before any creation POST.
       requireSaved(saved);
       const thread = existing ?? boundThread((await client.createThread(saved.request, createOperationKey(saved))).thread, workspaceID);
+      if (saved.projectSkills?.refs.length) {
+        await client.selectProjectSkills(thread.last_run_id, saved.projectSkills, `v2-project-skills-${saved.operationID}`);
+        requireSaved(saved);
+      }
       verifiedThreads.current.set(saved.operationID, thread);
       setObservations((current) => ({ ...current, [saved.operationID]: { thread, message: "已找到原对话；首条消息将沿用原请求标识。" } }));
       return thread;
     } catch (failure) {
       setObservations((current) => ({ ...current, [saved.operationID]: {
-        message: "原创建结果尚待确认，内容已保存。请点击“重新核对”查看结果。", } }));
+        message: `创建或技能选择尚未完成，原对话和内容已保留。${failure instanceof Error ? failure.message : "请重新核对后重试。"}`, } }));
       throw failure;
     }
   };
@@ -222,9 +230,9 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     {intents.map((intent) => <section key={intent.operationID} className="v2-notice" aria-label="上次创建的对话">
       <p>{intent.request.goal.slice(0, 120)}</p>
       <p role="status">{observations[intent.operationID]?.message ?? "原创建请求已保存，结果尚待确认。可点击“重新核对”查看记录。"}</p>
-      {observations[intent.operationID]?.thread && <button className="v2-composer-chip" onClick={() => {
+      {observations[intent.operationID]?.thread && <button className="v2-composer-chip" onClick={async () => {
         try {
-          const thread = observations[intent.operationID].thread!;
+          const thread = intent.projectSkills?.refs.length ? await resolve(intent) : observations[intent.operationID].thread!;
           const input = handoff(intent, thread);
           onRecovered(thread, intent.submittedDraft, intent.files, input);
         } catch (failure) { setError(failure instanceof Error ? failure.message : invalid().message); }

@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/githubreview"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/session"
@@ -84,6 +85,17 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 	if err := e.validateScope(ctx, scope, name); err != nil {
 		return toolgateway.AgentCodeExecutionResult{}, err
 	}
+	run, err := e.store.GetRun(ctx, scope.RunID)
+	if err != nil {
+		return toolgateway.AgentCodeExecutionResult{}, apperror.Normalize(err)
+	}
+	pathPolicy, err := projectconfig.PathPolicy(run.Config)
+	if err != nil {
+		return toolgateway.AgentCodeExecutionResult{}, err
+	}
+	if err := e.checkProjectPaths(ctx, pathPolicy, name, payload); err != nil {
+		return toolgateway.AgentCodeExecutionResult{}, err
+	}
 	payload = append(json.RawMessage(nil), payload...)
 	if definition, found := toolgateway.AgentCodeToolDefinition(name); found && definition.Class == toolgateway.ClassWorkspaceRead {
 		recheck, err := e.authorizeAgentCodeRead(ctx, scope, name, payload)
@@ -107,7 +119,7 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
 		result, err := workspace.AgentCodeListDirectory(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Path, input.Cursor, input.Limit, false)
+			scope.WorkspaceID, input.Path, input.Cursor, input.Limit, false, pathPolicy)
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
@@ -120,7 +132,7 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
 		result, err := workspace.AgentCodeReadFile(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Path, input.StartLine, input.EndLine, false)
+			scope.WorkspaceID, input.Path, input.StartLine, input.EndLine, false, pathPolicy)
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
@@ -134,7 +146,7 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
 		result, err := workspace.AgentCodeGlobFiles(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Pattern, input.Cursor, input.Limit, false)
+			scope.WorkspaceID, input.Pattern, input.Cursor, input.Limit, false, pathPolicy)
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
@@ -148,7 +160,7 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 		}
 		result, err := workspace.AgentCodeGrepFiles(scope.WorkspaceRoot,
 			scope.WorkspaceID, input.Query, input.Pattern, input.Cursor, input.Limit,
-			input.CaseSensitive, false)
+			input.CaseSensitive, false, pathPolicy)
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
@@ -719,3 +731,49 @@ func agentCodeEditBindingMismatch(edit fileedit.Edit,
 }
 
 var scopeNow = func() time.Time { return time.Now().UTC() }
+
+// Check stored edits as well as proposed paths: an edit ID is not an exemption
+// from the current task's pinned exclusions.
+func (e *AgentCodeToolExecutor) checkProjectPaths(ctx context.Context, policy workspace.AgentCodePathPolicy,
+	name toolgateway.ToolName, payload json.RawMessage,
+) error {
+	if name != toolgateway.WorkspaceChangeTool && name != toolgateway.WorkspaceApplyTool && name != toolgateway.WorkspaceDeleteTool {
+		return nil
+	}
+	if len(policy.ExcludePaths) == 0 {
+		return nil
+	}
+	var input struct {
+		Path            string `json:"path"`
+		DestinationPath string `json:"destination_path"`
+		EditID          string `json:"edit_id"`
+		SourceEditID    string `json:"source_edit_id"`
+	}
+	if err := json.Unmarshal(payload, &input); err != nil {
+		return err
+	}
+	for _, path := range []string{input.Path, input.DestinationPath} {
+		if path != "" {
+			if err := policy.Check(path); err != nil {
+				return err
+			}
+		}
+	}
+	for _, id := range []string{input.EditID, input.SourceEditID} {
+		if id == "" {
+			continue
+		}
+		edit, err := e.store.GetFileEdit(ctx, id)
+		if err != nil {
+			return apperror.Normalize(err)
+		}
+		for _, path := range []string{edit.Path, edit.DestinationPath} {
+			if path != "" {
+				if err := policy.Check(path); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}

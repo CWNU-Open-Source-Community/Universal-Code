@@ -60,7 +60,8 @@ Both return `task_configuration.v1`, `capability_grant=false`, normalized
 requested/effective budgets, closed field sources, a safe project summary and
 fingerprints. A rejected preview has field-specific reasons and no partial
 project/effective fingerprint. Decoder details and repository bytes are never
-returned; exclusion paths and Skill suggestions are represented as counts.
+returned; exclusion paths are represented as counts. Skill suggestions expose
+only their bounded exact `name@version` identities for explicit draft selection.
 Malformed JSON, unknown/duplicate fields and unsupported bounds fail closed.
 
 Sources describe normalized effective values: product defaults, operator
@@ -83,15 +84,41 @@ Draft inputs and validity belong to the workspace's parent draft state so closin
 the panel cannot silently revert an invalid attempted budget to defaults.
 Creation rechecks the file in Go; a preview is never admission authority.
 
-## Explicit limits and follow-up gap
+## Runtime consumers
 
-Budget and profile/read-only admission constraints actually take effect.
-`exclude_paths` currently has **no runtime access-filter consumer**; it is pinned
-metadata, not an enforced file-access restriction. Skill suggestions and typed
-test/format action IDs are also recorded metadata and never automatically
-installed, enabled or executed. The UI states these limits separately. Adding
-an exclusion consumer across every relevant read/write adapter requires a later
-scoped contract and regression matrix; this slice does not claim that work.
+The pinned `exclude_paths` snapshot now narrows file-tool reads, listing, glob,
+grep and mutations, Batch file access, editor proposals/apply/revert/recovery,
+legacy file reads and CodeIntel evidence. Root-relative `*`, `?`, character
+classes and whole `**` directory segments are supported. A matching directory
+excludes its descendants. Hidden-file flags and `.gitignore` negation cannot
+reinclude exclusions; pagination cursors bind the policy. This is a file-tool
+filter, not an OS sandbox for arbitrary command execution or LSP processes.
+
+Project Skill suggestions are selectable in draft task configuration. The
+control route `POST /api/v1/runs/{run_id}/project-skills/select` admits only exact
+refs in the saved snapshot and delegates to the existing built-in/external
+selection services. Built-in versions must match; external packages must already
+be installed and eligible, including catalog enablement and phase/surface checks.
+External context requires explicit confirmation. No package is installed and no
+capability is granted. Selection finishes before first-message handoff; a failure
+preserves the Created task and durable creation intent for same-key recovery.
+
+Registry presets `test.go` (`go test ./...`), `test.node` (`node --test`),
+`test.npm` (installed npm CLI `test` through native Node) and
+`format.go` (`gofmt -w` for one relative Go file) prepare native process intents,
+never shell strings from config. The Root receives configured test input and a
+format template when the existing host command runtime is offered. Operators
+can request the action in chat and inspect the ordinary Job receipts, or use
+`run project-action <run-id> test|format --prepare` / explicit CLI execution.
+`test.npm` uses the same installed launcher resolver as Batch validation, with
+offline/audit/fund settings and the runtime's fixed CI environment. It accepts an
+exact relative package directory, such as `--path web`; it never replaces npm's
+test script with Node's built-in runner or injects Jest-specific flags.
+Read-only projects, excluded npm scopes and excluded formatter targets are rejected during intent
+preparation. Toolchain availability and the runtime's existing permission,
+approval, lease and native input checks still apply. Sandbox adapters receive
+no fabricated host executable paths. Older typed Tool IDs without a command
+preset remain non-executable metadata; no fallback shell execution is introduced.
 
 This changes neither runtime permission selection nor leases, approvals,
 execution backends, secrets, command launch, model eligibility or account access.

@@ -33,6 +33,7 @@ import type { TaskReviewToolMemory } from "./components/task-review-tools";
 import { V2DraftConflict } from "./components/draft-conflict";
 import { V2PhasePicker, type V2WorkPhase } from "./components/phase-picker";
 import { useV2DraftTaskConfiguration } from "./draft-task-configuration";
+import type { ProjectSkillChoice } from "../api/project-skills";
 
 type CreationAttempt = Map<string, string>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -51,7 +52,7 @@ const V2InspectorHome = lazy(() => import("./components/inspector-home").then((m
 })));
 
 function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, onCreated,
-  onTurnSuccess, onManageModels, onOpenTaskConfiguration, budget, configurationValid,
+  onTurnSuccess, onManageModels, onOpenTaskConfiguration, budget, configurationValid, projectSkills,
   draft: legacyDraft, onDraftChange: legacyDraftChange, creationAttemptRef, options, onOptionsChange, moreProjects, onImported }: {
   client: APIClient;
   workspaces: WorkspaceView[];
@@ -64,6 +65,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   onOpenTaskConfiguration: () => void;
   budget?: TaskBudgetSettings;
   configurationValid: boolean;
+  projectSkills?: ProjectSkillChoice;
   draft: string;
   onDraftChange: (content: string, expected?: string) => void;
   creationAttemptRef: RefObject<CreationAttempt>;
@@ -98,6 +100,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
   const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = []) => {
     if (!configurationValid) throw new Error("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。");
+    if (projectSkills?.refs.length && !projectSkills.confirmUntrustedContext) throw new Error("请在任务配置中确认所选技能上下文。草稿已保留。");
     normalizedTaskBudget(budget);
     if (phase === "plan" && !client.hasPlanDelivery) throw new Error("当前连接未启用计划确认。请检查连接，或选择直接执行。");
     const submittedDraft = draft;
@@ -142,7 +145,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
           if (draftVersion) assertV2DraftVersion(managedDraft, draftVersion, { text: submittedDraft, files, images, attachments });
           else draftVersion = requireV2DraftVersion(managedDraft, { text: submittedDraft, files, images, attachments });
         }
-        const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments);
+        const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills);
         const thread = await creationRecovery.resolve(intent);
         const input = creationRecovery.handoff(intent, thread);
         const submission = turn.mutateAsync(input);
@@ -152,10 +155,17 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         catch (error) { if (v2TurnFailed(error) && !input.draftVersion) onTurnSuccess(thread.id, submittedDraft); throw error; }
         if (!input.draftVersion) onTurnSuccess(thread.id, submittedDraft);
       } else {
-        const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments)]);
+        const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments), projectSkills]);
         const operationID = creationAttemptRef.current.get(fingerprint) ?? globalThis.crypto.randomUUID();
         creationAttemptRef.current.set(fingerprint, operationID);
         const result = await client.createThread(request, `v2-thread-create-${operationID}`);
+        if (projectSkills?.refs.length) {
+          try { await client.selectProjectSkills(result.thread.last_run_id, projectSkills, `v2-project-skills-${operationID}`); }
+          catch (error) {
+            void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
+            throw new Error(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。${error instanceof Error ? error.message : "请重试。"}`);
+          }
+        }
         const submission = turn.mutateAsync({ threadID: result.thread.id, workspaceID, content,
           ...(files.length ? { files } : {}),
           ...(images.length ? { images } : {}),
@@ -486,6 +496,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           draftWorkspaceID={workspaceID} draftBudget={draftTaskConfiguration.budget}
           onDraftBudgetChange={draftTaskConfiguration.onBudgetChange}
           onDraftValidityChange={draftTaskConfiguration.onValidityChange}
+          draftProjectSkills={draftTaskConfiguration.projectSkills} onDraftProjectSkillsChange={draftTaskConfiguration.onProjectSkillsChange}
           prepareModelForDraft={Boolean(modelSetupToken)} modelSetupToken={modelSetupToken}
           onModelReady={completeModelSetup} /></V2LazySurface> : route.tool
           ? <V2LazySurface resetKey="inspector-tools"
@@ -500,7 +511,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             creationAttemptRef={creationAttemptRef}
             options={newThreadOptions} onOptionsChange={setNewThreadOptions}
-            budget={draftTaskConfiguration.budget} configurationValid={draftTaskConfiguration.valid}
+            budget={draftTaskConfiguration.budget} configurationValid={draftTaskConfiguration.valid} projectSkills={draftTaskConfiguration.projectSkills}
             onOpenTaskConfiguration={() => setSettingsSection("task-configuration")}
             onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true) => {
               const source = `new:${thread.workspace_id}`;

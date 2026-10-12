@@ -27,14 +27,15 @@ type ConfigurationSource struct {
 	Source string `json:"source"`
 }
 
-// The projection contains counts, never untrusted exclude paths, suggestion
-// strings, source bytes, credentials or host filesystem locations.
+// The projection contains exclusion counts and validated exact Skill identities,
+// never source bytes, credentials or host filesystem locations.
 type ProjectConfigurationView struct {
 	Protocol             string   `json:"protocol"`
 	ReadOnly             bool     `json:"read_only"`
 	AllowedProfiles      []string `json:"allowed_profiles"`
 	ExcludedPathCount    int      `json:"excluded_path_count"`
 	SkillSuggestionCount int      `json:"skill_suggestion_count"`
+	SkillSuggestions     []string `json:"skill_suggestions,omitempty"`
 	TestCommandID        string   `json:"test_command_id,omitempty"`
 	FormatCommandID      string   `json:"format_command_id,omitempty"`
 }
@@ -135,7 +136,7 @@ func configurationView(workspaceID string, profile domain.Profile, requested dom
 		view.ProjectFingerprint = project.Fingerprint()
 		view.Project = &ProjectConfigurationView{Protocol: project.Protocol, ReadOnly: project.ReadOnly,
 			AllowedProfiles: append([]string{}, project.AllowedProfiles...), ExcludedPathCount: len(project.ExcludePaths),
-			SkillSuggestionCount: len(project.SkillSuggestions), TestCommandID: project.TestCommandID, FormatCommandID: project.FormatCommandID}
+			SkillSuggestionCount: len(project.SkillSuggestions), SkillSuggestions: append([]string{}, project.SkillSuggestions...), TestCommandID: project.TestCommandID, FormatCommandID: project.FormatCommandID}
 		if project.MaxTurns > 0 && project.MaxTurns < view.Budget.MaxTurns {
 			view.Budget.MaxTurns = project.MaxTurns
 			view.Sources[0].Source = "project"
@@ -168,15 +169,9 @@ func configurationView(workspaceID string, profile domain.Profile, requested dom
 // PinnedTaskConfiguration projects only stored facts. It never reloads the
 // project file, including for successor Runs or creation replay.
 func PinnedTaskConfiguration(run domain.Run, workspaceID string, profile domain.Profile) (TaskConfigurationView, error) {
-	var project *projectconfig.Effective
-	if len(run.Config.ProjectConfig) == 0 && run.Config.ProjectConfigFingerprint != "" {
-		return TaskConfigurationView{}, apperror.New(apperror.CodeConflict, "pinned project configuration binding is invalid")
-	}
-	if len(run.Config.ProjectConfig) > 0 {
-		project = &projectconfig.Effective{}
-		if err := json.Unmarshal(run.Config.ProjectConfig, project); err != nil || project.Protocol != projectconfig.ProtocolVersion || project.Fingerprint() != run.Config.ProjectConfigFingerprint {
-			return TaskConfigurationView{}, apperror.New(apperror.CodeConflict, "pinned project configuration binding is invalid")
-		}
+	project, err := projectconfig.Pinned(run.Config)
+	if err != nil {
+		return TaskConfigurationView{}, err
 	}
 	requested := run.Config.CreationBudget()
 	if run.Config.RequestedBudget == nil {

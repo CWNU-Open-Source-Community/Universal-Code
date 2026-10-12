@@ -15,6 +15,20 @@ afterEach(() => { vi.unstubAllGlobals(); });
 function response(data: unknown, status = 200) { return new Response(JSON.stringify({ version: "api.v1", request_id: "req-configuration", data }), { status, headers: { "Content-Type": "application/json" } }); }
 
 describe("task configuration contract", () => {
+  it("selects exact project Skills through control and validates the existing selection receipt", async () => {
+    const receipt = { run_id: "run-pinned", refs: ["code@1.0.0"], builtin_selection_id: "skill-selection-existing", replayed: false, capability_grant: false };
+    const fetch = vi.fn().mockResolvedValue(response(receipt)); vi.stubGlobal("fetch", fetch);
+    const choice = { refs: ["code@1.0.0"], confirmUntrustedContext: true };
+    await expect(new APIClient("read", "/api/v1").selectProjectSkills("run-pinned", choice, "project-selection-0001")).rejects.toThrow("task control");
+    expect(fetch).not.toHaveBeenCalled();
+    const client = new APIClient("read", "/api/v1", "control");
+    await client.selectProjectSkills("run-pinned", choice, "project-selection-0001");
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-pinned/project-skills/select");
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: "POST", headers: { Authorization: "Bearer control", "Idempotency-Key": "project-selection-0001" } });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ refs: ["code@1.0.0"], confirm_untrusted_context: true });
+    fetch.mockResolvedValue(response({ ...receipt, refs: ["code@2.0.0"] }));
+    await expect(client.selectProjectSkills("run-pinned", choice, "project-selection-0001")).rejects.toThrow("does not match");
+  });
   it("previews inert configuration using the read bearer without control capability", async () => {
     const fetch = vi.fn().mockResolvedValue(response(configurationFixture())); vi.stubGlobal("fetch", fetch);
     const client = new APIClient("read-token", "/api/v1");

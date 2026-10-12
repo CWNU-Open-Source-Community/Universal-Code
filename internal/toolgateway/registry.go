@@ -17,6 +17,7 @@ type ToolDefinition struct {
 type toolRegistration struct {
 	definition     ToolDefinition
 	valid          bool
+	supervisor     bool
 	typedAction    bool
 	defaultCatalog bool
 	planCatalog    bool
@@ -53,13 +54,20 @@ func buildToolRegistry() toolRegistry {
 		typedAction, defaultCatalog bool,
 	) {
 		for _, definition := range definitions {
-			add(toolRegistration{definition: definition, valid: true,
+			add(toolRegistration{definition: definition, valid: true, supervisor: true,
 				typedAction: typedAction, defaultCatalog: defaultCatalog,
 				planCatalog: defaultCatalog && definition.Name != SkillCandidateProposeTool,
 				normalize:   normalize, preflight: preflight, invoke: invoke})
 		}
 	}
 
+	// Child calls use an internal gateway envelope, outside the Supervisor catalog.
+	add(toolRegistration{definition: SpecialistToolDefinition(false), valid: true,
+		normalize: func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
+			_, canonical, err := NormalizeSpecialistToolPayload(payload)
+			return canonical, err
+		},
+		preflight: requireExecutor("Specialist tool", func(g *Gateway, _ ToolCall) bool { return g.specialist != nil }), invoke: (*Gateway).invokeSpecialist})
 	// This order is the existing model catalog order. Dynamic capability
 	// projections narrow or replace these definitions at the application boundary.
 	addSupervisor(StructuredMemoryToolDefinitions(), NormalizeStructuredMemoryPayload,
@@ -131,7 +139,7 @@ func buildToolRegistry() toolRegistry {
 	})
 	addSupervisor(BrowserActionToolDefinitions(), NormalizeBrowserActionPayload,
 		browserInvoke, browserPreflight, true, true)
-	add(toolRegistration{definition: planDeliveryDefinition, valid: true,
+	add(toolRegistration{definition: planDeliveryDefinition, valid: true, supervisor: true,
 		typedAction: true, planCatalog: true,
 		normalize: func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
 			_, canonical, err := normalizePlanDeliveryPayload(payload)
@@ -212,7 +220,7 @@ func copyToolDefinition(definition ToolDefinition) ToolDefinition {
 // execution authority are decided from the current Run capability snapshot.
 func IsSupervisorTool(name ToolName) bool {
 	registration, found := lookupTool(name)
-	return found && registration.normalize != nil
+	return found && registration.supervisor
 }
 
 func SupervisorToolDefinitions() []ToolDefinition {
@@ -238,7 +246,7 @@ func PlanPhaseSupervisorToolDefinitions() []ToolDefinition {
 func AllSupervisorToolDefinitions() []ToolDefinition {
 	definitions := make([]ToolDefinition, 0)
 	for _, registration := range registeredTools.ordered {
-		if registration.normalize != nil {
+		if registration.supervisor {
 			definitions = append(definitions, copyToolDefinition(registration.definition))
 		}
 	}
@@ -247,7 +255,7 @@ func AllSupervisorToolDefinitions() []ToolDefinition {
 
 func SupervisorToolDefinition(name ToolName) (ToolDefinition, bool) {
 	registration, found := lookupTool(name)
-	if !found || registration.normalize == nil {
+	if !found || !registration.supervisor {
 		return ToolDefinition{}, false
 	}
 	return copyToolDefinition(registration.definition), true
@@ -255,7 +263,7 @@ func SupervisorToolDefinition(name ToolName) (ToolDefinition, bool) {
 
 func NormalizeSupervisorToolPayload(name ToolName, payload json.RawMessage) (json.RawMessage, error) {
 	registration, found := lookupTool(name)
-	if !found || registration.normalize == nil {
+	if !found || !registration.supervisor {
 		return nil, fmt.Errorf("unsupported supervisor tool %q", name)
 	}
 	return registration.normalize(name, payload)
@@ -265,6 +273,9 @@ func NormalizeSupervisorToolPayload(name ToolName, payload json.RawMessage) (jso
 // Model visibility and gateway validity do not expand this configuration set.
 func TypedActionIDs() map[string]struct{} {
 	ids := make(map[string]struct{})
+	for id := range projectCommandPresets {
+		ids[id] = struct{}{}
+	}
 	for _, registration := range registeredTools.ordered {
 		if registration.typedAction {
 			ids[string(registration.definition.Name)] = struct{}{}

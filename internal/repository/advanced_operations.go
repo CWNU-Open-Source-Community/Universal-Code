@@ -1019,7 +1019,7 @@ func controlledRecipeCommand(root string, name gitadvanced.RecipeName) (string, 
 		executable, err = exec.LookPath("go")
 		args = []string{"test", "-count=1", "./..."}
 	case gitadvanced.RecipeNPMTest:
-		executable, args, err = batchNPMValidationCommand(root)
+		executable, args, err = NPMTestLauncher(root)
 		args = append(args, "test", "--", "--runInBand")
 	default:
 		return "", nil, errors.New("bisect recipe is not a registered Go-owned template")

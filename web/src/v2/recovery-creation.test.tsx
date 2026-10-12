@@ -22,6 +22,7 @@ const found = { kind: "creation", workspace_id: workspaceID, state: "completed",
 function fixture() {
   return { baseURL: "/api/v1", inspectThreadCreationRequest: vi.fn().mockResolvedValue(absent),
     get: vi.fn().mockResolvedValue({ thread }), createThread: vi.fn().mockResolvedValue({ thread }),
+    selectProjectSkills: vi.fn().mockResolvedValue(undefined),
     submitThreadTurn: vi.fn(), executeRun: vi.fn() };
 }
 function mount(client: ReturnType<typeof fixture>, selectedWorkspace = workspaceID, onRecovered = vi.fn()) {
@@ -45,6 +46,30 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  it("selects exact project Skills before handoff and retains the created task on selection failure", async () => {
+    const client = fixture();
+    client.selectProjectSkills.mockRejectedValueOnce(new Error("exact package is unavailable"));
+    const first = mount(client);
+    let intent!: CreationIntent;
+    const choice = { refs: ["code@1.0.0"], confirmUntrustedContext: true };
+    act(() => { intent = first.helper().prepare(request, request.goal, files, request.goal, undefined, undefined, undefined, choice); });
+    await act(async () => { await expect(first.helper().resolve(intent)).rejects.toThrow("exact package is unavailable"); });
+    expect(() => first.helper().handoff(intent, thread)).toThrow("原创建请求无法可靠核对");
+    expect(first.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    expect(client.submitThreadTurn).not.toHaveBeenCalled();
+    expect(client.selectProjectSkills).toHaveBeenLastCalledWith(thread.last_run_id, choice, `v2-project-skills-${intent.operationID}`);
+    first.unmount();
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    const reopened = mount(client);
+    await screen.findByRole("button", { name: "打开原对话" });
+    // A read-only inspection cannot bypass the failed explicit selection.
+    expect(() => reopened.helper().handoff(intent, thread)).toThrow("原创建请求无法可靠核对");
+    fireEvent.click(screen.getByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(reopened.onRecovered).toHaveBeenCalledTimes(1));
+    expect(client.selectProjectSkills).toHaveBeenCalledTimes(2);
+    expect(client.createThread).toHaveBeenCalledTimes(1);
+    expect(reopened.store().read(`creation:${intent.operationID}`, null)).toBeNull();
+  });
   it("retries an unknown creation with the original key and budget after reopening, even when the draft budget changes", async () => {
     const client = fixture();
     client.createThread.mockRejectedValueOnce(new Error("response lost"));

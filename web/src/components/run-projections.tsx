@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, FileSearch, GitBranch, LoaderCircle, Network, PackageCheck, ScanSearch, ShieldAlert } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type {
@@ -20,6 +20,7 @@ import { useLocale } from "../lib/locale";
 import { diagnosticVocabulary } from "../lib/vocabulary";
 import { EmptyState, ErrorState, LoadMoreButton, LoadingState, StatusBadge } from "./common";
 import { BatchPreparation, BatchWorkbenchControls } from "./batch-workbench";
+import { SpecialistExecutionControl } from "./specialist-execution";
 
 export function ExternalSkillsPanel({ projection }: { projection: ExternalSkillProjectionView }) {
   const { t } = useLocale();
@@ -69,9 +70,11 @@ export function ExternalSkillsSection({ client, runID, initial }: {
 
 export function AgentGraphPanel({ client, runID }: ProjectionProps) {
   const { t } = useLocale();
+  const executing = useIsMutating({ mutationKey: ["run", runID, "specialist-execute"] });
   const query = useQuery({
     queryKey: ["run", runID, "agent-graph"],
     queryFn: ({ signal }) => client.get<AgentGraphView>(`/runs/${encodeURIComponent(runID)}/agent-graph`, {}, signal),
+    refetchInterval: (query) => executing > 0 || query.state.data?.nodes.some((node) => node.role === "specialist" && node.status === "running") ? 3000 : false,
   });
   if (query.isLoading) return <LoadingState label="加载 Agent 图" />;
   if (query.isError || !query.data) return <ErrorState error={query.error} />;
@@ -130,6 +133,7 @@ export function AgentGraphPanel({ client, runID }: ProjectionProps) {
             node.id !== query.data.root_agent_id && (
             <SpecialistCancelControl agent={node} client={client} runID={runID} />
           )}
+          <SpecialistExecutionControl key={`${client.baseURL}/${runID}/${node.id}`} client={client} runID={runID} agent={node} />
         </article>
       ))}
     </div>

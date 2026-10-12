@@ -40,9 +40,10 @@ const (
 type HarnessWorkload string
 
 const (
-	HarnessWorkloadRoot       HarnessWorkload = "root"
-	HarnessWorkloadSpecialist HarnessWorkload = "specialist"
-	HarnessWorkloadFanout     HarnessWorkload = "readonly_fanout"
+	HarnessWorkloadRoot            HarnessWorkload = "root"
+	HarnessWorkloadSpecialist      HarnessWorkload = "specialist"
+	HarnessWorkloadSpecialistTools HarnessWorkload = "specialist_tools"
+	HarnessWorkloadFanout          HarnessWorkload = "readonly_fanout"
 )
 
 // ModelHarness describes how one exact model is allowed to consume the Go-owned
@@ -194,11 +195,11 @@ func prepareHarnessRequest(profile ModelHarness, workload HarnessWorkload,
 		return ChatRequest{}, err
 	}
 	switch workload {
-	case HarnessWorkloadRoot, HarnessWorkloadSpecialist, HarnessWorkloadFanout:
+	case HarnessWorkloadRoot, HarnessWorkloadSpecialist, HarnessWorkloadSpecialistTools, HarnessWorkloadFanout:
 	default:
 		return ChatRequest{}, errors.New("model Harness workload is invalid")
 	}
-	if workload != HarnessWorkloadRoot {
+	if workload != HarnessWorkloadRoot && workload != HarnessWorkloadSpecialistTools {
 		request.Tools = nil
 	}
 	if len(request.Tools) > 0 {

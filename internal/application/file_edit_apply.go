@@ -434,6 +434,9 @@ func (s *FileEditApplyService) loadBinding(ctx context.Context, runID string,
 	if err != nil {
 		return fileEditApplyBinding{}, apperror.Normalize(err)
 	}
+	if err := checkRunProjectPaths(run, edit.Path, edit.DestinationPath); err != nil {
+		return fileEditApplyBinding{}, err
+	}
 	target, err := ResolveRunFileWorkspace(ctx, s.store, run, mission, s.drydocks)
 	if err != nil {
 		return fileEditApplyBinding{}, apperror.Normalize(err)

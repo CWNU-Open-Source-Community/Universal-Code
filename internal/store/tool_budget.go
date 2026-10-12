@@ -40,6 +40,27 @@ func (s *SQLiteStore) ChargeToolCall(ctx context.Context, request toolbudget.Cha
 			return toolbudget.Usage{}, err
 		}
 	}
+	if normalized.RequestedBy == "specialist_runner" {
+		var existing string
+		if err := tx.QueryRowContext(ctx, `SELECT charge_id FROM specialist_tool_calls WHERE agent_attempt_id=? AND call_id=? AND status='pending'`, normalized.AgentAttemptID, normalized.ToolCallID).Scan(&existing); err != nil {
+			return toolbudget.Usage{}, err
+		}
+		if existing != "" {
+			var sequence int64
+			var chargedAt string
+			if err := tx.QueryRowContext(ctx, `SELECT sequence,created_at FROM run_tool_calls WHERE id=? AND run_id=?`, existing, binding.RunID).Scan(&sequence, &chargedAt); err != nil {
+				return toolbudget.Usage{}, err
+			}
+			budget, _, err := loadRunBudgetTx(ctx, tx, binding.RunID)
+			if err != nil {
+				return toolbudget.Usage{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return toolbudget.Usage{}, err
+			}
+			return usageFromValues(binding.RunID, sequence, budget.MaxToolCalls, existing, parseTS(chargedAt), nil), nil
+		}
+	}
 	if !tracked {
 		if err := tx.Commit(); err != nil {
 			return toolbudget.Usage{}, err
@@ -113,6 +134,11 @@ func (s *SQLiteStore) ChargeToolCall(ctx context.Context, request toolbudget.Cha
 		normalized.WorkspaceID, normalized.ToolName, normalized.ActionClass, sequence, ts(now)); err != nil {
 		return toolbudget.Usage{}, err
 	}
+	if normalized.RequestedBy == "specialist_runner" {
+		if _, err := tx.ExecContext(ctx, `UPDATE specialist_tool_calls SET charge_id=? WHERE agent_attempt_id=? AND call_id=? AND charge_id='' AND status='pending'`, chargeID, normalized.AgentAttemptID, normalized.ToolCallID); err != nil {
+			return toolbudget.Usage{}, err
+		}
+	}
 	event, err := events.New(binding.RunID, binding.MissionID, events.ToolBudgetChargedEvent,
 		"tool_budget", chargeID, map[string]any{
 			"charge_id": chargeID, "session_id": normalized.SessionID, "workspace_id": normalized.WorkspaceID,
@@ -170,6 +196,25 @@ func (s *SQLiteStore) GetToolCallUsage(ctx context.Context, runID string) (toolb
 }
 
 func resolveToolBudgetBindingTx(ctx context.Context, tx *sql.Tx, request toolbudget.ChargeRequest) (runBinding, bool, error) {
+	if request.RequestedBy == "specialist_runner" {
+		ref := domain.AgentAttemptRef{RunID: request.RunID, AgentID: request.AgentID, AttemptID: request.AgentAttemptID}
+		attempt, child, run, err := loadActiveAgentAttemptTx(ctx, tx, ref)
+		if err != nil {
+			return runBinding{}, false, err
+		}
+		if child.SessionID != request.SessionID || attempt.LeaseID != request.LeaseID || attempt.LeaseGeneration != request.LeaseGeneration {
+			return runBinding{}, false, errors.New("Specialist tool budget actor or lease differs")
+		}
+		var bound int
+		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND c.call_id=? AND c.name=? AND c.status='pending'`, attempt.ID, request.WorkspaceID, request.ToolCallID, request.ToolName).Scan(&bound)
+		if err != nil {
+			return runBinding{}, false, err
+		}
+		if bound != 1 {
+			return runBinding{}, false, errors.New("Specialist tool budget lacks its pending child call")
+		}
+		return runBinding{RunID: run.ID, MissionID: run.MissionID, WorkspaceID: request.WorkspaceID}, true, nil
+	}
 	if request.SessionID != "" {
 		binding, bound, err := runBindingForSessionTx(ctx, tx, request.SessionID)
 		if err != nil {

@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
@@ -335,7 +336,7 @@ func newAgentCodeReplaceFixture(t *testing.T, fullAccess bool) *agentCodeReplace
 	return newAgentCodeReplaceFixtureForPermission(t, mode)
 }
 
-func newAgentCodeReplaceFixtureForPermission(t *testing.T, mode domain.RunExecutionPermissionMode) *agentCodeReplaceFixture {
+func newAgentCodeReplaceFixtureForPermission(t *testing.T, mode domain.RunExecutionPermissionMode, projects ...*projectconfig.Effective) *agentCodeReplaceFixture {
 	t.Helper()
 	fullAccess := mode == domain.RunExecutionPermissionFull
 	f := &agentCodeReplaceFixture{root: t.TempDir(), databasePath: filepath.Join(t.TempDir(), "replace.db"), runtime: domain.NewExecutionPermissionRuntimeAuthority()}
@@ -350,7 +351,11 @@ func newAgentCodeReplaceFixtureForPermission(t *testing.T, mode domain.RunExecut
 	}
 	f.write(t, "before\n")
 	runs := application.NewRunService(state)
-	mission, created, err := runs.Create(t.Context(), application.CreateRunRequest{Goal: "replace existing file", Profile: "code", WorkspaceID: "workspace-replace", Budget: domain.Budget{MaxTurns: 8, MaxToolCalls: 20}})
+	var project *projectconfig.Effective
+	if len(projects) != 0 {
+		project = projects[0]
+	}
+	mission, created, err := runs.Create(t.Context(), application.CreateRunRequest{Goal: "replace existing file", Profile: "code", WorkspaceID: "workspace-replace", Budget: domain.Budget{MaxTurns: 8, MaxToolCalls: 20}, ProjectConfig: project})
 	if err != nil {
 		t.Fatal(err)
 	}

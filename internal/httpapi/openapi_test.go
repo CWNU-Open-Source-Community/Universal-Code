@@ -34,6 +34,7 @@ import (
 	"cyberagent-workbench/internal/modelregistry"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/pricing"
+	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
@@ -563,6 +564,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	}
 	childRun, child, childAttempt, childModel :=
 		prepareOpenAPISpecialistCancellationTarget(t, fixture)
+	childExecution := &specialistExecutionCapture{}
+	fixture.api.specialistExecutionController = childExecution
 	_, profileRun, err := application.NewRunService(fixture.store).Create(t.Context(),
 		application.CreateRunRequest{Goal: "OpenAPI execution profile target", Profile: "code",
 			Budget: domain.Budget{MaxTurns: 2}})
@@ -715,6 +718,19 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	builtins, err := skills.BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	codeSkill, found := builtins.Get("code")
+	if !found {
+		t.Fatal("OpenAPI fixture requires the built-in code Skill")
+	}
+	projectSkillRef := "code@" + codeSkill.Version
+	_, projectSkillRun, err := application.NewRunService(fixture.store).Create(t.Context(),
+		application.CreateRunRequest{Goal: "OpenAPI project Skill selection target", Profile: "code",
+			WorkspaceID: fixture.workspace.ID, Budget: domain.Budget{MaxTurns: 2},
+			ProjectConfig: &projectconfig.Effective{Protocol: projectconfig.ProtocolVersion,
+				SkillSuggestions: []string{projectSkillRef}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1151,9 +1167,11 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		if spec.Path == SessionSteeringRevisionPathTemplate || spec.Path == SessionSteeringRevisionObservationPathTemplate {
 			requestPath = strings.ReplaceAll(requestPath, steering.Message.ID, revisionSteering.Message.ID)
 		}
-		if spec.Path == SpecialistModelCancellationPathTemplate {
+		if spec.Path == SpecialistModelCancellationPathTemplate || spec.Path == SpecialistExecutionPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", childRun.ID)
 			requestPath = strings.ReplaceAll(requestPath, "{agent_id}", child.ID)
+		} else if spec.Path == ProjectSkillSelectionPathTemplate {
+			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", projectSkillRun.ID)
 		} else if spec.Path == RunExecutionProfileControlPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", profileRun.ID)
 		} else if spec.Path == RunExecutionPermissionControlPathTemplate {
@@ -1273,6 +1291,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			if spec.OperationID == "getRunFindingReport" {
 				expectedStatus = http.StatusNotFound
 			} else if spec.OperationID == "cancelRunFanoutExecution" ||
+				spec.OperationID == "getRunSpecialistToolReceipts" ||
 				spec.OperationID == "reviewRunChildTaskProposal" ||
 				spec.OperationID == "admitRunChildTaskProposal" ||
 				strings.Contains(spec.OperationID, "RunBatchDelivery") ||
@@ -1327,7 +1346,11 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				response = previewConfigurationRequest(fixture.api, testAccessToken, `{"workspace_id":"`+fixture.workspace.ID+`"}`)
 			} else if spec.Control {
 				body := `{"profile":"docker"}`
-				if spec.Path == SandboxEnvironmentPath {
+				if spec.OperationID == "selectProjectSkills" {
+					body = `{"refs":["` + projectSkillRef + `"],"confirm_untrusted_context":false}`
+				} else if spec.OperationID == "executeRunSpecialist" {
+					body = `{"version":"specialist_tools.v1","operation_key":"openapi-child-execute-0001","workspace_tools":true,"confirm_execute":true}`
+				} else if spec.Path == SandboxEnvironmentPath {
 					body = sandboxEnvironmentControlTestBody()
 				} else if spec.OperationID == "prepareBatchWorkbench" {
 					body = `{"version":"batch-delivery-workbench.v1","proposal_id":"proposal-openapi-missing-0001","tasks":[],"confirm":true}`
@@ -1831,7 +1854,23 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					requestPath, response.Code, response.Body.String())
 			}
 			assertSecurityHeaders(t, response)
-			if spec.OperationID == "listThreadApplicationServices" {
+			if spec.OperationID == "selectProjectSkills" {
+				var view application.ProjectSkillSelectionResult
+				decodeDataStatus(t, response, http.StatusOK, &view)
+				if view.RunID != projectSkillRun.ID || !reflect.DeepEqual(view.Refs, []string{projectSkillRef}) ||
+					view.BuiltinSelectionID == "" || view.ExternalSelectionID != "" || view.CapabilityGrant || view.Replayed {
+					t.Fatalf("project Skill route did not select the pinned suggestion: %+v", view)
+				}
+			} else if spec.OperationID == "executeRunSpecialist" {
+				var view SpecialistExecutionView
+				decodeDataStatus(t, response, http.StatusOK, &view)
+				if len(childExecution.requests) != 1 || childExecution.requests[0] != (application.ExecuteSpecialistRequest{
+					RunID: childRun.ID, AgentID: child.ID, OperationKey: "openapi-child-execute-0001", WorkspaceTools: true,
+				}) || view.RunID != childRun.ID || view.AgentID != child.ID || view.AttemptID != "sealed-child-attempt" ||
+					view.Status != string(domain.AgentAttemptContinued) || view.ModelAttempts != 2 || view.ToolCalls != 1 || view.ToolRounds != 1 {
+					t.Fatalf("child execution route changed the admitted intent or result: requests=%+v view=%+v", childExecution.requests, view)
+				}
+			} else if spec.OperationID == "listThreadApplicationServices" {
 				var view application.ThreadApplicationServicesView
 				decodeDataStatus(t, response, http.StatusOK, &view)
 				if view.ThreadID != threadServiceJob.threadID || len(view.Services) != 1 || view.Services[0].JobID != threadServiceJob.jobID || view.Services[0].RunID != threadServiceJob.runID {

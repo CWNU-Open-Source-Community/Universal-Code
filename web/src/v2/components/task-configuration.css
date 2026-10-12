@@ -4,6 +4,9 @@
 .v2-task-configuration h3 { margin:20px 0 8px; font-size:15px; }
 .v2-task-budget-fields { border:1px solid var(--v2-border); border-radius:10px; padding:12px; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
 .v2-task-budget-fields label { display:flex; flex-direction:column; gap:4px; }
+.v2-task-skill-choices { border:1px solid var(--v2-border); border-radius:10px; padding:12px; display:grid; gap:8px; }
+.v2-task-skill-choices label { display:flex; align-items:flex-start; gap:8px; }
+.v2-task-skill-choices input[type="checkbox"] { flex:0 0 auto; margin-top:5px; accent-color:var(--v2-accent); }
 .v2-task-configuration input, .v2-task-configuration button { box-sizing:border-box; font:inherit; color:inherit; border:1px solid var(--v2-border); border-radius:7px; background:var(--prayu-panel-strong); padding:7px 10px; min-width:0; }
 .v2-task-configuration button { cursor:pointer; }
 .v2-task-configuration button:disabled { opacity:.5; cursor:default; }

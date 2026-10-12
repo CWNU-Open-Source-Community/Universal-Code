@@ -656,11 +656,12 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		PriceSnapshotController:               a.store,
 		FanoutExecutionController: application.NewReadOnlyFanoutExecutionService(
 			a.store, a.router, a.checker),
-		ChildTaskControlController:   application.NewChildTaskControlService(a.store),
-		ProviderCredentialController: providerCredentialControl,
-		FileEditReviewController:     fileEditReview,
-		FileEditProposalController:   fileEditProposal,
-		FileWorkspaceDrydocks:        commandRuntimeDrydocks,
+		ChildTaskControlController:    application.NewChildTaskControlService(a.store),
+		SpecialistExecutionController: application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(commandRuntimeDrydocks),
+		ProviderCredentialController:  providerCredentialControl,
+		FileEditReviewController:      fileEditReview,
+		FileEditProposalController:    fileEditProposal,
+		FileWorkspaceDrydocks:         commandRuntimeDrydocks,
 		ThreadReviewReader: application.NewThreadReviewService(a.store).WithRunWorktree(commandRuntimeDrydocks).
 			WithCodeHandoff(application.NewCodeHandoffService(a.store).WithStandardCodeDelivery(standardCodeDelivery)),
 		RunWakeController:                   runWakeControl,
@@ -677,7 +678,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		ThreadPullRequestController:         application.NewThreadPullRequestService(a.store, githubReviewService, threadGit),
 		GitHubReviewController:              githubReviewService,
 		BatchDeliveryController: application.NewBatchDeliveryWorkbenchService(batchDelivery).
-			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, a.store, a.router, a.checker)),
+			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, a.store, a.router, a.checker).WithNativeTools()),
 		ExtensionController:     extensionControl,
 		CodeIntelSource:         a.codeIntel,
 		CodeIntelController:     codeIntelControl,

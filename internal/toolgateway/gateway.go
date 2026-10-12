@@ -69,6 +69,7 @@ type Gateway struct {
 	debugTerminal              DebugTerminalExecutor
 	commandRuntime             CommandRuntimeExecutor
 	agentCode                  AgentCodeExecutor
+	specialist                 SpecialistToolExecutor
 	codeIntel                  CodeIntelExecutor
 	mcp                        MCPExecutor
 	webEvidence                WebEvidenceExecutor
@@ -276,9 +277,13 @@ func (g *Gateway) invokeWorkspaceRead(ctx context.Context, call ToolCall) (Outco
 	if err != nil {
 		return Outcome{}, err
 	}
+	fs, err := g.projectWorkspaceFS(ctx, call)
+	if err != nil {
+		return Outcome{}, err
+	}
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewReadFileTool(call.WorkspaceRoot))
-	registry.Register(tools.NewListWorkspaceTool(call.WorkspaceRoot))
+	registry.Register(tools.ReadFileTool{FS: fs})
+	registry.Register(tools.ListWorkspaceTool{FS: fs})
 	started := time.Now().UTC()
 	legacyResult, runErr := registry.Run(ctx, toolCall)
 	completed := time.Now().UTC()
@@ -764,6 +769,9 @@ func gatewayDecision(source policy.Decision, mode ApprovalMode, fallbackRisk str
 }
 
 func validateToolArguments(call ToolCall) error {
+	if call.Name == SpecialistTool {
+		return validateSpecialistCall(call)
+	}
 	if call.Name == SkillReadTool {
 		return validateSkillReadCall(call)
 	}

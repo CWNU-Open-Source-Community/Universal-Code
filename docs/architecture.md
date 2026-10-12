@@ -409,6 +409,14 @@ authority checks. The registry preserves model advertisement order and phase
 selection. Historical ledger names and migration SQL remain independent so
 stored calls can still be read after a tool is retired.
 
+Project action presets in `internal/toolgateway/project_commands.go` share this
+configuration ID catalog without adding model tools. `test.go`, `test.node`,
+`test.npm` and `format.go` build fixed native intents; the existing
+`command_runtime` owns execution, authorization and Job receipts. npm uses the
+same installed native Node/npm CLI launcher resolver as Batch and advanced Git
+validation. Repository configuration supplies IDs only, never executable paths,
+arguments or shell text.
+
 Every tool invocation uses one pipeline:
 
 ```text

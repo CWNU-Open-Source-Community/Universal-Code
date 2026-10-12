@@ -42,6 +42,22 @@ type SpecialistOperatorScheduleStore interface {
 		domain.SpecialistOperatorScheduleAttempt, bool, error)
 }
 
+// WithWorkspaceTools grants only the server-owned child read/search profile.
+// Delegation review, schedule intent and lease ownership remain unchanged.
+func (s *SpecialistOperatorScheduleService) WithWorkspaceTools() *SpecialistOperatorScheduleService {
+	if s != nil && s.scheduler != nil && s.scheduler.runner != nil {
+		s.scheduler.runner.WithWorkspaceTools()
+	}
+	return s
+}
+
+func (s *SpecialistOperatorScheduleService) WithRunWorktree(drydocks *RunWorktreeService) *SpecialistOperatorScheduleService {
+	if s != nil && s.scheduler != nil && s.scheduler.runner != nil {
+		s.scheduler.runner.WithRunWorktree(drydocks)
+	}
+	return s
+}
+
 type SpecialistOperatorScheduleService struct {
 	store        SpecialistOperatorScheduleStore
 	checker      policy.Checker
@@ -134,6 +150,9 @@ func (s *SpecialistOperatorScheduleService) Execute(ctx context.Context,
 		"specialist_operator_schedule_request.v1", application.ID, proposal.ID,
 		proposal.RunID, strings.Join(selected, "\x1f"), strconv.Itoa(normalized.MaxRounds),
 		normalized.RequestedBy)
+	if s.scheduler.runner.workspaceTools {
+		fingerprint = runmutation.Fingerprint("specialist_tool_schedule.v1", fingerprint)
+	}
 	keyDigest := runmutation.OperationKeyDigest("specialist_operator_schedule",
 		proposal.RunID, normalized.OperationKey)
 

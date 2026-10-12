@@ -65,6 +65,8 @@ func (a *App) runCommand(ctx context.Context, args []string) error {
 		return a.runCommandExecute(ctx, args[1:])
 	case "host-execute":
 		return a.runHostExecute(ctx, args[1:])
+	case "project-action":
+		return a.runProjectAction(ctx, args[1:])
 	case "command-proposal":
 		return a.runCommandProposal(ctx, args[1:])
 	case "events":
@@ -81,6 +83,8 @@ func (a *App) runCommand(ctx context.Context, args []string) error {
 		return a.runDelegations(ctx, args[1:])
 	case "delegation":
 		return a.runDelegation(ctx, args[1:])
+	case "specialist-step":
+		return a.runSpecialistStep(ctx, args[1:])
 	case "plans":
 		return a.runPlanDeliveryProposals(ctx, args[1:])
 	case "plan":
@@ -1192,25 +1196,61 @@ func (a *App) runDelegationSchedule(ctx context.Context, action string, args []s
 	operationKey := fs.String("operation-key", "", "stable schedule operation key")
 	operator := fs.String("operator", "cli_operator", "operator identity")
 	maxRounds := fs.Int("max-rounds", 1, "bounded schedule rounds")
+	tools := fs.Bool("tools", false, "enable the independent child read/search tool profile")
 	var agentIDs stringListFlag
 	fs.Var(&agentIDs, "agent", "instructed child Agent id (repeatable)")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"operation-key": true, "operator": true, "max-rounds": true, "agent": true,
+		"operation-key": true, "operator": true, "max-rounds": true, "agent": true, "tools": false,
 	})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 || strings.TrimSpace(*operationKey) == "" {
 		return fmt.Errorf("usage: cyberagent run delegation %s <proposal-id> --operation-key <key> [--operator <id>] [--max-rounds <n>] [--agent <id>]", action)
 	}
-	result, err := application.NewSpecialistOperatorScheduleService(
+	service := application.NewSpecialistOperatorScheduleService(
 		a.store, a.router, a.checker).
-		WithLifecycleHooks(a.newLifecycleHookEngine()).Execute(ctx,
+		WithLifecycleHooks(a.newLifecycleHookEngine())
+	proposal, lookupErr := a.store.GetSpecialistDelegationProposal(ctx, fs.Arg(0))
+	if lookupErr != nil {
+		return lookupErr
+	}
+	drydocks, resolveErr := a.newRunFileDrydockService(ctx, proposal.RunID)
+	if resolveErr != nil {
+		return resolveErr
+	}
+	service.WithRunWorktree(drydocks)
+	if *tools {
+		service.WithWorkspaceTools()
+	}
+	result, err := service.Execute(ctx,
 		application.ExecuteSpecialistOperatorScheduleRequest{
 			ProposalID: fs.Arg(0), AgentIDs: agentIDs.values, MaxRounds: *maxRounds,
 			OperationKey: *operationKey, RequestedBy: *operator,
 		})
 	if result.Request.ID != "" {
 		printSpecialistOperatorScheduleResult(a.out, result)
+	}
+	return err
+}
+
+func (a *App) runSpecialistStep(ctx context.Context, args []string) error {
+	fs := newFlagSet("run specialist-step", a.errOut)
+	agent := fs.String("agent", "", "already admitted child Agent id")
+	key := fs.String("operation-key", "", "stable child execution operation key")
+	tools := fs.Bool("tools", false, "enable independent child read/search tools")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{"agent": true, "operation-key": true, "tools": false})); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || *agent == "" || *key == "" {
+		return errors.New("usage: cyberagent run specialist-step <run-id> --agent <child-id> --operation-key <key> [--tools]")
+	}
+	drydocks, err := a.newRunFileDrydockService(ctx, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	result, err := application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(drydocks).ExecuteSpecialist(ctx, application.ExecuteSpecialistRequest{RunID: fs.Arg(0), AgentID: *agent, OperationKey: *key, WorkspaceTools: *tools})
+	if result.AttemptID != "" {
+		fmt.Fprintf(a.out, "agent: %s\nattempt: %s\nstatus: %s\ntokens: %d\ntool_calls: %d\ntool_rounds: %d\nreplayed: %t\n", result.AgentID, result.AttemptID, result.AttemptStatus, result.Usage.TotalTokens, result.ToolCalls, result.ToolRounds, result.Replayed)
 	}
 	return err
 }

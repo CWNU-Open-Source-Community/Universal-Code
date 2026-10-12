@@ -391,7 +391,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent plugin stage|list|show|review|rollback|trust-publisher|revoke-publisher|stage-mcp")
 	fmt.Fprintln(a.out, "  cyberagent code-intel status|qualify")
 	fmt.Fprintln(a.out, "  cyberagent headless events")
-	fmt.Fprintln(a.out, "  cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|capability-readiness|command-plan|command-execute|host-execute|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|plans|plan|delivery|steer|fanouts|fanout|sandbox|wake|schedule")
+	fmt.Fprintln(a.out, "  cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|plans|plan|delivery|steer|fanouts|fanout|sandbox|wake|schedule")
 	fmt.Fprintln(a.out, "  cyberagent run plan show|choose|selection")
 	fmt.Fprintln(a.out, "  cyberagent run sandbox docker-readiness|docker-admit|docker-start|docker-cancel|docker-status")
 	fmt.Fprintln(a.out, "  cyberagent run standard-code docker-readiness|docker-prepare|docker-execute|docker-cancel|docker-recover")

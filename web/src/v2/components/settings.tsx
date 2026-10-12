@@ -20,6 +20,7 @@ import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { V2ExecutionSettings } from "./execution-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
+import type { ProjectSkillChoice } from "../../api/project-skills";
 import { ShortcutSettings } from "../../components/shared-settings-panels";
 import { ModelAvailabilitySettings } from "../../components/model-availability-dialog";
 import { V2AboutSettings, V2ExtensionSettings, V2InspectorPreferences, V2SkillSettings } from "./advanced-settings";
@@ -335,7 +336,7 @@ function PlaceholderSettings({ section, onOpenLegacy }: {
 export function V2Settings({ client, section, threadID, workspaces, onSelectSection,
   onOpenInspector, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
   onModelReady, onOpenTask, sourceRunID, onOpenGithubReview, draftWorkspaceID, draftBudget,
-  onDraftBudgetChange, onDraftValidityChange, desktop = desktopBridgeAvailable() }: {
+  onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange, desktop = desktopBridgeAvailable() }: {
   client: APIClient;
   section: V2SettingsSection;
   threadID: string;
@@ -349,6 +350,8 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   draftBudget?: TaskBudgetSettings;
   onDraftBudgetChange?: (budget: TaskBudgetSettings | undefined) => void;
   onDraftValidityChange?: (valid: boolean) => void;
+  draftProjectSkills?: ProjectSkillChoice;
+  onDraftProjectSkillsChange?: (choice: ProjectSkillChoice) => void;
   onOpenInspector: (returnFocus?: HTMLElement | null) => void;
   prepareModelForDraft?: boolean;
   modelSetupToken?: string;
@@ -375,7 +378,8 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         onOpenGithubReview={onOpenGithubReview} onOpenTask={onOpenTask} onSelect={onSelectSection} />}
       {section === "task-configuration" && <Suspense fallback={<p role="status">正在加载任务配置…</p>}>
         <TaskConfigurationSettings client={client} threadID={threadID} sourceRunID={sourceRunID} draftWorkspaceID={draftWorkspaceID}
-          draftBudget={draftBudget} onDraftBudgetChange={onDraftBudgetChange} onDraftValidityChange={onDraftValidityChange} />
+          draftBudget={draftBudget} onDraftBudgetChange={onDraftBudgetChange} onDraftValidityChange={onDraftValidityChange}
+          draftProjectSkills={draftProjectSkills} onDraftProjectSkillsChange={onDraftProjectSkillsChange} />
       </Suspense>}
       {section === "archived" && <ArchivedSettings client={client} onOpenThread={onOpenThread} />}
       {(section === "models" || section === "advanced-models") &&

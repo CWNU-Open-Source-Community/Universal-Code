@@ -34,8 +34,11 @@ func TestTaskConfigurationCreationReplayRestartAndSuccessor(t *testing.T) {
 		t.Fatalf("preview=%#v err=%v", preview, err)
 	}
 	raw, _ := json.Marshal(preview)
-	if bytes.Contains(raw, []byte(workspace.RootPath)) || bytes.Contains(raw, []byte("secret-fixture")) || bytes.Contains(raw, []byte("fixture@1.0.0")) || preview.CapabilityGrant {
+	if bytes.Contains(raw, []byte(workspace.RootPath)) || bytes.Contains(raw, []byte("secret-fixture")) || preview.CapabilityGrant {
 		t.Fatalf("unsafe projection %s", raw)
+	}
+	if preview.Project == nil || len(preview.Project.SkillSuggestions) != 1 || preview.Project.SkillSuggestions[0] != "fixture@1.0.0" {
+		t.Fatal("exact Skill identity was not projected")
 	}
 	request := application.ControlledRunCreationRequest{Version: domain.RunCreationProtocolVersion, Goal: "review scoped files", WorkspaceID: workspace.ID, Profile: "review", Budget: settings, OperationKey: "config-create-replay-0001", RequestedBy: "test_operator"}
 	created, err := application.NewControlledRunCreationService(state).Create(t.Context(), request)
