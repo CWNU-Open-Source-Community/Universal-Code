@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { V2SettingsSection } from "./components/sidebar";
+import { useFileEditLeave } from "../components/file-edit-drafts";
 
 export type V2RunPane = "context" | "checkpoints" | "tools" | "ui-evidence";
 export type V2Route = { kind: "initial" | "new" | "thread" | "invalid";
@@ -56,23 +57,48 @@ function historyIndex() {
 }
 
 export function useV2Navigation() {
+  const leave = useFileEditLeave();
   const [location, setLocation] = useState(() => ({ route: readV2Route(window.location.hash, window.location.pathname), index: historyIndex() }));
+  const accepted = useRef({ url: window.location.href, index: historyIndex(), state: window.history.state });
   useEffect(() => {
-    const sync = () => setLocation({ route: readV2Route(window.location.hash, window.location.pathname), index: historyIndex() });
+    // Hash links and the browser's own Back/Forward controls also leave editors.
+    // Number hash-created entries so cancellation can restore the original entry.
+    window.history.replaceState({ ...window.history.state, v2NavigationIndex: historyIndex() }, "");
+    accepted.current.state = window.history.state;
+    const sync = () => {
+      const previous = accepted.current;
+      if (window.location.href === previous.url) return;
+      if (!Number.isSafeInteger(window.history.state?.v2NavigationIndex)) {
+        window.history.replaceState({ ...window.history.state, v2NavigationIndex: previous.index + 1 }, "");
+      }
+      const next = { url: window.location.href, index: historyIndex(), state: window.history.state };
+      const route = readV2Route(window.location.hash, window.location.pathname);
+      leave(() => {
+        accepted.current = next;
+        setLocation({ route, index: next.index });
+      }, () => {
+        const delta = previous.index - next.index;
+        if (delta) window.history.go(delta);
+        else window.history.replaceState(previous.state, "", previous.url);
+      });
+    };
     window.addEventListener("popstate", sync);
     window.addEventListener("hashchange", sync);
     return () => { window.removeEventListener("popstate", sync); window.removeEventListener("hashchange", sync); };
-  }, []);
+  }, [leave]);
   const navigate = useCallback((route: V2Route, replace = false) => {
     const hash = routeHash(route);
     if (hash === window.location.hash) return;
-    const index = historyIndex() + (replace ? 0 : 1);
-    const state = { ...window.history.state, v2NavigationIndex: index };
-    const url = window.location.pathname.startsWith("/legacy") ? `/${window.location.search}${hash}` : hash;
-    if (replace) window.history.replaceState(state, "", url);
-    else window.history.pushState(state, "", url);
-    setLocation({ route, index });
-  }, []);
+    leave(() => {
+      const index = historyIndex() + (replace ? 0 : 1);
+      const state = { ...window.history.state, v2NavigationIndex: index };
+      const url = window.location.pathname.startsWith("/legacy") ? `/${window.location.search}${hash}` : hash;
+      if (replace) window.history.replaceState(state, "", url);
+      else window.history.pushState(state, "", url);
+      accepted.current = { url: window.location.href, index, state };
+      setLocation({ route, index });
+    });
+  }, [leave]);
   const back = () => {
     if (location.route.section) navigate({ ...location.route, section: undefined }, true);
     else if (location.index > 0) window.history.back();

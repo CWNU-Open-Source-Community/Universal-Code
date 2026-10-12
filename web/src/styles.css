@@ -893,6 +893,9 @@ td code { font-size: 11px; }
 .file-proposal-editor > header > div:first-child { min-width: 0; display: flex; align-items: center; gap: 8px; margin-right: auto; }
 .file-proposal-editor > header strong { overflow-wrap: anywhere; font-size: 12px; }
 .file-proposal-editor .segmented-control button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.file-proposal-editor > [role="status"], .file-proposal-editor > [role="alert"] { padding: 8px 10px; font-size: 12px; }
+.file-edit-leave-dialog footer { flex-wrap: wrap; }
+.v2-dialog.file-edit-leave-dialog > header { display: flex; }
 .monaco-proposal-surface { min-width: 0; min-height: 360px; background: var(--prayu-surface-solid); }
 .monaco-local-state { align-items: center; display: flex; height: 100%; justify-content: center; }
 .proposal-created-status { display: inline-flex; align-items: center; gap: 5px; color: var(--prayu-success); font-weight: 600; }

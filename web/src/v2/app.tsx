@@ -31,6 +31,7 @@ import { assertV2DraftVersion, getV2DraftDocument, readV2Draft, requireV2DraftVe
 import type { V2DraftVersion } from "./draft-version";
 import type { TaskReviewToolMemory } from "./components/task-review-tools";
 import { V2DraftConflict } from "./components/draft-conflict";
+import { FileEditDraftProvider } from "../components/file-edit-drafts";
 import { V2PhasePicker, type V2WorkPhase } from "./components/phase-picker";
 import { useV2DraftTaskConfiguration } from "./draft-task-configuration";
 import type { ProjectSkillChoice } from "../api/project-skills";
@@ -229,7 +230,7 @@ export function V2Workbench({ client }: { client: APIClient }) {
   const queries = useMemo(() => scopeID ? new QueryClient({ defaultOptions: parentQueries.getDefaultOptions() })
     : parentQueries, [scopeID, client.baseURL, parentQueries]);
   return <QueryClientProvider client={queries}><V2RecoveryProvider key={JSON.stringify([scopeID, client.baseURL])} client={client} scopeID={scopeID}>
-    <V2WorkbenchContent client={client} />
+    <FileEditDraftProvider><V2WorkbenchContent client={client} /></FileEditDraftProvider>
   </V2RecoveryProvider></QueryClientProvider>;
 }
 

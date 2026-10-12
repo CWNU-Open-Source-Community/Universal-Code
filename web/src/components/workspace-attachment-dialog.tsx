@@ -1,15 +1,18 @@
 import { FolderOpen, X } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { WorkspaceExplorer } from "./workspace-explorer";
+import { useFileEditLeave } from "./file-edit-drafts";
 import { useModalFocusTrap } from "../hooks/use-modal-focus-trap";
 
-export function WorkspaceAttachmentDialog({ client, open, onClose, runID, workspaceID }: {
+export function WorkspaceAttachmentDialog({ client, open, onClose: close, runID, workspaceID }: {
   client: APIClient;
   open: boolean;
   onClose: () => void;
   runID: string;
   workspaceID: string;
 }) {
+  const leave = useFileEditLeave();
+  const onClose = () => leave(close);
   const dialogRef = useModalFocusTrap<HTMLElement>(open, onClose);
   if (!open) return null;
   return <div className="desktop-dialog-backdrop" role="presentation">

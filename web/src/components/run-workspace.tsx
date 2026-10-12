@@ -92,6 +92,7 @@ import { VerificationEvidence } from "./verification-evidence";
 import { VerificationPlan } from "./verification-plan";
 import type { ReceiptReviewNavigationTarget } from "./receipt-review-navigation";
 import { WorkspaceExplorer } from "./workspace-explorer";
+import { useFileEditLeave } from "./file-edit-drafts";
 import { SessionComposer, type SessionComposerStatus } from "./session-composer";
 import { AgentGraphPanel, BatchDeliveriesPanel, ChildTasksPanel, DelegationsPanel, ExternalSkillsSection, FanoutPanel, FindingsPanel } from "./run-projections";
 import { RunActivityTimeline } from "./run-activity-timeline";
@@ -236,7 +237,9 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
   initialTab?: RunTab;
 }) {
   const { t } = useLocale();
-  const [tab, setTab] = useState<RunTab>(initialTab);
+  const [tab, changeTab] = useState<RunTab>(initialTab);
+  const leaveFileEdit = useFileEditLeave();
+  const setTab = useCallback((next: RunTab) => leaveFileEdit(() => changeTab(next)), [leaveFileEdit]);
   const [inputOpen, setInputOpen] = useState(false);
   const [inputStatus, setInputStatus] = useState<SessionComposerStatus>({ pending: false, error: null });
   const showInputStatus = useCallback((status: SessionComposerStatus) => {
@@ -353,7 +356,7 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
 
   useEffect(() => {
     if (!visibleTabs.some((item) => item.id === tab)) setTab("activity");
-  }, [tab, visibleTabs]);
+  }, [tab, visibleTabs, setTab]);
   const commands = useMemo<CommandPaletteCommand[]>(() => [
     ...visibleTabs.map(({ id, label }) => ({ id: `view-${id}`, label: t(`打开${label[0]}`, `Open ${label[1]}`),
       group: t("导航", "Navigate"), keywords: [id, "run"], run: () => setTab(id) })),
@@ -361,7 +364,7 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
       keywords: ["reload", "sync"], run: () => {
         void queryClient.invalidateQueries({ queryKey: ["run", runID] });
       } },
-  ], [queryClient, runID, t, visibleTabs]);
+  ], [queryClient, runID, t, visibleTabs, setTab]);
 
   if (!runID) {
     return <EmptyWorkspace icon={<Boxes aria-hidden="true" size={24} />} title={t("选择一个 Run", "Select a Run")} />;

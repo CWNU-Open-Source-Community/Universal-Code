@@ -44,6 +44,7 @@ import { V2Composer } from "./composer";
 import { V2ThreadRunRecovery } from "./thread-run-recovery";
 import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
 import { WorkspaceExplorer } from "../../components/workspace-explorer";
+import { useFileEditLeave } from "../../components/file-edit-drafts";
 import { UserTerminalPanel } from "../../components/user-terminal-panel";
 import { desktopUserTerminalEnabled, closeDesktopUserTerminal } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
@@ -86,7 +87,7 @@ export function V2FileDrawer({
   initialPath = ".",
   initialLine,
   onPathChange,
-  onClose,
+  onClose: close,
   returnFocusRef,
   docked = false,
 }: {
@@ -102,6 +103,8 @@ export function V2FileDrawer({
   docked?: boolean;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const leaveFileEdit = useFileEditLeave();
+  const onClose = () => leaveFileEdit(close);
   const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton, {
     isolateBackground: !docked,
     trapFocus: !docked,
@@ -350,8 +353,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const [observations, setObservations] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [activePane, setActivePane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
+  const leaveFileEdit = useFileEditLeave();
   const setPaneOpen = (pane: NonNullable<typeof activePane>, open: boolean) =>
-    setActivePane((current) => open ? pane : current === pane ? null : current);
+    (open || activePane === pane) && leaveFileEdit(() => setActivePane(open ? pane : null));
   const reviewOpen = activePane === "review";
   const previewOpen = activePane === "preview";
   const contextOpen = activePane === "context";
@@ -404,14 +408,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     runID?: string;
     triggerElement?: HTMLElement | null;
   }) => {
-    fileReturnFocus.current = triggerElement ?? fileTrigger.current;
-    setActivePane("files");
-    setFileDrawerState({
-      path,
-      line,
-      runID,
+    leaveFileEdit(() => {
+      fileReturnFocus.current = triggerElement ?? fileTrigger.current;
+      setActivePane("files");
+      setFileDrawerState({ path, line, runID });
     });
-  }, []);
+  }, [leaveFileEdit]);
   const turn = useV2ThreadTurn(client);
   const submissions = useV2ThreadSubmissions(threadID);
   const submitTrackedTurn = async (input: V2TurnInput) => {
@@ -888,9 +890,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <nav className="v2-task-navigation" aria-label="任务工作区">
       <div className="v2-task-workbench" role="group" aria-label="对话与工作台">
         <button aria-pressed={view === "conversation" && activePane === null} disabled={view === "inspector" && !onExitInspector}
-          onClick={() => { setActivePane(null); onExitInspector?.(); }} type="button"><MessagesSquare size={16} aria-hidden="true" />对话</button>
+          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} type="button"><MessagesSquare size={16} aria-hidden="true" />对话</button>
         <button aria-label="工作区文件" aria-pressed={filesOpen} onClick={() => {
-          if (filesOpen) { setActivePane(null); return; }
+          if (filesOpen) { leaveFileEdit(() => setActivePane(null)); return; }
           fileReturnFocus.current = fileTrigger.current;
           setFileDrawerState({ path: ".", line: undefined, runID: currentRun.id }); setActivePane("files");
         }} ref={fileTrigger} type="button"><FolderTree aria-hidden="true" size={16} />文件</button>
@@ -907,7 +909,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         <button aria-label="查看上下文" aria-pressed={contextOpen} onClick={() => setContextOpen(true)}
           ref={contextTrigger} type="button"><BookOpen aria-hidden="true" size={16} />上下文与恢复</button>
         <button aria-pressed={view === "inspector" && activePane === null}
-          onClick={(event) => { setActivePane(null); onOpenInspector(event.currentTarget); }} type="button">
+          onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} type="button">
           <Microscope aria-hidden="true" size={16} />观察执行</button>
       </div>
     </nav>

@@ -6,6 +6,7 @@ import type { APIClient } from "../api/client";
 import type { FileEditProposalSourceView } from "../api/types";
 import { useLocale } from "../lib/locale";
 import { ErrorState, StatusBadge } from "./common";
+import { useFileEditDraft, useFileEditLeave, useFileEditLeaveEntry } from "./file-edit-drafts";
 
 export function FileProposalEditor({ client, runID, source, onClose }: {
   client: APIClient;
@@ -13,10 +14,17 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
   source: FileEditProposalSourceView;
   onClose: () => void;
 }) {
+  return <FileProposalSession key={JSON.stringify([source.workspace_id, runID, source.path, source.content_sha256])}
+    client={client} runID={runID} source={source} onClose={onClose} />;
+}
+
+function FileProposalSession({ client, runID, source, onClose }: Parameters<typeof FileProposalEditor>[0]) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const [activeSource, setActiveSource] = useState(source);
-  const [draft, setDraft] = useState(source.content);
+  const recovery = useFileEditDraft(runID, activeSource);
+  const [draft, setDraft] = useState(recovery.text);
+  const leave = useFileEditLeave();
   const [expired, setExpired] = useState(Date.parse(source.expires_at) <= Date.now());
   const [mode, setMode] = useState<"edit" | "diff">("edit");
   const [editorState, setEditorState] = useState<"loading" | "ready" | "failed">("loading");
@@ -32,7 +40,6 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
   }, []);
   useEffect(() => {
     setActiveSource(source);
-    setDraft(source.content);
   }, [source]);
   useEffect(() => {
     const remaining = Date.parse(activeSource.expires_at) - Date.now();
@@ -43,12 +50,13 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
     return () => window.clearTimeout(timer);
   }, [activeSource.expires_at]);
   const mutation = useMutation({
-    mutationFn: () => client.createFileEditProposal(runID, {
+    mutationFn: (proposedText: string) => client.createFileEditProposal(runID, {
       version: "file_edit_proposal.v1",
       source_handle: activeSource.source_handle,
-      proposed_text: draft,
+      proposed_text: proposedText,
     }),
-    onSuccess: () => {
+    onSuccess: (_, proposedText) => {
+      recovery.submitted(proposedText);
       void queryClient.invalidateQueries({ queryKey: ["run", runID, "file-edits"] });
       void queryClient.invalidateQueries({ queryKey: ["run", runID, "file-edit-change-set"] });
       void queryClient.invalidateQueries({ queryKey: ["run", runID, "approvals"] });
@@ -64,8 +72,13 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
   });
   const bytes = new TextEncoder().encode(draft).length;
   const invalid = editorState !== "ready" || bytes > 256 * 1024 ||
-    draft === activeSource.content || expired;
+    draft === activeSource.content || expired || recovery.changedBase;
   const language = languageForPath(activeSource.path);
+  useFileEditLeaveEntry({ path: activeSource.path, dirty: Boolean(recovery.draft),
+    busy: mutation.isPending, canSave: !invalid,
+    save: () => mutation.mutateAsync(draft), keep: recovery.keep,
+    discard: () => { recovery.discard(); setDraft(activeSource.content); mutation.reset(); },
+  });
 
   return <section className="file-proposal-editor" aria-label={t(`编辑 ${activeSource.path} 的提案`, `Edit proposal for ${activeSource.path}`)}>
     <header>
@@ -80,7 +93,7 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
         </button>
       </div>
       <button aria-label={t("关闭文件提案编辑器", "Close file proposal editor")} className="icon-button"
-        onClick={onClose} title={t("关闭编辑器", "Close editor")} type="button">
+        onClick={() => leave(onClose)} title={t("关闭编辑器", "Close editor")} type="button">
         <X aria-hidden="true" size={15} />
       </button>
     </header>
@@ -92,9 +105,11 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
         {t("无法加载本地编辑器资源", "Local editor assets could not be loaded")}
       </div>}
       {editorState === "ready" && (mode === "edit" ?
-        <Editor height="100%" language={language} onChange={(value) => setDraft(value ?? "")}
+        <Editor height="100%" language={language} onChange={(value) => {
+          setDraft(value ?? ""); recovery.change(value ?? ""); mutation.reset();
+        }}
         options={{ automaticLayout: true, fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
-          renderWhitespace: "selection", scrollBeyondLastLine: false, tabSize: 2, wordWrap: "off" }}
+          readOnly: mutation.isPending, renderWhitespace: "selection", scrollBeyondLastLine: false, tabSize: 2, wordWrap: "off" }}
         path={`proposal://${runID}/${activeSource.content_sha256}/${activeSource.path}`}
         theme="vs" value={draft} /> :
         <DiffEditor height="100%" language={language} modified={draft} original={activeSource.content}
@@ -115,12 +130,21 @@ export function FileProposalEditor({ client, runID, source, onClose }: {
       {mutation.data ? <span className="proposal-created-status" role="status">
         <Check aria-hidden="true" size={14} />{t("等待审阅", "Pending review")} {mutation.data.edit.id.slice(0, 12)}
       </span> : <button className="compact-command" disabled={invalid || mutation.isPending}
-        onClick={() => mutation.mutate()} type="button">
+        onClick={() => mutation.mutate(draft)} type="button">
         {mutation.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
           : <FileDiff aria-hidden="true" size={14} />}
         {t("创建提案", "Create proposal")}
       </button>}
     </footer>
+    {(recovery.draft || recovery.error) && <div role={recovery.persisted ? "status" : "alert"}>
+      {recovery.persisted ? t("草稿已保存在本机", "Draft saved locally")
+        : recovery.error ?? t("草稿仅保留在本窗口", "Draft is only kept in this window")}
+    </div>}
+    {recovery.changedBase && <div className="inline-warning" role="alert">
+      <p>{t("文件自草稿保存后已变化。请核对差异，再以当前文件创建提案。", "The file has changed since this draft was saved. Review the diff before creating a proposal against the current file.")}</p>
+      <button onClick={() => setMode("diff")} type="button">{t("核对差异", "Review diff")}</button>
+      <button onClick={recovery.rebase} type="button">{t("已核对，使用当前版本", "Use current version after review")}</button>
+    </div>}
     {bytes > 256 * 1024 && <div className="inline-warning" role="alert">
       {t("提案超过 Go 控制平面的 256 KiB 上限", "Proposal exceeds the 256 KiB Go boundary")}
     </div>}
