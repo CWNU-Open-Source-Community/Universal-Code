@@ -7,13 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"cyberagent-workbench/internal/runner"
 )
 
 func TestLocalCommandProjectActionsMapsGoDistributionAndExternalNPM(t *testing.T) {
 	for _, executable := range []string{"go.exe", "gofmt.exe", "node.exe"} {
 		t.Run(executable, func(t *testing.T) {
 			spec := localLaunchTestSpec(t)
-			root := t.TempDir()
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
 			filename := filepath.Join(root, executable)
 			if executable != "node.exe" {
 				filename = filepath.Join(root, "bin", executable)
@@ -27,13 +32,16 @@ func TestLocalCommandProjectActionsMapsGoDistributionAndExternalNPM(t *testing.T
 			if err := os.Rename(spec.ExecutablePath, filename); err != nil {
 				t.Fatal(err)
 			}
-			spec.Spec.Executable, spec.ExecutablePath = filename, filename
-			spec.Spec.Arguments, spec.CanonicalArgv = []string{"test", "./..."}, []string{"test", "./..."}
+			spec.Spec.Executable = filename
+			spec.Spec.Arguments = []string{"test", "./..."}
 			if executable == "gofmt.exe" {
-				spec.Spec.Arguments, spec.CanonicalArgv = []string{"-w", "./work/file.go"}, []string{"-w", "./work/file.go"}
+				spec.Spec.Arguments = []string{"-w", "./work/file.go"}
 			}
 			if executable == "node.exe" {
-				npmRoot := t.TempDir()
+				npmRoot, err := filepath.EvalSymlinks(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
 				if err := os.Mkdir(filepath.Join(npmRoot, "bin"), 0700); err != nil {
 					t.Fatal(err)
 				}
@@ -41,7 +49,13 @@ func TestLocalCommandProjectActionsMapsGoDistributionAndExternalNPM(t *testing.T
 				if err := os.WriteFile(launcher, []byte("// installed CLI"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				spec.Spec.Arguments, spec.CanonicalArgv = []string{launcher, "test"}, []string{launcher, "test"}
+				spec.Spec.Arguments = []string{launcher, "test"}
+			}
+			// Pin the relocated fixture through the production normalizer, which
+			// resolves Windows temporary-directory aliases before launch checks.
+			spec, err = runner.NormalizeCommandRuntimeSpec(spec.Spec, spec.WorkspaceRoot)
+			if err != nil {
+				t.Fatal(err)
 			}
 			request, err := localLaunchTestCompile(spec)
 			if err != nil {
