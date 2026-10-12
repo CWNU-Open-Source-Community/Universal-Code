@@ -658,7 +658,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		FanoutExecutionController: application.NewReadOnlyFanoutExecutionService(
 			a.store, a.router, a.checker),
 		ChildTaskControlController:    application.NewChildTaskControlService(a.store),
-		SpecialistExecutionController: application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(commandRuntimeDrydocks),
+		SpecialistExecutionController: application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl),
 		ProviderCredentialController:  providerCredentialControl,
 		FileEditReviewController:      fileEditReview,
 		FileEditProposalController:    fileEditProposal,

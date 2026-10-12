@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
@@ -11,6 +13,7 @@ import (
 )
 
 const SpecialistExecutionPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/execute"
+const SpecialistContinuationPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/continue"
 const SpecialistToolReceiptsPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/attempts/{attempt_id}/tool-receipts"
 
 type SpecialistExecutionController interface {
@@ -21,6 +24,33 @@ type SpecialistExecutionRequestView struct {
 	OperationKey   string `json:"operation_key"`
 	WorkspaceTools bool   `json:"workspace_tools"`
 	ConfirmExecute bool   `json:"confirm_execute"`
+}
+
+type SpecialistContinuationRequestView struct {
+	Version        string `json:"version"`
+	OperationKey   string `json:"operation_key"`
+	ConfirmExecute bool   `json:"confirm_execute"`
+}
+
+type SpecialistContinuationView struct {
+	Version          string   `json:"version"`
+	RunID            string   `json:"run_id"`
+	AgentID          string   `json:"agent_id"`
+	ThreadID         string   `json:"thread_id"`
+	ScheduleID       string   `json:"schedule_id"`
+	AttemptID        string   `json:"attempt_id,omitempty"`
+	AttemptIDs       []string `json:"attempt_ids"`
+	Status           string   `json:"status"`
+	StopReason       string   `json:"stop_reason"`
+	ErrorCode        string   `json:"error_code,omitempty"`
+	RoundsCompleted  int      `json:"rounds_completed"`
+	TurnsStarted     int      `json:"turns_started"`
+	TotalTokens      int64    `json:"total_tokens"`
+	ExecutionMillis  int64    `json:"execution_millis"`
+	SummaryStatus    string   `json:"summary_status"`
+	SummaryErrorCode string   `json:"summary_error_code,omitempty"`
+	WakeID           string   `json:"wake_id,omitempty"`
+	Replayed         bool     `json:"replayed"`
 }
 type SpecialistExecutionView struct {
 	Version       string                   `json:"version"`
@@ -57,7 +87,7 @@ func matchSpecialistExecutionPath(path string) (runID, agentID, attemptID string
 		return
 	}
 	p := strings.Split(strings.TrimPrefix(path, "/api/v1/runs/"), "/")
-	if len(p) == 4 && p[0] != "" && p[1] == "agents" && p[2] != "" && p[3] == "execute" {
+	if len(p) == 4 && p[0] != "" && p[1] == "agents" && p[2] != "" && (p[3] == "execute" || p[3] == "continue") {
 		return p[0], p[2], "", true
 	}
 	if len(p) == 6 && p[0] != "" && p[1] == "agents" && p[2] != "" && p[3] == "attempts" && p[4] != "" && p[5] == "tool-receipts" {
@@ -116,6 +146,10 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 	if !a.authorizeRunOperation(w, r, requestID, a.modelControlEnabled, "Specialist execution") {
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/continue") {
+		a.serveSpecialistContinuation(w, r, requestID, runID, agentID)
+		return
+	}
 	var body SpecialistExecutionRequestView
 	raw, err := readStrictControlBody(r, "Specialist execution")
 	if err == nil {
@@ -135,4 +169,50 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	a.writeSuccessStatus(w, requestID, SpecialistExecutionView{Version: domain.SpecialistToolsVersion, RunID: result.RunID, AgentID: result.AgentID, AttemptID: result.AttemptID, Status: string(result.AttemptStatus), Usage: result.Usage, ModelAttempts: result.ModelAttempts, ToolCalls: result.ToolCalls, ToolRounds: result.ToolRounds, Replayed: result.Replayed}, nil, http.StatusOK)
+}
+
+func (a *API) serveSpecialistContinuation(w http.ResponseWriter, r *http.Request, requestID, runID, agentID string) {
+	controller, ok := a.specialistExecutionController.(interface {
+		ContinueSpecialist(context.Context, application.ContinueSpecialistRequest) (application.SpecialistContinuationResult, error)
+	})
+	if !ok {
+		a.writeError(w, requestID, apperror.New(apperror.CodeNotFound, "continuous child execution is unavailable"), 0)
+		return
+	}
+	var body SpecialistContinuationRequestView
+	raw, err := readStrictControlBody(r, "Specialist continuation")
+	if err == nil {
+		err = decodeStrictRunOperation(raw, &body, "Specialist continuation")
+	}
+	if err != nil {
+		a.writeError(w, requestID, err, 0)
+		return
+	}
+	if body.Version != application.SpecialistContinuationVersion || !body.ConfirmExecute {
+		a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "continuous child execution and completion summary require explicit confirmation"), 0)
+		return
+	}
+	// Multi-round child work can exceed the ordinary HTTP write timeout.
+	// Request cancellation and the durable Agent/Run budgets still bound work.
+	responseControl := http.NewResponseController(w)
+	if err := responseControl.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		a.writeError(w, requestID, apperror.Wrap(apperror.CodeUnavailable, "child response deadline could not be configured", err), 0)
+		return
+	}
+	result, err := controller.ContinueSpecialist(r.Context(), application.ContinueSpecialistRequest{RunID: runID, AgentID: agentID, OperationKey: body.OperationKey})
+	_ = responseControl.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	if err != nil {
+		a.writeError(w, requestID, err, 0)
+		return
+	}
+	before, after := result.Schedule.UsageBefore, result.Schedule.UsageAfter
+	a.writeSuccessStatus(w, requestID, SpecialistContinuationView{
+		Version: application.SpecialistContinuationVersion, RunID: result.RunID, AgentID: result.AgentID, ThreadID: result.ThreadID,
+		ScheduleID: result.Schedule.ID, AttemptID: result.AttemptID, Status: string(result.Schedule.Status), StopReason: result.Schedule.StopReason,
+		ErrorCode:       result.Schedule.ErrorCode,
+		AttemptIDs:      result.AttemptIDs,
+		RoundsCompleted: result.Schedule.RoundsCompleted, TurnsStarted: result.Schedule.TurnsStarted,
+		TotalTokens: after.SpecialistTokens - before.SpecialistTokens, ExecutionMillis: after.SpecialistExecutionMillis - before.SpecialistExecutionMillis,
+		SummaryStatus: result.SummaryStatus, SummaryErrorCode: result.SummaryErrorCode, WakeID: result.WakeID, Replayed: result.Replayed,
+	}, nil, http.StatusOK)
 }

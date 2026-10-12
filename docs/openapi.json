@@ -6877,6 +6877,129 @@
         "x-cyberagent-read-only": true
       }
     },
+    "/api/v1/runs/{run_id}/agents/{agent_id}/continue": {
+      "post": {
+        "operationId": "continueRunSpecialist",
+        "summary": "Run an admitted child continuously and summarize its completion",
+        "description": "Operator-confirmed continuation uses the existing Specialist scheduler for at most 32 rounds, with the child's original turn, token, monetary and Run execution budgets and Go-owned read/search tools. An actual child completion queues an attributed completion notification and wakes one bounded parent turn. Waiting, exhausted and cancelled children retain their precise stop reason. Stable operation identity replays both the schedule and completion wake.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "path",
+            "description": "Specialist Agent identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SpecialistContinuationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialistContinuationRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/runs/{run_id}/agents/{agent_id}/execute": {
       "post": {
         "operationId": "executeRunSpecialist",
@@ -56084,6 +56207,141 @@
           "citeable",
           "untrusted",
           "instruction_authorized"
+        ],
+        "type": "object"
+      },
+      "SpecialistContinuationRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_execute": {
+            "type": "boolean"
+          },
+          "operation_key": {
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "specialist_continuation.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "operation_key",
+          "confirm_execute"
+        ],
+        "type": "object"
+      },
+      "SpecialistContinuationView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "attempt_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "attempt_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "execution_millis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "rounds_completed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "schedule_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "abandoned"
+            ],
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "summary_error_code": {
+            "type": "string"
+          },
+          "summary_status": {
+            "enum": [
+              "not_requested",
+              "queued",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "total_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "turns_started": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "version": {
+            "enum": [
+              "specialist_continuation.v1"
+            ],
+            "type": "string"
+          },
+          "wake_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "run_id",
+          "agent_id",
+          "thread_id",
+          "schedule_id",
+          "attempt_ids",
+          "status",
+          "stop_reason",
+          "rounds_completed",
+          "turns_started",
+          "total_tokens",
+          "execution_millis",
+          "summary_status",
+          "replayed"
         ],
         "type": "object"
       },

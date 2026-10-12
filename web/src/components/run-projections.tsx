@@ -12,6 +12,7 @@ import type {
   FindingReportSummaryView,
   FindingReportView,
   ModelCancellationRequestView,
+  RunDetailView,
   SpecialistModelCancellationView,
 } from "../api/types";
 import { usePagedResource } from "../hooks/use-paged-resource";
@@ -71,6 +72,10 @@ export function ExternalSkillsSection({ client, runID, initial }: {
 export function AgentGraphPanel({ client, runID }: ProjectionProps) {
   const { t } = useLocale();
   const executing = useIsMutating({ mutationKey: ["run", runID, "specialist-execute"] });
+  const run = useQuery({
+    queryKey: ["run", runID],
+    queryFn: ({ signal }) => client.get<RunDetailView>(`/runs/${encodeURIComponent(runID)}`, {}, signal),
+  });
   const query = useQuery({
     queryKey: ["run", runID, "agent-graph"],
     queryFn: ({ signal }) => client.get<AgentGraphView>(`/runs/${encodeURIComponent(runID)}/agent-graph`, {}, signal),
@@ -133,7 +138,7 @@ export function AgentGraphPanel({ client, runID }: ProjectionProps) {
             node.id !== query.data.root_agent_id && (
             <SpecialistCancelControl agent={node} client={client} runID={runID} />
           )}
-          <SpecialistExecutionControl key={`${client.baseURL}/${runID}/${node.id}`} client={client} runID={runID} agent={node} />
+          <SpecialistExecutionControl key={`${client.baseURL}/${runID}/${node.id}`} client={client} runID={runID} agent={node} runStatus={run.data?.run.status} />
         </article>
       ))}
     </div>

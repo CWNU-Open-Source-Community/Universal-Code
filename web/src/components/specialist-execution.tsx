@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Play } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { AgentNodeView } from "../api/types";
-import { executeSpecialist, getSpecialistToolReceipts } from "../api/specialist-execution";
+import { continueSpecialist, getSpecialistToolReceipts } from "../api/specialist-execution";
+import { v2QueryKeys } from "../v2/query-keys";
 import { useLocale } from "../lib/locale";
 import { formatNumber } from "../lib/format";
 import { ErrorState, LoadingState, StatusBadge } from "./common";
@@ -11,7 +12,7 @@ import { ErrorState, LoadingState, StatusBadge } from "./common";
 function readPendingKey(storageKey: string): string | null {
   try {
     const key = sessionStorage.getItem(storageKey);
-    return key && /^web-specialist-[a-f0-9-]{36}$/u.test(key) ? key : null;
+    return key && /^web-specialist-continuation-[a-f0-9-]{36}$/u.test(key) ? key : null;
   } catch { return null; }
 }
 
@@ -22,32 +23,37 @@ function retainPendingKey(storageKey: string, key: string | null) {
   } catch { /* The mounted card still retains the operation key for a retry. */ }
 }
 
-export function SpecialistExecutionControl({ client, runID, agent }: {
-  client: APIClient; runID: string; agent: AgentNodeView;
+export function SpecialistExecutionControl({ client, runID, agent, runStatus }: {
+  client: APIClient; runID: string; agent: AgentNodeView; runStatus?: string;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
-  const storageKey = `universal-code.specialist.v1:${client.baseURL}:${runID}:${agent.id}`;
+  const storageKey = `universal-code.specialist-continuation.v1:${client.baseURL}:${runID}:${agent.id}`;
   const [pendingKey, setPendingKey] = useState(() => readPendingKey(storageKey));
   const [showReceipts, setShowReceipts] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState<string>();
   const execute = useMutation({
     mutationKey: ["run", runID, "specialist-execute"],
     mutationFn: () => {
-      const key = pendingKey ?? `web-specialist-${globalThis.crypto.randomUUID()}`;
+      const key = pendingKey ?? `web-specialist-continuation-${globalThis.crypto.randomUUID()}`;
       setPendingKey(key);
       retainPendingKey(storageKey, key);
-      return executeSpecialist(client, runID, agent.id, key);
+      return continueSpecialist(client, runID, agent.id, key);
     },
-    onSuccess: () => {
-      setPendingKey(null);
-      retainPendingKey(storageKey, null);
+    onSuccess: (result) => {
+      if (result.summary_status !== "queued" && result.summary_status !== "failed") {
+        setPendingKey(null);
+        retainPendingKey(storageKey, null);
+      }
+      void cache.invalidateQueries({ queryKey: ["thread", result.thread_id] });
+      void cache.invalidateQueries({ queryKey: v2QueryKeys.thread(result.thread_id) });
+      void cache.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
     },
     onSettled: () => {
-      void cache.invalidateQueries({ queryKey: ["run", runID, "agent-graph"] });
-      void cache.invalidateQueries({ queryKey: ["run", runID, "events"] });
+      void cache.invalidateQueries({ queryKey: ["run", runID] });
     },
   });
-  const attemptID = execute.data?.attempt_id ?? agent.active_attempt_id ?? agent.completion?.attempt_id;
+  const attemptID = selectedAttempt ?? execute.data?.attempt_id ?? agent.active_attempt_id ?? agent.completion?.attempt_id;
   const receipts = useQuery({
     queryKey: ["run", runID, "specialist-receipts", agent.id, attemptID],
     queryFn: ({ signal }) => getSpecialistToolReceipts(client, runID, agent.id, attemptID!, signal),
@@ -55,25 +61,36 @@ export function SpecialistExecutionControl({ client, runID, agent }: {
     refetchInterval: showReceipts && agent.status === "running" ? 3000 : false,
   });
   const canExecute = client.hasControl && client.hasModelControl && (agent.status === "ready" || Boolean(pendingKey));
+  const runBlocked = !pendingKey && runStatus !== "running";
   return <div className="agent-execution-control">
     {canExecute && <>
-      <p className="projection-placeholder">{t("子代理可独立读取、搜索当前任务文件并提交结论。修改与验证请使用批量交付。",
-        "The child can independently read and search this task's files and report findings. Use batch delivery for edits and validation.")}</p>
-      <button className="command-button" disabled={execute.isPending} type="button" onClick={() => execute.mutate()}>
+      <p className="projection-placeholder">{t("子代理将在已授权预算内连续读取、搜索任务文件，完成后由主会话自动汇总。修改与验证请使用批量交付。",
+        "The child continues reading and searching task files within its approved budget. On completion, the main conversation summarizes its findings automatically. Use batch delivery for edits and validation.")}</p>
+      {runBlocked && <p>{runStatus === "paused" ? t("任务已暂停。请先在任务控制中恢复，再运行子代理。", "The task is paused. Resume it in task controls before running the child.")
+        : t("等待任务处于运行状态后执行。", "The task must be running before child execution.")}</p>}
+      <button className="command-button" disabled={execute.isPending || runBlocked} type="button" onClick={() => execute.mutate()}>
         {execute.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={15} /> : <Play aria-hidden="true" size={15} />}
-        {execute.isPending ? t("子代理执行中…", "Child running…") : pendingKey ? t("重试并读取执行结果", "Retry and read execution result") : t("运行子代理", "Run child agent")}
+        {execute.isPending ? t("子代理执行并汇总中…", "Child running and summarizing…") : pendingKey ? t("重试并读取执行结果", "Retry and read execution result") : t("连续运行并汇总", "Run continuously and summarize")}
       </button>
     </>}
     {execute.data && <div className="run-control-result" role="status">
       <StatusBadge status={execute.data.status} />
-      <span>{t(`${formatNumber(execute.data.tool_calls)} 次工具调用 · ${formatNumber(execute.data.tool_rounds)} 轮`,
-        `${formatNumber(execute.data.tool_calls)} tool calls · ${formatNumber(execute.data.tool_rounds)} rounds`)}</span>
-      <span>{formatNumber(execute.data.usage.total_tokens)} Tokens</span>
+      <span>{t(`${formatNumber(execute.data.rounds_completed)} 轮子代理执行`, `${formatNumber(execute.data.rounds_completed)} child turns`)}</span>
+      <span>{formatNumber(execute.data.total_tokens)} Tokens</span>
+      <span>{executionStopLabel(execute.data.stop_reason, execute.data.error_code, t)}</span>
+      <span>{summaryLabel(execute.data.summary_status, t)}{execute.data.summary_error_code && ` · ${execute.data.summary_error_code}`}</span>
+      <a href={`#/threads/${encodeURIComponent(execute.data.thread_id)}`}>{t("查看主会话", "Open main conversation")}</a>
       {execute.data.replayed && <span>{t("已读取原执行结果", "Original execution result")}</span>}
     </div>}
     {execute.error && <ErrorState error={execute.error} />}
     {attemptID && <details open={showReceipts} onToggle={(event) => setShowReceipts(event.currentTarget.open)}>
       <summary>{t("子代理工具记录", "Child tool receipts")}</summary>
+      {execute.data && execute.data.attempt_ids.length > 1 && <label>
+        {t("执行轮次", "Child turn")}
+        <select aria-label={t("执行轮次", "Child turn")} value={attemptID} onChange={(event) => setSelectedAttempt(event.target.value)}>
+          {execute.data.attempt_ids.map((id, index) => <option key={id} value={id}>{t(`第 ${index + 1} 轮`, `Turn ${index + 1}`)}</option>)}
+        </select>
+      </label>}
       {receipts.isLoading && <LoadingState />}
       {receipts.error && <ErrorState error={receipts.error} />}
       {receipts.data?.rounds.map((round) => <section key={round.round}>
@@ -86,4 +103,27 @@ export function SpecialistExecutionControl({ client, runID, agent }: {
       {receipts.data?.rounds.length === 0 && <p>{t("本次执行没有工具调用。", "No tool calls in this attempt.")}</p>}
     </details>}
   </div>;
+}
+
+type Translate = (zh: string, en: string) => string;
+function executionStopLabel(reason: string, errorCode: string | undefined, t: Translate) {
+  switch (reason) {
+    case "all_terminal": return t("子代理已完成", "Child completed");
+    case "no_ready_child": return t("等待后续消息", "Waiting for further input");
+    case "round_limit": return t("达到连续执行轮数上限", "Continuation round limit reached");
+    case "token_budget_exhausted": return t("Token 预算已耗尽", "Token budget exhausted");
+    case "execution_budget_exhausted": return t("执行时间预算已耗尽", "Execution budget exhausted");
+    case "cancelled": return t("执行已取消", "Execution cancelled");
+    case "child_error": return errorCode === "RESOURCE_EXHAUSTED" ? t("子代理预算已耗尽", "Child budget exhausted") : t("子代理执行失败", "Child execution failed");
+    default: return reason;
+  }
+}
+function summaryLabel(status: string, t: Translate) {
+  switch (status) {
+    case "completed": return t("主会话已汇总", "Main conversation summary completed");
+    case "queued": return t("汇总等待主会话执行", "Summary queued for the main conversation");
+    case "cancelled": return t("汇总已取消", "Summary cancelled");
+    case "failed": return t("主会话汇总失败", "Main conversation summary failed");
+    default: return t("尚无完成报告可汇总", "No completion report to summarize yet");
+  }
 }

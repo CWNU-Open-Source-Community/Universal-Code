@@ -1272,6 +1272,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/agents/{agent_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an admitted child continuously and summarize its completion
+         * @description Operator-confirmed continuation uses the existing Specialist scheduler for at most 32 rounds, with the child's original turn, token, monetary and Run execution budgets and Go-owned read/search tools. An actual child completion queues an attributed completion notification and wakes one bounded parent turn. Waiting, exhausted and cancelled children retain their precise stop reason. Stable operation identity replays both the schedule and completion wake.
+         */
+        post: operations["continueRunSpecialist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/agents/{agent_id}/execute": {
         parameters: {
             query?: never;
@@ -11834,6 +11854,39 @@ export interface components {
             untrusted: boolean;
             url: string;
         };
+        SpecialistContinuationRequestView: {
+            confirm_execute: boolean;
+            operation_key: string;
+            /** @enum {string} */
+            version: "specialist_continuation.v1";
+        };
+        SpecialistContinuationView: {
+            agent_id: string;
+            attempt_id?: string;
+            attempt_ids: string[];
+            error_code?: string;
+            /** Format: int64 */
+            execution_millis: number;
+            replayed: boolean;
+            /** Format: int32 */
+            rounds_completed: number;
+            run_id: string;
+            schedule_id: string;
+            /** @enum {string} */
+            status: "running" | "completed" | "failed" | "cancelled" | "abandoned";
+            stop_reason: string;
+            summary_error_code?: string;
+            /** @enum {string} */
+            summary_status: "not_requested" | "queued" | "completed" | "failed" | "cancelled";
+            thread_id: string;
+            /** Format: int64 */
+            total_tokens: number;
+            /** Format: int32 */
+            turns_started: number;
+            /** @enum {string} */
+            version: "specialist_continuation.v1";
+            wake_id?: string;
+        };
         SpecialistExecutionRequestView: {
             confirm_execute: boolean;
             operation_key: string;
@@ -17515,6 +17568,53 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    continueRunSpecialist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Specialist Agent identity */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialistContinuationRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SpecialistContinuationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];
