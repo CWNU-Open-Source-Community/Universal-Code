@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -204,6 +205,17 @@ func (e *LocalSandboxCommandRuntimeExecutor) compile(scope runner.CommandRuntime
 		return sandbox.LocalRunRequest{}, err
 	}
 	toolchainRoot := filepath.Clean(filepath.Dir(spec.ExecutablePath))
+	// Go needs its read-only standard library and compiler alongside bin/go.
+	// Select only the installed Go distribution, never arbitrary host ancestors.
+	base := strings.ToLower(filepath.Base(spec.ExecutablePath))
+	if base == "go.exe" || base == "go" || base == "gofmt.exe" || base == "gofmt" {
+		candidate := filepath.Dir(toolchainRoot)
+		if filepath.Base(toolchainRoot) == "bin" {
+			if info, err := os.Stat(filepath.Join(candidate, "src", "runtime")); err == nil && info.IsDir() {
+				toolchainRoot = candidate
+			}
+		}
+	}
 	toolchainSHA256, err := sandbox.LocalHostPathDigest(toolchainRoot)
 	if err != nil {
 		return sandbox.LocalRunRequest{}, err
@@ -218,6 +230,22 @@ func (e *LocalSandboxCommandRuntimeExecutor) compile(scope runner.CommandRuntime
 	}
 	virtualExecutable := path.Join(commandRuntimeLocalToolchainRoot,
 		filepath.ToSlash(relativeExecutable))
+	toolchainInputs := []sandbox.LocalToolchainInput{{ID: "command-runtime-toolchain", Root: toolchainRoot,
+		VirtualRoot: commandRuntimeLocalToolchainRoot, RootSHA256: toolchainSHA256}}
+	// An installed npm update can live outside the Node distribution. Bind
+	// that exact package read-only instead of leaking an inaccessible host CLI
+	// path into the isolated process or mounting its user-profile ancestors.
+	if (base == "node.exe" || base == "node") && len(spec.CanonicalArgv) > 0 && filepath.Base(spec.CanonicalArgv[0]) == "npm-cli.js" && filepath.IsAbs(spec.CanonicalArgv[0]) {
+		launcher := spec.CanonicalArgv[0]
+		if relative, err := filepath.Rel(toolchainRoot, launcher); err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			npmRoot := filepath.Dir(filepath.Dir(launcher))
+			digest, err := sandbox.LocalHostPathDigest(npmRoot)
+			if err != nil {
+				return sandbox.LocalRunRequest{}, err
+			}
+			toolchainInputs = append(toolchainInputs, sandbox.LocalToolchainInput{ID: "command-runtime-npm", Root: npmRoot, VirtualRoot: "/toolchains/npm", RootSHA256: digest})
+		}
+	}
 	workingDirectory := "/workspace"
 	if spec.Spec.WorkingDirectory != "." {
 		workingDirectory = path.Join(workingDirectory,
@@ -227,6 +255,11 @@ func (e *LocalSandboxCommandRuntimeExecutor) compile(scope runner.CommandRuntime
 	for index, argument := range spec.CanonicalArgv {
 		arguments[index] = commandRuntimeLocalVirtualArgument(argument,
 			workspace.Path, toolchainRoot)
+		if len(toolchainInputs) == 2 {
+			if relative, err := filepath.Rel(toolchainInputs[1].Root, argument); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				arguments[index] = path.Join(toolchainInputs[1].VirtualRoot, filepath.ToSlash(relative))
+			}
+		}
 	}
 	environment := make([]sandbox.EnvironmentBinding, len(spec.Spec.Environment))
 	for index, binding := range spec.Spec.Environment {
@@ -265,10 +298,7 @@ func (e *LocalSandboxCommandRuntimeExecutor) compile(scope runner.CommandRuntime
 				"command_runtime_local_sandbox_operation.v1", scope.RunID,
 				scope.OperationKey),
 			RuntimeGeneration: e.backend.Generation()},
-		ToolchainInputs: []sandbox.LocalToolchainInput{{
-			ID: "command-runtime-toolchain", Root: toolchainRoot,
-			VirtualRoot: commandRuntimeLocalToolchainRoot,
-			RootSHA256:  toolchainSHA256}},
+		ToolchainInputs: toolchainInputs,
 		// PowerShell registers its ETW provider before running the requested
 		// script. The pinned runtime selects this named capability, never the
 		// command text. Local PowerShell normalization accepts only PowerShell 7.

@@ -1,0 +1,440 @@
+package application
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
+	"time"
+
+	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/commandruntimeadapter"
+	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/runner"
+)
+
+const ProjectActionsProtocolVersion = "project-actions.v1"
+
+type ProjectActionsStore interface {
+	RunFileWorkspaceStore
+	GetRun(context.Context, string) (domain.Run, error)
+	GetMission(context.Context, string) (domain.Mission, error)
+	GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error)
+}
+
+type ProjectActionRuntime interface {
+	ThreadApplicationServiceCommandRuntime
+	projectCommandService(context.Context, string) (*CommandRuntimeService, error)
+}
+
+type ProjectActionView struct {
+	Slot       string `json:"slot"`
+	CommandID  string `json:"command_id"`
+	Configured bool   `json:"configured"`
+	Available  bool   `json:"available"`
+	TargetKind string `json:"target_kind"`
+	Reason     string `json:"reason"`
+}
+
+type ProjectActionsView struct {
+	ProtocolVersion string              `json:"protocol_version"`
+	RunID           string              `json:"run_id"`
+	Backend         string              `json:"backend"`
+	Actions         []ProjectActionView `json:"actions"`
+	CapabilityGrant bool                `json:"capability_grant"`
+}
+
+type ProjectActionJobView struct {
+	ID              string                        `json:"id"`
+	State           runner.CommandRuntimeJobState `json:"state"`
+	ExitCode        *int                          `json:"exit_code,omitempty"`
+	Stdout          string                        `json:"stdout"`
+	Stderr          string                        `json:"stderr"`
+	StdoutTruncated bool                          `json:"stdout_truncated"`
+	StderrTruncated bool                          `json:"stderr_truncated"`
+	CanStop         bool                          `json:"can_stop"`
+}
+
+type ProjectActionResultView struct {
+	ProtocolVersion string               `json:"protocol_version"`
+	RunID           string               `json:"run_id"`
+	Slot            string               `json:"slot"`
+	CommandID       string               `json:"command_id"`
+	Backend         string               `json:"backend"`
+	Replayed        bool                 `json:"replayed"`
+	Job             ProjectActionJobView `json:"job"`
+}
+
+type ProjectActionRequest struct {
+	RunID, Slot, Target, OperationKey, RequestedBy string
+	ConfirmExecution                               bool
+}
+
+type projectActionPending struct {
+	ready   chan struct{}
+	purpose string
+	result  ProjectActionResultView
+	err     error
+}
+
+type ProjectActionsService struct {
+	store    ProjectActionsStore
+	runtime  ProjectActionRuntime
+	drydocks *RunWorktreeService
+	mu       sync.Mutex
+	pending  map[string]*projectActionPending
+}
+
+func NewProjectActionsService(store ProjectActionsStore, runtime any, drydocks *RunWorktreeService) *ProjectActionsService {
+	commands, _ := runtime.(ProjectActionRuntime)
+	return &ProjectActionsService{store: store, runtime: commands, drydocks: drydocks, pending: make(map[string]*projectActionPending)}
+}
+
+// The selection is a read of current preferences/readiness. It creates no
+// lease or permission grant, and never substitutes Host for an owned sandbox.
+func (s *CommandRuntimeService) projectCommandService(ctx context.Context, runID string) (*CommandRuntimeService, error) {
+	if s == nil || s.store == nil || !s.adapter.Executable() || !s.commandRuntimeAdapterCurrent() {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "command runtime is unavailable")
+	}
+	run, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run.Status != domain.RunRunning && run.Status != domain.RunPaused && run.Status != domain.RunCreated {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "Run is not executable")
+	}
+	mode, err := s.store.GetRunMode(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := s.store.GetRunExecutionProfile(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	permission, err := s.store.GetRunExecutionPermission(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if mode.Surface != domain.ExecutionSurfaceCode || mode.Phase != domain.ExecutionPhaseDeliver {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "project actions require Code Deliver phase")
+	}
+	if profile.Profile != commandRuntimeExecutionProfile(s.adapter) {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "command adapter does not match the selected execution profile")
+	}
+	if !permission.Mode.IsApprovalMode() || !s.adapter.AllowsPermission(permission.Mode) || !s.capabilities.AllowsSnapshot(permission) {
+		return nil, apperror.New(apperror.CodePolicyDenied, "current Run permission is unavailable for project actions")
+	}
+	owned, found, err := readRunFileDrydock(ctx, s.store, runID)
+	if err != nil {
+		return nil, err
+	}
+	if s.adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && found {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "owned workspace requires its sandbox command adapter")
+	}
+	if s.adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace {
+		if !found || owned.Path == "" {
+			return nil, apperror.New(apperror.CodeFailedPrecondition, "sandbox workspace is unavailable")
+		}
+		if probe, ok := s.sandbox.(commandRuntimeSandboxReadiness); ok {
+			ready, err := probe.Ready(ctx, runID)
+			if err != nil {
+				return nil, err
+			}
+			if !ready {
+				return nil, apperror.New(apperror.CodeFailedPrecondition, "selected sandbox command runtime is not ready")
+			}
+		}
+	}
+	return s, nil
+}
+
+func (m *CommandRuntimeMultiplexer) projectCommandService(ctx context.Context, runID string) (*CommandRuntimeService, error) {
+	var selected *CommandRuntimeService
+	for _, service := range m.adapters {
+		value, err := service.projectCommandService(ctx, runID)
+		if err != nil {
+			continue
+		}
+		if selected != nil {
+			return nil, apperror.New(apperror.CodeConflict, "project command adapter selection is ambiguous")
+		}
+		selected = value
+	}
+	if selected == nil {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "selected project command runtime is unavailable")
+	}
+	return selected, nil
+}
+
+func (s *CommandRuntimeService) projectPresetReady(ctx context.Context, id string) error {
+	if s.adapter.Backend != CommandRuntimeDockerSandboxBackend || (id != "test.npm" && id != "format.go") {
+		return nil
+	}
+	executor, ok := s.sandbox.(*DockerSandboxCommandRuntimeExecutor)
+	if !ok {
+		return apperror.New(apperror.CodeFailedPrecondition, "Docker project tools are unavailable")
+	}
+	probe, ok := executor.service.docker.readiness.(interface {
+		ProjectActionsAvailable(context.Context, string) (bool, error)
+	})
+	if ok {
+		ready, err := probe.ProjectActionsAvailable(ctx, executor.service.imageDigest)
+		if err != nil {
+			return apperror.New(apperror.CodeUnavailable, "Docker project tool inspection failed")
+		}
+		if ready {
+			return nil
+		}
+	}
+	return apperror.New(apperror.CodeFailedPrecondition, "rebuild the Standard Code Docker image to enable npm tests and gofmt")
+}
+
+func (s *ProjectActionsService) List(ctx context.Context, runID string) (ProjectActionsView, error) {
+	view := ProjectActionsView{ProtocolVersion: ProjectActionsProtocolVersion, RunID: runID, Actions: []ProjectActionView{}}
+	run, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		return view, err
+	}
+	project, err := projectconfig.Pinned(run.Config)
+	if err != nil {
+		return view, err
+	}
+	var service *CommandRuntimeService
+	if s.runtime != nil {
+		service, err = s.runtime.projectCommandService(ctx, runID)
+	} else {
+		err = errors.New("command runtime is unavailable")
+	}
+	reason := ""
+	if err != nil {
+		reason = redact.String(err.Error())
+	}
+	root := ""
+	if service != nil {
+		view.Backend = service.adapter.Backend
+		mission, readErr := s.store.GetMission(ctx, run.MissionID)
+		if readErr != nil {
+			return view, readErr
+		}
+		files, resolveErr := ResolveRunFileWorkspace(ctx, s.store, run, mission, s.drydocks)
+		if resolveErr != nil {
+			reason = "Run workspace is unavailable"
+			service = nil
+		} else {
+			root = files.Workspace.RootPath
+			if lease, found, leaseErr := service.store.GetRunExecutionLease(ctx, run.ID); leaseErr != nil {
+				return view, leaseErr
+			} else if found && lease.ActiveAt(time.Now().UTC()) {
+				reason = "Run is executing another operation"
+				service = nil
+			}
+		}
+	}
+	for _, slot := range []string{"test", "format"} {
+		action := ProjectActionView{Slot: slot, TargetKind: "directory", Reason: reason}
+		if slot == "format" {
+			action.TargetKind = "go_file"
+		}
+		if project != nil {
+			if slot == "test" {
+				action.CommandID = project.TestCommandID
+			} else {
+				action.CommandID = project.FormatCommandID
+			}
+		}
+		action.Configured = action.CommandID != ""
+		if !action.Configured {
+			action.Reason = "No project action is configured"
+		} else if service != nil {
+			_, _, prepareErr := resolveProjectCommandToolchain(action.CommandID, service.adapter, root)
+			if prepareErr == nil {
+				prepareErr = service.projectPresetReady(ctx, action.CommandID)
+			}
+			if (slot == "format") != (action.CommandID == "format.go") {
+				prepareErr = errors.New("configured command preset does not match its project action")
+			}
+			if slot == "format" && project.ReadOnly {
+				prepareErr = errors.New("read-only project cannot be formatted")
+			}
+			if prepareErr != nil {
+				action.Reason = redact.String(prepareErr.Error())
+			} else {
+				action.Available = true
+				action.Reason = ""
+			}
+		}
+		view.Actions = append(view.Actions, action)
+	}
+	return view, nil
+}
+
+func projectActionCommandIdentity(run domain.Run, request ProjectActionRequest) (string, string, string, error) {
+	project, err := projectconfig.Pinned(run.Config)
+	if err != nil {
+		return "", "", "", err
+	}
+	if project == nil {
+		return "", "", "", apperror.New(apperror.CodeFailedPrecondition, "Run has no configured project actions")
+	}
+	id := project.TestCommandID
+	if request.Slot == "format" {
+		id = project.FormatCommandID
+	}
+	if id == "" {
+		return "", "", "", apperror.New(apperror.CodeFailedPrecondition, "project action is not configured")
+	}
+	key := "project-action-" + runmutation.Fingerprint("project_action_operation", request.RunID, request.OperationKey)
+	// Stored IntentJSON retains this immutable task/action binding, so retries
+	// can read the original Job even after a toolchain or adapter disappears.
+	purpose := "Configured project action " + id + " " + runmutation.Fingerprint("project_action_request", run.ID, run.Config.ProjectConfigFingerprint, request.Slot, request.Target, request.RequestedBy)
+	return id, key, purpose, nil
+}
+
+func operatorProjectJobID(runID, key string) string {
+	operation := "operator-command-" + runmutation.Fingerprint("operator_command_key.v1", runID, key)
+	_, jobID := runner.CommandRuntimeOperationIdentity(runID, commandRuntimeBatchOperationKey(operation, 0))
+	return jobID
+}
+
+func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRequest) (ProjectActionResultView, error) {
+	if !domain.ValidAgentID(request.RunID) || !domain.ValidAgentID(request.RequestedBy) || (request.Slot != "test" && request.Slot != "format") || !request.ConfirmExecution || request.Target != strings.TrimSpace(request.Target) {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeInvalidArgument, "a confirmed project action with normalized target is required")
+	}
+	key, err := domain.NormalizeAgentOperationKey(request.OperationKey)
+	if err != nil || key != request.OperationKey {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeInvalidArgument, "project action operation key is invalid")
+	}
+	run, err := s.store.GetRun(ctx, request.RunID)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	id, operationKey, purpose, err := projectActionCommandIdentity(run, request)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	jobID := operatorProjectJobID(run.ID, operationKey)
+	if job, readErr := s.store.GetCommandRuntimeJob(ctx, jobID); readErr == nil {
+		var intent runner.CommandRuntimeSpec
+		if job.Validate() != nil || json.Unmarshal([]byte(job.IntentJSON), &intent) != nil || job.RunID != run.ID || intent.Purpose != purpose {
+			return ProjectActionResultView{}, apperror.New(apperror.CodeConflict, "project action key was already used for another action or target")
+		}
+		return s.projectResult(ctx, request.Slot, id, job, true), nil
+	} else if !errors.Is(readErr, runner.ErrCommandRuntimeJobNotFound) && apperror.CodeOf(apperror.Normalize(readErr)) != apperror.CodeNotFound {
+		return ProjectActionResultView{}, readErr
+	}
+	if s.runtime == nil {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeFailedPrecondition, "project command runtime is unavailable")
+	}
+	service, err := s.runtime.projectCommandService(ctx, run.ID)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	if err := service.projectPresetReady(ctx, id); err != nil {
+		return ProjectActionResultView{}, err
+	}
+	mission, err := s.store.GetMission(ctx, run.MissionID)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	files, err := ResolveRunFileWorkspace(ctx, s.store, run, mission, s.drydocks)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	spec, err := PrepareProjectCommandForAdapter(run, request.Slot, request.Target, service.adapter, files.Workspace.RootPath)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	spec.Purpose = purpose
+	if err = ctx.Err(); err != nil {
+		return ProjectActionResultView{}, err
+	}
+	s.mu.Lock()
+	pending := s.pending[jobID]
+	if pending != nil && pending.purpose != purpose {
+		s.mu.Unlock()
+		return ProjectActionResultView{}, apperror.New(apperror.CodeConflict, "project action key was already used for another action or target")
+	}
+	if pending == nil {
+		pending = &projectActionPending{ready: make(chan struct{}), purpose: purpose}
+		s.pending[jobID] = pending
+		owned := context.WithoutCancel(ctx)
+		go func() {
+			var once sync.Once
+			publish := func(value OperatorCommandResult, err error) {
+				once.Do(func() {
+					if value.Job.ID != "" {
+						pending.result = s.projectResult(owned, request.Slot, id, value.Job, value.Replayed)
+						err = nil
+					}
+					pending.err = err
+					close(pending.ready)
+					s.mu.Lock()
+					delete(s.pending, jobID)
+					s.mu.Unlock()
+				})
+			}
+			value, executeErr := service.runOperatorCommand(owned, OperatorCommandRequest{RunID: run.ID, OperationKey: operationKey, RequestedBy: request.RequestedBy, Command: spec, ConfirmExecution: true}, func(value OperatorCommandResult) { publish(value, nil) })
+			publish(value, executeErr)
+		}()
+	}
+	s.mu.Unlock()
+	select {
+	case <-pending.ready:
+		return pending.result, pending.err
+	case <-ctx.Done():
+		return ProjectActionResultView{}, ctx.Err()
+	}
+}
+
+func (s *ProjectActionsService) GetJob(ctx context.Context, runID, jobID string) (ProjectActionResultView, error) {
+	job, err := s.store.GetCommandRuntimeJob(ctx, jobID)
+	if err != nil {
+		return ProjectActionResultView{}, err
+	}
+	var intent runner.CommandRuntimeSpec
+	if job.Validate() != nil || job.RunID != runID || !strings.HasPrefix(job.InvocationID, "operator-command-") || json.Unmarshal([]byte(job.IntentJSON), &intent) != nil {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeNotFound, "project action Job was not found")
+	}
+	parts := strings.Fields(intent.Purpose)
+	if len(parts) != 5 || strings.Join(parts[:3], " ") != "Configured project action" || len(parts[4]) != 64 {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeNotFound, "Job is not a configured project action")
+	}
+	slot := "test"
+	if parts[3] == "format.go" {
+		slot = "format"
+	}
+	return s.projectResult(ctx, slot, parts[3], job, true), nil
+}
+
+func (s *ProjectActionsService) projectResult(ctx context.Context, slot, id string, job runner.CommandRuntimeJob, replayed bool) ProjectActionResultView {
+	value := ProjectActionJobView{ID: job.ID, State: job.State, ExitCode: job.ExitCode, Stdout: redact.String(job.Stdout), Stderr: redact.String(job.Stderr), StdoutTruncated: job.StdoutObservedBytes > int64(len(job.Stdout)), StderrTruncated: job.StderrObservedBytes > int64(len(job.Stderr))}
+	// Operator Jobs are observed/stopped by the same owner bridge as Thread
+	// services. Source-message attribution is optional for operator invocation.
+	if s.runtime != nil && !job.State.Terminal() {
+		snapshot, page, owned, err := s.runtime.ReadCommandRuntimeActivityTail(ctx, job, runner.MaxCommandRuntimeOutputRead)
+		if err == nil && owned {
+			value.State, value.ExitCode = snapshot.State, snapshot.ExitCode
+			output := projectThreadServiceOutput(page, "", nil)
+			value.Stdout, value.Stderr = output.Stdout, output.Stderr
+			value.StdoutTruncated = output.Dropped || snapshot.StdoutObservedBytes > int64(len(output.Stdout))
+			value.StderrTruncated = output.Dropped || snapshot.StderrObservedBytes > int64(len(output.Stderr))
+			value.CanStop = !snapshot.State.Terminal() && snapshot.State != runner.CommandRuntimeJobStopping
+		}
+	}
+	// Local paths are not part of the public receipt.
+	if mission, err := s.store.GetMission(ctx, job.MissionID); err == nil {
+		if files, err := resolveRunFileWorkspaceControl(ctx, s.store, domain.Run{ID: job.RunID, MissionID: job.MissionID, SessionID: job.SessionID}, mission, s.drydocks); err == nil {
+			for _, root := range []string{files.Source.RootPath, files.Workspace.RootPath} {
+				if root != "" {
+					value.Stdout = strings.ReplaceAll(value.Stdout, root, "[workspace]")
+					value.Stderr = strings.ReplaceAll(value.Stderr, root, "[workspace]")
+				}
+			}
+		}
+	}
+	return ProjectActionResultView{ProtocolVersion: ProjectActionsProtocolVersion, RunID: job.RunID, Slot: slot, CommandID: id, Backend: job.Adapter.Backend, Replayed: replayed, Job: value}
+}

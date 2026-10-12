@@ -519,7 +519,7 @@ jobs:
           go test -v -count=1 -timeout 10m ./internal/app -run ('^(' + ($cliTests -join '|') + ')$')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Preserve the operator-first launch order and retain all results.
-          go test -v -count=1 -timeout 10m ./internal/application -run '^TestOperatorFixedCommandUsesSharedJobLedger$'
+          go test -v -count=1 -timeout 10m ./internal/application -run '^TestOperator(FixedCommandUsesSharedJobLedger|CommandDrainsMultipleOutputPages)$'
           $fixedOperatorExitCode = $LASTEXITCODE
           go test -v -count=1 -timeout 10m ./internal/runner -run '^TestWindowsFixedCommandRuntimeUsesRestrictedNativeProcess$'
           $fixedRunnerExitCode = $LASTEXITCODE

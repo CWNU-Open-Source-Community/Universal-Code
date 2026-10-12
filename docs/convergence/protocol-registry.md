@@ -28,13 +28,13 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 6 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
-| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 54 | true |
+| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 55 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 6 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
 | [release-and-packaging-contracts](#release-and-packaging-contracts) | `external-durable` | Desktop release and packaging maintainers | 4 | true |
 | [report-summary-projections](#report-summary-projections) | `projection` | Finding, repository, and summary maintainers | 5 | true |
-| [sandbox-docker-lifecycle](#sandbox-docker-lifecycle) | `internal-durable` | Sandbox and Docker lifecycle maintainers | 202 | true |
+| [sandbox-docker-lifecycle](#sandbox-docker-lifecycle) | `internal-durable` | Sandbox and Docker lifecycle maintainers | 203 | true |
 | [sandbox-environment-settings](#sandbox-environment-settings) | `internal-durable` | Desktop sandbox environment maintainers | 1 | true |
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
@@ -1114,7 +1114,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `process-runtime-lifecycle-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>54 active identifiers</summary>
+<details><summary>55 active identifiers</summary>
 
 - `application_docker_container_lifecycle_post_exit.v1`
 - `application_docker_container_lifecycle_running.v1`
@@ -1163,6 +1163,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `operator_command_key.v1`
 - `operator_command_request.v1`
 - `permission_runtime_epoch.v1`
+- `project-actions.v1`
 - `risk_escalation.v1`
 - `risk_escalation_policy.v1`
 - `risk_escalation_resume.v1`
@@ -1316,8 +1317,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `sandbox-docker-lifecycle-reader` (`v1, v2`, active) at `internal/store`
   - `local-sandbox-owner-recovery-reader` (`v1, v2, v3`, active) at `internal/sandbox`
 
-<details><summary>202 active identifiers</summary>
+<details><summary>203 active identifiers</summary>
 
+- `docker-standard-code-guest.v1`
 - `docker-standard-code.v1`
 - `docker_sandbox_admission.v1`
 - `docker_sandbox_admission_operation.v1`

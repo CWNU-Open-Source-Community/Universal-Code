@@ -1,5 +1,10 @@
 import type { components } from "./schema";
 
+export type ProjectActionsView = components["schemas"]["ProjectActionsView"];
+export type ProjectActionView = components["schemas"]["ProjectActionView"];
+export type ProjectActionResultView = components["schemas"]["ProjectActionResultView"];
+export type ProjectActionJobView = components["schemas"]["ProjectActionJobView"];
+
 export type ThreadExecutionView = components["schemas"]["ThreadExecutionState"];
 
 export type ThreadTurnFailureReferenceView = components["schemas"]["ThreadTurnFailureReferenceView"];

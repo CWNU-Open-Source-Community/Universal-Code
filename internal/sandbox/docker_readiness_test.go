@@ -10,6 +10,21 @@ import (
 
 var _ ReadinessProbe = DockerReadinessProbe{}
 
+func TestProjectActionsImageMetadataRequiresUpdatedExactImage(t *testing.T) {
+	transport, digest := readyDockerReadinessTestTransport(t)
+	probe := fixedDockerReadinessTestProbe(t, transport)
+	if ready, err := probe.ProjectActionsAvailable(t.Context(), digest); err != nil || ready {
+		t.Fatalf("old image promised project tools: %t %v", ready, err)
+	}
+	transport.image.ProjectActionsVersion = "1"
+	if ready, err := probe.ProjectActionsAvailable(t.Context(), digest); err != nil || !ready {
+		t.Fatalf("updated image capability lost: %t %v", ready, err)
+	}
+	if ready, err := probe.ProjectActionsAvailable(t.Context(), "sha256:"+strings.Repeat("f", 64)); err == nil || ready {
+		t.Fatalf("unbound image capability accepted: %t %v", ready, err)
+	}
+}
+
 type dockerReadinessTestTransport struct {
 	endpoint   DockerObservationEndpoint
 	pingErr    error

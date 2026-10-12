@@ -166,17 +166,23 @@ func workspaceGrowthExceeded(baseline, current workspaceUsage,
 }
 
 func fixedToolchain(toolchain string) (string, []string, error) {
-	tempRoot := filepath.Join(cacheRoot, "tmp")
+	return fixedToolchainAt(toolchain, cacheRoot)
+}
+
+func fixedToolchainAt(toolchain, scratchRoot string) (string, []string, error) {
+	tempRoot := filepath.Join(scratchRoot, "tmp")
 	if err := os.MkdirAll(tempRoot, 0o700); err != nil {
 		return "", nil, err
 	}
 	basePath := "/usr/bin:/bin"
 	baseEnvironment := []string{"TMPDIR=" + tempRoot}
 	switch toolchain {
+	case "gofmt":
+		return "/opt/toolchains/go/bin/gofmt", append(baseEnvironment, "PATH=/opt/toolchains/go/bin:"+basePath), nil
 	case "go":
-		cache := filepath.Join(cacheRoot, "go")
-		moduleCache := filepath.Join(cacheRoot, "go-mod")
-		goPath := filepath.Join(cacheRoot, "go-path")
+		cache := filepath.Join(scratchRoot, "go")
+		moduleCache := filepath.Join(scratchRoot, "go-mod")
+		goPath := filepath.Join(scratchRoot, "go-path")
 		goTemp := filepath.Join(tempRoot, "go")
 		for _, directory := range []string{cache, moduleCache, goPath, goTemp} {
 			if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -192,15 +198,15 @@ func fixedToolchain(toolchain string) (string, []string, error) {
 		), nil
 	case "node":
 		return "/opt/toolchains/node/bin/node", append(baseEnvironment,
-			"PATH=/opt/toolchains/node/bin:"+basePath), nil
+			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false"), nil
 	case "python":
 		return "/opt/toolchains/python/usr-local/bin/python3", append(baseEnvironment,
 			"PATH=/opt/toolchains/python/usr-local/bin:"+basePath,
 			"PYTHONHOME=/opt/toolchains/python/usr-local",
 			"PYTHONDONTWRITEBYTECODE=1", "PYTHONNOUSERSITE=1"), nil
 	case "rust":
-		target := filepath.Join(cacheRoot, "rust-target")
-		cargoHome := filepath.Join(cacheRoot, "cargo-home")
+		target := filepath.Join(scratchRoot, "rust-target")
+		cargoHome := filepath.Join(scratchRoot, "cargo-home")
 		if err := os.MkdirAll(target, 0o700); err != nil {
 			return "", nil, err
 		}

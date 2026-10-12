@@ -4,8 +4,26 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+func TestFixedProjectToolchainsKeepFormatterAndNestedNPMInGuest(t *testing.T) {
+	executable, environment, err := fixedToolchainAt("gofmt", t.TempDir())
+	if err != nil || executable != "/opt/toolchains/go/bin/gofmt" {
+		t.Fatalf("gofmt binding %q %v", executable, err)
+	}
+	if !strings.Contains(strings.Join(environment, "\n"), "PATH=/opt/toolchains/go/bin:") {
+		t.Fatal("formatter lost its fixed toolchain PATH")
+	}
+	executable, environment, err = fixedToolchainAt("node", t.TempDir())
+	if err != nil || executable != "/opt/toolchains/node/bin/node" || !strings.Contains(strings.Join(environment, "\n"), "npm_config_audit=false") || !strings.Contains(strings.Join(environment, "\n"), "npm_config_fund=false") {
+		t.Fatalf("Node/npm binding %q %+v %v", executable, environment, err)
+	}
+	if _, _, err := fixedToolchainAt("shell", t.TempDir()); err == nil {
+		t.Fatal("project actions granted a new shell toolchain")
+	}
+}
 
 func TestParseExecutionLimitsAcceptsOnlyFixedProfile(t *testing.T) {
 	values := []string{

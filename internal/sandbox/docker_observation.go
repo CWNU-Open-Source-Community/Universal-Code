@@ -177,16 +177,17 @@ func (info DockerDaemonInfo) UserNamespaceEnabled() bool {
 }
 
 type DockerImageInspection struct {
-	ID               string
-	RepoDigests      []string
-	OSType           string
-	Architecture     string
-	SizeBytes        int64
-	User             string
-	RootFSType       string
-	GraphDriver      string
-	EnvironmentCount int
-	VolumeCount      int
+	ID                    string
+	RepoDigests           []string
+	OSType                string
+	Architecture          string
+	SizeBytes             int64
+	User                  string
+	RootFSType            string
+	GraphDriver           string
+	EnvironmentCount      int
+	VolumeCount           int
+	ProjectActionsVersion string
 }
 
 func (image DockerImageInspection) Normalize(requestedDigest string) (DockerImageInspection, error) {
@@ -197,7 +198,7 @@ func (image DockerImageInspection) Normalize(requestedDigest string) (DockerImag
 		!validObservationText(image.RootFSType, 64, true) ||
 		!validObservationText(image.GraphDriver, 128, true) || len(image.RepoDigests) > 128 ||
 		image.EnvironmentCount < 0 || image.EnvironmentCount > 4096 ||
-		image.VolumeCount < 0 || image.VolumeCount > 4096 {
+		image.VolumeCount < 0 || image.VolumeCount > 4096 || (image.ProjectActionsVersion != "" && image.ProjectActionsVersion != "1") {
 		return DockerImageInspection{}, errors.New("docker image inspection is invalid")
 	}
 	digests := make([]string, 0, len(image.RepoDigests))

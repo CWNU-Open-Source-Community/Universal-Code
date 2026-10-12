@@ -27,7 +27,7 @@ func TestSupervisorProjectCommandsExposeExactStartIntentOnlyForOfferedHostRuntim
 	project := projectconfig.Effective{Protocol: projectconfig.ProtocolVersion, TestCommandID: "test.go"}
 	raw, _ := json.Marshal(project)
 	run := domain.Run{Config: domain.RunConfig{ProjectConfig: raw, ProjectConfigFingerprint: project.Fingerprint()}}
-	offered := supervisorCommandRuntimeTools{Adapter: commandruntimeadapter.Identity{Kind: commandruntimeadapter.KindHostUnsandboxed}, Authority: json.RawMessage("{}")}
+	offered := supervisorCommandRuntimeTools{Adapter: commandruntimeadapter.HostUnsandboxed("test-context"), Authority: json.RawMessage("{}")}
 	messages, err := supervisorProjectCommands(run, nil, offered, "")
 	if err != nil || len(messages) != 1 {
 		t.Fatalf("project context %#v %v", messages, err)

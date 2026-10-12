@@ -369,7 +369,7 @@ func (a *App) runStandardCodeRecover(ctx context.Context, args []string) error {
 }
 
 func (a *App) newStandardCodeDockerService(dockerEnabled, permissionControl,
-	workspaceSandbox bool,
+	workspaceSandbox bool, runtimeCapabilities ...domain.ExecutionPermissionRuntimeCapabilities,
 ) (*application.StandardCodeDockerService, error) {
 	imageDigest := strings.TrimSpace(os.Getenv(standardCodeDockerImageEnvironment))
 	if !sandbox.ValidOCIImageDigest(imageDigest) {
@@ -411,6 +411,9 @@ func (a *App) newStandardCodeDockerService(dockerEnabled, permissionControl,
 	permissionCapabilities := domain.ExecutionPermissionRuntimeCapabilities{
 		WorkspaceSandboxEnabled: workspaceSandbox,
 		OperatorApprovalEnabled: permissionControl}
+	if len(runtimeCapabilities) == 1 {
+		permissionCapabilities = runtimeCapabilities[0]
+	}
 	docker, err := application.NewDockerSandboxService(a.store, readiness, a.checker,
 		sandbox.DockerRuntimeCapabilities{Enabled: dockerEnabled}, permissionCapabilities,
 		application.WithDockerSandboxExecution(lifecycle, ioTransport, stagingRoot,

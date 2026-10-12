@@ -2804,6 +2804,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/project-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect configured project actions
+         * @description Reads pinned test/format action IDs and current runtime availability without creating execution authority or exposing host executable paths.
+         */
+        get: operations["listProjectActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/project-actions/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a saved project action Job
+         * @description Reads bounded real output and status from an existing Run-owned project-action Job. It requires no new execution authority.
+         */
+        get: operations["getProjectActionJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/project-actions/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run one configured project action
+         * @description Starts only the pinned test or format preset through the selected Command Runtime adapter and its existing permission and lease checks. Returns the saved Job promptly; retrying the same action key reads the original Job and never starts it again.
+         */
+        post: operations["runProjectAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/project-instructions": {
         parameters: {
             query?: never;
@@ -9749,6 +9809,53 @@ export interface components {
         PriceSnapshotListView: {
             items: components["schemas"]["PriceSnapshotItemView"][];
             protocol_version: string;
+        };
+        ProjectActionJobView: {
+            can_stop: boolean;
+            /** Format: int32 */
+            exit_code?: number;
+            id: string;
+            /** @enum {string} */
+            state: "prepared" | "running" | "stopping" | "completed" | "failed" | "timed_out" | "cancelled" | "killed" | "interrupted";
+            stderr: string;
+            stderr_truncated: boolean;
+            stdout: string;
+            stdout_truncated: boolean;
+        };
+        ProjectActionRequestView: {
+            confirm_execution: boolean;
+            target: string;
+            /** @enum {string} */
+            version: "project-actions.v1";
+        };
+        ProjectActionResultView: {
+            backend: string;
+            command_id: string;
+            job: components["schemas"]["ProjectActionJobView"];
+            /** @enum {string} */
+            protocol_version: "project-actions.v1";
+            replayed: boolean;
+            run_id: string;
+            /** @enum {string} */
+            slot: "test" | "format";
+        };
+        ProjectActionView: {
+            available: boolean;
+            command_id: string;
+            configured: boolean;
+            reason: string;
+            /** @enum {string} */
+            slot: "test" | "format";
+            /** @enum {string} */
+            target_kind: "directory" | "go_file";
+        };
+        ProjectActionsView: {
+            actions: components["schemas"]["ProjectActionView"][];
+            backend: string;
+            capability_grant: boolean;
+            /** @enum {string} */
+            protocol_version: "project-actions.v1";
+            run_id: string;
         };
         ProjectConfigurationView: {
             allowed_profiles: string[];
@@ -20886,6 +20993,131 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["PlanDeliveryWorkItemControlView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listProjectActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectActionsView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getProjectActionJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Saved project action Job */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectActionResultView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    runProjectAction: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                slot: "test" | "format";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectActionRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectActionResultView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

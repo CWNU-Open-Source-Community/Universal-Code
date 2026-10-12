@@ -493,6 +493,7 @@ func (c openAPIThreadPullRequestController) ImportCredential(ctx context.Context
 
 func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture := newAPIFixture(t)
+	fixture.api.projectActionsController = &projectActionsControllerStub{}
 	environmentFixture := newSandboxEnvironmentAPIFixture(t)
 	fixture.api.sandboxEnvironmentController = environmentFixture.api.sandboxEnvironmentController
 	fixture.api.sandboxEnvironmentControlEnabled = true
@@ -1148,6 +1149,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"{edit_id}":           fileEditRecord.ID,
 		"{source_edit_id}":    revertSource.ID,
 		"{job_id}":            scheduledSeed.Job.ID,
+		"{slot}":              "test",
 		"{action}":            string(domain.ScheduledJobPause),
 		"{object_id}":         strings.Repeat("a", 40),
 		"{plan_id}":           verificationPlan.Plan.ID,
@@ -1528,6 +1530,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					}
 					body = `{"version":"thread_lifecycle.v1","expected_version":` +
 						fmt.Sprint(current.Version) + `}`
+				} else if spec.Path == ProjectActionRunPathTemplate {
+					body = `{"version":"project-actions.v1","target":"","confirm_execution":true}`
 				} else if spec.Path == StandardCodePresetCreatePath {
 					body = `{"version":"standard_code_preset.v1",` +
 						`"workspace_id":"` + fixture.workspace.ID + `",` +

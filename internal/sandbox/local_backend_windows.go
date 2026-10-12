@@ -633,6 +633,9 @@ func buildLocalEnvironment(home, temporary string, toolchains []localPinnedRoot,
 	pathValues := make([]string, 0, len(toolchains)+1)
 	for _, root := range toolchains {
 		pathValues = append(pathValues, root.path)
+		if info, err := os.Stat(filepath.Join(root.path, "bin", "go.exe")); err == nil && info.Mode().IsRegular() {
+			pathValues = append(pathValues, filepath.Join(root.path, "bin"))
+		}
 	}
 	pathValues = append(pathValues, systemDirectory)
 	values := map[string]string{

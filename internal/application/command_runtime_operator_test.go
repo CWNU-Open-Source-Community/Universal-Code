@@ -498,6 +498,37 @@ func newFixedOperatorFixture(t *testing.T, status domain.RunStatus, kind runner.
 	return f, request
 }
 
+func TestOperatorCommandDrainsMultipleOutputPages(t *testing.T) {
+	// Paging uses the shared operator Job path. Native fixed-command isolation
+	// is covered separately, without making output size depend on PowerShell's
+	// cold startup and directory enumeration on hosted Windows runners.
+	f := newOperatorCommandFixtureAtStatus(t, domain.RunExecutionPermissionAsk, domain.RunCreated)
+	request := f.request(t, true)
+	request.Command.Arguments = []string{"-e", `require('fs').appendFileSync('count.txt','1');process.stdout.write(('page-'+'x'.repeat(100)+'\n').repeat(400));process.stderr.write('paging-complete\n');`}
+	request.Command.TimeoutMilliseconds = 60_000
+	request.Command.Output = runner.CommandRuntimeOutputPolicy{InlineBytes: runner.MaxControlledOutputCaptureBytes, ArtifactBytes: runner.MaxControlledOutputCaptureBytes}
+	wantStdout := strings.Repeat("page-"+strings.Repeat("x", 100)+"\n", 400)
+	const wantStderr = "paging-complete\n"
+	if len(wantStdout) <= toolgateway.MaxCommandRuntimePageBytes || len(wantStdout) > runner.MaxControlledOutputCaptureBytes {
+		t.Fatal("fixture must span multiple pages within the capture limit")
+	}
+	result, err := f.service.RunOperatorCommand(t.Context(), request)
+	if err != nil || result.Job.State != runner.CommandRuntimeJobCompleted || !result.Job.TreeReaped {
+		t.Fatal("paged operator command", result, err)
+	}
+	if result.Job.Stdout != wantStdout || result.Job.Stderr != wantStderr {
+		t.Fatalf("output pages changed: stdout bytes=%d stderr=%q", len(result.Job.Stdout), result.Job.Stderr)
+	}
+	f.caps.RuntimeAuthority.RevokeRun(f.run.ID)
+	replay, found, err := ReadOperatorCommand(t.Context(), f.st, request)
+	if err != nil || !found || !replay.Replayed || replay.Job.ID != result.Job.ID || replay.Job.Stdout != wantStdout || replay.Job.Stderr != wantStderr {
+		t.Fatal("paged output replay changed", replay, found, err)
+	}
+	if marker, err := os.ReadFile(filepath.Join(f.root, "count.txt")); err != nil || string(marker) != "1" {
+		t.Fatalf("paged command was not executed exactly once: %q %v", marker, err)
+	}
+}
+
 func TestOperatorFixedCommandUsesSharedJobLedger(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("fixed restricted native adapter is Windows-only")
@@ -528,27 +559,6 @@ func TestOperatorFixedCommandUsesSharedJobLedger(t *testing.T) {
 		result, err := f.service.RunOperatorCommand(t.Context(), request)
 		if err != nil || result.Job.State != runner.CommandRuntimeJobCompleted || result.Job.TimeoutMilliseconds != 120_000 || !result.Job.TreeReaped {
 			t.Fatal("fixed maximum timeout", result, err)
-		}
-	})
-	t.Run("multiple-output-pages", func(t *testing.T) {
-		// Paging correctness has its own budget; default and timeout behavior are tested separately.
-		f, request := newFixedOperatorFixture(t, domain.RunCreated, runner.ControlledCommandPowerShellWorkspaceList, time.Minute)
-		for i := 0; i < 400; i++ {
-			name := fmt.Sprintf("page-%03d-%s.txt", i, strings.Repeat("x", 60))
-			if err := os.WriteFile(filepath.Join(f.root, name), nil, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		result, err := f.service.RunOperatorCommand(t.Context(), request)
-		if err != nil || result.Job.State != runner.CommandRuntimeJobCompleted || result.Job.TimeoutMilliseconds != 60_000 || !result.Job.TreeReaped {
-			t.Fatal("paged fixed command", result, err)
-		}
-		if len(result.Job.Stdout) <= toolgateway.MaxCommandRuntimePageBytes || len(result.Job.Stdout) > runner.MaxControlledOutputCaptureBytes || strings.Count(result.Job.Stdout, "page-") != 400 {
-			t.Fatalf("output pages lost or exceeded capture: bytes=%d entries=%d", len(result.Job.Stdout), strings.Count(result.Job.Stdout, "page-"))
-		}
-		replay, found, err := ReadOperatorCommand(t.Context(), f.st, request)
-		if err != nil || !found || !replay.Replayed || replay.Job.Stdout != result.Job.Stdout {
-			t.Fatal("paged output replay changed", err)
 		}
 	})
 	t.Run("native-timeout", func(t *testing.T) {
