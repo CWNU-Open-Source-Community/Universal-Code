@@ -42,15 +42,30 @@ func TestSchemaV189RepairsSBXCommandScopeWithoutRewritingHistory(t *testing.T) {
 	for _, table := range []string{"workspaces", "command_runtime_jobs", "command_runtime_job_agents", "run_execution_profile_snapshots", "run_execution_permission_snapshots", "run_execution_interaction_snapshots"} {
 		beforeRows[table] = legacyFixtureRows(t, state, table)
 	}
+	// Check v189's exact change before Open applies subsequent migrations.
+	if err := state.applyMigration(ctx, migrationPlan()[188]); err != nil {
+		t.Fatal("upgrade v188 to v189", err)
+	}
+	const trigger = "trigger:trg_command_runtime_job_insert_scope"
+	const branch = "OR (NEW.adapter_backend = 'docker_standard_code' AND profile.profile = 'docker')"
+	wantSchema := beforeSchema
+	if strings.Count(wantSchema[trigger], branch) != 1 {
+		t.Fatal("historical scope anchor changed")
+	}
+	wantSchema[trigger] = strings.Replace(wantSchema[trigger], branch, branch+
+		"\n\t\t\t\t\t\t\tOR (NEW.adapter_backend = 'docker_sandboxes' AND profile.profile = 'sbx')", 1)
+	if !reflect.DeepEqual(wantSchema, commandScopeV189Schema(t, state)) {
+		t.Fatal("v189 changed schema outside the exact SBX adapter/profile scope branch")
+	}
 	if err := state.Close(); err != nil {
 		t.Fatal(err)
 	}
 	state, err = Open(file)
 	if err != nil {
-		t.Fatal("upgrade v188 to v189", err)
+		t.Fatal("upgrade to current schema", err)
 	}
 	defer state.Close()
-	if version, err := state.SchemaVersion(ctx); err != nil || version != 189 {
+	if version, err := state.SchemaVersion(ctx); err != nil || version != LatestSchemaVersion {
 		t.Fatalf("upgraded schema version=%d error=%v", version, err)
 	}
 	current, err := state.loadAppliedMigrations(ctx)
@@ -66,17 +81,6 @@ func TestSchemaV189RepairsSBXCommandScopeWithoutRewritingHistory(t *testing.T) {
 		if !reflect.DeepEqual(rows, legacyFixtureRows(t, state, table)) {
 			t.Fatalf("upgrade rewrote historical %s rows", table)
 		}
-	}
-	const trigger = "trigger:trg_command_runtime_job_insert_scope"
-	const branch = "OR (NEW.adapter_backend = 'docker_standard_code' AND profile.profile = 'docker')"
-	wantSchema := beforeSchema
-	if strings.Count(wantSchema[trigger], branch) != 1 {
-		t.Fatal("historical scope anchor changed")
-	}
-	wantSchema[trigger] = strings.Replace(wantSchema[trigger], branch, branch+
-		"\n\t\t\t\t\t\t\tOR (NEW.adapter_backend = 'docker_sandboxes' AND profile.profile = 'sbx')", 1)
-	if !reflect.DeepEqual(wantSchema, commandScopeV189Schema(t, state)) {
-		t.Fatal("v189 changed schema outside the exact SBX adapter/profile scope branch")
 	}
 	loaded, err := state.GetCommandRuntimeJob(ctx, oldJob.ID)
 	if err != nil || !reflect.DeepEqual(loaded, oldJob) {

@@ -887,7 +887,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 		{Path: RunTaskConfigurationPathTemplate, OperationID: "getRunTaskConfiguration", Summary: "Read immutable task configuration", Tag: "Runs",
 			Description: "Projects only stored Run budget and project snapshot, never live repository configuration. Legacy snapshots use snapshot provenance when operator input was not retained. This read grants no capability.",
 			DataType:    reflect.TypeOf(application.TaskConfigurationView{}), Parameters: []openAPIParameter{runID}, NotFound: true},
-		{Path: ProjectSkillSelectionPathTemplate, Method: http.MethodPost, OperationID: "selectProjectSkills", Summary: "Select exact pinned project Skill recommendations", Tag: "Control",
+		{Path: ProjectSkillSelectionPathTemplate, Method: http.MethodPost, OperationID: "selectProjectSkills", Summary: "Select exact pinned project Skill recommendations", Tag: "Control", SuccessStatus: http.StatusOK,
 			Description: "Explicit selection before the first turn through the existing built-in and installed external Skill services. Refs must match the immutable project suggestions exactly, including version. External context requires confirmation. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
 			DataType:    reflect.TypeOf(application.ProjectSkillSelectionResult{}), RequestType: reflect.TypeOf(ProjectSkillSelectionRequestView{}), Control: true,
 			Parameters: []openAPIParameter{runID, dockerSandboxIdempotencyKey}, NotFound: true},

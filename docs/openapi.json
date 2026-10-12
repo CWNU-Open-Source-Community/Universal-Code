@@ -16024,7 +16024,7 @@
           }
         ],
         "responses": {
-          "202": {
+          "200": {
             "description": "Control request accepted or idempotently replayed",
             "content": {
               "application/json": {

@@ -11682,7 +11682,7 @@ CREATE TABLE specialist_external_skill_context_preparations (
 			AND context_fingerprint NOT GLOB '*[^0-9a-f]*')
 	);
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE specialist_model_calls (
+CREATE TABLE "specialist_model_calls" (
 		agent_attempt_id TEXT NOT NULL,
 		run_id TEXT NOT NULL,
 		agent_id TEXT NOT NULL,
@@ -11690,6 +11690,7 @@ CREATE TABLE specialist_model_calls (
 		transport_attempt INTEGER NOT NULL,
 		max_attempts INTEGER NOT NULL,
 		protocol_repair INTEGER NOT NULL DEFAULT 0,
+ tool_round INTEGER NOT NULL DEFAULT 0 CHECK(tool_round BETWEEN 0 AND 16),
 		provider TEXT NOT NULL,
 		model TEXT NOT NULL,
 		input_fingerprint TEXT NOT NULL DEFAULT '',
@@ -11744,8 +11745,8 @@ CREATE TABLE specialist_model_calls (
 		OR (status = 'completed' AND outcome = 'success' AND error_text = ''
 			AND length(input_fingerprint) = 64 AND length(action_fingerprint) = 64
 			AND retry_after_millis = 0 AND retry_planned = 0 AND usage_recorded = 1
-			AND action_kind IN ('continue', 'finish')
-			AND ((action_kind = 'continue' AND report_outcome = '')
+			AND action_kind IN ('continue', 'finish', 'tool_calls')
+			AND ((action_kind IN ('continue', 'tool_calls') AND report_outcome = '')
 				OR (action_kind = 'finish' AND report_outcome IN ('succeeded', 'partial')))
 			AND policy_allowed IN (0, 1) AND length(trim(policy_reason)) > 0
 			AND ((policy_allowed = 1 AND policy_needs_approval = 0
@@ -12067,6 +12068,39 @@ CREATE TABLE specialist_task_briefs (
    CHECK(json_extract(brief_json,'$.agent_id')=agent_id),
    CHECK(json_extract(brief_json,'$.parent_agent_id')=parent_agent_id),
    CHECK(json_extract(brief_json,'$.fingerprint')=fingerprint)
+  );
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE specialist_tool_bindings (
+   agent_attempt_id TEXT PRIMARY KEY REFERENCES agent_attempts(id) ON DELETE CASCADE,
+   run_id TEXT NOT NULL,agent_id TEXT NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),
+   workspace_id TEXT NOT NULL,root_fingerprint TEXT NOT NULL CHECK(length(root_fingerprint)=64),
+   brief_fingerprint TEXT NOT NULL CHECK(length(brief_fingerprint)=64),mode TEXT NOT NULL CHECK(mode IN ('read','batch')),
+   batch_plan_id TEXT NOT NULL DEFAULT '',batch_ordinal INTEGER NOT NULL DEFAULT 0,batch_generation INTEGER NOT NULL DEFAULT 0,
+   created_at TEXT NOT NULL,
+   FOREIGN KEY(run_id,agent_id) REFERENCES agent_nodes(run_id,id),
+   CHECK((mode='read' AND batch_plan_id='' AND batch_ordinal=0 AND batch_generation=0)
+    OR (mode='batch' AND length(batch_plan_id)>0 AND batch_ordinal>0 AND batch_generation>0))
+  );
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE specialist_tool_calls (
+   agent_attempt_id TEXT NOT NULL,round INTEGER NOT NULL,position INTEGER NOT NULL CHECK(position BETWEEN 1 AND 4),
+   call_id TEXT NOT NULL,name TEXT NOT NULL,payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+   status TEXT NOT NULL CHECK(status IN ('pending','completed','denied','failed')),
+   result_json TEXT NOT NULL DEFAULT '',error_code TEXT NOT NULL DEFAULT '',charge_id TEXT NOT NULL DEFAULT '',
+   created_at TEXT NOT NULL,completed_at TEXT,
+   PRIMARY KEY(agent_attempt_id,round,position),UNIQUE(agent_attempt_id,call_id),
+   FOREIGN KEY(agent_attempt_id,round) REFERENCES specialist_tool_rounds(agent_attempt_id,round) ON DELETE CASCADE,
+   CHECK((status='pending' AND result_json='' AND error_code='' AND completed_at IS NULL)
+    OR (status='completed' AND json_valid(result_json) AND error_code='' AND completed_at IS NOT NULL)
+    OR (status IN ('denied','failed') AND json_valid(result_json) AND length(error_code)>0 AND completed_at IS NOT NULL))
+  );
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE specialist_tool_rounds (
+   agent_attempt_id TEXT NOT NULL REFERENCES specialist_tool_bindings(agent_attempt_id) ON DELETE CASCADE,
+   round INTEGER NOT NULL CHECK(round BETWEEN 1 AND 16),model_attempt INTEGER NOT NULL,
+   assistant_text TEXT NOT NULL,provider_replay BLOB,created_at TEXT NOT NULL,
+   PRIMARY KEY(agent_attempt_id,round),UNIQUE(agent_attempt_id,model_attempt),
+   FOREIGN KEY(agent_attempt_id,model_attempt) REFERENCES specialist_model_calls(agent_attempt_id,model_attempt_number)
   );
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE standard_code_deliveries (
@@ -24854,7 +24888,7 @@ CREATE TRIGGER trg_specialist_instruction_source_immutable
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_specialist_model_call_identity_immutable
 		BEFORE UPDATE OF agent_attempt_id, run_id, agent_id, model_attempt_number,
-			transport_attempt, max_attempts, protocol_repair, provider, model, started_at
+			transport_attempt, max_attempts, protocol_repair, tool_round, provider, model, started_at
 		ON specialist_model_calls
 		BEGIN
 			SELECT RAISE(ABORT, 'Specialist model call identity is immutable');
@@ -24875,7 +24909,7 @@ CREATE TRIGGER trg_specialist_model_call_insert
 				AND lease.lease_id = attempt.lease_id
 				AND lease.generation = attempt.lease_generation
 				AND lease.status = 'active' AND julianday(lease.expires_at) > julianday('now')
-				AND ((NEW.protocol_repair = 0 AND attempt.usage_recorded_at IS NULL
+				AND ((NEW.protocol_repair = 0 AND (attempt.usage_recorded_at IS NULL OR EXISTS(SELECT 1 FROM specialist_tool_bindings tb WHERE tb.agent_attempt_id=attempt.id))
 					AND NOT EXISTS (SELECT 1 FROM specialist_protocol_repairs repair
 						WHERE repair.agent_attempt_id = attempt.id))
 					OR (NEW.protocol_repair = 1 AND attempt.usage_recorded_at IS NOT NULL
@@ -24891,7 +24925,7 @@ CREATE TRIGGER trg_specialist_model_call_phase_sequence
 		WHEN NEW.transport_attempt <> (
 			SELECT COUNT(*) + 1 FROM specialist_model_calls
 			WHERE agent_attempt_id = NEW.agent_attempt_id
-				AND protocol_repair = NEW.protocol_repair
+				AND protocol_repair = NEW.protocol_repair AND tool_round = NEW.tool_round
 		)
 		BEGIN
 			SELECT RAISE(ABORT, 'Specialist model call is not the next phase transport attempt');
@@ -25490,6 +25524,49 @@ CREATE TRIGGER trg_specialist_task_brief_insert BEFORE INSERT ON specialist_task
      AND l.status='active' AND l.lease_id=a.lease_id AND l.generation=a.lease_generation
      AND julianday(l.expires_at)>julianday('now'))
    BEGIN SELECT RAISE(ABORT,'Specialist task brief requires its active attempt and lease'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_attempt_terminal BEFORE UPDATE OF status ON agent_attempts
+   WHEN NEW.status IN ('continued','finished') AND EXISTS(SELECT 1 FROM specialist_tool_calls WHERE agent_attempt_id=OLD.id AND status='pending')
+   BEGIN SELECT RAISE(ABORT,'Specialist attempt still has pending tools'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_binding_immutable BEFORE UPDATE ON specialist_tool_bindings
+   BEGIN SELECT RAISE(ABORT,'Specialist tool binding is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_binding_insert BEFORE INSERT ON specialist_tool_bindings
+   WHEN NOT EXISTS(SELECT 1 FROM agent_attempts a JOIN agent_nodes c ON c.id=a.agent_id
+    JOIN specialist_task_briefs b ON b.agent_attempt_id=a.id JOIN run_execution_leases l ON l.run_id=a.run_id
+    WHERE a.id=NEW.agent_attempt_id AND a.run_id=NEW.run_id AND a.agent_id=NEW.agent_id
+     AND c.session_id=NEW.session_id AND c.role='specialist' AND c.status='running' AND c.active_attempt_id=a.id
+     AND a.status='running' AND a.usage_recorded_at IS NULL AND b.fingerprint=NEW.brief_fingerprint
+     AND l.lease_id=a.lease_id AND l.generation=a.lease_generation AND l.status='active' AND julianday(l.expires_at)>julianday('now'))
+   BEGIN SELECT RAISE(ABORT,'Specialist tool binding requires its active prepared attempt'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_call_immutable BEFORE UPDATE ON specialist_tool_calls
+   WHEN OLD.status<>'pending' OR NEW.agent_attempt_id<>OLD.agent_attempt_id OR NEW.round<>OLD.round
+		    OR NEW.position<>OLD.position OR NEW.call_id<>OLD.call_id OR NEW.name<>OLD.name OR NEW.payload_json<>OLD.payload_json OR NEW.created_at<>OLD.created_at
+		    OR (OLD.charge_id<>'' AND NEW.charge_id<>OLD.charge_id)
+   BEGIN SELECT RAISE(ABORT,'Specialist tool receipt is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_call_terminal_lease BEFORE UPDATE OF status ON specialist_tool_calls
+		 WHEN OLD.status='pending' AND NEW.status<>'pending' AND NOT EXISTS(
+		 SELECT 1 FROM agent_attempts a JOIN agent_nodes c ON c.id=a.agent_id JOIN runs r ON r.id=a.run_id JOIN run_execution_leases l ON l.run_id=a.run_id
+		 WHERE a.id=OLD.agent_attempt_id AND a.status='running' AND c.status='running' AND c.active_attempt_id=a.id AND r.status='running'
+		 AND l.lease_id=a.lease_id AND l.generation=a.lease_generation AND l.status='active' AND julianday(l.expires_at)>julianday('now'))
+		 BEGIN SELECT RAISE(ABORT,'child tool receipt requires its active leased attempt');END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_round_immutable BEFORE UPDATE ON specialist_tool_rounds
+   BEGIN SELECT RAISE(ABORT,'Specialist tool round is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_round_insert BEFORE INSERT ON specialist_tool_rounds
+		 WHEN NEW.round<>(SELECT count(*)+1 FROM specialist_tool_rounds WHERE agent_attempt_id=NEW.agent_attempt_id)
+		 OR EXISTS(SELECT 1 FROM specialist_tool_calls WHERE agent_attempt_id=NEW.agent_attempt_id AND status='pending')
+		 OR NOT EXISTS(SELECT 1 FROM specialist_model_calls m JOIN agent_attempts a ON a.id=m.agent_attempt_id
+		  JOIN agent_nodes c ON c.id=a.agent_id JOIN runs r ON r.id=a.run_id JOIN run_execution_leases l ON l.run_id=a.run_id
+		  WHERE m.agent_attempt_id=NEW.agent_attempt_id AND m.model_attempt_number=NEW.model_attempt AND m.tool_round=NEW.round-1
+		   AND m.status='completed' AND m.action_kind='tool_calls' AND a.status='running' AND r.status='running'
+		   AND c.status='running' AND c.active_attempt_id=a.id AND l.lease_id=a.lease_id AND l.generation=a.lease_generation
+		   AND l.status='active' AND julianday(l.expires_at)>julianday('now'))
+		 BEGIN SELECT RAISE(ABORT,'child tool round requires its completed active leased model response');END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_standard_code_delivery_delete_immutable
 		BEFORE DELETE ON standard_code_deliveries BEGIN
