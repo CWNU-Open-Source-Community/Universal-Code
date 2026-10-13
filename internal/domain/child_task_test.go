@@ -49,8 +49,8 @@ func TestResolveChildTaskSurface(t *testing.T) {
 	readTasks := make([]ChildTask, 4)
 	for index := range readTasks {
 		readTasks[index] = ChildTask{Title: "read" + string(rune('a'+index)),
-			Goal: "inspect files " + string(rune('a'+index)),
-			Skills: []string{"model.chat", "read_file"},
+			Goal:      "inspect files " + string(rune('a'+index)),
+			Skills:    []string{"model.chat", "read_file"},
 			TurnLimit: 2, TokenLimit: 256, TimeoutMillis: 60000}
 	}
 	surface, tier, err = ResolveChildTaskSurface(ChildTaskProposalSpec{
@@ -74,3 +74,37 @@ func TestResolveChildTaskSurface(t *testing.T) {
 	}
 }
 
+func TestResolveChildTaskSurfaceHonorsReadOnlyCoreHint(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		count int
+	}{
+		{name: "one child", count: 1},
+		{name: "two children", count: 2},
+		{name: "three children rejected", count: 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tasks := make([]ChildTask, test.count)
+			for index := range tasks {
+				tasks[index] = ChildTask{
+					Title:  "read " + string(rune('a'+index)),
+					Goal:   "inspect files " + string(rune('a'+index)),
+					Skills: []string{"model.chat"}, SurfaceHint: ChildTaskSurfaceHintCore,
+					TurnLimit: 4, TokenLimit: 4096, TimeoutMillis: 60000,
+				}
+			}
+			surface, tier, err := ResolveChildTaskSurface(ChildTaskProposalSpec{
+				Version: ChildTaskProposalVersion, Tasks: tasks,
+			})
+			if test.count > MaxAgentChildren {
+				if err == nil || !strings.Contains(err.Error(), "core child tasks cannot exceed") {
+					t.Fatalf("core capacity was not enforced: %q %q %v", surface, tier, err)
+				}
+				return
+			}
+			if err != nil || surface != ChildTaskSurfaceCore || tier != "" {
+				t.Fatalf("read-only core hint was ignored: %q %q %v", surface, tier, err)
+			}
+		})
+	}
+}

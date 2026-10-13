@@ -3,11 +3,12 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
@@ -38,9 +39,11 @@ func TestChildTaskProposalReplaysDeduplicatesReviewsAndAdmits(t *testing.T) {
 	spec := domain.ChildTaskProposalSpec{
 		Version: domain.ChildTaskProposalVersion,
 		Tasks: []domain.ChildTask{
-			{Title: "first", Goal: "record one finding", Skills: []string{"model.chat", "note_create"},
+			{Title: "first", Goal: "Read notes.txt and report its exact proof after a second review turn.",
+				Skills: []string{"model.chat"}, SurfaceHint: domain.ChildTaskSurfaceHintCore,
 				TurnLimit: 2, TokenLimit: 256, TimeoutMillis: 60000},
-			{Title: "second", Goal: "record another finding", Skills: []string{"model.chat", "note_create"},
+			{Title: "second", Goal: "review the first finding", Skills: []string{"model.chat"},
+				SurfaceHint:        domain.ChildTaskSurfaceHintCore,
 				DependencyOrdinals: []int{1}, TurnLimit: 2, TokenLimit: 256, TimeoutMillis: 60000},
 		},
 	}
@@ -60,9 +63,9 @@ func TestChildTaskProposalReplaysDeduplicatesReviewsAndAdmits(t *testing.T) {
 	}
 	opKey := "child-task-op-0001-abcdefgh"
 	operation := domain.ChildTaskOperation{
-		KeyDigest: runmutation.OperationKeyDigest("child_task_propose", run.ID, opKey),
+		KeyDigest:          runmutation.OperationKeyDigest("child_task_propose", run.ID, opKey),
 		RequestFingerprint: runmutation.Fingerprint("child_task_request.v1", run.ID, spec.SpecJSONFingerprint()),
-		ProposalID: proposal.ID, RunID: run.ID, SessionID: run.SessionID,
+		ProposalID:         proposal.ID, RunID: run.ID, SessionID: run.SessionID,
 		WorkspaceID: run.MissionID, RootAgentID: root.ID,
 		LeaseID: idgen.New("lease"), LeaseGeneration: 1,
 		RequestedBy: "run_supervisor", CreatedAt: now,
@@ -92,6 +95,48 @@ func TestChildTaskProposalReplaysDeduplicatesReviewsAndAdmits(t *testing.T) {
 	if err != nil || replayed || reviewed.Status != domain.ChildTaskProposalApproved {
 		t.Fatalf("review failed: %#v replayed=%t err=%v", reviewed, replayed, err)
 	}
+	// Recover both possible interruptions after the child is created, even
+	// when the operator retries with a new request key.
+	var recoveredAgentID string
+	for index, failure := range []struct {
+		trigger      string
+		messageCount int
+	}{
+		{trigger: `CREATE TRIGGER fail_child_task_admission BEFORE INSERT ON agent_messages
+			BEGIN SELECT RAISE(ABORT, 'forced child task delivery failure'); END`, messageCount: 0},
+		{trigger: `CREATE TRIGGER fail_child_task_admission BEFORE UPDATE OF status ON child_task_assignments
+			WHEN NEW.status = 'admitted'
+			BEGIN SELECT RAISE(ABORT, 'forced child task assignment failure'); END`, messageCount: 1},
+	} {
+		if _, err := st.db.ExecContext(ctx, failure.trigger); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := st.AdmitChildTaskProposal(ctx, proposal.ID,
+			"child-task-admit-retry-abcdefgh-"+string(rune('a'+index))); err == nil ||
+			!strings.Contains(err.Error(), "forced child task") {
+			t.Fatalf("expected interrupted admission, got %v", err)
+		}
+		if _, err := st.db.ExecContext(ctx, `DROP TRIGGER fail_child_task_admission`); err != nil {
+			t.Fatal(err)
+		}
+		nodes, err := st.ListAgentNodes(ctx, run.ID)
+		if err != nil || len(nodes) != 2 {
+			t.Fatalf("interrupted admission created duplicate children: %#v err=%v", nodes, err)
+		}
+		for _, node := range nodes {
+			if node.Role != domain.AgentRoleSpecialist {
+				continue
+			}
+			if recoveredAgentID != "" && node.ID != recoveredAgentID {
+				t.Fatalf("retry replaced the child: got %q, want %q", node.ID, recoveredAgentID)
+			}
+			recoveredAgentID = node.ID
+			messages, err := st.ListAgentMessages(ctx, node.ID, false, 10)
+			if err != nil || len(messages) != failure.messageCount {
+				t.Fatalf("interrupted delivery count is wrong: %#v err=%v", messages, err)
+			}
+		}
+	}
 	// Admission creates both core children and binds the declared dependency
 	// onto the schema v101 wait ledger.
 	admitted, assignments, err := st.AdmitChildTaskProposal(ctx, proposal.ID, "child-task-admit-0001-abcdefgh")
@@ -106,6 +151,34 @@ func TestChildTaskProposalReplaysDeduplicatesReviewsAndAdmits(t *testing.T) {
 			t.Fatalf("assignment was not admitted: %#v", assignment)
 		}
 	}
+	if assignments[0].AdmittedAgentID != recoveredAgentID {
+		t.Fatal("admission did not recover the existing child")
+	}
+	if _, _, err := st.AdmitChildTaskProposal(ctx, proposal.ID, "child-task-admit-0001-abcdefgh"); err != nil {
+		t.Fatalf("admission replay failed: %v", err)
+	}
+	nodes, err := st.ListAgentNodes(ctx, run.ID)
+	if err != nil || len(nodes) != 3 {
+		t.Fatalf("admission replay changed the child count: %#v err=%v", nodes, err)
+	}
+	for _, node := range nodes {
+		if node.Role == domain.AgentRoleSpecialist && (len(node.Skills) != 1 || node.Skills[0] != "model.chat") {
+			t.Fatalf("read-only child received extra capabilities: %#v", node)
+		}
+	}
+	for _, assignment := range assignments {
+		messages, err := st.ListAgentMessages(ctx, assignment.AdmittedAgentID, false, 10)
+		if err != nil || len(messages) != 1 {
+			t.Fatalf("child must receive its goal exactly once: %#v err=%v", messages, err)
+		}
+		message := messages[0]
+		instruction, err := domain.DecodeAgentInstructionPayload(message.PayloadJSON)
+		if err != nil || instruction.Instruction != spec.Tasks[assignment.Ordinal-1].Goal ||
+			message.Kind != domain.AgentMessageInstruction || message.SenderAgentID != root.ID ||
+			message.RecipientAgentID != assignment.AdmittedAgentID || message.Status != domain.AgentMessagePending {
+			t.Fatalf("child goal was not delivered: %#v payload=%#v err=%v", message, instruction, err)
+		}
+	}
 	edges, err := st.ListDependencyEdges(ctx, run.ID, 8)
 	if err != nil || len(edges) != 1 || edges[0].State != domain.AgentDependencyWait {
 		t.Fatalf("dependency binding failed: %#v err=%v", edges, err)
@@ -116,8 +189,7 @@ func TestChildTaskProposalRejectsCycleAndThreeCoreTasks(t *testing.T) {
 	if _, err := domain.DecodeChildTaskProposalSpec([]byte(
 		`{"version":"child_task_proposal.v1","tasks":[
 		{"title":"A","goal":"one","skills":["model.chat","replace_file"],"turn_limit":1,"token_limit":64,"timeout_millis":60000,"dependency_ordinals":[2]},
-		{"title":"B","goal":"two","skills":["model.chat","replace_file"],"turn_limit":1,"token_limit":64,"timeout_millis":60000,"dependency_ordinals":[1]}]}`));
-		err == nil || apperror.CodeOf(err) == apperror.CodeInternal && err == nil {
+		{"title":"B","goal":"two","skills":["model.chat","replace_file"],"turn_limit":1,"token_limit":64,"timeout_millis":60000,"dependency_ordinals":[1]}]}`)); err == nil || apperror.CodeOf(err) == apperror.CodeInternal && err == nil {
 		t.Fatal("dependency cycle was accepted")
 	}
 	three := domain.ChildTaskProposalSpec{Version: domain.ChildTaskProposalVersion, Tasks: []domain.ChildTask{
@@ -129,4 +201,3 @@ func TestChildTaskProposalRejectsCycleAndThreeCoreTasks(t *testing.T) {
 		t.Fatal("three core tasks were accepted")
 	}
 }
-
