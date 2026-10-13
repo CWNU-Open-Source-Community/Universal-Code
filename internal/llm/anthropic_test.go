@@ -574,7 +574,7 @@ func TestAnthropicCompatibleProviderListModelsEndpoint(t *testing.T) {
 	}
 }
 
-func TestAnthropicCompatibleProviderListModelsFallback(t *testing.T) {
+func TestAnthropicCompatibleProviderListModelsReturnsHTTPFailure(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
 
@@ -588,11 +588,9 @@ func TestAnthropicCompatibleProviderListModelsFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	models, err := provider.ListModels(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models) != 1 || models[0].ID != "fallback-model" {
-		t.Fatalf("unexpected fallback models: %#v", models)
+	var providerErr *ProviderError
+	if !errors.As(err, &providerErr) || providerErr.StatusCode != http.StatusNotFound || len(models) != 0 {
+		t.Fatalf("model-list failure became fallback data: %#v %v", models, err)
 	}
 }
 

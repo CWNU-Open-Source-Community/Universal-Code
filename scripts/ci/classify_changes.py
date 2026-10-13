@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Sequence
 
 _COMMIT_RE = re.compile(r"[0-9a-f]{40}")
-CHECKS = ("full", "backend", "store", "web", "lsp", "rust", "native",
+CHECKS = ("full", "backend", "store", "web", "journeys", "lsp", "rust", "native",
           "ui", "race", "audit", "packaging")
 _FULL_PATHS = {"go.mod", "go.sum", ".github/workflows/ci.yml"}
 _PACKAGING_PREFIXES = (
@@ -108,6 +108,10 @@ def classify_paths(paths: Sequence[bytes], affected: Sequence[str] = ()) -> dict
     checks["native"] |= touches("runner", "sandbox", "credential", "commandruntimeadapter")
     checks["native"] |= checks["rust"]
     checks["ui"] = touches("browserruntime", "uievidence", "sandbox")
+    # Product journeys exercise the built renderer against Go and SQLite.
+    # Keep them separate from the Windows browser-runtime evidence matrix.
+    checks["journeys"] = checks["web"] or touches("app", "application", "httpapi", "webui") or any(
+        path.startswith(b"cmd/workbenchjourney/") for path in paths)
     checks["race"] |= touches("domain", "executionauth", "policy", "runmutation", "workspace")
     return checks
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -383,9 +384,18 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 		if assignments[index].Status == domain.ChildTaskAssignmentAdmitted {
 			continue
 		}
-		admissionKey := normalizedKey + "-admit-" + string(rune('a'+index))
 		if proposal.Surface == domain.ChildTaskSurfaceCore {
 			task := proposal.Spec.Tasks[assignments[index].Ordinal-1]
+			instruction, err := json.Marshal(domain.AgentInstructionPayload{
+				Version: domain.SpecialistInstructionVersion, Instruction: task.Goal,
+			})
+			if err != nil {
+				return domain.ChildTaskProposal{}, nil, err
+			}
+			// Admission and instruction delivery commit separately. Bind both
+			// retries to the assignment, including retries with a new caller key.
+			ordinal := strconv.Itoa(assignments[index].Ordinal)
+			admissionKey := runmutation.Fingerprint("child_task_admission.v1", proposal.ID, ordinal)
 			admitted, _, err := s.AdmitSpecialist(ctx, domain.SpecialistAdmission{
 				AgentID: idgen.New("agent"), SessionID: idgen.New("sess"),
 				RunID: proposal.RunID, ParentAgentID: proposal.RootAgentID,
@@ -394,6 +404,14 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 				MaxChildren: domain.MaxAgentChildren, CreatedAt: time.Now().UTC(),
 			}, admissionKey)
 			if err != nil {
+				return domain.ChildTaskProposal{}, nil, apperror.Normalize(err)
+			}
+			if _, _, err := s.SendAgentMessage(ctx, domain.AgentMessage{
+				ID: idgen.New("agentmsg"), RunID: proposal.RunID,
+				SenderAgentID: proposal.RootAgentID, RecipientAgentID: admitted.ID,
+				Kind: domain.AgentMessageInstruction, Semantic: domain.AgentMessageSemanticMessage,
+				PayloadJSON: string(instruction),
+			}, runmutation.Fingerprint("child_task_instruction.v1", proposal.ID, ordinal)); err != nil {
 				return domain.ChildTaskProposal{}, nil, apperror.Normalize(err)
 			}
 			assignments[index].AdmittedAgentID = admitted.ID

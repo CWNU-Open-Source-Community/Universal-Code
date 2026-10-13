@@ -113,60 +113,13 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 	var value any
 	var metadata = map[string]string{"workspace_id": scope.WorkspaceID}
 	switch name {
-	case toolgateway.WorkspaceListTool:
-		var input toolgateway.WorkspaceListPayload
-		if err := json.Unmarshal(payload, &input); err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		result, err := workspace.AgentCodeListDirectory(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Path, input.Cursor, input.Limit, false, pathPolicy)
+	case toolgateway.WorkspaceListTool, toolgateway.WorkspaceReadTool,
+		toolgateway.WorkspaceGlobTool, toolgateway.WorkspaceGrepTool:
+		value, metadata, err = executeWorkspaceReadTool(scope.WorkspaceRoot,
+			scope.WorkspaceID, name, payload, pathPolicy)
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
-		value = result
-		metadata["result_count"] = fmt.Sprint(len(result.Items))
-		metadata["truncated"] = fmt.Sprint(result.Truncated)
-	case toolgateway.WorkspaceReadTool:
-		var input toolgateway.WorkspaceReadPayload
-		if err := json.Unmarshal(payload, &input); err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		result, err := workspace.AgentCodeReadFile(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Path, input.StartLine, input.EndLine, false, pathPolicy)
-		if err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		value = result
-		metadata["path"] = result.Path
-		metadata["content_sha256"] = result.ContentSHA256
-		metadata["truncated"] = fmt.Sprint(result.Truncated)
-	case toolgateway.WorkspaceGlobTool:
-		var input toolgateway.WorkspaceGlobPayload
-		if err := json.Unmarshal(payload, &input); err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		result, err := workspace.AgentCodeGlobFiles(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Pattern, input.Cursor, input.Limit, false, pathPolicy)
-		if err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		value = result
-		metadata["result_count"] = fmt.Sprint(len(result.Paths))
-		metadata["truncated"] = fmt.Sprint(result.Truncated)
-	case toolgateway.WorkspaceGrepTool:
-		var input toolgateway.WorkspaceGrepPayload
-		if err := json.Unmarshal(payload, &input); err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		result, err := workspace.AgentCodeGrepFiles(scope.WorkspaceRoot,
-			scope.WorkspaceID, input.Query, input.Pattern, input.Cursor, input.Limit,
-			input.CaseSensitive, false, pathPolicy)
-		if err != nil {
-			return toolgateway.AgentCodeExecutionResult{}, err
-		}
-		value = result
-		metadata["result_count"] = fmt.Sprint(len(result.Matches))
-		metadata["truncated"] = fmt.Sprint(result.Truncated)
 	case toolgateway.GitHubEvidenceListTool:
 		metadata["workspace_id"] = scope.ControlWorkspaceID()
 		var input toolgateway.GitHubEvidenceListPayload

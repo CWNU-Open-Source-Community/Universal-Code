@@ -280,9 +280,9 @@ func validChildTaskInputRef(ref string) bool {
 }
 
 // ResolveChildTaskSurface decides the execution surface for the whole
-// proposal. Read-only task sets above two tasks fan out at the resolved
-// tier; write-capable or approval-capable tasks stay on the core surface
-// (at most two). Mixed capability sets are rejected.
+// proposal. Read-only task sets fan out unless core is explicitly requested.
+// Write-capable, approval-capable, or explicitly core tasks stay on the core
+// surface (at most two). Conflicting surface hints are rejected.
 func ResolveChildTaskSurface(spec ChildTaskProposalSpec) (ChildTaskSurface, ReadOnlyFanoutTier, error) {
 	normalized, err := NormalizeChildTaskProposalSpec(spec)
 	if err != nil {
@@ -311,7 +311,7 @@ func ResolveChildTaskSurface(spec ChildTaskProposalSpec) (ChildTaskSurface, Read
 	if coreHint && fanoutHint {
 		return "", "", errors.New("child task proposal cannot mix core and read-only fan-out hints")
 	}
-	if requiresCore {
+	if requiresCore || coreHint {
 		if fanoutHint {
 			return "", "", errors.New("child task proposal hints read-only fan-out but contains write-capable tasks")
 		}

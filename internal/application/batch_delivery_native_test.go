@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
@@ -104,6 +105,15 @@ func (p *nativeBatchTestProvider) StreamChat(ctx context.Context, r llm.ChatRequ
 
 func TestNativeBatchChildDiscoversBeyondFourFilesEditsVerifiesAndCommits(t *testing.T) {
 	fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
+	// The long ownership list previously needed four brief messages by itself;
+	// it must coexist with the durable admission goal in the same first turn.
+	for index := range 24 {
+		fixture.spec.Tasks[0].OwnershipHints = append(fixture.spec.Tasks[0].OwnershipHints,
+			domain.BatchDeliveryOwnershipHint{
+				Path: "long/" + strings.Repeat("x", 89) + fmt.Sprintf("%02d.txt", index),
+				Kind: domain.BatchDeliveryOwnershipFile,
+			})
+	}
 	for i := range 5 {
 		if err := os.WriteFile(filepath.Join(fixture.repository, "internal", "one", fmt.Sprintf("large-%d.txt", i)), []byte(strings.Repeat("observed source\n", 700)), 0600); err != nil {
 			t.Fatal(err)
@@ -123,6 +133,36 @@ func TestNativeBatchChildDiscoversBeyondFourFilesEditsVerifiesAndCommits(t *test
 	}
 	if len(provider.requests) != 7 || len(result.EvidenceRefs) < 8 {
 		t.Fatalf("native work/result: requests=%d result=%+v", len(provider.requests), result)
+	}
+	first := provider.requests[0]
+	if strings.Count(first.Messages[0].Content, batchNativeDirections) != 1 ||
+		strings.Contains(first.Messages[0].Content, batchEditDirections) {
+		t.Fatal("native Batch system protocol was lost or mixed with the no-tool protocol")
+	}
+	text, parts := batchTestBriefText(t, first)
+	if parts != 3 || first.Metadata["parent_instructions"] != "4" {
+		t.Fatalf("native ownership brief and goal did not share the delivery window: parts=%d metadata=%v", parts, first.Metadata)
+	}
+	var brief struct {
+		Owned     []domain.BatchDeliveryOwnershipHint `json:"owned"`
+		Artifacts []domain.ChildTaskExpectedArtifact  `json:"artifacts"`
+	}
+	if err := json.Unmarshal([]byte(text), &brief); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(brief.Owned, fixture.spec.Tasks[0].OwnershipHints) ||
+		!reflect.DeepEqual(brief.Artifacts, fixture.spec.Tasks[0].ExpectedArtifacts) {
+		t.Fatal("native Batch ownership or artifacts were truncated")
+	}
+	var previousShape map[string]any
+	if err := json.Unmarshal([]byte(text), &previousShape); err != nil {
+		t.Fatal(err)
+	}
+	previousShape["directions"] = batchNativeDirections
+	encoded, err := domain.MarshalSpecialistDeliveryContext(previousShape)
+	if err != nil || utf8.RuneCount(encoded) <= 3*(domain.MaxSpecialistInstructionRunes-160) ||
+		utf8.RuneCount(encoded) > 4*(domain.MaxSpecialistInstructionRunes-160) {
+		t.Fatalf("native fixture no longer covers the former four-part brief: runes=%d error=%v", utf8.RuneCount(encoded), err)
 	}
 	child, err := fixture.store.GetAgentNode(t.Context(), work.Workspace.AgentID)
 	if err != nil || child.TurnsUsed != 1 || child.TokensUsed != 35 {

@@ -80,6 +80,15 @@ func batchModelTestBriefText(t *testing.T, request llm.ChatRequest) (string, int
 	if len(request.Tools) != 0 {
 		t.Fatal("Batch model received tools")
 	}
+	if len(request.Messages) == 0 || request.Messages[0].Role != "system" ||
+		strings.Count(request.Messages[0].Content, batchEditDirections) != 1 {
+		t.Fatal("Batch edit protocol is missing from the system prompt")
+	}
+	return batchTestBriefText(t, request)
+}
+
+func batchTestBriefText(t *testing.T, request llm.ChatRequest) (string, int) {
+	t.Helper()
 	var envelope struct {
 		Instructions []struct {
 			Instruction string `json:"instruction"`
@@ -89,17 +98,52 @@ func batchModelTestBriefText(t *testing.T, request llm.ChatRequest) (string, int
 		t.Fatal(err)
 	}
 	var parts strings.Builder
+	var parentInstructions []string
+	partCount, expectedParts := 0, 0
 	for _, part := range envelope.Instructions {
 		if utf8.RuneCountInString(part.Instruction) > domain.MaxSpecialistInstructionRunes {
 			t.Fatal("Batch brief part exceeds the Specialist instruction limit")
 		}
-		_, value, found := strings.Cut(part.Instruction, ":\n")
-		if !found {
-			t.Fatal("missing Batch brief part header")
+		if !strings.HasPrefix(part.Instruction, "Current Batch edit brief JSON part ") {
+			parentInstructions = append(parentInstructions, part.Instruction)
+			continue
 		}
-		parts.WriteString(strings.TrimSuffix(value, "\nEnd of Batch edit brief part."))
+		var ordinal, total int
+		if _, err := fmt.Sscanf(part.Instruction, "Current Batch edit brief JSON part %d/%d;", &ordinal, &total); err != nil ||
+			ordinal != partCount+1 || total < 1 || expectedParts != 0 && total != expectedParts {
+			t.Fatalf("invalid Batch brief part order: %q", part.Instruction)
+		}
+		header := fmt.Sprintf(batchEditBriefPartHeader, ordinal, total)
+		if !strings.HasPrefix(part.Instruction, header) || !strings.HasSuffix(part.Instruction, batchEditBriefPartEnd) {
+			t.Fatal("missing Batch brief part framing")
+		}
+		parts.WriteString(strings.TrimSuffix(strings.TrimPrefix(part.Instruction, header), batchEditBriefPartEnd))
+		partCount++
+		expectedParts = total
 	}
-	return parts.String(), len(envelope.Instructions)
+	if partCount == 0 || partCount != expectedParts {
+		t.Fatalf("incomplete Batch brief: %d of %d parts", partCount, expectedParts)
+	}
+	var brief struct {
+		Task       string `json:"task"`
+		Directions string `json:"directions"`
+	}
+	if err := json.Unmarshal([]byte(parts.String()), &brief); err != nil {
+		t.Fatal(err)
+	}
+	goalCount := 0
+	for _, instruction := range parentInstructions {
+		if instruction == brief.Task {
+			goalCount++
+		}
+	}
+	if brief.Task == "" || goalCount != 1 {
+		t.Fatalf("admission goal must coexist with the Batch brief exactly once: goal=%q instructions=%q", brief.Task, parentInstructions)
+	}
+	if brief.Directions != "" {
+		t.Fatal("fixed protocol still consumes durable brief capacity")
+	}
+	return parts.String(), partCount
 }
 
 func TestBatchModelWorkerPatchesExactCRLFAndUTF8BOMSourceBytes(t *testing.T) {
@@ -150,42 +194,61 @@ func TestBatchModelWorkerPatchesExactCRLFAndUTF8BOMSourceBytes(t *testing.T) {
 }
 
 func TestBatchModelWorkerDispatchesLongCompleteBriefWithinFourMessageContext(t *testing.T) {
-	fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
-	// This is actual owned source, rather than an artificial oversized Task goal.
-	raw := strings.Repeat("source text\n", 170)
-	batchModelTestCommitSource(t, fixture.repository, raw)
-	provider := &batchEditTestProvider{respond: func(request llm.ChatRequest, _ int) batchEditProposal {
-		text, parts := batchModelTestBriefText(t, request)
-		if size := utf8.RuneCountInString(text); size <= 2800 || size > 4096 {
-			t.Fatalf("long brief outside requested regression range: %d runes", size)
-		}
-		if parts != domain.MaxSpecialistContextMessages || request.Metadata["parent_instructions"] != "4" {
-			t.Fatalf("long brief did not reach the actual four-message Specialist context: parts=%d metadata=%v", parts, request.Metadata)
-		}
-		files, _ := batchModelTestBrief(t, request)
-		for _, file := range files {
-			if file.Path == "internal/one/base.txt" {
-				if file.Content != raw {
-					t.Fatal("long source was truncated")
+	for _, lines := range []int{170, 215} {
+		t.Run(fmt.Sprintf("%d_source_lines", lines), func(t *testing.T) {
+			fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
+			raw := strings.Repeat("source text\n", lines)
+			batchModelTestCommitSource(t, fixture.repository, raw)
+			provider := &batchEditTestProvider{respond: func(request llm.ChatRequest, _ int) batchEditProposal {
+				text, parts := batchModelTestBriefText(t, request)
+				// Check against the old complete input bound, including the fixed
+				// protocol now carried separately in the system prompt.
+				var original map[string]any
+				if err := json.Unmarshal([]byte(text), &original); err != nil {
+					t.Fatal(err)
 				}
-				return batchEditProposal{Version: batchEditProposalVersion, Summary: "revise long owned text", Changes: []batchEditChange{
-					{Action: "patch", Path: file.Path, ExpectedSHA256: file.SHA256, Replacements: []toolgateway.WorkspaceReplacement{{OldText: "source text", NewText: "updated text", ExpectedOccurrences: 170}}},
-				}}
+				original["directions"] = batchEditDirections
+				encoded, err := domain.MarshalSpecialistDeliveryContext(original)
+				if err != nil {
+					t.Fatal(err)
+				}
+				minimum := 2800
+				if lines == 215 {
+					minimum = 4000
+				}
+				if size := utf8.RuneCount(encoded); size <= minimum || size > domain.MaxSpecialistMessageRunes {
+					t.Fatalf("complete source input outside regression range: %d runes", size)
+				}
+				if parts != domain.MaxSpecialistContextMessages-1 || request.Metadata["parent_instructions"] != "4" {
+					t.Fatalf("long brief and admission goal did not share the four-message Specialist context: parts=%d metadata=%v", parts, request.Metadata)
+				}
+				files, _ := batchModelTestBrief(t, request)
+				for _, file := range files {
+					if file.Path == "internal/one/base.txt" {
+						digest := sha256.Sum256([]byte(raw))
+						if file.Content != raw || file.SHA256 != hex.EncodeToString(digest[:]) {
+							t.Fatal("long source or its exact hash changed")
+						}
+						return batchEditProposal{Version: batchEditProposalVersion, Summary: "revise long owned text", Changes: []batchEditChange{
+							{Action: "patch", Path: file.Path, ExpectedSHA256: file.SHA256, Replacements: []toolgateway.WorkspaceReplacement{{OldText: "source text", NewText: "updated text", ExpectedOccurrences: lines}}},
+						}}
+					}
+				}
+				t.Fatal("long source was omitted")
+				return batchEditProposal{}
+			}}
+			_, work, worker := batchModelWorkerFixture(t, fixture, provider, fixture.store)
+			if _, err := worker.ExecuteBatchChild(t.Context(), work); err != nil {
+				t.Fatal(err)
 			}
-		}
-		t.Fatal("long source was omitted")
-		return batchEditProposal{}
-	}}
-	_, work, worker := batchModelWorkerFixture(t, fixture, provider, fixture.store)
-	if _, err := worker.ExecuteBatchChild(t.Context(), work); err != nil {
-		t.Fatal(err)
-	}
-	if len(provider.requests) != 1 {
-		t.Fatal("long complete brief did not dispatch exactly once")
-	}
-	content, err := os.ReadFile(filepath.Join(work.Workspace.WorktreeRoot, "internal", "one", "base.txt"))
-	if err != nil || string(content) != strings.Repeat("updated text\n", 170) {
-		t.Fatalf("long-source edit=%q error=%v", content, err)
+			if len(provider.requests) != 1 {
+				t.Fatal("long complete brief did not dispatch exactly once")
+			}
+			content, err := os.ReadFile(filepath.Join(work.Workspace.WorktreeRoot, "internal", "one", "base.txt"))
+			if err != nil || string(content) != strings.Repeat("updated text\n", lines) {
+				t.Fatalf("long-source edit=%q error=%v", content, err)
+			}
+		})
 	}
 }
 
@@ -285,6 +348,14 @@ func TestBatchModelWorkerPendingSourceOverflowStopsBeforeAnyMessagesOrModel(t *t
 	}}
 	tracked := &batchMessageTrackingStore{SQLiteStore: fixture.store}
 	_, work, worker := batchModelWorkerFixture(t, fixture, provider, tracked)
+	initial, err := fixture.store.ListAgentMessages(t.Context(), work.Workspace.AgentID, false, domain.MaxAgentInboxMessages)
+	if err != nil || len(initial) != 1 || initial[0].Status != domain.AgentMessagePending {
+		t.Fatalf("missing pending admission goal: %+v error=%v", initial, err)
+	}
+	goal, err := domain.DecodeAgentInstructionPayload(initial[0].PayloadJSON)
+	if err != nil || goal.Instruction != work.Task.Goal {
+		t.Fatalf("incorrect admission goal: %+v error=%v", goal, err)
+	}
 	for index := 0; index < 3; index++ {
 		payload, err := json.Marshal(domain.AgentInstructionPayload{Version: domain.SpecialistInstructionVersion, Instruction: "Preserve the existing pending parent instruction."})
 		if err != nil {
@@ -298,7 +369,7 @@ func TestBatchModelWorkerPendingSourceOverflowStopsBeforeAnyMessagesOrModel(t *t
 		}
 	}
 	before, err := fixture.store.ListAgentMessages(t.Context(), work.Workspace.AgentID, false, domain.MaxAgentInboxMessages)
-	if err != nil || len(before) != 3 {
+	if err != nil || len(before) != len(initial)+3 || before[0] != initial[0] {
 		t.Fatalf("pending source fixture=%+v error=%v", before, err)
 	}
 	head := fixtureGit(t, "-C", work.Workspace.WorktreeRoot, "rev-parse", "HEAD")
@@ -361,7 +432,29 @@ func batchModelTestAssertNoEdits(t *testing.T, fixture batchDeliveryApplicationF
 
 func TestBatchModelWorkerEditsSubmitsAndReworksWithAccountedTurns(t *testing.T) {
 	fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
+	source := strings.Repeat("base\n", 120)
+	batchModelTestCommitSource(t, fixture.repository, source)
+	const parentConstraint = "Preserve the exported API in every revision."
 	provider := &batchEditTestProvider{respond: func(request llm.ChatRequest, turn int) batchEditProposal {
+		_, parts := batchModelTestBriefText(t, request)
+		wantParts := 2
+		if turn == 2 {
+			wantParts = 1
+		}
+		if parts != wantParts {
+			t.Fatalf("rework retained stale Batch parts: got %d, want %d", parts, wantParts)
+		}
+		var envelope specialistContextEnvelope
+		if err := json.Unmarshal([]byte(request.Messages[len(request.Messages)-1].Content), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		preserved := false
+		for _, instruction := range envelope.ParentInstructions {
+			preserved = preserved || instruction.Instruction == parentConstraint
+		}
+		if !preserved {
+			t.Fatal("Batch execution lost the additional parent constraint")
+		}
 		files, feedback := batchModelTestBrief(t, request)
 		if turn == 2 && feedback != "use revised wording" {
 			t.Fatalf("missing current feedback: %q", feedback)
@@ -371,6 +464,10 @@ func TestBatchModelWorkerEditsSubmitsAndReworksWithAccountedTurns(t *testing.T) 
 		}
 		for _, file := range files {
 			if file.Path == "internal/one/base.txt" {
+				digest := sha256.Sum256([]byte(file.Content))
+				if file.SHA256 != hex.EncodeToString(digest[:]) {
+					t.Fatal("rework source hash does not describe the current bytes")
+				}
 				replacement := "first version\n"
 				if turn == 2 {
 					replacement = "revised version\n"
@@ -398,6 +495,17 @@ func TestBatchModelWorkerEditsSubmitsAndReworksWithAccountedTurns(t *testing.T) 
 		t.Fatal(err)
 	}
 	planID := prepared.Snapshot.Plan.ID
+	payload, _ := json.Marshal(domain.AgentInstructionPayload{
+		Version: domain.SpecialistInstructionVersion, Instruction: parentConstraint,
+	})
+	if _, _, err := fixture.store.SendAgentMessage(t.Context(), domain.AgentMessage{
+		ID: "batch-additional-parent-constraint", RunID: fixture.run.ID,
+		SenderAgentID: fixture.root.ID, RecipientAgentID: prepared.Snapshot.Workspaces[0].AgentID,
+		Kind: domain.AgentMessageInstruction, Semantic: domain.AgentMessageSemanticMessage,
+		PayloadJSON: string(payload),
+	}, "batch-additional-parent-constraint-operation"); err != nil {
+		t.Fatal(err)
+	}
 	request := ExecuteBatchDeliveryWorkbenchRequest{PlanID: planID, Ordinal: 1, ExpectedGeneration: 1, OperationKey: "model-workbench-execute-001", Confirm: true}
 	first, err := workbench.ExecuteWorkbench(t.Context(), request)
 	if err != nil {
@@ -446,7 +554,7 @@ func TestBatchModelWorkerEditsSubmitsAndReworksWithAccountedTurns(t *testing.T) 
 	if err != nil || string(content) != "revised version\n" {
 		t.Fatalf("reworked file=%q err=%v", content, err)
 	}
-	if original, _ := os.ReadFile(filepath.Join(fixture.repository, "internal", "one", "base.txt")); string(original) != "base\n" {
+	if original, _ := os.ReadFile(filepath.Join(fixture.repository, "internal", "one", "base.txt")); string(original) != source {
 		t.Fatal("Batch edited the source checkout")
 	}
 	for _, request := range provider.requests {

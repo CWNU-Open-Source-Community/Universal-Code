@@ -25,9 +25,9 @@ class ClassifyPathsTests(unittest.TestCase):
         for paths in ([b"web/src/v2/styles.css"], [b"web/package-lock.json"],
                       [b"web/public/traverse-board-favicon-32.png", b"docs/architecture.md"]):
             with self.subTest(paths=paths):
-                self.assertEqual(self.enabled(paths), {"web"})
+                self.assertEqual(self.enabled(paths), {"web", "journeys"})
         self.assertEqual(self.enabled([b"README.md", b"docs/ci.md"]), set())
-        self.assertEqual(self.enabled([b"docs/openapi.json"]), {"backend", "web"})
+        self.assertEqual(self.enabled([b"docs/openapi.json"]), {"backend", "web", "journeys"})
 
     def test_go_dependencies_select_store_without_unrelated_platforms(self):
         selected = self.enabled(
@@ -36,7 +36,17 @@ class ClassifyPathsTests(unittest.TestCase):
              "project/internal/application", "project/internal/app",
              "project/internal/httpapi", "project/internal/desktop"],
         )
-        self.assertEqual(selected, {"backend", "store"})
+        self.assertEqual(selected, {"backend", "store", "journeys"})
+
+    def test_product_journeys_follow_backend_consumers_without_native_matrix(self):
+        checks = self.enabled([b"internal/llm/model_catalog.go"],
+                              ["project/internal/llm", "project/internal/application"])
+        self.assertEqual(checks, {"backend", "journeys"})
+        checks = self.enabled([b"internal/app/api_command.go"], ["project/internal/app"])
+        self.assertEqual(checks, {"backend", "native", "journeys"})
+        self.assertEqual(self.enabled([b"cmd/workbenchjourney/main.go"]),
+                         {"backend", "journeys"})
+        self.assertEqual(self.enabled([b"internal/analyzer/vectors_test.go"]), {"backend"})
 
     def test_native_lsp_and_browser_runtime_inputs_are_selected(self):
         self.assertEqual(self.enabled([b"internal/codeintel/runtime.go"]),
@@ -57,8 +67,8 @@ class ClassifyPathsTests(unittest.TestCase):
 
     def test_mixed_changes_keep_both_lanes_and_tagged_embedding_gets_native_checks(self):
         self.assertEqual(self.enabled([b"web/src/App.tsx", b"internal/llm/openai.go"]),
-                         {"backend", "web"})
-        self.assertEqual(self.enabled([b"web/assets_desktop.go"]), {"web", "native"})
+                         {"backend", "web", "journeys"})
+        self.assertEqual(self.enabled([b"web/assets_desktop.go"]), {"web", "journeys", "native"})
         self.assertEqual(self.enabled([b"scripts/build-desktop.ps1"]), {"native", "packaging"})
         self.assertEqual(self.enabled([b"analyzers/src/lib.rs"]), {"rust", "native"})
 
@@ -120,7 +130,7 @@ class GoPlanClassificationTests(unittest.TestCase):
 
     def test_indirect_dto_change_keeps_openapi_golden_without_full_httpapi_suite(self):
         checks, plan = self.classify(b"internal/application/github_review_service.go")
-        self.assertEqual(checks, {"backend"})
+        self.assertEqual(checks, {"backend", "journeys"})
         self.assertIn("cyberagent-workbench/internal/httpapi", plan["compile"])
         self.assertNotIn("cyberagent-workbench/internal/httpapi", plan["test"])
         self.assertEqual(plan["integrations"], [{"package": "cyberagent-workbench/internal/httpapi",
@@ -128,7 +138,7 @@ class GoPlanClassificationTests(unittest.TestCase):
 
     def test_snapshot_only_runs_targeted_go_golden_and_web_api_check(self):
         checks, plan = self.classify(b"docs/openapi.json")
-        self.assertEqual(checks, {"backend", "web"})
+        self.assertEqual(checks, {"backend", "web", "journeys"})
         self.assertFalse(plan["full"])
         self.assertEqual(plan["affected"], ["cyberagent-workbench/internal/httpapi"])
         self.assertEqual(plan["test"], [])
@@ -148,7 +158,7 @@ class GoPlanClassificationTests(unittest.TestCase):
     def test_skill_creator_shared_subtree_activates_store_shards_but_pins_remain_local(self):
         checks, plan = self.classify(
             b"internal/agentpackages/testdata/upstream/anthropic-skill-creator/skills/skill-creator/SKILL.md")
-        self.assertEqual(checks, {"backend", "store"})
+        self.assertEqual(checks, {"backend", "store", "journeys"})
         self.assertTrue(plan["store_affected"])
         self.assertNotIn("cyberagent-workbench/internal/store", plan["test"] + plan["compile"])
         self.assertEqual(plan["production_affected"], [])

@@ -153,6 +153,7 @@ type SubagentRunner struct {
 	workspaceTools          bool
 	batchTools              *BatchDeliveryService
 	batchAuthority          BatchDeliveryToolAuthority
+	batchEditProtocol       bool
 	operationKey            string
 	drydocks                *RunWorktreeService
 }
@@ -409,6 +410,9 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 		externalSkillContext)
 	if err != nil {
 		return r.failAttempt(ctx, result, ref, err)
+	}
+	if r.batchEditProtocol {
+		request.Messages[0].Content += "\n\n" + batchEditDirections
 	}
 	request.Metadata["parent_instructions"] = fmt.Sprint(result.ParentInstructions)
 	request.Metadata["context_recovered"] = fmt.Sprint(result.ContextRecovered)

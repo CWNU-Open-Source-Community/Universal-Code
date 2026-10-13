@@ -10,9 +10,9 @@ run; releases require that result for their exact source commit.
 | Change | Central CI | Desktop release workflow |
 | --- | --- | --- |
 | Documentation | Module, protocol, Surface and documentation contract checks | No PR package build |
-| Frontend | Frontend types, API drift, tests, build, dependency audit, and Go tests loading the actual embedded production bundle | No PR package build |
+| Frontend | Frontend types, API drift, tests, build, dependency audit, embedded bundle checks, and real workbench browser journeys | No PR package build |
 | OpenAPI snapshot | Frontend checks plus the Go DTO-to-OpenAPI golden check | No PR package build |
-| Go source or resources | Direct package tests, affected consumer tests or compilation, and relevant integration tests | No PR package build |
+| Go source or resources | Direct package tests, affected consumer tests or compilation, and relevant integration tests; workbench journeys when App, Application, HTTP or WebUI consumers are affected | No PR package build |
 | Store or its dependencies | The applicable Go checks plus all eight Store shards | No PR package build |
 | LSP, analyzer, browser or native execution inputs | Their corresponding real runtime / platform checks | No package build unless packaging inputs change |
 | Packaging / release tooling | Native boundaries and packaging checks | Existing PR package validation |
@@ -102,6 +102,33 @@ Before a tag or manual release, run full CI for that exact commit (or use a
 successful nightly run of the same commit). The release workflow checks a
 successful **Full CI verification** job from the same run attempt and commit.
 A successful partial run, a PR run, or a skipped full gate is not release evidence.
+
+## Workbench browser journeys
+
+The TypeScript console job exercises the production renderer against a real
+loopback Go API, SQLite database and disposable Git workspace. A deterministic
+local model endpoint provides repeatable responses without external credentials.
+Browser requests use the production API; the tests do not replace those routes.
+
+The short journeys cover a task's file-tool result, retained manual file drafts,
+and child-agent completion followed by a main-conversation summary. They also
+check keyboard interaction, narrow layouts and bounded interaction times. Traces,
+screenshots and timing results are retained for five days in the
+`workbench-journeys` artifact.
+
+Frontend inputs select these journeys. Backend changes select them through the
+Go impact graph when App, Application, HTTP or WebUI consumers are affected. Backend
+journey runs build the renderer without repeating the whole frontend unit suite.
+Documentation changes do not select them; nightly and manual full runs do.
+The separate Windows Real Edge job continues to verify the browser execution
+and evidence machinery against its controlled pages.
+
+Run locally from `web` with `npm run test:journeys` after installing Chromium
+with `npx playwright install chromium`. The command builds the renderer and the
+test-only `workbenchjourney` Go harness. Set `WORKBENCH_JOURNEY_SKIP_BUILD=1`
+to reuse an existing production renderer build, as CI does. The harness uses a
+separate build tag and does not add test endpoints to the product.
+To use an installed Edge locally, set `WORKBENCH_JOURNEY_BROWSER_CHANNEL=msedge`.
 
 ## Store tests
 

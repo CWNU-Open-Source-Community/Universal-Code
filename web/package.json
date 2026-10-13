@@ -11,7 +11,8 @@
     "generate:api": "openapi-typescript ../docs/openapi.json -o src/api/schema.d.ts",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:journeys": "tsc -p e2e/tsconfig.json && playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
@@ -28,6 +29,7 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.4",
