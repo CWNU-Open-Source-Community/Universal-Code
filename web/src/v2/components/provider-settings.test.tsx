@@ -1138,36 +1138,39 @@ describe("V2 custom Provider settings", () => {
     expect(controls.deleteProviderDefinition).not.toHaveBeenCalled();
   });
 
-  it("removes a configured system credential before deleting its Provider definition", async () => {
+  it("delegates definition and credential deletion to one revision-bound backend operation", async () => {
     const user = userEvent.setup();
     const controls = createClient([provider()]);
     renderSettings(controls.client);
     await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
     await user.click(screen.getByRole("button", { name: "删除供应商" }));
     const dialog = screen.getByRole("dialog", { name: "删除 Acme AI" });
-    expect(within(dialog).getByText(/系统凭据会先/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/原凭据会保留/u)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "删除" }));
 
-    await waitFor(() => expect(controls.changeProviderCredential).toHaveBeenCalledWith("acme", {
-      version: "provider_credential.v1", action: "delete", confirm: true, secret: "",
+    await waitFor(() => expect(controls.deleteProviderDefinition).toHaveBeenCalledWith("acme", {
+      version: "provider_definition_control.v1", expected_collection_revision: 7,
+      expected_definition_revision: 4, confirm: true,
     }));
-    await waitFor(() => expect(controls.deleteProviderDefinition).toHaveBeenCalledTimes(1));
-    expect(controls.changeProviderCredential.mock.invocationCallOrder[0])
-      .toBeLessThan(controls.deleteProviderDefinition.mock.invocationCallOrder[0]);
+    expect(controls.changeProviderCredential).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "编辑供应商" })).not.toBeInTheDocument());
   });
 
-  it("keeps the Provider definition when credential deletion fails", async () => {
+  it.each(["供应商仍被路由引用", "供应商版本已过期", "系统凭据清理失败，原配置已恢复"])(
+    "retains the editor and refreshes both inventories when deletion is rejected: %s", async (message) => {
     const user = userEvent.setup();
     const controls = createClient([provider()]);
-    controls.changeProviderCredential.mockRejectedValueOnce(new Error("系统凭据仍被占用"));
+    controls.deleteProviderDefinition.mockRejectedValueOnce(new Error(message));
     renderSettings(controls.client);
     await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
     await user.click(screen.getByRole("button", { name: "删除供应商" }));
     await user.click(within(screen.getByRole("dialog", { name: "删除 Acme AI" }))
       .getByRole("button", { name: "删除" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("系统凭据仍被占用");
-    expect(controls.deleteProviderDefinition).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(controls.changeProviderCredential).not.toHaveBeenCalled();
+    await waitFor(() => expect(controls.providerDefinitions).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(controls.providerCredentialStatuses).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("heading", { name: "编辑供应商" })).toBeInTheDocument();
   });
 

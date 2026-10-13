@@ -96,12 +96,14 @@ func TestStandardCodeDeliveryOutputSourcesUseDurableActivityWithoutReadingBodies
 	if err != nil {
 		t.Fatal(err)
 	}
-	operationKey := runmutation.SupervisorToolOperationKey(run.ID, checkpoint.NextTurn,
+	intentKey := runmutation.SupervisorToolOperationKey(run.ID, checkpoint.NextTurn,
 		string(toolgateway.CommandRuntimeTool), string(canonical))
-	callID, err := runmutation.SupervisorToolCallID(operationKey, 1)
+	callID, err := runmutation.SupervisorToolCallID(intentKey, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	operationKey := runmutation.SupervisorToolExecutionKey(run.ID, checkpoint.NextTurn,
+		string(toolgateway.CommandRuntimeTool), string(canonical), callID)
 	manager, err := runner.NewPlatformCommandRuntimeManager(fixture.store, "report-output-owner")
 	if err != nil {
 		t.Fatal(err)

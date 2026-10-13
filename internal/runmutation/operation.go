@@ -324,6 +324,14 @@ func SupervisorToolOperationKey(runID string, turn int, toolName string, payload
 		strings.TrimSpace(toolName), strings.TrimSpace(payloadJSON))
 }
 
+// SupervisorToolExecutionKey binds side effects to a durable logical call.
+// The same payload in a later round has a different call ID, while resuming
+// the original call keeps its command, checkpoint, and budget identity.
+func SupervisorToolExecutionKey(runID string, turn int, toolName, payloadJSON, callID string) string {
+	return Fingerprint("supervisor_tool_execution.v1",
+		SupervisorToolOperationKey(runID, turn, toolName, payloadJSON), strings.TrimSpace(callID))
+}
+
 func SupervisorToolCallID(operationKey string, round int) (string, error) {
 	operationKey = strings.TrimSpace(operationKey)
 	if !validDigest(operationKey) {

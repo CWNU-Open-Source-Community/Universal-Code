@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import type { FileEditProposalSourceView } from "../api/types";
-import { V2RecoveryProvider } from "../v2/recovery-storage";
+import { V2RecoveryProvider, useV2RecoveryStore } from "../v2/recovery-storage";
 import { useV2Navigation } from "../v2/navigation";
 import { FileProposalEditor } from "./file-proposal-editor";
 import { WorkspaceExplorer } from "./workspace-explorer";
-import { FileEditDraftProvider, useFileEditLeave } from "./file-edit-drafts";
+import { FileEditDraftProvider, useFileEditDraft, useFileEditLeave } from "./file-edit-drafts";
 
 vi.mock("@monaco-editor/react", () => ({
   default: ({ value, onChange }: { value: string; onChange: (value: string) => void }) =>
@@ -44,6 +44,92 @@ function providers(client: APIClient, children: ReactNode, query = queries()) {
     <FileEditDraftProvider>{children}</FileEditDraftProvider>
   </V2RecoveryProvider></QueryClientProvider>;
 }
+function draftWindow(client = fakeClient()) {
+  const query = queries();
+  return ({ children }: { children: ReactNode }) => providers(client, children, query);
+}
+
+it.each(["newer draft B", "older draft A"])("preserves another window's version across submission and reload, including identical text: %s", async (newText) => {
+  const first = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  const second = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  await act(async () => first.result.current.change("older draft A"));
+  const submitted = first.result.current.captureSubmission("older draft A");
+  await act(async () => second.result.current.change(newText));
+  await act(async () => first.result.current.submitted(submitted.ref));
+  expect(second.result.current.text).toBe(newText);
+  expect(second.result.current.persisted).toBe(true);
+  first.unmount(); second.unmount();
+  const reopened = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  expect(reopened.result.current.text).toBe(newText);
+  expect(reopened.result.current.persisted).toBe(true);
+});
+
+it("settles the captured version after a storage notification and retains later edits with the same text", async () => {
+  const first = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  await act(async () => first.result.current.change("submitted text"));
+  const submitted = first.result.current.captureSubmission("submitted text");
+  const second = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  await act(async () => second.result.current.change("later text"));
+  await act(async () => second.result.current.change("submitted text"));
+  const later = second.result.current.captureSubmission("submitted text");
+  expect(later.ref).not.toEqual(submitted.ref);
+  await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: null })));
+  expect(first.result.current.captureSubmission("submitted text").ref).toEqual(later.ref);
+  await act(async () => first.result.current.submitted(submitted.ref));
+  const reopened = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  expect(reopened.result.current.text).toBe("submitted text");
+  expect(reopened.result.current.captureSubmission("submitted text").ref).toEqual(later.ref);
+});
+
+it("receives other-window changes after the recovery provider remounts with its cached document", async () => {
+  const wrapper = draftWindow();
+  const first = renderHook(() => useFileEditDraft("run-1", source), { wrapper });
+  await act(async () => first.result.current.change("original draft"));
+  first.unmount();
+  const remounted = renderHook(() => useFileEditDraft("run-1", source), { wrapper });
+  const otherWindow = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  await act(async () => otherWindow.result.current.change("newer remote draft"));
+  await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: null })));
+  expect(remounted.result.current.text).toBe("newer remote draft");
+});
+
+it("settles a recovered legacy draft without resurrecting it on the next mount", async () => {
+  const stored = renderHook(() => useV2RecoveryStore(), { wrapper: draftWindow() });
+  stored.result.current!.write(`file-edit-draft:${JSON.stringify([source.workspace_id, "run-1", source.path])}`, {
+    version: 1, base: source.content, baseSHA256: source.content_sha256, text: "legacy draft",
+  });
+  const first = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  expect(first.result.current.text).toBe("legacy draft");
+  await act(async () => {
+    const submitted = first.result.current.captureSubmission("legacy draft");
+    first.result.current.submitted(submitted.ref);
+  });
+  first.unmount();
+  const reopened = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  expect(reopened.result.current.draft).toBeNull();
+  expect(reopened.result.current.text).toBe(source.content);
+});
+
+it("lets the user compare and select independently saved file drafts before creating a proposal", async () => {
+  const client = fakeClient(); const user = userEvent.setup();
+  const first = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  const second = renderHook(() => useFileEditDraft("run-1", source), { wrapper: draftWindow() });
+  await act(async () => first.result.current.change("draft from first window"));
+  await act(async () => second.result.current.change("draft from second window"));
+  first.unmount(); second.unmount();
+  render(providers(client, <EditorHarness client={client} />));
+  await screen.findByLabelText("File editor");
+  expect(screen.getByText("Create proposal")).toBeDisabled();
+  await user.click(screen.getByText("Other windows have file drafts. Review the versions."));
+  const chosen = screen.getByText("draft from second window", { selector: "pre" }).parentElement!;
+  await user.click(within(chosen).getByRole("button", { name: /Use version/ }));
+  expect(screen.getByLabelText("File editor")).toHaveValue("draft from second window");
+  await user.click(screen.getByText("Create proposal"));
+  expect(client.createFileEditProposal).toHaveBeenCalledWith("run-1", {
+    version: "file_edit_proposal.v1", source_handle: source.source_handle, proposed_text: "draft from second window",
+  });
+  expect(await screen.findByText(/Pending review/)).toBeInTheDocument();
+});
 function EditorHarness({ client }: { client: APIClient }) {
   const [file, setFile] = useState(source);
   const [open, setOpen] = useState(true);

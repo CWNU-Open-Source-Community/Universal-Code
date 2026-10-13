@@ -97,6 +97,10 @@ func FetchGitCommit(ctx context.Context, repoURL, commitSHA, stagingDir string) 
 // stageGitCommit performs the clone/checkout/verify sequence. It is separated
 // from FetchGitCommit's URL policy so tests can stage local file:// fixtures.
 func stageGitCommit(ctx context.Context, repoURL, commitSHA, stagingDir string) error {
+	stagingDir, err := filepath.Abs(stagingDir)
+	if err != nil {
+		return fmt.Errorf("skill Git import: resolve staging: %w", err)
+	}
 	if err := os.MkdirAll(filepath.Dir(stagingDir), 0o700); err != nil {
 		return fmt.Errorf("skill Git import: prepare staging: %w", err)
 	}
@@ -105,19 +109,39 @@ func stageGitCommit(ctx context.Context, repoURL, commitSHA, stagingDir string) 
 	}
 	importCtx, cancel := context.WithTimeout(ctx, MaxGitImportDuration)
 	defer cancel()
+	hooksDir, err := os.MkdirTemp(filepath.Dir(stagingDir), "skill-import-hooks-")
+	if err != nil {
+		return fmt.Errorf("skill Git import: disable hooks: %w", err)
+	}
+	defer os.Remove(hooksDir)
+	protocol := "https"
+	if strings.HasPrefix(repoURL, "file://") {
+		protocol = "file" // private helper's offline fixtures; FetchGitCommit requires HTTPS
+	}
+	command := func(args ...string) *exec.Cmd {
+		prefix := []string{"-c", "core.autocrlf=false", "-c", "core.hooksPath=" + hooksDir,
+			"-c", "core.fsmonitor=false", "-c", "credential.helper=",
+			"-c", "core.attributesFile=" + os.DevNull, "-c", "http.followRedirects=false"}
+		cmd := exec.CommandContext(importCtx, "git", append(prefix, args...)...)
+		cmd.Dir = hooksDir
+		cmd.Env = append(skillGitEnvironment(), "GIT_ALLOW_PROTOCOL="+protocol,
+			"GIT_CEILING_DIRECTORIES="+hooksDir)
+		return cmd
+	}
 	// autocrlf must be off: the pinned-commit staging checkout must reproduce
 	// exact repository bytes, never a platform-normalized working tree.
-	clone := exec.CommandContext(importCtx, "git", "-c", "core.autocrlf=false",
-		"clone", "--quiet", "--no-checkout", "--", repoURL, stagingDir)
+	// An empty template and isolated environment also prevent inherited
+	// hooks, executable filters, and Git configuration injection before review.
+	clone := command("clone", "--quiet", "--no-checkout", "--no-recurse-submodules",
+		"--template=", "--", repoURL, stagingDir)
 	if output, err := clone.CombinedOutput(); err != nil {
 		return fmt.Errorf("skill Git import: clone pinned commit: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	checkout := exec.CommandContext(importCtx, "git", "-C", stagingDir,
-		"-c", "core.autocrlf=false", "checkout", "--quiet", "--detach", commitSHA)
+	checkout := command("-C", stagingDir, "checkout", "--quiet", "--detach", commitSHA)
 	if output, err := checkout.CombinedOutput(); err != nil {
 		return fmt.Errorf("skill Git import: checkout pinned commit: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	head := exec.CommandContext(importCtx, "git", "-C", stagingDir, "rev-parse", "HEAD")
+	head := command("-C", stagingDir, "rev-parse", "HEAD")
 	output, err := head.Output()
 	if err != nil {
 		return fmt.Errorf("skill Git import: verify pinned commit: %w", err)
@@ -126,6 +150,21 @@ func stageGitCommit(ctx context.Context, repoURL, commitSHA, stagingDir string) 
 		return fmt.Errorf("skill Git import: branch drift detected: HEAD %q does not match pinned commit %q", resolved, commitSHA)
 	}
 	return nil
+}
+
+func skillGitEnvironment() []string {
+	allowed := map[string]bool{"PATH": true, "PATHEXT": true, "SYSTEMROOT": true,
+		"WINDIR": true, "TMP": true, "TEMP": true, "TMPDIR": true}
+	environment := make([]string, 0, len(allowed)+8)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if allowed[strings.ToUpper(name)] {
+			environment = append(environment, entry)
+		}
+	}
+	return append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_ATTR_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=Never", "GIT_LFS_SKIP_SMUDGE=1")
 }
 
 func validGitCommit(value string) bool {

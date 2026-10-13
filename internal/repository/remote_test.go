@@ -185,8 +185,13 @@ func TestRemoteAskpassHelperResolvesCredentialByName(t *testing.T) {
 
 func TestRemoteGitCommandIsCredentialedAndHardened(t *testing.T) {
 	executor := newRemoteExecutor(t)
+	transport, err := executor.pinRemoteTransport("https://example.com/repo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(transport.path)
 	command := executor.remoteGitCommand(t.Context(), t.TempDir(),
-		"C:/temporary/askpass.cmd", "secret-token-value",
+		transport, "C:/temporary/askpass.cmd", "secret-token-value",
 		"ls-remote", "--heads", "https://example.com/repo.git", "refs/heads/feature")
 	args := strings.Join(command.Args, "\x00")
 	for _, required := range []string{
@@ -203,6 +208,7 @@ func TestRemoteGitCommandIsCredentialedAndHardened(t *testing.T) {
 	environment := strings.Join(command.Env, "\x00")
 	for _, required := range []string{
 		"GIT_ASKPASS=C:/temporary/askpass.cmd", "GIT_PASSWORD=secret-token-value",
+		"GIT_CONFIG_GLOBAL=" + transport.path, "GIT_ALLOW_PROTOCOL=https",
 	} {
 		if !strings.Contains(environment, required) {
 			t.Fatalf("remote branch probe omitted credential environment %q", required)
@@ -236,6 +242,12 @@ func TestRemoteBranchProbeAuthenticatesWithReferencedCredential(t *testing.T) {
 		_, _ = w.Write([]byte("001e# service=git-upload-pack\n00000000"))
 	}))
 	defer server.Close()
+	executor.AllowLocalRemotesForTest()
+	transport, err := executor.pinRemoteTransport(server.URL + "/repository.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(transport.path)
 	askpass, secret, err := executor.askpassHelper(t.Context(), "private-remote")
 	if err != nil {
 		t.Fatal(err)
@@ -243,10 +255,99 @@ func TestRemoteBranchProbeAuthenticatesWithReferencedCredential(t *testing.T) {
 	defer os.Remove(askpass)
 	exists, err := executor.remoteBranchExists(t.Context(), t.TempDir(), RemoteSpec{
 		RemoteURL: server.URL + "/repository.git", Branch: "feature",
-	}, askpass, secret)
+	}, transport, askpass, secret)
 	if err != nil || exists || !authenticated.Load() {
 		t.Fatalf("credentialed branch probe failed: exists=%t authenticated=%t err=%v",
 			exists, authenticated.Load(), err)
+	}
+}
+
+func TestRemoteTransportPinsReadAndPushAcrossRepositoryConfiguration(t *testing.T) {
+	for _, source := range []string{"insteadOf", "pushInsteadOf", "include", "worktree", "named-remote"} {
+		t.Run(source, func(t *testing.T) {
+			approved, root := newRemoteFixture(t)
+			unapproved := filepath.Join(t.TempDir(), "unapproved.git")
+			remoteGit(t, "init", "--bare", "--quiet", unapproved)
+			otherURL := "file://" + filepath.ToSlash(unapproved)
+			switch source {
+			case "insteadOf", "pushInsteadOf":
+				remoteGit(t, "-C", root, "config", "url."+otherURL+"."+source, approved)
+			case "include":
+				included := filepath.Join(t.TempDir(), "remote.config")
+				remoteGit(t, "config", "--file", included, "url."+otherURL+".insteadOf", approved)
+				remoteGit(t, "-C", root, "config", "include.path", included)
+			case "worktree":
+				remoteGit(t, "-C", root, "config", "extensions.worktreeConfig", "true")
+				remoteGit(t, "-C", root, "config", "--worktree", "url."+otherURL+".pushInsteadOf", approved)
+			case "named-remote":
+				remoteGit(t, "-C", root, "config", "remote."+approved+".url", otherURL)
+				remoteGit(t, "-C", root, "config", "remote."+approved+".pushurl", otherURL)
+			}
+			executor := newRemoteExecutor(t)
+			head := remoteGit(t, "-C", root, "rev-parse", "HEAD")
+			spec := remoteSpec(RemotePushBranch, approved, "main")
+			observed, err := executor.ReadRemoteOID(t.Context(), root, spec)
+			if err != nil || observed != head {
+				t.Fatalf("preview left approved remote: %q %v", observed, err)
+			}
+			spec.Branch, spec.CommitOID, spec.ExpectedRemoteOID = "reviewed", head, "missing"
+			receipt, err := executor.ExecuteGit(t.Context(), root, spec, RemoteBinding{LocalHead: head}, "pinned-remote")
+			if err != nil || receipt.CommitID != head {
+				t.Fatalf("approved push failed: %+v %v", receipt, err)
+			}
+			if got := remoteGit(t, "-C", strings.TrimPrefix(approved, "file://"), "rev-parse", "refs/heads/reviewed"); got != head {
+				t.Fatalf("approved remote is missing the pushed commit: %s", got)
+			}
+			if got := remoteGit(t, "-C", unapproved, "for-each-ref", "refs/heads"); got != "" {
+				t.Fatalf("unapproved remote was modified: %s", got)
+			}
+		})
+	}
+}
+
+func TestRemoteTransportKeepsHTTPSURLWhenConfigChangesAfterPinning(t *testing.T) {
+	_, root := newRemoteFixture(t)
+	executor := newRemoteExecutor(t)
+	const approved = "https://review-target.invalid/project.git"
+	transport, err := executor.pinRemoteTransport(approved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(transport.path)
+	remoteGit(t, "-C", root, "config", "URL.file:///unapproved/.inSteAdOf", approved)
+	remoteGit(t, "-C", root, "config", "remote."+approved+".url", "https://unapproved.invalid/project.git")
+	command := executor.remoteGitCommand(t.Context(), root, transport, "", "", "ls-remote", "--get-url", approved)
+	output, err := command.Output()
+	if err != nil || strings.TrimSpace(string(output)) != approved {
+		t.Fatalf("late configuration replaced the reviewed HTTPS target: %q %v", output, err)
+	}
+}
+
+func TestRemoteTransportIgnoresURLSpecificProxy(t *testing.T) {
+	_, root := newRemoteFixture(t)
+	var approvedRequests, proxyRequests atomic.Int32
+	approved := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		approvedRequests.Add(1)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte("001e# service=git-upload-pack\n00000000"))
+	}))
+	defer approved.Close()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyRequests.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+	rawURL := approved.URL + "/repository.git"
+	remoteGit(t, "-C", root, "config", "http."+rawURL+".proxy", proxy.URL)
+	executor := newRemoteExecutor(t)
+	transport, err := executor.pinRemoteTransport(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(transport.path)
+	_, err = executor.remoteBranchExists(t.Context(), root, RemoteSpec{RemoteURL: rawURL, Branch: "main"}, transport, "", "")
+	if err != nil || approvedRequests.Load() == 0 || proxyRequests.Load() != 0 {
+		t.Fatalf("remote proxy changed destination: approved=%d proxy=%d err=%v", approvedRequests.Load(), proxyRequests.Load(), err)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolgateway"
@@ -267,8 +268,7 @@ func TestThreadActivityDetailBindsPendingForegroundInvocationAndProjectsLiveTail
 		CallID: "call-live", ToolName: string(toolgateway.CommandRuntimeTool),
 		PayloadJSON: string(payload), Status: domain.SupervisorToolPending,
 		CreatedAt: started}
-	operationKey := supervisorToolOperationKey(call.RunID, call.Turn,
-		toolgateway.CommandRuntimeTool, json.RawMessage(call.PayloadJSON))
+	operationKey := runmutation.SupervisorToolExecutionKey(call.RunID, call.Turn, call.ToolName, call.PayloadJSON, call.CallID)
 	digest, jobID := runner.CommandRuntimeOperationIdentity(call.RunID,
 		commandRuntimeBatchOperationKey(operationKey, 0))
 	updated := started.Add(1500 * time.Millisecond)

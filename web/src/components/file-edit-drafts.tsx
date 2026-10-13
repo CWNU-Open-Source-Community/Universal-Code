@@ -1,63 +1,105 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import type { FileEditProposalSourceView } from "../api/types";
 import { useModalFocusTrap } from "../hooks/use-modal-focus-trap";
 import { useLocale } from "../lib/locale";
 import { useV2RecoveryStore } from "../v2/recovery-storage";
+import { getV2DraftDocument } from "../v2/draft-context";
+import { DraftDocument, type DraftRef, type DraftState } from "../v2/draft-document";
 
 type FileDraft = { version: 1; base: string; baseSHA256: string; text: string };
-type DraftState = { draft: FileDraft | null; persisted: boolean; error?: string };
-const empty: DraftState = { draft: null, persisted: true };
+const snapshot = (draft: FileDraft | null) => ({ text: draft ? JSON.stringify(draft) : "", files: [], images: [] });
+function validFileDraft(value: unknown): value is FileDraft {
+  return !!value && typeof value === "object" && "version" in value && value.version === 1 &&
+    "base" in value && typeof value.base === "string" && "text" in value && typeof value.text === "string" &&
+    "baseSHA256" in value && typeof value.baseSHA256 === "string";
+}
+function decodeDraft(text: string): FileDraft | null {
+  if (!text) return null;
+  const value: unknown = JSON.parse(text);
+  if (!validFileDraft(value)) throw new Error("文件草稿记录格式异常，原版本已保留。");
+  return value;
+}
 
 export function useFileEditDraft(runID: string, source: FileEditProposalSourceView) {
   const store = useV2RecoveryStore();
-  const queries = useQueryClient();
   const key = `file-edit-draft:${JSON.stringify([source.workspace_id, runID, source.path])}`;
-  const queryKey = ["file-edit-draft", key];
-  const { data = empty } = useQuery<DraftState>({
-    queryKey, enabled: false, gcTime: Infinity,
-    initialData: () => {
-      const value = store?.read<unknown>(key, null);
-      if (!value) return empty;
-      if (typeof value === "object" && "version" in value && value.version === 1 &&
-        "base" in value && typeof value.base === "string" && "text" in value && typeof value.text === "string" &&
-        "baseSHA256" in value && typeof value.baseSHA256 === "string") {
-        return { draft: value as FileDraft, persisted: true };
-      }
-      store?.reject(key);
-      return { ...empty, persisted: false };
-    },
+  const scope = useMemo(() => ({ key: `file-edit:${JSON.stringify([runID, source.path])}`,
+    workspaceID: source.workspace_id }), [runID, source.path, source.workspace_id]);
+  const initialDocument = useMemo(() => store ? getV2DraftDocument(store) : new DraftDocument(null), [store]);
+  const { data: document = initialDocument } = useQuery<DraftDocument>({
+    queryKey: ["file-edit-draft-document", key], queryFn: skipToken, gcTime: Infinity,
+    initialData: initialDocument,
   });
-  const save = (draft: FileDraft | null, requirePersistence = false) => {
-    let error: string | undefined;
-    try {
-      if (!store && draft) throw new Error("当前连接无法保存文件草稿，离开应用前请复制内容。");
-      if (draft) store!.write(key, draft);
-      else store?.remove(key);
-    } catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
-    if (error && requirePersistence) {
-      queries.setQueryData<DraftState>(queryKey, { ...data, persisted: false, error });
-      throw new Error(error);
-    }
-    queries.setQueryData<DraftState>(queryKey, { draft, persisted: !error, error });
+  const [, refresh] = useReducer((value: number) => value + 1, 0);
+  useEffect(() => {
+    // QueryClient can retain unsaved drafts across recovery-provider remounts.
+    // Listen through the current store, whose browser connection is active.
+    const unsubscribe = document.subscribe(scope, refresh, store);
+    refresh();
+    return unsubscribe;
+  }, [document, scope, store]);
+
+  // Keep the former shared key as a migration source. All subsequent writes
+  // use DraftDocument's single-writer branches and exact-version settlement.
+  let error: string | undefined;
+  const legacy = store?.read<unknown>(key, null);
+  if (legacy && !validFileDraft(legacy)) store?.reject(key);
+  try { store?.assertReadable(key); }
+  catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
+  const state = document.read(scope, snapshot(validFileDraft(legacy) ? legacy : null));
+  let draft: FileDraft | null = null;
+  let ref = state.ref;
+  let versions: Array<{ ref: DraftRef; draft: FileDraft }> = [];
+  try {
+    draft = decodeDraft(state.snapshot.text);
+    versions = state.heads.flatMap((head) => {
+      const value = decodeDraft(head.snapshot.text);
+      return value ? [{ ref: head.ref, draft: value }] : [];
+    });
+    // A settlement is an empty descendant of only the sent version. Prefer
+    // any remaining edit when reopening alongside that completed branch.
+    if (!draft && versions.length) ({ draft, ref } = versions[0]);
+  } catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
+  const readError = error;
+  error ??= state.error ?? undefined;
+  const requireSaved = (result: DraftState) => {
+    if (!result.persisted || readError) throw new Error(readError ?? result.error ?? "文件草稿尚未保存。");
   };
-  const text = data.draft?.text ?? source.content;
+  const save = (draft: FileDraft | null, requirePersistence = false) => {
+    const result = document.update(scope, snapshot(draft), ref);
+    if (requirePersistence) requireSaved(result);
+    return result;
+  };
+  const text = draft?.text ?? source.content;
   return {
-    ...data, text,
-    changedBase: Boolean(data.draft && data.draft.baseSHA256 !== source.content_sha256),
+    draft, ref, text, persisted: state.persisted && !error, error, versions, conflict: versions.length > 1,
+    headToken: state.headToken,
+    resolve: (token: string, selected: DraftRef) => document.resolve(scope, token, selected),
+    changedBase: Boolean(draft && draft.baseSHA256 !== source.content_sha256),
     change: (text: string) => {
-      const base = data.draft ?? { version: 1 as const, base: source.content, baseSHA256: source.content_sha256, text };
+      const base = draft ?? { version: 1 as const, base: source.content, baseSHA256: source.content_sha256, text };
       save(text === base.base && base.baseSHA256 === source.content_sha256 ? null : { ...base, text });
     },
     rebase: () => save(text === source.content ? null : {
       version: 1, base: source.content, baseSHA256: source.content_sha256, text,
     }),
-    keep: () => save(data.draft, true),
+    keep: () => save(draft, true),
     discard: () => save(null, true),
-    submitted: (text: string) => {
-      // A response must not erase edits made after that submission.
-      if (queries.getQueryData<DraftState>(queryKey)?.draft?.text === text) save(null);
+    captureSubmission: (text: string) => {
+      if (draft?.text !== text) throw new Error("文件草稿已变化，请重新核对后提交。");
+      return { text, ref: ref ?? save(draft).ref };
+    },
+    submitted: (submittedRef: DraftRef | null) => {
+      if (!submittedRef) return;
+      if (store) document.settle(scope, submittedRef);
+      else {
+        const current = document.read(scope).ref;
+        if (current?.branchID === submittedRef.branchID && current.seq === submittedRef.seq) {
+          document.update(scope, snapshot(null), submittedRef);
+        }
+      }
     },
   };
 }

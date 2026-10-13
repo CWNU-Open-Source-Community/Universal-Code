@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolgateway"
@@ -465,8 +466,7 @@ func threadCommandActivityJobBindings(call domain.SupervisorToolCall,
 			OperationDigest: digest, Optional: optional})
 	}
 	appendID(input.JobID, "", false)
-	operationKey := supervisorToolOperationKey(call.RunID, call.Turn,
-		toolgateway.CommandRuntimeTool, json.RawMessage(call.PayloadJSON))
+	operationKey := runmutation.SupervisorToolExecutionKey(call.RunID, call.Turn, call.ToolName, call.PayloadJSON, call.CallID)
 	switch input.Action {
 	case toolgateway.CommandRuntimeActionRun:
 		for index := range input.Commands {

@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
@@ -226,7 +227,7 @@ func (f *commandApprovalFixture) scope(t *testing.T) (toolgateway.CommandRuntime
 	if err != nil {
 		t.Fatal(err)
 	}
-	return toolgateway.CommandRuntimeContext{InvocationID: "direct-command-operation", OperationKey: supervisorToolOperationKey(f.call.RunID, f.call.Turn, toolgateway.CommandRuntimeTool, json.RawMessage(f.call.PayloadJSON)),
+	return toolgateway.CommandRuntimeContext{InvocationID: "direct-command-operation", OperationKey: runmutation.SupervisorToolExecutionKey(f.call.RunID, f.call.Turn, f.call.ToolName, f.call.PayloadJSON, f.call.CallID),
 		RunID: f.call.RunID, MissionID: f.turn.Mission.ID, RootAgentID: f.call.AgentID, AgentID: f.call.AgentID, AgentAttemptID: f.call.AgentAttemptID, SessionID: f.turn.Run.SessionID, WorkspaceID: f.turn.Mission.WorkspaceID,
 		Surface: f.turn.Mode.Surface, Phase: f.turn.Mode.Phase, Role: domain.AgentRoleRoot, Profile: f.turn.Mode.Profile, ModeRevision: f.turn.Mode.Revision,
 		PermissionMode: a.PermissionMode, PermissionRevision: a.PermissionRevision, PermissionSnapshotID: a.PermissionSnapshotID, PermissionGeneration: a.PermissionGeneration,

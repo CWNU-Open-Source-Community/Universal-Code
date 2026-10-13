@@ -980,6 +980,9 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 	}
 	name := toolgateway.ToolName(call.ToolName)
 	operationKey := supervisorToolOperationKey(call.RunID, call.Turn, name, json.RawMessage(call.PayloadJSON))
+	if name == toolgateway.CommandRuntimeTool {
+		operationKey = runmutation.SupervisorToolExecutionKey(call.RunID, call.Turn, call.ToolName, call.PayloadJSON, call.CallID)
+	}
 	if name == toolgateway.BrowserScreenshotTool {
 		operationKey = supervisorBrowserScreenshotOperationKey(call)
 	}

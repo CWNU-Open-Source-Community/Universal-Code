@@ -102,6 +102,13 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 			a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "child receipts require GET"), http.StatusMethodNotAllowed)
 			return
 		}
+		if !a.authorized(r, a.tokenHash) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="CyberAgent API"`)
+			a.writeError(w, requestID,
+				apperror.New(apperror.CodePolicyDenied, "valid bearer authorization is required"),
+				http.StatusUnauthorized)
+			return
+		}
 		if err := rejectQuery(r.URL.Query()); err != nil {
 			a.writeError(w, requestID, err, 0)
 			return

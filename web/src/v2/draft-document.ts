@@ -77,7 +77,18 @@ const mergeClocks = (...clocks: Readonly<Record<string, number>>[]): Record<stri
 };
 const validScope = (scope: DraftScope) => object(scope) && typeof scope.key === "string" && (
   id(scope.workspaceID) && (/^thread:[\w.-]{1,256}$/u.test(scope.key) || scope.key === `new:${scope.workspaceID}`) ||
+  id(scope.workspaceID) && validFileEditScope(scope.key) ||
   (scope.workspaceID === "" || id(scope.workspaceID)) && /^queue-edit:[\w.-]{1,256}:[\w.-]{1,256}:[\w.-]{1,256}:[\w.-]{1,256}:\d{1,16}$/u.test(scope.key));
+
+function validFileEditScope(key: string): boolean {
+  if (!key.startsWith("file-edit:")) return false;
+  try {
+    const parts: unknown = JSON.parse(key.slice("file-edit:".length));
+    return Array.isArray(parts) && parts.length === 2 && id(parts[0]) &&
+      typeof parts[1] === "string" && parts[1].length > 0 && parts[1].length <= 4096 &&
+      key === `file-edit:${JSON.stringify(parts)}`;
+  } catch { return false; }
+}
 
 export function validDraftSnapshot(value: unknown, workspaceID: string): value is DraftSnapshot {
   return object(value) && typeof value.text === "string" && Array.isArray(value.files) && value.files.length <= 4 &&
@@ -277,13 +288,13 @@ export class DraftDocument {
     return this.applyCapture(capture, () => empty(), selected);
   }
 
-  subscribe(scope: DraftScope, listener: () => void): () => void {
+  subscribe(scope: DraftScope, listener: () => void, notifications = this.store): () => void {
     this.session(scope);
     const key = prefix(scope);
     const listeners = this.listeners.get(key) ?? new Set();
     listeners.add(listener);
     this.listeners.set(key, listeners);
-    const disconnect = this.store?.subscribePrefix?.(key, listener);
+    const disconnect = notifications?.subscribePrefix?.(key, listener);
     return () => {
       disconnect?.();
       listeners.delete(listener);

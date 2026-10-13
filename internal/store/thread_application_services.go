@@ -108,11 +108,18 @@ func (s *SQLiteStore) FindThreadCommandRuntimeStartCall(ctx context.Context,
 		if err != nil || input.Action != toolgateway.CommandRuntimeActionStart || string(canonical) != candidate.PayloadJSON {
 			continue
 		}
-		key := runmutation.SupervisorToolOperationKey(candidate.RunID, candidate.Turn, string(toolgateway.CommandRuntimeTool), candidate.PayloadJSON)
-		digest, jobID := runner.CommandRuntimeOperationIdentity(candidate.RunID, key)
-		if candidate.RunID == identity.RunID && digest == identity.OperationDigest && jobID == identity.ID {
-			matched = candidate
-			count++
+		keys := []string{
+			runmutation.SupervisorToolExecutionKey(candidate.RunID, candidate.Turn, string(toolgateway.CommandRuntimeTool), candidate.PayloadJSON, candidate.CallID),
+			// Previously persisted Jobs retain the payload-based operation identity.
+			runmutation.SupervisorToolOperationKey(candidate.RunID, candidate.Turn, string(toolgateway.CommandRuntimeTool), candidate.PayloadJSON),
+		}
+		for _, key := range keys {
+			digest, jobID := runner.CommandRuntimeOperationIdentity(candidate.RunID, key)
+			if candidate.RunID == identity.RunID && digest == identity.OperationDigest && jobID == identity.ID {
+				matched = candidate
+				count++
+				break
+			}
 		}
 	}
 	if count != 1 {

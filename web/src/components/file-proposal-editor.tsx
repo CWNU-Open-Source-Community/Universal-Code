@@ -23,10 +23,10 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
   const queryClient = useQueryClient();
   const [activeSource, setActiveSource] = useState(source);
   const recovery = useFileEditDraft(runID, activeSource);
-  const [draft, setDraft] = useState(recovery.text);
   const leave = useFileEditLeave();
   const [expired, setExpired] = useState(Date.parse(source.expires_at) <= Date.now());
   const [mode, setMode] = useState<"edit" | "diff">("edit");
+  const [versionError, setVersionError] = useState("");
   const [editorState, setEditorState] = useState<"loading" | "ready" | "failed">("loading");
   useEffect(() => {
     let active = true;
@@ -50,18 +50,21 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
     return () => window.clearTimeout(timer);
   }, [activeSource.expires_at]);
   const mutation = useMutation({
-    mutationFn: (proposedText: string) => client.createFileEditProposal(runID, {
+    mutationFn: (submission: ReturnType<typeof recovery.captureSubmission>) => client.createFileEditProposal(runID, {
       version: "file_edit_proposal.v1",
       source_handle: activeSource.source_handle,
-      proposed_text: proposedText,
+      proposed_text: submission.text,
     }),
-    onSuccess: (_, proposedText) => {
-      recovery.submitted(proposedText);
+    onSuccess: (_, submission) => {
+      recovery.submitted(submission.ref);
       void queryClient.invalidateQueries({ queryKey: ["run", runID, "file-edits"] });
       void queryClient.invalidateQueries({ queryKey: ["run", runID, "file-edit-change-set"] });
       void queryClient.invalidateQueries({ queryKey: ["run", runID, "approvals"] });
     },
   });
+  const draft = recovery.draft?.text ?? (mutation.isSuccess ? mutation.variables.text : activeSource.content);
+  const proposalCreated = mutation.isSuccess && (!recovery.draft ||
+    recovery.ref?.branchID === mutation.variables.ref?.branchID && recovery.ref?.seq === mutation.variables.ref?.seq);
   const refresh = useMutation({
     mutationFn: () => client.reissueFileEditProposalSource(runID, activeSource.path,
       activeSource.content_sha256),
@@ -72,12 +75,12 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
   });
   const bytes = new TextEncoder().encode(draft).length;
   const invalid = editorState !== "ready" || bytes > 256 * 1024 ||
-    draft === activeSource.content || expired || recovery.changedBase;
+    draft === activeSource.content || expired || recovery.changedBase || recovery.conflict;
   const language = languageForPath(activeSource.path);
   useFileEditLeaveEntry({ path: activeSource.path, dirty: Boolean(recovery.draft),
     busy: mutation.isPending, canSave: !invalid,
-    save: () => mutation.mutateAsync(draft), keep: recovery.keep,
-    discard: () => { recovery.discard(); setDraft(activeSource.content); mutation.reset(); },
+    save: () => mutation.mutateAsync(recovery.captureSubmission(draft)), keep: recovery.keep,
+    discard: () => { recovery.discard(); mutation.reset(); },
   });
 
   return <section className="file-proposal-editor" aria-label={t(`编辑 ${activeSource.path} 的提案`, `Edit proposal for ${activeSource.path}`)}>
@@ -106,7 +109,7 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
       </div>}
       {editorState === "ready" && (mode === "edit" ?
         <Editor height="100%" language={language} onChange={(value) => {
-          setDraft(value ?? ""); recovery.change(value ?? ""); mutation.reset();
+          recovery.change(value ?? ""); mutation.reset(); setVersionError("");
         }}
         options={{ automaticLayout: true, fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
           readOnly: mutation.isPending, renderWhitespace: "selection", scrollBeyondLastLine: false, tabSize: 2, wordWrap: "off" }}
@@ -120,17 +123,17 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
     <footer>
       <span>{bytes.toLocaleString()} / {(256 * 1024).toLocaleString()} {t("字节", "bytes")}</span>
       <span>{t("来源", "Source")} {activeSource.content_sha256.slice(0, 12)}</span>
-      {!mutation.data && (expired || mutation.isError) &&
+      {!proposalCreated && (expired || mutation.isError) &&
         <button className="compact-command" disabled={refresh.isPending}
           onClick={() => refresh.mutate()} type="button">
           {refresh.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
             : <RefreshCw aria-hidden="true" size={14} />}
           {t("刷新来源", "Refresh source")}
         </button>}
-      {mutation.data ? <span className="proposal-created-status" role="status">
+      {proposalCreated ? <span className="proposal-created-status" role="status">
         <Check aria-hidden="true" size={14} />{t("等待审阅", "Pending review")} {mutation.data.edit.id.slice(0, 12)}
       </span> : <button className="compact-command" disabled={invalid || mutation.isPending}
-        onClick={() => mutation.mutate(draft)} type="button">
+        onClick={() => mutation.mutate(recovery.captureSubmission(draft))} type="button">
         {mutation.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
           : <FileDiff aria-hidden="true" size={14} />}
         {t("创建提案", "Create proposal")}
@@ -140,6 +143,18 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
       {recovery.persisted ? t("草稿已保存在本机", "Draft saved locally")
         : recovery.error ?? t("草稿仅保留在本窗口", "Draft is only kept in this window")}
     </div>}
+    {recovery.conflict && <details className="inline-warning">
+      <summary>{t("其他窗口也有文件草稿，请核对版本", "Other windows have file drafts. Review the versions.")}</summary>
+      {recovery.versions.map((version, index) => <div key={JSON.stringify(version.ref)}>
+        <pre>{version.draft.text}</pre>
+        <button disabled={mutation.isPending} onClick={() => {
+          try {
+            recovery.resolve(recovery.headToken, version.ref); mutation.reset(); setVersionError("");
+          } catch (error) { setVersionError(error instanceof Error ? error.message : String(error)); }
+        }} type="button">{t(`选用版本 ${index + 1}`, `Use version ${index + 1}`)}</button>
+      </div>)}
+      {versionError && <p role="alert">{versionError}</p>}
+    </details>}
     {recovery.changedBase && <div className="inline-warning" role="alert">
       <p>{t("文件自草稿保存后已变化。请核对差异，再以当前文件创建提案。", "The file has changed since this draft was saved. Review the diff before creating a proposal against the current file.")}</p>
       <button onClick={() => setMode("diff")} type="button">{t("核对差异", "Review diff")}</button>

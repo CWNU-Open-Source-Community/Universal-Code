@@ -963,17 +963,6 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
     setBusy(true);
     setError("");
     try {
-      if (configuredCredential) {
-        if (!client.hasProviderCredentials) {
-          throw new Error("该供应商仍有系统凭据，但当前会话没有凭据删除能力；供应商定义保持不变。");
-        }
-        const status = await client.changeProviderCredential(draft.id, {
-          version: "provider_credential.v1", action: "delete", confirm: true, secret: "",
-        });
-        if (status.configured) {
-          throw new Error("系统凭据未确认删除；供应商定义保持不变。");
-        }
-      }
       const result = await client.deleteProviderDefinition(draft.id, {
         version: "provider_definition_control.v1",
         expected_collection_revision: definitions.data.revision,
@@ -992,6 +981,11 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       requestAnimationFrame(() => addButtonRef.current?.focus());
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "删除供应商失败。");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: definitionQueryKey }),
+        queryClient.invalidateQueries({ queryKey: credentialQueryKey }),
+      ]);
+      invalidateDiscovery();
     } finally {
       setBusy(false);
     }
@@ -1414,7 +1408,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
 
     <V2ConfirmDialog busy={busy} confirmLabel="删除" danger
       description={configuredCredential
-        ? "系统凭据会先从操作系统凭据管理器删除，再移除供应商定义。凭据删除失败或路由仍引用此供应商时，删除会暂停；请先处理提示后重试。"
+        ? "确认供应商版本与路由引用允许删除后，将一并移除供应商定义和系统凭据。仍被路由引用或版本已更新时，原凭据会保留。"
         : "供应商定义将从可用模型列表中移除。仍有路由引用它时，请先更换这些路由的模型，再重试删除。"}
       onCancel={() => setDeleteOpen(false)} onConfirm={() => void removeDefinition()}
       open={deleteOpen} returnFocusRef={deleteButtonRef} title={`删除 ${draft.displayName || draft.id}`} />

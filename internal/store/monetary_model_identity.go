@@ -28,18 +28,8 @@ func monetaryModelEvidenceTx(ctx context.Context, tx *sql.Tx, runID, reservation
 	if scope == domain.MonetaryScopeSpecialist {
 		return specialistMonetaryEvidenceTx(ctx, tx, runID, number, provider, model)
 	}
-	if scope != domain.MonetaryScopeRoot {
-		// Keep the existing non-root accounting path, while preventing its
-		// events from being mistaken for a root Supervisor model call.
-		err := tx.QueryRowContext(ctx, `SELECT type,payload_json FROM run_events WHERE run_id=?
-			AND source<>'model_gateway' AND type IN ('model.completed','model.failed')
-			AND json_extract(payload_json,'$.model_attempt')=?
-			AND json_extract(payload_json,'$.provider')=? AND json_extract(payload_json,'$.model')=?
-			ORDER BY sequence DESC LIMIT 1`, runID, number, provider, model).Scan(&result.EventType, &result.PayloadJSON)
-		if errors.Is(err, sql.ErrNoRows) {
-			return result, nil
-		}
-		return result, err
+	if scope == domain.MonetaryScopeReadOnlyFanout {
+		return fanoutMonetaryEvidenceTx(ctx, tx, runID, number, provider, model)
 	}
 	var reservedSequence int64
 	var createdAt string

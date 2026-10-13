@@ -19,6 +19,8 @@ type ProviderModelDiscoveryRequest struct {
 	ConfirmDiscovery           bool            `json:"confirm_discovery"`
 }
 
+// WithModelDiscoveryCredentials binds the same Go-owned credential store used
+// for discovery and for credential cleanup when deleting a custom definition.
 func (s *ProviderDefinitionService) WithModelDiscoveryCredentials(store credential.Store) *ProviderDefinitionService {
 	s.discoveryCredentials = store
 	return s

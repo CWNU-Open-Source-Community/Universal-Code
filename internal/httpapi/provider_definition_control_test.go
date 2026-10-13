@@ -17,6 +17,7 @@ func TestProviderDefinitionHTTPPersistsCredentialReferencesAndDynamicCredentialS
 		t.Fatal(err)
 	}
 	credentialStore := credential.NewMemoryStore()
+	definitions.WithModelDiscoveryCredentials(credentialStore)
 	credentials := application.NewProviderCredentialService(credentialStore).
 		WithRegistryReload(fixture.api.modelRegistry, fixture.store)
 	api, err := New(fixture.store, Config{
@@ -116,17 +117,6 @@ func TestProviderDefinitionHTTPPersistsCredentialReferencesAndDynamicCredentialS
 		credentialStatus.RestartRequired {
 		t.Fatalf("unexpected custom Provider credential status: %#v", credentialStatus)
 	}
-	credentialDeleteBody := `{"version":"provider_credential.v1","action":"delete",` +
-		`"secret":"","confirm":true}`
-	credentialDelete := performSessionMessageRequest(t, api, http.MethodPost,
-		"/api/v1/models/credentials/"+provider, testControlToken, "", "application/json",
-		strings.NewReader(credentialDeleteBody))
-	decodeDataStatus(t, credentialDelete, http.StatusAccepted, &credentialStatus)
-	if credentialStatus.Configured || !credentialStatus.RegistryReloaded {
-		t.Fatalf("custom Provider credential was not removed before definition: %#v",
-			credentialStatus)
-	}
-
 	deleteBody := `{"version":"provider_definition_control.v1",` +
 		`"expected_collection_revision":1,"expected_definition_revision":1,"confirm":true}`
 	deletedResponse := performSessionMessageRequest(t, api, http.MethodPost, path+"/delete",
@@ -136,6 +126,9 @@ func TestProviderDefinitionHTTPPersistsCredentialReferencesAndDynamicCredentialS
 	if deleted.DeletedID != provider || deleted.Collection.Revision != 2 ||
 		len(deleted.Collection.Providers) != 0 || !deleted.RegistryReloaded {
 		t.Fatalf("unexpected custom Provider deletion: %#v", deleted)
+	}
+	if configured, err := credentialStore.Configured(t.Context(), provider); err != nil || configured {
+		t.Fatal("coordinated Provider deletion retained its credential")
 	}
 }
 

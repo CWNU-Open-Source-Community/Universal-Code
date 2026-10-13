@@ -306,6 +306,30 @@ func (r *Registry) Reload(ctx context.Context, reader RouteSettingReader) (Reloa
 	return r.reloadLocked(ctx, reader)
 }
 
+// MutateProviderDefinitions keeps definition persistence and credential cleanup
+// serialized with credential changes, route selection, and Registry reload.
+// Attempt reload even after an error to reflect the durable state when
+// credential cleanup or definition compensation failed.
+func (r *Registry) MutateProviderDefinitions(ctx context.Context, reader RouteSettingReader,
+	mutation func() error,
+) (ReloadResult, error) {
+	if r == nil || r.router == nil || ctx == nil || reader == nil || mutation == nil {
+		return ReloadResult{}, errors.New("Provider definition mutation dependencies are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return ReloadResult{}, err
+	}
+	r.qualificationMu.Lock()
+	defer r.qualificationMu.Unlock()
+	r.routeMu.Lock()
+	defer r.routeMu.Unlock()
+	mutationErr := mutation()
+	reloadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	result, reloadErr := r.reloadLocked(reloadCtx, reader)
+	return result, errors.Join(mutationErr, reloadErr)
+}
+
 func (r *Registry) reloadLocked(ctx context.Context, reader RouteSettingReader) (ReloadResult, error) {
 	candidate, err := buildRegistry(ctx, r.lookup, r.credentials, true)
 	if err != nil {
