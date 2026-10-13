@@ -89,7 +89,8 @@ describe("Run projection panels", () => {
           summary: "Reviewed the parser boundary", work_item_ids: [], note_ids: [],
           created_at: "2026-07-13T00:01:20Z" } }],
     };
-    const client = { get: vi.fn().mockResolvedValue(graph) } as unknown as APIClient;
+    const client = { get: vi.fn(async (path: string) => path === "/runs/run-1"
+      ? { run: { status: "running" } } : graph) } as unknown as APIClient;
     render(provider(<AgentGraphPanel client={client} runID="run-1" />));
     expect(await screen.findByText("Reviewed the parser boundary")).toBeInTheDocument();
     expect(screen.getByText("agent-root")).toBeInTheDocument();

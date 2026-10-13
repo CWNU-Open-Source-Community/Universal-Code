@@ -1170,7 +1170,7 @@
         "desktop_workspace_open.v1",
         "prayu.run-navigation.v1",
         "universal-code.batch-workbench.v1",
-        "universal-code.specialist.v1",
+        "universal-code.specialist-continuation.v1",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [
@@ -1185,6 +1185,12 @@
           "decision": "The authorized unified-shell replacement removed the legacy App sidebar reader/writer. This is presentation retirement only; existing localStorage values are neither deleted nor migrated.",
           "rebuild_evidence": "docs/UX_SHARED_SHELL_SETTINGS_PROPOSAL.md and web/src/App.tsx select the shared V2 shell; web/src/v2/styles.css supplies --v2-sidebar-width: 299px. The old custom width is not inherited. Current layout rebuilds from this explicit default, not from the retired preference.",
           "rollback": "Restore the legacy App.tsx sidebar reader/writer to read the unchanged localStorage value. No old preference data or protocol history is removed."
+        },
+        {
+          "identifier": "universal-code.specialist.v1",
+          "decision": "The ordinary child button now invokes an explicitly confirmed continuous execution with completion summary. Its pending operation key uses a separate presentation namespace so a prior single-step key cannot authorize the new workflow.",
+          "rebuild_evidence": "web/src/components/specialist-execution.tsx rebuilds execution state from the durable Specialist schedule response and Agent graph. Old sessionStorage values remain untouched; /execute and its durable attempt replay remain supported.",
+          "rollback": "Restore the single-step component from Git to read the unchanged sessionStorage operation key. No durable attempt or existing storage value is deleted."
         }
       ]
     },
@@ -1560,6 +1566,7 @@
         "session_steering_promotion.v1",
         "session_steering_revision.v1",
         "skill_package_installation.v1",
+        "specialist_continuation.v1",
         "specialist_tools.v1",
         "standard_code_preset.v1",
         "task_configuration.v1",

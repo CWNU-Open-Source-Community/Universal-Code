@@ -30,10 +30,11 @@ const (
 )
 
 type SpecialistScheduleRequest struct {
-	RunID             string
-	AgentIDs          []string
-	MaxRounds         int
-	OperatorRequestID string
+	RunID              string
+	AgentIDs           []string
+	MaxRounds          int
+	OperatorRequestID  string
+	ContinuationDigest string
 }
 
 type SpecialistScheduleFailure struct {
@@ -43,19 +44,21 @@ type SpecialistScheduleFailure struct {
 }
 
 type SpecialistScheduleResult struct {
-	ScheduleID        string
-	OperatorRequestID string
-	RunID             string
-	AgentIDs          []string
-	RoundsCompleted   int
-	TurnsStarted      int
-	RecoveredAttempts int
-	RecoveredSchedule bool
-	StopReason        SpecialistScheduleStopReason
-	UsageBefore       domain.RunAgentUsage
-	UsageAfter        domain.RunAgentUsage
-	Turns             []SpecialistTurnResult
-	Failures          []SpecialistScheduleFailure
+	ScheduleID         string
+	OperatorRequestID  string
+	ContinuationDigest string
+	Replayed           bool
+	RunID              string
+	AgentIDs           []string
+	RoundsCompleted    int
+	TurnsStarted       int
+	RecoveredAttempts  int
+	RecoveredSchedule  bool
+	StopReason         SpecialistScheduleStopReason
+	UsageBefore        domain.RunAgentUsage
+	UsageAfter         domain.RunAgentUsage
+	Turns              []SpecialistTurnResult
+	Failures           []SpecialistScheduleFailure
 }
 
 type SpecialistScheduleStore interface {
@@ -161,13 +164,23 @@ func (s *SpecialistScheduler) executeWithLease(ctx context.Context,
 		domain.SpecialistScheduleStart{
 			ID: scheduleID, RunID: result.RunID,
 			AgentIDs: append([]string(nil), result.AgentIDs...), MaxRounds: maxRounds,
-			OperatorRequestID: result.OperatorRequestID,
-			Lease:             lease, UsageBefore: usage, StartedAt: time.Now().UTC(),
+			OperatorRequestID:  result.OperatorRequestID,
+			ContinuationDigest: result.ContinuationDigest,
+			Lease:              lease, UsageBefore: usage, StartedAt: time.Now().UTC(),
 		})
 	if err != nil {
 		return apperror.Normalize(err)
 	}
 	result.ScheduleID = started.Schedule.ID
+	if started.Schedule.Status.Terminal() {
+		result.Replayed = true
+		result.RoundsCompleted = started.Schedule.RoundsCompleted
+		result.TurnsStarted = started.Schedule.TurnsStarted
+		result.StopReason = SpecialistScheduleStopReason(started.Schedule.StopReason)
+		result.UsageBefore = started.Schedule.UsageBefore
+		result.UsageAfter = started.Schedule.UsageAfter
+		return specialistOperatorScheduleTerminalError(started.Schedule)
+	}
 	result.RecoveredSchedule = started.RecoveredSchedule
 	defer func() {
 		if recover() != nil {
@@ -416,6 +429,7 @@ func normalizeSpecialistScheduleRequest(
 ) (SpecialistScheduleResult, error) {
 	result := SpecialistScheduleResult{RunID: strings.TrimSpace(request.RunID)}
 	result.OperatorRequestID = strings.TrimSpace(request.OperatorRequestID)
+	result.ContinuationDigest = request.ContinuationDigest
 	if result.RunID == "" {
 		return result, apperror.New(apperror.CodeInvalidArgument,
 			"Specialist schedule Run id is required")

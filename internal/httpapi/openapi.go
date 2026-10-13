@@ -1462,6 +1462,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			Control:     true, NotFound: true,
 			SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{runID, childTaskProposalID}},
 		{Path: SpecialistExecutionPathTemplate, Method: http.MethodPost, OperationID: "executeRunSpecialist", Summary: "Execute one already admitted independent child", Tag: "Control", Description: "Runs one bounded Specialist turn under its own identity, Session, usage and Run lease. Optional workspace_tools enables Go-scoped project reads/search; operator-confirmed Batch work uses its separate isolated authority. A stable operation key replays the recorded attempt without dispatching another model call.", DataType: reflect.TypeOf(SpecialistExecutionView{}), RequestType: reflect.TypeOf(SpecialistExecutionRequestView{}), Control: true, NotFound: true, SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{runID, agentID}},
+		{Path: SpecialistContinuationPathTemplate, Method: http.MethodPost, OperationID: "continueRunSpecialist", Summary: "Run an admitted child continuously and summarize its completion", Tag: "Control", Description: "Operator-confirmed continuation uses the existing Specialist scheduler for at most 32 rounds, with the child's original turn, token, monetary and Run execution budgets and Go-owned read/search tools. An actual child completion queues an attributed completion notification and wakes one bounded parent turn. Waiting, exhausted and cancelled children retain their precise stop reason. Stable operation identity replays both the schedule and completion wake.", DataType: reflect.TypeOf(SpecialistContinuationView{}), RequestType: reflect.TypeOf(SpecialistContinuationRequestView{}), Control: true, NotFound: true, SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{runID, agentID}},
 		{Path: SpecialistToolReceiptsPathTemplate, OperationID: "getRunSpecialistToolReceipts", Summary: "Read durable child tool receipts", Tag: "Agents", Description: "Returns the child attempt's bounded native tool calls and results. Private provider replay is never returned.", DataType: reflect.TypeOf(SpecialistToolReceiptsView{}), NotFound: true, Parameters: []openAPIParameter{runID, agentID, pathIdentityParameter("attempt_id", "Specialist attempt identity")}},
 		{Path: BatchDeliveriesPathTemplate, OperationID: "listRunBatchDeliveries",
 			Summary: "List durable batch deliveries", Tag: "Agents",
@@ -3168,6 +3169,10 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 }
 
 var openAPIFieldEnums = map[string][]string{
+	"SpecialistContinuationRequestView.version":                 {application.SpecialistContinuationVersion},
+	"SpecialistContinuationView.version":                        {application.SpecialistContinuationVersion},
+	"SpecialistContinuationView.status":                         {"running", "completed", "failed", "cancelled", "abandoned"},
+	"SpecialistContinuationView.summary_status":                 {"not_requested", "queued", "completed", "failed", "cancelled"},
 	"SandboxEnvironmentControlRequestView.version":              {application.SandboxEnvironmentVersion},
 	"SandboxEnvironmentView.protocol_version":                   {application.SandboxEnvironmentVersion},
 	"SandboxEnvironmentSettingsView.default_backend":            {"local", "docker", "sbx"},

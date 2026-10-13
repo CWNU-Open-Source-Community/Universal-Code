@@ -35,14 +35,15 @@ func (s SpecialistScheduleStatus) Terminal() bool {
 }
 
 type SpecialistScheduleStart struct {
-	ID                string
-	RunID             string
-	AgentIDs          []string
-	MaxRounds         int
-	OperatorRequestID string
-	Lease             RunExecutionLease
-	UsageBefore       RunAgentUsage
-	StartedAt         time.Time
+	ID                 string
+	RunID              string
+	AgentIDs           []string
+	MaxRounds          int
+	OperatorRequestID  string
+	ContinuationDigest string
+	Lease              RunExecutionLease
+	UsageBefore        RunAgentUsage
+	StartedAt          time.Time
 }
 
 func (s SpecialistScheduleStart) Normalize() (SpecialistScheduleStart, error) {
@@ -60,6 +61,12 @@ func (s SpecialistScheduleStart) Normalize() (SpecialistScheduleStart, error) {
 	}
 	s.AgentIDs = agentIDs
 	s.OperatorRequestID = strings.TrimSpace(s.OperatorRequestID)
+	if s.ContinuationDigest != "" && (len(s.ContinuationDigest) != 64 || strings.Trim(s.ContinuationDigest, "0123456789abcdef") != "") {
+		return SpecialistScheduleStart{}, errors.New("specialist continuation digest is invalid")
+	}
+	if s.ContinuationDigest != "" && s.OperatorRequestID != "" {
+		return SpecialistScheduleStart{}, errors.New("specialist schedule cannot combine delegation and continuation request identities")
+	}
 	if s.OperatorRequestID != "" {
 		if err := validateSpecialistScheduleIdentity(s.OperatorRequestID,
 			"operator request id"); err != nil {
@@ -136,20 +143,21 @@ func (f SpecialistScheduleFinish) Normalize() (SpecialistScheduleFinish, error) 
 }
 
 type SpecialistSchedule struct {
-	ID                string
-	RunID             string
-	AgentIDs          []string
-	MaxRounds         int
-	Status            SpecialistScheduleStatus
-	StopReason        string
-	RoundsCompleted   int
-	TurnsStarted      int
-	RecoveredAttempts int
-	UsageBefore       RunAgentUsage
-	UsageAfter        RunAgentUsage
-	ErrorCode         string
-	StartedAt         time.Time
-	FinishedAt        *time.Time
+	ID                 string
+	ContinuationDigest string
+	RunID              string
+	AgentIDs           []string
+	MaxRounds          int
+	Status             SpecialistScheduleStatus
+	StopReason         string
+	RoundsCompleted    int
+	TurnsStarted       int
+	RecoveredAttempts  int
+	UsageBefore        RunAgentUsage
+	UsageAfter         RunAgentUsage
+	ErrorCode          string
+	StartedAt          time.Time
+	FinishedAt         *time.Time
 }
 
 func (s SpecialistSchedule) Validate() error {

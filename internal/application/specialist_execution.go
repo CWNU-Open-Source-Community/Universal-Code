@@ -15,10 +15,16 @@ import (
 // SpecialistExecutionService is an operator entry point for an already admitted
 // child, including child_task admissions. Models cannot construct this service.
 type SpecialistExecutionService struct {
-	store    SubagentRunnerStore
-	router   *llm.Router
-	checker  policy.Checker
-	drydocks *RunWorktreeService
+	store          SubagentRunnerStore
+	router         *llm.Router
+	checker        policy.Checker
+	drydocks       *RunWorktreeService
+	summaryHandoff RunWakeExecutionHandoff
+}
+
+func (s *SpecialistExecutionService) WithCompletionSummary(handoff RunWakeExecutionHandoff) *SpecialistExecutionService {
+	s.summaryHandoff = handoff
+	return s
 }
 
 func NewSpecialistExecutionService(st SubagentRunnerStore, router *llm.Router, checker policy.Checker) *SpecialistExecutionService {

@@ -259,5 +259,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v188 | 在现有 Run 执行配置、受控交互与 Standard Code 预设快照中接入显式 sbx 后端，保留旧记录、审批约束和 Thread 延续触发器 | admit an explicit sbx backend in existing Run execution profiles, controlled interaction and Standard Code preset snapshots while preserving historical records, approval constraints and Thread continuation triggers |
 | v189 | 为 Command Runtime Job 的写入约束补充 docker_sandboxes 后端与 sbx 执行配置的映射，保留既有操作、权限、工作区和执行租约检查 | admit the docker_sandboxes backend with the sbx execution profile in Command Runtime Job insertion while preserving existing operation, permission, workspace and execution lease checks |
 | v190 | 为子代理加入持久化工具绑定、调用轮次和执行收据，扩展模型调用记录以支持工具循环并保留历史行身份 | add durable child-agent tool bindings, rounds and execution receipts, extending model-call records for tool loops while preserving historical row identities |
+| v191 | 为子代理连续调度增加不可变的操作者意图摘要及查询索引，支持原调度的精确重放 | add an immutable operator-intent digest and lookup index to continuous child-agent schedules for exact replay of the original schedule |
 
 </details>

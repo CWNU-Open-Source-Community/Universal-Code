@@ -21,7 +21,7 @@ const specialistScheduleSelect = `SELECT id, run_id, lease_id, lease_generation,
 	after_root_tokens, after_specialist_tokens, after_readonly_tokens,
 	after_total_tokens, after_root_execution_millis, after_specialist_execution_millis,
 	after_readonly_execution_millis, after_total_execution_millis,
-	error_code, started_at, finished_at
+	error_code, started_at, finished_at, continuation_digest
 	FROM specialist_schedules`
 
 type specialistScheduleRecord struct {
@@ -64,12 +64,35 @@ func (s *SQLiteStore) StartSpecialistSchedule(ctx context.Context,
 	if err := requireNoApplyingSpecialistDelegationApplicationTx(ctx, tx, run.ID); err != nil {
 		return domain.SpecialistScheduleStartResult{}, err
 	}
+	if start.ContinuationDigest != "" {
+		var existingID string
+		err := tx.QueryRowContext(ctx, `SELECT id FROM specialist_schedules WHERE continuation_digest = ?
+			ORDER BY started_at DESC, id DESC LIMIT 1`, start.ContinuationDigest).Scan(&existingID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return domain.SpecialistScheduleStartResult{}, err
+		}
+		if err == nil {
+			existing, err := getSpecialistScheduleTx(ctx, tx, existingID)
+			if err != nil {
+				return domain.SpecialistScheduleStartResult{}, err
+			}
+			if existing.Schedule.RunID != start.RunID || existing.Schedule.MaxRounds != start.MaxRounds || !slices.Equal(existing.Schedule.AgentIDs, start.AgentIDs) {
+				return domain.SpecialistScheduleStartResult{}, apperror.New(apperror.CodeConflict, "Specialist continuation intent changed")
+			}
+			if existing.Schedule.Status.Terminal() && existing.Schedule.Status != domain.SpecialistScheduleAbandoned {
+				return domain.SpecialistScheduleStartResult{Schedule: existing.Schedule}, tx.Commit()
+			}
+		}
+	}
 	recovered := false
 	previous, found, err := getRunningSpecialistScheduleTx(ctx, tx, run.ID)
 	if err != nil {
 		return domain.SpecialistScheduleStartResult{}, err
 	}
 	if found {
+		if previous.Schedule.ContinuationDigest != start.ContinuationDigest {
+			return domain.SpecialistScheduleStartResult{}, apperror.New(apperror.CodeConflict, "active Specialist schedule belongs to another continuation")
+		}
 		previousRequestID, operatorControlled, err :=
 			getSpecialistOperatorScheduleRequestIDForScheduleTx(ctx, tx,
 				previous.Schedule.ID)
@@ -159,8 +182,8 @@ func (s *SQLiteStore) StartSpecialistSchedule(ctx context.Context,
 		 after_root_tokens, after_specialist_tokens, after_readonly_tokens,
 		 after_total_tokens, after_root_execution_millis, after_specialist_execution_millis,
 		 after_readonly_execution_millis,
-		 after_total_execution_millis, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 after_total_execution_millis, started_at, continuation_digest)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		start.ID, run.ID, start.Lease.LeaseID, start.Lease.Generation, start.MaxRounds,
 		domain.SpecialistScheduleRunning, usage.RootTokens, usage.SpecialistTokens,
 		usage.ReadOnlyFanoutTokens, usage.RootTokens+usage.SpecialistTokens,
@@ -171,7 +194,7 @@ func (s *SQLiteStore) StartSpecialistSchedule(ctx context.Context,
 		usage.RootTokens+usage.SpecialistTokens, usage.RootExecutionMillis,
 		usage.SpecialistExecutionMillis, usage.ReadOnlyFanoutMillis,
 		usage.RootExecutionMillis+usage.SpecialistExecutionMillis,
-		ts(start.StartedAt)); err != nil {
+		ts(start.StartedAt), start.ContinuationDigest); err != nil {
 		return domain.SpecialistScheduleStartResult{}, err
 	}
 	for index, agentID := range start.AgentIDs {
@@ -197,7 +220,8 @@ func (s *SQLiteStore) StartSpecialistSchedule(ctx context.Context,
 		}
 	}
 	schedule := domain.SpecialistSchedule{
-		ID: start.ID, RunID: run.ID, AgentIDs: append([]string(nil), start.AgentIDs...),
+		ContinuationDigest: start.ContinuationDigest,
+		ID:                 start.ID, RunID: run.ID, AgentIDs: append([]string(nil), start.AgentIDs...),
 		MaxRounds: start.MaxRounds, Status: domain.SpecialistScheduleRunning,
 		UsageBefore: usage, UsageAfter: usage, StartedAt: start.StartedAt,
 	}
@@ -407,7 +431,7 @@ func scanSpecialistSchedule(row scanner) (specialistScheduleRecord, error) {
 		&schedule.UsageAfter.SpecialistExecutionMillis,
 		&schedule.UsageAfter.ReadOnlyFanoutMillis, &afterExecutionSubtotal,
 		&schedule.ErrorCode, &startedAt,
-		&finishedAt); err != nil {
+		&finishedAt, &schedule.ContinuationDigest); err != nil {
 		return specialistScheduleRecord{}, err
 	}
 	schedule.UsageBefore.RunID = schedule.RunID
@@ -434,6 +458,41 @@ func scanSpecialistSchedule(row scanner) (specialistScheduleRecord, error) {
 	schedule.StartedAt = parseTS(startedAt)
 	schedule.FinishedAt = parseNullableTS(finishedAt)
 	return record, nil
+}
+
+func (s *SQLiteStore) GetSpecialistContinuationSchedule(ctx context.Context, digest string) (domain.SpecialistSchedule, bool, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM specialist_schedules WHERE continuation_digest = ?
+		ORDER BY started_at DESC, id DESC LIMIT 1`, digest).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.SpecialistSchedule{}, false, nil
+	}
+	if err != nil {
+		return domain.SpecialistSchedule{}, false, err
+	}
+	schedule, err := s.GetSpecialistSchedule(ctx, id)
+	return schedule, err == nil, err
+}
+
+func (s *SQLiteStore) ListSpecialistContinuationAttemptIDs(ctx context.Context, digest string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT attempt.id FROM agent_attempts attempt
+		JOIN specialist_schedules schedule ON schedule.run_id = attempt.run_id
+			AND schedule.lease_id = attempt.lease_id AND schedule.lease_generation = attempt.lease_generation
+		JOIN specialist_schedule_agents target ON target.schedule_id = schedule.id AND target.agent_id = attempt.agent_id
+		WHERE schedule.continuation_digest = ? ORDER BY attempt.turn_number, attempt.id`, digest)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func listSpecialistScheduleAgentsTx(ctx context.Context, tx *sql.Tx,

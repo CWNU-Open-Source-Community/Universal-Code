@@ -18,6 +18,7 @@ type RunWakeConsumerStore interface {
 	RunWakeCoordinatorStore
 	GetRunExecutionHandoff(context.Context, string) (domain.RunExecutionHandoff, bool, error)
 	GetLatestRunWakeIntent(context.Context, string) (domain.RunWakeIntent, bool, error)
+	GetRunWakeIntent(context.Context, string) (domain.RunWakeIntent, error)
 	GetRunWakeConsumption(context.Context, string, int) (
 		domain.RunWakeConsumption, bool, error)
 	PrepareRunWakeConsumption(context.Context, domain.RunWakeConsumption) (
@@ -42,6 +43,7 @@ type ForegroundRunWakeConsumer struct {
 type ConsumeRunWakeRequest struct {
 	Version  string
 	RunID    string
+	IntentID string
 	OwnerID  string
 	MaxSteps int
 }
@@ -75,6 +77,16 @@ func (c *ForegroundRunWakeConsumer) Consume(ctx context.Context,
 			"foreground Run wake request is invalid")
 	}
 	intent, found, err := c.store.GetLatestRunWakeIntent(ctx, request.RunID)
+	if request.IntentID != "" {
+		if !validControlIdentity(request.IntentID) {
+			return ConsumeRunWakeResult{}, apperror.New(apperror.CodeInvalidArgument, "Run wake intent identity is invalid")
+		}
+		intent, err = c.store.GetRunWakeIntent(ctx, request.IntentID)
+		found = err == nil
+		if err == nil && intent.RunID != request.RunID {
+			return ConsumeRunWakeResult{}, apperror.New(apperror.CodeFailedPrecondition, "Run wake intent belongs to another Run")
+		}
+	}
 	if err != nil {
 		return ConsumeRunWakeResult{}, apperror.Normalize(err)
 	}

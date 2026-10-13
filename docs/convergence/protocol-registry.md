@@ -23,7 +23,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 121 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 122 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 6 | true |
@@ -717,15 +717,16 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_workspace_open.v1`
 - `prayu.run-navigation.v1`
 - `universal-code.batch-workbench.v1`
-- `universal-code.specialist.v1`
+- `universal-code.specialist-continuation.v1`
 - `v2_file_upload.v1`
 
 </details>
 
-<details><summary>2 retained retirement records</summary>
+<details><summary>3 retained retirement records</summary>
 
 - `prayu.settings.sidebar.width.v1`: Remove the unreachable legacy SettingsView and its private sidebar-width preference reader/writer.
 - `prayu.sidebar.width.v1`: The authorized unified-shell replacement removed the legacy App sidebar reader/writer. This is presentation retirement only; existing localStorage values are neither deleted nor migrated.
+- `universal-code.specialist.v1`: The ordinary child button now invokes an explicitly confirmed continuous execution with completion summary. Its pending operation key uses a separate presentation namespace so a prior single-step key cannot authorize the new workflow.
 
 </details>
 
@@ -883,7 +884,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `http-openapi-contract-reader` (`v0, v1, v2`, active) at `web/src/api`
 
-<details><summary>121 active identifiers</summary>
+<details><summary>122 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -979,6 +980,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `session_steering_promotion.v1`
 - `session_steering_revision.v1`
 - `skill_package_installation.v1`
+- `specialist_continuation.v1`
 - `specialist_tools.v1`
 - `standard_code_preset.v1`
 - `task_configuration.v1`

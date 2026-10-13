@@ -11945,7 +11945,8 @@ CREATE TABLE specialist_schedules (
 		INTEGER NOT NULL DEFAULT 0 CHECK(before_readonly_tokens >= 0), before_readonly_execution_millis
 		INTEGER NOT NULL DEFAULT 0 CHECK(before_readonly_execution_millis >= 0), after_readonly_tokens
 		INTEGER NOT NULL DEFAULT 0 CHECK(after_readonly_tokens >= 0), after_readonly_execution_millis
-		INTEGER NOT NULL DEFAULT 0 CHECK(after_readonly_execution_millis >= 0),
+		INTEGER NOT NULL DEFAULT 0 CHECK(after_readonly_execution_millis >= 0), continuation_digest TEXT NOT NULL DEFAULT ''
+		CHECK(continuation_digest = '' OR (length(continuation_digest) = 64 AND continuation_digest NOT GLOB '*[^0-9a-f]*')),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
 		CHECK(lease_generation > 0 AND max_rounds BETWEEN 1 AND 32),
 		CHECK(status IN ('running', 'completed', 'failed', 'cancelled', 'abandoned')),
@@ -14257,6 +14258,9 @@ CREATE INDEX idx_workspace_checkpoints_run_created
 CREATE INDEX idx_workspace_checkpoints_workspace_created
 		ON workspace_checkpoints(workspace_id, created_at DESC, id DESC) WHERE sealed = 1;
 -- traverse-board-clean-install-object-boundary --
+CREATE INDEX specialist_schedule_continuation ON specialist_schedules(continuation_digest, started_at DESC, id DESC)
+		WHERE continuation_digest <> '';
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER skill_candidate_import_insert_guard
 		BEFORE INSERT ON skill_candidate_imports
 		BEGIN
@@ -14519,6 +14523,10 @@ CREATE TRIGGER skill_package_remove_operations_no_delete
 CREATE TRIGGER skill_package_remove_operations_no_update
 		BEFORE UPDATE ON skill_package_remove_operations
 		BEGIN SELECT RAISE(ABORT, 'Skill package removal operations are immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER specialist_schedule_continuation_immutable
+		BEFORE UPDATE OF continuation_digest ON specialist_schedules
+		BEGIN SELECT RAISE(ABORT, 'Specialist continuation identity is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_agent_attempt_identity_immutable
 		BEFORE UPDATE OF id, run_id, agent_id, parent_agent_id, lease_id, lease_generation,

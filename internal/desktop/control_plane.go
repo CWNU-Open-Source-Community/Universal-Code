@@ -919,7 +919,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		FanoutExecutionController: application.NewReadOnlyFanoutExecutionService(
 			stateStore, models.Router(), checker),
 		ChildTaskControlController:    application.NewChildTaskControlService(stateStore),
-		SpecialistExecutionController: application.NewSpecialistExecutionService(stateStore, models.Router(), checker).WithRunWorktree(commandRuntimeDrydocks),
+		SpecialistExecutionController: application.NewSpecialistExecutionService(stateStore, models.Router(), checker).WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl),
 		ProviderCredentialController:  providerCredentialControl,
 		FileEditReviewController:      fileEditReview,
 		FileWorkspaceDrydocks:         commandRuntimeDrydocks,
