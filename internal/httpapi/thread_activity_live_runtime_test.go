@@ -65,12 +65,14 @@ func TestThreadActivityHTTPReadsLiveProcessRingBeforeDurableHeartbeat(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	operationKey := runmutation.SupervisorToolOperationKey(runRecord.ID,
+	intentKey := runmutation.SupervisorToolOperationKey(runRecord.ID,
 		checkpoint.NextTurn, string(toolgateway.CommandRuntimeTool), string(canonical))
-	callID, err := runmutation.SupervisorToolCallID(operationKey, 1)
+	callID, err := runmutation.SupervisorToolCallID(intentKey, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	operationKey := runmutation.SupervisorToolExecutionKey(runRecord.ID, checkpoint.NextTurn,
+		string(toolgateway.CommandRuntimeTool), string(canonical), callID)
 	manager, err := runner.NewPlatformCommandRuntimeManager(fixture.store,
 		"thread-activity-live-owner")
 	if err != nil {

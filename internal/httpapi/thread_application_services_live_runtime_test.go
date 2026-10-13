@@ -204,12 +204,14 @@ func (f *threadApplicationServicesLiveFixture) start(t *testing.T, mode string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	operationKey := runmutation.SupervisorToolOperationKey(run.ID, turn.Checkpoint.NextTurn,
+	intentKey := runmutation.SupervisorToolOperationKey(run.ID, turn.Checkpoint.NextTurn,
 		string(toolgateway.CommandRuntimeTool), string(canonical))
-	callID, err := runmutation.SupervisorToolCallID(operationKey, 1)
+	callID, err := runmutation.SupervisorToolCallID(intentKey, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	operationKey := runmutation.SupervisorToolExecutionKey(run.ID, turn.Checkpoint.NextTurn,
+		string(toolgateway.CommandRuntimeTool), string(canonical), callID)
 	permission, err := f.store.GetRunExecutionPermission(ctx, run.ID)
 	if err != nil {
 		t.Fatal(err)
