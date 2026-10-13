@@ -189,6 +189,12 @@ type IdempotentRunChatExecutor interface {
 		options RunChatOptions) (RunChatResult, bool, error)
 }
 
+// A Run-bound executor checks commands against the actual Run before the
+// command itself or any change to Session history is persisted.
+type RunChatCommandPreparer interface {
+	PrepareSessionCommand(ctx context.Context, sess Session, input string) (Session, error)
+}
+
 func NewManager(store Store, router *llm.Router, checker policy.Checker) *Manager {
 	gateway := toolgateway.New(store, checker).WithWorkspaceRootResolver(func(ctx context.Context, workspaceID string) (string, error) {
 		workspace, err := store.GetWorkspaceInfo(ctx, workspaceID)
@@ -294,6 +300,12 @@ func (m *Manager) SendWithOptions(ctx context.Context, sessionID string, input s
 		if options.OperationKey != "" {
 			return SendResult{}, apperror.New(apperror.CodeInvalidArgument,
 				"Session operation keys apply only to queued model input, not slash commands")
+		}
+		if preparer, ok := m.runChat.(RunChatCommandPreparer); ok {
+			sess, err = preparer.PrepareSessionCommand(ctx, sess, input)
+			if err != nil {
+				return SendResult{}, err
+			}
 		}
 		userMsg, err := m.store.SaveSessionMessage(ctx, NewMessage(sess.ID, "user", input))
 		if err != nil {

@@ -9,7 +9,8 @@ import (
 // A legacy queued attachment could already have a Session evidence row before
 // its operator message was delivered. The v168 receipt backfill binds that row
 // to its exact owner. Pending and cancelled owners remain available to audit
-// reads, but cannot become model history or a compaction source.
+// reads. A successor can publish its own exact evidence receipt for a retained,
+// unexecuted input without changing the old queue entry's cancelled status.
 const supervisorModelVisibleAttachmentEvidenceSQL = ` AND NOT (
 	message.source_kind IN ('workspace_image','uploaded_file')
 	AND instr(message.content,'operator_message_id')>0
@@ -22,6 +23,19 @@ const supervisorModelVisibleAttachmentEvidenceSQL = ` AND NOT (
 			AND receipt.attachment_id=message.source_ref
 			AND receipt.kind=CASE message.source_kind
 				WHEN 'workspace_image' THEN 'image' ELSE 'file' END
+	)
+	AND NOT EXISTS (
+		SELECT 1 FROM run_events receipt
+		JOIN thread_runs retained ON retained.run_id=receipt.run_id AND retained.session_id=message.session_id
+		JOIN operator_steering_messages steering ON steering.id=receipt.subject_id
+			AND steering.run_id=retained.predecessor_run_id AND steering.status='cancelled'
+		WHERE receipt.source='thread_epoch_continuation' AND receipt.type='session.message_created'
+			AND message.id IN (SELECT value FROM json_each(receipt.payload_json,'$.attachment_evidence_ids'))
+			AND instr(message.content,'"operator_message_id":"'||steering.id||'"')>0
+			AND ((message.source_kind='workspace_image' AND EXISTS (
+				SELECT 1 FROM thread_message_images b WHERE b.message_id=steering.id AND b.image_id=message.source_ref))
+			OR (message.source_kind='uploaded_file' AND EXISTS (
+				SELECT 1 FROM thread_message_attachments b WHERE b.message_id=steering.id AND b.attachment_id=message.source_ref)))
 	)
 )`
 
