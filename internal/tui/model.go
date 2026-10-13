@@ -382,6 +382,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ScrollMessages(-8)
 			return m, nil
 		case "up", "k":
+			if m.focus == focusInput && msg.String() == "k" {
+				break
+			}
 			if m.focus == focusTools {
 				m.SelectPreviousActivityItem()
 			} else {
@@ -389,6 +392,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "down", "j":
+			if m.focus == focusInput && msg.String() == "j" {
+				break
+			}
 			if m.focus == focusTools {
 				m.SelectNextActivityItem()
 			} else {

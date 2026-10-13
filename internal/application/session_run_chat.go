@@ -64,6 +64,38 @@ func (e *SessionRunChatExecutor) ExecuteSessionTurn(ctx context.Context, sess se
 	return e.ExecuteSessionTurnWithOptions(ctx, sess, input, session.RunChatOptions{})
 }
 
+func (e *SessionRunChatExecutor) PrepareSessionCommand(ctx context.Context, sess session.Session, input string) (session.Session, error) {
+	fields := strings.Fields(input)
+	if len(fields) == 0 || (fields[0] != "/compact" && fields[0] != "/model") {
+		return sess, nil
+	}
+	run, attached, err := e.store.GetRunBySession(ctx, sess.ID)
+	if err != nil || !attached {
+		return sess, apperror.Normalize(err)
+	}
+	if run.SessionID != sess.ID {
+		return session.Session{}, apperror.New(apperror.CodeConflict, "run and session binding changed")
+	}
+	if fields[0] == "/model" && len(fields) > 1 {
+		return session.Session{}, apperror.New(apperror.CodeFailedPrecondition,
+			"This Session is bound to its Run; select a model through Thread model control and continue the Thread to use it")
+	}
+	if fields[0] == "/compact" {
+		privateHistory, err := e.supervisor.requiresSupervisorPrivateHistory(run.Config.ModelRoute)
+		if err != nil {
+			return session.Session{}, err
+		}
+		if privateHistory {
+			return session.Session{}, apperror.New(apperror.CodeFailedPrecondition,
+				"native private assistant history cannot be replaced by a context summary")
+		}
+	}
+	// The Run is the executor's route authority, even when an older Session
+	// record contains a route written by the former slash-command path.
+	sess.Route = run.Config.ModelRoute
+	return sess, nil
+}
+
 func (e *SessionRunChatExecutor) ExecuteSessionTurnWithOptions(ctx context.Context,
 	sess session.Session, input string, options session.RunChatOptions,
 ) (session.RunChatResult, bool, error) {

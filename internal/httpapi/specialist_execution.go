@@ -170,7 +170,13 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 		a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "child execution requires its version and explicit confirmation"), 0)
 		return
 	}
+	responseControl := http.NewResponseController(w)
+	if err := responseControl.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		a.writeError(w, requestID, apperror.Wrap(apperror.CodeUnavailable, "child response deadline could not be configured", err), 0)
+		return
+	}
 	result, err := a.specialistExecutionController.ExecuteSpecialist(r.Context(), application.ExecuteSpecialistRequest{RunID: runID, AgentID: agentID, OperationKey: body.OperationKey, WorkspaceTools: body.WorkspaceTools})
+	_ = responseControl.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if err != nil {
 		a.writeError(w, requestID, err, 0)
 		return

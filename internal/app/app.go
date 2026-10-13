@@ -1116,6 +1116,10 @@ func reorderFlags(args []string, takesValue map[string]bool) []string {
 	rest := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
 		if strings.HasPrefix(arg, "-") && len(arg) > 1 {
 			name := strings.TrimLeft(arg, "-")
 			if idx := strings.Index(name, "="); idx >= 0 {

@@ -21,7 +21,8 @@ func (s *SQLiteStore) FileAttachmentInputDirectory() string {
 
 // ListSupervisorFileAttachmentInputs observes only sent evidence. A queued
 // message is eligible only while this exact checkpoint owns its prepared
-// delivery; imported-but-unsent files and later queued messages are excluded.
+// delivery or its successor retained it as an unexecuted input. Imported-but-unsent
+// files and later queued messages are excluded.
 // The flat inventory also survives Session compaction and same-Thread successors.
 func (s *SQLiteStore) ListSupervisorFileAttachmentInputs(ctx context.Context, cp domain.SupervisorCheckpoint) (domain.FileAttachmentInputSet, error) {
 	set := domain.FileAttachmentInputSet{Version: "file_attachment_inputs.v1", RunID: cp.RunID, Files: []domain.FileAttachmentInput{}}
@@ -68,16 +69,18 @@ func (s *SQLiteStore) ListSupervisorFileAttachmentInputs(ctx context.Context, cp
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return set, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT m.id,m.attachment_count,b.ordinal,f.id,f.workspace_id,f.name,f.mime_type,f.sha256,f.byte_size
+	rows, err := tx.QueryContext(ctx, `WITH `+retainedThreadInputsCTE+`
+	 SELECT m.id,m.attachment_count,b.ordinal,f.id,f.workspace_id,f.name,f.mime_type,f.sha256,f.byte_size
 	 FROM thread_runs caller JOIN threads t ON t.id=caller.thread_id AND t.active_run_id=caller.run_id
 	 JOIN thread_runs prior ON prior.thread_id=t.id AND prior.ordinal<=caller.ordinal
 	 JOIN operator_steering_messages m ON m.run_id=prior.run_id AND m.session_id=prior.session_id
 	 LEFT JOIN thread_message_attachments b ON b.message_id=m.id
 	 LEFT JOIN workspace_file_attachments f ON f.id=b.attachment_id AND f.workspace_id=t.workspace_id
 	 WHERE caller.run_id=? AND m.attachment_count>0 AND (m.id=? OR
+	 EXISTS(SELECT 1 FROM retained_thread_inputs retained WHERE retained.message_id=m.id) OR
 	 (m.status='committed' AND EXISTS(SELECT 1 FROM operator_steering_deliveries d WHERE d.message_id=m.id AND d.status='committed')
 	 AND EXISTS(SELECT 1 FROM session_messages sm WHERE sm.id=m.session_message_id AND sm.session_id=m.session_id AND sm.role='user')))
-	 ORDER BY (m.id=?) DESC,prior.ordinal DESC,m.sequence DESC,b.ordinal`, cp.RunID, currentMessageID, currentMessageID)
+	 ORDER BY (m.id=?) DESC,prior.ordinal DESC,m.sequence DESC,b.ordinal`, cp.RunID, cp.RunID, currentMessageID, currentMessageID)
 	if err != nil {
 		return set, err
 	}

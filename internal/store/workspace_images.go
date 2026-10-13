@@ -57,9 +57,9 @@ func saveImageEvidenceTx(ctx context.Context, tx *sql.Tx, runID, sessionID, mess
 	return saved, nil
 }
 
-// Only this exact current attempt or committed messages of the same Thread can
-// supply model image evidence. Old/compacted pixels are not silently presented
-// as remembered; callers must retain their explicit descriptor instead.
+// Only this exact current attempt, committed messages, or retained successor
+// inputs of the same Thread can supply image evidence. Old/compacted pixels are
+// not silently presented as remembered; callers must retain their descriptor.
 func (s *SQLiteStore) ListSupervisorImageEvidence(ctx context.Context, cp domain.SupervisorCheckpoint, historyIDs []int64) (domain.ModelImageContext, error) {
 	var projection domain.ModelImageContext
 	if err := cp.Validate(); err != nil {
@@ -96,17 +96,18 @@ func (s *SQLiteStore) ListSupervisorImageEvidence(ctx context.Context, cp domain
 	if err != nil {
 		return projection, err
 	}
-	const candidates = `WITH candidates AS (
-	 SELECT m.id,m.session_message_id,m.image_count,prior.ordinal,m.sequence,
-	 (m.id=? OR m.session_message_id IN (SELECT value FROM json_each(?))) AS retained
-	 FROM thread_runs caller JOIN threads t ON t.id=caller.thread_id JOIN thread_runs prior ON prior.thread_id=t.id
+	const candidates = `WITH ` + retainedThreadInputsCTE + `, candidates AS (
+	 SELECT m.id,COALESCE(m.session_message_id,carried.session_message_id) AS session_message_id,m.image_count,prior.ordinal,m.sequence,
+	 (m.id=? OR COALESCE(m.session_message_id,carried.session_message_id) IN (SELECT value FROM json_each(?))) AS retained
+	 FROM thread_runs caller JOIN threads t ON t.id=caller.thread_id JOIN thread_runs prior ON prior.thread_id=t.id AND prior.ordinal<=caller.ordinal
 	 JOIN operator_steering_messages m ON m.run_id=prior.run_id AND m.session_id=prior.session_id
-	 WHERE caller.run_id=? AND m.image_count>0 AND (m.status='committed' OR m.id=?)
+	 LEFT JOIN retained_thread_inputs carried ON carried.message_id=m.id
+	 WHERE caller.run_id=? AND m.image_count>0 AND (m.status='committed' OR m.id=? OR carried.message_id IS NOT NULL)
 	), selected AS (
 	 SELECT * FROM candidates WHERE retained OR id IN (
 	 SELECT id FROM candidates WHERE NOT retained ORDER BY ordinal DESC,sequence DESC LIMIT 8
 	 )) `
-	args := []any{currentMessageID, string(historyJSON), cp.RunID, currentMessageID}
+	args := []any{cp.RunID, currentMessageID, string(historyJSON), cp.RunID, currentMessageID}
 	var selectedCount int
 	if err := tx.QueryRowContext(ctx, candidates+`SELECT COALESCE((SELECT SUM(image_count) FROM candidates),0)-COALESCE((SELECT SUM(image_count) FROM selected),0),COALESCE((SELECT SUM(image_count) FROM selected),0)`, args...).Scan(&projection.OmittedOlderImages, &selectedCount); err != nil {
 		return projection, err

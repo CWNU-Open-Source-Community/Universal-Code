@@ -180,30 +180,59 @@ func (t *commandClientTransport) Connect(ctx context.Context) (sdk.Connection, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	stdin, err := t.cmd.StdinPipe()
+	if t.cmd.Stdin != nil || t.cmd.Stdout != nil {
+		return nil, errors.New("MCP stdio command already has input or output")
+	}
+	stdinReader, stdin, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := t.cmd.StdoutPipe()
+	defer stdinReader.Close()
+	// Own the output pipes so cmd.Wait can reap the root and stop descendants
+	// without closing stdout before the SDK drains the final response.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		_ = stdin.Close()
 		return nil, err
 	}
-	// Continue draining after the retention bound, so a chatty child cannot stall.
-	t.cmd.Stderr = newBoundedBuffer(16 * 1024)
-	if t.beforeStart != nil {
-		if err := t.beforeStart(ctx); err != nil {
+	stderr, stderrWriter, err := os.Pipe()
+	if err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stdoutWriter.Close()
+		return nil, err
+	}
+	started := false
+	defer func() {
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+		if !started {
 			_ = stdin.Close()
 			_ = stdout.Close()
+			_ = stderr.Close()
+		}
+	}()
+	t.cmd.Stdin, t.cmd.Stdout, t.cmd.Stderr = stdinReader, stdoutWriter, stderrWriter
+	if t.beforeStart != nil {
+		if err := t.beforeStart(ctx); err != nil {
 			return nil, err
 		}
 	}
-	if err := t.cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
+	tree, err := startClientProcessTree(ctx, t.cmd)
+	if err != nil {
 		return nil, err
 	}
-	process := &clientProcess{cmd: t.cmd, stdin: stdin, stdout: stdout, done: make(chan struct{})}
+	started = true
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
+	process := &clientProcess{cmd: t.cmd, tree: tree, stdin: stdin, stdout: stdout, stderr: stderr,
+		stderrLog: newBoundedBuffer(16 * 1024), done: make(chan struct{})}
+	// Continue draining after the retention bound, so a chatty child cannot stall.
+	go func() {
+		defer stderr.Close()
+		_, _ = io.Copy(process.stderrLog, stderr)
+	}()
+	process.wait()
 	conn, err := (&sdk.IOTransport{Reader: process, Writer: stdin, MaxLineLength: MaxMessageBytes}).Connect(ctx)
 	if err != nil {
 		_ = process.Close()
@@ -212,28 +241,42 @@ func (t *commandClientTransport) Connect(ctx context.Context) (sdk.Connection, e
 	return &stdioSDKConnection{Connection: conn, writeGate: make(chan struct{}, 1), beforeSend: t.beforeSend}, nil
 }
 
+type clientProcessTree interface {
+	Close() error
+}
+
 type clientProcess struct {
 	cmd       *exec.Cmd
+	tree      clientProcessTree
 	stdin     io.WriteCloser
 	stdout    io.ReadCloser
+	stderr    io.ReadCloser
+	stderrLog *boundedBuffer
 	done      chan struct{}
 	waitErr   error
 	waitOnce  sync.Once
+	stopOnce  sync.Once
+	stopErr   error
 	closeOnce sync.Once
 	closeErr  error
 }
 
 func (p *clientProcess) Read(b []byte) (int, error) {
-	n, err := p.stdout.Read(b)
-	if err != nil {
-		p.wait()
-	}
-	return n, err
+	return p.stdout.Read(b)
 }
 func (p *clientProcess) wait() {
-	// Wait closes StdoutPipe: defer it until its reader finishes or Close
-	// explicitly terminates the connection, so the final response cannot race it.
-	p.waitOnce.Do(func() { go func() { p.waitErr = p.cmd.Wait(); close(p.done) }() })
+	p.waitOnce.Do(func() {
+		go func() {
+			p.waitErr = p.cmd.Wait()
+			// A successful root exit still ends ownership of its descendants,
+			// including those retaining inherited stdout or stderr handles.
+			p.stopTree()
+			close(p.done)
+		}()
+	})
+}
+func (p *clientProcess) stopTree() {
+	p.stopOnce.Do(func() { p.stopErr = p.tree.Close() })
 }
 func (p *clientProcess) Close() error {
 	p.closeOnce.Do(func() {
@@ -243,14 +286,17 @@ func (p *clientProcess) Close() error {
 		case <-p.done:
 			p.closeErr = p.waitErr
 		case <-time.After(250 * time.Millisecond):
-			_ = p.cmd.Process.Kill()
+			p.stopTree()
 			select {
 			case <-p.done:
 			case <-time.After(2 * time.Second):
 				p.closeErr = errors.New("MCP stdio process did not exit after termination")
 			}
 		}
+		p.stopTree()
+		p.closeErr = errors.Join(p.closeErr, p.stopErr)
 		_ = p.stdout.Close()
+		_ = p.stderr.Close()
 	})
 	return p.closeErr
 }
