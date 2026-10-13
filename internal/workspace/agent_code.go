@@ -791,13 +791,23 @@ func (w agentWorkspace) blocked(relative string, directory, includeHidden bool) 
 			}
 		}
 	}
-	ignored := false
-	for _, rule := range w.ignore {
-		if agentIgnoreMatches(rule, relative, directory) {
-			ignored = !rule.negated
+	// Apply the rules to each parent before the leaf, just as a directory
+	// scan does. A file exception cannot reopen an ignored parent directory.
+	components := strings.Split(relative, "/")
+	for index := range components {
+		candidate := strings.Join(components[:index+1], "/")
+		isDirectory := index < len(components)-1 || directory
+		ignored := false
+		for _, rule := range w.ignore {
+			if agentIgnoreMatches(rule, candidate, isDirectory) {
+				ignored = !rule.negated
+			}
+		}
+		if ignored {
+			return true
 		}
 	}
-	return ignored
+	return false
 }
 
 func loadAgentIgnoreRules(root string) []agentIgnoreRule {
@@ -830,21 +840,15 @@ func loadAgentIgnoreRules(root string) []agentIgnoreRule {
 }
 
 func agentIgnoreMatches(rule agentIgnoreRule, relative string, directory bool) bool {
-	if rule.dirOnly && !directory && relative != rule.pattern &&
-		!strings.HasPrefix(relative, rule.pattern+"/") {
+	if rule.dirOnly && !directory {
 		return false
 	}
 	if rule.anchored || strings.Contains(rule.pattern, "/") {
 		matched, _ := path.Match(rule.pattern, relative)
-		return matched || strings.HasPrefix(relative, rule.pattern+"/")
+		return matched
 	}
-	for _, component := range strings.Split(relative, "/") {
-		matched, _ := path.Match(rule.pattern, component)
-		if matched {
-			return true
-		}
-	}
-	return false
+	matched, _ := path.Match(rule.pattern, path.Base(relative))
+	return matched
 }
 
 func normalizeAgentPath(value string, allowRoot bool) (string, error) {
