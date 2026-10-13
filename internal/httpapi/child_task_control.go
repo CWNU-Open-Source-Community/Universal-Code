@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	ChildTaskProposalsPathTemplate      = "/api/v1/runs/{run_id}/child-task-proposals"
-	ChildTaskProposalReviewPathTemplate = "/api/v1/runs/{run_id}/child-task-proposals/{proposal_id}/review"
-	ChildTaskProposalAdmitPathTemplate  = "/api/v1/runs/{run_id}/child-task-proposals/{proposal_id}/admit"
+	ChildTaskProposalsPathTemplate        = "/api/v1/runs/{run_id}/child-task-proposals"
+	ChildTaskProposalReviewPathTemplate   = "/api/v1/runs/{run_id}/child-task-proposals/{proposal_id}/review"
+	ChildTaskProposalAdmitPathTemplate    = "/api/v1/runs/{run_id}/child-task-proposals/{proposal_id}/admit"
 	ChildTaskProposalsListProtocolVersion = "child_task_proposals.v1"
 )
 
@@ -22,16 +22,16 @@ const (
 type ChildTaskControlController interface {
 	ListChildTaskProposals(context.Context, string, int) ([]domain.ChildTaskProposal, error)
 	ListChildTaskAssignments(context.Context, string) ([]domain.ChildTaskAssignment, error)
-	ReviewChildTaskProposal(context.Context, domain.ChildTaskReview, string) (domain.ChildTaskProposal, bool, error)
-	AdmitChildTaskProposal(context.Context, string, string) (domain.ChildTaskProposal, []domain.ChildTaskAssignment, error)
+	ReviewChildTaskProposal(context.Context, string, domain.ChildTaskReview, string) (domain.ChildTaskProposal, bool, error)
+	AdmitChildTaskProposal(context.Context, string, string, string) (domain.ChildTaskProposal, []domain.ChildTaskAssignment, error)
 }
 
 type ChildTaskReviewRequestView struct {
-	Version     string `json:"version"`
-	Action      string `json:"action"`
-	Reviewer    string `json:"reviewer"`
-	FanoutTier  string `json:"fanout_tier"`
-	ConfirmReview bool `json:"confirm_review"`
+	Version       string `json:"version"`
+	Action        string `json:"action"`
+	Reviewer      string `json:"reviewer"`
+	FanoutTier    string `json:"fanout_tier"`
+	ConfirmReview bool   `json:"confirm_review"`
 }
 
 type ChildTaskAdmitRequestView struct {
@@ -78,7 +78,7 @@ type ChildTaskProposalView struct {
 }
 
 type ChildTaskProposalsListView struct {
-	ProtocolVersion string                 `json:"protocol_version"`
+	ProtocolVersion string                  `json:"protocol_version"`
 	Items           []ChildTaskProposalView `json:"items"`
 }
 
@@ -104,7 +104,7 @@ func (a *API) listChildTaskProposals(request *http.Request, runID string) (any, 
 			RootAgentID: proposal.RootAgentID, Status: proposal.Status,
 			Surface: string(proposal.Surface), FanoutTier: string(proposal.FanoutTier),
 			RequestedBy: proposal.RequestedBy, CreatedAt: proposal.CreatedAt,
-			Tasks: make([]ChildTaskTaskView, 0, len(proposal.Spec.Tasks)),
+			Tasks:       make([]ChildTaskTaskView, 0, len(proposal.Spec.Tasks)),
 			Assignments: make([]ChildTaskAssignmentView, 0, len(proposal.Spec.Tasks))}
 		for _, task := range proposal.Spec.Tasks {
 			item.Tasks = append(item.Tasks, ChildTaskTaskView{Ordinal: task.Ordinal,
@@ -120,7 +120,7 @@ func (a *API) listChildTaskProposals(request *http.Request, runID string) (any, 
 					Ordinal: assignment.Ordinal, Surface: string(assignment.Surface),
 					FanoutTier: string(assignment.FanoutTier), Status: assignment.Status,
 					TurnLimit: assignment.TurnLimit, TokenLimit: assignment.TokenLimit,
-					TimeoutMillis: assignment.TimeoutMillis,
+					TimeoutMillis:   assignment.TimeoutMillis,
 					AdmittedAgentID: assignment.AdmittedAgentID, FanoutPlanID: assignment.FanoutPlanID})
 			}
 		}
@@ -186,16 +186,11 @@ func (a *API) serveChildTaskProposalReview(writer http.ResponseWriter, request *
 		parsed != domain.ReadOnlyFanoutAuto && parsed != "" {
 		tier = parsed
 	}
-	proposal, _, err := a.childTaskControlController.ReviewChildTaskProposal(request.Context(),
+	proposal, _, err := a.childTaskControlController.ReviewChildTaskProposal(request.Context(), runID,
 		domain.ChildTaskReview{ProposalID: proposalID, Action: body.Action,
 			Reviewer: body.Reviewer, FanoutTier: tier}, requestID)
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
-		return
-	}
-	if proposal.RunID != runID {
-		a.writeError(writer, requestID, apperror.New(apperror.CodeNotFound,
-			"child task proposal is not part of the run"), http.StatusNotFound)
 		return
 	}
 	view, _, err := a.childTaskProposalView(request.Context(), proposal)
@@ -235,14 +230,9 @@ func (a *API) serveChildTaskProposalAdmit(writer http.ResponseWriter, request *h
 		return
 	}
 	proposal, assignments, err := a.childTaskControlController.AdmitChildTaskProposal(
-		request.Context(), proposalID, requestID)
+		request.Context(), runID, proposalID, requestID)
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
-		return
-	}
-	if proposal.RunID != runID {
-		a.writeError(writer, requestID, apperror.New(apperror.CodeNotFound,
-			"child task proposal is not part of the run"), http.StatusNotFound)
 		return
 	}
 	view, _, err := a.childTaskProposalView(request.Context(), proposal)
@@ -270,4 +260,3 @@ func (a *API) childTaskProposalView(ctx context.Context, proposal domain.ChildTa
 	}
 	return view, true, nil
 }
-

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
@@ -169,11 +171,19 @@ func (a *API) serveRunExecutionControl(writer http.ResponseWriter,
 		a.writeError(writer, requestID, err, 0)
 		return
 	}
+	// Synchronous execution can outlast the ordinary HTTP write timeout.
+	// Cancellation and Run budgets continue to bound the work itself.
+	responseControl := http.NewResponseController(writer)
+	if err := responseControl.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		a.writeError(writer, requestID, apperror.Wrap(apperror.CodeUnavailable, "Run response deadline could not be configured", err), 0)
+		return
+	}
 	result, err := a.runExecutionController.Execute(request.Context(),
 		application.ExecuteRunHandoffRequest{
 			Version: view.Version, RunID: runID, MaxSteps: view.MaxSteps,
 			OperationKey: operationKey, RequestedBy: "http_run_operator",
 		})
+	_ = responseControl.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
 		return
