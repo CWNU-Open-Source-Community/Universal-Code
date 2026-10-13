@@ -489,7 +489,7 @@ func (s *SQLiteStore) ReleaseModelCost(ctx context.Context,
 		return domain.MonetaryUsage{}, false, apperror.New(apperror.CodeConflict,
 			"model attempt monetary reservation was already settled")
 	}
-	if normalized.Scope == domain.MonetaryScopeRoot || normalized.Scope == domain.MonetaryScopeSpecialist {
+	if normalized.Scope == domain.MonetaryScopeRoot || normalized.Scope == domain.MonetaryScopeSpecialist || normalized.Scope == domain.MonetaryScopeReadOnlyFanout {
 		evidence, e := monetaryModelEvidenceTx(ctx, tx, normalized.RunID, reservation.ID, normalized.Scope, normalized.AttemptNumber, reservation.Provider, reservation.Model)
 		if e != nil {
 			return domain.MonetaryUsage{}, false, e
@@ -824,7 +824,7 @@ func reconcileMonetaryReservationsTx(ctx context.Context, tx *sql.Tx, runID stri
 		if err := json.Unmarshal([]byte(evidence.PayloadJSON), &payload); err != nil {
 			return err
 		}
-		settle := ((r.scope == domain.MonetaryScopeRoot || r.scope == domain.MonetaryScopeSpecialist) && !evidence.NotSent) || evidence.EventType == events.ModelCompletedEvent
+		settle := !evidence.NotSent
 		settledMicros := int64(0)
 		pricingStatus := domain.MonetaryPricingUsageUnknown
 		actualMicros := int64(math.MaxInt64)

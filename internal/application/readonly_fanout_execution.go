@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -671,7 +669,7 @@ func (s *ReadOnlyFanoutExecutionService) runOneReadOnlyFanoutShard(
 		return apperror.Normalize(err)
 	}
 	fanoutAttempt := llm.ModelAttempt{
-		Number:   readOnlyFanoutMonetaryAttemptNumber(execution.ID, shard.Ordinal, started.CurrentAttempt),
+		Number:   llm.ReadOnlyFanoutMonetaryAttemptNumber(execution.ID, shard.Ordinal, started.CurrentAttempt),
 		Provider: modelRef.Provider, Model: modelRef.Model,
 	}
 	if s.monetary != nil {
@@ -709,6 +707,9 @@ func (s *ReadOnlyFanoutExecutionService) runOneReadOnlyFanoutShard(
 			code = "cancelled"
 		} else if errors.Is(callErr, context.DeadlineExceeded) {
 			code = "deadline_exceeded"
+		}
+		if errors.Is(callErr, llm.ErrPreparedRequestChanged) {
+			status, code = domain.ReadOnlyFanoutExecutionShardFailed, "request_not_dispatched"
 		}
 		persistErr := s.failReadOnlyFanoutShard(ctx, lease, execution.ID,
 			started, modelRef, receivedUsage, elapsed, status, code, providerErr.Error())
@@ -835,19 +836,6 @@ func (s *ReadOnlyFanoutExecutionService) failRecoveredExecution(ctx context.Cont
 		result.Execution = finalized
 	}
 	return errors.Join(apperror.New(apperror.CodeFailedPrecondition, reason), finalizeErr)
-}
-
-// readOnlyFanoutMonetaryAttemptNumber derives a stable positive attempt
-// identity for one durable shard attempt. Recovery starts a separately billed
-// request; only a replay of that same attempt shares its reservation.
-func readOnlyFanoutMonetaryAttemptNumber(executionID string, ordinal, attempt int) int {
-	hash := fnv.New64a()
-	_, _ = hash.Write([]byte(executionID))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(strconv.Itoa(ordinal)))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(strconv.Itoa(attempt)))
-	return int(hash.Sum64()&0x7FFFFFFF) + 1
 }
 
 func readOnlyFanoutFinalStatus(execution domain.ReadOnlyFanoutExecution,
