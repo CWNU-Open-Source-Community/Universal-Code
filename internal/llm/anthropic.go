@@ -130,59 +130,10 @@ func (p *AnthropicCompatibleProvider) Name() string {
 }
 
 func (p *AnthropicCompatibleProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
-	secret, err := providerRequestCredential(ctx, p.name, p.apiKey, p.runtime, p.baseURL)
-	if err != nil {
-		return nil, NewProviderError(OutcomePermanent, p.name,
-			"provider credential is unavailable", nil)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.modelsEndpoint(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.addHeaders(req, secret, "application/json"); err != nil {
-		return nil, NewProviderError(OutcomePermanent, p.name,
-			"could not prepare model-list headers", nil)
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return fallbackModelInfo(p.name, p.defaultModel), nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fallbackModelInfo(p.name, p.defaultModel), nil
-	}
-	var payload struct {
-		Data []struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"display_name"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return fallbackModelInfo(p.name, p.defaultModel), nil
-	}
-	if len(payload.Data) == 0 {
-		return fallbackModelInfo(p.name, p.defaultModel), nil
-	}
-	models := make([]ModelInfo, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		if item.ID == "" {
-			continue
-		}
-		display := item.DisplayName
-		if display == "" {
-			display = item.ID
-		}
-		models = append(models, ModelInfo{
-			ID:           item.ID,
-			DisplayName:  display,
-			Provider:     p.name,
-			Capabilities: []string{"chat", "tools"},
-		})
-	}
-	if len(models) == 0 {
-		return fallbackModelInfo(p.name, p.defaultModel), nil
-	}
-	return models, nil
+	return listProviderCatalog(ctx, ModelCatalogRequest{
+		Provider: p.name, EndpointURL: p.baseURL, Transport: HarnessTransportAnthropicMessages,
+		APIKey: p.apiKey, Runtime: p.runtime, HTTPClient: p.client,
+	})
 }
 
 func (p *AnthropicCompatibleProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
@@ -719,13 +670,6 @@ func (p *AnthropicCompatibleProvider) toRequest(model string, req ChatRequest) (
 	return out, nil
 }
 
-func (p *AnthropicCompatibleProvider) modelsEndpoint() string {
-	if strings.HasSuffix(p.baseURL, "/v1/messages") {
-		return strings.TrimSuffix(p.baseURL, "/messages") + "/models"
-	}
-	return p.endpoint("/v1/models")
-}
-
 func (p *AnthropicCompatibleProvider) endpoint(path string) string {
 	if strings.HasSuffix(p.baseURL, path) {
 		return p.baseURL
@@ -1230,16 +1174,4 @@ func (r anthropicMessageResponse) ModelOrDefault(model string) string {
 		return model
 	}
 	return r.Model
-}
-
-func fallbackModelInfo(provider string, model string) []ModelInfo {
-	if model == "" {
-		model = "claude-3-5-sonnet-latest"
-	}
-	return []ModelInfo{{
-		ID:           model,
-		DisplayName:  model,
-		Provider:     provider,
-		Capabilities: []string{"chat", "tools"},
-	}}
 }

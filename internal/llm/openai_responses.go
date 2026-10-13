@@ -72,58 +72,10 @@ func NewOpenAIResponsesProvider(config OpenAIResponsesConfig) (*OpenAIResponsesP
 func (p *OpenAIResponsesProvider) Name() string { return p.name }
 
 func (p *OpenAIResponsesProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
-	secret, err := providerRequestCredential(ctx, p.name, p.apiKey, p.runtime, p.baseURL)
-	if err != nil {
-		return nil, openAILocalError(p.name, "provider credential is unavailable")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		p.modelsEndpoint(), nil)
-	if err != nil {
-		return nil, openAILocalError(p.name, "could not create model-list request")
-	}
-	if err := applyOpenAIRequestHeaders(request, false, secret, p.runtime); err != nil {
-		return nil, openAILocalError(p.name, "could not prepare model-list headers")
-	}
-	response, err := p.client.Do(request)
-	if err != nil {
-		return nil, openAITransportError(ctx, p.name)
-	}
-	defer response.Body.Close()
-	raw, err := readOpenAIBody(response.Body)
-	if err != nil {
-		return nil, openAIReadError(ctx, p.name, "could not read model-list response", err)
-	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, openAIHTTPError(p.name, response.StatusCode,
-			response.Header.Get("Retry-After"), raw)
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-		Error *openAIError `json:"error,omitempty"`
-	}
-	if !utf8.Valid(raw) || json.Unmarshal(raw, &payload) != nil || payload.Error != nil ||
-		len(payload.Data) == 0 || len(payload.Data) > maxOpenAIModels {
-		return nil, openAIProtocolError(p.name, "returned an invalid model list")
-	}
-	models := make([]ModelInfo, 0, len(payload.Data))
-	seen := make(map[string]struct{}, len(payload.Data))
-	for _, item := range payload.Data {
-		id, err := normalizeOpenAIModel(item.ID)
-		if err != nil {
-			return nil, openAIProtocolError(p.name, "returned an invalid model identifier")
-		}
-		if _, duplicate := seen[id]; duplicate {
-			continue
-		}
-		seen[id] = struct{}{}
-		models = append(models, ModelInfo{ID: id, DisplayName: id, Provider: p.name})
-	}
-	if len(models) == 0 {
-		return nil, openAIProtocolError(p.name, "returned an empty model list")
-	}
-	return models, nil
+	return listProviderCatalog(ctx, ModelCatalogRequest{
+		Provider: p.name, EndpointURL: p.baseURL, Transport: HarnessTransportOpenAIResponses,
+		APIKey: p.apiKey, Runtime: p.runtime, HTTPClient: p.client,
+	})
 }
 
 func (p *OpenAIResponsesProvider) Chat(ctx context.Context,
@@ -661,19 +613,6 @@ func (p *OpenAIResponsesProvider) responsesEndpoint() string {
 		return p.baseURL + "/responses"
 	}
 	return p.baseURL + "/v1/responses"
-}
-
-func (p *OpenAIResponsesProvider) modelsEndpoint() string {
-	if strings.HasSuffix(p.baseURL, "/v1/responses") {
-		return strings.TrimSuffix(p.baseURL, "/responses") + "/models"
-	}
-	if strings.HasSuffix(p.baseURL, "/responses") {
-		return strings.TrimSuffix(p.baseURL, "/responses") + "/models"
-	}
-	if strings.HasSuffix(p.baseURL, "/v1") {
-		return p.baseURL + "/models"
-	}
-	return p.baseURL + "/v1/models"
 }
 
 type openAIResponsesRequest struct {

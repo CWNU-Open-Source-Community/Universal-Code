@@ -24,7 +24,6 @@ const (
 	maxOpenAIResponseBytes    = 2 << 20
 	maxOpenAIStreamLineBytes  = 1 << 20
 	maxOpenAIStreamEventBytes = 1 << 20
-	maxOpenAIModels           = 4096
 	maxOpenAIModelBytes       = 512
 )
 
@@ -89,70 +88,10 @@ func NewOpenAICompatibleProvider(config OpenAICompatibleConfig) (*OpenAICompatib
 func (p *OpenAICompatibleProvider) Name() string { return p.name }
 
 func (p *OpenAICompatibleProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
-	secret, err := providerRequestCredential(ctx, p.name, p.apiKey, p.runtime, p.baseURL)
-	if err != nil {
-		return nil, openAILocalError(p.name, "provider credential is unavailable")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.modelsEndpoint(), nil)
-	if err != nil {
-		return nil, openAILocalError(p.name, "could not create model-list request")
-	}
-	if err := applyOpenAIRequestHeaders(req, false, secret, p.runtime); err != nil {
-		return nil, openAILocalError(p.name, "could not prepare model-list headers")
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, openAITransportError(ctx, p.name)
-	}
-	defer resp.Body.Close()
-	raw, err := readOpenAIBody(resp.Body)
-	if err != nil {
-		return nil, openAIReadError(ctx, p.name, "could not read model-list response", err)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, openAIHTTPError(p.name, resp.StatusCode, resp.Header.Get("Retry-After"), raw)
-	}
-	if !utf8.Valid(raw) {
-		return nil, openAIProtocolError(p.name, "returned a non-UTF-8 model list")
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-		Error *openAIError `json:"error,omitempty"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, openAIProtocolError(p.name, "returned a malformed model list")
-	}
-	if payload.Error != nil {
-		return nil, openAIWireError(p.name, *payload.Error)
-	}
-	if len(payload.Data) == 0 || len(payload.Data) > maxOpenAIModels {
-		return nil, openAIProtocolError(p.name, "returned an invalid model list")
-	}
-	models := make([]ModelInfo, 0, len(payload.Data))
-	seen := make(map[string]struct{}, len(payload.Data))
-	for _, item := range payload.Data {
-		id, err := normalizeOpenAIModel(item.ID)
-		if err != nil {
-			return nil, openAIProtocolError(p.name, "returned an invalid model identifier")
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		models = append(models, ModelInfo{
-			ID: id, DisplayName: id, Provider: p.name,
-			// The Models endpoint exposes identity and ownership, not a reliable
-			// per-model Chat/Tool/JSON capability contract. Those capabilities
-			// are established by the configured model's Harness qualification.
-			Capabilities: []string{},
-		})
-	}
-	if len(models) == 0 {
-		return nil, openAIProtocolError(p.name, "returned an empty model list")
-	}
-	return models, nil
+	return listProviderCatalog(ctx, ModelCatalogRequest{
+		Provider: p.name, EndpointURL: p.baseURL, Transport: HarnessTransportOpenAIChatCompletions,
+		APIKey: p.apiKey, Runtime: p.runtime, HTTPClient: p.client,
+	})
 }
 
 func (p *OpenAICompatibleProvider) Chat(ctx context.Context, request ChatRequest) (*ChatResponse, error) {
@@ -627,13 +566,6 @@ func normalizeOpenAIModel(value string) (string, error) {
 func validateOpenAIToolName(name string) error {
 	_, err := NormalizeToolCall(ToolCall{ID: "spec", Name: name, Arguments: json.RawMessage(`{}`)})
 	return err
-}
-
-func (p *OpenAICompatibleProvider) modelsEndpoint() string {
-	if strings.HasSuffix(p.baseURL, "/v1/chat/completions") {
-		return strings.TrimSuffix(p.baseURL, "/chat/completions") + "/models"
-	}
-	return p.endpoint("/v1/models")
 }
 
 func (p *OpenAICompatibleProvider) endpoint(path string) string {
