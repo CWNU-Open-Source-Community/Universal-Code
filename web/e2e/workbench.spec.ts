@@ -76,6 +76,17 @@ async function withinViewport(locator: Locator, page: Page) {
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
 }
 
+async function narrowConversation(page: Page) {
+  // Wait for the reconnected workbench to mount before changing its viewport.
+  await expect(page.getByRole("textbox", { name: "继续对话" })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const toggle = page.getByRole("button", { name: /^(?:显示|隐藏)侧栏$/u });
+  await expect(toggle).toBeVisible();
+  if (await toggle.getAttribute("aria-pressed") === "true") await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("navigation", { name: "对话导航", exact: true })).toBeHidden();
+}
+
 test("normal entry reads a real project file and retains the task after reload", async ({ page }, info) => {
   const timings: Timing[] = [];
   try {
@@ -92,9 +103,7 @@ test("normal entry reads a real project file and retains the task after reload",
       await expect(page.getByText("Read README.md: JOURNEY_FILE_PROOF_2026", { exact: true })).toBeVisible();
       expect(page.url()).toBe(taskURL);
     });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "隐藏侧栏", exact: true }).click();
-    await expect(page.getByRole("textbox", { name: "继续对话" })).toBeVisible();
+    await narrowConversation(page);
     await withinViewport(page.getByRole("textbox", { name: "继续对话" }), page);
     await withinViewport(page.getByRole("button", { name: "发送消息", exact: true }), page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -161,8 +170,7 @@ test("manual file draft survives file switches, panel close and a browser reload
     await keepDraft(page);
     await page.reload();
     await reconnect(page);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "隐藏侧栏", exact: true }).click();
+    await narrowConversation(page);
     await measure(timings, "restore-file-draft-after-reload", async () => {
       await openFiles(page);
       await editReadme(page);
