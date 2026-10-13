@@ -83,6 +83,34 @@ type supervisorToolOptions struct {
 	BrowserActions     supervisorBrowserActionTools
 }
 
+func supervisorDebugTerminalAvailable(surface domain.ExecutionSurface, phase domain.ExecutionPhase,
+	permission domain.RunExecutionPermissionMode, enabled bool,
+) bool {
+	return enabled && surface == domain.ExecutionSurfaceCode &&
+		phase == domain.ExecutionPhaseDeliver && permission == domain.RunExecutionPermissionFull
+}
+
+func supervisorCommandRuntimeAvailable(surface domain.ExecutionSurface, phase domain.ExecutionPhase,
+	permission domain.RunExecutionPermissionMode, adapter commandruntimeadapter.Identity,
+) bool {
+	return adapter.Executable() && surface == domain.ExecutionSurfaceCode &&
+		phase == domain.ExecutionPhaseDeliver && permission.IsApprovalMode() && adapter.AllowsPermission(permission)
+}
+
+func supervisorWebEvidenceAvailable(name toolgateway.ToolName, capabilities toolgateway.WebEvidenceCapabilities) bool {
+	if !capabilities.Available {
+		return false
+	}
+	switch name {
+	case toolgateway.WebSearchTool:
+		return capabilities.SearchAvailable
+	case toolgateway.SourceSearchTool:
+		return capabilities.SourceSearchAvailable
+	default:
+		return capabilities.FetchAvailable
+	}
+}
+
 type supervisorToolResultEnvelope struct {
 	Version   string            `json:"version"`
 	Tool      string            `json:"tool"`
@@ -126,7 +154,6 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 	if len(options) > 0 {
 		configured = options[0]
 	}
-	runtimeEnabled := configured.CommandRuntime.Adapter.Executable()
 	agentCode := toolgateway.AgentCodeCapabilitySnapshot{}
 	if len(options) > 0 {
 		agentCode = configured.AgentCode.Capabilities
@@ -157,15 +184,11 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 			continue
 		}
 		if definition.Name == toolgateway.DebugTerminalTool &&
-			(!debugTerminalEnabled || surface != domain.ExecutionSurfaceCode ||
-				phase != domain.ExecutionPhaseDeliver ||
-				permissionMode != domain.RunExecutionPermissionFull) {
+			!supervisorDebugTerminalAvailable(surface, phase, permissionMode, debugTerminalEnabled) {
 			continue
 		}
 		if definition.Name == toolgateway.CommandRuntimeTool &&
-			(!runtimeEnabled || surface != domain.ExecutionSurfaceCode ||
-				phase != domain.ExecutionPhaseDeliver ||
-				!permissionMode.IsApprovalMode() || !configured.CommandRuntime.Adapter.AllowsPermission(permissionMode)) {
+			!supervisorCommandRuntimeAvailable(surface, phase, permissionMode, configured.CommandRuntime.Adapter) {
 			continue
 		}
 		if definition.Name == toolgateway.CommandRuntimeTool {
@@ -180,17 +203,9 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 			definition.InputSchema = supervisorMCPToolSchema(configured.MCP.Capabilities)
 			definition.Description += " Only the server/tool/fingerprint combinations encoded in this schema are available."
 		}
-		if toolgateway.IsWebEvidenceTool(definition.Name) {
-			if !configured.WebEvidence.Capabilities.Available ||
-				(definition.Name == toolgateway.WebSearchTool &&
-					!configured.WebEvidence.Capabilities.SearchAvailable) ||
-				(definition.Name == toolgateway.SourceSearchTool &&
-					!configured.WebEvidence.Capabilities.SourceSearchAvailable) ||
-				(definition.Name != toolgateway.WebSearchTool &&
-					definition.Name != toolgateway.SourceSearchTool &&
-					!configured.WebEvidence.Capabilities.FetchAvailable) {
-				continue
-			}
+		if toolgateway.IsWebEvidenceTool(definition.Name) &&
+			!supervisorWebEvidenceAvailable(definition.Name, configured.WebEvidence.Capabilities) {
+			continue
 		}
 		if toolgateway.IsBrowserActionTool(definition.Name) &&
 			!configured.BrowserActions.Capabilities.Available {
@@ -231,7 +246,6 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 	if len(options) > 0 {
 		configured = options[0]
 	}
-	runtimeEnabled := configured.CommandRuntime.Adapter.Executable()
 	commandRuntimeAuthority := configured.CommandRuntime.Authority
 	agentCode := toolgateway.AgentCodeCapabilitySnapshot{}
 	var agentCodeAuthority json.RawMessage
@@ -302,12 +316,8 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 			(phase != domain.ExecutionPhasePlan && phase != domain.ExecutionPhaseDeliver)) {
 			return nil, fmt.Errorf("provider requested unavailable code-intel tool %q", call.Name)
 		}
-		if toolgateway.IsWebEvidenceTool(name) && (!webEvidence.Available ||
-			len(webEvidenceAuthority) == 0 ||
-			(name == toolgateway.WebSearchTool && !webEvidence.SearchAvailable) ||
-			(name == toolgateway.SourceSearchTool && !webEvidence.SourceSearchAvailable) ||
-			(name != toolgateway.WebSearchTool && name != toolgateway.SourceSearchTool &&
-				!webEvidence.FetchAvailable)) {
+		if toolgateway.IsWebEvidenceTool(name) &&
+			(!supervisorWebEvidenceAvailable(name, webEvidence) || len(webEvidenceAuthority) == 0) {
 			return nil, fmt.Errorf("provider requested unavailable web evidence tool %q: %s",
 				call.Name, supervisorWebEvidenceUnavailableReason(name, webEvidence))
 		}
@@ -326,16 +336,12 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 				"provider requested Skill candidate proposal without the explicit generator Skill")
 		}
 		if name == toolgateway.DebugTerminalTool &&
-			(!debugTerminalEnabled || surface != domain.ExecutionSurfaceCode ||
-				phase != domain.ExecutionPhaseDeliver ||
-				permissionMode != domain.RunExecutionPermissionFull) {
+			!supervisorDebugTerminalAvailable(surface, phase, permissionMode, debugTerminalEnabled) {
 			return nil, errors.New(
 				"provider requested Debug terminal outside Code/Deliver with an active terminal input grant")
 		}
 		if name == toolgateway.CommandRuntimeTool &&
-			(!runtimeEnabled || surface != domain.ExecutionSurfaceCode ||
-				phase != domain.ExecutionPhaseDeliver ||
-				!permissionMode.IsApprovalMode() || !configured.CommandRuntime.Adapter.AllowsPermission(permissionMode)) {
+			!supervisorCommandRuntimeAvailable(surface, phase, permissionMode, configured.CommandRuntime.Adapter) {
 			return nil, errors.New(
 				"provider requested command runtime outside its advertised Code/Deliver adapter authority")
 		}

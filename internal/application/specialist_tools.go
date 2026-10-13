@@ -201,22 +201,10 @@ func (e *specialistWorkspaceExecutor) ExecuteSpecialistTool(ctx context.Context,
 			return nil, errors.New("child Run file workspace changed")
 		}
 		switch toolgateway.ToolName(input.Tool) {
-		case toolgateway.WorkspaceListTool:
-			var p toolgateway.WorkspaceListPayload
-			_ = json.Unmarshal(input.Arguments, &p)
-			value, err = workspace.AgentCodeListDirectory(e.root, e.binding.WorkspaceID, p.Path, p.Cursor, p.Limit, false, pathPolicy)
-		case toolgateway.WorkspaceReadTool:
-			var p toolgateway.WorkspaceReadPayload
-			_ = json.Unmarshal(input.Arguments, &p)
-			value, err = workspace.AgentCodeReadFile(e.root, e.binding.WorkspaceID, p.Path, p.StartLine, p.EndLine, false, pathPolicy)
-		case toolgateway.WorkspaceGlobTool:
-			var p toolgateway.WorkspaceGlobPayload
-			_ = json.Unmarshal(input.Arguments, &p)
-			value, err = workspace.AgentCodeGlobFiles(e.root, e.binding.WorkspaceID, p.Pattern, p.Cursor, p.Limit, false, pathPolicy)
-		case toolgateway.WorkspaceGrepTool:
-			var p toolgateway.WorkspaceGrepPayload
-			_ = json.Unmarshal(input.Arguments, &p)
-			value, err = workspace.AgentCodeGrepFiles(e.root, e.binding.WorkspaceID, p.Query, p.Pattern, p.Cursor, p.Limit, p.CaseSensitive, false, pathPolicy)
+		case toolgateway.WorkspaceListTool, toolgateway.WorkspaceReadTool,
+			toolgateway.WorkspaceGlobTool, toolgateway.WorkspaceGrepTool:
+			value, _, err = executeWorkspaceReadTool(e.root, e.binding.WorkspaceID,
+				toolgateway.ToolName(input.Tool), input.Arguments, pathPolicy)
 		case toolgateway.GitHubEvidenceListTool:
 			st, ok := e.store.(interface {
 				ListGitHubReviewEvidence(context.Context, string, int) ([]githubreview.EvidenceRecord, error)
