@@ -101,6 +101,8 @@ func (s *SQLiteStore) GetThreadModelRoutePreference(ctx context.Context,
 	return preference, true, nil
 }
 
+// ListSelectedThreadModelRoutePreferences returns dependencies that still need
+// their provider, including archived Threads that may be restored.
 func (s *SQLiteStore) ListSelectedThreadModelRoutePreferences(ctx context.Context,
 	provider string,
 ) ([]domain.ThreadModelRoutePreference, error) {
@@ -112,8 +114,11 @@ func (s *SQLiteStore) ListSelectedThreadModelRoutePreferences(ctx context.Contex
 	rows, err := s.db.QueryContext(ctx, `SELECT value FROM provider_setting
 		WHERE key LIKE ? ESCAPE '\' AND json_valid(value)
 			AND json_extract(value, '$.selected') = 1
-			AND json_extract(value, '$.provider') = ? ORDER BY key`,
-		threadModelRoutePreferenceKeyPrefix+"%", provider)
+			AND json_extract(value, '$.provider') = ?
+			AND NOT EXISTS (SELECT 1 FROM threads
+				WHERE provider_setting.key = ? || threads.id AND threads.status = ?)
+		ORDER BY key`, threadModelRoutePreferenceKeyPrefix+"%", provider,
+		threadModelRoutePreferenceKeyPrefix, domain.ThreadDeleted)
 	if err != nil {
 		return nil, err
 	}

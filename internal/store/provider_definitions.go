@@ -17,7 +17,8 @@ import (
 // custom Provider definition CAS. It shares SQLite's immediate write
 // transaction boundary with ChangeThreadModelRoutePreference, so a definition
 // cannot be deleted, disabled, or lose a model after the service checks Thread
-// preferences but before the collection is committed.
+// preferences but before the collection is committed. Permanently deleted
+// Threads no longer need their selected provider; archived Threads still do.
 func (s *SQLiteStore) CompareAndSwapProviderDefinitionCollection(ctx context.Context,
 	expectedRevision uint64, next modelregistry.ProviderDefinitionCollection,
 ) error {
@@ -97,7 +98,11 @@ func validateSelectedThreadRoutesForDefinitionCollectionTx(ctx context.Context,
 	}
 
 	rows, err := tx.QueryContext(ctx, `SELECT value FROM provider_setting
-		WHERE key LIKE ? ESCAPE '\' ORDER BY key`, threadModelRoutePreferenceKeyPrefix+"%")
+		WHERE key LIKE ? ESCAPE '\'
+			AND NOT EXISTS (SELECT 1 FROM threads
+				WHERE provider_setting.key = ? || threads.id AND threads.status = ?)
+		ORDER BY key`, threadModelRoutePreferenceKeyPrefix+"%",
+		threadModelRoutePreferenceKeyPrefix, domain.ThreadDeleted)
 	if err != nil {
 		return err
 	}

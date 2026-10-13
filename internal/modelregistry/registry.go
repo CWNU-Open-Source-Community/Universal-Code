@@ -371,6 +371,11 @@ func (r *Registry) reloadLocked(ctx context.Context, reader RouteSettingReader) 
 	r.available = available
 	r.qualificationStatuses = qualificationStatuses
 	r.credentialRevisions = credentialRevisions
+	r.geminiSequentialProbes = candidate.geminiSequentialProbes
+	r.kimiHistoryProbes = candidate.kimiHistoryProbes
+	r.ollama = candidate.ollama
+	r.customDefinitionsLoaded = candidate.customDefinitionsLoaded
+	r.strictCredentialReads = candidate.strictCredentialReads
 	r.generation++
 	generation := r.generation
 	r.mu.Unlock()
