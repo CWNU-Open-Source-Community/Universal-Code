@@ -24,6 +24,7 @@ jobs:
       backend: ${{ steps.changes.outputs.backend }}
       store: ${{ steps.changes.outputs.store }}
       web: ${{ steps.changes.outputs.web }}
+      journeys: ${{ steps.changes.outputs.journeys }}
       lsp: ${{ steps.changes.outputs.lsp }}
       rust: ${{ steps.changes.outputs.rust }}
       native: ${{ steps.changes.outputs.native }}
@@ -289,7 +290,7 @@ jobs:
   web:
     name: TypeScript console
     needs: classify
-    if: ${{ !cancelled() && needs.classify.result == 'success' && needs.classify.outputs.web == 'true' }}
+    if: ${{ !cancelled() && needs.classify.result == 'success' && (needs.classify.outputs.web == 'true' || needs.classify.outputs.journeys == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -303,7 +304,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run check:api
+        if: needs.classify.outputs.web == 'true'
       - run: npm test
+        if: needs.classify.outputs.web == 'true'
       - run: npm run build
       - name: Set up repository-pinned Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -312,11 +315,29 @@ jobs:
           check-latest: true
           cache: true
       - name: Verify Go bundle loader and embedded production UI bundle
+        if: needs.classify.outputs.web == 'true'
         working-directory: .
         run: |
           go test -count=1 ./internal/webui
           go test -count=1 -tags desktop ./web
+      - name: Install Chromium for product journeys
+        if: needs.classify.outputs.journeys == 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Exercise real workbench journeys
+        if: needs.classify.outputs.journeys == 'true'
+        env:
+          WORKBENCH_JOURNEY_SKIP_BUILD: '1'
+        run: npm run test:journeys
+      - name: Upload workbench journey results
+        if: ${{ !cancelled() && needs.classify.outputs.journeys == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workbench-journeys
+          path: output/playwright/workbench-journeys
+          if-no-files-found: warn
+          retention-days: 5
       - name: Audit dependencies
+        if: needs.classify.outputs.web == 'true'
         run: |
           for attempt in 1 2 3; do
             if npm audit --audit-level=high; then
