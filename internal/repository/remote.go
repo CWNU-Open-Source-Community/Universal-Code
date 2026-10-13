@@ -209,6 +209,11 @@ func (e *RemoteExecutor) ExecuteGit(ctx context.Context, root string, spec Remot
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(spec.NetworkTTLMillis)*time.Millisecond)
 	defer cancel()
+	transport, err := e.pinRemoteTransport(spec.RemoteURL)
+	if err != nil {
+		return RemoteReceipt{}, err
+	}
+	defer os.Remove(transport.path)
 	askpass, secret, err := e.askpassHelper(ctx, spec.CredentialName)
 	if err != nil {
 		return RemoteReceipt{}, err
@@ -223,7 +228,7 @@ func (e *RemoteExecutor) ExecuteGit(ctx context.Context, root string, spec Remot
 		args = []string{"pull", "--quiet", "--ff-only", spec.RemoteURL, spec.Branch}
 	case RemotePushBranch:
 		if spec.CommitOID != "" {
-			observed, err := e.readRemoteOID(ctx, root, spec, askpass, secret)
+			observed, err := e.readRemoteOID(ctx, root, spec, transport, askpass, secret)
 			if err != nil {
 				return RemoteReceipt{}, err
 			}
@@ -237,7 +242,7 @@ func (e *RemoteExecutor) ExecuteGit(ctx context.Context, root string, spec Remot
 			if expected != "" {
 				// Explicit CAS protects a concurrent update; the independent
 				// ancestry test disallows every history rewrite.
-				cmd := e.remoteGitCommand(ctx, root, askpass, secret, "merge-base", "--is-ancestor", expected, spec.CommitOID)
+				cmd := e.remoteGitCommand(ctx, root, transport, askpass, secret, "merge-base", "--is-ancestor", expected, spec.CommitOID)
 				if err := checkThreadGitDispatch(ctx); err != nil {
 					return RemoteReceipt{}, err
 				}
@@ -249,7 +254,7 @@ func (e *RemoteExecutor) ExecuteGit(ctx context.Context, root string, spec Remot
 			break
 		}
 		// New branch only: refuse to touch a branch that already exists.
-		exists, err := e.remoteBranchExists(ctx, root, spec, askpass, secret)
+		exists, err := e.remoteBranchExists(ctx, root, spec, transport, askpass, secret)
 		if err != nil {
 			return RemoteReceipt{}, err
 		}
@@ -259,7 +264,7 @@ func (e *RemoteExecutor) ExecuteGit(ctx context.Context, root string, spec Remot
 		}
 		args = []string{"push", "--quiet", spec.RemoteURL, "HEAD:refs/heads/" + spec.Branch}
 	}
-	command := e.remoteGitCommand(ctx, root, askpass, secret, args...)
+	command := e.remoteGitCommand(ctx, root, transport, askpass, secret, args...)
 	var stdout, stderr boundedBuffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -294,7 +299,7 @@ func (e *RemoteExecutor) ExecuteGit(ctx context.Context, root string, spec Remot
 		receipt.CommitID = postHead
 	}
 	if spec.Operation == RemotePushBranch && spec.CommitOID != "" {
-		observed, observeErr := e.readRemoteOID(ctx, root, spec, askpass, secret)
+		observed, observeErr := e.readRemoteOID(ctx, root, spec, transport, askpass, secret)
 		if observeErr != nil {
 			return receipt, observeErr
 		}
@@ -317,16 +322,23 @@ func (e *RemoteExecutor) ReadRemoteOID(ctx context.Context, root string, spec Re
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(spec.NetworkTTLMillis)*time.Millisecond)
 	defer cancel()
+	transport, err := e.pinRemoteTransport(spec.RemoteURL)
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(transport.path)
 	askpass, secret, err := e.askpassHelper(ctx, spec.CredentialName)
 	if err != nil {
 		return "", err
 	}
 	defer os.Remove(askpass)
-	return e.readRemoteOID(ctx, root, spec, askpass, secret)
+	return e.readRemoteOID(ctx, root, spec, transport, askpass, secret)
 }
 
-func (e *RemoteExecutor) readRemoteOID(ctx context.Context, root string, spec RemoteSpec, askpass, secret string) (string, error) {
-	cmd := e.remoteGitCommand(ctx, root, askpass, secret, "ls-remote", "--heads", spec.RemoteURL, "refs/heads/"+spec.Branch)
+func (e *RemoteExecutor) readRemoteOID(ctx context.Context, root string, spec RemoteSpec,
+	transport *remoteTransportConfig, askpass, secret string,
+) (string, error) {
+	cmd := e.remoteGitCommand(ctx, root, transport, askpass, secret, "ls-remote", "--heads", spec.RemoteURL, "refs/heads/"+spec.Branch)
 	var stdout, stderr boundedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -348,9 +360,9 @@ func (e *RemoteExecutor) readRemoteOID(ctx context.Context, root string, spec Re
 }
 
 func (e *RemoteExecutor) remoteBranchExists(ctx context.Context, root string, spec RemoteSpec,
-	askpass, secret string,
+	transport *remoteTransportConfig, askpass, secret string,
 ) (bool, error) {
-	command := e.remoteGitCommand(ctx, root, askpass, secret,
+	command := e.remoteGitCommand(ctx, root, transport, askpass, secret,
 		"ls-remote", "--heads", spec.RemoteURL, "refs/heads/"+spec.Branch)
 	var stdout, stderr boundedBuffer
 	command.Stdout = &stdout
@@ -365,15 +377,68 @@ func (e *RemoteExecutor) remoteBranchExists(ctx context.Context, root string, sp
 	return strings.TrimSpace(stdout.String()) != "", nil
 }
 
-func (e *RemoteExecutor) remoteGitCommand(ctx context.Context, root, askpass, secret string,
+type remoteTransportConfig struct {
+	path     string
+	url      string
+	protocol string
+}
+
+func (e *RemoteExecutor) pinRemoteTransport(rawURL string) (*remoteTransportConfig, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" &&
+		(!e.allowLocalRemote || parsed.Scheme != "file" && parsed.Scheme != "http") {
+		return nil, errors.New("remote transport requires the validated HTTPS URL")
+	}
+	file, err := os.CreateTemp("", "cyberagent-remote-config-*.gitconfig")
+	if err != nil {
+		return nil, err
+	}
+	// Git chooses the longest insteadOf prefix, retaining the first rule on
+	// equal lengths. This full-URL identity rule loads before local, included,
+	// and worktree configuration, so later changes cannot redirect transport.
+	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(rawURL) + `"`
+	_, writeErr := fmt.Fprintf(file, "[url %s]\n\tinsteadOf = %s\n\tpushInsteadOf = %s\n"+
+		"[remote %s]\n\tuploadpack = git-upload-pack\n\treceivepack = git-receive-pack\n", quoted, quoted, quoted, quoted)
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		_ = os.Remove(file.Name())
+		return nil, err
+	}
+	return &remoteTransportConfig{path: file.Name(), url: rawURL, protocol: parsed.Scheme}, nil
+}
+
+func (e *RemoteExecutor) remoteGitCommand(ctx context.Context, root string,
+	transport *remoteTransportConfig, askpass, secret string,
 	args ...string,
 ) *exec.Cmd {
-	hardenedArgs := append([]string{"-C", root, "--no-optional-locks",
+	hardenedArgs := []string{"-C", root, "--no-optional-locks",
 		"-c", "core.autocrlf=false", "-c", "http.proxy=", "-c", "https.proxy=",
-		"-c", "core.sshCommand=", "-c", "protocol.ext.allow=never"}, args...)
-	command := exec.CommandContext(ctx, e.gitPath, hardenedArgs...)
+		"-c", "core.sshCommand=", "-c", "protocol.ext.allow=never",
+		"-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no"}
+	remoteKey := "remote." + transport.url + "."
+	httpKey := "http." + transport.url + "."
+	for _, setting := range []string{
+		remoteKey + "url=", remoteKey + "url=" + transport.url,
+		remoteKey + "pushurl=", remoteKey + "pushurl=" + transport.url,
+		remoteKey + "proxy=", remoteKey + "mirror=false",
+		httpKey + "proxy=", httpKey + "followRedirects=false",
+		httpKey + "curloptResolve=", httpKey + "sslVerify=true",
+	} {
+		hardenedArgs = append(hardenedArgs, "-c", setting)
+	}
+	if transport.protocol != "file" {
+		// A local remote named exactly like the URL cannot select another helper.
+		hardenedArgs = append(hardenedArgs, "-c", remoteKey+"vcs="+transport.protocol)
+	}
+	command := exec.CommandContext(ctx, e.gitPath, append(hardenedArgs, args...)...)
 	command.Dir = root
-	command.Env = append(hardenedGitEnvironment(),
+	for _, value := range hardenedGitEnvironment() {
+		if !strings.HasPrefix(value, "GIT_CONFIG_GLOBAL=") {
+			command.Env = append(command.Env, value)
+		}
+	}
+	command.Env = append(command.Env, "GIT_CONFIG_GLOBAL="+transport.path,
+		"GIT_ALLOW_PROTOCOL="+transport.protocol, "GIT_NO_LAZY_FETCH=1",
 		"GIT_ASKPASS="+askpass, "GIT_PASSWORD="+secret)
 	return command
 }

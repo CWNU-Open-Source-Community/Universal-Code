@@ -968,6 +968,7 @@
         "structured_tool_operation.v1",
         "supervisor_structured_tool.v1",
         "supervisor_tool_call_id.v1",
+        "supervisor_tool_execution.v1",
         "supervisor_tool_result.v1",
         "untrusted_context.v1",
         "user_terminal_policy.v1",

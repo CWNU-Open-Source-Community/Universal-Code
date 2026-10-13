@@ -1022,7 +1022,7 @@ func (run *standardCodeSecurityRun) prepareCommand(ctx context.Context,
 	if err != nil {
 		return toolgateway.ToolCall{}, err
 	}
-	key = runmutation.SupervisorToolOperationKey(source.RunID, source.Turn, source.ToolName, source.PayloadJSON)
+	key = runmutation.SupervisorToolExecutionKey(source.RunID, source.Turn, source.ToolName, source.PayloadJSON, source.CallID)
 	return toolgateway.ToolCall{Name: toolgateway.CommandRuntimeTool,
 		Arguments: map[string]string{}, Payload: json.RawMessage(source.PayloadJSON), OperationKey: key,
 		RunID: source.RunID, MissionID: turn.Mission.ID, AgentID: source.AgentID,

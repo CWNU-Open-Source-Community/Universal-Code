@@ -671,7 +671,7 @@ func (s *ReadOnlyFanoutExecutionService) runOneReadOnlyFanoutShard(
 		return apperror.Normalize(err)
 	}
 	fanoutAttempt := llm.ModelAttempt{
-		Number:   readOnlyFanoutMonetaryAttemptNumber(execution.ID, shard.Ordinal),
+		Number:   readOnlyFanoutMonetaryAttemptNumber(execution.ID, shard.Ordinal, started.CurrentAttempt),
 		Provider: modelRef.Provider, Model: modelRef.Model,
 	}
 	if s.monetary != nil {
@@ -838,13 +838,15 @@ func (s *ReadOnlyFanoutExecutionService) failRecoveredExecution(ctx context.Cont
 }
 
 // readOnlyFanoutMonetaryAttemptNumber derives a stable positive attempt
-// identity for one shard. Retries of the same shard replay the same
-// monetary reservation instead of creating a second one.
-func readOnlyFanoutMonetaryAttemptNumber(executionID string, ordinal int) int {
+// identity for one durable shard attempt. Recovery starts a separately billed
+// request; only a replay of that same attempt shares its reservation.
+func readOnlyFanoutMonetaryAttemptNumber(executionID string, ordinal, attempt int) int {
 	hash := fnv.New64a()
 	_, _ = hash.Write([]byte(executionID))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write([]byte(strconv.Itoa(ordinal)))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(strconv.Itoa(attempt)))
 	return int(hash.Sum64()&0x7FFFFFFF) + 1
 }
 

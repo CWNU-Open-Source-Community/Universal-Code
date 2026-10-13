@@ -46,7 +46,12 @@ func TestCapturePersistsEmptyFileContentWithoutTreatingItAsMissing(t *testing.T)
 			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name))); err != nil || len(data) != 0 {
 				t.Fatalf("capture changed source: %q %v", data, err)
 			}
-			_, omitted, err := hashCaptureFile(t.Context(), filepath.Join(root, filepath.FromSlash(name)), false)
+			rootHandle, err := os.OpenRoot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rootHandle.Close()
+			_, omitted, err := hashCaptureFile(t.Context(), rootHandle, name, false)
 			if err != nil || omitted != nil {
 				t.Fatalf("hash-only capture retained content: %v %v", omitted, err)
 			}

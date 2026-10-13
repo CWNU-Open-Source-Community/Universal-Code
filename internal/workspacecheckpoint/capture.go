@@ -61,6 +61,11 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	rootHandle, err := os.OpenRoot(root)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("open Workspace root: %w", err)
+	}
+	defer rootHandle.Close()
 	rootFingerprint, err := workspaceidentity.Fingerprint(root)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("capture Workspace identity: %w", err)
@@ -134,7 +139,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 		}
 		casePaths[caseKey] = path
 		if runtime.GOOS == "windows" {
-			actualPath, exists, caseErr := actualCapturePathCase(root, path)
+			actualPath, exists, caseErr := actualCapturePathCase(rootHandle, path)
 			if caseErr != nil {
 				return Snapshot{}, caseErr
 			}
@@ -143,7 +148,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 				reasons["Workspace path casing differs from the Git index"] = struct{}{}
 			}
 		}
-		entry, content, incomplete, entryErr := captureEntry(ctx, root, path, inventory)
+		entry, content, incomplete, entryErr := captureEntry(ctx, rootHandle, path, inventory)
 		if entryErr != nil {
 			return Snapshot{}, entryErr
 		}
@@ -212,16 +217,30 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func actualCapturePathCase(root, normalized string) (string, bool, error) {
+func actualCapturePathCase(root *os.Root, normalized string) (string, bool, error) {
 	parts := strings.Split(normalized, "/")
-	current := root
+	current := "."
 	actual := make([]string, 0, len(parts))
 	for _, part := range parts {
-		entries, err := os.ReadDir(current)
+		info, err := root.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {
 			return "", false, nil
 		}
 		if err != nil {
+			return "", false, fmt.Errorf("inspect Workspace path casing: %w", err)
+		}
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return "", false, nil
+		}
+		directory, err := root.Open(current)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("inspect Workspace path casing: %w", err)
+		}
+		entries, readErr := directory.ReadDir(-1)
+		if err := errors.Join(readErr, directory.Close()); err != nil {
 			return "", false, fmt.Errorf("inspect Workspace path casing: %w", err)
 		}
 		matched := ""
@@ -249,7 +268,7 @@ func canonicalRoot(value string) (string, error) {
 		return "", err
 	}
 	requestedInfo, err := os.Lstat(abs)
-	if err != nil || !requestedInfo.IsDir() || requestedInfo.Mode()&os.ModeSymlink != 0 {
+	if err != nil || !requestedInfo.IsDir() || requestedInfo.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		return "", errors.New("workspace checkpoint root identity is not a real directory")
 	}
 	resolved, err := filepath.EvalSymlinks(abs)
@@ -260,7 +279,7 @@ func canonicalRoot(value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	if !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		return "", errors.New("workspace checkpoint root must be a real directory")
 	}
 	return filepath.Clean(resolved), nil
@@ -419,7 +438,7 @@ func capturePaths(inventory captureInventory) []string {
 	return paths
 }
 
-func captureEntry(ctx context.Context, root, path string,
+func captureEntry(ctx context.Context, root *os.Root, path string,
 	inventory captureInventory,
 ) (Entry, []byte, string, error) {
 	index, tracked := inventory.tracked[path]
@@ -435,11 +454,7 @@ func captureEntry(ctx context.Context, root, path string,
 		entry.Reason = "ignored content is outside automatic restore scope"
 		return entry, nil, "ignored Workspace content is not captured", nil
 	}
-	target, err := captureTarget(root, path)
-	if err != nil {
-		return Entry{}, nil, "", err
-	}
-	info, err := os.Lstat(target)
+	info, linked, err := capturePathInfo(root, path)
 	if errors.Is(err, os.ErrNotExist) && tracked {
 		entry.State = StateMissing
 		entry.StoragePolicy = StorageMissing
@@ -453,15 +468,19 @@ func captureEntry(ctx context.Context, root, path string,
 		entry.Reason = "Workspace entry could not be read"
 		return entry, nil, "unreadable Workspace content is not captured", nil
 	}
-	entry.Mode = uint32(info.Mode().Perm())
-	entry.Size = info.Size()
-	if info.Mode()&os.ModeSymlink != 0 {
-		entry.Kind = EntrySymlink
+	if linked {
 		entry.StoragePolicy = StorageExcludedLink
 		entry.Recoverable = false
-		entry.Reason = "symlink or junction restore requires manual review"
+		entry.Reason = "path contains a symlink or junction requiring manual review"
+		if info != nil {
+			entry.Kind = EntrySymlink
+			entry.Mode = uint32(info.Mode().Perm())
+			entry.Size = info.Size()
+		}
 		return entry, nil, "linked Workspace content is not captured", nil
 	}
+	entry.Mode = uint32(info.Mode().Perm())
+	entry.Size = info.Size()
 	if info.IsDir() {
 		entry.Kind = EntryDirectory
 		entry.StoragePolicy = StorageExcludedSpecial
@@ -476,7 +495,7 @@ func captureEntry(ctx context.Context, root, path string,
 		entry.Reason = "special filesystem entry is unsupported"
 		return entry, nil, "special Workspace content is not captured", nil
 	}
-	digest, content, err := hashCaptureFile(ctx, target, info.Size() <= MaxStoredFileBytes)
+	digest, content, err := hashCaptureFile(ctx, root, path, info.Size() <= MaxStoredFileBytes)
 	if err != nil {
 		entry.StoragePolicy = StorageUnreadable
 		entry.Recoverable = false
@@ -511,17 +530,33 @@ func captureEntry(ctx context.Context, root, path string,
 	return entry, content, "", nil
 }
 
-func captureTarget(root, relative string) (string, error) {
-	target := filepath.Join(root, filepath.FromSlash(relative))
-	rel, err := filepath.Rel(root, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", errors.New("workspace checkpoint path escapes its root")
+func capturePathInfo(root *os.Root, relative string) (os.FileInfo, bool, error) {
+	parts := strings.Split(relative, "/")
+	current := "."
+	var info os.FileInfo
+	for index, part := range parts {
+		current = filepath.Join(current, part)
+		var err error
+		info, err = root.Lstat(current)
+		if err != nil {
+			return nil, false, err
+		}
+		// Windows junctions are ModeIrregular. Never traverse them, including
+		// links to another directory inside this Workspace.
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			if index != len(parts)-1 {
+				info = nil
+			}
+			return info, true, nil
+		}
 	}
-	return target, nil
+	return info, false, nil
 }
 
-func hashCaptureFile(ctx context.Context, path string, keep bool) (string, []byte, error) {
-	file, err := os.Open(path)
+func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool) (string, []byte, error) {
+	// Keep the actual read beneath the same held root even if a parent is
+	// replaced by a link after capturePathInfo inspected it.
+	file, err := root.Open(filepath.FromSlash(path))
 	if err != nil {
 		return "", nil, err
 	}

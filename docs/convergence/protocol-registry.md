@@ -16,7 +16,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 4 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
-| [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 114 | true |
+| [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 115 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 23 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 16 | true |
@@ -508,7 +508,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `provider-private-replay-envelope-reader` (`v1, v2, v3, v4`, active) at `internal/llm/provider_replay.go`
   - `provider-private-replay-kimi-v4-history-reader` (`v4`, active) at `internal/store/supervisor_assistant_replay.go`
 
-<details><summary>114 active identifiers</summary>
+<details><summary>115 active identifiers</summary>
 
 - `byte_identical.v1`
 - `data_store_scope.v1`
@@ -592,6 +592,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `structured_tool_operation.v1`
 - `supervisor_structured_tool.v1`
 - `supervisor_tool_call_id.v1`
+- `supervisor_tool_execution.v1`
 - `supervisor_tool_result.v1`
 - `untrusted_context.v1`
 - `user_terminal_policy.v1`

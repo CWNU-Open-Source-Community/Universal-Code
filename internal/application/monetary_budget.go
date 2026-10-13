@@ -219,6 +219,9 @@ func estimateModelRequestBytes(request llm.ChatRequest) int64 {
 		}
 	}
 	for _, message := range request.Messages {
+		// Replay is deliberately excluded from public JSON, but providers send
+		// this private continuation state as part of the next model input.
+		total += int64(message.Replay.ContextBytes())
 		for _, part := range message.Images {
 			total += int64(llm.EstimateImageTokens(part))
 		}

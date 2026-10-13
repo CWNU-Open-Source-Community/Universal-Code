@@ -16,6 +16,74 @@ type specialistExecutionCapture struct {
 	continuations []application.ContinueSpecialistRequest
 }
 
+type specialistReceiptStore struct {
+	Store
+	runID string
+	reads int
+}
+
+func (s *specialistReceiptStore) GetAgentAttempt(_ context.Context, id string) (domain.AgentAttempt, bool, error) {
+	s.reads++
+	return domain.AgentAttempt{RunID: s.runID, AgentID: "receipt-child", ID: "receipt-attempt"}, id == "receipt-attempt", nil
+}
+
+func (s *specialistReceiptStore) ListSpecialistToolRounds(context.Context, domain.AgentAttemptRef) ([]domain.SpecialistToolRound, error) {
+	s.reads++
+	return []domain.SpecialistToolRound{{Round: 1, Calls: []domain.SpecialistToolCall{{
+		CallID: "read-call", Name: "workspace_read", ResultJSON: `{"content":"private receipt fixture"}`,
+	}}}}, nil
+}
+
+func TestSpecialistToolReceiptsRequireReadAuthenticationBeforeStoreAccess(t *testing.T) {
+	f := newAPIFixture(t)
+	receipts := &specialistReceiptStore{Store: f.store, runID: f.run.ID}
+	f.api.store = receipts
+	path := "/api/v1/runs/" + f.run.ID + "/agents/receipt-child/attempts/receipt-attempt/tool-receipts"
+	for _, tt := range []struct {
+		name    string
+		headers []string
+		status  int
+	}{
+		{name: "missing", status: http.StatusUnauthorized},
+		{name: "wrong", headers: []string{"Bearer invalid"}, status: http.StatusUnauthorized},
+		{name: "control token", headers: []string{"Bearer " + testControlToken}, status: http.StatusUnauthorized},
+		{name: "duplicate", headers: []string{"Bearer " + testAccessToken, "Bearer " + testAccessToken}, status: http.StatusUnauthorized},
+		{name: "read token", headers: []string{"Bearer " + testAccessToken}, status: http.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			receipts.reads = 0
+			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+			request.Host = "127.0.0.1:8765"
+			request.RemoteAddr = "127.0.0.1:45000"
+			for _, value := range tt.headers {
+				request.Header.Add("Authorization", value)
+			}
+			response := httptest.NewRecorder()
+			f.api.ServeHTTP(response, request)
+			if response.Code != tt.status {
+				t.Fatalf("status=%d want=%d: %s", response.Code, tt.status, response.Body.String())
+			}
+			if tt.status == http.StatusUnauthorized {
+				if receipts.reads != 0 || response.Header().Get("WWW-Authenticate") == "" ||
+					strings.Contains(response.Body.String(), "private receipt fixture") {
+					t.Fatalf("unauthorized receipt access: reads=%d response=%s", receipts.reads, response.Body.String())
+				}
+				return
+			}
+			var view SpecialistToolReceiptsView
+			decodeDataStatus(t, response, http.StatusOK, &view)
+			if receipts.reads != 2 || len(view.Rounds) != 1 || len(view.Rounds[0].Calls) != 1 ||
+				view.Rounds[0].Calls[0].ResultJSON != `{"content":"private receipt fixture"}` {
+				t.Fatalf("authorized receipt changed: reads=%d view=%+v", receipts.reads, view)
+			}
+		})
+	}
+	response := f.get(t, strings.Replace(path, "/agents/receipt-child/", "/agents/other-child/", 1))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("read token bypassed attempt ownership: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func (c *specialistExecutionCapture) ContinueSpecialist(_ context.Context, r application.ContinueSpecialistRequest) (application.SpecialistContinuationResult, error) {
 	c.continuations = append(c.continuations, r)
 	return application.SpecialistContinuationResult{RunID: r.RunID, AgentID: r.AgentID, ThreadID: "thread-main",

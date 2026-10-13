@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/credential"
@@ -30,7 +31,8 @@ type ProviderDefinitionStore interface {
 }
 
 type ProviderDefinitionRegistry interface {
-	Reload(context.Context, modelregistry.RouteSettingReader) (modelregistry.ReloadResult, error)
+	MutateProviderDefinitions(context.Context, modelregistry.RouteSettingReader,
+		func() error) (modelregistry.ReloadResult, error)
 	Generation() uint64
 }
 
@@ -199,34 +201,6 @@ func (s *ProviderDefinitionService) Delete(ctx context.Context,
 		return ProviderDefinitionMutationResult{}, apperror.New(apperror.CodeConflict,
 			"custom Provider definition revision is stale")
 	}
-	if reader, ok := s.store.(selectedThreadModelRouteReader); ok {
-		preferences, readErr := reader.ListSelectedThreadModelRoutePreferences(ctx, request.ID)
-		if readErr != nil {
-			return ProviderDefinitionMutationResult{}, apperror.Wrap(
-				apperror.CodeUnavailable, "Thread model route preferences could not be read", readErr)
-		}
-		if len(preferences) != 0 {
-			return ProviderDefinitionMutationResult{}, apperror.New(
-				apperror.CodeFailedPrecondition,
-				"custom Provider is still selected by one or more Thread model routes")
-		}
-	}
-	for _, route := range modelregistry.SupportedRouteNames() {
-		value, found, readErr := s.store.GetProviderSetting(ctx, "route."+route)
-		if readErr != nil {
-			return ProviderDefinitionMutationResult{}, apperror.Wrap(
-				apperror.CodeUnavailable, "model route status could not be read", readErr)
-		}
-		if !found {
-			continue
-		}
-		ref, parseErr := llm.ParseModelRef(value)
-		if parseErr == nil && ref.Provider == request.ID {
-			return ProviderDefinitionMutationResult{}, apperror.New(
-				apperror.CodeFailedPrecondition,
-				fmt.Sprintf("custom Provider is still selected by the %s model route", route))
-		}
-	}
 	collection.Providers = append(collection.Providers[:index], collection.Providers[index+1:]...)
 	if collection.Revision >= modelregistry.MaxProviderDefinitionRevision {
 		return ProviderDefinitionMutationResult{}, apperror.New(apperror.CodeResourceExhausted,
@@ -234,6 +208,38 @@ func (s *ProviderDefinitionService) Delete(ctx context.Context,
 	}
 	collection.Revision++
 	return s.persistAndReloadLocked(ctx, collection, modelregistry.ProviderDefinition{}, request.ID)
+}
+
+func (s *ProviderDefinitionService) ensureProviderNotSelected(ctx context.Context, id string) error {
+	if reader, ok := s.store.(selectedThreadModelRouteReader); ok {
+		preferences, readErr := reader.ListSelectedThreadModelRoutePreferences(ctx, id)
+		if readErr != nil {
+			return apperror.Wrap(
+				apperror.CodeUnavailable, "Thread model route preferences could not be read", readErr)
+		}
+		if len(preferences) != 0 {
+			return apperror.New(
+				apperror.CodeFailedPrecondition,
+				"custom Provider is still selected by one or more Thread model routes")
+		}
+	}
+	for _, route := range modelregistry.SupportedRouteNames() {
+		value, found, readErr := s.store.GetProviderSetting(ctx, "route."+route)
+		if readErr != nil {
+			return apperror.Wrap(
+				apperror.CodeUnavailable, "model route status could not be read", readErr)
+		}
+		if !found {
+			continue
+		}
+		ref, parseErr := llm.ParseModelRef(value)
+		if parseErr == nil && ref.Provider == id {
+			return apperror.New(
+				apperror.CodeFailedPrecondition,
+				fmt.Sprintf("custom Provider is still selected by the %s model route", route))
+		}
+	}
+	return nil
 }
 
 func (s *ProviderDefinitionService) ensureThreadPreferencesRemainValid(ctx context.Context,
@@ -287,12 +293,19 @@ func (s *ProviderDefinitionService) persistAndReloadLocked(ctx context.Context,
 		return ProviderDefinitionMutationResult{}, apperror.New(
 			apperror.CodeInternal, "custom Provider definition mutation revision is invalid")
 	}
-	if err := s.store.CompareAndSwapProviderDefinitionCollection(ctx,
-		collection.Revision-1, collection); err != nil {
-		return ProviderDefinitionMutationResult{}, apperror.Normalize(err)
-	}
-	reload, err := s.registry.Reload(ctx, s.store)
+	var mutationErr error
+	reload, err := s.registry.MutateProviderDefinitions(ctx, s.store, func() error {
+		if deletedID != "" {
+			mutationErr = s.deleteWithCredentialLocked(ctx, collection, deletedID)
+		} else {
+			mutationErr = s.store.CompareAndSwapProviderDefinitionCollection(ctx, collection.Revision-1, collection)
+		}
+		return mutationErr
+	})
 	if err != nil {
+		if mutationErr != nil {
+			return ProviderDefinitionMutationResult{}, apperror.Normalize(mutationErr)
+		}
 		return ProviderDefinitionMutationResult{}, apperror.Wrap(apperror.CodeUnavailable,
 			"custom Provider definitions were persisted but Registry reload was not applied", err)
 	}
@@ -307,6 +320,68 @@ func (s *ProviderDefinitionService) persistAndReloadLocked(ctx context.Context,
 		Definition:      cloneProviderDefinition(definition), DeletedID: deletedID,
 		RegistryReloaded: true, RegistryGeneration: s.registry.Generation(),
 	}, nil
+}
+
+func (s *ProviderDefinitionService) deleteWithCredentialLocked(ctx context.Context,
+	next modelregistry.ProviderDefinitionCollection, id string,
+) error {
+	if err := s.ensureProviderNotSelected(ctx, id); err != nil {
+		return err
+	}
+	previous, err := s.readLocked(ctx)
+	if err != nil {
+		return err
+	}
+	if previous.Revision != next.Revision-1 {
+		return apperror.New(apperror.CodeConflict, "custom Provider definition collection revision is stale")
+	}
+	// Retain the key only in Go memory while coordinating the two stores. The
+	// durable definition must be removed first: a crash can then leave an unused
+	// credential, but cannot leave a selected Provider without its original key.
+	var secret string
+	var configured bool
+	credentials := s.discoveryCredentials
+	if credentials != nil {
+		if !credentials.Available() {
+			return apperror.New(apperror.CodeFailedPrecondition, "system credential storage is unavailable")
+		}
+		secret, configured, err = credentials.Get(ctx, id)
+		if err != nil {
+			return apperror.New(apperror.CodeUnavailable, "system credential status could not be read; Provider was retained")
+		}
+	}
+	if configured && next.Revision >= modelregistry.MaxProviderDefinitionRevision {
+		return apperror.New(apperror.CodeResourceExhausted, "custom Provider definition revision cannot support credential recovery")
+	}
+	if err := s.store.CompareAndSwapProviderDefinitionCollection(ctx, next.Revision-1, next); err != nil {
+		return err
+	}
+	if !configured {
+		return nil
+	}
+	cleanupErr := credentials.Delete(ctx, id)
+	if cleanupErr == nil {
+		var remains bool
+		remains, cleanupErr = credentials.Configured(ctx, id)
+		if cleanupErr == nil && !remains {
+			return nil
+		}
+	}
+	// Cleanup can report failure after taking effect. Restore the original key
+	// before restoring the definition, including when the request was cancelled.
+	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := credentials.Put(recoveryCtx, id, secret); err != nil {
+		return apperror.New(apperror.CodeUnavailable,
+			"Provider definition was removed; credential cleanup and restoration could not be confirmed")
+	}
+	previous.Revision = next.Revision + 1
+	if err := s.store.CompareAndSwapProviderDefinitionCollection(recoveryCtx, next.Revision, previous); err != nil {
+		return apperror.New(apperror.CodeUnavailable,
+			"Provider credential was restored; definition restoration could not be applied, refresh Provider settings")
+	}
+	return apperror.New(apperror.CodeUnavailable,
+		"system credential cleanup failed; Provider definition and original credential were restored, refresh before retrying")
 }
 
 func providerDefinitionIndex(definitions []modelregistry.ProviderDefinition, id string) int {

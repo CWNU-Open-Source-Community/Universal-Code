@@ -147,6 +147,11 @@ func (s *ProviderCredentialService) Change(ctx context.Context,
 			"Provider credential action is invalid")
 	}
 	mutate := func() error {
+		// A custom definition may have been removed while this request waited
+		// for the Registry mutation lock. Do not recreate its orphan credential.
+		if !s.managedProvider(request.Provider) {
+			return apperror.New(apperror.CodeConflict, "Provider was removed before its credential could be changed")
+		}
 		if request.Action == ProviderCredentialSet {
 			return s.store.Put(ctx, request.Provider, request.Secret)
 		}

@@ -12,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
 )
@@ -190,7 +191,7 @@ func commandSourceMatchesScope(source commandApprovalSource, scope toolgateway.C
 		a.Adapter.SameBackend(adapter) && a.ScopeFingerprint == commandRuntimeBindingFingerprint(bindings, adapter) &&
 		a.PermissionSnapshotID == scope.PermissionSnapshotID && a.PermissionMode == bindings.permission.Mode &&
 		a.PermissionGeneration == scope.PermissionGeneration && a.PermissionRuntimeEpoch == scope.PermissionRuntimeEpoch && a.RunAuthorizationFence == scope.RunAuthorizationFence &&
-		supervisorToolOperationKey(source.call.RunID, source.call.Turn, toolgateway.CommandRuntimeTool, json.RawMessage(source.call.PayloadJSON)) == scope.OperationKey
+		runmutation.SupervisorToolExecutionKey(source.call.RunID, source.call.Turn, source.call.ToolName, source.call.PayloadJSON, source.call.CallID) == scope.OperationKey
 }
 
 func (s *CommandRuntimeService) checkPreparedCommandCall(ctx context.Context, scope toolgateway.CommandRuntimeContext, bindings commandRuntimeBindings, input toolgateway.CommandRuntimeInput) error {
