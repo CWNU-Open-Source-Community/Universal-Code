@@ -140,12 +140,12 @@ export function ProjectPreparationPanel({ view, operation, disabled = false, bus
   </div>;
 }
 
-export function ProjectPreparation(props: { client: APIClient; runID: string; threadID: string; working?: boolean }) {
+export function ProjectPreparation(props: { client: APIClient; runID: string; threadID: string; working?: boolean; onPrepared?: (target: string) => void }) {
   return <ProjectPreparationForRun key={props.client.baseURL + ":" + props.runID} {...props} />;
 }
 
-function ProjectPreparationForRun({ client, runID, threadID, working = false }: {
-  client: APIClient; runID: string; threadID: string; working?: boolean;
+function ProjectPreparationForRun({ client, runID, threadID, working = false, onPrepared }: {
+  client: APIClient; runID: string; threadID: string; working?: boolean; onPrepared?: (target: string) => void;
 }) {
   const { t } = useLocale();
   const queries = useQueryClient();
@@ -169,6 +169,7 @@ function ProjectPreparationForRun({ client, runID, threadID, working = false }: 
   const uncertain = Boolean(attempt && !attempt.operationID);
   const active = Boolean(result && projectPreparationIsActive(result.state));
   const terminalID = result && !projectPreparationIsActive(result.state) ? result.id : undefined;
+  const preparedTarget = result?.state === "ready" ? result.target : undefined;
   const baseURL = client.baseURL;
   useEffect(() => {
     if (!terminalID) return;
@@ -176,6 +177,9 @@ function ProjectPreparationForRun({ client, runID, threadID, working = false }: 
     void queries.invalidateQueries({ queryKey: ["run", runID, "project-actions", baseURL] });
     void queries.invalidateQueries({ queryKey: taskReviewKey(threadID) });
   }, [terminalID, baseURL, runID, threadID, queries]);
+  useEffect(() => {
+    if (preparedTarget !== undefined) onPrepared?.(preparedTarget);
+  }, [terminalID, preparedTarget, onPrepared]);
   const saveAttempt = (value: PreparationAttempt | null) => {
     store?.write(storageKey, value);
     setSaved(value);
@@ -254,7 +258,7 @@ function ProjectPreparationForRun({ client, runID, threadID, working = false }: 
       onCancel={stop} onReconcile={() => { if (attempt) submit(attempt); }}
       onPrepare={(selection) => submit({ runID, key: "project-preparation-" + crypto.randomUUID(), body: {
         version: "project-preparation.v1", target, expected_fingerprint: plan.data!.plan.fingerprint,
-        allowed_sources: selection.allowedSources, run_install_scripts: selection.runInstallScripts, confirm_execution: true,
+        allowed_sources: [...selection.allowedSources].sort(), run_install_scripts: selection.runInstallScripts, confirm_execution: true,
       } })} />}
   </section>;
 }

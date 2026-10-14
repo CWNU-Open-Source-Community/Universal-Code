@@ -9961,6 +9961,7 @@ export interface components {
             /** @enum {string} */
             protocol_version: "project-actions.v1";
             run_id: string;
+            target: string;
         };
         ProjectConfigurationView: {
             allowed_profiles: string[];
@@ -21296,7 +21297,10 @@ export interface operations {
     };
     listProjectActions: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Relative directory inspected for project tests */
+                target?: string;
+            };
             header?: never;
             path: {
                 /** @description Run identity */

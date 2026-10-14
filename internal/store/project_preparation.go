@@ -44,6 +44,64 @@ func (s *SQLiteStore) LatestProjectPreparation(ctx context.Context, runID, targe
 	return o, err == nil, err
 }
 
+// A Run admits at most one active preparation, regardless of project target.
+func (s *SQLiteStore) ActiveProjectPreparation(ctx context.Context, runID string) (domain.ProjectPreparationOperation, bool, error) {
+	o, err := scanPreparation(s.db.QueryRowContext(ctx, preparationSelect+` WHERE run_id=? AND state IN ('pending','downloading','installing')`, runID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return o, false, nil
+	}
+	return o, err == nil, err
+}
+
+// Recovery only retires the exact abandoned revision observed by the caller.
+// A concurrent progress/cancellation update or newly acquired lease keeps its
+// current record, and new admission still uses the existing Run interlocks.
+func (s *SQLiteStore) InterruptStaleProjectPreparation(ctx context.Context, expected domain.ProjectPreparationOperation) (domain.ProjectPreparationOperation, error) {
+	if err := expected.Validate(); err != nil {
+		return expected, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return expected, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockRunControlTx(ctx, tx, expected.RunID); err != nil {
+		return expected, err
+	}
+	current, err := scanPreparation(tx.QueryRowContext(ctx, preparationSelect+` WHERE run_id=? AND id=?`, expected.RunID, expected.ID))
+	if err != nil {
+		return current, err
+	}
+	now := time.Now().UTC()
+	if current.Terminal() || current.Revision != expected.Revision || current.OwnerID != expected.OwnerID || now.Sub(current.UpdatedAt) < 30*time.Second {
+		return current, tx.Commit()
+	}
+	if err := requireNoOpenWorkspaceRestoreTx(ctx, tx, current.RunID); err != nil {
+		return current, err
+	}
+	lease, found, err := getRunExecutionLeaseTx(ctx, tx, current.RunID)
+	if err != nil {
+		return current, err
+	}
+	if found && lease.ActiveAt(now) {
+		return current, tx.Commit()
+	}
+	current.State = "interrupted"
+	current.Error = "上次准备已中断；重新准备将复用已校验的下载"
+	current.Revision++
+	current.UpdatedAt = now
+	result, err := tx.ExecContext(ctx, `UPDATE project_preparations SET state=?,error=?,revision=?,updated_at=? WHERE run_id=? AND id=? AND revision=? AND owner_id=?`, current.State, current.Error, current.Revision, ts(current.UpdatedAt), current.RunID, current.ID, expected.Revision, expected.OwnerID)
+	if err != nil {
+		return current, err
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return current, err
+	} else if rows != 1 {
+		return current, apperror.New(apperror.CodeConflict, "project preparation changed before recovery")
+	}
+	return current, tx.Commit()
+}
+
 func (s *SQLiteStore) BeginProjectPreparation(ctx context.Context, o domain.ProjectPreparationOperation) (domain.ProjectPreparationOperation, bool, error) {
 	if err := o.Validate(); err != nil {
 		return o, false, err

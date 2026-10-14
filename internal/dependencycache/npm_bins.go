@@ -94,6 +94,17 @@ func FinalizeNPM(ctx context.Context, workspaceRoot, target string, guest bool) 
 				return err
 			}
 			bins[path.Base(manifest.Name)] = value
+		} else if manifest.Bin[0] == '[' {
+			var values []string
+			if err := json.Unmarshal(manifest.Bin, &values); err != nil {
+				return errors.New("installed npm bin metadata is invalid")
+			}
+			if len(values) > 256 {
+				return errors.New("installed npm package has too many commands")
+			}
+			for _, value := range values {
+				bins[path.Base(value)] = value
+			}
 		} else if err := json.Unmarshal(manifest.Bin, &bins); err != nil {
 			return errors.New("installed npm bin metadata is invalid")
 		}

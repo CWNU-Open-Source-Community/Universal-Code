@@ -31,6 +31,8 @@ type ProjectPreparationStore interface {
 	GetRunExecutionLease(context.Context, string) (domain.RunExecutionLease, bool, error)
 	GetProjectPreparation(context.Context, string, string) (domain.ProjectPreparationOperation, error)
 	LatestProjectPreparation(context.Context, string, string) (domain.ProjectPreparationOperation, bool, error)
+	ActiveProjectPreparation(context.Context, string) (domain.ProjectPreparationOperation, bool, error)
+	InterruptStaleProjectPreparation(context.Context, domain.ProjectPreparationOperation) (domain.ProjectPreparationOperation, error)
 	BeginProjectPreparation(context.Context, domain.ProjectPreparationOperation) (domain.ProjectPreparationOperation, bool, error)
 	UpdateProjectPreparation(context.Context, domain.ProjectPreparationOperation, int64) (domain.ProjectPreparationOperation, error)
 }
@@ -275,8 +277,11 @@ func (s *ProjectPreparationService) Prepare(ctx context.Context, r PrepareProjec
 	if err != nil {
 		return view, err
 	}
-	if view.Latest != nil && view.Latest.State == "interrupted" {
-		if _, err := s.interruptStale(ctx, r.RunID, view.Latest.ID); err != nil {
+	// Admission is exclusive across the Run, including other project targets.
+	if active, found, err := s.store.ActiveProjectPreparation(ctx, r.RunID); err != nil {
+		return view, err
+	} else if found {
+		if _, err := s.interruptStale(ctx, r.RunID, active.ID); err != nil {
 			return view, err
 		}
 	}
@@ -586,17 +591,19 @@ func (s *ProjectPreparationService) operationStale(ctx context.Context, o domain
 }
 
 func (s *ProjectPreparationService) interruptStale(ctx context.Context, runID, id string) (domain.ProjectPreparationOperation, error) {
+	// Admission adds its local owner under this lock. Hold it through recovery
+	// so a just-admitted worker cannot be mistaken for an abandoned operation.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	o, err := s.store.GetProjectPreparation(ctx, runID, id)
 	if err != nil {
 		return o, err
 	}
-	if s.operationStale(ctx, o) {
-		return s.change(ctx, runID, id, func(v *domain.ProjectPreparationOperation) {
-			v.State = "interrupted"
-			v.Error = "上次准备已中断；重新准备将复用已校验的下载"
-		})
+	if _, active := s.active[o.ID]; active || o.Terminal() {
+		return o, nil
 	}
-	return o, nil
+	// The store rechecks the observed revision, age and Run lease atomically.
+	return s.store.InterruptStaleProjectPreparation(ctx, o)
 }
 
 func (s *ProjectPreparationService) operationView(ctx context.Context, o domain.ProjectPreparationOperation) ProjectPreparationOperationView {

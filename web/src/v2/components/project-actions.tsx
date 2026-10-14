@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { projectActionIsRunning, type ProjectActionSlot } from "../../api/project-actions";
+import { normalizePreparationTarget } from "../../api/project-preparation";
 import { ErrorState, StatusLabel } from "../../components/common";
 import { useLocale } from "../../lib/locale";
 import { useV2PersistentState, useV2RecoveryStore } from "../recovery-storage";
@@ -23,18 +24,22 @@ function validAttempt(value: unknown, runID: string): value is ActionAttempt {
     /^project-action-[\w-]+$/u.test(item.key) && (item.jobID === undefined || typeof item.jobID === "string");
 }
 const actionKey = (client: APIClient, runID: string) => ["run", runID, "project-actions", client.baseURL] as const;
-const jobKey = (client: APIClient, runID: string, jobID: string) => [...actionKey(client, runID), "job", jobID] as const;
+const jobKey = (client: APIClient, runID: string, jobID: string) => ["run", runID, "project-action-job", client.baseURL, jobID] as const;
 
 export function ProjectActions(props: {
   client: APIClient; runID: string; threadID: string; working?: boolean;
   onFeedback?: (context: string) => void;
+  testTarget?: string;
+  onTestTargetChange?: (target: string) => void;
 }) {
   return <ProjectActionsForRun key={props.client.baseURL + ":" + props.runID} {...props} />;
 }
 
-function ProjectActionsForRun({ client, runID, threadID, working = false, onFeedback }: {
+function ProjectActionsForRun({ client, runID, threadID, working = false, onFeedback, testTarget, onTestTargetChange }: {
   client: APIClient; runID: string; threadID: string; working?: boolean;
   onFeedback?: (context: string) => void;
+  testTarget?: string;
+  onTestTargetChange?: (target: string) => void;
 }) {
   const { t } = useLocale();
   const queries = useQueryClient();
@@ -46,8 +51,13 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
   const [targets, setTargets] = useState({ test: "", format: "" });
   const [localError, setLocalError] = useState("");
   const submitting = useRef(false);
-  const actions = useQuery({ queryKey: actionKey(client, runID),
-    queryFn: ({ signal }) => client.listProjectActions(runID, signal), retry: false });
+  const testDirectory = testTarget ?? targets.test;
+  let inspectedTarget: string | undefined;
+  try { inspectedTarget = normalizePreparationTarget(testDirectory.trim() || "."); }
+  catch { /* Invalid input stays editable and cannot start an action. */ }
+  const actions = useQuery({ queryKey: [...actionKey(client, runID), inspectedTarget ?? null],
+    queryFn: ({ signal }) => client.listProjectActions(runID, inspectedTarget!, signal),
+    enabled: inspectedTarget !== undefined, retry: false });
   const job = useQuery({ queryKey: jobKey(client, runID, attempt?.jobID ?? ""),
     queryFn: ({ signal }) => client.getProjectActionJob(runID, attempt!.jobID!, signal),
     enabled: Boolean(attempt?.jobID), retry: false, refetchOnMount: "always",
@@ -57,7 +67,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
   const baseURL = client.baseURL;
   useEffect(() => {
     if (!terminalJobID) return;
-    void queries.invalidateQueries({ queryKey: ["run", runID, "project-actions", baseURL], exact: true });
+    void queries.invalidateQueries({ queryKey: ["run", runID, "project-actions", baseURL] });
     void queries.invalidateQueries({ queryKey: taskReviewKey(threadID) });
   }, [terminalJobID, baseURL, runID, threadID, queries]);
   const active = Boolean(attempt && (!attempt.jobID || !result || projectActionIsRunning(result.job.state)));
@@ -81,7 +91,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
     },
     onSettled: () => {
       submitting.current = false;
-      void queries.invalidateQueries({ queryKey: actionKey(client, runID), exact: true });
+      void queries.invalidateQueries({ queryKey: actionKey(client, runID) });
       void queries.invalidateQueries({ queryKey: taskReviewKey(threadID) });
     },
   });
@@ -122,43 +132,48 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
   };
   return <section className="v2-task-delivery v2-project-actions" aria-label={t("项目测试与格式化", "Project tests and formatting")}>
     <div className="v2-delivery-heading"><h2>{t("项目测试与格式化", "Project tests and formatting")}</h2>
-      <button type="button" disabled={actions.isFetching} onClick={() => void actions.refetch()}>{t("刷新动作", "Refresh actions")}</button></div>
+      <button type="button" disabled={actions.isFetching || inspectedTarget === undefined} onClick={() => void actions.refetch()}>{t("刷新动作", "Refresh actions")}</button></div>
     <p className="v2-delivery-muted">{t("使用本次任务保存的项目配置运行，结果保存在命令记录中。", "Run the project actions saved for this task. Results are retained in command history.")}
       {backendLabel && <> {t("执行环境：", "Environment: ")}{backendLabel}</>}</p>
-    {actions.isPending && <p role="status">{t("正在读取项目动作…", "Reading project actions…")}</p>}
+    {actions.isFetching && <p role="status">{t("正在读取项目动作…", "Reading project actions…")}</p>}
+    {inspectedTarget === undefined && <p role="alert">{t("请输入项目内的相对测试目录。", "Enter a relative test directory within the project.")}</p>}
     {actions.isError && <ErrorState error={actions.error} />}
     {working && <p role="status">{t("代理正在执行，暂停后可手动运行项目动作。", "The agent is working. Pause it to run project actions manually.")}</p>}
     {(!client.hasControl || !client.hasRunExecution) && <p role="status">{t("当前连接仅可查看结果，没有命令执行权限。", "This connection can view results but cannot execute commands.")}</p>}
     {damaged && <p role="alert">{t("保存的运行请求无法读取，请先到命令记录核对。", "The saved request could not be read. Check command history first.")}</p>}
     {localError && <p role="alert">{localError}</p>}
-    {actions.data && !actions.isError && <div className="v2-project-action-forms">
-      {actions.data.actions.map((action) => {
-        const slot = action.slot as ProjectActionSlot;
-        const directory = action.target_kind === "directory";
+    <div className="v2-project-action-forms">
+      {(["test", "format"] as const).map((slot) => {
+        const action = actions.data?.actions.find((item) => item.slot === slot);
+        const available = Boolean(action?.available && actions.data?.target === inspectedTarget && !actions.isFetching && !actions.isError);
+        const directory = slot === "test";
         const needsFile = !directory;
         return <form key={slot} onSubmit={(event) => {
           event.preventDefault();
-          if (!action.available || active || damaged) return;
-          submit({ runID, slot, target: targets[slot].trim(), key: "project-action-" + crypto.randomUUID() });
+          if (!available || active || damaged) return;
+          submit({ runID, slot, target: directory ? inspectedTarget! : targets.format.trim(), key: "project-action-" + crypto.randomUUID() });
         }}>
           <h3>{slot === "test" ? t("测试", "Tests") : t("格式化", "Formatting")}</h3>
-          {action.command_id ? <><code>{action.command_id}</code>{!action.configured && <small>{t("根据项目文件检测", "Detected from project files")}</small>}</>
-            : <p>{t("项目尚未配置此动作，请在 .prayu/config.yaml 中设置。", "Configure this action in .prayu/config.yaml.")}</p>}
-          {action.command_id && <label>
+          {action?.command_id ? <><code>{action.command_id}</code>{!action.configured && <small>{t("根据项目文件检测", "Detected from project files")}</small>}</>
+            : action && <p>{t("此目录未检测到项目动作，可选择其他目录或在 .prayu/config.yaml 中配置。", "No project action was detected in this directory. Choose another directory or configure it in .prayu/config.yaml.")}</p>}
+          {(directory || action?.command_id) && <label>
             {directory ? t("测试目录（留空使用项目根目录）", "Test directory (empty for project root)") : t("要格式化的文件", "File to format")}
-            <input value={targets[slot]} required={needsFile} disabled={active || working}
+            <input value={directory ? testDirectory : targets.format} required={needsFile} disabled={active || working}
               placeholder={directory ? "web" : "internal/example.go"}
-              onChange={(event) => setTargets((current) => ({ ...current, [slot]: event.target.value }))} />
+              onChange={(event) => {
+                if (directory && onTestTargetChange) onTestTargetChange(event.target.value);
+                else setTargets((current) => ({ ...current, [slot]: event.target.value }));
+              }} />
             <small>{t("填写相对于项目目录的路径。", "Enter a path relative to the project directory.")}</small>
           </label>}
-          {action.reason && <p className="v2-delivery-muted">{reasonLabel(action.reason)}</p>}
-          <button type="submit" disabled={!action.available || active || damaged || working || !client.hasControl ||
+          {action?.reason && <p className="v2-delivery-muted">{reasonLabel(action.reason)}</p>}
+          <button type="submit" disabled={!available || active || damaged || working || !client.hasControl ||
             !client.hasRunExecution || (needsFile && !targets[slot].trim())}>
             {slot === "test" ? t("运行测试", "Run tests") : t("格式化文件", "Format file")}
           </button>
         </form>;
       })}
-    </div>}
+    </div>
     {execute.isPending && <p role="status">{t("正在启动命令…", "Starting command…")}</p>}
     {execute.isError && <ErrorState error={execute.error} />}
     {attempt && !attempt.jobID && !execute.isPending && <div role="status">

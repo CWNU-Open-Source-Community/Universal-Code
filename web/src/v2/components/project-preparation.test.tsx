@@ -23,6 +23,35 @@ function setup() {
 }
 beforeEach(() => localStorage.clear());
 
+it("canonicalizes newly selected package sources before persisting and submitting consent", async () => {
+  const { client, ui } = setup();
+  const sources = ["https://proxy.golang.org", "https://storage.googleapis.com"];
+  const baseline = preparationView();
+  client.getProjectPreparation.mockResolvedValue({ ...baseline, plan: { ...baseline.plan, ecosystem: "go", sources } });
+  render(ui());
+  fireEvent.click(await screen.findByRole("checkbox", { name: "允许下载：https://storage.googleapis.com" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "允许下载：https://proxy.golang.org" }));
+  fireEvent.click(screen.getByRole("button", { name: "准备项目" }));
+  await waitFor(() => expect(client.prepareProject).toHaveBeenCalledTimes(1));
+  expect(client.prepareProject.mock.calls[0][1].allowed_sources).toEqual(sources);
+  const stored = Object.keys(localStorage).find((key) => key.includes("project-preparation"));
+  expect(JSON.parse(localStorage.getItem(stored!)!).value.body.allowed_sources).toEqual(sources);
+});
+
+it("replays recovered consent with its original source ordering", async () => {
+  const { client, ui } = setup();
+  const original = { version: "project-preparation.v1", target: ".", expected_fingerprint: "a".repeat(64),
+    allowed_sources: ["https://storage.googleapis.com", "https://proxy.golang.org"],
+    confirm_execution: true, run_install_scripts: false };
+  const storageKey = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent(client.baseURL)}:preparation-db:${encodeURIComponent("run:run-1:project-preparation")}`;
+  localStorage.setItem(storageKey, JSON.stringify({ version: "v2_recovery.v1", value: {
+    runID: "run-1", key: "project-preparation-original", body: original,
+  } }));
+  render(ui());
+  fireEvent.click(await screen.findByRole("button", { name: "确认上次准备" }));
+  await waitFor(() => expect(client.prepareProject).toHaveBeenCalledWith("run-1", original, "project-preparation-original"));
+});
+
 it("shows detected commands and submits only the selected package sources and installation script consent", async () => {
   const { client, ui } = setup();
   render(ui());

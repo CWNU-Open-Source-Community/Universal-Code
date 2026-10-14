@@ -44,6 +44,7 @@ type ProjectActionView struct {
 type ProjectActionsView struct {
 	ProtocolVersion string              `json:"protocol_version"`
 	RunID           string              `json:"run_id"`
+	Target          string              `json:"target"`
 	Backend         string              `json:"backend"`
 	Actions         []ProjectActionView `json:"actions"`
 	CapabilityGrant bool                `json:"capability_grant"`
@@ -194,14 +195,28 @@ func (s *CommandRuntimeService) projectPresetReady(ctx context.Context, id strin
 	return apperror.New(apperror.CodeFailedPrecondition, "rebuild the Standard Code Docker image to enable npm tests and gofmt")
 }
 
-func (s *ProjectActionsService) List(ctx context.Context, runID string) (ProjectActionsView, error) {
-	view := ProjectActionsView{ProtocolVersion: ProjectActionsProtocolVersion, RunID: runID, Actions: []ProjectActionView{}}
+func (s *ProjectActionsService) List(ctx context.Context, runID string, targets ...string) (ProjectActionsView, error) {
+	target := "."
+	if len(targets) > 1 {
+		return ProjectActionsView{}, apperror.New(apperror.CodeInvalidArgument, "project actions accept one target directory")
+	}
+	if len(targets) == 1 && targets[0] != "" {
+		target = targets[0]
+	}
+	view := ProjectActionsView{ProtocolVersion: ProjectActionsProtocolVersion, RunID: runID, Target: target, Actions: []ProjectActionView{}}
 	run, err := s.store.GetRun(ctx, runID)
 	if err != nil {
 		return view, err
 	}
 	project, err := projectconfig.Pinned(run.Config)
 	if err != nil {
+		return view, err
+	}
+	policy, err := projectconfig.PathPolicy(run.Config)
+	if err != nil {
+		return view, err
+	}
+	if err := policy.Check(target); err != nil {
 		return view, err
 	}
 	var service *CommandRuntimeService
@@ -252,7 +267,7 @@ func (s *ProjectActionsService) List(ctx context.Context, runID string) (Project
 		}
 		action.Configured = action.CommandID != ""
 		if slot == "test" && action.CommandID == "" && root != "" {
-			plan, detectErr := projectprep.Detect(ctx, root, ".")
+			plan, detectErr := projectprep.Detect(ctx, root, target)
 			if detectErr == nil {
 				detectErr = checkDetectedProjectPaths(run, plan)
 			}

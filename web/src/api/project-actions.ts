@@ -11,15 +11,16 @@ function invalid(): never {
   throw new APIRequestError("项目动作响应与当前执行不匹配。", "INVALID_RESPONSE", 502);
 }
 
-export function parseProjectActions(value: unknown, runID: string): ProjectActionsView {
+export function parseProjectActions(value: unknown, runID: string, target = "."): ProjectActionsView {
   if (!record(value) || value.protocol_version !== "project-actions.v1" || value.run_id !== runID ||
+    (value.target !== target && !(target === "." && value.target === undefined)) ||
     value.capability_grant !== false || !backend(value.backend) || !Array.isArray(value.actions) ||
     value.actions.length !== 2 || new Set(value.actions.map((item) => record(item) ? item.slot : null)).size !== 2 ||
     value.actions.some((item) => !record(item) || !slot(item.slot) || typeof item.command_id !== "string" ||
       typeof item.configured !== "boolean" || typeof item.available !== "boolean" ||
       (item.available && !item.command_id) || typeof item.reason !== "string" ||
       !["directory", "go_file"].includes(String(item.target_kind)))) invalid();
-  return value as unknown as ProjectActionsView;
+  return { ...value, target } as unknown as ProjectActionsView;
 }
 
 export function parseProjectActionResult(value: unknown, runID: string, expectedSlot?: ProjectActionSlot, jobID?: string): ProjectActionResultView {

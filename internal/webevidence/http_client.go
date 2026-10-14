@@ -156,7 +156,7 @@ func (c *SafeHTTPClient) Get(ctx context.Context, rawURL string, maxBytes int,
 func (c *SafeHTTPClient) GetAuthorized(ctx context.Context, rawURL string, maxBytes int,
 	accept string, authorize func(string) error,
 ) (HTTPDocument, error) {
-	return c.getAuthorized(ctx, rawURL, maxBytes, DefaultMaxResponse, accept, authorize)
+	return c.getAuthorized(ctx, rawURL, maxBytes, DefaultMaxResponse, accept, authorize, false)
 }
 
 // GetArtifactAuthorized shares public DNS pinning, proxy containment and
@@ -168,7 +168,7 @@ func (c *SafeHTTPClient) GetArtifactAuthorized(ctx context.Context, rawURL strin
 	if authorize == nil {
 		return HTTPDocument{}, errors.New("artifact download requires explicit authority")
 	}
-	document, err := c.getAuthorized(ctx, rawURL, maxBytes, 64*1024*1024, "application/octet-stream", authorize)
+	document, err := c.getAuthorized(ctx, rawURL, maxBytes, 64*1024*1024, "application/octet-stream", authorize, true)
 	if err == nil || ctx == nil || ctx.Err() != nil || (!errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF)) {
 		return document, err
 	}
@@ -176,11 +176,11 @@ func (c *SafeHTTPClient) GetArtifactAuthorized(ctx context.Context, rawURL strin
 	// already closed and discarded. One fresh attempt repeats every authority,
 	// URL, DNS and redirect check; ordinary evidence and POST requests do not
 	// inherit this retry behavior.
-	return c.getAuthorized(ctx, rawURL, maxBytes, 64*1024*1024, "application/octet-stream", authorize)
+	return c.getAuthorized(ctx, rawURL, maxBytes, 64*1024*1024, "application/octet-stream", authorize, true)
 }
 
 func (c *SafeHTTPClient) getAuthorized(ctx context.Context, rawURL string, maxBytes, maximum int,
-	accept string, authorize func(string) error,
+	accept string, authorize func(string) error, artifact bool,
 ) (HTTPDocument, error) {
 	if c == nil {
 		return HTTPDocument{}, errors.New("safe web HTTP client is required")
@@ -215,6 +215,14 @@ func (c *SafeHTTPClient) getAuthorized(ctx context.Context, rawURL string, maxBy
 			var requestErr error
 			response, requestErr = c.getOnce(ctx, current, accept)
 			if requestErr != nil {
+				if artifact {
+					// url.Error includes the full request URL, including temporary
+					// archive signatures. Keep its cause for errors.Is/As.
+					var urlErr *url.Error
+					if errors.As(requestErr, &urlErr) {
+						requestErr = fmt.Errorf("request dependency artifact: %w", urlErr.Err)
+					}
+				}
 				return HTTPDocument{}, requestErr
 			}
 			if !isRetryableHTTPStatus(response.StatusCode) || attempt >= maxRetries {
@@ -236,6 +244,9 @@ func (c *SafeHTTPClient) getAuthorized(ctx context.Context, rawURL string, maxBy
 				return HTTPDocument{}, errors.New("web redirect location is invalid")
 			}
 			current, parseErr = CanonicalizePublicHTTPSURL(next.String())
+			if parseErr != nil && artifact {
+				current, parseErr = CanonicalizeGoProxyArchiveRedirect(base.String(), next.String())
+			}
 			if parseErr != nil {
 				return HTTPDocument{}, fmt.Errorf("web redirect escaped public HTTPS policy: %w", parseErr)
 			}

@@ -1423,7 +1423,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			DataType:    reflect.TypeOf(ProjectPreparationOperationView{}), RequestType: reflect.TypeOf(ProjectPreparationCancelRequestView{}), SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{runID, pathIdentityParameter("operation_id", "Saved preparation operation"), dockerSandboxIdempotencyKey}},
 		{Path: ProjectActionsPathTemplate, OperationID: "listProjectActions", Summary: "Inspect configured project actions", Tag: "Runs",
 			Description: "Reads pinned test/format action IDs and current runtime availability without creating execution authority or exposing host executable paths.",
-			DataType:    reflect.TypeOf(ProjectActionsView{}), NotFound: true, Parameters: []openAPIParameter{runID}},
+			DataType:    reflect.TypeOf(ProjectActionsView{}), NotFound: true, Parameters: []openAPIParameter{runID, {Name: "target", In: "query", Description: "Relative directory inspected for project tests", Schema: map[string]any{"type": "string", "default": "."}}}},
 		{Path: ProjectActionRunPathTemplate, Method: http.MethodPost, OperationID: "runProjectAction", Summary: "Run one configured project action", Tag: "Control", Control: true, NotFound: true,
 			Description: "Starts only the pinned test or format preset through the selected Command Runtime adapter and its existing permission and lease checks. Returns the saved Job promptly; retrying the same action key reads the original Job and never starts it again.",
 			DataType:    reflect.TypeOf(ProjectActionResultView{}), RequestType: reflect.TypeOf(ProjectActionRequestView{}), SuccessStatus: http.StatusAccepted,

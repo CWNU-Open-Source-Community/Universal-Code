@@ -166,6 +166,12 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 					return err
 				}
 				parsed, err := artifactURL(raw)
+				if err != nil && pkg.Kind == projectprep.KindGoZip {
+					canonical, redirectErr := webevidence.CanonicalizeGoProxyArchiveRedirect(pkg.URL, raw)
+					if redirectErr == nil {
+						parsed, err = url.Parse(canonical)
+					}
+				}
 				if err != nil {
 					return err
 				}

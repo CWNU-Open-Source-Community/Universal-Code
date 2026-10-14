@@ -15928,6 +15928,15 @@
               "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
               "type": "string"
             }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Relative directory inspected for project tests",
+            "schema": {
+              "default": ".",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -48891,11 +48900,15 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "target": {
+            "type": "string"
           }
         },
         "required": [
           "protocol_version",
           "run_id",
+          "target",
           "backend",
           "actions",
           "capability_grant"

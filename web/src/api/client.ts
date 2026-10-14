@@ -8352,10 +8352,13 @@ export class APIClient {
     return this.sendControlRequest<T>(path, body, signal, "", "DELETE");
   }
 
-  async listProjectActions(runID: string, signal?: AbortSignal): Promise<import("./types").ProjectActionsView> {
-    if (!boundedIdentity(runID)) throw new Error("An exact Run is required");
+  async listProjectActions(runID: string, target: string | AbortSignal = ".", signal?: AbortSignal): Promise<import("./types").ProjectActionsView> {
+    const directory = typeof target === "string" ? target || "." : ".";
+    const requestSignal = typeof target === "string" ? signal : target;
+    if (!boundedIdentity(runID) || !validPreparationTarget(directory)) throw new Error("An exact Run and relative project directory are required");
+    const normalizedTarget = normalizePreparationTarget(directory);
     return parseProjectActions(await this.get<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-actions", {}, signal), runID);
+      "/runs/" + encodeURIComponent(runID) + "/project-actions", normalizedTarget === "." ? {} : { target: normalizedTarget }, requestSignal), runID, normalizedTarget);
   }
 
   async getProjectPreparation(runID: string, target = ".", signal?: AbortSignal): Promise<ProjectPreparationView> {

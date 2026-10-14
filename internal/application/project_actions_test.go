@@ -18,6 +18,41 @@ import (
 	"cyberagent-workbench/internal/session"
 )
 
+func TestProjectActionsInspectDetectedSubdirectory(t *testing.T) {
+	f, preparation := preparationFixture(t)
+	selected := &CommandRuntimeService{store: f.st, adapter: commandruntimeadapter.SandboxedWorkspace(CommandRuntimeSBXBackend, "directory-fixture", "generation")}
+	runtime := preparationAdmissionRuntime{CommandRuntimeService: f.service, selected: selected}
+	preparation.runtime = runtime
+	if err := os.Mkdir(filepath.Join(f.root, "web"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"package.json", "package-lock.json"} {
+		if err := os.Rename(filepath.Join(f.root, name), filepath.Join(f.root, "web", name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prepared, err := preparation.Inspect(t.Context(), f.run.ID, "web")
+	if err != nil || !prepared.Available {
+		t.Fatalf("subdirectory preparation unavailable: %+v %v", prepared, err)
+	}
+	actions := NewProjectActionsService(f.st, runtime, nil)
+	root, err := actions.List(t.Context(), f.run.ID)
+	if err != nil || root.Target != "." || root.Actions[0].Available {
+		t.Fatalf("root detection: %+v %v", root, err)
+	}
+	view, err := actions.List(t.Context(), f.run.ID, "web")
+	if err != nil || view.Target != "web" || !view.Actions[0].Available || view.Actions[0].Configured || view.Actions[0].CommandID != "test.npm" {
+		t.Fatalf("subdirectory detection: %+v %v", view, err)
+	}
+	spec, err := PrepareProjectCommandForAdapter(f.run, "test", view.Target, selected.adapter, f.root)
+	if err != nil || spec.WorkingDirectory != "web" {
+		t.Fatalf("listed directory cannot be tested: %+v %v", spec, err)
+	}
+	if _, err := actions.List(t.Context(), f.run.ID, "../other"); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("unsafe inspection target accepted: %v", err)
+	}
+}
+
 func TestProjectActionsDetectedTestReplaysAfterSourcesDisappear(t *testing.T) {
 	f := newCommandApprovalSandboxFixture(t, domain.RunExecutionPermissionAsk, domain.RunExecutionProfileDocker, true)
 	lease, found, err := f.st.GetRunExecutionLease(t.Context(), f.turn.Run.ID)
