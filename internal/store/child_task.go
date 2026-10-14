@@ -166,7 +166,6 @@ func (s *SQLiteStore) CreateChildTaskProposal(ctx context.Context,
 	return proposal, false, nil
 }
 
-
 // requireCoreChildTaskBudgetTx atomically pre-checks the core-surface
 // proposal against the current child count and the effective root budget
 // before the proposal is persisted.
@@ -354,7 +353,6 @@ func (s *SQLiteStore) ReviewChildTaskProposal(ctx context.Context,
 	return proposal, false, nil
 }
 
-
 // AdmitChildTaskProposal turns an approved proposal into admitted children:
 // core tasks go through the fenced Specialist admission and bind their
 // declared dependencies onto the schema v101 wait ledger; read-only tasks
@@ -363,7 +361,7 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 	operationKey string,
 ) (domain.ChildTaskProposal, []domain.ChildTaskAssignment, error) {
 	proposalID = strings.TrimSpace(proposalID)
-	normalizedKey, err := domain.NormalizeAgentOperationKey(operationKey)
+	_, err := domain.NormalizeAgentOperationKey(operationKey)
 	if err != nil {
 		return domain.ChildTaskProposal{}, nil, apperror.Wrap(apperror.CodeInvalidArgument,
 			"child task admission key is invalid", err)
@@ -396,13 +394,13 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 			// retries to the assignment, including retries with a new caller key.
 			ordinal := strconv.Itoa(assignments[index].Ordinal)
 			admissionKey := runmutation.Fingerprint("child_task_admission.v1", proposal.ID, ordinal)
-			admitted, _, err := s.AdmitSpecialist(ctx, domain.SpecialistAdmission{
+			admitted, _, err := s.admitSpecialist(ctx, domain.SpecialistAdmission{
 				AgentID: idgen.New("agent"), SessionID: idgen.New("sess"),
 				RunID: proposal.RunID, ParentAgentID: proposal.RootAgentID,
 				Title: task.Title, Skills: task.Skills,
 				TurnLimit: task.TurnLimit, TokenLimit: task.TokenLimit,
 				MaxChildren: domain.MaxAgentChildren, CreatedAt: time.Now().UTC(),
-			}, admissionKey)
+			}, admissionKey, &childTaskAdmissionBinding{proposalID: proposal.ID, task: task})
 			if err != nil {
 				return domain.ChildTaskProposal{}, nil, apperror.Normalize(err)
 			}
@@ -433,8 +431,8 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 			assignments[index].Status = domain.ChildTaskAssignmentAdmitted
 		}
 	}
-	// Bind core-surface inter-task dependencies onto the schema v101 wait
-	// ledger. The unique wake receipts make rebinding idempotent.
+	// Bind each dependency to the immutable proposal and task ordinals. The
+	// admitted child's creation time anchors its deadline across retries.
 	admittedByOrdinal := make(map[int]string, len(assignments))
 	for _, assignment := range assignments {
 		if assignment.AdmittedAgentID != "" {
@@ -451,16 +449,35 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 			if targetID == "" {
 				continue
 			}
-			now := time.Now().UTC()
+			// Reuse even settled edges, including those written before admission
+			// keys were bound to the proposal rather than the HTTP request.
+			_, err := scanDependencyEdge(s.db.QueryRowContext(ctx, dependencyEdgeSelect+`
+				WHERE run_id = ? AND source_kind = 'agent' AND source_id = ?
+				AND target_kind = 'agent' AND target_id = ? AND generation = 1
+				AND reason = 'child task dependency' AND failure_policy = 'fail'`,
+				proposal.RunID, sourceID, targetID))
+			if err == nil {
+				continue
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return domain.ChildTaskProposal{}, nil, err
+			}
+			source, err := s.GetAgentNode(ctx, sourceID)
+			if err != nil {
+				return domain.ChildTaskProposal{}, nil, err
+			}
+			now := source.CreatedAt
+			dependencyKey := runmutation.Fingerprint("child_task_dependency.v1", proposal.ID,
+				strconv.Itoa(task.Ordinal), strconv.Itoa(dependency))
 			if _, _, err := s.RecordDependencyWait(ctx, domain.DependencyEdge{
 				ID: idgen.New("depedge"), RunID: proposal.RunID,
 				SourceKind: waitgraph.KindAgent, SourceID: sourceID,
 				TargetKind: waitgraph.KindAgent, TargetID: targetID,
 				Reason: "child task dependency", State: domain.AgentDependencyWait,
 				FailurePolicy: domain.DependencyPolicyFail, Generation: 1,
-				Deadline: now.Add(time.Duration(task.TimeoutMillis) * time.Millisecond),
+				Deadline:  now.Add(time.Duration(task.TimeoutMillis) * time.Millisecond),
 				CreatedAt: now, UpdatedAt: now,
-			}, normalizedKey+"-dep-"+string(rune('a'+task.Ordinal))+string(rune('a'+dependency))); err != nil {
+			}, dependencyKey); err != nil {
 				return domain.ChildTaskProposal{}, nil, err
 			}
 		}
@@ -474,10 +491,12 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 	if err != nil {
 		return domain.ChildTaskProposal{}, nil, err
 	}
-	_ = appendSupervisorEventTx(ctx, tx, domain.Run{ID: proposal.RunID, MissionID: missionID},
+	if err := appendSupervisorEventTx(ctx, tx, domain.Run{ID: proposal.RunID, MissionID: missionID},
 		events.ChildTaskAdmittedEvent, "agent_coordinator", proposal.ID, map[string]any{
 			"surface": string(proposal.Surface), "task_count": len(proposal.Spec.Tasks),
-		})
+		}); err != nil {
+		return domain.ChildTaskProposal{}, nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return domain.ChildTaskProposal{}, nil, err
 	}
@@ -503,6 +522,30 @@ func (s *SQLiteStore) markChildTaskAssignmentAdmitted(ctx context.Context, propo
 		WHERE proposal_id = ? AND ordinal = ? AND status = 'proposed'`,
 		agentID, planID, ts(now), proposalID, ordinal)
 	return err
+}
+
+type childTaskAdmissionBinding struct {
+	proposalID string
+	task       domain.ChildTask
+}
+
+// Bind the assignment in the child's creation transaction. A wake during
+// interrupted instruction/dependency delivery must still see the declared waits.
+func bindChildTaskAdmissionTx(ctx context.Context, tx *sql.Tx, binding *childTaskAdmissionBinding, agentID string) error {
+	if binding == nil {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE child_task_assignments SET admitted_agent_id = ?
+		WHERE proposal_id = ? AND ordinal = ? AND surface = 'core'
+		AND (admitted_agent_id = '' OR admitted_agent_id = ?)`,
+		agentID, binding.proposalID, binding.task.Ordinal, agentID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		return apperror.New(apperror.CodeConflict, "child task assignment admission binding changed")
+	}
+	return nil
 }
 
 func (s *SQLiteStore) getChildTaskProposal(ctx context.Context, id string,

@@ -913,7 +913,10 @@ func (s *GitAdvancedService) persistInterruptedManagedGitWorktree(ctx context.Co
 	if err != nil {
 		return err
 	}
-	if !found || !value.Present || value.RunID != record.RunID ||
+	persistedRemoval := record.Operation == gitadvanced.WorktreeRemove &&
+		value.LastOperationID == record.ID && !value.Present
+	if !found || (!value.Present && !persistedRemoval) || value.ID != spec.WorktreeID ||
+		value.RunID != record.RunID ||
 		value.WorkspaceID != record.WorkspaceID ||
 		value.RepositorySHA256 != record.RepositorySHA256 ||
 		value.CommonDirSHA256 != preview.Binding.CommonDirSHA256 ||
@@ -924,6 +927,10 @@ func (s *GitAdvancedService) persistInterruptedManagedGitWorktree(ctx context.Co
 		preview.Binding, spec.WorktreeName)
 	if err != nil {
 		return err
+	}
+	if observation.Path != value.Path || gitadvanced.Fingerprint("managed-worktree-path",
+		observation.Path) != value.PathSHA256 {
+		return errors.New("interrupted managed Git worktree target changed")
 	}
 	desired := false
 	switch record.Operation {

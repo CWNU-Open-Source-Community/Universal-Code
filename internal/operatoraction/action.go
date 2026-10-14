@@ -38,10 +38,10 @@ func (k Kind) Valid() bool {
 type Destination string
 
 const (
-	DestinationQueue     Destination = "queue"
-	DestinationApprovals Destination = "approvals"
-	DestinationDiffs     Destination = "diffs"
-	DestinationWake      Destination = "wake"
+	DestinationQueue      Destination = "queue"
+	DestinationApprovals  Destination = "approvals"
+	DestinationDiffs      Destination = "diffs"
+	DestinationWake       Destination = "wake"
 	DestinationChildTasks Destination = "child-tasks"
 )
 
@@ -90,6 +90,7 @@ func (r Record) Validate() error {
 		KindFileEditReview:  "proposed",
 		KindFileEditApply:   "approved",
 		KindWakeDue:         "queued",
+		KindChildTaskReview: "proposed",
 	}[r.Kind]
 	if r.State != expectedState {
 		return fmt.Errorf("operator action %s has invalid state %q", r.Kind, r.State)

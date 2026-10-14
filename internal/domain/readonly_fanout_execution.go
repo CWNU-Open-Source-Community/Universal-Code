@@ -419,7 +419,7 @@ func (e ReadOnlyFanoutExecutionSummary) Validate() error {
 		}
 		switch shard.Status {
 		case ReadOnlyFanoutExecutionShardPending:
-			if shard.AttemptCount != 0 || shard.CurrentAttempt != 0 || shard.Provider != "" ||
+			if shard.CurrentAttempt != 0 || shard.Provider != "" ||
 				shard.Model != "" || shard.ErrorCode != "" || shard.InputTokens != 0 ||
 				shard.OutputTokens != 0 || shard.TotalTokens != 0 || shard.ElapsedMillis != 0 ||
 				shard.FindingCount != 0 || shard.StartedAt != nil || shard.FinishedAt != nil {
@@ -443,7 +443,7 @@ func (e ReadOnlyFanoutExecutionSummary) Validate() error {
 			}
 		case ReadOnlyFanoutExecutionShardCancelled:
 			attempted := validReadOnlyFanoutTerminalSummaryShard(shard)
-			beforeStart := shard.AttemptCount == 0 && shard.CurrentAttempt == 0 &&
+			beforeStart := shard.CurrentAttempt == 0 &&
 				shard.Provider == "" && shard.Model == "" && shard.InputTokens == 0 &&
 				shard.OutputTokens == 0 && shard.TotalTokens == 0 && shard.ElapsedMillis == 0 &&
 				shard.StartedAt == nil && shard.FinishedAt != nil &&

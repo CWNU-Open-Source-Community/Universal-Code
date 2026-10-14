@@ -351,8 +351,17 @@ func materializeBatchIntegration(ctx context.Context, sourceRoot string,
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return errors.New("batch integration destination is not a real directory")
 		}
-		return repository.VerifyBatchWorktree(ctx, queue.IntegrationRoot,
-			queue.IntegrationBranch, expectedHead)
+		if queue.Status == domain.BatchMergeQueueRunning {
+			// Git may have completed the next merge before its receipt was
+			// persisted. Check the repository identity here; runBatchMergeQueue
+			// verifies that an advanced HEAD is exactly that pending merge.
+			expectedHead, err = repository.CurrentFullHead(ctx, queue.IntegrationRoot)
+			if err != nil {
+				return err
+			}
+		}
+		return repository.VerifyBatchWorktreeBinding(ctx, sourceRoot, queue.IntegrationRoot,
+			queue.IntegrationBranch, expectedHead, true)
 	case errors.Is(err, os.ErrNotExist):
 		if queue.Status == domain.BatchMergeQueueRunning {
 			_, err = repository.RestoreExistingWorktree(ctx, sourceRoot,

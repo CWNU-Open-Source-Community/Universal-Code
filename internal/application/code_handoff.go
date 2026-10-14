@@ -618,8 +618,12 @@ func (s *CodeHandoffService) addPlan(ctx context.Context, result *CodeHandoff) e
 func (s *CodeHandoffService) addChangeSet(ctx context.Context, run domain.Run,
 	mission domain.Mission, result *CodeHandoff,
 ) error {
+	workspaceID, err := runFileProjectionWorkspaceID(ctx, s.store, run, mission)
+	if err != nil {
+		return err
+	}
 	values, err := s.store.ListFileEditPreviewsPage(ctx, fileedit.ListFilter{
-		SessionID: run.SessionID, WorkspaceID: mission.WorkspaceID,
+		SessionID: run.SessionID, WorkspaceID: workspaceID,
 	}, 0, MaxFileEditChangeSetItems+1)
 	if err != nil {
 		return apperror.Normalize(err)
@@ -628,7 +632,7 @@ func (s *CodeHandoffService) addChangeSet(ctx context.Context, run domain.Run,
 	if truncated {
 		values = values[:MaxFileEditChangeSetItems]
 	}
-	changeSet, err := BuildFileEditChangeSet(run, mission, values)
+	changeSet, err := BuildFileEditChangeSetForWorkspace(run, mission, workspaceID, values)
 	if err != nil {
 		return err
 	}

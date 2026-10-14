@@ -147,6 +147,9 @@ func (s *SQLiteStore) RecordDependencyWait(ctx context.Context,
 		keyDigest, requestFingerprint, edge.ID, ts(time.Now().UTC())); err != nil {
 		return domain.DependencyEdge{}, false, err
 	}
+	if err := waitReadyDependencySourcesTx(ctx, tx, edge.RunID); err != nil {
+		return domain.DependencyEdge{}, false, err
+	}
 	_ = appendSupervisorEventTx(ctx, tx, domain.Run{ID: edge.RunID, MissionID: missionID},
 		events.DependencyWaitRecordedEvent, "agent_dependency", edge.ID, map[string]any{
 			"source_kind": string(edge.SourceKind), "source_id": edge.SourceID,
@@ -159,7 +162,6 @@ func (s *SQLiteStore) RecordDependencyWait(ctx context.Context,
 	}
 	return edge, false, nil
 }
-
 
 // SettleDependencyTarget closes every open wait edge whose target matches
 // with the given terminal outcome. Each edge receives at most one wake
@@ -355,6 +357,9 @@ func (s *SQLiteStore) ReconcileDependencyEdges(ctx context.Context, runID string
 	if err != nil {
 		return nil, err
 	}
+	if err := waitReadyDependencySourcesTx(ctx, tx, runID); err != nil {
+		return nil, err
+	}
 	rows, err := tx.QueryContext(ctx, dependencyEdgeSelect+` WHERE run_id = ? AND state = 'wait'
 		ORDER BY created_at`, runID)
 	if err != nil {
@@ -528,7 +533,7 @@ func deliverDependencySourceMessagesTx(ctx context.Context, tx *sql.Tx, run doma
 	if nodeStatus != domain.AgentWaiting {
 		return nil
 	}
-	if outcome == domain.AgentDependencyFailed && edge.FailurePolicy == domain.DependencyPolicyFail {
+	if outcome != domain.AgentDependencySatisfied && edge.FailurePolicy == domain.DependencyPolicyFail {
 		_, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET status = ?, status_reason = ?,
 			finished_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND run_id = ?
 			AND version = ? AND status = ?`, domain.AgentFailed, "dependency_failed", ts(now),
@@ -537,6 +542,10 @@ func deliverDependencySourceMessagesTx(ctx context.Context, tx *sql.Tx, run doma
 			return err
 		}
 		return nil
+	}
+	blocked, err := specialistDependenciesBlockedTx(ctx, tx, run.ID, edge.SourceID)
+	if err != nil || blocked {
+		return err
 	}
 	wakePayload, err := json.Marshal(domain.AgentWakePayload{Reason: reason})
 	if err != nil {
@@ -558,6 +567,37 @@ func deliverDependencySourceMessagesTx(ctx context.Context, tx *sql.Tx, run doma
 		return err
 	}
 	return nil
+}
+
+// Check both recorded waits and the assignment's declared dependencies: an
+// interrupted admission may not have written its dependency edges yet.
+const specialistDependenciesBlockedPredicate = `(EXISTS (SELECT 1 FROM agent_dependency_edges edge
+	WHERE edge.run_id = agent_nodes.run_id AND edge.source_kind = 'agent' AND edge.source_id = agent_nodes.id
+	AND (edge.state = 'wait' OR (edge.state <> 'satisfied' AND edge.failure_policy = 'fail')))
+	OR EXISTS (SELECT 1 FROM child_task_assignments source
+		JOIN json_each(source.dependency_ordinals_json) dependency
+		LEFT JOIN child_task_assignments target ON target.proposal_id = source.proposal_id AND target.ordinal = dependency.value
+		WHERE source.admitted_agent_id = agent_nodes.id AND source.surface = 'core'
+		AND NOT EXISTS (SELECT 1 FROM agent_dependency_edges edge WHERE edge.run_id = agent_nodes.run_id
+			AND edge.source_kind = 'agent' AND edge.source_id = agent_nodes.id
+			AND edge.target_kind = 'agent' AND edge.target_id = target.admitted_agent_id
+			AND edge.reason = 'child task dependency' AND edge.generation = 1
+			AND edge.failure_policy = 'fail' AND edge.state = 'satisfied')))`
+
+func specialistDependenciesBlockedTx(ctx context.Context, tx *sql.Tx, runID, agentID string) (bool, error) {
+	var blocked bool
+	err := tx.QueryRowContext(ctx, `SELECT `+specialistDependenciesBlockedPredicate+`
+		FROM agent_nodes WHERE run_id = ? AND id = ?`, runID, agentID).Scan(&blocked)
+	return blocked, err
+}
+
+func waitReadyDependencySourcesTx(ctx context.Context, tx *sql.Tx, runID string) error {
+	_, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET status = 'waiting',
+		status_reason = 'dependency wait', version = version + 1, updated_at = ?
+		WHERE run_id = ? AND role = 'specialist' AND status = 'ready'
+		AND `+specialistDependenciesBlockedPredicate,
+		ts(time.Now().UTC()), runID)
+	return err
 }
 
 func appendDependencyTerminalEventTx(ctx context.Context, tx *sql.Tx, run domain.Run,

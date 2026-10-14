@@ -102,6 +102,14 @@ func (s *SQLiteStore) BeginSpecialistAttempt(ctx context.Context, start domain.A
 		return domain.AgentAttempt{}, false, apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist scheduling requires the ready child and its direct parent")
 	}
+	blocked, err := specialistDependenciesBlockedTx(ctx, tx, child.RunID, child.ID)
+	if err != nil {
+		return domain.AgentAttempt{}, false, err
+	}
+	if blocked {
+		return domain.AgentAttempt{}, false, apperror.New(apperror.CodeFailedPrecondition,
+			"Specialist scheduling requires satisfied dependencies")
+	}
 	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
 		start.ParentAgentID))
 	if err != nil {

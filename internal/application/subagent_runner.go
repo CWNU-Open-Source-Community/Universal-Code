@@ -35,6 +35,7 @@ type SubagentRunnerStore interface {
 	GetMission(ctx context.Context, id string) (domain.Mission, error)
 	GetAgentNode(ctx context.Context, id string) (domain.AgentNode, error)
 	ListAgentNodes(ctx context.Context, runID string) ([]domain.AgentNode, error)
+	ReconcileDependencyEdges(ctx context.Context, runID string) ([]domain.DependencyWake, error)
 	GetRunAgentUsage(ctx context.Context, runID string) (domain.RunAgentUsage, error)
 	GetSession(ctx context.Context, id string) (session.Session, error)
 	ListRecentSessionMessages(ctx context.Context, sessionID string,
@@ -263,6 +264,13 @@ func (r *SubagentRunner) Step(ctx context.Context, runID string,
 	if run.Status != domain.RunRunning {
 		return result, apperror.New(apperror.CodeFailedPrecondition,
 			fmt.Sprintf("run %s is %s; Specialist requires running", run.ID, run.Status))
+	}
+	if _, err := r.store.ReconcileDependencyEdges(ctx, run.ID); err != nil {
+		return result, apperror.Normalize(err)
+	}
+	child, err = r.store.GetAgentNode(ctx, child.ID)
+	if err != nil {
+		return result, apperror.Normalize(err)
 	}
 	if child.Status != domain.AgentReady && child.Status != domain.AgentRunning {
 		return result, apperror.New(apperror.CodeFailedPrecondition, "Specialist runner requires a ready child or a recoverable running child")

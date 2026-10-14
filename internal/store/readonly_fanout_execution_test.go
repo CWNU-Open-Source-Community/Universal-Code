@@ -245,6 +245,11 @@ func TestReadOnlyFanoutRecoveryFencesOldLeaseAndChargesUnknownCall(t *testing.T)
 		recovered.Shards[0].AttemptCount != 1 || recovered.Shards[0].CurrentAttempt != 0 {
 		t.Fatalf("recovery failed: %#v changed=%t err=%v", recovered, changed, err)
 	}
+	summary, found, err := st.GetLatestReadOnlyFanoutExecutionSummary(ctx, plan.ID)
+	if err != nil || !found || summary.Shards[0].AttemptCount != 1 ||
+		summary.Shards[0].CurrentAttempt != 0 || summary.Validate() != nil {
+		t.Fatalf("recovered pending summary is invalid: %#v found=%t err=%v", summary, found, err)
+	}
 	var callStatus string
 	if err := st.db.QueryRowContext(ctx, `SELECT status FROM readonly_fanout_model_calls
 		WHERE execution_id = ? AND shard_ordinal = 1 AND attempt_number = 1`,
@@ -269,8 +274,96 @@ func TestReadOnlyFanoutRecoveryFencesOldLeaseAndChargesUnknownCall(t *testing.T)
 		domain.ReadOnlyFanoutExecutionFailed, "test_cleanup"); err != nil {
 		t.Fatal(err)
 	}
+	summary, found, err = st.GetLatestReadOnlyFanoutExecutionSummary(ctx, plan.ID)
+	if err != nil || !found || summary.Shards[0].Status != domain.ReadOnlyFanoutExecutionShardCancelled ||
+		summary.Shards[0].AttemptCount != 1 || summary.Shards[0].CurrentAttempt != 0 || summary.Validate() != nil {
+		t.Fatalf("recovered cancelled summary is invalid: %#v found=%t err=%v", summary, found, err)
+	}
 	if _, _, err := st.ReleaseRunExecutionLease(ctx, newLease); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReadOnlyFanoutCancellationRecoversInterruptedExecution(t *testing.T) {
+	st, run, _ := createReadOnlyFanoutFixture(t, "fanout-cancel-recovery.db", 2)
+	ctx := t.Context()
+	plan := createReadOnlyFanoutExecutionPlan(t, ctx, st, run.ID, "2", "cancel-recovery-plan")
+	worker := application.NewReadOnlyFanoutExecutionService(&fanoutLostResultStore{st},
+		llm.NewDefaultRouter(), policy.NewDefaultChecker())
+	if _, err := worker.Execute(ctx, application.ExecuteReadOnlyFanoutRequest{
+		PlanID: plan.ID, OperationKey: "cancel-recovery-execute", RequestedBy: "operator",
+		MaxOutputTokensPerShard: 512,
+	}); err == nil {
+		t.Fatal("expected interrupted terminal persistence")
+	}
+	executions, err := st.ListReadOnlyFanoutExecutions(ctx, plan.ID, 5)
+	if err != nil || len(executions) != 1 || executions[0].Status != domain.ReadOnlyFanoutExecutionRunning {
+		t.Fatalf("interrupted execution missing: %#v err=%v", executions, err)
+	}
+	controller := application.NewReadOnlyFanoutExecutionService(st, llm.NewDefaultRouter(), policy.NewDefaultChecker())
+	activeLease := acquireTestRunExecutionLease(t, ctx, st, run.ID)
+	if _, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].ID,
+		"operator", "cancel-active-owner"); apperror.CodeOf(err) != apperror.CodeConflict {
+		t.Fatalf("cancellation stole an active lease: %v", err)
+	}
+	if _, _, err := st.ReleaseRunExecutionLease(ctx, activeLease); err != nil {
+		t.Fatal(err)
+	}
+	var version int64
+	for _, key := range []string{"cancel-interrupted-worker", "cancel-interrupted-worker-replay"} {
+		cancelled, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].ID, "operator", key)
+		if err != nil || cancelled.Status != domain.ReadOnlyFanoutExecutionCancelled || cancelled.Validate() != nil {
+			t.Fatalf("interrupted execution did not cancel: %#v err=%v", cancelled, err)
+		}
+		if version != 0 && version != cancelled.Version {
+			t.Fatal("repeated cancellation mutated the terminal execution")
+		}
+		version = cancelled.Version
+		for _, shard := range cancelled.Shards {
+			if shard.Status != domain.ReadOnlyFanoutExecutionShardCancelled || shard.AttemptCount != 1 || shard.CurrentAttempt != 0 {
+				t.Fatalf("cancelled recovery lost attempt history: %#v", shard)
+			}
+		}
+	}
+	if _, found, err := st.GetLatestReadOnlyFanoutExecutionSummary(ctx, plan.ID); err != nil || !found {
+		t.Fatalf("cancelled execution summary unavailable: found=%t err=%v", found, err)
+	}
+}
+
+type fanoutLostFinalizationStore struct{ *SQLiteStore }
+
+func (*fanoutLostFinalizationStore) FinalizeReadOnlyFanoutExecution(context.Context, domain.RunExecutionLease,
+	string, domain.ReadOnlyFanoutExecutionStatus, string,
+) (domain.ReadOnlyFanoutExecution, bool, error) {
+	return domain.ReadOnlyFanoutExecution{}, false, errors.New("fixture lost execution finalization")
+}
+
+func TestReadOnlyFanoutCancellationPreservesCompletedShardResults(t *testing.T) {
+	st, run, _ := createReadOnlyFanoutFixture(t, "fanout-completed-cancel.db", 2)
+	ctx := t.Context()
+	plan := createReadOnlyFanoutExecutionPlan(t, ctx, st, run.ID, "2", "completed-cancel-plan")
+	worker := application.NewReadOnlyFanoutExecutionService(&fanoutLostFinalizationStore{st},
+		llm.NewDefaultRouter(), policy.NewDefaultChecker())
+	if _, err := worker.Execute(ctx, application.ExecuteReadOnlyFanoutRequest{
+		PlanID: plan.ID, OperationKey: "completed-cancel-execute", RequestedBy: "operator",
+		MaxOutputTokensPerShard: 512,
+	}); err == nil {
+		t.Fatal("expected lost execution finalization")
+	}
+	executions, err := st.ListReadOnlyFanoutExecutions(ctx, plan.ID, 5)
+	if err != nil || len(executions) != 1 || executions[0].Status != domain.ReadOnlyFanoutExecutionRunning {
+		t.Fatalf("interrupted execution missing: %#v err=%v", executions, err)
+	}
+	controller := application.NewReadOnlyFanoutExecutionService(st, llm.NewDefaultRouter(), policy.NewDefaultChecker())
+	final, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].ID, "operator", "completed-cancel")
+	if err != nil || final.Status != domain.ReadOnlyFanoutExecutionCompleted || final.Validate() != nil {
+		t.Fatalf("already completed shards were not finalized: %#v err=%v", final, err)
+	}
+	for index, shard := range final.Shards {
+		if shard.ReportJSON != executions[0].Shards[index].ReportJSON ||
+			shard.AttemptCount != 1 || shard.CurrentAttempt != 1 {
+			t.Fatalf("cancellation changed a completed result: %#v", shard)
+		}
 	}
 }
 

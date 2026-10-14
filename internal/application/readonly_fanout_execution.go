@@ -908,9 +908,9 @@ func (s *ReadOnlyFanoutExecutionService) ListReadOnlyFanoutExecutions(ctx contex
 }
 
 // CancelReadOnlyFanoutExecution cancels one non-terminal fan-out execution
-// under a fresh lease fence: the remainder of pending shards is cancelled and
-// the execution finalizes cancelled. Terminal executions return their stored
-// state unchanged, so the control endpoint stays idempotent.
+// under a fresh lease fence: unfinished shards are cancelled and the execution
+// is finalized, preserving completion when all shard results were saved.
+// Terminal executions return their stored state, keeping the endpoint idempotent.
 func (s *ReadOnlyFanoutExecutionService) CancelReadOnlyFanoutExecution(ctx context.Context,
 	executionID, requestedBy, operationKey string,
 ) (domain.ReadOnlyFanoutExecution, error) {
@@ -954,12 +954,28 @@ func (s *ReadOnlyFanoutExecutionService) CancelReadOnlyFanoutExecution(ctx conte
 				return apperror.New(apperror.CodeConflict,
 					"read-only fan-out Run binding changed before cancellation")
 			}
-			if _, err := s.store.CancelReadOnlyFanoutExecutionRemainder(leaseCtx, lease,
-				executionID, "cancelled", "operator_cancelled"); err != nil {
+			current, _, err := s.store.RecoverReadOnlyFanoutExecution(leaseCtx, lease, executionID)
+			if err != nil {
 				return err
 			}
+			if current.Status.Terminal() {
+				result = current
+				return nil
+			}
+			current, err = s.store.CancelReadOnlyFanoutExecutionRemainder(leaseCtx, lease,
+				executionID, "cancelled", "operator_cancelled")
+			if err != nil {
+				return err
+			}
+			status, stopCode := domain.ReadOnlyFanoutExecutionCompleted, ""
+			for _, shard := range current.Shards {
+				if shard.Status != domain.ReadOnlyFanoutExecutionShardCompleted {
+					status, stopCode = domain.ReadOnlyFanoutExecutionCancelled, "operator_cancelled"
+					break
+				}
+			}
 			final, _, err := s.store.FinalizeReadOnlyFanoutExecution(leaseCtx, lease,
-				executionID, domain.ReadOnlyFanoutExecutionCancelled, "operator_cancelled")
+				executionID, status, stopCode)
 			if err != nil {
 				return err
 			}

@@ -85,8 +85,7 @@ func TestRecordDependencyWaitReplaysAndSettlesOnce(t *testing.T) {
 	}
 	tampered := edge
 	tampered.Reason = "different intent"
-	if _, _, err := st.RecordDependencyWait(ctx, tampered, "dep-record-0001-abcdefgh");
-		apperror.CodeOf(err) != apperror.CodeConflict {
+	if _, _, err := st.RecordDependencyWait(ctx, tampered, "dep-record-0001-abcdefgh"); apperror.CodeOf(err) != apperror.CodeConflict {
 		t.Fatalf("reused key with different intent was not rejected: %v", err)
 	}
 	wakes, err := st.SettleDependencyTarget(ctx, run.ID, waitgraph.KindAgent,
@@ -114,6 +113,51 @@ func TestRecordDependencyWaitReplaysAndSettlesOnce(t *testing.T) {
 	}
 }
 
+func TestDependencyWaitRequiresEveryTargetBeforeWakingSpecialist(t *testing.T) {
+	st, run, root, children := newDependencyTestFixture(t)
+	ctx := t.Context()
+	for index, target := range []domain.AgentNode{root, children[1]} {
+		if _, _, err := st.RecordDependencyWait(ctx, newDependencyEdge(run, children[0], target, 1),
+			"dependency-all-targets-"+string(rune('a'+index))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, target := range []domain.AgentNode{root, children[1]} {
+		if _, err := st.SettleDependencyTarget(ctx, run.ID, waitgraph.KindAgent, target.ID,
+			domain.AgentDependencySatisfied, "target result available"); err != nil {
+			t.Fatal(err)
+		}
+		child, err := st.GetAgentNode(ctx, children[0].ID)
+		want := domain.AgentWaiting
+		if index == 1 {
+			want = domain.AgentReady
+		}
+		if err != nil || child.Status != want || child.TurnsUsed != 0 {
+			t.Fatalf("child woke before all dependencies settled: %#v err=%v", child, err)
+		}
+	}
+}
+
+func TestDependencyFailPolicyPreventsExecutionAfterCancellationOrTimeout(t *testing.T) {
+	for _, outcome := range []domain.AgentDependencyState{domain.AgentDependencyCancelled, domain.AgentDependencyExpired} {
+		t.Run(string(outcome), func(t *testing.T) {
+			st, run, _, children := newDependencyTestFixture(t)
+			ctx := t.Context()
+			if _, _, err := st.RecordDependencyWait(ctx, newDependencyEdge(run, children[1], children[0], 1),
+				"dependency-failed-target"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.SettleDependencyTarget(ctx, run.ID, waitgraph.KindAgent, children[0].ID,
+				outcome, "target result unavailable"); err != nil {
+				t.Fatal(err)
+			}
+			child, err := st.GetAgentNode(ctx, children[1].ID)
+			if err != nil || child.Status != domain.AgentFailed || child.TurnsUsed != 0 {
+				t.Fatalf("unavailable dependency did not fail child without execution: %#v err=%v", child, err)
+			}
+		})
+	}
+}
 
 func TestDependencyWaitRejectsCyclesAndForeignEndpoints(t *testing.T) {
 	st, run, root, children := newDependencyTestFixture(t)
@@ -127,13 +171,11 @@ func TestDependencyWaitRejectsCyclesAndForeignEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	cycle := newDependencyEdge(run, children[1], root, 1)
-	if _, _, err := st.RecordDependencyWait(ctx, cycle, "dep-cycle-0003-abcdefgh");
-		apperror.CodeOf(err) != apperror.CodeConflict {
+	if _, _, err := st.RecordDependencyWait(ctx, cycle, "dep-cycle-0003-abcdefgh"); apperror.CodeOf(err) != apperror.CodeConflict {
 		t.Fatalf("multi-node cycle was not rejected: %v", err)
 	}
 	selfLoop := newDependencyEdge(run, root, root, 1)
-	if _, _, err := st.RecordDependencyWait(ctx, selfLoop, "dep-cycle-0004-abcdefgh");
-		apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+	if _, _, err := st.RecordDependencyWait(ctx, selfLoop, "dep-cycle-0004-abcdefgh"); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
 		t.Fatalf("self-loop was not rejected: %v", err)
 	}
 	_, otherRun, err := application.NewRunService(st).Create(ctx, application.CreateRunRequest{
@@ -144,14 +186,12 @@ func TestDependencyWaitRejectsCyclesAndForeignEndpoints(t *testing.T) {
 	}
 	foreign := newDependencyEdge(run, root, children[0], 2)
 	foreign.RunID = otherRun.ID
-	if _, _, err := st.RecordDependencyWait(ctx, foreign, "dep-cycle-0005-abcdefgh");
-		apperror.CodeOf(err) != apperror.CodeNotFound {
+	if _, _, err := st.RecordDependencyWait(ctx, foreign, "dep-cycle-0005-abcdefgh"); apperror.CodeOf(err) != apperror.CodeNotFound {
 		t.Fatalf("cross-run endpoint was not rejected: %v", err)
 	}
 	toolEdge := newDependencyEdge(run, root, children[0], 2)
 	toolEdge.SourceKind = waitgraph.KindTool
-	if _, _, err := st.RecordDependencyWait(ctx, toolEdge, "dep-cycle-0006-abcdefgh");
-		apperror.CodeOf(err) != apperror.CodePolicyDenied {
+	if _, _, err := st.RecordDependencyWait(ctx, toolEdge, "dep-cycle-0006-abcdefgh"); apperror.CodeOf(err) != apperror.CodePolicyDenied {
 		t.Fatalf("non-agent durable endpoint was not rejected: %v", err)
 	}
 }
@@ -237,7 +277,6 @@ func TestDependencyCancelAndExpire(t *testing.T) {
 		t.Fatal("no-progress deadline did not emit the deadlock diagnosis")
 	}
 }
-
 
 func TestDependencyReconcileRecoversAcrossRestart(t *testing.T) {
 	st, run, root, children := newDependencyTestFixture(t)
