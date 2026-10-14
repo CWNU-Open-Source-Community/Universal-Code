@@ -59,7 +59,11 @@ func supervisorMCPContent(request llm.ChatRequest, rounds []domain.SupervisorToo
 				continue
 			}
 			imageCount := len(message.Images)
-			projectMCPContent(native, &message.Images, vision, call.CallID)
+			if !projectMCPContent(native, &message.Images, vision, call.CallID) {
+				// Text-only outcomes retain their exact durable envelope, including
+				// JSON formatting and key order, across approval continuation.
+				continue
+			}
 			raw, err := json.Marshal(native)
 			if err != nil {
 				return llm.ChatRequest{}, err
@@ -86,7 +90,8 @@ func supervisorMCPContent(request llm.ChatRequest, rounds []domain.SupervisorToo
 	return request, nil
 }
 
-func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bool, callID string) {
+func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bool, callID string) bool {
+	changed := false
 	block := func(content any) {
 		value, ok := content.(map[string]any)
 		if !ok {
@@ -95,12 +100,16 @@ func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bo
 		switch value["type"] {
 		case "image":
 			projectMCPBinary(value, "data", images, vision, callID)
+			changed = true
 		case "audio":
 			delete(value, "data")
 			value["model_input_status"] = "Audio bytes were not supplied: this model adapter accepts text and images. Do not claim to have heard the recording."
+			changed = true
 		case "resource":
 			if resource, ok := value["resource"].(map[string]any); ok {
-				projectMCPResource(resource, images, vision, callID)
+				if projectMCPResource(resource, images, vision, callID) {
+					changed = true
+				}
 			}
 		}
 	}
@@ -112,7 +121,9 @@ func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bo
 	if contents, ok := result["contents"].([]any); ok {
 		for _, value := range contents {
 			if resource, ok := value.(map[string]any); ok {
-				projectMCPResource(resource, images, vision, callID)
+				if projectMCPResource(resource, images, vision, callID) {
+					changed = true
+				}
 			}
 		}
 	}
@@ -123,13 +134,15 @@ func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bo
 			}
 		}
 	}
+	return changed
 }
 
-func projectMCPResource(resource map[string]any, images *[]llm.ImagePart, vision bool, callID string) {
+func projectMCPResource(resource map[string]any, images *[]llm.ImagePart, vision bool, callID string) bool {
 	if _, ok := resource["blob"]; !ok {
-		return
+		return false
 	}
 	projectMCPBinary(resource, "blob", images, vision, callID)
+	return true
 }
 
 func projectMCPBinary(value map[string]any, field string, images *[]llm.ImagePart, vision bool, callID string) {
