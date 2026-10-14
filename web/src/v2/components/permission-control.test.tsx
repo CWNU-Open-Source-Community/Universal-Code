@@ -52,23 +52,23 @@ describe("Composer permission integration", () => {
       mode: { scope: { network_mode: "disabled", allowed_targets: [] } }, execution_permission: { mode: "conservative" } });
     const providerSearchReadiness = vi.fn().mockResolvedValue({ state: "provider_unqualified",
       reason: "provider_native_qualification_required", remediation: "qualify_provider_search" });
-    const changeThreadExecutionPermission = vi.fn(); const expandRunNetworkAuthority = vi.fn();
+    const changeThreadExecutionPermission = vi.fn(); const setRunWebAccess = vi.fn();
     const client = { getThreadExecutionPermission: vi.fn().mockResolvedValue(control()),
       hasExecutionPermissionControl: true, hasControl: true, get, providerSearchReadiness,
-      changeThreadExecutionPermission, expandRunNetworkAuthority } as unknown as APIClient;
+      changeThreadExecutionPermission, setRunWebAccess } as unknown as APIClient;
     const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queries}><V2PermissionControl client={client} threadID="thread-1" /></QueryClientProvider>);
     await user.click(await screen.findByRole("button", { name: "请求批准" }));
     expect(get).not.toHaveBeenCalled(); expect(providerSearchReadiness).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "网页访问与搜索" }));
     expect(await screen.findByText("网页搜索 · 搜索待验证")).toBeInTheDocument();
-    expect(screen.getByText("直接 URL 抓取")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toBeInTheDocument();
     expect(get).toHaveBeenCalledExactlyOnceWith("/runs/run-1", {}, expect.any(AbortSignal));
     expect(providerSearchReadiness).toHaveBeenCalledExactlyOnceWith("thread-1", expect.any(AbortSignal));
     expect(changeThreadExecutionPermission).not.toHaveBeenCalled();
-    expect(expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(setRunWebAccess).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "网页访问与搜索" }));
-    await waitFor(() => expect(screen.queryByText("直接 URL 抓取")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "当前任务网页搜索模式" })).not.toBeInTheDocument());
   });
 
   it.each(["click", "Enter"] as const)("keeps a real Composer draft and its attachments through cancellation and %s permission confirmation", async (activation) => {

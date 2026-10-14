@@ -54,6 +54,23 @@ it("retains budget edits through settings and submits all explicit ceilings with
     budget: { max_turns: 20, max_tool_calls: 30, max_tokens: 10000, max_cost_usd: 1.25, timeout_seconds: 600 } }));
 });
 
+it.each(["disabled", "rules", "full"])("shares the %s web selection between settings and creation without granting command network access", async (mode) => {
+  const client = fixture(); mount(client); const user = userEvent.setup();
+  await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "保持草稿并配置网页访问");
+  await user.click(screen.getByRole("button", { name: "设置" }));
+  await user.click(await screen.findByRole("button", { name: "配置" }));
+  await user.selectOptions(await screen.findByRole("combobox", { name: "网页搜索模式" }), mode);
+  await user.click(screen.getByRole("button", { name: "返回应用" }));
+  expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("保持草稿并配置网页访问");
+  const label = { disabled: "禁止搜索", rules: "规则搜索", full: "完全访问" }[mode]!;
+  expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "发送消息" }));
+  await waitFor(() => expect(client.createThread).toHaveBeenCalledTimes(1));
+  expect(client.createThread.mock.calls[0][0]).toEqual(expect.objectContaining({
+    network_mode: "disabled", web_access_mode: mode, web_allowed_targets: [], goal: "保持草稿并配置网页访问",
+  }));
+});
+
 it("keeps invalid budget submission blocked after leaving configuration while the draft remains editable", async () => {
   const client = fixture(); mount(client); const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "无效预算应保留草稿");

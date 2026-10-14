@@ -679,9 +679,11 @@ type WorkspaceSearchView struct {
 }
 
 type ScopeView struct {
-	WorkspaceID    string   `json:"workspace_id,omitempty"`
-	NetworkMode    string   `json:"network_mode"`
-	AllowedTargets []string `json:"allowed_targets,omitempty"`
+	WorkspaceID       string               `json:"workspace_id,omitempty"`
+	NetworkMode       string               `json:"network_mode"`
+	AllowedTargets    []string             `json:"allowed_targets,omitempty"`
+	WebAccessMode     domain.WebAccessMode `json:"web_access_mode"`
+	WebAllowedTargets []string             `json:"web_allowed_targets,omitempty"`
 }
 
 type MissionView struct {
@@ -1636,7 +1638,7 @@ type SupervisorToolRoundView struct {
 func missionView(value domain.Mission) MissionView {
 	return MissionView{
 		ID: value.ID, Goal: value.Goal, Profile: string(value.Profile), WorkspaceID: value.WorkspaceID,
-		Scope: ScopeView{WorkspaceID: value.Scope.WorkspaceID, NetworkMode: value.Scope.NetworkMode,
+		Scope: ScopeView{WebAccessMode: value.Scope.EffectiveWebAccessMode(), WebAllowedTargets: value.Scope.EffectiveWebAllowedTargets(), WorkspaceID: value.Scope.WorkspaceID, NetworkMode: value.Scope.NetworkMode,
 			AllowedTargets: append([]string{}, value.Scope.AllowedTargets...)},
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
@@ -1662,7 +1664,7 @@ func runModeView(value domain.RunModeSnapshot) RunModeView {
 		ProtocolVersion: value.ProtocolVersion, Revision: value.Revision,
 		Surface: string(value.Surface), Phase: string(value.Phase),
 		Profile: string(value.Profile),
-		Scope: ScopeView{WorkspaceID: value.Scope.WorkspaceID,
+		Scope: ScopeView{WebAccessMode: value.Scope.EffectiveWebAccessMode(), WebAllowedTargets: value.Scope.EffectiveWebAllowedTargets(), WorkspaceID: value.Scope.WorkspaceID,
 			NetworkMode:    value.Scope.NetworkMode,
 			AllowedTargets: append([]string{}, value.Scope.AllowedTargets...)},
 		PolicyVersion: value.PolicyVersion, RequestedBy: value.RequestedBy,

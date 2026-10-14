@@ -60,9 +60,9 @@ func (p ExecutionPhase) Valid() bool {
 
 // RunModeSnapshot is an append-only policy snapshot for one Run. Surface,
 // Profile, Workspace scope, and PolicyVersion are fixed. Phase can move through
-// an explicit operator transition while the Run is quiescent. Network scope can
-// only grow through the separately audited exact-host transition; no other
-// mutation may change it.
+// an explicit operator transition while the Run is quiescent. Command network
+// scope grows through the audited exact-host transition; independent webpage
+// access changes through a revision-bound operator selection.
 type RunModeSnapshot struct {
 	ID              string
 	RunID           string
@@ -176,7 +176,7 @@ func (s RunModeSnapshot) Next(id string, phase ExecutionPhase, requestedBy strin
 }
 
 func (s RunModeSnapshot) SamePolicy(other RunModeSnapshot) bool {
-	if !s.SameStaticPolicy(other) ||
+	if !s.SameStaticPolicy(other) || !s.Scope.SameWebAccess(other.Scope) ||
 		s.Scope.NetworkMode != other.Scope.NetworkMode ||
 		len(s.Scope.AllowedTargets) != len(other.Scope.AllowedTargets) {
 		return false
@@ -231,6 +231,7 @@ func (o RunModeOperation) Validate() error {
 func CloneScope(scope Scope) Scope {
 	cloned := scope
 	cloned.AllowedTargets = append([]string(nil), scope.AllowedTargets...)
+	cloned.WebAllowedTargets = append([]string(nil), scope.WebAllowedTargets...)
 	return cloned
 }
 

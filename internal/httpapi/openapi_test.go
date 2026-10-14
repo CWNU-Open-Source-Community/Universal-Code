@@ -1060,6 +1060,12 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, webAccessRun, err := application.NewRunService(fixture.store).Create(t.Context(),
+		application.CreateRunRequest{Goal: "OpenAPI web access fixture", Profile: "review",
+			WorkspaceID: fixture.workspace.ID, Budget: domain.Budget{MaxTurns: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture.api.executionPermissionCapabilities.RuntimeAuthority =
 		domain.NewExecutionPermissionRuntimeAuthority()
 	openAPIThreadSession, err := fixture.store.GetSession(t.Context(), openAPIThreadRun.SessionID)
@@ -1188,6 +1194,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", profileRun.ID)
 		} else if spec.Path == RunNetworkAuthorityControlPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", networkAuthorityRun.ID)
+		} else if spec.Path == RunWebAccessControlPathTemplate {
+			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", webAccessRun.ID)
 		} else if spec.Path == ProviderDefinitionPathTemplate ||
 			spec.Path == ProviderDefinitionDeletePathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{provider}", "openapi-custom")
@@ -1792,6 +1800,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"run_network_authority_control.v1",` +
 						`"expected_mode_revision":1,` +
 						`"add_allowed_targets":["search.example.org"]}`
+				} else if spec.Path == RunWebAccessControlPathTemplate {
+					body = `{"version":"run_web_access_control.v1",` +
+						`"expected_mode_revision":1,"web_access_mode":"full"}`
 				} else if spec.Path == RunExecutionInteractionControlPathTemplate {
 					body = `{"mode":"controlled","trust":"trusted",` +
 						`"confirm_workspace_trust":true}`

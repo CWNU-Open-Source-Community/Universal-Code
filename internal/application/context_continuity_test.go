@@ -64,7 +64,7 @@ func TestContinuityCheckpointForkAndRestartPreserveContextButNotAuthority(t *tes
 		t.Fatal(err)
 	}
 	_, run, err := application.NewRunService(state).Create(ctx, application.CreateRunRequest{
-		Goal: "preserve bounded context", Profile: "code", WorkspaceID: workspace.ID,
+		Goal: "preserve bounded context", Profile: "code", WorkspaceID: workspace.ID, WebAccessMode: "full",
 		Budget: domain.DefaultBudget(), RequestedBy: "desktop_operator",
 		ProjectInstructions: &instructions,
 	})
@@ -100,7 +100,7 @@ func TestContinuityCheckpointForkAndRestartPreserveContextButNotAuthority(t *tes
 	}
 	if branch.Run.ID == run.ID || branch.Run.SessionID == run.SessionID ||
 		branch.Run.Config.ContinuityContextFingerprint != checkpoint.ContextSHA256 ||
-		branch.CapabilityGrant || len(branch.NotInherited) < 8 {
+		branch.CapabilityGrant || len(branch.NotInherited) < 8 || branch.Mission.Scope.WebAccessMode != domain.WebAccessFull || branch.Mission.Scope.NetworkMode != "disabled" {
 		t.Fatalf("unsafe or incomplete branch result: %#v", branch)
 	}
 	tree, err := service.Tree(ctx, branch.Run.SessionID)

@@ -310,6 +310,7 @@ type WebEvidenceCapabilityContext struct {
 	PermissionMode                  domain.RunExecutionPermissionMode
 	PermissionRevision              int64
 	ModeRevision                    int64
+	WebAccessMode                   domain.WebAccessMode
 	NetworkMode                     string
 	AllowedTargets                  []string
 	ProviderAvailable               bool
@@ -340,6 +341,8 @@ func WebEvidenceCapabilitySnapshot(scope WebEvidenceCapabilityContext) WebEviden
 	switch {
 	case scope.Role != domain.AgentRoleRoot:
 		baseAvailable, refusal = false, "web evidence is available only to the root Agent"
+	case scope.WebAccessMode != "" && !scope.WebAccessMode.Valid():
+		baseAvailable, refusal = false, "web evidence Run web access mode is invalid"
 	case networkErr != nil:
 		baseAvailable, refusal = false, "web evidence Run network authority is invalid"
 	case !providerBindingValid:
@@ -347,10 +350,11 @@ func WebEvidenceCapabilitySnapshot(scope WebEvidenceCapabilityContext) WebEviden
 	case !connectorBindingValid:
 		baseAvailable, refusal = false, "source connector binding is invalid"
 	}
+	networkEnabled := scope.WebAccessMode != domain.WebAccessDisabled
 	preauthorizedFetch := scope.NetworkMode == "allowlist" && len(scope.AllowedTargets) > 0
-	fetchAvailable := baseAvailable && (preauthorizedFetch || scope.InlineWebFetchApprovalAvailable)
-	searchAvailable := baseAvailable && scope.ProviderAvailable
-	sourceSearchAvailable := baseAvailable && scope.SourceConnectorAvailable
+	fetchAvailable := baseAvailable && (scope.WebAccessMode == domain.WebAccessDisabled || preauthorizedFetch || scope.InlineWebFetchApprovalAvailable)
+	searchAvailable := baseAvailable && networkEnabled && scope.ProviderAvailable
+	sourceSearchAvailable := baseAvailable && networkEnabled && scope.SourceConnectorAvailable
 	available := fetchAvailable || searchAvailable || sourceSearchAvailable
 	if baseAvailable && !available {
 		refusal = "web evidence is unavailable: configure a search provider or enable public HTTPS fetch approval"
@@ -376,6 +380,7 @@ type WebEvidenceCallAuthority struct {
 	PermissionMode                  domain.RunExecutionPermissionMode `json:"permission_mode"`
 	PermissionRevision              int64                             `json:"permission_revision"`
 	ModeRevision                    int64                             `json:"mode_revision"`
+	WebAccessMode                   domain.WebAccessMode              `json:"web_access_mode,omitempty"`
 	NetworkMode                     string                            `json:"network_mode"`
 	AllowedTargets                  []string                          `json:"allowed_targets"`
 	ProviderAvailable               bool                              `json:"provider_available"`
@@ -394,6 +399,7 @@ func NewWebEvidenceCallAuthority(scope WebEvidenceCapabilityContext) (WebEvidenc
 		Phase: scope.Phase, Role: scope.Role, Profile: scope.Profile,
 		PermissionMode: scope.PermissionMode, ModeRevision: scope.ModeRevision,
 		PermissionRevision: scope.PermissionRevision,
+		WebAccessMode:      scope.WebAccessMode,
 		NetworkMode:        scope.NetworkMode, AllowedTargets: append([]string(nil), scope.AllowedTargets...),
 		ProviderAvailable:               scope.ProviderAvailable,
 		ProviderFingerprint:             scope.ProviderFingerprint,
@@ -410,6 +416,7 @@ func (a WebEvidenceCallAuthority) Validate() error {
 		Surface: a.Surface, Phase: a.Phase, Role: a.Role, Profile: a.Profile,
 		PermissionMode: a.PermissionMode, ModeRevision: a.ModeRevision,
 		PermissionRevision: a.PermissionRevision,
+		WebAccessMode:      a.WebAccessMode,
 		NetworkMode:        a.NetworkMode, AllowedTargets: append([]string(nil), a.AllowedTargets...),
 		ProviderAvailable:               a.ProviderAvailable,
 		ProviderFingerprint:             a.ProviderFingerprint,
@@ -482,6 +489,9 @@ func webEvidenceGeneration(scope WebEvidenceCapabilityContext, available bool,
 	}
 	if scope.InlineWebFetchApprovalAvailable {
 		parts = append(parts, "inline_web_fetch_approval_available=true")
+	}
+	if scope.WebAccessMode != "" {
+		parts = append(parts, "web_access_mode="+string(scope.WebAccessMode))
 	}
 	parts = append(parts, scope.AllowedTargets...)
 	for _, part := range parts {

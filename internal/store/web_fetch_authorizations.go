@@ -479,7 +479,8 @@ func getThreadWebFetchGrantTx(ctx context.Context, queryer interface {
 	value, err := getWebFetchAuthorizationRow(queryer.QueryRowContext(ctx,
 		webFetchAuthorizationSelect+` WHERE thread_id = ? AND exact_target = ?
 		AND status = 'approved' AND authorization_scope = 'thread'
-		ORDER BY decided_at DESC, id DESC LIMIT 1`, threadID, target))
+ AND julianday(decided_at) > COALESCE((SELECT MAX(julianday(selection.created_at)) FROM run_web_access_operations selection JOIN thread_runs member ON member.run_id=selection.run_id WHERE member.thread_id = ?),0)
+		ORDER BY decided_at DESC, id DESC LIMIT 1`, threadID, target, threadID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.WebFetchAuthorization{}, false, nil
 	}
