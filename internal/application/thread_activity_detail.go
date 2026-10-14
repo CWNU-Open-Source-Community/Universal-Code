@@ -224,7 +224,7 @@ func (s *ThreadActivityDetailService) Get(ctx context.Context, threadID,
 				"durable Thread command Job Agent attribution could not be projected",
 				attributionErr)
 		}
-		if !threadActivityAgentAttributionMatches(call, jobAttribution) {
+		if !threadActivityAgentAttributionMatches(call, jobAttribution, input.Action) {
 			return ThreadActivityDetail{}, apperror.New(apperror.CodeFailedPrecondition,
 				"durable Thread command Job has an inconsistent executing Agent binding")
 		}
@@ -722,7 +722,7 @@ func (s *ThreadActivityDetailService) threadActivityAgent(ctx context.Context,
 }
 
 func threadActivityAgentAttributionMatches(call domain.SupervisorToolCall,
-	job domain.AgentAttribution,
+	job domain.AgentAttribution, action string,
 ) bool {
 	callAttribution := domain.AgentAttribution{AgentID: call.AgentID,
 		AgentAttemptID: call.AgentAttemptID, Source: call.AgentAttribution}
@@ -739,6 +739,17 @@ func threadActivityAgentAttributionMatches(call domain.SupervisorToolCall,
 	}
 	if callAttribution.AgentAttemptID == job.AgentAttemptID {
 		return true
+	}
+	// A later model attempt can observe a Job started by this same Agent.
+	// The caller still verifies the Thread, Run and root authority binding;
+	// creation and control actions retain their exact-attempt attribution.
+	if callAttribution.Source == domain.AgentAttributionRecorded &&
+		job.Source == domain.AgentAttributionRecorded {
+		switch action {
+		case toolgateway.CommandRuntimeActionRead, toolgateway.CommandRuntimeActionWait,
+			toolgateway.CommandRuntimeActionList:
+			return true
+		}
 	}
 	// Migration v151 can prove the historical Command Job's root owner but
 	// cannot recover its exact attempt. Only the matching legacy-root call may

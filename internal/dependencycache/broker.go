@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"cyberagent-workbench/internal/projectprep"
@@ -62,11 +63,29 @@ func New(cacheRoot string) (*Broker, error) {
 	if err := os.MkdirAll(cacheRoot, 0700); err != nil {
 		return nil, err
 	}
-	canonical, err := filepath.EvalSymlinks(cacheRoot)
-	if err != nil || canonical != cacheRoot {
+	info, err := os.Lstat(cacheRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.New("dependency cache directory is linked")
 	}
-	return &Broker{root: cacheRoot, client: webevidence.NewSafeHTTPClient()}, nil
+	canonical, err := filepath.EvalSymlinks(cacheRoot)
+	if err != nil || !cacheRootPathMatches(cacheRoot, canonical) {
+		return nil, errors.New("dependency cache directory is linked")
+	}
+	return &Broker{root: canonical, client: webevidence.NewSafeHTTPClient()}, nil
+}
+
+// macOS exposes these system directories through fixed aliases. Only that
+// prefix may change; linked application or cache subdirectories still fail the
+// complete canonical-path comparison in New.
+func cacheRootAfterSystemAliases(root string) string {
+	if runtime.GOOS == "darwin" {
+		for _, alias := range []string{"/var", "/tmp"} {
+			if root == alias || strings.HasPrefix(root, alias+"/") {
+				return "/private" + root
+			}
+		}
+	}
+	return root
 }
 
 // Prepare checks authority before each read, network hop and staged mutation.

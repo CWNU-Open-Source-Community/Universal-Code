@@ -460,6 +460,8 @@ jobs:
         run: go test -v -tags keychainintegration -count=1 -timeout=90s ./internal/credential
       - name: Verify POSIX command runtime transport
         run: go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree)$'
+      - name: Verify dependency cache roots on macOS
+        run: go test -count=1 ./internal/dependencycache
       - name: Verify desktop boundaries without packaging
         if: ${{ needs.classify.outputs.packaging != 'true' }}
         run: |
@@ -521,6 +523,8 @@ jobs:
       - name: Verify Windows Local Sandbox isolation and product gates
         shell: pwsh
         run: |
+          go test -v -count=1 ./internal/dependencycache -run '^TestNewCache'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -v -count=1 -timeout 1m ./internal/sandboxtest -run '^TestAcquireHostMutexOpensExistingObject$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -v -count=1 -timeout 10m ./internal/app -run '^TestWindowsAPIServe'

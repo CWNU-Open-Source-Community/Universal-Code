@@ -60,7 +60,11 @@ func brokerFixture(t *testing.T, handler roundTrip) (*Broker, string) {
 		t.Fatal(err)
 	}
 	b.client = &webevidence.SafeHTTPClient{Resolver: publicResolver{"8.8.8.8"}, TransportFactory: func(string, []netip.Addr) http.RoundTripper { return handler }}
-	return b, t.TempDir()
+	workspace, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b, workspace
 }
 
 func TestDownloadsVerifyAndReplayCacheOnly(t *testing.T) {

@@ -261,5 +261,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v190 | 为子代理加入持久化工具绑定、调用轮次和执行收据，扩展模型调用记录以支持工具循环并保留历史行身份 | add durable child-agent tool bindings, rounds and execution receipts, extending model-call records for tool loops while preserving historical row identities |
 | v191 | 为子代理连续调度增加不可变的操作者意图摘要及查询索引，支持原调度的精确重放 | add an immutable operator-intent digest and lookup index to continuous child-agent schedules for exact replay of the original schedule |
 | v192 | 增加独立网页访问选择账本及 Run 范围校验，保留旧范围与授权历史，支持修订绑定的禁止、规则和完全访问及撤销 | add an independent web-access selection ledger and Run scope guards while preserving historical scopes and approvals; bind disabled, rules and full access and revocation to exact revisions |
+| v193 | 增加项目依赖准备的操作、进度与来源授权记录，绑定 Run、项目文件指纹和执行租约，支持缓存复用、取消和重启后读取 | add project preparation operations, progress and source consent bound to the Run, inspected project fingerprint and execution lease, with cache reuse, cancellation and durable reads after restart |
 
 </details>

@@ -91,5 +91,7 @@ npm 的「运行依赖的安装脚本」默认关闭。首次安装先关闭脚�
 准备工作流通过所选 Local、Docker Engine 或 Docker Sandboxes 执行。
 各后端的平台与版本要求见[执行环境选择](sandbox-environments.md)，
 具体运行结果以当前安装记录、测试记录和对应验收记录为准。
+本批真实运行、截图与尚待验证的环境见
+[项目依赖准备验收](acceptance/2026-10-14-project-preparation.md)。
 检测、授权、缓存和中断恢复合同见
 [ADR 0176](adr/0176-project-dependency-preparation.md)。
