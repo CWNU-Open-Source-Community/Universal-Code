@@ -57,6 +57,21 @@ credentials and the disposable database stay outside version control.
   disabled search/fetch, saved snapshot reading, exact-host rules, public URL
   transport restrictions, stale mode rejection, replay/reopen, inheritance,
   diagnostics cancellation and schema migration.
+- Broad checks exposed missing schema-history documentation and two fixtures
+  requiring updates: the live-route catalog needed a valid web-access request,
+  and the v166 historical fixture needed an empty current selection ledger while
+  invoking current application code. All three cases passed after correction,
+  along with migration, grant revocation and approval-resumption regressions.
+
+The broad local Windows run also reports machine-specific native-test failures:
+the installed fixed Go executable is 1.26.5, Git is installed under `D:\Git`
+rather than the fixed adapter's supported installation directories, and the
+attachment shell test requires a configured PowerShell 7. Deep repository-local
+temporary paths produce Git's `$GIT_DIR too big` error; the application package
+reached its 20-minute timeout. Moving the fixed-command test to an external
+temporary directory allowed its Go execution and replay to pass, leaving its
+fixed Git prerequisite. Logs retain these failures; the PR CI runs use their
+configured build hosts.
 
 Public-network provider availability and account-specific search behavior remain
 dependent on the configured provider; the browser capture validates the real
