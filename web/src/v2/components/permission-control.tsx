@@ -2,13 +2,14 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Globe2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
-import type { ThreadExecutionPermissionControlView } from "../../api/types";
+import type { ThreadExecutionPermissionControlView, WebAccessMode } from "../../api/types";
 import { useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
 import { V2ApprovalModeControl } from "./approval-mode-control";
 import type { ApprovalModeSelectionRequest } from "./approval-mode-contract";
 import { browserCDPQueryKey, V2BrowserCDPControl } from "./browser-cdp-control";
 import { V2RunNetworkAuthorityControl } from "./run-network-authority-control";
+import { webAccessModeLabels } from "./web-access-mode";
 
 function effectCopy(result: ThreadExecutionPermissionControlView, t: ReturnType<typeof useLocale>["t"]): string {
   if (result.current_run_effect === "deferred") return t("当前执行保持不变，选择用于下一次执行",
@@ -41,6 +42,7 @@ function ThreadPermissionControl({ client, threadID, variant = "menu", onOpenMod
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [networkMode, setNetworkMode] = useState<{ runID: string; mode: WebAccessMode } | null>(null);
   const networkRef = useRef<HTMLDivElement>(null);
   const networkTriggerRef = useRef<HTMLButtonElement>(null);
   const networkPanelRef = useRef<HTMLElement>(null);
@@ -86,13 +88,19 @@ function ThreadPermissionControl({ client, threadID, variant = "menu", onOpenMod
       }
     },
   });
+  const currentRunID = query.data?.current_run_id ?? "";
+  const onWebAccessModeChange = useCallback((mode: WebAccessMode) => {
+    setNetworkMode((current) => current?.runID === currentRunID && current.mode === mode
+      ? current : { runID: currentRunID, mode });
+  }, [currentRunID]);
   if (!threadID) return <p className="v2-settings-empty">{t("先从侧栏打开一个对话。", "Open a conversation from the sidebar first.")}</p>;
   if (query.isPending) return <span role="status">{t("正在读取权限…", "Reading permissions…")}</span>;
   if (query.isError || !query.data) return <p role="alert">{t("无法读取权限设置", "Unable to read permission settings")}</p>;
   const permission = query.data.execution_permission;
   const network = networkOpen && <V2RunNetworkAuthorityControl key={`${threadID}:${query.data.current_run_id ?? ""}`}
     client={client} runID={query.data.current_run_id ?? ""} threadID={threadID}
-    onOpenModelSettings={onOpenModelSettings} onConfirmationOpenChange={onNetworkConfirmationOpenChange} />;
+    onOpenModelSettings={onOpenModelSettings} onConfirmationOpenChange={onNetworkConfirmationOpenChange}
+    onWebAccessModeChange={onWebAccessModeChange} />;
   return <div className={`v2-permission-host is-${variant}`}
     style={variant === "menu" ? { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, minWidth: 0, maxWidth: "100%" } : undefined}>
     <V2ApprovalModeControl mode={permission.approval_mode} fullActivation={permission.full_activation}
@@ -114,7 +122,8 @@ function ThreadPermissionControl({ client, threadID, variant = "menu", onOpenMod
           if (networkConfirmationOpenRef.current) return;
           setNetworkOpen((value) => !value);
         }} ref={networkTriggerRef} type="button">
-        <Globe2 aria-hidden="true" size={14} />{t("网页访问与搜索", "Web & search")}
+        <Globe2 aria-hidden="true" size={14} />{networkMode?.runID === currentRunID
+          ? webAccessModeLabels[networkMode.mode] : t("网页访问与搜索", "Web & search")}
         <ChevronDown aria-hidden="true" size={13} />
       </button>
       {networkOpen && <section aria-label={t("网页访问与搜索", "Web access and search")}

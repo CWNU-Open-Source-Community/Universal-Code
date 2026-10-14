@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/modelregistry"
 	"cyberagent-workbench/internal/webevidence"
 )
@@ -59,18 +61,34 @@ func (s *ProviderSearchReadinessService) Check(ctx context.Context, threadID str
 	if ready.RunID == "" {
 		return result, nil
 	}
-	run, err := s.store.GetRun(ctx, ready.RunID)
+	probeCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	// The ordinary Run lease serializes the probe with web-mode transitions.
+	// A busy Run can be checked once its current execution has stopped.
+	if leases, ok := s.store.(interface {
+		AcquireRunExecutionLease(context.Context, domain.AcquireRunExecutionLeaseRequest) (domain.RunExecutionLeaseAcquisition, error)
+		ReleaseRunExecutionLease(context.Context, domain.RunExecutionLease) (domain.RunExecutionLease, bool, error)
+	}); ok {
+		acquired, err := leases.AcquireRunExecutionLease(probeCtx, domain.AcquireRunExecutionLeaseRequest{RunID: ready.RunID, OwnerID: idgen.New("search-check"), TTL: 30 * time.Second})
+		if err != nil {
+			return result, apperror.Normalize(err)
+		}
+		defer func() { _, _, _ = leases.ReleaseRunExecutionLease(context.WithoutCancel(ctx), acquired.Lease) }()
+	}
+	run, err := s.store.GetRun(probeCtx, ready.RunID)
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
-	mode, err := s.store.GetRunMode(ctx, run.ID)
+	mode, err := s.store.GetRunMode(probeCtx, run.ID)
 	if err != nil {
 		return result, apperror.Normalize(err)
+	}
+	if mode.Scope.WebAccessMode == domain.WebAccessDisabled || mode.Revision != ready.ModeRevision || run.Config.ModelRoute != ready.ModelRoute {
+		result.Code = "configuration_changed"
+		return result, nil
 	}
 	authority := webevidence.NetworkAuthority{Mode: "allowlist",
 		AllowedTargets: []string{webevidence.PublicHTTPSTarget}}
-	probeCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
 	selection, err := s.resolver.diagnosticSelection(probeCtx, webevidence.SearchRoute{ModelRoute: run.Config.ModelRoute}, authority)
 	if err != nil {
 		result.Code = searchDiagnosticFailureCode(err)

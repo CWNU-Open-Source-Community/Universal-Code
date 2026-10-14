@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleAlert, LoaderCircle, RefreshCw, Settings, Wifi } from "lucide-react";
 import type { APIClient } from "../../api/client";
+import { APIRequestError } from "../../api/client";
 import type { ProviderSearchReadinessView, SearchDiagnosticCode,
   SearchDiagnosticsView } from "../../api/types";
 
@@ -115,7 +116,9 @@ export function V2SearchDiagnosticsControl({ client, readiness, onOpenModelSetti
       setResult(next);
     } catch (reason) {
       if (!mountedRef.current || generation !== generationRef.current || controller.signal.aborted) return;
-      setError(reason instanceof Error ? reason.message : "搜索连接检查失败");
+      setError(reason instanceof APIRequestError && reason.code === "CONFLICT"
+        ? "当前任务或连接检查正在进行。暂停任务或等待完成后，再检查搜索连接。"
+        : reason instanceof Error ? reason.message : "搜索连接检查失败");
     } finally {
       if (mountedRef.current && generation === generationRef.current) {
         controllerRef.current = null;

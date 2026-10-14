@@ -29,9 +29,11 @@ func ParseProfile(value string) (Profile, error) {
 }
 
 type Scope struct {
-	WorkspaceID    string   `json:"workspace_id,omitempty"`
-	NetworkMode    string   `json:"network_mode"`
-	AllowedTargets []string `json:"allowed_targets,omitempty"`
+	WorkspaceID       string        `json:"workspace_id,omitempty"`
+	NetworkMode       string        `json:"network_mode"`
+	AllowedTargets    []string      `json:"allowed_targets,omitempty"`
+	WebAccessMode     WebAccessMode `json:"web_access_mode,omitempty"`
+	WebAllowedTargets []string      `json:"web_allowed_targets,omitempty"`
 }
 
 func DefaultScope(workspaceID string) Scope {
@@ -39,6 +41,9 @@ func DefaultScope(workspaceID string) Scope {
 }
 
 func (s Scope) Validate() error {
+	if err := s.ValidateWebAccess(); err != nil {
+		return err
+	}
 	switch s.NetworkMode {
 	case "disabled", "allowlist":
 		return nil

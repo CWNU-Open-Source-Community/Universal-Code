@@ -1,5 +1,7 @@
 # Architecture
 
+Conversation web access is an independent Go-owned Run preference: disabled, exact-host rules, or full public HTTPS. Quiescent changes append a mode revision and fence old web calls; saved snapshots remain readable. See [ADR 0175](adr/0175-explicit-web-access-modes.md).
+
 Universal Code is a run-centric, resumable Agent workbench. Go owns execution, policy and persistence; Desktop, Web and CLI use the same application services.
 
 Task-title search applies in SQLite before the existing creation-keyset page.

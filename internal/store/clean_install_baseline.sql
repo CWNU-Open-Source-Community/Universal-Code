@@ -6320,6 +6320,28 @@ CREATE TABLE run_wake_operations (
 			AND instr(requested_by, char(0)) = 0)
 	) WITHOUT ROWID;
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE run_web_access_operations (
+		operation_key_digest TEXT PRIMARY KEY,
+		request_fingerprint TEXT NOT NULL,
+		snapshot_id TEXT NOT NULL UNIQUE,
+		run_id TEXT NOT NULL,
+		expected_mode_revision INTEGER NOT NULL,
+		requested_by TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		FOREIGN KEY(snapshot_id) REFERENCES run_mode_snapshots(id) ON DELETE RESTRICT
+			DEFERRABLE INITIALLY DEFERRED,
+		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE RESTRICT,
+		CHECK(length(operation_key_digest) = 64
+			AND operation_key_digest = lower(operation_key_digest)
+			AND operation_key_digest NOT GLOB '*[^0-9a-f]*'),
+		CHECK(length(request_fingerprint) = 64
+			AND request_fingerprint = lower(request_fingerprint)
+			AND request_fingerprint NOT GLOB '*[^0-9a-f]*'),
+		CHECK(expected_mode_revision > 0),
+		CHECK(requested_by = trim(requested_by) AND length(requested_by) BETWEEN 1 AND 256
+			AND instr(requested_by, char(0)) = 0)
+	);
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE runs (
 		id TEXT PRIMARY KEY,
 		mission_id TEXT NOT NULL,
@@ -19740,6 +19762,13 @@ CREATE TRIGGER trg_run_mode_snapshot_insert
 										AND previous.scope_json = NEW.scope_json)
 									OR
 									(previous.phase = NEW.phase
+		AND json_extract(previous.scope_json, '$.network_mode') IS json_extract(NEW.scope_json, '$.network_mode')
+		AND COALESCE(json_extract(previous.scope_json, '$.allowed_targets'), '[]') = COALESCE(json_extract(NEW.scope_json, '$.allowed_targets'), '[]')
+		AND EXISTS (SELECT 1 FROM run_web_access_operations operation
+			WHERE operation.snapshot_id = NEW.id AND operation.run_id = NEW.run_id
+				AND operation.expected_mode_revision = previous.revision
+				AND operation.requested_by = NEW.requested_by AND operation.created_at = NEW.created_at))
+		OR (previous.phase = NEW.phase
 										AND json_extract(NEW.scope_json, '$.network_mode') = 'allowlist'
 										AND json_type(NEW.scope_json, '$.allowed_targets') = 'array'
 										AND json_array_length(NEW.scope_json, '$.allowed_targets') BETWEEN 1 AND 256
@@ -20201,6 +20230,53 @@ CREATE TRIGGER trg_run_wake_operation_update_immutable
 		BEFORE UPDATE ON run_wake_operations BEGIN
 			SELECT RAISE(ABORT, 'Run wake operation cannot be updated');
 		END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_run_web_access_operation_delete_immutable
+		BEFORE DELETE ON run_web_access_operations BEGIN
+			SELECT RAISE(ABORT, 'Run network authority operation cannot be deleted');
+		END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_run_web_access_operation_update_immutable
+		BEFORE UPDATE ON run_web_access_operations BEGIN
+			SELECT RAISE(ABORT, 'Run network authority operation cannot be updated');
+		END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_run_web_access_scope_insert
+		BEFORE INSERT ON run_mode_snapshots WHEN COALESCE((
+		 (json_type(NEW.scope_json, '$.web_access_mode') IS NULL AND COALESCE(json_array_length(NEW.scope_json, '$.web_allowed_targets'),0)=0)
+		 OR (json_extract(NEW.scope_json, '$.web_access_mode') IN ('disabled','rules','full')
+		  AND (json_type(NEW.scope_json, '$.web_allowed_targets') IS NULL OR json_type(NEW.scope_json, '$.web_allowed_targets')='array')
+		  AND COALESCE(json_array_length(NEW.scope_json, '$.web_allowed_targets'),0) BETWEEN 0 AND 256
+		  AND (json_extract(NEW.scope_json, '$.web_access_mode')='rules' OR COALESCE(json_array_length(NEW.scope_json, '$.web_allowed_targets'),0)=0)
+		  AND NOT EXISTS (SELECT 1 FROM json_each(NEW.scope_json, '$.web_allowed_targets') target WHERE target.type != 'text' OR length(target.value) NOT BETWEEN 1 AND 253
+										OR target.value != trim(target.value)
+										OR target.value != lower(target.value)
+										OR target.value = 'public_https'
+										OR target.value GLOB '*[^a-z0-9.-]*'
+										OR instr(target.value, '.') = 0
+										OR target.value LIKE '.%' OR target.value LIKE '%.'
+										OR target.value LIKE '-%' OR target.value LIKE '%-'
+										OR target.value LIKE '%..%' OR target.value LIKE '%.-%'
+										OR target.value LIKE '%-.%'
+										OR target.value NOT GLOB '*[a-z-]*'
+										OR target.value = 'localhost' OR target.value LIKE '%.localhost'
+										OR target.value LIKE '%.local' OR target.value LIKE '%.internal'
+										OR target.value LIKE '%.intranet' OR target.value LIKE '%.corp'
+										OR target.value LIKE '%.home' OR target.value LIKE '%.home.arpa'
+										OR target.value LIKE '%.lan'
+										OR target.value LIKE '%.localdomain' OR target.value LIKE '%.test'
+										OR target.value LIKE '%.invalid' OR target.value LIKE '%.example'
+										OR target.value IN ('metadata.google.internal',
+											'metadata.azure.internal', 'instance-data.ec2.internal'))
+		  AND NOT EXISTS (SELECT 1 FROM json_each(NEW.scope_json, '$.web_allowed_targets') earlier
+		   JOIN json_each(NEW.scope_json, '$.web_allowed_targets') later ON CAST(earlier.key AS INTEGER)<CAST(later.key AS INTEGER) WHERE earlier.value>=later.value)
+		 )
+		),0)=0 OR (NEW.revision>1 AND EXISTS (SELECT 1 FROM run_mode_snapshots previous
+		 WHERE previous.run_id=NEW.run_id AND previous.revision=NEW.revision-1
+		 AND (json_extract(previous.scope_json,'$.web_access_mode') IS NOT json_extract(NEW.scope_json,'$.web_access_mode')
+		 OR COALESCE(json_extract(previous.scope_json,'$.web_allowed_targets'),'[]') != COALESCE(json_extract(NEW.scope_json,'$.web_allowed_targets'),'[]')))
+		 AND NOT EXISTS (SELECT 1 FROM run_web_access_operations operation WHERE operation.snapshot_id=NEW.id AND operation.run_id=NEW.run_id AND operation.expected_mode_revision=NEW.revision-1))
+		BEGIN SELECT RAISE(ABORT,'Run web access scope or transition is invalid'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_runs_session_insert
 		BEFORE INSERT ON runs

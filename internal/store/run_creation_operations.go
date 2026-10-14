@@ -175,7 +175,7 @@ func validateControlledRunCreation(mission domain.Mission, run domain.Run,
 	if operation.RequestFingerprint != domain.ControlledCreationFingerprint(
 		mission.Goal, mission.WorkspaceID, string(mission.Profile), string(mode.Surface),
 		string(mode.Phase), mission.Scope.NetworkMode, mission.Scope.AllowedTargets,
-		run.Config.ModelRoute, operation.RequestedBy, run.Config.CreationBudget()) {
+		run.Config.ModelRoute, operation.RequestedBy, run.Config.CreationBudget(), mission.Scope) {
 		return apperror.New(apperror.CodeInvalidArgument,
 			"Run creation request fingerprint does not match the controlled Run")
 	}

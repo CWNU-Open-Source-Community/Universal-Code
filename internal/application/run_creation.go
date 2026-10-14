@@ -38,16 +38,18 @@ type ControlledRunCreationService struct {
 }
 
 type ControlledRunCreationRequest struct {
-	Version        string
-	Goal           string
-	WorkspaceID    string
-	Profile        string
-	Surface        string
-	Phase          string
-	NetworkMode    string
-	AllowedTargets []string
-	ModelRoute     string
-	Budget         *domain.TaskBudgetSettings
+	Version           string
+	Goal              string
+	WorkspaceID       string
+	Profile           string
+	Surface           string
+	Phase             string
+	NetworkMode       string
+	AllowedTargets    []string
+	WebAccessMode     string
+	WebAllowedTargets []string
+	ModelRoute        string
+	Budget            *domain.TaskBudgetSettings
 	// CustomModelProvider and ExpectedProviderDefinitionRevision are internal
 	// admission facts supplied by the model Registry. They are deliberately not
 	// copied from the renderer's JSON request.
@@ -73,6 +75,8 @@ type normalizedControlledRunCreationRequest struct {
 	Phase                domain.ExecutionPhase
 	NetworkMode          string
 	AllowedTargets       []string
+	WebAccessMode        domain.WebAccessMode
+	WebAllowedTargets    []string
 	ModelRoute           string
 	InitialModelRoutePin domain.InitialThreadModelRoutePin
 	OperationKey         string
@@ -108,7 +112,7 @@ func (s *ControlledRunCreationService) Create(ctx context.Context,
 	requestFingerprint := domain.ControlledCreationFingerprint(normalized.Goal,
 		normalized.WorkspaceID, string(normalized.Profile), string(normalized.Surface),
 		string(normalized.Phase), normalized.NetworkMode, normalized.AllowedTargets,
-		normalized.ModelRoute, normalized.RequestedBy, normalized.Budget)
+		normalized.ModelRoute, normalized.RequestedBy, normalized.Budget, domain.Scope{WebAccessMode: normalized.WebAccessMode, WebAllowedTargets: normalized.WebAllowedTargets})
 
 	if existing, found, err := s.store.GetRunCreationOperation(ctx, keyDigest); err != nil {
 		return ControlledRunCreationResult{}, apperror.Normalize(err)
@@ -145,7 +149,8 @@ func (s *ControlledRunCreationService) Create(ctx context.Context,
 		Goal: normalized.Goal, Profile: string(normalized.Profile),
 		Surface: string(normalized.Surface), Phase: string(normalized.Phase),
 		WorkspaceID: normalized.WorkspaceID, ModelRoute: normalized.ModelRoute,
-		NetworkMode:    normalized.NetworkMode,
+		NetworkMode:   normalized.NetworkMode,
+		WebAccessMode: string(normalized.WebAccessMode), WebAllowedTargets: normalized.WebAllowedTargets,
 		AllowedTargets: append([]string(nil), normalized.AllowedTargets...),
 		Interactive:    true, Budget: normalized.Budget, RequestedBudget: &normalized.Budget, RequestedBy: normalized.RequestedBy,
 		ProjectConfig:       project,
@@ -230,7 +235,7 @@ func (s *ControlledRunCreationService) loadResult(ctx context.Context,
 		operation.RequestFingerprint != domain.ControlledCreationFingerprint(
 			mission.Goal, mission.WorkspaceID, string(mission.Profile), string(mode.Surface),
 			string(mode.Phase), mission.Scope.NetworkMode, mission.Scope.AllowedTargets,
-			run.Config.ModelRoute, operation.RequestedBy, run.Config.CreationBudget()) {
+			run.Config.ModelRoute, operation.RequestedBy, run.Config.CreationBudget(), mission.Scope) {
 		return ControlledRunCreationResult{}, apperror.New(
 			apperror.CodeConflict, "stored controlled Run creation binding is inconsistent")
 	}
@@ -361,6 +366,10 @@ func normalizeControlledRunCreationRequest(request ControlledRunCreationRequest)
 		return normalizedControlledRunCreationRequest{}, apperror.New(
 			apperror.CodeInvalidArgument, "Run network mode must be disabled or allowlist")
 	}
+	webMode, webTargets, err := normalizeWebAccess(request.WebAccessMode, request.WebAllowedTargets, true)
+	if err != nil {
+		return normalizedControlledRunCreationRequest{}, err
+	}
 	operationKey, err := domain.NormalizeAgentOperationKey(request.OperationKey)
 	if err != nil || containsSpaceOrControl(operationKey) {
 		return normalizedControlledRunCreationRequest{}, apperror.New(
@@ -380,6 +389,7 @@ func normalizeControlledRunCreationRequest(request ControlledRunCreationRequest)
 	}
 	return normalizedControlledRunCreationRequest{Budget: budget, Goal: goal, WorkspaceID: workspaceID,
 		Profile: profile, Surface: surface, Phase: phase, NetworkMode: networkMode,
+		WebAccessMode: webMode, WebAllowedTargets: webTargets,
 		AllowedTargets: append([]string(nil), allowedTargets...), ModelRoute: modelRoute,
 		InitialModelRoutePin: initialModelRoutePin,
 		OperationKey:         operationKey,
@@ -405,7 +415,7 @@ func validControlledRunNetworkScope(scope domain.Scope) bool {
 }
 
 func sameControlledRunScope(first domain.Scope, second domain.Scope) bool {
-	return first.WorkspaceID == second.WorkspaceID &&
+	return first.SameWebAccess(second) && first.WorkspaceID == second.WorkspaceID &&
 		first.NetworkMode == second.NetworkMode &&
 		sameStringValues(first.AllowedTargets, second.AllowedTargets)
 }

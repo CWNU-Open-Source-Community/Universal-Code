@@ -126,7 +126,7 @@ describe("V2 model navigation", () => {
 
     const navigation = screen.getByRole("navigation", { name: "设置分类" });
     const labels = within(navigation).getAllByRole("button").map((button) => button.textContent);
-    expect(labels).toEqual(["常规", "外观", "快捷键", "关于", "连接与环境", "模型",
+    expect(labels).toEqual(["常规", "配置", "外观", "快捷键", "关于", "连接与环境", "模型",
       "扩展与代码智能", "Skill 包", "执行环境", "任务预算与项目配置", "当前任务权限", "观察视图偏好"]);
     expect(labels).not.toContain("智能伙伴");
     const models = within(navigation).getByRole("button", { name: "模型" });
@@ -134,4 +134,13 @@ describe("V2 model navigation", () => {
     await user.click(models);
     expect(onSelect).toHaveBeenCalledWith("models");
   });
+});
+
+it("opens the dedicated configuration section from Settings", async () => {
+  const onSelect = vi.fn();
+  render(<V2SettingsSidebar section="configuration" onSelect={onSelect} onBack={vi.fn()} />);
+  const entry = screen.getByRole("button", { name: "配置" });
+  expect(entry).toHaveAttribute("aria-current", "page");
+  await userEvent.click(entry);
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith("configuration");
 });

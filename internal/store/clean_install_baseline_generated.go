@@ -3,8 +3,8 @@
 package store
 
 const (
-	cleanInstallBaselineSchemaVersion       = 191
-	cleanInstallBaselineSQLSHA256           = "f8a0d07fb26cc0f16d702ecc8b8c7b940f420d89b18a21ed727b70a01dbb9643"
-	cleanInstallBaselineSchemaSHA256        = "45f2ab215ab961c2fefa81c24660f10bad8e55a162bba5325386887f490e7cbb"
-	cleanInstallBaselineMigrationPlanSHA256 = "bc5477c7d7958b63d49146fd047af90a4a836681b4e76fd8b76b7e6d936fcbb5"
+	cleanInstallBaselineSchemaVersion       = 192
+	cleanInstallBaselineSQLSHA256           = "e8d5892a678521d11245a64d1cebd744f341197991326cb2e306de06e4ba5cc2"
+	cleanInstallBaselineSchemaSHA256        = "961540bb4694eb2d499e7ca4bc359cd0199dd20c9e2b075f3036e5ad2d96c38c"
+	cleanInstallBaselineMigrationPlanSHA256 = "b678acfac2b381640e40bdd12ef507930b0219f926b6cf1c265cb4250bdc366c"
 )

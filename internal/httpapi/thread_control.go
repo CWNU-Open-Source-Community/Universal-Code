@@ -35,17 +35,19 @@ type ThreadTurnController interface {
 }
 
 type ThreadCreationControlRequestView struct {
-	Version        string                     `json:"version"`
-	Goal           string                     `json:"goal"`
-	WorkspaceID    string                     `json:"workspace_id"`
-	Profile        string                     `json:"profile,omitempty"`
-	Surface        string                     `json:"surface,omitempty"`
-	Phase          string                     `json:"phase,omitempty"`
-	NetworkMode    string                     `json:"network_mode,omitempty"`
-	AllowedTargets []string                   `json:"allowed_targets,omitempty"`
-	Budget         *domain.TaskBudgetSettings `json:"budget,omitempty"`
-	Provider       string                     `json:"provider,omitempty"`
-	Model          string                     `json:"model,omitempty"`
+	Version           string                     `json:"version"`
+	Goal              string                     `json:"goal"`
+	WorkspaceID       string                     `json:"workspace_id"`
+	Profile           string                     `json:"profile,omitempty"`
+	Surface           string                     `json:"surface,omitempty"`
+	Phase             string                     `json:"phase,omitempty"`
+	NetworkMode       string                     `json:"network_mode,omitempty"`
+	AllowedTargets    []string                   `json:"allowed_targets,omitempty"`
+	WebAccessMode     domain.WebAccessMode       `json:"web_access_mode,omitempty"`
+	WebAllowedTargets []string                   `json:"web_allowed_targets,omitempty"`
+	Budget            *domain.TaskBudgetSettings `json:"budget,omitempty"`
+	Provider          string                     `json:"provider,omitempty"`
+	Model             string                     `json:"model,omitempty"`
 }
 
 type ThreadCreationControlView struct {
@@ -681,6 +683,7 @@ func (a *API) serveThreadCreationControl(writer http.ResponseWriter, request *ht
 			CustomModelProvider:                customModelProvider,
 			ExpectedProviderDefinitionRevision: expectedProviderDefinitionRevision,
 			AllowedTargets:                     append([]string(nil), view.AllowedTargets...), OperationKey: operationKey,
+			WebAccessMode: string(view.WebAccessMode), WebAllowedTargets: view.WebAllowedTargets,
 			RequestedBy: "http_thread_operator"})
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)

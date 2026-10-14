@@ -485,14 +485,15 @@ func (s *AgentRunner) supervisorWebEvidenceCapabilities(
 	if s == nil || s.webEvidence == nil || turn.Agent.Role != domain.AgentRoleRoot {
 		return toolgateway.WebEvidenceCapabilities{}, nil, nil
 	}
-	networkAuthority := webevidence.NetworkAuthority{Mode: turn.Mode.Scope.NetworkMode,
-		AllowedTargets: append([]string(nil), turn.Mode.Scope.AllowedTargets...)}
-	searchAuthority := webevidence.NetworkAuthority{Mode: "allowlist",
-		AllowedTargets: []string{webevidence.PublicHTTPSTarget}}
-	providerFingerprint := s.webEvidence.SearchProviderFingerprintForScope(ctx,
-		webevidence.ExecutionScope{RunID: turn.Run.ID, MissionID: turn.Mission.ID,
-			WorkspaceID: turn.Mission.WorkspaceID,
-			ModelRoute:  turn.Run.Config.ModelRoute, Authority: searchAuthority})
+	networkAuthority := webNetworkAuthority(turn.Mode.Scope)
+	searchAuthority := webSearchAuthority(turn.Mode.Scope)
+	providerFingerprint := ""
+	if turn.Mode.Scope.WebAccessMode != domain.WebAccessDisabled {
+		providerFingerprint = s.webEvidence.SearchProviderFingerprintForScope(ctx,
+			webevidence.ExecutionScope{RunID: turn.Run.ID, MissionID: turn.Mission.ID,
+				WorkspaceID: turn.Mission.WorkspaceID,
+				ModelRoute:  turn.Run.Config.ModelRoute, Authority: searchAuthority})
+	}
 	connectorFingerprint := s.webEvidence.SourceConnectorFingerprintFor(searchAuthority)
 	context := toolgateway.WebEvidenceCapabilityContext{RunID: turn.Run.ID,
 		MissionID: turn.Mission.ID, SessionID: turn.Run.SessionID,
@@ -501,6 +502,7 @@ func (s *AgentRunner) supervisorWebEvidenceCapabilities(
 		Profile: turn.Mode.Profile, PermissionMode: permission.Mode,
 		ModeRevision:                    turn.Mode.Revision,
 		PermissionRevision:              permission.Revision,
+		WebAccessMode:                   turn.Mode.Scope.WebAccessMode,
 		NetworkMode:                     networkAuthority.Mode,
 		AllowedTargets:                  append([]string(nil), networkAuthority.AllowedTargets...),
 		ProviderAvailable:               providerFingerprint != "",

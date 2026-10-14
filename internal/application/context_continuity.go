@@ -267,6 +267,7 @@ func (s *ContextContinuityService) prepareBranch(ctx context.Context,
 		Budget: sourceRun.Budget, RequestedBudget: sourceRun.Config.RequestedBudget, RequestedBy: request.RequestedBy,
 		ProjectConfig: project, ProjectInstructions: instructions,
 		ContinuityContext: &continuity,
+		WebAccessMode:     string(mode.Scope.WebAccessMode), WebAllowedTargets: append([]string(nil), mode.Scope.WebAllowedTargets...),
 	}, s.store.GetSession)
 	if err != nil {
 		return preparedRun{}, contextmgr.ContinuityNode{}, ContinuityBranchResult{}, err

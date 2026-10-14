@@ -138,21 +138,22 @@ func (e *WebEvidenceToolExecutor) ExecuteWebEvidence(ctx context.Context,
 			apperror.CodeFailedPrecondition,
 			"web evidence Run route no longer matches the Supervisor scope")
 	}
-	networkAuthority := webevidence.NetworkAuthority{Mode: mode.Scope.NetworkMode,
-		AllowedTargets: append([]string(nil), mode.Scope.AllowedTargets...)}
-	searchAuthority := webevidence.NetworkAuthority{Mode: "allowlist",
-		AllowedTargets: []string{webevidence.PublicHTTPSTarget}}
-	providerFingerprint := e.service.SearchProviderFingerprintForScope(ctx,
-		webevidence.ExecutionScope{RunID: scope.RunID, MissionID: scope.MissionID,
-			WorkspaceID: scope.WorkspaceID, ModelRoute: run.Config.ModelRoute,
-			Authority: searchAuthority})
+	networkAuthority := webNetworkAuthority(mode.Scope)
+	searchAuthority := webSearchAuthority(mode.Scope)
+	providerFingerprint := ""
+	if mode.Scope.WebAccessMode != domain.WebAccessDisabled {
+		providerFingerprint = e.service.SearchProviderFingerprintForScope(ctx,
+			webevidence.ExecutionScope{RunID: scope.RunID, MissionID: scope.MissionID,
+				WorkspaceID: scope.WorkspaceID, ModelRoute: run.Config.ModelRoute,
+				Authority: searchAuthority})
+	}
 	connectorFingerprint := e.service.SourceConnectorFingerprintFor(searchAuthority)
 	capabilityContext := toolgateway.WebEvidenceCapabilityContext{
 		RunID: scope.RunID, MissionID: scope.MissionID, SessionID: scope.SessionID,
 		RootAgentID: scope.RootAgentID, WorkspaceID: scope.WorkspaceID,
 		Surface: mode.Surface, Phase: mode.Phase, Role: scope.Role, Profile: mode.Profile,
 		PermissionMode: permission.Mode, PermissionRevision: permission.Revision,
-		ModeRevision: mode.Revision, NetworkMode: networkAuthority.Mode,
+		ModeRevision: mode.Revision, NetworkMode: networkAuthority.Mode, WebAccessMode: mode.Scope.WebAccessMode,
 		AllowedTargets:                  append([]string(nil), networkAuthority.AllowedTargets...),
 		ProviderAvailable:               providerFingerprint != "",
 		ProviderFingerprint:             providerFingerprint,
@@ -249,6 +250,9 @@ func (e *WebEvidenceToolExecutor) ExecuteWebEvidence(ctx context.Context,
 		}
 		if request.SnapshotID != "" {
 			return e.readWebSnapshotPage(ctx, scope, request)
+		}
+		if mode.Scope.WebAccessMode == domain.WebAccessDisabled {
+			return toolgateway.WebEvidenceExecutionResult{}, apperror.New(apperror.CodePolicyDenied, "web access is disabled for this Run")
 		}
 		canonicalURL := request.URL
 		if request.SourceID != "" {

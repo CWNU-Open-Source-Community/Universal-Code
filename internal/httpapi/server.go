@@ -56,6 +56,7 @@ const (
 )
 
 type Store interface {
+	application.RunWebAccessStore
 	application.ControlledCommandHistoryStore
 	application.HostCommandHistoryStore
 	SchemaVersion(ctx context.Context) (int, error)
@@ -1244,6 +1245,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, matched := matchRunLifecycleControlPath(request.URL.Path); matched {
 		a.serveRunLifecycleControl(tracked, request, requestID, runID)
+		return
+	}
+	if runID, matched := matchRunWebAccessControlPath(request.URL.Path); matched {
+		a.serveRunWebAccessControl(tracked, request, requestID, runID)
 		return
 	}
 	if runID, matched := matchRunNetworkAuthorityControlPath(request.URL.Path); matched {

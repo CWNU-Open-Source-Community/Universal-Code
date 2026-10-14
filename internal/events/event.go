@@ -16,6 +16,7 @@ const (
 	RunModeSelectedEvent                          = "run.mode_selected"
 	RunPhaseChangedEvent                          = "run.phase_changed"
 	RunNetworkAuthorityExpandedEvent              = "run.network_authority_expanded"
+	RunWebAccessChangedEvent                      = "run.web_access_changed"
 	RunExecutionProfileSelectedEvent              = "run.execution_profile_selected"
 	RunExecutionInteractionSelectedEvent          = "run.execution_interaction_selected"
 	RunExecutionPermissionSelectedEvent           = "run.execution_permission_selected"

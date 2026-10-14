@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowRight, BookOpen, Monitor, Search, Trash2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
-import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
+import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WebAccessMode, WorkspaceView } from "../../api/types";
 import { applyPrayuTheme, readPrayuTheme, type PrayuTheme } from "../../lib/appearance";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { v2QueryKeys } from "../query-keys";
@@ -18,6 +18,7 @@ import { V2PermissionControl } from "./permission-control";
 import { V2ProviderSettings } from "./provider-settings";
 import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { V2ExecutionSettings } from "./execution-settings";
+import { V2WebAccessSettings } from "./web-access-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
@@ -336,7 +337,9 @@ function PlaceholderSettings({ section, onOpenLegacy }: {
 export function V2Settings({ client, section, threadID, workspaces, onSelectSection,
   onOpenInspector, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
   onModelReady, onOpenTask, sourceRunID, onOpenGithubReview, draftWorkspaceID, draftBudget,
-  onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange, desktop = desktopBridgeAvailable() }: {
+  onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange,
+  defaultWebAccessMode = "rules", defaultWebAccessTargets = [], onDefaultWebAccessChange,
+  desktop = desktopBridgeAvailable() }: {
   client: APIClient;
   section: V2SettingsSection;
   threadID: string;
@@ -352,6 +355,9 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   onDraftValidityChange?: (valid: boolean) => void;
   draftProjectSkills?: ProjectSkillChoice;
   onDraftProjectSkillsChange?: (choice: ProjectSkillChoice) => void;
+  defaultWebAccessMode?: WebAccessMode;
+  defaultWebAccessTargets?: string[];
+  onDefaultWebAccessChange?: (mode: WebAccessMode, targets: string[]) => void;
   onOpenInspector: (returnFocus?: HTMLElement | null) => void;
   prepareModelForDraft?: boolean;
   modelSetupToken?: string;
@@ -362,6 +368,9 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
     <div className="v2-settings-scroll"><div className="v2-settings-content">
       {section === "general" && <GeneralSettings onPermissions={() => onSelectSection("permissions")}
         threadID={threadID} workspaces={workspaces} />}
+      {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}
+        onChange={onDefaultWebAccessChange} hasThread={Boolean(threadID)}
+        onOpenPermissions={() => onSelectSection("permissions")} onOpenEnvironment={() => onSelectSection("environment")} />}
       {section === "permissions" && <><h1>权限</h1><p className="v2-settings-lead">
         为当前任务选择操作确认方式。运行中提高权限会从下一次执行生效；降低权限会收紧相应操作范围。
       </p>
@@ -395,7 +404,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       </div>}
       {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
       {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",
-        "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment"] as V2SettingsSection[])
+        "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration"] as V2SettingsSection[])
         .includes(section) && <PlaceholderSettings onOpenLegacy={onOpenInspector} section={section} />}
     </div></div>
   </main>;

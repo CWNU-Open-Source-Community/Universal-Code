@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
+import { APIRequestError } from "../../api/client";
 import type { ProviderSearchReadinessView, SearchDiagnosticsView } from "../../api/types";
 import { V2SearchDiagnosticsControl } from "./search-diagnostics-control";
 
@@ -27,6 +28,14 @@ function clientWith(diagnoseThreadSearch: APIClient["diagnoseThreadSearch"]): AP
 }
 
 describe("V2SearchDiagnosticsControl", () => {
+  it("guides a busy task to pause or finish before retrying the connection check", async () => {
+    const diagnoseThreadSearch = vi.fn().mockRejectedValue(new APIRequestError("Run has an active lease", "CONFLICT", 409));
+    render(<V2SearchDiagnosticsControl client={clientWith(diagnoseThreadSearch)} readiness={readiness} />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "检查搜索连接" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("暂停任务或等待完成");
+    expect(screen.getByRole("button", { name: "重新检查搜索连接" })).toBeEnabled();
+    expect(diagnoseThreadSearch).toHaveBeenCalledTimes(1);
+  });
   it("runs one explicit bounded probe and shows its exact model, backend, time, and result count", async () => {
     const user = userEvent.setup();
     let resolve!: (value: SearchDiagnosticsView) => void;

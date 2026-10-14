@@ -52,15 +52,15 @@ function install(variant: "menu" | "settings" | "network-menu" = "menu", locale:
     state: "provider_unqualified", reason: "provider_native_qualification_required",
     remediation: "qualify_provider_search", search_policy: "provider_native", provider: "Fixture",
   }));
-  const expandRunNetworkAuthority = vi.fn(async (runID: string, request: { add_allowed_targets: string[] }) => ({
-    mode: { ...runDetail(runID).mode, revision: 2, scope: { network_mode: "allowlist", allowed_targets: request.add_allowed_targets } },
+  const setRunWebAccess = vi.fn(async (runID: string, request: { web_allowed_targets: string[] }) => ({
+    mode: { ...runDetail(runID).mode, revision: 2, scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: request.web_allowed_targets } },
     replayed: false,
   }));
   const changeThreadExecutionPermission = vi.fn();
   const onSubmit = vi.fn(async () => {});
   const client = { hasControl: true, hasThreadControl: true, hasExecutionPermissionControl: true,
     getThreadExecutionPermission: vi.fn(async (threadID: string) => control(threadID)),
-    get, providerSearchReadiness, expandRunNetworkAuthority, changeThreadExecutionPermission,
+    get, providerSearchReadiness, setRunWebAccess, changeThreadExecutionPermission,
   } as unknown as APIClient;
   const tree = (threadID: string) => <LocaleProvider><QueryClientProvider client={queries}>
     {variant === "menu" ? <V2Composer client={client} threadID={threadID} workspaceID="" workspaces={[]}
@@ -71,7 +71,7 @@ function install(variant: "menu" | "settings" | "network-menu" = "menu", locale:
     <button type="button">Outside</button>
   </QueryClientProvider></LocaleProvider>;
   const view = render(tree("thread-a"));
-  return { ...view, queries, get, providerSearchReadiness, expandRunNetworkAuthority, changeThreadExecutionPermission,
+  return { ...view, queries, get, providerSearchReadiness, setRunWebAccess, changeThreadExecutionPermission,
     onSubmit, changeThread: () => view.rerender(tree("thread-b")) };
 }
 
@@ -79,7 +79,7 @@ async function openNetwork(user: ReturnType<typeof userEvent.setup>, name = "网
   const trigger = await screen.findByRole("button", { name });
   await user.click(trigger);
   const dialog = screen.getByRole("dialog", { name });
-  await within(dialog).findByText("直接 URL 抓取");
+  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "当前任务网页搜索模式" })).toBeEnabled());
   return { trigger, dialog };
 }
 
@@ -100,7 +100,7 @@ describe("Composer network layout and interaction", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(fixture.get).toHaveBeenCalledExactlyOnceWith("/runs/run-thread-a", {}, expect.any(AbortSignal));
     expect(fixture.providerSearchReadiness).toHaveBeenCalledExactlyOnceWith("thread-a", expect.any(AbortSignal));
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
     expect(fixture.changeThreadExecutionPermission).not.toHaveBeenCalled();
     expect(fixture.onSubmit).not.toHaveBeenCalled();
     expect(draft).toHaveValue("Keep this unsent draft");
@@ -117,7 +117,7 @@ describe("Composer network layout and interaction", () => {
     expect(screen.queryByRole("dialog", { name: "网页访问与搜索" })).not.toBeInTheDocument();
     expect(action === "outside" ? screen.getByRole("button", { name: "Outside" }) : trigger).toHaveFocus();
     expect(draft).toHaveValue("Retain draft");
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
     expect(fixture.onSubmit).not.toHaveBeenCalled();
   });
 
@@ -143,7 +143,7 @@ describe("Composer network layout and interaction", () => {
     await user.click(trigger);
     expect(await screen.findByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toHaveValue("");
     await waitFor(() => expect(fixture.get).toHaveBeenCalledWith("/runs/run-thread-b", {}, expect.any(AbortSignal)));
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
   });
 
   it("cancels an inner network confirmation before closing the outer popover", async () => {
@@ -156,7 +156,7 @@ describe("Composer network layout and interaction", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "网页访问与搜索" })).toBeVisible();
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); expect(trigger).toHaveFocus();
   });
@@ -176,17 +176,17 @@ describe("Composer network layout and interaction", () => {
     expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument();
     expect(dialog).toBeVisible(); expect(input).toHaveValue("docs.example.org");
     await waitFor(() => expect(review).toHaveFocus());
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
     expect(fixture.onSubmit).not.toHaveBeenCalled();
   });
 
   it.each([false, true])("removes the portal on Thread switch with pending=%s and keeps the original request target", async (pending) => {
     const user = userEvent.setup(); const fixture = install();
     let release: (() => void) | undefined;
-    fixture.expandRunNetworkAuthority.mockImplementation(async (runID, request) => {
+    fixture.setRunWebAccess.mockImplementation(async (runID, request) => {
       await new Promise<void>((resolve) => { release = resolve; });
       return { mode: { ...runDetail(runID).mode, revision: 2,
-        scope: { network_mode: "allowlist", allowed_targets: request.add_allowed_targets } }, replayed: false };
+        scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: request.web_allowed_targets } }, replayed: false };
     });
     await openNetwork(user);
     await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
@@ -198,11 +198,11 @@ describe("Composer network layout and interaction", () => {
     await openNetwork(user);
     expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toHaveValue("");
     if (pending) {
-      expect(fixture.expandRunNetworkAuthority.mock.calls[0]?.[0]).toBe("run-thread-a");
+      expect(fixture.setRunWebAccess.mock.calls[0]?.[0]).toBe("run-thread-a");
       await act(async () => { release?.(); });
       expect(fixture.queries.getQueryData<RunDetailView>(browserCDPQueryKey("run-thread-b"))?.mode.scope.allowed_targets).toEqual([]);
     }
-    expect(fixture.expandRunNetworkAuthority).toHaveBeenCalledTimes(pending ? 1 : 0);
+    expect(fixture.setRunWebAccess).toHaveBeenCalledTimes(pending ? 1 : 0);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fixture.onSubmit).not.toHaveBeenCalled();
@@ -221,7 +221,7 @@ describe("Composer network layout and interaction", () => {
     expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toHaveValue("");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
   });
 
   it("keeps the native network menu open while cancelling its body portal", async () => {
@@ -235,25 +235,25 @@ describe("Composer network layout and interaction", () => {
     expect(confirmation.parentElement?.parentElement).toBe(document.body);
     await user.click(within(confirmation).getByRole("button", { name: "取消" }));
     expect(menu).toBeVisible(); expect(review).toHaveFocus();
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
   });
 
   it("retains a pending inner confirmation and the exact network request", async () => {
     const user = userEvent.setup(); const fixture = install();
     let release: (() => void) | undefined;
-    fixture.expandRunNetworkAuthority.mockImplementation(async (runID, request) => {
+    fixture.setRunWebAccess.mockImplementation(async (runID, request) => {
       await new Promise<void>((resolve) => { release = resolve; });
       return { mode: { ...runDetail(runID).mode, revision: 2,
-        scope: { network_mode: "allowlist", allowed_targets: request.add_allowed_targets } }, replayed: false };
+        scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: request.web_allowed_targets } }, replayed: false };
     });
     await openNetwork(user);
     await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
     await user.click(screen.getByRole("button", { name: "审核并追加" }));
     await user.click(within(screen.getByRole("dialog", { name: "追加网页访问范围？" })).getByRole("button", { name: "允许这些主机" }));
-    await waitFor(() => expect(fixture.expandRunNetworkAuthority).toHaveBeenCalledExactlyOnceWith("run-thread-a", {
-      version: "run_network_authority_control.v1", expected_mode_revision: 1,
-      add_allowed_targets: ["docs.example.org"], reason: "v2 operator-confirmed exact HTTPS targets",
-    }, expect.stringMatching(/^v2-run-network-authority-/u)));
+    await waitFor(() => expect(fixture.setRunWebAccess).toHaveBeenCalledExactlyOnceWith("run-thread-a", {
+      version: "run_web_access_control.v1", expected_mode_revision: 1,
+      web_allowed_targets: ["docs.example.org"], web_access_mode: "rules", reason: "v2 operator-selected web access",
+    }, expect.stringMatching(/^v2-run-web-access-/u)));
     await user.keyboard("{Escape}");
     expect(screen.getByRole("dialog", { name: "网页访问与搜索" })).toBeVisible();
     expect(screen.getByRole("dialog", { name: "追加网页访问范围？" })).toBeVisible();
@@ -274,9 +274,9 @@ describe("Composer network layout and interaction", () => {
     const summary = screen.getByText("Web access and search");
     expect(summary.tagName).toBe("SUMMARY");
     await user.click(summary);
-    expect(await screen.findByText("直接 URL 抓取")).toBeVisible();
+    expect(await screen.findByText("当前任务网页访问")).toBeVisible();
     expect(summary.closest("details")).toHaveAttribute("open");
     expect(fixture.container.querySelector(".v2-network-popover")).toBeNull();
-    expect(fixture.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
   });
 });

@@ -144,8 +144,14 @@ func (s *ProviderSearchReadinessService) Get(ctx context.Context,
 	if err != nil {
 		return ProviderSearchReadiness{}, apperror.Normalize(err)
 	}
-	authority := webevidence.NetworkAuthority{Mode: "allowlist",
-		AllowedTargets: []string{webevidence.PublicHTTPSTarget}}
+	if mode.Scope.WebAccessMode == domain.WebAccessDisabled {
+		ref, refErr := providerSearchModelRef(s.resolver.registry.Router(), run.Config.ModelRoute)
+		if refErr != nil {
+			return ProviderSearchReadiness{}, apperror.New(apperror.CodeFailedPrecondition, "Run model route is unavailable")
+		}
+		return ProviderSearchReadiness{ProtocolVersion: ProviderSearchReadinessProtocolVersion, ThreadID: threadID, RunID: run.ID, ModelRoute: run.Config.ModelRoute, Provider: ref.Provider, Model: ref.Model, SearchPolicy: webevidence.SearchPolicyDisabled, ModeRevision: mode.Revision, NetworkMode: "disabled", State: ProviderSearchStateNetworkDisabled, Reason: ProviderSearchReasonRunNetworkDisabled, Remediation: ProviderSearchRemediationEnableNetwork}, nil
+	}
+	authority := webSearchAuthority(mode.Scope)
 	readiness := s.resolver.SearchReadiness(ctx,
 		webevidence.SearchRoute{ModelRoute: run.Config.ModelRoute},
 		authority)

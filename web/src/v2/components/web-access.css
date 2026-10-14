@@ -1,0 +1,43 @@
+.v2-web-access-select {
+  background: var(--prayu-panel-strong);
+  border: 1px solid var(--v2-border);
+  border-radius: 9px;
+  color: var(--v2-ink);
+  font: inherit;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 5px 28px 5px 9px;
+}
+.v2-web-access-select:focus-visible,
+.v2-web-access-target-editor textarea:focus-visible,
+.v2-web-access-target-editor button:focus-visible {
+  outline: 2px solid var(--v2-ink);
+  outline-offset: 3px;
+}
+.v2-web-access-select:disabled { opacity: .5; }
+.v2-web-access-select option:disabled { color: var(--v2-muted); }
+.v2-web-access-unavailable { color: var(--v2-muted); font-size: 12px; margin: 0; padding: 10px 15px 14px; }
+.v2-web-access-settings .v2-setting-row > div:first-child span { overflow-wrap: anywhere; }
+.v2-web-access-target-editor { border-top: 1px solid var(--v2-border); display: grid; gap: 10px; padding: 15px; }
+.v2-web-access-target-editor label { display: grid; gap: 7px; }
+.v2-web-access-target-editor label > span { font-size: 12px; }
+.v2-web-access-target-editor textarea {
+  background: var(--prayu-panel-strong); border: 1px solid var(--v2-border); border-radius: 9px;
+  color: var(--v2-ink); font: inherit; box-sizing: border-box; padding: 9px; resize: vertical; width: 100%;
+}
+.v2-web-access-target-editor p { color: var(--v2-muted); font-size: 12px; line-height: 1.5; margin: 0; }
+.v2-web-access-target-editor p.v2-network-error { color: var(--v2-danger); }
+.v2-web-access-target-editor button {
+  background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; color: var(--v2-ink);
+  font: inherit; justify-self: end; padding: 6px 11px;
+}
+.v2-web-access-target-editor button:disabled { opacity: .5; }
+.v2-web-access-mode-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
+.v2-web-access-mode-row > label { font-size: 12px; }
+.v2-web-access-mode-row + .v2-network-note { margin-left: 0; }
+.v2-run-network-authority > .v2-web-access-mode-row { margin-left: 44px; }
+@media (max-width: 560px) {
+  .v2-web-access-settings .v2-setting-row { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .v2-web-access-settings .v2-setting-value { max-width: 100%; }
+  .v2-run-network-authority > .v2-web-access-mode-row { margin-left: 0; }
+}
