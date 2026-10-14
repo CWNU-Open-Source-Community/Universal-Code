@@ -367,10 +367,6 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	if err != nil {
 		return result, err
 	}
-	content := string(raw)
-	truncated := len(raw) > record.Descriptor.MaxResultBytes
-	if truncated {
-		content = truncateClientUTF8(content, record.Descriptor.MaxResultBytes)
-	}
+	content, truncated := BoundResultJSON(raw, record.Descriptor.MaxResultBytes)
 	return ClientCallResult{Content: content, IsError: isError, Bytes: len(content), Truncated: truncated}, nil
 }

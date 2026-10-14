@@ -118,6 +118,11 @@ func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) e
 			s.handleNotification(ctx, envelope, output)
 			continue
 		}
+		if err := prepareServerRequest(&request); err != nil {
+			_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
+				Error: err})
+			continue
+		}
 		// initialize stays synchronous so the handshake gate is deterministic:
 		// nothing else is dispatched until the capability response is written.
 		if request.Method == "initialize" {
@@ -142,7 +147,7 @@ func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) e
 		s.mu.Lock()
 		initialized := s.initialized
 		s.mu.Unlock()
-		if !initialized {
+		if !initialized && !request.modern {
 			_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
 				Error: &RPCError{Code: CodeNotInitialized, Message: "server requires initialize before other requests"}})
 			continue
@@ -189,17 +194,26 @@ func (s *Server) handleRequest(ctx context.Context, request Request, output io.W
 	initialized := s.initialized
 	initializedAt := s.initializedAt
 	s.mu.Unlock()
-	if request.Method != "initialize" && !initialized {
+	if request.Method != "initialize" && !initialized && !request.modern {
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
 			Error: &RPCError{Code: CodeNotInitialized, Message: "server requires initialize before other requests"}})
 		return
 	}
-	if initialized && s.now().Sub(initializedAt) > s.sessionTTL {
+	if initialized && !request.modern && s.now().Sub(initializedAt) > s.sessionTTL {
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
 			Error: &RPCError{Code: CodeNotInitialized, Message: "MCP session capability TTL expired; re-initialize"}})
 		return
 	}
+	if request.modern {
+		if _, err := s.store.GetRun(ctx, s.runID); err != nil {
+			_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
+				Error: &RPCError{Code: CodeInvalidParams, Message: "MCP Run scope is unavailable"}})
+			return
+		}
+	}
 	switch request.Method {
+	case "server/discover":
+		s.serveDiscover(ctx, request, output)
 	case "initialize":
 		s.serveInitialize(ctx, request, output)
 	case "tools/list":
@@ -210,6 +224,8 @@ func (s *Server) handleRequest(ctx context.Context, request Request, output io.W
 		s.serveResourcesList(ctx, request, output)
 	case "resources/read":
 		s.serveResourcesRead(ctx, request, output)
+	case "resources/templates/list":
+		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: serverResult(request, map[string]any{"resourceTemplates": []any{}})})
 	case "ping":
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: json.RawMessage("{}")})
 	default:
@@ -257,7 +273,7 @@ func (s *Server) serveInitialize(ctx context.Context, request Request, output io
 	s.clientName = params.ClientInfo.Name
 	s.clientVersion = params.ClientInfo.Version
 	s.mu.Unlock()
-	result := InitializeResult{ProtocolVersion: ProtocolVersion,
+	result := InitializeResult{ProtocolVersion: negotiatedServerVersion(params.ProtocolVersion),
 		Capabilities: ServerCapabilities{Resources: &struct{}{}, Tools: &struct{}{}},
 		ServerInfo:   ClientInfo{Name: ServerName, Version: ServerVersion}}
 	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: mustJSON(result)})
