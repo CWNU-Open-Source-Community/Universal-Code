@@ -11,6 +11,21 @@ function sameRendererOrigin(raw: string): boolean {
   }
 }
 
+function sameRendererBlobDownload(anchor: Element | null, raw: string, event: Event): boolean {
+  if (!anchor?.hasAttribute("download") || event.type !== "click" ||
+    !(event instanceof MouseEvent) || event.button !== 0 ||
+    event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+    return false;
+  }
+  try {
+    const target = new URL(raw, window.location.href);
+    return target.protocol === "blob:" && target.origin !== "null" &&
+      target.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 function closestElement(event: Event, selector: string): Element | null {
   const target = event.target;
   if (target instanceof Element) {
@@ -34,7 +49,8 @@ export function installDesktopNavigationGuard(): () => void {
   const onLink = (event: Event) => {
     const anchor = closestElement(event, "a[href]");
     const href = anchor?.getAttribute("href");
-    if (href !== null && href !== undefined && !sameRendererOrigin(href)) {
+    if (href !== null && href !== undefined && !sameRendererOrigin(href) &&
+      !sameRendererBlobDownload(anchor, href, event)) {
       block(event);
     }
   };

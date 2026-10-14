@@ -452,7 +452,11 @@ $evidencePath = Join-Path $outputRoot "direct-exe-signing.json"
 $publicSumsPath = Join-Path $outputRoot "SHA256SUMS"
 $sbomPath = Join-Path $outputRoot "sbom.json"
 $noticePath = Join-Path $outputRoot "NOTICE"
-foreach ($required in @($payloadPath, $metadataPath, $sbomPath, $noticePath)) {
+$requiredInputs = @($payloadPath, $metadataPath)
+if (-not $PrepareSigningRequest) {
+    $requiredInputs += @($sbomPath, $noticePath)
+}
+foreach ($required in $requiredInputs) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Direct EXE staging input is missing: $required"
     }

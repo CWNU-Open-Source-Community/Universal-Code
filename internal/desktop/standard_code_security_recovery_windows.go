@@ -45,11 +45,12 @@ const (
 	recoveryWorkerStateName              = "recovery-state.json"
 	recoveryWorkerReadyName              = "prepare-ready"
 	recoveryWorkerShutdownName           = "shutdown-requested"
-	recoveryWorkerRendererName           = "renderer-detached"
-	recoveryWorkerRendererAckName        = "renderer-detach-observed"
 	recoveryWorkerReceiptName            = "recovery-receipt.json"
 	standardCodeSecurityDockerEnv        = "CYBERAGENT_STANDARD_CODE_DOCKER_IMAGE_DIGEST"
 )
+
+var errStandardCodeRendererRecoveryUnsupported = errors.New(
+	"recovery_renderer_close is unsupported: real renderer closure at the FileEdit apply boundary has not been implemented")
 
 var standardCodeRecoveryCases = map[string]bool{
 	"recovery_renderer_close":                  true,
@@ -127,6 +128,9 @@ type standardCodeSecurityRecoveryPlane struct {
 func RunStandardCodeSecurityRecoveryWorker(ctx context.Context,
 	config StandardCodeSecurityRecoveryWorkerConfig,
 ) error {
+	if config.CaseID == "recovery_renderer_close" {
+		return errStandardCodeRendererRecoveryUnsupported
+	}
 	root, owner, err := validateStandardCodeSecurityRecoveryWorker(config)
 	if err != nil {
 		return err
@@ -470,7 +474,7 @@ func prepareStandardCodeSecurityRecovery(ctx context.Context, root string,
 		[]byte("ready\n")); err != nil {
 		return err
 	}
-	if err := waitForStandardCodeSecurityRecoverySignal(ctx, root, owner); err != nil {
+	if err := waitForStandardCodeSecurityRecoverySignal(ctx, root); err != nil {
 		return err
 	}
 	if _, _, err := opened.plane.stateStore.ReleaseRunExecutionLease(ctx,
@@ -480,10 +484,7 @@ func prepareStandardCodeSecurityRecovery(ctx context.Context, root string,
 	return nil
 }
 
-func waitForStandardCodeSecurityRecoverySignal(ctx context.Context, root string,
-	owner standardCodeSecurityRecoveryOwner,
-) error {
-	rendererAcknowledged := false
+func waitForStandardCodeSecurityRecoverySignal(ctx context.Context, root string) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -493,15 +494,6 @@ func waitForStandardCodeSecurityRecoverySignal(ctx context.Context, root string,
 		case <-ticker.C:
 			if _, err := os.Lstat(filepath.Join(root, recoveryWorkerShutdownName)); err == nil {
 				return nil
-			}
-			if owner.CaseID == "recovery_renderer_close" && !rendererAcknowledged {
-				if _, err := os.Lstat(filepath.Join(root, recoveryWorkerRendererName)); err == nil {
-					if err := writeExclusiveSecurityFile(filepath.Join(root,
-						recoveryWorkerRendererAckName), []byte("observed\n")); err != nil {
-						return err
-					}
-					rendererAcknowledged = true
-				}
 			}
 		}
 	}
@@ -600,8 +592,7 @@ func observeStandardCodeSecurityRecovery(ctx context.Context,
 		return standardCodeSecurityRecoveryReceipt{}, err
 	}
 	signal := "interrupted"
-	if owner.CaseID == "recovery_renderer_close" ||
-		owner.CaseID == "recovery_reboot_equivalent" ||
+	if owner.CaseID == "recovery_reboot_equivalent" ||
 		owner.CaseID == "recovery_dirty_untracked_concurrent_edit" {
 		signal = "recovery_required"
 	}
@@ -620,6 +611,9 @@ func observeStandardCodeSecurityRecovery(ctx context.Context,
 func (d *standardCodeSecurityDriver) verifyPackagedRecovery(ctx context.Context,
 	request packagede2e.SecurityDriverCase,
 ) (standardCodeSecurityRecoveryReceipt, error) {
+	if request.Attack.ID == "recovery_renderer_close" {
+		return standardCodeSecurityRecoveryReceipt{}, errStandardCodeRendererRecoveryUnsupported
+	}
 	root := filepath.Join(d.config.OwnedRuntimeRoot, "recovery",
 		standardCodeSecurityRecoveryDirectoryName(request.Attack.ID, request.Backend))
 	if err := os.MkdirAll(filepath.Dir(root), 0o700); err != nil {
@@ -671,16 +665,6 @@ func (d *standardCodeSecurityDriver) verifyPackagedRecovery(ctx context.Context,
 			strings.TrimSpace(prepareOutput.String()))
 	}
 	forceTermination := standardCodeSecurityRecoveryForceTermination(request.Attack.ID)
-	if request.Attack.ID == "recovery_renderer_close" {
-		if err := writeExclusiveSecurityFile(filepath.Join(root,
-			recoveryWorkerRendererName), []byte("detach\n")); err != nil {
-			return standardCodeSecurityRecoveryReceipt{}, err
-		}
-		if err := waitForSecurityWorkerFile(ctx, prepare,
-			filepath.Join(root, recoveryWorkerRendererAckName), 15*time.Second); err != nil {
-			return standardCodeSecurityRecoveryReceipt{}, err
-		}
-	}
 	if request.Attack.ID == "recovery_dirty_untracked_concurrent_edit" {
 		if err := seedStandardCodeSecurityConcurrentEdit(root); err != nil {
 			return standardCodeSecurityRecoveryReceipt{}, err

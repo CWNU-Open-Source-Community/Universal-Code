@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,9 +10,42 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/store"
 )
+
+func TestGitAdvancedCLIStatusPrintsJSONByDefault(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CYBERAGENT_HOME", home)
+	if _, stderr, code := executeTestCommand(t, "workspace", "init", "git-status"); code != 0 {
+		t.Fatalf("workspace init failed: %s", stderr)
+	}
+	root := filepath.Join(home, "workspaces", "git-status")
+	runGitAdvancedCLITestGit(t, root, "init", "-b", "main")
+	runGitAdvancedCLITestGit(t, root, "config", "user.email", "test@example.invalid")
+	runGitAdvancedCLITestGit(t, root, "config", "user.name", "Git Status Test")
+	runGitAdvancedCLITestGit(t, root, "commit", "--allow-empty", "-m", "base")
+	created, stderr, code := executeTestCommand(t, "run", "create", "advanced git status",
+		"--workspace", "git-status", "--profile", "code", "--surface", "code")
+	runID := runIDPattern.FindString(created)
+	if code != 0 || runID == "" {
+		t.Fatalf("run create output=%q stderr=%q code=%d", created, stderr, code)
+	}
+	for _, flags := range [][]string{nil, {"--json"}} {
+		args := []string{"git-advanced", "status", "--run", runID,
+			"--enable-git-advanced", "--enable-permission-control"}
+		stdout, stderr, code := executeTestCommand(t, append(args, flags...)...)
+		if code != 0 || stderr != "" {
+			t.Fatalf("status %v output=%q stderr=%q code=%d", flags, stdout, stderr, code)
+		}
+		var projection application.GitAdvancedProjection
+		if err := json.Unmarshal([]byte(stdout), &projection); err != nil || projection.RunID != runID ||
+			projection.ProtocolVersion != application.GitAdvancedAPIProtocolVersion || projection.WorkspaceID == "" {
+			t.Fatalf("status %v projection=%#v err=%v", flags, projection, err)
+		}
+	}
+}
 
 func TestGitAdvancedCLIRequiresExplicitCapabilityFlagsAndRejectsRawArgv(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())

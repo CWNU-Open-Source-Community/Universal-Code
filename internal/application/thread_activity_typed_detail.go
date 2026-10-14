@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -628,15 +629,46 @@ func safeThreadActivityFileEditID(value string) string {
 	return value
 }
 
+var threadActivityDiffHunkPattern = regexp.MustCompile(`^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@.*$`)
+
 func safeThreadActivityDiffSummary(raw, action, source, destination string) ThreadActivityDiffSummary {
 	if raw == "" || !utf8.ValidString(raw) {
 		return ThreadActivityDiffSummary{}
 	}
 	value := ThreadActivityDiffSummary{}
+	oldRemaining, newRemaining := 0, 0
 	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
-		switch {
-		case strings.HasPrefix(line, "@@"):
+		if oldRemaining > 0 || newRemaining > 0 {
+			switch {
+			case strings.HasPrefix(line, "-") && oldRemaining > 0:
+				value.RemovedLines++
+				oldRemaining--
+				continue
+			case strings.HasPrefix(line, "+") && newRemaining > 0:
+				value.AddedLines++
+				newRemaining--
+				continue
+			case strings.HasPrefix(line, " ") && oldRemaining > 0 && newRemaining > 0:
+				oldRemaining--
+				newRemaining--
+				continue
+			case strings.HasPrefix(line, "\\ No newline"):
+				continue
+			}
+		}
+		oldRemaining, newRemaining = 0, 0
+		if hunk := threadActivityDiffHunkPattern.FindStringSubmatch(line); hunk != nil {
 			value.Hunks++
+			oldRemaining, newRemaining = 1, 1
+			if hunk[1] != "" {
+				oldRemaining, _ = strconv.Atoi(hunk[1])
+			}
+			if hunk[2] != "" {
+				newRemaining, _ = strconv.Atoi(hunk[2])
+			}
+			continue
+		}
+		switch {
 		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
 			value.AddedLines++
 		case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):

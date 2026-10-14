@@ -51,8 +51,10 @@ func ValidateEvolution(previous, current Registry) error {
 			}
 		}
 		for _, retired := range oldFamily.RetiredIdentifiers {
-			if owner, ok := currentClaims[retired.Identifier]; !ok || owner != oldFamily.ID {
+			if current, ok := newRetired[retired.Identifier]; !ok {
 				problems = append(problems, fmt.Sprintf("family %q deleted historical retirement %q", oldFamily.ID, retired.Identifier))
+			} else if current != retired {
+				problems = append(problems, fmt.Sprintf("family %q rewrote historical retirement %q", oldFamily.ID, retired.Identifier))
 			}
 		}
 		newReaders := make(map[string]Reader)

@@ -122,16 +122,17 @@ export function VerificationEvidence({ client, runID }: {
       </div>
     </header>
     {client.hasVerificationEvidence && <form className="verification-form" onSubmit={submit}>
-      <label>{t("结果", "Result")}<select aria-label={t("验证结果", "Verification result")} value={outcome}
+      <label>{t("结果", "Result")}<select aria-label={t("验证结果", "Verification result")} value={outcome} disabled={record.isPending}
         onChange={(event) => changeIntent(() =>
           setOutcome(event.target.value as VerificationEvidenceRequestView["outcome"]))}>
         <option value="pass">{t("通过", "Pass")}</option><option value="fail">{t("失败", "Fail")}</option>
         <option value="unknown">{t("未知", "Unknown")}</option>
       </select></label>
-      <label>{t("标题", "Title")}<input maxLength={160} required value={title}
+      <label>{t("标题", "Title")}<input maxLength={160} required value={title} disabled={record.isPending}
         onChange={(event) => changeIntent(() => setTitle(event.target.value))} /></label>
       <label className="verification-summary">{t("摘要", "Summary")}<textarea maxLength={2048} required rows={3}
-        value={summary} onChange={(event) => changeIntent(() => setSummary(event.target.value))} /></label>
+        value={summary} disabled={record.isPending}
+        onChange={(event) => changeIntent(() => setSummary(event.target.value))} /></label>
       <button className="command-button" disabled={record.isPending || !title.trim() || !summary.trim()}
         type="submit">{record.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={15} /> :
           <ClipboardCheck aria-hidden="true" size={15} />}{t("记录", "Record")}</button>
