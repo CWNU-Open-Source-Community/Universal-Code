@@ -210,6 +210,8 @@ func (s *Server) handleRequest(ctx context.Context, request Request, output io.W
 		s.serveResourcesList(ctx, request, output)
 	case "resources/read":
 		s.serveResourcesRead(ctx, request, output)
+	case "resources/templates/list":
+		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: mustJSON(map[string]any{"resourceTemplates": []any{}})})
 	case "ping":
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: json.RawMessage("{}")})
 	default:
