@@ -24,6 +24,9 @@ var (
 	privateKeyBegin        = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)
 	privateKeyEnd          = regexp.MustCompile(`-----END [A-Z ]*PRIVATE KEY-----`)
 	presentationWhitespace = strings.NewReplacer("\r", "", "\t", "    ")
+	// These two redact rules allow whitespace (including LF) between the
+	// introducer and its value. Keep that prefix with the following line.
+	continuedSecretPrefix = regexp.MustCompile(`(?i)\b(?:(Bearer\s+)|([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY)[A-Z0-9_]*)(\s*)(?:([:=])\s*)?)$`)
 )
 
 // RedactingStream combines terminal-control parsing with bounded logical-line
@@ -36,6 +39,8 @@ type RedactingStream struct {
 	privateKey      bool
 	discardOversize bool
 	discardTail     string
+	discardPrefix   string
+	discardPending  bool
 }
 
 func (s *RedactingStream) Feed(data []byte) string {
@@ -46,11 +51,16 @@ func (s *RedactingStream) Flush() string {
 	return s.consume(s.controls.Flush(), true)
 }
 
+// DiscardPending excludes output that began before a new reader's fence.
+// Keep parsing the buffered text: resetting it could lose a split secret or
+// private-key marker. Its completed logical line will be suppressed instead.
+func (s *RedactingStream) DiscardPending() {
+	if s.pending != "" || len(s.controls.pending) != 0 || s.discardOversize {
+		s.discardPending = true
+	}
+}
+
 func (s *RedactingStream) consume(value string, force bool) string {
-	// Preserve only LF as structural terminal whitespace. Carriage returns can
-	// rewrite already rendered text, while tabs can create misleading visual
-	// alignment; normalize them before any content is persisted.
-	value = presentationWhitespace.Replace(value)
 	s.pending += value
 	var output strings.Builder
 	for {
@@ -62,27 +72,53 @@ func (s *RedactingStream) consume(value string, force bool) string {
 				if force {
 					s.discardOversize = false
 					s.discardTail = ""
+					s.discardPrefix = ""
+					s.discardPending = false
 				}
 				break
 			}
 			s.observeDiscarded(s.pending[:newline+1])
 			s.pending = s.pending[newline+1:]
+			if continuedSecretPrefix.MatchString(s.discardPrefix) {
+				continue
+			}
 			s.discardOversize = false
 			s.discardTail = ""
-			output.WriteByte('\n')
+			s.discardPrefix = ""
+			if !s.discardPending {
+				output.WriteByte('\n')
+			}
+			s.discardPending = false
 			continue
 		}
 
 		newline := strings.IndexByte(s.pending, '\n')
+		for newline >= 0 && continuedSecretPrefix.MatchString(s.pending[:newline+1]) {
+			next := strings.IndexByte(s.pending[newline+1:], '\n')
+			if next < 0 {
+				newline = -1
+				break
+			}
+			newline += next + 1
+		}
 		if newline >= 0 {
 			line := s.pending[:newline+1]
 			s.pending = s.pending[newline+1:]
 			if len([]byte(line)) > maxRedactingStreamLineBytes {
 				s.observeDiscarded(line)
-				output.WriteString("[REDACTED:oversized-line]\n")
+				s.discardTail = ""
+				s.discardPrefix = ""
+				if !s.discardPending {
+					output.WriteString("[REDACTED:oversized-line]\n")
+				}
+				s.discardPending = false
 				continue
 			}
-			output.WriteString(s.redactLine(line))
+			redacted := s.redactLine(line)
+			if !s.discardPending {
+				output.WriteString(redacted)
+			}
+			s.discardPending = false
 			continue
 		}
 		if !force {
@@ -90,49 +126,114 @@ func (s *RedactingStream) consume(value string, force bool) string {
 				s.observeDiscarded(s.pending)
 				s.pending = ""
 				s.discardOversize = true
-				output.WriteString("[REDACTED:oversized-line]")
+				if !s.discardPending {
+					output.WriteString("[REDACTED:oversized-line]")
+				}
 			}
 			break
 		}
 		if s.pending != "" {
+			var redacted string
 			if len([]byte(s.pending)) > maxRedactingStreamLineBytes {
 				s.observeDiscarded(s.pending)
-				output.WriteString("[REDACTED:oversized-line]")
+				s.discardTail = ""
+				s.discardPrefix = ""
+				redacted = "[REDACTED:oversized-line]"
 			} else {
-				output.WriteString(s.redactLine(s.pending))
+				redacted = s.redactLine(s.pending)
+			}
+			if !s.discardPending {
+				output.WriteString(redacted)
 			}
 			s.pending = ""
 		}
+		s.discardPending = false
 		break
 	}
 	return output.String()
 }
 
 func (s *RedactingStream) redactLine(value string) string {
+	// Recognize PEM boundaries before an assigned-secret rule can replace the
+	// beginning of a marker such as PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----.
 	if s.privateKey {
-		if location := privateKeyEnd.FindStringIndex(value); location != nil {
+		if location := privateKeyMarkerLocation(privateKeyEnd, value); location != nil {
 			s.privateKey = false
-			return redact.String(value[location[1]:])
+			return s.redactLine(value[location[1]:])
 		}
 		return ""
 	}
-	location := privateKeyBegin.FindStringIndex(value)
+	location := privateKeyMarkerLocation(privateKeyBegin, value)
 	if location == nil {
-		return redact.String(value)
+		return redactPrintable(value)
 	}
-	if privateKeyEnd.FindStringIndex(value[location[1]:]) != nil {
-		return redact.String(value)
+	if end := privateKeyMarkerLocation(privateKeyEnd, value[location[1]:]); end != nil {
+		return redactPrintable(value[:location[0]]) + "[REDACTED:private-key]" +
+			s.redactLine(value[location[1]+end[1]:])
 	}
 	s.privateKey = true
 	suffix := ""
 	if strings.HasSuffix(value, "\n") {
 		suffix = "\n"
 	}
-	return redact.String(value[:location[0]]) + "[REDACTED:private-key]" + suffix
+	return redactPrintable(value[:location[0]]) + "[REDACTED:private-key]" + suffix
+}
+
+func privateKeyMarkerLocation(pattern *regexp.Regexp, value string) []int {
+	location := pattern.FindStringIndex(presentationWhitespace.Replace(value))
+	if location == nil {
+		return nil
+	}
+	// Map the printable marker back to the original text so CR/tab remain
+	// available to secret rules on the text before and after the PEM block.
+	start, printable := -1, 0
+	for i := 0; i < len(value); i++ {
+		if start < 0 && printable == location[0] {
+			start = i
+		}
+		switch value[i] {
+		case '\r':
+		case '\t':
+			printable += 4
+		default:
+			printable++
+		}
+		if printable == location[1] {
+			return []int{start, i + 1}
+		}
+	}
+	return nil
+}
+
+func redactPrintable(value string) string {
+	// CR/tab are significant whitespace in some secret rules. Redact before
+	// normalizing them, then also check the resulting printable form.
+	return redact.String(presentationWhitespace.Replace(redact.String(value)))
 }
 
 func (s *RedactingStream) observeDiscarded(value string) {
 	const markerCarryRunes = 96
+	// Preserve the meaning of a trailing sensitive prefix without retaining an
+	// unbounded variable name or whitespace run. It may continue across LF.
+	prefix := s.discardPrefix + value
+	match := continuedSecretPrefix.FindStringSubmatch(prefix)
+	switch {
+	case match == nil:
+		runes := []rune(prefix)
+		if len(runes) > markerCarryRunes {
+			runes = runes[len(runes)-markerCarryRunes:]
+		}
+		s.discardPrefix = string(runes)
+	case match[1] != "":
+		s.discardPrefix = "Bearer "
+	case match[4] != "":
+		s.discardPrefix = "TOKEN="
+	case match[3] != "":
+		s.discardPrefix = "TOKEN "
+	default:
+		s.discardPrefix = "TOKEN"
+	}
+	value = presentationWhitespace.Replace(value)
 	combined := s.discardTail + value
 	for combined != "" {
 		if s.privateKey {

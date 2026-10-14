@@ -24,8 +24,9 @@ func TestSchemaV182KeepsFrozenHistoricalPrefix(t *testing.T) {
 	if len(plan) < 182 || plan[181].Version != 182 {
 		t.Fatal("v182 is not registered")
 	}
-	// Recorded from the reviewed C34a6142/B12 v181 baseline, before this change.
-	const previousDigest = "027c9de00442f087d4fa0a11ee63aabc46771847e32eb620b68c323c9dd7891a"
+	// Reviewed C34a6142/B12 v181 baseline plus the v131 command-history repair.
+	// TestSchemaV131AcceptsExactReleasedHistory covers the released v131 ledger.
+	const previousDigest = "9beb9126888da0a1448054f923fede33c0d45d25f508841a5a8c54bf94111414"
 	if got := migrationPlanDigest(plan[:181]); got != previousDigest {
 		t.Fatalf("a historical migration changed: %s", got)
 	}

@@ -8967,6 +8967,7 @@ func validateMigrationPlan(migrations []migration, applied map[int]appliedMigrat
 const (
 	legacyWindowsPreviewMigration30Checksum  = "bef87a078e337c7c78f020b0470b5d3c8a889a42c3f5993ef62f16e761018ae7"
 	legacyWindowsPreviewMigration97Checksum  = "844427411efc98247ebf521badb98a8c96e3a17b8aa5c7d429b7192d4dcad83b"
+	legacyCommandRuntimeMigration131Checksum = "1b00f96d67981ef589988355b002410eb40102ed7459f37ebdec7fc79020c249"
 	legacyWindowsPreviewMigration136Checksum = "5cccad921f47d44ac37f2206e91b355d55ce221d6c9c61e25e7fc08f1cbb6dbd"
 )
 
@@ -8979,8 +8980,11 @@ func acceptedMigrationChecksum(item migration, recorded string) bool {
 	// v138 repairs the two Supervisor authority triggers absent from the pinned
 	// intermediate v136 history. The compatibility path remains exact and cannot
 	// be widened at runtime.
+	// The v131 repair changes only the projection of previously empty command
+	// authority; databases that completed the released v131 have the same schema.
 	return (item.Version == 30 && recorded == legacyWindowsPreviewMigration30Checksum) ||
 		(item.Version == 97 && recorded == legacyWindowsPreviewMigration97Checksum) ||
+		(item.Version == 131 && recorded == legacyCommandRuntimeMigration131Checksum) ||
 		(item.Version == 136 && recorded == legacyWindowsPreviewMigration136Checksum)
 }
 

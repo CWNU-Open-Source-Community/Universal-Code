@@ -336,25 +336,6 @@ func (s *DebugTerminalAgentInputService) Grant(
 			apperror.CodeConflict,
 			"debug terminal Agent-input binding changed during grant")
 	}
-	outputFence, err := s.bridge.Read(ctx, terminalruntime.AgentReadRequest{
-		Token: issued.Token, Scope: issued.Lease.Scope,
-		Cursor: math.MaxUint64, MaxBytes: 1,
-	})
-	if err != nil ||
-		outputFence.ProtocolVersion != terminalruntime.AgentInputBridgeProtocolVersion ||
-		outputFence.LeaseID != issued.Lease.ID ||
-		outputFence.SessionID != normalized.TerminalSessionID ||
-		outputFence.Page.SessionID != normalized.TerminalSessionID {
-		_, _ = s.bridge.Revoke(issued.Lease.ID, normalized.RequestedBy, true)
-		if err != nil {
-			return DebugTerminalAgentInputBinding{}, apperror.Wrap(
-				apperror.CodeFailedPrecondition,
-				"debug terminal output fence could not be established", err)
-		}
-		return DebugTerminalAgentInputBinding{}, apperror.New(
-			apperror.CodeConflict,
-			"debug terminal output fence returned an inconsistent binding")
-	}
 	binding := projectDebugTerminalBinding(bindings, issued)
 	if err := s.store.RecordDebugTerminalAgentInputAudit(ctx,
 		debugTerminalAuditRecord(binding,
@@ -402,6 +383,25 @@ func (s *DebugTerminalAgentInputService) Grant(
 			message = "Run already has an active debug terminal Agent-input binding"
 		}
 		return DebugTerminalAgentInputBinding{}, apperror.New(code, message)
+	}
+	// Do not discard a pending line for a failed duplicate grant. Establish the
+	// actual publication fence only after the binding has passed admission.
+	outputFence, err := s.bridge.Read(ctx, terminalruntime.AgentReadRequest{
+		Token: issued.Token, Scope: issued.Lease.Scope,
+		Cursor: math.MaxUint64, MaxBytes: 1, Fence: true,
+	})
+	if err != nil || outputFence.ProtocolVersion != terminalruntime.AgentInputBridgeProtocolVersion ||
+		outputFence.LeaseID != binding.ID || outputFence.SessionID != binding.TerminalSessionID ||
+		outputFence.Page.SessionID != binding.TerminalSessionID {
+		s.mu.Unlock()
+		_, _ = s.bridge.Revoke(binding.ID, binding.RequestedBy, true)
+		_ = s.store.RecordDebugTerminalAgentInputAudit(ctx, debugTerminalAuditRecord(binding,
+			terminalruntime.AgentInputAuditRevoked, "", "", 0, 0, s.now().UTC()))
+		if err == nil {
+			err = errors.New("debug terminal output fence returned an inconsistent binding")
+		}
+		return DebugTerminalAgentInputBinding{}, apperror.Wrap(apperror.CodeFailedPrecondition,
+			"debug terminal output fence could not be established", err)
 	}
 	s.bindings[binding.ID] = &debugTerminalBindingEntry{
 		binding: binding, token: issued.Token, scope: issued.Lease.Scope,
@@ -484,7 +484,7 @@ func (s *DebugTerminalAgentInputService) Write(
 	s.mu.Unlock()
 	tail, tailErr := s.bridge.Read(ctx, terminalruntime.AgentReadRequest{
 		Token: entry.token, Scope: entry.scope,
-		Cursor: math.MaxUint64, MaxBytes: 1,
+		Cursor: math.MaxUint64, MaxBytes: 1, Fence: true,
 	})
 	if tailErr != nil {
 		s.removePendingOperation(entry.binding.ID, operationDigest)

@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"cyberagent-workbench/internal/executionauth"
@@ -49,6 +50,9 @@ type AgentReadRequest struct {
 	Scope    executionauth.TerminalInputScope
 	Cursor   uint64
 	MaxBytes int
+	// Fence is a host-only tail operation used when granting a binding or
+	// starting a command. Ordinary reads, including liveness checks, omit it.
+	Fence bool
 }
 
 type AgentReadResult struct {
@@ -134,15 +138,16 @@ func (b *AgentInputBridge) Write(ctx context.Context,
 	}, nil
 }
 
-// Read returns a bounded, cursor-addressed projection of the same terminal
-// protected by the short-lived Agent-input lease. Reading does not consume
-// bytes from the user-owned terminal ring, so the renderer remains primary.
+// Read returns a bounded page of the continuously redacted Agent projection.
+// Its byte cursors are independent of the user's raw terminal ring. Partial
+// logical lines wait for LF/EOF; reading never consumes the user's output.
 func (b *AgentInputBridge) Read(ctx context.Context,
 	request AgentReadRequest,
 ) (AgentReadResult, error) {
 	if b == nil || b.manager == nil || b.broker == nil ||
 		ctx == nil || ctx.Err() != nil || request.MaxBytes < 1 ||
-		request.MaxBytes > MaxTerminalOutputReadBytes {
+		request.MaxBytes > MaxTerminalOutputReadBytes ||
+		(request.Fence && request.Cursor != math.MaxUint64) {
 		return AgentReadResult{}, ErrAgentInputBridgeDenied
 	}
 	lease, err := b.broker.Authorize(request.Token, request.Scope)
@@ -157,7 +162,7 @@ func (b *AgentInputBridge) Read(ctx context.Context,
 	if err := b.manager.recheckAgentInputSession(ctx, session.ID); err != nil {
 		return AgentReadResult{}, ErrAgentInputBridgeDenied
 	}
-	page, err := b.manager.Read(session.ID, request.Cursor, request.MaxBytes)
+	page, err := b.manager.readAgentOutput(session.ID, request.Cursor, request.MaxBytes, request.Fence)
 	if err != nil {
 		return AgentReadResult{}, err
 	}

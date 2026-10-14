@@ -17,6 +17,7 @@ import (
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/executionauth"
+	"cyberagent-workbench/internal/outputsafe"
 	"cyberagent-workbench/internal/toolcontract"
 )
 
@@ -217,6 +218,8 @@ type sessionEntry struct {
 	process          Process
 	cancel           context.CancelFunc
 	output           outputRing
+	agentOutput      outputRing
+	agentSanitizer   outputsafe.RedactingStream
 	authorizer       *executionauth.PolicyAuthorizer
 	subject          executionauth.SubjectRef
 	startOperation   toolcontract.Operation
@@ -435,6 +438,28 @@ func (m *Manager) Read(sessionID string, cursor uint64,
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	data, base, next, dropped := entry.output.read(cursor, maxBytes)
+	return OutputPage{
+		SessionID: sessionID, BaseCursor: base, NextCursor: next,
+		Data: data, Dropped: dropped, State: entry.value.State,
+	}, nil
+}
+
+// Agent cursors address a separate, already redacted byte stream. Only an
+// explicit grant/command fence suppresses pending output; tail reads used to
+// check a lease's liveness leave the parser and its pending line untouched.
+func (m *Manager) readAgentOutput(sessionID string, cursor uint64,
+	maxBytes int, fence bool,
+) (OutputPage, error) {
+	entry := m.entry(sessionID)
+	if entry == nil {
+		return OutputPage{}, ErrTerminalClosed
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if fence {
+		entry.agentSanitizer.DiscardPending()
+	}
+	data, base, next, dropped := entry.agentOutput.read(cursor, maxBytes)
 	return OutputPage{
 		SessionID: sessionID, BaseCursor: base, NextCursor: next,
 		Data: data, Dropped: dropped, State: entry.value.State,
@@ -765,9 +790,13 @@ func (m *Manager) readLoop(entry *sessionEntry) {
 		if count > 0 {
 			entry.mu.Lock()
 			entry.output.append(buffer[:count])
+			entry.agentOutput.append([]byte(entry.agentSanitizer.Feed(buffer[:count])))
 			entry.mu.Unlock()
 		}
 		if err != nil {
+			entry.mu.Lock()
+			entry.agentOutput.append([]byte(entry.agentSanitizer.Flush()))
+			entry.mu.Unlock()
 			return
 		}
 	}
