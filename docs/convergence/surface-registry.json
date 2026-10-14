@@ -193,7 +193,7 @@
         "authenticated-loopback-web"
       ],
       "application_contract": "One renderer consumes authenticated Go HTTP/bridge projections backed by internal/application; TypeScript cannot mint durable identity or authority.",
-      "authority_impact": "UI state is non-authorizing presentation; all mutations, permissions, approvals, and recovery decisions are validated in Go.",
+      "authority_impact": "UI state is non-authorizing presentation; all mutations, permissions, approvals, and recovery decisions are validated in Go. Project preparation submits explicit lock-bound package source and install-script selections to Go; web search retains its independent setting.",
       "release_blocking_checks": [
         "CI / TypeScript console",
         "CI / Windows Desktop shell",
@@ -208,7 +208,8 @@
       "recovery_evidence": [
         "internal/httpapi/ui_test.go",
         "internal/desktop/control_plane_test.go",
-        "internal/browserruntime/ui_evidence_runtime_windows_test.go"
+        "internal/browserruntime/ui_evidence_runtime_windows_test.go",
+        "web/src/v2/components/project-preparation.test.tsx"
       ],
       "compatibility_strategy": "Keep the React renderer shared by Desktop and authenticated loopback Web, preserve API v1 projections, and converge primary navigation on Thread without renaming durable IDs.",
       "deprecation_window": "Downgrade requires a supported user workflow replacement; removal follows at least 90 days and two tagged prereleases at maintenance-only.",
@@ -296,13 +297,15 @@
       ],
       "contract_checks": [
         "go test ./internal/httpapi ./internal/app -run API",
+        "go test ./internal/httpapi -run ProjectPreparation",
         "npm --prefix web run check:api"
       ],
       "recovery_evidence": [
         "internal/app/api_command_test.go",
         "internal/httpapi/api_test.go",
         "internal/httpapi/thread_control_test.go",
-        "internal/httpapi/run_web_access_control_test.go"
+        "internal/httpapi/run_web_access_control_test.go",
+        "internal/httpapi/project_preparation_test.go"
       ],
       "compatibility_strategy": "Preserve /api/v1 routes, DTOs, generated OpenAPI, loopback-only binding, and process-local token separation; it is not a hosted service.",
       "deprecation_window": "External route retirement follows protocol governance in addition to at least 90 days and two tagged prereleases after any Surface downgrade.",
@@ -315,7 +318,7 @@
         "credentials",
         "recovery"
       ],
-      "boundary": "Authenticated literal-loopback API used by first-party clients and integrations; never a multi-tenant remote control plane. Conversation web access follows the shared Go Run snapshot contract (ADR 0175), independently of command and sandbox scope.",
+      "boundary": "Authenticated literal-loopback API used by first-party clients and integrations; never a multi-tenant remote control plane. Conversation web access follows the shared Go Run snapshot contract (ADR 0175), independently of command and sandbox scope. Project preparation (ADR 0176) binds package downloads to the inspected lockfile and exact operator-selected HTTPS origins, then installs offline in the selected sandbox through the existing Command Runtime.",
       "lifecycle": {
         "registered_tier": "active",
         "registered_by": "docs/adr/0135-pre-1-0-product-convergence.md",

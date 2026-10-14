@@ -474,8 +474,21 @@ func TestThreadActivityOperatorRuntimeCannotMasqueradeAsAgentAttempt(t *testing.
 		AgentAttribution: domain.AgentAttributionRecorded}
 	operator := domain.AgentAttribution{AgentID: call.AgentID,
 		Source: domain.AgentAttributionOperatorRoot}
-	if threadActivityAgentAttributionMatches(call, operator) {
+	if threadActivityAgentAttributionMatches(call, operator, toolgateway.CommandRuntimeActionRun) {
 		t.Fatal("operator-started Command Runtime Job matched a model Agent attempt")
+	}
+}
+
+func TestThreadActivityCommandMutationKeepsExactAttemptAttribution(t *testing.T) {
+	call := domain.SupervisorToolCall{AgentID: "agent-root-activity",
+		AgentAttemptID: "attempt-current", AgentAttribution: domain.AgentAttributionRecorded}
+	job := domain.AgentAttribution{AgentID: call.AgentID,
+		AgentAttemptID: "attempt-started-job", Source: domain.AgentAttributionRecorded}
+	for _, action := range []string{toolgateway.CommandRuntimeActionRun, toolgateway.CommandRuntimeActionStart,
+		toolgateway.CommandRuntimeActionWriteStdin, toolgateway.CommandRuntimeActionCancel, toolgateway.CommandRuntimeActionKill} {
+		if threadActivityAgentAttributionMatches(call, job, action) {
+			t.Fatalf("%s accepted a different execution attempt", action)
+		}
 	}
 }
 

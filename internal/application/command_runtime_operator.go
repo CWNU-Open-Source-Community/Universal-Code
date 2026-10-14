@@ -37,6 +37,12 @@ type operatorCommandApproval struct {
 	lease                                                           domain.RunExecutionLease
 }
 
+func (s *CommandRuntimeService) operatorCompletesCommandBoundary(ctx context.Context, scope toolgateway.CommandRuntimeContext) bool {
+	proof, ok := ctx.Value(operatorCommandApprovalKey{}).(operatorCommandApproval)
+	return ok && proof.host == s && proof.invocationID == scope.InvocationID &&
+		proof.operationKey == scope.OperationKey && scope.RequestedBy == toolgateway.CommandRuntimeRequestedByOperator
+}
+
 // Only the foreground operator entry can create this evidence. A requested_by
 // string, persisted actor row or Job discriminator cannot substitute for it.
 func operatorCommandOwnsStoppedRun(ctx context.Context, run domain.Run, lease domain.RunExecutionLease) bool {
@@ -56,6 +62,12 @@ func (s *CommandRuntimeService) RunOperatorCommand(ctx context.Context, request 
 }
 
 func (s *CommandRuntimeService) runOperatorCommand(ctx context.Context, request OperatorCommandRequest, started func(OperatorCommandResult)) (OperatorCommandResult, error) {
+	return s.runPreparedOperatorCommand(ctx, request, started, nil, nil)
+}
+
+// Preparation hooks are private Go-owned work under the same execution lease.
+// They are never supplied by an HTTP body, repository or model tool call.
+func (s *CommandRuntimeService) runPreparedOperatorCommand(ctx context.Context, request OperatorCommandRequest, started func(OperatorCommandResult), before func(context.Context, string) error, after func(context.Context, string) error) (OperatorCommandResult, error) {
 	var result OperatorCommandResult
 	if s == nil || s.store == nil {
 		return result, apperror.New(apperror.CodeFailedPrecondition, "operator command store is unavailable")
@@ -124,6 +136,11 @@ func (s *CommandRuntimeService) runOperatorCommand(ctx context.Context, request 
 		if err != nil {
 			return err
 		}
+		if before != nil {
+			if err := before(leaseCtx, bindings.rootPath); err != nil {
+				return err
+			}
+		}
 		resolved, err := s.normalizeCommandRuntimeSpec(spec, bindings.rootPath)
 		if err != nil {
 			return err
@@ -161,6 +178,9 @@ func (s *CommandRuntimeService) runOperatorCommand(ctx context.Context, request 
 			job, readErr := s.store.GetCommandRuntimeJob(context.WithoutCancel(leaseCtx), value.Jobs[0].ID)
 			result = OperatorCommandResult{Job: job, Replayed: value.Replayed}
 			err = errors.Join(err, readErr)
+			if err == nil && job.State == runner.CommandRuntimeJobCompleted && job.TreeReaped && job.ExitCode != nil && *job.ExitCode == 0 && after != nil {
+				err = after(leaseCtx, bindings.rootPath)
+			}
 			if readErr == nil && job.State.Terminal() {
 				err = errors.Join(err, s.completeCommandRuntimeJobBoundary(context.WithoutCancel(leaseCtx), job))
 			}

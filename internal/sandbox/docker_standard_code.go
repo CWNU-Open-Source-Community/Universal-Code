@@ -14,11 +14,13 @@ const (
 	dockerStandardCodeRunnerLegacyProtocol  = "standard-code-docker-runner.v1"
 	DockerStandardCodeRunnerExecutable      = "/traverse-board/standard-code-runner"
 	DockerStandardCodeProjectActionsLabel   = "org.traverse-board.project-actions"
+	DockerStandardCodePreparationLabel      = "org.traverse-board.project-preparation"
 	DockerStandardCodeWorkspaceTarget       = "/workspace"
 	DockerStandardCodeGitMetadataTarget     = "/workspace/.git"
 	DockerStandardCodeGitMetadataMask       = "gitdir: .traverse-board-git-disabled\n"
 	DockerStandardCodeCacheTarget           = "/traverse-board/cache"
 	DockerStandardCodeCacheTmpfsOptions     = "rw,exec,nosuid,nodev,size=134217728,nr_inodes=16384,mode=0700,uid=65532,gid=65532"
+	DockerStandardCodeGoCacheTmpfsOptions   = "rw,exec,nosuid,nodev,size=536870912,nr_inodes=16384,mode=0700,uid=65532,gid=65532"
 
 	DockerStandardCodeCPUQuotaMillis               = 2_000
 	DockerStandardCodeMemoryBytes            int64 = 2 * 1024 * 1024 * 1024
@@ -31,15 +33,18 @@ const (
 	DockerStandardCodeWorkspaceFreeBytes     int64 = 2 * 1024 * 1024 * 1024
 	DockerStandardCodeWorkspaceFreeEntries   int64 = 1_000_000
 	DockerStandardCodeCacheBytes             int64 = 128 * 1024 * 1024
+	DockerStandardCodeGoCacheBytes           int64 = 512 * 1024 * 1024
 	DockerStandardCodeCacheEntries                 = 16_384
 
-	DockerStandardCodeToolchainGo     = "go"
-	DockerStandardCodeToolchainGofmt  = "gofmt"
-	DockerStandardCodeToolchainNode   = "node"
-	DockerStandardCodeToolchainPython = "python"
-	DockerStandardCodeToolchainRust   = "rust"
-	DockerStandardCodeStdinClosed     = "closed"
-	DockerStandardCodeStdinPipe       = "pipe"
+	DockerStandardCodeToolchainGo          = "go"
+	DockerStandardCodeToolchainGoPrepare   = "go-prepare"
+	DockerStandardCodeToolchainNodePrepare = "node-prepare"
+	DockerStandardCodeToolchainGofmt       = "gofmt"
+	DockerStandardCodeToolchainNode        = "node"
+	DockerStandardCodeToolchainPython      = "python"
+	DockerStandardCodeToolchainRust        = "rust"
+	DockerStandardCodeStdinClosed          = "closed"
+	DockerStandardCodeStdinPipe            = "pipe"
 
 	dockerStandardCodeBindingFieldCount = 24
 	dockerStandardCodeLegacyFieldCount  = 23
@@ -115,7 +120,7 @@ func validDockerStandardCodeStdinPolicy(value string) bool {
 func validDockerStandardCodeToolchain(value string) bool {
 	switch value {
 	case DockerStandardCodeToolchainGo, DockerStandardCodeToolchainGofmt, DockerStandardCodeToolchainNode,
-		DockerStandardCodeToolchainPython, DockerStandardCodeToolchainRust:
+		DockerStandardCodeToolchainPython, DockerStandardCodeToolchainRust, DockerStandardCodeToolchainGoPrepare, DockerStandardCodeToolchainNodePrepare:
 		return true
 	default:
 		return false
@@ -172,12 +177,13 @@ func dockerStandardCodeManifest(binding DockerStandardCodeRunnerBinding,
 	if protocol == DockerStandardCodeRunnerProtocolVersion {
 		arguments = append(arguments, binding.StdinPolicy)
 	}
+	growthBytes, growthEntries, fileBytes := dockerStandardCodeWriteLimits(binding.Toolchain)
 	arguments = append(arguments,
 		binding.Toolchain,
 		binding.WorkingDirectory,
-		strconv.FormatInt(DockerStandardCodeWorkspaceGrowthBytes, 10),
-		strconv.Itoa(DockerStandardCodeWorkspaceGrowthEntries),
-		strconv.FormatInt(DockerStandardCodeWorkspaceFileBytes, 10),
+		strconv.FormatInt(growthBytes, 10),
+		strconv.Itoa(growthEntries),
+		strconv.FormatInt(fileBytes, 10),
 		strconv.FormatInt(DockerStandardCodeWorkspaceFreeBytes, 10),
 		strconv.FormatInt(DockerStandardCodeWorkspaceFreeEntries, 10),
 	)
@@ -256,12 +262,13 @@ func ParseDockerStandardCodeManifest(manifest Manifest) (
 	workspaceFileBytes, fileBytesErr := strconv.ParseInt(arguments[limitIndex+2], 10, 64)
 	workspaceFreeBytes, freeBytesErr := strconv.ParseInt(arguments[limitIndex+3], 10, 64)
 	workspaceFreeEntries, freeEntriesErr := strconv.ParseInt(arguments[limitIndex+4], 10, 64)
+	expectedGrowthBytes, expectedGrowthEntries, expectedFileBytes := dockerStandardCodeWriteLimits(arguments[toolchainIndex])
 	if generationErr != nil || profileErr != nil || permissionErr != nil ||
 		growthBytesErr != nil || growthEntriesErr != nil || fileBytesErr != nil ||
 		freeBytesErr != nil || freeEntriesErr != nil || workspaceGrowthBytes !=
-		DockerStandardCodeWorkspaceGrowthBytes || workspaceGrowthEntries !=
-		DockerStandardCodeWorkspaceGrowthEntries || workspaceFileBytes !=
-		DockerStandardCodeWorkspaceFileBytes || workspaceFreeBytes !=
+		expectedGrowthBytes || workspaceGrowthEntries !=
+		expectedGrowthEntries || workspaceFileBytes !=
+		expectedFileBytes || workspaceFreeBytes !=
 		DockerStandardCodeWorkspaceFreeBytes || workspaceFreeEntries !=
 		DockerStandardCodeWorkspaceFreeEntries {
 		return DockerStandardCodeRunnerBinding{}, false
@@ -292,4 +299,11 @@ func ParseDockerStandardCodeManifest(manifest Manifest) (
 		return DockerStandardCodeRunnerBinding{}, false
 	}
 	return binding, true
+}
+
+func dockerStandardCodeWriteLimits(toolchain string) (int64, int, int64) {
+	if toolchain == DockerStandardCodeToolchainGoPrepare || toolchain == DockerStandardCodeToolchainNodePrepare {
+		return 1024 * 1024 * 1024, 200000, 64 * 1024 * 1024
+	}
+	return DockerStandardCodeWorkspaceGrowthBytes, DockerStandardCodeWorkspaceGrowthEntries, DockerStandardCodeWorkspaceFileBytes
 }

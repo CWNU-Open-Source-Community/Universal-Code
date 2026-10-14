@@ -27,6 +27,25 @@ func dockerStandardCodeBindingFixture(toolchain string) DockerStandardCodeRunner
 	}
 }
 
+func TestDockerPreparationLimitsAreBoundToPreparationToolchain(t *testing.T) {
+	binding := dockerStandardCodeBindingFixture(DockerStandardCodeToolchainGoPrepare)
+	binding.Arguments = []string{"mod", "download"}
+	manifest, err := DockerStandardCodeManifest(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Command.Arguments[19] != "1073741824" || manifest.Command.Arguments[20] != "200000" || manifest.Command.Arguments[21] != "67108864" || manifest.Network.Mode != "disabled" {
+		t.Fatal("preparation write bounds or network boundary drifted")
+	}
+	if _, ok := ParseDockerStandardCodeManifest(manifest); !ok {
+		t.Fatal("preparation profile failed round trip")
+	}
+	manifest.Command.Arguments[17] = DockerStandardCodeToolchainGo
+	if _, ok := ParseDockerStandardCodeManifest(manifest); ok {
+		t.Fatal("ordinary command acquired preparation write bounds")
+	}
+}
+
 func TestDockerStandardCodeManifestIsBackendNeutralAndExact(t *testing.T) {
 	expectedTmpfs := fmt.Sprintf(
 		"rw,exec,nosuid,nodev,size=%d,nr_inodes=%d,mode=0700,uid=65532,gid=65532",
@@ -56,6 +75,40 @@ func TestDockerStandardCodeManifestIsBackendNeutralAndExact(t *testing.T) {
 				manifest.Mounts[0] != (Mount{Source: ".",
 					Target: DockerStandardCodeWorkspaceTarget, Access: MountReadWrite}) {
 				t.Fatalf("fixed Standard Code boundary drifted: %#v", manifest)
+			}
+		})
+	}
+}
+
+func TestDockerGoScratchIsBoundToFixedToolchain(t *testing.T) {
+	expectedGo := fmt.Sprintf(
+		"rw,exec,nosuid,nodev,size=%d,nr_inodes=%d,mode=0700,uid=65532,gid=65532",
+		DockerStandardCodeGoCacheBytes, DockerStandardCodeCacheEntries)
+	if DockerStandardCodeGoCacheTmpfsOptions != expectedGo {
+		t.Fatal("Go scratch capacity drifted from its fixed bound")
+	}
+	for _, toolchain := range []string{DockerStandardCodeToolchainGo,
+		DockerStandardCodeToolchainGoPrepare, DockerStandardCodeToolchainNode,
+		DockerStandardCodeToolchainNodePrepare, DockerStandardCodeToolchainPython,
+		DockerStandardCodeToolchainRust} {
+		t.Run(toolchain, func(t *testing.T) {
+			manifest, err := DockerStandardCodeManifest(dockerStandardCodeBindingFixture(toolchain))
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec, err := CompileDockerContainerSpec(t.Context(),
+				dockerContainerCompilerObservation(t, t.Context(), manifest, true, 8, 8*1024*1024*1024), manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := DockerStandardCodeCacheTmpfsOptions
+			if toolchain == DockerStandardCodeToolchainGo || toolchain == DockerStandardCodeToolchainGoPrepare {
+				want = expectedGo
+			}
+			payload := dockerCreatePayload(DockerContainerWriteRequest{Spec: spec})
+			if len(payload.HostConfig.Tmpfs) != 1 || payload.HostConfig.Tmpfs[DockerStandardCodeCacheTarget] != want ||
+				payload.HostConfig.Memory != DockerStandardCodeMemoryBytes || payload.HostConfig.MemorySwap != DockerStandardCodeMemoryBytes {
+				t.Fatalf("scratch capacity or total memory changed: %+v", payload.HostConfig)
 			}
 		})
 	}

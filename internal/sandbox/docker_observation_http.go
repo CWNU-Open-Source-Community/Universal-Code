@@ -164,6 +164,7 @@ func (transport dockerEngineReadOnlyTransport) InspectImage(ctx context.Context,
 		GraphDriver:      payload.GraphDriver.Name,
 		EnvironmentCount: len(payload.Config.Env), VolumeCount: len(payload.Config.Volumes),
 		ProjectActionsVersion: payload.Config.Labels[DockerStandardCodeProjectActionsLabel],
+		PreparationVersion:    payload.Config.Labels[DockerStandardCodePreparationLabel],
 	}, nil
 }
 

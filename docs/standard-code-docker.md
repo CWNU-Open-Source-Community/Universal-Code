@@ -13,6 +13,13 @@ It never falls back to an unsandboxed host command.
 
 ## Fixed image
 
+For project dependency preparation, use **Changes and delivery → Checks and
+delivery → Prepare project**. Review the detected lockfile and explicitly select
+the package origins; the application downloads verified artifacts, then installs
+offline in this fixed image. npm install scripts have a separate operator choice.
+See [Prepare project dependencies](project-preparation.md) for cache reuse,
+failure recovery, and installed toolchain requirements.
+
 Set one exact, already-present image digest. The product readiness path only inspects
 this digest and never pulls:
 
@@ -139,8 +146,9 @@ Container root filesystem/toolchains are read-only; user is `65532:65532`;
 capabilities are dropped; network is none; environment and credential inputs are
 absent; Docker socket, HOME, SSH/Git credentials, browser profiles, devices, ports,
 and undeclared mounts are not accepted. The Supervisor command has no fields for any
-of them. Toolchain cache/temp data uses one fixed 128 MiB/16,384-inode tmpfs outside
-the host projection. The runner requires 2 GiB/1,000,000-inode host headroom and
+of them. Toolchain cache/temp data uses one fixed tmpfs outside the host projection:
+512 MiB for Go compilation and module preparation, 128 MiB for the other toolchains,
+with 16,384 inodes and the same 2 GiB total container memory limit. The runner requires 2 GiB/1,000,000-inode host headroom and
 enforces at most 16 MiB and 4,096 entries of aggregate Workspace growth, plus the
 16 MiB process file-size ceiling needed by the offline toolchains.
 

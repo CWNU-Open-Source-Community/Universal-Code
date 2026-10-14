@@ -1903,6 +1903,9 @@
         "operator_command_request.v1",
         "permission_runtime_epoch.v1",
         "project-actions.v1",
+        "project-preparation.v1",
+        "project_preparation_key.v1",
+        "project_preparation_request.v1",
         "risk_escalation.v1",
         "risk_escalation_policy.v1",
         "risk_escalation_resume.v1",
@@ -3564,6 +3567,14 @@
       "reason": "Test-only or golden/negative-vector identifier; exact source binding prevents production classification."
     },
     {
+      "identifier": "fixture.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/project_preparation_commands_test.go"
+      ],
+      "reason": "Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter."
+    },
+    {
       "identifier": "fixture.wrong.v1",
       "kind": "negative-version-fixture",
       "sources": [
@@ -3846,6 +3857,14 @@
       "reason": "Explicit sandbox output-simulation fixture input; it grants no production execution authority."
     },
     {
+      "identifier": "sbx-fixture.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/project_commands_context_test.go"
+      ],
+      "reason": "Synthetic SBX adapter identity for project command context coverage; not a production protocol."
+    },
+    {
       "identifier": "scheduled-store-observation.v1",
       "kind": "test-fixture",
       "sources": [
@@ -4033,6 +4052,7 @@
       "kind": "negative-version-fixture",
       "sources": [
         "internal/analyzer/descriptor_test.go",
+        "internal/httpapi/project_preparation_test.go",
         "web/src/api/queued-messages.test.ts"
       ],
       "reason": "Test-only or golden/negative-vector identifier; exact source binding prevents production classification."

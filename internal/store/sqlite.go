@@ -452,7 +452,8 @@ func migrationPlan() []migration {
 		Statements: specialistToolLoopStatements(), DisableForeignKeys: true})
 	previous = append(previous, migration{Version: 191, Name: "Bind continuous Specialist schedules to durable operator intent",
 		Statements: specialistContinuationStatements})
-	return append(previous, migration{Version: 192, Name: "Explicit independent Run web access modes", Statements: runWebAccessStatements()})
+	previous = append(previous, migration{Version: 192, Name: "Explicit independent Run web access modes", Statements: runWebAccessStatements()})
+	return append(previous, migration{Version: 193, Name: "Lock-bound project dependency preparation receipts", Statements: projectPreparationStatements})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

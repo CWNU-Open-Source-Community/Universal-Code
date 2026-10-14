@@ -55,7 +55,9 @@ func main() {
 			delete(value, "Env")
 			delete(value, "Volumes")
 			delete(value, "Labels")
-			if key == "config" { value["Labels"] = map[string]string{"org.traverse-board.project-actions": "1"} }
+			if key == "config" {
+				value["Labels"] = map[string]string{"org.traverse-board.project-actions": "1", "org.traverse-board.project-preparation": "1"}
+			}
 		}
 	}
 	editedConfig, err := json.Marshal(config)
@@ -124,5 +126,5 @@ func main() {
 			panic(err)
 		}
 	}
-	fmt.Fprintln(os.Stderr, "environment/volume/label-free config: sha256:"+configDigest)
+	fmt.Fprintln(os.Stderr, "fixed config without inherited environment or volumes: sha256:"+configDigest)
 }

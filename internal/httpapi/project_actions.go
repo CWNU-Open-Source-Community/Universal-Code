@@ -27,7 +27,7 @@ type ProjectActionRequestView struct {
 }
 
 type ProjectActionsController interface {
-	List(context.Context, string) (application.ProjectActionsView, error)
+	List(context.Context, string, ...string) (application.ProjectActionsView, error)
 	Run(context.Context, application.ProjectActionRequest) (application.ProjectActionResultView, error)
 	GetJob(context.Context, string, string) (application.ProjectActionResultView, error)
 }
@@ -72,7 +72,16 @@ func (a *API) serveProjectActions(w http.ResponseWriter, r *http.Request, reques
 		a.writeError(w, requestID, err, 0)
 		return
 	}
-	if err := rejectQuery(r.URL.Query()); err != nil {
+	target := "."
+	if slot == "" && jobID == "" {
+		for key, values := range r.URL.Query() {
+			if key != "target" || len(values) != 1 || values[0] == "" {
+				a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "project actions accept one target directory"), 0)
+				return
+			}
+			target = values[0]
+		}
+	} else if err := rejectQuery(r.URL.Query()); err != nil {
 		a.writeError(w, requestID, err, 0)
 		return
 	}
@@ -84,7 +93,7 @@ func (a *API) serveProjectActions(w http.ResponseWriter, r *http.Request, reques
 		var value any
 		var err error
 		if jobID == "" {
-			view, readErr := a.projectActionsController.List(r.Context(), runID)
+			view, readErr := a.projectActionsController.List(r.Context(), runID, target)
 			if !a.runExecutionEnabled {
 				for i := range view.Actions {
 					view.Actions[i].Available = false

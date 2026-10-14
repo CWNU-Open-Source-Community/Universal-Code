@@ -778,7 +778,7 @@ func generatedCapturePath(path string) bool {
 	parts := strings.Split(strings.ToLower(filepath.ToSlash(path)), "/")
 	for _, part := range parts {
 		switch part {
-		case "node_modules", "dist", "build", "target", "coverage", ".cache", ".next",
+		case "node_modules", "dist", "build", "target", "coverage", ".cache", ".next", ".traverse-preparation",
 			"bin", "obj", "vendor":
 			return true
 		}

@@ -366,6 +366,20 @@ func (b *windowsLocalBackend) runWithProcess(ctx context.Context,
 	if err != nil {
 		return result, err
 	}
+	cacheDirectory, err := filepath.Rel(prepared.drydock.path, prepared.workingDir)
+	if err != nil {
+		return result, ErrLocalSandboxBoundary
+	}
+	moduleCache, err := PreparedGoModuleCache(prepared.drydock.path, filepath.ToSlash(cacheDirectory))
+	if err != nil {
+		return result, err
+	}
+	if moduleCache != "" {
+		prepared.environment, err = localPreparedGoEnvironment(prepared.environment, filepath.Join(prepared.drydock.path, filepath.FromSlash(moduleCache)))
+		if err != nil {
+			return result, err
+		}
+	}
 	scratchSnapshot, err := captureLocalSecurity(scratch)
 	if err != nil {
 		return result, err
@@ -659,10 +673,16 @@ func buildLocalEnvironment(home, temporary string, toolchains []localPinnedRoot,
 		"GOOGLE_APPLICATION_CREDENTIALS": filepath.Join(home, "gcp", "application.json"),
 		"KUBECONFIG":                     filepath.Join(home, "kube", "config"),
 		"DOCKER_CONFIG":                  filepath.Join(home, "docker"), "NUGET_PACKAGES": filepath.Join(home, "nuget"),
-		"NPM_CONFIG_USERCONFIG": filepath.Join(home, "npmrc"),
-		"GOCACHE":               filepath.Join(home, "go-build"), "GOPATH": filepath.Join(home, "go"),
+		"NPM_CONFIG_USERCONFIG":   filepath.Join(home, "npmrc"),
+		"NPM_CONFIG_GLOBALCONFIG": filepath.Join(home, "npm-globalrc"),
+		"NPM_CONFIG_OFFLINE":      "true",
+		// Every bound root has already been pinned without reparse points.
+		// Node's default JavaScript realpath walk otherwise lstats the denied
+		// drive root before loading an allowed script or npm module.
+		"NODE_OPTIONS": "--preserve-symlinks --preserve-symlinks-main",
+		"GOCACHE":      filepath.Join(home, "go-build"), "GOPATH": filepath.Join(home, "go"),
 		"GOMODCACHE": filepath.Join(home, "go", "pkg", "mod"), "GOTOOLCHAIN": "local",
-		"GOPROXY": "off", "GOSUMDB": "off",
+		"GOPROXY": "off", "GOSUMDB": "off", "GOWORK": "off", "GOENV": "off",
 	}
 	for _, binding := range bindings {
 		if binding.Source != EnvironmentLiteral || localSensitiveEnvironmentName(binding.Name) {

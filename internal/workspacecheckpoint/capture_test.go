@@ -114,6 +114,7 @@ func TestCaptureExcludesLargeAndGeneratedUntrackedContent(t *testing.T) {
 	mustCheckpointWrite(t, filepath.Join(root, "large.bin"),
 		bytes.Repeat([]byte{0x7f}, MaxStoredFileBytes+1))
 	mustCheckpointWrite(t, filepath.Join(root, "build", "result.txt"), []byte("output"))
+	mustCheckpointWrite(t, filepath.Join(root, ".traverse-preparation", "npm-cache", "package.tgz"), []byte("dependency cache"))
 
 	snapshot, err := Capture(t.Context(), validCaptureRequest(root, time.Now().UTC()))
 	if err != nil {
@@ -127,6 +128,10 @@ func TestCaptureExcludesLargeAndGeneratedUntrackedContent(t *testing.T) {
 	if entry := entries["build/result.txt"]; entry.State != StateGenerated ||
 		entry.StoragePolicy != StorageExcludedGenerated || entry.Recoverable {
 		t.Fatalf("unexpected generated entry: %+v", entry)
+	}
+	if entry := entries[".traverse-preparation/npm-cache/package.tgz"]; entry.State != StateGenerated ||
+		entry.StoragePolicy != StorageExcludedGenerated || entry.Recoverable {
+		t.Fatalf("dependency cache entered recovery content: %+v", entry)
 	}
 }
 

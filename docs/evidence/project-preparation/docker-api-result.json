@@ -1,0 +1,272 @@
+{
+  "recorded_at": "2026-10-14T13:38:03.5838886Z",
+  "source_base": "beefb3f0404a1a7831ff8d61468e4232de76063b",
+  "fix": "Accept the two fixed Standard Code image metadata labels during owned container inspection",
+  "image_digest": "sha256:c3fbe9ca922a26b4230203d277c19651963314dce67b06e59be030b027259850",
+  "original_tool_retry_succeeded": true,
+  "model_repair_performed": false,
+  "projects": [
+    {
+      "replay": {
+        "passed": true,
+        "operation_id": "prep-6bacc007de8b154da0302584ecfbd2a9bde81a02e9e5f3f3f143fdd22c223f3e",
+        "name": "same-key-replay"
+      },
+      "thread_id": "thread-run-20261014131002-6f0885a528fd",
+      "remaining_owned_containers": 0,
+      "run_id": "run-20261014131002-6f0885a528fd",
+      "fixture_hashes": [
+        {
+          "path": ".gitignore",
+          "unchanged": true,
+          "before": "9bf69f7de4cf1fc80b8e6dc2c9ac3d449ba7e15532eb8fbaa82cbc9ce7d57f81",
+          "after": "9bf69f7de4cf1fc80b8e6dc2c9ac3d449ba7e15532eb8fbaa82cbc9ce7d57f81"
+        },
+        {
+          "path": "classify.cjs",
+          "unchanged": true,
+          "before": "a003e723faf2f8953098200976cdace9289b767205748b678babb1762b9289bb",
+          "after": "a003e723faf2f8953098200976cdace9289b767205748b678babb1762b9289bb"
+        },
+        {
+          "path": "classify.test.cjs",
+          "unchanged": true,
+          "before": "2096b7153b1504f2975b32bcfdc434d96d3345f9d50fe01341fce821cfe17770",
+          "after": "2096b7153b1504f2975b32bcfdc434d96d3345f9d50fe01341fce821cfe17770"
+        },
+        {
+          "path": "package-lock.json",
+          "unchanged": true,
+          "before": "f072dfd8534ec0ab484d2d520fea6967def95bc7806c6c3326f47836fc275ba0",
+          "after": "f072dfd8534ec0ab484d2d520fea6967def95bc7806c6c3326f47836fc275ba0"
+        },
+        {
+          "path": "package.json",
+          "unchanged": true,
+          "before": "55f28aa4418a0af9933c9d4e72675d7c6033199a91e618eb7afb8225edf37d21",
+          "after": "55f28aa4418a0af9933c9d4e72675d7c6033199a91e618eb7afb8225edf37d21"
+        },
+        {
+          "path": "README.md",
+          "unchanged": true,
+          "before": "89d3df9b568ee677d9cee865cd1c589a53258ae18e1a814b7fc436d149947734",
+          "after": "89d3df9b568ee677d9cee865cd1c589a53258ae18e1a814b7fc436d149947734"
+        },
+        {
+          "path": ".prayu/config.yaml",
+          "unchanged": true,
+          "before": "4035ce164df7fdd09b10d662679396bb96348fd33fec4dd08ce10a00aee41f7d",
+          "after": "4035ce164df7fdd09b10d662679396bb96348fd33fec4dd08ce10a00aee41f7d"
+        }
+      ],
+      "installation": {
+        "protocol_version": "project-preparation.v1",
+        "run_id": "run-20261014131002-6f0885a528fd",
+        "target": ".",
+        "id": "prep-6bacc007de8b154da0302584ecfbd2a9bde81a02e9e5f3f3f143fdd22c223f3e",
+        "state": "ready",
+        "completed_packages": 1,
+        "total_packages": 1,
+        "downloaded_bytes": 0,
+        "cache_hits": 1,
+        "job": {
+          "id": "command-job-c7bc04f89121d25309f3e95e",
+          "state": "completed",
+          "exit_code": 0,
+          "stdout": "\nadded 1 package in 394ms\n",
+          "stderr": "",
+          "stdout_truncated": false,
+          "stderr_truncated": false,
+          "can_stop": false
+        },
+        "error": "",
+        "can_cancel": false,
+        "created_at": "2026-10-14T13:23:38.461081Z",
+        "updated_at": "2026-10-14T13:23:52.3127579Z"
+      },
+      "test": {
+        "protocol_version": "project-actions.v1",
+        "run_id": "run-20261014131002-6f0885a528fd",
+        "slot": "test",
+        "command_id": "test.npm",
+        "backend": "docker_standard_code",
+        "replayed": true,
+        "job": {
+          "id": "command-job-fc0956dd9c26626fde98d7db",
+          "state": "failed",
+          "exit_code": 1,
+          "stdout": "\n> preparation-number-fixture@1.0.0 test\n> node --test\n\n✖ numeric strings are numbers (0.863096ms)\n✔ ordinary text is not a number (0.132367ms)\nℹ tests 2\nℹ suites 0\nℹ pass 1\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 64.147772\n\n✖ failing tests:\n\ntest at classify.test.cjs:4:1\n✖ numeric strings are numbers (0.863096ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  false !== true\n  \n      at TestContext.<anonymous> (/workspace/classify.test.cjs:4:50)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.start (node:internal/test_runner/test:1262:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n",
+          "stderr": "Docker Standard Code terminal status is failed",
+          "stdout_truncated": false,
+          "stderr_truncated": false,
+          "can_stop": false
+        }
+      },
+      "project": "npm",
+      "cold_cache_checks": [
+        {
+          "downloaded_bytes": 0,
+          "operation_id": "prep-bc05e39a3914b6901567a5d036666b1e1dc4265ae8dfcb875af023e40af8744d",
+          "passed": true,
+          "error": "dependency download failed: web request is outside Run authority: package source has not been approved",
+          "name": "unapproved-download-denied",
+          "state": "failed"
+        },
+        {
+          "package_count": 1,
+          "downloaded_bytes": 3730,
+          "operation_id": "prep-67e6fcff88919a632c443ed7d83e3d7ad38387823d9889fc513243bb56a291d1",
+          "passed": false,
+          "job_id": "command-job-e7c3ed7b28212bd39de3d738",
+          "name": "real-sandbox-install",
+          "state": "failed"
+        }
+      ],
+      "previous_result_after_restart": {
+        "operation_id": "prep-67e6fcff88919a632c443ed7d83e3d7ad38387823d9889fc513243bb56a291d1",
+        "name": "previous-result-after-restart",
+        "state": "failed"
+      }
+    },
+    {
+      "replay": {
+        "name": "same-key-replay",
+        "operation_id": "prep-0b1edbe3a11cd9b50af48edf3af4add489541b21423a3a2f471246d23fc63fbb",
+        "passed": true
+      },
+      "thread_id": "thread-run-20261014131008-c9955971d5de",
+      "remaining_owned_containers": 0,
+      "run_id": "run-20261014131008-c9955971d5de",
+      "fixture_hashes": [
+        {
+          "path": ".gitignore",
+          "unchanged": true,
+          "before": "9bf69f7de4cf1fc80b8e6dc2c9ac3d449ba7e15532eb8fbaa82cbc9ce7d57f81",
+          "after": "9bf69f7de4cf1fc80b8e6dc2c9ac3d449ba7e15532eb8fbaa82cbc9ce7d57f81"
+        },
+        {
+          "path": "go.mod",
+          "unchanged": true,
+          "before": "fdacbe438a9c79c9da1d504dbe4ba9358b603567398f066320e669e9c960fd71",
+          "after": "fdacbe438a9c79c9da1d504dbe4ba9358b603567398f066320e669e9c960fd71"
+        },
+        {
+          "path": "go.sum",
+          "unchanged": true,
+          "before": "13f166eb12e6f1e2e816bdb99cf0eeb8edd41933c6c4f446082eb84d285ff53d",
+          "after": "13f166eb12e6f1e2e816bdb99cf0eeb8edd41933c6c4f446082eb84d285ff53d"
+        },
+        {
+          "path": "normalize_test.go",
+          "unchanged": true,
+          "before": "8aaebb81bcbaf137567a6d7b879f4ded4322da5ea47b2b5a182f4b44aa4c9251",
+          "after": "8aaebb81bcbaf137567a6d7b879f4ded4322da5ea47b2b5a182f4b44aa4c9251"
+        },
+        {
+          "path": "normalize.go",
+          "unchanged": true,
+          "before": "61dd1041b0f6c3452f6b8e2180f25350aed1157b5953e0ca64548324bc3cecde",
+          "after": "61dd1041b0f6c3452f6b8e2180f25350aed1157b5953e0ca64548324bc3cecde"
+        },
+        {
+          "path": "README.md",
+          "unchanged": true,
+          "before": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4",
+          "after": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4"
+        },
+        {
+          "path": ".prayu/config.yaml",
+          "unchanged": true,
+          "before": "f44766736d7e265ce1d6999a78ed7a0a689034f91689a3e2b4d657787da956fe",
+          "after": "f44766736d7e265ce1d6999a78ed7a0a689034f91689a3e2b4d657787da956fe"
+        }
+      ],
+      "installation": {
+        "protocol_version": "project-preparation.v1",
+        "run_id": "run-20261014131008-c9955971d5de",
+        "target": ".",
+        "id": "prep-0b1edbe3a11cd9b50af48edf3af4add489541b21423a3a2f471246d23fc63fbb",
+        "state": "ready",
+        "completed_packages": 2,
+        "total_packages": 2,
+        "downloaded_bytes": 0,
+        "cache_hits": 2,
+        "job": {
+          "id": "command-job-9164d596f05fc3d29ecce685",
+          "state": "completed",
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": "",
+          "stdout_truncated": false,
+          "stderr_truncated": false,
+          "can_stop": false
+        },
+        "error": "",
+        "can_cancel": false,
+        "created_at": "2026-10-14T13:24:28.3273207Z",
+        "updated_at": "2026-10-14T13:24:41.8696888Z"
+      },
+      "test": {
+        "protocol_version": "project-actions.v1",
+        "run_id": "run-20261014131008-c9955971d5de",
+        "slot": "test",
+        "command_id": "test.go",
+        "backend": "docker_standard_code",
+        "replayed": true,
+        "job": {
+          "id": "command-job-7afe2c3f8747751a02373491",
+          "state": "failed",
+          "exit_code": 1,
+          "stdout": "--- FAIL: TestNormalizeCanonicalUUID (0.00s)\n    normalize_test.go:6: canonical UUID: 6BA7B810-9DAD-11D1-80B4-00C04FD430C8\nFAIL\nFAIL    example.com/preparation-uuid    0.001s\nFAIL\n",
+          "stderr": "Docker Standard Code terminal status is failed",
+          "stdout_truncated": false,
+          "stderr_truncated": false,
+          "can_stop": false
+        }
+      },
+      "project": "go",
+      "cold_cache_checks": [
+        {
+          "passed": true,
+          "error": "dependency download failed: web request is outside Run authority: package source has not been approved",
+          "state": "failed",
+          "operation_id": "prep-560dcd543ed857498d55f3fe2cd5e8cf8833505e71ef87bd0e88b85a7fb3170b",
+          "name": "unapproved-download-denied",
+          "downloaded_bytes": 0
+        },
+        {
+          "passed": false,
+          "job_id": "command-job-59f83851b80cca8a8da16734",
+          "state": "failed",
+          "operation_id": "prep-5d945040ea3a0738d93784d0ce665a05a068683aea2e6f1eec44cfeb03c53f23",
+          "name": "real-sandbox-install",
+          "downloaded_bytes": 32011,
+          "package_count": 2
+        }
+      ],
+      "previous_result_after_restart": {
+        "name": "previous-result-after-restart",
+        "operation_id": "prep-5d945040ea3a0738d93784d0ce665a05a068683aea2e6f1eec44cfeb03c53f23",
+        "state": "failed"
+      }
+    }
+  ],
+  "ui_test": {
+    "protocol_version": "project-actions.v1",
+    "run_id": "run-20261014131002-6f0885a528fd",
+    "slot": "test",
+    "command_id": "test.npm",
+    "backend": "docker_standard_code",
+    "replayed": true,
+    "job": {
+      "id": "command-job-bf607874aa9615d89176545c",
+      "state": "failed",
+      "exit_code": 1,
+      "stdout": "\n> preparation-number-fixture@1.0.0 test\n> node --test\n\n✖ numeric strings are numbers (1.002162ms)\n✔ ordinary text is not a number (0.110587ms)\nℹ tests 2\nℹ suites 0\nℹ pass 1\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 55.904798\n\n✖ failing tests:\n\ntest at classify.test.cjs:4:1\n✖ numeric strings are numbers (1.002162ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  false !== true\n  \n      at TestContext.<anonymous> (/workspace/classify.test.cjs:4:50)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.start (node:internal/test_runner/test:1262:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n",
+      "stderr": "Docker Standard Code terminal status is failed",
+      "stdout_truncated": false,
+      "stderr_truncated": false,
+      "can_stop": false
+    }
+  }
+}

@@ -1,5 +1,11 @@
 package sandbox
 
+const SBXPreparedGoModuleCacheEnvironment = "TRAVERSE_PREPARED_GOMODCACHE"
+
+// The guest mount's absolute path is selected by sbx. After the fixed cwd
+// change, resolve the Go-owned relative cache binding against its real PWD.
+const sbxGuestWorkspaceCommand = `cd -- "$1" || exit 125; shift; if [ -n "${TRAVERSE_PREPARED_GOMODCACHE-}" ]; then export GOMODCACHE="$PWD/$TRAVERSE_PREPARED_GOMODCACHE"; fi; unset TRAVERSE_PREPARED_GOMODCACHE; exec "$@"`
+
 // Verify effective guest state before dispatch, since daemon settings may have
 // changed on disk without a restart. This fixed script reads only local socket
 // presence and credential-mode metadata; it never prints a credential or loads

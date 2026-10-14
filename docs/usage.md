@@ -1735,6 +1735,12 @@ the runtime's fixed CI environment. The default package directory is the Run
 workspace; `--path web` selects an allowed relative package directory. This is
 distinct from Node's built-in test runner, and adds no Jest-specific flags.
 
+The same panel can detect npm and Go tests from project files when no test action
+is pinned. Use **Prepare project** first to review the lockfile, authorize exact
+package sources, and install dependencies offline in the selected sandbox.
+Downloads, install scripts, cache reuse, cancellation, and interrupted requests
+are described in [Prepare project dependencies](project-preparation.md).
+
 ```powershell
 cyberagent run project-action <run-id> test --prepare
 cyberagent run project-action <run-id> test --path web --prepare

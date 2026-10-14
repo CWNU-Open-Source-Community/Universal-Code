@@ -15928,6 +15928,15 @@
               "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
               "type": "string"
             }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Relative directory inspected for project tests",
+            "schema": {
+              "default": ".",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -16421,6 +16430,451 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/projectInstructionRefreshRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/project-preparation": {
+      "get": {
+        "operationId": "inspectProjectPreparation",
+        "summary": "Inspect project dependencies and approved-source requirements",
+        "description": "Detects a relative project directory, lock files and fixed install/test commands. Reports verified cached artifacts and the current preparation. Reads grant no network or execution authority.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "default": ".",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectPreparationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "post": {
+        "operationId": "prepareProject",
+        "summary": "Prepare locked project dependencies in the selected sandbox",
+        "description": "Confirms the inspected lock fingerprint, exact public package origins and optional offline installation scripts. Downloads verified artifacts and runs the fixed install through the existing sandbox permission and lease checks. The idempotency key returns the original operation.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque retry key; only a domain-separated digest is persisted",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectPreparationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPreparationRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/project-preparation/operations/{operation_id}": {
+      "get": {
+        "operationId": "getProjectPreparation",
+        "summary": "Read a saved project preparation",
+        "description": "",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "path",
+            "description": "Saved preparation operation",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectPreparationOperationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/runs/{run_id}/project-preparation/operations/{operation_id}/cancel": {
+      "post": {
+        "operationId": "cancelProjectPreparation",
+        "summary": "Cancel an owned project preparation",
+        "description": "Durably requests cancellation for the exact operation. Repeated cancellation reads its current state; no new work is started.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "path",
+            "description": "Saved preparation operation",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque retry key; only a domain-separated digest is persisted",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectPreparationOperationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPreparationCancelRequestView"
               }
             }
           }
@@ -39013,6 +39467,22 @@
         ],
         "type": "object"
       },
+      "File": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "type": "object"
+      },
       "FileAttachmentObservation": {
         "additionalProperties": false,
         "properties": {
@@ -48430,11 +48900,15 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "target": {
+            "type": "string"
           }
         },
         "required": [
           "protocol_version",
           "run_id",
+          "target",
           "backend",
           "actions",
           "capability_grant"
@@ -48542,6 +49016,267 @@
           "stale",
           "refresh_confirmed",
           "capability_grant"
+        ],
+        "type": "object"
+      },
+      "ProjectPreparationCacheView": {
+        "additionalProperties": false,
+        "properties": {
+          "cached_packages": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total_packages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "cached_packages",
+          "total_packages"
+        ],
+        "type": "object"
+      },
+      "ProjectPreparationCancelRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "enum": [
+              "project-preparation.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "ProjectPreparationOperationView": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_hits": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "can_cancel": {
+            "type": "boolean"
+          },
+          "completed_packages": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "downloaded_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "job": {
+            "$ref": "#/components/schemas/ProjectActionJobView"
+          },
+          "protocol_version": {
+            "enum": [
+              "project-preparation.v1"
+            ],
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "total_packages": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "run_id",
+          "target",
+          "id",
+          "state",
+          "completed_packages",
+          "total_packages",
+          "downloaded_bytes",
+          "cache_hits",
+          "error",
+          "can_cancel",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ProjectPreparationPlanView": {
+        "additionalProperties": false,
+        "properties": {
+          "ecosystem": {
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/File"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "install_command": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "package_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "requested_version": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "test_command": {
+            "type": "string"
+          },
+          "toolchain": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "ecosystem",
+          "toolchain",
+          "requested_version",
+          "files",
+          "sources",
+          "package_count",
+          "install_command",
+          "test_command",
+          "ready",
+          "issues"
+        ],
+        "type": "object"
+      },
+      "ProjectPreparationRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "confirm_execution": {
+            "type": "boolean"
+          },
+          "expected_fingerprint": {
+            "type": "string"
+          },
+          "run_install_scripts": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "project-preparation.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "target",
+          "expected_fingerprint",
+          "allowed_sources",
+          "confirm_execution",
+          "run_install_scripts"
+        ],
+        "type": "object"
+      },
+      "ProjectPreparationView": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "cache": {
+            "$ref": "#/components/schemas/ProjectPreparationCacheView"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/ProjectPreparationOperationView"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ProjectPreparationPlanView"
+          },
+          "protocol_version": {
+            "enum": [
+              "project-preparation.v1"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "run_id",
+          "backend",
+          "target",
+          "available",
+          "reason",
+          "plan",
+          "cache"
         ],
         "type": "object"
       },

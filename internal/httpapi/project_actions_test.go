@@ -15,8 +15,12 @@ type projectActionsControllerStub struct {
 	starts  int
 }
 
-func (*projectActionsControllerStub) List(_ context.Context, runID string) (application.ProjectActionsView, error) {
-	return application.ProjectActionsView{ProtocolVersion: application.ProjectActionsProtocolVersion, RunID: runID, Backend: "docker_standard_code", Actions: []application.ProjectActionView{{Slot: "test", CommandID: "test.npm", Configured: true, Available: true, TargetKind: "directory"}, {Slot: "format", CommandID: "format.go", Configured: true, Available: true, TargetKind: "go_file"}}}, nil
+func (*projectActionsControllerStub) List(_ context.Context, runID string, targets ...string) (application.ProjectActionsView, error) {
+	target := "."
+	if len(targets) == 1 {
+		target = targets[0]
+	}
+	return application.ProjectActionsView{ProtocolVersion: application.ProjectActionsProtocolVersion, RunID: runID, Target: target, Backend: "docker_standard_code", Actions: []application.ProjectActionView{{Slot: "test", CommandID: "test.npm", Configured: true, Available: true, TargetKind: "directory"}, {Slot: "format", CommandID: "format.go", Configured: true, Available: true, TargetKind: "go_file"}}}, nil
 }
 func (s *projectActionsControllerStub) Run(_ context.Context, request application.ProjectActionRequest) (application.ProjectActionResultView, error) {
 	s.request, s.starts = request, s.starts+1
@@ -53,4 +57,19 @@ func TestProjectActionsHTTPReadExecuteAndSavedFailure(t *testing.T) {
 	if controller.starts != 1 {
 		t.Fatalf("invalid HTTP input executed %d actions", controller.starts)
 	}
+}
+
+func TestProjectActionsHTTPAcceptsOneInspectionTarget(t *testing.T) {
+	f := newAPIFixture(t)
+	f.api.projectActionsController = &projectActionsControllerStub{}
+	path := "/api/v1/runs/" + f.run.ID + "/project-actions"
+	var view ProjectActionsView
+	decodeData(t, f.get(t, path+"?target=web"), &view)
+	if view.Target != "web" {
+		t.Fatalf("inspection target lost: %+v", view)
+	}
+	for _, query := range []string{"?target=a&target=b", "?target=", "?target=web&shell=whoami"} {
+		assertAPIError(t, f.get(t, path+query), http.StatusBadRequest, "INVALID_ARGUMENT")
+	}
+	assertAPIError(t, f.get(t, path+"/jobs/job-1?target=web"), http.StatusBadRequest, "INVALID_ARGUMENT")
 }

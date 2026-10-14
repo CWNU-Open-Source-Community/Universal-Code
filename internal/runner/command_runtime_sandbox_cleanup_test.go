@@ -144,6 +144,9 @@ func TestSandboxConfirmedCleanupKeepsNormalJobTerminals(t *testing.T) {
 				!terminal.TreeReaped || terminal.CompletedAt == nil || terminal.ExitCode == nil || executor.calls.Load() != 1 {
 				t.Fatalf("confirmed cleanup changed normal terminal: snapshot=%+v persisted=%+v calls=%d err=%v", terminal, persisted, executor.calls.Load(), err)
 			}
+			if test.err != nil && persisted.Stderr != test.err.Error() {
+				t.Fatalf("sandbox failure diagnostic was lost: %q", persisted.Stderr)
+			}
 		})
 	}
 }

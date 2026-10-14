@@ -494,6 +494,8 @@ func (c openAPIThreadPullRequestController) ImportCredential(ctx context.Context
 func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture := newAPIFixture(t)
 	fixture.api.projectActionsController = &projectActionsControllerStub{}
+	preparationController := &preparationControllerStub{}
+	fixture.api.projectPreparationController = preparationController
 	environmentFixture := newSandboxEnvironmentAPIFixture(t)
 	fixture.api.sandboxEnvironmentController = environmentFixture.api.sandboxEnvironmentController
 	fixture.api.sandboxEnvironmentControlEnabled = true
@@ -1134,6 +1136,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	replacements := map[string]string{
 		"{thread_id}":         openAPIThread.ID,
 		"{operation_key}":     "openapi-thread-git-operation-0001",
+		"{operation_id}":      "prep-saved",
 		"{activity_ref}":      "activity-openapi-missing-0001",
 		"{run_id}":            fixture.run.ID,
 		"{workspace_id}":      fixture.workspace.ID,
@@ -1542,6 +1545,13 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 						fmt.Sprint(current.Version) + `}`
 				} else if spec.Path == ProjectActionRunPathTemplate {
 					body = `{"version":"project-actions.v1","target":"","confirm_execution":true}`
+				} else if spec.Path == ProjectPreparationPathTemplate {
+					body = `{"version":"project-preparation.v1","target":".",` +
+						`"expected_fingerprint":"` + strings.Repeat("a", 64) + `",` +
+						`"allowed_sources":["https://registry.npmjs.org"],` +
+						`"confirm_execution":true,"run_install_scripts":false}`
+				} else if spec.Path == ProjectPreparationCancelPathTemplate {
+					body = `{"version":"project-preparation.v1"}`
 				} else if spec.Path == StandardCodePresetCreatePath {
 					body = `{"version":"standard_code_preset.v1",` +
 						`"workspace_id":"` + fixture.workspace.ID + `",` +
@@ -1871,7 +1881,38 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					requestPath, response.Code, response.Body.String())
 			}
 			assertSecurityHeaders(t, response)
-			if spec.OperationID == "selectProjectSkills" {
+			if spec.OperationID == "inspectProjectPreparation" || spec.OperationID == "prepareProject" {
+				var view application.ProjectPreparationView
+				decodeDataStatus(t, response, expectedStatus, &view)
+				if view.ProtocolVersion != application.ProjectPreparationProtocolVersion || view.RunID != fixture.run.ID || view.Target != "." {
+					t.Fatalf("project preparation route lost its protocol or target: %+v", view)
+				}
+				if spec.OperationID == "inspectProjectPreparation" && !view.Available {
+					t.Fatal("enabled project preparation route reported unavailable")
+				}
+				if spec.OperationID == "prepareProject" {
+					want := application.PrepareProjectRequest{RunID: fixture.run.ID,
+						OperationKey: "openapi-live-operation-012345-prepareProject", RequestedBy: "web_operator",
+						Target: ".", ExpectedFingerprint: strings.Repeat("a", 64),
+						AllowedSources: []string{"https://registry.npmjs.org"}, ConfirmExecution: true}
+					if preparationController.starts != 1 || !reflect.DeepEqual(preparationController.request, want) ||
+						view.Latest == nil || view.Latest.ID != "prep-saved" || view.Latest.State != "pending" {
+						t.Fatalf("preparation route changed operator intent or result: request=%+v view=%+v", preparationController.request, view)
+					}
+				}
+			} else if spec.OperationID == "getProjectPreparation" || spec.OperationID == "cancelProjectPreparation" {
+				var view application.ProjectPreparationOperationView
+				decodeDataStatus(t, response, http.StatusOK, &view)
+				if view.ProtocolVersion != application.ProjectPreparationProtocolVersion || view.RunID != fixture.run.ID || view.ID != "prep-saved" {
+					t.Fatalf("preparation operation route lost its identity: %+v", view)
+				}
+				if spec.OperationID == "getProjectPreparation" && (view.State != "installing" || !view.CanCancel) {
+					t.Fatalf("preparation operation lost progress: %+v", view)
+				}
+				if spec.OperationID == "cancelProjectPreparation" && (preparationController.cancels != 1 || view.State != "cancelled") {
+					t.Fatalf("preparation cancellation lost its result: %+v", view)
+				}
+			} else if spec.OperationID == "selectProjectSkills" {
 				var view application.ProjectSkillSelectionResult
 				decodeDataStatus(t, response, http.StatusOK, &view)
 				if view.RunID != projectSkillRun.ID || !reflect.DeepEqual(view.Refs, []string{projectSkillRef}) ||

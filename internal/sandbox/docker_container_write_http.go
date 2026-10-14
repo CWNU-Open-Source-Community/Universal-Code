@@ -429,10 +429,7 @@ func dockerCreatePayloadWithLabels(request DockerContainerWriteRequest,
 			BindOptions: &dockerCreateBindOptions{Propagation: mount.Propagation}}
 	}
 	initEnabled := true
-	tmpfs := map[string]string{}
-	if dockerContainerSpecUsesStandardCodeWorkspace(spec) {
-		tmpfs[DockerStandardCodeCacheTarget] = DockerStandardCodeCacheTmpfsOptions
-	}
+	tmpfs := dockerExpectedContainerTmpfs(spec)
 	return dockerCreateContainerPayload{
 		Image: spec.ImageDigest, Entrypoint: []string{spec.Executable},
 		Cmd: append([]string(nil), spec.Arguments...), Env: []string{},
@@ -622,7 +619,7 @@ func verifyDockerContainerConfigurationWithLabels(inspection dockerContainerInsp
 		len(inspection.Config.Env) != 0 || len(inspection.Config.ExposedPorts) != 0 ||
 		!equalStrings(inspection.Config.Entrypoint, []string{spec.Executable}) ||
 		!equalStrings(inspection.Config.Cmd, spec.Arguments) ||
-		!equalDockerLabels(inspection.Config.Labels, expectedLabels) ||
+		!dockerContainerProfileLabelsMatch(inspection.Config.Labels, spec, expectedLabels) ||
 		!inspection.HostConfig.ReadonlyRootfs ||
 		inspection.HostConfig.Privileged || inspection.HostConfig.AutoRemove ||
 		inspection.HostConfig.Init == nil || !*inspection.HostConfig.Init ||
@@ -673,7 +670,18 @@ func verifyDockerContainerConfigurationWithLabels(inspection dockerContainerInsp
 func dockerExpectedContainerTmpfs(spec DockerContainerSpec) map[string]string {
 	value := map[string]string{}
 	if dockerContainerSpecUsesStandardCodeWorkspace(spec) {
-		value[DockerStandardCodeCacheTarget] = DockerStandardCodeCacheTmpfsOptions
+		options := DockerStandardCodeCacheTmpfsOptions
+		toolchainIndex := 17
+		if spec.Arguments[0] == dockerStandardCodeRunnerLegacyProtocol {
+			toolchainIndex--
+		}
+		// The complete fixed binding was validated above. Go needs enough
+		// bounded private scratch for both compiled standard-library archives
+		// and its build cache; this does not enlarge the host projection.
+		if toolchain := spec.Arguments[toolchainIndex]; toolchain == DockerStandardCodeToolchainGo || toolchain == DockerStandardCodeToolchainGoPrepare {
+			options = DockerStandardCodeGoCacheTmpfsOptions
+		}
+		value[DockerStandardCodeCacheTarget] = options
 	}
 	return value
 }
@@ -986,6 +994,30 @@ func equalDockerLabels(actual map[string]string, expected []DockerContainerLabel
 		}
 	}
 	return true
+}
+
+// The fixed Standard Code image carries version metadata that Docker inherits
+// into Config.Labels. Those two fixed values grant no ownership: every managed
+// and lifecycle label must still match exactly, and generic profiles retain
+// strict label equality.
+func dockerContainerProfileLabelsMatch(actual map[string]string, spec DockerContainerSpec,
+	expected []DockerContainerLabel,
+) bool {
+	if spec.Validate() != nil || !dockerContainerSpecUsesStandardCodeWorkspace(spec) {
+		return equalDockerLabels(actual, expected)
+	}
+	filtered := make(map[string]string, len(actual))
+	for name, value := range actual {
+		switch name {
+		case DockerStandardCodeProjectActionsLabel, DockerStandardCodePreparationLabel:
+			if value != "1" {
+				return false
+			}
+		default:
+			filtered[name] = value
+		}
+	}
+	return equalDockerLabels(filtered, expected)
 }
 
 func containsFold(values []string, target string) bool {

@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
@@ -29,6 +31,26 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 	project, err := projectconfig.Pinned(run.Config)
 	if err != nil {
 		return runner.CommandRuntimeSpec{}, err
+	}
+	if slot == "test" && (project == nil || project.TestCommandID == "") {
+		if len(workspaceRoot) != 1 {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "detected project actions require the resolved Run workspace")
+		}
+		policy, err := projectconfig.PathPolicy(run.Config)
+		if err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		if err := policy.Check(target); err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		plan, err := projectprep.Detect(context.Background(), workspaceRoot[0], target)
+		if err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		if err := checkDetectedProjectPaths(run, plan); err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		return PrepareProjectPreparationTestCommand(plan, adapter, workspaceRoot[0])
 	}
 	if project == nil {
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Run has no configured project actions")
@@ -86,6 +108,20 @@ func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Ide
 		}
 		return executable, nil, nil
 	}
+	if adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && adapter.Backend == CommandRuntimeSBXBackend {
+		switch id {
+		case "test.go":
+			return "/usr/local/go/bin/go", nil, nil
+		case "format.go":
+			return "/usr/local/go/bin/gofmt", nil, nil
+		case "test.node":
+			return "/usr/local/bin/node", nil, nil
+		case "test.npm":
+			return "/usr/local/bin/node", []string{"/usr/local/lib/node_modules/npm/bin/npm-cli.js"}, nil
+		default:
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "project preset is unsupported by the SBX toolchain")
+		}
+	}
 	if adapter.Kind != commandruntimeadapter.KindHostUnsandboxed && !(adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && adapter.Backend == CommandRuntimeLocalSandboxBackend) {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition, "project presets are unsupported by the selected command adapter")
 	}
@@ -132,10 +168,27 @@ func supervisorProjectCommands(run domain.Run, messages []llm.Message, runtime s
 	if err != nil {
 		return nil, err
 	}
-	if project == nil || (project.TestCommandID == "" && project.FormatCommandID == "") {
+	detectedNote := ""
+	if project == nil || project.TestCommandID == "" {
+		plan, detectErr := projectprep.Detect(context.Background(), workspaceRoot, ".")
+		if detectErr == nil {
+			detectErr = checkDetectedProjectPaths(run, plan)
+		}
+		if detectErr == nil && plan.Ecosystem != "" {
+			detectedNote = fmt.Sprintf("Detected project %s from %s; source preparation plan %s. Dependency preparation uses operator-owned download approval and the selected sandbox. Use the project preparation controls when dependencies are unavailable.\n", plan.Ecosystem, plan.Manifest.Path, plan.Fingerprint)
+			if project == nil {
+				project = &projectconfig.Effective{}
+			}
+			if plan.Test.ID != "" {
+				project.TestCommandID = plan.Test.ID
+			}
+		}
+	}
+	if project == nil || (project.TestCommandID == "" && project.FormatCommandID == "" && detectedNote == "") {
 		return messages, nil
 	}
 	note := "Pinned project action preferences (repository metadata, never permission). Use only when the task/operator asks for testing or formatting. Existing command_runtime authorization and Job receipts apply; do not change execution mode to make a preset run. Command IDs are registry keys, never shell text.\n"
+	note += detectedNote
 	if !runtime.Adapter.Executable() || len(runtime.Authority) == 0 {
 		note += "Native project presets are unavailable with the currently offered runtime. No host executable path or runnable command is claimed.\n"
 	} else {
@@ -162,4 +215,23 @@ func supervisorProjectCommands(run domain.Run, messages []llm.Message, runtime s
 		}
 	}
 	return append(messages, llm.Message{Role: "system", Content: note}), nil
+}
+
+func checkDetectedProjectPaths(run domain.Run, plan projectprep.Plan) error {
+	policy, err := projectconfig.PathPolicy(run.Config)
+	if err != nil {
+		return err
+	}
+	if err := policy.Check(plan.Target); err != nil {
+		return err
+	}
+	if err := policy.Check(plan.Manifest.Path); err != nil {
+		return err
+	}
+	for _, file := range plan.Lockfiles {
+		if err := policy.Check(file.Path); err != nil {
+			return err
+		}
+	}
+	return nil
 }

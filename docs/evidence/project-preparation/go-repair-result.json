@@ -1,0 +1,115 @@
+{
+  "recorded_at": "2026-10-14T10:57:28.1124516Z",
+  "run_id": "run-20261014103610-38b9b8f628df",
+  "model": "deepseek/deepseek-v4-flash",
+  "execution_environment": "Windows Local LPAC; network disabled",
+  "preparation": {
+    "state": "ready",
+    "cache_hits": 2,
+    "total_packages": 2,
+    "downloaded_bytes": 0
+  },
+  "original_test": {
+    "job_id": "command-job-10ab0e03fb99d7e301797483",
+    "state": "failed",
+    "exit_code": 1,
+    "stdout": "--- FAIL: TestNormalizeCanonicalUUID (0.00s)\n    normalize_test.go:6: canonical UUID: 6BA7B810-9DAD-11D1-80B4-00C04FD430C8\nFAIL\nFAIL    example.com/preparation-uuid    0.330s\nFAIL\n"
+  },
+  "model_test": {
+    "job_id": "command-job-157ec72f75cdaeca903ff22a",
+    "activity_ref": "toolu_cbb6cc49d1faf9819296e07f",
+    "command": "go.exe \"test\" \"./...\"",
+    "execution_environment": "Workspace Sandbox",
+    "network": "disabled",
+    "state": "completed",
+    "exit_code": 0,
+    "stdout": "ok      example.com/preparation-uuid    0.330s\n",
+    "stderr": "go: downloading github.com/google/uuid v1.6.0\n",
+    "read_after_api_restart": true
+  },
+  "independent_test": {
+    "exit_code": 0,
+    "name": "repaired-project-test",
+    "passed": true,
+    "state": "completed",
+    "job_id": "command-job-bb9eeb50f34e3934a5217d7c"
+  },
+  "model_usage": {
+    "input_tokens": 238278,
+    "output_tokens": 4517,
+    "total_tokens": 242795,
+    "cache_read_tokens": 38144,
+    "cache_creation_tokens": 0,
+    "cache_creation_5m_tokens": 0,
+    "cache_creation_1h_tokens": 0,
+    "cache_usage_reported_calls": 14,
+    "calls": 14
+  },
+  "tool_usage": {
+    "consumed": 18,
+    "limit": 64,
+    "remaining": 46
+  },
+  "before_hashes": {
+    "README.md": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4",
+    "go.mod": "fdacbe438a9c79c9da1d504dbe4ba9358b603567398f066320e669e9c960fd71",
+    "normalize_test.go": "8aaebb81bcbaf137567a6d7b879f4ded4322da5ea47b2b5a182f4b44aa4c9251",
+    "go.sum": "13f166eb12e6f1e2e816bdb99cf0eeb8edd41933c6c4f446082eb84d285ff53d",
+    "normalize.go": "61dd1041b0f6c3452f6b8e2180f25350aed1157b5953e0ca64548324bc3cecde"
+  },
+  "after_hashes": {
+    "go.mod": "fdacbe438a9c79c9da1d504dbe4ba9358b603567398f066320e669e9c960fd71",
+    "normalize.go": "79c593f2d0cfebeb0ca9dd4745bb0af28d692e6933dab3f72ea82d0d794ecb23",
+    "README.md": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4",
+    "normalize_test.go": "8aaebb81bcbaf137567a6d7b879f4ded4322da5ea47b2b5a182f4b44aa4c9251",
+    "go.sum": "13f166eb12e6f1e2e816bdb99cf0eeb8edd41933c6c4f446082eb84d285ff53d"
+  },
+  "protected_files_unchanged": true,
+  "changed_files": [
+    "normalize.go"
+  ],
+  "selected_work_items": [
+    {
+      "id": "work-20261014104156-5196ed5e82c5",
+      "title": "M3: Post-fix verification with the unmodified test",
+      "status": "completed"
+    },
+    {
+      "id": "work-20261014104156-cce5b9071009",
+      "title": "M2: Minimal fix in normalize.go",
+      "status": "completed"
+    },
+    {
+      "id": "work-20261014104156-a2f7d3ecfb50",
+      "title": "M1: Reproduce the original failure in the controlled Local sandbox (read-only baseline)",
+      "status": "completed"
+    }
+  ],
+  "final_status": {
+    "phase": "deliver",
+    "active_lease": false,
+    "run_status": "paused",
+    "ready_checkpoints": 3,
+    "required_checkpoints": 3
+  },
+  "passed": true,
+  "operator_controls": {
+    "count_basis": "Distinct operator control actions for this final Go Run; count initial task/setup and failed Plan submission; exclude polling, file hash reads, and retries of the same action.",
+    "performed_by": "Acceptance driver using the normal operator API",
+    "categories": {
+      "task_and_local_setup": 2,
+      "model_plan_and_repair_requests": 2,
+      "direction_selection_and_deliver": 2,
+      "dependency_preparation": 1,
+      "original_and_independent_final_tests": 2,
+      "pause_for_required_acceptance": 1,
+      "three_modules_start_checkpoint_complete": 9
+    },
+    "total": 19,
+    "host_source_patches": 0,
+    "extra_file_edit_approvals": 0,
+    "human_acceptance_checkpoints": 3,
+    "model_tool_calls": 18,
+    "model_calls": 14
+  }
+}

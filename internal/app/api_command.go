@@ -527,6 +527,11 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	skillInstallation := application.NewSkillPackageRegistryService(a.store,
 		skillObjects, builtinSkills)
 	controlledCommandProposals := application.NewControlledCommandHistory(a.store)
+	projectPreparation, err := application.NewProjectPreparationService(a.store, commandRuntime, commandRuntimeDrydocks, a.home)
+	if err != nil {
+		return err
+	}
+	defer projectPreparation.Close()
 	hostCommandProposalControl := application.NewHostCommandHistory(a.store)
 	embeddedAnalyzerExecution := application.NewEmbeddedAnalyzerExecutionService(a.store)
 	installedCommandRuntimeAdapters := []commandruntimeadapter.Identity{}
@@ -628,6 +633,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
 		ProjectActionsController:              application.NewProjectActionsService(a.store, commandRuntime, commandRuntimeDrydocks),
+		ProjectPreparationController:          projectPreparation,
 		SkillInstallationEnabled:              controlToken != "",
 		EvidenceAttachmentEnabled:             controlToken != "",
 		VerificationEvidenceEnabled:           controlToken != "",

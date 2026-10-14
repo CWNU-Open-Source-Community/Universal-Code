@@ -119,12 +119,25 @@ func NormalizeSBXCommandRuntimeSpec(spec runner.CommandRuntimeSpec, root, templa
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}
 	intent.WorkingDirectory = filepath.ToSlash(relative)
-	environment := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/home/agent", "LANG=C.UTF-8",
+	environment := []string{"PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "HOME=/home/agent", "LANG=C.UTF-8",
 		"CI=1", "NO_COLOR=1", "TERM=dumb", "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=",
 		"GIT_CONFIG_KEY_1=core.hooksPath", "GIT_CONFIG_VALUE_1=/dev/null", "GIT_CONFIG_KEY_2=core.fsmonitor", "GIT_CONFIG_VALUE_2=false",
 		"GIT_ASKPASS=/bin/false", "SSH_ASKPASS=/bin/false", "GIT_LFS_SKIP_SMUDGE=1", "GIT_ALLOW_PROTOCOL=file",
-		"GOPROXY=off", "GOSUMDB=off", "CARGO_NET_OFFLINE=true", "NPM_CONFIG_OFFLINE=true", "PIP_NO_INDEX=1"}
+		"GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off", "GOENV=off", "CARGO_NET_OFFLINE=true", "NPM_CONFIG_OFFLINE=true", "PIP_NO_INDEX=1",
+		"NPM_CONFIG_USERCONFIG=/dev/null", "NPM_CONFIG_GLOBALCONFIG=/tmp/traverse-empty-global.npmrc",
+		sandbox.SBXPreparedGoModuleCacheEnvironment + "="}
+	moduleCache, err := sandbox.PreparedGoModuleCache(root, intent.WorkingDirectory)
+	if err != nil {
+		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
+	}
+	if moduleCache != "" {
+		relative, err := filepath.Rel(directory, filepath.Join(root, filepath.FromSlash(moduleCache)))
+		if err != nil {
+			return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
+		}
+		environment[len(environment)-1] = sandbox.SBXPreparedGoModuleCacheEnvironment + "=" + filepath.ToSlash(relative)
+	}
 	// Preserve the normalized caller bindings, while never allowing them to
 	// replace fixed credential/startup/network configuration.
 	fixed := map[string]bool{}
@@ -155,6 +168,9 @@ func NormalizeSBXCommandRuntimeSpec(spec runner.CommandRuntimeSpec, root, templa
 }
 
 func sbxGuestExecutableAllowed(executable string) bool {
+	if executable == "/usr/local/go/bin/go" || executable == "/usr/local/go/bin/gofmt" {
+		return true
+	}
 	if !(strings.HasPrefix(executable, "/usr/bin/") || strings.HasPrefix(executable, "/usr/local/bin/") || strings.HasPrefix(executable, "/bin/")) {
 		return false
 	}

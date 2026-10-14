@@ -199,6 +199,12 @@ func commandRuntimeDockerCommand(spec runner.CommandRuntimeResolvedSpec) (
 		return standardcode.Command{}, errors.New(
 			"Docker Standard Code accepts only the fixed Go, Node, Python, or Rust toolchain")
 	}
+	if toolchain == sandbox.DockerStandardCodeToolchainGo && len(spec.CanonicalArgv) == 2 && spec.CanonicalArgv[0] == "mod" && spec.CanonicalArgv[1] == "download" {
+		toolchain = sandbox.DockerStandardCodeToolchainGoPrepare
+	}
+	if toolchain == sandbox.DockerStandardCodeToolchainNode && len(spec.CanonicalArgv) > 1 && spec.CanonicalArgv[0] == "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && (spec.CanonicalArgv[1] == "ci" || spec.CanonicalArgv[1] == "rebuild") {
+		toolchain = sandbox.DockerStandardCodeToolchainNodePrepare
+	}
 	command := standardcode.Command{ProtocolVersion: standardcode.CommandProtocolVersion,
 		Toolchain: toolchain, Arguments: append([]string(nil), spec.CanonicalArgv...),
 		WorkingDirectory: filepath.ToSlash(spec.Spec.WorkingDirectory),

@@ -19,7 +19,118 @@ import (
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
+	"cyberagent-workbench/internal/workspacecheckpoint"
 )
+
+func TestOperatorCommandCheckpointWaitsForPreparationFinalizer(t *testing.T) {
+	f := newOperatorCommandFixture(t, domain.RunExecutionPermissionAsk)
+	request := f.request(t, true)
+	finalizing, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	type outcome struct {
+		value OperatorCommandResult
+		err   error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		value, err := f.service.runPreparedOperatorCommand(t.Context(), request, nil, nil, func(ctx context.Context, root string) error {
+			close(finalizing)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			return os.WriteFile(filepath.Join(root, "finalized-bin.txt"), []byte("owned preparation finalizer"), 0600)
+		})
+		done <- outcome{value, err}
+	}()
+	select {
+	case <-finalizing:
+	case <-time.After(20 * time.Second):
+		t.Fatal("command never reached finalizer")
+	}
+	if _, err := f.service.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	transactions, err := f.st.ListWorkspaceCheckpointTransactions(t.Context(), f.run.ID, 10)
+	if err != nil || len(transactions) != 1 || transactions[0].Status != workspacecheckpoint.TransactionPrepared {
+		t.Fatalf("reconciler sealed before finalizer: %+v %v", transactions, err)
+	}
+	close(release)
+	result := <-done
+	if result.err != nil || result.value.Job.State != runner.CommandRuntimeJobCompleted {
+		t.Fatalf("prepared command %+v %v", result.value, result.err)
+	}
+	transactions, err = f.st.ListWorkspaceCheckpointTransactions(t.Context(), f.run.ID, 10)
+	if err != nil || len(transactions) != 1 || transactions[0].Status != workspacecheckpoint.TransactionCompleted {
+		t.Fatalf("completion %+v %v", transactions, err)
+	}
+	snapshot, err := f.st.GetWorkspaceCheckpointSnapshot(t.Context(), transactions[0].AfterCheckpointID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range snapshot.Entries {
+		if entry.Path == "finalized-bin.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("after checkpoint omitted preparation finalizer output")
+	}
+	if _, err := f.service.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !f.manager.Available() {
+		t.Fatal("successful completion shut down manager")
+	}
+}
+
+type operatorIncompleteReceiptStore struct {
+	*store.SQLiteStore
+	state  runner.CommandRuntimeJobState
+	reaped bool
+}
+
+func (s operatorIncompleteReceiptStore) GetCommandRuntimeJob(ctx context.Context, id string) (runner.CommandRuntimeJob, error) {
+	job, err := s.SQLiteStore.GetCommandRuntimeJob(ctx, id)
+	if err == nil && job.State == runner.CommandRuntimeJobCompleted {
+		job.State, job.TreeReaped = s.state, s.reaped
+		job.Cancelled = s.state == runner.CommandRuntimeJobCancelled
+	}
+	return job, err
+}
+
+func TestOperatorCommandPreparationFinalizerRequiresCompletedReapedJob(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		state  runner.CommandRuntimeJobState
+		reaped bool
+	}{
+		{"cancelled exit zero", runner.CommandRuntimeJobCancelled, true},
+		{"failed exit zero", runner.CommandRuntimeJobFailed, true},
+		{"unreaped exit zero", runner.CommandRuntimeJobCompleted, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newOperatorCommandFixture(t, domain.RunExecutionPermissionAsk)
+			f.service.store = operatorIncompleteReceiptStore{SQLiteStore: f.st, state: test.state, reaped: test.reaped}
+			called := false
+			result, err := f.service.runPreparedOperatorCommand(t.Context(), f.request(t, true), nil, nil, func(context.Context, string) error { called = true; return nil })
+			if err != nil || result.Job.State != test.state || result.Job.ExitCode == nil || *result.Job.ExitCode != 0 {
+				t.Fatalf("incomplete receipt %+v %v", result, err)
+			}
+			if called {
+				t.Fatal("preparation finalizer ran without completed, reaped success")
+			}
+		})
+	}
+}
 
 type operatorCommandFixture struct {
 	st         *store.SQLiteStore
