@@ -143,25 +143,29 @@ func (s Source) Validate() error {
 }
 
 type ServerDescriptor struct {
-	ProtocolVersion      string           `json:"protocol_version"`
-	ID                   string           `json:"id"`
-	Name                 string           `json:"name"`
-	Transport            TransportKind    `json:"transport"`
-	Target               string           `json:"target"`
-	Arguments            []string         `json:"arguments,omitempty"`
-	CredentialRef        string           `json:"credential_ref,omitempty"`
-	DeclaredCapabilities []CapabilityKind `json:"declared_capabilities"`
-	Scope                ScopeKind        `json:"scope"`
-	RunID                string           `json:"run_id,omitempty"`
-	WorkspaceID          string           `json:"workspace_id"`
-	Source               Source           `json:"source"`
-	CallTimeoutMillis    int64            `json:"call_timeout_ms"`
-	MaxResultBytes       int              `json:"max_result_bytes"`
-	NativeSource         *NativeSourceRef `json:"native_source,omitempty"`
+	ProtocolVersion      string            `json:"protocol_version"`
+	ID                   string            `json:"id"`
+	Name                 string            `json:"name"`
+	Transport            TransportKind     `json:"transport"`
+	Target               string            `json:"target"`
+	Arguments            []string          `json:"arguments,omitempty"`
+	CredentialRef        string            `json:"credential_ref,omitempty"`
+	Cwd                  string            `json:"cwd,omitempty"`
+	Env                  map[string]string `json:"env,omitempty"`
+	EnvCredentialRefs    map[string]string `json:"env_credential_refs,omitempty"`
+	Headers              map[string]string `json:"headers,omitempty"`
+	DeclaredCapabilities []CapabilityKind  `json:"declared_capabilities"`
+	Scope                ScopeKind         `json:"scope"`
+	RunID                string            `json:"run_id,omitempty"`
+	WorkspaceID          string            `json:"workspace_id"`
+	Source               Source            `json:"source"`
+	CallTimeoutMillis    int64             `json:"call_timeout_ms"`
+	MaxResultBytes       int               `json:"max_result_bytes"`
+	NativeSource         *NativeSourceRef  `json:"native_source,omitempty"`
 }
 
 func (d ServerDescriptor) Validate() error {
-	if (d.ProtocolVersion != ClientProtocolVersion && d.ProtocolVersion != NativeClientProtocolVersion) || !validClientIdentity(d.ID) ||
+	if (d.ProtocolVersion != ClientProtocolVersion && d.ProtocolVersion != NativeClientProtocolVersion && d.ProtocolVersion != ConfigClientProtocolVersion) || !validClientIdentity(d.ID) ||
 		!validClientIdentity(d.Name) || !d.Transport.Valid() || !d.Scope.Valid() ||
 		!validClientIdentity(d.WorkspaceID) || d.CallTimeoutMillis < 100 ||
 		d.CallTimeoutMillis > int64((5*time.Minute)/time.Millisecond) ||
@@ -178,6 +182,13 @@ func (d ServerDescriptor) Validate() error {
 	if err := d.Source.Validate(); err != nil {
 		return err
 	}
+	if d.ProtocolVersion == ConfigClientProtocolVersion {
+		if err := d.validateManualConfig(); err != nil {
+			return err
+		}
+	} else if d.Cwd != "" || len(d.Env) != 0 || len(d.EnvCredentialRefs) != 0 || len(d.Headers) != 0 {
+		return errors.New("MCP connection configuration requires the manual v3 descriptor protocol")
+	}
 	if d.ProtocolVersion == NativeClientProtocolVersion {
 		if d.NativeSource == nil || d.NativeSource.Validate() != nil || d.Source.Kind != "plugin" ||
 			d.Source.PluginID != d.NativeSource.Component.PackageID || d.Source.SHA256 != d.NativeSource.Revision ||
@@ -193,9 +204,9 @@ func (d ServerDescriptor) Validate() error {
 		}
 	} else {
 		parsed, err := url.Parse(d.Target)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+		if err != nil || (parsed.Scheme != "https" && !(d.ProtocolVersion == ConfigClientProtocolVersion && agentPluginEndpoint(d.Target))) || parsed.Host == "" || parsed.User != nil ||
 			parsed.RawQuery != "" || parsed.Fragment != "" || len(d.Arguments) != 0 {
-			return errors.New("remote MCP target must be a fixed HTTPS URL without userinfo, query, fragment, or process arguments")
+			return errors.New("remote MCP target must be fixed HTTPS or local HTTP without userinfo, query, fragment, or process arguments")
 		}
 		if !validClientText(d.Target, MaxClientTargetBytes, false) {
 			return errors.New("remote MCP target is invalid")

@@ -20,7 +20,7 @@ func (s *ExtensionControlService) RegisterMCP(ctx context.Context, descriptor mc
 		s.credentials.mu.Lock()
 		defer s.credentials.mu.Unlock()
 	}
-	if descriptor.ProtocolVersion != mcp.ClientProtocolVersion || descriptor.NativeSource != nil {
+	if (descriptor.ProtocolVersion != mcp.ClientProtocolVersion && descriptor.ProtocolVersion != mcp.ConfigClientProtocolVersion) || descriptor.NativeSource != nil {
 		return mcp.ServerRecord{}, false, apperror.New(apperror.CodeInvalidArgument,
 			"manual MCP registration requires the supported descriptor protocol")
 	}

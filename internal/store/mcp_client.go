@@ -109,7 +109,8 @@ func (s *SQLiteStore) GetMCPClientServer(ctx context.Context, id string) (mcp.Se
 // entries: the OS credential name is shared independently of execution state.
 func (s *SQLiteStore) ListMCPClientServersByCredentialRef(ctx context.Context, reference string) ([]mcp.ServerRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+mcpClientServerColumns+`
-		FROM mcp_client_servers WHERE json_extract(descriptor_json, '$.credential_ref') = ? ORDER BY id`, reference)
+		FROM mcp_client_servers WHERE json_extract(descriptor_json, '$.credential_ref') = ?
+		OR EXISTS (SELECT 1 FROM json_each(descriptor_json, '$.env_credential_refs') WHERE value = ?) ORDER BY id`, reference, reference)
 	if err != nil {
 		return nil, err
 	}

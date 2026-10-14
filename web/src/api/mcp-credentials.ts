@@ -1,4 +1,5 @@
 import type { MCPCredentialBindingView, MCPCredentialStatusView } from "./types";
+import { absoluteMCPPath, validManualMCPURL } from "./mcp-config";
 
 const sha256 = /^[a-f0-9]{64}$/u;
 const name = /^[\p{L}\p{Nd}_-]+$/u;
@@ -11,10 +12,7 @@ export function validMCPCredentialBinding(value: MCPCredentialBindingView): bool
   if (!identity(value.server_id) || !identity(value.workspace_id) || !sha256.test(value.expected_descriptor_fingerprint) ||
     !credentialName(value.credential_ref) || (value.run_id !== undefined && !identity(value.run_id)) ||
     value.target !== value.target.trim() || value.target.length > 4096) return false;
-  try {
-    const url = new URL(value.target);
-    return url.protocol === "https:" && !!url.hostname && !url.username && !url.password && !url.search && !url.hash;
-  } catch { return false; }
+  return validManualMCPURL(value.target) || absoluteMCPPath(value.target);
 }
 
 export function validMCPBearerSecret(secret: string): boolean {

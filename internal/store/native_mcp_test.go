@@ -30,6 +30,16 @@ func TestNativeMCPReferenceSurvivesSQLiteRestartBesideLegacy(t *testing.T) {
 			Scope: mcp.ScopeWorkspace, WorkspaceID: "native-workspace", Source: mcp.Source{Kind: "plugin", URI: "test:original", PluginID: "native-package", SHA256: revision, Fingerprint: revision},
 			NativeSource:         &mcp.NativeSourceRef{InstallationID: "native-installation", Component: toolcontract.ComponentRef{PackageID: "native-package", ComponentID: "mcp:peer"}, Revision: revision, InstallationGeneration: 3, Surface: "code"},
 			DeclaredCapabilities: []mcp.CapabilityKind{mcp.CapabilityTools}, CallTimeoutMillis: 1000, MaxResultBytes: 4096}}
+	descriptors = append(descriptors,
+		mcp.ServerDescriptor{ProtocolVersion: mcp.ConfigClientProtocolVersion, ID: "manual-local", Name: "manual-local", Transport: mcp.TransportStdio,
+			Target: filepath.Join(t.TempDir(), "server.exe"), Cwd: t.TempDir(), Env: map[string]string{"MCP_MODE": "selected"},
+			EnvCredentialRefs: map[string]string{"API_KEY": "shared-mcp", "SECOND_KEY": "shared-mcp"},
+			Scope:             mcp.ScopeWorkspace, WorkspaceID: "native-workspace", Source: mcp.Source{Kind: "manual", URI: "operator"},
+			DeclaredCapabilities: []mcp.CapabilityKind{mcp.CapabilityTools}, CallTimeoutMillis: 1000, MaxResultBytes: 4096},
+		mcp.ServerDescriptor{ProtocolVersion: mcp.ConfigClientProtocolVersion, ID: "manual-http", Name: "manual-http", Transport: mcp.TransportStreamableHTTP,
+			Target: "http://127.0.0.1:8099/mcp", Headers: map[string]string{"X-Project": "fixture"}, CredentialRef: "shared-mcp",
+			Scope: mcp.ScopeWorkspace, WorkspaceID: "native-workspace", Source: mcp.Source{Kind: "manual", URI: "operator"},
+			DeclaredCapabilities: []mcp.CapabilityKind{mcp.CapabilityTools}, CallTimeoutMillis: 1000, MaxResultBytes: 4096})
 	for _, descriptor := range descriptors {
 		now := time.Now().UTC()
 		record := mcp.ServerRecord{ProtocolVersion: mcp.ServerRecordProtocolVersion, Descriptor: descriptor, DescriptorFingerprint: descriptor.Fingerprint(), State: mcp.TrustStaged,
@@ -73,5 +83,9 @@ func TestNativeMCPReferenceSurvivesSQLiteRestartBesideLegacy(t *testing.T) {
 		if _, err := state.UpdateMCPClientServer(ctx, changed, record.Generation); err == nil {
 			t.Fatal("immutable descriptor replacement succeeded")
 		}
+	}
+	references, err := state.ListMCPClientServersByCredentialRef(ctx, "shared-mcp")
+	if err != nil || len(references) != 2 {
+		t.Fatal("HTTP/environment references were omitted or counted twice", err)
 	}
 }

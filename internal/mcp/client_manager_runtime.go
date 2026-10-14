@@ -9,9 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
-	"strings"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -86,12 +84,17 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 	if d.Validate() != nil {
 		return toolcontract.ResolvedLaunch{}, "", errors.New("invalid persisted MCP descriptor")
 	}
-	launch := toolcontract.ResolvedLaunch{Component: toolcontract.ComponentRef{PackageID: ClientProtocolVersion, ComponentID: d.ID},
-		InstanceID: record.DescriptorFingerprint + "-" + fmt.Sprint(record.Generation), Format: "mcp-client", FormatVersion: "1",
-		ProtocolVersions: []string{record.Capabilities.ProtocolVersion}, Transport: toolcontract.Transport(d.Transport)}
+	environment, err := m.readManualEnvironment(ctx, d)
+	if err != nil {
+		return toolcontract.ResolvedLaunch{}, "", err
+	}
+	launch, err := resolveManualLaunch(d, []string{record.Capabilities.ProtocolVersion}, environment)
+	if err != nil {
+		return launch, "", err
+	}
+	launch.InstanceID = record.DescriptorFingerprint + "-" + fmt.Sprint(record.Generation)
 	bearer := ""
 	if d.Transport == TransportStreamableHTTP {
-		launch.HTTP = &toolcontract.HTTPLaunch{Endpoint: d.Target}
 		if d.CredentialRef != "" {
 			if m.credentials == nil {
 				return launch, "", errors.New("MCP credential reader unavailable")
@@ -103,31 +106,6 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 			bearer = value
 			launch.HTTP.Credential = &toolcontract.CredentialRef{ID: d.CredentialRef, Revision: runtimeCredentialRevision(key, value)}
 		}
-	} else {
-		cwd, err := canonicalLaunchDirectory(os.TempDir())
-		if err != nil {
-			return launch, "", err
-		}
-		env := map[string]string{}
-		for _, entry := range minimalMCPEnvironment() {
-			name, value, found := strings.Cut(entry, "=")
-			if found {
-				env[name] = value
-			}
-		}
-		env, err = normalizeLaunchEnvironment(env)
-		if err != nil {
-			return launch, "", err
-		}
-		executable, err := resolveLaunchExecutable(d.Target, cwd, env)
-		if err != nil {
-			return launch, "", err
-		}
-		digest, err := launchExecutableDigest(executable)
-		if err != nil {
-			return launch, "", err
-		}
-		launch.Stdio = &toolcontract.StdioLaunch{Command: executable, ExecutableSHA256: digest, Args: slices.Clone(d.Arguments), Env: env, Cwd: cwd}
 	}
 	return launch, bearer, launch.Validate()
 }
@@ -200,6 +178,11 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		if bearer != "" {
 			secrets = []string{bearer}
 		}
+		if launch.Stdio != nil {
+			for name := range record.Descriptor.EnvCredentialRefs {
+				secrets = append(secrets, launch.Stdio.Env[manualEnvironmentKey(name)])
+			}
+		}
 	}
 	credential := func(ctx context.Context, ref toolcontract.CredentialRef) (string, error) {
 		if m.credentials == nil || launch.HTTP == nil || launch.HTTP.Credential == nil || ref != *launch.HTTP.Credential {
@@ -228,6 +211,9 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			if err := recheckSource(ctx); err != nil {
 				return err
 			}
+		}
+		if err := m.recheckManualEnvironment(ctx, record.Descriptor, launch); err != nil {
+			return err
 		}
 		if launch.HTTP != nil && launch.HTTP.Credential != nil {
 			_, credentialErr := credential(ctx, *launch.HTTP.Credential)

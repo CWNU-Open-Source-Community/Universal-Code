@@ -26,7 +26,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 123 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
-| [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 7 | true |
+| [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 56 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 6 | true |
@@ -1074,16 +1074,17 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Compatibility rule: Follow upstream negotiation and bounded local parsing; negotiated capabilities never grant local Go authority.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
-  - `mcp-interchange-writer` (`v1, v2`, write-current) at `internal/mcp`
+  - `mcp-interchange-writer` (`v1, v2, v3`, write-current) at `internal/mcp`
 - Readers:
-  - `mcp-interchange-reader` (`v1, v2`, active) at `internal/mcp`
+  - `mcp-interchange-reader` (`v1, v2, v3`, active) at `internal/mcp`
 
-<details><summary>7 active identifiers</summary>
+<details><summary>8 active identifiers</summary>
 
 - `mcp-client-call-audit.v1`
 - `mcp-client-server.v1`
 - `mcp-client.v1`
 - `mcp-client.v2`
+- `mcp-client.v3`
 - `mcp.call.input.v1`
 - `mcp.capabilities.v1`
 - `mcp.content.input.v1`

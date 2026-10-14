@@ -116,7 +116,7 @@ func TestMCPCredentialUnsupportedDescriptorsNeverReadSecretPresence(t *testing.T
 func (r *mcpCredentialRegistryFake) ListMCPClientServersByCredentialRef(_ context.Context, name string) ([]mcp.ServerRecord, error) {
 	values := []mcp.ServerRecord{}
 	for _, record := range r.records {
-		if record.Descriptor.CredentialRef == name {
+		if record.Descriptor.ReferencesCredential(name) {
 			values = append(values, record)
 		}
 	}

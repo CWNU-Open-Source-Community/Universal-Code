@@ -79,6 +79,10 @@ type ExtensionMCPServerView struct {
 	Target                        string                        `json:"target"`
 	NativeSource                  *ExtensionMCPNativeSourceView `json:"native_source,omitempty"`
 	CredentialRef                 string                        `json:"credential_ref,omitempty"`
+	Cwd                           string                        `json:"cwd,omitempty"`
+	Env                           map[string]string             `json:"env,omitempty"`
+	EnvCredentialRefs             map[string]string             `json:"env_credential_refs,omitempty"`
+	Headers                       map[string]string             `json:"headers,omitempty"`
 	DeclaredCapabilities          []string                      `json:"declared_capabilities"`
 	Scope                         string                        `json:"scope"`
 	RunID                         string                        `json:"run_id,omitempty"`
@@ -397,7 +401,9 @@ func extensionMCPServerView(value mcp.ServerRecord) ExtensionMCPServerView {
 	result := ExtensionMCPServerView{ProtocolVersion: value.ProtocolVersion,
 		ID: value.Descriptor.ID, Name: value.Descriptor.Name,
 		Transport: string(value.Descriptor.Transport), Target: value.Descriptor.Target,
-		CredentialRef:        value.Descriptor.CredentialRef,
+		CredentialRef: value.Descriptor.CredentialRef,
+		Cwd:           value.Descriptor.Cwd, Env: value.Descriptor.Env,
+		EnvCredentialRefs: value.Descriptor.EnvCredentialRefs, Headers: value.Descriptor.Headers,
 		DeclaredCapabilities: stringsFromMCPCapabilities(value.Descriptor.DeclaredCapabilities),
 		Scope:                string(value.Descriptor.Scope), RunID: value.Descriptor.RunID,
 		WorkspaceID: value.Descriptor.WorkspaceID,

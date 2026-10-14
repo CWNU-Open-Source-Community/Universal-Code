@@ -101,6 +101,9 @@ func (e *MCPClientToolExecutor) operationAuthorizer(ctx context.Context, scope t
 		if err != nil && apperror.CodeOf(err) != apperror.CodeNotFound {
 			return subject, nil, nil, err
 		}
+		if err == nil {
+			component.PackageID = record.Descriptor.ProtocolVersion
+		}
 		if err == nil && record.Descriptor.NativeSource != nil {
 			source := *record.Descriptor.NativeSource
 			if source.Validate() != nil || source.Surface != string(scope.Surface) {

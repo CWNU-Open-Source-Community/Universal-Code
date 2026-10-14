@@ -38090,11 +38090,32 @@
           "credential_ref": {
             "type": "string"
           },
+          "cwd": {
+            "type": "string"
+          },
           "declared_capabilities": {
             "items": {
               "type": "string"
             },
             "type": "array"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "env_credential_refs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "id": {
             "maxLength": 256,
@@ -38223,6 +38244,9 @@
           "credential_ref": {
             "type": "string"
           },
+          "cwd": {
+            "type": "string"
+          },
           "declared_capabilities": {
             "items": {
               "type": "string"
@@ -38232,9 +38256,27 @@
           "descriptor_fingerprint": {
             "type": "string"
           },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "env_credential_refs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "generation": {
             "format": "int64",
             "type": "integer"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "health": {
             "type": "string"

@@ -2,6 +2,7 @@ import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } f
 import { parseProjectActions, parseProjectActionResult, type ProjectActionSlot } from "./project-actions";
 import { consumeSSE } from "./sse";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
+import { validMCPConnectionConfig } from "./mcp-config";
 import type { MCPCredentialBindingView, MCPCredentialRequestView, MCPCredentialStatusView } from "./types";
 import { applicationServiceIdentity, parseThreadApplicationServices, parseThreadApplicationService,
   parseThreadApplicationServiceStop } from "./application-services";
@@ -6096,7 +6097,8 @@ function containsForbiddenExtensionField(value: unknown): boolean {
   const forbidden = new Set(["credential", "credential_value", "secret", "token",
     "authorization", "arguments", "result", "publisher_public_key", "archive_bytes", "raw"]);
   return Object.entries(value).some(([key, child]) =>
-    forbidden.has(key.toLocaleLowerCase()) || containsForbiddenExtensionField(child));
+    forbidden.has(key.toLocaleLowerCase()) ||
+    (!(value.protocol_version === "mcp-client-server.v1" && ["env", "env_credential_refs", "headers"].includes(key)) && containsForbiddenExtensionField(child)));
 }
 
 const codeIntelTools = ["code_workspace_symbols", "code_document_symbols",
@@ -6386,7 +6388,8 @@ function parseExtensionMCPServer(value: unknown): ExtensionMCPServerView {
 }
 
 function validExtensionMCPTarget(item: Record<string, unknown>): boolean {
-  if (item.native_source === undefined) return boundedText(item.target, 4_096);
+  if (item.native_source === undefined) return boundedText(item.target, 4_096) &&
+    validMCPConnectionConfig(item as { transport: string });
   const source = item.native_source;
   return item.target === "" && (item.credential_ref === undefined || item.credential_ref === "") &&
     isRecord(source) && boundedIdentity(source.installation_id) !== "" &&
@@ -6496,6 +6499,7 @@ function parseMCPRegistration(value: unknown,
   }
   const server = parseExtensionMCPServer(value.server);
   if (server.id !== request.descriptor.id || server.workspace_id !== request.descriptor.workspace_id ||
+    server.transport !== request.descriptor.transport || server.target !== request.descriptor.target ||
     server.scope !== request.descriptor.scope || (server.run_id ?? "") !== (request.descriptor.run_id ?? "") ||
     (!value.replayed && (server.state !== "staged" || server.generation !== 1))) {
     throw new APIRequestError("MCP registration binding is invalid", "INVALID_RESPONSE", 502);
@@ -7074,7 +7078,8 @@ export class APIClient {
     signal?: AbortSignal): Promise<ExtensionMCPRegistrationView> {
     const descriptor = body.descriptor;
     if (!this.hasExtensionControl || body.version !== "extension-control.v1" ||
-      !isRecord(descriptor) || descriptor.protocol_version !== "mcp-client.v1" ||
+      !isRecord(descriptor) || !["mcp-client.v1", "mcp-client.v3"].includes(descriptor.protocol_version) ||
+      !validMCPConnectionConfig(descriptor) ||
       !boundedIdentity(descriptor.id) || !boundedIdentity(descriptor.workspace_id) ||
       !boundedText(descriptor.name, 256) || !boundedText(descriptor.target, 4_096) ||
       !["stdio", "streamable_http"].includes(String(descriptor.transport)) ||

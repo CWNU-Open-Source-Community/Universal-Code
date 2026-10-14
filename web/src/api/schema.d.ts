@@ -7259,7 +7259,17 @@ export interface components {
             /** Format: int64 */
             call_timeout_ms: number;
             credential_ref?: string;
+            cwd?: string;
             declared_capabilities: string[];
+            env?: {
+                [key: string]: string;
+            };
+            env_credential_refs?: {
+                [key: string]: string;
+            };
+            headers?: {
+                [key: string]: string;
+            };
             id: string;
             /** Format: int32 */
             max_result_bytes: number;
@@ -7292,10 +7302,20 @@ export interface components {
             capabilities: components["schemas"]["ExtensionMCPCapabilityView"];
             created_at: string;
             credential_ref?: string;
+            cwd?: string;
             declared_capabilities: string[];
             descriptor_fingerprint: string;
+            env?: {
+                [key: string]: string;
+            };
+            env_credential_refs?: {
+                [key: string]: string;
+            };
             /** Format: int64 */
             generation: number;
+            headers?: {
+                [key: string]: string;
+            };
             health: string;
             health_message?: string;
             id: string;

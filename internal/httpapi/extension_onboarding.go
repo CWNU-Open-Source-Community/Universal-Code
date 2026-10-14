@@ -39,6 +39,10 @@ type ExtensionMCPRegistrationDescriptorView struct {
 	Target               string               `json:"target"`
 	Arguments            []string             `json:"arguments,omitempty"`
 	CredentialRef        string               `json:"credential_ref,omitempty"`
+	Cwd                  string               `json:"cwd,omitempty"`
+	Env                  map[string]string    `json:"env,omitempty"`
+	EnvCredentialRefs    map[string]string    `json:"env_credential_refs,omitempty"`
+	Headers              map[string]string    `json:"headers,omitempty"`
 	DeclaredCapabilities []mcp.CapabilityKind `json:"declared_capabilities"`
 	Scope                mcp.ScopeKind        `json:"scope"`
 	RunID                string               `json:"run_id,omitempty"`
@@ -107,6 +111,7 @@ func (a *API) serveExtensionOnboarding(writer http.ResponseWriter, request *http
 		value, replayed, err := controller.RegisterMCP(request.Context(), mcp.ServerDescriptor{
 			ProtocolVersion: d.ProtocolVersion, ID: d.ID, Name: d.Name, Transport: d.Transport,
 			Target: d.Target, Arguments: d.Arguments, CredentialRef: d.CredentialRef,
+			Cwd: d.Cwd, Env: d.Env, EnvCredentialRefs: d.EnvCredentialRefs, Headers: d.Headers,
 			DeclaredCapabilities: d.DeclaredCapabilities, Scope: d.Scope, RunID: d.RunID,
 			WorkspaceID: d.WorkspaceID, CallTimeoutMillis: d.CallTimeoutMillis,
 			MaxResultBytes: d.MaxResultBytes})
