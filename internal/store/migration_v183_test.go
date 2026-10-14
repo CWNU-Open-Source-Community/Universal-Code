@@ -19,7 +19,8 @@ import (
 )
 
 func TestSchemaV183PreservesHistoricalCandidateReceiptsAndPendingRecovery(t *testing.T) {
-	if got := migrationPlanDigest(migrationPlan()[:182]); got != "0ae57655f1afe8416641c9b10e0ba239828ed405300adc5d82f4220205ffbe7b" {
+	// Includes the v131 command-history repair; released v131 compatibility is tested separately.
+	if got := migrationPlanDigest(migrationPlan()[:182]); got != "d3f0e75c895fb0abaaed6c1a3a88c440de5672601da40d20e1a512118becab2e" {
 		t.Fatalf("historical migration prefix changed: %s", got)
 	}
 	home := t.TempDir()

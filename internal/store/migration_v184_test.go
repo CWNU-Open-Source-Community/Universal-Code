@@ -16,7 +16,8 @@ import (
 )
 
 func TestSchemaV184PreservesRealV183SelectionRowsAndReceipts(t *testing.T) {
-	if got := migrationPlanDigest(migrationPlan()[:183]); got != "c074ffaed70e3f0bbd1ee9046b8da33668b9c66b9a87514a79a667754c516202" {
+	// Includes the v131 command-history repair; released v131 compatibility is tested separately.
+	if got := migrationPlanDigest(migrationPlan()[:183]); got != "b575b30a0eb52022a21ddd59ccded6928b57c1c4f580e172edc5bf86ee21f5c4" {
 		t.Fatalf("published v1-v183 prefix changed: %s", got)
 	}
 	path := filepath.Join(t.TempDir(), "actual-v183.db")

@@ -14,7 +14,8 @@ import (
 )
 
 func TestSchemaV185PreservesRealV184CommandJobs(t *testing.T) {
-	if got := migrationPlanDigest(migrationPlan()[:184]); got != "334bb197038c5b66a1ab0d176186fe8dd831be1b4d4fa8ac77e3b1212c2567d3" {
+	// Includes the v131 command-history repair; released v131 compatibility is tested separately.
+	if got := migrationPlanDigest(migrationPlan()[:184]); got != "2a1d90c2bca6af524cf86646cc415b38b209b4bc3ec8a184fdfe0df61b58fc2d" {
 		t.Fatalf("published v1-v184 prefix changed: %s", got)
 	}
 	ctx := t.Context()
