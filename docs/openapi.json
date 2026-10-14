@@ -38002,6 +38002,12 @@
             },
             "type": "array"
           },
+          "resource_templates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "resources": {
             "items": {
               "type": "string"

@@ -747,7 +747,10 @@ func decodeThreadActivityMCPPayload(raw json.RawMessage) (toolgateway.MCPToolCal
 	value.Arguments = append(json.RawMessage(nil), bytes.TrimSpace(value.Arguments)...)
 	arguments, validArguments := decodeThreadActivityJSON(value.Arguments)
 	_, isObject := arguments.(map[string]any)
-	if value.Version != toolgateway.MCPClientToolProtocolVersion ||
+	validProfile := value.Version == toolgateway.MCPClientToolProtocolVersion && value.Method == "" ||
+		value.Version == toolgateway.MCPContentToolProtocolVersion &&
+			(value.Method == "resources/read" && value.ToolName == "resources.read" || value.Method == "prompts/get" && value.ToolName == "prompts.get")
+	if !validProfile ||
 		!validThreadActivityMCPIdentity(value.ServerID) ||
 		!validThreadActivityMCPIdentity(value.ToolName) ||
 		!validThreadActivityDigest(value.CapabilityFingerprint) || !validArguments || !isObject {

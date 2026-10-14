@@ -6332,6 +6332,7 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
       !boundedStringArray(item.capabilities.negotiated, 3, 32) ||
       !boundedStringArray(item.capabilities.tools, 256, 256) ||
       !boundedStringArray(item.capabilities.resources, 256) ||
+      (item.capabilities.resource_templates !== undefined && !boundedStringArray(item.capabilities.resource_templates, 256, 4096)) ||
       !boundedStringArray(item.capabilities.prompts, 128, 256) ||
       !isRecord(item.source) || !boundedText(item.source.kind, 32) ||
       !boundedText(item.source.uri, 4_096)) {

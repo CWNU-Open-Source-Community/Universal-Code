@@ -1753,7 +1753,8 @@
         "mcp-client.v1",
         "mcp-client.v2",
         "mcp.call.input.v1",
-        "mcp.capabilities.v1"
+        "mcp.capabilities.v1",
+        "mcp.content.input.v1"
       ],
       "retired_identifiers": []
     },

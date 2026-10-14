@@ -170,9 +170,13 @@ type mcpApprovalFixture struct {
 	onRequest       func(string)
 }
 
-func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermissionMode, cyberPlan bool, require bool) *mcpApprovalFixture {
+func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermissionMode, cyberPlan bool, require bool, contentMethod ...string) *mcpApprovalFixture {
 	t.Helper()
 	ctx := t.Context()
+	method := ""
+	if len(contentMethod) > 0 {
+		method = contentMethod[0]
+	}
 	f := &mcpApprovalFixture{checker: &mcpReviewChecker{Checker: policy.NewDefaultChecker(), require: require}}
 	var err error
 	f.st, err = store.Open(filepath.Join(t.TempDir(), "mcp-approval.db"))
@@ -243,6 +247,22 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		switch request.Method {
 		case "initialize":
 			result = json.RawMessage(`{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"approval-fixture","version":"1"}}`)
+			if method != "" {
+				result = json.RawMessage(`{"protocolVersion":"2024-11-05","capabilities":{"resources":{},"prompts":{}},"serverInfo":{"name":"approval-fixture","version":"1"}}`)
+			}
+		case "resources/list":
+			result = json.RawMessage(`{"resources":[{"uri":"fixture://review","name":"Review"}]}`)
+		case "resources/templates/list":
+			result = json.RawMessage(`{"resourceTemplates":[]}`)
+		case "prompts/list":
+			result = json.RawMessage(`{"prompts":[{"name":"review","arguments":[{"name":"language","required":true}]}]}`)
+		case "resources/read", "prompts/get":
+			f.calls.Add(1)
+			if request.Method == "resources/read" {
+				result = json.RawMessage(`{"contents":[{"uri":"fixture://review","text":"reviewed resource"}]}`)
+			} else {
+				result = json.RawMessage(`{"messages":[{"role":"user","content":{"type":"text","text":"reviewed prompt"}}]}`)
+			}
 		case "tools/list":
 			result = json.RawMessage(`{"tools":[{"name":"lookup","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"value":{"type":"integer"}},"additionalProperties":false}}]}`)
 		case "tools/call":
@@ -268,6 +288,9 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 	descriptor := mcp.ServerDescriptor{ProtocolVersion: mcp.ClientProtocolVersion, ID: "mcp-approval-server", Name: "Approval fixture",
 		Transport: mcp.TransportStreamableHTTP, Target: peer.URL, DeclaredCapabilities: []mcp.CapabilityKind{mcp.CapabilityTools},
 		Scope: mcp.ScopeRun, RunID: run.ID, WorkspaceID: workspace.ID, Source: mcp.Source{Kind: "manual", URI: "operator://mcp-approval-fixture"}, CallTimeoutMillis: 3000, MaxResultBytes: 8192}
+	if method != "" {
+		descriptor.DeclaredCapabilities = []mcp.CapabilityKind{mcp.CapabilityResources, mcp.CapabilityPrompts}
+	}
 	f.server, _, err = f.manager.Stage(ctx, descriptor)
 	if err != nil {
 		t.Fatal(err)
@@ -294,6 +317,13 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		t.Fatalf("advertisement missing: %v", err)
 	}
 	payload, _ := json.Marshal(toolgateway.MCPToolCallPayload{Version: toolgateway.MCPClientToolProtocolVersion, ServerID: descriptor.ID, ToolName: "lookup", CapabilityFingerprint: f.server.ApprovedCapabilityFingerprint, Arguments: json.RawMessage(`{"value":9007199254740993}`)})
+	if method != "" {
+		name, args := "resources.read", `{"uri":"fixture://review"}`
+		if method == "prompts/get" {
+			name, args = "prompts.get", `{"name":"review","arguments":{"language":"Go"}}`
+		}
+		payload, _ = json.Marshal(toolgateway.MCPToolCallPayload{Version: toolgateway.MCPContentToolProtocolVersion, Method: method, ServerID: descriptor.ID, ToolName: name, CapabilityFingerprint: f.server.ApprovedCapabilityFingerprint, Arguments: json.RawMessage(args)})
+	}
 	prepared, err := prepareSupervisorToolCalls([]llm.ToolCall{{ID: "provider-call", Name: mcp.OperationApprovalTool, Arguments: payload}}, run.ID, f.turn.Checkpoint.NextTurn, 1, f.turn.Mode.Surface, f.turn.Mode.Phase, mode, false, false, supervisorToolOptions{MCP: advertisement})
 	if err != nil {
 		t.Fatal(err)

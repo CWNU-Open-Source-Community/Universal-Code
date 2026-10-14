@@ -60,14 +60,15 @@ type ExtensionSourceView struct {
 }
 
 type ExtensionMCPCapabilityView struct {
-	ServerName    string   `json:"server_name,omitempty"`
-	ServerVersion string   `json:"server_version,omitempty"`
-	Negotiated    []string `json:"negotiated"`
-	Tools         []string `json:"tools"`
-	Resources     []string `json:"resources"`
-	Prompts       []string `json:"prompts"`
-	Fingerprint   string   `json:"fingerprint,omitempty"`
-	DiscoveredAt  string   `json:"discovered_at,omitempty"`
+	ServerName        string   `json:"server_name,omitempty"`
+	ServerVersion     string   `json:"server_version,omitempty"`
+	Negotiated        []string `json:"negotiated"`
+	Tools             []string `json:"tools"`
+	Resources         []string `json:"resources"`
+	ResourceTemplates []string `json:"resource_templates,omitempty"`
+	Prompts           []string `json:"prompts"`
+	Fingerprint       string   `json:"fingerprint,omitempty"`
+	DiscoveredAt      string   `json:"discovered_at,omitempty"`
 }
 
 type ExtensionMCPServerView struct {
@@ -386,6 +387,9 @@ func extensionMCPServerView(value mcp.ServerRecord) ExtensionMCPServerView {
 	}
 	for _, resource := range value.Capabilities.Resources {
 		capability.Resources = append(capability.Resources, resource.URI)
+	}
+	for _, template := range value.Capabilities.ResourceTemplates {
+		capability.ResourceTemplates = append(capability.ResourceTemplates, template.URITemplate)
 	}
 	for _, prompt := range value.Capabilities.Prompts {
 		capability.Prompts = append(capability.Prompts, prompt.Name)

@@ -665,7 +665,37 @@ func boundedSupervisorMCPCapabilities(value mcp.ScopedCapabilities) mcp.ScopedCa
 			count++
 			budget -= cost
 		}
-		if len(projected.Tools) > 0 {
+		for _, r := range server.Resources {
+			raw, _ := json.Marshal(r)
+			cost := len(raw) + 512
+			if count >= maxSupervisorMCPTools || cost > budget {
+				break
+			}
+			projected.Resources = append(projected.Resources, r)
+			count++
+			budget -= cost
+		}
+		for _, r := range server.ResourceTemplates {
+			raw, _ := json.Marshal(r)
+			cost := len(raw) + 1024
+			if count >= maxSupervisorMCPTools || cost > budget {
+				break
+			}
+			projected.ResourceTemplates = append(projected.ResourceTemplates, r)
+			count++
+			budget -= cost
+		}
+		for _, p := range server.Prompts {
+			raw, _ := json.Marshal(p)
+			cost := len(raw)*2 + 1024
+			if count >= maxSupervisorMCPTools || cost > budget {
+				break
+			}
+			projected.Prompts = append(projected.Prompts, p)
+			count++
+			budget -= cost
+		}
+		if len(projected.Tools)+len(projected.Resources)+len(projected.ResourceTemplates)+len(projected.Prompts) > 0 {
 			result.Servers = append(result.Servers, projected)
 		}
 	}
@@ -680,10 +710,9 @@ func supervisorMCPToolAvailable(capabilities mcp.ScopedCapabilities,
 			server.CapabilityFingerprint != request.CapabilityFingerprint {
 			continue
 		}
-		for _, tool := range server.Tools {
-			if tool.Name == request.ToolName {
-				return true
-			}
+		snapshot := mcp.CapabilitySnapshot{Tools: server.Tools, Resources: server.Resources, ResourceTemplates: server.ResourceTemplates, Prompts: server.Prompts}
+		if _, err := mcp.ValidateInvocation(snapshot, request.Method, request.ToolName, request.Arguments); err == nil {
+			return true
 		}
 	}
 	return false
@@ -691,6 +720,7 @@ func supervisorMCPToolAvailable(capabilities mcp.ScopedCapabilities,
 
 func supervisorMCPToolSchema(capabilities mcp.ScopedCapabilities) json.RawMessage {
 	type choiceProperties struct {
+		Method                map[string]string `json:"method,omitempty"`
 		Version               map[string]string `json:"version"`
 		ServerID              map[string]string `json:"server_id"`
 		ToolName              map[string]string `json:"tool_name"`
@@ -718,6 +748,10 @@ func supervisorMCPToolSchema(capabilities mcp.ScopedCapabilities) json.RawMessag
 					Arguments: append(json.RawMessage(nil), tool.InputSchema...),
 				}})
 		}
+		for _, content := range server.ContentChoices() {
+			choices = append(choices, choice{Type: "object", AdditionalProperties: false, Required: append(append([]string{}, required...), "method"), Properties: choiceProperties{Version: map[string]string{"const": toolgateway.MCPContentToolProtocolVersion}, Method: map[string]string{"const": content.Method}, ServerID: map[string]string{"const": server.ServerID}, ToolName: map[string]string{"const": content.Name}, CapabilityFingerprint: map[string]string{"const": server.CapabilityFingerprint}, Arguments: content.InputSchema}})
+		}
+
 	}
 	raw, err := json.Marshal(struct {
 		Type  string   `json:"type"`

@@ -287,12 +287,36 @@ func (r RemoteResource) Validate() error {
 	return nil
 }
 
-type RemotePrompt struct {
+type RemotePromptArgument struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+type RemoteResourceTemplate struct {
+	URITemplate string `json:"uri_template"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mime_type,omitempty"`
+}
+
+type RemotePrompt struct {
+	Arguments   []RemotePromptArgument `json:"arguments,omitempty"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
 }
 
 func (p RemotePrompt) Validate() error {
+	if len(p.Arguments) > 128 {
+		return errors.New("too many MCP prompt arguments")
+	}
+	seen := map[string]bool{}
+	for _, a := range p.Arguments {
+		if !validRemoteName(a.Name) || !validClientText(a.Description, MaxClientDescriptionBytes, true) || seen[a.Name] {
+			return errors.New("invalid MCP prompt argument")
+		}
+		seen[a.Name] = true
+	}
 	if !validRemoteName(p.Name) || !validClientText(p.Description, MaxClientDescriptionBytes, true) {
 		return errors.New("discovered MCP prompt is invalid")
 	}
@@ -300,21 +324,22 @@ func (p RemotePrompt) Validate() error {
 }
 
 type CapabilitySnapshot struct {
-	ProtocolVersion string           `json:"protocol_version"`
-	ServerName      string           `json:"server_name"`
-	ServerVersion   string           `json:"server_version"`
-	Negotiated      []CapabilityKind `json:"negotiated"`
-	Tools           []RemoteTool     `json:"tools"`
-	Resources       []RemoteResource `json:"resources"`
-	Prompts         []RemotePrompt   `json:"prompts"`
-	Fingerprint     string           `json:"fingerprint"`
-	DiscoveredAt    time.Time        `json:"discovered_at"`
+	ResourceTemplates []RemoteResourceTemplate `json:"resource_templates,omitempty"`
+	ProtocolVersion   string                   `json:"protocol_version"`
+	ServerName        string                   `json:"server_name"`
+	ServerVersion     string                   `json:"server_version"`
+	Negotiated        []CapabilityKind         `json:"negotiated"`
+	Tools             []RemoteTool             `json:"tools"`
+	Resources         []RemoteResource         `json:"resources"`
+	Prompts           []RemotePrompt           `json:"prompts"`
+	Fingerprint       string                   `json:"fingerprint"`
+	DiscoveredAt      time.Time                `json:"discovered_at"`
 }
 
 func (s CapabilitySnapshot) Validate() error {
 	if !supportedClientProtocol(s.ProtocolVersion) || !validClientIdentity(s.ServerName) ||
 		!validClientText(s.ServerVersion, 128, false) || len(s.Tools) > MaxClientTools ||
-		len(s.Resources) > MaxClientResources || len(s.Prompts) > MaxClientPrompts ||
+		len(s.Resources) > MaxClientResources || len(s.ResourceTemplates) > MaxClientResources || len(s.Prompts) > MaxClientPrompts ||
 		!validClientDigest(s.Fingerprint) || s.DiscoveredAt.IsZero() {
 		return errors.New("MCP capability snapshot identity or bounds are invalid")
 	}
@@ -343,6 +368,11 @@ func (s CapabilitySnapshot) Validate() error {
 	}
 	for _, resource := range s.Resources {
 		if err := resource.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, template := range s.ResourceTemplates {
+		if err := template.Validate(); err != nil {
 			return err
 		}
 	}

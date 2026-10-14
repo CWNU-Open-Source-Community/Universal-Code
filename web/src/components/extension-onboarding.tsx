@@ -159,10 +159,11 @@ export function MCPReviewControls({ client, server, onOpenTask, credentialCapabi
       : t("先核对来源、目标、范围与描述符指纹，再明确批准发现。", "Inspect source, target, scope, and descriptor fingerprint before approving discovery.")}</p>
     {server.health_message && <p className="inline-warning">{server.health_message}</p>}
     <p>{t("已发现能力", "Discovered capabilities")}: {server.capabilities.negotiated.join(", ") || "—"}</p>
-    {server.state === "enabled" && server.capabilities.tools.length === 0 && <p>{t("未发现可调用工具。当前任务的 MCP 调用入口需要 tools 能力；请重新发现，或登记提供工具的 Server。",
-      "No callable tools were discovered. Task MCP calls require the tools capability; rediscover or register a server that provides tools.")}</p>}
+    {server.state === "enabled" && server.capabilities.tools.length + server.capabilities.resources.length + server.capabilities.prompts.length + (server.capabilities.resource_templates?.length ?? 0) === 0 && <p>{t("未发现工具、资源、资源模板或 Prompt，请重新发现并检查服务器发布的能力。",
+      "No tools, resources, resource templates, or prompts were discovered. Rediscover and check the server's published capabilities.")}</p>}
     {server.capabilities.tools.length > 0 && <p className="extension-tool-list">{server.capabilities.tools.join(", ")}</p>}
     {server.capabilities.resources.length > 0 && <p className="extension-tool-list">Resources: {server.capabilities.resources.join(", ")}</p>}
+    {(server.capabilities.resource_templates?.length ?? 0) > 0 && <p className="extension-tool-list">Resource templates: {server.capabilities.resource_templates?.join(", ")}</p>}
     {server.capabilities.prompts.length > 0 && <p className="extension-tool-list">Prompts: {server.capabilities.prompts.join(", ")}</p>}
     {reviewable && <>
       <label><input checked={confirmed} disabled={review.isPending} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />

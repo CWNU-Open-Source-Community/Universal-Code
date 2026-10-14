@@ -7239,6 +7239,7 @@ export interface components {
             fingerprint?: string;
             negotiated: string[];
             prompts: string[];
+            resource_templates?: string[];
             resources: string[];
             server_name?: string;
             server_version?: string;

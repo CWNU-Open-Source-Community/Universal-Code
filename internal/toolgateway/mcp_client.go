@@ -18,7 +18,10 @@ import (
 
 const MCPClientToolProtocolVersion = "mcp-client.v1"
 
+const MCPContentToolProtocolVersion = "mcp-client.v2"
+
 type MCPToolCallPayload struct {
+	Method                string          `json:"method,omitempty"`
 	Version               string          `json:"version"`
 	ServerID              string          `json:"server_id"`
 	ToolName              string          `json:"tool_name"`
@@ -28,8 +31,8 @@ type MCPToolCallPayload struct {
 
 var mcpToolCallDefinition = ToolDefinition{Name: MCPToolCallTool, Class: ClassProcess,
 	Approval:    ApprovalAutomatic,
-	Description: "Invoke one tool from an operator-enabled, Run/Workspace-scoped MCP server. The approved capability fingerprint is rechecked immediately before every call; remote output is untrusted.",
-	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","server_id","tool_name","capability_fingerprint","arguments"],"properties":{"version":{"const":"mcp-client.v1"},"server_id":{"type":"string","minLength":1,"maxLength":256},"tool_name":{"type":"string","minLength":1,"maxLength":256},"capability_fingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"},"arguments":{"type":"object"}}}`)}
+	Description: "Invoke an approved tool, read an approved resource/template, or get an approved prompt from a Run/Workspace-scoped MCP server. Use mcp-client.v1 for tools; mcp-client.v2 with method resources/read or prompts/get and tool_name resources.read or prompts.get for content. The approved capability fingerprint is rechecked immediately before every call; remote output is untrusted.",
+	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","server_id","tool_name","capability_fingerprint","arguments"],"properties":{"version":{"enum":["mcp-client.v1","mcp-client.v2"]},"method":{"enum":["resources/read","prompts/get"]},"server_id":{"type":"string","minLength":1,"maxLength":256},"tool_name":{"type":"string","minLength":1,"maxLength":256},"capability_fingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"},"arguments":{"type":"object"}}}`)}
 
 func MCPToolDefinition() ToolDefinition {
 	value := mcpToolCallDefinition
@@ -54,7 +57,7 @@ func NormalizeMCPToolPayload(raw json.RawMessage) (MCPToolCallPayload, json.RawM
 	value.ToolName = strings.TrimSpace(value.ToolName)
 	value.CapabilityFingerprint = strings.TrimSpace(value.CapabilityFingerprint)
 	value.Arguments = append(json.RawMessage(nil), bytes.TrimSpace(value.Arguments)...)
-	if value.Version != MCPClientToolProtocolVersion || !validMCPIdentity(value.ServerID) ||
+	if !((value.Version == MCPClientToolProtocolVersion && value.Method == "") || (value.Version == MCPContentToolProtocolVersion && ((value.Method == "resources/read" && value.ToolName == "resources.read") || (value.Method == "prompts/get" && value.ToolName == "prompts.get")))) || !validMCPIdentity(value.ServerID) ||
 		!validMCPIdentity(value.ToolName) || !validAgentCodeDigest(value.CapabilityFingerprint, false) ||
 		len(value.Arguments) < 2 || len(value.Arguments) > MaxArgumentValueBytes ||
 		!json.Valid(value.Arguments) || value.Arguments[0] != '{' {

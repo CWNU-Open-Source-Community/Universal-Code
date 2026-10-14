@@ -2070,6 +2070,26 @@ control capability or control authentication. Unregistered servers need setup,
 staged entries need review, and discovery/probe failures require checking the
 reported executable, transport, hash or protocol error before retrying.
 
+### Read MCP resources and obtain prompts
+
+After discovery and capability approval, the task's model can use the same
+`mcp_tool_call` entry to read listed resources, expand resource templates, or
+obtain a named prompt. Ask the task to read the desired MCP resource or use the
+named prompt; its approved catalog supplies URI, template variables and prompt
+arguments. Ask/Auto calls still wait for the existing per-call review. Full calls
+require current operator activation. Returned prompt messages remain untrusted
+content in the tool result.
+
+The content payload is `mcp-client.v2`; existing `mcp-client.v1` tool payloads
+remain valid. Resource reads set `method` to `resources/read` and `tool_name` to
+`resources.read`, with `arguments` containing either `{"uri":"..."}` or
+`{"uri_template":"...","variables":{"name":"value"}}`. Prompt retrieval sets
+`method` to `prompts/get`, `tool_name` to `prompts.get`, and `arguments` to
+`{"name":"...","arguments":{"name":"value"}}`. Each payload also includes the
+approved `server_id` and `capability_fingerprint`. A resource URI is sent only
+to that server. Changed templates or prompt argument definitions require renewed
+capability review. Interrupted calls with an unknown outcome are not replayed.
+
 ## MCP Server
 
 `cyberagent mcp serve` runs a Model Context Protocol server over stdio

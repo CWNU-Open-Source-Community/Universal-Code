@@ -57,7 +57,7 @@ func (m *Manager) discoverNativeSource(ctx context.Context, record ServerRecord)
 		return CapabilitySnapshot{}, err
 	}
 	scope := toolcontract.DiscoveryScope{OperationID: "discovery-" + record.DiscoveryLeaseID, ConnectionFingerprint: fingerprint, Profile: launch.ProtocolVersions[0],
-		Methods: []string{"initialize", "notifications/initialized", "tools/list", "resources/list", "prompts/list"}, MaxRequests: 64, MaxBytes: 1024 * 1024,
+		Methods: []string{"initialize", "notifications/initialized", "tools/list", "resources/list", "resources/templates/list", "prompts/list"}, MaxRequests: 64, MaxBytes: 1024 * 1024,
 		ExpiresAt: m.now().Add(time.Duration(record.Descriptor.CallTimeoutMillis) * time.Millisecond)}
 	if scope.Profile == preferredClientProtocolVersion {
 		scope.Methods = append(scope.Methods, "server/discover")
