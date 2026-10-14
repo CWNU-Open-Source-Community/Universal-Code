@@ -28,7 +28,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 6 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
-| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 55 | true |
+| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 56 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 6 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
@@ -1112,14 +1112,15 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Owner: Command, model, terminal, and runner lifecycle maintainers
 - Source of truth: `internal/application`, `internal/runner`, `internal/store`
 - Persistence/export boundary: Durable intent, executable identity, bounds, cancellation, terminal state, and cleanup survive failure.
-- Compatibility rule: Preserve write-ahead intent, generation fencing, result binding, and cleanup; retain supported readers.
+- Compatibility rule: Preserve write-ahead intent, generation fencing, result binding, and cleanup; retain supported readers. The command-runtime-legacy-unbound.v1 migration marker retains the original empty authority for pre-v131 Supervisor calls. History readers preserve it, and executable authority decoders reject it.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
   - `process-runtime-lifecycle-writer` (`v1, v2`, write-new) at `internal/application`
+  - `command-runtime-legacy-history-migration-writer` (`v1`, write-current) at `internal/store/migration_v131.go`
 - Readers:
   - `process-runtime-lifecycle-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>55 active identifiers</summary>
+<details><summary>56 active identifiers</summary>
 
 - `application_docker_container_lifecycle_post_exit.v1`
 - `application_docker_container_lifecycle_running.v1`
@@ -1127,6 +1128,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `command-runtime-adapter-authority.v1`
 - `command-runtime-adapter-authority.v2`
 - `command-runtime-batch.v2`
+- `command-runtime-legacy-unbound.v1`
 - `command-runtime-policy.v2`
 - `command-runtime-result.v2`
 - `command-runtime-workspace-boundary.v1`

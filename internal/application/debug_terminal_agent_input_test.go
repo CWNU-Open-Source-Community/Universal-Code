@@ -336,7 +336,7 @@ func TestDebugTerminalAgentInputReadsBoundedOutputAndHasOneRunBinding(t *testing
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if err != nil || string(output.Data) != "bounded terminal output\r\n" ||
+	if err != nil || string(output.Data) != "bounded terminal output\n" ||
 		output.NextCursor <= output.BaseCursor || output.Dropped {
 		t.Fatalf("output=%#v err=%v", output, err)
 	}
@@ -404,8 +404,93 @@ func TestDebugTerminalAgentInputCannotReadOutputFromBeforeGrant(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if err != nil || string(page.Data) != "agent-visible output after grant\r\n" {
+	if err != nil || string(page.Data) != "agent-visible output after grant\n" {
 		t.Fatalf("post-grant output=%q err=%v", page.Data, err)
+	}
+}
+
+func TestDebugTerminalAgentOutputFencesOnlyAdmittedGrantOrCommand(t *testing.T) {
+	for _, action := range []string{"grant", "write", "regrant", "duplicate_grant"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newDebugTerminalAgentFixture(t, false)
+			ctx := t.Context()
+			request := GrantDebugTerminalAgentInputRequest{
+				ProtocolVersion: DebugTerminalAgentInputProtocolVersion,
+				RunID:           fixture.run.ID, TerminalSessionID: fixture.sessionID,
+				RequestedBy: "test_operator", ConfirmFullAccess: true,
+				ConfirmAgentTerminalInput: true, TTL: time.Minute,
+			}
+			var binding DebugTerminalAgentInputBinding
+			var err error
+			if action != "grant" {
+				binding, err = fixture.service.Grant(ctx, request)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := "history\nold pending"
+			if err := fixture.process.emit(before); err != nil {
+				t.Fatal(err)
+			}
+			waitForDebugTerminalRingData(t, fixture.manager, fixture.sessionID)
+			var cursor uint64
+			switch action {
+			case "regrant":
+				err = fixture.service.Revoke(ctx, RevokeDebugTerminalAgentInputRequest{
+					ProtocolVersion: DebugTerminalAgentInputProtocolVersion,
+					BindingID:       binding.ID, RequestedBy: "test_operator", OperatorConfirmed: true,
+				})
+				if err == nil {
+					binding, err = fixture.service.Grant(ctx, request)
+				}
+			case "grant":
+				binding, err = fixture.service.Grant(ctx, request)
+			case "write":
+				var written DebugTerminalAgentInputWriteResult
+				written, err = fixture.service.Write(ctx, WriteDebugTerminalAgentInputRequest{
+					ProtocolVersion: DebugTerminalAgentInputProtocolVersion, BindingID: binding.ID,
+					OperationKey: "output-fence-command", Data: []byte("pwd\r"),
+				})
+				cursor = written.OutputCursor
+			case "duplicate_grant":
+				_, duplicateErr := fixture.service.Grant(ctx, request)
+				if apperror.CodeOf(duplicateErr) != apperror.CodeConflict {
+					t.Fatalf("duplicate grant=%v", duplicateErr)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := fixture.service.Active(ctx, fixture.run.ID); err != nil || !found {
+				t.Fatalf("active binding=%t err=%v", found, err)
+			}
+			if err := fixture.process.emit(" finished\nnew line\n"); err != nil {
+				t.Fatal(err)
+			}
+			var output DebugTerminalAgentOutputResult
+			deadline := time.Now().Add(time.Second)
+			for time.Now().Before(deadline) {
+				output, err = fixture.service.Read(ctx, ReadDebugTerminalAgentOutputRequest{
+					ProtocolVersion: DebugTerminalAgentInputProtocolVersion,
+					BindingID:       binding.ID, Cursor: cursor, MaxBytes: 1024,
+				})
+				if err != nil || strings.Contains(string(output.Data), "new line") {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			want := "new line\n"
+			if action == "duplicate_grant" {
+				want = "history\nold pending finished\nnew line\n"
+			}
+			if err != nil || string(output.Data) != want {
+				t.Fatalf("output=%q, want %q err=%v", output.Data, want, err)
+			}
+			userOutput, err := fixture.manager.Read(fixture.sessionID, 0, 1024)
+			if err != nil || string(userOutput.Data) != before+" finished\nnew line\n" {
+				t.Fatalf("raw terminal changed: %q err=%v", userOutput.Data, err)
+			}
+		})
 	}
 }
 

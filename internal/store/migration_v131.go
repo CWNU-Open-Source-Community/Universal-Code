@@ -310,7 +310,20 @@ var commandRuntimeAdapterStatements = func() []string {
 		`DROP INDEX idx_supervisor_tool_stream_item_identity;`,
 		`ALTER TABLE run_supervisor_tool_calls RENAME TO run_supervisor_tool_calls_v130;`,
 		createCalls,
-		`INSERT INTO run_supervisor_tool_calls_v131 SELECT *
+		// v116-v130 command calls carried no adapter authority. Preserve their
+		// audit fields with a readable history marker that DecodeAuthority
+		// rejects, rather than manufacturing a binding to an executable adapter.
+		`INSERT INTO run_supervisor_tool_calls_v131
+			(run_id, turn, attempt_id, round, position, model_attempt, call_id,
+			 tool_name, payload_json, authority_json, status, result_json, error_code,
+			 created_at, completed_at, stream_response_id, stream_item_id, stream_call_id)
+		SELECT run_id, turn, attempt_id, round, position, model_attempt, call_id,
+			tool_name, payload_json,
+			CASE WHEN tool_name = 'command_runtime' AND authority_json = ''
+				THEN '{"protocol_version":"command-runtime-legacy-unbound.v1","authority_json":""}'
+				ELSE authority_json END,
+			status, result_json, error_code, created_at, completed_at,
+			stream_response_id, stream_item_id, stream_call_id
 			FROM run_supervisor_tool_calls_v130;`,
 		`DROP TABLE run_supervisor_tool_calls_v130;`,
 		`ALTER TABLE run_supervisor_tool_calls_v131 RENAME TO run_supervisor_tool_calls;`,

@@ -6,5 +6,5 @@ const (
 	cleanInstallBaselineSchemaVersion       = 191
 	cleanInstallBaselineSQLSHA256           = "f8a0d07fb26cc0f16d702ecc8b8c7b940f420d89b18a21ed727b70a01dbb9643"
 	cleanInstallBaselineSchemaSHA256        = "45f2ab215ab961c2fefa81c24660f10bad8e55a162bba5325386887f490e7cbb"
-	cleanInstallBaselineMigrationPlanSHA256 = "bc5477c7d7958b63d49146fd047af90a4a836681b4e76fd8b76b7e6d936fcbb5"
+	cleanInstallBaselineMigrationPlanSHA256 = "2ba02c275a57917b50946985dacfb29bdf87cf2e3188c2c1e617f8dff3f0cd66"
 )
