@@ -818,25 +818,10 @@ func replaceFold(value, old, replacement string) string {
 	if old == "" {
 		return value
 	}
-	lowerValue, lowerOld := strings.ToLower(value), strings.ToLower(old)
-	if !strings.Contains(lowerValue, lowerOld) {
-		return value
-	}
-	var projected strings.Builder
-	projected.Grow(len(value))
-	start := 0
-	for start < len(value) {
-		index := strings.Index(lowerValue[start:], lowerOld)
-		if index < 0 {
-			projected.WriteString(value[start:])
-			break
-		}
-		index += start
-		projected.WriteString(value[start:index])
-		projected.WriteString(replacement)
-		start = index + len(old)
-	}
-	return projected.String()
+	// Case folding can change UTF-8 byte widths (for example, K and k).
+	// Match against the original text so replacement spans retain its offsets.
+	pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(old))
+	return pattern.ReplaceAllStringFunc(value, func(string) string { return replacement })
 }
 
 func safeRelativeActivityDirectory(value, workspaceRoot string) string {

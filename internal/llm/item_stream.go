@@ -420,6 +420,7 @@ type streamAccumulatorItem struct {
 	status        StreamItemStatus
 	rawCallID     string
 	callID        string
+	toolOrdinal   int
 	toolName      string
 	argumentBytes int
 	argumentParts []string
@@ -623,6 +624,9 @@ func (a *ItemStreamAccumulator) consumeExplicit(raw StreamEvent) (StreamEvent, e
 		item := &streamAccumulatorItem{rawID: raw.ItemID,
 			id:       StableStreamID("item", a.responseID, strconv.Itoa(len(a.itemOrder)+1)),
 			typeName: raw.ItemType, status: StreamItemInProgress}
+		if raw.ItemType == StreamItemToolCall {
+			item.toolOrdinal = len(a.toolItems()) + 1
+		}
 		a.items[raw.ItemID] = item
 		a.itemOrder = append(a.itemOrder, item)
 		event.ItemID = item.id
@@ -659,7 +663,7 @@ func (a *ItemStreamAccumulator) consumeExplicit(raw StreamEvent) (StreamEvent, e
 			return StreamEvent{}, err
 		}
 		item.rawCallID = raw.CallID
-		item.callID = StableStreamID("call", a.responseID, strconv.Itoa(len(a.toolItems())))
+		item.callID = StableStreamID("call", a.responseID, strconv.Itoa(item.toolOrdinal))
 		item.toolName = raw.ToolName
 		event.ItemID, event.CallID = item.id, item.callID
 	case StreamToolArgumentDelta:
@@ -883,6 +887,7 @@ func (a *ItemStreamAccumulator) clone() *ItemStreamAccumulator {
 		cloned := &streamAccumulatorItem{
 			rawID: item.rawID, id: item.id, typeName: item.typeName, status: item.status,
 			rawCallID: item.rawCallID, callID: item.callID, toolName: item.toolName,
+			toolOrdinal:   item.toolOrdinal,
 			argumentBytes: item.argumentBytes, argumentDelta: item.argumentDelta,
 			argumentParts: item.argumentParts[:len(item.argumentParts):len(item.argumentParts)],
 			callComplete:  item.callComplete, itemComplete: item.itemComplete,

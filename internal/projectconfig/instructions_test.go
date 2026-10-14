@@ -73,6 +73,39 @@ func TestDiscoverInstructionsIsHierarchicalDeterministicAndExplainable(t *testin
 	}
 }
 
+func TestDiscoverInstructionsManyRulesPreserveNestedPrecedence(t *testing.T) {
+	for _, count := range []int{9, MaxInstructionFiles - 2} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			root := t.TempDir()
+			for index := 0; index < count; index++ {
+				writeInstruction(t, root, fmt.Sprintf(".prayu/rules/%02d.md", index), "Root guidance.\n")
+			}
+			writeInstruction(t, root, "src/AGENTS.md", "Source guidance.\n")
+			writeInstruction(t, root, "src/nested/AGENTS.md", "Nearest guidance.\n")
+			first, err := DiscoverInstructions(t.Context(), root, "src/nested")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(first.Sources) != count+2 {
+				t.Fatalf("sources=%d want=%d", len(first.Sources), count+2)
+			}
+			for index := 1; index < len(first.Sources); index++ {
+				if first.Sources[index].Precedence <= first.Sources[index-1].Precedence {
+					t.Fatalf("precedence moved backwards: %+v", first.Sources[index])
+				}
+			}
+			last := first.Sources[len(first.Sources)-1]
+			if last.Path != canonicalInstructionPath("src/nested/AGENTS.md") || last.Depth != 2 {
+				t.Fatalf("nearest guidance lost: %+v", last)
+			}
+			second, err := DiscoverInstructions(t.Context(), root, "src/nested")
+			if err != nil || first.Fingerprint != second.Fingerprint {
+				t.Fatalf("discovery is not stable: %v", err)
+			}
+		})
+	}
+}
+
 func TestDiscoverInstructionsAppliesIgnoreAndRedactsSecrets(t *testing.T) {
 	root := t.TempDir()
 	writeInstruction(t, root, "AGENTS.md", "token=ghp_abcdefghijklmnopqrstuvwxyz1234567890\n")

@@ -84,6 +84,7 @@ type githubReviewClientEntry struct {
 type GitHubReviewService struct {
 	store                  GitHubReviewStore
 	credentials            credential.Store
+	authLifecycle          *githubreview.AuthLifecycle
 	executor               *repository.AdvancedExecutor
 	permissionCapabilities domain.ExecutionPermissionRuntimeCapabilities
 	now                    func() time.Time
@@ -112,7 +113,11 @@ func NewGitHubReviewService(store GitHubReviewStore, credentials credential.Stor
 		return nil, apperror.New(apperror.CodeFailedPrecondition,
 			"GitHub review service requires Git, system credential storage, and operator approval")
 	}
-	service := &GitHubReviewService{store: store, credentials: credentials,
+	lifecycle, err := githubreview.NewAuthLifecycle(credentials)
+	if err != nil {
+		return nil, githubReviewApplicationError(err)
+	}
+	service := &GitHubReviewService{store: store, credentials: credentials, authLifecycle: lifecycle,
 		executor: executor, permissionCapabilities: permissionCapabilities,
 		now:     func() time.Time { return time.Now().UTC() },
 		clients: make(map[string]githubReviewClientEntry)}
@@ -938,7 +943,7 @@ func (s *GitHubReviewService) loadClient(ctx context.Context, connectionID strin
 	if cached, ok := s.clients[connection.ID]; ok && cached.generation == connection.Generation {
 		return connection, cached.auth, cached.client, nil
 	}
-	auth, err := githubreview.NewAuthManager(s.credentials, connection.ClientID)
+	auth, err := s.authLifecycle.NewManager(connection.ClientID)
 	if err != nil {
 		return githubreview.Connection{}, nil, nil, githubReviewApplicationError(err)
 	}

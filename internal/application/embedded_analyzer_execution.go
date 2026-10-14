@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/artifact"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -204,7 +205,14 @@ func readEmbeddedAnalyzerWorkspaceFile(root, relative string) ([]byte, error) {
 		return nil, fmt.Errorf("open analyzer workspace root: %w", err)
 	}
 	defer confinedRoot.Close()
-	file, err := confinedRoot.Open(clean)
+	before, err := confinedRoot.Stat(clean)
+	if err != nil {
+		return nil, fmt.Errorf("stat analyzer input within workspace: %w", err)
+	}
+	if !before.Mode().IsRegular() {
+		return nil, errors.New("analyzer file must be regular")
+	}
+	file, err := rootfs.OpenReadOnly(confinedRoot, clean)
 	if err != nil {
 		return nil, fmt.Errorf("open analyzer input within workspace: %w", err)
 	}
