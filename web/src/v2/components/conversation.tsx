@@ -181,7 +181,7 @@ export function V2FileDrawer({
           ) : workspaceQuery.isError ? (
             <div className="v2-notice" role="alert">
               <p>无法确认此执行的工作区，文件目录可能已清理或暂时无法读取。请重试确认后查看文件。</p>
-              <button disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()} type="button">
+              <button className="compact-command" disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()} type="button">
                 重试工作区确认
               </button>
             </div>

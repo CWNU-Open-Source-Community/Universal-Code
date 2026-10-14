@@ -69,7 +69,7 @@ export function EmbeddedAnalyzerPanel({ client, runID }: {
           type="checkbox" />
         <span>{t("运行分析器，并将结果保存为本次执行的产物。", "Run the analyzer and save the result as an artifact for this execution.")}</span>
       </label>
-      <button className="primary-button" disabled={!confirmed || !hasInput || mutation.isPending}
+      <button className="command-button" disabled={!confirmed || !hasInput || mutation.isPending}
         onClick={() => mutation.mutate()} type="button">
         {mutation.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={15} /> :
           <Binary aria-hidden="true" size={15} />}

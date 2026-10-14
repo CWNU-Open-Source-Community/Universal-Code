@@ -370,6 +370,11 @@
   .v2-permission-settings-card .v2-permission-options { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 480px) {
+  .v2-setting-row { align-items: stretch; flex-direction: column; gap: 10px; padding-block: 14px; }
+  .v2-setting-value { align-self: flex-start; max-width: 100%; flex-wrap: wrap; }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .v2-provider-list,
 .v2-provider-fields { backdrop-filter: none; background: var(--prayu-panel-strong); }

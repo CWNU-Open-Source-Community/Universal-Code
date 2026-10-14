@@ -82,12 +82,28 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     attachment.mutate({ sourceRef, contentSHA256 });
   };
 
-  if (!workspaceID) return <EmptyState>{t("绑定项目后可查看文件，请返回对话核对项目选择。", "Bind a project to inspect files. Return to the conversation to review the project selection.")}</EmptyState>;
-  if (query.isLoading) return <LoadingState label={t("正在加载工作区文件", "Loading Workspace files")} />;
-  if (query.isError || !query.data) return <div className="explorer-error"><ErrorState error={query.error} />
-    <p className="explorer-error-hint" role="alert">{t("目标路径读取失败，请重试或返回上级目录确认文件位置。", "Reading this path failed. Retry or return to the parent directory to locate the file.")}</p>
-    <button onClick={() => void query.refetch()} type="button">{t("重试文件读取", "Retry file read")}</button>
-    <button onClick={() => navigate(parent)} type="button">{t("返回上级目录", "Return to parent")}</button></div>;
+  if (!workspaceID) return <section className="workspace-explorer">
+    <EmptyState>{t("绑定项目后可查看文件，请返回对话核对项目选择。", "Bind a project to inspect files. Return to the conversation to review the project selection.")}</EmptyState>
+  </section>;
+  if (query.isLoading) return <section className="workspace-explorer">
+    <LoadingState label={t("正在加载工作区文件", "Loading Workspace files")} />
+  </section>;
+  if (query.isError || !query.data) return <section className="workspace-explorer">
+    <div className="explorer-error">
+      <h4>{t("无法读取工作区文件", "Unable to read Workspace files")}</h4>
+      <p className="explorer-error-hint" role="alert">{t("目标路径读取失败，请重试或返回上级目录确认文件位置。", "Reading this path failed. Retry or return to the parent directory to locate the file.")}</p>
+      <div className="explorer-error-actions">
+        <button className="compact-command" disabled={query.isFetching}
+          onClick={() => void query.refetch()} type="button">{t("重试文件读取", "Retry file read")}</button>
+        <button className="compact-command" disabled={path === "." || query.isFetching}
+          onClick={() => navigate(parent)} type="button">{t("返回上级目录", "Return to parent")}</button>
+      </div>
+      <details className="explorer-error-details">
+        <summary>{t("错误详情", "Error details")}</summary>
+        <ErrorState error={query.error} />
+      </details>
+    </div>
+  </section>;
   const snapshot = query.data;
 
   return <section className="workspace-explorer" aria-label={t("工作区文件", "Workspace files")}>
