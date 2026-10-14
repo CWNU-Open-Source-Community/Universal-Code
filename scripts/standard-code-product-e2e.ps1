@@ -166,9 +166,9 @@ if ($Mode -eq "Prepare") {
     $untrackedPath = Join-Path $goRoot "edge/user-untracked.bin"
     [System.IO.File]::WriteAllBytes($untrackedPath, [byte[]](0, 255, 13, 10, 128, 1, 2, 3))
 
-    $home = Join-Path $sessionRoot "isolated home"
+    $isolatedHome = Join-Path $sessionRoot "isolated home"
     $evidenceRoot = Join-Path $sessionRoot "evidence"
-    [System.IO.Directory]::CreateDirectory($home) | Out-Null
+    [System.IO.Directory]::CreateDirectory($isolatedHome) | Out-Null
     foreach ($relative in @("launch", "surfaces", "fallback", "continuity",
             "windows_10", "windows_11")) {
         [System.IO.Directory]::CreateDirectory((Join-Path $evidenceRoot $relative)) | Out-Null
@@ -176,7 +176,7 @@ if ($Mode -eq "Prepare") {
 
     $previousHome = [System.Environment]::GetEnvironmentVariable("CYBERAGENT_HOME", "Process")
     try {
-        [System.Environment]::SetEnvironmentVariable("CYBERAGENT_HOME", $home, "Process")
+        [System.Environment]::SetEnvironmentVariable("CYBERAGENT_HOME", $isolatedHome, "Process")
         $process = Start-Process -FilePath $extractedBinary -WorkingDirectory $packageRoot `
             -PassThru
     }
@@ -184,7 +184,7 @@ if ($Mode -eq "Prepare") {
         [System.Environment]::SetEnvironmentVariable("CYBERAGENT_HOME", $previousHome, "Process")
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    $database = Join-Path $home "cyberagent.db"
+    $database = Join-Path $isolatedHome "cyberagent.db"
     while ([DateTime]::UtcNow -lt $deadline -and
         -not (Test-Path -LiteralPath $database -PathType Leaf)) {
         $process.Refresh()
@@ -220,7 +220,7 @@ if ($Mode -eq "Prepare") {
         fixture_report_path = $fixtureReportPath
         repositories_root = $repositoriesRoot
         extracted_binary = $extractedBinary
-        home = $home
+        home = $isolatedHome
         evidence_root = $evidenceRoot
         launch_record_path = $launchRecordPath
         launch_record_sha256 = Get-SHA256 $launchRecordPath

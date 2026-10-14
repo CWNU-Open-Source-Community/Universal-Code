@@ -238,6 +238,7 @@
         "child_task_admission.v1",
         "child_task_admit.v1",
         "child_task_dedup.v1",
+        "child_task_dependency.v1",
         "child_task_instruction.v1",
         "child_task_proposal.v1",
         "child_task_proposals.v1",

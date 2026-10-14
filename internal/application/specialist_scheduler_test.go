@@ -18,6 +18,7 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/store"
+	"cyberagent-workbench/internal/waitgraph"
 )
 
 func TestSpecialistSchedulerRunsTwoChildrenConcurrentlyWithinOneLease(t *testing.T) {
@@ -128,6 +129,48 @@ func TestSpecialistSchedulerStopsWhenAllChildrenFinish(t *testing.T) {
 		if err != nil || updated.Status != domain.AgentCompleted || updated.FinishedAt == nil {
 			t.Fatalf("finished child is not terminal: child=%#v err=%v", updated, err)
 		}
+	}
+}
+
+func TestSpecialistSchedulerWaitsForDependencyBeforeCallingModel(t *testing.T) {
+	report := domain.CompletionReport{Version: domain.CompletionReportVersion,
+		Outcome: domain.CompletionSucceeded, Summary: "bounded work completed",
+		WorkItemIDs: []string{}, NoteIDs: []string{}}
+	response := llm.ChatResponse{Text: specialistResponse(t, domain.SpecialistAction{
+		Version: domain.SpecialistLifecycleVersion, Kind: domain.SpecialistActionFinish,
+		Message: "child finished", Report: &report,
+	}), Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}
+	provider := &specialistTestProvider{responses: []llm.ChatResponse{response, response}}
+	st, run, children, scheduler := newSpecialistSchedulerFixture(t, provider,
+		domain.Budget{MaxTurns: 20}, 4, 64)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	if _, _, err := st.RecordDependencyWait(ctx, domain.DependencyEdge{
+		ID: "scheduler-dependency", RunID: run.ID, SourceKind: waitgraph.KindAgent, SourceID: children[1].ID,
+		TargetKind: waitgraph.KindAgent, TargetID: children[0].ID, Reason: "consume the first result",
+		State: domain.AgentDependencyWait, FailurePolicy: domain.DependencyPolicyFail, Generation: 1,
+		CreatedAt: now, UpdatedAt: now, Deadline: now.Add(time.Minute),
+	}, "scheduler-dependency-operation"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := scheduler.Execute(ctx, application.SpecialistScheduleRequest{
+		RunID: run.ID, AgentIDs: childIDs(children), MaxRounds: 4,
+	})
+	if err != nil || result.StopReason != application.SpecialistScheduleAllTerminal ||
+		result.RoundsCompleted != 2 || result.TurnsStarted != 2 || len(result.Turns) != 2 {
+		t.Fatalf("dependency schedule failed: %#v err=%v", result, err)
+	}
+	if result.Turns[0].AgentID != children[0].ID || result.Turns[1].AgentID != children[1].ID {
+		t.Fatalf("dependent child executed before its target: %#v", result.Turns)
+	}
+	target, err := st.GetAgentNode(ctx, children[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := st.ListAgentAttempts(ctx, children[1].ID)
+	if err != nil || len(attempts) != 1 || target.FinishedAt == nil ||
+		attempts[0].StartedAt.Before(*target.FinishedAt) {
+		t.Fatalf("dependent child started before completion: target=%#v attempts=%#v err=%v", target, attempts, err)
 	}
 }
 

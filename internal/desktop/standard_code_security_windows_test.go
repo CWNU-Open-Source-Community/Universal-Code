@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +41,31 @@ func TestStandardCodeSecurityRecoveryTerminationPolicy(t *testing.T) {
 	for caseID := range standardCodeRecoveryCases {
 		if got := standardCodeSecurityRecoveryForceTermination(caseID); got != forced[caseID] {
 			t.Fatalf("force termination for %s = %t, want %t", caseID, got, forced[caseID])
+		}
+	}
+}
+
+func TestStandardCodeRendererCloseRecoveryCannotReportSyntheticPass(t *testing.T) {
+	request := packagede2e.SecurityDriverCase{
+		Attack: packagede2e.AttackCase{ID: "recovery_renderer_close", Category: "recovery",
+			ExpectedSignal: "recovery_required"}, Backend: "local",
+	}
+	driver := &standardCodeSecurityDriver{opened: true, available: map[string]bool{"local": true}}
+	result, err := driver.Execute(context.Background(), request)
+	if !errors.Is(err, errStandardCodeRendererRecoveryUnsupported) ||
+		result.Status != packagede2e.SecurityEvidenceFailed || result.ActualExecution ||
+		result.ActualSignal != "unsupported" ||
+		result.DiagnosticCode != "product.renderer_file_edit_recovery_unimplemented" {
+		t.Fatalf("unimplemented renderer/FileEdit case = %#v, err = %v", result, err)
+	}
+	if receipt, err := driver.verifyPackagedRecovery(context.Background(), request); !errors.Is(err, errStandardCodeRendererRecoveryUnsupported) || receipt.Status == "passed" {
+		t.Fatalf("command worker manufactured renderer recovery: %#v, err = %v", receipt, err)
+	}
+	for _, phase := range []string{recoveryWorkerPreparePhase, recoveryWorkerRecoverPhase} {
+		err := RunStandardCodeSecurityRecoveryWorker(context.Background(),
+			StandardCodeSecurityRecoveryWorkerConfig{CaseID: request.Attack.ID, Backend: "local", Phase: phase})
+		if !errors.Is(err, errStandardCodeRendererRecoveryUnsupported) {
+			t.Fatalf("renderer recovery worker %s error = %v", phase, err)
 		}
 	}
 }

@@ -23,3 +23,15 @@ func TestActionCenterRejectsDestinationAndWakeAuthorityDrift(t *testing.T) {
 		t.Fatal("wake action without a due time was accepted")
 	}
 }
+
+func TestChildTaskReviewActionRequiresProposedState(t *testing.T) {
+	item := Item{ID: "action-child-task", Kind: KindChildTaskReview, State: "proposed",
+		Destination: DestinationChildTasks, AvailableAt: time.Now().UTC()}
+	if err := item.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	item.State = "approved"
+	if err := item.Validate(); err == nil {
+		t.Fatal("reviewed child task was accepted as a pending action")
+	}
+}

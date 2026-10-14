@@ -93,6 +93,44 @@ type deviceSession struct {
 	expiresAt  time.Time
 	interval   time.Duration
 	nextPollAt time.Time
+	generation uint64
+}
+
+// AuthLifecycle orders credential replacement and disconnect across the
+// managers for all connections using the same credential store.
+type AuthLifecycle struct {
+	store       credential.Store
+	mu          sync.Mutex
+	generations map[string]uint64
+}
+
+func NewAuthLifecycle(store credential.Store) (*AuthLifecycle, error) {
+	if store == nil || !store.Available() {
+		return nil, errors.New("system credential storage is unavailable")
+	}
+	return &AuthLifecycle{store: store, generations: make(map[string]uint64)}, nil
+}
+
+// credentialKey follows the store identity: Windows TargetName is case-insensitive.
+// Other stores retain their case-sensitive names.
+func (l *AuthLifecycle) credentialKey(name string) string {
+	if l.store.Kind() == "windows_credential_manager" {
+		return strings.ToUpper(name)
+	}
+	return name
+}
+
+func (l *AuthLifecycle) ImportToken(ctx context.Context, ref CredentialReference, token string) error {
+	if ref.Validate() != nil || (ref.Kind != AuthFineGrainedPAT && ref.Kind != AuthOAuthUser) || !validOpaqueSecret(token) {
+		return errors.New("GitHub token import request is invalid")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.store.Put(ctx, ref.Name, token); err != nil {
+		return err
+	}
+	l.generations[l.credentialKey(ref.Name)]++
+	return nil
 }
 
 type AuthManager struct {
@@ -101,19 +139,25 @@ type AuthManager struct {
 	httpClient *http.Client
 	oauthBase  string
 	now        func() time.Time
-	mu         sync.Mutex
+	mu         *sync.Mutex
+	lifecycle  *AuthLifecycle
 	sessions   map[string]deviceSession
 }
 
 func NewAuthManager(store credential.Store, clientID string) (*AuthManager, error) {
-	clientID = strings.TrimSpace(clientID)
-	if store == nil || !store.Available() {
-		return nil, errors.New("system credential storage is unavailable")
+	lifecycle, err := NewAuthLifecycle(store)
+	if err != nil {
+		return nil, err
 	}
+	return lifecycle.NewManager(clientID)
+}
+
+func (l *AuthLifecycle) NewManager(clientID string) (*AuthManager, error) {
+	clientID = strings.TrimSpace(clientID)
 	if clientID != "" && !validClientID(clientID) {
 		return nil, errors.New("GitHub App public client id is invalid")
 	}
-	return &AuthManager{store: store, clientID: clientID,
+	return &AuthManager{store: l.store, clientID: clientID, mu: &l.mu, lifecycle: l,
 		httpClient: &http.Client{Timeout: 20 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -154,6 +198,9 @@ func (m *AuthManager) BeginDeviceFlow(ctx context.Context,
 	if !validClientID(m.clientID) {
 		return DeviceAuthorization{}, errors.New("GitHub App public client id is not configured")
 	}
+	m.mu.Lock()
+	generation := m.lifecycle.generations[m.lifecycle.credentialKey(ref.Name)]
+	m.mu.Unlock()
 	form := url.Values{"client_id": []string{m.clientID}}
 	var response struct {
 		DeviceCode      string `json:"device_code"`
@@ -175,11 +222,15 @@ func (m *AuthManager) BeginDeviceFlow(ctx context.Context,
 	now := m.now().UTC()
 	session := deviceSession{id: idgen.New("github-device"), credential: ref,
 		deviceCode: response.DeviceCode, expiresAt: now.Add(time.Duration(response.ExpiresIn) * time.Second),
-		interval: time.Duration(response.Interval) * time.Second, nextPollAt: now}
+		interval: time.Duration(response.Interval) * time.Second, nextPollAt: now,
+		generation: generation}
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lifecycle.generations[m.lifecycle.credentialKey(ref.Name)] != generation {
+		return DeviceAuthorization{}, authLifecycleChanged()
+	}
 	m.pruneSessionsLocked(now)
 	m.sessions[session.id] = session
-	m.mu.Unlock()
 	return DeviceAuthorization{ProtocolVersion: DeviceFlowProtocolVersion,
 		SessionID: session.id, UserCode: response.UserCode,
 		VerificationURI: response.VerificationURI, ExpiresAt: session.expiresAt,
@@ -216,6 +267,16 @@ func (m *AuthManager) PollDeviceFlow(ctx context.Context, sessionID string) (Dev
 	if err != nil {
 		return DevicePollResult{}, err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lifecycle.generations[m.lifecycle.credentialKey(session.credential.Name)] != session.generation {
+		delete(m.sessions, sessionID)
+		return DevicePollResult{}, authLifecycleChanged()
+	}
+	if _, found := m.sessions[sessionID]; !found || !session.expiresAt.After(m.now().UTC()) {
+		delete(m.sessions, sessionID)
+		return DevicePollResult{}, authLifecycleChanged()
+	}
 	if response.Error != "" {
 		switch response.Error {
 		case "authorization_pending":
@@ -223,15 +284,13 @@ func (m *AuthManager) PollDeviceFlow(ctx context.Context, sessionID string) (Dev
 		case "slow_down":
 			session.interval += 5 * time.Second
 			session.nextPollAt = now.Add(session.interval)
-			m.mu.Lock()
 			m.sessions[sessionID] = session
-			m.mu.Unlock()
 			return devicePollView(session, DeviceSlowDown, false), nil
 		case "expired_token":
-			m.deleteSession(sessionID)
+			delete(m.sessions, sessionID)
 			return devicePollView(session, DeviceExpired, false), nil
 		case "access_denied":
-			m.deleteSession(sessionID)
+			delete(m.sessions, sessionID)
 			return devicePollView(session, DeviceDenied, false), nil
 		default:
 			return DevicePollResult{}, &Error{Code: FailureAuthentication,
@@ -245,7 +304,8 @@ func (m *AuthManager) PollDeviceFlow(ctx context.Context, sessionID string) (Dev
 	if err := m.storeBundle(ctx, session.credential, bundle); err != nil {
 		return DevicePollResult{}, err
 	}
-	m.deleteSession(sessionID)
+	m.lifecycle.generations[m.lifecycle.credentialKey(session.credential.Name)]++
+	delete(m.sessions, sessionID)
 	result := devicePollView(session, DeviceAuthorized, true)
 	result.ExpiresAt = bundle.ExpiresAt
 	result.NextPollAt = time.Time{}
@@ -282,10 +342,14 @@ func (m *AuthManager) Disconnect(ctx context.Context, ref CredentialReference) e
 	if m == nil || m.store == nil || ref.Validate() != nil {
 		return errors.New("GitHub credential disconnect request is invalid")
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.store.Delete(ctx, ref.Name); err != nil {
 		return &Error{Code: FailureCredential,
 			Message: "delete GitHub credential from the system store"}
 	}
+	m.lifecycle.generations[m.lifecycle.credentialKey(ref.Name)]++
+	m.pruneSessionsLocked(m.now().UTC())
 	return nil
 }
 
@@ -301,7 +365,10 @@ func (m *AuthManager) resolve(ctx context.Context, ref CredentialReference) (tok
 		return tokenLease{}, &Error{Code: FailureCredential,
 			Message: "GitHub credential reference is invalid"}
 	}
+	m.mu.Lock()
+	generation := m.lifecycle.generations[m.lifecycle.credentialKey(ref.Name)]
 	raw, found, err := m.store.Get(ctx, ref.Name)
+	m.mu.Unlock()
 	if err != nil || !found {
 		return tokenLease{}, &Error{Code: FailureCredential,
 			Message: "GitHub credential is not configured in the system store"}
@@ -347,6 +414,18 @@ func (m *AuthManager) resolve(ctx context.Context, ref CredentialReference) (tok
 	if refreshed.RefreshToken == "" {
 		refreshed.RefreshToken = bundle.RefreshToken
 		refreshed.RefreshExpiresAt = bundle.RefreshExpiresAt
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lifecycle.generations[m.lifecycle.credentialKey(ref.Name)] != generation {
+		return tokenLease{}, authLifecycleChanged()
+	}
+	current, found, err := m.store.Get(ctx, ref.Name)
+	if err != nil {
+		return tokenLease{}, &Error{Code: FailureCredential, Message: "read GitHub credential before token refresh commit"}
+	}
+	if !found || current != raw {
+		return tokenLease{}, authLifecycleChanged()
 	}
 	if err := m.storeBundle(ctx, ref, refreshed); err != nil {
 		return tokenLease{}, err
@@ -482,15 +561,13 @@ func devicePollView(session deviceSession, state DevicePollState, configured boo
 		NextPollAt: session.nextPollAt}
 }
 
-func (m *AuthManager) deleteSession(id string) {
-	m.mu.Lock()
-	delete(m.sessions, id)
-	m.mu.Unlock()
+func authLifecycleChanged() error {
+	return &Error{Code: FailureCancelled, Message: "GitHub authorization changed while the request was in flight"}
 }
 
 func (m *AuthManager) pruneSessionsLocked(now time.Time) {
 	for id, session := range m.sessions {
-		if !session.expiresAt.After(now) {
+		if !session.expiresAt.After(now) || session.generation != m.lifecycle.generations[m.lifecycle.credentialKey(session.credential.Name)] {
 			delete(m.sessions, id)
 		}
 	}

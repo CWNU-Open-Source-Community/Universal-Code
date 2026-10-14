@@ -70,17 +70,26 @@ func TestOperatorActionProjectionAggregatesOnlyCurrentRunFacts(t *testing.T) {
 			BaseBackoffSeconds: 5, MaxBackoffSeconds: 30, MaxElapsedSeconds: 120}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO child_task_proposals
+		(id, run_id, root_agent_id, session_id, workspace_id, status, spec_json,
+		surface, fanout_tier, dedup_fingerprint, requested_by, version, created_at)
+		VALUES ('child-task-review-action', ?, 'root-actions', ?, ?, 'proposed',
+		'{}', 'core', '', ?, 'model', 1, ?)`, run.ID, run.SessionID, workspace.ID,
+		digest, ts(now)); err != nil {
+		t.Fatal(err)
+	}
 	records, err := state.ListOperatorActionRecords(ctx, run.ID, run.SessionID,
 		workspace.ID, time.Now().UTC().Add(time.Second), operatoraction.MaxItems+1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 5 {
+	if len(records) != 6 {
 		t.Fatalf("unexpected action projection: %#v", records)
 	}
 	want := []operatoraction.Kind{operatoraction.KindWakeDue,
 		operatoraction.KindApprovalPending, operatoraction.KindFileEditReview,
-		operatoraction.KindFileEditApply, operatoraction.KindSteeringPending}
+		operatoraction.KindFileEditApply, operatoraction.KindChildTaskReview,
+		operatoraction.KindSteeringPending}
 	for index, kind := range want {
 		if records[index].Kind != kind || records[index].RunID != run.ID {
 			t.Fatalf("action %d drifted: %#v", index, records[index])

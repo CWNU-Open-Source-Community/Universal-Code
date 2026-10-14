@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import { VerificationEvidence } from "./verification-evidence";
@@ -48,6 +48,43 @@ describe("VerificationEvidence", () => {
       version: "operator_verification_evidence.v1", outcome: "pass",
       title: "Focused tests", summary: "Go and React suites passed",
     }, expect.stringMatching(/^web-verification-/u));
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue(""));
+    expect(screen.getByLabelText("Summary")).toHaveValue("");
+  });
+
+  it("locks pending evidence fields and preserves the draft when saving fails", async () => {
+    let rejectSave!: (reason: Error) => void;
+    const recordVerificationEvidence = vi.fn(() => new Promise((_, reject) => { rejectSave = reject; }));
+    const client = {
+      hasVerificationEvidence: true,
+      verificationEvidence: async () => ({ items: [], pass_count: 0, fail_count: 0, unknown_count: 0 }),
+      verificationPlans: async () => emptyPlans(),
+      verificationPlanCoverage: async () => emptyCoverage(),
+      recordVerificationEvidence,
+    } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: {
+      queries: { retry: false }, mutations: { retry: false },
+    } });
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={queryClient}>
+      <VerificationEvidence client={client} runID="run-1" />
+    </QueryClientProvider>);
+    await user.selectOptions(screen.getByLabelText("Verification result"), "pass");
+    await user.type(screen.getByLabelText("Title"), "First result");
+    await user.type(screen.getByLabelText("Summary"), "First evidence");
+    await user.click(screen.getByRole("button", { name: "Record" }));
+    await waitFor(() => expect(recordVerificationEvidence).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("Verification result")).toBeDisabled();
+    expect(screen.getByLabelText("Title")).toBeDisabled();
+    expect(screen.getByLabelText("Summary")).toBeDisabled();
+    await user.type(screen.getByLabelText("Title"), "Second result");
+    await user.type(screen.getByLabelText("Summary"), "Second evidence");
+    await act(async () => { rejectSave(new Error("Save failed")); });
+    await waitFor(() => expect(screen.getByLabelText("Title")).toBeEnabled());
+    expect(screen.getByLabelText("Title")).toHaveValue("First result");
+    expect(screen.getByLabelText("Summary")).toHaveValue("First evidence");
+    expect(screen.getByLabelText("Verification result")).toHaveValue("pass");
+    queryClient.clear();
   });
 
   it("associates one immutable observation with one explicit plan item", async () => {

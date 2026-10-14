@@ -20,6 +20,12 @@ import (
 func (s *SQLiteStore) AdmitSpecialist(ctx context.Context, admission domain.SpecialistAdmission,
 	operationKey string,
 ) (domain.AgentNode, bool, error) {
+	return s.admitSpecialist(ctx, admission, operationKey, nil)
+}
+
+func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.SpecialistAdmission,
+	operationKey string, binding *childTaskAdmissionBinding,
+) (domain.AgentNode, bool, error) {
 	admission.AgentID = strings.TrimSpace(admission.AgentID)
 	admission.SessionID = strings.TrimSpace(admission.SessionID)
 	admission.RunID = strings.TrimSpace(admission.RunID)
@@ -81,6 +87,9 @@ func (s *SQLiteStore) AdmitSpecialist(ctx context.Context, admission domain.Spec
 		}
 		existing, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, storedAgentID))
 		if err != nil {
+			return domain.AgentNode{}, false, err
+		}
+		if err := bindChildTaskAdmissionTx(ctx, tx, binding, existing.ID); err != nil {
 			return domain.AgentNode{}, false, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -178,6 +187,10 @@ func (s *SQLiteStore) AdmitSpecialist(ctx context.Context, admission domain.Spec
 		TurnLimit: admission.TurnLimit, TokenLimit: admission.TokenLimit,
 		StatusReason: "awaiting internal scheduling", Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
+	if binding != nil && len(binding.task.DependencyOrdinals) != 0 {
+		child.Status = domain.AgentWaiting
+		child.StatusReason = "child task dependencies"
+	}
 	if err := child.Validate(); err != nil {
 		return domain.AgentNode{}, false, err
 	}
@@ -221,6 +234,9 @@ func (s *SQLiteStore) AdmitSpecialist(ctx context.Context, admission domain.Spec
 		child.ID, child.RunID, child.ParentID, child.SessionID, child.Role, child.Profile, skillsJSON,
 		child.Status, child.Depth, child.ChildLimit, child.TurnLimit, child.TokenLimit, child.StatusReason,
 		child.Version, ts(child.CreatedAt), ts(child.UpdatedAt)); err != nil {
+		return domain.AgentNode{}, false, err
+	}
+	if err := bindChildTaskAdmissionTx(ctx, tx, binding, child.ID); err != nil {
 		return domain.AgentNode{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO agent_admission_operations

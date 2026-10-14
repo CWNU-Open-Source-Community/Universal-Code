@@ -307,6 +307,9 @@ func specialistScheduleTerminal(result *SpecialistScheduleResult, err error,
 func (s *SpecialistScheduler) scheduleCandidates(ctx context.Context, runID string,
 	agentIDs []string,
 ) ([]domain.AgentNode, int, error) {
+	if _, err := s.runner.store.ReconcileDependencyEdges(ctx, runID); err != nil {
+		return nil, 0, apperror.Normalize(err)
+	}
 	nodes, err := s.runner.store.ListAgentNodes(ctx, runID)
 	if err != nil {
 		return nil, 0, apperror.Normalize(err)

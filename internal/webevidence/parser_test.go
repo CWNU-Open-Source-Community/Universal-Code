@@ -5,6 +5,27 @@ import (
 	"testing"
 )
 
+func TestParseDocumentTextEncodingDefaults(t *testing.T) {
+	raw := []byte(`{"prefix":"` + strings.Repeat("a", 1200) + `","body":"中文证据"}`)
+	for _, mime := range []string{"application/json", "application/json; charset=windows-1252", "text/plain"} {
+		parsed, err := ParseDocument(raw, mime, MaxBodyBytes)
+		if err != nil || parsed.Charset != "utf-8" || !strings.Contains(parsed.Body, "中文证据") {
+			t.Fatalf("%s parsed=%+v err=%v", mime, parsed, err)
+		}
+	}
+	parsed, err := ParseDocument([]byte("caf\xe9"), "text/plain; charset=iso-8859-1", MaxBodyBytes)
+	if err != nil || parsed.Body != "café" || parsed.Charset != "windows-1252" {
+		t.Fatalf("declared text charset: %+v err=%v", parsed, err)
+	}
+	parsed, err = ParseDocument([]byte("<meta charset=windows-1252><p>caf\xe9</p>"), "text/html", MaxBodyBytes)
+	if err != nil || !strings.Contains(parsed.Body, "café") || parsed.Charset != "windows-1252" {
+		t.Fatalf("detected HTML charset: %+v err=%v", parsed, err)
+	}
+	if _, err := ParseDocument([]byte("text"), "text/plain; charset=unsupported-encoding", MaxBodyBytes); err == nil {
+		t.Fatal("unknown declared encoding was silently reinterpreted")
+	}
+}
+
 func TestParseHTMLStripsActiveContentButPreservesUntrustedEvidenceText(t *testing.T) {
 	raw := []byte(`<!doctype html><html><head><title>Evidence title</title>
 		<meta name="author" content="Researcher"><script>stealCredentials()</script></head>

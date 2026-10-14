@@ -52,4 +52,41 @@ describe("Desktop renderer navigation guard", () => {
     expect(external.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }))).toBe(true);
     remove();
   });
+
+  it("allows a primary download click for a same-origin blob", () => {
+    const remove = installDesktopNavigationGuard();
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = `blob:${window.location.origin}/verified-image`;
+      anchor.download = "source.png";
+      document.body.append(anchor);
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+      expect(anchor.dispatchEvent(event)).toBe(true);
+      expect(event.defaultPrevented).toBe(false);
+    } finally { remove(); }
+  });
+
+  it("continues to block blob navigation and untrusted downloads", () => {
+    const remove = installDesktopNavigationGuard();
+    try {
+      for (const [href, download, type, options] of [
+        [`blob:${window.location.origin}/image`, false, "click", {}],
+        ["blob:https://example.com/image", true, "click", {}],
+        ["blob:null/image", true, "click", {}],
+        ["data:image/png;base64,aGVsbG8=", true, "click", {}],
+        ["javascript:alert(1)", true, "click", {}],
+        [`blob:${window.location.origin}/image`, true, "auxclick", { button: 1 }],
+        [`blob:${window.location.origin}/image`, true, "click", { ctrlKey: true }],
+      ] as const) {
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        if (download) anchor.download = "source.png";
+        document.body.append(anchor);
+        expect(anchor.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, ...options,
+        }))).toBe(false);
+        anchor.remove();
+      }
+    } finally { remove(); }
+  });
 });

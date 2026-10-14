@@ -218,7 +218,7 @@ func DiscoverInstructions(ctx context.Context, workspaceRoot, targetPath string)
 			snapshot.Sources = append(snapshot.Sources, InstructionSource{
 				Ordinal: ordinal, Path: relative, Kind: candidate.kind,
 				Scope: scopeRelative, Depth: depth,
-				Precedence: 100 + depth*10 + candidate.kindOrder,
+				Precedence: 100 + ordinal - 1,
 				Content:    content, ContentSHA256: digest, LoadedAt: now,
 				Trust: InstructionTrustClass, ApplicableTo: []string{targetRelative},
 				WhyEffective: instructionWhyEffective(scopeRelative, targetRelative, depth),
@@ -331,9 +331,8 @@ func DiffInstructionSnapshots(before, after InstructionSnapshot) InstructionSnap
 }
 
 type instructionCandidate struct {
-	path      string
-	kind      string
-	kindOrder int
+	path string
+	kind string
 }
 
 func instructionBoundary(workspaceRoot, targetPath string) (string, string, string, string, error) {
@@ -441,10 +440,9 @@ func instructionDirectories(root, targetDir string) ([]string, error) {
 
 func instructionCandidates(directory, root string) ([]instructionCandidate, error) {
 	candidates := make([]instructionCandidate, 0, 4)
-	for index, name := range instructionFileNames {
+	for _, name := range instructionFileNames {
 		candidates = append(candidates, instructionCandidate{
 			path: filepath.Join(directory, name), kind: strings.TrimSuffix(strings.ToLower(name), ".md"),
-			kindOrder: index,
 		})
 	}
 	prayuDir := filepath.Join(directory, ConfigDirName)
@@ -453,7 +451,7 @@ func instructionCandidates(directory, root string) ([]instructionCandidate, erro
 			return nil, errors.New("project instruction .prayu path must be a real directory")
 		}
 		candidates = append(candidates, instructionCandidate{
-			path: filepath.Join(prayuDir, "instructions.md"), kind: "prayu_instructions", kindOrder: 2,
+			path: filepath.Join(prayuDir, "instructions.md"), kind: "prayu_instructions",
 		})
 		rulesDir := filepath.Join(prayuDir, "rules")
 		if rulesInfo, rulesErr := os.Lstat(rulesDir); rulesErr == nil {
@@ -498,9 +496,9 @@ func instructionCandidates(directory, root string) ([]instructionCandidate, erro
 				right := canonicalInstructionPath(rules[j])
 				return left < right
 			})
-			for index, rule := range rules {
+			for _, rule := range rules {
 				candidates = append(candidates, instructionCandidate{
-					path: rule, kind: "prayu_rule", kindOrder: 3 + index,
+					path: rule, kind: "prayu_rule",
 				})
 			}
 		} else if !errors.Is(rulesErr, fs.ErrNotExist) {

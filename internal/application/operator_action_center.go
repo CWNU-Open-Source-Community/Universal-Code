@@ -56,9 +56,13 @@ func (s *OperatorActionCenterService) List(ctx context.Context,
 		return operatoraction.Center{}, apperror.New(apperror.CodeConflict,
 			"operator action center Mission lookup changed")
 	}
+	fileWorkspaceID, err := runFileProjectionWorkspaceID(ctx, s.store, run, mission)
+	if err != nil {
+		return operatoraction.Center{}, err
+	}
 	now := s.now().UTC()
 	records, err := s.store.ListOperatorActionRecords(ctx, run.ID, run.SessionID,
-		mission.WorkspaceID, now, operatoraction.MaxItems+1)
+		fileWorkspaceID, now, operatoraction.MaxItems+1)
 	if err != nil {
 		return operatoraction.Center{}, apperror.Normalize(err)
 	}
@@ -72,9 +76,16 @@ func (s *OperatorActionCenterService) List(ctx context.Context,
 			return operatoraction.Center{}, apperror.Wrap(apperror.CodeInternal,
 				"stored operator action is invalid", err)
 		}
+		workspaceMatches := record.WorkspaceID == "" || record.WorkspaceID == mission.WorkspaceID
+		switch record.Kind {
+		case operatoraction.KindFileEditReview, operatoraction.KindFileEditApply:
+			workspaceMatches = record.WorkspaceID == fileWorkspaceID
+		case operatoraction.KindApprovalPending:
+			workspaceMatches = workspaceMatches || record.WorkspaceID == fileWorkspaceID
+		}
 		if record.RunID != run.ID ||
 			(record.SessionID != "" && record.SessionID != run.SessionID) ||
-			(record.WorkspaceID != "" && record.WorkspaceID != mission.WorkspaceID) ||
+			!workspaceMatches ||
 			(record.Kind == operatoraction.KindWakeDue && record.DueAt.After(now)) {
 			return operatoraction.Center{}, apperror.New(apperror.CodeConflict,
 				"operator action escaped its requested Run binding")

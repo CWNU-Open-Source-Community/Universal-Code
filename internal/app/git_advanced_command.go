@@ -125,7 +125,7 @@ func (a *App) gitAdvancedCommand(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printGitAdvancedValue(a.out, projection, *jsonOutput)
+		return printGitAdvancedValue(a.out, projection, true)
 	}
 
 	spec := gitadvanced.Spec{ProtocolVersion: gitadvanced.ProtocolVersion,

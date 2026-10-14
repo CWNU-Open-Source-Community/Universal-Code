@@ -50,19 +50,14 @@ func ParseDocument(raw []byte, contentType string, maxBodyBytes int) (ParsedDocu
 func parseHTML(raw []byte, mediaType, declaredCharset string,
 	maxBodyBytes int,
 ) (ParsedDocument, error) {
-	reader, err := charset.NewReader(bytes.NewReader(raw), mediaType+
+	encoding, encodingName, _ := charset.DetermineEncoding(raw, mediaType+
 		charsetParameter(declaredCharset))
-	if err != nil {
-		return ParsedDocument{}, fmt.Errorf("decode web HTML charset: %w", err)
-	}
+	reader := encoding.NewDecoder().Reader(bytes.NewReader(raw))
 	root, err := html.Parse(io.LimitReader(reader, int64(DefaultMaxResponse)+1))
 	if err != nil {
 		return ParsedDocument{}, fmt.Errorf("parse bounded web HTML: %w", err)
 	}
-	result := ParsedDocument{MIME: mediaType, Charset: normalizedCharset(declaredCharset)}
-	if result.Charset == "" {
-		result.Charset = "utf-8"
-	}
+	result := ParsedDocument{MIME: mediaType, Charset: encodingName}
 	var body strings.Builder
 	var walk func(*html.Node, bool)
 	walk = func(node *html.Node, skipped bool) {
@@ -111,10 +106,17 @@ func parseHTML(raw []byte, mediaType, declaredCharset string,
 func parseText(raw []byte, mediaType, declaredCharset string,
 	maxBodyBytes int,
 ) (ParsedDocument, error) {
-	reader, err := charset.NewReader(bytes.NewReader(raw), mediaType+
-		charsetParameter(declaredCharset))
-	if err != nil {
-		return ParsedDocument{}, fmt.Errorf("decode web text charset: %w", err)
+	// JSON is UTF-8; other text defaults to UTF-8 unless its media type
+	// explicitly declares an encoding. HTML sniffing does not apply here.
+	var reader io.Reader = bytes.NewReader(raw)
+	encodingName := "utf-8"
+	if mediaType != "application/json" && strings.TrimSpace(declaredCharset) != "" {
+		encoding, name := charset.Lookup(declaredCharset)
+		if encoding == nil {
+			return ParsedDocument{}, fmt.Errorf("unsupported web text charset %q", declaredCharset)
+		}
+		reader = encoding.NewDecoder().Reader(reader)
+		encodingName = name
 	}
 	decoded, err := io.ReadAll(io.LimitReader(reader, int64(DefaultMaxResponse)+1))
 	if err != nil {
@@ -123,11 +125,7 @@ func parseText(raw []byte, mediaType, declaredCharset string,
 	value := strings.ToValidUTF8(string(decoded), "�")
 	value = stripUnsafeControls(value)
 	body, truncated := boundUTF8(normalizeLines(value), maxBodyBytes)
-	encoding := normalizedCharset(declaredCharset)
-	if encoding == "" {
-		encoding = "utf-8"
-	}
-	return ParsedDocument{Body: body, MIME: mediaType, Charset: encoding,
+	return ParsedDocument{Body: body, MIME: mediaType, Charset: encodingName,
 		Truncated: truncated}, nil
 }
 

@@ -459,7 +459,7 @@ func (s *ThreadPullRequestService) ImportCredential(ctx context.Context, threadI
 	if err = requireThreadPRRepository(bound, connection.Repository); err != nil {
 		return GitHubReviewCredentialView{}, err
 	}
-	if err = s.review.credentials.Put(ctx, connection.Credential.Name, request.Token); err != nil {
+	if err = s.review.authLifecycle.ImportToken(ctx, connection.Credential, request.Token); err != nil {
 		return GitHubReviewCredentialView{}, apperror.New(apperror.CodeUnavailable, "system credential storage could not save the token")
 	}
 	return s.review.CredentialStatus(ctx, connection.ID)

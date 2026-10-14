@@ -252,6 +252,14 @@ func (d *standardCodeSecurityDriver) Execute(ctx context.Context,
 		base.CompletedAt = time.Now().UTC()
 		return base, errors.New("packaged security backend is unavailable")
 	}
+	if request.Attack.ID == "recovery_renderer_close" {
+		base.ActualExecution = false
+		base.ActualSignal = "unsupported"
+		base.OperatorCode = "standard_code.attack.unsupported"
+		base.DiagnosticCode = "product.renderer_file_edit_recovery_unimplemented"
+		base.CompletedAt = time.Now().UTC()
+		return base, errStandardCodeRendererRecoveryUnsupported
+	}
 	// Each independent attack owns its Run and ledger. Reusing a Run for a
 	// fixed matrix would correctly trip the product's no-progress guard.
 	run, err := d.securityRun(ctx, request.Backend, request.FixtureID, request.Attack.ID)

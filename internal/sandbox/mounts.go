@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 type MountBinding struct {
@@ -41,7 +43,14 @@ func ResolveMountSources(ctx context.Context, rootPath string, manifest Manifest
 			return MountBinding{}, err
 		}
 		name := filepath.FromSlash(mount.Source)
-		file, err := root.Open(name)
+		before, err := root.Stat(name)
+		if err != nil {
+			return MountBinding{}, fmt.Errorf("stat sandbox mount source %d: %w", index+1, err)
+		}
+		if !before.Mode().IsRegular() && !before.IsDir() {
+			return MountBinding{}, fmt.Errorf("sandbox mount source %d is not a regular file or directory", index+1)
+		}
+		file, err := rootfs.OpenReadOnly(root, name)
 		if err != nil {
 			return MountBinding{}, fmt.Errorf("open sandbox mount source %d: %w", index+1, err)
 		}

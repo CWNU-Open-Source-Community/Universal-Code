@@ -7,6 +7,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -144,29 +145,36 @@ func main() {
 // the target package, using the exact build tags the distributed binary uses.
 // It never runs go mod download, so it never rewrites go.sum.
 func listModules(pkg, buildTags string) ([]module, error) {
-	args := []string{"list", "-deps", "-tags", buildTags,
-		"-f", "{{with .Module}}{{.Path}} {{.Version}} {{.Dir}}{{end}}", pkg}
+	args := []string{"list", "-deps", "-tags", buildTags, "-json=Module", pkg}
 	output, err := exec.Command("go", args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("go list -deps: %w", err)
 	}
 	seen := map[string]bool{}
 	var modules []module
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[0] == "cyberagent-workbench" {
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for {
+		var dependency struct {
+			Module *struct {
+				Path, Version, Dir string
+				Main               bool
+			}
+		}
+		if err := decoder.Decode(&dependency); err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("decode go list module: %w", err)
+		}
+		listed := dependency.Module
+		if listed == nil || listed.Main {
 			continue
 		}
-		key := fields[0] + "@" + fields[1]
+		key := listed.Path + "@" + listed.Version
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		dir := ""
-		if len(fields) >= 3 {
-			dir = fields[2]
-		}
-		modules = append(modules, module{Path: fields[0], Version: fields[1], Dir: dir})
+		modules = append(modules, module{Path: listed.Path, Version: listed.Version, Dir: listed.Dir})
 	}
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Path < modules[j].Path })
 	return modules, nil
