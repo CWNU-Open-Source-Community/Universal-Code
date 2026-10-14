@@ -159,6 +159,21 @@
   padding: 14px 18px 18px;
 }
 
+.v2-file-drawer-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 110px;
+  padding: 14px 18px;
+  color: var(--v2-muted);
+  font-size: 13px;
+}
+
+.v2-file-drawer-body > .v2-notice {
+  margin: 14px 18px;
+}
+
 .v2-terminal-drawer-body > .user-terminal-panel {
   display: flex;
   flex: 1 1 auto;
@@ -1249,6 +1264,11 @@
 .v2-workspace-picker select { outline: 0; }
 .v2-composer-caption { color: color-mix(in srgb, var(--v2-muted) 72%, transparent); display: block; font-size: 11px; margin: 7px auto 0; max-width: var(--v2-composer-width); text-align: center; }
 .v2-composer-error { color: var(--v2-danger); font-size: 12px; margin: 5px 16px 0; }
+.v2-composer-attachment-notice { display: grid; gap: 12px; margin: 8px 16px 0; padding: 12px; border: 1px solid var(--v2-border); border-radius: 8px; background: var(--v2-control); color: var(--v2-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.v2-composer-attachment-notice p { margin: 0; }
+.v2-composer-attachment-notice ul { margin: 8px 0; padding-left: 18px; }
+.v2-composer-attachment-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.v2-composer-attachment-actions .compact-command { min-height: 32px; max-width: 100%; white-space: normal; text-align: left; }
 
 .v2-permission-control { position: relative; }
 .v2-permission-popover {

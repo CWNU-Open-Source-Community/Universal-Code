@@ -135,10 +135,12 @@ export function useNativeClipboard({ workspaceID, threadID = "", disabled = fals
         <p>{busy ? "正在核对本次粘贴。" : intent.added ? "已加入找到的附件，原批次是否完整仍待确认。核对附件列表后，可点击“结束本次粘贴核对”。" : result?.batch_complete ?
           "附件已保存。点击“加入已保存的附件”放入当前消息。" : count ? "已找到原请求保存的附件，原批次是否完整仍待确认。可点击“加入已保存的附件”放入当前消息。" : "原粘贴结果尚待确认，暂未找到已保存的附件。可点击“不加入本条消息”结束本次核对。"}</p>
         {count > 0 && <ul>{[...result!.images, ...result!.attachments].map((item) => <li key={item.id}>{item.name || "图片"}</li>)}</ul>}
-        {count > 0 && !intent.added && <button type="button" className="v2-button" disabled={busy || disabled} onClick={() => {
-          try { addSaved(key, intent); scope.error = null; } catch (error) { scope.error = errorText(error); } redraw();
-        }}>加入已保存的附件</button>}
-        <button type="button" className="v2-button" disabled={busy} onClick={() => dismiss(key, intent)}>{intent.added ? "结束本次粘贴核对" : "不加入本条消息"}</button>
+        <div className="v2-composer-attachment-actions">
+          {count > 0 && !intent.added && <button type="button" className="compact-command" disabled={busy || disabled} onClick={() => {
+            try { addSaved(key, intent); scope.error = null; } catch (error) { scope.error = errorText(error); } redraw();
+          }}>加入已保存的附件</button>}
+          <button type="button" className="compact-command" disabled={busy} onClick={() => dismiss(key, intent)}>{intent.added ? "结束本次粘贴核对" : "不加入本条消息"}</button>
+        </div>
         {intent.added && <p>已加入的附件仍在草稿中，可在附件卡片移除。</p>}
       </div>;
     })}
