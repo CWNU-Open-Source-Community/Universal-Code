@@ -3416,6 +3416,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/web-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select a quiescent Run web access mode
+         * @description Selects disabled, exact-host rules, or full anonymous public HTTPS access independently of command, filesystem and sandbox permissions. Requires created or paused status, no active lease, exact current mode revision and Idempotency-Key. Appends an audited revision and fences stale tool calls. Saved snapshots remain readable when disabled. Rules control direct fetch hosts; configured search provider policy remains independent.
+         */
+        post: operations["changeRunWebAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/web-evidence": {
         parameters: {
             query?: never;
@@ -10675,6 +10695,9 @@ export interface components {
             surface?: "code" | "cyber";
             /** @enum {string} */
             version: "run_creation.v1";
+            /** @enum {string} */
+            web_access_mode?: "disabled" | "rules" | "full";
+            web_allowed_targets?: string[];
             workspace_id: string;
         };
         RunCreationControlView: {
@@ -11148,6 +11171,23 @@ export interface components {
             /** @enum {string} */
             state: "disabled" | "ready" | "running" | "draining" | "stopped";
         };
+        RunWebAccessControlRequestView: {
+            /** Format: int64 */
+            expected_mode_revision: number;
+            reason?: string;
+            /** @enum {string} */
+            version: "run_web_access_control.v1";
+            /** @enum {string} */
+            web_access_mode: "disabled" | "rules" | "full";
+            web_allowed_targets?: string[];
+        };
+        RunWebAccessControlView: {
+            mode: components["schemas"]["RunModeView"];
+            replayed: boolean;
+            run_id: string;
+            /** @enum {string} */
+            version: "run_web_access_control.v1";
+        };
         RuntimeCapabilitiesView: {
             agent_code_tools_enabled: boolean;
             approval_control_enabled: boolean;
@@ -11476,6 +11516,9 @@ export interface components {
             allowed_targets?: string[];
             /** @enum {string} */
             network_mode: "disabled" | "allowlist";
+            /** @enum {string} */
+            web_access_mode: "disabled" | "rules" | "full";
+            web_allowed_targets?: string[];
             workspace_id?: string;
         };
         SearchDiagnostics: {
@@ -12658,6 +12701,9 @@ export interface components {
             surface?: "code" | "cyber";
             /** @enum {string} */
             version: "thread_creation.v1";
+            /** @enum {string} */
+            web_access_mode?: "disabled" | "rules" | "full";
+            web_allowed_targets?: string[];
             workspace_id: string;
         };
         ThreadCreationControlView: {
@@ -22661,6 +22707,54 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["RunWakeExecutionView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    changeRunWebAccess: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque revision-bound operation key */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunWebAccessControlRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RunWebAccessControlView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

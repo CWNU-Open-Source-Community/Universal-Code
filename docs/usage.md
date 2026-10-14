@@ -2112,3 +2112,31 @@ Client wiring (example launcher config, see `configs/mcp-client.example.json`):
 
 Unsupported tools are never published and never callable (method-not-found);
 Shell, Docker sockets, SQLite and remote listen are out of scope for v1.
+
+## Conversation web access / 会话网页访问
+
+创建会话时可选择禁止搜索、规则搜索或完全访问。设置保存到 Go 的当前 Run
+配置；后续执行和新一轮续聊继承该选择。暂停且没有执行中的操作时，可修改当前
+会话的网页访问设置。
+
+禁止搜索会停止网页搜索、公共来源搜索、联网抓取和搜索连接检查；已保存网页
+仍可读取和引用。规则搜索按精确域名允许网页读取，其他域名按现有流程请求批准；
+搜索结果仍遵循配置的搜索服务及其支持的查询过滤条件。完全访问允许读取公共
+HTTPS 网页，继续拒绝本机、内网和云元数据地址；搜索服务未配置时会明确显示。
+缓存搜索和索引搜索暂不可用。网页访问设置独立于文件操作、命令执行和沙箱权限。
+
+The authenticated control API accepts `POST /api/v1/runs/{run_id}/web-access`
+with an `Idempotency-Key` header and a body containing
+`version: "run_web_access_control.v1"`, `expected_mode_revision`,
+`web_access_mode: "disabled" | "rules" | "full"`, optional
+`web_allowed_targets` and `reason`. Rule targets must be exact public DNS hosts;
+origins are normalized and wildcard/global targets are rejected. The selected
+list replaces previous rules. The Run must be created or paused with no active
+execution lease. Concurrent or stale selections return conflict; original-key
+retries replay the committed snapshot. Older conversation domain approvals are
+invalidated by a new selection. Search connection checks require the Run to be
+idle and release their bounded lease on cancellation.
+
+Existing API requests and historical scopes without the new mode retain their
+original configured-search and inline-fetch-approval behavior. New clients
+should send an explicit mode. See [ADR 0175](adr/0175-explicit-web-access-modes.md).

@@ -450,8 +450,9 @@ func migrationPlan() []migration {
 		Statements: sbxCommandRuntimeScopeStatements()})
 	previous = append(previous, migration{Version: 190, Name: "Independent Specialist tool calls and bounded native continuation",
 		Statements: specialistToolLoopStatements(), DisableForeignKeys: true})
-	return append(previous, migration{Version: 191, Name: "Bind continuous Specialist schedules to durable operator intent",
+	previous = append(previous, migration{Version: 191, Name: "Bind continuous Specialist schedules to durable operator intent",
 		Statements: specialistContinuationStatements})
+	return append(previous, migration{Version: 192, Name: "Explicit independent Run web access modes", Statements: runWebAccessStatements()})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

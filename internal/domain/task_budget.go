@@ -108,10 +108,17 @@ func (c RunConfig) CreationBudget() Budget {
 // historical default digests. Repository changes never reinterpret a retry.
 func ControlledCreationFingerprint(goal, workspaceID, profile, surface, phase,
 	networkMode string, allowedTargets []string, modelRoute, requestedBy string,
-	budget Budget,
+	budget Budget, webScope ...Scope,
 ) string {
 	base := runmutation.RunCreationRequestFingerprintWithNetworkAndModelRoute(goal, workspaceID,
 		profile, surface, phase, networkMode, allowedTargets, modelRoute, requestedBy)
+	if len(webScope) > 0 && webScope[0].WebAccessMode != "" {
+		raw, _ := json.Marshal(struct {
+			Mode    WebAccessMode
+			Targets []string
+		}{webScope[0].WebAccessMode, webScope[0].WebAllowedTargets})
+		base = runmutation.Fingerprint("run_creation_web_access.v1", base, string(raw))
+	}
 	if budget == DefaultBudget() {
 		return base
 	}

@@ -46,6 +46,25 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  it("retries a lost creation with its original web policy and distinguishes a changed policy", async () => {
+    const client = fixture();
+    client.createThread.mockRejectedValueOnce(new Error("response lost"));
+    const originalRequest = { ...request, web_access_mode: "rules" as const, web_allowed_targets: ["docs.example.com"] };
+    const first = mount(client);
+    const original = prepare(first, originalRequest);
+    await act(async () => { await expect(first.helper().resolve(original)).rejects.toThrow("response lost"); });
+    first.unmount();
+    const reopened = mount(client);
+    const resumed = prepare(reopened, originalRequest);
+    expect(resumed.operationID).toBe(original.operationID);
+    const changed = prepare(reopened, { ...request, web_access_mode: "full", web_allowed_targets: [] });
+    expect(changed.operationID).not.toBe(original.operationID);
+    await act(async () => { await reopened.helper().resolve(resumed); });
+    expect(client.createThread.mock.calls).toEqual([
+      [originalRequest, `v2-thread-create-${original.operationID}`],
+      [originalRequest, `v2-thread-create-${original.operationID}`],
+    ]);
+  });
   it("selects exact project Skills before handoff and retains the created task on selection failure", async () => {
     const client = fixture();
     client.selectProjectSkills.mockRejectedValueOnce(new Error("exact package is unavailable"));

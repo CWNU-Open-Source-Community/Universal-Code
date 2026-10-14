@@ -43,19 +43,21 @@ type RunService struct {
 }
 
 type CreateRunRequest struct {
-	Goal            string
-	Profile         string
-	Surface         string
-	Phase           string
-	WorkspaceID     string
-	SessionID       string
-	ModelRoute      string
-	Interactive     bool
-	NetworkMode     string
-	AllowedTargets  []string
-	Budget          domain.Budget
-	RequestedBudget *domain.Budget
-	RequestedBy     string
+	Goal              string
+	Profile           string
+	Surface           string
+	Phase             string
+	WorkspaceID       string
+	SessionID         string
+	ModelRoute        string
+	Interactive       bool
+	NetworkMode       string
+	AllowedTargets    []string
+	WebAccessMode     string
+	WebAllowedTargets []string
+	Budget            domain.Budget
+	RequestedBudget   *domain.Budget
+	RequestedBy       string
 	// ProjectConfig is the validated, narrowed .prayu snapshot. It can only
 	// reduce the requested budget and profiles; any widening was already
 	// rejected by the caller, and the Run pins this exact view at creation.
@@ -318,12 +320,16 @@ func prepareRun(ctx context.Context, req CreateRunRequest,
 	if err := linkedSession.Validate(); err != nil {
 		return preparedRun{}, err
 	}
+	webMode, webTargets, err := normalizeWebAccess(req.WebAccessMode, req.WebAllowedTargets, true)
+	if err != nil {
+		return preparedRun{}, err
+	}
 	mission := domain.Mission{
 		ID:          idgen.New("mission"),
 		Goal:        goal,
 		Profile:     profile,
 		WorkspaceID: workspaceID,
-		Scope: domain.Scope{WorkspaceID: workspaceID, NetworkMode: networkMode,
+		Scope: domain.Scope{WebAccessMode: webMode, WebAllowedTargets: webTargets, WorkspaceID: workspaceID, NetworkMode: networkMode,
 			AllowedTargets: append([]string(nil), allowedTargets...)},
 		CreatedAt: now,
 		UpdatedAt: now,

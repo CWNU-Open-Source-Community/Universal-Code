@@ -4,13 +4,15 @@ import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { ProviderSearchReadinessView, RunDetailView } from "../../api/types";
 import { V2RunNetworkAuthorityControl } from "./run-network-authority-control";
+import { browserCDPQueryKey } from "./browser-cdp-control";
 
 function renderControl(status: "created" | "paused" | "running" = "paused",
   variant: "menu" | "settings" = "settings",
   readiness: Partial<ProviderSearchReadinessView> = {},
   permissionMode: RunDetailView["execution_permission"]["mode"] = "ask",
   onOpenModelSettings = vi.fn(),
-  networkScope = { network_mode: "allowlist", allowed_targets: ["search.example.org"] }) {
+  networkScope: RunDetailView["mode"]["scope"] = { network_mode: "allowlist", allowed_targets: ["search.example.org"],
+    web_access_mode: "rules", web_allowed_targets: ["search.example.org"] }) {
   const mode = {
     protocol_version: "run_mode.v1", policy_version: "mode_policy.v1",
     revision: 3, capability_grant: false, phase: "deliver", profile: "code",
@@ -20,14 +22,12 @@ function renderControl(status: "created" | "paused" | "running" = "paused",
   };
   const get = vi.fn().mockResolvedValue({ run: { status }, mode,
     execution_permission: { mode: permissionMode } });
-  const expandRunNetworkAuthority = vi.fn().mockResolvedValue({
-    version: "run_network_authority_control.v1", run_id: "run-1", replayed: false,
-    capability_grant: true, added_targets: ["docs.example.com"],
-    mode: { ...mode, revision: 4, scope: {
-      network_mode: "allowlist",
-      allowed_targets: ["docs.example.com", "search.example.org"],
+  const setRunWebAccess = vi.fn().mockImplementation(async (_runID, request) => ({
+    version: "run_web_access_control.v1", run_id: "run-1", replayed: false,
+    mode: { ...mode, revision: 4, scope: { ...networkScope,
+      web_access_mode: request.web_access_mode, web_allowed_targets: request.web_allowed_targets,
     } },
-  });
+  }));
   const providerSearchReadiness = vi.fn().mockResolvedValue({
     protocol_version: "provider_search_readiness.v1", thread_id: "thread-1", run_id: "run-1",
     model_route: "provider/model", provider: "provider", model: "model",
@@ -42,7 +42,7 @@ function renderControl(status: "created" | "paused" | "running" = "paused",
     state: "failed", code: "access_challenge", result_count: 0,
     network_request_attempted: true, http_status: 403,
   });
-  const client = { hasControl: true, get, expandRunNetworkAuthority,
+  const client = { hasControl: true, get, setRunWebAccess,
     providerSearchReadiness, diagnoseThreadSearch } as unknown as APIClient;
   const queryClient = new QueryClient({ defaultOptions: {
     queries: { retry: false }, mutations: { retry: false },
@@ -51,7 +51,7 @@ function renderControl(status: "created" | "paused" | "running" = "paused",
     <V2RunNetworkAuthorityControl client={client} runID="run-1" threadID="thread-1"
       variant={variant} onOpenModelSettings={onOpenModelSettings} />
   </QueryClientProvider>);
-  return { diagnoseThreadSearch, expandRunNetworkAuthority, onOpenModelSettings };
+  return { diagnoseThreadSearch, setRunWebAccess, onOpenModelSettings, get, queryClient };
 }
 
 describe("V2RunNetworkAuthorityControl", () => {
@@ -60,15 +60,15 @@ describe("V2RunNetworkAuthorityControl", () => {
     renderControl("paused", "menu");
 
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索配置就绪"));
+    await waitFor(() => expect(trigger).toHaveTextContent("规则搜索"));
     await user.click(trigger);
 
     const popover = screen.getByRole("dialog", { name: "当前执行网页访问" });
-    expect(within(popover).getByText("直接 URL 抓取")).toBeInTheDocument();
-    expect(within(popover).getByText(/供应商搜索 · 搜索配置就绪/u)).toBeInTheDocument();
+    expect(within(popover).getByText("当前任务网页访问")).toBeInTheDocument();
+    expect(await within(popover).findByText(/供应商搜索 · 搜索配置就绪/u)).toBeInTheDocument();
     expect(within(popover).getByText("search.example.org")).toBeInTheDocument();
     expect(within(popover).getByText(/搜索使用供应商接口/u)).toBeInTheDocument();
-    expect(within(popover).getByText(/填写要访问的公网 HTTPS 主机/u)).toBeInTheDocument();
+    expect(within(popover).getByText(/当前任务及其后续执行/u)).toBeInTheDocument();
   });
 
   it.each(["ask", "auto", "full", "full_access", "debug"] as const)(
@@ -77,43 +77,44 @@ describe("V2RunNetworkAuthorityControl", () => {
     const controls = renderControl("paused", "menu", {}, permissionMode);
 
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索配置就绪"));
+    await waitFor(() => expect(trigger).toHaveTextContent("规则搜索"));
     await user.click(trigger);
 
     const popover = screen.getByRole("dialog", { name: "当前执行网页访问" });
     expect(within(popover).getByText("search.example.org")).toBeInTheDocument();
-    expect(within(popover).getByText("1 个主机")).toBeInTheDocument();
+    expect(within(popover).getByRole("combobox", { name: "当前任务网页搜索模式" })).toHaveValue("rules");
     expect(within(popover).queryByText("公网 HTTPS")).not.toBeInTheDocument();
     expect(within(popover).getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toBeEnabled();
-    expect(controls.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(controls.setRunWebAccess).not.toHaveBeenCalled();
   });
 
   it("reads a saved broad network scope without treating it as a permission preference", async () => {
     const user = userEvent.setup();
     renderControl("running", "menu", {}, "ask", vi.fn(), {
       network_mode: "allowlist", allowed_targets: ["public_https"],
-    });
+    // An older server projection omits the new fields; retain this fallback test.
+    } as RunDetailView["mode"]["scope"]);
 
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索配置就绪"));
+    await waitFor(() => expect(trigger).toHaveTextContent("完全访问"));
     await user.click(trigger);
 
     const popover = screen.getByRole("dialog", { name: "当前执行网页访问" });
-    expect(within(popover).getByText("公网 HTTPS")).toBeInTheDocument();
-    expect(within(popover).getByText(/当前执行保存的网络范围允许匿名访问公网 HTTPS/u)).toBeInTheDocument();
+    expect(within(popover).getByRole("combobox", { name: "当前任务网页搜索模式" })).toHaveValue("full");
+    expect(within(popover).getByText(/直接读取公网 HTTPS 网页/u)).toBeInTheDocument();
     expect(within(popover).queryByRole("textbox", { name: "追加允许的 HTTPS 主机" }))
       .not.toBeInTheDocument();
   });
 
   it("does not claim broad access or a disconnected provider when the URL scope is disabled", async () => {
     const controls = renderControl("paused", "settings", {}, "full", vi.fn(), {
-      network_mode: "disabled", allowed_targets: [],
+      network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: [],
     });
-    expect(await screen.findByText("未预先授权主机")).toBeInTheDocument();
-    expect(screen.getByText("供应商搜索 · 搜索配置就绪")).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "当前任务网页搜索模式" })).toHaveValue("rules");
+    expect(await screen.findByText("供应商搜索 · 搜索配置就绪")).toBeInTheDocument();
     expect(screen.queryByText("公网 HTTPS")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toBeEnabled();
-    expect(controls.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(controls.setRunWebAccess).not.toHaveBeenCalled();
   });
 
   it("explains and prefills the exact missing Provider target", async () => {
@@ -125,11 +126,20 @@ describe("V2RunNetworkAuthorityControl", () => {
     });
 
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索缺目标"));
+    await waitFor(() => expect(trigger).toHaveTextContent("规则搜索"));
     await user.click(trigger);
     await user.click(screen.getByRole("button", { name: /使用所需主机/u }));
     expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }))
       .toHaveValue("api.provider.com");
+  });
+
+  it("points disabled-search remediation to the web mode selector", async () => {
+    renderControl("paused", "settings", {
+      state: "network_disabled", reason: "run_network_disabled", remediation: "enable_network_allowlist",
+    });
+    expect(await screen.findByText("选择规则搜索或完全访问以启用网页搜索")).toBeVisible();
+    expect(screen.getByText(/选择规则搜索或完全访问后，可使用已配置的搜索服务/u)).toBeVisible();
+    expect(screen.queryByText("追加搜索后端主机后即可启用")).not.toBeInTheDocument();
   });
 
   it("identifies DuckDuckGo configuration readiness without claiming a completed search or changing authority", async () => {
@@ -138,13 +148,13 @@ describe("V2RunNetworkAuthorityControl", () => {
       search_policy: "web", required_target: "html.duckduckgo.com",
     }, "full");
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索配置就绪"));
+    await waitFor(() => expect(trigger).toHaveTextContent("规则搜索"));
     await user.click(trigger);
     expect(screen.getByText(/普通网页搜索（DuckDuckGo）的配置与网络授权已就绪/u))
       .toHaveTextContent("实际搜索结果以本次工具返回为准");
     expect(screen.getByText("网页搜索 · 搜索配置就绪")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /使用所需主机/u })).not.toBeInTheDocument();
-    expect(controls.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(controls.setRunWebAccess).not.toHaveBeenCalled();
   });
 
   it("distinguishes a native-search transport timeout from model chat readiness", async () => {
@@ -156,7 +166,7 @@ describe("V2RunNetworkAuthorityControl", () => {
     });
 
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索不可用"));
+    await waitFor(() => expect(trigger).toHaveTextContent("规则搜索"));
     await user.click(trigger);
     expect(screen.getByText(/连接或超时边界内没有完成/u)).toBeInTheDocument();
     expect(screen.getByText(/普通对话仍可继续/u)).toBeInTheDocument();
@@ -185,17 +195,18 @@ describe("V2RunNetworkAuthorityControl", () => {
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
 
-    expect(controls.expandRunNetworkAuthority).not.toHaveBeenCalled();
+    expect(controls.setRunWebAccess).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "追加网页访问范围？" });
     await user.click(within(dialog).getByRole("button", { name: "允许这些主机" }));
 
-    await waitFor(() => expect(controls.expandRunNetworkAuthority).toHaveBeenCalledWith(
+    await waitFor(() => expect(controls.setRunWebAccess).toHaveBeenCalledWith(
       "run-1", {
-        version: "run_network_authority_control.v1",
+        version: "run_web_access_control.v1",
         expected_mode_revision: 3,
-        add_allowed_targets: ["docs.example.com"],
-        reason: "v2 operator-confirmed exact HTTPS targets",
-      }, expect.stringMatching(/^v2-run-network-authority-/u),
+        web_access_mode: "rules",
+        web_allowed_targets: ["docs.example.com", "search.example.org"],
+        reason: "v2 operator-selected web access",
+      }, expect.stringMatching(/^v2-run-web-access-/u),
     ));
     expect(await screen.findByText("docs.example.com")).toBeInTheDocument();
   });
@@ -204,7 +215,49 @@ describe("V2RunNetworkAuthorityControl", () => {
     renderControl("running");
     const input = await screen.findByRole("textbox", { name: "追加允许的 HTTPS 主机" });
     await waitFor(() => expect(input).toBeDisabled());
-    expect(await screen.findByText(/暂停执行并等待资源释放后追加范围/u)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toBeDisabled();
+    expect(await screen.findByText(/暂停执行并等待资源释放后可修改/u)).toBeInTheDocument();
+  });
+
+  it("disables search controls and webpage rules for an explicit disabled mode", async () => {
+    const controls = renderControl("paused", "settings", {}, "full", vi.fn(), {
+      network_mode: "allowlist", allowed_targets: ["command.example.org"],
+      web_access_mode: "disabled", web_allowed_targets: [],
+    });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toHaveValue("disabled"));
+    expect(screen.getByText("关闭新的网页搜索与抓取，已保存的网页仍可阅读。")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "检查搜索连接" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(controls.setRunWebAccess).not.toHaveBeenCalled();
+  });
+
+  it.each(["disabled", "full"] as const)("sets %s through the versioned web endpoint without granting command networking", async (mode) => {
+    const controls = renderControl("paused", "settings", {}, "ask", vi.fn(), {
+      network_mode: "disabled", allowed_targets: [], web_access_mode: "rules",
+      web_allowed_targets: ["docs.example.org"],
+    });
+    const select = await screen.findByRole("combobox", { name: "当前任务网页搜索模式" });
+    await waitFor(() => expect(select).toBeEnabled());
+    await userEvent.selectOptions(select, mode);
+    await waitFor(() => expect(controls.setRunWebAccess).toHaveBeenCalledExactlyOnceWith("run-1", {
+      version: "run_web_access_control.v1", expected_mode_revision: 3,
+      web_access_mode: mode, web_allowed_targets: [], reason: "v2 operator-selected web access",
+    }, expect.stringMatching(/^v2-run-web-access-/u)));
+    await waitFor(() => expect(select).toHaveValue(mode));
+    expect(controls.queryClient.getQueryData<RunDetailView>(browserCDPQueryKey("run-1"))?.mode.scope)
+      .toMatchObject({ network_mode: "disabled", allowed_targets: [], web_access_mode: mode });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("leaves the saved mode unchanged when the server rejects a stale update", async () => {
+    const controls = renderControl();
+    controls.setRunWebAccess.mockRejectedValueOnce(new Error("网页访问设置已更新，请重新读取后重试。"));
+    const select = await screen.findByRole("combobox", { name: "当前任务网页搜索模式" });
+    await waitFor(() => expect(select).toBeEnabled());
+    await userEvent.selectOptions(select, "full");
+    expect(await screen.findByRole("alert")).toHaveTextContent("请重新读取后重试");
+    expect(select).toHaveValue("rules");
   });
 
   it("rejects broad and path-bearing targets before confirmation", async () => {
@@ -222,7 +275,7 @@ describe("V2RunNetworkAuthorityControl", () => {
     const user = userEvent.setup();
     renderControl("paused", "menu");
     const trigger = screen.getByRole("button", { name: "网页访问状态" });
-    await waitFor(() => expect(trigger).toHaveTextContent("搜索配置就绪"));
+    await waitFor(() => expect(trigger).toHaveTextContent("规则搜索"));
     await user.click(trigger);
     expect(screen.getByRole("dialog", { name: "当前执行网页访问" })).toBeInTheDocument();
 

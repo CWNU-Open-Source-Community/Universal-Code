@@ -367,6 +367,11 @@ export type RunNetworkAuthorityControlRequestView =
   components["schemas"]["RunNetworkAuthorityControlRequestView"];
 export type RunNetworkAuthorityControlView =
   components["schemas"]["RunNetworkAuthorityControlView"];
+export type WebAccessMode = "disabled" | "rules" | "full";
+export type RunWebAccessControlRequestView =
+  components["schemas"]["RunWebAccessControlRequestView"];
+export type RunWebAccessControlView =
+  components["schemas"]["RunWebAccessControlView"];
 export type RunExecutionProfileControlView = components["schemas"]["RunExecutionProfileControlView"];
 export type RunExecutionProfileView = components["schemas"]["RunExecutionProfileView"];
 export type RunExecutionPermissionControlView = components["schemas"]["RunExecutionPermissionControlView"];

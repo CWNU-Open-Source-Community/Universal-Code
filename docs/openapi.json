@@ -19834,6 +19834,129 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/runs/{run_id}/web-access": {
+      "post": {
+        "operationId": "changeRunWebAccess",
+        "summary": "Select a quiescent Run web access mode",
+        "description": "Selects disabled, exact-host rules, or full anonymous public HTTPS access independently of command, filesystem and sandbox permissions. Requires created or paused status, no active lease, exact current mode revision and Idempotency-Key. Appends an audited revision and fences stale tool calls. Saved snapshots remain readable when disabled. Rules control direct fetch hosts; configured search provider policy remains independent.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque revision-bound operation key",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RunWebAccessControlView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunWebAccessControlRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/runs/{run_id}/web-evidence": {
       "get": {
         "operationId": "getRunWebEvidence",
@@ -51559,6 +51682,20 @@
             ],
             "type": "string"
           },
+          "web_access_mode": {
+            "enum": [
+              "disabled",
+              "rules",
+              "full"
+            ],
+            "type": "string"
+          },
+          "web_allowed_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "workspace_id": {
             "maxLength": 256,
             "minLength": 1,
@@ -53409,6 +53546,75 @@
         ],
         "type": "object"
       },
+      "RunWebAccessControlRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_mode_revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "run_web_access_control.v1"
+            ],
+            "type": "string"
+          },
+          "web_access_mode": {
+            "enum": [
+              "disabled",
+              "rules",
+              "full"
+            ],
+            "type": "string"
+          },
+          "web_allowed_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "version",
+          "expected_mode_revision",
+          "web_access_mode"
+        ],
+        "type": "object"
+      },
+      "RunWebAccessControlView": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/RunModeView"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "run_web_access_control.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "run_id",
+          "mode",
+          "replayed"
+        ],
+        "type": "object"
+      },
       "RuntimeCapabilitiesView": {
         "additionalProperties": false,
         "properties": {
@@ -54659,6 +54865,20 @@
             ],
             "type": "string"
           },
+          "web_access_mode": {
+            "enum": [
+              "disabled",
+              "rules",
+              "full"
+            ],
+            "type": "string"
+          },
+          "web_allowed_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "workspace_id": {
             "maxLength": 256,
             "minLength": 1,
@@ -54666,7 +54886,8 @@
           }
         },
         "required": [
-          "network_mode"
+          "network_mode",
+          "web_access_mode"
         ],
         "type": "object"
       },
@@ -59623,6 +59844,20 @@
               "thread_creation.v1"
             ],
             "type": "string"
+          },
+          "web_access_mode": {
+            "enum": [
+              "disabled",
+              "rules",
+              "full"
+            ],
+            "type": "string"
+          },
+          "web_allowed_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "workspace_id": {
             "maxLength": 256,

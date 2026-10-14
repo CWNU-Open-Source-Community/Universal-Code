@@ -17,15 +17,17 @@ import (
 const RunCreationControlPath = "/api/v1/runs"
 
 type RunCreationControlRequestView struct {
-	Version        string                     `json:"version"`
-	Goal           string                     `json:"goal"`
-	WorkspaceID    string                     `json:"workspace_id"`
-	Profile        string                     `json:"profile,omitempty"`
-	Surface        string                     `json:"surface,omitempty"`
-	Phase          string                     `json:"phase,omitempty"`
-	NetworkMode    string                     `json:"network_mode,omitempty"`
-	AllowedTargets []string                   `json:"allowed_targets,omitempty"`
-	Budget         *domain.TaskBudgetSettings `json:"budget,omitempty"`
+	Version           string                     `json:"version"`
+	Goal              string                     `json:"goal"`
+	WorkspaceID       string                     `json:"workspace_id"`
+	Profile           string                     `json:"profile,omitempty"`
+	Surface           string                     `json:"surface,omitempty"`
+	Phase             string                     `json:"phase,omitempty"`
+	NetworkMode       string                     `json:"network_mode,omitempty"`
+	AllowedTargets    []string                   `json:"allowed_targets,omitempty"`
+	WebAccessMode     domain.WebAccessMode       `json:"web_access_mode,omitempty"`
+	WebAllowedTargets []string                   `json:"web_allowed_targets,omitempty"`
+	Budget            *domain.TaskBudgetSettings `json:"budget,omitempty"`
 }
 
 type RunCreationControlView struct {
@@ -111,7 +113,8 @@ func (a *API) serveRunCreationControl(writer http.ResponseWriter,
 			Profile: view.Profile, Surface: view.Surface, Phase: view.Phase,
 			NetworkMode: view.NetworkMode, Budget: view.Budget,
 			AllowedTargets: append([]string(nil), view.AllowedTargets...),
-			OperationKey:   operationKey, RequestedBy: "http_control",
+			WebAccessMode:  string(view.WebAccessMode), WebAllowedTargets: view.WebAllowedTargets,
+			OperationKey: operationKey, RequestedBy: "http_control",
 		})
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)

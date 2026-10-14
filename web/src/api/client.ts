@@ -193,6 +193,9 @@ import type {
   RunLifecycleControlView,
   RunNetworkAuthorityControlRequestView,
   RunNetworkAuthorityControlView,
+  RunWebAccessControlRequestView,
+  RunWebAccessControlView,
+  WebAccessMode,
   RunWakeCancelRequestView,
   RunWakeControlView,
   RunWakeScheduleRequestView,
@@ -480,6 +483,7 @@ function parseRunCreationControl(value: unknown,
   const expectedSurface = request.surface ?? "code";
   const expectedPhase = request.phase ?? "deliver";
   const expectedNetwork = normalizeRequestedNetworkAuthority(request);
+  const expectedWeb = normalizeRequestedWebAccess(request);
   if (!missionID || !runID || !sessionID || !workspaceID ||
     workspaceID !== request.workspace_id || value.mission.goal !== request.goal ||
     value.run.mission_id !== missionID || value.run.session_id !== sessionID ||
@@ -493,6 +497,8 @@ function parseRunCreationControl(value: unknown,
     value.session.title !== value.mission.goal ||
     !scopeMatchesRequestedNetworkAuthority(value.mission.scope, expectedNetwork) ||
     !scopeMatchesRequestedNetworkAuthority(value.mode.scope, expectedNetwork) ||
+    (expectedWeb !== null && (!scopeMatchesRequestedWebAccess(value.mission.scope, expectedWeb) ||
+      !scopeMatchesRequestedWebAccess(value.mode.scope, expectedWeb))) ||
     !creationBudgetMatches(value.run.budget, value.run.config, request.budget) ||
     value.mode.capability_grant !== false || value.mode.protocol_version !== "run_mode.v1" ||
     value.mode.policy_version !== "mode_policy.v1" || value.mode.revision !== 1 ||
@@ -555,6 +561,7 @@ function parseThreadCreationControl(value: unknown,
     version: "run_creation.v1", goal: request.goal, workspace_id: request.workspace_id,
     profile: request.profile, surface: request.surface, phase: request.phase,
     network_mode: request.network_mode, allowed_targets: request.allowed_targets, budget: request.budget,
+    web_access_mode: request.web_access_mode, web_allowed_targets: request.web_allowed_targets,
   }, requestedModelRoute);
   const thread = parseThreadView(value.thread);
   if (thread.status !== "active" || thread.workspace_id !== request.workspace_id ||
@@ -3067,7 +3074,8 @@ function parseStrictRunMode(value: unknown): Record<string, unknown> {
     !["code", "review", "learn", "script"].includes(value.profile) ||
     !boundedText(value.requested_by, 256) || !boundedText(value.reason, 1_024) ||
     !validDate(value.created_at) || !isRecord(value.scope) ||
-    !hasOnlyKeys(value.scope, ["allowed_targets", "network_mode", "workspace_id"]) ||
+    !hasOnlyKeys(value.scope, ["allowed_targets", "network_mode", "workspace_id", "web_access_mode", "web_allowed_targets"]) ||
+    !validWebAccessScope(value.scope) ||
     !Object.prototype.hasOwnProperty.call(value.scope, "network_mode") ||
     (value.scope.workspace_id !== undefined && !boundedIdentity(value.scope.workspace_id))) {
     throw new APIRequestError("Run mode response is invalid", "INVALID_RESPONSE", 502);
@@ -3110,6 +3118,20 @@ function parseRunNetworkAuthorityControl(value: unknown, expectedRunID: string,
       "INVALID_RESPONSE", 502);
   }
   return value as unknown as RunNetworkAuthorityControlView;
+}
+
+function parseRunWebAccessControl(value: unknown, runID: string,
+  request: RunWebAccessControlRequestView): RunWebAccessControlView {
+  const mode = isRecord(value) && Object.hasOwn(value, "mode") ? parseStrictRunMode(value.mode) : null;
+  const expected = normalizeRequestedWebAccess(request);
+  if (!hasExactKeys(value, ["version", "run_id", "mode", "replayed"]) ||
+    value.version !== "run_web_access_control.v1" || value.run_id !== runID ||
+    typeof value.replayed !== "boolean" || mode === null || expected === null ||
+    mode.revision !== request.expected_mode_revision + 1 || !isRecord(mode.scope) ||
+    !scopeMatchesRequestedWebAccess(mode.scope, expected)) {
+    throw new APIRequestError("Web access response does not match the requested setting", "INVALID_RESPONSE", 502);
+  }
+  return value as unknown as RunWebAccessControlView;
 }
 
 function parseFullCDPSession(value: unknown, expectedRunID: string): FullCDPSessionView {
@@ -5713,6 +5735,42 @@ type RequestedNetworkAuthority = {
   mode: "disabled" | "allowlist";
   targets: string[];
 };
+
+export function canonicalWebAccessSettings(mode: unknown, rawTargets: unknown = []): {
+  mode: WebAccessMode; targets: string[];
+} {
+  if (mode !== "disabled" && mode !== "rules" && mode !== "full") {
+    throw new Error("请选择已支持的网页访问方式。");
+  }
+  if (!Array.isArray(rawTargets) || rawTargets.length > 256 ||
+    rawTargets.some((target) => typeof target !== "string")) {
+    throw new Error("网站规则最多包含 256 个 HTTPS 域名。");
+  }
+  if (mode !== "rules" && rawTargets.length > 0) {
+    throw new Error("网站名单仅用于规则搜索。");
+  }
+  return { mode, targets: [...new Set(rawTargets.map(canonicalExactNetworkTarget))].sort() };
+}
+
+function normalizeRequestedWebAccess(request: { web_access_mode?: string; web_allowed_targets?: string[] }) {
+  if (request.web_access_mode === undefined && request.web_allowed_targets === undefined) return null;
+  return canonicalWebAccessSettings(request.web_access_mode, request.web_allowed_targets ?? []);
+}
+
+function validWebAccessScope(scope: Record<string, unknown>): boolean {
+  if (scope.web_access_mode === undefined && scope.web_allowed_targets === undefined) return true;
+  try {
+    const expected = canonicalWebAccessSettings(scope.web_access_mode, scope.web_allowed_targets ?? []);
+    return scopeMatchesRequestedWebAccess(scope, expected);
+  } catch { return false; }
+}
+
+function scopeMatchesRequestedWebAccess(scope: Record<string, unknown>,
+  expected: { mode: WebAccessMode; targets: string[] }): boolean {
+  const targets = scope.web_allowed_targets ?? [];
+  return scope.web_access_mode === expected.mode && Array.isArray(targets) &&
+    targets.length === expected.targets.length && targets.every((target, index) => target === expected.targets[index]);
+}
 
 function normalizeRequestedNetworkAuthority(request: {
   network_mode?: string;
@@ -8346,6 +8404,7 @@ export class APIClient {
     }
     normalizedTaskBudget(body.budget);
     normalizeRequestedNetworkAuthority(body);
+    normalizeRequestedWebAccess(body);
     const result = await this.sendControl<unknown>("/runs", body, idempotencyKey, signal);
     return parseRunCreationControl(result, body);
   }
@@ -8362,6 +8421,7 @@ export class APIClient {
     }
     normalizedTaskBudget(body.budget);
     normalizeRequestedNetworkAuthority(body);
+    normalizeRequestedWebAccess(body);
     return parseThreadCreationControl(await this.sendControl<unknown>("/threads", body,
       idempotencyKey, signal), body);
   }
@@ -8404,6 +8464,23 @@ export class APIClient {
         "INVALID_RESPONSE", 502);
     }
     return value;
+  }
+
+  async setRunWebAccess(runID: string,
+    body: RunWebAccessControlRequestView, idempotencyKey: string,
+    signal?: AbortSignal): Promise<RunWebAccessControlView> {
+    if (!this.hasControl || !boundedIdentity(runID) || runID.trim() !== runID ||
+      body.version !== "run_web_access_control.v1" ||
+      !safePositiveInteger(body.expected_mode_revision) ||
+      (body.reason !== undefined && body.reason !== "" && (!boundedText(body.reason, 1_024) ||
+        /[\u0000-\u001f\u007f]/u.test(body.reason)))) {
+      throw new Error("请选择当前任务的网页访问方式后重试。");
+    }
+    const selection = normalizeRequestedWebAccess(body);
+    if (selection === null) throw new Error("请选择网页访问方式。");
+    const request = { ...body, web_access_mode: selection.mode, web_allowed_targets: selection.targets };
+    return parseRunWebAccessControl(await this.sendControl<unknown>(
+      `/runs/${encodeURIComponent(runID)}/web-access`, request, idempotencyKey, signal), runID, request);
   }
 
   async expandRunNetworkAuthority(runID: string,

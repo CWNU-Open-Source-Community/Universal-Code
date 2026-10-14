@@ -470,7 +470,7 @@ func getRunModeOperation(ctx context.Context, queryer runModeQueryer,
 }
 
 func sameRunModeScope(left, right domain.Scope) bool {
-	if left.WorkspaceID != right.WorkspaceID || left.NetworkMode != right.NetworkMode ||
+	if !left.SameWebAccess(right) || left.WorkspaceID != right.WorkspaceID || left.NetworkMode != right.NetworkMode ||
 		len(left.AllowedTargets) != len(right.AllowedTargets) {
 		return false
 	}

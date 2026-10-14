@@ -35,6 +35,7 @@ import { FileEditDraftProvider } from "../components/file-edit-drafts";
 import { V2PhasePicker, type V2WorkPhase } from "./components/phase-picker";
 import { useV2DraftTaskConfiguration } from "./draft-task-configuration";
 import type { ProjectSkillChoice } from "../api/project-skills";
+import { useV2WebAccessDefaults } from "./web-access-defaults";
 
 type CreationAttempt = Map<string, string>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -53,7 +54,7 @@ const V2InspectorHome = lazy(() => import("./components/inspector-home").then((m
 })));
 
 function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, onCreated,
-  onTurnSuccess, onManageModels, onOpenTaskConfiguration, budget, configurationValid, projectSkills,
+  onTurnSuccess, onManageModels, onOpenTaskConfiguration, budget, configurationValid, webAccessValid, projectSkills,
   draft: legacyDraft, onDraftChange: legacyDraftChange, creationAttemptRef, options, onOptionsChange, moreProjects, onImported }: {
   client: APIClient;
   workspaces: WorkspaceView[];
@@ -66,6 +67,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   onOpenTaskConfiguration: () => void;
   budget?: TaskBudgetSettings;
   configurationValid: boolean;
+  webAccessValid: boolean;
   projectSkills?: ProjectSkillChoice;
   draft: string;
   onDraftChange: (content: string, expected?: string) => void;
@@ -100,6 +102,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
   const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
   const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = []) => {
+    if (!webAccessValid) throw new Error("请重新选择网页访问方式，草稿已保留。");
     if (!configurationValid) throw new Error("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。");
     if (projectSkills?.refs.length && !projectSkills.confirmUntrustedContext) throw new Error("请在任务配置中确认所选技能上下文。草稿已保留。");
     normalizedTaskBudget(budget);
@@ -135,9 +138,10 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
       profile: "code",
       surface: "code",
       phase,
-      network_mode: networkMode,
+      network_mode: "disabled",
+      web_access_mode: networkMode,
+      web_allowed_targets: networkMode === "rules" ? allowedTargets : [],
       ...(budget ? { budget } : {}),
-      ...(networkMode === "allowlist" ? { allowed_targets: allowedTargets } : {}),
       ...(modelRoute ? { provider: modelRoute.provider, model: modelRoute.model } : {}),
     } as Parameters<APIClient["createThread"]>[0] & { provider?: string; model?: string };
     try {
@@ -197,6 +201,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
     </div></div>
     {creationRecovery.notice}
     {modelCatalogError && <div className="v2-notice" role="alert">{modelCatalogError}</div>}
+    {!webAccessValid && <div className="v2-notice" role="alert">保存的网页访问设置需要更新，请在输入框下方重新选择。</div>}
     {!configurationValid && <div className="v2-notice" role="alert">任务配置需要修正或重新核对，草稿已保留。
       <button onClick={onOpenTaskConfiguration} type="button">修正任务配置</button></div>}
     <div className="v2-composer-dock">
@@ -204,7 +209,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
       <V2Composer client={client}
       draft={draft} onDraftChange={onDraftChange}
-      disabled={!client.hasThreadControl} submitDisabled={!configurationValid} onSubmit={create}
+      disabled={!client.hasThreadControl} submitDisabled={!configurationValid || !webAccessValid} onSubmit={create}
       onManageModels={onManageModels} onPendingModelRouteChange={(route) =>
         onOptionsChange({ ...options, modelRoute: route })}
       pendingModelRoute={modelRoute}
@@ -286,9 +291,17 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const [backgroundCreations, setBackgroundCreations] = useState<ThreadView[]>([]);
   const [drafts, setDrafts] = useV2Drafts();
   const creationAttemptRef = useRef<CreationAttempt>(new Map());
-  const [newThreadOptions, setNewThreadOptions] = useState<NewThreadOptions>({
-    networkMode: "disabled", allowedTargets: [], modelRoute: null,
-  });
+  const webAccessDefaults = useV2WebAccessDefaults();
+  const [newThreadModelRoute, setNewThreadModelRoute] = useState<NewThreadOptions["modelRoute"]>(null);
+  const newThreadOptions: NewThreadOptions = { networkMode: webAccessDefaults.mode,
+    allowedTargets: webAccessDefaults.targets, modelRoute: newThreadModelRoute };
+  const setNewThreadOptions = (next: NewThreadOptions) => {
+    if (next.networkMode !== newThreadOptions.networkMode ||
+      next.allowedTargets !== newThreadOptions.allowedTargets) {
+      webAccessDefaults.onChange(next.networkMode, next.allowedTargets);
+    }
+    setNewThreadModelRoute(next.modelRoute);
+  };
   const [modelSetupToken, setModelSetupToken] = useState("");
   const modelSetupContextRef = useRef<{ token: string; workspaceID: string; entered: boolean } | null>(null);
   const updateModelSetupToken = (value: string, setupWorkspaceID = "") => {
@@ -422,8 +435,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     const currentRoute = routeRef.current;
     if (!token || token !== setup?.token || !setup.entered || workspaceID !== setup.workspaceID ||
       currentRoute.section !== "models" || currentRoute.kind !== "new") return;
-    setNewThreadOptions((current) => ({ ...current,
-      modelRoute: { provider: definition.id, model: definition.default_model } }));
+    setNewThreadModelRoute({ provider: definition.id, model: definition.default_model });
     updateModelSetupToken("");
     navigate({ ...currentRoute, section: undefined }, true);
     requestAnimationFrame(() => requestAnimationFrame(() =>
@@ -491,6 +503,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             changeView("conversation");
           }} section={settingsSection}
           threadID={selectedThreadID} workspaces={workspaces}
+          defaultWebAccessMode={webAccessDefaults.mode} defaultWebAccessTargets={webAccessDefaults.targets}
+          onDefaultWebAccessChange={webAccessDefaults.onChange}
           sourceRunID={route.tool === "run" ? route.resourceID : reviewMemoryRef.current.client === client &&
             reviewMemoryRef.current.threadID === selectedThreadID ? reviewMemoryRef.current.runID : undefined}
           onOpenGithubReview={openGithubReview}
@@ -512,6 +526,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             creationAttemptRef={creationAttemptRef}
             options={newThreadOptions} onOptionsChange={setNewThreadOptions}
+            webAccessValid={webAccessDefaults.valid}
             budget={draftTaskConfiguration.budget} configurationValid={draftTaskConfiguration.valid} projectSkills={draftTaskConfiguration.projectSkills}
             onOpenTaskConfiguration={() => setSettingsSection("task-configuration")}
             onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true) => {
@@ -566,7 +581,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             onOpenWorktree={(workspace) => {
               setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace]);
               selectWorkspace(workspace.id);
-              setNewThreadOptions({ networkMode: "disabled", allowedTargets: [], modelRoute: null });
+              setNewThreadModelRoute(null);
               navigate({ kind: "new" });
               closeNavigationSidebar();
             }}
