@@ -631,8 +631,12 @@ func NewPlatformCommandRuntimeManager(store CommandRuntimeStore,
 }
 
 func (m *CommandRuntimeManager) Available() bool {
-	return m != nil && m.store != nil && m.starter != nil && m.starter.Available() &&
-		m.adapter.Executable()
+	if m == nil || m.store == nil || m.starter == nil || !m.starter.Available() || !m.adapter.Executable() {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return !m.closed
 }
 
 func (m *CommandRuntimeManager) AdapterIdentity() (commandruntimeadapter.Identity, bool) {
@@ -645,10 +649,13 @@ func (m *CommandRuntimeManager) AdapterIdentity() (commandruntimeadapter.Identit
 func (m *CommandRuntimeManager) Start(ctx context.Context,
 	request CommandRuntimeStartRequest,
 ) (CommandRuntimeJobSnapshot, bool, error) {
-	if ctx == nil || ctx.Err() != nil || m == nil || !m.Available() ||
+	if ctx == nil || ctx.Err() != nil || m == nil ||
 		request.Scope.Validate() != nil || !request.Scope.Adapter.SameBackend(m.adapter) ||
 		(request.DispatchCheck != nil && request.OwnershipCheck == nil) {
 		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeBoundary
+	}
+	if !m.Available() {
+		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeUnavailable
 	}
 	m.startMu.Lock()
 	defer m.startMu.Unlock()

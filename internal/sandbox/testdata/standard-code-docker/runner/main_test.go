@@ -23,6 +23,39 @@ func TestFixedProjectToolchainsKeepFormatterAndNestedNPMInGuest(t *testing.T) {
 	if _, _, err := fixedToolchainAt("shell", t.TempDir()); err == nil {
 		t.Fatal("project actions granted a new shell toolchain")
 	}
+	bindings := map[string]string{}
+	for _, value := range environment {
+		if name, value, ok := strings.Cut(value, "="); ok {
+			bindings[name] = value
+		}
+	}
+	if home := bindings["HOME"]; home == "" {
+		t.Fatal("npm has no isolated home")
+	} else if info, err := os.Stat(home); err != nil || !info.IsDir() {
+		t.Fatal("isolated npm home is not created", err)
+	}
+	if bindings["NPM_CONFIG_USERCONFIG"] == "" || bindings["NPM_CONFIG_GLOBALCONFIG"] == "" || bindings["NPM_CONFIG_USERCONFIG"] == bindings["NPM_CONFIG_GLOBALCONFIG"] {
+		t.Fatal("npm config files are not independently bound")
+	}
+}
+
+func TestDependencyWriteLimitsRemainSpecificAndOffline(t *testing.T) {
+	values := []string{"1073741824", "200000", "67108864", strconv.FormatInt(workspaceFreeBytes, 10), strconv.FormatInt(workspaceFreeEntries, 10)}
+	if _, err := parseExecutionLimits(values); err == nil {
+		t.Fatal("ordinary command acquired preparation limits")
+	}
+	if limits, err := parseExecutionLimitsForToolchain(values, "go-prepare"); err != nil || limits.GrowthBytes != 1024*1024*1024 {
+		t.Fatalf("preparation limits: %+v %v", limits, err)
+	}
+	_, environment, err := fixedToolchainAt("go-prepare", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off"} {
+		if !strings.Contains(strings.Join(environment, "\n"), required) {
+			t.Fatalf("preparation lost %s", required)
+		}
+	}
 }
 
 func TestParseExecutionLimitsAcceptsOnlyFixedProfile(t *testing.T) {

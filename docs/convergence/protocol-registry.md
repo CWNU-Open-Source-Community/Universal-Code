@@ -28,7 +28,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 6 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
-| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 56 | true |
+| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 59 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 6 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
@@ -1124,7 +1124,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `process-runtime-lifecycle-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>56 active identifiers</summary>
+<details><summary>59 active identifiers</summary>
 
 - `application_docker_container_lifecycle_post_exit.v1`
 - `application_docker_container_lifecycle_running.v1`
@@ -1175,6 +1175,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `operator_command_request.v1`
 - `permission_runtime_epoch.v1`
 - `project-actions.v1`
+- `project-preparation.v1`
+- `project_preparation_key.v1`
+- `project_preparation_request.v1`
 - `risk_escalation.v1`
 - `risk_escalation_policy.v1`
 - `risk_escalation_resume.v1`
@@ -1899,6 +1902,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `docker_observation_store_test.v1` | `test-fixture` | `internal/store/docker_observation_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `docker_sandbox_product_lifecycle_test.v1` | `test-fixture` | `internal/store/docker_sandbox_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `fake-browser-process.v1` | `test-fixture` | `internal/browserruntime/production_runtime_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
+| `fixture.v1` | `test-fixture` | `internal/application/project_preparation_commands_test.go` | Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter. |
 | `fixture.wrong.v1` | `negative-version-fixture` | `internal/analyzer/subprocess_conformance_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `foreign.v1` | `negative-version-fixture` | `internal/store/run_progress_browser_state_test.go` | Foreign receipt envelope in an exact sealed-progress rejection test; never a production protocol. |
 | `full_cdp_session.v0` | `negative-version-fixture` | `internal/httpapi/full_cdp_session_control_test.go` | Unknown-version HTTP fixture retained to prove fail-closed Full CDP session decoding. |
@@ -1932,6 +1936,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `sandbox_docker_lifecycle_store_test.v1` | `test-fixture` | `internal/store/docker_container_lifecycle_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `sandbox_environment.v2` | `test-fixture` | `internal/httpapi/sandbox_environment_test.go` | Rejects an unsupported future settings protocol before any mutation. |
 | `sandbox_output_fixture.v1` | `test-fixture` | `configs/sandbox-output-fixture.example.json`, `internal/app/sandbox_command_test.go`, `internal/sandbox/output_simulation.go`, `internal/sandbox/output_simulation_test.go` | Explicit sandbox output-simulation fixture input; it grants no production execution authority. |
+| `sbx-fixture.v1` | `test-fixture` | `internal/application/project_commands_context_test.go` | Synthetic SBX adapter identity for project command context coverage; not a production protocol. |
 | `scheduled-store-observation.v1` | `test-fixture` | `internal/store/scheduled_jobs_concurrency_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `skill.v2` | `test-fixture` | `internal/skills/manifest_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `skill.v99` | `negative-version-fixture` | `internal/agentpackages/edge_cases_test.go` | Unknown legacy Skill version rejection fixture; never a supported production reader. |
@@ -1954,7 +1959,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `ui-evidence-ci-launch.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `ui-evidence-ci-smoke.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `ui-evidence-ci-startup-diagnostic.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
-| `unknown.v1` | `negative-version-fixture` | `internal/analyzer/descriptor_test.go`, `web/src/api/queued-messages.test.ts` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
+| `unknown.v1` | `negative-version-fixture` | `internal/analyzer/descriptor_test.go`, `internal/httpapi/project_preparation_test.go`, `web/src/api/queued-messages.test.ts` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `web-mode-test.v1` | `test-fixture` | `internal/application/web_permissions_integration_test.go` | Test connector identity for the real Supervisor search path across Ask, Auto, and cold Full; not a production protocol. |
 | `web_search.v0` | `test-fixture` | `internal/toolgateway/web_evidence_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `windows-local-sandbox.v1` | `test-fixture` | `internal/application/command_runtime_test.go`, `internal/application/supervisor_tool_permission_test.go`, `internal/desktop/standard_code_security_ledger_windows_test.go`, `internal/store/supervisor_tool_registry_migration_test.go`, `internal/store/supervisor_tools_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

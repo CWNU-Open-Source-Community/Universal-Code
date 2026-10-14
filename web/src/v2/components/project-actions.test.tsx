@@ -48,6 +48,18 @@ it("runs the chosen test directory, displays the real failure and offers it back
   expect(feedback).toHaveBeenCalledWith(expect.stringContaining("expected true"));
 });
 
+it("runs a detected test without asking the user to configure the pinned action", async () => {
+  const { client, ui } = setup();
+  client.listProjectActions.mockResolvedValue({ ...actions(), actions: actions().actions.map((action) => action.slot === "test"
+    ? { ...action, configured: false } : action) });
+  render(ui());
+  expect(await screen.findByText("根据项目文件检测")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/测试目录/), { target: { value: "web" } });
+  fireEvent.click(screen.getByRole("button", { name: "运行测试" }));
+  await screen.findByText("expected true");
+  expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", "web", expect.stringMatching(/^project-action-/));
+});
+
 it("keeps an unknown outcome on the same request key and does not automatically rerun", async () => {
   const { client, ui } = setup();
   client.runProjectAction.mockRejectedValueOnce(new TypeError("Network disconnected"));

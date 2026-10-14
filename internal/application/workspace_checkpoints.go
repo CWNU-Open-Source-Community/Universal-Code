@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -93,6 +94,7 @@ type WorkspaceCheckpointService struct {
 	runWorkspace         func(context.Context, string) (session.WorkspaceInfo, bool, error)
 	strictMutationReplay bool
 	operatorGitThreadID  string
+	boundaryCompletionMu *sync.Mutex
 }
 
 func (s *WorkspaceCheckpointService) WithLifecycleHooks(
@@ -124,7 +126,7 @@ func NewWorkspaceCheckpointService(store WorkspaceCheckpointStore,
 			"workspace checkpoint service dependencies are invalid")
 	}
 	return &WorkspaceCheckpointService{store: store, capabilities: capabilities,
-		now: func() time.Time { return time.Now().UTC() }}, nil
+		now: func() time.Time { return time.Now().UTC() }, boundaryCompletionMu: &sync.Mutex{}}, nil
 }
 
 type WorkspaceCheckpointCaptureRequest struct {
@@ -476,6 +478,15 @@ func (s *WorkspaceCheckpointService) CompleteBoundary(ctx context.Context,
 		!workspaceBoundaryKind(request.Kind) {
 		return WorkspaceMutationBoundary{}, apperror.New(apperror.CodeInvalidArgument,
 			"workspace mutation completion request is invalid")
+	}
+	// Foreground completion and recovery can observe the same prepared row.
+	// Serialize capture through cursor advancement so the second caller reads
+	// the durable completion instead of producing a competing timestamp/CAS.
+	// The pointer keeps Drydock's scoped service copies on the same lock.
+	s.boundaryCompletionMu.Lock()
+	defer s.boundaryCompletionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return WorkspaceMutationBoundary{}, err
 	}
 	binding, err := s.loadBinding(ctx, request.RunID)
 	if err != nil {

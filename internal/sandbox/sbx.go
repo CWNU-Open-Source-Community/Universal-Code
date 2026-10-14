@@ -440,7 +440,7 @@ func (b *SBXBackend) Run(ctx context.Context, request SBXRunRequest, stdin io.Re
 		sbxGuestEnvironmentGuard, "traverse-sbx-env")
 	args = append(args, request.Environment...)
 	args = append(args, "/bin/bash", "--noprofile", "--norc", "-c",
-		`cd -- "$1" || exit 125; shift; exec "$@"`, "traverse-sbx", request.WorkingDirectory)
+		sbxGuestWorkspaceCommand, "traverse-sbx", request.WorkingDirectory)
 	args = append(args, request.Arguments...)
 	record.Phase = "dispatching"
 	if err := b.save(record); err != nil {

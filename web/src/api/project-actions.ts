@@ -17,7 +17,7 @@ export function parseProjectActions(value: unknown, runID: string): ProjectActio
     value.actions.length !== 2 || new Set(value.actions.map((item) => record(item) ? item.slot : null)).size !== 2 ||
     value.actions.some((item) => !record(item) || !slot(item.slot) || typeof item.command_id !== "string" ||
       typeof item.configured !== "boolean" || typeof item.available !== "boolean" ||
-      (item.available && !item.configured) || typeof item.reason !== "string" ||
+      (item.available && !item.command_id) || typeof item.reason !== "string" ||
       !["directory", "go_file"].includes(String(item.target_kind)))) invalid();
   return value as unknown as ProjectActionsView;
 }

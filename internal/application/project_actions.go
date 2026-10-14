@@ -12,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
@@ -216,16 +217,18 @@ func (s *ProjectActionsService) List(ctx context.Context, runID string) (Project
 	root := ""
 	if service != nil {
 		view.Backend = service.adapter.Backend
-		mission, readErr := s.store.GetMission(ctx, run.MissionID)
-		if readErr != nil {
-			return view, readErr
-		}
-		files, resolveErr := ResolveRunFileWorkspace(ctx, s.store, run, mission, s.drydocks)
-		if resolveErr != nil {
-			reason = "Run workspace is unavailable"
-			service = nil
-		} else {
-			root = files.Workspace.RootPath
+	}
+	mission, readErr := s.store.GetMission(ctx, run.MissionID)
+	if readErr != nil {
+		return view, readErr
+	}
+	files, resolveErr := ResolveRunFileWorkspace(ctx, s.store, run, mission, s.drydocks)
+	if resolveErr != nil {
+		reason = "Run workspace is unavailable"
+		service = nil
+	} else {
+		root = files.Workspace.RootPath
+		if service != nil {
 			if lease, found, leaseErr := service.store.GetRunExecutionLease(ctx, run.ID); leaseErr != nil {
 				return view, leaseErr
 			} else if found && lease.ActiveAt(time.Now().UTC()) {
@@ -236,6 +239,7 @@ func (s *ProjectActionsService) List(ctx context.Context, runID string) (Project
 	}
 	for _, slot := range []string{"test", "format"} {
 		action := ProjectActionView{Slot: slot, TargetKind: "directory", Reason: reason}
+		var detected *projectprep.Plan
 		if slot == "format" {
 			action.TargetKind = "go_file"
 		}
@@ -247,17 +251,31 @@ func (s *ProjectActionsService) List(ctx context.Context, runID string) (Project
 			}
 		}
 		action.Configured = action.CommandID != ""
-		if !action.Configured {
-			action.Reason = "No project action is configured"
+		if slot == "test" && action.CommandID == "" && root != "" {
+			plan, detectErr := projectprep.Detect(ctx, root, ".")
+			if detectErr == nil {
+				detectErr = checkDetectedProjectPaths(run, plan)
+			}
+			if detectErr == nil && plan.Test.ID != "" {
+				action.CommandID, detected = plan.Test.ID, &plan
+			}
+		}
+		if action.CommandID == "" {
+			if action.Reason == "" {
+				action.Reason = "No project action is configured or detected"
+			}
 		} else if service != nil {
 			_, _, prepareErr := resolveProjectCommandToolchain(action.CommandID, service.adapter, root)
+			if prepareErr == nil && detected != nil {
+				_, prepareErr = PrepareProjectPreparationTestCommand(*detected, service.adapter, root)
+			}
 			if prepareErr == nil {
 				prepareErr = service.projectPresetReady(ctx, action.CommandID)
 			}
 			if (slot == "format") != (action.CommandID == "format.go") {
 				prepareErr = errors.New("configured command preset does not match its project action")
 			}
-			if slot == "format" && project.ReadOnly {
+			if slot == "format" && project != nil && project.ReadOnly {
 				prepareErr = errors.New("read-only project cannot be formatted")
 			}
 			if prepareErr != nil {
@@ -277,21 +295,34 @@ func projectActionCommandIdentity(run domain.Run, request ProjectActionRequest) 
 	if err != nil {
 		return "", "", "", err
 	}
-	if project == nil {
-		return "", "", "", apperror.New(apperror.CodeFailedPrecondition, "Run has no configured project actions")
+	id := ""
+	if project != nil {
+		id = project.TestCommandID
+		if request.Slot == "format" {
+			id = project.FormatCommandID
+		}
 	}
-	id := project.TestCommandID
-	if request.Slot == "format" {
-		id = project.FormatCommandID
-	}
-	if id == "" {
+	if id == "" && request.Slot != "test" {
 		return "", "", "", apperror.New(apperror.CodeFailedPrecondition, "project action is not configured")
 	}
 	key := "project-action-" + runmutation.Fingerprint("project_action_operation", request.RunID, request.OperationKey)
 	// Stored IntentJSON retains this immutable task/action binding, so retries
 	// can read the original Job even after a toolchain or adapter disappears.
-	purpose := "Configured project action " + id + " " + runmutation.Fingerprint("project_action_request", run.ID, run.Config.ProjectConfigFingerprint, request.Slot, request.Target, request.RequestedBy)
+	purpose := "Configured project action " + id + " " + projectActionRequestFingerprint(run, request)
 	return id, key, purpose, nil
+}
+
+func projectActionRequestFingerprint(run domain.Run, request ProjectActionRequest) string {
+	return runmutation.Fingerprint("project_action_request", run.ID, run.Config.ProjectConfigFingerprint, request.Slot, request.Target, request.RequestedBy)
+}
+
+func detectedProjectActionPurpose(purpose, requestFingerprint string) (string, bool) {
+	parts := strings.Fields(purpose)
+	if len(parts) != 6 || strings.Join(parts[:3], " ") != "Detected project action" ||
+		parts[4] != requestFingerprint || len(parts[5]) != 64 || (parts[3] != "test.go" && parts[3] != "test.npm") {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func operatorProjectJobID(runID, key string) string {
@@ -319,7 +350,13 @@ func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRe
 	jobID := operatorProjectJobID(run.ID, operationKey)
 	if job, readErr := s.store.GetCommandRuntimeJob(ctx, jobID); readErr == nil {
 		var intent runner.CommandRuntimeSpec
-		if job.Validate() != nil || json.Unmarshal([]byte(job.IntentJSON), &intent) != nil || job.RunID != run.ID || intent.Purpose != purpose {
+		valid := job.Validate() == nil && json.Unmarshal([]byte(job.IntentJSON), &intent) == nil && job.RunID == run.ID
+		if valid && id == "" {
+			id, valid = detectedProjectActionPurpose(intent.Purpose, projectActionRequestFingerprint(run, request))
+		} else {
+			valid = valid && intent.Purpose == purpose
+		}
+		if !valid {
 			return ProjectActionResultView{}, apperror.New(apperror.CodeConflict, "project action key was already used for another action or target")
 		}
 		return s.projectResult(ctx, request.Slot, id, job, true), nil
@@ -333,9 +370,6 @@ func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRe
 	if err != nil {
 		return ProjectActionResultView{}, err
 	}
-	if err := service.projectPresetReady(ctx, id); err != nil {
-		return ProjectActionResultView{}, err
-	}
 	mission, err := s.store.GetMission(ctx, run.MissionID)
 	if err != nil {
 		return ProjectActionResultView{}, err
@@ -344,7 +378,38 @@ func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRe
 	if err != nil {
 		return ProjectActionResultView{}, err
 	}
-	spec, err := PrepareProjectCommandForAdapter(run, request.Slot, request.Target, service.adapter, files.Workspace.RootPath)
+	var detectedPlan *projectprep.Plan
+	if id == "" {
+		policy, err := projectconfig.PathPolicy(run.Config)
+		if err != nil {
+			return ProjectActionResultView{}, err
+		}
+		if err := policy.Check(request.Target); err != nil {
+			return ProjectActionResultView{}, err
+		}
+		plan, err := projectprep.Detect(ctx, files.Workspace.RootPath, request.Target)
+		if err != nil {
+			return ProjectActionResultView{}, err
+		}
+		if err := checkDetectedProjectPaths(run, plan); err != nil {
+			return ProjectActionResultView{}, err
+		}
+		if plan.Test.ID == "" {
+			return ProjectActionResultView{}, apperror.New(apperror.CodeFailedPrecondition, "no project test was detected in the selected directory")
+		}
+		id = plan.Test.ID
+		detectedPlan = &plan
+		purpose = "Detected project action " + id + " " + projectActionRequestFingerprint(run, request) + " " + plan.Fingerprint
+	}
+	if err := service.projectPresetReady(ctx, id); err != nil {
+		return ProjectActionResultView{}, err
+	}
+	var spec runner.CommandRuntimeSpec
+	if detectedPlan != nil {
+		spec, err = PrepareProjectPreparationTestCommand(*detectedPlan, service.adapter, files.Workspace.RootPath)
+	} else {
+		spec, err = PrepareProjectCommandForAdapter(run, request.Slot, request.Target, service.adapter, files.Workspace.RootPath)
+	}
 	if err != nil {
 		return ProjectActionResultView{}, err
 	}
@@ -377,7 +442,20 @@ func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRe
 					s.mu.Unlock()
 				})
 			}
-			value, executeErr := service.runOperatorCommand(owned, OperatorCommandRequest{RunID: run.ID, OperationKey: operationKey, RequestedBy: request.RequestedBy, Command: spec, ConfirmExecution: true}, func(value OperatorCommandResult) { publish(value, nil) })
+			var before func(context.Context, string) error
+			if detectedPlan != nil {
+				before = func(ctx context.Context, root string) error {
+					current, err := projectprep.Detect(ctx, root, request.Target)
+					if err != nil {
+						return err
+					}
+					if current.Fingerprint != detectedPlan.Fingerprint {
+						return apperror.New(apperror.CodeConflict, "detected project sources changed before test execution; inspect the project again")
+					}
+					return checkDetectedProjectPaths(run, current)
+				}
+			}
+			value, executeErr := service.runPreparedOperatorCommand(owned, OperatorCommandRequest{RunID: run.ID, OperationKey: operationKey, RequestedBy: request.RequestedBy, Command: spec, ConfirmExecution: true}, func(value OperatorCommandResult) { publish(value, nil) }, before, nil)
 			publish(value, executeErr)
 		}()
 	}
@@ -400,7 +478,9 @@ func (s *ProjectActionsService) GetJob(ctx context.Context, runID, jobID string)
 		return ProjectActionResultView{}, apperror.New(apperror.CodeNotFound, "project action Job was not found")
 	}
 	parts := strings.Fields(intent.Purpose)
-	if len(parts) != 5 || strings.Join(parts[:3], " ") != "Configured project action" || len(parts[4]) != 64 {
+	configured := len(parts) == 5 && strings.Join(parts[:3], " ") == "Configured project action" && len(parts[4]) == 64
+	detected := len(parts) == 6 && strings.Join(parts[:3], " ") == "Detected project action" && len(parts[4]) == 64 && len(parts[5]) == 64 && (parts[3] == "test.go" || parts[3] == "test.npm")
+	if !configured && !detected {
 		return ProjectActionResultView{}, apperror.New(apperror.CodeNotFound, "Job is not a configured project action")
 	}
 	slot := "test"

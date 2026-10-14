@@ -503,11 +503,14 @@ func TestCommandRuntimeManagerShutdownClosesLaunchGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	request := commandRuntimeTestRequest(manager, 2000)
 	if err := manager.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := manager.Start(context.Background(),
-		commandRuntimeTestRequest(manager, 2000)); !errors.Is(err, ErrCommandRuntimeUnavailable) {
+	if manager.Available() {
+		t.Fatal("closed manager still advertises availability")
+	}
+	if _, _, err := manager.Start(context.Background(), request); !errors.Is(err, ErrCommandRuntimeUnavailable) {
 		t.Fatalf("closed manager accepted a launch: %v", err)
 	}
 	if starter.starts != 0 {

@@ -105,8 +105,9 @@ try {
   $config = $configJSON | ConvertFrom-Json
   if (($null -ne $config.Env -and @($config.Env).Count -ne 0) -or
       $null -ne $config.Volumes -or $null -eq $config.Labels -or
-      @($config.Labels.PSObject.Properties).Count -ne 1 -or
+      @($config.Labels.PSObject.Properties).Count -ne 2 -or
       $config.Labels.'org.traverse-board.project-actions' -ne '1' -or
+      $config.Labels.'org.traverse-board.project-preparation' -ne '1' -or
       $config.User -ne "65532:65532" -or $config.WorkingDir -ne "/workspace" -or
       @($config.Entrypoint).Count -ne 1 -or
       $config.Entrypoint[0] -ne "/traverse-board/standard-code-runner") {
@@ -125,6 +126,13 @@ try {
     Remove-Item -LiteralPath $finalTar -Force
   }
   if ($workOwned -and (Test-Path -LiteralPath $work)) {
-    Remove-Item -LiteralPath $work -Recurse -Force
+    $resolvedWork = [System.IO.Path]::GetFullPath($work)
+    $expectedWork = [System.IO.Path]::GetFullPath((Join-Path ([System.IO.Path]::GetTempPath()) ("cyberagent-standard-code-$ownedID")))
+    $workEntry = Get-Item -LiteralPath $resolvedWork -Force
+    if ($resolvedWork -ne $expectedWork -or -not $workEntry.PSIsContainer -or
+        ($workEntry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+      throw "owned fixture cleanup path changed; preserving it"
+    }
+    Remove-Item -LiteralPath $resolvedWork -Recurse -Force
   }
 }

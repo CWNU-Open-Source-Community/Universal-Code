@@ -2924,6 +2924,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/project-preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect project dependencies and approved-source requirements
+         * @description Detects a relative project directory, lock files and fixed install/test commands. Reports verified cached artifacts and the current preparation. Reads grant no network or execution authority.
+         */
+        get: operations["inspectProjectPreparation"];
+        put?: never;
+        /**
+         * Prepare locked project dependencies in the selected sandbox
+         * @description Confirms the inspected lock fingerprint, exact public package origins and optional offline installation scripts. Downloads verified artifacts and runs the fixed install through the existing sandbox permission and lease checks. The idempotency key returns the original operation.
+         */
+        post: operations["prepareProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/project-preparation/operations/{operation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a saved project preparation */
+        get: operations["getProjectPreparation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/project-preparation/operations/{operation_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an owned project preparation
+         * @description Durably requests cancellation for the exact operation. Repeated cancellation reads its current state; no new work is started.
+         */
+        post: operations["cancelProjectPreparation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/project-skills/select": {
         parameters: {
             query?: never;
@@ -7508,6 +7569,10 @@ export interface components {
             total_bytes: number;
             workspace_id: string;
         };
+        File: {
+            path: string;
+            sha256: string;
+        };
         FileAttachmentObservation: {
             attachment?: components["schemas"]["WorkspaceFileAttachment"];
             /** @enum {string} */
@@ -9920,6 +9985,75 @@ export interface components {
             run_id: string;
             stale: boolean;
             workspace_id: string;
+        };
+        ProjectPreparationCacheView: {
+            /** Format: int32 */
+            cached_packages: number;
+            status: string;
+            /** Format: int32 */
+            total_packages: number;
+        };
+        ProjectPreparationCancelRequestView: {
+            /** @enum {string} */
+            version: "project-preparation.v1";
+        };
+        ProjectPreparationOperationView: {
+            /** Format: int32 */
+            cache_hits: number;
+            can_cancel: boolean;
+            /** Format: int32 */
+            completed_packages: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            downloaded_bytes: number;
+            error: string;
+            id: string;
+            job?: components["schemas"]["ProjectActionJobView"];
+            /** @enum {string} */
+            protocol_version: "project-preparation.v1";
+            run_id: string;
+            state: string;
+            target: string;
+            /** Format: int32 */
+            total_packages: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ProjectPreparationPlanView: {
+            ecosystem: string;
+            files: components["schemas"]["File"][];
+            fingerprint: string;
+            install_command: string;
+            issues: string[];
+            /** Format: int32 */
+            package_count: number;
+            ready: boolean;
+            requested_version: string;
+            sources: string[];
+            test_command: string;
+            toolchain: string;
+        };
+        ProjectPreparationRequestView: {
+            allowed_sources: string[];
+            confirm_execution: boolean;
+            expected_fingerprint: string;
+            run_install_scripts: boolean;
+            target: string;
+            /** @enum {string} */
+            version: "project-preparation.v1";
+        };
+        ProjectPreparationView: {
+            available: boolean;
+            backend: string;
+            cache: components["schemas"]["ProjectPreparationCacheView"];
+            latest?: components["schemas"]["ProjectPreparationOperationView"];
+            plan: components["schemas"]["ProjectPreparationPlanView"];
+            /** @enum {string} */
+            protocol_version: "project-preparation.v1";
+            reason: string;
+            run_id: string;
+            target: string;
         };
         ProjectSkillSelectionRequestView: {
             confirm_untrusted_context: boolean;
@@ -21349,6 +21483,182 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ProjectInstructionState"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    inspectProjectPreparation: {
+        parameters: {
+            query?: {
+                target?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectPreparationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    prepareProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPreparationRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectPreparationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getProjectPreparation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Saved preparation operation */
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectPreparationOperationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    cancelProjectPreparation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Saved preparation operation */
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPreparationCancelRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectPreparationOperationView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

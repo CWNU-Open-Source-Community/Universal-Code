@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,42 @@ import (
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/workspacecheckpoint"
 )
+
+func TestWorkspaceCheckpointBoundaryConcurrentCompletionReplays(t *testing.T) {
+	fixture := newWorkspaceCheckpointApplicationFixture(t)
+	defer fixture.state.Close()
+	request := application.WorkspaceMutationBoundaryRequest{RunID: fixture.run.ID,
+		Kind: workspacecheckpoint.TransactionCommandBatch, OperationKey: "concurrent-command-completion",
+		TriggerReceiptID: "command-job-concurrent", LeaseID: fixture.lease.LeaseID, LeaseGeneration: fixture.lease.Generation}
+	if _, err := fixture.service.BeginBoundary(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	mustWorkspaceCheckpointApplicationWrite(t, filepath.Join(fixture.root, "file.txt"), []byte("completed command\n"))
+	const callers = 8
+	results := make([]application.WorkspaceMutationBoundary, callers)
+	errors := make([]error, callers)
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	for index := range callers {
+		group.Go(func() {
+			<-start
+			results[index], errors[index] = fixture.service.CompleteBoundary(t.Context(), request, nil)
+		})
+	}
+	close(start)
+	group.Wait()
+	after := ""
+	for index := range callers {
+		if errors[index] != nil || results[index].After == nil || results[index].Transaction.Status != workspacecheckpoint.TransactionCompleted {
+			t.Fatalf("completion %d: %+v %v", index, results[index], errors[index])
+		}
+		if after == "" {
+			after = results[index].After.ID
+		} else if results[index].After.ID != after {
+			t.Fatal("duplicate completion changed checkpoint identity")
+		}
+	}
+}
 
 func TestWorkspaceCheckpointServiceBoundaryUndoRedoAndTimeline(t *testing.T) {
 	fixture := newWorkspaceCheckpointApplicationFixture(t)

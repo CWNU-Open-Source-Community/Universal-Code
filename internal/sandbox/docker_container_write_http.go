@@ -429,10 +429,7 @@ func dockerCreatePayloadWithLabels(request DockerContainerWriteRequest,
 			BindOptions: &dockerCreateBindOptions{Propagation: mount.Propagation}}
 	}
 	initEnabled := true
-	tmpfs := map[string]string{}
-	if dockerContainerSpecUsesStandardCodeWorkspace(spec) {
-		tmpfs[DockerStandardCodeCacheTarget] = DockerStandardCodeCacheTmpfsOptions
-	}
+	tmpfs := dockerExpectedContainerTmpfs(spec)
 	return dockerCreateContainerPayload{
 		Image: spec.ImageDigest, Entrypoint: []string{spec.Executable},
 		Cmd: append([]string(nil), spec.Arguments...), Env: []string{},
@@ -673,7 +670,18 @@ func verifyDockerContainerConfigurationWithLabels(inspection dockerContainerInsp
 func dockerExpectedContainerTmpfs(spec DockerContainerSpec) map[string]string {
 	value := map[string]string{}
 	if dockerContainerSpecUsesStandardCodeWorkspace(spec) {
-		value[DockerStandardCodeCacheTarget] = DockerStandardCodeCacheTmpfsOptions
+		options := DockerStandardCodeCacheTmpfsOptions
+		toolchainIndex := 17
+		if spec.Arguments[0] == dockerStandardCodeRunnerLegacyProtocol {
+			toolchainIndex--
+		}
+		// The complete fixed binding was validated above. Go needs enough
+		// bounded private scratch for both compiled standard-library archives
+		// and its build cache; this does not enlarge the host projection.
+		if toolchain := spec.Arguments[toolchainIndex]; toolchain == DockerStandardCodeToolchainGo || toolchain == DockerStandardCodeToolchainGoPrepare {
+			options = DockerStandardCodeGoCacheTmpfsOptions
+		}
+		value[DockerStandardCodeCacheTarget] = options
 	}
 	return value
 }

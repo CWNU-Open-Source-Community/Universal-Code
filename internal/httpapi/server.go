@@ -363,6 +363,7 @@ type Config struct {
 	ThreadGitController                   ThreadGitController
 	ThreadApplicationServiceController    ThreadApplicationServiceController
 	ProjectActionsController              ProjectActionsController
+	ProjectPreparationController          ProjectPreparationController
 	ThreadPullRequestController           ThreadPullRequestController
 	StandardCodePresetController          StandardCodePresetController
 	StandardCodeDeliveryController        StandardCodeDeliveryController
@@ -468,6 +469,7 @@ type API struct {
 	threadGitController                   ThreadGitController
 	threadApplicationServiceController    ThreadApplicationServiceController
 	projectActionsController              ProjectActionsController
+	projectPreparationController          ProjectPreparationController
 	threadPullRequestController           ThreadPullRequestController
 	standardCodePresetController          StandardCodePresetController
 	standardCodeDeliveryController        StandardCodeDeliveryController
@@ -907,6 +909,7 @@ func New(store Store, config Config) (*API, error) {
 		capabilityReadiness:                 capabilityReadiness,
 		commandRuntimeAdapters:              append([]commandruntimeadapter.Identity(nil), config.CommandRuntimeAdapters...),
 		projectActionsController:            config.ProjectActionsController,
+		projectPreparationController:        config.ProjectPreparationController,
 		commandActivitySource:               commandActivitySource,
 		capabilityReadinessRuntime:          readinessRuntime,
 		runLifecycleController:              config.RunLifecycleController,
@@ -1103,6 +1106,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if isDockerSandboxPath(request.URL.Path) {
 		a.serveDockerSandbox(tracked, request, requestID)
+		return
+	}
+	if runID, operationID, cancel, matched := matchProjectPreparationPath(request.URL.Path); matched {
+		a.serveProjectPreparation(tracked, request, requestID, runID, operationID, cancel)
 		return
 	}
 	if runID, slot, jobID, matched := matchProjectActionsPath(request.URL.Path); matched {

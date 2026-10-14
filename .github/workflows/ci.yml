@@ -147,7 +147,7 @@ jobs:
           go test -race -timeout 15m -count=1
           ./internal/domain ./internal/executionauth ./internal/application
           ./internal/store ./internal/httpapi
-          -run 'WorkspaceAccess|RunExecutionPermission|ExecutionPermission|PermissionDrift|SchemaV126|AgentCodeExecutorCreatesReviewedFileAndFailsClosedOnCASConflict|CommandOperationApprovalRealNativeThreeModes'
+          -run 'WorkspaceAccess|RunExecutionPermission|ExecutionPermission|PermissionDrift|SchemaV126|SchemaV193|ProjectPreparation|AgentCodeExecutorCreatesReviewedFileAndFailsClosedOnCASConflict|CommandOperationApprovalRealNativeThreeModes'
 
   go-audit:
     name: Go dependency audit
@@ -548,7 +548,9 @@ jobs:
           if ($fixedOperatorExitCode -ne 0) { exit $fixedOperatorExitCode }
           if ($fixedRunnerExitCode -ne 0) { exit $fixedRunnerExitCode }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go test -v -count=1 -timeout 10m ./internal/sandbox -run '^TestWindowsLocal(Sandbox|Backend|Process|FailedStart|ToolchainPreflight)'
+          $env:TRAVERSE_BOARD_NODE_LPAC_FIXTURE = Split-Path -Parent (Get-Command node.exe -ErrorAction Stop).Source
+          $env:TRAVERSE_BOARD_GO_LPAC_FIXTURE = go env GOROOT
+          go test -v -count=1 -timeout 10m ./internal/sandbox -run '^Test(WindowsLocal(Sandbox|Backend|Process|FailedStart|ToolchainPreflight|NodeEnvironment|NamedPipeNamespace)|PreparedLocalCache)'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Local command manifests bind Windows drive roots and LPAC policy.
           # Run their launch freshness/capability tests on the actual platform.

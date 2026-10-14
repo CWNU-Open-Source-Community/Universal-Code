@@ -10,6 +10,22 @@ import (
 
 var _ ReadinessProbe = DockerReadinessProbe{}
 
+func TestPreparationImageMetadataRequiresIndependentUpdatedMarker(t *testing.T) {
+	transport, digest := readyDockerReadinessTestTransport(t)
+	probe := fixedDockerReadinessTestProbe(t, transport)
+	transport.image.ProjectActionsVersion = "1"
+	if ready, err := probe.ProjectPreparationAvailable(t.Context(), digest); err != nil || ready {
+		t.Fatalf("old image promised preparation: %t %v", ready, err)
+	}
+	transport.image.PreparationVersion = "1"
+	if ready, err := probe.ProjectPreparationAvailable(t.Context(), digest); err != nil || !ready {
+		t.Fatalf("prepared image unavailable: %t %v", ready, err)
+	}
+	if ready, err := probe.ProjectPreparationAvailable(t.Context(), "sha256:"+strings.Repeat("f", 64)); err == nil || ready {
+		t.Fatalf("wrong image accepted: %t %v", ready, err)
+	}
+}
+
 func TestProjectActionsImageMetadataRequiresUpdatedExactImage(t *testing.T) {
 	transport, digest := readyDockerReadinessTestTransport(t)
 	probe := fixedDockerReadinessTestProbe(t, transport)

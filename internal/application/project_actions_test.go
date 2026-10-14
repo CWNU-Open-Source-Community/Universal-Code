@@ -13,9 +13,75 @@ import (
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
 )
+
+func TestProjectActionsDetectedTestReplaysAfterSourcesDisappear(t *testing.T) {
+	f := newCommandApprovalSandboxFixture(t, domain.RunExecutionPermissionAsk, domain.RunExecutionProfileDocker, true)
+	lease, found, err := f.st.GetRunExecutionLease(t.Context(), f.turn.Run.ID)
+	if err != nil || !found {
+		t.Fatalf("fixture lease %v %v", found, err)
+	}
+	if _, _, err := f.st.ReleaseRunExecutionLease(t.Context(), lease); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(f.owned.Path, "go.mod")
+	if err := os.WriteFile(manifest, []byte("module example.org/detected\ngo 1.26.9\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := f.drydockFixture.service.Checkpoint(t.Context(), DrydockCheckpointRequest{RunID: f.turn.Run.ID, ExpectedGeneration: f.owned.Generation, OperationKey: "detect-project-files", RequestedBy: "operator", Title: "Project manifest", ConfirmObservedChanges: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.owned = checkpoint.Workspace
+	if _, err := f.service.projectCommandService(t.Context(), f.turn.Run.ID); err != nil {
+		t.Fatalf("detected fixture runtime unavailable: %v", err)
+	}
+	plan, err := projectprep.Detect(t.Context(), f.owned.Path, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewProjectActionsService(f.st, f.mux, f.drydockFixture.service)
+	view, err := service.List(t.Context(), f.turn.Run.ID)
+	if err != nil || len(view.Actions) != 2 || view.Actions[0].Configured || !view.Actions[0].Available || view.Actions[0].CommandID != "test.go" {
+		t.Fatalf("unconfigured project test missing: %+v %v", view, err)
+	}
+	request := ProjectActionRequest{RunID: f.turn.Run.ID, Slot: "test", OperationKey: "detected-test-once", RequestedBy: "web_operator", ConfirmExecution: true}
+	started, err := service.Run(t.Context(), request)
+	if err != nil || started.Job.ID == "" {
+		t.Fatalf("detected start %+v %v", started, err)
+	}
+	completed := waitProjectAction(t, service, f.turn.Run.ID, started.Job.ID, time.Minute)
+	if completed.Job.State != runner.CommandRuntimeJobCompleted || !strings.Contains(completed.Job.Stdout, "controlled sandbox output") {
+		t.Fatalf("detected receipt %+v", completed)
+	}
+	job, err := f.st.GetCommandRuntimeJob(t.Context(), started.Job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var intent runner.CommandRuntimeSpec
+	if err := json.Unmarshal([]byte(job.IntentJSON), &intent); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(intent.Purpose, "Detected project action test.go ") || len(strings.Fields(intent.Purpose)) != 6 || strings.Fields(intent.Purpose)[5] != plan.Fingerprint {
+		t.Fatalf("source plan binding missing: %+v", intent)
+	}
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	cold := NewProjectActionsService(f.st, nil, nil)
+	replay, err := cold.Run(t.Context(), request)
+	if err != nil || !replay.Replayed || replay.Job.ID != started.Job.ID {
+		t.Fatalf("detected cold replay %+v %v", replay, err)
+	}
+	request.Target = "different"
+	if _, err := cold.Run(t.Context(), request); apperror.CodeOf(err) != apperror.CodeConflict {
+		t.Fatalf("changed target reused consent: %v", err)
+	}
+	f.assertDispatchCounts(t, 1, 1)
+}
 
 func pinActionConfig(value projectconfig.Effective) domain.RunConfig {
 	raw, _ := json.Marshal(value)
@@ -50,6 +116,20 @@ func TestProjectCommandsSelectGuestPathsWithoutHostToolchain(t *testing.T) {
 
 func projectActionsFixture(t *testing.T, readonly bool) (*operatorCommandFixture, *ProjectActionsService) {
 	return projectActionsFixtureWithTestID(t, readonly, "test.go")
+}
+
+func TestProjectActionsClosedManagerIsUnavailable(t *testing.T) {
+	f, service := projectActionsFixture(t, false)
+	if err := f.manager.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if f.manager.Available() {
+		t.Fatal("closed command manager advertised availability")
+	}
+	view, err := service.List(t.Context(), f.run.ID)
+	if err != nil || view.Actions[0].Available || view.Actions[0].Reason == "" {
+		t.Fatalf("closed runtime project action %+v %v", view, err)
+	}
 }
 
 func projectActionsFixtureWithTestID(t *testing.T, readonly bool, testID string) (*operatorCommandFixture, *ProjectActionsService) {
@@ -174,9 +254,13 @@ func TestProjectActionsNonzeroTestKeepsSavedOutput(t *testing.T) {
 	}
 }
 
-func waitProjectAction(t *testing.T, service *ProjectActionsService, runID, jobID string) ProjectActionResultView {
+func waitProjectAction(t *testing.T, service *ProjectActionsService, runID, jobID string, timeout ...time.Duration) ProjectActionResultView {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
+	wait := 12 * time.Second
+	if len(timeout) == 1 {
+		wait = timeout[0]
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), wait)
 	defer cancel()
 	for {
 		value, err := service.GetJob(ctx, runID, jobID)

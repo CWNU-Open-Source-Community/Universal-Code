@@ -18,6 +18,7 @@ require (
 	github.com/wailsapp/go-webview2 v1.0.23
 	github.com/wailsapp/wails/v2 v2.14.0
 	golang.org/x/image v0.45.0
+	golang.org/x/mod v0.42.0
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0

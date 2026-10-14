@@ -20,6 +20,7 @@ import { TaskOverview } from "./task-overview";
 import { TaskGit } from "./task-git";
 import { TaskPullRequest } from "./task-pull-request";
 import { ProjectActions } from "./project-actions";
+import { ProjectPreparation } from "./project-preparation";
 import { TaskReviewTools, type TaskReviewToolMemory, type TaskReviewToolReviews } from "./task-review-tools";
 import type { WorkspaceView } from "../../api/types";
 import "./task-review.css";
@@ -246,6 +247,7 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
           </details>
         </>}
         {tab === "checks" && selectedRun && <>
+          <ProjectPreparation client={client} runID={reviewedRunID} threadID={detail.thread.id} working={working} />
           <ProjectActions client={client} runID={reviewedRunID} threadID={detail.thread.id}
             working={working} onFeedback={onRequestChange} />
           <section aria-label="编码环境与计划">

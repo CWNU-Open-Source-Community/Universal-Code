@@ -1,5 +1,8 @@
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import { parseProjectActions, parseProjectActionResult, type ProjectActionSlot } from "./project-actions";
+import { parseProjectPreparation, parseProjectPreparationOperation, normalizePreparationTarget, validPreparationTarget,
+  validProjectPreparationRequest, type ProjectPreparationRequest, type ProjectPreparationView,
+  type ProjectPreparationOperation } from "./project-preparation";
 import { consumeSSE } from "./sse";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
 import type { MCPCredentialBindingView, MCPCredentialRequestView, MCPCredentialStatusView } from "./types";
@@ -8353,6 +8356,38 @@ export class APIClient {
     if (!boundedIdentity(runID)) throw new Error("An exact Run is required");
     return parseProjectActions(await this.get<unknown>(
       "/runs/" + encodeURIComponent(runID) + "/project-actions", {}, signal), runID);
+  }
+
+  async getProjectPreparation(runID: string, target = ".", signal?: AbortSignal): Promise<ProjectPreparationView> {
+    if (!boundedIdentity(runID) || !validPreparationTarget(target)) throw new Error("An exact Run and relative project directory are required");
+    const normalizedTarget = normalizePreparationTarget(target);
+    return parseProjectPreparation(await this.get<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-preparation", { target: normalizedTarget }, signal), runID, normalizedTarget);
+  }
+
+  async prepareProject(runID: string, body: ProjectPreparationRequest, operationKey: string): Promise<ProjectPreparationView> {
+    if (!this.hasControl || !this.hasRunExecution) throw new Error("Project preparation requires execution control");
+    if (!boundedIdentity(runID) || !boundedIdentity(operationKey) || !validProjectPreparationRequest(body))
+      throw new Error("An exact reviewed project preparation request is required");
+    const result = parseProjectPreparation(await this.sendControlRequest<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-preparation", body, undefined, operationKey), runID, body.target);
+    if (!result.latest) throw new APIRequestError("项目准备响应没有执行记录。", "INVALID_RESPONSE", 502);
+    return result;
+  }
+
+  async getProjectPreparationOperation(runID: string, operationID: string, signal?: AbortSignal): Promise<ProjectPreparationOperation> {
+    if (!boundedIdentity(runID) || !boundedIdentity(operationID)) throw new Error("An exact Run and preparation operation are required");
+    return parseProjectPreparationOperation(await this.get<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-preparation/operations/" + encodeURIComponent(operationID), {}, signal), runID, operationID);
+  }
+
+  async cancelProjectPreparation(runID: string, operationID: string, operationKey: string): Promise<ProjectPreparationOperation> {
+    if (!this.hasControl || !this.hasRunExecution) throw new Error("Project preparation requires execution control");
+    if (!boundedIdentity(runID) || !boundedIdentity(operationID) || !boundedIdentity(operationKey))
+      throw new Error("An exact Run and preparation operation are required");
+    return parseProjectPreparationOperation(await this.sendControlRequest<unknown>(
+      "/runs/" + encodeURIComponent(runID) + "/project-preparation/operations/" + encodeURIComponent(operationID) + "/cancel",
+      { version: "project-preparation.v1" }, undefined, operationKey), runID, operationID);
   }
 
   async runProjectAction(runID: string, slot: ProjectActionSlot, target: string, operationKey: string): Promise<import("./types").ProjectActionResultView> {

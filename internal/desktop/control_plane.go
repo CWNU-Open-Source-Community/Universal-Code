@@ -47,6 +47,7 @@ type ControlPlane struct {
 	handler                        http.Handler
 	closeOnce                      sync.Once
 	closeErr                       error
+	projectPreparation             *application.ProjectPreparationService
 	skillInstaller                 *application.SkillPackageRegistryService
 	dockerSandbox                  *application.DockerSandboxService
 	sbxBackend                     *sandbox.SBXBackend
@@ -795,6 +796,10 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		executionControl.WithDebugTerminalAgentInput(debugAgentInput)
 	}
 	controlledCommandProposals := application.NewControlledCommandHistory(stateStore)
+	projectPreparation, err := application.NewProjectPreparationService(stateStore, commandRuntime, commandRuntimeDrydocks, home)
+	if err != nil {
+		return nil, err
+	}
 	hostCommandProposals := application.NewHostCommandHistory(stateStore)
 	embeddedAnalyzerExecution := application.NewEmbeddedAnalyzerExecutionService(stateStore)
 	if standardCodeDockerReadiness != nil {
@@ -868,6 +873,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
 		ProjectActionsController:              application.NewProjectActionsService(stateStore, commandRuntime, commandRuntimeDrydocks),
+		ProjectPreparationController:          projectPreparation,
 		RunCreationEnabled:                    config.RunCreationEnabled,
 		StandardCodePresetEnabled:             standardCodePreset != nil,
 		SessionMessageEnabled:                 config.SessionMessageEnabled,
@@ -980,8 +986,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	codeIntelTransferred = true
 	commandRuntimeSetTransferred = true
 	return &ControlPlane{stateStore: stateStore, workspaceManager: workspaceManager,
-		handler:        api.Handler(),
-		skillInstaller: skillInstaller, dockerSandbox: dockerSandbox,
+		projectPreparation: projectPreparation,
+		handler:            api.Handler(),
+		skillInstaller:     skillInstaller, dockerSandbox: dockerSandbox,
 		userTerminal:                   userTerminal,
 		debugAgentInput:                debugAgentInput,
 		commandRuntime:                 commandRuntime,
@@ -1253,6 +1260,9 @@ func (c *ControlPlane) Close() error {
 		c.webFetchReconcileCancel = nil
 		c.webFetchReconcileDone = nil
 		c.workerMu.Unlock()
+		if c.projectPreparation != nil {
+			c.projectPreparation.Close()
+		}
 		var fullCDPShutdown <-chan error
 		var fullCDPShutdownCancel context.CancelFunc
 		if c.fullCDPSessions != nil {

@@ -99,8 +99,9 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
   }
   const backend = actions.data?.backend ?? result?.backend;
   const backendLabel = backend === "host" || backend === "host_unsandboxed" ? t("本机", "Host")
-    : backend === "local" || backend === "local_sandbox" ? t("本地沙箱", "Local sandbox")
-      : backend === "docker" || backend === "docker_sandbox" || backend === "docker_standard_code" ? "Docker" : backend;
+    : backend === "local" || backend === "local_sandbox" || backend === "local_windows_lpac" ? t("本地沙箱", "Local sandbox")
+      : backend === "docker" || backend === "docker_sandbox" || backend === "docker_standard_code" ? "Docker"
+        : backend === "docker_sandboxes" ? "Docker Sandboxes (sbx)" : backend;
   const failed = result && !projectActionIsRunning(result.job.state) &&
     (result.job.state !== "completed" || result.job.exit_code !== 0);
   const reasonLabel = (reason: string) => {
@@ -141,15 +142,16 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
           submit({ runID, slot, target: targets[slot].trim(), key: "project-action-" + crypto.randomUUID() });
         }}>
           <h3>{slot === "test" ? t("测试", "Tests") : t("格式化", "Formatting")}</h3>
-          {action.configured ? <code>{action.command_id}</code> : <p>{t("项目尚未配置此动作，请在 .prayu/config.yaml 中设置。", "Configure this action in .prayu/config.yaml.")}</p>}
-          {action.configured && <label>
+          {action.command_id ? <><code>{action.command_id}</code>{!action.configured && <small>{t("根据项目文件检测", "Detected from project files")}</small>}</>
+            : <p>{t("项目尚未配置此动作，请在 .prayu/config.yaml 中设置。", "Configure this action in .prayu/config.yaml.")}</p>}
+          {action.command_id && <label>
             {directory ? t("测试目录（留空使用项目根目录）", "Test directory (empty for project root)") : t("要格式化的文件", "File to format")}
             <input value={targets[slot]} required={needsFile} disabled={active || working}
               placeholder={directory ? "web" : "internal/example.go"}
               onChange={(event) => setTargets((current) => ({ ...current, [slot]: event.target.value }))} />
             <small>{t("填写相对于项目目录的路径。", "Enter a path relative to the project directory.")}</small>
           </label>}
-          {action.configured && action.reason && <p className="v2-delivery-muted">{reasonLabel(action.reason)}</p>}
+          {action.reason && <p className="v2-delivery-muted">{reasonLabel(action.reason)}</p>}
           <button type="submit" disabled={!action.available || active || damaged || working || !client.hasControl ||
             !client.hasRunExecution || (needsFile && !targets[slot].trim())}>
             {slot === "test" ? t("运行测试", "Run tests") : t("格式化文件", "Format file")}

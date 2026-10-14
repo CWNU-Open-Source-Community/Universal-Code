@@ -38,7 +38,7 @@ counted as another product Surface.
 | Windows and macOS Wails Desktop | User surface | Yes | `active` | `desktop-product` | Primary packaged product; build, startup, renderer-integrity, and recovery checks are release-blocking. |
 | React/Vite Thread workbench | User surface | Yes | `active` | `desktop-product` | Shared renderer for Desktop and authenticated loopback Web; Thread is primary and TypeScript remains presentation-only. |
 | cyberagent CLI | User/control surface | Yes | `active` | `runtime-supervisor` | Stable operator and automation entry; the executable name is a compatibility ID, not a second control plane. |
-| Loopback HTTP and OpenAPI /api/v1 | Control surface and external contract | Yes | `active` | `runtime-supervisor` | Authenticated literal-loopback API used by first-party clients and integrations; never a multi-tenant remote control plane. Conversation web access follows the shared Go Run snapshot contract (ADR 0175), independently of command and sandbox scope. |
+| Loopback HTTP and OpenAPI /api/v1 | Control surface and external contract | Yes | `active` | `runtime-supervisor` | Authenticated literal-loopback API used by first-party clients and integrations; never a multi-tenant remote control plane. Conversation web access follows the shared Go Run snapshot contract (ADR 0175), independently of command and sandbox scope. Project preparation (ADR 0176) binds package downloads to the inspected lockfile and exact operator-selected HTTPS origins, then installs offline in the selected sandbox through the existing Command Runtime. |
 | Bubble Tea TUI | User surface | Yes | `maintenance-only` | `desktop-product` | Read/control compatibility and critical fixes remain supported; feature parity is not a beta release gate. |
 | headless event/CI commands | Automation surface | Yes | `maintenance-only` | `runtime-supervisor` | Existing deterministic CI and event automation remains supported; it is not another interactive product or authority path. |
 | /runs/{id} and /sessions/{id} diagnostic views/routes | Compatibility surface | Yes | `maintenance-only` | `runtime-supervisor` | Diagnostics and API compatibility only; these routes are not alternate stable task identities. |
@@ -76,10 +76,10 @@ counted as another product Surface.
 - **Owner:** `desktop-product`
 - **Supported platforms:** `windows-desktop`, `macos-desktop`, `authenticated-loopback-web`
 - **Shared Go Application contract:** One renderer consumes authenticated Go HTTP/bridge projections backed by internal/application; TypeScript cannot mint durable identity or authority.
-- **Authority impact:** UI state is non-authorizing presentation; all mutations, permissions, approvals, and recovery decisions are validated in Go.
+- **Authority impact:** UI state is non-authorizing presentation; all mutations, permissions, approvals, and recovery decisions are validated in Go. Project preparation submits explicit lock-bound package source and install-script selections to Go; web search retains its independent setting.
 - **Release-blocking checks:** `CI / TypeScript console`, `CI / Windows Desktop shell`, `CI / macOS Desktop shell`, `CI / Real Edge UI evidence`
 - **Contract/test checks:** `npm --prefix web run check:api`, `npm --prefix web test`, `npm --prefix web run build`
-- **Failure/recovery evidence:** `internal/httpapi/ui_test.go`, `internal/desktop/control_plane_test.go`, `internal/browserruntime/ui_evidence_runtime_windows_test.go`
+- **Failure/recovery evidence:** `internal/httpapi/ui_test.go`, `internal/desktop/control_plane_test.go`, `internal/browserruntime/ui_evidence_runtime_windows_test.go`, `web/src/v2/components/project-preparation.test.tsx`
 - **Compatibility strategy:** Keep the React renderer shared by Desktop and authenticated loopback Web, preserve API v1 projections, and converge primary navigation on Thread without renaming durable IDs.
 - **Deprecation window:** Downgrade requires a supported user workflow replacement; removal follows at least 90 days and two tagged prereleases at maintenance-only.
 - **Removal/rollback plan:** Restore the same renderer bundle and Go projections; preserve exported receipts, API compatibility, and user-data recovery.
@@ -106,8 +106,8 @@ counted as another product Surface.
 - **Shared Go Application contract:** internal/httpapi is an authenticated adapter over the shared internal/application contract used by Web and Desktop clients.
 - **Authority impact:** Literal loopback binding and bearer separation gate access; handlers cannot widen Go-owned Scope, policy, approval, credential, or persistence decisions.
 - **Release-blocking checks:** `CI / Go control plane`, `CI / TypeScript console API drift check`
-- **Contract/test checks:** `go test ./internal/httpapi ./internal/app -run API`, `npm --prefix web run check:api`
-- **Failure/recovery evidence:** `internal/app/api_command_test.go`, `internal/httpapi/api_test.go`, `internal/httpapi/thread_control_test.go`, `internal/httpapi/run_web_access_control_test.go`
+- **Contract/test checks:** `go test ./internal/httpapi ./internal/app -run API`, `go test ./internal/httpapi -run ProjectPreparation`, `npm --prefix web run check:api`
+- **Failure/recovery evidence:** `internal/app/api_command_test.go`, `internal/httpapi/api_test.go`, `internal/httpapi/thread_control_test.go`, `internal/httpapi/run_web_access_control_test.go`, `internal/httpapi/project_preparation_test.go`
 - **Compatibility strategy:** Preserve /api/v1 routes, DTOs, generated OpenAPI, loopback-only binding, and process-local token separation; it is not a hosted service.
 - **Deprecation window:** External route retirement follows protocol governance in addition to at least 90 days and two tagged prereleases after any Surface downgrade.
 - **Removal/rollback plan:** Restore handlers over the same Application contract and retain old-client/OpenAPI fixtures; a Surface transition cannot delete published routes or durable readers.

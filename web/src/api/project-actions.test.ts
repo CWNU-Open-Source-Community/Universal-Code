@@ -46,3 +46,9 @@ it("rejects execution without control and binds responses to the requested Run a
   expect(() => parseProjectActionResult(result, "run-1", undefined, "other-job")).toThrow();
   expect(parseProjectActionResult({ ...result, job: { ...result.job, state: "failed", can_stop: false, exit_code: 1, stderr: "test failed" } }, "run-1").job.exit_code).toBe(1);
 });
+
+it("accepts a detected runnable test with no pinned action while requiring its command identity", () => {
+  const detected = { ...actions, actions: actions.actions.map((action) => action.slot === "test" ? { ...action, configured: false } : action) };
+  expect(parseProjectActions(detected, "run-1").actions[0]).toMatchObject({ configured: false, available: true, command_id: "test.npm" });
+  expect(() => parseProjectActions({ ...detected, actions: detected.actions.map((action) => ({ ...action, command_id: "" })) }, "run-1")).toThrow();
+});

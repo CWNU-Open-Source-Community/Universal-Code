@@ -156,13 +156,39 @@ func (c *SafeHTTPClient) Get(ctx context.Context, rawURL string, maxBytes int,
 func (c *SafeHTTPClient) GetAuthorized(ctx context.Context, rawURL string, maxBytes int,
 	accept string, authorize func(string) error,
 ) (HTTPDocument, error) {
+	return c.getAuthorized(ctx, rawURL, maxBytes, DefaultMaxResponse, accept, authorize)
+}
+
+// GetArtifactAuthorized shares public DNS pinning, proxy containment and
+// per-hop authorization with evidence reads. It has a separate download bound
+// for lock-pinned dependency archives; ordinary web reads retain their limit.
+func (c *SafeHTTPClient) GetArtifactAuthorized(ctx context.Context, rawURL string, maxBytes int,
+	authorize func(string) error,
+) (HTTPDocument, error) {
+	if authorize == nil {
+		return HTTPDocument{}, errors.New("artifact download requires explicit authority")
+	}
+	document, err := c.getAuthorized(ctx, rawURL, maxBytes, 64*1024*1024, "application/octet-stream", authorize)
+	if err == nil || ctx == nil || ctx.Err() != nil || (!errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF)) {
+		return document, err
+	}
+	// Artifact GET is anonymous and idempotent. An interrupted response is
+	// already closed and discarded. One fresh attempt repeats every authority,
+	// URL, DNS and redirect check; ordinary evidence and POST requests do not
+	// inherit this retry behavior.
+	return c.getAuthorized(ctx, rawURL, maxBytes, 64*1024*1024, "application/octet-stream", authorize)
+}
+
+func (c *SafeHTTPClient) getAuthorized(ctx context.Context, rawURL string, maxBytes, maximum int,
+	accept string, authorize func(string) error,
+) (HTTPDocument, error) {
 	if c == nil {
 		return HTTPDocument{}, errors.New("safe web HTTP client is required")
 	}
 	if ctx == nil {
 		return HTTPDocument{}, errors.New("safe web HTTP context is required")
 	}
-	if maxBytes <= 0 || maxBytes > DefaultMaxResponse {
+	if maxBytes <= 0 || maxBytes > maximum {
 		return HTTPDocument{}, errors.New("safe web response limit is invalid")
 	}
 	requested, err := CanonicalizePublicHTTPSURL(rawURL)

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -61,7 +63,7 @@ func run(arguments []string) (int, error) {
 			return runnerFailureExitCode, errors.New("runner digest is invalid")
 		}
 	}
-	limits, err := parseExecutionLimits(fields[19:24])
+	limits, err := parseExecutionLimitsForToolchain(fields[19:24], fields[17])
 	if err != nil {
 		return runnerFailureExitCode, err
 	}
@@ -80,6 +82,17 @@ func run(arguments []string) (int, error) {
 	executable, environment, err := fixedToolchain(fields[17])
 	if err != nil {
 		return runnerFailureExitCode, err
+	}
+	moduleCache, err := preparedModuleCache(workspaceRoot, fields[18])
+	if err != nil {
+		return runnerFailureExitCode, err
+	}
+	if moduleCache != "" && (fields[17] == "go" || fields[17] == "go-prepare") {
+		for index, binding := range environment {
+			if strings.HasPrefix(binding, "GOMODCACHE=") {
+				environment[index] = "GOMODCACHE=" + moduleCache
+			}
+		}
 	}
 	toolArguments := append([]string{executable}, arguments[bindingFieldCount+1:]...)
 	for _, argument := range toolArguments {
@@ -100,6 +113,10 @@ type executionLimits struct {
 }
 
 func parseExecutionLimits(values []string) (executionLimits, error) {
+	return parseExecutionLimitsForToolchain(values, "")
+}
+
+func parseExecutionLimitsForToolchain(values []string, toolchain string) (executionLimits, error) {
 	if len(values) != 5 {
 		return executionLimits{}, errors.New("complete workspace resource limits are required")
 	}
@@ -113,8 +130,12 @@ func parseExecutionLimits(values []string) (executionLimits, error) {
 	}
 	limits := executionLimits{GrowthBytes: parsed[0], GrowthEntries: parsed[1],
 		FileBytes: parsed[2], FreeBytes: parsed[3], FreeEntries: parsed[4]}
-	if limits != (executionLimits{GrowthBytes: workspaceGrowthBytes,
-		GrowthEntries: workspaceGrowthEntries, FileBytes: workspaceFileBytes,
+	growthBytes, growthEntries, fileBytes := workspaceGrowthBytes, int64(workspaceGrowthEntries), workspaceFileBytes
+	if toolchain == "go-prepare" || toolchain == "node-prepare" {
+		growthBytes, growthEntries, fileBytes = 1024*1024*1024, 200000, 64*1024*1024
+	}
+	if limits != (executionLimits{GrowthBytes: growthBytes,
+		GrowthEntries: growthEntries, FileBytes: fileBytes,
 		FreeBytes: workspaceFreeBytes, FreeEntries: workspaceFreeEntries}) {
 		return executionLimits{}, errors.New("workspace resource limit does not match the fixed profile")
 	}
@@ -174,12 +195,16 @@ func fixedToolchainAt(toolchain, scratchRoot string) (string, []string, error) {
 	if err := os.MkdirAll(tempRoot, 0o700); err != nil {
 		return "", nil, err
 	}
+	homeRoot := filepath.Join(scratchRoot, "home")
+	if err := os.MkdirAll(homeRoot, 0700); err != nil {
+		return "", nil, err
+	}
 	basePath := "/usr/bin:/bin"
-	baseEnvironment := []string{"TMPDIR=" + tempRoot}
+	baseEnvironment := []string{"TMPDIR=" + tempRoot, "HOME=" + homeRoot}
 	switch toolchain {
 	case "gofmt":
 		return "/opt/toolchains/go/bin/gofmt", append(baseEnvironment, "PATH=/opt/toolchains/go/bin:"+basePath), nil
-	case "go":
+	case "go", "go-prepare":
 		cache := filepath.Join(scratchRoot, "go")
 		moduleCache := filepath.Join(scratchRoot, "go-mod")
 		goPath := filepath.Join(scratchRoot, "go-path")
@@ -193,12 +218,19 @@ func fixedToolchainAt(toolchain, scratchRoot string) (string, []string, error) {
 			"PATH=/opt/toolchains/go/bin:"+basePath,
 			"GOROOT=/opt/toolchains/go", "GOCACHE="+cache,
 			"GOMODCACHE="+moduleCache, "GOPATH="+goPath,
-			"GOTMPDIR="+goTemp, "GOENV=off", "GOTOOLCHAIN=local",
+			"GOTMPDIR="+goTemp, "GOENV=off", "GOTOOLCHAIN=local", "GOWORK=off",
 			"GOPROXY=off", "GOSUMDB=off", "CGO_ENABLED=0",
 		), nil
-	case "node":
+	case "node", "node-prepare":
+		userConfig := filepath.Join(scratchRoot, "npm-user.npmrc")
+		globalConfig := filepath.Join(scratchRoot, "npm-global.npmrc")
+		for _, config := range []string{userConfig, globalConfig} {
+			if err := os.WriteFile(config, nil, 0600); err != nil {
+				return "", nil, err
+			}
+		}
 		return "/opt/toolchains/node/bin/node", append(baseEnvironment,
-			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false"), nil
+			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false", "NPM_CONFIG_OFFLINE=true", "NPM_CONFIG_USERCONFIG="+userConfig, "NPM_CONFIG_GLOBALCONFIG="+globalConfig), nil
 	case "python":
 		return "/opt/toolchains/python/usr-local/bin/python3", append(baseEnvironment,
 			"PATH=/opt/toolchains/python/usr-local/bin:"+basePath,
@@ -221,6 +253,35 @@ func fixedToolchainAt(toolchain, scratchRoot string) (string, []string, error) {
 			"RUSTUP_NO_UPDATE_CHECK=1"), nil
 	default:
 		return "", nil, errors.New("unsupported fixed toolchain")
+	}
+}
+
+func preparedModuleCache(root, directory string) (string, error) {
+	opened, err := os.OpenRoot(root)
+	if err != nil {
+		return "", err
+	}
+	defer opened.Close()
+	for current := directory; ; current = filepath.ToSlash(filepath.Dir(current)) {
+		sum := sha256.Sum256([]byte(current))
+		relative := filepath.Join(".traverse-preparation", hex.EncodeToString(sum[:]), "go-mod")
+		if info, err := opened.Lstat(relative); err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return "", errors.New("prepared module cache is linked")
+			}
+			for parent := filepath.Dir(relative); parent != "."; parent = filepath.Dir(parent) {
+				info, err := opened.Lstat(parent)
+				if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+					return "", errors.New("prepared module cache parent is linked")
+				}
+			}
+			return filepath.Join(root, relative), nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if current == "." {
+			return "", nil
+		}
 	}
 }
 

@@ -99,6 +99,8 @@ func (command Command) Fingerprint() (string, error) {
 func validToolchain(value string) bool {
 	switch value {
 	case sandbox.DockerStandardCodeToolchainGo,
+		sandbox.DockerStandardCodeToolchainGoPrepare,
+		sandbox.DockerStandardCodeToolchainNodePrepare,
 		sandbox.DockerStandardCodeToolchainGofmt,
 		sandbox.DockerStandardCodeToolchainNode,
 		sandbox.DockerStandardCodeToolchainPython,

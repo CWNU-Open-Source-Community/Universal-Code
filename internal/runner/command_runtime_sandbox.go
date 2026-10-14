@@ -167,6 +167,17 @@ func (p *commandRuntimeSandboxProcess) execute(ctx context.Context,
 			}
 		}
 	}
+	// Native launch and preflight failures can have no child stderr. Preserve
+	// their diagnostic in the existing bounded, sanitized output stream.
+	if err != nil && len(result.Stderr) == 0 {
+		remaining := spec.Spec.Output.ArtifactBytes - len(result.Stdout)
+		if remaining > 0 {
+			result.Stderr = []byte(err.Error())
+			if len(result.Stderr) > remaining {
+				result.Stderr = result.Stderr[:remaining]
+			}
+		}
+	}
 	if len(result.Stdout) > 0 {
 		_, _ = p.stdoutWriter.Write(result.Stdout)
 	}

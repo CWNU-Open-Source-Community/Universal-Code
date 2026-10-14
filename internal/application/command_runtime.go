@@ -341,7 +341,9 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		}
 		result.Jobs = append(result.Jobs, job)
 		result.Replayed = replayed
-		if job.State.Terminal() {
+		// Foreground operators finish Go-owned preparation hooks before sealing
+		// the after checkpoint, even when the native Job exits during Start.
+		if job.State.Terminal() && !s.operatorCompletesCommandBoundary(ctx, scope) {
 			if boundaryErr := s.completeCommandRuntimeBoundary(ctx, boundaryRequest,
 				commandRuntimeJobStateError(job.State)); boundaryErr != nil {
 				return result, boundaryErr
@@ -976,6 +978,18 @@ func (s *CommandRuntimeService) Reconcile(ctx context.Context) (int, error) {
 			continue
 		}
 		if job.State.Terminal() {
+			if s.checkpoints != nil {
+				lease, found, err := s.store.GetRunExecutionLease(ctx, job.RunID)
+				if err != nil {
+					return stopped, apperror.Normalize(err)
+				}
+				if found && lease.ActiveAt(time.Now().UTC()) {
+					// Native exit can precede operator finalization. The Run lease
+					// still owns those writes and their checkpoint; recovery resumes
+					// only after the foreground owner releases or loses the lease.
+					continue
+				}
+			}
 			if completeErr := s.completeCommandRuntimeJobBoundary(ctx, job); completeErr != nil {
 				return stopped, completeErr
 			}
