@@ -120,7 +120,7 @@ Windows Local 的 npm 测试原生进程超时，未执行模型修复；React �
 | 环境 | 已执行 | 待完成 |
 | --- | --- | --- |
 | Windows Local | 真实 npm、Go、React 准备；取消、重启、重放；Go 模型修复、原测试通过与三个计划工作项验收 | 兼容 Node 的完整测试与构建 |
-| Docker Engine | 固定 runner 中 npm / Go 离线安装退出 0，原回归退出 1 | 生产 HTTP、SQLite、Run 租约与模型的完整联调 |
+| Docker Engine | 固定 runner 与生产 HTTP API 中 npm / Go 离线安装退出 0，原回归退出 1；原请求重放、重启后的显式重试和自有容器清理 | Docker 内的模型修复闭环、React 完整测试与构建 |
 | Docker Sandboxes | 适配代码与定向测试 | 本机 daemon 已停止，真实执行未验证 |
 
 Docker 实测镜像为
@@ -136,8 +136,45 @@ Windows Local 的 Node 子进程管道存在上游兼容问题：实测 libuv �
 网络或 DACL 权限。后续使用包含该修复的 Node 工具链复测，或采用 Docker 执行环境。
 本机私有 Node 构建还缺 Visual Studio ClangCL 组件，未进行大型系统安装。
 
-自动审批拒绝了完整 Docker API 启动，返回 `blocked by policy`，未提供更具体原因。
-该启动未执行或改道重试；表中的 Docker 结果限于已实际运行的固定 runner。
+首次启动完整 Docker API 时，工具返回 `blocked by policy`，未提供更具体原因。
+用户随后明确要求重试；通过原命令工具重新提交后启动成功，保留独立数据目录、
+loopback 地址、独立读写令牌和原有权限控制。此次结果无法确定首次拒绝的原因。
+
+## Docker API 补验
+
+生产 API 为两个新项目选中 Docker，完成工作区信任确认和正常执行权限配置。
+未授权包源时均保持下载 0 字节；授权后 npm 下载 3,730 字节、Go 下载 32,011 字节。
+首次安装实际暴露 `configuration_mismatch`：Docker 继承固定镜像的
+`org.traverse-board.project-actions=1` 和 `org.traverse-board.project-preparation=1`，
+原检查只接受任务归属标签，因此两个容器都停在 Created，未启动安装命令。
+
+修复只对完整验证的 Standard Code 配置认可这两个固定元数据标签。
+每个归属标签仍须精确匹配；未知标签、错误值和通用配置保留原拒绝行为。
+定向回归先复现创建后的失败，修后覆盖创建、生命周期观察、启动及日志/归档读取。
+
+使用修复后的程序在相同数据目录和端口重启，旧失败记录保持原状态。
+通过新操作键显式重试后，结果如下：
+
+| 项目 | 安装结果 | 原请求重放 | 未修改的原测试 |
+| --- | --- | --- | --- |
+| npm | Docker 中完成，退出 0；复用 1 个包，新增下载 0 字节 | 返回同一准备操作 | `node --test` 正常完成；数字字符串断言失败，退出 1 |
+| Go | Docker 中完成，退出 0；复用 2 个包，新增下载 0 字节 | 返回同一准备操作 | UUID 大小写断言失败，退出 1 |
+
+原测试预置的代码错误用于检查真实命令与失败结果的传递。本次 Docker 补验
+保留源码、测试、锁文件和配置的前后 SHA256，不执行模型修复。
+生产 API 的 SQLite 记录、Run 归属、命令结果与退出清理均参与此次流程。
+两次旧失败留下的容器和本轮执行容器都已由产品清理，按各自 Run 标签读取的
+剩余容器数为 0。
+
+随后在真实 Edge 的“检查与交付”页面点击“运行测试”，生成
+`command-job-bf607874aa9615d89176545c`，页面显示同一预置断言失败及退出码 1。
+下方两张截图采用 1280×1000 视口。
+
+[结构化 Docker API 结果、界面测试记录、原始输出与文件摘要](../evidence/project-preparation/docker-api-result.json)。
+
+![真实 Docker Go 准备完成页面](../evidence/project-preparation/docker-go-api-ready.png)
+
+![从真实界面启动 npm 原回归测试](../evidence/project-preparation/docker-npm-ui-test.png)
 
 ## 复现入口
 

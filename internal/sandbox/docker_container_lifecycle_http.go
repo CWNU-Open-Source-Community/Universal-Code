@@ -158,7 +158,7 @@ func (transport dockerEngineContainerLifecycleTransport) observeOwned(ctx contex
 	}
 	idFingerprint := fingerprint("sandbox_docker_container_id.v1", inspection.ID)
 	if inspection.Name != "/"+request.WriteRequest.Spec.ContainerName ||
-		!equalDockerLabels(inspection.Config.Labels, labels) ||
+		!dockerContainerProfileLabelsMatch(inspection.Config.Labels, request.WriteRequest.Spec, labels) ||
 		(request.ResourceIDFingerprint != "" &&
 			idFingerprint != request.ResourceIDFingerprint) {
 		return DockerContainerLifecycleObservation{}, "",
