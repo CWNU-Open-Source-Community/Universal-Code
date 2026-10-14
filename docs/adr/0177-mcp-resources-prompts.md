@@ -40,7 +40,8 @@ permission/runtime fence、lease、注册代次及能力指纹。远端 annotati
 复用 Supervisor write-ahead intent、approval、result 与 receipt 账本。
 发送前拒绝保留 `not_dispatched`；发送后取消/丢失响应为 `outcome_unknown`；
 已收到 RPC 错误或 `input_required` 为 `result_received`，不会自动当成成功。
-`input_required` 保留 raw 给后续宿主交互切片；SDK 自动多轮重试保持关闭。
+`input_required` 由 [ADR 0180](0180-mcp-interactive-input.md) 的宿主输入流程处理，
+只在操作者答复后显式续接；SDK 自动多轮重试保持关闭。
 结果落库失败后的恢复不重放读取或取得请求。
 
 ## 验证与参考

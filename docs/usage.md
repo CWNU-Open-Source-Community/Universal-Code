@@ -2098,6 +2098,20 @@ reported explicitly. Audio bytes are not passed to the current model adapters.
 Results retain the configured limit (up to 128 KiB); oversized media is omitted
 with a notice, and oversized text is represented by a valid JSON preview.
 
+The extension review shows each discovered prompt's argument names, descriptions,
+and required/optional status before capability approval. The activity detail in
+the conversation and Inspector shows saved MCP text, resource URI provenance,
+validated PNG/JPEG/WebP images, and embedded WAV/MP3/Ogg audio. Audio has playback
+controls, uses `preload="none"`, and never autoplays. Resource links open only
+on an explicit click for HTTP/HTTPS; other URI schemes remain visible as text.
+HTML resources are displayed as literal text.
+
+Previews use the existing saved result, with at most 16 content items, 32 KiB of
+UTF-8 text per item, and 128 KiB across the content projection. Invalid or
+unsupported media is omitted with a count; shortened content and playback
+errors are shown in the activity detail. Older saved results without embedded
+content retain their summary and field list.
+
 ### Manual MCP connection inputs
 
 The registration form uses `mcp-client.v3`. For stdio, enter an absolute executable

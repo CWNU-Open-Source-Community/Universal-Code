@@ -7272,6 +7272,7 @@ export interface components {
             discovered_at?: string;
             fingerprint?: string;
             negotiated: string[];
+            prompt_details?: components["schemas"]["ExtensionMCPPromptView"][];
             prompts: string[];
             resource_templates?: string[];
             resources: string[];
@@ -7287,6 +7288,15 @@ export interface components {
             package_id: string;
             revision: string;
             surface: string;
+        };
+        ExtensionMCPPromptArgumentView: {
+            description?: string;
+            name: string;
+            required: boolean;
+        };
+        ExtensionMCPPromptView: {
+            arguments: components["schemas"]["ExtensionMCPPromptArgumentView"][];
+            name: string;
         };
         ExtensionMCPRegistrationDescriptorView: {
             arguments?: string[];
@@ -12602,9 +12612,28 @@ export interface components {
             /** @enum {string} */
             type: "unavailable" | "text" | "null" | "boolean" | "number" | "string" | "array" | "object" | "unknown";
         };
+        ThreadActivityMCPContentView: {
+            /** Format: int32 */
+            byte_size?: number;
+            data_base64?: string;
+            /** Format: int32 */
+            height?: number;
+            kind: string;
+            mime_type?: string;
+            name?: string;
+            role?: string;
+            text?: string;
+            uri?: string;
+            /** Format: int32 */
+            width?: number;
+        };
         ThreadActivityMCPDetailView: {
             arguments: components["schemas"]["ThreadActivityJSONFieldSummaryView"][];
             boundary: components["schemas"]["ThreadActivityBoundaryView"];
+            content_truncated?: boolean;
+            contents?: components["schemas"]["ThreadActivityMCPContentView"][];
+            /** Format: int32 */
+            omitted_contents?: number;
             operation: string;
             result: components["schemas"]["ThreadActivityJSONSummaryView"];
             server: string;

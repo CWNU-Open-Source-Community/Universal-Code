@@ -111,6 +111,7 @@ export type ThreadActivityArtifactReferenceView =
 export type ThreadActivityCommandDetailView =
   components["schemas"]["ThreadActivityCommandDetailView"];
 export type ThreadActivityToolDetailView = components["schemas"]["ThreadActivityToolDetailView"];
+export type ThreadActivityMCPContentView = components["schemas"]["ThreadActivityMCPContentView"];
 export type ThreadActivityDetailView = components["schemas"]["ThreadActivityDetailView"];
 export type ThreadActivityArtifactView = components["schemas"]["ThreadActivityArtifactView"];
 export type ThreadExportView = components["schemas"]["ThreadExportView"];

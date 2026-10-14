@@ -1370,12 +1370,28 @@ type ThreadActivityJSONSummaryView struct {
 }
 
 type ThreadActivityMCPDetailView struct {
-	Operation string                               `json:"operation"`
-	Server    string                               `json:"server"`
-	Tool      string                               `json:"tool"`
-	Arguments []ThreadActivityJSONFieldSummaryView `json:"arguments"`
-	Result    ThreadActivityJSONSummaryView        `json:"result"`
-	Boundary  ThreadActivityBoundaryView           `json:"boundary"`
+	Operation        string                               `json:"operation"`
+	Server           string                               `json:"server"`
+	Tool             string                               `json:"tool"`
+	Arguments        []ThreadActivityJSONFieldSummaryView `json:"arguments"`
+	Result           ThreadActivityJSONSummaryView        `json:"result"`
+	Contents         []ThreadActivityMCPContentView       `json:"contents,omitempty"`
+	OmittedContents  int                                  `json:"omitted_contents,omitempty"`
+	ContentTruncated bool                                 `json:"content_truncated,omitempty"`
+	Boundary         ThreadActivityBoundaryView           `json:"boundary"`
+}
+
+type ThreadActivityMCPContentView struct {
+	Kind       string `json:"kind"`
+	Text       string `json:"text,omitempty"`
+	URI        string `json:"uri,omitempty"`
+	Name       string `json:"name,omitempty"`
+	MIMEType   string `json:"mime_type,omitempty"`
+	DataBase64 string `json:"data_base64,omitempty"`
+	ByteSize   int    `json:"byte_size,omitempty"`
+	Width      int    `json:"width,omitempty"`
+	Height     int    `json:"height,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 type ThreadActivityVerificationDetailView struct {
@@ -2079,9 +2095,11 @@ func threadActivityTypedDetailView(value application.ThreadActivityTypedDetail,
 	if value.MCP != nil {
 		view.MCP = &ThreadActivityMCPDetailView{Operation: value.MCP.Operation,
 			Server: value.MCP.Server, Tool: value.MCP.Tool,
-			Arguments: threadActivityJSONFieldsView(value.MCP.Arguments),
-			Result:    threadActivityJSONSummaryView(value.MCP.Result),
-			Boundary:  threadActivityBoundaryView(value.MCP.Boundary)}
+			Arguments:       threadActivityJSONFieldsView(value.MCP.Arguments),
+			Result:          threadActivityJSONSummaryView(value.MCP.Result),
+			Contents:        threadActivityMCPContentsView(value.MCP.Contents),
+			OmittedContents: value.MCP.OmittedContents, ContentTruncated: value.MCP.ContentTruncated,
+			Boundary: threadActivityBoundaryView(value.MCP.Boundary)}
 	}
 	if value.Verification != nil {
 		view.Verification = &ThreadActivityVerificationDetailView{
@@ -2101,6 +2119,16 @@ func threadActivityTypedDetailView(value application.ThreadActivityTypedDetail,
 			Boundary: threadActivityBoundaryView(value.Browser.Boundary)}
 	}
 	return view
+}
+
+func threadActivityMCPContentsView(contents []application.ThreadActivityMCPContent) []ThreadActivityMCPContentView {
+	result := make([]ThreadActivityMCPContentView, 0, len(contents))
+	for _, item := range contents {
+		result = append(result, ThreadActivityMCPContentView{Kind: item.Kind, Text: item.Text, URI: item.URI,
+			Name: item.Name, MIMEType: item.MIMEType, DataBase64: item.DataBase64, ByteSize: item.ByteSize,
+			Width: item.Width, Height: item.Height, Role: item.Role})
+	}
+	return result
 }
 
 func threadActivityBoundaryView(value application.ThreadActivityBoundary) ThreadActivityBoundaryView {
