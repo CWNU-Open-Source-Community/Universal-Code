@@ -3637,3 +3637,5 @@ host/port/protocol guard has its own lifecycle, recovery, bypass, and real
 platform evidence. TypeScript, Rust analyzers, and model providers remain
 unable to bypass the Go Tool Gateway, Application service, Policy, approval,
 permission, readiness, or budget boundaries.
+
+MCP 交互切片：运行中工具、资源读取和 Prompt 获取支持宿主驱动的 input_required 续接及旧协议 elicitation。Go 的 live InputBroker 绑定原调用权限，HTTP/CLI/对话提供表单与显式 HTTPS 外部授权链接；输入仅在内存中存续，取消、超时、撤销和重启均不重放。设计见 ADR 0180。

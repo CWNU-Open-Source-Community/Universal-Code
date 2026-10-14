@@ -1324,6 +1324,9 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 }
 
 func supervisorToolExecutionTimeout(name toolgateway.ToolName) time.Duration {
+	if name == "mcp_tool_call" {
+		return mcp.InvocationTimeout + time.Minute
+	}
 	if name == toolgateway.WebSearchTool || name == toolgateway.SourceSearchTool {
 		return supervisorWebSearchToolCallTimeout
 	}

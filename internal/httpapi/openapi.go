@@ -668,6 +668,8 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			RequestType: reflect.TypeOf(StandardCodePresetControlRequestView{}),
 			Control:     true, NotFound: true, SuccessStatus: http.StatusAccepted,
 			Parameters: []openAPIParameter{runID, standardCodePresetIdempotencyKey}},
+		{Path: MCPInputsPathTemplate, OperationID: "listMCPInputs", Summary: "Read live MCP operator input requests", Tag: "Extensions", NotFound: true, DataType: reflect.TypeOf(MCPInputListView{}), Parameters: []openAPIParameter{runID}},
+		{Path: MCPInputResponsePathTemplate, Method: http.MethodPost, OperationID: "respondMCPInput", Summary: "Answer one live MCP operator input request", Tag: "Extensions", Control: true, NotFound: true, SuccessStatus: http.StatusOK, DataType: reflect.TypeOf(MCPInputResponseView{}), RequestType: reflect.TypeOf(mcp.InputResponse{}), Parameters: []openAPIParameter{runID, pathIdentityParameter("input_id", "Live input request identity")}},
 		{Path: ExtensionInventoryPath, OperationID: "getExtensionInventory",
 			Summary: "Inspect MCP Client and Plugin state", Tag: "Extensions",
 			Description: "Returns bounded MCP server health, capability fingerprints, metadata-only call audits, and Plugin installation state. Credential plaintext, MCP arguments and results, and package bytes are never returned.",

@@ -194,7 +194,7 @@ func (a *App) newMCPClientManager() *mcp.Manager {
 	if err != nil {
 		return nil
 	}
-	manager, err := mcp.NewClientManager(a.store, a.credentials, mcp.ManagerOptions{NativeSources: nativeSources})
+	manager, err := mcp.NewClientManager(a.store, a.credentials, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(), NativeSources: nativeSources})
 	if err != nil {
 		return nil
 	}

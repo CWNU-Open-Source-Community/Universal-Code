@@ -39,6 +39,7 @@ import { settleRecoveryTurn } from "../recovery-session";
 import { assertV2DraftVersion, useV2DraftDocument } from "../draft-context";
 import type { V2DraftVersion } from "../draft-version";
 import { V2DraftConflict } from "./draft-conflict";
+import { MCPInputCards } from "./mcp-input-cards";
 import { V2ApprovalCards } from "./approval-cards";
 import { V2Composer } from "./composer";
 import { V2ThreadRunRecovery } from "./thread-run-recovery";
@@ -1021,6 +1022,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           </div>)}
         {(eventStream.error || publicStream.error) && working && <div className="v2-notice tone-warning"
           role="status">实时进度暂不可用；持久工作记录仍会继续同步。</div>}
+        {detail.active_run && <MCPInputCards client={client} runID={currentRun.id} />}
         {detail.active_run && <V2ApprovalCards client={client}
           runID={currentRun.id} threadID={threadID} onReviewFile={(target, trigger) => {
             reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); setReviewOpen(true);

@@ -33,6 +33,7 @@ type CredentialReader interface {
 type TransportFactory func(context.Context, ServerDescriptor, string) (clientTransport, error)
 
 type ManagerOptions struct {
+	InputBroker      *InputBroker
 	HTTPClient       *http.Client
 	TransportFactory TransportFactory
 	Now              func() time.Time
@@ -40,6 +41,7 @@ type ManagerOptions struct {
 }
 
 type Manager struct {
+	inputs        *InputBroker
 	store         ClientStore
 	credentials   CredentialReader
 	factory       TransportFactory
@@ -117,7 +119,7 @@ func NewClientManager(store ClientStore, credentials CredentialReader,
 			return newRemoteClientTransport(descriptor, bearer, options.HTTPClient)
 		}
 	}
-	return &Manager{store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, now: now,
+	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, now: now,
 		locks: make(map[string]*sync.Mutex)}, nil
 }
 

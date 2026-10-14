@@ -2231,3 +2231,16 @@ idle and release their bounded lease on cancellation.
 Existing API requests and historical scopes without the new mode retain their
 original configured-search and inline-fetch-approval behavior. New clients
 should send an explicit mode. See [ADR 0175](adr/0175-explicit-web-access-modes.md).
+
+### MCP 运行中输入
+
+MCP 服务在已授权调用期间请求操作员输入时，对话会显示服务名称、表单或外部授权链接。确认、拒绝和取消只用于当前 Run 的这一次请求。外部授权链接必须由你点击；完成后再确认。等待有五分钟期限，重启不会恢复尚未回答的表单。
+
+CLI 可连接同一个正在运行的 API：
+
+```powershell
+cyberagent mcp client inputs --run <run-id> --api http://127.0.0.1:8765
+'{"version":"mcp-input.v1","action":"accept","content":{"label":"review"}}' | cyberagent mcp client respond --run <run-id> --input <input-id> --api http://127.0.0.1:8765
+```
+
+读取使用 `CYBERAGENT_API_TOKEN`，答复使用 `CYBERAGENT_API_CONTROL_TOKEN`。URL 模式 accept、decline、cancel 不带 content。答复只通过 stdin 进入内存，不写入调用参数或历史；若请求已消失，请查看原调用结果，不要重新发起工具调用来重放它。

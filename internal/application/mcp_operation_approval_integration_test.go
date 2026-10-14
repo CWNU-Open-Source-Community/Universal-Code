@@ -173,6 +173,7 @@ type mcpApprovalFixture struct {
 func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermissionMode, cyberPlan bool, require bool, contentMethod ...string) *mcpApprovalFixture {
 	t.Helper()
 	ctx := t.Context()
+	interactive := len(contentMethod) > 1 && contentMethod[1] == "interactive"
 	method := ""
 	if len(contentMethod) > 0 {
 		method = contentMethod[0]
@@ -245,10 +246,20 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		w.Header().Set("Content-Type", "application/json")
 		var result json.RawMessage
 		switch request.Method {
+		case "server/discover":
+			if interactive {
+				result = json.RawMessage(`{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"approval-fixture","version":"1"}},"resultType":"complete","ttlMs":0,"cacheScope":"private"}`)
+			} else {
+				w.WriteHeader(404)
+				return
+			}
 		case "initialize":
 			result = json.RawMessage(`{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"approval-fixture","version":"1"}}`)
 			if method != "" {
 				result = json.RawMessage(`{"protocolVersion":"2024-11-05","capabilities":{"resources":{},"prompts":{}},"serverInfo":{"name":"approval-fixture","version":"1"}}`)
+			}
+			if interactive {
+				result = json.RawMessage(strings.ReplaceAll(string(result), "2024-11-05", "2026-07-28"))
 			}
 		case "resources/list":
 			result = json.RawMessage(`{"resources":[{"uri":"fixture://review","name":"Review"}]}`)
@@ -281,7 +292,7 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
 	}))
 	t.Cleanup(peer.Close)
-	f.manager, err = mcp.NewClientManager(f.st, &mcpRuntimeCredentialFixture{}, mcp.ManagerOptions{HTTPClient: peer.Client()})
+	f.manager, err = mcp.NewClientManager(f.st, &mcpRuntimeCredentialFixture{}, mcp.ManagerOptions{HTTPClient: peer.Client(), InputBroker: mcp.NewInputBroker()})
 	if err != nil {
 		t.Fatal(err)
 	}

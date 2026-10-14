@@ -1169,6 +1169,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveCodeIntelConfigurationMutation(tracked, request, requestID, identity, kind)
 		return
 	}
+	if runID, inputID, matched := matchMCPInputPath(request.URL.Path); matched {
+		a.serveMCPInput(tracked, request, requestID, runID, inputID)
+		return
+	}
 	if identity, kind, matched := matchExtensionMutationPath(request.URL.Path); matched {
 		a.serveExtensionMutation(tracked, request, requestID, identity, kind)
 		return
