@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/credential"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/toolcontract"
 )
@@ -104,6 +106,12 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 				return launch, "", errors.New("MCP credential unavailable")
 			}
 			bearer = value
+			if mcpoauth.IsEnvelope(value) {
+				bearer, err = mcpoauth.LocalBearer(value, mcpoauth.Binding{Ref: d.CredentialRef, Fingerprint: record.DescriptorFingerprint, Target: d.Target})
+				if err != nil {
+					return launch, "", err
+				}
+			}
 			launch.HTTP.Credential = &toolcontract.CredentialRef{ID: d.CredentialRef, Revision: runtimeCredentialRevision(key, value)}
 		}
 	}
@@ -111,6 +119,7 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 }
 
 func runtimeCredentialRevision(key []byte, value string) string {
+	value = mcpoauth.RevisionIdentity(value)
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte("mcp.runtime.credential\x00" + value))
 	return hex.EncodeToString(mac.Sum(nil))
@@ -184,6 +193,8 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			}
 		}
 	}
+	var resolvedClientForSecrets *Client
+	var recheckCall func(context.Context) error
 	credential := func(ctx context.Context, ref toolcontract.CredentialRef) (string, error) {
 		if m.credentials == nil || launch.HTTP == nil || launch.HTTP.Credential == nil || ref != *launch.HTTP.Credential {
 			return "", runtimeAuthorityFailure(errors.New("MCP credential binding changed"))
@@ -191,6 +202,30 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		value, found, err := m.credentials.Get(ctx, ref.ID)
 		if err != nil || !found || runtimeCredentialRevision(key, value) != ref.Revision {
 			return "", runtimeAuthorityFailure(errors.New("MCP credential revision changed"))
+		}
+		if mcpoauth.IsEnvelope(value) {
+			// Refresh contacts the issuer. Recheck the current call before that
+			// network action, in addition to the final MCP dispatch guard.
+			if recheckCall != nil {
+				if err := recheckCall(ctx); err != nil {
+					return "", err
+				}
+			}
+			owned, ok := m.credentials.(credential.Store)
+			if !ok {
+				return "", mcpoauth.ErrOAuth
+			}
+			secret, err := mcpoauth.ResolveRevision(ctx, owned, mcpoauth.Binding{Ref: ref.ID, Fingerprint: record.DescriptorFingerprint, Target: record.Descriptor.Target}, m.httpClient, mcpoauth.RevisionIdentity(value))
+			if err == nil && resolvedClientForSecrets != nil {
+				resolvedClientForSecrets.addSecret(secret)
+			}
+			if err == nil {
+				current, checkErr := m.store.GetMCPClientServer(ctx, record.Descriptor.ID)
+				if checkErr != nil || current.Generation != record.Generation || current.State != TrustEnabled || current.DescriptorFingerprint != record.DescriptorFingerprint {
+					return "", errors.New("MCP authorization changed during credential refresh")
+				}
+			}
+			return secret, err
 		}
 		return value, nil
 	}
@@ -216,8 +251,17 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			return err
 		}
 		if launch.HTTP != nil && launch.HTTP.Credential != nil {
-			_, credentialErr := credential(ctx, *launch.HTTP.Credential)
-			return credentialErr
+			if m.credentials == nil {
+				return errors.New("MCP credential reader unavailable")
+			}
+			value, found, err := m.credentials.Get(ctx, launch.HTTP.Credential.ID)
+			if err != nil || !found || runtimeCredentialRevision(key, value) != launch.HTTP.Credential.Revision {
+				return errors.New("MCP credential revision changed")
+			}
+			if mcpoauth.IsEnvelope(value) {
+				_, err = mcpoauth.LocalBearer(value, mcpoauth.Binding{Ref: launch.HTTP.Credential.ID, Fingerprint: record.DescriptorFingerprint, Target: record.Descriptor.Target})
+			}
+			return err
 		}
 		return nil
 	}
@@ -298,6 +342,16 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	defer client.Close()
+	resolvedClientForSecrets = client
+	if client.remote != nil && launch.HTTP != nil && launch.HTTP.Credential != nil {
+		stored, found, readErr := m.credentials.Get(ctx, launch.HTTP.Credential.ID)
+		if readErr != nil {
+			return result, readErr
+		}
+		if found && mcpoauth.IsEnvelope(stored) {
+			client.remote.resolveBearer = func(ctx context.Context) (string, error) { return credential(ctx, *launch.HTTP.Credential) }
+		}
+	}
 	client.secrets = slices.Clone(secrets)
 	client.descriptor.DeclaredCapabilities = slices.Clone(record.Descriptor.DeclaredCapabilities)
 	current, err := client.DiscoverWithScope(ctx, discovery)
@@ -323,7 +377,6 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	}
 	operation := runtimeOperation(request.OperationID, toolcontract.OperationToolCall, launch, input)
 	operation.CapabilityFingerprint = client.NativeCapabilityFingerprint()
-	var recheckCall func(context.Context) error
 	toolGuard, recheckCall, err = authorize(ctx, operation)
 	if err != nil {
 		return result, err

@@ -45364,7 +45364,10 @@
           "action": {
             "enum": [
               "set",
-              "delete"
+              "delete",
+              "oauth-discover",
+              "oauth-start",
+              "oauth-cancel"
             ],
             "type": "string"
           },
@@ -45375,6 +45378,26 @@
             "type": "boolean"
           },
           "expected_reference_fingerprint": {
+            "type": "string"
+          },
+          "oauth_client_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "oauth_client_id_mode": {
+            "enum": [
+              "pre_registered",
+              "metadata_url"
+            ],
+            "type": "string"
+          },
+          "oauth_flow_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "oauth_issuer": {
             "type": "string"
           },
           "secret": {
@@ -45412,6 +45435,9 @@
           },
           "endpoint_conflict": {
             "type": "boolean"
+          },
+          "oauth": {
+            "$ref": "#/components/schemas/OAuthStatus"
           },
           "plaintext_returned": {
             "enum": [
@@ -46464,6 +46490,39 @@
           "version",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "OAuthStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_url": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "flow_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "issuers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
         ],
         "type": "object"
       },

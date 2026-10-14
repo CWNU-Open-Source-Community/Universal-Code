@@ -7122,6 +7122,21 @@ export class APIClient {
     catch { throw new APIRequestError("MCP credential change returned invalid presence metadata; refresh before retrying", "INVALID_RESPONSE", 502); }
   }
 
+  async changeMCPOAuth(body: MCPCredentialRequestView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
+    if (!this.hasExtensionControl || body.version !== "mcp-credential.v1" || !validMCPCredentialBinding(body.binding) ||
+      !body.confirm || !isSHA256(body.expected_reference_fingerprint) || body.secret ||
+      !["oauth-discover", "oauth-start", "oauth-cancel"].includes(body.action)) throw new Error("An exact MCP OAuth binding and confirmation are required");
+    if (body.oauth_client_id_mode !== undefined &&
+      (body.action !== "oauth-start" || !["pre_registered", "metadata_url"].includes(body.oauth_client_id_mode))) throw new Error("Invalid OAuth client ID mode");
+    if (body.action === "oauth-start" && body.oauth_client_id_mode === "metadata_url") {
+      const url = new URL(body.oauth_client_id ?? "");
+      if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash || url.pathname === "/" ||
+        (body.oauth_client_id?.length ?? 0) > 256) throw new Error("A hosted HTTPS client metadata document URL is required");
+    }
+    const value=await this.sendControlRequest<unknown>(`/extensions/mcp/${encodeURIComponent(body.binding.server_id)}/credential`,body,signal);
+    return parseMCPCredentialStatus(value,body.binding);
+  }
+
   async importPluginPackage(body: ExtensionPluginImportRequestView,
     signal?: AbortSignal): Promise<ExtensionPluginImportView> {
     if (!this.hasExtensionControl || body.version !== "extension-control.v1" ||

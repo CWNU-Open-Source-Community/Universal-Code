@@ -9139,10 +9139,15 @@ export interface components {
         };
         MCPCredentialRequestView: {
             /** @enum {string} */
-            action: "set" | "delete";
+            action: "set" | "delete" | "oauth-discover" | "oauth-start" | "oauth-cancel";
             binding: components["schemas"]["MCPCredentialBindingView"];
             confirm: boolean;
             expected_reference_fingerprint: string;
+            oauth_client_id?: string;
+            /** @enum {string} */
+            oauth_client_id_mode?: "pre_registered" | "metadata_url";
+            oauth_flow_id?: string;
+            oauth_issuer?: string;
             secret?: string;
             /** @enum {string} */
             version: "mcp-credential.v1";
@@ -9152,6 +9157,7 @@ export interface components {
             credential_ref: string;
             descriptor_fingerprint: string;
             endpoint_conflict: boolean;
+            oauth?: components["schemas"]["OAuthStatus"];
             /** @enum {boolean} */
             plaintext_returned: false;
             /** @enum {string} */
@@ -9412,6 +9418,15 @@ export interface components {
             version: number;
             /** @enum {string} */
             visibility: "run" | "root" | "owner";
+        };
+        OAuthStatus: {
+            authorization_url?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            flow_id?: string;
+            issuer?: string;
+            issuers?: string[];
+            state: string;
         };
         OperationReceiptHistoryItemView: {
             /** Format: date-time */

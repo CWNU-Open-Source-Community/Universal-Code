@@ -20,8 +20,10 @@ import (
 // redacted records; JSON-RPC framing and request identity belong to the SDK.
 type Client struct {
 	resolved        *resolvedClient
+	remote          *mcpHTTPTransport
 	descriptor      ServerDescriptor
 	secrets         []string
+	secretsMu       sync.RWMutex
 	closed          atomic.Bool
 	tap             *sdkResponseTap
 	protocolVersion string
@@ -295,7 +297,20 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMe
 		Bytes: len([]byte(content)), Truncated: truncated}, nil
 }
 
+func (c *Client) addSecret(secret string) {
+	if secret == "" {
+		return
+	}
+	c.secretsMu.Lock()
+	defer c.secretsMu.Unlock()
+	if !slices.Contains(c.secrets, secret) {
+		c.secrets = append(c.secrets, secret)
+	}
+}
+
 func (c *Client) sanitizeText(value string) string {
+	c.secretsMu.RLock()
+	defer c.secretsMu.RUnlock()
 	value = strings.ToValidUTF8(value, "?")
 	for _, secret := range c.secrets {
 		value = strings.ReplaceAll(value, secret, "[REDACTED:credential]")

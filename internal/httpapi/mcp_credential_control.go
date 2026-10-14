@@ -23,6 +23,10 @@ type MCPCredentialRequestView struct {
 	Version                      string                   `json:"version"`
 	Binding                      MCPCredentialBindingView `json:"binding"`
 	Action                       string                   `json:"action"`
+	OAuthFlowID                  string                   `json:"oauth_flow_id,omitempty"`
+	OAuthIssuer                  string                   `json:"oauth_issuer,omitempty"`
+	OAuthClientID                string                   `json:"oauth_client_id,omitempty"`
+	OAuthClientIDMode            string                   `json:"oauth_client_id_mode,omitempty"`
 	Secret                       string                   `json:"secret,omitempty"`
 	Confirm                      bool                     `json:"confirm"`
 	ExpectedReferenceFingerprint string                   `json:"expected_reference_fingerprint"`
@@ -97,7 +101,7 @@ func (a *API) serveMCPCredential(writer http.ResponseWriter, request *http.Reque
 		}
 		value, err = controller.ChangeMCPCredential(request.Context(), application.ChangeMCPCredentialRequest{
 			Binding: application.MCPCredentialBinding(view.Binding), Version: view.Version, Action: view.Action,
-			Secret: view.Secret, Confirm: view.Confirm, ExpectedReferenceFingerprint: view.ExpectedReferenceFingerprint})
+			Secret: view.Secret, OAuthFlowID: view.OAuthFlowID, OAuthIssuer: view.OAuthIssuer, OAuthClientID: view.OAuthClientID, OAuthClientIDMode: view.OAuthClientIDMode, Confirm: view.Confirm, ExpectedReferenceFingerprint: view.ExpectedReferenceFingerprint})
 		view.Secret = ""
 	}
 	if err != nil {

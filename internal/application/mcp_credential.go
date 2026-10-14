@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/mcp"
+	"cyberagent-workbench/internal/mcpoauth"
 )
 
 const MCPCredentialProtocolVersion = "mcp-credential.v1"
@@ -25,26 +27,31 @@ type MCPCredentialBinding struct {
 }
 
 type MCPCredentialStatus struct {
-	ProtocolVersion       string `json:"protocol_version"`
-	ServerID              string `json:"server_id"`
-	WorkspaceID           string `json:"workspace_id"`
-	RunID                 string `json:"run_id,omitempty"`
-	DescriptorFingerprint string `json:"descriptor_fingerprint"`
-	Target                string `json:"target"`
-	CredentialRef         string `json:"credential_ref"`
-	Configured            bool   `json:"configured"`
-	StoreKind             string `json:"store_kind"`
-	StoreAvailable        bool   `json:"store_available"`
-	PlaintextReturned     bool   `json:"plaintext_returned"`
-	RegistrationCount     int    `json:"registration_count"`
-	ReferenceFingerprint  string `json:"reference_fingerprint"`
-	EndpointConflict      bool   `json:"endpoint_conflict"`
+	ProtocolVersion       string                `json:"protocol_version"`
+	ServerID              string                `json:"server_id"`
+	WorkspaceID           string                `json:"workspace_id"`
+	RunID                 string                `json:"run_id,omitempty"`
+	DescriptorFingerprint string                `json:"descriptor_fingerprint"`
+	Target                string                `json:"target"`
+	CredentialRef         string                `json:"credential_ref"`
+	Configured            bool                  `json:"configured"`
+	StoreKind             string                `json:"store_kind"`
+	StoreAvailable        bool                  `json:"store_available"`
+	PlaintextReturned     bool                  `json:"plaintext_returned"`
+	RegistrationCount     int                   `json:"registration_count"`
+	ReferenceFingerprint  string                `json:"reference_fingerprint"`
+	EndpointConflict      bool                  `json:"endpoint_conflict"`
+	OAuth                 *mcpoauth.OAuthStatus `json:"oauth,omitempty"`
 }
 
 type ChangeMCPCredentialRequest struct {
 	Binding                      MCPCredentialBinding
 	Version                      string
 	Action                       string
+	OAuthFlowID                  string
+	OAuthIssuer                  string
+	OAuthClientID                string
+	OAuthClientIDMode            string
 	Secret                       string
 	Confirm                      bool
 	ExpectedReferenceFingerprint string
@@ -58,19 +65,25 @@ type MCPCredentialRegistry interface {
 // The OS store remains the sole secret owner. Presence is local metadata, not
 // proof of remote authentication. No secret or backend error enters a reply.
 type MCPCredentialService struct {
-	mu       sync.Mutex
-	registry MCPCredentialRegistry
-	store    credential.Store
+	mu        sync.Mutex
+	registry  MCPCredentialRegistry
+	store     credential.Store
+	oauth     map[string]*mcpoauth.Flow
+	oauthHTTP *http.Client
 }
 
 func NewMCPCredentialService(registry MCPCredentialRegistry, store credential.Store) *MCPCredentialService {
-	return &MCPCredentialService{registry: registry, store: store}
+	return &MCPCredentialService{registry: registry, store: store, oauth: make(map[string]*mcpoauth.Flow)}
 }
 
 func (s *MCPCredentialService) Status(ctx context.Context, binding MCPCredentialBinding) (MCPCredentialStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.status(ctx, binding)
+	value, err := s.status(ctx, binding)
+	if err == nil {
+		err = s.oauthStatus(ctx, binding, &value)
+	}
+	return value, err
 }
 
 func (s *MCPCredentialService) status(ctx context.Context, binding MCPCredentialBinding) (MCPCredentialStatus, error) {
@@ -126,11 +139,14 @@ func (s *MCPCredentialService) status(ctx context.Context, binding MCPCredential
 }
 
 func (s *MCPCredentialService) Change(ctx context.Context, request ChangeMCPCredentialRequest) (MCPCredentialStatus, error) {
+	if strings.HasPrefix(request.Action, "oauth-") {
+		return s.changeOAuth(ctx, request)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if request.Version != MCPCredentialProtocolVersion || !request.Confirm ||
+	if request.Version != MCPCredentialProtocolVersion || !request.Confirm || request.OAuthIssuer != "" || request.OAuthClientID != "" || request.OAuthClientIDMode != "" || request.OAuthFlowID != "" ||
 		(request.Action != "set" && request.Action != "delete") ||
-		(request.Action == "set" && (len([]byte(request.Secret)) < 8 || !credential.ValidSecret(request.Secret))) ||
+		(request.Action == "set" && (len([]byte(request.Secret)) < 8 || !credential.ValidSecret(request.Secret) || mcpoauth.IsEnvelope(request.Secret))) ||
 		(request.Action == "delete" && request.Secret != "") {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeInvalidArgument, "MCP credential change requires an explicit action, confirmation and valid bounded input")
 	}
@@ -141,12 +157,15 @@ func (s *MCPCredentialService) Change(ctx context.Context, request ChangeMCPCred
 	if !status.StoreAvailable {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeFailedPrecondition, "System credential storage is unavailable; no plaintext fallback exists")
 	}
-	if request.Action == "set" && strings.HasPrefix(request.Secret, "uc-mcp-oauth-v1:") {
-		return MCPCredentialStatus{}, apperror.New(apperror.CodeInvalidArgument, "MCP credential input uses a reserved authentication format")
-	}
 	if status.EndpointConflict || status.ReferenceFingerprint != request.ExpectedReferenceFingerprint {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeConflict, "MCP credential references changed or bind different endpoints; refresh before changing the shared credential")
 	}
+	if flow := s.oauth[request.Binding.CredentialRef]; flow != nil {
+		flow.Cancel()
+		delete(s.oauth, request.Binding.CredentialRef)
+	}
+	unlock := mcpoauth.CredentialLock(request.Binding.CredentialRef)
+	defer unlock()
 	if request.Action == "set" {
 		err = s.store.Put(ctx, request.Binding.CredentialRef, request.Secret)
 	} else {

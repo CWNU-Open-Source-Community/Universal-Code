@@ -135,6 +135,7 @@ func makeHTTPClientTransport(endpoint, bearer string, base *http.Client) (*Clien
 	// public Connection observer. Restore only its negotiated header state;
 	// the other callback behavior (standalone SSE) is explicitly disabled.
 	transport.tap.negotiated = func(version string) { httpTransport.protocolVersion.Store(version) }
+	transport.remote = httpTransport
 	return transport, httpTransport
 }
 
@@ -277,6 +278,7 @@ type mcpHTTPTransport struct {
 	origin          *url.URL
 	base            http.RoundTripper
 	bearer          string
+	resolveBearer   func(context.Context) (string, error)
 	headers         http.Header
 	beforeConnect   func(context.Context) error
 	beforeSend      func(context.Context, *jsonrpc.Request, int64) error
@@ -352,16 +354,31 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	// Even an Idempotency-Key must not make net/http replay a tool POST.
 	// SDK-level reconnect and multi-round-trip retries are disabled separately.
 	request.GetBody = nil
-	if t.bearer != "" {
-		request.Header.Set("Authorization", "Bearer "+t.bearer)
-	}
 	if request.Method == http.MethodPost {
 		if t.beforeSend != nil {
 			if err := t.beforeSend(request.Context(), envelope, wireBytes); err != nil {
 				return nil, err
 			}
 		}
-		// Final HTTP guard: after body/header/credential projection.
+	}
+	// Credential refresh may contact the issuer, so resolve only after the
+	// connection and frame guards. The one-shot final dispatch guard remains
+	// after refresh, so a refresh failure never claims an MCP dispatch.
+	bearer := t.bearer
+	if t.resolveBearer != nil {
+		var err error
+		bearer, err = t.resolveBearer(request.Context())
+		if err != nil {
+			return nil, err
+		}
+	}
+	if bearer != "" {
+		request.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	if err := request.Context().Err(); err != nil {
+		return nil, err
+	}
+	if request.Method == http.MethodPost {
 		if err := beforeSDKDispatch(request.Context(), envelope.Method); err != nil {
 			return nil, err
 		}

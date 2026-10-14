@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/mcp"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/toolgateway"
 )
 
@@ -181,6 +183,9 @@ func (a *App) mcpClientReviewCommand(ctx context.Context, manager *mcp.Manager,
 }
 
 func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
+	if len(args) > 0 && strings.HasPrefix(args[0], "oauth-") {
+		return a.mcpOAuthCommand(ctx, args)
+	}
 	if len(args) == 0 || a.credentials == nil {
 		return errors.New("usage: cyberagent mcp credential status|set|delete <name>")
 	}
@@ -207,9 +212,11 @@ func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
 			return errors.New("usage: cyberagent mcp credential set <name> --from-env <variable> --confirm")
 		}
 		secret := os.Getenv(*fromEnvironment)
-		if len([]byte(secret)) < 8 || !credential.ValidSecret(secret) {
+		if len([]byte(secret)) < 8 || !credential.ValidSecret(secret) || mcpoauth.IsEnvelope(secret) {
 			return errors.New("MCP credential environment value is missing or invalid")
 		}
+		unlock := mcpoauth.CredentialLock(fs.Arg(0))
+		defer unlock()
 		if err := a.credentials.Put(ctx, fs.Arg(0), secret); err != nil {
 			return err
 		}
@@ -225,6 +232,8 @@ func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
 		if fs.NArg() != 1 || !credential.ValidName(fs.Arg(0)) || !*confirm || !a.credentials.Available() {
 			return errors.New("usage: cyberagent mcp credential delete <name> --confirm")
 		}
+		unlock := mcpoauth.CredentialLock(fs.Arg(0))
+		defer unlock()
 		if err := a.credentials.Delete(ctx, fs.Arg(0)); err != nil {
 			return err
 		}
@@ -264,4 +273,85 @@ func writeExtensionJSON(destination io.Writer, value any) error {
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+// The CLI owns the callback lifetime; Ctrl+C cancels it without persisting tokens.
+func (a *App) mcpOAuthCommand(ctx context.Context, args []string) error {
+	fs := newFlagSet("mcp credential OAuth", a.errOut)
+	issuer := fs.String("issuer", "", "explicitly trusted discovered HTTPS issuer")
+	clientID := fs.String("client-id", "", "public OAuth client ID or hosted metadata URL")
+	clientIDMode := fs.String("client-id-mode", "", "pre_registered (default) or metadata_url")
+	confirm := fs.Bool("confirm", false, "confirm OAuth metadata network access and credential change")
+	if err := fs.Parse(reorderFlags(args[1:], map[string]bool{"issuer": true, "client-id": true, "client-id-mode": true, "confirm": false})); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || (args[0] != "oauth-status" && !*confirm) {
+		return errors.New("usage: cyberagent mcp credential oauth-discover|oauth-login|oauth-status <server-id> --confirm [--issuer <url> --client-id <id>]")
+	}
+	record, err := a.store.GetMCPClientServer(ctx, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	d := record.Descriptor
+	binding := application.MCPCredentialBinding{ServerID: d.ID, WorkspaceID: d.WorkspaceID, RunID: d.RunID, ExpectedDescriptorFingerprint: record.DescriptorFingerprint, Target: d.Target, CredentialRef: d.CredentialRef}
+	service := application.NewMCPCredentialService(a.store, a.credentials)
+	status, err := service.Status(ctx, binding)
+	if err != nil {
+		return err
+	}
+	if args[0] == "oauth-status" {
+		return writeExtensionJSON(a.out, status)
+	}
+	action := "oauth-discover"
+	if args[0] == "oauth-login" {
+		action = "oauth-start"
+	} else if args[0] != "oauth-discover" {
+		return errors.New("unknown MCP OAuth command")
+	}
+	request := application.ChangeMCPCredentialRequest{Binding: binding, Version: application.MCPCredentialProtocolVersion, Action: action, Confirm: *confirm, ExpectedReferenceFingerprint: status.ReferenceFingerprint, OAuthIssuer: *issuer, OAuthClientID: *clientID, OAuthClientIDMode: *clientIDMode}
+	status, err = service.Change(ctx, request)
+	if err != nil {
+		return err
+	}
+	if action == "oauth-start" {
+		cancellation := request
+		cancellation.Action = "oauth-cancel"
+		cancellation.OAuthFlowID = status.OAuth.FlowID
+		cancellation.OAuthIssuer = ""
+		cancellation.OAuthClientID = ""
+		cancellation.OAuthClientIDMode = ""
+		defer func() { _, _ = service.Change(context.Background(), cancellation) }()
+	}
+	if err = writeExtensionJSON(a.out, status); err != nil {
+		return err
+	}
+	if action != "oauth-start" {
+		return nil
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			status, err = service.Status(ctx, binding)
+			if err != nil {
+				return err
+			}
+			if status.OAuth == nil {
+				return errors.New("MCP OAuth state is unavailable")
+			}
+			if status.OAuth.State == "authorizing" || status.OAuth.State == "starting" {
+				continue
+			}
+			if err = writeExtensionJSON(a.out, status); err != nil {
+				return err
+			}
+			if status.OAuth.State != "authorized" {
+				return errors.New("MCP OAuth authorization did not complete")
+			}
+			return nil
+		}
+	}
 }

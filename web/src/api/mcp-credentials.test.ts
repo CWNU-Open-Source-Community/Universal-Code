@@ -6,6 +6,31 @@ afterEach(() => vi.unstubAllGlobals());
 const respond = (data: unknown) => new Response(JSON.stringify({ version: "api.v1", request_id: "credential-test", data }),
   { status: 200, headers: { "Content-Type": "application/json" } });
 
+it("sends the explicit CIMD mode and accepts a host-validated cross-origin authorization endpoint", async () => {
+  const value = { ...credentialStatus(), oauth: { state: "authorizing", flow_id: "AbCdef1234567890ABCDEFGH1234", issuer: "https://issuer.example", authorization_url: "https://login.example/authorize?state=fixture" } };
+  const fetchMock = vi.fn().mockResolvedValue(respond(value));
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await new APIClient("read", "/api/v1", "control").changeMCPOAuth({ version: "mcp-credential.v1", binding: credentialBinding(), action: "oauth-start", confirm: true,
+    expected_reference_fingerprint: "e".repeat(64), oauth_issuer: "https://issuer.example", oauth_client_id: "https://client.example/metadata.json", oauth_client_id_mode: "metadata_url" });
+  expect(result.oauth?.authorization_url).toBe(value.oauth.authorization_url);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ oauth_client_id_mode: "metadata_url" });
+});
+
+it.each(["http://client.example/doc", "https://client.example/", "https://user:secret@client.example/doc"])("rejects invalid CIMD URL %s before sending", async (url) => {
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  await expect(new APIClient("read", "/api/v1", "control").changeMCPOAuth({ version: "mcp-credential.v1", binding: credentialBinding(), action: "oauth-start", confirm: true,
+    expected_reference_fingerprint: "e".repeat(64), oauth_client_id: url, oauth_client_id_mode: "metadata_url" })).rejects.toThrow();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("accepts the host's mixed-case OAuth flow IDs without accepting token fields", async () => {
+  const value = { ...credentialStatus(), oauth: { state: "authorizing", flow_id: "AbCdef1234567890ABCDEFGH1234", issuer: "https://issuer.example" } };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(value)));
+  expect((await new APIClient("read").mcpCredentialStatus(credentialBinding())).oauth?.flow_id).toBe(value.oauth.flow_id);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond({ ...value, oauth: { ...value.oauth, access_token: "private" } })));
+  await expect(new APIClient("read").mcpCredentialStatus(credentialBinding())).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+});
+
 it("reads exact descriptor presence with the read token and writes only through control", async () => {
   const binding = credentialBinding();
   const fetchMock = vi.fn().mockResolvedValueOnce(respond(credentialStatus())).mockResolvedValueOnce(respond(credentialStatus(undefined, true)))

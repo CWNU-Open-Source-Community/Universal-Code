@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/executionauth"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/redact"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
@@ -336,6 +338,16 @@ func (m *Manager) connect(ctx context.Context, descriptor ServerDescriptor) (*Cl
 			return nil, errors.New("configured MCP credential is unavailable")
 		}
 		bearer = value
+		if mcpoauth.IsEnvelope(value) {
+			owned, ok := m.credentials.(credential.Store)
+			if !ok {
+				return nil, mcpoauth.ErrOAuth
+			}
+			bearer, err = mcpoauth.ResolveRevision(ctx, owned, mcpoauth.Binding{Ref: descriptor.CredentialRef, Fingerprint: descriptor.Fingerprint(), Target: descriptor.Target}, m.httpClient, mcpoauth.RevisionIdentity(value))
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	transport, err := m.factory(ctx, descriptor, bearer)
 	if err != nil {
