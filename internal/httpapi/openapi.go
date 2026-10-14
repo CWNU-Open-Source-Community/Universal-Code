@@ -1420,7 +1420,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			DataType: reflect.TypeOf(ProjectPreparationOperationView{}), Parameters: []openAPIParameter{runID, pathIdentityParameter("operation_id", "Saved preparation operation")}},
 		{Path: ProjectPreparationCancelPathTemplate, Method: http.MethodPost, OperationID: "cancelProjectPreparation", Summary: "Cancel an owned project preparation", Tag: "Control", Control: true, NotFound: true,
 			Description: "Durably requests cancellation for the exact operation. Repeated cancellation reads its current state; no new work is started.",
-			DataType:    reflect.TypeOf(ProjectPreparationOperationView{}), RequestType: reflect.TypeOf(ProjectPreparationCancelRequestView{}), Parameters: []openAPIParameter{runID, pathIdentityParameter("operation_id", "Saved preparation operation"), dockerSandboxIdempotencyKey}},
+			DataType:    reflect.TypeOf(ProjectPreparationOperationView{}), RequestType: reflect.TypeOf(ProjectPreparationCancelRequestView{}), SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{runID, pathIdentityParameter("operation_id", "Saved preparation operation"), dockerSandboxIdempotencyKey}},
 		{Path: ProjectActionsPathTemplate, OperationID: "listProjectActions", Summary: "Inspect configured project actions", Tag: "Runs",
 			Description: "Reads pinned test/format action IDs and current runtime availability without creating execution authority or exposing host executable paths.",
 			DataType:    reflect.TypeOf(ProjectActionsView{}), NotFound: true, Parameters: []openAPIParameter{runID}},

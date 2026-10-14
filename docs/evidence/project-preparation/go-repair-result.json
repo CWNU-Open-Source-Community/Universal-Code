@@ -92,5 +92,24 @@
     "ready_checkpoints": 3,
     "required_checkpoints": 3
   },
-  "passed": true
+  "passed": true,
+  "operator_controls": {
+    "count_basis": "Distinct operator control actions for this final Go Run; count initial task/setup and failed Plan submission; exclude polling, file hash reads, and retries of the same action.",
+    "performed_by": "Acceptance driver using the normal operator API",
+    "categories": {
+      "task_and_local_setup": 2,
+      "model_plan_and_repair_requests": 2,
+      "direction_selection_and_deliver": 2,
+      "dependency_preparation": 1,
+      "original_and_independent_final_tests": 2,
+      "pause_for_required_acceptance": 1,
+      "three_modules_start_checkpoint_complete": 9
+    },
+    "total": 19,
+    "host_source_patches": 0,
+    "extra_file_edit_approvals": 0,
+    "human_acceptance_checkpoints": 3,
+    "model_tool_calls": 18,
+    "model_calls": 14
+  }
 }

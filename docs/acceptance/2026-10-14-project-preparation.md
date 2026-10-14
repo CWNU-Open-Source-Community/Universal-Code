@@ -65,6 +65,13 @@ Go 已完成真实模型修改及原测试复测，默认 `go vet` 保持启用�
 Run 保持 `paused/Deliver`，执行租约已释放。Plan 首次响应留下的一个未选中待办
 仍按历史状态保留。记录中的“完成”指本次所选计划与原测试验收。
 
+按不同的操作者控制动作计，验收驱动通过正常 API 发起 19 次控制：创建任务与
+Local 配置 2 次、计划与修复消息 2 次、方向确认与进入交付 2 次、准备依赖 1 次、
+原始与独立复测 2 次、暂停 1 次、三个工作项的启动/检查点/完成共 9 次。
+计数包含首次 Plan 响应失败，不计只读轮询、文件摘要核对和同一动作重试。
+宿主机源码补丁为 0，额外文件编辑审批为 0。此计数记录验收驱动承担的操作者
+步骤，可用于后续比较减少介入后的流程。
+
 [结构化结果与文件摘要](../evidence/project-preparation/go-repair-result.json) ·
 [模型实际源码改动](../evidence/project-preparation/go-model-source.diff) ·
 [模型回复截图](../evidence/project-preparation/go-model-summary-desktop.png)。
@@ -103,7 +110,8 @@ Windows Local 的 npm 测试原生进程超时，未执行模型修复；React �
   Root 归属校验；启动和控制动作的归属要求保持精确。
 - Windows 原生短路径与目录大小写、macOS 的系统目录别名曾使缓存初始化失败。
   初始化现在使用对应平台的真实目录身份，仍拒绝应用目录内的链接和 junction。
-  Windows 真实 8.3 路径与目录链接回归已执行；macOS 原生用例接入 CI。
+  Windows 真实 8.3 路径与目录链接回归、macOS 原生缓存测试及两平台桌面构建
+  已在提交 `bde6f6b0` 的 CI 中通过。
 - Docker npm 需要私有 HOME；Go 编译需要更大的临时目录。固定 runner 补齐 HOME，
   Go 临时目录设为 512 MiB，其他工具链保留 128 MiB，总内存仍为 2 GiB。
 
