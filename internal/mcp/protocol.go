@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	// ProtocolVersion is the only MCP protocol version this server speaks.
+	// ProtocolVersion is the historical default for persisted server integrations.
 	ProtocolVersion = "2025-06-18"
 	ServerName      = "cyberagent-mcp"
 	ServerVersion   = "1.0.0"
@@ -35,8 +35,9 @@ type Envelope struct {
 }
 
 type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 const (
@@ -71,9 +72,11 @@ func DecodeEnvelope(raw []byte) (Envelope, error) {
 
 // Request represents one decoded client request.
 type Request struct {
-	ID     json.RawMessage
-	Method string
-	Params json.RawMessage
+	ID         json.RawMessage
+	Method     string
+	Params     json.RawMessage
+	modern     bool
+	clientName string
 }
 
 // DecodeRequest validates the request shape: exactly one of request

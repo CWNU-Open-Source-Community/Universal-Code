@@ -26,7 +26,7 @@ func (s *Server) toolCatalog() []ToolDefinition {
 
 func (s *Server) serveToolsList(_ context.Context, request Request, output io.Writer) {
 	result := ListToolsResult{Tools: s.toolCatalog()}
-	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: mustJSON(result)})
+	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: serverResult(request, result)})
 }
 
 func (s *Server) serveToolsCall(ctx context.Context, request Request, output io.Writer) {
@@ -52,9 +52,15 @@ func (s *Server) serveToolsCall(ctx context.Context, request Request, output io.
 	}
 	// Workspace reads use the Gateway's Arguments contract. The Gateway owns
 	// invocation identity and budget charging; a transport request id is not one.
+	clientName := request.clientName
+	if !request.modern {
+		s.mu.Lock()
+		clientName = s.clientName
+		s.mu.Unlock()
+	}
 	call := toolgateway.ToolCall{Name: name, Arguments: arguments,
 		RunID: s.runID, SessionID: "", WorkspaceID: s.workspaceID,
-		RequestedBy: "mcp:" + s.clientName}
+		RequestedBy: "mcp:" + clientName}
 	run, err := s.store.GetRun(ctx, s.runID)
 	if err != nil {
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
@@ -98,7 +104,8 @@ func (s *Server) serveToolsCall(ctx context.Context, request Request, output io.
 		}
 	}
 	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
-		Result: mustJSON(CallToolResult{Content: []TextContent{{Type: "text", Text: text}}})})
+		Result: serverResult(request, CallToolResult{Content: []TextContent{{Type: "text", Text: text}},
+			IsError: outcome.Result.Status != toolgateway.StatusCompleted})})
 	_ = s.store.RecordMCPAudit(context.WithoutCancel(ctx), s.runID, "mcp.tool_completed", map[string]any{
 		"tool": params.Name, "status": outcome.Result.Status})
 }

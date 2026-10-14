@@ -110,8 +110,8 @@ func TestMCPRejectsMalformedOversizedAndDuplicateIDs(t *testing.T) {
 	if !strings.Contains(responses[1], "-32002") {
 		t.Fatalf("pre-initialize unknown method not rejected: %s", responses[1])
 	}
-	if !strings.Contains(responses[2], "unsupported MCP protocol version") {
-		t.Fatalf("wrong protocol version accepted: %s", responses[2])
+	if !strings.Contains(responses[2], `"protocolVersion":"2025-11-25"`) {
+		t.Fatalf("unknown requested version did not negotiate a supported version: %s", responses[2])
 	}
 	if !strings.Contains(responses[3], "-32602") {
 		t.Fatalf("unknown initialize field accepted: %s", responses[3])
