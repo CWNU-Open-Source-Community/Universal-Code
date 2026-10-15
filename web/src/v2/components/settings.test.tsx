@@ -265,20 +265,6 @@ describe("V2 model provider catalog", () => {
     })).toHaveFocus());
   });
 
-  it("keeps GitHub Copilot as an honest account connector instead of an API-key form", async () => {
-    const user = userEvent.setup();
-    renderModels();
-
-    const copilot = screen.getByRole("button", { name: /^GitHub Copilot，/u });
-    await user.click(copilot);
-    const dialog = screen.getByRole("dialog", { name: "GitHub Copilot 账户登录" });
-    expect(within(dialog).getByText(/账户登录待接入/u)).toBeInTheDocument();
-    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "返回模型列表" }));
-    expect(screen.queryByRole("dialog", { name: "GitHub Copilot 账户登录" }))
-      .not.toBeInTheDocument();
-    expect(copilot).toHaveFocus();
-  });
 });
 
 describe("V2 permission settings hierarchy", () => {

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { v2ModelProviderPresets } from "./model-provider-presets";
 
 describe("v2 model provider presets", () => {
-  it("keeps the requested eleven providers in product order", () => {
-    expect(v2ModelProviderPresets).toHaveLength(11);
+  it("keeps the supported API providers in product order", () => {
+    expect(v2ModelProviderPresets).toHaveLength(10);
     expect(v2ModelProviderPresets.map((preset) => preset.providerName)).toEqual([
       "Claude",
       "OpenAI",
@@ -16,7 +16,6 @@ describe("v2 model provider presets", () => {
       "Kimi",
       "Kimi for Coding",
       "OpenCode Go",
-      "GitHub Copilot",
     ]);
     expect(v2ModelProviderPresets.every((preset) => isValidElement(preset.icon))).toBe(true);
   });
@@ -78,13 +77,13 @@ describe("v2 model provider presets", () => {
     const kimi = v2ModelProviderPresets.find((preset) => preset.id === "official-kimi");
     const coding = v2ModelProviderPresets.find((preset) => preset.id === "official-kimi-coding");
 
-    expect(kimi).toMatchObject({ kind: "api_key", modelName: "kimi-k3" });
+    expect(kimi).toMatchObject({ modelName: "kimi-k3" });
     expect(kimi?.draft).toMatchObject({
       endpointURL: "https://api.moonshot.ai/v1/chat/completions",
       models: ["kimi-k3"],
       searchMode: "web",
     });
-    expect(coding).toMatchObject({ kind: "api_key", modelName: "kimi-for-coding" });
+    expect(coding).toMatchObject({ modelName: "kimi-for-coding" });
     expect(coding?.draft).toMatchObject({
       endpointURL: "https://api.kimi.com/coding/v1/chat/completions",
       models: ["kimi-for-coding", "k3", "k3-256k", "kimi-for-coding-highspeed"],
@@ -94,18 +93,7 @@ describe("v2 model provider presets", () => {
     expect(kimi?.draft?.id).not.toBe(coding?.draft?.id);
   });
 
-  it("models Copilot only as an account connector, never an API-key provider", () => {
-    const copilot = v2ModelProviderPresets.at(-1);
-
-    expect(copilot).toMatchObject({
-      id: "github-copilot",
-      providerName: "GitHub Copilot",
-      modelName: "账户接入",
-      kind: "account",
-      setup: { kind: "account", connected: false, accountName: "GitHub 账户" },
-    });
-    expect(copilot?.draft).toBeUndefined();
-    expect(v2ModelProviderPresets.slice(0, -1).every((preset) =>
-      preset.kind === "api_key" && preset.draft !== undefined)).toBe(true);
+  it("offers an editable draft for every listed provider", () => {
+    expect(v2ModelProviderPresets.every((preset) => preset.draft !== undefined)).toBe(true);
   });
 });

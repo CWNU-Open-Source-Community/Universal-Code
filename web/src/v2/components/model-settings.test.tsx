@@ -26,13 +26,6 @@ const presets: V2ModelProviderPreset[] = [
     icon: <Hexagon data-testid="anthropic-mark" />,
     credentialConfigured: true,
   },
-  {
-    id: "github-copilot",
-    providerName: "GitHub Copilot",
-    modelName: "Copilot",
-    icon: <Circle data-testid="copilot-mark" />,
-    setup: { kind: "account", connected: false, accountName: "GitHub 账户" },
-  },
 ];
 
 function client(): APIClient {
@@ -62,7 +55,7 @@ describe("V2 model settings", () => {
 
     const list = screen.getByRole("list", { name: "模型供应商" });
     const items = within(list).getAllByRole("listitem");
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(4);
     expect(within(items[0]).getByRole("button", { name: "打开自定义模型配置" }))
       .toHaveTextContent("自定义配置自定义模型");
     expect(within(items[2]).getByRole("button", {
@@ -73,10 +66,8 @@ describe("V2 model settings", () => {
     })).toHaveTextContent("AnthropicClaude Opus");
     expect(within(items[2]).getByText("尚未保存 API Key")).toBeVisible();
     expect(within(items[3]).getByText("已保存 API Key")).toBeVisible();
-    expect(within(items[4]).getByRole("button", {
-      name: "GitHub Copilot，Copilot，登录待接入",
-    })).toHaveTextContent("GitHub CopilotCopilot");
-    expect(within(items[4]).getByText("登录待接入")).toBeVisible();
+    expect(within(items[1]).getByRole("button", { name: /ChatGPT，订阅账户/u }))
+      .toHaveTextContent("ChatGPT订阅账户");
     expect(screen.queryByText("需要 API Key")).not.toBeInTheDocument();
     expect(screen.queryByText("已接入")).not.toBeInTheDocument();
     const openAIButton = screen.getByRole("button", { name: /OpenAI，GPT-5/u });
