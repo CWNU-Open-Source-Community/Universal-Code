@@ -1107,6 +1107,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveProjectSkillSelection(tracked, request, requestID, runID)
 		return
 	}
+	if runID, matched := matchInstalledSkillSelectionPath(request.URL.Path); matched {
+		a.serveInstalledSkillSelection(tracked, request, requestID, runID)
+		return
+	}
 	if request.URL.Path == DockerEnvironmentPath {
 		a.serveDockerEnvironment(tracked, request, requestID)
 		return

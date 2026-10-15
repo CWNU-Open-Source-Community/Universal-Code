@@ -1,10 +1,23 @@
 # Project Status
 
+> 2026-10-15 已安装 Skill 的按任务选择入口：新增
+> `POST /api/v1/runs/{run_id}/external-skills/select`，操作者可在不改
+> `.prayu/config.yaml` 的前提下把一个已安装 Skill 绑定到尚未开始的 Run。Go 侧把
+> `SelectProjectSkills` 的公共流程抽成 `selectSkills(subject, admitted)`，新入口
+> `SelectInstalledSkills` 只去掉"必须在 pinned suggestions 中"这一条准入，Run 状态、
+> 模式绑定、不可信上下文确认、目录资格与同 key 重放仍由原有两个选择服务持有。
+> 任务草稿界面在技能建议之外增列已安装技能，混合选择走更宽的准入。无 SQLite 迁移，
+> 不安装、不下载、不授予能力。见 ADR 0187。
+> 验证：`internal/httpapi` 新增 3 个用例（准入/重放/冲突、离开 Created 后拒绝、
+> 内置版本规则），OpenAPI 路由真实可达守卫覆盖新路由，`protocolregistry -check`、
+> `surfacecheck` 通过，前端 `typecheck` 与 task-configuration、client 契约测试通过。
+> 本项尚未做真实浏览器截图验收。
+
 > 2026-10-15 插件发布者信任控制面：新增 `POST /api/v1/extensions/plugins/{installation_id}/publisher-trust`
 > 与桌面/Web 的“信任该发布者”入口，解除“撤销后 GUI 无法重新信任”的死锁。Go 侧新增有界核心
 > `TrustInstallationPublisher`，必须匹配签名有效安装的期望公钥指纹与信任代次（首次为 0），
 > 沿用 `SetPluginPublisherTrust` 的 CAS；CLI `plugin trust-publisher` 改为委派同一核心，行为不变。
-> 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0183。
+> 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0186。
 > 验证：`internal/store` 新增有界授予与被撤销发布者解除阻塞的实测用例，`internal/httpapi`
 > OpenAPI 守卫与新增用例通过，`internal/plugins`、`internal/application` 通过，前端
 > `typecheck` 与 plugin lifecycle 相关 23 项测试通过。Skill Catalog 发布者信任仍只有 CLI；
@@ -14,12 +27,15 @@
 > HTTP 读端点、控制写端点与桌面桥方法，复用既有 `SkillPackageRegistryService` 与
 > `skill_package_remove_operation.v1` 意图/tombstone，无 SQLite 迁移。清单逐项给出
 > 包对象的真实回读结果，单个不可读对象不再让整张清单失败。新增
-> `skill_package_remove` 收据类型与 ADR 0182。GUI 安装的新包仍走 Plugin 生命周期，
-> 本项只覆盖历史 legacy 登记；发布者信任与 URL/Git 导入尚未接入，见 #334。
+> `skill_package_remove` 收据类型与 ADR 0185。GUI 安装的新包仍走 Plugin 生命周期，
+> 本项只覆盖历史 legacy 登记；URL/Git 导入尚未接入，见 #334。
 > 验证：`internal/httpapi`、`internal/desktop`（含 desktop tag）、`internal/application`、
 > `internal/skills`、`internal/operationreceipt` 定向与整包测试通过，
 > `protocolregistry -check`、`surfacecheck` 通过，前端 214 文件 2094 项测试与
-> `typecheck` 通过。尚未做真实浏览器截图验收，也未提交 PR。
+> `typecheck` 通过。Skill Registry 与发布者信任已在 loopback 服务 + `web/dist`
+> 的真实浏览器验收中确认（清单 200 且 `capability_grant:false`、未确认移除返回
+> `INVALID_ARGUMENT`、索引广播 `skill-packages`、控制台无 error/warn）；
+> 签名插件的“信任该发布者”按钮因产品内没有签名入口而未做浏览器验收。
 
 > 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
 

@@ -1,4 +1,4 @@
-# ADR 0182: Skill 包清单与移除的操作者控制面
+# ADR 0185: Skill 包清单与移除的操作者控制面
 
 Date: 2026-10-15
 Status: Proposed for [Issue #334](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues/334).

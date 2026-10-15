@@ -740,6 +740,14 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The installed-Skill selection route is exercised on a Run with no pinned
+	// project suggestions, so only the operator-named admission can succeed here.
+	_, installedSkillRun, err := application.NewRunService(fixture.store).Create(t.Context(),
+		application.CreateRunRequest{Goal: "OpenAPI installed Skill selection target", Profile: "code",
+			WorkspaceID: fixture.workspace.ID, Budget: domain.Budget{MaxTurns: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, scheduledCreated, err := application.NewRunService(fixture.store).Create(t.Context(),
 		application.CreateRunRequest{Goal: "OpenAPI scheduled observation target", Profile: "code",
 			Surface: "code", Phase: "plan", WorkspaceID: fixture.workspace.ID,
@@ -1188,6 +1196,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = strings.ReplaceAll(requestPath, "{agent_id}", child.ID)
 		} else if spec.Path == ProjectSkillSelectionPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", projectSkillRun.ID)
+		} else if spec.Path == InstalledSkillSelectionPathTemplate {
+			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", installedSkillRun.ID)
 		} else if spec.Path == RunExecutionProfileControlPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", profileRun.ID)
 		} else if spec.Path == RunExecutionPermissionControlPathTemplate {
@@ -1364,7 +1374,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				response = previewConfigurationRequest(fixture.api, testAccessToken, `{"workspace_id":"`+fixture.workspace.ID+`"}`)
 			} else if spec.Control {
 				body := `{"profile":"docker"}`
-				if spec.OperationID == "selectProjectSkills" {
+				if spec.OperationID == "selectProjectSkills" || spec.OperationID == "selectInstalledSkills" {
 					body = `{"refs":["` + projectSkillRef + `"],"confirm_untrusted_context":false}`
 				} else if spec.OperationID == "executeRunSpecialist" {
 					body = `{"version":"specialist_tools.v1","operation_key":"openapi-child-execute-0001","workspace_tools":true,"confirm_execute":true}`
@@ -1928,12 +1938,18 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				if spec.OperationID == "cancelProjectPreparation" && (preparationController.cancels != 1 || view.State != "cancelled") {
 					t.Fatalf("preparation cancellation lost its result: %+v", view)
 				}
-			} else if spec.OperationID == "selectProjectSkills" {
+			} else if spec.OperationID == "selectProjectSkills" ||
+				spec.OperationID == "selectInstalledSkills" {
+				expectedRun := projectSkillRun.ID
+				if spec.OperationID == "selectInstalledSkills" {
+					expectedRun = installedSkillRun.ID
+				}
 				var view application.ProjectSkillSelectionResult
 				decodeDataStatus(t, response, http.StatusOK, &view)
-				if view.RunID != projectSkillRun.ID || !reflect.DeepEqual(view.Refs, []string{projectSkillRef}) ||
+				if view.RunID != expectedRun || !reflect.DeepEqual(view.Refs, []string{projectSkillRef}) ||
 					view.BuiltinSelectionID == "" || view.ExternalSelectionID != "" || view.CapabilityGrant || view.Replayed {
-					t.Fatalf("project Skill route did not select the pinned suggestion: %+v", view)
+					t.Fatalf("%s route did not select the requested Skill: %+v",
+						spec.OperationID, view)
 				}
 			} else if spec.OperationID == "executeRunSpecialist" {
 				var view SpecialistExecutionView

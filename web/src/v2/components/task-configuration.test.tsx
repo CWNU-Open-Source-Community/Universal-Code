@@ -29,6 +29,55 @@ describe("TaskConfiguration presentation fixtures", () => {
     await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
     expect(client.createThread).not.toHaveBeenCalled();
   });
+  it("offers installed packages as a second admission and routes a mixed choice to it", async () => {
+    const client = { ...clientFixture(), hasSkillInstallation: true, listSkillPackages: vi.fn().mockResolvedValue({
+      items: [{ skill: "review@1.2.0", status: "installed" }, { skill: "code@1.0.0", status: "installed" },
+        { skill: "gone@1.0.0", status: "removed" }],
+    }) };
+    const changed = vi.fn(), validity = vi.fn();
+    client.previewTaskConfiguration.mockResolvedValue({ ...view(), project: { ...view().project!, skill_suggestions: ["code@1.0.0"] } });
+    function Host() {
+      const [choice, setChoice] = useState<{ refs: string[]; confirmUntrustedContext: boolean; source?: "project" | "installed" }>({ refs: [], confirmUntrustedContext: false });
+      return <TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" projectSkills={choice}
+        onProjectSkillsChange={(next) => { changed(next); setChoice(next); }} onValidityChange={validity} />;
+    }
+    render(<Host />);
+    // A pinned suggestion is never offered twice, and a tombstoned package is never offered.
+    expect(await screen.findAllByRole("checkbox", { name: "code@1.0.0" })).toHaveLength(1);
+    expect(screen.queryByRole("checkbox", { name: "gone@1.0.0" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "review@1.2.0" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0"], confirmUntrustedContext: false, source: "installed" });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("checkbox", { name: "code@1.0.0" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0", "code@1.0.0"], confirmUntrustedContext: false, source: "installed" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /确认使用所选技能上下文/ }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0", "code@1.0.0"], confirmUntrustedContext: true, source: "installed" });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+    expect(screen.getByText(/已安装技能不来自项目建议/)).toBeInTheDocument();
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed Registry read instead of silently offering no packages", async () => {
+    const client = { ...clientFixture(), hasSkillInstallation: true, listSkillPackages: vi.fn().mockRejectedValue(new Error("Skill package inventory response is invalid")) };
+    const validity = vi.fn();
+    render(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" onValidityChange={validity}
+      projectSkills={{ refs: [], confirmUntrustedContext: false }} onProjectSkillsChange={() => undefined} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Skill package inventory response is invalid");
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+  });
+
+  it("refuses a saved choice whose admission no longer offers the package", async () => {
+    const client = { ...clientFixture(), hasSkillInstallation: true, listSkillPackages: vi.fn().mockResolvedValue({ items: [] }) };
+    const changed = vi.fn(), validity = vi.fn();
+    render(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1"
+      projectSkills={{ refs: ["review@1.2.0"], confirmUntrustedContext: true, source: "installed" }}
+      onProjectSkillsChange={changed} onValidityChange={validity} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("保存的技能已不在当前可选列表中");
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("button", { name: "清除技能选择" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: [], confirmUntrustedContext: false });
+  });
+
   it("edits the bounded draft, resets defaults and displays Go-owned effective sources", async () => {
     const client = clientFixture(), changed = vi.fn();
     function Host() {

@@ -1,4 +1,4 @@
-# ADR 0183: 插件发布者信任的操作者控制面
+# ADR 0186: 插件发布者信任的操作者控制面
 
 Date: 2026-10-15
 Status: Proposed for [Issue #334](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues/334).

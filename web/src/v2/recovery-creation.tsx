@@ -12,7 +12,7 @@ import type { V2TurnInput } from "./use-thread-turn";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validV2DraftVersion, type V2DraftVersion } from "./draft-version";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
-import { validProjectSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
+import { submitSkillChoice, validProjectSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
 import { validMCPReferences, type MCPDraftReference } from "../api/mcp-references";
 
 export interface CreationIntent {
@@ -208,7 +208,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
       requireSaved(saved);
       const thread = existing ?? boundThread((await client.createThread(saved.request, createOperationKey(saved))).thread, workspaceID);
       if (saved.projectSkills?.refs.length) {
-        await client.selectProjectSkills(thread.last_run_id, saved.projectSkills, `v2-project-skills-${saved.operationID}`);
+        await submitSkillChoice(client, thread.last_run_id, saved.projectSkills, saved.operationID);
         requireSaved(saved);
       }
       verifiedThreads.current.set(saved.operationID, thread);

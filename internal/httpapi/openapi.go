@@ -915,6 +915,10 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			Description: "Explicit selection before the first turn through the existing built-in and installed external Skill services. Refs must match the immutable project suggestions exactly, including version. External context requires confirmation. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
 			DataType:    reflect.TypeOf(application.ProjectSkillSelectionResult{}), RequestType: reflect.TypeOf(ProjectSkillSelectionRequestView{}), Control: true,
 			Parameters: []openAPIParameter{runID, dockerSandboxIdempotencyKey}, NotFound: true},
+		{Path: InstalledSkillSelectionPathTemplate, Method: http.MethodPost, OperationID: "selectInstalledSkills", Summary: "Select exact installed Skills for one Run", Tag: "Control", SuccessStatus: http.StatusOK,
+			Description: "Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
+			DataType:    reflect.TypeOf(application.ProjectSkillSelectionResult{}), RequestType: reflect.TypeOf(InstalledSkillSelectionRequestView{}), Control: true,
+			Parameters: []openAPIParameter{runID, dockerSandboxIdempotencyKey}, NotFound: true},
 		{Path: ThreadCollectionPath, Method: http.MethodPost,
 
 			OperationID: "createThread", Summary: "Create a Thread", Tag: "Control",

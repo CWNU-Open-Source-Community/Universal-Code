@@ -3949,6 +3949,34 @@ const skillPackageRemovalKeys = ["context_injection_authorized", "future_selecti
   "historical_recovery_preserved", "package_object_retained", "removed_at", "removed_by",
   "run_selection_authorized", "tool_capability_grant"];
 
+// Both Skill selection routes take the identical request DTO and return the
+// identical response DTO, so one guard covers either admission.
+function assertSkillSelectionChoice(runID: string,
+  choice: import("./project-skills").ProjectSkillChoice, label: string,
+): void {
+  if (!boundedIdentity(runID) || runID.trim() !== runID || typeof choice.confirmUntrustedContext !== "boolean" ||
+    choice.refs.length === 0 || choice.refs.length > 16 || new Set(choice.refs).size !== choice.refs.length ||
+    choice.refs.some((ref) => ref.length > 128 || !/^[a-z0-9.-]+@[a-z0-9.-]+$/u.test(ref))) {
+    throw new Error(`Exact ${label} Skill references and task control are required`);
+  }
+}
+
+function assertSkillSelectionReceipt(value: unknown, runID: string, refs: string[],
+  label: string,
+): void {
+  if (!isRecord(value)) throw new Error(`${label} Skill selection receipt is invalid`);
+  if (!hasOnlyKeys(value, ["run_id", "refs", "builtin_selection_id", "external_selection_id",
+    "replayed", "capability_grant"]) || value.run_id !== runID || value.capability_grant !== false ||
+    typeof value.replayed !== "boolean" || !Array.isArray(value.refs) ||
+    value.refs.length !== refs.length || value.refs.some((ref) => typeof ref !== "string" || !refs.includes(ref)) ||
+    new Set(value.refs).size !== value.refs.length ||
+    (!value.builtin_selection_id && !value.external_selection_id) ||
+    [value.builtin_selection_id, value.external_selection_id]
+      .some((id) => id !== undefined && !boundedIdentity(id))) {
+    throw new Error(`${label} Skill selection receipt does not match the request`);
+  }
+}
+
 export function parseSkillPackageInventory(value: unknown): SkillPackageInventoryView {
   if (!hasExactKeys(value, ["capability_grant", "include_removed", "items", "profile",
     "protocol_version", "returned_count", "surface", "unverified_count"]) ||
@@ -8675,17 +8703,21 @@ export class APIClient {
   }
 
   async selectProjectSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
-    if (!this.hasThreadControl || !boundedIdentity(runID) || runID.trim() !== runID || typeof choice.confirmUntrustedContext !== "boolean" || choice.refs.length === 0 || choice.refs.length > 16 ||
-      new Set(choice.refs).size !== choice.refs.length || choice.refs.some((ref) => ref.length > 128 || !/^[a-z0-9.-]+@[a-z0-9.-]+$/u.test(ref))) throw new Error("Exact project Skill references and task control are required");
+    if (!this.hasThreadControl) throw new Error("Exact project Skill references and task control are required");
+    assertSkillSelectionChoice(runID, choice, "project");
     const value = await this.sendControl<unknown>(`/runs/${encodeURIComponent(runID)}/project-skills/select`,
       { refs: choice.refs, confirm_untrusted_context: choice.confirmUntrustedContext }, idempotencyKey, signal);
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Project Skill selection receipt is invalid");
-    const result = value as Record<string, unknown>;
-    if (!hasOnlyKeys(result, ["run_id", "refs", "builtin_selection_id", "external_selection_id", "replayed", "capability_grant"]) ||
-      result.run_id !== runID || result.capability_grant !== false || typeof result.replayed !== "boolean" || !Array.isArray(result.refs) ||
-      result.refs.length !== choice.refs.length || result.refs.some((ref) => typeof ref !== "string" || !choice.refs.includes(ref)) ||
-      new Set(result.refs).size !== result.refs.length || (!result.builtin_selection_id && !result.external_selection_id) ||
-      [result.builtin_selection_id, result.external_selection_id].some((id) => id !== undefined && !boundedIdentity(id))) throw new Error("Project Skill selection receipt does not match the request");
+    assertSkillSelectionReceipt(value, runID, choice.refs, "Project");
+  }
+
+  // selectInstalledSkills names already installed Skills for one exact Run without
+  // the pinned-project admission; every other server-side rule is the same.
+  async selectInstalledSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
+    if (!this.hasThreadControl) throw new Error("Exact installed Skill references and task control are required");
+    assertSkillSelectionChoice(runID, choice, "installed");
+    const value = await this.sendControl<unknown>(`/runs/${encodeURIComponent(runID)}/external-skills/select`,
+      { refs: choice.refs, confirm_untrusted_context: choice.confirmUntrustedContext }, idempotencyKey, signal);
+    assertSkillSelectionReceipt(value, runID, choice.refs, "Installed");
   }
 
   async createRun(body: RunCreationControlRequestView, idempotencyKey: string,

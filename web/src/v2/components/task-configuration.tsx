@@ -50,6 +50,8 @@ export function TaskConfiguration({ client, workspaceID, profile = "code", budge
   };
   const errorLabel = (message: string) => t(message, errorEnglish[message] ?? message);
   const [refresh, setRefresh] = useState(0);
+  const [installedRefs, setInstalledRefs] = useState<string[]>([]);
+  const [installedError, setInstalledError] = useState("");
   const [state, setState] = useState<ReadState>({ key: "", client });
   const requestKey = JSON.stringify([run?.id ?? "", workspaceID, profile, budget ?? {}, refresh]);
   let inputError = "";
@@ -58,7 +60,16 @@ export function TaskConfiguration({ client, workspaceID, profile = "code", budge
   const view = current?.view;
   const suggestedRefs = Array.from(new Set(view?.project?.skill_suggestions ?? []));
   const selectedRefs = projectSkills?.refs ?? [];
-  const choicesValid = selectedRefs.every((ref) => suggestedRefs.includes(ref)) && (!selectedRefs.length || projectSkills?.confirmUntrustedContext === true);
+  // The installed admission also accepts every pinned suggestion, so one mixed
+  // selection travels as a single choice; the project admission accepts nothing else.
+  const routeAdmits = (ref: string) => (projectSkills?.source === "installed"
+    ? installedRefs.includes(ref) || suggestedRefs.includes(ref)
+    : suggestedRefs.includes(ref));
+  const choicesValid = selectedRefs.every(routeAdmits) && (!selectedRefs.length || projectSkills?.confirmUntrustedContext === true);
+  const chooseRefs = (refs: string[]) => onProjectSkillsChange?.({
+    refs, confirmUntrustedContext: false,
+    ...(refs.every((ref) => suggestedRefs.includes(ref)) ? {} : { source: "installed" as const }),
+  });
   useEffect(() => {
     if (inputError) onValidityChange?.(false);
     else if (view) onValidityChange?.(view.project_disposition !== "rejected" && (Boolean(run) || choicesValid));
@@ -83,6 +94,27 @@ export function TaskConfiguration({ client, workspaceID, profile = "code", budge
     return () => { clearTimeout(timer); abort.abort(); };
   }, [client, requestKey, workspaceID, profile, run?.id, inputError]);
 
+  // Installed packages are a draft-only admission; an existing Run keeps its own
+  // saved selection, so a pinned task never reads the Registry. The gate is a
+  // boolean because callbacks are often inline props: depending on their identity
+  // would re-read the Registry on every render.
+  const skillPickerEnabled = !run && Boolean(onProjectSkillsChange) && client.hasSkillInstallation;
+  useEffect(() => {
+    if (!skillPickerEnabled || inputError) return;
+    const abort = new AbortController();
+    void client.listSkillPackages({}, abort.signal).then((inventory) => {
+      if (abort.signal.aborted) return;
+      setInstalledRefs(Array.from(new Set(inventory.items
+        .filter((item) => item.status === "installed").map((item) => item.skill))));
+      setInstalledError("");
+    }, (error: unknown) => {
+      if (abort.signal.aborted) return;
+      setInstalledRefs([]);
+      setInstalledError(error instanceof Error ? error.message : "无法读取技能包清单。");
+    });
+    return () => abort.abort();
+  }, [client, skillPickerEnabled, run?.id, inputError]);
+
   function change(key: keyof TaskBudgetSettings, text: string, badInput: boolean) {
     const next = { ...budget };
     if (badInput) next[key] = Number.NaN; else if (text === "") delete next[key]; else next[key] = Number(text);
@@ -104,11 +136,16 @@ export function TaskConfiguration({ client, workspaceID, profile = "code", budge
         {view.sources.some((source) => source.source === "snapshot") ? <p>{t("历史执行沿用保存的上限；工具调用上限为 0 或省略时表示不限次数。", "Historical runs use their saved limits; a zero or omitted tool limit means unlimited.")}</p> : null}
         {view.project ? <dl><div><dt>{fieldLabels.read_only}</dt><dd>{view.project.read_only ? t("已开启", "Enabled") : t("未额外限制", "No additional restriction")}</dd></div><div><dt>{fieldLabels.allowed_profiles}</dt><dd>{view.project.allowed_profiles.length ? view.project.allowed_profiles.join(locale === "zh-CN" ? "、" : ", ") : t("未额外限制", "No additional restriction")}</dd></div><div><dt>{fieldLabels.exclude_paths}</dt><dd>{view.project.excluded_path_count}{t(" 项", " items")}<small>{t("已应用于文件工具的读取、搜索和修改", "Applied to file-tool reads, searches and edits")}</small></dd></div><div><dt>{fieldLabels.skill_suggestions}</dt><dd>{view.project.skill_suggestion_count}{t(" 项", " items")}<small>{t("由你选择已有的准确版本，首条消息前核对；不会自动安装", "Choose exact available versions; checked before the first message, without automatic installation")}</small></dd></div>
           {view.project.test_command_id ? <div><dt>{fieldLabels.test_command_id}</dt><dd>{view.project.test_command_id}<small>{t("可在“改动与交付 → 检查与交付”中运行，也可在对话中提出要求", "Run from Changes and delivery → Checks and delivery, or ask in chat")}</small></dd></div> : null}{view.project.format_command_id ? <div><dt>{fieldLabels.format_command_id}</dt><dd>{view.project.format_command_id}<small>{t("可在“检查与交付”中格式化指定文件；只读项目不可执行", "Format a specific file from Checks and delivery; unavailable for read-only projects")}</small></dd></div> : null}</dl> : null}
-        {!run && onProjectSkillsChange && suggestedRefs.length > 0 && <fieldset className="v2-task-skill-choices" disabled={disabled}><legend>{t("选择本次任务的技能建议", "Select Skill recommendations for this task")}</legend>
-          {suggestedRefs.map((ref) => <label key={ref}><input type="checkbox" checked={selectedRefs.includes(ref)} onChange={(event) => onProjectSkillsChange({ refs: event.target.checked ? [...selectedRefs, ref] : selectedRefs.filter((item) => item !== ref), confirmUntrustedContext: false })} />{ref}</label>)}
-          {selectedRefs.length > 0 && <label><input type="checkbox" checked={projectSkills?.confirmUntrustedContext ?? false} onChange={(event) => onProjectSkillsChange({ refs: selectedRefs, confirmUntrustedContext: event.target.checked })} />{t("确认使用所选技能上下文；外部技能内容是不可信资料，不授予权限", "Use selected Skill context; external content is untrusted and grants no permission")}</label>}
+        {!run && onProjectSkillsChange && (suggestedRefs.length > 0 || installedRefs.length > 0 || installedError !== "") && <fieldset className="v2-task-skill-choices" disabled={disabled}><legend>{t("选择本次任务的技能建议", "Select Skill recommendations for this task")}</legend>
+          {!suggestedRefs.length && <p>{t("该项目没有技能建议。", "This project has no Skill recommendations.")}</p>}
+          {suggestedRefs.map((ref) => <label key={ref}><input type="checkbox" checked={selectedRefs.includes(ref)} onChange={(event) => chooseRefs(event.target.checked ? [...selectedRefs, ref] : selectedRefs.filter((item) => item !== ref))} />{ref}</label>)}
+          {installedRefs.filter((ref) => !suggestedRefs.includes(ref)).length > 0 && <h4>{t("已安装的技能包", "Installed Skill packages")}</h4>}
+          {installedRefs.filter((ref) => !suggestedRefs.includes(ref)).map((ref) => <label key={ref}><input type="checkbox" checked={selectedRefs.includes(ref)} onChange={(event) => chooseRefs(event.target.checked ? [...selectedRefs, ref] : selectedRefs.filter((item) => item !== ref))} />{ref}</label>)}
+          {installedRefs.some((ref) => !suggestedRefs.includes(ref)) && <p>{t("已安装技能不来自项目建议，仍只对本任务生效；不会安装、下载或授予权限。", "Installed Skills are not project recommendations. They apply to this task only, never install, download or grant a permission.")}</p>}
+          {installedError !== "" && <p role="alert">{errorLabel(installedError)}</p>}
+          {selectedRefs.length > 0 && <label><input type="checkbox" checked={projectSkills?.confirmUntrustedContext ?? false} onChange={(event) => onProjectSkillsChange({ refs: selectedRefs, confirmUntrustedContext: event.target.checked, ...(projectSkills?.source === "installed" ? { source: "installed" as const } : {}) })} />{t("确认使用所选技能上下文；外部技能内容是不可信资料，不授予权限", "Use selected Skill context; external content is untrusted and grants no permission")}</label>}
         </fieldset>}
-        {!run && selectedRefs.some((ref) => !suggestedRefs.includes(ref)) && <p role="alert">{t("保存的技能已不在当前建议中，请重新选择。", "Saved Skills are no longer current recommendations. Select again.")} <button type="button" onClick={() => onProjectSkillsChange?.({ refs: [], confirmUntrustedContext: false })}>{t("清除技能选择", "Clear Skill choices")}</button></p>}
+        {!run && selectedRefs.some((ref) => !routeAdmits(ref)) && <p role="alert">{t("保存的技能已不在当前可选列表中，请重新选择。", "Saved Skills are no longer selectable here. Select again.")} <button type="button" onClick={() => onProjectSkillsChange?.({ refs: [], confirmUntrustedContext: false })}>{t("清除技能选择", "Clear Skill choices")}</button></p>}
         <details><summary>{t("字段来源与配置指纹", "Field sources and configuration fingerprints")}</summary><ul>{view.sources.map((source) => <li key={source.field}>{fieldLabels[source.field]}{t("：", ": ")}{sourceLabels[source.source]}</li>)}</ul><p>{t("配置指纹", "Configuration fingerprint")} <code>{view.fingerprint}</code></p>{view.project_fingerprint ? <p>{t("项目快照指纹", "Project snapshot fingerprint")} <code>{view.project_fingerprint}</code></p> : null}</details>
       </>}
     </>}

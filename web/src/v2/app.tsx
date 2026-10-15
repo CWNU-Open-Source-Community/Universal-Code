@@ -36,7 +36,7 @@ import { V2DraftConflict } from "./components/draft-conflict";
 import { FileEditDraftProvider } from "../components/file-edit-drafts";
 import { V2PhasePicker, type V2WorkPhase } from "./components/phase-picker";
 import { useV2DraftTaskConfiguration } from "./draft-task-configuration";
-import type { ProjectSkillChoice } from "../api/project-skills";
+import { submitSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
 import { useV2WebAccessDefaults } from "./web-access-defaults";
 
 type CreationAttempt = Map<string, string>;
@@ -170,7 +170,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         creationAttemptRef.current.set(fingerprint, operationID);
         const result = await client.createThread(request, `v2-thread-create-${operationID}`);
         if (projectSkills?.refs.length) {
-          try { await client.selectProjectSkills(result.thread.last_run_id, projectSkills, `v2-project-skills-${operationID}`); }
+          try { await submitSkillChoice(client, result.thread.last_run_id, projectSkills, operationID); }
           catch (error) {
             void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
             throw new Error(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。${error instanceof Error ? error.message : "请重试。"}`);
