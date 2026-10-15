@@ -470,10 +470,15 @@ func (s *AgentRunner) WithExecutionPermissionCapabilities(
 }
 
 func (s *AgentRunner) revokeRunRuntimeAuthority(runID string) {
-	if s == nil || s.executionCapabilities.RuntimeAuthority == nil {
+	if s == nil {
 		return
 	}
-	s.executionCapabilities.RuntimeAuthority.RevokeRun(runID)
+	if s.executionCapabilities.RuntimeAuthority != nil {
+		s.executionCapabilities.RuntimeAuthority.RevokeRun(runID)
+	}
+	if client, ok := s.mcpClient.(interface{ CloseRun(string) }); ok {
+		client.CloseRun(runID)
+	}
 }
 
 func (s *AgentRunner) installMCPExecutor() {

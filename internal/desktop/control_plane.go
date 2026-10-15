@@ -41,6 +41,7 @@ import (
 // It does not listen on a socket and it adds no renderer authority beyond the
 // tokens explicitly supplied in ControlPlaneConfig.
 type ControlPlane struct {
+	mcpClient                      *mcp.Manager
 	stateStore                     *store.SQLiteStore
 	workspaceManager               *workspace.Manager
 	workspaceImportMu              sync.Mutex
@@ -985,7 +986,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	}
 	codeIntelTransferred = true
 	commandRuntimeSetTransferred = true
-	return &ControlPlane{stateStore: stateStore, workspaceManager: workspaceManager,
+	return &ControlPlane{mcpClient: mcpClient, stateStore: stateStore, workspaceManager: workspaceManager,
 		projectPreparation: projectPreparation,
 		handler:            api.Handler(),
 		skillInstaller:     skillInstaller, dockerSandbox: dockerSandbox,
@@ -1248,6 +1249,9 @@ func (c *ControlPlane) Close() error {
 		return nil
 	}
 	c.closeOnce.Do(func() {
+		if c.mcpClient != nil {
+			_ = c.mcpClient.Close()
+		}
 		c.workerMu.Lock()
 		c.closed = true
 		cancel, done := c.workerCancel, c.workerDone

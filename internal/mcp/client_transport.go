@@ -275,6 +275,7 @@ func (p *clientProcess) Close() error {
 // SSE is incremental and bounded per event by the SDK, not per stream.
 type mcpHTTPTransport struct {
 	protocolVersion atomic.Value
+	sessionID       atomic.Value
 	origin          *url.URL
 	base            http.RoundTripper
 	bearer          string
@@ -400,6 +401,9 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	response, err := t.base.RoundTrip(request)
 	if err != nil {
 		return nil, err
+	}
+	if id := response.Header.Get("Mcp-Session-Id"); id != "" && envelope != nil && envelope.Method == "initialize" {
+		t.sessionID.Store(id)
 	}
 	contentType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if contentType != "text/event-stream" {
