@@ -7,6 +7,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/executionauth"
 	"cyberagent-workbench/internal/gitadvanced"
@@ -65,7 +66,26 @@ func (s *GitAdvancedService) operationApprovalFingerprint(ctx context.Context,
 	if err != nil {
 		return "", err
 	}
-	return gitadvanced.Fingerprint("authorized-native-git.v2", string(raw)), nil
+	base := gitadvanced.Fingerprint("authorized-native-git.v2", string(raw))
+	if preview.Spec.Operation != gitadvanced.BisectRun {
+		return base, nil
+	}
+	if reviewing {
+		if err := s.requireBisectRuntime(ctx, value.run.ID, value.workspace.RootPath, preview.Spec); err != nil {
+			return "", err
+		}
+	}
+	selected, err := s.selectBisectCommandRuntime(ctx, value.run.ID)
+	if err != nil {
+		return "", err
+	}
+	backend, err := json.Marshal(struct {
+		Adapter commandruntimeadapter.Identity
+	}{selected.adapter})
+	if err != nil {
+		return "", err
+	}
+	return gitadvanced.Fingerprint("authorized-native-git-bisect.v1", base, string(backend)), nil
 }
 
 func gitAdvancedApprovalMatches(record gitadvanced.OperationRecord, proof approval.Record) bool {

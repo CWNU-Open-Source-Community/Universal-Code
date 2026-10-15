@@ -99,6 +99,10 @@ func NewProjectActionsService(store ProjectActionsStore, runtime any, drydocks *
 // The selection is a read of current preferences/readiness. It creates no
 // lease or permission grant, and never substitutes Host for an owned sandbox.
 func (s *CommandRuntimeService) projectCommandService(ctx context.Context, runID string) (*CommandRuntimeService, error) {
+	return s.projectCommandServiceWithReadiness(ctx, runID, true)
+}
+
+func (s *CommandRuntimeService) projectCommandServiceWithReadiness(ctx context.Context, runID string, probeReadiness bool) (*CommandRuntimeService, error) {
 	if s == nil || s.store == nil || !s.adapter.Executable() || !s.commandRuntimeAdapterCurrent() {
 		return nil, apperror.New(apperror.CodeFailedPrecondition, "command runtime is unavailable")
 	}
@@ -141,7 +145,7 @@ func (s *CommandRuntimeService) projectCommandService(ctx context.Context, runID
 		if !found || owned.Path == "" {
 			return nil, apperror.New(apperror.CodeFailedPrecondition, "sandbox workspace is unavailable")
 		}
-		if probe, ok := s.sandbox.(commandRuntimeSandboxReadiness); ok {
+		if probe, ok := s.sandbox.(commandRuntimeSandboxReadiness); ok && probeReadiness {
 			ready, err := probe.Ready(ctx, runID)
 			if err != nil {
 				return nil, err

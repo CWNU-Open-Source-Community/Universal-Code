@@ -608,6 +608,12 @@ func batchValidationOutputDigest(stdout, stderr runner.OnceOutputCapture) string
 }
 
 func batchValidationEnvironment(cacheRoot string) []string {
+	return ProjectValidationEnvironment(cacheRoot)
+}
+
+// ProjectValidationEnvironment is the fixed offline environment for native
+// project validation on an explicitly selected host runtime.
+func ProjectValidationEnvironment(cacheRoot string) []string {
 	temp := os.TempDir()
 	return []string{
 		"PATH=" + os.Getenv("PATH"), "SystemRoot=" + os.Getenv("SystemRoot"),

@@ -64,6 +64,7 @@ type GitAdvancedStore interface {
 
 type GitAdvancedService struct {
 	store                  GitAdvancedStore
+	bisectRuntime          ProjectActionRuntime
 	executor               *repository.AdvancedExecutor
 	permissionCapabilities domain.ExecutionPermissionRuntimeCapabilities
 	checkpoints            *WorkspaceCheckpointService
@@ -262,6 +263,9 @@ func (s *GitAdvancedService) Preview(ctx context.Context, runID string,
 	if err := s.requireDurableTarget(ctx, authority, preview); err != nil {
 		return GitAdvancedReviewResult{}, err
 	}
+	if err := s.requireBisectRuntime(ctx, authority.run.ID, authority.workspace.RootPath, spec); err != nil {
+		return GitAdvancedReviewResult{}, err
+	}
 	return GitAdvancedReviewResult{ProtocolVersion: GitAdvancedAPIProtocolVersion,
 		RunID: authority.run.ID, WorkspaceID: authority.workspace.ID,
 		Preview: preview}, nil
@@ -444,6 +448,14 @@ func (s *GitAdvancedService) Execute(ctx context.Context,
 	if err != nil {
 		return GitAdvancedExecuteResult{}, err
 	}
+	executor := s.executor
+	if preview.Spec.Operation == gitadvanced.BisectRun {
+		recipeExecutor, err := s.bisectRecipeExecutor(ctx, authority, record, preview, guard)
+		if err != nil {
+			return GitAdvancedExecuteResult{}, err
+		}
+		executor = executor.WithBisectRecipeExecutor(recipeExecutor)
+	}
 	boundaryRequest := WorkspaceMutationBoundaryRequest{RunID: authority.run.ID,
 		Kind:         workspacecheckpoint.TransactionGitMutation,
 		OperationKey: record.OperationKeySHA256, TriggerReceiptID: record.ID,
@@ -473,7 +485,7 @@ func (s *GitAdvancedService) Execute(ctx context.Context,
 			apperror.New(apperror.CodeFailedPrecondition,
 				"Git advanced operation already began; reconcile or await its terminal receipt instead of replaying it")
 	}
-	receipt, executeErr := s.executor.ExecuteAdvanced(ctx,
+	receipt, executeErr := executor.ExecuteAdvanced(ctx,
 		authority.workspace.RootPath, preview, guard)
 	receipt.CheckpointID = boundary.Before.ID
 	sequence, worktree, stateErr := s.persistGitAdvancedState(context.WithoutCancel(ctx),
@@ -605,7 +617,7 @@ func (s *GitAdvancedService) gitAdvancedAuthorityView(ctx context.Context,
 		value.mode.Surface == domain.ExecutionSurfaceCode &&
 		value.mode.Phase == domain.ExecutionPhaseDeliver &&
 		value.profile.RunID == value.run.ID && value.profile.MissionID == value.mission.ID &&
-		value.profile.Profile == domain.RunExecutionProfileLocal &&
+		s.gitAdvancedProfileAllowed(value.profile.Profile) &&
 		value.profile.NetworkScope == domain.ExecutionNetworkDisabled &&
 		value.permission.RunID == value.run.ID && value.permission.MissionID == value.mission.ID &&
 		s.permissionCapabilities.AllowsSnapshot(value.permission)
@@ -1079,7 +1091,7 @@ func (s *GitAdvancedService) loadMutationAuthority(ctx context.Context, runID st
 		value.mode.Surface != domain.ExecutionSurfaceCode ||
 		value.mode.Phase != domain.ExecutionPhaseDeliver ||
 		value.profile.RunID != value.run.ID || value.profile.MissionID != value.mission.ID ||
-		value.profile.Profile != domain.RunExecutionProfileLocal ||
+		!s.gitAdvancedProfileAllowed(value.profile.Profile) ||
 		value.profile.NetworkScope != domain.ExecutionNetworkDisabled ||
 		value.permission.RunID != value.run.ID ||
 		value.permission.MissionID != value.mission.ID ||

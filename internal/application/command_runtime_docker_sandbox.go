@@ -129,6 +129,15 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 			return noProcess, err
 		}
 	}
+	if proof := gitBisectRuntimeFromContext(ctx); proof != nil {
+		if batchValidationRuntimeFromContext(ctx) != nil || proof.runID != scope.RunID || proof.specFingerprint != runner.CommandRuntimeSpecFingerprint(spec) || proof.check == nil || proof.check(ctx) != nil {
+			return noProcess, runner.ErrCommandRuntimeBoundary
+		}
+		requestedBy = gitBisectDockerRequester(proof)
+		if _, _, err := parseGitBisectDockerRequester(requestedBy); err != nil {
+			return noProcess, err
+		}
+	}
 	workspace, found, err := readRunFileDrydock(ctx, e.service.store, scope.RunID)
 	if err != nil || !found {
 		return noProcess, errors.Join(err,
@@ -182,10 +191,11 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 	if executed.batchRecord != nil {
 		record := executed.batchRecord
 		if !executed.Executed || record.Validate() != nil || record.Receipt == nil || record.Receipt.ExitCode == nil || !record.Receipt.CleanupComplete {
-			return runner.CommandRuntimeSandboxResult{ExitCode: 125, TreeReaped: output.noOwnedTree()}, errors.New("batch Docker terminal receipt is unavailable")
+			return runner.CommandRuntimeSandboxResult{ExitCode: 125, TreeReaped: output.noOwnedTree()}, errors.New("native Docker terminal receipt is unavailable")
 		}
-		if record.Receipt.Outcome != domain.DockerSandboxOutcomeSucceeded {
-			err = errors.Join(err, errors.New("batch Docker validation did not succeed"))
+		if record.Receipt.Outcome != domain.DockerSandboxOutcomeSucceeded &&
+			!(gitBisectRuntimeFromContext(ctx) != nil && gitBisectDockerProcessExit(record.Receipt, err)) {
+			err = errors.Join(err, errors.New("native Docker command did not succeed"))
 		}
 		return output.terminal(*record.Receipt.ExitCode), err
 	}

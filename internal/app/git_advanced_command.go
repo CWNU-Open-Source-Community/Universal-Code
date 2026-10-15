@@ -120,6 +120,14 @@ func (a *App) gitAdvancedCommand(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if operation == gitadvanced.BisectRun && *dangerFullAccess {
+		runtime, err := a.newCLIExecutionRuntime(ctx, capabilities, true)
+		if err != nil {
+			return err
+		}
+		defer runtime.close()
+		service.WithBisectCommandRuntime(runtime.commands)
+	}
 	if action == "status" {
 		projection, err := service.Projection(ctx, *runID, *limit)
 		if err != nil {

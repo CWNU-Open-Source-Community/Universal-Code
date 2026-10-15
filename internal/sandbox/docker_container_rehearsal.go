@@ -56,6 +56,7 @@ func (mount DockerHostMount) Validate() error {
 
 type DockerContainerWriteRequest struct {
 	ProtocolVersion    string
+	NativeGitSource    bool // Internal source-root execution; an empty directory masks metadata.
 	Spec               DockerContainerSpec
 	HostMounts         []DockerHostMount
 	MountFingerprint   string
@@ -69,7 +70,7 @@ func NewDockerContainerWriteRequest(ctx context.Context, workspaceRoot string,
 		return DockerContainerWriteRequest{}, errors.New(
 			"Standard Code Docker requires its fixed Git metadata mask")
 	}
-	return newDockerContainerWriteRequest(ctx, workspaceRoot, "", spec)
+	return newDockerContainerWriteRequest(ctx, workspaceRoot, "", spec, false)
 }
 
 // NewDockerStandardCodeContainerWriteRequest adds the one fixed read-only
@@ -82,11 +83,11 @@ func NewDockerStandardCodeContainerWriteRequest(ctx context.Context, workspaceRo
 		return DockerContainerWriteRequest{}, errors.New(
 			"Git metadata masking is restricted to the fixed Standard Code profile")
 	}
-	return newDockerContainerWriteRequest(ctx, workspaceRoot, gitMetadataMask, spec)
+	return newDockerContainerWriteRequest(ctx, workspaceRoot, gitMetadataMask, spec, false)
 }
 
 func newDockerContainerWriteRequest(ctx context.Context, workspaceRoot,
-	gitMetadataMask string, spec DockerContainerSpec,
+	gitMetadataMask string, spec DockerContainerSpec, nativeGitSource bool,
 ) (DockerContainerWriteRequest, error) {
 	if err := ctx.Err(); err != nil {
 		return DockerContainerWriteRequest{}, err
@@ -110,19 +111,26 @@ func newDockerContainerWriteRequest(ctx context.Context, workspaceRoot,
 	}
 
 	standardCode := dockerContainerSpecUsesStandardCodeWorkspace(spec)
-	if standardCode {
+	if nativeGitSource {
+		if !standardCode || validateDockerNativeGitSource(resolvedRoot) != nil {
+			return DockerContainerWriteRequest{}, errors.New("native Git Docker source metadata is invalid")
+		}
+		var maskErr error
+		gitMetadataMask, maskErr = validateDockerNativeGitMetadataMask(gitMetadataMask)
+		if maskErr != nil {
+			return DockerContainerWriteRequest{}, maskErr
+		}
+	} else if standardCode {
 		if err := validateDockerStandardCodeWorkspaceGitMetadata(resolvedRoot); err != nil {
 			return DockerContainerWriteRequest{}, err
 		}
 		var maskErr error
-		gitMetadataMask, maskErr = validateDockerStandardCodeGitMetadataMask(
-			gitMetadataMask)
+		gitMetadataMask, maskErr = validateDockerStandardCodeGitMetadataMask(gitMetadataMask)
 		if maskErr != nil {
 			return DockerContainerWriteRequest{}, maskErr
 		}
 	} else if gitMetadataMask != "" {
-		return DockerContainerWriteRequest{}, errors.New(
-			"generic Docker request cannot carry a Git metadata mask")
+		return DockerContainerWriteRequest{}, errors.New("generic Docker request cannot carry a Git metadata mask")
 	}
 
 	mountCount := len(spec.Mounts)
@@ -147,7 +155,7 @@ func newDockerContainerWriteRequest(ctx context.Context, workspaceRoot,
 			Propagation: DockerMountPropagationPrivate})
 	}
 	request := DockerContainerWriteRequest{ProtocolVersion: DockerContainerWriteProtocolVersion,
-		Spec: spec, HostMounts: mounts}
+		Spec: spec, HostMounts: mounts, NativeGitSource: nativeGitSource}
 	request.MountFingerprint = dockerHostMountFingerprint(mounts)
 	request.RequestFingerprint = fingerprint(DockerContainerWriteProtocolVersion,
 		spec.SpecFingerprint, request.MountFingerprint)
@@ -160,7 +168,7 @@ func (request DockerContainerWriteRequest) Validate() error {
 	if standardCode {
 		expectedMounts++
 	}
-	if request.ProtocolVersion != DockerContainerWriteProtocolVersion ||
+	if request.NativeGitSource && !standardCode || request.ProtocolVersion != DockerContainerWriteProtocolVersion ||
 		ValidateDockerContainerRehearsalProfile(request.Spec) != nil ||
 		len(request.HostMounts) != expectedMounts ||
 		!validDigest(request.MountFingerprint) || !validDigest(request.RequestFingerprint) {
@@ -178,14 +186,22 @@ func (request DockerContainerWriteRequest) Validate() error {
 		workspaceMount := request.HostMounts[0]
 		mask := request.HostMounts[len(request.HostMounts)-1]
 		if workspaceMount.Source == mask.Source ||
-			validateDockerStandardCodeWorkspaceGitMetadata(workspaceMount.Source) != nil ||
 			mask.Validate() != nil || !mask.ReadOnly ||
 			mask.Target != DockerStandardCodeGitMetadataTarget ||
 			mask.Propagation != DockerMountPropagationPrivate {
 			return errors.New("Standard Code Git metadata mask is invalid")
 		}
-		if resolved, err := validateDockerStandardCodeGitMetadataMask(mask.Source); err != nil || resolved != mask.Source {
-			return errors.New("Standard Code Git metadata mask changed")
+		if request.NativeGitSource {
+			if resolved, err := validateDockerNativeGitMetadataMask(mask.Source); validateDockerNativeGitSource(workspaceMount.Source) != nil || err != nil || resolved != mask.Source || mask.Source == filepath.Join(workspaceMount.Source, ".git") {
+				return errors.New("native Git Docker metadata mount changed")
+			}
+		} else {
+			if validateDockerStandardCodeWorkspaceGitMetadata(workspaceMount.Source) != nil {
+				return errors.New("Standard Code Git metadata shape changed")
+			}
+			if resolved, err := validateDockerStandardCodeGitMetadataMask(mask.Source); err != nil || resolved != mask.Source {
+				return errors.New("Standard Code Git metadata mask changed")
+			}
 		}
 	}
 	if request.MountFingerprint != dockerHostMountFingerprint(request.HostMounts) ||
@@ -796,4 +812,42 @@ func DockerContainerRehearsalRequestFingerprint(value DockerContainerRehearsal) 
 	return fingerprint("sandbox_docker_container_rehearsal_request.v1", value.PlanID,
 		value.ManifestFingerprint, value.AuthorityFingerprint, value.SpecFingerprint,
 		value.PlanFingerprint, value.RequestFingerprint, value.RequestedBy)
+}
+
+// NewDockerNativeGitContainerWriteRequest is only for a natively authorized
+// source repository. An empty directory hides its metadata behind a read-only mount.
+func NewDockerNativeGitContainerWriteRequest(ctx context.Context, root, mask string, spec DockerContainerSpec) (DockerContainerWriteRequest, error) {
+	return newDockerContainerWriteRequest(ctx, root, mask, spec, true)
+}
+
+func validateDockerNativeGitSource(root string) error {
+	target := filepath.Join(root, ".git")
+	info, err := os.Lstat(target)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("native Git Docker metadata must be a directory")
+	}
+	canonical, err := filepath.EvalSymlinks(target)
+	if err != nil || filepath.Clean(canonical) != target {
+		return errors.New("native Git Docker metadata directory changed")
+	}
+	return nil
+}
+
+func validateDockerNativeGitMetadataMask(source string) (string, error) {
+	if source == "" || !filepath.IsAbs(source) || filepath.Clean(source) != source {
+		return "", errors.New("native Git metadata mask path is invalid")
+	}
+	info, err := os.Lstat(source)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("native Git metadata mask is not a directory")
+	}
+	canonical, err := filepath.EvalSymlinks(source)
+	if err != nil || filepath.Clean(canonical) != source {
+		return "", errors.New("native Git metadata mask identity changed")
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil || len(entries) != 0 {
+		return "", errors.New("native Git metadata mask must be empty")
+	}
+	return source, nil
 }

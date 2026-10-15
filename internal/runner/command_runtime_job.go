@@ -1407,6 +1407,12 @@ func (m *CommandRuntimeManager) renewOwnership(ctx context.Context,
 
 func (m *CommandRuntimeManager) wait(entry *commandRuntimeEntry) {
 	exitCode, waitErr := entry.process.Wait()
+	if waitErr != nil {
+		// An adapter/transport failure supplies no trustworthy program exit.
+		// Preserve that distinction durably: bisect must not interpret an
+		// infrastructure failure as a bad revision or a legitimate exit 125.
+		exitCode = -1
+	}
 	treeReaped := true
 	if proof, ok := entry.process.(interface{ TreeReaped() bool }); ok {
 		treeReaped = proof.TreeReaped()

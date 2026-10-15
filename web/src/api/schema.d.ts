@@ -8289,6 +8289,12 @@ export interface components {
             protocol_version: string;
             scope: components["schemas"]["GitAdvancedScope"];
         };
+        GitAdvancedBisectExecutionReceipt: {
+            commit: string;
+            execution: components["schemas"]["BatchValidationExecutionReceipt"];
+            /** Format: int32 */
+            ordinal: number;
+        };
         GitAdvancedBisectRecipe: {
             /** Format: int32 */
             max_steps: number;
@@ -8479,6 +8485,7 @@ export interface components {
             worktrees: components["schemas"]["GitAdvancedManagedWorktree"][];
         };
         GitAdvancedReceipt: {
+            bisect_executions?: components["schemas"]["GitAdvancedBisectExecutionReceipt"][];
             checkpoint_id?: string;
             /** Format: date-time */
             completed_at: string;

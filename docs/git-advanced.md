@@ -25,7 +25,8 @@ Advanced Git is available only when all of these independent gates are true:
   explicit operator-selected path or the product-owned directory below `CYBERAGENT_HOME`;
 - permission control, operator approval, approval control, and Workspace Checkpoint
   control are enabled in the same process;
-- the Run is active in `Code/Deliver`, uses the Local profile with network disabled, and
+- the Run is active in `Code/Deliver`, uses Local, Docker Engine, or Docker Sandboxes
+  with network disabled, and
   holds a current non-conservative execution permission plus active Workspace lease;
 - a preview was rendered against the current process capability generation, and an
   operator approved that exact approval fingerprint once.
@@ -33,7 +34,7 @@ Advanced Git is available only when all of these independent gates are true:
 高级 Git 只有在以下独立门禁同时成立时才可用：进程显式启用 capability，受管
 worktree 根由操作者指定或使用 `CYBERAGENT_HOME` 下的产品目录；权限控制、操作者审批、
 Approval 控制和 Workspace Checkpoint 控制全部开启；
-Run 处于 `Code/Deliver`、Local、禁网并持有当前非 conservative 权限和 active lease；
+Run 处于 `Code/Deliver`，选择 Local、Docker Engine 或 Docker Sandboxes，禁网并持有当前非 conservative 权限和 active lease；
 最后还必须针对当前进程 generation 渲染 preview，并由操作者一次性批准它的精确指纹。
 
 API/Desktop hosts reject an inconsistent partial configuration at composition time. CLI
@@ -175,14 +176,36 @@ marks also bind `expected_current`, preventing a stale UI from classifying anoth
 
 The caller can select only `max_steps` (1–128) and per-step timeout (1–900 seconds). It cannot
 supply argv, shell text, executable paths, environment, or network settings. Each step binds
-the exact commit, uses a stripped offline environment, closed stdin, and the existing
-whole-process-tree runner. Missing `stdin_closed` or `tree_reaped` evidence, timeout, cancel,
+the exact commit and uses the Run-selected Command Runtime with a stripped offline
+environment and closed stdin. Missing `stdin_closed` or `tree_reaped` evidence, timeout, cancel,
 or budget exhaustion produces a typed terminal failure. Exit 0 marks good, 125 marks skip,
-and other exits mark bad. `bisect_reset` restores the original reference/worktree state and
+and other program exits from 1 through 127 mark bad. Adapter failures and unknown exits
+stop the operation without classifying the commit. `bisect_reset` restores the original reference/worktree state and
 is permitted even when that original branch is protected; external sequence drift is denied.
 
-These recipes execute repository test code on the host. Approval and process ownership make
-that execution explicit, but they are not an OS network sandbox.
+API/Desktop recipes use the backend already selected for the Run: Local sandbox, Docker
+Engine, or Docker Sandboxes (SBX). An explicitly configured Local host runtime records
+`host_unsandboxed` / `explicit_host_execution`; a missing selected backend never falls back
+to it. The foreground CLI currently assembles only the existing Local host runtime, requiring
+`--enable-danger-full-access` in addition to the Git gates; Docker/SBX execution is available
+through the Desktop's configured runtime.
+
+Git operations, approvals and checkpoints remain bound to the source Workspace. A private
+native authorization binds each recipe's exact source directory, current commit, fixed
+command and operation record before passing that directory to the selected runtime. Ordinary
+Run commands retain their Drydock binding. Docker masks `.git` with a read-only empty
+directory (or the existing mask file for a linked worktree). SBX mounts the source `.git`
+read-only: tests may inspect its history and configuration, but only the approved native
+Git operation may switch or classify revisions. Each step records `bisect_executions`: zero-based
+ordinal, tested commit, Job ID, backend identity/generation, isolation/network/credential
+policy, readiness, workspace digest, image/template reference and process cleanup evidence.
+Raw test output is discarded; only byte counts and digests enter the runtime Job. Permission,
+lease, backend or repository drift stops further execution and marking. Cancellation reaps
+the owned process/container/VM; restart recovery cleans owned resources and never replays
+an uncertain recipe.
+
+高级 Git 继续绑定原 Workspace，每步测试在 Run 所选后端内执行。收据记录实际提交、
+Job 与后端身份；后端不可用、权限变化、取消或结果不确定时停止，不标记该提交，也不重放测试。
 
 ## Managed worktrees / 受管 Worktree
 

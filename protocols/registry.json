@@ -3073,6 +3073,7 @@
       "active_identifiers": [
         "agent_code_file_edit_proposal.v1",
         "agent_code_file_edit_source.v1",
+        "authorized-native-git-bisect.v1",
         "authorized-native-git.v2",
         "file-operation-proposal.v1",
         "file_edit_apply_operation.v1",
@@ -3086,6 +3087,7 @@
         "git-advanced-receipt.v1",
         "git-advanced-sequence.v1",
         "git-advanced.v1",
+        "git-bisect-job.v1",
         "git-managed-worktree.v1",
         "git-review-diff-evidence.v1",
         "git_advanced_operation.v1",
@@ -3536,6 +3538,14 @@
         "internal/store/batch_delivery_test.go"
       ],
       "reason": "Test-only or golden/negative-vector identifier; exact source binding prevents production classification."
+    },
+    {
+      "identifier": "bisect-fixture.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/repository/advanced_test.go"
+      ],
+      "reason": "Repository bisect executor fixture identity; never used by a production backend."
     },
     {
       "identifier": "browser_key.v1",

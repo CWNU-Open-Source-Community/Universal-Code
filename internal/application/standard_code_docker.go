@@ -201,8 +201,8 @@ func (s *StandardCodeDockerService) Cancel(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if isBatchValidationDockerRequester(owned.Admission.RequestedBy) {
-		return nil, apperror.New(apperror.CodePolicyDenied, "cancel Batch validation through its Command Runtime Job")
+	if isNativeCommandDockerRequester(owned.Admission.RequestedBy) {
+		return nil, apperror.New(apperror.CodePolicyDenied, "cancel native commands through their Command Runtime Job")
 	}
 	cancelled, err := s.docker.Cancel(ctx, DockerSandboxCancelRequest(request))
 	if err != nil || cancelled.Record.Receipt == nil {
@@ -397,12 +397,19 @@ func (s *StandardCodeDockerService) execute(ctx context.Context,
 			return result, errors.Join(startErr, err)
 		}
 	}
-	if isBatchValidationDockerRequester(request.RequestedBy) {
-		proof := batchValidationRuntimeFromContext(ctx)
-		if proof == nil || proof.target.runID != scope.RunID || batchValidationDockerRequester(proof.target) != request.RequestedBy {
-			return result, runner.ErrCommandRuntimeBoundary
+	if isNativeCommandDockerRequester(request.RequestedBy) {
+		if isGitBisectDockerRequester(request.RequestedBy) {
+			proof := gitBisectRuntimeFromContext(ctx)
+			if proof == nil || proof.runID != scope.RunID || gitBisectDockerRequester(proof) != request.RequestedBy {
+				return result, runner.ErrCommandRuntimeBoundary
+			}
+		} else {
+			proof := batchValidationRuntimeFromContext(ctx)
+			if proof == nil || proof.target.runID != scope.RunID || batchValidationDockerRequester(proof.target) != request.RequestedBy {
+				return result, runner.ErrCommandRuntimeBoundary
+			}
 		}
-		// The container wrote only the Batch target. Its terminal lifecycle
+		// The container wrote only the native command target. Its terminal lifecycle
 		// receipt must not advance the unrelated Run Drydock checkpoint.
 		result.batchRecord, result.Executed = &started.Record, true
 		return result, startErr
@@ -431,7 +438,7 @@ func (s *StandardCodeDockerService) RecoverStartup(ctx context.Context) (
 	seen := make(map[string]struct{}, len(records)+len(completed))
 	candidates := make([]domain.DockerSandboxRecord, 0, len(records)+len(completed))
 	for _, record := range append(records, completed...) {
-		if isBatchValidationDockerRequester(record.Admission.RequestedBy) {
+		if isNativeCommandDockerRequester(record.Admission.RequestedBy) {
 			continue
 		}
 		if _, duplicate := seen[record.Admission.ID]; duplicate {
@@ -558,7 +565,7 @@ func (s *StandardCodeDockerService) loadTerminalReplay(ctx context.Context,
 			return StandardCodeDockerExecuteResult{}, true, err
 		}
 	}
-	if isBatchValidationDockerRequester(admission.RequestedBy) {
+	if isNativeCommandDockerRequester(admission.RequestedBy) {
 		record.Replayed = true
 		return StandardCodeDockerExecuteResult{AdmissionID: admission.ID, batchRecord: &record, Executed: true}, true, nil
 	}
@@ -764,8 +771,8 @@ func (s *StandardCodeDockerService) finalize(ctx context.Context,
 	record domain.DockerSandboxRecord, scope standardcode.ExecutionContext,
 	requestedBy string,
 ) (standardcode.Result, error) {
-	if isBatchValidationDockerRequester(record.Admission.RequestedBy) || isBatchValidationDockerRequester(requestedBy) {
-		return standardcode.Result{}, apperror.New(apperror.CodePolicyDenied, "Batch validation cannot checkpoint the Run Drydock")
+	if isNativeCommandDockerRequester(record.Admission.RequestedBy) || isNativeCommandDockerRequester(requestedBy) {
+		return standardcode.Result{}, apperror.New(apperror.CodePolicyDenied, "native commands cannot checkpoint the Run Drydock")
 	}
 	if record.Launch == nil || record.Receipt == nil ||
 		record.Receipt.Validate() != nil || record.Receipt.RunID != scope.RunID {

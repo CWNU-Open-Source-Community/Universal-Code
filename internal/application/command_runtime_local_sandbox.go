@@ -134,6 +134,10 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 	if err != nil {
 		return noProcess, err
 	}
+	workspace, err = gitBisectExecutionWorkspace(ctx, workspace, scope, spec)
+	if err != nil {
+		return noProcess, err
+	}
 	profile, err := e.store.GetRunExecutionProfile(ctx, scope.RunID)
 	if err != nil {
 		return noProcess, err

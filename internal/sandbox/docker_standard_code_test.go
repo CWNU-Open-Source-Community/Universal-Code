@@ -303,3 +303,48 @@ func TestDockerStandardCodeWriteRequestFailsClosedForUnprovenGitMetadata(t *test
 		t.Fatal("Standard Code accepted Git metadata whose ownership shape was not proven")
 	}
 }
+
+func TestDockerNativeGitSourceMetadataRemainsReadonlyAndBound(t *testing.T) {
+	ctx := t.Context()
+	manifest, err := DockerStandardCodeManifest(dockerStandardCodeBindingFixture(DockerStandardCodeToolchainGo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := CompileDockerContainerSpec(ctx, dockerContainerCompilerObservation(t, ctx, manifest, true, 8, 8*1024*1024*1024), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	mask := t.TempDir()
+	request, err := NewDockerNativeGitContainerWriteRequest(ctx, root, mask, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := dockerCreatePayload(request)
+	if len(request.HostMounts) != 2 || request.HostMounts[1].Source != mask || !payload.HostConfig.Mounts[1].ReadOnly {
+		t.Fatal("native source metadata is not hidden behind exact read-only mask")
+	}
+	if err := os.WriteFile(filepath.Join(mask, "config"), []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if request.Validate() == nil {
+		t.Fatal("nonempty metadata mask accepted")
+	}
+	if err := os.Remove(filepath.Join(mask, "config")); err != nil {
+		t.Fatal(err)
+	}
+	changed := request
+	changed.HostMounts = append([]DockerHostMount(nil), request.HostMounts...)
+	changed.HostMounts[1].ReadOnly = false
+	if changed.Validate() == nil {
+		t.Fatal("writable Git metadata accepted")
+	}
+	changed = request
+	changed.NativeGitSource = false
+	if changed.Validate() == nil {
+		t.Fatal("native source became ordinary Run authority")
+	}
+}

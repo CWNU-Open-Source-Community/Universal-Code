@@ -513,6 +513,12 @@ func (s *DockerSandboxService) loadCurrentDockerSandboxAuthority(ctx context.Con
 			return dockerSandboxAuthority{}, apperror.New(apperror.CodePolicyDenied, "batch Docker execution requires live target authority")
 		}
 	}
+	if isGitBisectDockerRequester(plan.RequestedBy) {
+		proof := gitBisectRuntimeFromContext(ctx)
+		if proof == nil || proof.runID != plan.RunID || gitBisectDockerRequester(proof) != plan.RequestedBy || proof.check == nil || proof.check(ctx) != nil {
+			return dockerSandboxAuthority{}, apperror.New(apperror.CodePolicyDenied, "Git bisect Docker execution requires live source authority")
+		}
+	}
 	if err := requireDockerSandboxManifestPlan(manifest, plan); err != nil {
 		return dockerSandboxAuthority{}, err
 	}

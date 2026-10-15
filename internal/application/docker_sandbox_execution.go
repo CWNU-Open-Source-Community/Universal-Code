@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/sandbox"
 )
 
@@ -760,6 +761,14 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 	if isBatchValidationDockerRequester(admission.RequestedBy) {
 		workspaceCtx = context.WithValue(ctx, batchValidationRuntimeKey{}, (*batchValidationRuntimeProof)(nil))
 	}
+	if isGitBisectDockerRequester(admission.RequestedBy) {
+		source, err := s.gitBisectCleanupWorkspace(ctx, admission, sandbox.WorkspaceBinding{ID: admission.WorkspaceID})
+		if err != nil {
+			return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
+		}
+		workspaceCtx = context.WithValue(workspaceCtx, gitBisectRuntimeKey{}, (*gitBisectRuntimeProof)(nil))
+		workspaceCtx = context.WithValue(workspaceCtx, gitBisectCleanupRootKey{}, source)
+	}
 	workspace, err := s.resolveDockerSandboxWorkspace(workspaceCtx, admission.RunID,
 		admission.WorkspaceID, manifest, false)
 	if err != nil {
@@ -767,6 +776,12 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 	}
 	if isBatchValidationDockerRequester(admission.RequestedBy) {
 		workspace, err = s.batchValidationCleanupWorkspace(ctx, admission, workspace)
+		if err != nil {
+			return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
+		}
+	}
+	if isGitBisectDockerRequester(admission.RequestedBy) {
+		workspace, err = s.gitBisectCleanupWorkspace(ctx, admission, workspace)
 		if err != nil {
 			return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
 		}
@@ -784,7 +799,7 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 		return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{},
 			errors.New("Docker Sandbox specification cannot be reconstructed")
 	}
-	writeRequest, err := s.newDockerSandboxWriteRequest(ctx, root, manifest, spec)
+	writeRequest, err := s.newDockerSandboxWriteRequest(workspaceCtx, root, manifest, spec)
 	if err != nil {
 		return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
 	}
@@ -1006,6 +1021,27 @@ func (s *DockerSandboxService) newDockerSandboxWriteRequest(ctx context.Context,
 	if _, standardCode := sandbox.ParseDockerStandardCodeManifest(manifest); !standardCode {
 		return sandbox.NewDockerContainerWriteRequest(ctx, root, spec)
 	}
+	if proof := gitBisectRuntimeFromContext(ctx); proof != nil {
+		if proof.root != root || proof.check == nil || proof.check(ctx) != nil {
+			return sandbox.DockerContainerWriteRequest{}, runner.ErrCommandRuntimeBoundary
+		}
+		if info, err := os.Lstat(filepath.Join(root, ".git")); err == nil && info.IsDir() {
+			mask, err := s.nativeGitMetadataMaskDirectory()
+			if err != nil {
+				return sandbox.DockerContainerWriteRequest{}, err
+			}
+			return sandbox.NewDockerNativeGitContainerWriteRequest(ctx, root, mask, spec)
+		}
+	}
+	if source, ok := ctx.Value(gitBisectCleanupRootKey{}).(sandbox.WorkspaceBinding); ok && source.RootPath == root {
+		if info, err := os.Lstat(filepath.Join(root, ".git")); err == nil && info.IsDir() {
+			mask, err := s.nativeGitMetadataMaskDirectory()
+			if err != nil {
+				return sandbox.DockerContainerWriteRequest{}, err
+			}
+			return sandbox.NewDockerNativeGitContainerWriteRequest(ctx, root, mask, spec)
+		}
+	}
 	mask, err := s.standardCodeGitMetadataMaskPath()
 	if err != nil {
 		return sandbox.DockerContainerWriteRequest{}, err
@@ -1113,4 +1149,17 @@ func (s *DockerSandboxService) cancelActive(admissionID string) bool {
 		cancel()
 	}
 	return found
+}
+
+func (s *DockerSandboxService) nativeGitMetadataMaskDirectory() (string, error) {
+	if s == nil || s.stagingRoot == "" {
+		return "", errors.New("native Git metadata mask root unavailable")
+	}
+	s.standardCodeMaskMu.Lock()
+	defer s.standardCodeMaskMu.Unlock()
+	target := filepath.Join(s.stagingRoot, "native-git-metadata-mask")
+	if err := os.Mkdir(target, 0555); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", err
+	}
+	return target, nil
 }

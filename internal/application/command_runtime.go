@@ -48,6 +48,7 @@ type CommandRuntimeService struct {
 	checker             policy.Checker
 	policyMu            sync.RWMutex
 	batchValidationJobs sync.Map
+	gitBisectJobs       sync.Map
 }
 
 type commandRuntimeSandboxReadiness interface {
@@ -1089,6 +1090,13 @@ func (s *CommandRuntimeService) commandRuntimeJobBindingsCurrent(ctx context.Con
 			return false, nil
 		}
 		rootPath = binding.proof.target.root
+	}
+	if native, ok := s.gitBisectJobs.Load(job.ID); ok {
+		binding := native.(*gitBisectJobBinding)
+		if binding.proof.runID != job.RunID || binding.operationDigest != job.OperationDigest || binding.specFingerprint != job.SpecFingerprint || binding.proof.check == nil || binding.proof.check(ctx) != nil {
+			return false, nil
+		}
+		rootPath = binding.proof.root
 	}
 	rootSHA256, err := runner.CommandRuntimeWorkspaceRootSHA256(rootPath)
 	if err != nil {

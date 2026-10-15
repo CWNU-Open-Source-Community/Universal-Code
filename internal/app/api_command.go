@@ -413,6 +413,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}()
 	commandRuntime := commandSet.Runtime
 	batchDelivery.WithValidationCommandRuntime(commandRuntime)
+	gitAdvancedService.WithBisectCommandRuntime(commandRuntime)
 	// Reap owned backend processes before Batch reconciliation can remove an
 	// expired child/integration worktree that their cleanup intent still binds.
 	if _, err := batchDelivery.ReconcileStartup(ctx, 256); err != nil {

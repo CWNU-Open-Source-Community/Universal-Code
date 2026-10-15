@@ -212,7 +212,7 @@ func (e *SBXCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.Context, s
 	requestFingerprint := sha256.Sum256(requestIdentity)
 	result, runErr := e.backend.Run(ctx, sandbox.SBXRunRequest{OperationKey: scope.RunID + "/" + scope.OperationKey,
 		RequestFingerprint: hex.EncodeToString(requestFingerprint[:]), RuntimeGeneration: e.identity.Generation,
-		DrydockRoot: spec.WorkspaceRoot, Arguments: append([]string{spec.ExecutablePath}, spec.CanonicalArgv...),
+		DrydockRoot: spec.WorkspaceRoot, SourceRepository: gitBisectRuntimeFromContext(ctx) != nil, Arguments: append([]string{spec.ExecutablePath}, spec.CanonicalArgv...),
 		Environment: append([]string{}, spec.Environment...), WorkingDirectory: spec.Spec.WorkingDirectory,
 		Timeout: time.Duration(spec.Spec.TimeoutMilliseconds) * time.Millisecond, OutputLimit: spec.Spec.Output.ArtifactBytes, AuthorityCheck: check}, stdin)
 	value := runner.CommandRuntimeSandboxResult{ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, TreeReaped: result.TreeReaped}
@@ -240,6 +240,10 @@ func (e *SBXCommandRuntimeExecutor) checkAuthority(ctx context.Context, scope ru
 		return errors.Join(err, runner.ErrCommandRuntimeBoundary)
 	}
 	workspace, err = batchValidationExecutionWorkspace(ctx, workspace, scope, spec)
+	if err != nil {
+		return err
+	}
+	workspace, err = gitBisectExecutionWorkspace(ctx, workspace, scope, spec)
 	if err != nil {
 		return err
 	}
