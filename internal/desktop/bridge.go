@@ -17,13 +17,16 @@ import (
 	"cyberagent-workbench/internal/httpapi"
 	"cyberagent-workbench/internal/operationreceipt"
 	"cyberagent-workbench/internal/plugins"
+	"cyberagent-workbench/internal/skills"
 )
 
 const (
-	ConnectionBootstrapProtocolVersion = "desktop_connection_bootstrap.v1"
-	SkillPackageDialogProtocolVersion  = "desktop_skill_package_dialog.v1"
-	SkillPackageInstallProtocolVersion = "desktop_skill_package_install.v1"
-	DesktopAPIBasePath                 = "/api/v1"
+	ConnectionBootstrapProtocolVersion   = "desktop_connection_bootstrap.v1"
+	SkillPackageDialogProtocolVersion    = "desktop_skill_package_dialog.v1"
+	SkillPackageInstallProtocolVersion   = "desktop_skill_package_install.v1"
+	SkillPackageInventoryProtocolVersion = "desktop_skill_package_inventory.v1"
+	SkillPackageRemovalProtocolVersion   = "desktop_skill_package_removal.v1"
+	DesktopAPIBasePath                   = "/api/v1"
 
 	desktopTokenMinBytes = 32
 	desktopTokenMaxBytes = 512
@@ -122,6 +125,16 @@ type SkillPackageInstaller interface {
 		application.ImportSkillPackageResult, error)
 }
 
+// SkillPackageRegistry exposes the operator-facing historical Registry view.
+// Inventory reports the live readback state of each retained object, and Remove
+// writes the immutable tombstone. Neither grants selection or execution.
+type SkillPackageRegistry interface {
+	Inventory(context.Context, application.ListInstalledSkillPackagesRequest) (
+		application.SkillPackageInventory, error)
+	Remove(context.Context, application.RemoveSkillPackageRequest) (
+		application.RemoveSkillPackageResult, error)
+}
+
 type SkillPackageInstallRequest struct {
 	ProtocolVersion    string `json:"protocol_version"`
 	ConfirmationHandle string `json:"confirmation_handle"`
@@ -216,6 +229,7 @@ type DesktopBridgeConfig struct {
 	Selector                           NativeSkillPackageSelector
 	PreviewBridge                      *SkillPackagePreviewBridge
 	SkillInstaller                     SkillPackageInstaller
+	SkillRegistry                      SkillPackageRegistry
 	WorkspaceResolver                  WorkspaceResolver
 	WorkspaceLauncher                  NativeWorkspaceLauncher
 	WorkspaceDirectoryPicker           WorkspaceDirectoryPicker
@@ -237,6 +251,7 @@ type DesktopBridge struct {
 	selector                 NativeSkillPackageSelector
 	previewBridge            *SkillPackagePreviewBridge
 	skillInstaller           SkillPackageInstaller
+	skillRegistry            SkillPackageRegistry
 	workspaceResolver        WorkspaceResolver
 	workspaceLauncher        NativeWorkspaceLauncher
 	workspaceDirectoryPicker WorkspaceDirectoryPicker
@@ -410,6 +425,7 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 		selector:                 config.Selector,
 		previewBridge:            config.PreviewBridge,
 		skillInstaller:           config.SkillInstaller,
+		skillRegistry:            config.SkillRegistry,
 		workspaceResolver:        config.WorkspaceResolver,
 		workspaceLauncher:        config.WorkspaceLauncher,
 		workspaceDirectoryPicker: config.WorkspaceDirectoryPicker,
@@ -738,4 +754,94 @@ func validSHA256(value string) bool {
 	}
 	raw, err := hex.DecodeString(value)
 	return err == nil && len(raw) == sha256.Size
+}
+
+// SkillPackageInventoryRequest selects the historical Registry scope to show.
+// Filters stay inert: listing never authorises selection or execution.
+type SkillPackageInventoryRequest struct {
+	ProtocolVersion string `json:"protocol_version"`
+	Surface         string `json:"surface"`
+	Profile         string `json:"profile"`
+	IncludeRemoved  bool   `json:"include_removed"`
+}
+
+type SkillPackageRemovalRequest struct {
+	ProtocolVersion string `json:"protocol_version"`
+	Skill           string `json:"skill"`
+	OperationKey    string `json:"operation_key"`
+	ConfirmRemove   bool   `json:"confirm_remove"`
+}
+
+func (b *DesktopBridge) ListSkillPackages(
+	request SkillPackageInventoryRequest,
+) (httpapi.SkillPackageInventoryView, error) {
+	empty := httpapi.SkillPackageInventoryView{}
+	if b == nil || !b.bootstrap.SkillInstallationEnabled || b.skillRegistry == nil {
+		return empty, apperror.New(apperror.CodeNotFound,
+			"desktop Skill package Registry is disabled")
+	}
+	if request.ProtocolVersion != SkillPackageInventoryProtocolVersion {
+		return empty, apperror.New(apperror.CodeInvalidArgument,
+			"desktop Skill inventory protocol is invalid")
+	}
+	var surface domain.ExecutionSurface
+	if request.Surface != "" {
+		parsed, err := domain.ParseExecutionSurface(request.Surface)
+		if err != nil {
+			return empty, apperror.Normalize(err)
+		}
+		surface = parsed
+	}
+	var profile domain.Profile
+	if request.Profile != "" {
+		parsed, err := domain.ParseProfile(request.Profile)
+		if err != nil || parsed != domain.Profile(request.Profile) {
+			return empty, apperror.New(apperror.CodeInvalidArgument,
+				"installed Skill package Profile is invalid")
+		}
+		profile = parsed
+	}
+	ctx, err := b.lifecycleContext()
+	if err != nil {
+		return empty, err
+	}
+	inventory, err := b.skillRegistry.Inventory(ctx,
+		application.ListInstalledSkillPackagesRequest{Surface: surface,
+			Profile: profile, IncludeRemoved: request.IncludeRemoved})
+	if err != nil {
+		return empty, apperror.Normalize(err)
+	}
+	return httpapi.ProjectSkillPackageInventory(string(surface), string(profile),
+		request.IncludeRemoved, inventory), nil
+}
+
+func (b *DesktopBridge) RemoveSkillPackage(
+	request SkillPackageRemovalRequest,
+) (httpapi.SkillPackageRemovalView, error) {
+	empty := httpapi.SkillPackageRemovalView{}
+	if b == nil || !b.bootstrap.SkillInstallationEnabled || b.skillRegistry == nil {
+		return empty, apperror.New(apperror.CodeNotFound,
+			"desktop Skill package Registry is disabled")
+	}
+	if request.ProtocolVersion != SkillPackageRemovalProtocolVersion ||
+		!request.ConfirmRemove {
+		return empty, apperror.New(apperror.CodeFailedPrecondition,
+			"desktop Skill package removal requires explicit operator confirmation")
+	}
+	name, version, err := skills.ParseInstalledPackageRef(request.Skill)
+	if err != nil {
+		return empty, apperror.New(apperror.CodeInvalidArgument,
+			"installed Skill package reference is invalid")
+	}
+	ctx, err := b.lifecycleContext()
+	if err != nil {
+		return empty, err
+	}
+	result, err := b.skillRegistry.Remove(ctx, application.RemoveSkillPackageRequest{
+		Name: name, Version: version, OperationKey: request.OperationKey,
+		RemovedBy: "desktop_operator", ConfirmRemove: true})
+	if err != nil {
+		return empty, apperror.Normalize(err)
+	}
+	return httpapi.ProjectSkillPackageRemoval(result), nil
 }

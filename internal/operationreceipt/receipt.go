@@ -12,6 +12,7 @@ const (
 	KindFileEditApply       Kind = "file_edit_apply"
 	KindRunWakeConsume      Kind = "run_wake_consume"
 	KindSkillPackageInstall Kind = "skill_package_install"
+	KindSkillPackageRemove  Kind = "skill_package_remove"
 )
 
 type RetryStrategy string
@@ -75,6 +76,9 @@ func Settled(kind Kind, replayed bool, cleanupPending bool) Receipt {
 	case KindSkillPackageInstall:
 		receipt.Outcome = "installed"
 		receipt.RetryStrategy = RetrySameOperationKey
+	case KindSkillPackageRemove:
+		receipt.Outcome = "removed"
+		receipt.RetryStrategy = RetrySameOperationKey
 	}
 	return receipt
 }
@@ -96,7 +100,7 @@ func (r Receipt) Validate() error {
 		return fmt.Errorf("operation receipt protocol or durable retry state is invalid")
 	}
 	if r.Kind != KindFileEditApply && r.Kind != KindRunWakeConsume &&
-		r.Kind != KindSkillPackageInstall {
+		r.Kind != KindSkillPackageInstall && r.Kind != KindSkillPackageRemove {
 		return fmt.Errorf("operation receipt kind is invalid")
 	}
 	if r.Kind == KindFileEditApply && r.Outcome != "applied" && r.Outcome != "failed" {

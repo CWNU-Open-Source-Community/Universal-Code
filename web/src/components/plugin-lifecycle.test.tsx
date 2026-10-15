@@ -99,3 +99,31 @@ it("reads the selected Hook scope again after the production scope changes", asy
   rendered.rerender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LocaleProvider><HookDiagnostics client={client} runID="run-two" workspaceID="project-two" /></LocaleProvider></QueryClientProvider>);
   await waitFor(() => expect(read).toHaveBeenCalledWith("run-two", "project-two", expect.any(AbortSignal)));
 });
+
+it("offers re-trust for a revoked publisher and binds the reviewed generation", async () => {
+  const user = userEvent.setup(); const trust = vi.fn().mockResolvedValue({});
+  const history = pluginHistory(); history.publisher!.state = "revoked";
+  mount(<PluginLifecycleControls client={{ hasExtensionControl: true, pluginHistory: vi.fn().mockResolvedValue(history), trustPluginPublisher: trust } as unknown as APIClient} installationID="plugin-current" />);
+  await user.click(screen.getByText("版本与发布者"));
+  const button = await screen.findByRole("button", { name: "信任该发布者" });
+  expect(button).toBeDisabled();
+  expect(screen.getByText(/无法通过审查/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "撤销发布者信任" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "我已核对发布者公钥指纹，确认建立信任记录" }));
+  await user.click(button);
+  expect(trust).toHaveBeenCalledWith("plugin-current", { version: "plugin-lifecycle.v1",
+    expected_publisher_fingerprint: "f".repeat(64), expected_publisher_generation: 3, confirm: true });
+});
+
+it("offers a first trust record for a signed publisher without one", async () => {
+  const user = userEvent.setup(); const trust = vi.fn().mockResolvedValue({});
+  const history = pluginHistory(); delete history.publisher;
+  mount(<PluginLifecycleControls client={{ hasExtensionControl: true, pluginHistory: vi.fn().mockResolvedValue(history), trustPluginPublisher: trust } as unknown as APIClient} installationID="plugin-current" />);
+  await user.click(screen.getByText("版本与发布者"));
+  const button = await screen.findByRole("button", { name: "信任该发布者" });
+  expect(screen.getByText(/尚无信任记录/)).toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "我已核对发布者公钥指纹，确认建立信任记录" }));
+  await user.click(button);
+  expect(trust).toHaveBeenCalledWith("plugin-current", { version: "plugin-lifecycle.v1",
+    expected_publisher_fingerprint: "f".repeat(64), expected_publisher_generation: 0, confirm: true });
+});

@@ -33,7 +33,9 @@ function PluginVersionActions({ client, history, fetching, refresh, setBusy }: {
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [revokeConfirmed, setRevokeConfirmed] = useState(false);
+  const [trustConfirmed, setTrustConfirmed] = useState(false);
   const current = history.installations.find((item) => item.id === history.installation_id)!;
+  const publisherFingerprint = current.publisher_fingerprint ?? "";
   const targets = history.installations.filter((item) => item.id !== current.id && item.state !== "enabled" && item.state !== "revoked");
   const target = targets.find((item) => item.id === targetID);
   const invalidate = async () => {
@@ -51,9 +53,13 @@ function PluginVersionActions({ client, history, fetching, refresh, setBusy }: {
     version: "plugin-lifecycle.v1", expected_publisher_fingerprint: history.publisher!.fingerprint,
     expected_publisher_generation: history.publisher!.generation, confirm: revokeConfirmed,
   }), onMutate: () => setBusy(true), onSuccess: invalidate, onSettled: () => setBusy(false) });
-  const pending = rollback.isPending || revoke.isPending;
-  const submitted = !rollback.isIdle || !revoke.isIdle;
-  const readAgain = async () => { try { await refresh(); rollback.reset(); revoke.reset(); setConfirmed(false); setRevokeConfirmed(false); } catch { /* Retain the original write result while the read remains unresolved. */ } };
+  const trust = useMutation({ mutationFn: () => client.trustPluginPublisher(current.id, {
+    version: "plugin-lifecycle.v1", expected_publisher_fingerprint: publisherFingerprint,
+    expected_publisher_generation: history.publisher?.generation ?? 0, confirm: trustConfirmed,
+  }), onMutate: () => setBusy(true), onSuccess: invalidate, onSettled: () => setBusy(false) });
+  const pending = rollback.isPending || revoke.isPending || trust.isPending;
+  const submitted = !rollback.isIdle || !revoke.isIdle || !trust.isIdle;
+  const readAgain = async () => { try { await refresh(); rollback.reset(); revoke.reset(); trust.reset(); setConfirmed(false); setRevokeConfirmed(false); setTrustConfirmed(false); } catch { /* Retain the original write result while the read remains unresolved. */ } };
   const version = (item: PluginHistoryView["installations"][number]) => item.manifest.version ? `v${item.manifest.version}` :
     t(`保留快照 ${item.snapshot?.revision.slice(0, 12) ?? item.archive_sha256.slice(0, 12)}`, `Retained snapshot ${item.snapshot?.revision.slice(0, 12) ?? item.archive_sha256.slice(0, 12)}`);
   const state = (value: string) => ({ enabled: t("当前启用", "Enabled now"), rolled_back: t("已回退", "Rolled back"),
@@ -108,6 +114,17 @@ function PluginVersionActions({ client, history, fetching, refresh, setBusy }: {
         <label className="plugin-confirmation"><input checked={revokeConfirmed} disabled={!client.hasExtensionControl || pending || fetching || submitted} onChange={(event) => setRevokeConfirmed(event.target.checked)} type="checkbox" />
           {t("我已核对发布者和影响范围，撤销其信任与安装权限", "I reviewed the publisher and scope and revoke its trust and installation authority")}</label>
         <button className="settings-action danger" disabled={!client.hasExtensionControl || !revokeConfirmed || pending || fetching || submitted} onClick={() => revoke.mutate()} type="button">{t("撤销发布者信任", "Revoke publisher trust")}</button>
+      </>}
+      {current.signature_valid && publisherFingerprint !== "" &&
+        (!history.publisher || history.publisher.state === "revoked") && <>
+        <p>{!history.publisher ? t("该发布者尚无信任记录。建立信任只表明你认可这个签名发布者，逐包的能力批准与启用仍需单独审查。",
+          "This publisher has no trust record. Trusting it only records the signing publisher you accept; per-package capability approval and enablement remain separate reviews.") :
+          t("信任已被撤销，该发布者的包无法通过审查。重新信任需要绑定当前指纹与代次，不会恢复此前被撤销的安装。",
+            "Trust is revoked, so this publisher's packages cannot pass review. Re-trusting binds the current fingerprint and generation and does not restore previously revoked installations.")}</p>
+        <p><code>{current.publisher_fingerprint}</code></p>
+        <label className="plugin-confirmation"><input checked={trustConfirmed} disabled={!client.hasExtensionControl || pending || fetching || submitted} onChange={(event) => setTrustConfirmed(event.target.checked)} type="checkbox" />
+          {t("我已核对发布者公钥指纹，确认建立信任记录", "I reviewed the publisher public-key fingerprint and grant the trust record")}</label>
+        <button className="settings-action" disabled={!client.hasExtensionControl || !trustConfirmed || pending || fetching || submitted} onClick={() => trust.mutate()} type="button">{t("信任该发布者", "Trust this publisher")}</button>
       </>}
     </section>
     {pending && <p role="status">{t("正在更新插件状态…", "Updating Plugin state…")}</p>}

@@ -155,6 +155,9 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 		if a.skillInstallationEnabled {
 			resources = append(resources, "skill-installation-control")
 		}
+		if a.skillInstallationController != nil {
+			resources = append(resources, "skill-packages")
+		}
 		if a.evidenceAttachmentEnabled {
 			resources = append(resources, "evidence-attachment-control")
 		}
@@ -263,6 +266,10 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 	case "notes":
 		if len(segments) == 2 {
 			return a.note(request, segments[1])
+		}
+	case "skills":
+		if len(segments) == 2 && segments[1] == "packages" {
+			return a.skillPackageInventory(request, segments)
 		}
 	case "artifacts":
 		if len(segments) == 2 {

@@ -18,6 +18,8 @@ Profile Skill 中 `code/learn` 仅支持 Code，增强后的 `review@1.5.0` 支�
 - `cyberagent skill installed [--surface code|cyber] [--profile <profile>] [--include-removed]`
 - `cyberagent skill installed show <name>@<version>`
 - `cyberagent skill remove <name>@<version> --operation-key <stable-key> --confirm-remove`
+- `GET /api/v1/skills/packages` 与桌面/Web 的“Skill 包”设置页：列出历史登记项，并逐包给出真实的包对象回读结果；`include_removed` 才显示 tombstone
+- `POST /api/v1/skills/packages/remove` 与桌面同一入口：显式确认后为精确 `name@version` 追加不可变 tombstone，复用同一操作键与恢复语义
 - `cyberagent skill select-external <run-id> <name>@<version>... --operation-key <stable-key> --confirm-untrusted-skill-context [--specialist <name>@<version>]`
 - `cyberagent skill external-selection <run-id>`
 - `cyberagent skill select`

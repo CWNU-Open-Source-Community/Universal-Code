@@ -70,7 +70,7 @@ cyberagent plugin import-url --url https://plugins.example/plugin.zip `
   --sha256 <archive-sha256> --by <actor>
 cyberagent plugin import-git --repo https://github.com/example/plugin.git `
   --commit <full-commit-sha> --archive dist/plugin.zip --by <actor>
-cyberagent plugin trust-publisher <installation-id> --by <actor>
+cyberagent plugin trust-publisher <installation-id> --by <actor>  # 同一动作已在桌面/Web 的“发布者信任”区提供，需绑定当前指纹与代次并显式确认
 cyberagent plugin review <installation-id> --action approve `
   --fingerprint <sha256> --generation <n> --by <actor>
 cyberagent plugin review <installation-id> --action enable `

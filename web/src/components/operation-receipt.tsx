@@ -7,6 +7,7 @@ const outcomeLabels: Record<OperationReceiptView["outcome"], [string, string]> =
   failed: ["操作失败", "Operation failed"],
   completed: ["操作已完成", "Operation completed"],
   installed: ["安装已完成", "Installation completed"],
+  removed: ["移除已完成", "Removal completed"],
 };
 
 export function OperationReceipt({ receipt }: { receipt: OperationReceiptView }) {

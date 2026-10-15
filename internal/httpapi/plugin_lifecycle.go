@@ -14,6 +14,7 @@ const (
 	ExtensionPluginHistoryPath             = "/api/v1/extensions/plugins/{installation_id}/history"
 	ExtensionPluginRollbackPath            = "/api/v1/extensions/plugins/{installation_id}/rollback"
 	ExtensionPluginPublisherRevocationPath = "/api/v1/extensions/plugins/{installation_id}/publisher-revocation"
+	ExtensionPluginPublisherTrustPath      = "/api/v1/extensions/plugins/{installation_id}/publisher-trust"
 	ExtensionHookDiagnosticsPath           = "/api/v1/extensions/hooks"
 	PluginLifecycleProtocol                = "plugin-lifecycle.v1"
 	HookDiagnosticsProtocol                = "hook-diagnostics.v1"
@@ -23,6 +24,7 @@ type PluginLifecycleController interface {
 	PluginHistory(context.Context, string) (plugins.History, error)
 	RollbackPlugin(context.Context, string, string, plugins.RollbackRequest) (plugins.Installation, plugins.Installation, error)
 	RevokePluginPublisher(context.Context, string, string, int64, string) (plugins.PublisherTrust, error)
+	TrustPluginPublisher(context.Context, string, string, int64, string) (plugins.PublisherTrust, error)
 	HookDiagnostics(context.Context, string, string) (application.HookDiagnostics, error)
 }
 
@@ -65,6 +67,22 @@ type PluginPublisherRevocationRequestView struct {
 	Confirm                      bool   `json:"confirm"`
 }
 type PluginPublisherRevocationView struct {
+	ProtocolVersion string                   `json:"protocol_version"`
+	InstallationID  string                   `json:"installation_id"`
+	Publisher       PluginPublisherTrustView `json:"publisher"`
+}
+
+// PluginPublisherTrustRequestView binds a grant to the publisher record the
+// operator actually observed. The generation is required even for a first
+// trust, where the reviewed value is zero.
+type PluginPublisherTrustRequestView struct {
+	Version                      string `json:"version"`
+	ExpectedPublisherFingerprint string `json:"expected_publisher_fingerprint"`
+	ExpectedPublisherGeneration  int64  `json:"expected_publisher_generation"`
+	Confirm                      bool   `json:"confirm"`
+}
+
+type PluginPublisherTrustResponseView struct {
 	ProtocolVersion string                   `json:"protocol_version"`
 	InstallationID  string                   `json:"installation_id"`
 	Publisher       PluginPublisherTrustView `json:"publisher"`
@@ -112,7 +130,7 @@ func matchPluginLifecyclePath(path string) (string, string, bool) {
 	if !strings.HasPrefix(path, prefix) {
 		return "", "", false
 	}
-	for _, action := range []string{"history", "rollback", "publisher-revocation"} {
+	for _, action := range []string{"history", "rollback", "publisher-revocation", "publisher-trust"} {
 		if strings.HasSuffix(path, "/"+action) {
 			id := strings.TrimSuffix(strings.TrimPrefix(path, prefix), "/"+action)
 			return id, action, id != "" && !strings.Contains(id, "/")
@@ -218,6 +236,24 @@ func (a *API) servePluginLifecycle(writer http.ResponseWriter, request *http.Req
 	body, err := readExtensionOnboardingBody(request, maxExtensionControlBodyBytes)
 	if err != nil {
 		a.writeError(writer, requestID, err, runOperationErrorStatus(err))
+		return
+	}
+	if action == "publisher-trust" {
+		var view PluginPublisherTrustRequestView
+		if err := decodeStrictRunOperation(body, &view, label); err != nil {
+			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		if view.Version != PluginLifecycleProtocol || !view.Confirm {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "publisher trust requires the lifecycle version and confirmation"), 0)
+			return
+		}
+		value, err := controller.TrustPluginPublisher(request.Context(), id, view.ExpectedPublisherFingerprint, view.ExpectedPublisherGeneration, "http_extension_operator")
+		if err != nil {
+			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		a.writeSuccessStatus(writer, requestID, PluginPublisherTrustResponseView{ProtocolVersion: PluginLifecycleProtocol, InstallationID: id, Publisher: projectPluginPublisher(value)}, nil, http.StatusAccepted)
 		return
 	}
 	if action == "rollback" {

@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { APIClient } from "../../api/client";
 import type { ThreadDetailView, WorkspaceView } from "../../api/types";
 import { DesktopSkillPreviewDialog } from "../../components/desktop-skill-preview";
+import { SkillPackageRegistry, type SkillPackageRegistrySource } from "../../components/skill-package-registry";
+import { listDesktopSkillPackages, removeDesktopSkillPackage } from "../../lib/desktop-bridge";
 import { SafeWebReadinessPanel } from "../../components/safe-web-readiness";
 import { AboutSettings, ExtensionSettings, WebSkillInstall, persistDensity, readDensity,
   type Density } from "../../components/shared-settings-panels";
@@ -44,6 +46,16 @@ export function V2ExtensionSettings({ client, threadID, workspaces = [], onOpenT
 
 export function V2SkillSettings({ client, desktop }: { client: APIClient; desktop: boolean }) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const registry: SkillPackageRegistrySource = desktop ? {
+    load: (includeRemoved, signal) => listDesktopSkillPackages({ includeRemoved })
+      .then((value) => { if (signal?.aborted) throw new Error("Desktop Skill registry read was cancelled"); return value; }),
+    remove: (skill, operationKey) => removeDesktopSkillPackage(skill, operationKey),
+  } : {
+    load: (includeRemoved, signal) => client.listSkillPackages({ includeRemoved }, signal),
+    remove: (skill, operationKey) => client.removeSkillPackage({
+      protocol_version: "skill_package_removal_request.v1", skill, confirm_remove: true,
+    }, operationKey),
+  };
   return <><h1>Skill 包</h1><p className="v2-settings-lead">
     将已有技能包加入本地技能库，再在任务中使用。加载与执行遵循该任务的权限和审批。
   </p><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-skill-settings-card">
@@ -57,6 +69,7 @@ export function V2SkillSettings({ client, desktop }: { client: APIClient; deskto
       <p>网页端可上传 ZIP 包并登记到 Code。结构校验由服务端执行；本机文件选择预览仅在桌面端提供。</p>
       <WebSkillInstall client={client} />
     </> : <p role="status">连接具备 Skill 安装权限的服务后，可选择 ZIP 包加入技能库。</p>}
+    <SkillPackageRegistry enabled={client.hasSkillInstallation} source={registry} />
   </div></section></>;
 }
 

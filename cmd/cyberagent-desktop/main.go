@@ -834,6 +834,7 @@ func runDesktop(config desktopOptions) error {
 		GitHubReviewControlEnabled:         config.githubReview,
 		AppVersion:                         app.Version, UIDigest: bundle.Digest(), Selector: selector,
 		PreviewBridge: preview, SkillInstaller: controlPlane.SkillInstaller(),
+		SkillRegistry:     controlPlane.SkillRegistry(),
 		WorkspaceResolver: controlPlane, WorkspaceLauncher: newNativeWorkspaceLauncher(),
 		WorkspaceDirectoryPicker:          nativeWorkspaceDirectoryPicker{},
 		WorkspaceRegistrar:                controlPlane,

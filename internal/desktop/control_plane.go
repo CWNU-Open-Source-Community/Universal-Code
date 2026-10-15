@@ -1069,6 +1069,16 @@ func (c *ControlPlane) SkillInstaller() SkillPackageInstaller {
 	return c.skillInstaller
 }
 
+// SkillRegistry returns the same inert Registry service the installer uses.
+// Listing and removal stay behind the existing Skill installation gate, so no
+// second authority path is introduced for the historical packages.
+func (c *ControlPlane) SkillRegistry() SkillPackageRegistry {
+	if c == nil {
+		return nil
+	}
+	return c.skillInstaller
+}
+
 func (c *ControlPlane) UserTerminalController() UserTerminalController {
 	if c == nil {
 		return nil

@@ -99,6 +99,8 @@ import type {
   PluginRollbackRequestView,
   PluginRollbackView,
   PluginPublisherRevocationRequestView,
+  PluginPublisherTrustRequestView,
+  PluginPublisherTrustResponseView,
   PluginPublisherRevocationView,
   PluginPublisherTrustView,
   HookDiagnosticsView,
@@ -240,6 +242,9 @@ import type {
   UIEvidenceStartView,
   SkillPackageInstallRequestView,
   SkillPackageInstallView,
+  SkillPackageInventoryView,
+  SkillPackageRemoveRequestView,
+  SkillPackageRemovalView,
   PluginSkillInstallView,
   SkillPackageInstallResult,
   RunEventPollView,
@@ -3919,6 +3924,73 @@ function parseSkillPackageInstall(value: unknown,
   return { ...value, receipt } as unknown as SkillPackageInstallView;
 }
 
+const skillPackageItemKeys = ["archive_bytes", "archive_sha256", "completed_at",
+  "content_body_exposed", "content_bytes", "content_sha256", "content_token_upper_bound",
+  "context_injection_authorized", "created_at",
+  "entry_count", "explicit_only", "import_command_execution", "import_network_access",
+  "import_provider_calls", "installed_by", "model_invocable", "object_verified",
+  "operator_confirmed", "package_fingerprint", "phases", "profiles", "risk_codes", "roles",
+  "run_selection_authorized", "skill", "status", "surface", "surfaces",
+  "tool_capability_grant", "tool_dependencies", "trust_class", "uncompressed_bytes",
+  "user_invocable"];
+const skillPackageRemovalKeys = ["context_injection_authorized", "future_selection_enabled",
+  "historical_recovery_preserved", "package_object_retained", "removed_at", "removed_by",
+  "run_selection_authorized", "tool_capability_grant"];
+
+export function parseSkillPackageInventory(value: unknown): SkillPackageInventoryView {
+  if (!hasExactKeys(value, ["capability_grant", "include_removed", "items", "profile",
+    "protocol_version", "returned_count", "surface", "unverified_count"]) ||
+    value.protocol_version !== "skill_package_inventory.v1" ||
+    value.capability_grant !== false || typeof value.include_removed !== "boolean" ||
+    typeof value.surface !== "string" || typeof value.profile !== "string" ||
+    !Array.isArray(value.items) || value.items.length !== value.returned_count ||
+    !Number.isInteger(value.unverified_count) ||
+    (value.unverified_count as number) < 0 ||
+    (value.unverified_count as number) > value.items.length) {
+    throw new APIRequestError("Skill package inventory response is invalid",
+      "INVALID_RESPONSE", 502);
+  }
+  for (const item of value.items) {
+    if ((!hasExactKeys(item, skillPackageItemKeys) &&
+      !hasExactKeys(item, [...skillPackageItemKeys, "removal"])) ||
+      typeof item.skill !== "string" ||
+      (item.status !== "installed" && item.status !== "removed") ||
+      typeof item.object_verified !== "boolean" ||
+      item.content_body_exposed !== false ||
+      (item.status === "removed" &&
+        (!isRecord(item.removal) || !hasExactKeys(item.removal, skillPackageRemovalKeys) ||
+          item.removal.future_selection_enabled !== false ||
+          item.removal.package_object_retained !== true)) ||
+      (item.status === "installed" && item.removal !== undefined)) {
+      throw new APIRequestError("Installed Skill package projection is invalid",
+        "INVALID_RESPONSE", 502);
+    }
+  }
+  return value as unknown as SkillPackageInventoryView;
+}
+
+export function parseSkillPackageRemoval(value: unknown,
+  request: { skill: string },
+): SkillPackageRemovalView {
+  if (!hasExactKeys(value, ["capability_grant", "context_injection_authorized",
+    "future_selection_enabled", "historical_recovery_preserved", "package_object_retained",
+    "protocol_version", "receipt", "removed_at", "removed_by", "replayed",
+    "run_selection_authorized", "skill", "status", "surface", "tool_capability_grant"]) ||
+    value.protocol_version !== "skill_package_removal_control.v1" ||
+    value.capability_grant !== false || value.status !== "removed" ||
+    typeof value.replayed !== "boolean" ||
+    value.skill !== request.skill || value.future_selection_enabled !== false ||
+    value.run_selection_authorized !== false ||
+    value.context_injection_authorized !== false || value.tool_capability_grant !== false ||
+    value.package_object_retained !== true || value.historical_recovery_preserved !== true) {
+    throw new APIRequestError("Skill package removal widened inert Registry authority",
+      "INVALID_RESPONSE", 502);
+  }
+  const receipt = parseOperationReceipt(value.receipt, "skill_package_remove", "removed",
+    value.replayed);
+  return { ...value, receipt } as unknown as SkillPackageRemovalView;
+}
+
 function parseOperationReceipt(value: unknown, kind: OperationReceiptView["kind"],
   outcome: OperationReceiptView["outcome"], replayed: boolean): OperationReceiptView {
   if (!hasExactKeys(value, ["cleanup_state", "durable", "kind", "outcome", "protocol_version",
@@ -3933,6 +4005,7 @@ function parseOperationReceipt(value: unknown, kind: OperationReceiptView["kind"
   if ((apply && value.retry_strategy !== "same_operation_key") ||
     (kind === "run_wake_consume" && value.retry_strategy !== "same_wake_generation") ||
     (kind === "skill_package_install" && value.retry_strategy !== "same_operation_key") ||
+    (kind === "skill_package_remove" && value.retry_strategy !== "same_operation_key") ||
     (apply && !["complete", "pending_review"].includes(String(value.cleanup_state))) ||
     (!apply && value.cleanup_state !== "not_applicable") ||
     (value.cleanup_state === "pending_review" &&
@@ -7289,6 +7362,30 @@ export class APIClient {
     return { ...value, publisher } as PluginPublisherRevocationView;
   }
 
+  async trustPluginPublisher(installationID: string,
+    body: PluginPublisherTrustRequestView, signal?: AbortSignal,
+  ): Promise<PluginPublisherTrustResponseView> {
+    if (!this.hasExtensionControl || !boundedIdentity(installationID) ||
+      body.version !== "plugin-lifecycle.v1" || body.confirm !== true ||
+      !isSHA256(body.expected_publisher_fingerprint) ||
+      !safeBoundedCount(body.expected_publisher_generation, Number.MAX_SAFE_INTEGER)) {
+      throw new Error("An exact publisher trust binding and confirmation are required");
+    }
+    const value = await this.sendControlRequest<unknown>(
+      `/extensions/plugins/${encodeURIComponent(installationID)}/publisher-trust`, body, signal);
+    if (!hasExactKeys(value, ["protocol_version", "installation_id", "publisher"]) ||
+      value.protocol_version !== "plugin-lifecycle.v1" || value.installation_id !== installationID) {
+      throw new APIRequestError("Publisher trust projection is invalid", "INVALID_RESPONSE", 502);
+    }
+    const publisher = parsePluginPublisher(value.publisher);
+    if (publisher.fingerprint !== body.expected_publisher_fingerprint ||
+      publisher.generation !== body.expected_publisher_generation + 1 ||
+      publisher.state !== "trusted") {
+      throw new APIRequestError("Publisher trust binding is invalid", "INVALID_RESPONSE", 502);
+    }
+    return { ...value, publisher } as PluginPublisherTrustResponseView;
+  }
+
   async hookDiagnostics(runID = "", workspaceID = "", signal?: AbortSignal): Promise<HookDiagnosticsView> {
     if ((runID && !boundedIdentity(runID)) || (workspaceID && !boundedIdentity(workspaceID))) throw new Error("An exact Hook diagnostic scope is required");
     return parseHookDiagnostics(await this.get<unknown>("/extensions/hooks", { run_id: runID || undefined, workspace_id: workspaceID || undefined }, signal), runID, workspaceID);
@@ -8331,6 +8428,38 @@ export class APIClient {
     }
     return parseSkillPackageInstall(await this.sendControl<unknown>(
       "/skills/packages/install", body, idempotencyKey, signal,
+    ), body);
+  }
+
+  async listSkillPackages(filters: { surface?: string; profile?: string;
+    includeRemoved?: boolean } = {}, signal?: AbortSignal): Promise<SkillPackageInventoryView> {
+    const query: Record<string, QueryValue> = {};
+    if (filters.surface !== undefined) {
+      const surface = boundedIdentity(filters.surface);
+      if (!surface) throw new Error("A bounded Skill inventory surface is required");
+      query.surface = surface;
+    }
+    if (filters.profile !== undefined) {
+      const profile = boundedIdentity(filters.profile);
+      if (!profile) throw new Error("A bounded Skill inventory Profile is required");
+      query.profile = profile;
+    }
+    if (filters.includeRemoved !== undefined) {
+      query.include_removed = filters.includeRemoved;
+    }
+    return parseSkillPackageInventory(await this.get<unknown>(
+      "/skills/packages", query, signal,
+    ));
+  }
+
+  async removeSkillPackage(body: SkillPackageRemoveRequestView,
+    idempotencyKey: string, signal?: AbortSignal): Promise<SkillPackageRemovalView> {
+    if (!this.hasSkillInstallation || body.confirm_remove !== true ||
+      body.protocol_version !== "skill_package_removal_request.v1") {
+      throw new Error("Explicit Skill package removal confirmation is required");
+    }
+    return parseSkillPackageRemoval(await this.sendControl<unknown>(
+      "/skills/packages/remove", body, idempotencyKey, signal,
     ), body);
   }
 

@@ -248,6 +248,42 @@ func (s *SkillPackageRegistryService) importPlugin(ctx context.Context, request 
 	return ImportSkillPackageResult{Installation: &installed, Replayed: replayed}, nil
 }
 
+// SkillPackageInventory is an operator-facing projection. Unlike List, one
+// unreadable retained object is reported per installation instead of hiding the
+// whole Registry, so the operator can still inspect and remove that package.
+type SkillPackageInventory struct {
+	Items      []skills.InstalledPackage
+	Unverified []string
+}
+
+func (s *SkillPackageRegistryService) Inventory(ctx context.Context,
+	request ListInstalledSkillPackagesRequest,
+) (SkillPackageInventory, error) {
+	result := SkillPackageInventory{Items: []skills.InstalledPackage{}, Unverified: []string{}}
+	if s == nil || s.store == nil || s.objects == nil {
+		return result, apperror.New(apperror.CodeFailedPrecondition,
+			"Skill package Registry store and object store are required")
+	}
+	values, err := s.store.ListInstalledPackages(ctx, request.Surface, request.Profile,
+		request.IncludeRemoved)
+	if err != nil {
+		return result, apperror.Normalize(err)
+	}
+	for index := range values {
+		value := skills.CloneInstalledPackage(values[index])
+		descriptor := skills.DescriptorForInstallation(value.Installation)
+		receipt, verifyErr := s.objects.Verify(ctx, descriptor)
+		if verifyErr != nil ||
+			skills.ValidatePackageObjectReceipt(descriptor, receipt) != nil ||
+			receipt.ObjectKey != value.Result.ObjectKey {
+			result.Unverified = append(result.Unverified, skills.FormatInstalledPackageRef(
+				value.Installation.Name, value.Installation.Version))
+		}
+		result.Items = append(result.Items, value)
+	}
+	return result, nil
+}
+
 func (s *SkillPackageRegistryService) List(ctx context.Context,
 	request ListInstalledSkillPackagesRequest,
 ) ([]skills.InstalledPackage, error) {

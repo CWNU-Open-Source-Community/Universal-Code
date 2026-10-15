@@ -285,18 +285,53 @@ func (s *Service) TrustPublisher(ctx context.Context, installationID, actor stri
 	if err != nil {
 		return PublisherTrust{}, err
 	}
-	generation := int64(1)
 	expected := int64(0)
 	if found {
-		generation = existing.Generation + 1
 		expected = existing.Generation
+	}
+	return s.trustPublisher(ctx, installation, expected, actor)
+}
+
+// TrustInstallationPublisher binds a grant to the exact signed installation and
+// publisher-trust generation the operator reviewed, mirroring
+// RevokeInstallationPublisher so a stale view cannot trust another record.
+func (s *Service) TrustInstallationPublisher(ctx context.Context, installationID,
+	expectedFingerprint string, expectedGeneration int64, actor string,
+) (PublisherTrust, error) {
+	installation, err := s.store.GetPluginInstallation(ctx, strings.TrimSpace(installationID))
+	if err != nil {
+		return PublisherTrust{}, err
+	}
+	if !installation.SignatureValid || installation.PublisherFingerprint != expectedFingerprint {
+		return PublisherTrust{}, apperror.New(apperror.CodeConflict,
+			"publisher trust differs from the selected signed installation")
+	}
+	return s.trustPublisher(ctx, installation, expectedGeneration, actor)
+}
+
+func (s *Service) trustPublisher(ctx context.Context, installation Installation,
+	expectedGeneration int64, actor string,
+) (PublisherTrust, error) {
+	if !validText(actor, 256, false) {
+		return PublisherTrust{}, apperror.New(apperror.CodeInvalidArgument,
+			"publisher trust requires a review actor")
+	}
+	existing, found, err := s.store.GetPluginPublisherTrust(ctx,
+		installation.PublisherFingerprint)
+	if err != nil {
+		return PublisherTrust{}, err
+	}
+	if (found && existing.Generation != expectedGeneration) ||
+		(!found && expectedGeneration != 0) {
+		return PublisherTrust{}, apperror.New(apperror.CodeConflict,
+			"plugin publisher trust is missing or stale")
 	}
 	record := PublisherTrust{ProtocolVersion: PublisherTrustProtocol,
 		Fingerprint: installation.PublisherFingerprint,
 		Publisher:   installation.Manifest.Publisher, PublicKey: installation.PublisherPublicKey,
-		State: PublisherTrusted, Generation: generation, ReviewedBy: actor,
+		State: PublisherTrusted, Generation: expectedGeneration + 1, ReviewedBy: actor,
 		ReviewedAt: s.now().UTC()}
-	return s.store.SetPluginPublisherTrust(ctx, record, expected)
+	return s.store.SetPluginPublisherTrust(ctx, record, expectedGeneration)
 }
 
 func (s *Service) RevokePublisher(ctx context.Context, fingerprint string,

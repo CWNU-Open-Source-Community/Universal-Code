@@ -1,5 +1,26 @@
 # Project Status
 
+> 2026-10-15 插件发布者信任控制面：新增 `POST /api/v1/extensions/plugins/{installation_id}/publisher-trust`
+> 与桌面/Web 的“信任该发布者”入口，解除“撤销后 GUI 无法重新信任”的死锁。Go 侧新增有界核心
+> `TrustInstallationPublisher`，必须匹配签名有效安装的期望公钥指纹与信任代次（首次为 0），
+> 沿用 `SetPluginPublisherTrust` 的 CAS；CLI `plugin trust-publisher` 改为委派同一核心，行为不变。
+> 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0183。
+> 验证：`internal/store` 新增有界授予与被撤销发布者解除阻塞的实测用例，`internal/httpapi`
+> OpenAPI 守卫与新增用例通过，`internal/plugins`、`internal/application` 通过，前端
+> `typecheck` 与 plugin lifecycle 相关 23 项测试通过。Skill Catalog 发布者信任仍只有 CLI；
+> 本项未做真实浏览器截图验收。
+
+> 2026-10-15 Skill Registry 操作者入口：历史登记的列出与移除从 CLI-only 提升为
+> HTTP 读端点、控制写端点与桌面桥方法，复用既有 `SkillPackageRegistryService` 与
+> `skill_package_remove_operation.v1` 意图/tombstone，无 SQLite 迁移。清单逐项给出
+> 包对象的真实回读结果，单个不可读对象不再让整张清单失败。新增
+> `skill_package_remove` 收据类型与 ADR 0182。GUI 安装的新包仍走 Plugin 生命周期，
+> 本项只覆盖历史 legacy 登记；发布者信任与 URL/Git 导入尚未接入，见 #334。
+> 验证：`internal/httpapi`、`internal/desktop`（含 desktop tag）、`internal/application`、
+> `internal/skills`、`internal/operationreceipt` 定向与整包测试通过，
+> `protocolregistry -check`、`surfacecheck` 通过，前端 214 文件 2094 项测试与
+> `typecheck` 通过。尚未做真实浏览器截图验收，也未提交 PR。
+
 > 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
 
 > 2026-10-14 manual MCP connections: `mcp-client.v3` adds stdio cwd, explicit non-sensitive environment, OS-store environment credential references, fixed non-sensitive HTTP headers, and loopback HTTP. Web/Desktop settings and CLI staging use the existing Go launch and review contracts; historical v1/native v2 descriptors retain their fingerprints. Focused race checks and real subprocess/browser registration, error and narrow-screen checks passed. See [ADR 0178](adr/0178-mcp-manual-connection-config.md).
