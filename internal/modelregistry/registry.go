@@ -158,6 +158,8 @@ type Registry struct {
 	ollama                  *llm.OllamaProvider
 	strictCredentialReads   bool
 	customDefinitionsLoaded bool
+	chatGPT                 *chatGPTSource
+	chatGPTLoaded           bool
 	qualificationStatuses   map[string]persistedQualificationStatus
 	credentialRevisions     map[string]uint64
 	geminiSequentialProbes  map[llm.ModelRef]bool
@@ -335,6 +337,7 @@ func (r *Registry) reloadLocked(ctx context.Context, reader RouteSettingReader) 
 	if err != nil {
 		return ReloadResult{}, err
 	}
+	candidate.chatGPT = r.chatGPT
 	if err := candidate.LoadRouteSettings(ctx, reader); err != nil {
 		return ReloadResult{}, err
 	}
@@ -375,6 +378,7 @@ func (r *Registry) reloadLocked(ctx context.Context, reader RouteSettingReader) 
 	r.kimiHistoryProbes = candidate.kimiHistoryProbes
 	r.ollama = candidate.ollama
 	r.customDefinitionsLoaded = candidate.customDefinitionsLoaded
+	r.chatGPTLoaded = candidate.chatGPTLoaded
 	r.strictCredentialReads = candidate.strictCredentialReads
 	r.generation++
 	generation := r.generation
@@ -405,6 +409,12 @@ func (r *Registry) LoadRouteSettings(ctx context.Context, reader RouteSettingRea
 	}
 	if reader == nil {
 		return errors.New("model route setting reader is required")
+	}
+	if !r.chatGPTLoaded {
+		if err := r.loadChatGPTProviders(ctx); err != nil {
+			return err
+		}
+		r.chatGPTLoaded = true
 	}
 	if !r.customDefinitionsLoaded {
 		if err := r.loadCustomProviderDefinitions(ctx, reader); err != nil {
@@ -602,7 +612,9 @@ func (r *Registry) Snapshot() Snapshot {
 	for index, provider := range r.providers {
 		providers[index] = provider
 		if !provider.Custom {
-			providers[index].DisplayName = provider.Name
+			if providers[index].DisplayName == "" {
+				providers[index].DisplayName = provider.Name
+			}
 			providers[index].Enabled = true
 			providers[index].SearchMode = ProviderSearchModeDisabled
 			providers[index].NativeWebSearchCapability = NativeWebSearchUnsupported
@@ -610,7 +622,9 @@ func (r *Registry) Snapshot() Snapshot {
 			case ProviderKindAnthropicCompatible:
 				providers[index].Transport = llm.HarnessTransportAnthropicMessages
 			case ProviderKindOpenAICompatible:
-				providers[index].Transport = llm.HarnessTransportOpenAIChatCompletions
+				if provider.Transport == "" {
+					providers[index].Transport = llm.HarnessTransportOpenAIChatCompletions
+				}
 			case ProviderKindOllama:
 				providers[index].Transport = llm.HarnessTransportOllamaChat
 			case ProviderKindLocal:

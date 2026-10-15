@@ -37,6 +37,7 @@ function capabilities(state: ClientCapabilities): ClientCapabilities {
 
     modelControlEnabled: state.modelControlEnabled,
     providerCredentialEnabled: state.providerCredentialEnabled,
+    chatGPTAuthEnabled: state.chatGPTAuthEnabled,
     fileEditReviewEnabled: state.fileEditReviewEnabled,
     fileEditProposalEnabled: state.fileEditProposalEnabled,
     fileEditApplyEnabled: state.fileEditApplyEnabled,

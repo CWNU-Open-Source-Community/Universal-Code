@@ -658,3 +658,20 @@
   .v2-connection-task { border-left-color: Highlight; }
   .v2-connection-task > button { border-color: ButtonText; }
 }
+
+.v2-chatgpt-card > header { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; padding: 20px; }
+.v2-chatgpt-card > header p { color: var(--v2-muted); margin: 5px 0 0; }
+.v2-chatgpt-actions { backdrop-filter: none; background: transparent; border: 0; flex-wrap: wrap; margin: 0; padding: 0; position: static; z-index: auto; }
+.v2-chatgpt-login, .v2-chatgpt-accounts { border-top: 1px solid var(--v2-border); padding: 18px 20px; }
+.v2-chatgpt-login > p { align-items: center; display: flex; gap: 8px; line-height: 1.5; margin: 0 0 12px; }
+.v2-chatgpt-accounts { display: grid; gap: 16px; }
+.v2-chatgpt-accounts h2 { font-size: 14px; margin: 0; }
+.v2-chatgpt-accounts label { display: grid; gap: 7px; min-width: 0; }
+.v2-chatgpt-accounts select { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; color: var(--v2-ink); font: inherit; min-height: 36px; min-width: 0; padding: 7px 10px; width: 100%; }
+.v2-chatgpt-help { color: var(--v2-muted); line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.v2-chatgpt-card > .v2-chatgpt-help { padding: 0 20px 20px; }
+.v2-chatgpt-local-url { background: var(--v2-control); border-radius: 7px; display: block; font: 11px/1.6 var(--prayu-font-mono); margin-top: 12px; overflow-wrap: anywhere; padding: 10px; user-select: all; }
+.v2-chatgpt-error { color: var(--v2-danger); line-height: 1.6; overflow-wrap: anywhere; }
+.v2-chatgpt-spinner { animation: v2-chatgpt-spin 1s linear infinite; }
+@keyframes v2-chatgpt-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .v2-chatgpt-spinner { animation: none; } }

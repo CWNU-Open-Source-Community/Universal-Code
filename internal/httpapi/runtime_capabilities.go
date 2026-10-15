@@ -85,6 +85,7 @@ type RuntimeCapabilitiesView struct {
 	ApprovalControlEnabled             bool                         `json:"approval_control_enabled"`
 	ModelControlEnabled                bool                         `json:"model_control_enabled"`
 	ProviderCredentialEnabled          bool                         `json:"provider_credential_enabled"`
+	ChatGPTAuthEnabled                 bool                         `json:"chatgpt_auth_enabled"`
 	FileEditReviewEnabled              bool                         `json:"file_edit_review_enabled"`
 	FileEditProposalEnabled            bool                         `json:"file_edit_proposal_enabled"`
 	FileEditApplyEnabled               bool                         `json:"file_edit_apply_enabled"`
@@ -224,6 +225,7 @@ func (a *API) runtimeCapabilities(request *http.Request) (any, *Page, error) {
 		ApprovalControlEnabled:             a.approvalControlEnabled,
 		ModelControlEnabled:                a.modelControlEnabled,
 		ProviderCredentialEnabled:          a.providerCredentialEnabled,
+		ChatGPTAuthEnabled:                 a.chatGPTAuthEnabled,
 		FileEditReviewEnabled:              a.fileEditReviewEnabled,
 		FileEditProposalEnabled:            a.fileEditProposalEnabled,
 		FileEditApplyEnabled:               a.fileEditApplyEnabled,

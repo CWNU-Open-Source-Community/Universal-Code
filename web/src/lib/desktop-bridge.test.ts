@@ -133,6 +133,23 @@ describe("desktop native bridge", () => {
     expect(module.desktopRuntimeActive()).toBe(true);
   });
 
+  it("accepts ChatGPT account management independently of run execution control", async () => {
+    const accountBootstrap = { ...bootstrap, control_token: restartBootstrap.control_token,
+      read_only_default: false, model_control_enabled: true, provider_credential_enabled: true,
+      chatgpt_auth_enabled: true };
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue(accountBootstrap) });
+    const module = await import("./desktop-bridge");
+    await expect(module.loadDesktopBootstrap()).resolves.toEqual(accountBootstrap);
+  });
+
+  it("rejects ChatGPT authority without provider credential management", async () => {
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue({ ...bootstrap,
+      control_token: restartBootstrap.control_token, read_only_default: false,
+      model_control_enabled: true, chatgpt_auth_enabled: true }) });
+    const module = await import("./desktop-bridge");
+    await expect(module.loadDesktopBootstrap()).rejects.toThrow();
+  });
+
   it("restarts only through the native Debug profile contract", async () => {
     const result = {
       protocol_version: "desktop_risk_restart.v1",

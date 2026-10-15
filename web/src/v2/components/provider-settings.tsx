@@ -64,7 +64,7 @@ type V2ProviderSettingsProps = {
   onExit?: () => void;
   onSaved?: (definition: ProviderDefinitionView) => void;
   prepareForDraft?: boolean;
-  onReady?: (definition: ProviderDefinitionView) => void;
+  onReady?: (definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
 };
 
 type SecretMigration = {

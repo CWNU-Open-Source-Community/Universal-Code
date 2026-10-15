@@ -430,7 +430,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       workspaceID);
     setSettingsSection("models");
   };
-  const completeModelSetup = (token: string, definition: ProviderDefinitionView) => {
+  const completeModelSetup = (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => {
     const setup = modelSetupContextRef.current;
     const currentRoute = routeRef.current;
     if (!token || token !== setup?.token || !setup.entered || workspaceID !== setup.workspaceID ||

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Settings2 } from "lucide-react";
+import { ArrowLeft, Settings2, UserRound } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import { V2ProviderSettings } from "./provider-settings";
+import { V2ChatGPTAccountSettings, useChatGPTAuthStatus, type V2ReadyModelSource } from "./chatgpt-account-settings";
 import "./settings.css";
 
 export type V2ModelProviderPreset = {
@@ -20,6 +21,8 @@ export type V2ModelProviderPreset = {
 export type V2ModelSettingsProps = {
   client: APIClient;
   presets: readonly V2ModelProviderPreset[];
+  prepareForDraft?: boolean;
+  onReady?: (source: V2ReadyModelSource) => void;
   onSelectPreset: (preset: V2ModelProviderPreset, trigger: HTMLButtonElement) => void;
 };
 
@@ -33,8 +36,10 @@ function setupStateLabel(preset: V2ModelProviderPreset): string {
   return configured ? "已保存 API Key" : "尚未保存 API Key";
 }
 
-export function V2ModelSettings({ client, presets, onSelectPreset }: V2ModelSettingsProps) {
-  const [view, setView] = useState<"catalog" | "custom">("catalog");
+export function V2ModelSettings({ client, presets, onSelectPreset, prepareForDraft, onReady }: V2ModelSettingsProps) {
+  const chatGPT = useChatGPTAuthStatus(client);
+  const [view, setView] = useState<"catalog" | "custom" | "chatgpt">("catalog");
+  const chatGPTTriggerRef = useRef<HTMLButtonElement>(null);
   const customTriggerRef = useRef<HTMLButtonElement>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -46,8 +51,13 @@ export function V2ModelSettings({ client, presets, onSelectPreset }: V2ModelSett
 
   const returnToCatalog = () => {
     setView("catalog");
-    requestAnimationFrame(() => customTriggerRef.current?.focus());
+    requestAnimationFrame(() => (view === "chatgpt" ? chatGPTTriggerRef : customTriggerRef).current?.focus());
   };
+
+  if (view === "chatgpt") {
+    return <V2ChatGPTAccountSettings client={client} query={chatGPT} onExit={returnToCatalog}
+      prepareForDraft={prepareForDraft} onReady={onReady} />;
+  }
 
   if (view === "custom") {
     return <>
@@ -58,6 +68,12 @@ export function V2ModelSettings({ client, presets, onSelectPreset }: V2ModelSett
       <V2ProviderSettings client={client} />
     </>;
   }
+
+  const chatGPTState = !client.hasChatGPTAuth ? "账户登录未启用"
+    : chatGPT.isError ? "账户状态读取失败"
+      : chatGPT.data?.login?.state === "waiting" ? "等待登录"
+        : chatGPT.data?.accounts.some((account) => account.state === "connected") ? "账户已连接"
+          : chatGPT.data?.available === false ? "凭据库不可用" : "使用 ChatGPT 账户登录";
 
   return <section aria-labelledby="v2-model-settings-title">
     <header className="v2-model-catalog-heading">
@@ -71,6 +87,14 @@ export function V2ModelSettings({ client, presets, onSelectPreset }: V2ModelSett
           <span aria-hidden="true" className="v2-model-card-icon"><Settings2 /></span>
           <span className="v2-model-card-copy"><strong>自定义配置</strong>
             <span>自定义模型</span></span>
+        </button>
+      </li>
+      <li>
+        <button aria-label={`ChatGPT，订阅账户，${chatGPTState}`} className="v2-model-card"
+          onClick={() => setView("chatgpt")} ref={chatGPTTriggerRef} type="button">
+          <span aria-hidden="true" className="v2-model-card-icon"><UserRound /></span>
+          <span className="v2-model-card-copy"><strong>ChatGPT</strong>
+            <span>订阅账户</span><span>{chatGPTState}</span></span>
         </button>
       </li>
       {presets.map((preset) => {
