@@ -1344,7 +1344,12 @@
   overflow-y: auto;
   z-index: 110;
 }
-.v2-network-popover > header { display: flex; justify-content: space-between; }
+.v2-network-popover > header { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.v2-network-popover .v2-run-network-authority { padding: 8px 0; }
+.v2-network-popover .v2-run-network-authority > :is(.v2-web-access-mode-row, .v2-network-note, .v2-network-error, .v2-search-readiness) { margin-left: 0; }
+.v2-network-popover .v2-network-note,
+.v2-network-popover .v2-search-readiness small,
+.v2-network-popover .v2-search-readiness em { font-size: 12px; line-height: 1.6; }
 .v2-network-popover > header span { color: var(--v2-muted); font-size: 11px; }
 .v2-network-popover > p { color: var(--v2-muted); font-size: 11px; line-height: 1.45; margin: 0; }
 .v2-network-popover textarea {
@@ -1610,6 +1615,8 @@
   padding: 8px 9px;
 }
 .v2-search-readiness > span { display: grid; gap: 2px; }
+.v2-search-readiness > span > strong { align-items: center; display: flex; gap: 6px; }
+.v2-search-readiness .compact-command { justify-self: start; max-width: 100%; white-space: normal; text-align: left; }
 .v2-search-readiness strong { font-size: 12px; }
 .v2-search-readiness small,
 .v2-search-readiness em { color: var(--v2-muted); font-size: 10.5px; font-style: normal; line-height: 1.4; }

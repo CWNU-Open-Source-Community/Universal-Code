@@ -136,7 +136,7 @@ export function V2SearchDiagnosticsControl({ client, readiness, onOpenModelSetti
       <small>搜索配置：{configuredBackend(readiness)}</small>
       <small>检查会使用当前模型对应的通用搜索后端执行一次有界搜索，可能产生供应商搜索费用；不检测专业来源连接器。</small>
     </span>
-    <button disabled={!canCheck || busy} onClick={() => void check()} type="button">
+    <button className="compact-command" disabled={!canCheck || busy} onClick={() => void check()} type="button">
       {busy ? <LoaderCircle aria-hidden="true" className="spin" size={13} />
         : <RefreshCw aria-hidden="true" size={13} />}
       {busy ? "正在检查…" : result || error ? "重新检查搜索连接" : "检查搜索连接"}
@@ -156,7 +156,7 @@ export function V2SearchDiagnosticsControl({ client, readiness, onOpenModelSetti
         {result.rate_limit_reset && <div><dt>限流重置</dt><dd>{result.rate_limit_reset}</dd></div>}
       </dl>
       {result.required_target && <p>需要允许的主机：<code>{result.required_target}</code></p>}
-      {needsModelSettings(result.code) && onOpenModelSettings && <button onClick={onOpenModelSettings}
+      {needsModelSettings(result.code) && onOpenModelSettings && <button className="compact-command" onClick={onOpenModelSettings}
         type="button"><Settings aria-hidden="true" size={13} />打开模型设置</button>}
     </article>}
     {error && <em role="alert"><CircleAlert aria-hidden="true" size={13} />{error}</em>}
