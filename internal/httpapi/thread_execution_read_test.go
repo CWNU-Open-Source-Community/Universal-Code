@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 )
 
@@ -51,6 +52,12 @@ func TestThreadExecutionReadCapabilityMatchesRouteWithoutGrantingControl(t *test
 			api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken,
 				RunExecutionEnabled: tt.execution, RunExecutionController: runExecutionControllerFake{},
 				ThreadTurnController: tt.controller})
+			if tt.name == "Thread turn without execution reader" {
+				if apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+					t.Fatalf("enabled partial controller accepted: %v", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

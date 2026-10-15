@@ -518,7 +518,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}
 	var scheduleWorkerHealth httpapi.ScheduledJobWorkerHealthSource
 	if scheduleWorker != nil {
-		scheduleWorkerHealth = scheduleWorker
+		scheduleWorkerHealth = scheduledAPIWorkerHealth{scheduleWorker}
 	}
 	builtinSkills, err := skills.BuiltinRegistry()
 	if err != nil {
@@ -887,3 +887,8 @@ func (a *App) apiOpenAPICommand(args []string) error {
 	fmt.Fprintf(a.out, "openapi_written: %s\n", absolute)
 	return nil
 }
+
+// The API worker runs the complete due-job service selected by this composition.
+type scheduledAPIWorkerHealth struct{ *scheduler.Worker }
+
+func (scheduledAPIWorkerHealth) SelectionScope() string { return "all_jobs" }

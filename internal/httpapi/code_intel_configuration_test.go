@@ -91,7 +91,7 @@ func TestCodeIntelConfigurationLSPHelperProcess(t *testing.T) {
 
 func newCodeIntelConfigurationFixture(t *testing.T, mode string) (*apiFixture, *API, *application.CodeIntelControlService, CodeIntelConfigurationRequestView, string) {
 	t.Helper()
-	f := newAPIFixture(t)
+	f, extensionController, _, _ := newExtensionOnboardingFixture(t)
 	if err := os.WriteFile(filepath.Join(f.workspace.RootPath, "main.go"), []byte("package main\nfunc FixtureMain() {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func newCodeIntelConfigurationFixture(t *testing.T, mode string) (*apiFixture, *
 		defer cancel()
 		_ = service.Manager().Close(ctx)
 	})
-	api, err := New(f.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, ExtensionControlEnabled: true, ExtensionController: &extensionControllerStub{}, CodeIntelSource: service.Manager(), CodeIntelController: service})
+	api, err := New(f.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, ExtensionControlEnabled: true, ExtensionController: extensionController, CodeIntelSource: service.Manager(), CodeIntelController: service})
 	if err != nil {
 		t.Fatal(err)
 	}

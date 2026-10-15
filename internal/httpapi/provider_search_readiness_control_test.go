@@ -7,12 +7,17 @@ import (
 	"strings"
 	"testing"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 )
 
 type providerSearchReadinessControllerFake struct {
 	value application.ProviderSearchReadiness
 	calls int
+}
+
+func (f *providerSearchReadinessControllerFake) Check(context.Context, string) (application.SearchDiagnostics, error) {
+	return application.SearchDiagnostics{}, apperror.New(apperror.CodeFailedPrecondition, "unused diagnostics test seam")
 }
 
 func (f *providerSearchReadinessControllerFake) Get(_ context.Context,

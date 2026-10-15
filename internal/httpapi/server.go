@@ -786,6 +786,9 @@ func New(store Store, config Config) (*API, error) {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"HTTP API full CDP requires the Full Access execution adapter")
 	}
+	if err := validateControllerContracts(store, config); err != nil {
+		return nil, err
+	}
 	readinessRuntime := application.CapabilityReadinessRuntime{
 		RunControlEnabled:                  controlTokenPresent && config.RunControlEnabled,
 		RunExecutionEnabled:                controlTokenPresent && config.RunExecutionEnabled,

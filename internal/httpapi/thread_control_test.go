@@ -324,6 +324,18 @@ type threadTurnControllerStub struct {
 	interruptedExecutionID string
 }
 
+func (s *threadTurnControllerStub) ExecutionStates(ctx context.Context, ids []string) (map[string]application.ThreadExecutionState, error) {
+	states := make(map[string]application.ThreadExecutionState, len(ids))
+	for _, id := range ids {
+		states[id], _ = s.ExecutionState(ctx, id)
+	}
+	return states, nil
+}
+
+func (s *threadTurnControllerStub) ResumeApproval(context.Context, application.ApprovalContinuationRequest) application.ApprovalContinuationResult {
+	return application.ApprovalContinuationResult{State: "not_started"}
+}
+
 func (s *threadTurnControllerStub) ExecutionState(_ context.Context, threadID string) (application.ThreadExecutionState, error) {
 	return application.ThreadExecutionState{Version: application.ThreadExecutionProtocolVersion,
 		ThreadID: threadID, State: "idle"}, nil

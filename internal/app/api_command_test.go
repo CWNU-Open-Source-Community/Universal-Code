@@ -124,6 +124,7 @@ func TestAPIServeCLIStartsAuthenticatedLoopbackServerWithoutPersistingToken(t *t
 			"--enable-permission-control", "--enable-danger-full-access",
 			"--enable-browser-cdp-control", "--enable-full-cdp-debug",
 			"--enable-batch-validation-execution",
+			"--enable-scheduled-job-worker",
 		}, &stdout, &stderr)
 	}()
 
@@ -201,6 +202,8 @@ func TestAPIServeCLIStartsAuthenticatedLoopbackServerWithoutPersistingToken(t *t
 		!bytes.Contains(capabilityBody,
 			[]byte(`"browser_cdp_permission_control_enabled":true`)) ||
 		!bytes.Contains(capabilityBody, []byte(`"full_cdp_debug_enabled":true`)) ||
+		!bytes.Contains(capabilityBody, []byte(`"scheduled_job_worker_enabled":true`)) ||
+		!bytes.Contains(capabilityBody, []byte(`"selection_scope":"all_jobs"`)) ||
 		!bytes.Contains(capabilityBody,
 			[]byte(`"batch_delivery_host_validation_enabled":true`)) {
 		t.Fatalf("execution permission capability is not wired by api serve: status=%d body=%s err=%v",

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/mcp"
@@ -234,6 +235,12 @@ func TestExtensionOnboardingControlBoundaries(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					tc.config.AccessToken, tc.config.ControlToken = testAccessToken, testControlToken
 					api, err := New(f.store, tc.config)
+					if tc.name == "review-only" {
+						if apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+							t.Fatalf("enabled partial controller accepted: %v", err)
+						}
+						return
+					}
 					if err != nil {
 						t.Fatal(err)
 					}

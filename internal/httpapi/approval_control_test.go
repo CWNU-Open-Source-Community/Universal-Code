@@ -34,6 +34,7 @@ func (c cancelAfterWebApprovalController) Decide(_ context.Context,
 }
 
 type detachedWebFetchResumeController struct {
+	runExecutionControllerFake
 	called chan error
 }
 

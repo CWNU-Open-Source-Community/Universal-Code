@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 )
@@ -21,6 +22,16 @@ type fullCDPSessionControllerStub struct {
 	getRunID     string
 	openRequest  application.OpenFullCDPSessionRequest
 	closeRequest application.CloseFullCDPSessionRequest
+}
+
+func (*fullCDPSessionControllerStub) CaptureFullCDPPreview(context.Context, string, string) (application.FullCDPPreviewView, error) {
+	return application.FullCDPPreviewView{}, apperror.New(apperror.CodeFailedPrecondition, "unused preview test seam")
+}
+func (*fullCDPSessionControllerStub) ReadFullCDPPreviewImage(context.Context, string, string, string) (application.FullCDPPreviewCapture, error) {
+	return application.FullCDPPreviewCapture{}, apperror.New(apperror.CodeFailedPrecondition, "unused preview test seam")
+}
+func (*fullCDPSessionControllerStub) ActFullCDPPreview(context.Context, application.FullCDPPreviewActionRequest) (application.FullCDPPreviewView, error) {
+	return application.FullCDPPreviewView{}, apperror.New(apperror.CodeFailedPrecondition, "unused preview test seam")
 }
 
 func (stub *fullCDPSessionControllerStub) GetFullCDPSession(

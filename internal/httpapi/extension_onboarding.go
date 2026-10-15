@@ -20,8 +20,8 @@ const (
 	maxExtensionPluginImportBodyBytes = ((plugins.MaxArchiveBytes + 2) / 3 * 4) + 1024
 )
 
-// Onboarding is additive. Review-only adapters retain their existing contract
-// and advertise no import capability until this interface is implemented.
+// Minimal read adapters remain valid while extension control is disabled.
+// Enabling control requires the complete published controller contracts at construction.
 type ExtensionOnboardingController interface {
 	RegisterMCP(context.Context, mcp.ServerDescriptor) (mcp.ServerRecord, bool, error)
 	ImportPlugin(context.Context, []byte, string) (plugins.Installation, bool, error)
