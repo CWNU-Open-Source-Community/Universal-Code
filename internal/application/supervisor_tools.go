@@ -609,7 +609,32 @@ func (s *AgentRunner) supervisorMCPCapabilities(ctx context.Context,
 		}
 		fence = issuedFence
 	}
-	capabilities, err := s.mcpClient.Capabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID)
+	var capabilities mcp.ScopedCapabilities
+	var err error
+	if dynamic, ok := s.mcpClient.(interface {
+		RefreshCapabilities(context.Context, string, string, func(context.Context) error, <-chan struct{}) (mcp.ScopedCapabilities, error)
+	}); ok {
+		lease, found, leaseErr := s.store.GetRunExecutionLease(ctx, turn.Run.ID)
+		if leaseErr != nil {
+			return supervisorMCPTools{}, leaseErr
+		}
+		if !found {
+			return supervisorMCPTools{}, apperror.New(apperror.CodeConflict, "MCP catalog requires a current Run lease")
+		}
+		scope := toolgateway.MCPExecutionScope{RunID: turn.Run.ID, MissionID: turn.Mission.ID, WorkspaceID: turn.Mission.WorkspaceID,
+			PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionMode: permission.Mode,
+			PermissionGeneration: generation, RunAuthorizationFence: fence, PermissionRuntimeEpoch: runtimeEpoch,
+			LeaseID: lease.LeaseID, LeaseGeneration: lease.Generation}
+		executor := &MCPClientToolExecutor{client: s.mcpClient, store: s.store, capabilities: s.executionCapabilities}
+		check := func(ctx context.Context) error { return executor.recheckExecutionScope(ctx, scope) }
+		var revoked <-chan struct{}
+		if s.executionCapabilities.RuntimeAuthority != nil {
+			revoked = s.executionCapabilities.RuntimeAuthority.RunAuthorizationDone(turn.Run.ID, fence)
+		}
+		capabilities, err = dynamic.RefreshCapabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID, check, revoked)
+	} else {
+		capabilities, err = s.mcpClient.Capabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID)
+	}
 	if err != nil {
 		return supervisorMCPTools{}, apperror.Normalize(err)
 	}

@@ -217,10 +217,10 @@ func TestMCPRuntimeCommonAuthorityAtRealTLSSends(t *testing.T) {
 			} else {
 				receipt, found := mcp.InvocationReceipt(callErr)
 				wantState, wantCalls := toolcontract.ReceiptNotDispatched, int32(0)
-				if scenario == "lost_response" {
+				if scenario == "lost_response" || scenario == "disable_after_send" {
 					wantState, wantCalls = toolcontract.ReceiptOutcomeUnknown, 1
 				}
-				if scenario == "revoke_after_send" || scenario == "disable_after_send" || scenario == "credential_after_send" {
+				if scenario == "revoke_after_send" || scenario == "credential_after_send" {
 					wantState, wantCalls = toolcontract.ReceiptResultReceived, 1
 				}
 				if callErr == nil || !found || receipt.State != wantState || calls.Load() != wantCalls || result.Content != "" {

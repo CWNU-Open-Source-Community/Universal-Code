@@ -190,7 +190,7 @@ func TestServerDescriptorRejectsPersistedStdioSecrets(t *testing.T) {
 	}
 }
 
-func TestClientManagerRequiresTwoReviewsAndQuarantinesCapabilityDrift(t *testing.T) {
+func TestClientManagerRequiresInitialReviewsAndUpdatesEnabledCatalog(t *testing.T) {
 	store := &clientStoreFake{}
 	toolSet := []RemoteTool{{Name: "lookup", Description: "Look up credential-value item.",
 		InputSchema: json.RawMessage(`{"type":"object","description":"credential-value","additionalProperties":false,"required":["query"],"properties":{"query":{"type":"string"}}}`)}}
@@ -269,8 +269,8 @@ func TestClientManagerRequiresTwoReviewsAndQuarantinesCapabilityDrift(t *testing
 		t.Fatalf("capability drift was not rejected: %v", err)
 	}
 	quarantined, _ := store.GetMCPClientServer(t.Context(), "docs")
-	if quarantined.State != TrustQuarantined || quarantined.Health != HealthDrifted {
-		t.Fatalf("drift did not quarantine the server: %#v", quarantined)
+	if quarantined.State != TrustEnabled || quarantined.Health != HealthHealthy || quarantined.ApprovedCapabilityFingerprint != quarantined.Capabilities.Fingerprint {
+		t.Fatalf("drift did not atomically update the enabled server: %#v", quarantined)
 	}
 }
 
@@ -413,7 +413,7 @@ func TestClientManagerRemovesDisconnectedServerFromHealthyCapabilities(t *testin
 	}
 }
 
-func TestClientManagerStartupRecoveryQuarantinesInterruptedEnabledDiscovery(t *testing.T) {
+func TestClientManagerStartupRecoveryPreservesInterruptedEnabledCatalog(t *testing.T) {
 	now := time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC)
 	descriptor := ServerDescriptor{ProtocolVersion: ClientProtocolVersion,
 		ID: "restart-server", Name: "Restart Server", Transport: TransportStreamableHTTP,
@@ -452,9 +452,9 @@ func TestClientManagerStartupRecoveryQuarantinesInterruptedEnabledDiscovery(t *t
 		t.Fatalf("startup reconciliation count=%d err=%v", count, err)
 	}
 	recovered, err := store.GetMCPClientServer(t.Context(), descriptor.ID)
-	if err != nil || recovered.State != TrustQuarantined ||
+	if err != nil || recovered.State != TrustEnabled ||
 		recovered.Health != HealthUnavailable ||
-		recovered.ApprovedCapabilityFingerprint != "" || recovered.Generation != 5 {
+		recovered.ApprovedCapabilityFingerprint != snapshot.Fingerprint || recovered.Generation != 5 {
 		t.Fatalf("interrupted discovery was not fenced: %#v err=%v", recovered, err)
 	}
 }

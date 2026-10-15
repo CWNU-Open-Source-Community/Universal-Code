@@ -122,7 +122,11 @@ func (f *mcpRecoveryAcceptanceFixture) serve(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if f.runtime.Load() {
-		f.requests.Add(1)
+		// Enabled-server catalog refresh is authorized independently of the
+		// pending tool consent. Keep invocation traffic separately observable.
+		if request.Method != "initialize" && request.Method != "notifications/initialized" && request.Method != "tools/list" {
+			f.requests.Add(1)
+		}
 	}
 	if len(request.ID) == 0 {
 		w.WriteHeader(http.StatusAccepted)

@@ -50,13 +50,16 @@ type Manager struct {
 	now           func() time.Time
 	locksMu       sync.Mutex
 	locks         map[string]*sync.Mutex
+	sessionsMu    sync.Mutex
+	sessions      map[catalogSessionKey]*catalogSession
+	closed        bool
 }
 
 // ReconcileStartup deterministically fences discovery whose durable lease has
 // expired. A live lease may belong to another process sharing the same store,
 // so it must not be mistaken for work interrupted by this process starting.
-// Previously enabled servers are quarantined because their last approved
-// capability snapshot cannot authorize a half-completed rediscovery.
+// Interrupted refreshes retain the last catalog and enabled state; unavailable
+// health keeps calls fenced until discovery succeeds again.
 func (m *Manager) ReconcileStartup(ctx context.Context) (int, error) {
 	if m == nil || m.store == nil {
 		return 0, errors.New("MCP Client manager is required")
@@ -80,10 +83,6 @@ func (m *Manager) ReconcileStartup(ctx context.Context) (int, error) {
 			continue
 		}
 		before := current.Generation
-		if current.State == TrustEnabled {
-			current.State = TrustQuarantined
-			current.ApprovedCapabilityFingerprint = ""
-		}
 		current.Health = HealthUnavailable
 		current.HealthMessage = "discovery interrupted by process restart"
 		current.DiscoveryLeaseID = ""
@@ -120,7 +119,7 @@ func NewClientManager(store ClientStore, credentials CredentialReader,
 		}
 	}
 	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, now: now,
-		locks: make(map[string]*sync.Mutex)}, nil
+		locks: make(map[string]*sync.Mutex), sessions: make(map[catalogSessionKey]*catalogSession)}, nil
 }
 
 func (m *Manager) Stage(ctx context.Context, descriptor ServerDescriptor) (ServerRecord, bool, error) {
@@ -208,7 +207,11 @@ func (m *Manager) Review(ctx context.Context, serverID string,
 	if err := record.Validate(); err != nil {
 		return ServerRecord{}, err
 	}
-	return m.store.UpdateMCPClientServer(ctx, record, record.Generation-1)
+	updated, err := m.store.UpdateMCPClientServer(ctx, record, record.Generation-1)
+	if err == nil && (record.State == TrustDisabled || record.State == TrustRevoked) {
+		m.closeSessions(func(key catalogSessionKey) bool { return key.server == record.Descriptor.ID })
+	}
+	return updated, err
 }
 
 func (m *Manager) Refresh(ctx context.Context, serverID string) (ServerRecord, error) {
@@ -294,11 +297,8 @@ func (m *Manager) refreshLocked(ctx context.Context, record ServerRecord) (Serve
 		record.State = TrustCapabilitiesPending
 		record.Health = HealthHealthy
 		record.HealthMessage = "capability review required"
-	} else if record.ApprovedCapabilityFingerprint != record.Capabilities.Fingerprint {
-		record.State = TrustQuarantined
-		record.Health = HealthDrifted
-		record.HealthMessage = "discovered capabilities changed after approval"
 	} else {
+		record.ApprovedCapabilityFingerprint = record.Capabilities.Fingerprint
 		record.State = TrustEnabled
 		record.Health = HealthHealthy
 		record.HealthMessage = ""
@@ -421,6 +421,7 @@ func (m *Manager) Capabilities(ctx context.Context, runID, workspaceID string) (
 }
 
 type InvokeRequest struct {
+	catalogCheck          func(context.Context) error
 	Method                string
 	RunID                 string
 	WorkspaceID           string
@@ -486,11 +487,13 @@ func (m *Manager) Invoke(ctx context.Context, request InvokeRequest) (result Cli
 		return ClientCallResult{}, err
 	}
 	if record.State != TrustEnabled || record.Health != HealthHealthy ||
-		record.Capabilities.Fingerprint != request.CapabilityFingerprint ||
-		record.ApprovedCapabilityFingerprint != request.CapabilityFingerprint ||
 		!scopeMatches(record.Descriptor, request.RunID, request.WorkspaceID) {
 		return ClientCallResult{}, apperror.New(apperror.CodePolicyDenied,
 			"MCP server is not enabled for the exact Run/Workspace capability scope")
+	}
+	if record.Capabilities.Fingerprint != request.CapabilityFingerprint ||
+		record.ApprovedCapabilityFingerprint != request.CapabilityFingerprint {
+		return ClientCallResult{}, staleCatalogError()
 	}
 	if _, err := ValidateInvocation(record.Capabilities, request.Method, request.ToolName, request.Arguments); err != nil {
 		return ClientCallResult{}, apperror.Wrap(apperror.CodeInvalidArgument, "MCP operation does not match the approved catalog", err)
@@ -539,14 +542,13 @@ func (m *Manager) verifyInvocationSnapshot(ctx context.Context, request InvokeRe
 	if current.Fingerprint != record.ApprovedCapabilityFingerprint {
 		previous := record.Generation
 		record.Capabilities = current
-		record.State = TrustQuarantined
-		record.Health = HealthDrifted
-		record.HealthMessage = "capabilities changed immediately before invocation"
+		record.ApprovedCapabilityFingerprint = current.Fingerprint
+		record.Health = HealthHealthy
+		record.HealthMessage = ""
 		record.Generation++
 		record.UpdatedAt = m.now().UTC()
 		_, updateErr := m.store.UpdateMCPClientServer(context.WithoutCancel(ctx), record, previous)
-		return ServerRecord{}, errors.Join(apperror.New(apperror.CodeConflict,
-			"MCP capability drift quarantined the server"), updateErr)
+		return ServerRecord{}, errors.Join(staleCatalogError(), updateErr)
 	}
 	latest, err := m.store.GetMCPClientServer(ctx, request.ServerID)
 	if err != nil {
@@ -579,7 +581,7 @@ func (m *Manager) markInvocationUnavailable(ctx context.Context, record ServerRe
 	updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	if _, err := m.store.UpdateMCPClientServer(updateCtx, record, previous); err != nil {
-		return errors.Join(cause, err)
+		return errors.Join(cause, catalogStoreError(err))
 	}
 	return cause
 }

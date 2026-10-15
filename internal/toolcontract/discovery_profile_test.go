@@ -33,8 +33,8 @@ func TestDiscoveryProfileBindsModernProbeAndLegacyFallback(t *testing.T) {
 	}
 }
 
-func TestModernDiscoveryDoesNotAdmitCallsReadsOrSubscriptions(t *testing.T) {
-	for _, method := range []string{"tools/call", "resources/read", "prompts/get", "subscriptions/listen",
+func TestModernDiscoveryDoesNotAdmitCallsReadsOrUnboundCancellation(t *testing.T) {
+	for _, method := range []string{"tools/call", "resources/read", "prompts/get",
 		"notifications/subscriptions/acknowledged", "logging/setLevel", "sampling/createMessage",
 		"elicitation/create", "notifications/cancelled", "extra/approval"} {
 		scope := discovery()

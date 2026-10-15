@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/agent"
@@ -48,6 +49,8 @@ const codeIntelConfigEnvironment = "CYBERAGENT_CODE_INTEL_CONFIG"
 const webSearchEndpointEnvironment = "CYBERAGENT_WEB_SEARCH_ENDPOINT"
 
 type App struct {
+	mcpMu                 sync.Mutex
+	mcpClient             *mcp.Manager
 	home                  string
 	out                   io.Writer
 	errOut                io.Writer
@@ -190,6 +193,11 @@ func (a *App) newMCPClientManager() *mcp.Manager {
 	if a == nil || a.store == nil {
 		return nil
 	}
+	a.mcpMu.Lock()
+	defer a.mcpMu.Unlock()
+	if a.mcpClient != nil {
+		return a.mcpClient
+	}
 	nativeSources, err := application.NewNativeMCPSourceResolver(a.store, filepath.Join(a.home, "plugins", "mcp"))
 	if err != nil {
 		return nil
@@ -198,6 +206,7 @@ func (a *App) newMCPClientManager() *mcp.Manager {
 	if err != nil {
 		return nil
 	}
+	a.mcpClient = manager
 	return manager
 }
 
@@ -235,6 +244,9 @@ func DefaultHome() string {
 }
 
 func (a *App) Close() {
+	if a.mcpClient != nil {
+		_ = a.mcpClient.Close()
+	}
 	if a.codeIntel != nil {
 		ctx, cancel := context.WithTimeout(context.Background(),
 			codeintel.MaximumShutdownGracePeriod)
