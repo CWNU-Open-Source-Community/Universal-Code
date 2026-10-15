@@ -401,7 +401,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		_ = stateStore.Close()
 		return nil, err
 	}
-	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{})
+	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker()})
 	if err != nil {
 		_ = stateStore.Close()
 		return nil, err

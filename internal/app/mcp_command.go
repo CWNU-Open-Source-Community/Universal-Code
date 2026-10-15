@@ -27,6 +27,9 @@ func (a *App) mcpCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: cyberagent mcp serve|client|credential")
 	}
+	if len(args) > 1 && args[0] == "client" && (args[1] == "inputs" || args[1] == "respond") {
+		return a.mcpInputCommand(ctx, args[1:])
+	}
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
@@ -70,6 +73,9 @@ func (a *App) mcpServeCommand(ctx context.Context, args []string) error {
 }
 
 func (a *App) mcpClientCommand(ctx context.Context, args []string) error {
+	if len(args) > 0 && (args[0] == "inputs" || args[0] == "respond") {
+		return a.mcpInputCommand(ctx, args)
+	}
 	if len(args) == 0 {
 		return errors.New("usage: cyberagent mcp client stage|list|show|review|refresh|calls")
 	}

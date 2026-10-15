@@ -317,6 +317,7 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 		request.Header.Set("MCP-Protocol-Version", version)
 	}
 	var envelope *jsonrpc.Request
+	var reply *jsonrpc.Response
 	var wireBytes int64
 	if request.Method == http.MethodPost {
 		if request.GetBody == nil {
@@ -341,12 +342,15 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 		var ok bool
 		envelope, ok = message.(*jsonrpc.Request)
 		if !ok {
-			return nil, errors.New("MCP client dispatch requires a request")
+			reply, ok = message.(*jsonrpc.Response)
+			if !ok {
+				return nil, errors.New("MCP client dispatch requires a request or authorized reply")
+			}
 		}
 		// Modern HTTP cancellation is closing the request stream. SDK v1.8.0
 		// also emits a legacy cancellation notification; do not send it on
 		// this profile after the HTTP request context has already been cancelled.
-		if envelope.Method == "notifications/cancelled" && version == preferredClientProtocolVersion {
+		if envelope != nil && envelope.Method == "notifications/cancelled" && version == preferredClientProtocolVersion {
 			return &http.Response{StatusCode: http.StatusAccepted, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
 		}
 		wireBytes = int64(len(raw))
@@ -354,7 +358,12 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	// Even an Idempotency-Key must not make net/http replay a tool POST.
 	// SDK-level reconnect and multi-round-trip retries are disabled separately.
 	request.GetBody = nil
-	if request.Method == http.MethodPost {
+	if reply != nil {
+		if err := authorizeLegacyReply(request.Context(), reply, false); err != nil {
+			return nil, err
+		}
+	}
+	if request.Method == http.MethodPost && envelope != nil {
 		if t.beforeSend != nil {
 			if err := t.beforeSend(request.Context(), envelope, wireBytes); err != nil {
 				return nil, err
@@ -378,7 +387,12 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	if err := request.Context().Err(); err != nil {
 		return nil, err
 	}
-	if request.Method == http.MethodPost {
+	if reply != nil {
+		if err := authorizeLegacyReply(request.Context(), reply, true); err != nil {
+			return nil, err
+		}
+	}
+	if request.Method == http.MethodPost && envelope != nil {
 		if err := beforeSDKDispatch(request.Context(), envelope.Method); err != nil {
 			return nil, err
 		}

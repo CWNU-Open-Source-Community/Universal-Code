@@ -20,7 +20,7 @@ func isClientInvocationMethod(method string) bool {
 // FingerprintContentInput includes the method: equal JSON on two operations
 // cannot reuse authorization. SDK-owned protocol metadata grants no authority.
 func FingerprintContentInput(key []byte, launch toolcontract.ResolvedLaunch, method string, params json.RawMessage) (string, error) {
-	if method != "resources/read" && method != "prompts/get" {
+	if !isClientInvocationMethod(method) {
 		return "", errors.New("invalid MCP content method")
 	}
 	if len(params) == 0 || len(params) > MaxClientArgumentsBytes || !json.Valid(params) {
@@ -65,6 +65,7 @@ func (c *Client) InvokeContentWithReceipt(ctx context.Context, operation toolcon
 	ctx = context.WithValue(ctx, resolvedCallKey{}, &resolvedCall{operation: cloneOperation(operation)})
 	ctx = context.WithValue(ctx, sdkCallAttemptKey{}, attempt)
 	ctx = context.WithValue(ctx, sdkRawResponseKey{}, capture)
+	defer c.activateInput(ctx, attempt)()
 	session, err := c.connect(ctx)
 	if err != nil {
 		return nil, receipt, c.sdkError(err)
@@ -75,12 +76,20 @@ func (c *Client) InvokeContentWithReceipt(ctx context.Context, operation toolcon
 		if json.Unmarshal(params, &p) != nil {
 			return nil, receipt, errors.New("invalid resource parameters")
 		}
+		p.InputResponses, err = decodeInputResponses(params)
+		if err != nil {
+			return nil, receipt, err
+		}
 		p.Meta = c.callProgressMeta(operation.ID)
 		_, err = session.ReadResource(ctx, &p)
 	case "prompts/get":
 		var p sdk.GetPromptParams
 		if json.Unmarshal(params, &p) != nil {
 			return nil, receipt, errors.New("invalid prompt parameters")
+		}
+		p.InputResponses, err = decodeInputResponses(params)
+		if err != nil {
+			return nil, receipt, err
 		}
 		p.Meta = c.callProgressMeta(operation.ID)
 		_, err = session.GetPrompt(ctx, &p)

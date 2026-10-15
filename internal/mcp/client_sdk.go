@@ -62,7 +62,7 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 	stop := context.AfterFunc(t.lifetime, cancel)
 	defer stop()
 	defer cancel()
-	client := sdk.NewClient(&sdk.Implementation{Name: ClientName, Version: ClientVersion}, &sdk.ClientOptions{
+	options := &sdk.ClientOptions{
 		Capabilities:   &sdk.ClientCapabilities{},
 		MultiRoundTrip: &sdk.MultiRoundTripOptions{Disabled: true},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -74,7 +74,14 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 				handler(ctx, req.Params)
 			}
 		},
-	})
+	}
+	if t.inputHandler != nil {
+		options.Capabilities.Elicitation = &sdk.ElicitationCapabilities{Form: &sdk.FormElicitationCapabilities{}, URL: &sdk.URLElicitationCapabilities{}}
+		options.ElicitationHandler = t.handleLegacyInput
+		t.tap.receiveInput = t.receiveLegacyInput
+		t.tap.prepareReply = t.prepareLegacyReply
+	}
+	client := sdk.NewClient(&sdk.Implementation{Name: ClientName, Version: ClientVersion}, options)
 	client.AddSendingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, request sdk.Request) (sdk.Result, error) {
 			capture, _ := ctx.Value(sdkRawResponseKey{}).(*sdkRawResponse)
@@ -292,6 +299,11 @@ func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) err
 		return ctx.Err()
 	}
 	defer func() { <-c.writeGate }()
+	if response, ok := msg.(*jsonrpc.Response); ok && ctx.Value(legacyReplyKey{}) != nil {
+		if err := authorizeLegacyReply(ctx, response, true); err != nil {
+			return err
+		}
+	}
 	if request, ok := msg.(*jsonrpc.Request); ok {
 		if c.beforeSend != nil {
 			raw, err := jsonrpc.EncodeMessage(msg)

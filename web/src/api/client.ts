@@ -8344,6 +8344,17 @@ export class APIClient {
     return { items, page: envelope.page, requestID: envelope.request_id };
   }
 
+  async respondMCPInput(runID: string, inputID: string,
+    body: { version: "mcp-input.v1"; action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }): Promise<{ accepted: boolean }> {
+    if (!this.hasExtensionControl || !boundedIdentity(runID) || !boundedIdentity(inputID) ||
+      body.version !== "mcp-input.v1" || !["accept", "decline", "cancel"].includes(body.action)) {
+      throw new Error("An active MCP request and extension control capability are required");
+    }
+    // The live broker consumes an answer once. It is not a durable command and
+    // must not carry a replay key or be retried automatically.
+    return this.sendControlRequest(`/runs/${encodeURIComponent(runID)}/mcp-inputs/${encodeURIComponent(inputID)}`, body);
+  }
+
   async postControl<T>(
     path: string,
     body: unknown,

@@ -776,7 +776,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture.api.verificationEvidenceEnabled = true
 	fixture.api.embeddedAnalyzerExecutionEnabled = true
 	fixture.api.extensionControlEnabled = true
-	fixture.api.extensionController = &extensionControllerStub{}
+	fixture.api.extensionController = &mcpInputRoutingStub{runID: fixture.run.ID}
 	fixture.api.codeIntelController = newCodeIntelOpenAPITestController(t, fixture)
 	onboardingFixture, _, _, _ := newExtensionOnboardingFixture(t)
 	credentialFixture, credentialBinding, credentialStatus, _ := newMCPCredentialFixture(t)
@@ -1163,6 +1163,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"{route}":             "code",
 		"{provider}":          "mimo",
 		"{server_id}":         "mcp-openapi",
+		"{input_id}":          "mcp-input-openapi",
 		"{installation_id}":   "plugin-openapi",
 		"{memory_id}":         openAPIMemory.ID,
 		"{node_id}":           openAPICheckpoint.ID,
@@ -1788,6 +1789,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 						fmt.Sprint(openAPIReceipt.Receipt.EventSequence) + `,` +
 						`"decision":"metadata_confirmed",` +
 						`"confirm_non_authorizing_review":true}`
+				} else if spec.Path == MCPInputResponsePathTemplate {
+					body = `{"version":"mcp-input.v1","action":"decline"}`
 				} else if spec.Path == RunExecutionPermissionControlPathTemplate {
 					body = `{"mode":"full","confirm_full":true}`
 				} else if spec.Path == "/api/v1/threads/{thread_id}/search-diagnostics" {
