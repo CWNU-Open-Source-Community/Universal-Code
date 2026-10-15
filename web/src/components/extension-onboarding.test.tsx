@@ -19,6 +19,23 @@ function mount(children: React.ReactNode) {
   return render(<QueryClientProvider client={queryClient}><LocaleProvider>{children}</LocaleProvider></QueryClientProvider>);
 }
 const emptyLSP = { protocol_version: "code-intel-lsp.v1", enabled: true, qualifications: [], servers: [], configurations: [] };
+
+it("shows prompt required and optional parameters before enabling discovered capabilities", async () => {
+  const current = inventory();
+  const server = mcpServer("capabilities_pending");
+  server.capabilities = { negotiated: ["prompts", "resources"], tools: [], resources: ["notes://guide"], resource_templates: ["notes://{topic}"], prompts: ["prepare"],
+    fingerprint: "b".repeat(64), prompt_details: [{ name: "prepare", arguments: [{ name: "topic", description: "Subject to prepare", required: true }, { name: "style", required: false }] }] };
+  current.mcp_servers = [server];
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => respond(url.split("?")[0].endsWith("/code-intel") ? { ...emptyLSP, workspace_id: "project-one" } : current));
+  vi.stubGlobal("fetch", fetchMock);
+  mount(<ExtensionSettings client={new APIClient("read", "/api/v1", "control")} selectedRunID="" selectedWorkspaceID="project-one" />);
+  await userEvent.click(await screen.findByText("Prompt: prepare"));
+  expect(screen.getByText("topic").closest("li")).toHaveTextContent("必填 · Subject to prepare");
+  expect(screen.getByText("style").closest("li")).toHaveTextContent("可选");
+  expect(screen.getByText("Resource templates: notes://{topic}")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "审查并启用能力" })).toBeDisabled();
+  expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});
 function inventory(): ExtensionInventoryView { return { protocol_version: "extension-inventory.v1", workspace_id: "project-one",
   mcp_servers: [], mcp_calls: [], plugins: [], onboarding: { mcp_registration: true, plugin_import: true, lsp_configuration: true } }; }
 

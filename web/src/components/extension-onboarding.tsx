@@ -189,6 +189,12 @@ export function MCPReviewControls({ client, server, onOpenTask, credentialCapabi
     {server.capabilities.resources.length > 0 && <p className="extension-tool-list">Resources: {server.capabilities.resources.join(", ")}</p>}
     {(server.capabilities.resource_templates?.length ?? 0) > 0 && <p className="extension-tool-list">Resource templates: {server.capabilities.resource_templates?.join(", ")}</p>}
     {server.capabilities.prompts.length > 0 && <p className="extension-tool-list">Prompts: {server.capabilities.prompts.join(", ")}</p>}
+    {server.capabilities.prompt_details?.map((prompt) => <details className="extension-tool-list" key={prompt.name}>
+      <summary>Prompt: {prompt.name}</summary>
+      {prompt.arguments.length === 0 ? <p>{t("此 Prompt 无参数。", "This prompt has no arguments.")}</p> : <ul>{prompt.arguments.map((argument) =>
+        <li key={argument.name}><code>{argument.name}</code> · {argument.required ? t("必填", "Required") : t("可选", "Optional")}
+          {argument.description ? ` · ${argument.description}` : ""}</li>)}</ul>}
+    </details>)}
     {reviewable && <>
       <label><input checked={confirmed} disabled={review.isPending} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />
         {action === "enable_capabilities" ? t("我已核对当前能力指纹与所有发现列表", "I reviewed this capability fingerprint and all discovered lists") : t("我已核对描述符，允许连接并发现能力", "I reviewed this descriptor and permit connection for discovery")}</label>

@@ -38203,6 +38203,12 @@
             },
             "type": "array"
           },
+          "prompt_details": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionMCPPromptView"
+            },
+            "type": "array"
+          },
           "prompts": {
             "items": {
               "type": "string"
@@ -38278,6 +38284,44 @@
           "revision",
           "installation_generation",
           "surface"
+        ],
+        "type": "object"
+      },
+      "ExtensionMCPPromptArgumentView": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "required"
+        ],
+        "type": "object"
+      },
+      "ExtensionMCPPromptView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionMCPPromptArgumentView"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "arguments"
         ],
         "type": "object"
       },
@@ -59458,6 +59502,48 @@
         ],
         "type": "object"
       },
+      "ThreadActivityMCPContentView": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "data_base64": {
+            "type": "string"
+          },
+          "height": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "width": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
       "ThreadActivityMCPDetailView": {
         "additionalProperties": false,
         "properties": {
@@ -59470,6 +59556,20 @@
           },
           "boundary": {
             "$ref": "#/components/schemas/ThreadActivityBoundaryView"
+          },
+          "content_truncated": {
+            "type": "boolean"
+          },
+          "contents": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadActivityMCPContentView"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "omitted_contents": {
+            "format": "int32",
+            "type": "integer"
           },
           "operation": {
             "type": "string"

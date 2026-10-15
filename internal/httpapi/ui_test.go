@@ -132,6 +132,7 @@ func assertUISecurityHeaders(t *testing.T, response *httptest.ResponseRecorder) 
 	header := response.Header()
 	csp := header.Get("Content-Security-Policy")
 	if !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "style-src 'self'") ||
+		!strings.Contains(csp, "media-src data:;") ||
 		strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") ||
 		header.Get("X-Frame-Options") != "DENY" || header.Get("X-Content-Type-Options") != "nosniff" ||
 		header.Get("Referrer-Policy") != "no-referrer" ||

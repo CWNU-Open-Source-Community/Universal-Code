@@ -60,15 +60,27 @@ type ExtensionSourceView struct {
 }
 
 type ExtensionMCPCapabilityView struct {
-	ServerName        string   `json:"server_name,omitempty"`
-	ServerVersion     string   `json:"server_version,omitempty"`
-	Negotiated        []string `json:"negotiated"`
-	Tools             []string `json:"tools"`
-	Resources         []string `json:"resources"`
-	ResourceTemplates []string `json:"resource_templates,omitempty"`
-	Prompts           []string `json:"prompts"`
-	Fingerprint       string   `json:"fingerprint,omitempty"`
-	DiscoveredAt      string   `json:"discovered_at,omitempty"`
+	ServerName        string                   `json:"server_name,omitempty"`
+	ServerVersion     string                   `json:"server_version,omitempty"`
+	Negotiated        []string                 `json:"negotiated"`
+	Tools             []string                 `json:"tools"`
+	Resources         []string                 `json:"resources"`
+	ResourceTemplates []string                 `json:"resource_templates,omitempty"`
+	Prompts           []string                 `json:"prompts"`
+	PromptDetails     []ExtensionMCPPromptView `json:"prompt_details,omitempty"`
+	Fingerprint       string                   `json:"fingerprint,omitempty"`
+	DiscoveredAt      string                   `json:"discovered_at,omitempty"`
+}
+
+type ExtensionMCPPromptView struct {
+	Name      string                           `json:"name"`
+	Arguments []ExtensionMCPPromptArgumentView `json:"arguments"`
+}
+
+type ExtensionMCPPromptArgumentView struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required"`
 }
 
 type ExtensionMCPServerView struct {
@@ -397,6 +409,11 @@ func extensionMCPServerView(value mcp.ServerRecord) ExtensionMCPServerView {
 	}
 	for _, prompt := range value.Capabilities.Prompts {
 		capability.Prompts = append(capability.Prompts, prompt.Name)
+		arguments := make([]ExtensionMCPPromptArgumentView, 0, len(prompt.Arguments))
+		for _, argument := range prompt.Arguments {
+			arguments = append(arguments, ExtensionMCPPromptArgumentView{Name: argument.Name, Description: argument.Description, Required: argument.Required})
+		}
+		capability.PromptDetails = append(capability.PromptDetails, ExtensionMCPPromptView{Name: prompt.Name, Arguments: arguments})
 	}
 	result := ExtensionMCPServerView{ProtocolVersion: value.ProtocolVersion,
 		ID: value.Descriptor.ID, Name: value.Descriptor.Name,

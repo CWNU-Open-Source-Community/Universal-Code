@@ -7,6 +7,22 @@ import { fingerprint, lspConfiguration, lspTest, mcpServer, plugin } from "../te
 import type { ExtensionMCPRegistrationRequestView } from "./types";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("validates prompt argument details against the discovered prompt catalog", async () => {
+  const server = mcpServer("capabilities_pending");
+  server.capabilities.prompts = ["prepare"];
+  const details = [{ name: "prepare", arguments: [{ name: "topic", description: "Subject to prepare", required: true }, { name: "style", required: false }] }];
+  server.capabilities.prompt_details = details;
+  const inventory = { protocol_version: "extension-inventory.v1", mcp_servers: [server], mcp_calls: [], plugins: [] };
+  const fetchMock = vi.fn().mockResolvedValueOnce(respond(envelope(inventory)))
+    .mockResolvedValueOnce(respond(envelope({ ...inventory, mcp_servers: [{ ...server, capabilities: { ...server.capabilities, prompt_details: [{ ...details[0], name: "unreviewed" }] } }] })))
+    .mockResolvedValueOnce(respond(envelope({ ...inventory, mcp_servers: [{ ...server, capabilities: { ...server.capabilities, prompt_details: [{ ...details[0], arguments: [{ name: "topic", required: "yes" }] }] } }] })));
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new APIClient("read");
+  expect((await client.extensionInventory()).mcp_servers[0].capabilities.prompt_details).toEqual(details);
+  await expect(client.extensionInventory()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  await expect(client.extensionInventory()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+});
 function envelope(data: unknown) { return { version: "api.v1", request_id: "onboarding-test", data }; }
 function respond(value: unknown) { return new Response(JSON.stringify(value), { status: 200, headers: { "Content-Type": "application/json" } }); }
 function realFixture(name: string, fallback: unknown) {

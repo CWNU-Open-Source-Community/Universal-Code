@@ -3152,6 +3152,9 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 		(typeName == "ThreadActivityJSONSummaryView" && fieldName == "fields") {
 		schema["maxItems"] = application.MaxThreadActivityMCPFields
 	}
+	if typeName == "ThreadActivityMCPDetailView" && fieldName == "contents" {
+		schema["maxItems"] = application.MaxThreadActivityMCPContents
+	}
 	if typeName == "ThreadActivityCommandDetailView" {
 		switch fieldName {
 		case "command":
