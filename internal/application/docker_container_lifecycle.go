@@ -642,15 +642,26 @@ func (s *DockerContainerLifecycleSupervisor) runObserved(ctx context.Context,
 				return s.finishStartDeniedCreated(context.WithoutCancel(ctx), record,
 					request, createdObservation, err)
 			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return s.finishInterruptedStart(ctx, record, request, err)
+			}
 			return s.fail(ctx, record, lifecycleFailureReason(err))
+		}
+		if err := ctx.Err(); err != nil {
+			return s.finishInterruptedStart(ctx, record, request, err)
 		}
 		// Start returns the pre-start observation. Exact observe resolves the
-		// response/commit crash window and never starts running/exited twice.
-		observation, err = s.transport.Observe(ctx, request)
+		// response/commit crash window even when the caller cancels after its
+		// daemon write. Only confirmation detaches; Wait retains the caller ctx.
+		confirmationCtx, confirmationCancel := s.cleanupContext(ctx)
+		observation, err = s.transport.Observe(confirmationCtx, request)
 		if err != nil {
-			return s.fail(ctx, record, lifecycleFailureReason(err))
+			failed, failureErr := s.fail(confirmationCtx, record, lifecycleFailureReason(err))
+			confirmationCancel()
+			return failed, failureErr
 		}
-		record, err = s.checkpointObservation(ctx, record, observation)
+		record, err = s.checkpointObservation(confirmationCtx, record, observation)
+		confirmationCancel()
 		if err != nil {
 			return sandbox.DockerContainerLifecycleRecord{}, err
 		}
@@ -687,7 +698,9 @@ func (s *DockerContainerLifecycleSupervisor) runObserved(ctx context.Context,
 				return s.fail(ctx, record, lifecycleFailureReason(err))
 			}
 			if err == nil {
-				record, err = s.checkpointObservation(ctx, record, observation)
+				confirmationCtx, confirmationCancel := s.cleanupContext(ctx)
+				record, err = s.checkpointObservation(confirmationCtx, record, observation)
+				confirmationCancel()
 				if err != nil {
 					return sandbox.DockerContainerLifecycleRecord{}, err
 				}
@@ -742,21 +755,26 @@ func (s *DockerContainerLifecycleSupervisor) runObserved(ctx context.Context,
 	}
 	var postExitErr error
 	// Exited+cleaning on entry normally means a previous owner crossed the
-	// post-exit boundary before attempting delete. Cancellation is the exception:
-	// CancelOne may append its sticky marker after an already-checkpointed exit,
-	// so it invokes the same deterministic logical key and relies on callback
+	// post-exit boundary before attempting delete. CancelOne or an interrupted
+	// Start may append a cancellation/timeout marker after a checkpointed exit,
+	// so they use the same deterministic logical key and rely on callback
 	// idempotency across the unavoidable callback/cleaning crash window.
 	cleaning := latestLifecycleTransition(record,
 		sandbox.DockerContainerLifecycleTransitionCleaning)
 	if !exitCheckpointedBeforeRun || !cleaningCheckpointedBeforeRun ||
-		(cleaning != nil &&
-			cleaning.ReasonCode == sandbox.DockerContainerLifecycleReasonCancelled) {
+		(cleaning != nil && (cleaning.ReasonCode == sandbox.DockerContainerLifecycleReasonCancelled ||
+			cleaning.ReasonCode == sandbox.DockerContainerLifecycleReasonTimeout)) {
 		postExitErr = s.handlePostExit(context.WithoutCancel(ctx), record, request,
 			observation)
 	}
 	reason := sandbox.DockerContainerLifecycleReasonNaturalExit
 	if cleaning != nil {
 		reason = cleaning.ReasonCode
+	} else if ctx.Err() != nil {
+		reason = sandbox.DockerContainerLifecycleReasonCancelled
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			reason = sandbox.DockerContainerLifecycleReasonTimeout
+		}
 	}
 	record, err = s.ensureCleaning(context.WithoutCancel(ctx), record, reason)
 	if err != nil {
@@ -776,6 +794,39 @@ func (s *DockerContainerLifecycleSupervisor) runObserved(ctx context.Context,
 		return finished, postExitErr
 	}
 	return finished, nil
+}
+
+// Start may reach the daemon before cancellation interrupts its response or
+// confirmation. The existing owned request and lease authorize cleanup only;
+// the sticky cleaning transition prevents another create/start or Wait.
+func (s *DockerContainerLifecycleSupervisor) finishInterruptedStart(ctx context.Context,
+	record sandbox.DockerContainerLifecycleRecord, request sandbox.DockerContainerLifecycleRequest,
+	interrupted error,
+) (sandbox.DockerContainerLifecycleRecord, error) {
+	cleanupCtx, cancel := s.cleanupContext(ctx)
+	defer cancel()
+	reason := sandbox.DockerContainerLifecycleReasonCancelled
+	if errors.Is(interrupted, context.DeadlineExceeded) {
+		reason = sandbox.DockerContainerLifecycleReasonTimeout
+	}
+	observation, err := s.transport.Observe(cleanupCtx, request)
+	if err != nil {
+		return s.fail(cleanupCtx, record, lifecycleFailureReason(err))
+	}
+	// SQLite requires the observed start before a cleaning marker or TERM WAL.
+	// An interrupted response must not skip that durable side-effect receipt.
+	record, err = s.checkpointObservation(cleanupCtx, record, observation)
+	if err != nil {
+		return record, err
+	}
+	record, err = s.ensureCleaning(cleanupCtx, record, reason)
+	if err != nil {
+		return record, err
+	}
+	if observation.State == sandbox.DockerContainerLifecycleStateAbsent {
+		return s.finishAbsentRecovery(cleanupCtx, record)
+	}
+	return s.runObserved(cleanupCtx, record, request, observation)
 }
 
 func (s *DockerContainerLifecycleSupervisor) handleRunning(ctx context.Context,

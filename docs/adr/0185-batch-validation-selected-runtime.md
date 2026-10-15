@@ -57,6 +57,14 @@ be cancelled again, including through the UI; startup cannot resume its work.
 Public Standard Code cancellation rejects Batch admissions before side effects,
 and its finalizer rejects them before any parent Drydock checkpoint.
 
+Docker start/exit confirmation uses the existing lease-bounded cleanup context
+if cancellation races with a completed daemon effect. A cancelled or timed-out
+start response is resolved by exact inspection under the original owned intent,
+then the existing sticky cleaning path terminates/removes that resource without
+another create/start. Waiting still follows the caller's cancellation. Failed
+identity checks, expired fences or unconfirmed cleanup retain the uncertain Job
+and its mount instead of claiming that its process tree was reaped.
+
 Digest-only Jobs retain byte counts and full-stream hashes without retaining
 stdout/stderr bodies or output frames. Test receipts add optional actual
 backend identity/generation, isolation/network/credential policy, readiness

@@ -622,6 +622,99 @@ func TestBatchRuntimeCancelReapsDockerBeforeRemovingMount(t *testing.T) {
 	}
 }
 
+type batchDockerStartupCancellationTransport struct {
+	*batchDockerTargetTransport
+	startup chan struct{}
+}
+
+func (transport *batchDockerStartupCancellationTransport) Start(ctx context.Context,
+	request sandbox.DockerContainerLifecycleRequest, fence sandbox.DockerContainerLifecycleFence,
+) (sandbox.DockerContainerLifecycleObservation, bool, error) {
+	observation, started, err := transport.dockerLifecycleSupervisorTestTransport.Start(ctx, request, fence)
+	if err != nil || !started {
+		return observation, started, err
+	}
+	close(transport.startup)
+	transport.recorder.add("startup-paused:" + transport.state)
+	// Freeze the real response/confirmation window until Batch Cancel reaches
+	// the owned Job. Start's daemon effect has already happened.
+	<-ctx.Done()
+	transport.recorder.add("startup-cancelled:" + transport.state)
+	observation, err = sandbox.NewDockerContainerLifecycleObservation(transport.endpoint, request,
+		sandbox.DockerContainerLifecycleStateCreated, transport.resourceID, 0, 1)
+	return observation, true, err
+}
+
+func (transport *batchDockerStartupCancellationTransport) Observe(ctx context.Context,
+	request sandbox.DockerContainerLifecycleRequest,
+) (sandbox.DockerContainerLifecycleObservation, error) {
+	if err := ctx.Err(); err != nil {
+		transport.recorder.add("startup-observe:cancelled")
+		return sandbox.DockerContainerLifecycleObservation{}, err
+	}
+	transport.recorder.add("startup-observe:" + transport.state)
+	resourceID := transport.resourceID
+	if transport.state == sandbox.DockerContainerLifecycleStateAbsent {
+		resourceID = ""
+	}
+	return sandbox.NewDockerContainerLifecycleObservation(transport.endpoint, request, transport.state, resourceID, 0, 1)
+}
+
+func TestBatchRuntimeCancelBeforeDockerStartupConfirmation(t *testing.T) {
+	f := newCommandApprovalSandboxFixture(t, domain.RunExecutionPermissionFull, domain.RunExecutionProfileDocker, true, true)
+	executor := f.service.sandbox.(*DockerSandboxCommandRuntimeExecutor)
+	transport := &batchDockerStartupCancellationTransport{
+		batchDockerTargetTransport: &batchDockerTargetTransport{dockerLifecycleSupervisorTestTransport: executor.service.docker.lifecycleTransport.(*dockerLifecycleSupervisorTestTransport)},
+		startup:                    make(chan struct{}),
+	}
+	executor.service.docker.lifecycleTransport = transport
+	service, prepared := prepareRuntimeBatch(t, f, domain.BatchValidationGoTest)
+	child := prepared.Workspaces[0]
+	type submission struct {
+		receipt domain.BatchDeliveryReceipt
+		err     error
+	}
+	finished := make(chan submission, 1)
+	go func() {
+		receipt, _, err := service.Submit(t.Context(), SubmitBatchDeliveryRequest{PlanID: prepared.Plan.ID, Ordinal: 1,
+			Generation: child.Generation, OwnerToken: prepared.Authorities[0].OwnerToken,
+			EvidenceRefs: []string{"test://cancel-before-confirmation"}, OperationKey: "submit-before-startup-confirmation"})
+		finished <- submission{receipt, err}
+	}()
+	select {
+	case <-transport.startup:
+	case result := <-finished:
+		t.Fatalf("Docker did not start: %v / %v", result.err, errors.Unwrap(result.err))
+	case <-time.After(30 * time.Second):
+		t.Fatalf("Docker start timed out: %v", f.recorder.snapshot())
+	}
+	result, err := service.Cancel(t.Context(), CancelBatchDeliveryRequest{PlanID: prepared.Plan.ID,
+		OperationKey: "cancel-before-startup-confirmation", RequestedBy: "operator", Reason: "cancel while startup confirmation is pending", Confirm: true})
+	if err != nil || result.Snapshot.Plan.Status != domain.BatchDeliveryAborted || !transport.cleanupHadMount ||
+		transport.starts != 1 || transport.terms != 1 || transport.deletes != 1 {
+		t.Fatalf("startup cancellation lost cleanup: plan=%s mount=%v starts=%d terms=%d deletes=%d trace=%v error=%v / %v",
+			result.Snapshot.Plan.Status, transport.cleanupHadMount, transport.starts, transport.terms, transport.deletes, f.recorder.snapshot(), err, errors.Unwrap(err))
+	}
+	select {
+	case submitted := <-finished:
+		if submitted.err == nil || submitted.receipt.ID != "" {
+			t.Fatal("cancelled submission returned success")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("cancelled submission did not finish")
+	}
+	if _, err := os.Stat(child.WorktreeRoot); !os.IsNotExist(err) {
+		t.Fatalf("reaped child mount remained: %v", err)
+	}
+	if _, found, err := f.st.GetBatchDeliveryReceipt(t.Context(), prepared.Plan.ID, child.Ordinal, child.Generation); err != nil || found {
+		t.Fatalf("cancelled submission retained a success receipt: found=%v error=%v", found, err)
+	}
+	jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
+	if err != nil || len(jobs) != 1 || !jobs[0].State.Terminal() || jobs[0].State == runner.CommandRuntimeJobCompleted || !jobs[0].TreeReaped {
+		t.Fatalf("startup cancellation left an active/successful Job: %+v error=%v", jobs, err)
+	}
+}
+
 func TestBatchRuntimeCancelWithoutLiveOwnerPreservesMountUntilRetry(t *testing.T) {
 	f := newCommandApprovalSandboxFixture(t, domain.RunExecutionPermissionFull, domain.RunExecutionProfileSBX, true, true)
 	backend := installBatchSBX(t, f)
