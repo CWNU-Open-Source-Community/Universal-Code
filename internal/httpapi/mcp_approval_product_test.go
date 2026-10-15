@@ -110,8 +110,11 @@ func TestMCPApprovalHTTPProductSameTurnAndReplay(t *testing.T) {
 				}
 			}
 			var runtime atomic.Bool
-			var requests, calls, onboardingRequests atomic.Int32
+			var requests, catalogRequests, calls, onboardingRequests atomic.Int32
 			peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if runtime.Load() {
+					requests.Add(1)
+				}
 				if r.Method == http.MethodDelete {
 					w.WriteHeader(204)
 					return
@@ -127,7 +130,10 @@ func TestMCPApprovalHTTPProductSameTurnAndReplay(t *testing.T) {
 				}
 				onboardingRequests.Add(1)
 				if runtime.Load() {
-					requests.Add(1)
+					switch request.Method {
+					case "initialize", "notifications/initialized", "tools/list":
+						catalogRequests.Add(1)
+					}
 				}
 				if len(request.ID) == 0 {
 					w.WriteHeader(202)
@@ -154,6 +160,7 @@ func TestMCPApprovalHTTPProductSameTurnAndReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer manager.Close()
 			descriptor := mcp.ServerDescriptor{ProtocolVersion: mcp.ClientProtocolVersion, ID: "http-mcp-server", Name: "HTTP MCP fixture", Transport: mcp.TransportStreamableHTTP, Target: peer.URL, DeclaredCapabilities: []mcp.CapabilityKind{mcp.CapabilityTools}, Scope: mcp.ScopeRun, RunID: run.ID, WorkspaceID: workspace.ID, Source: mcp.Source{Kind: "manual", URI: "operator://http-mcp-fixture"}, CallTimeoutMillis: 3000, MaxResultBytes: 8192}
 			pluginService, err := plugins.NewService(st)
 			if err != nil {
@@ -224,8 +231,10 @@ func TestMCPApprovalHTTPProductSameTurnAndReplay(t *testing.T) {
 			}
 			runtime.Store(true)
 			result, err := supervisor.Step(ctx, run.ID)
-			if err != nil || result.RunStatus != domain.RunWaitingApproval || requests.Load() != 0 || provider.requests != 1 {
-				t.Fatalf("preflight %+v err=%v peer=%d model=%d", result, err, requests.Load(), provider.requests)
+			// The enabled catalog refreshes before the model round. Only catalog
+			// requests may precede approval; tools/call still requires approval.
+			if err != nil || result.RunStatus != domain.RunWaitingApproval || catalogRequests.Load() == 0 || requests.Load() != catalogRequests.Load() || calls.Load() != 0 || provider.requests != 1 {
+				t.Fatalf("preflight %+v err=%v peer=%d catalog=%d tools=%d model=%d", result, err, requests.Load(), catalogRequests.Load(), calls.Load(), provider.requests)
 			}
 			threadList, _ := readThreadList(t, api, "/api/v1/threads")
 			if len(threadList) != 1 || threadList[0].ExecutionState != "waiting_approval" || threadList[0].ComposerState != "waiting_approval" {
@@ -236,7 +245,7 @@ func TestMCPApprovalHTTPProductSameTurnAndReplay(t *testing.T) {
 					t.Fatal(err)
 				}
 				threadList, _ = readThreadList(t, api, "/api/v1/threads")
-				if len(threadList) != 1 || threadList[0].ExecutionState != "cancelled" {
+				if len(threadList) != 1 || threadList[0].ExecutionState != "cancelled" || calls.Load() != 0 || provider.requests != 1 {
 					t.Fatalf("retained MCP approval hid explicit cancellation: %+v", threadList)
 				}
 				return
@@ -252,10 +261,11 @@ func TestMCPApprovalHTTPProductSameTurnAndReplay(t *testing.T) {
 			if len(queue.Items) != 1 || len(queue.Items[0].AllowedActions) != 2 {
 				t.Fatalf("MCP pending queue omitted one-call review: %+v", queue)
 			}
+			beforePreviewRequests := requests.Load()
 			previewResponse := performRequest(t, api, http.MethodGet, base+"/preview", testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
 			var preview ApprovalPreviewView
 			decodeDataStatus(t, previewResponse, http.StatusOK, &preview)
-			if !preview.SourceCurrent || preview.Effect != "mcp_server_and_tool" || !strings.Contains(previewResponse.Body.String(), "exact review intent") || requests.Load() != 0 {
+			if !preview.SourceCurrent || preview.Effect != "mcp_server_and_tool" || !strings.Contains(previewResponse.Body.String(), "exact review intent") || requests.Load() != beforePreviewRequests || calls.Load() != 0 {
 				t.Fatalf("preview %+v", preview)
 			}
 			var decision ApprovalDecisionControlView
