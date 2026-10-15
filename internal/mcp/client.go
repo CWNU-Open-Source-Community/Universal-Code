@@ -19,23 +19,31 @@ import (
 // Client owns one SDK session. Manager-facing methods only project durable,
 // redacted records; JSON-RPC framing and request identity belong to the SDK.
 type Client struct {
-	resolved        *resolvedClient
-	descriptor      ServerDescriptor
-	secrets         []string
-	closed          atomic.Bool
-	tap             *sdkResponseTap
-	protocolVersion string
-	transport       sdk.Transport
-	mu              sync.Mutex
-	session         *sdk.ClientSession
-	connectErr      error
-	connected       bool
-	lifetime        context.Context
-	stop            context.CancelFunc
-	closeOnce       sync.Once
-	closeErr        error
+	inputMu          sync.Mutex
+	inputHandler     func(context.Context, *sdk.ElicitParams) (*sdk.ElicitResult, error)
+	activeInput      *activeClientInput
+	inputSecrets     []string
+	inputRecheck     func(context.Context) error
+	legacyInputCount int
+	resolved         *resolvedClient
+	remote           *mcpHTTPTransport
+	descriptor       ServerDescriptor
+	secrets          []string
+	secretsMu        sync.RWMutex
+	closed           atomic.Bool
+	tap              *sdkResponseTap
+	protocolVersion  string
+	transport        sdk.Transport
+	mu               sync.Mutex
+	session          *sdk.ClientSession
+	connectErr       error
+	connected        bool
+	lifetime         context.Context
+	stop             context.CancelFunc
+	closeOnce        sync.Once
+	closeErr         error
 	// Legacy adapter test hooks stay private; resolved clients use ExecutionGuards.
-	// The progress handler is the only callback mutable after connection.
+	// Progress and active invocation input handlers have separate locks.
 	beforeConnect   func(context.Context) error
 	beforeCall      func(context.Context) error
 	progress        func(context.Context, *sdk.ProgressNotificationParams)
@@ -295,7 +303,27 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMe
 		Bytes: len([]byte(content)), Truncated: truncated}, nil
 }
 
+func (c *Client) addSecret(secret string) {
+	if secret == "" {
+		return
+	}
+	c.secretsMu.Lock()
+	defer c.secretsMu.Unlock()
+	if !slices.Contains(c.secrets, secret) {
+		c.secrets = append(c.secrets, secret)
+	}
+}
+
 func (c *Client) sanitizeText(value string) string {
+	c.inputMu.Lock()
+	for _, secret := range c.inputSecrets {
+		if secret != "" {
+			value = strings.ReplaceAll(value, secret, "[REDACTED]")
+		}
+	}
+	c.inputMu.Unlock()
+	c.secretsMu.RLock()
+	defer c.secretsMu.RUnlock()
 	value = strings.ToValidUTF8(value, "?")
 	for _, secret := range c.secrets {
 		value = strings.ReplaceAll(value, secret, "[REDACTED:credential]")

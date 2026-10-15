@@ -10,6 +10,7 @@ import { fileChangeLabels, type NarrativeEntry } from "../projection/narrative";
 import { parseUnifiedDiff } from "../../components/unified-diff";
 import { SavedCommandOutput } from "../../components/saved-command-output";
 import { StatusLabel } from "../../components/common";
+import { MCPContentPreview } from "./mcp-content-preview";
 
 type ActivityEntry = Extract<NarrativeEntry, { kind: "activity" }>;
 type ActivityItem = ActivityEntry["items"][number];
@@ -387,7 +388,8 @@ function TypedDetailBody({ client, detail, runID, status }: {
         <dt>结果摘要</dt><dd>{value.result.summary}</dd>
       </dl>
       <SafeJSONFieldList label="参数" values={value.arguments} />
-      <SafeJSONFieldList label="结果字段" values={value.result.fields} /></>;
+      <SafeJSONFieldList label="结果字段" values={value.result.fields} />
+      <MCPContentPreview contents={value.contents} omitted={value.omitted_contents} truncated={value.content_truncated} /></>;
     }
     case "verification": {
       const value = detail.verification;

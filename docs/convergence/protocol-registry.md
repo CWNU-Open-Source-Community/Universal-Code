@@ -27,6 +27,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
+| [mcp-live-input](#mcp-live-input) | `ephemeral` | MCP client maintainers | 1 | false |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 59 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 6 | true |
@@ -1088,6 +1089,26 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `mcp.call.input.v1`
 - `mcp.capabilities.v1`
 - `mcp.content.input.v1`
+
+</details>
+
+### mcp-live-input
+
+- Class: `ephemeral`
+- Owner: MCP client maintainers
+- Source of truth: `internal/httpapi/mcp_input_control.go`, `internal/mcp/client_input.go`
+- Persistence/export boundary: Requests and one-shot answers exist only in the active host's in-memory InputBroker; HTTP and CLI do not persist a replayable input queue.
+- Compatibility rule: Unknown versions fail closed. Answers bind the live Run and input identity; restart requires a newly authorized operation.
+- Retirement gate (`restart-non-persistence`): Expired, cancelled and consumed inputs cannot be replayed; No pending input, answer or authorization may be adopted after restart
+- Restart proof: NewInputBroker constructs an empty process-local map; it has no database or restore reader. client_input_test.go verifies single consumption, cancellation and revocation; durable invocation recovery never adopts broker answers.
+- Writers:
+  - `mcp-live-input-writer` (`v1`, write-current) at `internal/httpapi/mcp_input_control.go`
+- Readers:
+  - `mcp-live-input-reader` (`v1`, active) at `internal/mcp/client_input.go`
+
+<details><summary>1 active identifiers</summary>
+
+- `mcp-input.v1`
 
 </details>
 

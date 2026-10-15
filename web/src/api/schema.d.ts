@@ -2644,6 +2644,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/mcp-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read live MCP operator input requests */
+        get: operations["listMCPInputs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/mcp-inputs/{input_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer one live MCP operator input request */
+        post: operations["respondMCPInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/network-authority": {
         parameters: {
             query?: never;
@@ -7299,6 +7333,7 @@ export interface components {
             discovered_at?: string;
             fingerprint?: string;
             negotiated: string[];
+            prompt_details?: components["schemas"]["ExtensionMCPPromptView"][];
             prompts: string[];
             resource_templates?: string[];
             resources: string[];
@@ -7314,6 +7349,15 @@ export interface components {
             package_id: string;
             revision: string;
             surface: string;
+        };
+        ExtensionMCPPromptArgumentView: {
+            description?: string;
+            name: string;
+            required: boolean;
+        };
+        ExtensionMCPPromptView: {
+            arguments: components["schemas"]["ExtensionMCPPromptArgumentView"][];
+            name: string;
         };
         ExtensionMCPRegistrationDescriptorView: {
             arguments?: string[];
@@ -9103,6 +9147,35 @@ export interface components {
             app_version: string;
             resources: string[];
         };
+        InputField: {
+            default?: unknown;
+            description?: string;
+            enum?: string[];
+            enum_titles?: string[];
+            name: string;
+            required: boolean;
+            title: string;
+            type: string;
+        };
+        InputResponse: {
+            action: string;
+            content?: unknown;
+            version: string;
+        };
+        InputView: {
+            /** Format: date-time */
+            expires_at: string;
+            fields: components["schemas"]["InputField"][];
+            host?: string;
+            id: string;
+            message: string;
+            method: string;
+            mode: string;
+            run_id: string;
+            server_id: string;
+            server_name: string;
+            url?: string;
+        };
         InstructionAuthority: {
             debug_grant: boolean;
             formatting_guidance: boolean;
@@ -9204,10 +9277,15 @@ export interface components {
         };
         MCPCredentialRequestView: {
             /** @enum {string} */
-            action: "set" | "delete";
+            action: "set" | "delete" | "oauth-discover" | "oauth-start" | "oauth-cancel";
             binding: components["schemas"]["MCPCredentialBindingView"];
             confirm: boolean;
             expected_reference_fingerprint: string;
+            oauth_client_id?: string;
+            /** @enum {string} */
+            oauth_client_id_mode?: "pre_registered" | "metadata_url";
+            oauth_flow_id?: string;
+            oauth_issuer?: string;
             secret?: string;
             /** @enum {string} */
             version: "mcp-credential.v1";
@@ -9217,6 +9295,7 @@ export interface components {
             credential_ref: string;
             descriptor_fingerprint: string;
             endpoint_conflict: boolean;
+            oauth?: components["schemas"]["OAuthStatus"];
             /** @enum {boolean} */
             plaintext_returned: false;
             /** @enum {string} */
@@ -9230,6 +9309,13 @@ export interface components {
             store_kind: string;
             target: string;
             workspace_id: string;
+        };
+        MCPInputListView: {
+            items: components["schemas"]["InputView"][];
+            version: string;
+        };
+        MCPInputResponseView: {
+            accepted: boolean;
         };
         Manifest: {
             backend: string;
@@ -9477,6 +9563,15 @@ export interface components {
             version: number;
             /** @enum {string} */
             visibility: "run" | "root" | "owner";
+        };
+        OAuthStatus: {
+            authorization_url?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            flow_id?: string;
+            issuer?: string;
+            issuers?: string[];
+            state: string;
         };
         OperationReceiptHistoryItemView: {
             /** Format: date-time */
@@ -12652,9 +12747,28 @@ export interface components {
             /** @enum {string} */
             type: "unavailable" | "text" | "null" | "boolean" | "number" | "string" | "array" | "object" | "unknown";
         };
+        ThreadActivityMCPContentView: {
+            /** Format: int32 */
+            byte_size?: number;
+            data_base64?: string;
+            /** Format: int32 */
+            height?: number;
+            kind: string;
+            mime_type?: string;
+            name?: string;
+            role?: string;
+            text?: string;
+            uri?: string;
+            /** Format: int32 */
+            width?: number;
+        };
         ThreadActivityMCPDetailView: {
             arguments: components["schemas"]["ThreadActivityJSONFieldSummaryView"][];
             boundary: components["schemas"]["ThreadActivityBoundaryView"];
+            content_truncated?: boolean;
+            contents?: components["schemas"]["ThreadActivityMCPContentView"][];
+            /** Format: int32 */
+            omitted_contents?: number;
             operation: string;
             result: components["schemas"]["ThreadActivityJSONSummaryView"];
             server: string;
@@ -20859,6 +20973,90 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["RunLifecycleControlView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listMCPInputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MCPInputListView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    respondMCPInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Live input request identity */
+                input_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputResponse"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MCPInputResponseView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

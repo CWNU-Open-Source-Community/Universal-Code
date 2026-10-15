@@ -137,12 +137,15 @@ type ThreadActivityJSONSummary struct {
 }
 
 type ThreadActivityMCPDetail struct {
-	Operation string
-	Server    string
-	Tool      string
-	Arguments []ThreadActivityJSONFieldSummary
-	Result    ThreadActivityJSONSummary
-	Boundary  ThreadActivityBoundary
+	Operation        string
+	Server           string
+	Tool             string
+	Arguments        []ThreadActivityJSONFieldSummary
+	Result           ThreadActivityJSONSummary
+	Contents         []ThreadActivityMCPContent
+	OmittedContents  int
+	ContentTruncated bool
+	Boundary         ThreadActivityBoundary
 }
 
 type ThreadActivityVerificationDetail struct {
@@ -717,6 +720,7 @@ func projectThreadActivityMCP(call domain.SupervisorToolCall, facts ThreadActivi
 		return ThreadActivityMCPDetail{}, err
 	}
 	arguments := summarizeThreadActivityJSONObject(input.Arguments)
+	contents, omitted, contentTruncated := projectThreadActivityMCPContents(envelope.Stdout)
 	result := summarizeThreadActivityJSON([]byte(envelope.Stdout))
 	if result.Type == "" {
 		result = ThreadActivityJSONSummary{Type: "unavailable", Summary: "无可展示的结果摘要",
@@ -724,7 +728,7 @@ func projectThreadActivityMCP(call domain.SupervisorToolCall, facts ThreadActivi
 	}
 	return ThreadActivityMCPDetail{Operation: facts.Operation,
 		Server: input.ServerID, Tool: input.ToolName, Arguments: arguments,
-		Result: result, Boundary: boundary}, nil
+		Result: result, Contents: contents, OmittedContents: omitted, ContentTruncated: contentTruncated, Boundary: boundary}, nil
 }
 
 func decodeThreadActivityMCPPayload(raw json.RawMessage) (toolgateway.MCPToolCallPayload, error) {
@@ -1068,6 +1072,7 @@ func (v ThreadActivityTypedDetail) Validate() error {
 		}
 	case "mcp":
 		if v.MCP == nil || len(v.MCP.Arguments) > MaxThreadActivityMCPFields ||
+			v.MCP.OmittedContents < 0 || validThreadActivityMCPContents(v.MCP.Contents) != nil ||
 			len(v.MCP.Result.Fields) > MaxThreadActivityMCPFields ||
 			!validThreadActivityBranchText(v.MCP.Operation, false) ||
 			!validThreadActivityBranchText(v.MCP.Server, false) ||

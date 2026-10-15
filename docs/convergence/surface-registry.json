@@ -462,8 +462,8 @@
         "macos",
         "linux"
       ],
-      "application_contract": "internal/mcp negotiation and invocation enter only through reviewed Go tool/application adapters.",
-      "authority_impact": "Discovery is non-authorizing; Go retains policy, independent approval, Scope, timeout, audit, and credential boundaries.",
+      "application_contract": "internal/mcp negotiation and invocation enter through reviewed Go tool/application adapters. GET /api/v1/runs/{run_id}/mcp-inputs and POST /api/v1/runs/{run_id}/mcp-inputs/{input_id} expose the same live Go InputBroker to UI and CLI.",
+      "authority_impact": "Discovery and remote input requests are non-authorizing; Go retains policy, independent approval, Scope, timeout, audit, and credential boundaries. Operator answers require extension control and current invocation authority, are consumed once, and are not persisted.",
       "release_blocking_checks": [],
       "contract_checks": [
         "go test ./internal/mcp",
@@ -472,7 +472,10 @@
       "recovery_evidence": [
         "internal/mcp/server_test.go",
         "internal/mcp/client_manager_test.go",
-        "internal/mcp/client_transport_test.go"
+        "internal/mcp/client_transport_test.go",
+        "internal/mcp/client_input_test.go",
+        "internal/httpapi/mcp_input_control_test.go",
+        "internal/application/mcp_input_integration_test.go"
       ],
       "compatibility_strategy": "Keep protocol negotiation, parser, audit, timeout, and cancellation contracts compatible; core use and release never require an MCP server.",
       "deprecation_window": "Contract retirement requires a separate decision, compatibility evidence, notice, and the registry default removal window unless a security advisory shortens it.",

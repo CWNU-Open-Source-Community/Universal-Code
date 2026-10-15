@@ -34,6 +34,8 @@ type sdkResponseTap struct {
 	pending        map[jsonrpc.ID]sdkPendingResponse
 	negotiated     func(string)
 	acceptProtocol func(string) error
+	receiveInput   func(*jsonrpc.Request)
+	prepareReply   func(context.Context, *jsonrpc.Response) (context.Context, error)
 }
 
 func (t *sdkResponseTap) forget(target *sdkRawResponse) {
@@ -65,6 +67,13 @@ type sdkObservingConnection struct {
 }
 
 func (c *sdkObservingConnection) Write(ctx context.Context, msg jsonrpc.Message) error {
+	if response, ok := msg.(*jsonrpc.Response); ok && c.tap.prepareReply != nil {
+		var err error
+		ctx, err = c.tap.prepareReply(ctx, response)
+		if err != nil {
+			return err
+		}
+	}
 	if request, ok := msg.(*jsonrpc.Request); ok && request.IsCall() {
 		target, _ := ctx.Value(sdkRawResponseKey{}).(*sdkRawResponse)
 		c.tap.mu.Lock()
@@ -75,6 +84,9 @@ func (c *sdkObservingConnection) Write(ctx context.Context, msg jsonrpc.Message)
 }
 func (c *sdkObservingConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
 	msg, err := c.Connection.Read(ctx)
+	if request, ok := msg.(*jsonrpc.Request); ok && c.tap.receiveInput != nil {
+		c.tap.receiveInput(request)
+	}
 	if response, ok := msg.(*jsonrpc.Response); ok {
 		c.tap.mu.Lock()
 		pending, found := c.tap.pending[response.ID]

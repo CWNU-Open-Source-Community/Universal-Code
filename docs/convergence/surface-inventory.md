@@ -221,11 +221,11 @@ counted as another product Surface.
 
 - **Owner:** `security-qa`
 - **Supported platforms:** `windows`, `macos`, `linux`
-- **Shared Go Application contract:** internal/mcp negotiation and invocation enter only through reviewed Go tool/application adapters.
-- **Authority impact:** Discovery is non-authorizing; Go retains policy, independent approval, Scope, timeout, audit, and credential boundaries.
+- **Shared Go Application contract:** internal/mcp negotiation and invocation enter through reviewed Go tool/application adapters. GET /api/v1/runs/{run_id}/mcp-inputs and POST /api/v1/runs/{run_id}/mcp-inputs/{input_id} expose the same live Go InputBroker to UI and CLI.
+- **Authority impact:** Discovery and remote input requests are non-authorizing; Go retains policy, independent approval, Scope, timeout, audit, and credential boundaries. Operator answers require extension control and current invocation authority, are consumed once, and are not persisted.
 - **Core release blocker:** No
 - **Contract/test checks:** `go test ./internal/mcp`, `go test ./internal/app -run MCP`
-- **Failure/recovery evidence:** `internal/mcp/server_test.go`, `internal/mcp/client_manager_test.go`, `internal/mcp/client_transport_test.go`
+- **Failure/recovery evidence:** `internal/mcp/server_test.go`, `internal/mcp/client_manager_test.go`, `internal/mcp/client_transport_test.go`, `internal/mcp/client_input_test.go`, `internal/httpapi/mcp_input_control_test.go`, `internal/application/mcp_input_integration_test.go`
 - **Go-owned controls:** `policy`, `approval`, `scope`, `audit`
 - **Compatibility strategy:** Keep protocol negotiation, parser, audit, timeout, and cancellation contracts compatible; core use and release never require an MCP server.
 - **Deprecation window:** Contract retirement requires a separate decision, compatibility evidence, notice, and the registry default removal window unless a security advisory shortens it.

@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/executionauth"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/redact"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
@@ -31,6 +33,7 @@ type CredentialReader interface {
 type TransportFactory func(context.Context, ServerDescriptor, string) (clientTransport, error)
 
 type ManagerOptions struct {
+	InputBroker      *InputBroker
 	HTTPClient       *http.Client
 	TransportFactory TransportFactory
 	Now              func() time.Time
@@ -38,6 +41,7 @@ type ManagerOptions struct {
 }
 
 type Manager struct {
+	inputs        *InputBroker
 	store         ClientStore
 	credentials   CredentialReader
 	factory       TransportFactory
@@ -115,7 +119,7 @@ func NewClientManager(store ClientStore, credentials CredentialReader,
 			return newRemoteClientTransport(descriptor, bearer, options.HTTPClient)
 		}
 	}
-	return &Manager{store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, now: now,
+	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, now: now,
 		locks: make(map[string]*sync.Mutex)}, nil
 }
 
@@ -336,6 +340,16 @@ func (m *Manager) connect(ctx context.Context, descriptor ServerDescriptor) (*Cl
 			return nil, errors.New("configured MCP credential is unavailable")
 		}
 		bearer = value
+		if mcpoauth.IsEnvelope(value) {
+			owned, ok := m.credentials.(credential.Store)
+			if !ok {
+				return nil, mcpoauth.ErrOAuth
+			}
+			bearer, err = mcpoauth.ResolveRevision(ctx, owned, mcpoauth.Binding{Ref: descriptor.CredentialRef, Fingerprint: descriptor.Fingerprint(), Target: descriptor.Target}, m.httpClient, mcpoauth.RevisionIdentity(value))
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	transport, err := m.factory(ctx, descriptor, bearer)
 	if err != nil {

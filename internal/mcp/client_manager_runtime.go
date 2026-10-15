@@ -13,8 +13,11 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/credential"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/toolcontract"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const RuntimeAdapterID = "mcp-sdk"
@@ -104,6 +107,12 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 				return launch, "", errors.New("MCP credential unavailable")
 			}
 			bearer = value
+			if mcpoauth.IsEnvelope(value) {
+				bearer, err = mcpoauth.LocalBearer(value, mcpoauth.Binding{Ref: d.CredentialRef, Fingerprint: record.DescriptorFingerprint, Target: d.Target})
+				if err != nil {
+					return launch, "", err
+				}
+			}
 			launch.HTTP.Credential = &toolcontract.CredentialRef{ID: d.CredentialRef, Revision: runtimeCredentialRevision(key, value)}
 		}
 	}
@@ -111,6 +120,7 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 }
 
 func runtimeCredentialRevision(key []byte, value string) string {
+	value = mcpoauth.RevisionIdentity(value)
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte("mcp.runtime.credential\x00" + value))
 	return hex.EncodeToString(mac.Sum(nil))
@@ -133,6 +143,7 @@ func runtimeOperation(id string, kind toolcontract.OperationKind, launch toolcon
 func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, record ServerRecord) (result ClientCallResult, err error) {
 	receipt := toolcontract.Receipt{OperationID: request.OperationID, State: toolcontract.ReceiptNotDispatched}
 	defer func() {
+		receipt.OperationID = request.OperationID
 		if err != nil && receipt.Validate() == nil {
 			if receipt.ErrorCode == "" {
 				receipt.ErrorCode = string(apperror.CodeOf(apperror.Normalize(err)))
@@ -143,7 +154,7 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	if request.Subject.Validate() != nil || request.Subject.RunID != request.RunID || !validClientIdentity(request.OperationID) {
 		return result, apperror.New(apperror.CodeInvalidArgument, "MCP invocation requires a host operation and subject")
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(record.Descriptor.CallTimeoutMillis)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, InvocationTimeout)
 	defer cancel()
 	key := make([]byte, 32)
 	if _, err = rand.Read(key); err != nil {
@@ -184,6 +195,8 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			}
 		}
 	}
+	var resolvedClientForSecrets *Client
+	var recheckCall func(context.Context) error
 	credential := func(ctx context.Context, ref toolcontract.CredentialRef) (string, error) {
 		if m.credentials == nil || launch.HTTP == nil || launch.HTTP.Credential == nil || ref != *launch.HTTP.Credential {
 			return "", runtimeAuthorityFailure(errors.New("MCP credential binding changed"))
@@ -191,6 +204,30 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		value, found, err := m.credentials.Get(ctx, ref.ID)
 		if err != nil || !found || runtimeCredentialRevision(key, value) != ref.Revision {
 			return "", runtimeAuthorityFailure(errors.New("MCP credential revision changed"))
+		}
+		if mcpoauth.IsEnvelope(value) {
+			// Refresh contacts the issuer. Recheck the current call before that
+			// network action, in addition to the final MCP dispatch guard.
+			if recheckCall != nil {
+				if err := recheckCall(ctx); err != nil {
+					return "", err
+				}
+			}
+			owned, ok := m.credentials.(credential.Store)
+			if !ok {
+				return "", mcpoauth.ErrOAuth
+			}
+			secret, err := mcpoauth.ResolveRevision(ctx, owned, mcpoauth.Binding{Ref: ref.ID, Fingerprint: record.DescriptorFingerprint, Target: record.Descriptor.Target}, m.httpClient, mcpoauth.RevisionIdentity(value))
+			if err == nil && resolvedClientForSecrets != nil {
+				resolvedClientForSecrets.addSecret(secret)
+			}
+			if err == nil {
+				current, checkErr := m.store.GetMCPClientServer(ctx, record.Descriptor.ID)
+				if checkErr != nil || current.Generation != record.Generation || current.State != TrustEnabled || current.DescriptorFingerprint != record.DescriptorFingerprint {
+					return "", errors.New("MCP authorization changed during credential refresh")
+				}
+			}
+			return secret, err
 		}
 		return value, nil
 	}
@@ -216,8 +253,17 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			return err
 		}
 		if launch.HTTP != nil && launch.HTTP.Credential != nil {
-			_, credentialErr := credential(ctx, *launch.HTTP.Credential)
-			return credentialErr
+			if m.credentials == nil {
+				return errors.New("MCP credential reader unavailable")
+			}
+			value, found, err := m.credentials.Get(ctx, launch.HTTP.Credential.ID)
+			if err != nil || !found || runtimeCredentialRevision(key, value) != launch.HTTP.Credential.Revision {
+				return errors.New("MCP credential revision changed")
+			}
+			if mcpoauth.IsEnvelope(value) {
+				_, err = mcpoauth.LocalBearer(value, mcpoauth.Binding{Ref: launch.HTTP.Credential.ID, Fingerprint: record.DescriptorFingerprint, Target: record.Descriptor.Target})
+			}
+			return err
 		}
 		return nil
 	}
@@ -298,8 +344,27 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	defer client.Close()
+	resolvedClientForSecrets = client
+	if client.remote != nil && launch.HTTP != nil && launch.HTTP.Credential != nil {
+		stored, found, readErr := m.credentials.Get(ctx, launch.HTTP.Credential.ID)
+		if readErr != nil {
+			return result, readErr
+		}
+		if found && mcpoauth.IsEnvelope(stored) {
+			client.remote.resolveBearer = func(ctx context.Context) (string, error) { return credential(ctx, *launch.HTTP.Credential) }
+		}
+	}
 	client.secrets = slices.Clone(secrets)
 	client.descriptor.DeclaredCapabilities = slices.Clone(record.Descriptor.DeclaredCapabilities)
+	binding := inputBinding{runID: request.RunID, serverID: record.Descriptor.ID, serverName: record.Descriptor.Name, operationID: request.OperationID, method: request.Method}
+	if binding.method == "" {
+		binding.method = "tools/call"
+	}
+	if m.inputs != nil {
+		client.inputHandler = func(context.Context, *sdk.ElicitParams) (*sdk.ElicitResult, error) {
+			return nil, errors.New("MCP input has no authorized invocation")
+		}
+	}
 	current, err := client.DiscoverWithScope(ctx, discovery)
 	if err != nil {
 		return result, m.runtimeInvocationFailure(ctx, record, "runtime discovery failed", err)
@@ -323,23 +388,99 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	}
 	operation := runtimeOperation(request.OperationID, toolcontract.OperationToolCall, launch, input)
 	operation.CapabilityFingerprint = client.NativeCapabilityFingerprint()
-	var recheckCall func(context.Context) error
 	toolGuard, recheckCall, err = authorize(ctx, operation)
 	if err != nil {
 		return result, err
 	}
 	var raw json.RawMessage
 	isError := false
+	original := params
 	if request.Method == "" {
-		typed, body, callReceipt, callErr := client.CallToolWithReceipt(ctx, operation, request.ToolName, request.Arguments)
-		raw, receipt, err = body, callReceipt, callErr
-		if typed != nil {
-			isError = typed.IsError
+		original, _ = json.Marshal(struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}{request.ToolName, request.Arguments})
+	}
+	wireParams := original
+	originalRecheck := recheckCall
+	for round := 0; ; round++ {
+		if m.inputs != nil {
+			check := recheckCall
+			client.inputMu.Lock()
+			client.inputRecheck = func(checkCtx context.Context) error {
+				if err := originalRecheck(checkCtx); err != nil {
+					return err
+				}
+				return check(checkCtx)
+			}
+			client.inputHandler = func(inputCtx context.Context, p *sdk.ElicitParams) (*sdk.ElicitResult, error) {
+				if err := originalRecheck(inputCtx); err != nil {
+					return nil, err
+				}
+				return m.inputs.request(inputCtx, binding, p, check)
+			}
+			client.inputMu.Unlock()
 		}
-	} else {
-		raw, receipt, err = client.InvokeContentWithReceipt(ctx, operation, request.Method, params)
+		priorReceipt := receipt
+		callCtx, stopCall := timedInputCall(ctx, time.Duration(record.Descriptor.CallTimeoutMillis)*time.Millisecond)
+		if request.Method == "" {
+			p, decodeErr := decodeToolParams(wireParams)
+			if decodeErr != nil {
+				stopCall()
+				return result, errors.New("invalid MCP invocation parameters")
+			}
+			typed, body, callReceipt, callErr := client.callToolParamsWithReceipt(callCtx, operation, p)
+			raw, receipt, err = body, callReceipt, callErr
+			if typed != nil {
+				isError = typed.IsError
+			}
+		} else {
+			raw, receipt, err = client.InvokeContentWithReceipt(callCtx, operation, request.Method, wireParams)
+		}
+		stopCall()
+		if receipt.State == toolcontract.ReceiptNotDispatched && priorReceipt.State != toolcontract.ReceiptNotDispatched {
+			priorReceipt.ErrorCode = receipt.ErrorCode
+			receipt = priorReceipt
+		}
+		var required *sdkInputRequiredError
+		if !errors.As(err, &required) {
+			break
+		}
+		if m.inputs == nil || record.Capabilities.ProtocolVersion != preferredClientProtocolVersion {
+			return result, err
+		}
+		if round >= 3 || receipt.State != toolcontract.ReceiptResultReceived {
+			return result, runtimeAuthorityFailure(errors.New("MCP input interaction unavailable or exhausted"))
+		}
+		currentRecheck := recheckCall
+		wireParams, err = m.continueInput(ctx, client, binding, required.raw, original, func(ctx context.Context) error {
+			if err := originalRecheck(ctx); err != nil {
+				return err
+			}
+			return currentRecheck(ctx)
+		})
+		if err != nil {
+			return result, runtimeAuthorityFailure(err)
+		}
+		if request.Method == "" {
+			input, err = fingerprintToolParams(key, launch, wireParams)
+		} else {
+			input, err = FingerprintContentInput(key, launch, request.Method, wireParams)
+		}
+		if err != nil {
+			return result, err
+		}
+		operation = runtimeOperation("mcp-continue-"+digestBytes([]byte(fmt.Sprintf("%s:%d", request.OperationID, round))), toolcontract.OperationToolCall, launch, input)
+		operation.CapabilityFingerprint = client.NativeCapabilityFingerprint()
+		toolGuard, recheckCall, err = authorize(ctx, operation)
+		if err != nil {
+			return result, err
+		}
 	}
 	if err != nil {
+		if authErr := recheckCall(ctx); authErr != nil {
+			return result, authErr
+		}
 		return result, m.runtimeInvocationFailure(ctx, latest, "runtime tool call failed", err)
 	}
 	if err = recheckCall(ctx); err != nil {

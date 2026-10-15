@@ -983,8 +983,16 @@
 }
 .v2-command-truncated { color: var(--v2-muted); font-size: 10px; margin: 0; }
 .v2-tool-facts-list { display: grid; gap: 5px; }
+.v2-mcp-contents { display: grid; gap: 12px; min-width: 0; }
+.v2-mcp-content { display: grid; gap: 8px; margin: 0; min-width: 0; }
+.v2-mcp-content figcaption { color: var(--v2-muted); font-size: 11px; }
+.v2-mcp-content p { margin: 0; overflow-wrap: anywhere; }
+.v2-mcp-content img { display: block; max-width: 100%; max-height: 480px; width: auto; height: auto; object-fit: contain; border-radius: 8px; }
+.v2-mcp-content audio { width: 100%; max-width: 480px; }
+.v2-mcp-content-text { margin: 0; max-height: 320px; overflow: auto; padding: 10px; border: 1px solid var(--v2-border); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .v2-tool-facts-list > strong { color: var(--v2-muted); font-size: 10px; font-weight: 600; }
 .v2-tool-facts-list > dl { display: grid; gap: 4px; }
+.v2-command-detail .v2-tool-facts-list > dl { grid-template-columns: minmax(0, 1fr); }
 .v2-tool-facts-list > dl > div {
   display: grid;
   gap: 4px 9px;
@@ -1400,6 +1408,19 @@
 .v2-network-popover > footer button.primary:hover:not(:disabled),
 .v2-approval-card footer button.primary:hover:not(:disabled),
 .v2-dialog footer button.primary:hover:not(:disabled) { background: var(--prayu-primary-hover); }
+
+.v2-mcp-input { min-width: 0; overflow-wrap: anywhere; }
+.v2-mcp-input h3 { color: var(--v2-ink); font-size: 15px; margin: 0 0 10px; }
+.v2-mcp-input p { font-size: 13px; line-height: 1.6; }
+.v2-mcp-input label { display: grid; gap: 7px; }
+.v2-mcp-input label small { display: block; }
+.v2-mcp-input input, .v2-mcp-input select { color: var(--v2-ink); font: inherit; }
+.v2-mcp-input select { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; min-height: 34px; min-width: 0; padding: 6px 10px; width: 100%; }
+.v2-mcp-input select[multiple] { min-height: 76px; }
+.v2-mcp-input label.v2-mcp-checkbox { align-items: center; display: flex; flex-direction: row-reverse; justify-content: flex-end; }
+.v2-mcp-input input[type="checkbox"] { flex: 0 0 18px; height: 18px; margin: 0; padding: 0; width: 18px; }
+.v2-mcp-input a { color: var(--v2-ink); text-decoration: underline; text-underline-offset: 3px; }
+.v2-mcp-input button:disabled { opacity: .45; }
 
 .v2-new-conversation-body { align-items: center; display: flex; justify-content: center; min-height: 0; }
 .v2-new-copy { margin-top: 30px; max-width: 490px; text-align: center; }

@@ -6,6 +6,7 @@ import { parseProjectPreparation, parseProjectPreparationOperation, normalizePre
 import { consumeSSE } from "./sse";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
 import { validMCPConnectionConfig } from "./mcp-config";
+import { validMCPContents } from "./mcp-content";
 import type { MCPCredentialBindingView, MCPCredentialRequestView, MCPCredentialStatusView } from "./types";
 import { applicationServiceIdentity, parseThreadApplicationServices, parseThreadApplicationService,
   parseThreadApplicationServiceStop } from "./application-services";
@@ -1195,7 +1196,10 @@ function validThreadActivityTypedDetail(value: unknown): boolean {
       if (!hasExactKeys(value, ["kind", "mcp"]) || !isRecord(value.mcp)) return false;
       const detail = value.mcp;
       return hasExactKeys(detail, ["arguments", "boundary", "operation", "result", "server",
-        "tool"]) && validThreadActivityFactText(detail.operation, 2_048) &&
+        "tool", ...["contents", "omitted_contents", "content_truncated"].filter((key) => detail[key] !== undefined)]) &&
+        (detail.contents === undefined || validMCPContents(detail.contents)) &&
+        (detail.omitted_contents === undefined || safeBoundedCount(detail.omitted_contents, 65536)) &&
+        (detail.content_truncated === undefined || typeof detail.content_truncated === "boolean") && validThreadActivityFactText(detail.operation, 2_048) &&
         validThreadActivityFactIdentity(detail.server) && validThreadActivityFactIdentity(detail.tool) &&
         validThreadActivityJSONFields(detail.arguments) &&
         validThreadActivityJSONSummary(detail.result) &&
@@ -6101,7 +6105,8 @@ function containsForbiddenExtensionField(value: unknown): boolean {
     "authorization", "arguments", "result", "publisher_public_key", "archive_bytes", "raw"]);
   return Object.entries(value).some(([key, child]) =>
     forbidden.has(key.toLocaleLowerCase()) ||
-    (!(value.protocol_version === "mcp-client-server.v1" && ["env", "env_credential_refs", "headers"].includes(key)) && containsForbiddenExtensionField(child)));
+    (!(value.protocol_version === "mcp-client-server.v1" && ["env", "env_credential_refs", "headers"].includes(key)) &&
+      !(key === "prompt_details" && validExtensionPromptDetails(value)) && containsForbiddenExtensionField(child)));
 }
 
 const codeIntelTools = ["code_workspace_symbols", "code_document_symbols",
@@ -6339,6 +6344,7 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
       !boundedStringArray(item.capabilities.resources, 256) ||
       (item.capabilities.resource_templates !== undefined && !boundedStringArray(item.capabilities.resource_templates, 256, 4096)) ||
       !boundedStringArray(item.capabilities.prompts, 128, 256) ||
+      (item.capabilities.prompt_details !== undefined && !validExtensionPromptDetails(item.capabilities)) ||
       !isRecord(item.source) || !boundedText(item.source.kind, 32) ||
       !boundedText(item.source.uri, 4_096)) {
       throw new APIRequestError("MCP server projection is invalid", "INVALID_RESPONSE", 502);
@@ -6383,6 +6389,26 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
     }
   }
   return value as unknown as ExtensionInventoryView;
+}
+
+function validExtensionPromptDetails(capabilities: Record<string, unknown>): boolean {
+  const details = capabilities.prompt_details;
+  const prompts = capabilities.prompts;
+  if (!Array.isArray(details) || details.length > 128 || !Array.isArray(prompts) || details.length !== prompts.length) return false;
+  const seen = new Set<string>();
+  return details.every((prompt) => {
+    if (!isRecord(prompt) || !hasExactKeys(prompt, ["name", "arguments"]) || !boundedText(prompt.name, 256) || seen.has(prompt.name) ||
+      !prompts.includes(prompt.name) || !Array.isArray(prompt.arguments) || prompt.arguments.length > 128) return false;
+    seen.add(prompt.name);
+    const argumentsSeen = new Set<string>();
+    return prompt.arguments.every((argument) => {
+      if (!isRecord(argument) || !hasExactKeys(argument, ["name", "required", ...(argument.description !== undefined ? ["description"] : [])]) ||
+        !boundedText(argument.name, 256) || argumentsSeen.has(argument.name) || typeof argument.required !== "boolean" ||
+        argument.description !== undefined && argument.description !== "" && !boundedText(argument.description, 16384)) return false;
+      argumentsSeen.add(argument.name);
+      return true;
+    });
+  });
 }
 
 function parseExtensionMCPServer(value: unknown): ExtensionMCPServerView {
@@ -7123,6 +7149,21 @@ export class APIClient {
       return status;
     }
     catch { throw new APIRequestError("MCP credential change returned invalid presence metadata; refresh before retrying", "INVALID_RESPONSE", 502); }
+  }
+
+  async changeMCPOAuth(body: MCPCredentialRequestView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
+    if (!this.hasExtensionControl || body.version !== "mcp-credential.v1" || !validMCPCredentialBinding(body.binding) ||
+      !body.confirm || !isSHA256(body.expected_reference_fingerprint) || body.secret ||
+      !["oauth-discover", "oauth-start", "oauth-cancel"].includes(body.action)) throw new Error("An exact MCP OAuth binding and confirmation are required");
+    if (body.oauth_client_id_mode !== undefined &&
+      (body.action !== "oauth-start" || !["pre_registered", "metadata_url"].includes(body.oauth_client_id_mode))) throw new Error("Invalid OAuth client ID mode");
+    if (body.action === "oauth-start" && body.oauth_client_id_mode === "metadata_url") {
+      const url = new URL(body.oauth_client_id ?? "");
+      if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash || url.pathname === "/" ||
+        (body.oauth_client_id?.length ?? 0) > 256) throw new Error("A hosted HTTPS client metadata document URL is required");
+    }
+    const value=await this.sendControlRequest<unknown>(`/extensions/mcp/${encodeURIComponent(body.binding.server_id)}/credential`,body,signal);
+    return parseMCPCredentialStatus(value,body.binding);
   }
 
   async importPluginPackage(body: ExtensionPluginImportRequestView,
@@ -8330,6 +8371,17 @@ export class APIClient {
       ? parseThreadTranscriptItems(envelope.data as unknown[]) as T[]
       : envelope.data;
     return { items, page: envelope.page, requestID: envelope.request_id };
+  }
+
+  async respondMCPInput(runID: string, inputID: string,
+    body: { version: "mcp-input.v1"; action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }): Promise<{ accepted: boolean }> {
+    if (!this.hasExtensionControl || !boundedIdentity(runID) || !boundedIdentity(inputID) ||
+      body.version !== "mcp-input.v1" || !["accept", "decline", "cancel"].includes(body.action)) {
+      throw new Error("An active MCP request and extension control capability are required");
+    }
+    // The live broker consumes an answer once. It is not a durable command and
+    // must not carry a replay key or be retried automatically.
+    return this.sendControlRequest(`/runs/${encodeURIComponent(runID)}/mcp-inputs/${encodeURIComponent(inputID)}`, body);
   }
 
   async postControl<T>(

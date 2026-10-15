@@ -174,7 +174,7 @@ func (r *resolvedClient) beforeSend(ctx context.Context, frame *jsonrpc.Request,
 		var actualInput string
 		var err error
 		if frame.Method == "tools/call" {
-			actualInput, err = FingerprintCallInput(r.key, r.launch, params.Name, params.Arguments)
+			actualInput, err = fingerprintToolParams(r.key, r.launch, frame.Params)
 		} else {
 			actualInput, err = FingerprintContentInput(r.key, r.launch, frame.Method, frame.Params)
 		}
@@ -352,12 +352,16 @@ func FingerprintCallInput(key []byte, launch toolcontract.ResolvedLaunch, name s
 // sensitive data for the host's redaction boundary, never a logging payload. The
 // SDK result provides typed content; raw preserves unknown fields and numbers.
 func (c *Client) CallToolWithReceipt(ctx context.Context, operation toolcontract.Operation, name string, arguments json.RawMessage) (*sdk.CallToolResult, json.RawMessage, toolcontract.Receipt, error) {
+	return c.callToolParamsWithReceipt(ctx, operation, &sdk.CallToolParams{Name: name, Arguments: json.RawMessage(bytes.Clone(arguments))})
+}
+func (c *Client) callToolParamsWithReceipt(ctx context.Context, operation toolcontract.Operation, params *sdk.CallToolParams) (*sdk.CallToolResult, json.RawMessage, toolcontract.Receipt, error) {
 	receipt := toolcontract.Receipt{OperationID: operation.ID, State: toolcontract.ReceiptNotDispatched}
 	if c == nil || c.resolved == nil || c.closed.Load() || operation.Validate() != nil || operation.Kind != toolcontract.OperationToolCall ||
 		operation.Component != c.resolved.launch.Component || operation.CapabilityFingerprint != c.NativeCapabilityFingerprint() {
 		return nil, nil, receipt, errors.New("MCP tool operation is not bound to current discovery")
 	}
-	input, err := FingerprintCallInput(c.resolved.key, c.resolved.launch, name, arguments)
+	encoded, _ := json.Marshal(params)
+	input, err := fingerprintToolParams(c.resolved.key, c.resolved.launch, encoded)
 	if err != nil || input != operation.InputFingerprint {
 		return nil, nil, receipt, errors.New("MCP tool input fingerprint differs from its operation")
 	}
@@ -365,9 +369,9 @@ func (c *Client) CallToolWithReceipt(ctx context.Context, operation toolcontract
 	ctx = context.WithValue(ctx, resolvedCallKey{}, &resolvedCall{operation: cloneOperation(operation)})
 	ctx = context.WithValue(ctx, sdkCallAttemptKey{}, attempt)
 	ctx = context.WithValue(ctx, sdkRawResponseKey{}, capture)
-	result, raw, err := c.callTool(ctx, &sdk.CallToolParams{
-		Name: name, Arguments: json.RawMessage(bytes.Clone(arguments)), Meta: c.callProgressMeta(operation.ID),
-	})
+	defer c.activateInput(ctx, attempt)()
+	params.Meta = c.callProgressMeta(operation.ID)
+	result, raw, err := c.callTool(ctx, params)
 	_, wireError := capture.result()
 	if len(raw) > 0 || wireError != nil {
 		receipt.State = toolcontract.ReceiptResultReceived

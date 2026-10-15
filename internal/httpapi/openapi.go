@@ -668,6 +668,8 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			RequestType: reflect.TypeOf(StandardCodePresetControlRequestView{}),
 			Control:     true, NotFound: true, SuccessStatus: http.StatusAccepted,
 			Parameters: []openAPIParameter{runID, standardCodePresetIdempotencyKey}},
+		{Path: MCPInputsPathTemplate, OperationID: "listMCPInputs", Summary: "Read live MCP operator input requests", Tag: "Extensions", NotFound: true, DataType: reflect.TypeOf(MCPInputListView{}), Parameters: []openAPIParameter{runID}},
+		{Path: MCPInputResponsePathTemplate, Method: http.MethodPost, OperationID: "respondMCPInput", Summary: "Answer one live MCP operator input request", Tag: "Extensions", Control: true, NotFound: true, SuccessStatus: http.StatusOK, DataType: reflect.TypeOf(MCPInputResponseView{}), RequestType: reflect.TypeOf(mcp.InputResponse{}), Parameters: []openAPIParameter{runID, pathIdentityParameter("input_id", "Live input request identity")}},
 		{Path: ExtensionInventoryPath, OperationID: "getExtensionInventory",
 			Summary: "Inspect MCP Client and Plugin state", Tag: "Extensions",
 			Description: "Returns bounded MCP server health, capability fingerprints, metadata-only call audits, and Plugin installation state. Credential plaintext, MCP arguments and results, and package bytes are never returned.",
@@ -3161,6 +3163,9 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 		(typeName == "ThreadActivityJSONSummaryView" && fieldName == "fields") {
 		schema["maxItems"] = application.MaxThreadActivityMCPFields
 	}
+	if typeName == "ThreadActivityMCPDetailView" && fieldName == "contents" {
+		schema["maxItems"] = application.MaxThreadActivityMCPContents
+	}
 	if typeName == "ThreadActivityCommandDetailView" {
 		switch fieldName {
 		case "command":
@@ -3388,7 +3393,8 @@ var openAPIFieldEnums = map[string][]string{
 	"ProviderCredentialRequestView.action":                     {string(application.ProviderCredentialSet), string(application.ProviderCredentialDelete)},
 	"MCPCredentialStatusView.protocol_version":                 {application.MCPCredentialProtocolVersion},
 	"MCPCredentialRequestView.version":                         {application.MCPCredentialProtocolVersion},
-	"MCPCredentialRequestView.action":                          {"set", "delete"},
+	"MCPCredentialRequestView.action":                          {"set", "delete", "oauth-discover", "oauth-start", "oauth-cancel"},
+	"MCPCredentialRequestView.oauth_client_id_mode":            {"pre_registered", "metadata_url"},
 	"FileEditProposalSourceView.protocol_version":              {application.FileEditProposalProtocolVersion},
 	"FileEditProposalRequestView.version":                      {application.FileEditProposalProtocolVersion},
 	"FileEditProposalView.protocol_version":                    {application.FileEditProposalProtocolVersion},

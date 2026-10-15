@@ -1176,6 +1176,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveCodeIntelConfigurationMutation(tracked, request, requestID, identity, kind)
 		return
 	}
+	if runID, inputID, matched := matchMCPInputPath(request.URL.Path); matched {
+		a.serveMCPInput(tracked, request, requestID, runID, inputID)
+		return
+	}
 	if identity, kind, matched := matchExtensionMutationPath(request.URL.Path); matched {
 		a.serveExtensionMutation(tracked, request, requestID, identity, kind)
 		return
@@ -1613,7 +1617,7 @@ func setUISecurityHeaders(header http.Header, requestID string) {
 	header.Set("Cache-Control", "no-store")
 	header.Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; connect-src 'self'; "+
 		"font-src 'self'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; "+
-		"manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self'")
+		"manifest-src 'self'; media-src data:; object-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self'")
 	header.Set("Cross-Origin-Opener-Policy", "same-origin")
 	header.Set("Cross-Origin-Resource-Policy", "same-origin")
 	header.Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
