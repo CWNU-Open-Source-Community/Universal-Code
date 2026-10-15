@@ -21,6 +21,8 @@ import { HostCommandProposalPanel } from "../../components/host-command-proposal
 import { v2FileReferenceKey, type V2FileReference } from "./file-context";
 import { imageIdentities, type WorkspaceImageAttachment } from "../../api/image-attachments";
 import { fileAttachmentIdentities, type WorkspaceFileAttachment } from "../../api/file-attachments";
+import { mcpReferenceIdentities, type MCPDraftReference } from "../../api/mcp-references";
+import { v2MCPReferenceKey } from "./mcp-reference-picker";
 import { useV2QueuedMessagesQuery, V2QueuedMessages } from "./queued-messages";
 import { V2AgentBrowser } from "./agent-browser";
 import { v2AttachmentReferenceKey } from "../attachment-keys";
@@ -471,6 +473,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       if (accepted && !input.draftVersion) queryClient.setQueryData<WorkspaceFileAttachment[]>(v2AttachmentReferenceKey(input.workspaceID, input.threadID),
         (current) => current?.filter((file) => !input.attachments?.some((sent) => sent.id === file.id &&
           sent.workspace_id === file.workspace_id && sent.sha256 === file.sha256 && sent.byte_size === file.byte_size)));
+      if (accepted && !input.draftVersion) queryClient.setQueryData<MCPDraftReference[]>(v2MCPReferenceKey(input.workspaceID, input.threadID),
+        (current) => current?.filter(({ id }) => !input.mcpReferences?.some((item) => item.id === id)));
       removeV2Submission(queryClient, input);
       setConfirmedSubmission(input);
       if (accepted && !managedDraft && !input.draftVersion && draft === (input.draft ?? input.content)) onDraftChange?.("", draft);
@@ -761,31 +765,31 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             : "活动状态尚未确认，暂时不能新增文件引用。已有输入会保留。"
         : undefined;
 
-  const send = async (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[]) => {
+  const send = async (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => {
     if (deliveryMode === "steer" && !canSteer) {
       throw new Error(`${steerUnavailable}。纠正草稿已保留；请选择“下一轮处理”发送。`);
     }
-    if (deliveryMode === "steer" && (files?.length || images?.length || attachments?.length)) {
+    if (deliveryMode === "steer" && (files?.length || images?.length || attachments?.length || mcpReferences?.length)) {
       throw new Error("更新当前任务目前只支持文字。附件和引用已保留，请选择“下一轮处理”发送完整消息。");
     }
-    const fingerprint = JSON.stringify([deliveryMode, content, files ?? [], imageIdentities(images), fileAttachmentIdentities(attachments)]);
+    const fingerprint = JSON.stringify([deliveryMode, content, files ?? [], imageIdentities(images), fileAttachmentIdentities(attachments), mcpReferenceIdentities(mcpReferences)]);
     let replaced = submissions.findLast(({ error }) => v2TurnOutcomeKnown(error))?.input.operationKey;
     // The user's new request waits for unknown earlier submissions to settle.
     // Confirmation uses the original payload and key, never the edited draft.
     for (const { input } of submissions.filter(({ error }) => error && !v2TurnOutcomeKnown(error))) {
       const outcome = await confirmSubmission(input);
-      if (outcome === "accepted" && JSON.stringify([input.deliveryMode ?? "next_turn", input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments)]) === fingerprint) return;
+      if (outcome === "accepted" && JSON.stringify([input.deliveryMode ?? "next_turn", input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint) return;
       if (outcome === "rejected") replaced = input.operationKey;
       if (outcome === "unresolved") {
         if (recovery) {
-          if (JSON.stringify([input.deliveryMode ?? "next_turn", input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments)]) === fingerprint) { await submitTrackedTurn(input); return; }
+          if (JSON.stringify([input.deliveryMode ?? "next_turn", input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint) { await submitTrackedTurn(input); return; }
           throw new V2SubmissionError(input, new Error("原提交尚未确认。新草稿已保留，请先核对或继续提交原消息。"));
         }
         replaced = input.operationKey;
       }
     }
     if (managedDraft && draftVersion) assertV2DraftVersion(managedDraft, draftVersion,
-      { text: draft ?? content, files: files ?? [], images: images ?? [], attachments });
+      { text: draft ?? content, files: files ?? [], images: images ?? [], attachments, mcpReferences });
     const operationKey = `v2-thread-turn-${globalThis.crypto.randomUUID()}`;
     const input: V2TurnInput = { threadID, workspaceID: detail.thread.workspace_id ?? "", content,
       ...(deliveryMode === "steer" ? { deliveryMode: "steer" as const, sessionID: currentRun.session_id } : {}),
@@ -793,6 +797,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       operationKey, createdAt: new Date().toISOString(), ...(files?.length ? { files } : {}),
       ...(images?.length ? { images } : {}),
       ...(attachments?.length ? { attachments } : {}),
+      ...(mcpReferences?.length ? { mcpReferences } : {}),
       ...(draftVersion ? { draftVersion } : {}),
       ...(replaced ? { replacesOperationKey: replaced } : {}) };
     trackApplicationPreviewSubmission(queryClient, input, "submitting", undefined, true);

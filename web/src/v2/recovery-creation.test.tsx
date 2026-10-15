@@ -7,6 +7,7 @@ import type { CreationIntent } from "./recovery-creation";
 import { V2RecoveryProvider, useV2RecoveryStore } from "./recovery-storage";
 import type { V2RecoveryStore } from "./recovery-storage";
 import { recoveryTurnKey } from "./recovery-session";
+import type { MCPDraftReference } from "../api/mcp-references";
 
 const workspaceID = "workspace-recovery";
 const request: ThreadCreationControlRequestView = { version: "thread_creation.v1", workspace_id: workspaceID,
@@ -46,6 +47,31 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  it("recovers reference-only MCP input with the same selection and message key after a lost create response", async () => {
+    const client = fixture();
+    client.createThread.mockRejectedValueOnce(new Error("response lost"));
+    const selected: MCPDraftReference[] = [{ id: "selected-prompt", label: "review", serverName: "Project MCP",
+      reference: { server_id: "project-mcp", capability_fingerprint: "c".repeat(64), method: "prompts/get",
+        arguments: { name: "review", arguments: { language: "Go with spaces" } } } }];
+    const body = { ...request, goal: "MCP 内容" };
+    const first = mount(client);
+    let intent!: CreationIntent;
+    act(() => { intent = first.helper().prepare(body, "", [], "", undefined, undefined, undefined, undefined, selected); });
+    await act(async () => { await expect(first.helper().resolve(intent)).rejects.toThrow("response lost"); });
+    first.unmount();
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    const reopened = mount(client);
+    await screen.findByRole("button", { name: "打开原对话" });
+    fireEvent.click(screen.getByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(reopened.onRecovered).toHaveBeenCalledTimes(1));
+    const input = reopened.onRecovered.mock.calls[0][3];
+    expect(input).toMatchObject({ content: "", mcpReferences: selected,
+      operationKey: `v2-thread-create-turn-${intent.operationID}` });
+    expect(reopened.store().read(recoveryTurnKey(input), null)).toEqual(input);
+    expect(client.createThread).toHaveBeenCalledTimes(1);
+    expect(client.submitThreadTurn).not.toHaveBeenCalled();
+  });
+
   it("retries a lost creation with its original web policy and distinguishes a changed policy", async () => {
     const client = fixture();
     client.createThread.mockRejectedValueOnce(new Error("response lost"));
