@@ -3283,7 +3283,7 @@ var openAPIFieldEnums = map[string][]string{
 		string(toolgateway.WorkspaceChangeTool), string(toolgateway.WorkspaceApplyTool),
 		string(toolgateway.WorkspaceDeleteTool), string(toolgateway.WebSearchTool),
 		string(toolgateway.WebFetchTool), string(toolgateway.WebCitationTool),
-		string(toolgateway.MCPToolCallTool), string(toolgateway.CodeWorkspaceSymbolsTool),
+		string(toolgateway.MCPToolSearchTool), string(toolgateway.MCPToolCallTool), string(toolgateway.CodeWorkspaceSymbolsTool),
 		string(toolgateway.CodeDocumentSymbolsTool), string(toolgateway.CodeDefinitionTool),
 		string(toolgateway.CodeReferencesTool), string(toolgateway.CodeImplementationTool),
 		string(toolgateway.CodeHoverTool), string(toolgateway.CodeSignatureHelpTool),

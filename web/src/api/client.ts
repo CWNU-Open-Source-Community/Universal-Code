@@ -1000,7 +1000,7 @@ const threadActivityKinds = ["command", "web_search", "web_fetch", "file_read", 
   "verification", "mcp", "browser"];
 const threadActivityToolNames = ["command_runtime", "workspace_list", "workspace_read",
   "workspace_glob", "workspace_grep", "workspace_change", "workspace_apply", "workspace_delete",
-  "web_search", "web_fetch", "web_citation", "mcp_tool_call", "code_workspace_symbols",
+  "web_search", "web_fetch", "web_citation", "mcp_tool_search", "mcp_tool_call", "code_workspace_symbols",
   "code_document_symbols", "code_definition", "code_references", "code_implementation",
   "code_hover", "code_signature_help", "code_diagnostics", "code_call_hierarchy",
   "code_type_hierarchy", "github_review_evidence_list", "github_review_evidence_read",
@@ -1251,7 +1251,7 @@ function expectedThreadActivityKind(tool: string): string {
   if (tool === "web_fetch" || tool === "web_citation") return "web_fetch";
   if (["workspace_list", "workspace_read", "workspace_glob", "workspace_grep"].includes(tool)) return "file_read";
   if (["workspace_change", "workspace_apply", "workspace_delete"].includes(tool)) return "file_edit";
-  if (tool === "mcp_tool_call") return "mcp";
+  if (tool === "mcp_tool_call" || tool === "mcp_tool_search") return "mcp";
   if (tool.startsWith("browser_")) return "browser";
   return "verification";
 }

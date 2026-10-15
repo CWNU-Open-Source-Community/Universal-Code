@@ -72,6 +72,7 @@ type Gateway struct {
 	specialist                 SpecialistToolExecutor
 	codeIntel                  CodeIntelExecutor
 	mcp                        MCPExecutor
+	mcpSearch                  MCPSearchExecutor
 	webEvidence                WebEvidenceExecutor
 	browserActions             BrowserActionExecutor
 	agentBrowser               AgentBrowserExecutor
@@ -849,7 +850,7 @@ func validateToolArguments(call ToolCall) error {
 				call.WorkspaceID == "" || call.LeaseID == "" {
 				return errors.New("command runtime calls require a fenced root Supervisor")
 			}
-		case MCPToolCallTool:
+		case MCPToolCallTool, MCPToolSearchTool:
 			if call.RequestedBy != "run_supervisor" || call.AgentID == "" ||
 				call.WorkspaceID == "" || call.LeaseID == "" {
 				return errors.New("MCP tool calls require a fenced host actor")

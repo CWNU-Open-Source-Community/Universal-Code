@@ -33,6 +33,17 @@ it("reads the Go-projected media response and preserves older history without co
   expect(legacy.mcp.contents).toBeUndefined();
 });
 
+it("accepts on-demand MCP catalog search as typed MCP activity", async () => {
+  const saved = response();
+  saved.data.tools[0].name = "mcp_tool_search";
+  saved.data.tools[0].detail.mcp.operation = "search";
+  saved.data.tools[0].detail.mcp.tool = "mcp_tool_search";
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(saved), { status: 200 })));
+  const actual = await new APIClient("read").threadActivityDetail("thread-media", "call-media");
+  expect(actual.tools[0].name).toBe("mcp_tool_search");
+  expect(actual.tools[0].detail.kind).toBe("mcp");
+});
+
 it.each([
   ["non-string kind", [{ ...image, kind: { toString: null } }]],
   ["SVG MIME", [{ ...image, mime_type: "image/svg+xml" }]],

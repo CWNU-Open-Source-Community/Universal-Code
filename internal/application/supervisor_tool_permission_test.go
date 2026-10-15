@@ -234,10 +234,8 @@ func TestSupervisorMCPRequiresReviewedSnapshotAndExactRuntimeScope(t *testing.T)
 	}
 	found, schema := visible(domain.ExecutionSurfaceCode, domain.ExecutionPhaseDeliver,
 		domain.RunExecutionPermissionFull, options)
-	if !found || !json.Valid(schema) || !strings.Contains(string(schema), `"const":"docs"`) ||
-		!strings.Contains(string(schema), `"const":"lookup"`) ||
-		!strings.Contains(string(schema), `"const":"`+fingerprint+`"`) {
-		t.Fatalf("reviewed MCP capability was not encoded exactly: %s", schema)
+	if !found || !json.Valid(schema) || strings.Contains(string(schema), `"const":"lookup"`) {
+		t.Fatalf("MCP invocation must expose a compact schema and discover operations on demand: %s", schema)
 	}
 	var schemaRoot struct {
 		Type string `json:"type"`
