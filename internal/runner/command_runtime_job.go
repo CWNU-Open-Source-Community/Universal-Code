@@ -447,6 +447,9 @@ type CommandRuntimeStartRequest struct {
 	// OwnershipCheck renews only this admitted Job's lifetime. It cannot
 	// authorize native launch or initial/later stdin, which use DispatchCheck.
 	OwnershipCheck func(context.Context) error `json:"-"`
+	// Digest-only native families retain stream counts/hashes without storing
+	// output text in the Job, output ring, or read-only projections.
+	DiscardOutput bool `json:"-"`
 }
 
 // CommandRuntimeOperationIdentity is the deterministic durable identity used
@@ -576,6 +579,7 @@ type commandRuntimeEntry struct {
 	authorityContext   context.Context
 	authorityCheck     func(context.Context) error
 	operatorInvocation bool
+	discardOutput      bool
 }
 
 type commandRuntimeStdinResult struct {
@@ -704,6 +708,9 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 	if request.Scope.RunAuthorizationFence != 0 {
 		requestParts = append(requestParts, "run_authorization_fence", fmt.Sprint(request.Scope.RunAuthorizationFence))
 	}
+	if request.DiscardOutput {
+		requestParts = append(requestParts, "digest_only_output.v1")
+	}
 	now := time.Now().UTC()
 	ownerExpiresAt := now.Add(m.ownerLeaseTTL)
 	record := CommandRuntimeJob{
@@ -802,6 +809,9 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		failed.StderrObservedBytes = int64(len([]byte(err.Error())))
 		failed.StdoutSHA256 = commandRuntimeStringSHA256("")
 		failed.StderrSHA256 = commandRuntimeStringSHA256(failed.Stderr)
+		if request.DiscardOutput {
+			failed.Stderr = ""
+		}
 		failed.Version++
 		failed.UpdatedAt = completed
 		updated, updateErr := m.store.UpdateCommandRuntimeJob(context.WithoutCancel(ctx), failed, stored.Version)
@@ -867,6 +877,7 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		record: updated, process: process,
 		authorityContext:   context.WithoutCancel(ctx),
 		operatorInvocation: request.Scope.AttributionSource == domain.AgentAttributionOperatorRoot,
+		discardOutput:      request.DiscardOutput,
 		ring:               commandRuntimeRing{capacity: updated.InlineLimitBytes},
 		done:               make(chan struct{}), notify: make(chan struct{}, 1),
 		stdoutDone: make(chan struct{}), stderrDone: make(chan struct{}),
@@ -874,6 +885,9 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		inputs: make(map[string]commandRuntimeStdinResult), inputGate: make(chan struct{}, 1),
 	}
 	entry.authorityCheck = request.OwnershipCheck
+	if request.DiscardOutput {
+		entry.ring.frames = []CommandRuntimeFrame{}
+	}
 	entry.inputGate <- struct{}{}
 	m.mu.Lock()
 	m.entries[jobID] = entry
@@ -1288,6 +1302,26 @@ func (m *CommandRuntimeManager) collect(entry *commandRuntimeEntry,
 		return
 	}
 	defer reader.Close()
+	if entry.discardOutput {
+		buffer := make([]byte, 16*1024)
+		for {
+			count, err := reader.Read(buffer)
+			if count > 0 {
+				entry.mu.Lock()
+				if stream == CommandRuntimeStdout {
+					entry.record.StdoutObservedBytes += int64(count)
+					_, _ = entry.stdoutHash.Write(buffer[:count])
+				} else {
+					entry.record.StderrObservedBytes += int64(count)
+					_, _ = entry.stderrHash.Write(buffer[:count])
+				}
+				entry.mu.Unlock()
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
 	entry.mu.Lock()
 	legacyPowerShell := commandRuntimeLegacyPowerShellOutput(entry.record, stream)
 	entry.mu.Unlock()

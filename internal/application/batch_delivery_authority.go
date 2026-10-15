@@ -28,6 +28,9 @@ type batchValidationStarter struct {
 }
 
 func (s *batchValidationStarter) Start(ctx context.Context, spec runner.OnceStartSpec) (runner.OnceStartResult, error) {
+	if err := s.service.requireBatchLocalHostValidation(ctx, s.runID); err != nil {
+		return runner.OnceStartResult{}, err
+	}
 	// Freeze all executable inputs before the resolver can call external stores.
 	spec.Argv = slices.Clone(spec.Argv)
 	spec.Environment = slices.Clone(spec.Environment)
@@ -100,6 +103,10 @@ func (s *BatchDeliveryService) batchValidationAuthorization(ctx context.Context,
 		if err != nil {
 			return executionauth.OperationAuthority{}, apperror.Normalize(err)
 		}
+		profile, err := s.store.GetRunExecutionProfile(checkCtx, run.ID)
+		if err != nil || profile.RunID != run.ID || profile.MissionID != run.MissionID || profile.Validate() != nil {
+			return executionauth.OperationAuthority{}, apperror.New(apperror.CodePolicyDenied, "batch validation execution profile changed")
+		}
 		if permission.RunID != run.ID || permission.MissionID != run.MissionID {
 			return executionauth.OperationAuthority{}, apperror.New(apperror.CodeFailedPrecondition,
 				"batch delivery execution permission binding changed")
@@ -140,9 +147,10 @@ func (s *BatchDeliveryService) batchValidationAuthorization(ctx context.Context,
 			Run                                               domain.Run
 			MissionID, WorkspaceID, SourceRoot, ExecutionRoot string
 			Permission                                        domain.RunExecutionPermissionSnapshot
+			Profile                                           domain.RunExecutionProfileSnapshot
 			RuntimeEpoch                                      string
 			RuntimeFence, FullGeneration                      uint64
-		}{run, mission.ID, info.ID, sourceRoot, executionRoot, permission, epoch, fence, generation})
+		}{run, mission.ID, info.ID, sourceRoot, executionRoot, permission, profile, epoch, fence, generation})
 		if err != nil {
 			return executionauth.OperationAuthority{}, err
 		}
@@ -161,5 +169,12 @@ func (s *BatchDeliveryService) batchValidationAuthorization(ctx context.Context,
 		return executionauth.Decision{}, apperror.New(apperror.CodePolicyDenied,
 			"batch delivery host validation denied: "+decision.ReasonCode)
 	}
+	fingerprint, err := toolcontract.FingerprintOperation(operation)
+	if err != nil {
+		return executionauth.Decision{}, err
+	}
+	decision.BeforeDispatch = executionauth.NewRecheckingDispatchGuard(fingerprint, decision.BeforeDispatch, func(checkCtx context.Context) error {
+		return authorizer.Recheck(checkCtx, subject, operation, "", decision.AuthorizationRef)
+	}, "batch validation dispatch authority changed")
 	return decision, nil
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/runner"
 )
 
 // Reuse only Go-recorded checks from an immutable child attempt bound to this
@@ -38,6 +40,31 @@ func (s *BatchDeliveryService) reuseSpecialistBatchVerification(ctx context.Cont
 			if receipt.RequirementID != requirement.ID || receipt.Kind != requirement.Kind || receipt.Scope != requirement.Scope || receipt.ExitCode != 0 || receipt.CompletedAt.IsZero() || len(receipt.OutputSHA256) != 64 {
 				valid = false
 				break
+			}
+			if requirement.Kind != domain.BatchValidationGitDiffCheck {
+				var adapter commandruntimeadapter.Identity
+				if s.validationRuntime != nil {
+					selected, err := s.validationRuntime.projectCommandService(ctx, plan.RunID)
+					if err != nil {
+						return nil, false, err
+					}
+					adapter = selected.adapter
+				} else {
+					if err := s.requireBatchLocalHostValidation(ctx, plan.RunID); err != nil {
+						return nil, false, err
+					}
+					adapter = commandruntimeadapter.HostUnsandboxed(runner.OnceExecutionProtocolVersion)
+				}
+				rootSHA, err := runner.CommandRuntimeWorkspaceRootSHA256(child.WorktreeRoot)
+				execution := receipt.Execution
+				if err != nil || execution == nil || execution.Backend != adapter.Backend || execution.BackendIdentity != adapter.BackendIdentity ||
+					execution.BackendGeneration != adapter.Generation || execution.IsolationGrade != string(adapter.IsolationGrade) ||
+					execution.NetworkPolicy != string(adapter.NetworkPolicy) || execution.CredentialPolicy != string(adapter.CredentialPolicy) ||
+					execution.WorkspaceSHA256 != rootSHA || execution.ReadinessCheckedAt.IsZero() || !execution.TreeReaped || !execution.StdinClosed ||
+					(adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && (execution.Readiness != "ready" || execution.JobID == "")) {
+					valid = false
+					break
+				}
 			}
 		}
 		if valid {

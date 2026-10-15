@@ -390,6 +390,13 @@ type BatchValidationResult struct {
 	CompletedAt    time.Time
 }
 
+// The native runtime can select fixed guest toolchains without a host install.
+// This interface is Go-owned; validation declarations still contain no argv.
+type BatchValidationCommandResolver interface {
+	BatchValidationCommand(string, domain.BatchDeliveryValidationRequirement) (string, []string, error)
+	BatchValidationGuestExecutable() bool
+}
+
 func RunBatchValidation(ctx context.Context, root, baseCommit string,
 	requirement domain.BatchDeliveryValidationRequirement, starter runner.OnceStarter,
 ) (BatchValidationResult, error) {
@@ -427,12 +434,19 @@ func RunBatchValidation(ctx context.Context, root, baseCommit string,
 	default:
 		return result, errors.New("unsupported batch validation requirement")
 	}
+	guest := false
+	if resolver, ok := starter.(BatchValidationCommandResolver); ok && requirement.Kind != domain.BatchValidationGitDiffCheck {
+		executable, args, err = resolver.BatchValidationCommand(root, requirement)
+		guest = resolver.BatchValidationGuestExecutable()
+	}
 	if err != nil {
 		return result, fmt.Errorf("batch validation executable is unavailable: %w", err)
 	}
-	executable, err = canonicalBatchValidationExecutable(root, executable)
-	if err != nil {
-		return result, err
+	if !guest {
+		executable, err = canonicalBatchValidationExecutable(root, executable)
+		if err != nil {
+			return result, err
+		}
 	}
 	workingRoot, err = canonicalBatchValidationWorkingRoot(root, requirement.Scope)
 	if err != nil {

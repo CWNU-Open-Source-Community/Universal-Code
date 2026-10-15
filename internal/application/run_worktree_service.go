@@ -280,8 +280,8 @@ func (s *RunWorktreeService) ResolveDrydockExecutionBinding(ctx context.Context,
 		return sandbox.WorkspaceBinding{}, apperror.New(apperror.CodeConflict,
 			"Standard Code Drydock content changed before container start")
 	}
-	return sandbox.WorkspaceBinding{ID: workspace.SourceWorkspaceID,
-		RootPath: workspace.Path}, nil
+	return batchValidationDockerWorkspace(ctx, binding, sandbox.WorkspaceBinding{ID: workspace.SourceWorkspaceID,
+		RootPath: workspace.Path})
 }
 
 type DrydockCheckpointRequest struct {

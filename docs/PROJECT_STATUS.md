@@ -1,5 +1,11 @@
 # Project Status
 
+> 2026-10-15 Batch validation: fixed Go/npm checks now select the task's existing
+> Command Runtime adapter and bind the stored child/integration workspace.
+> Receipts record the actual backend; historical or mismatched specialist
+> receipts require revalidation. New live backend acceptance remains pending.
+> See [ADR 0185](adr/0185-batch-validation-selected-runtime.md).
+
 > 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
 
 > 2026-10-14 manual MCP connections: `mcp-client.v3` adds stdio cwd, explicit non-sensitive environment, OS-store environment credential references, fixed non-sensitive HTTP headers, and loopback HTTP. Web/Desktop settings and CLI staging use the existing Go launch and review contracts; historical v1/native v2 descriptors retain their fingerprints. Focused race checks and real subprocess/browser registration, error and narrow-screen checks passed. See [ADR 0178](adr/0178-mcp-manual-connection-config.md).

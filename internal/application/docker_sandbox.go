@@ -507,6 +507,12 @@ func (s *DockerSandboxService) loadCurrentDockerSandboxAuthority(ctx context.Con
 		return dockerSandboxAuthority{}, apperror.New(apperror.CodeConflict,
 			"Docker Sandbox requester does not own the exact compiled plan")
 	}
+	if isBatchValidationDockerRequester(plan.RequestedBy) {
+		proof := batchValidationRuntimeFromContext(ctx)
+		if proof == nil || proof.target.runID != plan.RunID || batchValidationDockerRequester(proof.target) != plan.RequestedBy || proof.check(ctx) != nil {
+			return dockerSandboxAuthority{}, apperror.New(apperror.CodePolicyDenied, "batch Docker execution requires live target authority")
+		}
+	}
 	if err := requireDockerSandboxManifestPlan(manifest, plan); err != nil {
 		return dockerSandboxAuthority{}, err
 	}

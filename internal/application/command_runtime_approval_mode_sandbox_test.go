@@ -55,7 +55,7 @@ func (s *commandApprovalSandboxHostTripwire) PrepareCommandRuntimeJobForAgent(co
 	return runner.CommandRuntimeJob{}, false, errors.New("test rejected an unexpected attributed host process dispatch")
 }
 
-func newCommandApprovalSandboxFixture(t *testing.T, mode domain.RunExecutionPermissionMode, profile domain.RunExecutionProfile, owned bool) *commandApprovalSandboxFixture {
+func newCommandApprovalSandboxFixture(t *testing.T, mode domain.RunExecutionPermissionMode, profile domain.RunExecutionProfile, owned bool, idleRoot ...bool) *commandApprovalSandboxFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatal("real Git fixture is required; do not silently skip", err)
@@ -69,6 +69,14 @@ func newCommandApprovalSandboxFixture(t *testing.T, mode domain.RunExecutionPerm
 		RunID: base.run.ID, Profile: string(profile), OperationKey: "sandbox-approval-profile", RequestedBy: "operator",
 	}); err != nil {
 		t.Fatal(err)
+	}
+	if profile == domain.RunExecutionProfileSBX {
+		if _, err := NewRunExecutionInteractionService(base.state).Change(t.Context(), ChangeRunExecutionInteractionRequest{
+			RunID: base.run.ID, Mode: string(domain.RunExecutionInteractionControlled), Trust: string(domain.WorkspaceTrustTrusted),
+			OperationKey: "sandbox-approval-sbx-interaction", RequestedBy: "operator", ConfirmWorkspaceTrust: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	caps := domain.ExecutionPermissionRuntimeCapabilities{
 		WorkspaceSandboxEnabled: true, OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
@@ -151,9 +159,25 @@ func newCommandApprovalSandboxFixture(t *testing.T, mode domain.RunExecutionPerm
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn, err := base.state.BeginSupervisorTurn(t.Context(), lease.Lease, "")
-	if err != nil {
-		t.Fatal(err)
+	var turn domain.SupervisorTurn
+	if len(idleRoot) != 0 && idleRoot[0] {
+		turn.Run, err = base.state.GetRun(t.Context(), base.run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		turn.Mission, err = base.state.GetMission(t.Context(), turn.Run.MissionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		turn.Agent, _, err = base.state.RegisterRootAgent(t.Context(), base.run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		turn, err = base.state.BeginSupervisorTurn(t.Context(), lease.Lease, "")
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	f.commandApprovalFixture = &commandApprovalFixture{
 		st: base.state, service: service, turn: turn, caps: caps, root: base.sourceRoot, path: base.databasePath, manager: manager,

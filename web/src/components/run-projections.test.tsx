@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import type { AgentGraphView, BatchDeliverySnapshotView, ExternalSkillProjectionView, FindingReportView } from "../api/types";
 import { AgentGraphPanel, BatchDeliveriesPanel, DelegationsPanel, ExternalSkillsPanel, FanoutPanel, FindingsPanel } from "./run-projections";
+import { batchWorkbenchFixture } from "../test/batch-workbench-fixture";
 
 function provider(children: React.ReactNode) {
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>;
@@ -19,7 +20,8 @@ describe("Run projection panels", () => {
     expect(container.textContent).toContain("selected execution");
     expect(container.textContent).toContain("current Full process activation");
     if (enabled) {
-      expect(container.textContent).toContain("runs repository code directly on the host");
+      expect(container.textContent).toContain("selected Local, Docker, or SBX environment");
+      expect(container.textContent).toContain("refuses execution when it is not ready");
     } else {
       expect(container.textContent).toContain("--enable-batch-validation-execution");
       expect(container.textContent).toContain("--enable-permission-control");
@@ -28,6 +30,26 @@ describe("Run projection panels", () => {
       expect(container.textContent).toContain("operator approval");
     }
     expect(screen.queryByRole("button", { name: "Merge in dependency order" })).not.toBeInTheDocument();
+  });
+
+  it("lets an aborted plan retry pending cleanup without reopening merge", async () => {
+    const current = batchWorkbenchFixture("ready_for_review");
+    current.snapshot.plan.status = "aborted";
+    const cancel = vi.fn().mockResolvedValue({});
+    const client = { hasBatchDeliveryControl: true,
+      getRunBatchDeliveries: vi.fn().mockResolvedValue({ items: [current.snapshot.plan] }),
+      getRunBatchDelivery: vi.fn().mockResolvedValue(current.snapshot),
+      cancelRunBatchDelivery: cancel,
+    } as unknown as APIClient;
+    const user = userEvent.setup();
+    render(provider(<BatchDeliveriesPanel client={client} runID="run-1" />));
+    await user.click(await screen.findByRole("button", { name: "Retry cancellation cleanup" }));
+    expect(cancel).toHaveBeenCalledWith("run-1", current.snapshot.plan.id,
+      expect.objectContaining({ version: "batch_delivery_cancel.v1", confirm: true }), expect.stringMatching(/^web-batch-cancel-/));
+    expect(screen.queryByRole("button", { name: "Merge in dependency order" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reconcile state" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Request changes" })).not.toBeInTheDocument();
   });
 
   it("explains the independent Desktop batch control switch while preserving read access", async () => {

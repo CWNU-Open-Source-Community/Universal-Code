@@ -754,10 +754,22 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 		return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{},
 			errors.New("Docker Sandbox compiled plan changed")
 	}
-	workspace, err := s.resolveDockerSandboxWorkspace(ctx, admission.RunID,
+	// Cleanup reconstructs the immutable mount without borrowing the foreground
+	// proof, which may have expired. Create/start still requires that live proof.
+	workspaceCtx := ctx
+	if isBatchValidationDockerRequester(admission.RequestedBy) {
+		workspaceCtx = context.WithValue(ctx, batchValidationRuntimeKey{}, (*batchValidationRuntimeProof)(nil))
+	}
+	workspace, err := s.resolveDockerSandboxWorkspace(workspaceCtx, admission.RunID,
 		admission.WorkspaceID, manifest, false)
 	if err != nil {
 		return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
+	}
+	if isBatchValidationDockerRequester(admission.RequestedBy) {
+		workspace, err = s.batchValidationCleanupWorkspace(ctx, admission, workspace)
+		if err != nil {
+			return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
+		}
 	}
 	root, err := validateSandboxWorkspaceBinding(workspace)
 	if err != nil {
