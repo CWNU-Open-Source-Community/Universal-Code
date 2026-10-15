@@ -67,3 +67,11 @@ it("keeps opaque resource URIs as text and opens only safe HTTP links", () => {
     expect(safeMCPContentLink(uri)).toBe(false);
   }
 });
+
+it("accepts validated GIF projections and rejects mismatched GIF headers", () => {
+  const data = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+  const gif = { kind: "image", mime_type: "image/gif", data_base64: data.toString("base64"), byte_size: data.length, width: 1, height: 1 };
+  expect(validMCPContents([gif])).toBe(true);
+  expect(validMCPContents([{ ...gif, mime_type: "image/png" }])).toBe(false);
+  expect(validMCPContents([{ ...image, mime_type: "image/gif" }])).toBe(false);
+});

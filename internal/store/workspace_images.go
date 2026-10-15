@@ -154,6 +154,10 @@ func (s *SQLiteStore) ListSupervisorImageEvidence(ctx context.Context, cp domain
 }
 
 func (s *SQLiteStore) SaveWorkspaceImage(ctx context.Context, workspaceID, operationKey, mimeType, name string, content []byte) (domain.WorkspaceImage, error) {
+	// MCP content can use GIF; operator uploads retain their published formats.
+	if mimeType != "image/png" && mimeType != "image/jpeg" && mimeType != "image/webp" {
+		return domain.WorkspaceImage{}, apperror.New(apperror.CodeInvalidArgument, "Workspace image uploads support PNG, JPEG, or WebP")
+	}
 	image, err := imageattachment.Validate(content, mimeType, name)
 	if err != nil {
 		return image, err

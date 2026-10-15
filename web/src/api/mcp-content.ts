@@ -37,6 +37,7 @@ export function validMCPContents(value: unknown): value is ThreadActivityMCPCont
           Number(item.width) > 8192 || Number(item.height) > 8192 || Number(item.width)*Number(item.height) > 16*1024*1024) return false;
         const formatMatched = item.mime_type === "image/png" && data.startsWith("\x89PNG\r\n\x1a\n") ||
           item.mime_type === "image/jpeg" && data.charCodeAt(0) === 255 && data.charCodeAt(1) === 216 && data.charCodeAt(2) === 255 ||
+          item.mime_type === "image/gif" && (data.startsWith("GIF87a") || data.startsWith("GIF89a")) ||
           item.mime_type === "image/webp" && data.startsWith("RIFF") && data.slice(8, 12) === "WEBP";
         if (!formatMatched) return false;
       } else {

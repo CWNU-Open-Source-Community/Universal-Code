@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"image"
+	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"strings"
@@ -49,5 +51,26 @@ func TestValidateImageDecodesActualWebP(t *testing.T) {
 	}
 	if _, err := Validate(data[:len(data)-8], "image/webp", "truncated.webp"); err == nil {
 		t.Fatal("truncated WebP was accepted")
+	}
+}
+
+func TestValidateGIFPreservesExistingImageBounds(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := gif.Encode(&encoded, image.NewPaletted(image.Rect(0, 0, 2, 3), color.Palette{color.Black, color.White}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if actual, err := Validate(encoded.Bytes(), "image/gif", "pixel.gif"); err != nil || actual.Width != 2 || actual.Height != 3 {
+		t.Fatal("valid GIF rejected", actual, err)
+	}
+	if _, err := Validate(encoded.Bytes(), "image/png", ""); err == nil {
+		t.Fatal("GIF accepted with a false MIME")
+	}
+	oversized := append([]byte(nil), encoded.Bytes()...)
+	oversized[6], oversized[7] = 1, 33 // Logical width8449, above8192.
+	if _, err := Validate(oversized, "image/gif", ""); err == nil {
+		t.Fatal("GIF exceeded existing dimensions")
+	}
+	if _, err := Validate(encoded.Bytes()[:len(encoded.Bytes())/2], "image/gif", ""); err == nil {
+		t.Fatal("incomplete GIF accepted")
 	}
 }
