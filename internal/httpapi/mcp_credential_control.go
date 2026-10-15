@@ -27,6 +27,8 @@ type MCPCredentialRequestView struct {
 	OAuthIssuer                  string                   `json:"oauth_issuer,omitempty"`
 	OAuthClientID                string                   `json:"oauth_client_id,omitempty"`
 	OAuthClientIDMode            string                   `json:"oauth_client_id_mode,omitempty"`
+	OAuthClientSecret            string                   `json:"oauth_client_secret,omitempty"`
+	OAuthCallbackPort            int                      `json:"oauth_callback_port,omitempty"`
 	Secret                       string                   `json:"secret,omitempty"`
 	Confirm                      bool                     `json:"confirm"`
 	ExpectedReferenceFingerprint string                   `json:"expected_reference_fingerprint"`
@@ -101,8 +103,9 @@ func (a *API) serveMCPCredential(writer http.ResponseWriter, request *http.Reque
 		}
 		value, err = controller.ChangeMCPCredential(request.Context(), application.ChangeMCPCredentialRequest{
 			Binding: application.MCPCredentialBinding(view.Binding), Version: view.Version, Action: view.Action,
-			Secret: view.Secret, OAuthFlowID: view.OAuthFlowID, OAuthIssuer: view.OAuthIssuer, OAuthClientID: view.OAuthClientID, OAuthClientIDMode: view.OAuthClientIDMode, Confirm: view.Confirm, ExpectedReferenceFingerprint: view.ExpectedReferenceFingerprint})
+			Secret: view.Secret, OAuthFlowID: view.OAuthFlowID, OAuthIssuer: view.OAuthIssuer, OAuthClientID: view.OAuthClientID, OAuthClientIDMode: view.OAuthClientIDMode, OAuthClientSecret: view.OAuthClientSecret, OAuthCallbackPort: view.OAuthCallbackPort, Confirm: view.Confirm, ExpectedReferenceFingerprint: view.ExpectedReferenceFingerprint})
 		view.Secret = ""
+		view.OAuthClientSecret = ""
 	}
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)

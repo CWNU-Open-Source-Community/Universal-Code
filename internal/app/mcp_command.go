@@ -285,10 +285,12 @@ func writeExtensionJSON(destination io.Writer, value any) error {
 func (a *App) mcpOAuthCommand(ctx context.Context, args []string) error {
 	fs := newFlagSet("mcp credential OAuth", a.errOut)
 	issuer := fs.String("issuer", "", "explicitly trusted discovered HTTPS issuer")
-	clientID := fs.String("client-id", "", "public OAuth client ID or hosted metadata URL")
-	clientIDMode := fs.String("client-id-mode", "", "pre_registered (default) or metadata_url")
+	clientID := fs.String("client-id", "", "OAuth client ID or hosted metadata URL")
+	clientIDMode := fs.String("client-id-mode", "", "auto, dynamic, pre_registered (default), or metadata_url")
+	clientSecretEnv := fs.String("client-secret-env", "", "environment variable containing the confidential client secret")
+	callbackPort := fs.Int("callback-port", 0, "loopback callback port; 0 chooses an available port")
 	confirm := fs.Bool("confirm", false, "confirm OAuth metadata network access and credential change")
-	if err := fs.Parse(reorderFlags(args[1:], map[string]bool{"issuer": true, "client-id": true, "client-id-mode": true, "confirm": false})); err != nil {
+	if err := fs.Parse(reorderFlags(args[1:], map[string]bool{"issuer": true, "client-id": true, "client-id-mode": true, "client-secret-env": true, "callback-port": true, "confirm": false})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 || (args[0] != "oauth-status" && !*confirm) {
@@ -314,7 +316,16 @@ func (a *App) mcpOAuthCommand(ctx context.Context, args []string) error {
 	} else if args[0] != "oauth-discover" {
 		return errors.New("unknown MCP OAuth command")
 	}
-	request := application.ChangeMCPCredentialRequest{Binding: binding, Version: application.MCPCredentialProtocolVersion, Action: action, Confirm: *confirm, ExpectedReferenceFingerprint: status.ReferenceFingerprint, OAuthIssuer: *issuer, OAuthClientID: *clientID, OAuthClientIDMode: *clientIDMode}
+	request := application.ChangeMCPCredentialRequest{Binding: binding, Version: application.MCPCredentialProtocolVersion, Action: action, Confirm: *confirm, ExpectedReferenceFingerprint: status.ReferenceFingerprint, OAuthIssuer: *issuer, OAuthClientID: *clientID, OAuthClientIDMode: *clientIDMode, OAuthCallbackPort: *callbackPort}
+	if *clientSecretEnv != "" {
+		if action != "oauth-start" {
+			return errors.New("client-secret-env is only valid for oauth-login")
+		}
+		request.OAuthClientSecret = os.Getenv(*clientSecretEnv)
+		if request.OAuthClientSecret == "" {
+			return errors.New("OAuth client secret environment variable is empty")
+		}
+	}
 	status, err = service.Change(ctx, request)
 	if err != nil {
 		return err
@@ -326,6 +337,8 @@ func (a *App) mcpOAuthCommand(ctx context.Context, args []string) error {
 		cancellation.OAuthIssuer = ""
 		cancellation.OAuthClientID = ""
 		cancellation.OAuthClientIDMode = ""
+		cancellation.OAuthClientSecret = ""
+		cancellation.OAuthCallbackPort = 0
 		defer func() { _, _ = service.Change(context.Background(), cancellation) }()
 	}
 	if err = writeExtensionJSON(a.out, status); err != nil {

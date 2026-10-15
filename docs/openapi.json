@@ -46218,6 +46218,12 @@
           "expected_reference_fingerprint": {
             "type": "string"
           },
+          "oauth_callback_port": {
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "oauth_client_id": {
             "maxLength": 256,
             "minLength": 1,
@@ -46225,10 +46231,17 @@
           },
           "oauth_client_id_mode": {
             "enum": [
+              "auto",
+              "dynamic",
               "pre_registered",
               "metadata_url"
             ],
             "type": "string"
+          },
+          "oauth_client_secret": {
+            "maxLength": 1024,
+            "type": "string",
+            "writeOnly": true
           },
           "oauth_flow_id": {
             "maxLength": 256,
