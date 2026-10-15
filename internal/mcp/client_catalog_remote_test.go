@@ -22,6 +22,7 @@ func TestTaskCatalogRemoteTransportLifecycle(t *testing.T) {
 	for _, kind := range []TransportKind{TransportSSE, TransportWebSocket} {
 		t.Run(string(kind), func(t *testing.T) {
 			var calls, initializes, streams, active atomic.Int32
+			var currentPeer atomic.Pointer[sdk.ServerSession]
 			server := sdk.NewServer(&sdk.Implementation{Name: "remote-catalog", Version: "1"}, &sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{ListChanged: true}}})
 			handler := func(context.Context, *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 				calls.Add(1)
@@ -31,6 +32,7 @@ func TestTaskCatalogRemoteTransportLifecycle(t *testing.T) {
 			server.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 				return func(ctx context.Context, method string, request sdk.Request) (sdk.Result, error) {
 					if method == "initialize" {
+						currentPeer.Store(request.GetSession().(*sdk.ServerSession))
 						initializes.Add(1)
 					}
 					return next(ctx, method, request)
@@ -74,7 +76,20 @@ func TestTaskCatalogRemoteTransportLifecycle(t *testing.T) {
 				endpoint = "wss" + strings.TrimPrefix(endpoint, "https")
 			}
 			store := &clientStoreFake{}
-			manager, err := NewClientManager(store, credentialReaderFake{value: "catalog-token"}, ManagerOptions{HTTPClient: peer.Client()})
+			root := WorkspaceRoot{Path: t.TempDir(), Fingerprint: strings.Repeat("b", 64)}
+			rootURI, err := workspaceRootURI(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager, err := NewClientManager(store, credentialReaderFake{value: "catalog-token"}, ManagerOptions{
+				HTTPClient: peer.Client(), InputBroker: NewInputBroker(),
+				WorkspaceRoot: func(_ context.Context, run, workspace string) (WorkspaceRoot, error) {
+					if run != "run-1" || workspace != "workspace-1" {
+						t.Errorf("roots scope changed: %s/%s", run, workspace)
+					}
+					return root, nil
+				},
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,6 +129,21 @@ func TestTaskCatalogRemoteTransportLifecycle(t *testing.T) {
 			}
 			if initializes.Load() != connects || streams.Load() != gets || calls.Load() != 2 {
 				t.Fatal("tool calls reopened connection or replayed")
+			}
+			// Both tool leases have ended. This server-initiated reply must use
+			// the roots permit through the actual SSE/WS writer, not an old call guard.
+			remoteSession := currentPeer.Load()
+			if remoteSession == nil {
+				t.Fatal("runtime peer session missing")
+			}
+			rootsCtx, stopRoots := context.WithTimeout(t.Context(), 3*time.Second)
+			roots, rootsErr := remoteSession.ListRoots(rootsCtx, &sdk.ListRootsParams{})
+			stopRoots()
+			if rootsErr != nil || roots == nil || len(roots.Roots) != 1 || roots.Roots[0].URI != rootURI {
+				t.Fatalf("idle roots roundtrip: %+v %v", roots, rootsErr)
+			}
+			if initializes.Load() != connects || streams.Load() != gets || calls.Load() != 2 {
+				t.Fatal("idle roots request reopened connection or invoked a tool")
 			}
 			server.AddTool(&sdk.Tool{Name: "added", InputSchema: json.RawMessage(`{"type":"object"}`)}, handler)
 			deadline := time.Now().Add(3 * time.Second)

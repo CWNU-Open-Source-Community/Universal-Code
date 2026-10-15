@@ -379,7 +379,7 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	// SDK-level reconnect and multi-round-trip retries are disabled separately.
 	request.GetBody = nil
 	if reply != nil {
-		if err := authorizeLegacyReply(request.Context(), reply, false); err != nil {
+		if err := authorizeClientReply(request.Context(), reply, false); err != nil {
 			return nil, err
 		}
 	}
@@ -408,7 +408,7 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 		return nil, err
 	}
 	if reply != nil {
-		if err := authorizeLegacyReply(request.Context(), reply, true); err != nil {
+		if err := authorizeClientReply(request.Context(), reply, true); err != nil {
 			return nil, err
 		}
 	}

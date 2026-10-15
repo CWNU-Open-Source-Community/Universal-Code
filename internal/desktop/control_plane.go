@@ -403,7 +403,11 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		_ = stateStore.Close()
 		return nil, err
 	}
-	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker()})
+	var commandRuntimeDrydocks *application.RunWorktreeService
+	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(),
+		WorkspaceRoot: application.NewMCPWorkspaceRootProvider(stateStore, func(context.Context, string) (*application.RunWorktreeService, error) {
+			return commandRuntimeDrydocks, nil
+		})})
 	if err != nil {
 		_ = stateStore.Close()
 		return nil, err
@@ -445,7 +449,6 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		return nil, err
 	}
 	workspaceCheckpoints.WithLifecycleHooks(hookEngine)
-	var commandRuntimeDrydocks *application.RunWorktreeService
 	if config.RunExecutionEnabled &&
 		config.ExecutionPermissionCapabilities.WorkspaceSandboxEnabled {
 		drydockExecutor, executorErr := repository.NewRunWorktreeExecutor(

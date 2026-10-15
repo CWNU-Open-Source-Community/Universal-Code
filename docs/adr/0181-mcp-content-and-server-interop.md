@@ -56,3 +56,31 @@ JSON-RPC 测试覆盖 legacy 版本、未知版本协商和拒绝结果。模型
 
 协议依据：[Resources](https://modelcontextprotocol.io/specification/2026-07-28/server/resources)、
 [Versioning](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)。
+
+## 当前 Workspace 的 MCP roots
+
+宿主只向 `roots/list` 返回当前已选 Workspace 的单个 `file:` URI。工作区作用域
+的显式发现使用其发现批准和有效 lease，因此无需先创建或运行一个任务。普通 Run
+使用登记根；拥有 Drydock 的 Run 复用文件工具的真实目录检查和当前归属，目标缺失
+或漂移时报错，不回退到源目录。启动 cwd、用户目录和其他项目不会加入结果。
+
+连接绑定该物理根的指纹；后续根变化重建连接，而非复用第三方缓存的旧根。每次
+服务端请求都重新验证服务器状态、当前任务或发现上下文和物理目录。持久连接使用
+独立任务检查，短连接使用该次连接批准；均不消费或复用工具调用的单次派发许可。
+撤销或失去该上下文时返回空 roots；发送前失效的旧结果会被拒绝。根列表描述上下文，第三方服务的实际调用继续
+走既有权限流程；该元数据不是操作系统对第三方可执行进程的隔离措施。
+
+[Claude Code 官方说明](https://code.claude.com/docs/en/mcp)返回启动目录及用户授予的
+附加工作目录，并通知目录变化。[所核对的 Codex 固定源码](https://github.com/openai/codex/blob/ac9db7d8b556c7c34a73793aed34b1f980a4fe39/codex-rs/codex-mcp/src/rmcp_client.rs#L1058-L1080)
+从默认空能力只加入 elicitation 和 extensions，未启用 roots。本项目仅提供自身
+已经授权的一个 Workspace，保留自己的目录归属和生命周期检查。
+[MCP SEP-2577](https://modelcontextprotocol.io/seps/2577-deprecate-roots-sampling-and-logging)
+已在 2026-07-28 将 roots 标记为 deprecated；这里保留现行服务所需的互操作。
+
+真实服务验收固定使用官方 `@modelcontextprotocol/server-filesystem@1.0.0`，2026-10-15
+查询 npm registry 的 `dist-tags.latest` 和 `version` 均为 `1.0.0`，metadata 更新时间
+为 `2026-10-11T02:58:37.880Z`。该[官方服务](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem)
+在初始化后立即请求 roots；测试在尚无 Run 时完成登记、发现和启用，不传允许目录
+参数，再由真实 Supervisor/Gateway 验证根目录列举、根内中文文件读取及根外读取拒绝。
+`TestMCPWorkspaceRootsOfficialFilesystem` 通过环境变量
+`UNIVERSAL_CODE_MCP_FILESYSTEM_PACKAGE` 接收仓库外已安装的这个固定 npm 包目录。

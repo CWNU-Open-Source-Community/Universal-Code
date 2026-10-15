@@ -88,7 +88,11 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 		t.tap.receiveInput = t.receiveLegacyInput
 		t.tap.prepareReply = t.prepareLegacyReply
 	}
+	rootsMiddleware := t.configureSDKRoots(options)
 	client := sdk.NewClient(&sdk.Implementation{Name: ClientName, Version: ClientVersion}, options)
+	if rootsMiddleware != nil {
+		client.AddReceivingMiddleware(rootsMiddleware)
+	}
 	client.AddSendingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, request sdk.Request) (sdk.Result, error) {
 			if method == "subscriptions/listen" && t.resolved != nil {
@@ -314,8 +318,8 @@ func (c *guardedSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) e
 		return ctx.Err()
 	}
 	defer func() { <-c.writeGate }()
-	if response, ok := msg.(*jsonrpc.Response); ok && ctx.Value(legacyReplyKey{}) != nil {
-		if err := authorizeLegacyReply(ctx, response, true); err != nil {
+	if response, ok := msg.(*jsonrpc.Response); ok && (ctx.Value(legacyReplyKey{}) != nil || ctx.Value(rootsReplyKey{}) != nil) {
+		if err := authorizeClientReply(ctx, response, true); err != nil {
 			return err
 		}
 	}
