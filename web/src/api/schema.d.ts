@@ -2196,7 +2196,7 @@ export interface paths {
         put?: never;
         /**
          * Select exact installed Skills for one Run
-         * @description Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.
+         * @description Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Legacy refs retain name@version; native refs are the exact canonical skill_read component pin returned by task Skill candidates, including revision and installation generation. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.
          */
         post: operations["selectInstalledSkills"];
         delete?: never;
@@ -4362,6 +4362,26 @@ export interface paths {
          * @description Read-only bounded workspace configuration preview using the read bearer. Loads inert .prayu/config.yaml through the same Go resolver as creation. Rejections block the entire creation; no source bytes, host paths or secrets are returned. No command, model, network, Skill or capability is executed or granted. Cost limits require an operator price snapshot at execution and do not represent exact billing.
          */
         post: operations["previewTaskConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-configuration/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List exact installed Skill candidates for one task mode
+         * @description Read-only, workspace-bound candidates for explicit per-Run context selection. Resolves historical installations and enabled Plugin Skill components through the same exact-ref, catalog, surface, phase, Profile and token checks as selection. Native refs copy the exact canonical skill_read component pin, including revision and installation generation. Missing objects and ambiguous or ineligible refs are withheld individually. A complete bounded inventory is required. No source content, installation, activation or capability grant is returned.
+         */
+        get: operations["listTaskSkillCandidates"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -12969,6 +12989,29 @@ export interface components {
             sources: components["schemas"]["ConfigurationSource"][];
             /** @enum {string} */
             version: "task_configuration.v1";
+            workspace_id: string;
+        };
+        TaskSkillCandidateItem: {
+            name: string;
+            ref: string;
+            /** Format: int32 */
+            token_upper_bound: number;
+            version?: string;
+        };
+        TaskSkillCandidatesView: {
+            /** @enum {boolean} */
+            capability_grant: false;
+            items: components["schemas"]["TaskSkillCandidateItem"][];
+            /** @enum {string} */
+            phase: "plan" | "deliver";
+            /** @enum {string} */
+            profile: "code" | "learn" | "review" | "script";
+            /** @enum {string} */
+            surface: "code" | "cyber";
+            /** Format: int32 */
+            unavailable_count: number;
+            /** @enum {string} */
+            version: "task_skill_candidates.v1";
             workspace_id: string;
         };
         ThreadActivityArtifactReferenceView: {
@@ -25545,6 +25588,45 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["TaskConfigurationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listTaskSkillCandidates: {
+        parameters: {
+            query: {
+                workspace_id: string;
+                surface: "code" | "cyber";
+                phase: "plan" | "deliver";
+                profile: "code" | "learn" | "review" | "script";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskSkillCandidatesView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

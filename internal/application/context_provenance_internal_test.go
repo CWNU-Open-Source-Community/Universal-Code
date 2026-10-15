@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
@@ -194,6 +195,58 @@ func TestExternalSkillGuidanceIsUserDataWithClosedAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertExternalSkillEnvelope(t, request.Messages, injection, "specialist")
+}
+
+func TestNativeSkillGuidanceBoundsDescriptiveAuthorVersion(t *testing.T) {
+	for _, test := range []struct {
+		name, version string
+		native        bool
+		wantVersion   bool
+	}{
+		{"legacy", "1.0.0", false, true},
+		{"native-author-version", "release-2026.10+reviewed", true, true},
+		{"native-boundary", strings.Repeat("v", maxExternalSkillGuidanceVersionBytes), true, true},
+		{"native-over-boundary", strings.Repeat("v", maxExternalSkillGuidanceVersionBytes+1), true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			item := skills.ExternalContextItem{Plugin: &skills.PluginSkillBinding{Native: test.native},
+				InstallationID: "native-version-install", Name: "native-version", Version: test.version,
+				SourceSHA256: strings.Repeat("a", 64), DeliveredSHA256: strings.Repeat("b", 64), Content: "Original selected instructions."}
+			for _, audience := range []string{"root", "specialist"} {
+				message := externalSkillGuidanceMessage(item, audience)
+				var envelope externalSkillGuidanceEnvelope
+				if err := json.Unmarshal([]byte(message.Content), &envelope); err != nil {
+					t.Fatal(err)
+				}
+				if test.wantVersion && envelope.Source.Version != test.version ||
+					!test.wantVersion && envelope.Source.Version != "" ||
+					envelope.Source.InstallationID != item.InstallationID || envelope.Source.ContentSHA256 != item.SourceSHA256 ||
+					envelope.Source.DeliveredSHA256 != item.DeliveredSHA256 || envelope.Content != item.Content || item.Version != test.version {
+					t.Fatalf("version projection changed source binding or instructions: %+v", envelope)
+				}
+				assertExternalSkillEnvelope(t, []llm.Message{message}, item.Content, audience)
+			}
+		})
+	}
+	item := skills.ExternalContextItem{Plugin: &skills.PluginSkillBinding{Native: true}, InstallationID: "native-version-install",
+		Name: "native-version", Version: strings.Repeat("v", 64*1024), Content: "Short selected instructions."}
+	message := externalSkillGuidanceMessage(item, "root")
+	var unbounded externalSkillGuidanceEnvelope
+	if err := json.Unmarshal([]byte(message.Content), &unbounded); err != nil {
+		t.Fatal(err)
+	}
+	unbounded.Source.Version = item.Version
+	raw, _ := json.Marshal(unbounded)
+	window := llm.ContextWindow{ProtocolVersion: llm.ContextWindowProtocolVersion, WindowTokens: 4096, SafetyMarginTokens: 128,
+		DefaultOutputTokens: 64, MaxOutputTokens: 64, Source: "test"}
+	request := llm.ChatRequest{Messages: []llm.Message{{Role: "user", Content: string(raw)}}, MaxTokens: 64}
+	if _, _, err := constrainRequestToModelWindow(request, window, modelContextLayout{}); apperror.CodeOf(err) != apperror.CodeResourceExhausted {
+		t.Fatalf("complete request did not account for the oversized metadata: %v", err)
+	}
+	request.Messages = []llm.Message{message}
+	if _, _, err := constrainRequestToModelWindow(request, window, modelContextLayout{}); err != nil {
+		t.Fatalf("bounded native metadata crowded out its short instructions: %v", err)
+	}
 }
 
 func assertExternalSkillEnvelope(t *testing.T, messages []llm.Message,

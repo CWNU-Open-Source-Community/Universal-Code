@@ -652,7 +652,8 @@ metadata；原始 artifact 下载额外返回 `no-store`、ETag、精确 SHA-256
 | `POST` | `/api/v1/ui-evidence/{attempt_id}/cancel` | Control-bearer explicit `{confirm:true}` cancellation and owned-resource cleanup wait |
 | `GET` | `/api/v1/ui-evidence/{attempt_id}/artifacts/{artifact_id}` | Hash-verified raw untrusted bytes with no-store, MIME, length, ETag, and SHA-256 headers |
 | `GET` | `/api/v1/runs/{run_id}/external-skills` | Bounded external-Skill provenance and root/Specialist delivery counts; no content, paths, digests, or private identities |
-| `POST` | `/api/v1/runs/{run_id}/external-skills/select` | Control-bearer operator-named installed-Skill selection for one `Created` Run; no project-config edit, install, or capability grant |
+| `GET` | `/api/v1/task-configuration/skills` | Read-bearer eligible installed Skill candidates for an exact workspace/surface/phase/profile |
+| `POST` | `/api/v1/runs/{run_id}/external-skills/select` | Control-bearer installed-Skill selection by versioned ref or exact native component pin for one `Created` Run |
 | `GET` | `/api/v1/runs/{run_id}/activity` | Chronological public model updates plus allowlisted Harness facts; redacted/bounded, no private reasoning, raw payload, Prompt, Tool arguments, or Tool output |
 | `GET` | `/api/v1/runs/{run_id}/events` | Ordered Run events; pagination |
 | `GET` | `/api/v1/runs/{run_id}/events/poll` | Bounded non-streaming event batch; shared Run-bound high-water `cursor` |
@@ -844,19 +845,32 @@ same-key replay status and `capability_grant=false`. No installation or first
 turn occurs here. Product draft creation completes selection before handing off
 the first message; failure leaves the Created task recoverable.
 
+`GET /api/v1/task-configuration/skills` requires the read bearer and exactly one
+of each query parameter: `workspace_id`, `surface`, `phase`, and `profile`. It
+accepts no body. Its `task_skill_candidates.v1` projection lists eligible legacy
+Registry packages, enabled versioned Plugin Skills, and enabled native Skill
+components after verifying their stored objects. Items expose an opaque `ref`,
+the real `name`, optional author `version`, and `token_upper_bound`;
+`unavailable_count` reports entries that cannot currently be selected and
+`capability_grant` is always false. Storage failures remain errors.
+
 Installed-Skill selection uses `POST /api/v1/runs/{run_id}/external-skills/select`
-with the same control bearer, `Idempotency-Key` and strict JSON body shape. It
-names any installed `name@version` ref without editing `.prayu/config.yaml`, and
-runs the identical built-in and external selection services: Run must still be
-`Created`, execution-mode binding, untrusted-context confirmation, catalog
-eligibility, exact built-in version match and same-key replay stay unchanged. The
-only difference is the admission rule — project refs must appear in the pinned
-suggestions, operator refs need not. Nothing here installs a package or grants a
-capability; see [ADR 0189](adr/0189-installed-skill-selection-control.md).
+with the same control bearer, `Idempotency-Key` and strict JSON body shape.
+Versioned packages retain `name@version`. Native components use the candidate's
+canonical JSON string containing the existing `skill_read` fields
+`installation_id`, `package_id`, `component_id`, `revision`, and
+`installation_generation`; clients preserve this exact string rather than
+constructing an author-version alias. Both routes run the same selection
+services: the Run must be `Created`, mode/catalog eligibility and explicit
+untrusted-context confirmation apply, and same-key replay preserves the original
+selection. Operator refs do not need to appear in pinned project suggestions.
+Schema v197 retains old rows and fingerprints while permitting distinct native
+components from one installation. Delivery rechecks the selected installation
+and generation. See [ADR 0189](adr/0189-installed-skill-selection-control.md).
 
-运行时的 `/api/v1/openapi.json` 返回同一份原始文档，仍要求 loopback 与 read Bearer 认证，不接受 query 或 body。它使用 `application/vnd.oai.openapi+json`，不套普通 `api.v1` envelope。当前契约有 274 个 path、301 个 operation 和 774 个 schema。测试逐条命中公开 handler，并确认普通 DTO 不包含 Workspace root、Artifact/Skill/Session 正文、模型输出、工具参数、私有 lifecycle、operation/fencing/lease owner、API key、Provider Base URL 或环境变量名。Web evidence DTO 还明确排除搜索片段、网页正文、citation claim、operation key 与私有网络 authority；batch delivery DTO 排除 child/integration root、owner-token digest 与 operation/request fingerprint。明文 owner token 只在 Prepare/rotation control 响应中返回一次。
+运行时的 `/api/v1/openapi.json` 返回同一份原始文档，仍要求 loopback 与 read Bearer 认证，不接受 query 或 body。它使用 `application/vnd.oai.openapi+json`，不套普通 `api.v1` envelope。当前契约有 275 个 path、302 个 operation 和 776 个 schema。测试逐条命中公开 handler，并确认普通 DTO 不包含 Workspace root、Artifact/Skill/Session 正文、模型输出、工具参数、私有 lifecycle、operation/fencing/lease owner、API key、Provider Base URL 或环境变量名。Web evidence DTO 还明确排除搜索片段、网页正文、citation claim、operation key 与私有网络 authority；batch delivery DTO 排除 child/integration root、owner-token digest 与 operation/request fingerprint。明文 owner token 只在 Prepare/rotation control 响应中返回一次。
 
-The runtime `/api/v1/openapi.json` returns the same raw document under the loopback and read-bearer boundary and accepts neither a query nor a body. It uses `application/vnd.oai.openapi+json` rather than the ordinary `api.v1` envelope. The contract contains 274 paths, 301 operations, and 774 schemas. Tests exercise every handler and verify that ordinary DTOs omit Workspace roots, Artifact/Skill/Session bodies, model output, Tool arguments, private lifecycle, operation/fencing/lease-owner identities, API keys, Provider base URLs, and environment-variable names. Web-evidence DTOs additionally omit search snippets, page bodies, citation claims, operation keys, and private network authority. Batch-delivery DTOs omit child/integration roots, owner-token digests, and operation/request fingerprints; a plaintext owner token appears only once in a prepare/rotation control response.
+The runtime `/api/v1/openapi.json` returns the same raw document under the loopback and read-bearer boundary and accepts neither a query nor a body. It uses `application/vnd.oai.openapi+json` rather than the ordinary `api.v1` envelope. The contract contains 275 paths, 302 operations, and 776 schemas. Tests exercise every handler and verify that ordinary DTOs omit Workspace roots, Artifact/Skill/Session bodies, model output, Tool arguments, private lifecycle, operation/fencing/lease-owner identities, API keys, Provider base URLs, and environment-variable names. Web-evidence DTOs additionally omit search snippets, page bodies, citation claims, operation keys, and private network authority. Batch-delivery DTOs omit child/integration roots, owner-token digests, and operation/request fingerprints; a plaintext owner token appears only once in a prepare/rotation control response.
 
 ## 主动取消 / Active-Call Cancellation
 

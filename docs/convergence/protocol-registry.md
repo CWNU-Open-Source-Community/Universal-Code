@@ -14,7 +14,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 52 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
-| [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 4 | true |
+| [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
 | [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 115 | true |
@@ -468,12 +468,13 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `capability-readiness-projection-reader` (`v1, v2`, active) at `internal/httpapi`
 
-<details><summary>4 active identifiers</summary>
+<details><summary>5 active identifiers</summary>
 
 - `model_availability.v2`
 - `run_capability_readiness.v1`
 - `runtime_capabilities.v1`
 - `search_diagnostics.v1`
+- `task_skill_candidates.v1`
 
 </details>
 

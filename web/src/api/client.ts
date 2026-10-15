@@ -1,4 +1,6 @@
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
+import { parseTaskSkillCandidates, type TaskSkillCandidateScope } from "./task-skill-candidates";
+import { validSkillSelectionRef } from "./project-skills";
 import { parseProjectActions, parseProjectActionResult, type ProjectActionSlot } from "./project-actions";
 import { parseProjectPreparation, parseProjectPreparationOperation, normalizePreparationTarget, validPreparationTarget,
   validProjectPreparationRequest, type ProjectPreparationRequest, type ProjectPreparationView,
@@ -3956,7 +3958,7 @@ function assertSkillSelectionChoice(runID: string,
 ): void {
   if (!boundedIdentity(runID) || runID.trim() !== runID || typeof choice.confirmUntrustedContext !== "boolean" ||
     choice.refs.length === 0 || choice.refs.length > 16 || new Set(choice.refs).size !== choice.refs.length ||
-    choice.refs.some((ref) => ref.length > 128 || !/^[a-z0-9.-]+@[a-z0-9.-]+$/u.test(ref))) {
+    choice.refs.some((ref) => !validSkillSelectionRef(ref))) {
     throw new Error(`Exact ${label} Skill references and task control are required`);
   }
 }
@@ -8687,6 +8689,16 @@ export class APIClient {
     if (!boundedIdentity(runID) || !boundedIdentity(jobID)) throw new Error("An exact Run and Job are required");
     return parseProjectActionResult(await this.get<unknown>(
       "/runs/" + encodeURIComponent(runID) + "/project-actions/jobs/" + encodeURIComponent(jobID), {}, signal), runID, undefined, jobID);
+  }
+
+  async listTaskSkillCandidates(scope: TaskSkillCandidateScope,
+    signal?: AbortSignal): Promise<import("./types").TaskSkillCandidatesView> {
+    if (!boundedIdentity(scope.workspace_id) || scope.workspace_id.trim() !== scope.workspace_id ||
+      !["code", "cyber"].includes(scope.surface) || !["plan", "deliver"].includes(scope.phase) ||
+      !["code", "learn", "review", "script"].includes(scope.profile)) {
+      throw new Error("An exact workspace and task mode are required");
+    }
+    return parseTaskSkillCandidates(await this.get<unknown>("/task-configuration/skills", scope, signal), scope);
   }
 
   async previewTaskConfiguration(body: import("./types").TaskConfigurationRequest,

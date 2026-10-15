@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/skills"
+	"cyberagent-workbench/internal/toolgateway"
 )
 
 type ExternalSkillSelectionStore interface {
@@ -119,12 +120,12 @@ func (s *ExternalSkillSelectionService) Select(ctx context.Context,
 			"built-in Skill Registry could not be loaded", err)
 	}
 	for _, ref := range normalized.PackageRefs {
-		name, _, parseErr := skills.ParseInstalledPackageRef(ref)
+		name, _, pin, parseErr := parseExternalSkillReference(ref)
 		if parseErr != nil {
 			return SelectExternalSkillsResult{}, apperror.Wrap(
 				apperror.CodeInvalidArgument, "external Skill reference is invalid", parseErr)
 		}
-		if _, reserved := builtins.Get(name); reserved {
+		if _, reserved := builtins.Get(name); !pin.Portable() && reserved {
 			return SelectExternalSkillsResult{}, apperror.New(apperror.CodeConflict,
 				"external Skill selections cannot use a built-in Skill name")
 		}
@@ -133,73 +134,13 @@ func (s *ExternalSkillSelectionService) Select(ctx context.Context,
 	if err != nil {
 		return SelectExternalSkillsResult{}, apperror.Normalize(err)
 	}
-	packages := make([]skills.InstalledPackage, 0, len(normalized.PackageRefs))
-	var sources []skills.ExternalSelectionSource
-	var pluginValues []plugins.Installation
-	if inventory, ok := s.store.(interface {
-		ListPluginInstallations(context.Context, string, int) ([]plugins.Installation, error)
-	}); ok {
-		pluginValues, err = inventory.ListPluginInstallations(ctx, "", portableSkillCatalogInstallLimit)
-		if err != nil {
-			return SelectExternalSkillsResult{}, apperror.Normalize(err)
-		}
-		if len(pluginValues) == portableSkillCatalogInstallLimit {
-			return SelectExternalSkillsResult{}, apperror.New(apperror.CodeResourceExhausted, "explicit Skill resolution requires a complete Plugin inventory")
-		}
+	pluginValues, err := externalSkillPluginInventory(ctx, s.store)
+	if err != nil {
+		return SelectExternalSkillsResult{}, err
 	}
-	for _, ref := range normalized.PackageRefs {
-		name, version, err := skills.ParseInstalledPackageRef(ref)
-		if err != nil {
-			return SelectExternalSkillsResult{}, apperror.Wrap(
-				apperror.CodeInvalidArgument, "external Skill reference is invalid", err)
-		}
-		installed, found, err := s.store.GetInstalledPackageByRef(ctx, name, version)
-		if err != nil {
-			return SelectExternalSkillsResult{}, apperror.Normalize(err)
-		}
-		var pluginMatch *plugins.Installation
-		for i := range pluginValues {
-			value := &pluginValues[i]
-			if value.Snapshot == nil || value.Snapshot.Legacy == nil || value.Source.Surface != string(mode.Surface) || value.Snapshot.Legacy.Manifest.Name != name || value.Snapshot.Legacy.Manifest.Version != version {
-				continue
-			}
-			// Only the currently enabled version is eligible; reject ambiguity with
-			// an old record or another enabled installation instead of substituting.
-			if value.State != plugins.StateEnabled {
-				continue
-			}
-			if found || pluginMatch != nil {
-				return SelectExternalSkillsResult{}, apperror.New(apperror.CodeConflict, "external Skill reference is ambiguous: "+ref)
-			}
-			pluginMatch = value
-		}
-		if pluginMatch != nil {
-			source, err := plugins.SkillSelectionSource(*pluginMatch)
-			if err != nil {
-				return SelectExternalSkillsResult{}, apperror.Wrap(apperror.CodePolicyDenied, "Plugin Skill cannot be selected", err)
-			}
-			sources = append(sources, source)
-			continue
-		}
-		if !found {
-			return SelectExternalSkillsResult{}, apperror.New(apperror.CodeNotFound, "installed external Skill package was not found: "+ref)
-		}
-		// A catalog pin, when present, is the enable/disable and active-version
-		// decision: a disabled or non-pinned version cannot be selected. Skills
-		// without any pin keep the existing operator-confirmed flow.
-		if pin, pinned, err := s.store.ActiveSkillCatalogPin(ctx, name, mode.Surface); err != nil {
-			return SelectExternalSkillsResult{}, apperror.Normalize(err)
-		} else if pinned {
-			if !pin.Enabled {
-				return SelectExternalSkillsResult{}, apperror.New(apperror.CodePolicyDenied,
-					"external Skill is disabled by its catalog pin: "+ref)
-			}
-			if pin.Version != version {
-				return SelectExternalSkillsResult{}, apperror.New(apperror.CodePolicyDenied,
-					"external Skill version is not the catalog-pinned version: "+ref)
-			}
-		}
-		packages = append(packages, installed)
+	packages, sources, err := resolveExternalSkillReferences(ctx, s.store, mode, normalized.PackageRefs, pluginValues)
+	if err != nil {
+		return SelectExternalSkillsResult{}, err
 	}
 	now := time.Now().UTC()
 	candidate, err := skills.ResolveExternalSelection(skills.ResolveExternalSelectionRequest{
@@ -243,6 +184,112 @@ func (s *ExternalSkillSelectionService) Select(ctx context.Context,
 		apperror.Normalize(err)
 }
 
+func externalSkillPluginInventory(ctx context.Context, store any) ([]plugins.Installation, error) {
+	inventory, ok := store.(interface {
+		ListPluginInstallations(context.Context, string, int) ([]plugins.Installation, error)
+	})
+	if !ok {
+		return nil, nil
+	}
+	values, err := inventory.ListPluginInstallations(ctx, "", portableSkillCatalogInstallLimit)
+	if err != nil {
+		return nil, apperror.Normalize(err)
+	}
+	if len(values) >= portableSkillCatalogInstallLimit {
+		return nil, apperror.New(apperror.CodeResourceExhausted, "explicit Skill resolution requires a complete Plugin inventory")
+	}
+	return values, nil
+}
+
+// Candidate discovery and selection resolve the same exact identities. In
+// particular, discovery must never replace an ambiguous ref with a newer copy.
+func resolveExternalSkillReferences(ctx context.Context, store ExternalSkillSelectionStore,
+	mode domain.RunModeSnapshot, refs []string, pluginValues []plugins.Installation,
+) ([]skills.InstalledPackage, []skills.ExternalSelectionSource, error) {
+	packages := make([]skills.InstalledPackage, 0, len(refs))
+	var sources []skills.ExternalSelectionSource
+	for _, ref := range refs {
+		name, version, pin, err := parseExternalSkillReference(ref)
+		if err != nil {
+			return nil, nil, apperror.Wrap(
+				apperror.CodeInvalidArgument, "external Skill reference is invalid", err)
+		}
+		if pin.Portable() {
+			var matched *plugins.Installation
+			for index := range pluginValues {
+				if pluginValues[index].ID == pin.InstallationID {
+					matched = &pluginValues[index]
+					break
+				}
+			}
+			if matched == nil {
+				return nil, nil, apperror.New(apperror.CodeNotFound, "installed Skill component was not found")
+			}
+			if matched.Snapshot == nil || matched.Snapshot.Legacy != nil || matched.Source.Surface != string(mode.Surface) ||
+				matched.PackageID() != pin.PackageID || matched.Revision() != pin.Revision || matched.Generation != pin.InstallationGeneration {
+				return nil, nil, apperror.New(apperror.CodePolicyDenied, "installed Skill component scope, revision or generation changed")
+			}
+			source, err := plugins.SkillSelectionSourceForComponent(*matched, pin.ComponentID)
+			if err != nil {
+				return nil, nil, apperror.Wrap(apperror.CodePolicyDenied, "Plugin Skill cannot be selected", err)
+			}
+			if skills.ExternalSelectionItemRef(source.Item) != ref {
+				return nil, nil, apperror.New(apperror.CodePolicyDenied, "installed Skill component reference changed")
+			}
+			sources = append(sources, source)
+			continue
+		}
+		installed, found, err := store.GetInstalledPackageByRef(ctx, name, version)
+		if err != nil {
+			return nil, nil, apperror.Normalize(err)
+		}
+		var pluginMatch *plugins.Installation
+		for i := range pluginValues {
+			value := &pluginValues[i]
+			if value.Snapshot == nil || value.Snapshot.Legacy == nil || value.Source.Surface != string(mode.Surface) || value.Snapshot.Legacy.Manifest.Name != name || value.Snapshot.Legacy.Manifest.Version != version {
+				continue
+			}
+			// Only the currently enabled version is eligible; reject ambiguity with
+			// an old record or another enabled installation instead of substituting.
+			if value.State != plugins.StateEnabled {
+				continue
+			}
+			if found || pluginMatch != nil {
+				return nil, nil, apperror.New(apperror.CodeConflict, "external Skill reference is ambiguous: "+ref)
+			}
+			pluginMatch = value
+		}
+		// A catalog pin, when present, is the enable/disable and active-version
+		// decision: a disabled or non-pinned version cannot be selected. Skills
+		// without any pin keep the existing operator-confirmed flow.
+		if pin, pinned, err := store.ActiveSkillCatalogPin(ctx, name, mode.Surface); err != nil {
+			return nil, nil, apperror.Normalize(err)
+		} else if pinned {
+			if !pin.Enabled {
+				return nil, nil, apperror.New(apperror.CodePolicyDenied,
+					"external Skill is disabled by its catalog pin: "+ref)
+			}
+			if pin.Version != version {
+				return nil, nil, apperror.New(apperror.CodePolicyDenied,
+					"external Skill version is not the catalog-pinned version: "+ref)
+			}
+		}
+		if pluginMatch != nil {
+			source, err := plugins.SkillSelectionSource(*pluginMatch)
+			if err != nil {
+				return nil, nil, apperror.Wrap(apperror.CodePolicyDenied, "Plugin Skill cannot be selected", err)
+			}
+			sources = append(sources, source)
+			continue
+		}
+		if !found {
+			return nil, nil, apperror.New(apperror.CodeNotFound, "installed external Skill package was not found: "+ref)
+		}
+		packages = append(packages, installed)
+	}
+	return packages, sources, nil
+}
+
 func externalSelectionMatchesRequest(selection skills.ExternalSelection,
 	request SelectExternalSkillsRequest,
 ) bool {
@@ -253,7 +300,7 @@ func externalSelectionMatchesRequest(selection skills.ExternalSelection,
 	}
 	specialistRef := ""
 	for index, item := range selection.Items {
-		if skills.FormatInstalledPackageRef(item.Name, item.Version) !=
+		if skills.ExternalSelectionItemRef(item) !=
 			request.PackageRefs[index] {
 			return false
 		}
@@ -328,11 +375,10 @@ func normalizeSelectExternalSkillsRequest(
 		if strings.TrimSpace(ref) != ref || !utf8.ValidString(ref) {
 			return SelectExternalSkillsRequest{}, errors.New("external Skill references must be normalized UTF-8")
 		}
-		name, version, err := skills.ParseInstalledPackageRef(ref)
-		if err != nil {
+		if _, _, _, err := parseExternalSkillReference(ref); err != nil {
 			return SelectExternalSkillsRequest{}, err
 		}
-		refs[index] = skills.FormatInstalledPackageRef(name, version)
+		refs[index] = ref
 	}
 	sort.Strings(refs)
 	for index := 1; index < len(refs); index++ {
@@ -341,11 +387,9 @@ func normalizeSelectExternalSkillsRequest(
 		}
 	}
 	if request.SpecialistRef != "" {
-		name, version, err := skills.ParseInstalledPackageRef(request.SpecialistRef)
-		if err != nil {
+		if _, _, _, err := parseExternalSkillReference(request.SpecialistRef); err != nil {
 			return SelectExternalSkillsRequest{}, err
 		}
-		request.SpecialistRef = skills.FormatInstalledPackageRef(name, version)
 		if index := sort.SearchStrings(refs, request.SpecialistRef); index >= len(refs) ||
 			refs[index] != request.SpecialistRef {
 			return SelectExternalSkillsRequest{}, errors.New("specialist external Skill must also appear in the selected package list")
@@ -353,4 +397,19 @@ func normalizeSelectExternalSkillsRequest(
 	}
 	request.PackageRefs = refs
 	return request, nil
+}
+
+// Native selections copy the existing exact skill_read pin. Requiring its
+// canonical JSON prevents alternate spellings from bypassing duplicate/replay
+// checks; catalog and resource reads cannot stand in for a selected component.
+func parseExternalSkillReference(ref string) (string, string, toolgateway.SkillReadRequest, error) {
+	if strings.HasPrefix(ref, "{") {
+		pin, canonical, err := toolgateway.NormalizeSkillReadPayload([]byte(ref))
+		if err != nil || !pin.Portable() || pin.Resource != "" || string(canonical) != ref {
+			return "", "", toolgateway.SkillReadRequest{}, errors.New("external Skill component requires its exact canonical skill_read reference")
+		}
+		return "", "", pin, nil
+	}
+	name, version, err := skills.ParseInstalledPackageRef(ref)
+	return name, version, toolgateway.SkillReadRequest{}, err
 }

@@ -16,6 +16,36 @@ afterEach(() => { vi.unstubAllGlobals(); });
 function response(data: unknown, status = 200) { return new Response(JSON.stringify({ version: "api.v1", request_id: "req-configuration", data }), { status, headers: { "Content-Type": "application/json" } }); }
 
 describe("task configuration contract", () => {
+  it("reads server-admitted task Skill candidates with the exact workspace and mode using the read bearer", async () => {
+    const scope = { workspace_id: "ws-configuration", surface: "code" as const, phase: "plan" as const, profile: "code" as const };
+    const ref = JSON.stringify({ installation_id: "native-install", package_id: "native-package", component_id: "skill:native",
+      revision: "a".repeat(64), installation_generation: 3 });
+    const data = { version: "task_skill_candidates.v1", ...scope, items: [{ ref, name: "native", token_upper_bound: 100 }], unavailable_count: 1, capability_grant: false };
+    const fetch = vi.fn().mockResolvedValue(response(data)); vi.stubGlobal("fetch", fetch);
+    const client = new APIClient("read", "/api/v1");
+    await expect(client.listTaskSkillCandidates(scope)).resolves.toEqual(data);
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/task-configuration/skills?workspace_id=ws-configuration&surface=code&phase=plan&profile=code");
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: "GET", headers: { Authorization: "Bearer read" } });
+    for (const invalid of [{ ...data, workspace_id: "other" }, { ...data, profile: "review" }, { ...data, phase: "deliver" },
+      { ...data, capability_grant: true }, { ...data, root_path: "D:/secret" }, { ...data, items: [...data.items, ...data.items] },
+      { ...data, items: [{ ...data.items[0], ref: ref.replace('"component_id":', '"resource":"assets/secret","component_id":') }] }]) {
+      fetch.mockResolvedValueOnce(response(invalid));
+      await expect(client.listTaskSkillCandidates(scope)).rejects.toThrow("does not match");
+    }
+  });
+
+  it("submits a native installed Skill pin unchanged and validates its exact selection receipt", async () => {
+    const ref = JSON.stringify({ installation_id: "native-install", package_id: "package-" + "p".repeat(120), component_id: "skill:native",
+      revision: "a".repeat(64), installation_generation: 3 });
+    const receipt = { run_id: "run-native", refs: [ref], external_selection_id: "native-selection", replayed: false, capability_grant: false };
+    const fetch = vi.fn().mockResolvedValue(response(receipt)); vi.stubGlobal("fetch", fetch);
+    const client = new APIClient("read", "/api/v1", "control");
+    const choice = { refs: [ref], confirmUntrustedContext: true, source: "installed" as const };
+    await client.selectInstalledSkills("run-native", choice, "native-selection-key");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ refs: [ref], confirm_untrusted_context: true });
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-native/external-skills/select");
+  });
+
   it("selects exact project Skills through control and validates the existing selection receipt", async () => {
     const receipt = { run_id: "run-pinned", refs: ["code@1.0.0"], builtin_selection_id: "skill-selection-existing", replayed: false, capability_grant: false };
     const fetch = vi.fn().mockResolvedValue(response(receipt)); vi.stubGlobal("fetch", fetch);

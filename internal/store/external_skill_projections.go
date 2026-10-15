@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -43,9 +44,13 @@ func (s *SQLiteStore) GetExternalSkillProjectionByRun(ctx context.Context,
 	value.ContextDeliveryAuthorized = contextDelivery != 0
 	value.ToolCapabilityGrant = toolGrant != 0
 	value.CreatedAt = parseTS(createdAt)
-	rows, err := s.db.QueryContext(ctx, `SELECT ordinal, name, version,
-		token_upper_bound, trust_class, declared_tool_count, specialist_eligible
-		FROM run_external_skill_projection_items WHERE run_id = ? ORDER BY ordinal`, runID)
+	rows, err := s.db.QueryContext(ctx, `SELECT projection.ordinal, projection.name, projection.version,
+		projection.token_upper_bound, projection.trust_class, projection.declared_tool_count, projection.specialist_eligible,
+		item.installation_id, item.plugin_binding_json
+		FROM run_external_skill_projection_items projection
+		JOIN run_external_skill_selections selection ON selection.run_id = projection.run_id
+		JOIN run_external_skill_selection_items item ON item.selection_id = selection.id AND item.ordinal = projection.ordinal
+		WHERE projection.run_id = ? ORDER BY projection.ordinal`, runID)
 	if err != nil {
 		return skills.ExternalSkillProjection{}, false, err
 	}
@@ -54,12 +59,23 @@ func (s *SQLiteStore) GetExternalSkillProjectionByRun(ctx context.Context,
 	for rows.Next() {
 		var item skills.ExternalSkillProjectionItem
 		var specialistEligible int
+		var installationID, binding string
 		if err := rows.Scan(&item.Ordinal, &item.Name, &item.Version,
 			&item.TokenUpperBound, &item.TrustClass, &item.DeclaredToolCount,
-			&specialistEligible); err != nil {
+			&specialistEligible, &installationID, &binding); err != nil {
 			return skills.ExternalSkillProjection{}, false, err
 		}
 		item.SpecialistEligible = specialistEligible != 0
+		if binding != "{}" {
+			var plugin skills.PluginSkillBinding
+			if err := json.Unmarshal([]byte(binding), &plugin); err != nil || plugin.Validate() != nil {
+				return skills.ExternalSkillProjection{}, false, errors.New("external Skill projection component binding is invalid")
+			}
+			if plugin.Native {
+				item.Native = true
+				item.SelectionRef = skills.ExternalSelectionItemRef(skills.ExternalSelectionItem{InstallationID: installationID, Plugin: &plugin})
+			}
+		}
 		value.Items = append(value.Items, item)
 	}
 	if err := rows.Err(); err != nil {

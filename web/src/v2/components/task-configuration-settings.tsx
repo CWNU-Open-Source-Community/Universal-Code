@@ -6,12 +6,13 @@ import { TaskConfiguration } from "./task-configuration";
 import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
 
-export function TaskConfigurationSettings({ client, threadID, sourceRunID, draftWorkspaceID = "", draftBudget,
+export function TaskConfigurationSettings({ client, threadID, sourceRunID, draftWorkspaceID = "", draftPhase = "deliver", draftBudget,
   onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange }: {
   client: APIClient;
   threadID: string;
   sourceRunID?: string;
   draftWorkspaceID?: string;
+  draftPhase?: "plan" | "deliver";
   draftBudget?: TaskBudgetSettings;
   onDraftBudgetChange?: (budget: TaskBudgetSettings | undefined) => void;
   onDraftValidityChange?: (valid: boolean) => void;
@@ -49,7 +50,7 @@ export function TaskConfigurationSettings({ client, threadID, sourceRunID, draft
           : t("所选执行或其工作区尚未找到。请返回任务，重新选择执行记录后读取配置。", "The selected execution or workspace was not found. Return to the task, select a run, and read its configuration again.")}
         {!source.isPending && <button onClick={() => void source.refetch()} type="button">{t("重新读取执行配置", "Read execution configuration again")}</button>}
       </div>
-      : <TaskConfiguration key={`draft:${draftWorkspaceID}`} client={client} workspaceID={draftWorkspaceID} profile="code"
+      : <TaskConfiguration key={`draft:${draftWorkspaceID}`} client={client} workspaceID={draftWorkspaceID} profile="code" phase={draftPhase}
         budget={draftBudget} onBudgetChange={onDraftBudgetChange} onValidityChange={onDraftValidityChange}
         projectSkills={draftProjectSkills} onProjectSkillsChange={onDraftProjectSkillsChange}
         disabled={!client.hasThreadControl || !draftWorkspaceID} />}

@@ -12132,7 +12132,7 @@
       "post": {
         "operationId": "selectInstalledSkills",
         "summary": "Select exact installed Skills for one Run",
-        "description": "Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
+        "description": "Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Legacy refs retain name@version; native refs are the exact canonical skill_read component pin returned by task Skill candidates, including revision and installation generation. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
         "tags": [
           "Control"
         ],
@@ -25284,6 +25284,128 @@
                 "$ref": "#/components/schemas/TaskConfigurationRequest"
               }
             }
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/task-configuration/skills": {
+      "get": {
+        "operationId": "listTaskSkillCandidates",
+        "summary": "List exact installed Skill candidates for one task mode",
+        "description": "Read-only, workspace-bound candidates for explicit per-Run context selection. Resolves historical installations and enabled Plugin Skill components through the same exact-ref, catalog, surface, phase, Profile and token checks as selection. Native refs copy the exact canonical skill_read component pin, including revision and installation generation. Missing objects and ambiguous or ineligible refs are withheld individually. A complete bounded inventory is required. No source content, installation, activation or capability grant is returned.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "surface",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "code",
+                "cyber"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "phase",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "plan",
+                "deliver"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "code",
+                "learn",
+                "review",
+                "script"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskSkillCandidatesView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
           }
         },
         "x-cyberagent-read-only": true
@@ -61377,6 +61499,101 @@
           "sources",
           "project_disposition",
           "rejections",
+          "capability_grant"
+        ],
+        "type": "object"
+      },
+      "TaskSkillCandidateItem": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "token_upper_bound": {
+            "format": "int32",
+            "maximum": 4096,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "name",
+          "token_upper_bound"
+        ],
+        "type": "object"
+      },
+      "TaskSkillCandidatesView": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_grant": {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSkillCandidateItem"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          },
+          "phase": {
+            "enum": [
+              "plan",
+              "deliver"
+            ],
+            "type": "string"
+          },
+          "profile": {
+            "enum": [
+              "code",
+              "learn",
+              "review",
+              "script"
+            ],
+            "type": "string"
+          },
+          "surface": {
+            "enum": [
+              "code",
+              "cyber"
+            ],
+            "type": "string"
+          },
+          "unavailable_count": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "version": {
+            "enum": [
+              "task_skill_candidates.v1"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "workspace_id",
+          "surface",
+          "phase",
+          "profile",
+          "items",
+          "unavailable_count",
           "capability_grant"
         ],
         "type": "object"

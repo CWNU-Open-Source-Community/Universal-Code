@@ -1248,6 +1248,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		}
 		if spec.OperationID == "searchWorkspace" {
 			requestPath += "?query=README"
+		} else if spec.Path == TaskSkillCandidatesPath {
+			requestPath += "?workspace_id=" + fixture.workspace.ID + "&surface=code&phase=deliver&profile=review"
 		} else if spec.OperationID == "getWorkspaceRepositoryFileHistory" {
 			requestPath += "?path=README.md"
 		} else if spec.OperationID == "getWorkspaceRepositoryCommitFilePreview" {

@@ -740,7 +740,8 @@
         "model_availability.v2",
         "run_capability_readiness.v1",
         "runtime_capabilities.v1",
-        "search_diagnostics.v1"
+        "search_diagnostics.v1",
+        "task_skill_candidates.v1"
       ],
       "retired_identifiers": []
     },

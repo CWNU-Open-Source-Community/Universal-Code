@@ -75,10 +75,14 @@ cyberagent skill candidate approve|reject|import <candidate-id> ...
 ```
 
 HTTP 入口覆盖上面两条 Run 相关命令，并在一次调用里合并它们的准入：
+`GET /api/v1/task-configuration/skills` 按工作区、surface、phase 与 Profile
+返回旧 Registry、新 Plugin 版本化 Skill 和原生组件的合格候选，逐项核验实际对象；
 `GET /api/v1/runs/{run_id}/external-skills` 读取既有投影，
 `POST /api/v1/runs/{run_id}/external-skills/select` 用控制 bearer 与
-`Idempotency-Key` 选择任意 `name@version`，内置名仍要求精确 active 版本，外部名要求
-已安装、具资格并显式确认不可信上下文；任务草稿界面据此提供勾选。
+`Idempotency-Key` 选择合格的 `name@version` 或候选提供的原生组件精确 JSON pin。
+内置名仍要求精确 active 版本，外部内容要求已安装、具资格并显式确认不可信上下文；
+任务草稿界面据此提供勾选。原生组件保留真实名称和可空作者版本，v197 兼容旧账本，
+支持同一 Plugin 多组件；自动发现与 `skill_read` 继续沿用既有路径。
 `skill installed`/`skill remove` 对应 ADR 0187 的清单与移除端点。固定项目建议的
 `POST /api/v1/runs/{run_id}/project-skills/select` 保留更窄的 pin 准入，两条路由
 的差别只在准入规则，见 ADR 0189。

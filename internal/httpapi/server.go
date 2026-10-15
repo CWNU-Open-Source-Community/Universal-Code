@@ -1095,6 +1095,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveUI(tracked, request)
 		return
 	}
+	if request.URL.Path == TaskSkillCandidatesPath {
+		a.serveTaskSkillCandidates(tracked, request, requestID)
+		return
+	}
 	if request.URL.Path == TaskConfigurationPreviewPath {
 		a.serveTaskConfiguration(tracked, request, requestID, "")
 		return

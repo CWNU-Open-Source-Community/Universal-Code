@@ -130,9 +130,10 @@ function PluginVersionActions({ client, history, fetching, refresh, setBusy }: {
     {pending && <p role="status">{t("正在更新插件状态…", "Updating Plugin state…")}</p>}
     {rollback.isSuccess && <p role="status">{t("回退已完成，所选版本已启用。刷新版本记录查看当前状态。", "Rollback completed and the selected version is enabled. Refresh version records to inspect current state.")}</p>}
     {revoke.isSuccess && <p role="status">{t("发布者信任已撤销。刷新版本记录查看安装状态。", "Publisher trust revoked. Refresh version records to inspect installation state.")}</p>}
-    {(rollback.error || revoke.error) && <>
+    {trust.isSuccess && <p role="status">{t("发布者信任已建立。逐包能力仍需单独审查和启用。", "Publisher trust granted. Package capabilities still require separate review and enablement.")}</p>}
+    {(rollback.error || revoke.error || trust.error) && <>
       <p className="inline-warning" role="alert">{t("操作结果需要核对。选择“核对最新版本状态”读取当前记录，再决定下一步。", "Check the operation result. Select Check latest version state to read current records before continuing.")}</p>
-      <details><summary>{t("操作详细记录", "Operation details")}</summary><p>{String(rollback.error ?? revoke.error)}</p></details>
+      <details><summary>{t("操作详细记录", "Operation details")}</summary><p>{String(rollback.error ?? revoke.error ?? trust.error)}</p></details>
       <button className="settings-action" disabled={pending || fetching} onClick={() => void readAgain()} type="button">{t("核对最新版本状态", "Check latest version state")}</button>
     </>}
   </div>;

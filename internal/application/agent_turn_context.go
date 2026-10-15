@@ -209,10 +209,15 @@ type externalSkillGuidanceEnvelope struct {
 type externalSkillGuidanceSource struct {
 	InstallationID  string `json:"installation_id"`
 	Name            string `json:"name"`
-	Version         string `json:"version"`
+	Version         string `json:"version,omitempty"`
 	ContentSHA256   string `json:"content_sha256"`
 	DeliveredSHA256 string `json:"delivered_sha256"`
 }
+
+// Native author versions are free text. Keep this descriptive field within the
+// same 256-byte metadata bound as a portable component identity; long versions
+// remain pinned in storage and must not crowd out the selected instructions.
+const maxExternalSkillGuidanceVersionBytes = 256
 
 type externalSkillGuidanceAuthority struct {
 	WorkflowGuidance bool `json:"workflow_guidance"`
@@ -229,11 +234,15 @@ type externalSkillGuidanceAuthority struct {
 func externalSkillGuidanceMessage(item skills.ExternalContextItem,
 	audience string,
 ) llm.Message {
+	version := item.Version
+	if item.Plugin != nil && item.Plugin.Native && len(version) > maxExternalSkillGuidanceVersionBytes {
+		version = ""
+	}
 	envelope := externalSkillGuidanceEnvelope{
 		Version: "external_skill_guidance.v1", Audience: audience,
 		Trust: skills.PackageTrustOperatorInstalledUntrusted,
 		Source: externalSkillGuidanceSource{
-			InstallationID: item.InstallationID, Name: item.Name, Version: item.Version,
+			InstallationID: item.InstallationID, Name: item.Name, Version: version,
 			ContentSHA256: item.SourceSHA256, DeliveredSHA256: item.DeliveredSHA256,
 		},
 		Authority: externalSkillGuidanceAuthority{WorkflowGuidance: true},

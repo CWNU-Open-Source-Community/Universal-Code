@@ -89,12 +89,12 @@ func selectSkills(ctx context.Context, store ProjectSkillSelectionStore,
 				"selected Skill must be an exact, unique "+subject+" Skill reference")
 		}
 		seen[ref] = true
-		name, version, err := skills.ParseInstalledPackageRef(ref)
+		name, version, pin, err := parseExternalSkillReference(ref)
 		if err != nil {
 			return result, apperror.New(apperror.CodeInvalidArgument,
 				subject+" Skill reference is invalid")
 		}
-		if manifest, builtin := registry.Get(name); builtin {
+		if manifest, builtin := registry.Get(name); !pin.Portable() && builtin {
 			if manifest.Version != version {
 				return result, apperror.New(apperror.CodeConflict, "suggested built-in Skill version is unavailable: "+ref)
 			}

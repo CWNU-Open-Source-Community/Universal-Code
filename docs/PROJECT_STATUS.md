@@ -6,18 +6,16 @@
 > receipts require revalidation. New live backend acceptance remains pending.
 > See [ADR 0185](adr/0185-batch-validation-selected-runtime.md).
 
-> 2026-10-15 已安装 Skill 的按任务选择入口：新增
-> `POST /api/v1/runs/{run_id}/external-skills/select`，操作者可在不改
-> `.prayu/config.yaml` 的前提下把一个已安装 Skill 绑定到尚未开始的 Run。Go 侧把
-> `SelectProjectSkills` 的公共流程抽成 `selectSkills(subject, admitted)`，新入口
-> `SelectInstalledSkills` 只去掉"必须在 pinned suggestions 中"这一条准入，Run 状态、
-> 模式绑定、不可信上下文确认、目录资格与同 key 重放仍由原有两个选择服务持有。
-> 任务草稿界面在技能建议之外增列已安装技能，混合选择走更宽的准入。无 SQLite 迁移，
-> 不安装、不下载、不授予能力。见 ADR 0189。
-> 验证：`internal/httpapi` 新增 3 个用例（准入/重放/冲突、离开 Created 后拒绝、
-> 内置版本规则），OpenAPI 路由真实可达守卫覆盖新路由，`protocolregistry -check`、
-> `surfacecheck` 通过，前端 `typecheck` 与 task-configuration、client 契约测试通过。
-> 本项尚未做真实浏览器截图验收。
+> 2026-10-15 #348 按任务选择 Skill：任务配置同时列出合格的旧 Registry 包、
+> 新导入 Plugin 的版本化 Skill 和原生 SKILL.md 组件。候选按工作区、surface、phase
+> 与 Profile 核验，发送前通过 `external-skills/select` 绑定精确安装和组件；无须修改
+> `.prayu/config.yaml`。原生引用沿用 `skill_read` 的精确 pin，保留真实名称和可空版本。
+> SQLite v197 支持同 Plugin 多组件，迁移测试确认旧行、rowid、指纹与重放保持不变。
+> 自动发现、模式限制、不可信上下文确认和现有预算继续生效。见 [ADR 0189](adr/0189-installed-skill-selection-control.md)。
+> 真实浏览器已完成新 ZIP 导入/审查/启用/选择，以及原生组件手动选择；两次任务均将
+> 精确正文送达隔离的离线 Provider，并通过实际 `skill_read` 和工作区读取验证。
+> 应用测试另覆盖重启恢复、同包多组件、停用与代次变化后的拒绝。详见
+> [扩展选择验收](acceptance/2026-10-15-extension-selection.md)。
 
 > 2026-10-15 插件发布者信任控制面：新增 `POST /api/v1/extensions/plugins/{installation_id}/publisher-trust`
 > 与桌面/Web 的“信任该发布者”入口，解除“撤销后 GUI 无法重新信任”的死锁。Go 侧新增有界核心
@@ -26,8 +24,9 @@
 > 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0188。
 > 验证：`internal/store` 新增有界授予与被撤销发布者解除阻塞的实测用例，`internal/httpapi`
 > OpenAPI 守卫与新增用例通过，`internal/plugins`、`internal/application` 通过，前端
-> `typecheck` 与 plugin lifecycle 相关 23 项测试通过。Skill Catalog 发布者信任仍只有 CLI；
-> 本项未做真实浏览器截图验收。
+> `typecheck` 与 plugin lifecycle 相关测试通过。失败响应可通过重新读取当前状态并重新
+> 确认恢复。真实浏览器已验证签名包的信任、撤销、重新信任，以及同发布者新版本的
+> 审查与启用；被撤销的旧安装保持撤销。Skill Catalog 发布者信任 GUI 仍由 #334 跟踪。
 
 > 2026-10-15 Skill Registry 操作者入口：历史登记的列出与移除从 CLI-only 提升为
 > HTTP 读端点、控制写端点与桌面桥方法，复用既有 `SkillPackageRegistryService` 与
@@ -38,10 +37,9 @@
 > 验证：`internal/httpapi`、`internal/desktop`（含 desktop tag）、`internal/application`、
 > `internal/skills`、`internal/operationreceipt` 定向与整包测试通过，
 > `protocolregistry -check`、`surfacecheck` 通过，前端 214 文件 2094 项测试与
-> `typecheck` 通过。Skill Registry 与发布者信任已在 loopback 服务 + `web/dist`
-> 的真实浏览器验收中确认（清单 200 且 `capability_grant:false`、未确认移除返回
-> `INVALID_ARGUMENT`、索引广播 `skill-packages`、控制台无 error/warn）；
-> 签名插件的“信任该发布者”按钮因产品内没有签名入口而未做浏览器验收。
+> `typecheck` 通过。本次在非空历史 Registry 上通过浏览器确认移除登记、隐藏已移除项、
+> 勾选后查看 tombstone 与保留对象说明；浏览器控制台无 error/warn。签名包可由现有
+> 签名 API 构建后通过实际上传流程验收，无须在 GUI 内签名。URL/Git GUI 导入仍由 #334 跟踪。
 
 > 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
 
