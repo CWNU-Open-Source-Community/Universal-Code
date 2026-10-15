@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,7 +22,105 @@ import (
 type acceptedWebSocketTransport struct{ sdk.Connection }
 
 func (t acceptedWebSocketTransport) Connect(context.Context) (sdk.Connection, error) {
-	return t.Connection, nil
+	return &acceptedWebSocketConnection{Connection: t.Connection}, nil
+}
+
+type acceptedWebSocketConnection struct {
+	sdk.Connection
+	writeMu sync.Mutex
+}
+
+func (c *acceptedWebSocketConnection) Write(ctx context.Context, message jsonrpc.Message) error {
+	// SDK server handlers may reply concurrently; Gorilla permits one writer.
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.Connection.Write(ctx, message)
+}
+
+func TestAcceptedWebSocketTransportConcurrentResponses(t *testing.T) {
+	const parallel = 16
+	payload := strings.Repeat("response payload ", 4096)
+	ready := make(chan struct{})
+	var arrived atomic.Int32
+	server := sdk.NewServer(&sdk.Implementation{Name: "concurrent-peer", Version: "1"}, nil)
+	server.AddTool(&sdk.Tool{Name: "echo", InputSchema: json.RawMessage(`{"type":"object","properties":{"index":{"type":"integer"}}}`)},
+		func(ctx context.Context, request *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+			var args struct{ Index int }
+			if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
+				return nil, err
+			}
+			if arrived.Add(1) == parallel {
+				close(ready)
+			}
+			select {
+			case <-ready:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: fmt.Sprintf("%d:%s", args.Index, payload)}}}, nil
+		})
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer connection.Close()
+		session, err := server.Connect(r.Context(), acceptedWebSocketTransport{&webSocketClientConnection{connection: connection}}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = session.Wait()
+	}))
+	defer peer.Close()
+	connection, response, err := websocket.DefaultDialer.DialContext(t.Context(), "ws"+strings.TrimPrefix(peer.URL, "http"), nil)
+	if response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.WriteJSON(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": map[string]any{
+		"protocolVersion": "2025-11-25", "capabilities": map[string]any{}, "clientInfo": map[string]string{"name": "concurrent-test", "version": "1"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	var reply struct {
+		ID     int
+		Result json.RawMessage
+		Error  json.RawMessage
+	}
+	if err := connection.ReadJSON(&reply); err != nil || reply.ID != 0 || len(reply.Error) != 0 {
+		t.Fatalf("initialize response: %+v, %v", reply, err)
+	}
+	if err := connection.WriteJSON(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}); err != nil {
+		t.Fatal(err)
+	}
+	// Send sequentially; the barrier releases all SDK response handlers together.
+	// This specifically exercises concurrent server writes, not client writes.
+	for id := 1; id <= parallel; id++ {
+		if err := connection.WriteJSON(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
+			"name": "echo", "arguments": map[string]int{"index": id},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := make(map[int]bool, parallel)
+	for range parallel {
+		if err := connection.ReadJSON(&reply); err != nil {
+			t.Fatal(err)
+		}
+		var result struct{ Content []struct{ Text string } }
+		if reply.ID < 1 || reply.ID > parallel || seen[reply.ID] || len(reply.Error) != 0 ||
+			json.Unmarshal(reply.Result, &result) != nil || len(result.Content) != 1 || result.Content[0].Text != fmt.Sprintf("%d:%s", reply.ID, payload) {
+			t.Fatalf("response %d lost its identity or complete payload", reply.ID)
+		}
+		seen[reply.ID] = true
+	}
 }
 
 func remoteCompatibilityPeer(t *testing.T, kind TransportKind, calls *atomic.Int32) (*httptest.Server, string) {
