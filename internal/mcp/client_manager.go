@@ -20,6 +20,7 @@ import (
 	"cyberagent-workbench/internal/executionauth"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/redact"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
@@ -302,6 +303,26 @@ func (m *Manager) refreshLocked(ctx context.Context, record ServerRecord) (Serve
 }
 
 func (m *Manager) connect(ctx context.Context, descriptor ServerDescriptor) (*Client, error) {
+	if len(descriptor.EnvCredentialRefs) != 0 {
+		environment, err := m.readManualEnvironment(ctx, descriptor)
+		if err != nil {
+			return nil, err
+		}
+		launch, err := resolveManualLaunch(descriptor, []string{legacyClientProtocolVersion, "2024-11-05", "2025-03-26", "2025-11-25", preferredClientProtocolVersion}, environment)
+		if err != nil {
+			return nil, err
+		}
+		recheck := func(ctx context.Context) error { return m.recheckManualEnvironment(ctx, descriptor, launch) }
+		transport, _, err := newLaunchClient(launch, m.httpClient, recheck, func(ctx context.Context, _ *jsonrpc.Request, _ int64) error { return recheck(ctx) })
+		if err != nil {
+			return nil, err
+		}
+		secrets := make([]string, 0, len(environment))
+		for _, value := range environment {
+			secrets = append(secrets, value)
+		}
+		return newClient(transport, descriptor, secrets...), nil
+	}
 	bearer := ""
 	if descriptor.CredentialRef != "" {
 		if m.credentials == nil {

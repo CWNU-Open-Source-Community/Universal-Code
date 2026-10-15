@@ -81,7 +81,7 @@ func (a *App) mcpClientCommand(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "stage":
 		fs := newFlagSet("mcp client stage", a.errOut)
-		file := fs.String("file", "", "bounded mcp-client.v1 descriptor JSON")
+		file := fs.String("file", "", "bounded manual mcp-client.v1 or mcp-client.v3 descriptor JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}

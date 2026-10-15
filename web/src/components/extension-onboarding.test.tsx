@@ -47,7 +47,7 @@ it("registers MCP only on submit, reviews each pinned stage, and reads actual ca
   await user.click(screen.getByText("登记 MCP Server"));
   await user.type(screen.getByRole("textbox", { name: "Server ID" }), "first-mcp");
   await user.type(screen.getByRole("textbox", { name: "显示名称" }), "First MCP");
-  await user.type(screen.getByRole("textbox", { name: "HTTPS 地址" }), "https://example.invalid/mcp");
+  await user.type(screen.getByRole("textbox", { name: "服务器地址（HTTPS / 本机 HTTP）" }), "https://example.invalid/mcp");
   expect(mutations).toEqual([]);
   await user.click(screen.getByRole("button", { name: "提交登记" }));
   const discovery = await screen.findByRole("button", { name: "批准能力发现" });

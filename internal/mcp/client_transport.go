@@ -41,45 +41,15 @@ func newRemoteClientTransport(descriptor ServerDescriptor, bearer string, base *
 // Historical descriptors are input adapters, not another client runtime.
 // Manager owns their review/authority semantics and persisted representation.
 func newLegacyLaunchClient(d ServerDescriptor, bearer string, base *http.Client) (*Client, error) {
-	launch := toolcontract.ResolvedLaunch{
-		Component:  toolcontract.ComponentRef{PackageID: ClientProtocolVersion, ComponentID: d.ID},
-		InstanceID: d.Fingerprint(), Format: "mcp-client", FormatVersion: "1",
-		Transport: toolcontract.Transport(d.Transport),
-		// Keep the historical preferred version and supported negotiation set.
-		ProtocolVersions: []string{legacyClientProtocolVersion, "2024-11-05", "2025-03-26", "2025-11-25", preferredClientProtocolVersion},
+	// Keep the historical preferred version and supported negotiation set.
+	launch, err := resolveManualLaunch(d, []string{legacyClientProtocolVersion, "2024-11-05", "2025-03-26", "2025-11-25", preferredClientProtocolVersion}, nil)
+	if err != nil {
+		return nil, err
 	}
-	if d.Transport == TransportStdio {
-		env := map[string]string{}
-		for _, entry := range minimalMCPEnvironment() {
-			key, value, ok := strings.Cut(entry, "=")
-			if ok {
-				env[key] = value
-			}
-		}
-		var err error
-		env, err = normalizeLaunchEnvironment(env)
-		if err != nil {
-			return nil, err
-		}
-		cwd, err := canonicalLaunchDirectory(os.TempDir())
-		if err != nil {
-			return nil, err
-		}
-		command, err := resolveLaunchExecutable(d.Target, cwd, env)
-		if err != nil {
-			return nil, err
-		}
-		digest, err := launchExecutableDigest(command)
-		if err != nil {
-			return nil, err
-		}
-		launch.Stdio = &toolcontract.StdioLaunch{Command: command, Args: slices.Clone(d.Arguments), Env: env, Cwd: cwd, ExecutableSHA256: digest}
-	} else {
-		launch.HTTP = &toolcontract.HTTPLaunch{Endpoint: d.Target}
-		if base == nil {
-			// Preserve the legacy descriptor's existing HTTP client selection.
-			base = &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
-		}
+	if d.Transport == TransportStreamableHTTP && base == nil && d.ProtocolVersion == ClientProtocolVersion {
+		// Preserve historical HTTP selection; new configuration uses the
+		// existing resolved transport's proxy-free default.
+		base = &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	}
 	client, remote, err := newLaunchClient(launch, base, nil, nil)
 	if err != nil {

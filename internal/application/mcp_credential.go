@@ -85,22 +85,22 @@ func (s *MCPCredentialService) status(ctx context.Context, binding MCPCredential
 		return MCPCredentialStatus{}, err
 	}
 	d := record.Descriptor
-	if record.Validate() != nil || d.ProtocolVersion != mcp.ClientProtocolVersion || d.NativeSource != nil ||
-		d.Transport != mcp.TransportStreamableHTTP || d.CredentialRef == "" {
-		return MCPCredentialStatus{}, apperror.New(apperror.CodeFailedPrecondition, "This MCP descriptor does not support a managed bearer credential")
+	if record.Validate() != nil || (d.ProtocolVersion != mcp.ClientProtocolVersion && d.ProtocolVersion != mcp.ConfigClientProtocolVersion) || d.NativeSource != nil ||
+		(d.CredentialRef == "" && len(d.EnvCredentialRefs) == 0) {
+		return MCPCredentialStatus{}, apperror.New(apperror.CodeFailedPrecondition, "This MCP descriptor does not reference the managed credential")
 	}
 	if record.DescriptorFingerprint != binding.ExpectedDescriptorFingerprint || d.Target != binding.Target ||
-		d.CredentialRef != binding.CredentialRef || d.WorkspaceID != binding.WorkspaceID || d.RunID != binding.RunID {
+		!d.ReferencesCredential(binding.CredentialRef) || d.WorkspaceID != binding.WorkspaceID || d.RunID != binding.RunID {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeConflict, "MCP credential descriptor or scope changed; refresh its binding")
 	}
-	registrations, err := s.registry.ListMCPClientServersByCredentialRef(ctx, d.CredentialRef)
+	registrations, err := s.registry.ListMCPClientServersByCredentialRef(ctx, binding.CredentialRef)
 	if err != nil {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeUnavailable, "MCP credential references could not be verified")
 	}
 	fingerprints := make([]string, 0, len(registrations))
 	found, conflict := false, false
 	for _, current := range registrations {
-		if current.Validate() != nil || current.Descriptor.CredentialRef != d.CredentialRef {
+		if current.Validate() != nil || !current.Descriptor.ReferencesCredential(binding.CredentialRef) {
 			return MCPCredentialStatus{}, apperror.New(apperror.CodeUnavailable, "MCP credential reference metadata is invalid")
 		}
 		found = found || current.Descriptor.ID == d.ID
@@ -114,10 +114,10 @@ func (s *MCPCredentialService) status(ctx context.Context, binding MCPCredential
 	digest := sha256.Sum256([]byte(strings.Join(fingerprints, "\n")))
 	result := MCPCredentialStatus{ProtocolVersion: MCPCredentialProtocolVersion, ServerID: d.ID,
 		WorkspaceID: d.WorkspaceID, RunID: d.RunID, DescriptorFingerprint: record.DescriptorFingerprint,
-		Target: d.Target, CredentialRef: d.CredentialRef, StoreKind: s.store.Kind(), StoreAvailable: s.store.Available(),
+		Target: d.Target, CredentialRef: binding.CredentialRef, StoreKind: s.store.Kind(), StoreAvailable: s.store.Available(),
 		RegistrationCount: len(registrations), ReferenceFingerprint: hex.EncodeToString(digest[:]), EndpointConflict: conflict}
 	if result.StoreAvailable {
-		result.Configured, err = s.store.Configured(ctx, d.CredentialRef)
+		result.Configured, err = s.store.Configured(ctx, binding.CredentialRef)
 		if err != nil {
 			return MCPCredentialStatus{}, apperror.New(apperror.CodeUnavailable, "MCP credential presence could not be verified")
 		}
@@ -140,6 +140,9 @@ func (s *MCPCredentialService) Change(ctx context.Context, request ChangeMCPCred
 	}
 	if !status.StoreAvailable {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeFailedPrecondition, "System credential storage is unavailable; no plaintext fallback exists")
+	}
+	if request.Action == "set" && strings.HasPrefix(request.Secret, "uc-mcp-oauth-v1:") {
+		return MCPCredentialStatus{}, apperror.New(apperror.CodeInvalidArgument, "MCP credential input uses a reserved authentication format")
 	}
 	if status.EndpointConflict || status.ReferenceFingerprint != request.ExpectedReferenceFingerprint {
 		return MCPCredentialStatus{}, apperror.New(apperror.CodeConflict, "MCP credential references changed or bind different endpoints; refresh before changing the shared credential")

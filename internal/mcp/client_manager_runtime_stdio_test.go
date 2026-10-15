@@ -16,6 +16,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/mcp"
@@ -31,6 +32,7 @@ type managerStdioEvent struct {
 	Phase, Method, Cwd, Executable string
 	Args, EnvNames                 []string
 	CanaryInherited                bool
+	ManualConfigMatched            bool
 	Params                         json.RawMessage
 }
 
@@ -84,7 +86,8 @@ func runManagerStdioPeer(dir, scenario string) error {
 	}
 	slices.Sort(names)
 	if err := appendManagerStdioEvent(trace, managerStdioEvent{Phase: phase, Method: "spawn", Cwd: cwd,
-		Executable: executable, Args: os.Args[1:], EnvNames: names, CanaryInherited: os.Getenv("TRAVERSE_MANAGER_PARENT_CANARY") != ""}); err != nil {
+		Executable: executable, Args: os.Args[1:], EnvNames: names, CanaryInherited: os.Getenv("TRAVERSE_MANAGER_PARENT_CANARY") != "",
+		ManualConfigMatched: cwd == dir && os.Getenv("TRAVERSE_CONFIG_LITERAL") == "selected" && os.Getenv("TRAVERSE_CONFIG_SECRET") == "synthetic-environment-secret"}); err != nil {
 		return err
 	}
 	waitGate := func(name string) error {
@@ -142,6 +145,13 @@ func runManagerStdioPeer(dir, scenario string) error {
 			if scenario == "remote_error" {
 				result = json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"remote partial work failed"}]}`)
 			}
+			if strings.HasPrefix(scenario, "manual_config") {
+				raw, err := json.Marshal(map[string]any{"content": []map[string]string{{"type": "text", "text": os.Getenv("TRAVERSE_CONFIG_SECRET")}}})
+				if err != nil {
+					return err
+				}
+				result = raw
+			}
 		default:
 			return fmt.Errorf("unexpected request %s", request.Method)
 		}
@@ -172,6 +182,7 @@ type managerStdioFixture struct {
 	reviewed     mcp.ServerRecord
 	capabilities domain.ExecutionPermissionRuntimeCapabilities
 	authority    *domain.ExecutionPermissionRuntimeAuthority
+	credentials  *credential.MemoryStore
 }
 
 func newManagerStdioFixture(t *testing.T, scenario string) *managerStdioFixture {
@@ -227,7 +238,8 @@ func newManagerStdioFixture(t *testing.T, scenario string) *managerStdioFixture 
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.manager, err = mcp.NewClientManager(f.state, nil, mcp.ManagerOptions{})
+	f.credentials = credential.NewMemoryStore()
+	f.manager, err = mcp.NewClientManager(f.state, f.credentials, mcp.ManagerOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,6 +252,14 @@ func newManagerStdioFixture(t *testing.T, scenario string) *managerStdioFixture 
 		Arguments:            []string{"-test.run=^TestManagerRuntimeStdioHelper$", "--", managerStdioMarker, f.dir, scenario, "space value", `literal "quote"`, "$HOME", "%TEMP%", "${PLUGIN_ROOT}"},
 		DeclaredCapabilities: []mcp.CapabilityKind{mcp.CapabilityTools}, Scope: mcp.ScopeRun, RunID: f.run.ID, WorkspaceID: workspace.ID,
 		Source: mcp.Source{Kind: "manual", URI: "test://manager-stdio"}, CallTimeoutMillis: 20000, MaxResultBytes: 8192}
+	if strings.HasPrefix(scenario, "manual_config") {
+		descriptor.ProtocolVersion, descriptor.Cwd = mcp.ConfigClientProtocolVersion, f.dir
+		descriptor.Env = map[string]string{"TRAVERSE_CONFIG_LITERAL": "selected"}
+		descriptor.EnvCredentialRefs = map[string]string{"TRAVERSE_CONFIG_SECRET": "manual-config-secret"}
+		if err := f.credentials.Put(t.Context(), "manual-config-secret", "synthetic-environment-secret"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	f.reviewed, _, err = f.manager.Stage(t.Context(), descriptor)
 	if err != nil {
 		t.Fatal(err)

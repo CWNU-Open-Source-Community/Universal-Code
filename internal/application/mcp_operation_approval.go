@@ -214,7 +214,7 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 	}
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(mcp.OperationApprovalFingerprint(call)))
-	component := toolcontract.ComponentRef{PackageID: mcp.ClientProtocolVersion, ComponentID: p.ServerID}
+	component := toolcontract.ComponentRef{PackageID: source.server.Descriptor.ProtocolVersion, ComponentID: p.ServerID}
 	if source.server.Descriptor.NativeSource != nil {
 		component = source.server.Descriptor.NativeSource.Component
 	}

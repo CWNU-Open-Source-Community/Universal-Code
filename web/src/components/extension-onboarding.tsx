@@ -4,6 +4,8 @@ import type { APIClient } from "../api/client";
 import type { ExtensionMCPServerView, ExtensionPluginInstallationView } from "../api/types";
 import { useLocale } from "../lib/locale";
 import { MCPCredentialControls } from "./mcp-credential-controls";
+import { MCPEnvironmentCredentialControls } from "./mcp-environment-credentials";
+import { parseMCPConfigLines } from "../api/mcp-config";
 import "./extension-onboarding.css";
 
 function Failure({ error }: { error: unknown }) {
@@ -33,14 +35,22 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
   const [target, setTarget] = useState("");
   const [args, setArgs] = useState("");
   const [credential, setCredential] = useState("");
+  const [cwd, setCwd] = useState("");
+  const [environment, setEnvironment] = useState("");
+  const [environmentCredentials, setEnvironmentCredentials] = useState("");
+  const [headers, setHeaders] = useState("");
   const [scope, setScope] = useState("workspace");
   const [capabilities, setCapabilities] = useState<string[]>(["tools"]);
   const registration = useMutation({
     mutationFn: () => client.registerMCPServer({ version: "extension-control.v1", descriptor: {
-      protocol_version: "mcp-client.v1", id: id.trim(), name: name.trim(), transport,
+      protocol_version: "mcp-client.v3", id: id.trim(), name: name.trim(), transport,
       target: target.trim(), workspace_id: workspaceID, scope,
       ...(scope === "run" ? { run_id: runID } : {}),
       ...(transport === "stdio" && args ? { arguments: args.split(/\r?\n/u).filter(Boolean) } : {}),
+      ...(transport === "stdio" && cwd.trim() ? { cwd: cwd.trim() } : {}),
+      ...(transport === "stdio" && environment.trim() ? { env: parseMCPConfigLines(environment, "=", t("环境变量需每行填写唯一的 NAME=value。", "Use one unique NAME=value environment entry per line.")) } : {}),
+      ...(transport === "stdio" && environmentCredentials.trim() ? { env_credential_refs: parseMCPConfigLines(environmentCredentials, "=", t("凭据引用需每行填写唯一的 NAME=凭据名称。", "Use one unique NAME=credential-name reference per line.")) } : {}),
+      ...(transport === "streamable_http" && headers.trim() ? { headers: parseMCPConfigLines(headers, ":", t("HTTP header 需每行填写唯一的 Name: value。", "Use one unique Name: value HTTP header per line.")) } : {}),
       ...(transport === "streamable_http" && credential.trim() ? { credential_ref: credential.trim() } : {}),
       declared_capabilities: capabilities, call_timeout_ms: 30_000, max_result_bytes: 65_536,
     } }),
@@ -58,9 +68,9 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
         <label>{t("Server ID", "Server ID")}<input required maxLength={256} value={id} onChange={(event) => change(() => setID(event.target.value))} /></label>
         <label>{t("显示名称", "Display name")}<input required maxLength={256} value={name} onChange={(event) => change(() => setName(event.target.value))} /></label>
         <label>{t("传输方式", "Transport")}<select value={transport} onChange={(event) => change(() => setTransport(event.target.value))}>
-          <option value="streamable_http">HTTPS / Streamable HTTP</option><option value="stdio">本地程序 / stdio</option>
+          <option value="streamable_http">HTTP / Streamable HTTP</option><option value="stdio">本地程序 / stdio</option>
         </select></label>
-        <label>{transport === "stdio" ? t("可执行文件绝对路径", "Absolute executable path") : t("HTTPS 地址", "HTTPS URL")}
+        <label>{transport === "stdio" ? t("可执行文件绝对路径", "Absolute executable path") : t("服务器地址（HTTPS / 本机 HTTP）", "Server URL (HTTPS / local HTTP)")}
           <input required maxLength={4096} type={transport === "stdio" ? "text" : "url"} value={target}
             placeholder={transport === "stdio" ? "C:\\tools\\mcp-server.exe" : "https://example.com/mcp"}
             onChange={(event) => change(() => setTarget(event.target.value))} /></label>
@@ -73,10 +83,20 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
             checked={capabilities.includes(capability)} onChange={(event) => change(() => setCapabilities((current) =>
               event.target.checked ? [...current, capability] : current.filter((item) => item !== capability)))} />{capability}</label>)}
         </div>
-        {transport === "stdio" ? <label>{t("程序参数（每行一项，可选）", "Arguments (one per line, optional)")}
+        {transport === "stdio" ? <><label>{t("程序参数（每行一项，可选）", "Arguments (one per line, optional)")}
           <textarea rows={3} maxLength={8192} value={args} onChange={(event) => change(() => setArgs(event.target.value))} /></label>
-          : <label>{t("凭据名称（认证时填写，登记后输入令牌）", "Credential name (for authentication; enter the token after registration)")}
-            <input maxLength={64} value={credential} placeholder="mcp-example" onChange={(event) => change(() => setCredential(event.target.value))} /></label>}
+          <label>{t("工作目录（现存绝对路径，可选）", "Working directory (existing absolute path, optional)")}
+            <input maxLength={4096} value={cwd} onChange={(event) => change(() => setCwd(event.target.value))} /></label>
+          <label>{t("非敏感环境变量（每行 NAME=value）", "Non-sensitive environment (NAME=value per line)")}
+            <textarea rows={3} maxLength={16384} value={environment} placeholder="NODE_ENV=production" onChange={(event) => change(() => setEnvironment(event.target.value))} /></label>
+          <label>{t("环境凭据引用（每行 NAME=凭据名称）", "Environment credential references (NAME=credential-name per line)")}
+            <textarea rows={3} maxLength={4096} value={environmentCredentials} placeholder="API_KEY=mcp-example" onChange={(event) => change(() => setEnvironmentCredentials(event.target.value))} /></label>
+          <p>{t("程序继承最小系统环境和以上显式值。秘密请填写凭据名称，登记后保存到系统凭据库。", "The program receives a minimal system environment plus these explicit values. Reference secrets by credential name, then store them after registration.")}</p>
+          </> : <><label>{t("固定非敏感 HTTP header（每行 Name: value）", "Fixed non-sensitive HTTP headers (Name: value per line)")}
+            <textarea rows={3} maxLength={16384} value={headers} placeholder="X-Project: example" onChange={(event) => change(() => setHeaders(event.target.value))} /></label>
+          <label>{t("凭据名称（认证时填写，登记后输入令牌）", "Credential name (for authentication; enter the token after registration)")}
+            <input maxLength={64} value={credential} placeholder="mcp-example" onChange={(event) => change(() => setCredential(event.target.value))} /></label>
+          <p>{t("HTTP 明文地址限本机 loopback。认证与 MCP 协议 header 由服务管理。", "Plain HTTP is limited to local loopback. Authentication and MCP protocol headers are managed by the service.")}</p></>}
         <button className="settings-action" disabled={!id.trim() || !name.trim() || !target.trim() ||
           capabilities.length === 0 || registration.isSuccess} type="submit">
           {registration.isPending ? t("正在登记…", "Registering…") : t("提交登记", "Register descriptor")}</button>
@@ -150,7 +170,11 @@ export function MCPReviewControls({ client, server, onOpenTask, credentialCapabi
   return <div className="extension-review">
     {server.state !== "revoked" && <ExtensionSteps current={server.state === "enabled" ? 3 : server.state === "capabilities_pending" ? 2 : server.state === "discovery_approved" ? 1 : 0}
       steps={[t("核对登记", "Review registration"), t("批准并发现", "Approve and discover"), t("审查并启用", "Review and enable"), t("任务中调用", "Call in a task")]} />}
-    <MCPCredentialControls client={client} server={server} capability={credentialCapability} />
+    {server.transport === "stdio" ? <MCPEnvironmentCredentialControls client={client} server={server} capability={credentialCapability} /> :
+      <MCPCredentialControls client={client} server={server} capability={credentialCapability} />}
+    {server.cwd && <p>{t("工作目录", "Working directory")}: {server.cwd}</p>}
+    {server.env && Object.keys(server.env).length > 0 && <p>{t("显式非敏感环境", "Explicit non-sensitive environment")}: {Object.entries(server.env).map(([name, value]) => `${name}=${value}`).join(" · ")}</p>}
+    {server.headers && Object.keys(server.headers).length > 0 && <p>{t("固定 HTTP header", "Fixed HTTP headers")}: {Object.entries(server.headers).map(([name, value]) => `${name}: ${value}`).join(" · ")}</p>}
     {!client.hasExtensionControl && <p role="status">{t("当前连接为只读。查看登记与调用记录；连接具备控制权限的服务后可继续审查或启用。", "This connection is read-only. Inspect registration and call records; connect with control access to review or enable capabilities.")}</p>}
     <p>{server.state === "enabled" ? t("能力已启用；实际调用仍需当前任务的权限、审批与参数。", "Capabilities enabled; calls still require task permissions, approval, and arguments.")
       : server.state === "discovery_approved" ? t("发现审查已通过。下一步点击“重新发现”，连接服务器并读取工具与能力清单。", "Discovery reviewed. Select Rediscover to connect and read the tools and capability lists.")

@@ -1720,7 +1720,8 @@
           "source": "internal/mcp",
           "versions": [
             1,
-            2
+            2,
+            3
           ],
           "mode": "write-current"
         }
@@ -1731,7 +1732,8 @@
           "source": "internal/mcp",
           "versions": [
             1,
-            2
+            2,
+            3
           ],
           "status": "active"
         }
@@ -1752,6 +1754,7 @@
         "mcp-client-server.v1",
         "mcp-client.v1",
         "mcp-client.v2",
+        "mcp-client.v3",
         "mcp.call.input.v1",
         "mcp.capabilities.v1",
         "mcp.content.input.v1"

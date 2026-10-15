@@ -2055,7 +2055,7 @@ misfire, DST, and crash-recovery details are in
 
 In Web/Desktop **Settings → Extensions**, select a registered Workspace (or the
 current task's Run) before registering a manual MCP client. Supply its stable
-identity, stdio executable/arguments or fixed HTTPS endpoint, declared capability
+identity, stdio executable/arguments or fixed HTTPS/local HTTP endpoint, declared capability
 types and scope. Registration is inert. Approve discovery, rediscover the server,
 inspect its advertised tools/resources/prompts, then approve that exact capability
 fingerprint. To exercise a tool, open the drafted request in the task composer and
@@ -2103,6 +2103,67 @@ system instructions. Unsupported media, unavailable vision and image limits are
 reported explicitly. Audio bytes are not passed to the current model adapters.
 Results retain the configured limit (up to 128 KiB); oversized media is omitted
 with a notice, and oversized text is represented by a valid JSON preview.
+
+### Manual MCP connection inputs
+
+The registration form uses `mcp-client.v3`. For stdio, enter an absolute executable
+path, one argument per line, and an optional existing absolute working directory.
+Without `cwd`, Go uses the system temporary directory. Non-sensitive environment
+entries use `NAME=value`; secret entries use `NAME=credential-name` in the separate
+credential-reference field. After registration, each referenced name has an
+environment credential control in the server card. It saves to the system store,
+reports local presence, and requires explicit confirmation before set/delete.
+Unavailable stores keep credential writes disabled. Credential entry preserves the
+server's discovery/capability review stage.
+
+For HTTP, use HTTPS or local HTTP (`localhost`, loopback IPv4 or IPv6). Fixed
+non-sensitive headers use `Name: value`, one per line. Authentication uses the
+separate managed credential name. Literal authorization/cookie/API-key headers,
+MCP session/framing headers, queries, fragments and URL credentials are rejected.
+Redirects and alternate SSE endpoints remain disabled.
+
+CLI staging accepts the same descriptor. For example, save this non-secret JSON
+as `manual-mcp.json`, replacing the executable, working directory and workspace:
+
+```json
+{
+  "protocol_version": "mcp-client.v3",
+  "id": "manual-local",
+  "name": "Local MCP",
+  "transport": "stdio",
+  "target": "C:/tools/node.exe",
+  "arguments": ["C:/tools/mcp-server.mjs"],
+  "cwd": "C:/work/project",
+  "env": {"NODE_ENV": "production"},
+  "env_credential_refs": {"API_KEY": "manual-mcp-secret"},
+  "declared_capabilities": ["tools", "resources", "prompts"],
+  "scope": "workspace",
+  "workspace_id": "workspace-id",
+  "source": {"kind": "manual", "uri": "operator://manual-mcp"},
+  "call_timeout_ms": 30000,
+  "max_result_bytes": 65536
+}
+```
+
+```powershell
+cyberagent mcp client stage --file manual-mcp.json
+cyberagent mcp credential set manual-mcp-secret --from-env MCP_SETUP_SECRET --confirm
+cyberagent mcp client review manual-local --action approve_discovery --descriptor-fingerprint <fingerprint> --by operator
+cyberagent mcp client refresh manual-local
+```
+
+The named setup environment variable supplies the secret only to the credential
+command. It is not inherited by MCP subprocesses. Go passes only its existing
+minimal system environment plus reviewed explicit values. It resolves credentials
+in memory, rechecks them before sending, and redacts them from returned content.
+Commands remain a fixed executable plus an ordered argument array. Windows batch
+scripts require a separately declared interpreter.
+
+At most 32 combined environment entries/references and 32 headers are accepted;
+individual literal values are bounded to 4096 bytes and the complete descriptor
+to 64 KiB. Historical v1 registrations and native source-bound v2 registrations
+retain their encoding and reviewed fingerprints. A changed configuration requires
+a new server ID and review. See [ADR 0178](adr/0178-mcp-manual-connection-config.md).
 
 ## MCP Server
 
