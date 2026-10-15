@@ -336,7 +336,7 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	connect := runtimeOperation("mcp-connect-"+digestBytes([]byte(request.OperationID)), toolcontract.OperationConnect, launch, launchFingerprint)
-	connectGuard, _, err := authorize(ctx, connect)
+	connectGuard, connectCheck, err := authorize(ctx, connect)
 	if err != nil {
 		return result, err
 	}
@@ -376,8 +376,29 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			return toolGuard(ctx, actual)
 		},
 	}
+	entry.checkMu.RLock()
+	persistentRoots := entry.check != nil
+	entry.checkMu.RUnlock()
+	rootCheck := entry.boundTaskCheck()
+	if !persistentRoots {
+		operationCtx := ctx
+		rootCheck = func(ctx context.Context) error {
+			if err := operationCtx.Err(); err != nil {
+				return err
+			}
+			return connectCheck(ctx)
+		}
+	}
+	roots, err := m.prepareWorkspaceRoots(ctx, record, request.RunID, rootCheck)
+	if err != nil {
+		return result, err
+	}
+	connectionFingerprint := launchFingerprint
+	if roots != nil {
+		connectionFingerprint = digestBytes([]byte(launchFingerprint + "\x00" + roots.fingerprint))
+	}
 	client := entry.client
-	if client != nil && (entry.fingerprint != launchFingerprint || client.closed.Load()) {
+	if client != nil && (entry.fingerprint != connectionFingerprint || client.closed.Load()) {
 		_ = client.Close()
 		entry.client = nil
 		client = nil
@@ -394,12 +415,13 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			default:
 			}
 		}
-		entry.client, entry.fingerprint = client, launchFingerprint
+		entry.client, entry.fingerprint = client, connectionFingerprint
 	} else {
 		client.resolved.connect = cloneOperation(connect)
 		client.resolved.guards = guards
 		client.resolved.credential = credential
 	}
+	client.setWorkspaceRoots(roots)
 	defer func() {
 		clearSessionOperation(client)
 		entry.checkMu.RLock()

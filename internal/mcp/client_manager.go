@@ -38,6 +38,7 @@ type ManagerOptions struct {
 	TransportFactory TransportFactory
 	Now              func() time.Time
 	NativeSources    NativeSourceResolver
+	WorkspaceRoot    WorkspaceRootProvider
 }
 
 type Manager struct {
@@ -47,6 +48,7 @@ type Manager struct {
 	factory       TransportFactory
 	httpClient    *http.Client
 	nativeSources NativeSourceResolver
+	workspaceRoot WorkspaceRootProvider
 	now           func() time.Time
 	locksMu       sync.Mutex
 	locks         map[string]*sync.Mutex
@@ -118,7 +120,7 @@ func NewClientManager(store ClientStore, credentials CredentialReader,
 			return newRemoteClientTransport(descriptor, bearer, options.HTTPClient)
 		}
 	}
-	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, now: now,
+	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, workspaceRoot: options.WorkspaceRoot, now: now,
 		locks: make(map[string]*sync.Mutex), sessions: make(map[catalogSessionKey]*catalogSession)}, nil
 }
 
@@ -269,10 +271,15 @@ func (m *Manager) refreshLocked(ctx context.Context, record ServerRecord) (Serve
 		client, err = m.connect(callCtx, record.Descriptor)
 		if err == nil {
 			defer client.Close()
-			var capabilities CapabilitySnapshot
-			capabilities, err = client.Discover(callCtx, m.now())
+			var roots *clientWorkspaceRoots
+			roots, err = m.prepareWorkspaceRoots(callCtx, record, record.Descriptor.RunID, func(context.Context) error { return callCtx.Err() })
 			if err == nil {
-				record.Capabilities = capabilities
+				client.setWorkspaceRoots(roots)
+				var capabilities CapabilitySnapshot
+				capabilities, err = client.Discover(callCtx, m.now())
+				if err == nil {
+					record.Capabilities = capabilities
+				}
 			}
 		}
 	}
