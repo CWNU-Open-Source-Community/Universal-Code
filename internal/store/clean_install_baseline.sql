@@ -3426,7 +3426,7 @@ CREATE TABLE mcp_client_calls (
 			AND julianday(completed_at) >= julianday(started_at))
 	);
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE mcp_client_servers (
+CREATE TABLE "mcp_client_servers" (
 		id TEXT PRIMARY KEY,
 		protocol_version TEXT NOT NULL,
 		name TEXT NOT NULL,
@@ -3452,7 +3452,7 @@ CREATE TABLE mcp_client_servers (
 		updated_at TEXT NOT NULL,
 		FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE RESTRICT,
 		CHECK(protocol_version = 'mcp-client-server.v1'),
-		CHECK(transport IN ('stdio', 'streamable_http')),
+		CHECK(transport IN ('stdio', 'streamable_http', 'sse', 'websocket')),
 		CHECK(scope IN ('run', 'workspace')),
 		CHECK((scope = 'run' AND length(run_id) BETWEEN 1 AND 256)
 			OR (scope = 'workspace' AND run_id = '')),

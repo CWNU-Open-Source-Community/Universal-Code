@@ -8,6 +8,7 @@ import type { ExtensionInventoryView } from "../api/types";
 import { LocaleProvider } from "../lib/locale";
 import { lspConfiguration, lspTest, mcpServer, plugin } from "../test/extension-onboarding-fixtures";
 import { ExtensionSettings } from "./shared-settings-panels";
+import { MCPRegistrationForm } from "./extension-onboarding";
 import { V2ExtensionSettings } from "../v2/components/advanced-settings";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -19,6 +20,28 @@ function mount(children: React.ReactNode) {
   return render(<QueryClientProvider client={queryClient}><LocaleProvider>{children}</LocaleProvider></QueryClientProvider>);
 }
 const emptyLSP = { protocol_version: "code-intel-lsp.v1", enabled: true, qualifications: [], servers: [], configurations: [] };
+
+it.each(["sse", "websocket"])("registers a %s server through the normal API parser", async (transport) => {
+  const user = userEvent.setup();
+  const target = transport === "websocket" ? "wss://example.invalid/mcp" : "https://example.invalid/events";
+  const requests: Record<string, unknown>[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+    const request = JSON.parse(String(init?.body));
+    requests.push(request.descriptor);
+    return respond({ protocol_version: "extension-onboarding.v1", replayed: false, next_step: "approve_discovery",
+      server: { ...mcpServer(), ...request.descriptor, protocol_version: "mcp-client-server.v1" } });
+  }));
+  mount(<MCPRegistrationForm client={new APIClient("read", "/api/v1", "control")} enabled workspaceID="project-one" runID="run-one" />);
+  await user.selectOptions(screen.getByLabelText("传输方式"), transport);
+  await user.type(screen.getByLabelText("Server ID"), "first-mcp");
+  await user.type(screen.getByLabelText("显示名称"), "First MCP");
+  await user.type(screen.getByLabelText(transport === "websocket" ? "服务器地址（WSS / 本机 WS）" : "服务器地址（HTTPS / 本机 HTTP）"), target);
+  await user.type(screen.getByLabelText("固定非敏感 HTTP header（每行 Name: value）"), "X-Project: one");
+  await user.type(screen.getByLabelText("凭据名称（认证时填写，登记后输入令牌）"), "server-secret");
+  await user.click(screen.getByRole("button", { name: "提交登记" }));
+  expect(await screen.findByText(/登记返回状态/)).toHaveTextContent("staged");
+  expect(requests).toEqual([expect.objectContaining({ transport, target, headers: { "X-Project": "one" }, credential_ref: "server-secret" })]);
+});
 
 it("shows prompt required and optional parameters before enabling discovered capabilities", async () => {
   const current = inventory();

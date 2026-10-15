@@ -18,6 +18,8 @@ type Transport string
 const (
 	TransportStdio          Transport = "stdio"
 	TransportStreamableHTTP Transport = "streamable_http"
+	TransportSSE            Transport = "sse"
+	TransportWebSocket      Transport = "websocket"
 )
 
 // CredentialRef contains no secret. A declaration may omit Revision; the host
@@ -125,7 +127,7 @@ func validateLaunch(kind Transport, stdio *StdioLaunch, remote *HTTPLaunch, reso
 			!digest(stdio.ExecutableSHA256)) {
 			return errors.New("resolved stdio launch requires absolute paths and executable identity")
 		}
-	case TransportStreamableHTTP:
+	case TransportStreamableHTTP, TransportSSE, TransportWebSocket:
 		if remote == nil || stdio != nil || !normalized(remote.Endpoint, 8192) ||
 			len(remote.Headers) > 128 {
 			return errors.New("HTTP launch branch is invalid")
@@ -146,7 +148,11 @@ func validateLaunch(kind Transport, stdio *StdioLaunch, remote *HTTPLaunch, reso
 		}
 		if resolved {
 			u, err := url.Parse(remote.Endpoint)
-			if err != nil || (u.Scheme != "https" && u.Scheme != "http") ||
+			validScheme := err == nil && (u.Scheme == "https" || u.Scheme == "http")
+			if kind == TransportWebSocket {
+				validScheme = err == nil && (u.Scheme == "wss" || u.Scheme == "ws")
+			}
+			if !validScheme ||
 				u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.Opaque != "" {
 				return errors.New("resolved HTTP endpoint is invalid")
 			}
