@@ -29,7 +29,8 @@ func TestClientSanitizesSensitiveResultFieldsBeforeTruncation(t *testing.T) {
 	result, err := client.CallTool(t.Context(), "lookup", json.RawMessage(`{}`), 128)
 	if err != nil || !result.Truncated || strings.Contains(result.Content, passwordCanary) ||
 		strings.Contains(result.Content, authCanary) ||
-		!strings.Contains(result.Content, "[REDACTED:sensitive-field]") {
+		strings.Contains(result.FullContent, passwordCanary) || strings.Contains(result.FullContent, authCanary) ||
+		!strings.Contains(result.FullContent, "[REDACTED:sensitive-field]") || !json.Valid([]byte(result.Content)) {
 		t.Fatalf("bounded MCP result was not sanitized before truncation: result=%#v err=%v",
 			result, err)
 	}

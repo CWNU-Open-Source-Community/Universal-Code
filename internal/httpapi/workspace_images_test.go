@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
+	"image/color"
+	"image/gif"
 	"image/png"
 	"net/http"
 	"strings"
@@ -13,6 +15,25 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 )
+
+func TestWorkspaceImageUploadKeepsPublishedFormatsAndRejectsGIF(t *testing.T) {
+	f := newAPIFixture(t)
+	api, err := New(f.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, RunCreationEnabled: true, SessionMessageEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pixels bytes.Buffer
+	if err := gif.Encode(&pixels, image.NewPaletted(image.Rect(0, 0, 1, 1), color.Palette{color.Black, color.White}), nil); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(WorkspaceImageUploadRequestView{Version: WorkspaceImageUploadVersion,
+		MIMEType: "image/gif", Name: "pixel.gif", DataBase64: base64.StdEncoding.EncodeToString(pixels.Bytes())})
+	response := performSessionMessageRequest(t, api, http.MethodPost,
+		"/api/v1/workspaces/"+f.workspace.ID+"/image-attachments", testControlToken, "reject-gif-upload", "application/json", bytes.NewReader(body))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("GIF upload changed the public image contract: %d %s", response.Code, response.Body)
+	}
+}
 
 func TestWorkspaceImageHTTPImmutableUploadAuthenticatedBytesAndScope(t *testing.T) {
 	f := newAPIFixture(t)

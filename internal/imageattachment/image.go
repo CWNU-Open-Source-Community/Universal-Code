@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"image"
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"strings"
@@ -34,9 +35,9 @@ func Validate(content []byte, mimeType, name string) (domain.WorkspaceImage, err
 	}
 	config, format, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return invalid("Image cannot be decoded as PNG, JPEG, or WebP")
+		return invalid("Image cannot be decoded as PNG, JPEG, WebP, or GIF")
 	}
-	actualMIME := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp"}[format]
+	actualMIME := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}[format]
 	if actualMIME == "" || actualMIME != mimeType {
 		return invalid("Image MIME type does not match its decoded format")
 	}

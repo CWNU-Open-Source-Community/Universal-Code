@@ -495,5 +495,9 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	content, truncated := BoundResultJSON(raw, record.Descriptor.MaxResultBytes)
-	return ClientCallResult{Content: content, IsError: isError, Bytes: len(content), Truncated: truncated}, nil
+	retained := ""
+	if truncated {
+		retained = string(raw)
+	}
+	return ClientCallResult{Content: content, FullContent: retained, IsError: isError, Bytes: len(content), Truncated: truncated}, nil
 }

@@ -81,7 +81,7 @@ func (e *MCPClientToolExecutor) ExecuteMCP(ctx context.Context,
 			State: toolcontract.ReceiptResultReceived, ErrorCode: "authority_changed"}, err)
 	}
 	return toolgateway.MCPExecutionResult{
-		Content: result.Content, IsError: result.IsError, Truncated: result.Truncated,
+		Content: result.Content, FullContent: result.FullContent, IsError: result.IsError, Truncated: result.Truncated,
 		Metadata: map[string]string{"trust": "untrusted", "source": "mcp_client", "execution_receipt": "result_received", "operation_id": scope.InvocationID},
 	}, nil
 }

@@ -183,6 +183,7 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 	var status, stdout, stderr string
 	switch request.ToolName {
 	case "read_file", "list_workspace",
+		"mcp_tool_call",
 		"workspace_list", "workspace_read", "workspace_glob", "workspace_grep",
 		"workspace_change", "workspace_apply", "workspace_delete":
 		var runID, sessionID, workspaceID, toolName string
