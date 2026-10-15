@@ -106,6 +106,9 @@ function SnapshotContent({ client, workspaceID, snapshot, label }: {
     <p>图片（{snapshot.images.length}）</p>
     <V2ImagePreview client={client} images={matchingImages} />
     <p>文件附件（{snapshot.attachments?.length ?? 0}）</p>
+    {(snapshot.mcpReferences?.length ?? 0) > 0 && <><p>MCP 引用（{snapshot.mcpReferences!.length}）</p>
+      <ul className="v2-draft-conflict-files">{snapshot.mcpReferences!.map((item) => <li key={item.id}>
+        <span>{item.serverName} · {item.label}</span><code>{JSON.stringify(item.reference.arguments)}</code></li>)}</ul></>}
     <V2FileAttachments client={client} attachments={(snapshot.attachments ?? []).filter((file) => file.workspace_id === workspaceID)} />
     {matchingImages.length !== snapshot.images.length && <p className="v2-draft-conflict-error">存在其他项目的图片，未读取其预览；请核对草稿来源。</p>}
     {snapshot.images.length > 0 && <details><summary>图片版本信息</summary>

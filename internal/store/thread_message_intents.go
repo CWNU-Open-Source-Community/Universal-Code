@@ -32,6 +32,9 @@ func threadMessageIntentIdentity(request domain.ThreadMessageIntentRequest) (str
 	if err := domain.ValidateThreadMessageImages(request.Images); err != nil {
 		return "", "", "", apperror.New(apperror.CodeInvalidArgument, err.Error())
 	}
+	if err := domain.ValidateThreadMCPReferences(request.MCPReferences); err != nil {
+		return "", "", "", apperror.New(apperror.CodeInvalidArgument, err.Error())
+	}
 	files := request.Files
 	if files == nil {
 		files = []domain.WorkspaceFileReference{}
@@ -55,6 +58,13 @@ func threadMessageIntentIdentity(request domain.ThreadMessageIntentRequest) (str
 			return "", "", "", err
 		}
 		fingerprint = runmutation.Fingerprint("workspace_file_upload.v1", fingerprint, string(raw))
+	}
+	if len(request.MCPReferences) > 0 {
+		refs, err := json.Marshal(request.MCPReferences)
+		if err != nil {
+			return "", "", "", err
+		}
+		fingerprint = runmutation.Fingerprint("thread_mcp_references.v1", fingerprint, string(refs))
 	}
 	return runmutation.Fingerprint("thread_message_intent_operation.v1", request.ThreadID, key), fingerprint, string(raw), nil
 }
@@ -139,7 +149,7 @@ func (s *SQLiteStore) ReserveThreadMessageIntent(ctx context.Context, request do
 			return intent, err
 		}
 		content, _ := domain.NormalizeOperatorSteeringContent(redact.String(request.Content))
-		if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 || message.RequestedBy != request.RequestedBy || message.OriginalContentSHA256 != domain.OperatorSteeringContentSHA256(content) {
+		if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 || len(request.MCPReferences) != 0 || message.RequestedBy != request.RequestedBy || message.OriginalContentSHA256 != domain.OperatorSteeringContentSHA256(content) {
 			return intent, apperror.New(apperror.CodeConflict, "Thread message key already belongs to a different legacy message intent")
 		}
 		intent.RunID, intent.MessageID = runID, messageID
@@ -169,6 +179,9 @@ func (s *SQLiteStore) ReserveThreadMessageIntent(ctx context.Context, request do
 		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`, key, request.ThreadID, fingerprint, filesJSON, string(imagesJSON), string(attachmentsJSON), intent.RunID, intent.MessageID, ts(time.Now().UTC())); err != nil {
 		return intent, err
 	}
+	if err := reserveThreadMCPReferencesTx(ctx, tx, key, request.MCPReferences, request.RequestedBy); err != nil {
+		return intent, err
+	}
 	return intent, tx.Commit()
 }
 
@@ -182,7 +195,7 @@ func (s *SQLiteStore) CommitThreadMessage(ctx context.Context, request domain.Th
 }
 
 func (s *SQLiteStore) CommitThreadPlanMessage(ctx context.Context, request domain.ThreadMessageIntentRequest, runID, proposalID, selectionKey string) (domain.OperatorSteeringEnqueueResult, error) {
-	if !domain.ValidAgentID(proposalID) || selectionKey == "" || len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 {
+	if !domain.ValidAgentID(proposalID) || selectionKey == "" || len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 || len(request.MCPReferences) != 0 {
 		return domain.OperatorSteeringEnqueueResult{}, apperror.New(apperror.CodeInvalidArgument, "Thread Plan message binding is invalid")
 	}
 	return s.commitThreadMessage(ctx, request, runID, nil, proposalID, selectionKey)
@@ -245,7 +258,7 @@ func (s *SQLiteStore) commitThreadMessage(ctx context.Context, request domain.Th
 	if err := validateThreadImagesTx(ctx, tx, threadRecord.WorkspaceID, request.Images); err != nil {
 		return domain.OperatorSteeringEnqueueResult{}, err
 	}
-	if len(request.Files) > 0 {
+	if len(request.Files) > 0 || len(request.MCPReferences) > 0 {
 		busy, err := operatorSteeringBusyTx(ctx, tx, runID, time.Now().UTC())
 		if err != nil {
 			return domain.OperatorSteeringEnqueueResult{}, err

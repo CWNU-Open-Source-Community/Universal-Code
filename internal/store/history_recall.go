@@ -346,7 +346,7 @@ func readHistoryMCPArtifact(ctx context.Context, q historyQueryer, scope history
 		return domain.HistoryRecord{}, nil, historyNotFound()
 	}
 	blob, err := getRunArtifactRow(q.QueryRowContext(ctx, runArtifactSelect+` WHERE id=?
-		AND tool_name='mcp_tool_call' AND stream='stdout' AND mime='application/json'
+		AND tool_name IN ('mcp_tool_call','mcp_reference') AND stream='stdout' AND mime='application/json'
 		AND run_id IN (SELECT run_id FROM thread_runs WHERE thread_id=?)`, id, scope.threadID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.HistoryRecord{}, nil, historyNotFound()

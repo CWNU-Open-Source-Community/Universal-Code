@@ -65,11 +65,12 @@ type ThreadMessageControlRequestView struct {
 }
 
 type ThreadTurnControlRequestView struct {
-	Version     string                           `json:"version"`
-	Content     string                           `json:"content"`
-	Files       []domain.WorkspaceFileReference  `json:"files,omitempty"`
-	Images      []domain.ImageReference          `json:"images,omitempty"`
-	Attachments []domain.FileAttachmentReference `json:"attachments,omitempty"`
+	Version       string                           `json:"version"`
+	Content       string                           `json:"content"`
+	Files         []domain.WorkspaceFileReference  `json:"files,omitempty"`
+	Images        []domain.ImageReference          `json:"images,omitempty"`
+	Attachments   []domain.FileAttachmentReference `json:"attachments,omitempty"`
+	MCPReferences []domain.MCPReference            `json:"mcp_references,omitempty"`
 }
 
 type ThreadMessageControlView struct {
@@ -805,7 +806,7 @@ func (a *API) serveThreadMutationControl(writer http.ResponseWriter, request *ht
 		result, err := a.threadTurnController.Execute(request.Context(),
 			application.ExecuteThreadTurnRequest{Version: view.Version, ThreadID: threadID,
 				Content: view.Content, OperationKey: operationKey,
-				Files: view.Files, Images: view.Images, Attachments: view.Attachments,
+				Files: view.Files, Images: view.Images, Attachments: view.Attachments, MCPReferences: view.MCPReferences,
 				RequestedBy: "http_thread_operator"})
 		_ = responseControl.SetWriteDeadline(time.Now().Add(30 * time.Second))
 		if err != nil {

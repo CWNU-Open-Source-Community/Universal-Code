@@ -9,6 +9,7 @@ import { getV2DraftDocument, readV2Draft, v2DraftScope } from "./draft-context";
 import { validV2DraftVersion } from "./draft-version";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 import { recoveryAttachmentsKey, v2AttachmentReferenceKey } from "./attachment-keys";
+import { validMCPReferences } from "../api/mcp-references";
 
 export const recoveryFilesKey = (workspace: string, thread: string) => `files:${JSON.stringify([workspace, thread])}`;
 export const recoveryImagesKey = (workspace: string, thread: string) => `images:${JSON.stringify([workspace, thread])}`;
@@ -24,15 +25,16 @@ export function validRecoveryTurn(value: unknown): value is V2TurnInput {
   const input = value as V2TurnInput;
   return identity(input.threadID) && identity(input.workspaceID) && identity(input.operationKey) &&
 	(input.deliveryMode === undefined || (input.deliveryMode === "steer" && identity(input.sessionID) &&
-		!input.files?.length && !input.images?.length && !input.attachments?.length)) &&
+		!input.files?.length && !input.images?.length && !input.attachments?.length && !input.mcpReferences?.length)) &&
 	(input.deliveryMode === "steer" || input.sessionID === undefined) &&
-    typeof input.content === "string" && (input.content.trim().length > 0 || (input.images?.length ?? 0) > 0 || (input.attachments?.length ?? 0) > 0) &&
+    typeof input.content === "string" && (input.content.trim().length > 0 || (input.images?.length ?? 0) > 0 || (input.attachments?.length ?? 0) > 0 || (input.mcpReferences?.length ?? 0) > 0) &&
     new TextEncoder().encode(input.content).byteLength <= 16384 &&
     typeof input.createdAt === "string" && Number.isFinite(Date.parse(input.createdAt)) &&
     (input.draft === undefined || (typeof input.draft === "string" && input.draft.length <= 16384 && input.draft.trim() === input.content)) &&
     (input.files === undefined || validRecoveryFiles(input.files)) &&
     (input.images === undefined || validImageAttachments(input.images, input.workspaceID)) &&
     (input.attachments === undefined || validFileAttachments(input.attachments, input.workspaceID)) &&
+    (input.mcpReferences === undefined || validMCPReferences(input.mcpReferences)) &&
     (input.draftVersion === undefined || validV2DraftVersion(input.draftVersion, input.workspaceID, input.threadID)) &&
     (input.replacesOperationKey === undefined || identity(input.replacesOperationKey));
 }
@@ -134,8 +136,9 @@ export function settleRecoveryTurn(store: V2RecoveryStore | null, input: V2TurnI
     if (!migrated.ref && migrated.snapshot.text === (input.draft ?? input.content) &&
         JSON.stringify(migrated.snapshot.files) === JSON.stringify(input.files ?? []) &&
         JSON.stringify(migrated.snapshot.images) === JSON.stringify(input.images ?? []) &&
-        JSON.stringify(migrated.snapshot.attachments ?? []) === JSON.stringify(input.attachments ?? [])) {
-      const state = document.update(scope, { text: "", files: [], images: [], ...(input.attachments?.length ? { attachments: [] } : {}) }, null);
+        JSON.stringify(migrated.snapshot.attachments ?? []) === JSON.stringify(input.attachments ?? []) &&
+        JSON.stringify(migrated.snapshot.mcpReferences ?? []) === JSON.stringify(input.mcpReferences ?? [])) {
+      const state = document.update(scope, { text: "", files: [], images: [], ...(input.attachments?.length ? { attachments: [] } : {}), ...(input.mcpReferences?.length ? { mcpReferences: [] } : {}) }, null);
       if (!state.persisted || state.error) throw new Error(state.error ?? "原草稿清理尚未保存。");
     }
   }

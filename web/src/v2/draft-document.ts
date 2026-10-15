@@ -2,11 +2,12 @@ import { validImageAttachments, type WorkspaceImageAttachment } from "../api/ima
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 import type { V2FileReference } from "./components/file-context";
 import type { V2RecoveryStore } from "./recovery-storage";
+import { validMCPReferences, type MCPDraftReference } from "../api/mcp-references";
 
-export interface DraftSnapshot { text: string; files: V2FileReference[]; images: WorkspaceImageAttachment[]; attachments?: WorkspaceFileAttachment[] }
+export interface DraftSnapshot { text: string; files: V2FileReference[]; images: WorkspaceImageAttachment[]; attachments?: WorkspaceFileAttachment[]; mcpReferences?: MCPDraftReference[] }
 // Older saved drafts have no attachments field. Treat its absence as an empty list.
 export const draftSnapshotFingerprint = (value: DraftSnapshot) =>
-  JSON.stringify([value.text, value.files, value.images, value.attachments ?? []]);
+  JSON.stringify([value.text, value.files, value.images, value.attachments ?? [], value.mcpReferences ?? []]);
 export interface DraftRef { branchID: string; seq: number }
 export interface DraftScope { key: string; workspaceID: string }
 export interface DraftHead { ref: DraftRef; snapshot: DraftSnapshot; ownerID: string }
@@ -97,7 +98,8 @@ export function validDraftSnapshot(value: unknown, workspaceID: string): value i
       typeof file.partial === "boolean" && typeof file.redacted === "boolean") &&
     new Set(value.files.map((file: V2FileReference) => file.id)).size === value.files.length &&
     validImageAttachments(value.images, workspaceID) &&
-    (value.attachments === undefined || validFileAttachments(value.attachments, workspaceID));
+    (value.attachments === undefined || validFileAttachments(value.attachments, workspaceID)) &&
+    (value.mcpReferences === undefined || validMCPReferences(value.mcpReferences));
 }
 
 function validBranch(value: unknown, scope: DraftScope): value is Branch {
