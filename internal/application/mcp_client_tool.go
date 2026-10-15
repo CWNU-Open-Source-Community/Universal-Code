@@ -66,7 +66,7 @@ func (e *MCPClientToolExecutor) ExecuteMCP(ctx context.Context,
 	}
 	result, err := e.client.Invoke(ctx, mcp.InvokeRequest{
 		RunID: scope.RunID, WorkspaceID: scope.WorkspaceID,
-		ServerID: payload.ServerID, ToolName: payload.ToolName,
+		ServerID: payload.ServerID, ToolName: payload.ToolName, Method: payload.Method,
 		CapabilityFingerprint: payload.CapabilityFingerprint,
 		Arguments:             payload.Arguments,
 		OperationID:           scope.InvocationID, Subject: subject, Authorizer: authorizer,

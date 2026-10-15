@@ -185,3 +185,28 @@ func TestMCPGatewayRedactsSensitiveJSONFieldsBeforeDurableOutcome(t *testing.T) 
 			outcome.Result.Stdout)
 	}
 }
+
+func TestMCPContentPayloadVersionSeparatesMethods(t *testing.T) {
+	old := `{"version":"mcp-client.v1","server_id":"docs","tool_name":"lookup","capability_fingerprint":"` + strings.Repeat("a", 64) + `","arguments":{}}`
+	_, canonical, err := NormalizeMCPToolPayload(json.RawMessage(old))
+	if err != nil || string(canonical) != old {
+		t.Fatalf("old canonical payload changed: %s %v", canonical, err)
+	}
+	for _, method := range []string{"resources/read", "prompts/get"} {
+		name := "resources.read"
+		if method == "prompts/get" {
+			name = "prompts.get"
+		}
+		raw := `{"version":"mcp-client.v2","method":"` + method + `","server_id":"docs","tool_name":"` + name + `","capability_fingerprint":"` + strings.Repeat("a", 64) + `","arguments":{}}`
+		p, _, err := NormalizeMCPToolPayload(json.RawMessage(raw))
+		if err != nil || p.Method != method {
+			t.Fatalf("content normalization: %+v %v", p, err)
+		}
+		if _, _, err := NormalizeMCPToolPayload(json.RawMessage(strings.Replace(raw, "mcp-client.v2", "mcp-client.v1", 1))); err == nil {
+			t.Fatal("v1 admitted a content method")
+		}
+	}
+	if _, _, err := NormalizeMCPToolPayload(json.RawMessage(strings.Replace(old, "mcp-client.v1", "mcp-client.v2", 1))); err == nil {
+		t.Fatal("v2 omitted its content method")
+	}
+}

@@ -1,5 +1,7 @@
 # Project Status
 
+> 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
+
 > 2026-10-14 web access: explicit 禁止搜索、规则搜索、完全访问 settings are persisted independently from command and sandbox scope. Current quiescent Runs can replace or revoke webpage rules; successor and explicit Fork/Resume preferences are retained. See [ADR 0175](adr/0175-explicit-web-access-modes.md).
 
 > 2026-10-11 sandbox integration: Local, Docker Engine and Windows sbx 0.47.0

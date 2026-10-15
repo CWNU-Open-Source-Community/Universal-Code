@@ -93,6 +93,7 @@ func (c *Client) Discover(ctx context.Context, at time.Time) (CapabilitySnapshot
 		}
 	}
 	var tools []RemoteTool
+	var templates []RemoteResourceTemplate
 	var resources []RemoteResource
 	var prompts []RemotePrompt
 	if slices.Contains(advertised, CapabilityTools) {
@@ -100,6 +101,9 @@ func (c *Client) Discover(ctx context.Context, at time.Time) (CapabilitySnapshot
 	}
 	if err == nil && slices.Contains(advertised, CapabilityResources) {
 		resources, err = c.listResources(ctx, session)
+	}
+	if err == nil && slices.Contains(advertised, CapabilityResources) {
+		templates, err = c.listResourceTemplates(ctx, session)
 	}
 	if err == nil && slices.Contains(advertised, CapabilityPrompts) {
 		prompts, err = c.listPrompts(ctx, session)
@@ -110,8 +114,12 @@ func (c *Client) Discover(ctx context.Context, at time.Time) (CapabilitySnapshot
 	snapshot, err := NewCapabilitySnapshot(serverInfo.Name, serverInfo.Version,
 		advertised, tools, resources, prompts, at)
 	if err == nil {
+		snapshot.ResourceTemplates = templates
 		snapshot.ProtocolVersion = initialized.ProtocolVersion
 		snapshot.Fingerprint = capabilityFingerprint(snapshot)
+	}
+	if err == nil {
+		err = snapshot.Validate()
 	}
 	return snapshot, err
 }
@@ -207,6 +215,13 @@ func (c *Client) listPrompts(ctx context.Context, session *sdk.ClientSession) ([
 			}
 			candidate := RemotePrompt{Name: strings.TrimSpace(c.sanitizeText(item.Name)),
 				Description: strings.TrimSpace(c.sanitizeText(item.Description))}
+			for _, argument := range item.Arguments {
+				if argument == nil {
+					return nil, errors.New("null MCP prompt argument")
+				}
+				candidate.Arguments = append(candidate.Arguments, RemotePromptArgument{Name: c.sanitizeText(argument.Name), Description: c.sanitizeText(argument.Description), Required: argument.Required})
+			}
+			slices.SortFunc(candidate.Arguments, func(a, b RemotePromptArgument) int { return strings.Compare(a.Name, b.Name) })
 			if err := candidate.Validate(); err != nil {
 				return nil, fmt.Errorf("invalid MCP prompt definition: %w", err)
 			}

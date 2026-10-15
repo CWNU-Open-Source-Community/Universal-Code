@@ -88,7 +88,7 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 			if len(raw) > MaxMessageBytes {
 				return nil, errors.New("MCP response exceeds the transport limit")
 			}
-			if catalog, _ := ctx.Value(resolvedCatalogKey{}).(*resolvedCatalog); catalog != nil && len(raw) > 0 && (method == "tools/list" || method == "resources/list" || method == "prompts/list") {
+			if catalog, _ := ctx.Value(resolvedCatalogKey{}).(*resolvedCatalog); catalog != nil && len(raw) > 0 && (method == "tools/list" || method == "resources/list" || method == "resources/templates/list" || method == "prompts/list") {
 				if len(raw) > MaxMessageBytes-catalog.bytes {
 					return nil, errors.New("MCP native discovery exceeds its aggregate result limit")
 				}
@@ -116,6 +116,8 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 				}
 				result.TTLMs = 0
 			case *sdk.ListResourcesResult:
+				result.TTLMs = 0
+			case *sdk.ListResourceTemplatesResult:
 				result.TTLMs = 0
 			case *sdk.ListPromptsResult:
 				result.TTLMs = 0
@@ -238,7 +240,7 @@ func (a *sdkCallAttempt) reject(err error) error {
 }
 
 func beforeSDKDispatch(ctx context.Context, method string) error {
-	if method != "tools/call" {
+	if !isClientInvocationMethod(method) {
 		return ctx.Err()
 	}
 	call, _ := ctx.Value(sdkCallAttemptKey{}).(*sdkCallAttempt)

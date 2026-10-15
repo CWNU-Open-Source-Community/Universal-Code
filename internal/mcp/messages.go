@@ -10,14 +10,19 @@ import (
 // InitializeParams carries the client handshake. Only client identity and
 // capabilities are accepted; every unknown field is rejected.
 type InitializeParams struct {
+	Meta            json.RawMessage `json:"_meta,omitempty"`
 	ProtocolVersion string          `json:"protocolVersion"`
 	Capabilities    json.RawMessage `json:"capabilities"`
 	ClientInfo      ClientInfo      `json:"clientInfo"`
 }
 
 type ClientInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name        string          `json:"name"`
+	Version     string          `json:"version"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	WebsiteURL  string          `json:"websiteUrl,omitempty"`
+	Icons       json.RawMessage `json:"icons,omitempty"`
 }
 
 func DecodeInitializeParams(raw json.RawMessage) (InitializeParams, error) {
@@ -33,9 +38,8 @@ func DecodeInitializeParams(raw json.RawMessage) (InitializeParams, error) {
 	if decoder.Decode(&struct{}{}) != io.EOF {
 		return InitializeParams{}, fmt.Errorf("initialize params contain trailing data")
 	}
-	if params.ProtocolVersion != ProtocolVersion {
-		return InitializeParams{}, fmt.Errorf("unsupported MCP protocol version %q; this server speaks %s only",
-			params.ProtocolVersion, ProtocolVersion)
+	if len(params.ProtocolVersion) != 10 || params.ProtocolVersion[4] != '-' || params.ProtocolVersion[7] != '-' {
+		return InitializeParams{}, fmt.Errorf("MCP protocol version must be a dated revision")
 	}
 	if len(params.ClientInfo.Name) == 0 || len(params.ClientInfo.Name) > 128 ||
 		len(params.ClientInfo.Version) == 0 || len(params.ClientInfo.Version) > 128 {
@@ -72,6 +76,7 @@ type ToolDefinition struct {
 // JSON arguments are accepted; arbitrary executables, paths, credentials,
 // or permission tiers cannot be smuggled through extra fields.
 type CallToolParams struct {
+	Meta      json.RawMessage `json:"_meta,omitempty"`
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
 }
@@ -93,7 +98,7 @@ func DecodeCallToolParams(raw json.RawMessage) (CallToolParams, error) {
 		return CallToolParams{}, fmt.Errorf("tool name must be bounded and present")
 	}
 	if len(params.Arguments) == 0 {
-		return CallToolParams{}, fmt.Errorf("tool arguments are required")
+		params.Arguments = json.RawMessage(`{}`)
 	}
 	if !json.Valid(params.Arguments) {
 		return CallToolParams{}, fmt.Errorf("tool arguments must be a valid JSON object")
@@ -126,7 +131,8 @@ type Resource struct {
 
 // ReadResourceParams binds one resource read by URI.
 type ReadResourceParams struct {
-	URI string `json:"uri"`
+	Meta json.RawMessage `json:"_meta,omitempty"`
+	URI  string          `json:"uri"`
 }
 
 func DecodeReadResourceParams(raw json.RawMessage) (ReadResourceParams, error) {

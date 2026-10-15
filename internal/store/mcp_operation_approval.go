@@ -70,12 +70,10 @@ func validateMCPApprovalSourceTx(ctx context.Context, tx *sql.Tx, p approval.Pro
 	if !a.MatchesServer(server) || payload.CapabilityFingerprint != server.ApprovedCapabilityFingerprint {
 		return errors.New("MCP approval reviewed registration changed")
 	}
-	for _, tool := range server.Capabilities.Tools {
-		if tool.Name == payload.ToolName {
-			return nil
-		}
+	if _, err := mcp.ValidateInvocation(server.Capabilities, payload.Method, payload.ToolName, payload.Arguments); err != nil {
+		return errors.New("MCP approval operation is absent from the reviewed registration")
 	}
-	return errors.New("MCP approval tool is absent from the reviewed registration")
+	return nil
 }
 
 // Only negative results may settle an undispatched intent. This exception does

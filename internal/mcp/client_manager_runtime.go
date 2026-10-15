@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -271,7 +272,7 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	discovery := toolcontract.DiscoveryScope{OperationID: "mcp-discovery-" + digestBytes([]byte(request.OperationID)), ConnectionFingerprint: launchFingerprint,
-		Profile: launch.ProtocolVersions[0], Methods: []string{"initialize", "notifications/initialized", "tools/list", "resources/list", "prompts/list"},
+		Profile: launch.ProtocolVersions[0], Methods: []string{"initialize", "notifications/initialized", "tools/list", "resources/list", "resources/templates/list", "prompts/list"},
 		MaxRequests: 64, MaxBytes: 1024 * 1024, ExpiresAt: time.Now().Add(time.Duration(record.Descriptor.CallTimeoutMillis) * time.Millisecond)}
 	if discovery.Profile == preferredClientProtocolVersion {
 		discovery.Methods = append(discovery.Methods, "server/discover")
@@ -321,7 +322,16 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	if err != nil {
 		return result, err
 	}
-	input, err := FingerprintCallInput(key, launch, request.ToolName, request.Arguments)
+	params, err := ValidateInvocation(record.Capabilities, request.Method, request.ToolName, request.Arguments)
+	if err != nil {
+		return result, err
+	}
+	var input string
+	if request.Method == "" {
+		input, err = FingerprintCallInput(key, launch, request.ToolName, request.Arguments)
+	} else {
+		input, err = FingerprintContentInput(key, launch, request.Method, params)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -332,7 +342,17 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	if err != nil {
 		return result, err
 	}
-	typed, raw, receipt, err := client.CallToolWithReceipt(ctx, operation, request.ToolName, request.Arguments)
+	var raw json.RawMessage
+	isError := false
+	if request.Method == "" {
+		typed, body, callReceipt, callErr := client.CallToolWithReceipt(ctx, operation, request.ToolName, request.Arguments)
+		raw, receipt, err = body, callReceipt, callErr
+		if typed != nil {
+			isError = typed.IsError
+		}
+	} else {
+		raw, receipt, err = client.InvokeContentWithReceipt(ctx, operation, request.Method, params)
+	}
 	if err != nil {
 		return result, m.runtimeInvocationFailure(ctx, latest, "runtime tool call failed", err)
 	}
@@ -347,10 +367,6 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	if err != nil {
 		return result, err
 	}
-	content := string(raw)
-	truncated := len(raw) > record.Descriptor.MaxResultBytes
-	if truncated {
-		content = truncateClientUTF8(content, record.Descriptor.MaxResultBytes)
-	}
-	return ClientCallResult{Content: content, IsError: typed.IsError, Bytes: len(content), Truncated: truncated}, nil
+	content, truncated := BoundResultJSON(raw, record.Descriptor.MaxResultBytes)
+	return ClientCallResult{Content: content, IsError: isError, Bytes: len(content), Truncated: truncated}, nil
 }

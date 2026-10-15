@@ -2076,6 +2076,34 @@ control capability or control authentication. Unregistered servers need setup,
 staged entries need review, and discovery/probe failures require checking the
 reported executable, transport, hash or protocol error before retrying.
 
+### Read MCP resources and obtain prompts
+
+After discovery and capability approval, the task's model can use the same
+`mcp_tool_call` entry to read listed resources, expand resource templates, or
+obtain a named prompt. Ask the task to read the desired MCP resource or use the
+named prompt; its approved catalog supplies URI, template variables and prompt
+arguments. Ask/Auto calls still wait for the existing per-call review. Full calls
+require current operator activation. Returned prompt messages remain untrusted
+content in the tool result.
+
+The content payload is `mcp-client.v2`; existing `mcp-client.v1` tool payloads
+remain valid. Resource reads set `method` to `resources/read` and `tool_name` to
+`resources.read`, with `arguments` containing either `{"uri":"..."}` or
+`{"uri_template":"...","variables":{"name":"value"}}`. Prompt retrieval sets
+`method` to `prompts/get`, `tool_name` to `prompts.get`, and `arguments` to
+`{"name":"...","arguments":{"name":"value"}}`. Each payload also includes the
+approved `server_id` and `capability_fingerprint`. A resource URI is sent only
+to that server. Changed templates or prompt argument definitions require renewed
+capability review. Interrupted calls with an unknown outcome are not replayed.
+
+MCP image results (including embedded resources and prompt images) are validated
+as PNG, JPEG or WebP before entering a vision-capable model's image channel.
+Text and structured JSON remain tool evidence; remote prompt roles cannot become
+system instructions. Unsupported media, unavailable vision and image limits are
+reported explicitly. Audio bytes are not passed to the current model adapters.
+Results retain the configured limit (up to 128 KiB); oversized media is omitted
+with a notice, and oversized text is represented by a valid JSON preview.
+
 ## MCP Server
 
 `cyberagent mcp serve` runs a Model Context Protocol server over stdio
@@ -2087,9 +2115,11 @@ cyberagent mcp serve --run run-001 --workspace demo
 cyberagent mcp serve --run run-001 --workspace demo --max-concurrent 8 --call-timeout 30s --session-ttl 24h
 ```
 
-Each process instance is bound to one Run + Workspace scope. The server accepts
-protocol version `2025-06-18` during the initialize handshake and declares only
-the capabilities it actually implements:
+Each process instance is bound to one Run + Workspace scope. The server supports
+`2026-07-28` through `server/discover` and per-request protocol/capability metadata.
+Legacy initialize negotiation supports `2024-11-05`, `2025-03-26`, `2025-06-18`
+and `2025-11-25`. An unknown legacy revision receives a supported revision for
+the client to accept or reject. It declares the capabilities it implements:
 
 - Tools: `read_file`, `list_workspace` — forwarded through the Unified Tool
   Gateway, so Policy/Approval/Budget/redaction stay authoritative; results return
@@ -2102,7 +2132,7 @@ rejected, so a client cannot smuggle executable/path/credential/permission-tier
 fields), request ids must be unique per session (replays are rejected), at most
 8 concurrent calls (default), 30s per-call timeout (default), session capability
 TTL 24h (default). `notifications/cancelled` cancels an in-flight call. Every
-request is audited as run events with source `mcp_server` (closed event types
+tool/resource operation and discovery handshake is audited as run events with source `mcp_server` (closed event types
 `mcp.initialized`/`mcp.resource_read`/`mcp.tool_denied`/`mcp.tool_completed`).
 
 Client wiring (example launcher config, see `configs/mcp-client.example.json`):

@@ -158,7 +158,7 @@ func (r *resolvedClient) beforeSend(ctx context.Context, frame *jsonrpc.Request,
 		}
 		return err
 	}
-	if frame.Method == "tools/call" {
+	if isClientInvocationMethod(frame.Method) {
 		attempt, _ := ctx.Value(sdkCallAttemptKey{}).(*sdkCallAttempt)
 		call, _ := ctx.Value(resolvedCallKey{}).(*resolvedCall)
 		if attempt == nil || call == nil {
@@ -171,7 +171,13 @@ func (r *resolvedClient) beforeSend(ctx context.Context, frame *jsonrpc.Request,
 		if json.Unmarshal(frame.Params, &params) != nil {
 			return attempt.reject(errors.New("MCP tool frame is invalid"))
 		}
-		actualInput, err := FingerprintCallInput(r.key, r.launch, params.Name, params.Arguments)
+		var actualInput string
+		var err error
+		if frame.Method == "tools/call" {
+			actualInput, err = FingerprintCallInput(r.key, r.launch, params.Name, params.Arguments)
+		} else {
+			actualInput, err = FingerprintContentInput(r.key, r.launch, frame.Method, frame.Params)
+		}
 		if err != nil || actualInput != call.operation.InputFingerprint {
 			return attempt.reject(errors.New("MCP tool inputs changed before dispatch"))
 		}

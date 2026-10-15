@@ -21,7 +21,7 @@ func (s *Server) resourceCatalog() []Resource {
 func (s *Server) serveResourcesList(ctx context.Context, request Request, output io.Writer) {
 	_ = ctx
 	result := ListResourcesResult{Resources: s.resourceCatalog()}
-	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: mustJSON(result)})
+	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID, Result: serverResult(request, result)})
 }
 
 func (s *Server) serveResourcesRead(ctx context.Context, request Request, output io.Writer) {
@@ -52,7 +52,7 @@ func (s *Server) readRunSummary(ctx context.Context, request Request, output io.
 	summary := map[string]any{"run_id": run.ID, "status": run.Status,
 		"profile": run.Config.ModelRoute, "workspace_id": s.workspaceID}
 	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
-		Result: mustJSON(ReadResourceResult{Contents: []ResourceContent{{URI: "cyberagent://run/summary",
+		Result: serverResult(request, ReadResourceResult{Contents: []ResourceContent{{URI: "cyberagent://run/summary",
 			MIMEType: "application/json", Text: string(mustJSON(summary))}}})})
 	_ = s.store.RecordMCPAudit(ctx, s.runID, "mcp.resource_read", map[string]any{"uri": "cyberagent://run/summary"})
 }
@@ -71,7 +71,7 @@ func (s *Server) readRunActivity(ctx context.Context, request Request, output io
 		return
 	}
 	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
-		Result: mustJSON(ReadResourceResult{Contents: []ResourceContent{{URI: "cyberagent://run/activity",
+		Result: serverResult(request, ReadResourceResult{Contents: []ResourceContent{{URI: "cyberagent://run/activity",
 			MIMEType: "application/json", Text: string(raw)}}})})
 	_ = s.store.RecordMCPAudit(ctx, s.runID, "mcp.resource_read", map[string]any{"uri": "cyberagent://run/activity"})
 }

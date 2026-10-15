@@ -111,6 +111,19 @@ func TestProjectThreadActivityTypedMCPKeepsSafeScalarsAndRedactsSecrets(t *testi
 	}
 }
 
+func TestProjectThreadActivityMCPContentOperations(t *testing.T) {
+	for _, method := range []string{"resources/read", "prompts/get"} {
+		payload, _ := json.Marshal(toolgateway.MCPToolCallPayload{Version: toolgateway.MCPContentToolProtocolVersion,
+			Method: method, ToolName: strings.ReplaceAll(method, "/", "."), ServerID: "content-server",
+			CapabilityFingerprint: strings.Repeat("a", 64), Arguments: json.RawMessage(`{"name":"summary"}`)})
+		call := threadActivityFactsCall(toolgateway.MCPToolCallTool, payload, nil, `{"content":[{"type":"text","text":"visible resource"}]}`)
+		detail, found, err := ProjectThreadActivityTypedDetail(call)
+		if err != nil || !found || detail.MCP == nil || detail.MCP.Tool != strings.ReplaceAll(method, "/", ".") {
+			t.Fatalf("content operation activity disappeared: %#v found=%t err=%v", detail, found, err)
+		}
+	}
+}
+
 func TestProjectThreadActivityTypedFileEditProjectsSafeDiffReferenceAndStatistics(t *testing.T) {
 	payload, _ := json.Marshal(toolgateway.WorkspaceChangePayload{
 		Version: toolgateway.AgentCodeRegistryVersion, Action: "propose_patch", Path: "src/session.ts",

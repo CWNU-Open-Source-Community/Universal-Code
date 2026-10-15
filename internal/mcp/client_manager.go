@@ -324,10 +324,13 @@ func (m *Manager) connect(ctx context.Context, descriptor ServerDescriptor) (*Cl
 }
 
 type ScopedServerCapability struct {
-	ServerID              string       `json:"server_id"`
-	Name                  string       `json:"name"`
-	CapabilityFingerprint string       `json:"capability_fingerprint"`
-	Tools                 []RemoteTool `json:"tools"`
+	Resources             []RemoteResource         `json:"resources,omitempty"`
+	ResourceTemplates     []RemoteResourceTemplate `json:"resource_templates,omitempty"`
+	Prompts               []RemotePrompt           `json:"prompts,omitempty"`
+	ServerID              string                   `json:"server_id"`
+	Name                  string                   `json:"name"`
+	CapabilityFingerprint string                   `json:"capability_fingerprint"`
+	Tools                 []RemoteTool             `json:"tools"`
 	// Host-only review identity; never accepted from a model tool payload.
 	DescriptorFingerprint  string `json:"-"`
 	RegistrationGeneration int64  `json:"-"`
@@ -372,6 +375,7 @@ func (m *Manager) Capabilities(ctx context.Context, runID, workspaceID string) (
 			ServerID: record.Descriptor.ID, Name: record.Descriptor.Name,
 			CapabilityFingerprint: record.Capabilities.Fingerprint,
 			DescriptorFingerprint: record.DescriptorFingerprint, RegistrationGeneration: record.Generation,
+			Resources: slices.Clone(record.Capabilities.Resources), ResourceTemplates: slices.Clone(record.Capabilities.ResourceTemplates), Prompts: slices.Clone(record.Capabilities.Prompts),
 			Tools: slices.Clone(record.Capabilities.Tools)})
 	}
 	sort.Slice(result.Servers, func(i, j int) bool { return result.Servers[i].ServerID < result.Servers[j].ServerID })
@@ -382,6 +386,7 @@ func (m *Manager) Capabilities(ctx context.Context, runID, workspaceID string) (
 }
 
 type InvokeRequest struct {
+	Method                string
 	RunID                 string
 	WorkspaceID           string
 	ServerID              string
@@ -452,14 +457,11 @@ func (m *Manager) Invoke(ctx context.Context, request InvokeRequest) (result Cli
 		return ClientCallResult{}, apperror.New(apperror.CodePolicyDenied,
 			"MCP server is not enabled for the exact Run/Workspace capability scope")
 	}
-	tool, found := findRemoteTool(record.Capabilities.Tools, request.ToolName)
-	if !found {
-		return ClientCallResult{}, apperror.New(apperror.CodePolicyDenied,
-			"MCP tool is absent from the approved capability snapshot")
+	if _, err := ValidateInvocation(record.Capabilities, request.Method, request.ToolName, request.Arguments); err != nil {
+		return ClientCallResult{}, apperror.Wrap(apperror.CodeInvalidArgument, "MCP operation does not match the approved catalog", err)
 	}
-	if err := validateArgumentsAgainstSchema(tool.InputSchema, request.Arguments); err != nil {
-		return ClientCallResult{}, apperror.Wrap(apperror.CodeInvalidArgument,
-			"MCP tool arguments do not match the approved schema", err)
+	if request.Method != "" && request.Authorizer == nil {
+		return ClientCallResult{}, apperror.New(apperror.CodePolicyDenied, "MCP content access requires common host authority")
 	}
 	if request.Authorizer != nil {
 		// Do not hold the review lock during transport. Operator disable/revoke

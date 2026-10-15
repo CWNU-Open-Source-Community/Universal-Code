@@ -105,12 +105,8 @@ func readMCPApprovalSource(ctx context.Context, st mcpApprovalStore, runID, call
 	if !a.MatchesServer(source.server) || source.server.ApprovedCapabilityFingerprint != source.payload.CapabilityFingerprint {
 		return source, mcpApprovalUnavailable("MCP approved registration or capability changed")
 	}
-	found := false
-	for _, tool := range source.server.Capabilities.Tools {
-		found = found || tool.Name == source.payload.ToolName
-	}
-	if !found {
-		return source, mcpApprovalUnavailable("MCP tool is no longer in the reviewed capability snapshot")
+	if _, err := mcp.ValidateInvocation(source.server.Capabilities, source.payload.Method, source.payload.ToolName, source.payload.Arguments); err != nil {
+		return source, mcpApprovalUnavailable("MCP operation no longer matches the reviewed capability snapshot")
 	}
 	if ref := source.server.Descriptor.NativeSource; ref != nil {
 		native, ok := st.(nativeMCPSourceStore)
