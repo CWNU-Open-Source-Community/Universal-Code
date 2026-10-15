@@ -5584,17 +5584,21 @@ CREATE TABLE "run_external_skill_selection_items" (
   legacy_installation_id TEXT,
   plugin_installation_id TEXT,
 		PRIMARY KEY(selection_id, ordinal),
-		UNIQUE(selection_id, installation_id),
-		UNIQUE(selection_id, name, version),
 		FOREIGN KEY(selection_id) REFERENCES run_external_skill_selections(id) ON DELETE RESTRICT,
 		FOREIGN KEY(legacy_installation_id) REFERENCES skill_package_installations(id) ON DELETE RESTRICT,
   FOREIGN KEY(plugin_installation_id) REFERENCES plugin_installations(id) ON DELETE RESTRICT,
 		CHECK(ordinal BETWEEN 1 AND 4),
 		CHECK(surface IN ('code', 'cyber')),
-		CHECK(name = trim(name) AND length(name) BETWEEN 1 AND 64
-			AND name NOT GLOB '*[^a-z0-9-]*' AND name GLOB '[a-z]*' AND substr(name, -1) != '-'),
-		CHECK(version = trim(version) AND length(version) BETWEEN 5 AND 29
-			AND version NOT GLOB '*[^0-9.]*'),
+		CHECK(COALESCE(json_extract(plugin_binding_json, '$.native'), 0) = 1 OR
+   (name = trim(name) AND length(name) BETWEEN 1 AND 64
+    AND name NOT GLOB '*[^a-z0-9-]*' AND name GLOB '[a-z]*' AND substr(name, -1) != '-')),
+  CHECK(COALESCE(json_extract(plugin_binding_json, '$.native'), 0) = 0 OR
+   (plugin_installation_id = installation_id AND length(name) BETWEEN 1 AND 64
+    AND instr(name, char(0)) = 0)),
+  CHECK(json_type(plugin_binding_json, '$.native') IS NULL OR json_type(plugin_binding_json, '$.native') = 'true'),
+		CHECK((COALESCE(json_extract(plugin_binding_json, '$.native'), 0) = 0
+   AND version = trim(version) AND length(version) BETWEEN 5 AND 29 AND version NOT GLOB '*[^0-9.]*')
+   OR (json_extract(plugin_binding_json, '$.native') = 1 AND length(version) <= 262144 AND instr(version, char(0)) = 0)),
 		CHECK(length(installation_fingerprint) = 64
 			AND installation_fingerprint NOT GLOB '*[^0-9a-f]*'),
 		CHECK(COALESCE((plugin_binding_json = '{}' AND legacy_installation_id = installation_id AND plugin_installation_id IS NULL
@@ -5613,7 +5617,7 @@ CREATE TABLE "run_external_skill_selection_items" (
 		CHECK(content_bytes BETWEEN 1 AND 32768 AND token_upper_bound = content_bytes
 			AND token_upper_bound BETWEEN 1 AND 4096),
 		CHECK(length(archive_sha256) = 64 AND archive_sha256 NOT GLOB '*[^0-9a-f]*'),
-		CHECK(archive_bytes BETWEEN 1 AND 65536),
+		CHECK(archive_bytes BETWEEN 1 AND CASE WHEN json_extract(plugin_binding_json, '$.native') = 1 THEN 4194304 ELSE 65536 END),
 		CHECK(length(package_fingerprint) = 64
 			AND package_fingerprint NOT GLOB '*[^0-9a-f]*'),
 		CHECK(trust_class = 'operator_installed_untrusted'),
@@ -13687,6 +13691,15 @@ CREATE INDEX idx_drydock_workspaces_active_repository
 CREATE INDEX idx_drydock_workspaces_expiry
 		ON drydock_workspaces(state, expires_at, id);
 -- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX idx_external_skill_legacy_installation ON run_external_skill_selection_items(selection_id, installation_id)
+   WHERE COALESCE(json_extract(plugin_binding_json, '$.native'), 0) = 0;
+-- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX idx_external_skill_legacy_ref ON run_external_skill_selection_items(selection_id, name, version)
+   WHERE COALESCE(json_extract(plugin_binding_json, '$.native'), 0) = 0;
+-- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX idx_external_skill_native_component ON run_external_skill_selection_items(selection_id, installation_id, json_extract(plugin_binding_json, '$.component_id'))
+   WHERE json_extract(plugin_binding_json, '$.native') = 1;
+-- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_file_edit_apply_operations_run_created
 		ON file_edit_apply_operations(run_id, created_at);
 -- traverse-board-clean-install-object-boundary --
@@ -19591,6 +19604,38 @@ CREATE TRIGGER trg_run_external_skill_selection_item_insert
 CREATE TRIGGER trg_run_external_skill_selection_item_update_immutable BEFORE UPDATE ON run_external_skill_selection_items
 		BEGIN SELECT RAISE(ABORT, 'external Skill selection item cannot be updated'); END;
 -- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_run_external_skill_selection_native_item_insert
+ BEFORE INSERT ON run_external_skill_selection_items
+ WHEN json_extract(NEW.plugin_binding_json, '$.native') = 1 AND NOT EXISTS (
+  SELECT 1 FROM run_external_skill_selections selection
+  JOIN plugin_installations installation ON installation.id = NEW.plugin_installation_id
+  JOIN plugin_objects object ON object.archive_sha256 = installation.archive_sha256
+   AND object.package_fingerprint = installation.package_fingerprint
+  JOIN json_each(installation.manifest_json, '$.skills') skill
+  JOIN json_each(installation.manifest_json, '$.inventory') entry
+  WHERE selection.id = NEW.selection_id AND selection.protocol_version = 'external_skill_selection.v2'
+   AND NEW.ordinal = 1 + (SELECT COUNT(*) FROM run_external_skill_selection_items existing WHERE existing.selection_id = NEW.selection_id)
+   AND installation.protocol_version = 'plugin-installation.v2' AND installation.state = 'enabled'
+   AND json_extract(installation.source_json, '$.surface') = selection.surface AND NEW.surface = selection.surface
+   AND EXISTS (SELECT 1 FROM json_each(installation.enabled_capabilities_json) WHERE value = 'skills')
+   AND installation.plugin_id = json_extract(NEW.plugin_binding_json, '$.package_id')
+   AND installation.generation = json_extract(NEW.plugin_binding_json, '$.generation')
+   AND installation.archive_sha256 = NEW.archive_sha256 AND installation.archive_bytes = NEW.archive_bytes
+   AND installation.package_fingerprint = NEW.package_fingerprint
+   AND json_extract(installation.manifest_json, '$.format') IN ('agent-skills', 'agent-plugins')
+   AND json_type(installation.manifest_json, '$.legacy') IS NULL
+   AND json_extract(skill.value, '$.instructions.Component.PackageID') = installation.plugin_id
+   AND json_extract(skill.value, '$.instructions.Component.ComponentID') = json_extract(NEW.plugin_binding_json, '$.component_id')
+   AND json_extract(skill.value, '$.instructions.SHA256') = NEW.content_sha256
+   AND json_extract(skill.value, '$.name') = NEW.name
+   AND COALESCE(json_extract(installation.manifest_json, '$.author_version'), '') = NEW.version
+   AND json_extract(entry.value, '$.path') = json_extract(skill.value, '$.instructions.Path')
+   AND json_extract(entry.value, '$.kind') = 'file'
+   AND json_extract(entry.value, '$.sha256') = NEW.content_sha256
+   AND json_extract(entry.value, '$.bytes') = NEW.content_bytes
+   AND NEW.content_bytes = NEW.token_upper_bound AND NEW.tool_dependency_count = 0)
+ BEGIN SELECT RAISE(ABORT, 'external native Skill selection component binding is invalid'); END;
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_run_external_skill_selection_operation_delete_immutable BEFORE DELETE ON run_external_skill_selection_operations
 		BEGIN SELECT RAISE(ABORT, 'external Skill selection operation cannot be deleted'); END;
 -- traverse-board-clean-install-object-boundary --
@@ -19617,7 +19662,7 @@ CREATE TRIGGER trg_run_external_skill_selection_operation_update_immutable BEFOR
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_run_external_skill_selection_plugin_item_insert
  BEFORE INSERT ON run_external_skill_selection_items
- WHEN NEW.plugin_binding_json != '{}' AND NOT EXISTS (
+ WHEN NEW.plugin_binding_json != '{}' AND COALESCE(json_extract(NEW.plugin_binding_json, '$.native'), 0) = 0 AND NOT EXISTS (
   SELECT 1 FROM run_external_skill_selections selection
   JOIN plugin_installations installation ON installation.id = NEW.plugin_installation_id
   JOIN plugin_objects object ON object.archive_sha256 = installation.archive_sha256

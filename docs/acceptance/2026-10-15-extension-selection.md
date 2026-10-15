@@ -53,6 +53,14 @@ Windows、Go 1.26.9、生产 `web/dist`、Microsoft Edge / Playwright CLI。
 补齐前提交的 Windows 失败经本机重复执行与原 CI 失败任务重跑恢复，全套 CI 已绿。
 本次未修改 Windows 运行时、超时或权限检查；后续提交的 CI 单独核验。
 
+本次补齐的首个提交 `cdf0e094` 在完整 CI 中暴露初始化产物遗漏：schema 已到 v197，
+`clean_install_baseline_generated.go` 仍为 v196。空库因此回退执行全部历史迁移，
+使新库基线断言失败、并发打开出现锁超时，并拖慢 Windows 测试至其原有整包时限。
+后续修复仅使用现有 `go generate ./internal/store` 同步初始化 SQL 与元数据；
+历史迁移和超时设置保持原值。初始化、历史结构/迁移账本等价、回滚恢复、并发打开和
+v197 绑定验证全部通过；空库初始化约 0.20 秒，并发打开约 0.52 秒。完整 CI 以 PR
+最新提交为准。
+
 ## #334 后续范围
 
 URL/Git GUI 导入、旧 Skill Catalog 发布者信任 GUI、原生目录 Web 导入仍未交付。
