@@ -157,9 +157,9 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 
 ## 自定义模型供应商与 Harness
 
-- 模型页使用两列小卡片，第一张固定为齿轮图标的“自定义配置”，其余卡片可见内容严格只有供应商名称与预设模型名；卡片左侧使用白色填充图标槽与深色单色品牌图形。窄窗改为单列，并覆盖 reduced motion、reduced transparency、high contrast 与 Windows forced colors。
-- 预设依次提供 Claude、OpenAI、DeepSeek、Gemini、Grok、MiniMax、MiMo、Kimi、Kimi for Coding、OpenCode Go 和 GitHub Copilot。API 预设只提供可编辑的官方端点、协议、模型和搜索策略初值，不是锁死模板；进入编辑器后用户仍可修改模型列表、请求地址与高级 JSON。
-- Kimi 开放平台与 Kimi for Coding 必须使用独立卡片、供应商 ID、域名、Key 和配额，不能互换。OpenCode Go 明确标为订阅网关，不冒充模型厂商。GitHub Copilot 是 GitHub/Copilot 账号与订阅席位连接器，不得把 PAT、Base URL 或普通 API Key 表单伪装成 Copilot 推理接口；在 SDK 登录链完成前应如实显示“尚未接通”。
+- 模型页使用两列小卡片，第一张固定为齿轮图标的“自定义配置”，随后提供独立的 ChatGPT 订阅账户入口与 API 供应商卡片，显示供应商、模型和连接状态；卡片左侧使用白色填充图标槽与深色单色品牌图形。窄窗改为单列，并覆盖 reduced motion、reduced transparency、high contrast 与 Windows forced colors。
+- 10 个 API 预设依次提供 Claude、OpenAI、DeepSeek、Gemini、Grok、MiniMax、MiMo、Kimi、Kimi for Coding 和 OpenCode Go。API 预设只提供可编辑的官方端点、协议、模型和搜索策略初值，不是锁死模板；进入编辑器后用户仍可修改模型列表、请求地址与高级 JSON。
+- Kimi 开放平台与 Kimi for Coding 必须使用独立卡片、供应商 ID、域名、Key 和配额，不能互换。OpenCode Go 明确标为订阅网关，不冒充模型厂商。ChatGPT 订阅通过独立账户页面登录、选择账户并检查模型；真实账户授权、订阅推理与撤销的验收状态见 [账户登录验收记录](../../../docs/acceptance/2026-10-15-chatgpt-sign-in.md)。GitHub Copilot 登录尚未实现，模型目录不提供占位入口。
 - 模型模块中的“自定义配置”允许用户持久新增供应商；“集成”下不再保留重复的“智能伙伴”分类。供应商定义和 API 凭证必须分离：名称、协议、端点、模型映射和能力策略写入 SQLite；API Key 只进入操作系统凭证管理器，任何 GET、事件、日志或导出均不得回传明文。
 - 高级 JSON 是用户可完整编辑的供应商配置层，不要求遵循产品预置模板；保存前必须进行重复键、体积、深度、危险 header、URL 凭证和 Harness 保留字段校验。需要认证的 JSON 位置使用 `{"$credential":"provider-id"}` 引用，运行时才从系统凭据库解析。API Key 表单默认把这个引用同步到协议对应的 `request_headers`，用户可以关闭同步、移动引用或修改模板；同步和持久化的始终是引用而不是明文。用户粘贴明文密钥时，UI 必须先显示迁移确认，把密钥写入系统凭据库并用引用替换；取消迁移则不得保存明文。
 - 用户配置可以新增 header、环境映射和供应商扩展字段，但不得覆盖 `model`、`messages`/`input`、`tools`、`tool_choice`、`stream`、`response_format`/`text`、`previous_response_id` 等由 Harness 持有的协议字段。UI 必须明确标出冲突位置，不能静默丢弃用户 JSON。
@@ -187,7 +187,7 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 | --- | --- |
 | 打开软件 | 立即看到 Thread 列表与输入框 |
 | 新建对话 | 输入第一句话即可创建，不先配置 Run |
-| 接入模型 | 主侧栏与设置均可进入同一模型目录；预设卡打开可编辑草稿，自定义卡保留完整高级 JSON，Copilot 明确走账户连接 |
+| 接入模型 | 主侧栏与设置均可进入同一模型目录；预设卡打开可编辑草稿，自定义卡保留完整高级 JSON，ChatGPT 使用独立账户登录入口 |
 | 发送消息 | React 只提交一个 turn；Go 自动工作到自然停止边界 |
 | Agent 工作 | 显示自然语言以及聚合的搜索、读取、修改、运行、验证 |
 | 内部状态 | 默认不显示 event sequence、Run ID、stage |

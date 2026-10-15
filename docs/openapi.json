@@ -34054,6 +34054,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "execution": {
+            "$ref": "#/components/schemas/BatchValidationExecutionReceipt"
+          },
           "exit_code": {
             "format": "int32",
             "type": "integer"
@@ -34248,6 +34251,70 @@
           "last_heartbeat_at",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "BatchValidationExecutionReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "backend_generation": {
+            "type": "string"
+          },
+          "backend_identity": {
+            "type": "string"
+          },
+          "credential_policy": {
+            "type": "string"
+          },
+          "image_digest": {
+            "type": "string"
+          },
+          "isolation_grade": {
+            "type": "string"
+          },
+          "job_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "network_policy": {
+            "type": "string"
+          },
+          "readiness": {
+            "type": "string"
+          },
+          "readiness_checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stdin_closed": {
+            "type": "boolean"
+          },
+          "template_reference": {
+            "type": "string"
+          },
+          "tree_reaped": {
+            "type": "boolean"
+          },
+          "workspace_sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "backend_identity",
+          "backend_generation",
+          "isolation_grade",
+          "network_policy",
+          "credential_policy",
+          "readiness",
+          "readiness_checked_at",
+          "workspace_sha256",
+          "tree_reaped",
+          "stdin_closed"
         ],
         "type": "object"
       },

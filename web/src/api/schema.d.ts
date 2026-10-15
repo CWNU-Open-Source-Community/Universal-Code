@@ -6105,6 +6105,7 @@ export interface components {
             completed_at: string;
             /** Format: int64 */
             duration_millis: number;
+            execution?: components["schemas"]["BatchValidationExecutionReceipt"];
             /** Format: int32 */
             exit_code: number;
             kind: string;
@@ -6156,6 +6157,23 @@ export interface components {
             tool_profile: components["schemas"]["BatchDeliveryToolProfile"];
             /** Format: date-time */
             updated_at: string;
+        };
+        BatchValidationExecutionReceipt: {
+            backend: string;
+            backend_generation: string;
+            backend_identity: string;
+            credential_policy: string;
+            image_digest?: string;
+            isolation_grade: string;
+            job_id?: string;
+            network_policy: string;
+            readiness: string;
+            /** Format: date-time */
+            readiness_checked_at: string;
+            stdin_closed: boolean;
+            template_reference?: string;
+            tree_reaped: boolean;
+            workspace_sha256: string;
         };
         BatchWorkbenchChildView: {
             executing: boolean;

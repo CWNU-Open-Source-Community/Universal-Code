@@ -1,4 +1,4 @@
-# ADR 0187: 已安装 Skill 的按任务选择入口
+# ADR 0189: 已安装 Skill 的按任务选择入口
 
 Date: 2026-10-15
 Status: Proposed for [Issue #334](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues/334).
@@ -25,7 +25,7 @@ Token 上限、Run 必须仍为 `Created`、execution mode 快照绑定、untrus
 ## 授权与信任边界
 
 这条路由放开的是"**选哪个已装好的包**"，不是"能否装包"。安装动作仍只在
-CLI 与 [ADR 0185](0185-skill-package-inventory-and-removal.md) 的移除控制面之外，
+CLI 与 [ADR 0187](0187-skill-package-inventory-and-removal.md) 的移除控制面之外，
 本入口不导入、不下载、不安装，也不授予任何能力。内置 Skill 仍要求与编译进
 二进制的版本精确相等，否则冲突。
 
@@ -63,7 +63,7 @@ CLI 与 [ADR 0185](0185-skill-package-inventory-and-removal.md) 的移除控制�
 
 不提供卸载后自动清理历史选择、不提供运行中改选、不提供批量应用到多个 Run，也不
 改变 Skill 内容注入预算与 Hook 执行边界。Skill Catalog 发布者信任仍只有 CLI
-（见 [ADR 0186](0186-plugin-publisher-trust-control.md) 的同一遗留项）。
+（见 [ADR 0188](0188-plugin-publisher-trust-control.md) 的同一遗留项）。
 
 ## 验证与参考
 

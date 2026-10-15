@@ -31,23 +31,29 @@ const (
 )
 
 type Request struct {
-	PathPolicy            workspaceidentity.PathPolicy `json:"-"`
-	Tool                  string                       `json:"tool"`
-	WorkspaceID           string                       `json:"workspace_id"`
-	WorkspaceRoot         string                       `json:"-"`
-	ServerID              string                       `json:"server_id"`
-	ServerGeneration      string                       `json:"server_generation"`
-	CapabilityFingerprint string                       `json:"capability_fingerprint"`
-	Path                  string                       `json:"path,omitempty"`
-	Query                 string                       `json:"query,omitempty"`
-	Position              Position                     `json:"position,omitempty"`
-	Direction             string                       `json:"direction,omitempty"`
-	IncludeDeclaration    bool                         `json:"include_declaration,omitempty"`
-	Limit                 int                          `json:"limit"`
-	Cursor                string                       `json:"cursor,omitempty"`
+	// ExpectedDocumentSHA256 binds automatic post-edit feedback to the applied
+	// bytes. It is an internal constraint, never a model-provided authority.
+	ExpectedDocumentSHA256 string                       `json:"-"`
+	PathPolicy             workspaceidentity.PathPolicy `json:"-"`
+	Tool                   string                       `json:"tool"`
+	WorkspaceID            string                       `json:"workspace_id"`
+	WorkspaceRoot          string                       `json:"-"`
+	ServerID               string                       `json:"server_id"`
+	ServerGeneration       string                       `json:"server_generation"`
+	CapabilityFingerprint  string                       `json:"capability_fingerprint"`
+	Path                   string                       `json:"path,omitempty"`
+	Query                  string                       `json:"query,omitempty"`
+	Position               Position                     `json:"position,omitempty"`
+	Direction              string                       `json:"direction,omitempty"`
+	IncludeDeclaration     bool                         `json:"include_declaration,omitempty"`
+	Limit                  int                          `json:"limit"`
+	Cursor                 string                       `json:"cursor,omitempty"`
 }
 
 func (r Request) Validate() error {
+	if r.ExpectedDocumentSHA256 != "" && (r.Tool != ToolDiagnostics || !validDigest(r.ExpectedDocumentSHA256)) {
+		return apperror.New(apperror.CodeInvalidArgument, "expected document hash requires a diagnostics request")
+	}
 	if err := r.PathPolicy.Validate(); err != nil {
 		return err
 	}
@@ -131,7 +137,13 @@ func (m *Manager) Execute(ctx context.Context, request Request) (Result, error) 
 		return Result{}, err
 	}
 	key := serverKey(request.WorkspaceID, request.ServerID)
-	current, err := m.ensureClient(ctx, key, request.WorkspaceRoot)
+	var current *client
+	var err error
+	if request.ExpectedDocumentSHA256 != "" {
+		current, err = m.ensureClientGeneration(ctx, key, request.WorkspaceRoot, request.ServerGeneration)
+	} else {
+		current, err = m.ensureClient(ctx, key, request.WorkspaceRoot)
+	}
 	if err != nil {
 		return Result{}, err
 	}
@@ -157,6 +169,9 @@ func (m *Manager) Execute(ctx context.Context, request Request) (Result, error) 
 			return Result{}, openErr
 		}
 		document = &opened
+		if request.ExpectedDocumentSHA256 != "" && document.SHA256 != request.ExpectedDocumentSHA256 {
+			return Result{}, apperror.New(apperror.CodeConflict, "document no longer matches the applied version")
+		}
 	}
 	queryFingerprint := requestFingerprint(request, before, document, snapshot)
 	requestTimeout := time.Duration(current.descriptor.RequestTimeoutMillis) * time.Millisecond
@@ -343,7 +358,7 @@ func (c *client) query(ctx context.Context, request Request, document *documentB
 		items, content, warnings := parseSignatureHelp(c.workspace.Root, raw, document.Path)
 		return items, nil, content, warnings, len(warnings) > 0, nil
 	case ToolDiagnostics:
-		return c.queryDiagnostics(ctx, document)
+		return c.queryDiagnostics(ctx, document, request.ExpectedDocumentSHA256 != "")
 	case ToolCallHierarchy:
 		return c.queryCallHierarchy(ctx, request, document)
 	case ToolTypeHierarchy:
@@ -373,13 +388,26 @@ func (c *client) queryLocations(ctx context.Context, request Request,
 	return items, nil, "", warnings, len(warnings) > 0, nil
 }
 
-func (c *client) queryDiagnostics(ctx context.Context, document *documentBinding) (
+// ErrDiagnosticsPending means no response can yet be bound to this document
+// version. It must not be presented as a successful empty diagnostic list.
+var ErrDiagnosticsPending = errors.New("diagnostics for the current document version are pending")
+
+func (c *client) queryDiagnostics(ctx context.Context, document *documentBinding, requireVersion bool) (
 	[]EvidenceItem, []GraphEdge, string, []string, bool, error,
 ) {
 	var raw json.RawMessage
 	err := c.transport.request(ctx, "textDocument/diagnostic", map[string]any{
 		"textDocument": map[string]string{"uri": document.URI}}, &raw)
 	if err == nil {
+		if requireVersion {
+			var report struct {
+				Kind  string          `json:"kind"`
+				Items json.RawMessage `json:"items"`
+			}
+			if json.Unmarshal(raw, &report) != nil || (report.Kind != "" && report.Kind != "full") || len(report.Items) == 0 || string(report.Items) == "null" {
+				return nil, nil, "", nil, false, ErrDiagnosticsPending
+			}
+		}
 		items, warnings := parseDiagnostics(c.workspace.Root, raw, document.Path, document.URI)
 		return items, nil, "", warnings, len(warnings) > 0, nil
 	}
@@ -397,8 +425,19 @@ func (c *client) queryDiagnostics(ctx context.Context, document *documentBinding
 	published := append(json.RawMessage(nil), c.diagnostics[document.URI]...)
 	c.mu.Unlock()
 	if len(published) == 0 {
+		if requireVersion {
+			return nil, nil, "", nil, false, ErrDiagnosticsPending
+		}
 		return []EvidenceItem{}, nil, "", []string{
 			"server supports document sync but returned neither pull nor published diagnostics"}, true, nil
+	}
+	if requireVersion {
+		var header struct {
+			Version *int `json:"version"`
+		}
+		if json.Unmarshal(published, &header) != nil || header.Version == nil || *header.Version != document.Version {
+			return nil, nil, "", nil, false, ErrDiagnosticsPending
+		}
 	}
 	items, warnings := parseDiagnostics(c.workspace.Root, published, document.Path, document.URI)
 	warnings = append(warnings, "diagnostics came from bounded publishDiagnostics fallback")

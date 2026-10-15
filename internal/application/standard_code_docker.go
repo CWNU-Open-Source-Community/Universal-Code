@@ -11,6 +11,7 @@ import (
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/runworktree"
 	"cyberagent-workbench/internal/sandbox"
 	"cyberagent-workbench/internal/standardcode"
@@ -184,6 +185,7 @@ type StandardCodeDockerExecuteResult struct {
 	AdmissionID string                        `json:"admission_id,omitempty"`
 	Result      *standardcode.Result          `json:"result,omitempty"`
 	Executed    bool                          `json:"executed"`
+	batchRecord *domain.DockerSandboxRecord
 }
 
 type StandardCodeDockerCancelRequest struct {
@@ -195,6 +197,13 @@ type StandardCodeDockerCancelRequest struct {
 func (s *StandardCodeDockerService) Cancel(ctx context.Context,
 	request StandardCodeDockerCancelRequest,
 ) (*standardcode.Result, error) {
+	owned, err := s.docker.Get(ctx, request.AdmissionID)
+	if err != nil {
+		return nil, err
+	}
+	if isBatchValidationDockerRequester(owned.Admission.RequestedBy) {
+		return nil, apperror.New(apperror.CodePolicyDenied, "cancel Batch validation through its Command Runtime Job")
+	}
 	cancelled, err := s.docker.Cancel(ctx, DockerSandboxCancelRequest(request))
 	if err != nil || cancelled.Record.Receipt == nil {
 		return nil, err
@@ -388,6 +397,16 @@ func (s *StandardCodeDockerService) execute(ctx context.Context,
 			return result, errors.Join(startErr, err)
 		}
 	}
+	if isBatchValidationDockerRequester(request.RequestedBy) {
+		proof := batchValidationRuntimeFromContext(ctx)
+		if proof == nil || proof.target.runID != scope.RunID || batchValidationDockerRequester(proof.target) != request.RequestedBy {
+			return result, runner.ErrCommandRuntimeBoundary
+		}
+		// The container wrote only the Batch target. Its terminal lifecycle
+		// receipt must not advance the unrelated Run Drydock checkpoint.
+		result.batchRecord, result.Executed = &started.Record, true
+		return result, startErr
+	}
 	common, finalizeErr := s.finalize(ctx, started.Record, scope,
 		request.RequestedBy)
 	if finalizeErr != nil {
@@ -412,6 +431,9 @@ func (s *StandardCodeDockerService) RecoverStartup(ctx context.Context) (
 	seen := make(map[string]struct{}, len(records)+len(completed))
 	candidates := make([]domain.DockerSandboxRecord, 0, len(records)+len(completed))
 	for _, record := range append(records, completed...) {
+		if isBatchValidationDockerRequester(record.Admission.RequestedBy) {
+			continue
+		}
 		if _, duplicate := seen[record.Admission.ID]; duplicate {
 			continue
 		}
@@ -535,6 +557,10 @@ func (s *StandardCodeDockerService) loadTerminalReplay(ctx context.Context,
 		if err := output.confirmCleanup(record); err != nil {
 			return StandardCodeDockerExecuteResult{}, true, err
 		}
+	}
+	if isBatchValidationDockerRequester(admission.RequestedBy) {
+		record.Replayed = true
+		return StandardCodeDockerExecuteResult{AdmissionID: admission.ID, batchRecord: &record, Executed: true}, true, nil
 	}
 	readiness, err := s.docker.StandardCodeReadiness(ctx, manifest)
 	if err != nil {
@@ -738,6 +764,9 @@ func (s *StandardCodeDockerService) finalize(ctx context.Context,
 	record domain.DockerSandboxRecord, scope standardcode.ExecutionContext,
 	requestedBy string,
 ) (standardcode.Result, error) {
+	if isBatchValidationDockerRequester(record.Admission.RequestedBy) || isBatchValidationDockerRequester(requestedBy) {
+		return standardcode.Result{}, apperror.New(apperror.CodePolicyDenied, "Batch validation cannot checkpoint the Run Drydock")
+	}
 	if record.Launch == nil || record.Receipt == nil ||
 		record.Receipt.Validate() != nil || record.Receipt.RunID != scope.RunID {
 		return standardcode.Result{}, errors.New(

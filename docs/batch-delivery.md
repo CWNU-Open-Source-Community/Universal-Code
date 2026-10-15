@@ -170,7 +170,9 @@ Desktop 还必须单独启用 `--enable-batch-delivery-control`；仅因其他�
 
 验证使用固定 argv、10 分钟超时、关闭 stdin、Windows Job Object / Unix inherited process-group 终止与回收、临时 HOME/cache、禁用 Git credential prompt/global config、`GOPROXY=off`、`GOSUMDB=off` 与 npm offline/audit-off 配置。Go 测试固定加入 `-count=1`，避免把缓存成功误作本次执行证据；stdout/stderr 正文不会进入 error、SQLite 或 read DTO，只保留 exit code、完整观察流 SHA-256、字节计数与时间收据。每个非 Git 验证开始前都会重新读取当前 Run 权限，receipt/review/merge 的持久化还会再次检查 Run/lease，因此 Prepare 后降权、暂停、终止或执行期间过期都会 fail closed。
 
-child-authored code 仍在宿主进程中运行，能够尝试读取宿主可见资源或发起网络访问；上述环境与生命周期约束不是 OS filesystem/network sandbox。在 POSIX 上，恶意代码主动建立新 session 并脱离 inherited process group 仍是显式宿主执行的残余风险，不会被误写成可证明的完整树沙箱。对不可信仓库，需要真实隔离证据时应只声明 `git_diff_check`，或在未来接入单独审阅的 Docker/network-none 验证后端。
+非 Git 验证按 Run 当前选择复用 Command Runtime adapter。Local 使用已安装的 LPAC 或显式启用的宿主路径；Docker Engine 与 SBX 使用既有固定来宾工具链和禁网策略。未就绪、缺少当前 Run 租约或所选 adapter 不可用时明确拒绝，不回退宿主。执行目标从持久化的子工作区或合并队列记录读取，并绑定仓库、分支、提交、目录身份和 generation；不能由 child 或请求传入任意 cwd。提交、独立复核与合并验证分别记录 Job，旧收据缺少执行环境或与当前 adapter 不符时重新验证。详见 [ADR 0185](adr/0185-batch-validation-selected-runtime.md)。
+
+验证收据的 `execution` 记录实际 backend、generation、隔离/网络/凭据策略、readiness 观察、工作区摘要，以及可用的镜像摘要或模板引用。Job 只保存输出计数和摘要，不保存正文。历史收据缺少 `execution` 时其执行环境保持未知。显式宿主路径仍能访问宿主可见资源；offline 环境和进程树回收不构成 OS 隔离。新 Batch 路径的 Docker/SBX/LPAC 真机验收仍需单独记录，不能沿用普通命令的历史验收结论。
 
 ## 顺序合并 / Ordered local merge queue
 
@@ -184,12 +186,18 @@ Merge 只接受每个 task 当前 generation 的 `accepted` receipt/review，且
 
 ## 取消、过期与重启 / Cancellation, expiry, and restart
 
-取消先在 SQLite 中 fence 全部 active generation，再按精确 identity 清理：
+独立 Submit/Review/Merge 验证需要 Run 空闲并取得自己的执行租约；Run 正由其他操作占用时返回冲突，待该操作结束后重试。Specialist 的 `verify` 只复用其已校验且仍有效的父租约。Workbench 在 child worker 返回并释放租约后自动提交；若此时另一个操作已取得 Run 租约，重新验证同样返回冲突，保留 child 的已提交交付，待 Run 空闲且 child ownership 仍有效时重试。
+
+启动时先回收 Docker/SBX 等后端已拥有的执行资源，再收敛 Batch worktree。Docker 从不可变 requester 的 Batch 引用、generation 与目录 identity 重建精确 mount 以供回收，仍复核原写请求 fingerprint 和容器 ownership；该引用不恢复执行授权。
+
+取消先在 SQLite 中将 plan 设为 `aborted`，阻止新验证与 merge queue，再停止并等待本进程拥有的验证 Job。只有持久 Job/工作区记录和 Run 租约能证明没有未回收执行时，才按精确 identity 清理：
 
 - clean 且仍是 base-only 的 child worktree/branch 可删除；
 - clean 但已有 commit 的 worktree 可移除，branch/commit 保留；
 - dirty、branch/ancestry/root identity 漂移或无法安全识别的目录标记 `orphaned` 并原样保留；
 - integration worktree 只有在 exact clean identity 下清理，否则报告 `integration_preserved`。
+
+回收未确认或其他进程仍持有执行租约时，取消保留目录并返回错误；plan 已为 `aborted`，不会再派发。此类 plan 不自动重启工作，待后端资源回收且 Run 操作结束后，通过界面的“重试取消清理”或同一取消 HTTP 入口再次清理。再次取消会继续处理未完成的 child/queue，并保留幂等 `replayed` 语义。
 
 启动时最多分批扫描 256 个 recoverable plan，收敛 Prepare materialization、缺失但可验证的 worktree、commit intent、过期 lease 与 prepared/running merge queue。恢复在任何文件或 Git 副作用前重新读取 Run；paused/cancelled/terminal Run 只报告需要操作者处理，不会重建 worktree、执行验证或推进 merge。它不从数据库恢复 token、进程或旧权限，不会按不可信路径递归删除，也不会在不确定状态下自动选择冲突。
 

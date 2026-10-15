@@ -1138,6 +1138,11 @@ func newBatchDeliveryApplicationFixture(t *testing.T,
 		OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
 		RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority(),
 	}
+	if _, err := NewRunExecutionProfileService(state).Change(ctx, ChangeRunExecutionProfileRequest{
+		RunID: run.ID, Profile: string(domain.RunExecutionProfileLocal), OperationKey: "batch-application-local-profile", RequestedBy: "operator",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Git-only batches retain the real initial Ask preference. Host Go/npm
 	// validation opts into Full through the current writer and its live fence.
 	if mode != domain.RunExecutionPermissionAsk {

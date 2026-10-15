@@ -522,11 +522,6 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	batchDelivery := application.NewBatchDeliveryService(stateStore).
 		WithHostValidationExecution(config.BatchDeliveryHostValidationEnabled,
 			config.ExecutionPermissionCapabilities)
-	if _, err := batchDelivery.ReconcileStartup(context.Background(), 256); err != nil {
-		_ = stateStore.Close()
-		return nil, apperror.Wrap(apperror.CodeUnavailable,
-			"desktop batch delivery startup reconciliation failed", err)
-	}
 	var standardCodeDelivery *application.StandardCodeDeliveryService
 	var standardCodeDeliveryController httpapi.StandardCodeDeliveryController
 	if commandRuntimeDrydocks != nil {
@@ -615,6 +610,12 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		return nil, err
 	}
 	commandRuntime := commandSet.Runtime
+	batchDelivery.WithValidationCommandRuntime(commandRuntime)
+	// Backend recovery needs its recorded mounts until owned processes are gone.
+	if _, err := batchDelivery.ReconcileStartup(context.Background(), 256); err != nil {
+		return nil, apperror.Wrap(apperror.CodeUnavailable,
+			"desktop batch delivery startup reconciliation failed", err)
+	}
 	if commandRuntime != nil {
 		runtimeDependencies.CommandRuntime = commandRuntime
 	}

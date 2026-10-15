@@ -464,6 +464,7 @@ func (s *AgentRunner) WithExecutionPermissionCapabilities(
 	if store, ok := s.store.(AgentCodeToolStore); ok && s.tools != nil {
 		s.tools.WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).
 			WithRunWorktree(s.drydocks).
+			WithCodeIntel(s.codeIntel).
 			WithExecutionPermissionCapabilities(s.executionCapabilities))
 	}
 	return s
@@ -510,6 +511,9 @@ func (s *AgentRunner) WithCodeIntel(manager *codeintel.Manager) *AgentRunner {
 		return s
 	}
 	s.codeIntel = manager
+	s.tools.WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).
+		WithRunWorktree(s.drydocks).WithCodeIntel(manager).
+		WithExecutionPermissionCapabilities(s.executionCapabilities))
 	s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, manager).WithRunWorktree(s.drydocks))
 	return s
 }
@@ -523,6 +527,7 @@ func (s *AgentRunner) WithRunWorktree(drydocks *RunWorktreeService) *AgentRunner
 		s.tools.WithAgentCodeWorkspaceResolver(NewAgentCodeWorkspaceResolver(store, drydocks)).
 			WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).
 				WithRunWorktree(drydocks).
+				WithCodeIntel(s.codeIntel).
 				WithExecutionPermissionCapabilities(s.executionCapabilities))
 		if s.codeIntel != nil {
 			s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, s.codeIntel).WithRunWorktree(drydocks))

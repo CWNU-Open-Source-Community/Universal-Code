@@ -79,9 +79,9 @@ HTTP 入口覆盖上面两条 Run 相关命令，并在一次调用里合并它�
 `POST /api/v1/runs/{run_id}/external-skills/select` 用控制 bearer 与
 `Idempotency-Key` 选择任意 `name@version`，内置名仍要求精确 active 版本，外部名要求
 已安装、具资格并显式确认不可信上下文；任务草稿界面据此提供勾选。
-`skill installed`/`skill remove` 对应 ADR 0185 的清单与移除端点。固定项目建议的
+`skill installed`/`skill remove` 对应 ADR 0187 的清单与移除端点。固定项目建议的
 `POST /api/v1/runs/{run_id}/project-skills/select` 保留更窄的 pin 准入，两条路由
-的差别只在准入规则，见 ADR 0187。
+的差别只在准入规则，见 ADR 0189。
 
 Desktop D1 阶段：
 

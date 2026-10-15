@@ -36,6 +36,11 @@
 缓存复用、安装输出、失败重试和中断恢复的具体操作见
 [准备项目依赖](project-preparation.md)。
 
+Batch 交付的 Go/npm 验证也使用任务当前选择的 Command Runtime 后端，目标是
+已记录的子工作区或合并工作区。仍需显式 Batch 验证开关及当前 Full 权限；
+后端未就绪时拒绝执行。收据标明实际 backend、网络策略与 readiness，历史
+验收记录不代表这条新路径已真机通过。见 [Batch 验证边界](batch-delivery.md#验证执行边界--validation-execution-boundary)。
+
 ## Docker Engine 准备
 
 由用户安装并启动 Docker；Windows 使用 Docker Desktop 的 Linux Engine。

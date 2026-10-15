@@ -432,8 +432,8 @@ export function BatchDeliveriesPanel({ client, runID }: ProjectionProps) {
         <span>{t(`${formatNumber(query.data.items.length)} 个计划`, `${formatNumber(query.data.items.length)} plans`)}</span>
       </div>
       <p className="projection-placeholder">{client.hasBatchDeliveryHostValidation
-        ? t("Go/npm 验证已启用，会在本机直接执行仓库代码。开始前需核对当前执行状态、Full 进程激活和权限。",
-          "Go/npm validation is enabled and runs repository code directly on the host. Check the current execution state, Full process activation, and permissions before starting.")
+        ? t("Go/npm 验证已启用，将使用当前 Run 所选的 Local、Docker 或 SBX 环境；环境未就绪时拒绝执行。开始前需核对当前执行状态、Full 进程激活和权限。",
+          "Go/npm validation uses the current Run's selected Local, Docker, or SBX environment and refuses execution when it is not ready. Check the current execution state, Full process activation, and permissions before starting.")
         : t("当前可检查 Git 差异。运行 Go/npm 验证需要完成下方执行配置。",
           "Git diff checks are available. Complete the execution settings below to run Go/npm validation.")}</p>
       <details><summary>{t("核对批量交付配置", "Review batch delivery settings")}</summary>
@@ -524,6 +524,10 @@ function BatchDeliveryDetail({ client, runID, planID }: ProjectionProps & { plan
     snapshot.children.every((child) => child.workspace.status === "accepted" ||
       child.workspace.status === "merged");
   const terminal = snapshot.plan.status === "completed" || snapshot.plan.status === "aborted";
+  const cleanupPending = snapshot.plan.status === "aborted" && (
+    snapshot.children.some((child) => !["merged", "cancelled", "failed", "orphaned"].includes(child.workspace.status)) ||
+    (snapshot.merge_queue != null && !["completed", "aborted"].includes(snapshot.merge_queue.status))
+  );
   return (
     <article className="delegation-item">
       <header className="projection-header">
@@ -576,7 +580,7 @@ function BatchDeliveryDetail({ client, runID, planID }: ProjectionProps & { plan
                 <StatusBadge status={message.kind} /> {message.summary} · {formatDate(message.created_at)}
               </li>)}
             </ol>}
-            {client.hasBatchDeliveryControl && child.workspace.status === "ready_for_review" &&
+            {client.hasBatchDeliveryControl && !terminal && child.workspace.status === "ready_for_review" &&
               <div className="run-execution-control">
                 <label htmlFor={`batch-review-${planID}-${child.workspace.ordinal}`}>
                   {t("独立审阅摘要", "Independent review summary")}</label>
@@ -608,8 +612,8 @@ function BatchDeliveryDetail({ client, runID, planID }: ProjectionProps & { plan
         {snapshot.merge_queue.failure_code && <> · <strong>{snapshot.merge_queue.failure_code}</strong>
           {snapshot.merge_queue.failure_summary ? `: ${snapshot.merge_queue.failure_summary}` : ""}</>}
       </div>}
-      {client.hasBatchDeliveryControl && !terminal && <div className="run-execution-control">
-        {accepted && <>
+      {client.hasBatchDeliveryControl && (!terminal || cleanupPending) && <div className="run-execution-control">
+        {accepted && !terminal && <>
           <label className="checkbox-row"><input checked={baseReplayConfirmed}
             onChange={(event) => setBaseReplayConfirmed(event.target.checked)} type="checkbox" />
             {t("若源分支已前进，确认将已复核交付重放到最新 base",
@@ -619,18 +623,20 @@ function BatchDeliveryDetail({ client, runID, planID }: ProjectionProps & { plan
             onClick={() => { setBusy("merge"); action.mutate({ kind: "merge" }); }} type="button">
             {t("按依赖顺序合并", "Merge in dependency order")}</button>
         </>}
-        <button className="command-button" disabled={action.isPending}
+        {!terminal && <button className="command-button" disabled={action.isPending}
           onClick={() => { setBusy("reconcile"); action.mutate({ kind: "reconcile" }); }} type="button">
-          {t("核对并恢复状态", "Reconcile state")}</button>
+          {t("核对并恢复状态", "Reconcile state")}</button>}
         <button className="command-button danger" disabled={action.isPending}
           onClick={() => { setBusy("cancel"); action.mutate({ kind: "cancel" }); }} type="button">
-          {t("取消并保留现场", "Cancel and preserve state")}</button>
+          {cleanupPending ? t("重试取消清理", "Retry cancellation cleanup") : t("取消并保留现场", "Cancel and preserve state")}</button>
       </div>}
       {action.isPending && !busy.includes("-") && <span className="projection-placeholder">
         <LoaderCircle aria-hidden="true" className="spin" size={15} /> {t("处理中", "Working")}</span>}
       {action.isError && <div className="inline-warning" role="alert">
         {action.error instanceof Error ? action.error.message : t("批量交付操作失败", "Batch delivery operation failed")}
-        <p>{t("请核对最新交付状态。结果待确认时，使用「核对并恢复状态」检查原操作。", "Check the latest delivery state. When the outcome needs confirmation, use Reconcile state to inspect the original operation.")}</p>
+        <p>{cleanupPending
+          ? t("刷新交付状态；待验证 Job 和 Run 操作结束后，重试取消清理。", "Refresh the delivery state, then retry cancellation cleanup after the validation Job and Run operation end.")
+          : t("请核对最新交付状态。结果待确认时，使用「核对并恢复状态」检查原操作。", "Check the latest delivery state. When the outcome needs confirmation, use Reconcile state to inspect the original operation.")}</p>
         <button className="compact-command" onClick={() => void query.refetch()} type="button">{t("刷新交付状态", "Refresh delivery state")}</button>
       </div>}
     </article>

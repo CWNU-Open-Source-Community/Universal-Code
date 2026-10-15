@@ -11,7 +11,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
-	"cyberagent-workbench/internal/redact"
+
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
 )
@@ -20,7 +20,7 @@ const (
 	ThreadApplicationServicesProtocolVersion = "thread_application_services.v1"
 	DefaultThreadApplicationServicesLimit    = 20
 	MaxThreadApplicationServicesLimit        = 50
-	MaxThreadApplicationServiceURLs          = 8
+	MaxThreadApplicationServiceURLs          = runner.MaxCommandServiceURLs
 )
 
 type ThreadApplicationServiceStore interface {
@@ -297,7 +297,7 @@ func threadServicePrefix(value string) string {
 	return strings.ToValidUTF8(value[:runner.MaxCommandRuntimeOutputRead/2], "")
 }
 
-var threadServiceURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"'` + "`" + `]+`)
+var threadServiceURLPattern = regexp.MustCompile(runner.CommandServiceURLPattern)
 
 // The existing host-path scrubber recognizes the trailing p:/ in http:// as a
 // Windows drive. Preserve only already-safe loopback URLs, after checking all
@@ -350,59 +350,17 @@ func scrubThreadServiceText(value, root string, secrets []string) string {
 }
 
 func canonicalThreadServiceURL(candidate string) (string, bool) {
-	if len(candidate) > 2048 || strings.ContainsAny(candidate, "\\\r\n\t") {
-		return "", false
-	}
-	parsed, err := url.Parse(candidate)
-	if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.Opaque != "" || redact.String(candidate) != candidate {
-		return "", false
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
-		return "", false
-	}
-	port := parsed.Port()
-	if port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
-			return "", false
-		}
-	}
-	if host == "localhost" {
-		parsed.Host = "127.0.0.1"
-		if port != "" {
-			parsed.Host += ":" + port
-		}
-	}
-	return parsed.String(), true
+	return runner.CanonicalCommandServiceURL(candidate)
 }
 
 func threadServiceCandidateURLs(frames []runner.CommandRuntimeFrame) []ThreadApplicationServiceURLView {
-	values := make([]ThreadApplicationServiceURLView, 0, MaxThreadApplicationServiceURLs)
-	seen := make(map[string]bool)
-	for _, frame := range frames {
-		for _, match := range threadServiceURLPattern.FindAllString(frame.Text, MaxThreadApplicationServiceURLs*4) {
-			candidate := strings.TrimRight(match, ".,;)")
-			canonical, ok := canonicalThreadServiceURL(candidate)
-			if !ok {
-				continue
-			}
-			if seen[canonical] {
-				continue
-			}
-			seen[canonical] = true
-			values = append(values, ThreadApplicationServiceURLView{URL: canonical, Source: "command_output", Verified: false})
-			if len(values) == MaxThreadApplicationServiceURLs {
-				return values
-			}
-		}
+	candidates := runner.CommandServiceURLCandidates(frames)
+	values := make([]ThreadApplicationServiceURLView, 0, len(candidates))
+	for _, candidate := range candidates {
+		values = append(values, ThreadApplicationServiceURLView(candidate))
 	}
 	return values
 }
-
 func (s *ThreadApplicationService) Stop(ctx context.Context, threadID, jobID string, request ThreadApplicationServiceStopRequest) (ThreadApplicationServiceStopView, error) {
 	value := ThreadApplicationServiceStopView{Version: ThreadApplicationServicesProtocolVersion}
 	if err := s.checkThread(ctx, threadID); err != nil {

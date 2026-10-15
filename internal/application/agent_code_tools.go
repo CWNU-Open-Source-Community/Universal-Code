@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/codeintel"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/githubreview"
@@ -32,6 +33,8 @@ type AgentCodeToolStore interface {
 }
 
 type AgentCodeToolExecutor struct {
+	checker               policy.Checker
+	codeIntel             *codeintel.Manager
 	store                 AgentCodeToolStore
 	manager               *fileedit.Manager
 	apply                 *FileEditApplyService
@@ -69,7 +72,7 @@ func NewAgentCodeToolExecutor(store AgentCodeToolStore,
 ) *AgentCodeToolExecutor {
 	checkpoints := embeddedWorkspaceCheckpointService(store,
 		domain.ExecutionPermissionRuntimeCapabilities{})
-	return &AgentCodeToolExecutor{store: store, manager: fileedit.NewManager(store),
+	return &AgentCodeToolExecutor{store: store, manager: fileedit.NewManager(store), checker: checker,
 		apply:  NewFileEditApplyService(store, checker, checkpoints),
 		revert: NewFileEditProposalService(store, checker)}
 }
@@ -194,7 +197,9 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
-		value = agentCodeApplyResult(result)
+		applied := agentCodeApplyResult(result)
+		applied["diagnostics"] = e.appliedDocumentDiagnostics(ctx, scope, result, pathPolicy)
+		value = applied
 		metadata["edit_id"] = result.Edit.ID
 		metadata["status"] = result.Edit.Status
 		metadata["operation"] = result.Edit.Operation

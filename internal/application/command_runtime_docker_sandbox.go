@@ -119,6 +119,16 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 	if err != nil {
 		return noProcess, err
 	}
+	requestedBy := scope.RootAgentID
+	if proof := batchValidationRuntimeFromContext(ctx); proof != nil {
+		if err := proof.check(ctx); err != nil {
+			return noProcess, err
+		}
+		requestedBy = batchValidationDockerRequester(proof.target)
+		if _, _, err := parseBatchValidationDockerRequester(requestedBy); err != nil {
+			return noProcess, err
+		}
+	}
 	workspace, found, err := readRunFileDrydock(ctx, e.service.store, scope.RunID)
 	if err != nil || !found {
 		return noProcess, errors.Join(err,
@@ -134,7 +144,7 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 	prepared, err := e.service.prepareCommandRuntime(ctx, StandardCodeDockerPrepareRequest{
 		RunID: scope.RunID, ExpectedGeneration: workspace.Generation,
 		ExpectedCheckpoint: workspace.LastCheckpointID,
-		OperationKey:       baseKey + "-prepare", RequestedBy: scope.RootAgentID,
+		OperationKey:       baseKey + "-prepare", RequestedBy: requestedBy,
 		Command: command}, stdinPolicy)
 	if err != nil {
 		return noProcess, err
@@ -168,7 +178,17 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 			ExpectedCheckpoint: workspace.LastCheckpointID,
 			PreparationID:      prepared.Preparation.Preparation.ID,
 			ApprovalID:         decision.Approval.ID, OperationKey: baseKey + "-execute",
-			RequestedBy: scope.RootAgentID, Command: command}, lease, stdinPolicy, stdin)
+			RequestedBy: requestedBy, Command: command}, lease, stdinPolicy, stdin)
+	if executed.batchRecord != nil {
+		record := executed.batchRecord
+		if !executed.Executed || record.Validate() != nil || record.Receipt == nil || record.Receipt.ExitCode == nil || !record.Receipt.CleanupComplete {
+			return runner.CommandRuntimeSandboxResult{ExitCode: 125, TreeReaped: output.noOwnedTree()}, errors.New("batch Docker terminal receipt is unavailable")
+		}
+		if record.Receipt.Outcome != domain.DockerSandboxOutcomeSucceeded {
+			err = errors.Join(err, errors.New("batch Docker validation did not succeed"))
+		}
+		return output.terminal(*record.Receipt.ExitCode), err
+	}
 	if !executed.Executed || executed.Result == nil ||
 		executed.Result.Validate() != nil || executed.Result.ExitCode == nil {
 		return runner.CommandRuntimeSandboxResult{ExitCode: 125, TreeReaped: output.noOwnedTree()}, errors.Join(err, errors.New(

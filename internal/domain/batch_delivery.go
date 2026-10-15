@@ -547,13 +547,33 @@ type BatchDeliveryMailboxMessage struct {
 }
 
 type BatchDeliveryTestReceipt struct {
-	RequirementID  string                      `json:"requirement_id"`
-	Kind           BatchDeliveryValidationKind `json:"kind"`
-	Scope          string                      `json:"scope"`
-	ExitCode       int                         `json:"exit_code"`
-	OutputSHA256   string                      `json:"output_sha256"`
-	DurationMillis int64                       `json:"duration_millis"`
-	CompletedAt    time.Time                   `json:"completed_at"`
+	RequirementID  string                           `json:"requirement_id"`
+	Kind           BatchDeliveryValidationKind      `json:"kind"`
+	Scope          string                           `json:"scope"`
+	ExitCode       int                              `json:"exit_code"`
+	OutputSHA256   string                           `json:"output_sha256"`
+	DurationMillis int64                            `json:"duration_millis"`
+	CompletedAt    time.Time                        `json:"completed_at"`
+	Execution      *BatchValidationExecutionReceipt `json:"execution,omitempty"`
+}
+
+// Execution describes the actual native backend. Missing evidence in historical
+// receipts remains unknown and cannot be promoted to a sandbox receipt.
+type BatchValidationExecutionReceipt struct {
+	JobID              string    `json:"job_id,omitempty"`
+	Backend            string    `json:"backend"`
+	BackendIdentity    string    `json:"backend_identity"`
+	BackendGeneration  string    `json:"backend_generation"`
+	IsolationGrade     string    `json:"isolation_grade"`
+	NetworkPolicy      string    `json:"network_policy"`
+	CredentialPolicy   string    `json:"credential_policy"`
+	Readiness          string    `json:"readiness"`
+	ReadinessCheckedAt time.Time `json:"readiness_checked_at"`
+	WorkspaceSHA256    string    `json:"workspace_sha256"`
+	ImageDigest        string    `json:"image_digest,omitempty"`
+	TemplateReference  string    `json:"template_reference,omitempty"`
+	TreeReaped         bool      `json:"tree_reaped"`
+	StdinClosed        bool      `json:"stdin_closed"`
 }
 
 type BatchDeliveryReceipt struct {

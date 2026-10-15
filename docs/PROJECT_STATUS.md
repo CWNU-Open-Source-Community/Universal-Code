@@ -1,5 +1,11 @@
 # Project Status
 
+> 2026-10-15 Batch validation: fixed Go/npm checks now select the task's existing
+> Command Runtime adapter and bind the stored child/integration workspace.
+> Receipts record the actual backend; historical or mismatched specialist
+> receipts require revalidation. New live backend acceptance remains pending.
+> See [ADR 0185](adr/0185-batch-validation-selected-runtime.md).
+
 > 2026-10-15 已安装 Skill 的按任务选择入口：新增
 > `POST /api/v1/runs/{run_id}/external-skills/select`，操作者可在不改
 > `.prayu/config.yaml` 的前提下把一个已安装 Skill 绑定到尚未开始的 Run。Go 侧把
@@ -7,7 +13,7 @@
 > `SelectInstalledSkills` 只去掉"必须在 pinned suggestions 中"这一条准入，Run 状态、
 > 模式绑定、不可信上下文确认、目录资格与同 key 重放仍由原有两个选择服务持有。
 > 任务草稿界面在技能建议之外增列已安装技能，混合选择走更宽的准入。无 SQLite 迁移，
-> 不安装、不下载、不授予能力。见 ADR 0187。
+> 不安装、不下载、不授予能力。见 ADR 0189。
 > 验证：`internal/httpapi` 新增 3 个用例（准入/重放/冲突、离开 Created 后拒绝、
 > 内置版本规则），OpenAPI 路由真实可达守卫覆盖新路由，`protocolregistry -check`、
 > `surfacecheck` 通过，前端 `typecheck` 与 task-configuration、client 契约测试通过。
@@ -17,7 +23,7 @@
 > 与桌面/Web 的“信任该发布者”入口，解除“撤销后 GUI 无法重新信任”的死锁。Go 侧新增有界核心
 > `TrustInstallationPublisher`，必须匹配签名有效安装的期望公钥指纹与信任代次（首次为 0），
 > 沿用 `SetPluginPublisherTrust` 的 CAS；CLI `plugin trust-publisher` 改为委派同一核心，行为不变。
-> 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0186。
+> 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0188。
 > 验证：`internal/store` 新增有界授予与被撤销发布者解除阻塞的实测用例，`internal/httpapi`
 > OpenAPI 守卫与新增用例通过，`internal/plugins`、`internal/application` 通过，前端
 > `typecheck` 与 plugin lifecycle 相关 23 项测试通过。Skill Catalog 发布者信任仍只有 CLI；
@@ -27,7 +33,7 @@
 > HTTP 读端点、控制写端点与桌面桥方法，复用既有 `SkillPackageRegistryService` 与
 > `skill_package_remove_operation.v1` 意图/tombstone，无 SQLite 迁移。清单逐项给出
 > 包对象的真实回读结果，单个不可读对象不再让整张清单失败。新增
-> `skill_package_remove` 收据类型与 ADR 0185。GUI 安装的新包仍走 Plugin 生命周期，
+> `skill_package_remove` 收据类型与 ADR 0187。GUI 安装的新包仍走 Plugin 生命周期，
 > 本项只覆盖历史 legacy 登记；URL/Git 导入尚未接入，见 #334。
 > 验证：`internal/httpapi`、`internal/desktop`（含 desktop tag）、`internal/application`、
 > `internal/skills`、`internal/operationreceipt` 定向与整包测试通过，

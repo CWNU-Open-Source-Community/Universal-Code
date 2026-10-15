@@ -12,10 +12,6 @@ export type V2ModelProviderPreset = {
   icon: ReactNode;
   /** True only after the OS credential store reports a configured secret. */
   credentialConfigured?: boolean;
-  /** Account-based presets (for example GitHub Copilot) must not be described as API-key routes. */
-  setup?:
-    | { kind: "api_key"; configured: boolean }
-    | { kind: "account"; connected: boolean; accountName?: string };
 };
 
 export type V2ModelSettingsProps = {
@@ -27,13 +23,7 @@ export type V2ModelSettingsProps = {
 };
 
 function setupStateLabel(preset: V2ModelProviderPreset): string {
-  if (preset.setup?.kind === "account") {
-    const account = preset.setup.accountName?.trim() || "账户";
-    return preset.setup.connected ? `${account}已连接` : "登录待接入";
-  }
-  const configured = preset.setup?.kind === "api_key"
-    ? preset.setup.configured : Boolean(preset.credentialConfigured);
-  return configured ? "已保存 API Key" : "尚未保存 API Key";
+  return preset.credentialConfigured ? "已保存 API Key" : "尚未保存 API Key";
 }
 
 export function V2ModelSettings({ client, presets, onSelectPreset, prepareForDraft, onReady }: V2ModelSettingsProps) {

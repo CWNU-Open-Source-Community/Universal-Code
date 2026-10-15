@@ -9,7 +9,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 5 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
-| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 78 | true |
+| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 80 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 52 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
@@ -30,7 +30,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
 | [mcp-live-input](#mcp-live-input) | `ephemeral` | MCP client maintainers | 1 | false |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
-| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 59 | true |
+| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 60 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 6 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
@@ -116,7 +116,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `agent-scheduling-delivery-ledgers-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>78 active identifiers</summary>
+<details><summary>80 active identifiers</summary>
 
 - `agent-code-edit.v1`
 - `agent_admission_operation.v1`
@@ -150,8 +150,10 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `batch-delivery-tools.v1`
 - `batch-delivery-workspace-tools.v1`
 - `batch-edit-proposal.v1`
+- `batch-validation-job.v1`
 - `batch-validation-output.v2`
 - `batch-validation-process.v1`
+- `batch-validation-target.v1`
 - `batch_delivery_cancel.v1`
 - `batch_delivery_merge.v1`
 - `batch_delivery_prepare.v1`
@@ -1177,7 +1179,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `process-runtime-lifecycle-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>59 active identifiers</summary>
+<details><summary>60 active identifiers</summary>
 
 - `application_docker_container_lifecycle_post_exit.v1`
 - `application_docker_container_lifecycle_running.v1`
@@ -1211,6 +1213,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `debug_terminal_agent_input_audit_record.v1`
 - `debug_terminal_agent_input_operation.v1`
 - `debug_terminal_agent_input_policy.v1`
+- `digest_only_output.v1`
 - `file_attachment_inputs.v1`
 - `host-process.v1`
 - `host_command.v1`

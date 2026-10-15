@@ -14,9 +14,11 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/repository"
@@ -29,6 +31,9 @@ type BatchDeliveryStore interface {
 	GetRun(context.Context, string) (domain.Run, error)
 	GetRunExecutionPermission(context.Context, string) (
 		domain.RunExecutionPermissionSnapshot, error)
+	GetRunExecutionProfile(context.Context, string) (domain.RunExecutionProfileSnapshot, error)
+	GetRunExecutionLease(context.Context, string) (domain.RunExecutionLease, bool, error)
+	ListCommandRuntimeJobs(context.Context, runner.CommandRuntimeListFilter) ([]runner.CommandRuntimeJob, error)
 	GetMission(context.Context, string) (domain.Mission, error)
 	GetWorkspaceInfo(context.Context, string) (session.WorkspaceInfo, error)
 	GetChildTaskProposal(context.Context, string) (domain.ChildTaskProposal, bool, error)
@@ -90,10 +95,21 @@ type BatchDeliveryService struct {
 	now                             func() time.Time
 	hostValidationExecutionEnabled  bool
 	executionPermissionCapabilities domain.ExecutionPermissionRuntimeCapabilities
+	validationRuntime               ProjectActionRuntime
+	validationMu                    sync.Mutex
 }
 
 func NewBatchDeliveryService(store BatchDeliveryStore) *BatchDeliveryService {
 	return &BatchDeliveryService{store: store, now: func() time.Time { return time.Now().UTC() }}
+}
+
+// WithValidationCommandRuntime installs the process-owned adapter selector.
+// Requests and child-authored validation declarations cannot choose a backend.
+func (s *BatchDeliveryService) WithValidationCommandRuntime(runtime any) *BatchDeliveryService {
+	if s != nil {
+		s.validationRuntime, _ = runtime.(ProjectActionRuntime)
+	}
+	return s
 }
 
 // WithHostValidationExecution enables fixed go/npm validation processes. It
@@ -730,7 +746,8 @@ func (s *BatchDeliveryService) Submit(ctx context.Context,
 	}
 	tests, reused, err := s.reuseSpecialistBatchVerification(ctx, plan, workspace, task, inspection.HeadCommit)
 	if err == nil && !reused {
-		tests, err = s.runBatchDeliveryValidations(ctx, plan.RunID, workspace.WorktreeRoot, workspace.BaseCommit, task.Validations)
+		tests, err = s.runBatchDeliveryValidations(ctx, plan.RunID, workspace.WorktreeRoot, workspace.BaseCommit, task.Validations,
+			batchValidationTargetRef{PlanID: plan.ID, Ordinal: workspace.Ordinal, Generation: workspace.Generation, OperationKey: "submit:" + operationKey})
 	}
 	if err != nil {
 		return empty, false, err
@@ -772,24 +789,52 @@ func (s *BatchDeliveryService) Submit(ctx context.Context,
 func (s *BatchDeliveryService) runBatchDeliveryValidations(ctx context.Context,
 	runID, root, baseCommit string,
 	requirements []domain.BatchDeliveryValidationRequirement,
+	refs ...batchValidationTargetRef,
 ) ([]domain.BatchDeliveryTestReceipt, error) {
 	results := make([]domain.BatchDeliveryTestReceipt, 0, len(requirements))
 	for _, requirement := range requirements {
 		starter := runner.NewPlatformOnceProcessStarter()
+		var runtimeStarter *batchRuntimeValidationStarter
 		if requirement.Kind != domain.BatchValidationGitDiffCheck {
 			if err := s.authorizeBatchHostValidation(ctx, runID); err != nil {
 				return results, err
 			}
-			starter = &batchValidationStarter{OnceStarter: starter, service: s, runID: runID}
+			if s.validationRuntime != nil {
+				if len(refs) != 1 {
+					return results, apperror.New(apperror.CodeFailedPrecondition, "batch validation target is unavailable")
+				}
+				selected, err := s.validationRuntime.projectCommandService(ctx, runID)
+				if err != nil {
+					return results, err
+				}
+				target, err := s.bindBatchValidationTarget(ctx, runID, root, baseCommit, refs[0])
+				if err != nil {
+					return results, err
+				}
+				runtimeStarter = &batchRuntimeValidationStarter{service: s, runtime: selected, target: target, requirement: requirement, readinessCheckedAt: s.now().UTC()}
+				starter = runtimeStarter
+			} else {
+				if err := s.requireBatchLocalHostValidation(ctx, runID); err != nil {
+					return results, err
+				}
+				starter = &batchValidationStarter{OnceStarter: starter, service: s, runID: runID}
+			}
 		}
 		result, err := repository.RunBatchValidation(ctx, root, baseCommit, requirement, starter)
-		if err != nil && apperror.CodeOf(err) == apperror.CodePolicyDenied {
+		if err != nil && (apperror.CodeOf(err) == apperror.CodePolicyDenied || apperror.CodeOf(err) == apperror.CodeConflict) {
 			return results, err
 		}
 		receipt := domain.BatchDeliveryTestReceipt{RequirementID: result.RequirementID,
 			Kind: result.Kind, Scope: result.Scope, ExitCode: result.ExitCode,
 			OutputSHA256: result.OutputSHA256, DurationMillis: result.DurationMillis,
 			CompletedAt: result.CompletedAt}
+		if runtimeStarter != nil {
+			receipt.Execution = runtimeStarter.execution
+		} else if !result.CompletedAt.IsZero() {
+			rootSHA, _ := runner.CommandRuntimeWorkspaceRootSHA256(root)
+			receipt.Execution = batchValidationExecutionReceipt(commandruntimeadapter.HostUnsandboxed(runner.OnceExecutionProtocolVersion), rootSHA)
+			receipt.Execution.TreeReaped, receipt.Execution.StdinClosed = true, true
+		}
 		results = append(results, receipt)
 		if err != nil {
 			return results, apperror.Wrap(apperror.CodeFailedPrecondition,
@@ -946,7 +991,8 @@ func (s *BatchDeliveryService) Review(ctx context.Context,
 		}
 	}
 	if _, err := s.runBatchDeliveryValidations(ctx, plan.RunID,
-		workspace.WorktreeRoot, workspace.BaseCommit, task.Validations); err != nil {
+		workspace.WorktreeRoot, workspace.BaseCommit, task.Validations,
+		batchValidationTargetRef{PlanID: plan.ID, Ordinal: workspace.Ordinal, Generation: workspace.Generation, OperationKey: "review:" + operationKey}); err != nil {
 		return empty, false, err
 	}
 	postValidation, err := repository.InspectBatchDelivery(ctx, workspace.WorktreeRoot,
