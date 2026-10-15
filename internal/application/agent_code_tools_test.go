@@ -412,6 +412,10 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		moveApplyResult["file_written"] != true {
 		t.Fatalf("Full Access move apply=%s err=%v", moveApplied.JSON, err)
 	}
+	feedback, ok := moveApplyResult["diagnostics"].(map[string]any)
+	if !ok || feedback["path"] != "moved.txt" || feedback["document_sha256"] != fileedit.HashText("normal task\n") || feedback["status"] != "unavailable" {
+		t.Fatalf("move feedback must identify its destination and missing backend: %s", moveApplied.JSON)
+	}
 	if _, err := os.Stat(filepath.Join(rootPath, "normal.txt")); !os.IsNotExist(err) {
 		t.Fatalf("move source still exists: %v", err)
 	}
