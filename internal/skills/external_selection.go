@@ -24,6 +24,7 @@ const (
 // PluginSkillBinding pins a real installation component. It is not an install
 // receipt and grants no execution capability.
 type PluginSkillBinding struct {
+	Native      bool   `json:"native,omitempty"`
 	PackageID   string `json:"package_id"`
 	ComponentID string `json:"component_id"`
 	Revision    string `json:"revision"`
@@ -166,7 +167,7 @@ func ResolveExternalSelection(request ResolveExternalSelectionRequest) (External
 		}})
 	}
 	sort.Slice(sources, func(a, b int) bool {
-		return FormatInstalledPackageRef(sources[a].Item.Name, sources[a].Item.Version) < FormatInstalledPackageRef(sources[b].Item.Name, sources[b].Item.Version)
+		return ExternalSelectionItemRef(sources[a].Item) < ExternalSelectionItemRef(sources[b].Item)
 	})
 	items := make([]ExternalSelectionItem, 0, len(sources))
 	tokens := 0
@@ -175,7 +176,7 @@ func ResolveExternalSelection(request ResolveExternalSelectionRequest) (External
 	previousRef := ""
 	for index, source := range sources {
 		item, manifest := source.Item, source.Manifest
-		ref := FormatInstalledPackageRef(item.Name, item.Version)
+		ref := ExternalSelectionItemRef(item)
 		if ref == previousRef {
 			return ExternalSelection{}, fmt.Errorf("selected external Skill %q is duplicated", ref)
 		}
@@ -283,7 +284,11 @@ func (s ExternalSelection) Validate() error {
 	specialistCount := 0
 	pluginCount := 0
 	for index, item := range s.Items {
-		ref := FormatInstalledPackageRef(item.Name, item.Version)
+		ref := ExternalSelectionItemRef(item)
+		maxArchiveBytes := MaxPackageArchiveBytes
+		if nativeSelectionBinding(item.Plugin) {
+			maxArchiveBytes = 4 * 1024 * 1024 // Portable Plugin acquisition limit.
+		}
 		wantKey, keyErr := PackageObjectKey(item.ArchiveSHA256)
 		objectValid := validSHA256(item.InstallResultFingerprint) && keyErr == nil && item.ObjectKey == wantKey
 		if item.Plugin != nil {
@@ -293,12 +298,11 @@ func (s ExternalSelection) Validate() error {
 		if item.SelectionID != s.ID || item.Ordinal != index+1 ||
 			!validPackageIdentity(item.InstallationID) ||
 			!validSHA256(item.InstallationFingerprint) ||
-			!objectValid || !validName(item.Name) ||
-			!validCoreVersion(item.Version) || item.Surface != s.Surface ||
+			!objectValid || !validExternalSelectionIdentity(item.Name, item.Version, nativeSelectionBinding(item.Plugin)) || item.Surface != s.Surface ||
 			!validSHA256(item.ContentSHA256) || item.ContentBytes <= 0 ||
 			item.ContentBytes > MaxContentBytes || item.TokenUpperBound != item.ContentBytes ||
 			item.TokenUpperBound > MaxContentTokenUpperBound ||
-			item.ArchiveBytes <= 0 || item.ArchiveBytes > MaxPackageArchiveBytes ||
+			item.ArchiveBytes <= 0 || item.ArchiveBytes > maxArchiveBytes ||
 			!validSHA256(item.PackageFingerprint) ||
 			item.TrustClass != PackageTrustOperatorInstalledUntrusted ||
 			item.ToolDependencyCount < 0 || item.ToolDependencyCount > MaxToolDependencies ||
@@ -389,7 +393,11 @@ func pluginSelectionFingerprintParts(p *PluginSkillBinding) []string {
 	if p == nil {
 		return nil
 	}
-	return []string{"plugin-component", p.PackageID, p.ComponentID, p.Revision, strconv.FormatInt(p.Generation, 10)}
+	parts := []string{"plugin-component", p.PackageID, p.ComponentID, p.Revision, strconv.FormatInt(p.Generation, 10)}
+	if p.Native {
+		parts = append(parts, "native=true")
+	}
+	return parts
 }
 
 func clonePluginSkillBinding(value *PluginSkillBinding) *PluginSkillBinding {

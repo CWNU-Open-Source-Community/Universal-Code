@@ -22,6 +22,10 @@ const (
 type SkillInstallationController interface {
 	Import(context.Context, application.ImportSkillPackageRequest) (
 		application.ImportSkillPackageResult, error)
+	Inventory(context.Context, application.ListInstalledSkillPackagesRequest) (
+		application.SkillPackageInventory, error)
+	Remove(context.Context, application.RemoveSkillPackageRequest) (
+		application.RemoveSkillPackageResult, error)
 }
 
 type SkillPackageInstallRequestView struct {

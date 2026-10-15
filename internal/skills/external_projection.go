@@ -14,6 +14,9 @@ const ExternalSkillProjectionProtocolVersion = "external_skill_projection.v1"
 // one Run-pinned external Skill. Package content, storage identity, and digests
 // are not representable by this type.
 type ExternalSkillProjectionItem struct {
+	// Internal validation fields are not part of the HTTP projection.
+	Native             bool   `json:"-"`
+	SelectionRef       string `json:"-"`
 	Ordinal            int
 	Name               string
 	Version            string
@@ -75,8 +78,13 @@ func (p ExternalSkillProjection) Validate() error {
 	specialistCount := 0
 	for index, item := range p.Items {
 		ref := FormatInstalledPackageRef(item.Name, item.Version)
-		if item.Ordinal != index+1 || !validName(item.Name) ||
-			!validCoreVersion(item.Version) || item.TokenUpperBound <= 0 ||
+		if item.Native {
+			ref = item.SelectionRef
+			if !validNativeSelectionRef(ref) {
+				return fmt.Errorf("external Skill projection item %d native reference is invalid", index+1)
+			}
+		}
+		if item.Ordinal != index+1 || !validExternalSelectionIdentity(item.Name, item.Version, item.Native) || item.TokenUpperBound <= 0 ||
 			item.TokenUpperBound > MaxContentTokenUpperBound ||
 			item.TrustClass != PackageTrustOperatorInstalledUntrusted ||
 			item.DeclaredToolCount < 0 || item.DeclaredToolCount > MaxToolDependencies ||

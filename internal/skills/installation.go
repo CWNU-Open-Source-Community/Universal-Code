@@ -17,12 +17,15 @@ import (
 )
 
 const (
-	PackageInstallationProtocolVersion  = "skill_package_installation.v1"
-	PackageInstallResultProtocolVersion = "skill_package_install_result.v1"
-	PackageRemovalProtocolVersion       = "skill_package_removal.v1"
-	PackageObjectProtocolVersion        = "skill_package_object.v1"
-	MaxInstalledPackageIdentities       = MaxSkills
-	PackageObjectRoot                   = "skill-registry/objects"
+	PackageInstallationProtocolVersion   = "skill_package_installation.v1"
+	PackageInstallResultProtocolVersion  = "skill_package_install_result.v1"
+	PackageRemovalProtocolVersion        = "skill_package_removal.v1"
+	PackageObjectProtocolVersion         = "skill_package_object.v1"
+	PackageInventoryProtocolVersion      = "skill_package_inventory.v1"
+	PackageRemovalControlProtocolVersion = "skill_package_removal_control.v1"
+	PackageRemovalRequestProtocolVersion = "skill_package_removal_request.v1"
+	MaxInstalledPackageIdentities        = MaxSkills
+	PackageObjectRoot                    = "skill-registry/objects"
 )
 
 // PackageInstallation is an immutable, metadata-only intent. Its presence

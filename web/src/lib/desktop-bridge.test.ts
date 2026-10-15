@@ -631,6 +631,77 @@ describe("desktop native bridge", () => {
     await expect(module.selectDesktopSkillPreview()).rejects.toThrow("rejected");
   });
 
+  it("lists and removes historical Skill packages only through an enabled native bridge", async () => {
+    const item = {
+      skill: "native.review@1.0.0", surface: "code", profiles: ["review"], surfaces: ["code"],
+      phases: ["deliver"], roles: ["root"], user_invocable: true, model_invocable: false,
+      explicit_only: true, tool_dependencies: ["read_file"], content_sha256: "a".repeat(64),
+      content_bytes: 24, content_token_upper_bound: 24, archive_sha256: "b".repeat(64),
+      package_fingerprint: "c".repeat(64), archive_bytes: 512, uncompressed_bytes: 256,
+      entry_count: 2, trust_class: "operator_installed_untrusted", risk_codes: [],
+      status: "installed", object_verified: false, operator_confirmed: true,
+      import_command_execution: false, import_network_access: false,
+      import_provider_calls: false, run_selection_authorized: false,
+      context_injection_authorized: false, tool_capability_grant: false,
+      content_body_exposed: false, installed_by: "desktop_operator",
+      created_at: "2026-10-15T00:00:00Z", completed_at: "2026-10-15T00:00:01Z",
+    };
+    const inventory = { protocol_version: "skill_package_inventory.v1", capability_grant: false,
+      surface: "", profile: "", include_removed: true, items: [item], returned_count: 1,
+      unverified_count: 1 };
+    const removal = {
+      protocol_version: "skill_package_removal_control.v1", skill: "native.review@1.0.0",
+      surface: "code", status: "removed", capability_grant: false,
+      package_object_retained: true, historical_recovery_preserved: true,
+      future_selection_enabled: false, run_selection_authorized: false,
+      context_injection_authorized: false, tool_capability_grant: false,
+      removed_by: "desktop_operator", removed_at: "2026-10-15T01:00:00Z", replayed: false,
+      receipt: { protocol_version: "operation_receipt.v1", kind: "skill_package_remove",
+        outcome: "removed", durable: true, replayed: false, retry_safe: true,
+        retry_strategy: "same_operation_key", recovery_action: "none",
+        cleanup_state: "not_applicable" },
+    };
+    const enabledBootstrap = { ...bootstrap, control_token: "control-token-0123456789abcdefghijkl",
+      read_only_default: false, skill_installation_enabled: true };
+    const list = vi.fn().mockResolvedValue(inventory);
+    const remove = vi.fn().mockResolvedValue(removal);
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue(enabledBootstrap),
+      ListSkillPackages: list, RemoveSkillPackage: remove });
+    const module = await import("./desktop-bridge");
+    await module.loadDesktopBootstrap();
+
+    await expect(module.listDesktopSkillPackages({ includeRemoved: true }))
+      .resolves.toEqual(inventory);
+    expect(list).toHaveBeenCalledWith({
+      protocol_version: "desktop_skill_package_inventory.v1", include_removed: true,
+    });
+    await expect(module.removeDesktopSkillPackage("native.review@1.0.0",
+      "native-skill-remove-operation-0001")).resolves.toEqual(removal);
+    expect(remove).toHaveBeenCalledWith({
+      protocol_version: "desktop_skill_package_removal.v1", skill: "native.review@1.0.0",
+      operation_key: "native-skill-remove-operation-0001", confirm_remove: true,
+    });
+
+    await expect(module.listDesktopSkillPackages({ surface: " ".repeat(200) }))
+      .rejects.toThrow("rejected");
+    await expect(module.removeDesktopSkillPackage("native.review",
+      "native-skill-remove-operation-0002")).rejects.toThrow("rejected");
+    await expect(module.removeDesktopSkillPackage("native.review@1.0.0", "short")).rejects.toThrow("rejected");
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a shell without the Registry methods as disabled", async () => {
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue({ ...bootstrap,
+      control_token: "control-token-0123456789abcdefghijkl", read_only_default: false,
+      skill_installation_enabled: true }) });
+    const module = await import("./desktop-bridge");
+    await module.loadDesktopBootstrap();
+    await expect(module.listDesktopSkillPackages()).rejects.toThrow("disabled");
+    await expect(module.removeDesktopSkillPackage("native.review@1.0.0",
+      "native-skill-remove-operation-0003")).rejects.toThrow("disabled");
+  });
+
   it("does not consume a cancelled selection or path-bearing preview", async () => {
     const consume = vi.fn().mockResolvedValue(preview);
     installBridge({
@@ -957,6 +1028,8 @@ function installBridge(overrides: Partial<{
   Bootstrap: () => Promise<unknown>;
   ImportWorkspace: () => Promise<unknown>;
   InstallSkillPackage: (request: unknown) => Promise<unknown>;
+  ListSkillPackages: (request: unknown) => Promise<unknown>;
+  RemoveSkillPackage: (request: unknown) => Promise<unknown>;
   PreviewSkillPackage: (handle: string) => Promise<unknown>;
   SelectSkillPackage: () => Promise<unknown>;
   OpenWorkspace: (request: unknown) => Promise<unknown>;

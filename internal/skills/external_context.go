@@ -219,7 +219,7 @@ func loadExternalContextItem(ctx context.Context, selected ExternalSelectionItem
 		}
 		manifest, content = loaded.Manifest, loaded.Content
 	}
-	if err := manifest.Validate(content); err != nil {
+	if err := ValidateExternalSelectionContent(manifest, content, nativeSelectionBinding(selected.Plugin)); err != nil {
 		return ExternalContextItem{}, err
 	}
 	if manifest.Name != selected.Name || manifest.Version != selected.Version ||
@@ -291,7 +291,7 @@ func validateExternalContextItems(items []ExternalContextItem, totalTokens,
 	tokens, redactions := 0, 0
 	previousRef := ""
 	for index, item := range items {
-		ref := FormatInstalledPackageRef(item.Name, item.Version)
+		ref := ExternalSelectionItemRef(ExternalSelectionItem{Plugin: item.Plugin, InstallationID: item.InstallationID, Name: item.Name, Version: item.Version})
 		content := []byte(item.Content)
 		digest := sha256.Sum256(content)
 		wantKey, keyErr := PackageObjectKey(item.ArchiveSHA256)
@@ -301,8 +301,7 @@ func validateExternalContextItems(items []ExternalContextItem, totalTokens,
 		}
 		if item.Ordinal != index+1 || !validPackageIdentity(item.InstallationID) ||
 			!validSHA256(item.InstallationFingerprint) ||
-			!objectValid || !validName(item.Name) ||
-			!validCoreVersion(item.Version) || !validSHA256(item.SourceSHA256) ||
+			!objectValid || !validExternalSelectionIdentity(item.Name, item.Version, nativeSelectionBinding(item.Plugin)) || !validSHA256(item.SourceSHA256) ||
 			item.SourceBytes <= 0 || item.SourceBytes > MaxContentBytes ||
 			item.SourceTokenUpperBound != item.SourceBytes ||
 			item.DeliveredBytes <= 0 || item.DeliveredBytes != len(content) ||

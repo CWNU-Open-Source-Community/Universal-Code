@@ -322,7 +322,7 @@ function PlaceholderSettings({ section, onOpenLegacy }: {
 
 export function V2Settings({ client, section, threadID, workspaces, onSelectSection,
   onOpenInspector, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
-  onModelReady, onOpenTask, sourceRunID, onOpenGithubReview, draftWorkspaceID, draftBudget,
+  onModelReady, onOpenTask, sourceRunID, onOpenGithubReview, draftWorkspaceID, draftPhase, draftBudget,
   onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange,
   defaultWebAccessMode = "rules", defaultWebAccessTargets = [], onDefaultWebAccessChange,
   desktop = desktopBridgeAvailable() }: {
@@ -336,6 +336,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   sourceRunID?: string;
   onOpenGithubReview?: (runID: string) => void;
   draftWorkspaceID?: string;
+  draftPhase?: "plan" | "deliver";
   draftBudget?: TaskBudgetSettings;
   onDraftBudgetChange?: (budget: TaskBudgetSettings | undefined) => void;
   onDraftValidityChange?: (valid: boolean) => void;
@@ -372,7 +373,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "connections" && <ConnectionsSettings client={client} threadID={threadID} sourceRunID={sourceRunID}
         onOpenGithubReview={onOpenGithubReview} onOpenTask={onOpenTask} onSelect={onSelectSection} />}
       {section === "task-configuration" && <Suspense fallback={<p role="status">正在加载任务配置…</p>}>
-        <TaskConfigurationSettings client={client} threadID={threadID} sourceRunID={sourceRunID} draftWorkspaceID={draftWorkspaceID}
+        <TaskConfigurationSettings client={client} threadID={threadID} sourceRunID={sourceRunID} draftWorkspaceID={draftWorkspaceID} draftPhase={draftPhase}
           draftBudget={draftBudget} onDraftBudgetChange={onDraftBudgetChange} onDraftValidityChange={onDraftValidityChange}
           draftProjectSkills={draftProjectSkills} onDraftProjectSkillsChange={onDraftProjectSkillsChange} />
       </Suspense>}

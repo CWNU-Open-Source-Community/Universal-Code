@@ -19,6 +19,7 @@ const preview = (workspaceID: string, budget?: TaskBudgetSettings) => ({ version
   project_disposition: "absent", fingerprint: "a".repeat(64), rejections: [], capability_grant: false });
 function fixture() {
   return { baseURL: "/api/v1", hasThreadControl: true,
+    listTaskSkillCandidates: vi.fn().mockResolvedValue({ items: [], unavailable_count: 0 }),
     getPage: vi.fn(async (path: string) => ({ items: path === "/workspaces" ? workspaces : [], page: { limit: 100 }, requestID: path })),
     availableModelRoutes: vi.fn().mockResolvedValue({ protocol_version: "model_route_catalog.v1", generation: 1,
       routes: [{ provider_id: "fixture", provider_name: "Fixture", model: "fixture", selectable: true,
@@ -26,6 +27,7 @@ function fixture() {
         default_for_routes: ["code"], vision_capability: { state: "unknown", source: "unknown" } }] }),
     previewTaskConfiguration: vi.fn(async ({ workspace_id, budget }: { workspace_id: string; budget?: TaskBudgetSettings }) => preview(workspace_id, budget)),
     createThread: vi.fn().mockResolvedValue({ thread }), submitThreadTurn: vi.fn().mockResolvedValue({ accepted: true }),
+    selectInstalledSkills: vi.fn().mockResolvedValue(undefined),
   };
 }
 function mount(client: ReturnType<typeof fixture>) {
@@ -34,6 +36,27 @@ function mount(client: ReturnType<typeof fixture>) {
     <LocaleProvider><V2Workbench client={client as unknown as APIClient} /></LocaleProvider></QueryClientProvider>);
 }
 afterEach(() => { cleanup(); useConnectionStore.getState().disconnect(); window.history.replaceState({}, "", "/"); window.localStorage.clear(); });
+
+it("uses the composer phase for native candidates and selects their exact pin before sending the first message", async () => {
+  const ref = JSON.stringify({ installation_id: "native-install", package_id: "native-package", component_id: "skill:native",
+    revision: "a".repeat(64), installation_generation: 3 });
+  const client = { ...fixture(), hasPlanDelivery: true };
+  client.listTaskSkillCandidates.mockResolvedValue({ items: [{ ref, name: "native", token_upper_bound: 100 }], unavailable_count: 0 } as never);
+  mount(client); const user = userEvent.setup();
+  await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "使用手动选择的原生技能");
+  await user.click(screen.getByRole("button", { name: "计划模式" }));
+  await user.click(screen.getByRole("button", { name: "任务预算与项目配置" }));
+  await user.click(await screen.findByRole("checkbox", { name: "native" }, { timeout: 5_000 }));
+  expect(client.listTaskSkillCandidates).toHaveBeenCalledWith({ workspace_id: "workspace-first", surface: "code", phase: "plan", profile: "code" }, expect.any(AbortSignal));
+  await user.click(screen.getByRole("checkbox", { name: /确认使用所选技能上下文/ }));
+  await user.click(screen.getByRole("button", { name: "返回应用" }));
+  await user.click(await screen.findByRole("button", { name: "发送消息" }));
+  await waitFor(() => expect(client.submitThreadTurn).toHaveBeenCalledTimes(1));
+  expect(client.createThread.mock.calls[0][0]).toMatchObject({ phase: "plan" });
+  expect(client.selectInstalledSkills.mock.calls[0]).toEqual([thread.last_run_id,
+    { refs: [ref], confirmUntrustedContext: true, source: "installed" }, expect.stringMatching(/^v2-installed-skills-/u)]);
+  expect(client.selectInstalledSkills.mock.invocationCallOrder[0]).toBeLessThan(client.submitThreadTurn.mock.invocationCallOrder[0]);
+});
 
 it("retains budget edits through settings and submits all explicit ceilings with the original task draft", async () => {
   const client = fixture(); mount(client); const user = userEvent.setup();

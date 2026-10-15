@@ -41,6 +41,7 @@ import (
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/skills"
 	"cyberagent-workbench/internal/standardcodedelivery"
+	"cyberagent-workbench/internal/testfixtures/legacyskill"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/uievidence"
 	"cyberagent-workbench/internal/verification"
@@ -739,6 +740,14 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The installed-Skill selection route is exercised on a Run with no pinned
+	// project suggestions, so only the operator-named admission can succeed here.
+	_, installedSkillRun, err := application.NewRunService(fixture.store).Create(t.Context(),
+		application.CreateRunRequest{Goal: "OpenAPI installed Skill selection target", Profile: "code",
+			WorkspaceID: fixture.workspace.ID, Budget: domain.Budget{MaxTurns: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, scheduledCreated, err := application.NewRunService(fixture.store).Create(t.Context(),
 		application.CreateRunRequest{Goal: "OpenAPI scheduled observation target", Profile: "code",
 			Surface: "code", Phase: "plan", WorkspaceID: fixture.workspace.ID,
@@ -906,6 +915,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	uiStub.bundle.Attempt = uiStub.attempt
 	fixture.api.skillInstallationController = application.NewSkillPackageRegistryService(
 		fixture.store, objects, builtins)
+	removalSkillRef := seedOpenAPILegacySkillForRemoval(t, fixture)
 	steering, err := fixture.store.EnqueueOperatorSteering(t.Context(),
 		domain.EnqueueOperatorSteeringRequest{
 			RunID: fixture.run.ID, SessionID: fixture.run.SessionID,
@@ -1186,6 +1196,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = strings.ReplaceAll(requestPath, "{agent_id}", child.ID)
 		} else if spec.Path == ProjectSkillSelectionPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", projectSkillRun.ID)
+		} else if spec.Path == InstalledSkillSelectionPathTemplate {
+			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", installedSkillRun.ID)
 		} else if spec.Path == RunExecutionProfileControlPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", profileRun.ID)
 		} else if spec.Path == RunExecutionPermissionControlPathTemplate {
@@ -1236,6 +1248,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		}
 		if spec.OperationID == "searchWorkspace" {
 			requestPath += "?query=README"
+		} else if spec.Path == TaskSkillCandidatesPath {
+			requestPath += "?workspace_id=" + fixture.workspace.ID + "&surface=code&phase=deliver&profile=review"
 		} else if spec.OperationID == "getWorkspaceRepositoryFileHistory" {
 			requestPath += "?path=README.md"
 		} else if spec.OperationID == "getWorkspaceRepositoryCommitFilePreview" {
@@ -1362,7 +1376,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				response = previewConfigurationRequest(fixture.api, testAccessToken, `{"workspace_id":"`+fixture.workspace.ID+`"}`)
 			} else if spec.Control {
 				body := `{"profile":"docker"}`
-				if spec.OperationID == "selectProjectSkills" {
+				if spec.OperationID == "selectProjectSkills" || spec.OperationID == "selectInstalledSkills" {
 					body = `{"refs":["` + projectSkillRef + `"],"confirm_untrusted_context":false}`
 				} else if spec.OperationID == "executeRunSpecialist" {
 					body = `{"version":"specialist_tools.v1","operation_key":"openapi-child-execute-0001","workspace_tools":true,"confirm_execute":true}`
@@ -1715,6 +1729,10 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"plugin-lifecycle.v1","target_installation_id":"plugin-rollback-target","expected_current_fingerprint":"` + strings.Repeat("b", 64) + `","expected_current_generation":2,"expected_target_fingerprint":"` + strings.Repeat("b", 64) + `","expected_target_generation":2,"capabilities":["hooks"],"confirm_untrusted":true}`
 				} else if spec.Path == ExtensionPluginPublisherRevocationPath {
 					body = extensionJSON(t, PluginPublisherRevocationRequestView{Version: PluginLifecycleProtocol, ExpectedPublisherFingerprint: strings.Repeat("a", 64), ExpectedPublisherGeneration: 1, Confirm: true})
+				} else if spec.Path == ExtensionPluginPublisherTrustPath {
+					// The revocation probe above advances this fixture publisher
+					// to generation 2, so trust must bind the observed value.
+					body = extensionJSON(t, PluginPublisherTrustRequestView{Version: PluginLifecycleProtocol, ExpectedPublisherFingerprint: strings.Repeat("a", 64), ExpectedPublisherGeneration: 2, Confirm: true})
 				} else if spec.Path == ExtensionPluginReviewPath {
 					body = `{"version":"extension-control.v1","action":"disable",` +
 						`"expected_package_fingerprint":"` + strings.Repeat("b", 64) + `",` +
@@ -1761,6 +1779,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"skill_package_installation.v1","archive_base64":"` +
 						base64.StdEncoding.EncodeToString(skillArchive) +
 						`","surface":"code","confirm_untrusted":true}`
+				} else if spec.Path == SkillPackageRemovePath {
+					body = `{"protocol_version":"skill_package_removal_request.v1",` +
+						`"skill":"` + removalSkillRef + `","confirm_remove":true}`
 				} else if spec.Path == EvidenceAttachmentPathTemplate {
 					body = `{"version":"session_evidence_attachment.v1",` +
 						`"source_kind":"workspace_file","source_ref":"README.md",` +
@@ -1919,12 +1940,18 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				if spec.OperationID == "cancelProjectPreparation" && (preparationController.cancels != 1 || view.State != "cancelled") {
 					t.Fatalf("preparation cancellation lost its result: %+v", view)
 				}
-			} else if spec.OperationID == "selectProjectSkills" {
+			} else if spec.OperationID == "selectProjectSkills" ||
+				spec.OperationID == "selectInstalledSkills" {
+				expectedRun := projectSkillRun.ID
+				if spec.OperationID == "selectInstalledSkills" {
+					expectedRun = installedSkillRun.ID
+				}
 				var view application.ProjectSkillSelectionResult
 				decodeDataStatus(t, response, http.StatusOK, &view)
-				if view.RunID != projectSkillRun.ID || !reflect.DeepEqual(view.Refs, []string{projectSkillRef}) ||
+				if view.RunID != expectedRun || !reflect.DeepEqual(view.Refs, []string{projectSkillRef}) ||
 					view.BuiltinSelectionID == "" || view.ExternalSelectionID != "" || view.CapabilityGrant || view.Replayed {
-					t.Fatalf("project Skill route did not select the pinned suggestion: %+v", view)
+					t.Fatalf("%s route did not select the requested Skill: %+v",
+						spec.OperationID, view)
 				}
 			} else if spec.OperationID == "executeRunSpecialist" {
 				var view SpecialistExecutionView
@@ -1989,6 +2016,64 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"127.0.0.1:8765", "127.0.0.1:45000", nil)
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "POLICY_DENIED")
 	assertAPIError(t, fixture.get(t, OpenAPIPath+"?format=yaml"), http.StatusBadRequest, "INVALID_ARGUMENT")
+}
+
+// seedOpenAPILegacySkillForRemoval writes one legacy Registry installation that
+// no Run pins, so the documented removal route is reachable without weakening
+// the pinned-version refusal. Its retained object is intentionally absent: the
+// inventory read must report it as unverified instead of hiding the Registry.
+func seedOpenAPILegacySkillForRemoval(t *testing.T, fixture *apiFixture) string {
+	t.Helper()
+	const name = "openapi-removal-review"
+	const version = "1.0.0"
+	content := []byte("# OpenAPI removal review\n")
+	contentDigest := sha256.Sum256(content)
+	archiveDigest := sha256.Sum256([]byte("archive:" + name + "@" + version))
+	createdAt := time.Now().UTC().Add(-time.Minute)
+	installation := skills.PackageInstallation{
+		ID: idgen.New("skill-install"), ProtocolVersion: skills.PackageInstallationProtocolVersion,
+		Name: name, Version: version, Surface: domain.ExecutionSurfaceCode,
+		Manifest: skills.Manifest{
+			Protocol: skills.ProtocolVersion, Name: name, Version: version,
+			Description: "OpenAPI legacy removal projection fixture.",
+			Profiles:    []domain.Profile{domain.ProfileReview},
+			ToolDependencies: []toolgateway.ToolName{
+				toolgateway.ListWorkspaceTool, toolgateway.ReadFileTool,
+			},
+			ContentPath:   skills.PackageContentPath,
+			ContentSHA256: hex.EncodeToString(contentDigest[:]),
+			ContentBytes:  len(content), ContentTokenUpperBound: skills.ContentTokenUpperBound(content),
+		},
+		ArchiveSHA256: hex.EncodeToString(archiveDigest[:]), ArchiveBytes: 512,
+		UncompressedBytes: 256, EntryCount: skills.PackageEntryCount,
+		PackageFingerprint: runmutation.Fingerprint("package", name, version,
+			hex.EncodeToString(contentDigest[:])),
+		TrustClass: skills.PackageTrustOperatorInstalledUntrusted,
+		RiskCodes: []skills.PackageRiskCode{
+			skills.PackageRiskUntrustedInstructions, skills.PackageRiskDeclaredToolsOnly,
+		},
+		OperatorConfirmed: true,
+		OperationKeyDigest: runmutation.Fingerprint("skill_package_install_operation.v1",
+			"openapi-removal-operation"),
+		InstalledBy: "openapi_fixture_operator", CreatedAt: createdAt,
+	}
+	installation.RequestFingerprint = skills.PackageInstallationIntentFingerprint(installation)
+	installation.InstallationFingerprint = skills.PackageInstallationFingerprint(installation)
+	objectKey, err := skills.PackageObjectKey(installation.ArchiveSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := skills.NewPackageInstallResult(installation, skills.PackageObjectReceipt{
+		Descriptor: skills.DescriptorForInstallation(installation), ObjectKey: objectKey,
+	}, createdAt.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyskill.Seed(t, fixture.dbPath, installation)
+	if _, _, err := fixture.store.CompletePackageInstallation(t.Context(), result); err != nil {
+		t.Fatal(err)
+	}
+	return name + "@" + version
 }
 
 func buildOpenAPISkillPackage(t *testing.T) []byte {

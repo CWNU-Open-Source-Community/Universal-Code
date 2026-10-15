@@ -1,5 +1,5 @@
-import { parsePluginSkillInstall } from "../api/client";
-import type { PluginSkillInstallView } from "../api/types";
+import { parsePluginSkillInstall, parseSkillPackageInventory, parseSkillPackageRemoval } from "../api/client";
+import type { PluginSkillInstallView, SkillPackageInventoryView, SkillPackageRemovalView } from "../api/types";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 
@@ -24,6 +24,8 @@ export const desktopSkillDialogProtocol = "desktop_skill_package_dialog.v1";
 export const desktopSkillSelectionProtocol = "desktop_file_selection.v1";
 export const desktopSkillPreviewProtocol = "desktop_skill_package_preview.v1";
 export const desktopSkillInstallProtocol = "desktop_skill_package_install.v1";
+export const desktopSkillInventoryProtocol = "desktop_skill_package_inventory.v1";
+export const desktopSkillRemovalProtocol = "desktop_skill_package_removal.v1";
 export const desktopWorkspaceLauncherProtocol = "desktop_workspace_launcher_list.v1";
 export const desktopWorkspaceOpenProtocol = "desktop_workspace_open.v1";
 export const desktopWorkspaceImportProtocol = "desktop_workspace_import.v1";
@@ -303,6 +305,20 @@ export interface DesktopSkillInstallRequest {
   confirm_untrusted: true;
 }
 
+export interface DesktopSkillInventoryRequest {
+  protocol_version: typeof desktopSkillInventoryProtocol;
+  surface?: string;
+  profile?: string;
+  include_removed?: boolean;
+}
+
+export interface DesktopSkillRemovalRequest {
+  protocol_version: typeof desktopSkillRemovalProtocol;
+  skill: string;
+  operation_key: string;
+  confirm_remove: true;
+}
+
 export type DesktopSkillInstallResult = DesktopLegacySkillInstallResult | PluginSkillInstallView;
 
 export interface DesktopLegacySkillInstallResult {
@@ -330,6 +346,8 @@ interface NativeDesktopBridge {
   InspectClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   ImportWorkspace?: () => Promise<unknown>;
   InstallSkillPackage: (request: DesktopSkillInstallRequest) => Promise<unknown>;
+  ListSkillPackages?: (request: DesktopSkillInventoryRequest) => Promise<unknown>;
+  RemoveSkillPackage?: (request: DesktopSkillRemovalRequest) => Promise<unknown>;
   OpenWorkspace?: (request: DesktopWorkspaceOpenRequest) => Promise<unknown>;
   PreviewSkillPackage: (handle: string) => Promise<unknown>;
   SelectSkillPackage: () => Promise<unknown>;
@@ -604,6 +622,51 @@ export async function installDesktopSkillPackage(preview: DesktopSkillPreview,
     throw new Error("Desktop Skill installation result was rejected");
   }
   return value;
+}
+
+export async function listDesktopSkillPackages(filters: {
+  surface?: string; profile?: string; includeRemoved?: boolean;
+} = {}): Promise<SkillPackageInventoryView> {
+  const bridge = getBridge();
+  if (!bridge?.ListSkillPackages || !activeBootstrap?.skill_installation_enabled) {
+    throw new Error("Desktop Skill package Registry is disabled");
+  }
+  const request: DesktopSkillInventoryRequest = {
+    protocol_version: desktopSkillInventoryProtocol,
+  };
+  if (filters.surface !== undefined) {
+    if (!boundedText(filters.surface, 1, 64)) {
+      throw new Error("Desktop Skill inventory surface was rejected");
+    }
+    request.surface = filters.surface;
+  }
+  if (filters.profile !== undefined) {
+    if (!boundedText(filters.profile, 1, 64)) {
+      throw new Error("Desktop Skill inventory Profile was rejected");
+    }
+    request.profile = filters.profile;
+  }
+  if (filters.includeRemoved !== undefined) request.include_removed = filters.includeRemoved;
+  return parseSkillPackageInventory(await bridge.ListSkillPackages(request));
+}
+
+export async function removeDesktopSkillPackage(skill: string,
+  operationKey: string): Promise<SkillPackageRemovalView> {
+  const bridge = getBridge();
+  if (!bridge?.RemoveSkillPackage || !activeBootstrap?.skill_installation_enabled) {
+    throw new Error("Desktop Skill package Registry is disabled");
+  }
+  if (!boundedText(skill, 3, 512) || !skill.includes("@") ||
+    !boundedText(operationKey, 16, 256) || /\s/u.test(operationKey)) {
+    throw new Error("Desktop Skill package removal request was rejected");
+  }
+  const request: DesktopSkillRemovalRequest = {
+    protocol_version: desktopSkillRemovalProtocol,
+    skill,
+    operation_key: operationKey,
+    confirm_remove: true,
+  };
+  return parseSkillPackageRemoval(await bridge.RemoveSkillPackage(request), request);
 }
 
 export async function listDesktopWorkspaceLaunchers(

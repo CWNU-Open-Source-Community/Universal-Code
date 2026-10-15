@@ -31,6 +31,9 @@ func (s *extensionControllerStub) RollbackPlugin(_ context.Context, currentID, t
 func (s *extensionControllerStub) RevokePluginPublisher(_ context.Context, _, fingerprint string, generation int64, _ string) (plugins.PublisherTrust, error) {
 	return plugins.PublisherTrust{Fingerprint: fingerprint, Publisher: "test-publisher", State: plugins.PublisherRevoked, Generation: generation + 1, ReviewedAt: time.Now().UTC()}, nil
 }
+func (s *extensionControllerStub) TrustPluginPublisher(_ context.Context, _, fingerprint string, generation int64, _ string) (plugins.PublisherTrust, error) {
+	return plugins.PublisherTrust{Fingerprint: fingerprint, Publisher: "test-publisher", State: plugins.PublisherTrusted, Generation: generation + 1, ReviewedAt: time.Now().UTC()}, nil
+}
 func (s *extensionControllerStub) HookDiagnostics(_ context.Context, runID, workspaceID string) (application.HookDiagnostics, error) {
 	return application.HookDiagnostics{RunID: runID, WorkspaceID: workspaceID, Declarations: []application.HookDeclaration{}, Observations: []hooks.AuditRecord{}}, nil
 }

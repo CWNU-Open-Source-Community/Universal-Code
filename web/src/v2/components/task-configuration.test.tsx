@@ -1,7 +1,8 @@
-import { fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect, useState, type ReactElement } from "react";
 import type { APIClient } from "../../api/client";
 import type { RunView, TaskBudgetSettings, TaskConfigurationView } from "../../api/types";
+import type { ProjectSkillChoice } from "../../api/project-skills";
 import { TaskConfiguration } from "./task-configuration";
 import { LocaleProvider } from "../../lib/locale";
 
@@ -12,6 +13,73 @@ const view = (workspaceID = "workspace-1"): TaskConfigurationView => ({ version:
 const clientFixture = () => ({ previewTaskConfiguration: vi.fn().mockResolvedValue(view()), getRunTaskConfiguration: vi.fn().mockResolvedValue(view()), createThread: vi.fn() });
 
 describe("TaskConfiguration presentation fixtures", () => {
+  it("displays native Skill metadata while selecting and confirming its exact component pin", async () => {
+    const ref = JSON.stringify({ installation_id: "native-install", package_id: "native-package", component_id: "skill:native",
+      revision: "a".repeat(64), installation_generation: 3 });
+    const client = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: vi.fn().mockResolvedValue({
+      items: [{ ref, name: "native", token_upper_bound: 100 }], unavailable_count: 0,
+    }) }, changed = vi.fn(), validity = vi.fn();
+    function Host() {
+      const [choice, setChoice] = useState<ProjectSkillChoice>({ refs: [], confirmUntrustedContext: false });
+      return <TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" phase="plan" projectSkills={choice}
+        onProjectSkillsChange={(next) => { changed(next); setChoice(next); }} onValidityChange={validity} />;
+    }
+    render(<Host />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "native" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: [ref], confirmUntrustedContext: false, source: "installed" });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("checkbox", { name: /确认使用所选技能上下文/ }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: [ref], confirmUntrustedContext: true, source: "installed" });
+    expect(client.listTaskSkillCandidates).toHaveBeenCalledWith({ workspace_id: "workspace-1", surface: "code", phase: "plan", profile: "code" }, expect.any(AbortSignal));
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
+
+  it.each(["workspace", "profile", "phase", "client"])("hides old candidates immediately when the %s changes and blocks the saved choice while loading", async (change) => {
+    const read = vi.fn().mockResolvedValueOnce({ items: [{ ref: "external@1.0.0", name: "external", version: "1.0.0", token_upper_bound: 100 }], unavailable_count: 0 })
+      .mockImplementation(() => new Promise(() => {}));
+    const first = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: read };
+    const second = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: vi.fn().mockImplementation(() => new Promise(() => {})) };
+    const validity = vi.fn(), displayed: boolean[] = [];
+    type Props = { client: APIClient; workspaceID: string; profile: "code" | "review"; phase: "plan" | "deliver" };
+    function Host(props: Props) {
+      useLayoutEffect(() => { displayed.push(Boolean(screen.queryByRole("checkbox", { name: "external@1.0.0" }))); }, [props]);
+      return <TaskConfiguration {...props} projectSkills={{ refs: ["external@1.0.0"], confirmUntrustedContext: true, source: "installed" }} onProjectSkillsChange={() => {}} onValidityChange={validity} />;
+    }
+    const props: Props = { client: first as unknown as APIClient, workspaceID: "workspace-1", profile: "code", phase: "deliver" };
+    const result = render(<Host {...props} />);
+    await screen.findByRole("checkbox", { name: "external@1.0.0" });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+    const signal = read.mock.calls[0][1] as AbortSignal;
+    result.rerender(<Host {...props} {...(change === "workspace" ? { workspaceID: "workspace-2" } : change === "profile" ? { profile: "review" as const }
+      : change === "phase" ? { phase: "plan" as const } : { client: second as unknown as APIClient })} />);
+    expect(displayed.at(-1)).toBe(false);
+    expect(signal.aborted).toBe(true);
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+  });
+
+  it("ignores a late old inventory, keeps budget edits from rereading Skills, and refreshes current candidates", async () => {
+    let finish!: (value: unknown) => void;
+    const list = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue({ items: [{ ref: "new@1.0.0", name: "new", version: "1.0.0", token_upper_bound: 100 }], unavailable_count: 0 });
+    const client = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: list };
+    const props = { client: client as unknown as APIClient, workspaceID: "workspace-1", onProjectSkillsChange: () => {} };
+    const result = render(<TaskConfiguration {...props} />);
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    result.rerender(<TaskConfiguration {...props} phase="plan" />);
+    await screen.findByRole("checkbox", { name: "new@1.0.0" });
+    await act(async () => finish({ items: [{ ref: "old@1.0.0", name: "old", version: "1.0.0", token_upper_bound: 100 }], unavailable_count: 0 }));
+    expect(screen.queryByRole("checkbox", { name: "old@1.0.0" })).not.toBeInTheDocument();
+    result.rerender(<TaskConfiguration {...props} phase="plan" budget={{ max_turns: 20 }} onProjectSkillsChange={() => {}} />);
+    await screen.findByText("生效的执行上限");
+    expect(list).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    result.rerender(<TaskConfiguration {...props} run={{ id: "existing-run" } as RunView} />);
+    await screen.findByText("已保存的执行上限");
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
   it("lets the operator choose exact recommended versions and confirms context before creation", async () => {
     const client = clientFixture(), changed = vi.fn(), validity = vi.fn();
     client.previewTaskConfiguration.mockResolvedValue({ ...view(), project: { ...view().project!, skill_suggestions: ["code@1.0.0"] } });
@@ -29,6 +97,55 @@ describe("TaskConfiguration presentation fixtures", () => {
     await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
     expect(client.createThread).not.toHaveBeenCalled();
   });
+  it("offers installed packages as a second admission and routes a mixed choice to it", async () => {
+    const client = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: vi.fn().mockResolvedValue({
+      items: [{ ref: "code@1.0.0", name: "code", version: "1.0.0", token_upper_bound: 20 },
+        { ref: "review@1.2.0", name: "review", version: "1.2.0", token_upper_bound: 20 }], unavailable_count: 0,
+    }) };
+    const changed = vi.fn(), validity = vi.fn();
+    client.previewTaskConfiguration.mockResolvedValue({ ...view(), project: { ...view().project!, skill_suggestions: ["code@1.0.0"] } });
+    function Host() {
+      const [choice, setChoice] = useState<{ refs: string[]; confirmUntrustedContext: boolean; source?: "project" | "installed" }>({ refs: [], confirmUntrustedContext: false });
+      return <TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" projectSkills={choice}
+        onProjectSkillsChange={(next) => { changed(next); setChoice(next); }} onValidityChange={validity} />;
+    }
+    render(<Host />);
+    // A pinned suggestion is never offered twice; Go filters unavailable refs.
+    expect(await screen.findAllByRole("checkbox", { name: "code@1.0.0" })).toHaveLength(1);
+    expect(screen.queryByRole("checkbox", { name: "gone@1.0.0" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "review@1.2.0" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0"], confirmUntrustedContext: false, source: "installed" });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("checkbox", { name: "code@1.0.0" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0", "code@1.0.0"], confirmUntrustedContext: false, source: "installed" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /确认使用所选技能上下文/ }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0", "code@1.0.0"], confirmUntrustedContext: true, source: "installed" });
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+    expect(screen.getByText(/已安装技能不来自项目建议/)).toBeInTheDocument();
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed Registry read instead of silently offering no packages", async () => {
+    const client = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: vi.fn().mockRejectedValue(new Error("Skill candidates response is invalid")) };
+    const validity = vi.fn();
+    render(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" onValidityChange={validity}
+      projectSkills={{ refs: [], confirmUntrustedContext: false }} onProjectSkillsChange={() => undefined} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Skill candidates response is invalid");
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
+  });
+
+  it("refuses a saved choice whose admission no longer offers the package", async () => {
+    const client = { ...clientFixture(), hasThreadControl: true, listTaskSkillCandidates: vi.fn().mockResolvedValue({ items: [], unavailable_count: 0 }) };
+    const changed = vi.fn(), validity = vi.fn();
+    render(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1"
+      projectSkills={{ refs: ["review@1.2.0"], confirmUntrustedContext: true, source: "installed" }}
+      onProjectSkillsChange={changed} onValidityChange={validity} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("保存的技能已不在当前可选列表中");
+    await waitFor(() => expect(validity).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("button", { name: "清除技能选择" }));
+    expect(changed).toHaveBeenLastCalledWith({ refs: [], confirmUntrustedContext: false });
+  });
+
   it("edits the bounded draft, resets defaults and displays Go-owned effective sources", async () => {
     const client = clientFixture(), changed = vi.fn();
     function Host() {

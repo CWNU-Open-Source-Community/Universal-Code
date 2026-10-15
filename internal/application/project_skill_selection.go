@@ -33,11 +33,13 @@ type ProjectSkillSelectionStore interface {
 	ExternalSkillSelectionStore
 }
 
-func SelectProjectSkills(ctx context.Context, store ProjectSkillSelectionStore, request ProjectSkillSelectionRequest) (ProjectSkillSelectionResult, error) {
-	result := ProjectSkillSelectionResult{RunID: request.RunID, Refs: slices.Clone(request.Refs), Replayed: true}
-	if store == nil || len(request.Refs) == 0 || len(request.Refs) > projectconfig.MaxSkillSuggestions {
-		return result, apperror.New(apperror.CodeInvalidArgument, "a bounded project Skill selection is required")
-	}
+// SelectProjectSkills admits only the exact Skill identities pinned by the
+// project configuration file of this Run.
+func SelectProjectSkills(ctx context.Context, store ProjectSkillSelectionStore,
+	request ProjectSkillSelectionRequest,
+) (ProjectSkillSelectionResult, error) {
+	result := ProjectSkillSelectionResult{RunID: request.RunID,
+		Refs: slices.Clone(request.Refs), Replayed: true}
 	run, err := store.GetRun(ctx, request.RunID)
 	if err != nil {
 		return result, apperror.Normalize(err)
@@ -47,7 +49,33 @@ func SelectProjectSkills(ctx context.Context, store ProjectSkillSelectionStore, 
 		return result, err
 	}
 	if project == nil {
-		return result, apperror.New(apperror.CodeFailedPrecondition, "this Run has no pinned project Skill suggestions")
+		return result, apperror.New(apperror.CodeFailedPrecondition,
+			"this Run has no pinned project Skill suggestions")
+	}
+	return selectSkills(ctx, store, request, "project",
+		func(ref string) bool { return slices.Contains(project.SkillSuggestions, ref) })
+}
+
+// SelectInstalledSkills lets an operator name an already installed Skill for one
+// exact Run without editing the project configuration file. It shares the
+// ordinary selection services, so the Run-state, mode binding, untrusted-context
+// confirmation, catalog eligibility and replay checks stay identical. Only the
+// project-suggestion admission is replaced by the downstream installation check.
+func SelectInstalledSkills(ctx context.Context, store ProjectSkillSelectionStore,
+	request ProjectSkillSelectionRequest,
+) (ProjectSkillSelectionResult, error) {
+	return selectSkills(ctx, store, request, "installed", nil)
+}
+
+func selectSkills(ctx context.Context, store ProjectSkillSelectionStore,
+	request ProjectSkillSelectionRequest, subject string,
+	admitted func(ref string) bool,
+) (ProjectSkillSelectionResult, error) {
+	result := ProjectSkillSelectionResult{RunID: request.RunID,
+		Refs: slices.Clone(request.Refs), Replayed: true}
+	if store == nil || len(request.Refs) == 0 || len(request.Refs) > projectconfig.MaxSkillSuggestions {
+		return result, apperror.New(apperror.CodeInvalidArgument,
+			"a bounded "+subject+" Skill selection is required")
 	}
 	registry, err := skills.BuiltinRegistry()
 	if err != nil {
@@ -56,15 +84,17 @@ func SelectProjectSkills(ctx context.Context, store ProjectSkillSelectionStore, 
 	builtins, external := []string{}, []string{}
 	seen := map[string]bool{}
 	for _, ref := range request.Refs {
-		if seen[ref] || !slices.Contains(project.SkillSuggestions, ref) {
-			return result, apperror.New(apperror.CodeInvalidArgument, "selected Skill must be an exact, unique pinned project suggestion")
+		if seen[ref] || (admitted != nil && !admitted(ref)) {
+			return result, apperror.New(apperror.CodeInvalidArgument,
+				"selected Skill must be an exact, unique "+subject+" Skill reference")
 		}
 		seen[ref] = true
-		name, version, err := skills.ParseInstalledPackageRef(ref)
+		name, version, pin, err := parseExternalSkillReference(ref)
 		if err != nil {
-			return result, apperror.New(apperror.CodeInvalidArgument, "project Skill reference is invalid")
+			return result, apperror.New(apperror.CodeInvalidArgument,
+				subject+" Skill reference is invalid")
 		}
-		if manifest, builtin := registry.Get(name); builtin {
+		if manifest, builtin := registry.Get(name); !pin.Portable() && builtin {
 			if manifest.Version != version {
 				return result, apperror.New(apperror.CodeConflict, "suggested built-in Skill version is unavailable: "+ref)
 			}
@@ -74,19 +104,22 @@ func SelectProjectSkills(ctx context.Context, store ProjectSkillSelectionStore, 
 		}
 	}
 	if len(builtins) > skills.MaxSelectionItems || len(external) > skills.MaxExternalSelectionItems {
-		return result, apperror.New(apperror.CodeInvalidArgument, "project Skill selection exceeds the existing selection limit")
+		return result, apperror.New(apperror.CodeInvalidArgument,
+			"the "+subject+" Skill selection exceeds the existing selection limit")
 	}
 	// Validate shared identities and confirmation before mutation. The services retain
 	// their version/enablement, mode, confirmation and replay checks.
 	if len(external) != 0 && !request.ConfirmUntrustedContext {
-		return result, apperror.New(apperror.CodeFailedPrecondition, "external project Skill selection requires explicit untrusted-context confirmation")
+		return result, apperror.New(apperror.CodeFailedPrecondition,
+			"external "+subject+" Skill selection requires explicit untrusted-context confirmation")
 	}
 	validationNames := builtins
 	if len(validationNames) == 0 {
 		validationNames = []string{"code"}
 	}
 	if _, err := normalizeSelectSkillsRequest(SelectSkillsRequest{RunID: request.RunID, Names: validationNames, OperationKey: request.OperationKey + "-builtin", RequestedBy: request.RequestedBy}); err != nil {
-		return result, apperror.New(apperror.CodeInvalidArgument, "project Skill selection identity or operation key is invalid")
+		return result, apperror.New(apperror.CodeInvalidArgument,
+			subject+" Skill selection identity or operation key is invalid")
 	}
 	// External first: an unavailable installation leaves the built-in selection
 	// untouched. A later failure preserves the Created Run for same-key recovery.

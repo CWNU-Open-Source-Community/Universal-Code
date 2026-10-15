@@ -18,6 +18,10 @@ func (s *ExtensionControlService) RevokePluginPublisher(ctx context.Context, id,
 	return s.plugins.RevokeInstallationPublisher(ctx, id, fingerprint, generation, actor)
 }
 
+func (s *ExtensionControlService) TrustPluginPublisher(ctx context.Context, id, fingerprint string, generation int64, actor string) (plugins.PublisherTrust, error) {
+	return s.plugins.TrustInstallationPublisher(ctx, id, fingerprint, generation, actor)
+}
+
 type HookDeclaration struct {
 	InstallationID     string
 	PluginID           string

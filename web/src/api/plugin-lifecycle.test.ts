@@ -81,3 +81,42 @@ it("refuses lifecycle writes locally on a read connection", async () => {
   await expect(client.revokePluginPublisher("plugin-current", { version: "plugin-lifecycle.v1", expected_publisher_fingerprint: "f".repeat(64), expected_publisher_generation: 3, confirm: true })).rejects.toThrow();
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it("grants publisher trust only with the exact reviewed binding", async () => {
+  const reply = () => response({ protocol_version: "plugin-lifecycle.v1", installation_id: "plugin-current",
+    publisher: { ...pluginHistory().publisher, state: "trusted", generation: 4 } });
+  const fetchMock = vi.fn().mockResolvedValue(reply());
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new APIClient("read", "/api/v1", "control");
+  const granted = await client.trustPluginPublisher("plugin-current", {
+    version: "plugin-lifecycle.v1", expected_publisher_fingerprint: "f".repeat(64),
+    expected_publisher_generation: 3, confirm: true,
+  });
+  expect(granted.publisher.state).toBe("trusted");
+  expect(granted.publisher.generation).toBe(4);
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/extensions/plugins/plugin-current/publisher-trust");
+  expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer control");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+    version: "plugin-lifecycle.v1", expected_publisher_fingerprint: "f".repeat(64),
+    expected_publisher_generation: 3, confirm: true,
+  });
+
+  const drifted = vi.fn().mockResolvedValue(response({ protocol_version: "plugin-lifecycle.v1",
+    installation_id: "plugin-current",
+    publisher: { ...pluginHistory().publisher, state: "trusted", generation: 9 } }));
+  vi.stubGlobal("fetch", drifted);
+  await expect(new APIClient("read", "/api/v1", "control").trustPluginPublisher("plugin-current", {
+    version: "plugin-lifecycle.v1", expected_publisher_fingerprint: "f".repeat(64),
+    expected_publisher_generation: 3, confirm: true,
+  })).rejects.toThrow("Publisher trust binding is invalid");
+
+  vi.stubGlobal("fetch", vi.fn());
+  await expect(new APIClient("read").trustPluginPublisher("plugin-current", {
+    version: "plugin-lifecycle.v1", expected_publisher_fingerprint: "f".repeat(64),
+    expected_publisher_generation: 3, confirm: true,
+  })).rejects.toThrow("exact publisher trust binding and confirmation are required");
+  await expect(new APIClient("read", "/api/v1", "control").trustPluginPublisher("plugin-current", {
+    version: "plugin-lifecycle.v1", expected_publisher_fingerprint: "f".repeat(64),
+    expected_publisher_generation: 3, confirm: false as true,
+  })).rejects.toThrow("exact publisher trust binding and confirmation are required");
+});

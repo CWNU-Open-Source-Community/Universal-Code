@@ -9,6 +9,41 @@
 > [#335](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues/335).
 > See [ADR 0185](adr/0185-batch-validation-selected-runtime.md).
 
+> 2026-10-15 #348 按任务选择 Skill：任务配置同时列出合格的旧 Registry 包、
+> 新导入 Plugin 的版本化 Skill 和原生 SKILL.md 组件。候选按工作区、surface、phase
+> 与 Profile 核验，发送前通过 `external-skills/select` 绑定精确安装和组件；无须修改
+> `.prayu/config.yaml`。原生引用沿用 `skill_read` 的精确 pin，保留真实名称和可空版本。
+> SQLite v197 支持同 Plugin 多组件，迁移测试确认旧行、rowid、指纹与重放保持不变。
+> 自动发现、模式限制、不可信上下文确认和现有预算继续生效。见 [ADR 0189](adr/0189-installed-skill-selection-control.md)。
+> 真实浏览器已完成新 ZIP 导入/审查/启用/选择，以及原生组件手动选择；两次任务均将
+> 精确正文送达隔离的离线 Provider，并通过实际 `skill_read` 和工作区读取验证。
+> 应用测试另覆盖重启恢复、同包多组件、停用与代次变化后的拒绝。详见
+> [扩展选择验收](acceptance/2026-10-15-extension-selection.md)。
+
+> 2026-10-15 插件发布者信任控制面：新增 `POST /api/v1/extensions/plugins/{installation_id}/publisher-trust`
+> 与桌面/Web 的“信任该发布者”入口，解除“撤销后 GUI 无法重新信任”的死锁。Go 侧新增有界核心
+> `TrustInstallationPublisher`，必须匹配签名有效安装的期望公钥指纹与信任代次（首次为 0），
+> 沿用 `SetPluginPublisherTrust` 的 CAS；CLI `plugin trust-publisher` 改为委派同一核心，行为不变。
+> 信任只标识发布者，不授予能力，逐包 approve/enable 仍是独立审查。无 SQLite 迁移。见 ADR 0188。
+> 验证：`internal/store` 新增有界授予与被撤销发布者解除阻塞的实测用例，`internal/httpapi`
+> OpenAPI 守卫与新增用例通过，`internal/plugins`、`internal/application` 通过，前端
+> `typecheck` 与 plugin lifecycle 相关测试通过。失败响应可通过重新读取当前状态并重新
+> 确认恢复。真实浏览器已验证签名包的信任、撤销、重新信任，以及同发布者新版本的
+> 审查与启用；被撤销的旧安装保持撤销。Skill Catalog 发布者信任 GUI 仍由 #334 跟踪。
+
+> 2026-10-15 Skill Registry 操作者入口：历史登记的列出与移除从 CLI-only 提升为
+> HTTP 读端点、控制写端点与桌面桥方法，复用既有 `SkillPackageRegistryService` 与
+> `skill_package_remove_operation.v1` 意图/tombstone，无 SQLite 迁移。清单逐项给出
+> 包对象的真实回读结果，单个不可读对象不再让整张清单失败。新增
+> `skill_package_remove` 收据类型与 ADR 0187。GUI 安装的新包仍走 Plugin 生命周期，
+> 本项只覆盖历史 legacy 登记；URL/Git 导入尚未接入，见 #334。
+> 验证：`internal/httpapi`、`internal/desktop`（含 desktop tag）、`internal/application`、
+> `internal/skills`、`internal/operationreceipt` 定向与整包测试通过，
+> `protocolregistry -check`、`surfacecheck` 通过，前端 214 文件 2094 项测试与
+> `typecheck` 通过。本次在非空历史 Registry 上通过浏览器确认移除登记、隐藏已移除项、
+> 勾选后查看 tombstone 与保留对象说明；浏览器控制台无 error/warn。签名包可由现有
+> 签名 API 构建后通过实际上传流程验收，无须在 GUI 内签名。URL/Git GUI 导入仍由 #334 跟踪。
+
 > 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
 
 > 2026-10-14 manual MCP connections: `mcp-client.v3` adds stdio cwd, explicit non-sensitive environment, OS-store environment credential references, fixed non-sensitive HTTP headers, and loopback HTTP. Web/Desktop settings and CLI staging use the existing Go launch and review contracts; historical v1/native v2 descriptors retain their fingerprints. Focused race checks and real subprocess/browser registration, error and narrow-screen checks passed. See [ADR 0178](adr/0178-mcp-manual-connection-config.md).

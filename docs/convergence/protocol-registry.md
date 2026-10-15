@@ -14,17 +14,17 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 52 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
-| [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 4 | true |
+| [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
 | [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 115 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 16 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 18 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 124 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 127 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
@@ -468,12 +468,13 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `capability-readiness-projection-reader` (`v1, v2`, active) at `internal/httpapi`
 
-<details><summary>4 active identifiers</summary>
+<details><summary>5 active identifiers</summary>
 
 - `model_availability.v2`
 - `run_capability_readiness.v1`
 - `runtime_capabilities.v1`
 - `search_diagnostics.v1`
+- `task_skill_candidates.v1`
 
 </details>
 
@@ -734,7 +735,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
 
-<details><summary>16 active identifiers</summary>
+<details><summary>18 active identifiers</summary>
 
 - `desktop_clipboard_files.v1`
 - `desktop_connection_bootstrap.v1`
@@ -743,7 +744,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_risk_restart.v1`
 - `desktop_skill_package_dialog.v1`
 - `desktop_skill_package_install.v1`
+- `desktop_skill_package_inventory.v1`
 - `desktop_skill_package_preview.v1`
+- `desktop_skill_package_removal.v1`
 - `desktop_user_terminal.v1`
 - `desktop_workspace_import.v1`
 - `desktop_workspace_launcher_list.v1`
@@ -917,7 +920,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `http-openapi-contract-reader` (`v0, v1, v2`, active) at `web/src/api`
 
-<details><summary>124 active identifiers</summary>
+<details><summary>127 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -1015,6 +1018,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `session_steering_promotion.v1`
 - `session_steering_revision.v1`
 - `skill_package_installation.v1`
+- `skill_package_inventory.v1`
+- `skill_package_removal_control.v1`
+- `skill_package_removal_request.v1`
 - `specialist_continuation.v1`
 - `specialist_tools.v1`
 - `standard_code_preset.v1`

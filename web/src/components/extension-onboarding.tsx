@@ -128,8 +128,8 @@ export function PluginImportForm({ client, enabled, capabilityKnown = true }: { 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["extensions"] }),
   });
   return <details className="extension-onboarding"><summary>{t("导入 Plugin ZIP", "Import Plugin ZIP")}</summary>
-    <p>{t("选择 plugin.v1 ZIP 包，最大 4 MiB。服务端固定来源与 SHA-256 后暂存；核对包信息、审查并选择要启用的能力。原生 Skill 包请前往 Skill 包设置。",
-      "Choose a plugin.v1 ZIP up to 4 MiB. The service pins its source and SHA-256 when staging it. Review the package, then select capabilities to enable. Use Skill settings for native Skill packages.")}</p>
+    <p>{t("选择 plugin.v1 ZIP 包，最大 4 MiB。核对包信息、审查并选择要启用的能力。版本化 Skill ZIP 请前往“Skill 包”设置；原生 SKILL.md 可用 CLI 导入目录后在任务配置中选择。",
+      "Choose a plugin.v1 ZIP up to 4 MiB. Review the package, then select capabilities to enable. Use Skill settings for versioned Skill ZIPs; import native SKILL.md directories with the CLI, then select them in task configuration.")}</p>
     {!enabled && <p role="status">{!capabilityKnown ? t("Plugin 接入能力尚未确认，请刷新状态。", "Plugin onboarding capability is unconfirmed; refresh state.") :
       t("当前服务未开放 Plugin 导入或当前连接没有控制权限。请检查服务版本与控制连接。", "Plugin import is unavailable. Check the service version and control connection.")}</p>}
     <input hidden ref={input} type="file" accept="application/zip,.zip" aria-label={t("选择 Plugin ZIP", "Choose Plugin ZIP")}

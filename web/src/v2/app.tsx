@@ -36,7 +36,7 @@ import { V2DraftConflict } from "./components/draft-conflict";
 import { FileEditDraftProvider } from "../components/file-edit-drafts";
 import { V2PhasePicker, type V2WorkPhase } from "./components/phase-picker";
 import { useV2DraftTaskConfiguration } from "./draft-task-configuration";
-import type { ProjectSkillChoice } from "../api/project-skills";
+import { submitSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
 import { useV2WebAccessDefaults } from "./web-access-defaults";
 
 type CreationAttempt = Map<string, string>;
@@ -56,7 +56,7 @@ const V2InspectorHome = lazy(() => import("./components/inspector-home").then((m
 })));
 
 function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, onCreated,
-  onTurnSuccess, onManageModels, onOpenTaskConfiguration, budget, configurationValid, webAccessValid, projectSkills,
+  onTurnSuccess, onManageModels, onOpenTaskConfiguration, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
   draft: legacyDraft, onDraftChange: legacyDraftChange, creationAttemptRef, options, onOptionsChange, moreProjects, onImported }: {
   client: APIClient;
   workspaces: WorkspaceView[];
@@ -67,6 +67,8 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   onTurnSuccess: (threadID: string, submittedDraft: string) => void;
   onManageModels: (prepareForDraft?: boolean) => void;
   onOpenTaskConfiguration: () => void;
+  phase: V2WorkPhase;
+  onPhaseChange: (phase: V2WorkPhase) => void;
   budget?: TaskBudgetSettings;
   configurationValid: boolean;
   webAccessValid: boolean;
@@ -101,8 +103,6 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   });
   const { networkMode, allowedTargets, modelRoute } = options;
   const [modelCatalogError, setModelCatalogError] = useState("");
-  const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
-  const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
   const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = [], mcpReferences: MCPDraftReference[] = []) => {
     if (!webAccessValid) throw new Error("请重新选择网页访问方式，草稿已保留。");
     if (!configurationValid) throw new Error("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。");
@@ -170,7 +170,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         creationAttemptRef.current.set(fingerprint, operationID);
         const result = await client.createThread(request, `v2-thread-create-${operationID}`);
         if (projectSkills?.refs.length) {
-          try { await client.selectProjectSkills(result.thread.last_run_id, projectSkills, `v2-project-skills-${operationID}`); }
+          try { await submitSkillChoice(client, result.thread.last_run_id, projectSkills, operationID); }
           catch (error) {
             void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
             throw new Error(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。${error instanceof Error ? error.message : "请重试。"}`);
@@ -221,7 +221,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
       pendingModelRoute={modelRoute}
       newThreadControls={<><button aria-label="任务预算与项目配置" className="v2-composer-chip"
         onClick={onOpenTaskConfiguration} type="button">任务配置{budget ? " · 自定义" : ""}</button>
-      <V2PhasePicker phase={phase} onChange={setSavedPhase}
+      <V2PhasePicker phase={phase} onChange={onPhaseChange}
         disabled={!client.hasThreadControl} planAvailable={client.hasPlanDelivery} />
       <V2NetworkScopeControl disabled={!client.hasThreadControl}
         mode={networkMode} onChange={(nextMode, nextTargets) => {
@@ -290,6 +290,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   }, [normalizedThreadSearch, searchComposing, searchTooLong]);
   const [storedWorkspace, setWorkspaceID] = useV2PersistentState<unknown>("workspace", "");
   const workspaceID = typeof storedWorkspace === "string" ? storedWorkspace : "";
+  const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
+  const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
   const draftTaskConfiguration = useV2DraftTaskConfiguration(workspaceID);
   // An explicitly imported existing project may be outside the first list page.
   // Retain its pathless receipt so selection survives list refetches.
@@ -514,7 +516,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           sourceRunID={route.tool === "run" ? route.resourceID : reviewMemoryRef.current.client === client &&
             reviewMemoryRef.current.threadID === selectedThreadID ? reviewMemoryRef.current.runID : undefined}
           onOpenGithubReview={openGithubReview}
-          draftWorkspaceID={workspaceID} draftBudget={draftTaskConfiguration.budget}
+          draftWorkspaceID={workspaceID} draftPhase={phase} draftBudget={draftTaskConfiguration.budget}
           onDraftBudgetChange={draftTaskConfiguration.onBudgetChange}
           onDraftValidityChange={draftTaskConfiguration.onValidityChange}
           draftProjectSkills={draftTaskConfiguration.projectSkills} onDraftProjectSkillsChange={draftTaskConfiguration.onProjectSkillsChange}
@@ -530,6 +532,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             <V2InspectorHome client={client} onOpenTool={openTool} onOpenSettings={setSettingsSection} /></V2LazySurface>
           : newConversation || !selectedThreadID
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
+            phase={phase} onPhaseChange={setSavedPhase}
             creationAttemptRef={creationAttemptRef}
             options={newThreadOptions} onOptionsChange={setNewThreadOptions}
             webAccessValid={webAccessDefaults.valid}

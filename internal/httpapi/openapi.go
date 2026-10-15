@@ -765,6 +765,9 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 		{Path: ExtensionPluginPublisherRevocationPath, Method: http.MethodPost, OperationID: "revokePluginPublisher", Summary: "Revoke one Plugin publisher trust record", Tag: "Extensions", Control: true, NotFound: true,
 			Description: "Revokes the exact publisher fingerprint and trust generation bound to the selected signed installation, atomically revoking that publisher's nonterminal installations across packages.",
 			DataType:    reflect.TypeOf(PluginPublisherRevocationView{}), RequestType: reflect.TypeOf(PluginPublisherRevocationRequestView{}), Parameters: []openAPIParameter{pathIdentityParameter("installation_id", "Signed Plugin installation identity")}},
+		{Path: ExtensionPluginPublisherTrustPath, Method: http.MethodPost, OperationID: "trustPluginPublisher", Summary: "Grant one Plugin publisher trust record", Tag: "Extensions", Control: true, NotFound: true,
+			Description: "Grants trust for the exact publisher fingerprint and trust generation the operator reviewed on one signed installation, so a stale view cannot trust another record. Trust identifies the publisher only: it grants no capability, and approval and enablement remain separate reviewed actions.",
+			DataType:    reflect.TypeOf(PluginPublisherTrustResponseView{}), RequestType: reflect.TypeOf(PluginPublisherTrustRequestView{}), Parameters: []openAPIParameter{pathIdentityParameter("installation_id", "Signed Plugin installation identity")}},
 		{Path: ExtensionHookDiagnosticsPath, OperationID: "getHookDiagnostics", Summary: "Inspect declarative Hook scope and observed decisions", Tag: "Extensions", NotFound: true,
 			Description: "Read-only projection of local declarations and the newest 200 scoped observations. New observations bind the actual package fingerprint and rejection decision; historical missing decisions remain unknown. Hook payloads and plugin-controlled messages are omitted.",
 			DataType:    reflect.TypeOf(HookDiagnosticsView{}), Parameters: []openAPIParameter{identityQueryParameter("run_id", "Optional exact Run scope"), identityQueryParameter("workspace_id", "Optional Workspace scope; must match a supplied Run")}},
@@ -902,6 +905,15 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 					string(domain.ThreadActive), string(domain.ThreadArchived), string(domain.ThreadDeleted)}),
 				openAPIParameter{Name: "q", In: "query", Description: "Trimmed literal title substring across all matching tasks; at most 256 Unicode characters. ASCII case-insensitive, other Unicode exact; no message-body search.", Schema: map[string]any{"type": "string", "maxLength": domain.MaxThreadTitleQueryRunes}},
 				booleanQueryParameter("include_deleted", "Include soft-deleted Threads"))},
+		{Path: TaskSkillCandidatesPath, OperationID: "listTaskSkillCandidates", Summary: "List exact installed Skill candidates for one task mode", Tag: "Runs",
+			Description: "Read-only, workspace-bound candidates for explicit per-Run context selection. Resolves historical installations and enabled Plugin Skill components through the same exact-ref, catalog, surface, phase, Profile and token checks as selection. Native refs copy the exact canonical skill_read component pin, including revision and installation generation. Missing objects and ambiguous or ineligible refs are withheld individually. A complete bounded inventory is required. No source content, installation, activation or capability grant is returned.",
+			DataType:    reflect.TypeOf(application.TaskSkillCandidatesView{}), NotFound: true,
+			Parameters: []openAPIParameter{
+				{Name: "workspace_id", In: "query", Required: true, Schema: map[string]any{"type": "string"}},
+				{Name: "surface", In: "query", Required: true, Schema: map[string]any{"type": "string", "enum": []string{"code", "cyber"}}},
+				{Name: "phase", In: "query", Required: true, Schema: map[string]any{"type": "string", "enum": []string{"plan", "deliver"}}},
+				{Name: "profile", In: "query", Required: true, Schema: map[string]any{"type": "string", "enum": []string{"code", "learn", "review", "script"}}},
+			}},
 		{Path: TaskConfigurationPreviewPath, Method: http.MethodPost, OperationID: "previewTaskConfiguration", Summary: "Preview task budget and project narrowing", Tag: "Runs", SuccessStatus: http.StatusOK,
 			Description: "Read-only bounded workspace configuration preview using the read bearer. Loads inert .prayu/config.yaml through the same Go resolver as creation. Rejections block the entire creation; no source bytes, host paths or secrets are returned. No command, model, network, Skill or capability is executed or granted. Cost limits require an operator price snapshot at execution and do not represent exact billing.",
 			DataType:    reflect.TypeOf(application.TaskConfigurationView{}), RequestType: reflect.TypeOf(application.TaskConfigurationRequest{}), NotFound: true},
@@ -911,6 +923,10 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 		{Path: ProjectSkillSelectionPathTemplate, Method: http.MethodPost, OperationID: "selectProjectSkills", Summary: "Select exact pinned project Skill recommendations", Tag: "Control", SuccessStatus: http.StatusOK,
 			Description: "Explicit selection before the first turn through the existing built-in and installed external Skill services. Refs must match the immutable project suggestions exactly, including version. External context requires confirmation. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
 			DataType:    reflect.TypeOf(application.ProjectSkillSelectionResult{}), RequestType: reflect.TypeOf(ProjectSkillSelectionRequestView{}), Control: true,
+			Parameters: []openAPIParameter{runID, dockerSandboxIdempotencyKey}, NotFound: true},
+		{Path: InstalledSkillSelectionPathTemplate, Method: http.MethodPost, OperationID: "selectInstalledSkills", Summary: "Select exact installed Skills for one Run", Tag: "Control", SuccessStatus: http.StatusOK,
+			Description: "Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Legacy refs retain name@version; native refs are the exact canonical skill_read component pin returned by task Skill candidates, including revision and installation generation. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
+			DataType:    reflect.TypeOf(application.ProjectSkillSelectionResult{}), RequestType: reflect.TypeOf(InstalledSkillSelectionRequestView{}), Control: true,
 			Parameters: []openAPIParameter{runID, dockerSandboxIdempotencyKey}, NotFound: true},
 		{Path: ThreadCollectionPath, Method: http.MethodPost,
 
@@ -2119,6 +2135,29 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 						"minLength": domain.MinAgentOperationKeyBytes,
 						"maxLength": domain.MaxAgentOperationKeyBytes, "pattern": `^\S+$`}},
 			}},
+		{Path: SkillPackageInventoryPath, OperationID: "listSkillPackages",
+			Summary: "List installed Skill packages", Tag: "Extensions",
+			Description: "Returns inert installation metadata, eligibility lists, trust class and immutable removal tombstones. Each item reports the live readback result of its retained package object, so one unreadable object is shown as unverified instead of hiding the Registry. It never exposes package bodies, local paths, operation keys or digests, and listing grants no selection, execution or tool capability.",
+			DataType:    reflect.TypeOf(SkillPackageInventoryView{}), Collection: true,
+			Parameters: []openAPIParameter{
+				stringQueryParameter("surface", "Filter by execution surface",
+					[]string{string(domain.ExecutionSurfaceCode), string(domain.ExecutionSurfaceCyber)}),
+				identityQueryParameter("profile", "Filter by one exact Profile identity"),
+				booleanQueryParameter("include_removed", "Include removed packages"),
+			}},
+		{Path: SkillPackageRemovePath, Method: http.MethodPost,
+			OperationID: "removeSkillPackage",
+			Summary:     "Remove one installed Skill package",
+			Tag:         "Control",
+			Description: "Writes an immutable removal tombstone for one exact installed package after explicit operator confirmation. The retained object and historical Run facts stay unchanged, and removal grants no capability or re-authorization anywhere.",
+			DataType:    reflect.TypeOf(SkillPackageRemovalView{}),
+			RequestType: reflect.TypeOf(SkillPackageRemoveRequestView{}), Control: true,
+			Parameters: []openAPIParameter{
+				{Name: "Idempotency-Key", In: "header", Description: "Opaque retry key; only a domain-separated digest is persisted",
+					Required: true, Schema: map[string]any{"type": "string",
+						"minLength": domain.MinAgentOperationKeyBytes,
+						"maxLength": domain.MaxAgentOperationKeyBytes, "pattern": `^\S+$`}},
+			}},
 		{Path: ApprovalDecisionControlPathTemplate, Method: http.MethodPost,
 			OperationID: "decideRunApproval", Summary: "Approve once or deny a pending request",
 			Tag:         "Control",
@@ -2704,11 +2743,23 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 			schema["minimum"], schema["maximum"] = bound[0], bound[1]
 		}
 	}
-	if typeName == "TaskConfigurationView" && fieldName == "capability_grant" {
+	if (typeName == "TaskConfigurationView" || typeName == "TaskSkillCandidatesView") && fieldName == "capability_grant" {
 		schema["enum"] = []bool{false}
 	}
 	if typeName == "TaskConfigurationView" && (fieldName == "fingerprint" || fieldName == "project_fingerprint") {
 		schema["pattern"] = "^[0-9a-f]{64}$"
+	}
+	if typeName == "TaskSkillCandidatesView" && fieldName == "items" {
+		schema["maxItems"] = application.MaxTaskSkillCandidates
+	}
+	if typeName == "TaskSkillCandidatesView" && fieldName == "unavailable_count" {
+		schema["minimum"] = 0
+	}
+	if typeName == "TaskSkillCandidateItem" && fieldName == "ref" {
+		schema["maxLength"] = 8192
+	}
+	if typeName == "TaskSkillCandidateItem" && fieldName == "token_upper_bound" {
+		schema["minimum"], schema["maximum"] = 1, skills.MaxExternalSelectionTokenBudget
 	}
 
 	if typeName == "BoundedCommandGrantView" && fieldName == "each_command_requires_review" {
@@ -3473,9 +3524,15 @@ var openAPIFieldEnums = map[string][]string{
 	"SkillPackageInstallView.protocol_version":                 {skills.PackageInstallationProtocolVersion},
 	"SkillPackageInstallView.surface":                          {string(domain.ExecutionSurfaceCode), string(domain.ExecutionSurfaceCyber)},
 	"SkillPackageInstallView.trust_class":                      {string(skills.PackageTrustOperatorInstalledUntrusted)},
+	"SkillPackageInventoryView.protocol_version":               {skills.PackageInventoryProtocolVersion},
+	"SkillPackageItemView.status":                              {"installed", "removed"},
+	"SkillPackageItemView.trust_class":                         {string(skills.PackageTrustOperatorInstalledUntrusted)},
+	"SkillPackageRemoveRequestView.protocol_version":           {skills.PackageRemovalRequestProtocolVersion},
+	"SkillPackageRemovalView.protocol_version":                 {skills.PackageRemovalControlProtocolVersion},
+	"SkillPackageRemovalView.status":                           {"removed"},
 	"OperationReceiptView.protocol_version":                    {operationreceipt.ProtocolVersion},
-	"OperationReceiptView.kind":                                {string(operationreceipt.KindFileEditApply), string(operationreceipt.KindRunWakeConsume), string(operationreceipt.KindSkillPackageInstall)},
-	"OperationReceiptView.outcome":                             {"applied", "failed", "completed", "installed"},
+	"OperationReceiptView.kind":                                {string(operationreceipt.KindFileEditApply), string(operationreceipt.KindRunWakeConsume), string(operationreceipt.KindSkillPackageInstall), string(operationreceipt.KindSkillPackageRemove)},
+	"OperationReceiptView.outcome":                             {"applied", "failed", "completed", "installed", "removed"},
 	"OperationReceiptView.retry_strategy":                      {string(operationreceipt.RetrySameOperationKey), string(operationreceipt.RetrySameWakeGeneration)},
 	"OperationReceiptView.recovery_action":                     {string(operationreceipt.RecoveryNone), string(operationreceipt.RecoveryRetryAfterGrace)},
 	"OperationReceiptView.cleanup_state":                       {string(operationreceipt.CleanupNotApplicable), string(operationreceipt.CleanupComplete), string(operationreceipt.CleanupPendingReview)},
@@ -3566,6 +3623,10 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadView.composer_state":                                {"ready", "waiting_approval", "successor_required", "unavailable"},
 	"ThreadView.execution_state":                               {"idle", "running", "stopping", "stop_failed", "waiting_approval", "paused", "completed", "failed", "cancelled", "unknown"},
 	"TaskConfigurationView.version":                            {application.TaskConfigurationVersion},
+	"TaskSkillCandidatesView.version":                          {application.TaskSkillCandidatesVersion},
+	"TaskSkillCandidatesView.surface":                          {"code", "cyber"},
+	"TaskSkillCandidatesView.phase":                            {"plan", "deliver"},
+	"TaskSkillCandidatesView.profile":                          {"code", "learn", "review", "script"},
 	"TaskConfigurationView.project_disposition":                {"absent", "applied", "rejected"},
 	"TaskConfigurationView.profile":                            {"code", "learn", "review", "script"},
 	"TaskConfigurationRequest.profile":                         {"code", "learn", "review", "script"},
@@ -3578,7 +3639,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadCreationControlRequestView.network_mode":            {"disabled", "allowlist"},
 	"ThreadMessageControlRequestView.version":                  {domain.ThreadMessageProtocolVersion},
 	"ThreadTurnControlRequestView.version":                     {domain.ThreadMessageProtocolVersion},
-	"MCPReference.method":                                     {"resources/read", "prompts/get"},
+	"MCPReference.method":                                      {"resources/read", "prompts/get"},
 	"ThreadPlanControlRequestView.version":                     {application.PlanDeliveryControlProtocolVersion},
 	"ThreadPlanControlView.version":                            {application.PlanDeliveryControlProtocolVersion},
 	"ThreadPlanControlRequestView.action":                      {"enter_plan", "enter_deliver", "confirm"},

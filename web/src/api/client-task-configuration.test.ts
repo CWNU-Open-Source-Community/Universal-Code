@@ -1,4 +1,5 @@
 import { APIClient } from "./client";
+import { submitSkillChoice } from "./project-skills";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import type { TaskConfigurationView } from "./types";
 
@@ -15,6 +16,36 @@ afterEach(() => { vi.unstubAllGlobals(); });
 function response(data: unknown, status = 200) { return new Response(JSON.stringify({ version: "api.v1", request_id: "req-configuration", data }), { status, headers: { "Content-Type": "application/json" } }); }
 
 describe("task configuration contract", () => {
+  it("reads server-admitted task Skill candidates with the exact workspace and mode using the read bearer", async () => {
+    const scope = { workspace_id: "ws-configuration", surface: "code" as const, phase: "plan" as const, profile: "code" as const };
+    const ref = JSON.stringify({ installation_id: "native-install", package_id: "native-package", component_id: "skill:native",
+      revision: "a".repeat(64), installation_generation: 3 });
+    const data = { version: "task_skill_candidates.v1", ...scope, items: [{ ref, name: "native", token_upper_bound: 100 }], unavailable_count: 1, capability_grant: false };
+    const fetch = vi.fn().mockResolvedValue(response(data)); vi.stubGlobal("fetch", fetch);
+    const client = new APIClient("read", "/api/v1");
+    await expect(client.listTaskSkillCandidates(scope)).resolves.toEqual(data);
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/task-configuration/skills?workspace_id=ws-configuration&surface=code&phase=plan&profile=code");
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: "GET", headers: { Authorization: "Bearer read" } });
+    for (const invalid of [{ ...data, workspace_id: "other" }, { ...data, profile: "review" }, { ...data, phase: "deliver" },
+      { ...data, capability_grant: true }, { ...data, root_path: "D:/secret" }, { ...data, items: [...data.items, ...data.items] },
+      { ...data, items: [{ ...data.items[0], ref: ref.replace('"component_id":', '"resource":"assets/secret","component_id":') }] }]) {
+      fetch.mockResolvedValueOnce(response(invalid));
+      await expect(client.listTaskSkillCandidates(scope)).rejects.toThrow("does not match");
+    }
+  });
+
+  it("submits a native installed Skill pin unchanged and validates its exact selection receipt", async () => {
+    const ref = JSON.stringify({ installation_id: "native-install", package_id: "package-" + "p".repeat(120), component_id: "skill:native",
+      revision: "a".repeat(64), installation_generation: 3 });
+    const receipt = { run_id: "run-native", refs: [ref], external_selection_id: "native-selection", replayed: false, capability_grant: false };
+    const fetch = vi.fn().mockResolvedValue(response(receipt)); vi.stubGlobal("fetch", fetch);
+    const client = new APIClient("read", "/api/v1", "control");
+    const choice = { refs: [ref], confirmUntrustedContext: true, source: "installed" as const };
+    await client.selectInstalledSkills("run-native", choice, "native-selection-key");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ refs: [ref], confirm_untrusted_context: true });
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-native/external-skills/select");
+  });
+
   it("selects exact project Skills through control and validates the existing selection receipt", async () => {
     const receipt = { run_id: "run-pinned", refs: ["code@1.0.0"], builtin_selection_id: "skill-selection-existing", replayed: false, capability_grant: false };
     const fetch = vi.fn().mockResolvedValue(response(receipt)); vi.stubGlobal("fetch", fetch);
@@ -28,6 +59,35 @@ describe("task configuration contract", () => {
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ refs: ["code@1.0.0"], confirm_untrusted_context: true });
     fetch.mockResolvedValue(response({ ...receipt, refs: ["code@2.0.0"] }));
     await expect(client.selectProjectSkills("run-pinned", choice, "project-selection-0001")).rejects.toThrow("does not match");
+  });
+  it("selects installed Skills on the operator route without the pinned admission", async () => {
+    const receipt = { run_id: "run-open", refs: ["review@1.2.0"], external_selection_id: "external-skill-selection-existing", replayed: false, capability_grant: false };
+    const fetch = vi.fn().mockResolvedValue(response(receipt)); vi.stubGlobal("fetch", fetch);
+    const choice = { refs: ["review@1.2.0"], confirmUntrustedContext: true, source: "installed" as const };
+    await expect(new APIClient("read", "/api/v1").selectInstalledSkills("run-open", choice, "installed-selection-0001")).rejects.toThrow("task control");
+    expect(fetch).not.toHaveBeenCalled();
+    const client = new APIClient("read", "/api/v1", "control");
+    await expect(client.selectInstalledSkills("run-open", { ...choice, refs: [] }, "installed-selection-0002")).rejects.toThrow("Exact installed Skill references");
+    await client.selectInstalledSkills("run-open", choice, "installed-selection-0001");
+    expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-open/external-skills/select");
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: "POST", headers: { Authorization: "Bearer control", "Idempotency-Key": "installed-selection-0001" } });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ refs: ["review@1.2.0"], confirm_untrusted_context: true });
+    // One receipt guard covers either admission, so a drift is still refused.
+    fetch.mockResolvedValue(response({ ...receipt, capability_grant: true }));
+    await expect(client.selectInstalledSkills("run-open", choice, "installed-selection-0001")).rejects.toThrow("does not match");
+  });
+  it("routes one Skill choice by its admission and keeps the operation key stable", async () => {
+    const calls: string[][] = [];
+    const routes = {
+      selectProjectSkills: (_runID: string, _choice: unknown, key: string) => { calls.push(["project", key]); return Promise.resolve(); },
+      selectInstalledSkills: (_runID: string, _choice: unknown, key: string) => { calls.push(["installed", key]); return Promise.resolve(); },
+    };
+    const pinned = { refs: ["code@1.0.0"], confirmUntrustedContext: false };
+    const installed = { refs: ["code@1.0.0", "review@1.2.0"], confirmUntrustedContext: true, source: "installed" as const };
+    await submitSkillChoice(routes, "run-one", pinned, "op-1");
+    await submitSkillChoice(routes, "run-one", installed, "op-1");
+    await submitSkillChoice(routes, "run-one", { ...pinned, source: "project" }, "op-2");
+    expect(calls).toEqual([["project", "v2-project-skills-op-1"], ["installed", "v2-installed-skills-op-1"], ["project", "v2-project-skills-op-2"]]);
   });
   it("previews inert configuration using the read bearer without control capability", async () => {
     const fetch = vi.fn().mockResolvedValue(response(configurationFixture())); vi.stubGlobal("fetch", fetch);

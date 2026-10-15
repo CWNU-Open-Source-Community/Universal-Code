@@ -1095,6 +1095,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveUI(tracked, request)
 		return
 	}
+	if request.URL.Path == TaskSkillCandidatesPath {
+		a.serveTaskSkillCandidates(tracked, request, requestID)
+		return
+	}
 	if request.URL.Path == TaskConfigurationPreviewPath {
 		a.serveTaskConfiguration(tracked, request, requestID, "")
 		return
@@ -1105,6 +1109,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, matched := matchProjectSkillSelectionPath(request.URL.Path); matched {
 		a.serveProjectSkillSelection(tracked, request, requestID, runID)
+		return
+	}
+	if runID, matched := matchInstalledSkillSelectionPath(request.URL.Path); matched {
+		a.serveInstalledSkillSelection(tracked, request, requestID, runID)
 		return
 	}
 	if request.URL.Path == DockerEnvironmentPath {
@@ -1368,6 +1376,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if request.URL.Path == SkillPackageInstallPath {
 		a.serveSkillPackageInstallControl(tracked, request, requestID)
+		return
+	}
+	if request.URL.Path == SkillPackageRemovePath {
+		a.serveSkillPackageRemoveControl(tracked, request, requestID)
 		return
 	}
 	if runID, matched := matchEvidenceAttachmentPath(request.URL.Path); matched &&

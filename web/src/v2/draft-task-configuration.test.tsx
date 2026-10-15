@@ -20,6 +20,17 @@ it("retains exact Skill choices across budget edits and reopening without cleari
   expect(reopened.result.current.valid).toBe(false);
 });
 
+it("persists a native component pin unchanged across reopening", () => {
+  const ref = JSON.stringify({ installation_id: "native-install", package_id: "package-" + "p".repeat(120), component_id: "skill:native",
+    revision: "a".repeat(64), installation_generation: 7 });
+  const choice = { refs: [ref], confirmUntrustedContext: true, source: "installed" as const };
+  const first = renderHook(() => useV2DraftTaskConfiguration("workspace-native"), { wrapper });
+  act(() => first.result.current.onProjectSkillsChange(choice));
+  first.unmount();
+  const reopened = renderHook(() => useV2DraftTaskConfiguration("workspace-native"), { wrapper });
+  expect(reopened.result.current.projectSkills).toEqual(choice);
+});
+
 it("retains each workspace's budget and rejection without letting an old callback update another workspace", () => {
   const view = renderHook(({ workspaceID }) => useV2DraftTaskConfiguration(workspaceID), { initialProps: { workspaceID: "workspace-first" }, wrapper });
   act(() => view.result.current.onBudgetChange({ max_turns: 20 }));

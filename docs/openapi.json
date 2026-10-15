@@ -2476,6 +2476,117 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/extensions/plugins/{installation_id}/publisher-trust": {
+      "post": {
+        "operationId": "trustPluginPublisher",
+        "summary": "Grant one Plugin publisher trust record",
+        "description": "Grants trust for the exact publisher fingerprint and trust generation the operator reviewed on one signed installation, so a stale view cannot trust another record. Trust identifies the publisher only: it grants no capability, and approval and enablement remain separate reviewed actions.",
+        "tags": [
+          "Extensions"
+        ],
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "path",
+            "description": "Signed Plugin installation identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PluginPublisherTrustResponseView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginPublisherTrustRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/extensions/plugins/{installation_id}/review": {
       "post": {
         "operationId": "reviewPluginInstallation",
@@ -12015,6 +12126,129 @@
           }
         },
         "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/runs/{run_id}/external-skills/select": {
+      "post": {
+        "operationId": "selectInstalledSkills",
+        "summary": "Select exact installed Skills for one Run",
+        "description": "Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Legacy refs retain name@version; native refs are the exact canonical skill_read component pin returned by task Skill candidates, including revision and installation generation. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque retry key; only a domain-separated digest is persisted",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProjectSkillSelectionResult"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledSkillSelectionRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
       }
     },
     "/api/v1/runs/{run_id}/fanout-executions": {
@@ -24540,6 +24774,110 @@
         "x-cyberagent-read-only": true
       }
     },
+    "/api/v1/skills/packages": {
+      "get": {
+        "operationId": "listSkillPackages",
+        "summary": "List installed Skill packages",
+        "description": "Returns inert installation metadata, eligibility lists, trust class and immutable removal tombstones. Each item reports the live readback result of its retained package object, so one unreadable object is shown as unverified instead of hiding the Registry. It never exposes package bodies, local paths, operation keys or digests, and listing grants no selection, execution or tool capability.",
+        "tags": [
+          "Extensions"
+        ],
+        "parameters": [
+          {
+            "name": "surface",
+            "in": "query",
+            "description": "Filter by execution surface",
+            "schema": {
+              "enum": [
+                "code",
+                "cyber"
+              ],
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "description": "Filter by one exact Profile identity",
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_removed",
+            "in": "query",
+            "description": "Include removed packages",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/SkillPackageInventoryView"
+                      },
+                      "type": "array"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
     "/api/v1/skills/packages/install": {
       "post": {
         "operationId": "installSkillPackage",
@@ -24648,6 +24986,114 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SkillPackageInstallRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/skills/packages/remove": {
+      "post": {
+        "operationId": "removeSkillPackage",
+        "summary": "Remove one installed Skill package",
+        "description": "Writes an immutable removal tombstone for one exact installed package after explicit operator confirmation. The retained object and historical Run facts stay unchanged, and removal grants no capability or re-authorization anywhere.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque retry key; only a domain-separated digest is persisted",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SkillPackageRemovalView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPackageRemoveRequestView"
               }
             }
           }
@@ -24838,6 +25284,128 @@
                 "$ref": "#/components/schemas/TaskConfigurationRequest"
               }
             }
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/task-configuration/skills": {
+      "get": {
+        "operationId": "listTaskSkillCandidates",
+        "summary": "List exact installed Skill candidates for one task mode",
+        "description": "Read-only, workspace-bound candidates for explicit per-Run context selection. Resolves historical installations and enabled Plugin Skill components through the same exact-ref, catalog, surface, phase, Profile and token checks as selection. Native refs copy the exact canonical skill_read component pin, including revision and installation generation. Missing objects and ambiguous or ineligible refs are withheld individually. A complete bounded inventory is required. No source content, installation, activation or capability grant is returned.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "surface",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "code",
+                "cyber"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "phase",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "plan",
+                "deliver"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "description": "",
+            "required": true,
+            "schema": {
+              "enum": [
+                "code",
+                "learn",
+                "review",
+                "script"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskSkillCandidatesView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
           }
         },
         "x-cyberagent-read-only": true
@@ -46530,6 +47098,25 @@
         ],
         "type": "object"
       },
+      "InstalledSkillSelectionRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_untrusted_context": {
+            "type": "boolean"
+          },
+          "refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "refs",
+          "confirm_untrusted_context"
+        ],
+        "type": "object"
+      },
       "InstructionAuthority": {
         "additionalProperties": false,
         "properties": {
@@ -48265,7 +48852,8 @@
             "enum": [
               "file_edit_apply",
               "run_wake_consume",
-              "skill_package_install"
+              "skill_package_install",
+              "skill_package_remove"
             ],
             "type": "string"
           },
@@ -48274,7 +48862,8 @@
               "applied",
               "failed",
               "completed",
-              "installed"
+              "installed",
+              "removed"
             ],
             "type": "string"
           },
@@ -49545,6 +50134,53 @@
         "type": "object"
       },
       "PluginPublisherRevocationView": {
+        "additionalProperties": false,
+        "properties": {
+          "installation_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "string"
+          },
+          "publisher": {
+            "$ref": "#/components/schemas/PluginPublisherTrustView"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "installation_id",
+          "publisher"
+        ],
+        "type": "object"
+      },
+      "PluginPublisherTrustRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
+          "expected_publisher_fingerprint": {
+            "type": "string"
+          },
+          "expected_publisher_generation": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "expected_publisher_fingerprint",
+          "expected_publisher_generation",
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "PluginPublisherTrustResponseView": {
         "additionalProperties": false,
         "properties": {
           "installation_id": {
@@ -58172,6 +58808,228 @@
         ],
         "type": "object"
       },
+      "SkillPackageInventoryView": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_grant": {
+            "type": "boolean"
+          },
+          "include_removed": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillPackageItemView"
+            },
+            "type": "array"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "enum": [
+              "skill_package_inventory.v1"
+            ],
+            "type": "string"
+          },
+          "returned_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "unverified_count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "capability_grant",
+          "surface",
+          "profile",
+          "include_removed",
+          "items",
+          "returned_count",
+          "unverified_count"
+        ],
+        "type": "object"
+      },
+      "SkillPackageItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_bytes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "archive_sha256": {
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string"
+          },
+          "content_body_exposed": {
+            "type": "boolean"
+          },
+          "content_bytes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "content_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "content_token_upper_bound": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "context_injection_authorized": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "entry_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "explicit_only": {
+            "type": "boolean"
+          },
+          "import_command_execution": {
+            "type": "boolean"
+          },
+          "import_network_access": {
+            "type": "boolean"
+          },
+          "import_provider_calls": {
+            "type": "boolean"
+          },
+          "installed_by": {
+            "type": "string"
+          },
+          "model_invocable": {
+            "type": "boolean"
+          },
+          "object_verified": {
+            "type": "boolean"
+          },
+          "operator_confirmed": {
+            "type": "boolean"
+          },
+          "package_fingerprint": {
+            "type": "string"
+          },
+          "phases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "profiles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removal": {
+            "$ref": "#/components/schemas/SkillPackageRemovalSummaryView"
+          },
+          "risk_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "run_selection_authorized": {
+            "type": "boolean"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "installed",
+              "removed"
+            ],
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "surfaces": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tool_capability_grant": {
+            "type": "boolean"
+          },
+          "tool_dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "trust_class": {
+            "enum": [
+              "operator_installed_untrusted"
+            ],
+            "type": "string"
+          },
+          "uncompressed_bytes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "user_invocable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skill",
+          "surface",
+          "profiles",
+          "surfaces",
+          "phases",
+          "roles",
+          "user_invocable",
+          "model_invocable",
+          "explicit_only",
+          "tool_dependencies",
+          "content_sha256",
+          "content_bytes",
+          "content_token_upper_bound",
+          "archive_sha256",
+          "package_fingerprint",
+          "archive_bytes",
+          "uncompressed_bytes",
+          "entry_count",
+          "trust_class",
+          "risk_codes",
+          "status",
+          "object_verified",
+          "operator_confirmed",
+          "import_command_execution",
+          "import_network_access",
+          "import_provider_calls",
+          "run_selection_authorized",
+          "context_injection_authorized",
+          "tool_capability_grant",
+          "content_body_exposed",
+          "installed_by",
+          "created_at",
+          "completed_at"
+        ],
+        "type": "object"
+      },
       "SkillPackageManifest": {
         "additionalProperties": false,
         "properties": {
@@ -58256,6 +59114,143 @@
           "content_sha256",
           "content_bytes",
           "content_token_upper_bound"
+        ],
+        "type": "object"
+      },
+      "SkillPackageRemovalSummaryView": {
+        "additionalProperties": false,
+        "properties": {
+          "context_injection_authorized": {
+            "type": "boolean"
+          },
+          "future_selection_enabled": {
+            "type": "boolean"
+          },
+          "historical_recovery_preserved": {
+            "type": "boolean"
+          },
+          "package_object_retained": {
+            "type": "boolean"
+          },
+          "removed_at": {
+            "type": "string"
+          },
+          "removed_by": {
+            "type": "string"
+          },
+          "run_selection_authorized": {
+            "type": "boolean"
+          },
+          "tool_capability_grant": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "package_object_retained",
+          "historical_recovery_preserved",
+          "future_selection_enabled",
+          "run_selection_authorized",
+          "context_injection_authorized",
+          "tool_capability_grant",
+          "removed_by",
+          "removed_at"
+        ],
+        "type": "object"
+      },
+      "SkillPackageRemovalView": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_grant": {
+            "type": "boolean"
+          },
+          "context_injection_authorized": {
+            "type": "boolean"
+          },
+          "future_selection_enabled": {
+            "type": "boolean"
+          },
+          "historical_recovery_preserved": {
+            "type": "boolean"
+          },
+          "package_object_retained": {
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "enum": [
+              "skill_package_removal_control.v1"
+            ],
+            "type": "string"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/OperationReceiptView"
+          },
+          "removed_at": {
+            "type": "string"
+          },
+          "removed_by": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "run_selection_authorized": {
+            "type": "boolean"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "removed"
+            ],
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "tool_capability_grant": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "skill",
+          "surface",
+          "status",
+          "capability_grant",
+          "package_object_retained",
+          "historical_recovery_preserved",
+          "future_selection_enabled",
+          "run_selection_authorized",
+          "context_injection_authorized",
+          "tool_capability_grant",
+          "removed_by",
+          "removed_at",
+          "replayed",
+          "receipt"
+        ],
+        "type": "object"
+      },
+      "SkillPackageRemoveRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_remove": {
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "enum": [
+              "skill_package_removal_request.v1"
+            ],
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "skill",
+          "confirm_remove"
         ],
         "type": "object"
       },
@@ -60504,6 +61499,101 @@
           "sources",
           "project_disposition",
           "rejections",
+          "capability_grant"
+        ],
+        "type": "object"
+      },
+      "TaskSkillCandidateItem": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "token_upper_bound": {
+            "format": "int32",
+            "maximum": 4096,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "name",
+          "token_upper_bound"
+        ],
+        "type": "object"
+      },
+      "TaskSkillCandidatesView": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_grant": {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSkillCandidateItem"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          },
+          "phase": {
+            "enum": [
+              "plan",
+              "deliver"
+            ],
+            "type": "string"
+          },
+          "profile": {
+            "enum": [
+              "code",
+              "learn",
+              "review",
+              "script"
+            ],
+            "type": "string"
+          },
+          "surface": {
+            "enum": [
+              "code",
+              "cyber"
+            ],
+            "type": "string"
+          },
+          "unavailable_count": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "version": {
+            "enum": [
+              "task_skill_candidates.v1"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "workspace_id",
+          "surface",
+          "phase",
+          "profile",
+          "items",
+          "unavailable_count",
           "capability_grant"
         ],
         "type": "object"

@@ -448,6 +448,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extensions/plugins/{installation_id}/publisher-trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant one Plugin publisher trust record
+         * @description Grants trust for the exact publisher fingerprint and trust generation the operator reviewed on one signed installation, so a stale view cannot trust another record. Trust identifies the publisher only: it grants no capability, and approval and enablement remain separate reviewed actions.
+         */
+        post: operations["trustPluginPublisher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/extensions/plugins/{installation_id}/review": {
         parameters: {
             query?: never;
@@ -2159,6 +2179,26 @@ export interface paths {
         get: operations["getRunExternalSkills"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/external-skills/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select exact installed Skills for one Run
+         * @description Explicit selection before the first turn for any installed Skill ref, without editing the pinned project configuration. Legacy refs retain name@version; native refs are the exact canonical skill_read component pin returned by task Skill candidates, including revision and installation generation. Reuses the built-in and installed external Skill selection services, so Run state, mode binding, untrusted-context confirmation, catalog eligibility and replay rules are identical to project-pinned selection. This endpoint never installs a package or grants a capability. Same-key recovery preserves selection receipts and the Created Run on failure.
+         */
+        post: operations["selectInstalledSkills"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4228,6 +4268,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills/packages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List installed Skill packages
+         * @description Returns inert installation metadata, eligibility lists, trust class and immutable removal tombstones. Each item reports the live readback result of its retained package object, so one unreadable object is shown as unverified instead of hiding the Registry. It never exposes package bodies, local paths, operation keys or digests, and listing grants no selection, execution or tool capability.
+         */
+        get: operations["listSkillPackages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills/packages/install": {
         parameters: {
             query?: never;
@@ -4242,6 +4302,26 @@ export interface paths {
          * @description Stages one explicitly confirmed package in the existing Plugin lifecycle. Versioned Plugin results identify the actual installation; legacy results are returned only when recovering an already durable legacy intent. Installation executes no scripts, commands or Provider calls. Capabilities require separate Plugin review.
          */
         post: operations["installSkillPackage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/packages/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove one installed Skill package
+         * @description Writes an immutable removal tombstone for one exact installed package after explicit operator confirmation. The retained object and historical Run facts stay unchanged, and removal grants no capability or re-authorization anywhere.
+         */
+        post: operations["removeSkillPackage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4282,6 +4362,26 @@ export interface paths {
          * @description Read-only bounded workspace configuration preview using the read bearer. Loads inert .prayu/config.yaml through the same Go resolver as creation. Rejections block the entire creation; no source bytes, host paths or secrets are returned. No command, model, network, Skill or capability is executed or granted. Cost limits require an operator price snapshot at execution and do not represent exact billing.
          */
         post: operations["previewTaskConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-configuration/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List exact installed Skill candidates for one task mode
+         * @description Read-only, workspace-bound candidates for explicit per-Run context selection. Resolves historical installations and enabled Plugin Skill components through the same exact-ref, catalog, surface, phase, Profile and token checks as selection. Native refs copy the exact canonical skill_read component pin, including revision and installation generation. Missing objects and ambiguous or ineligible refs are withheld individually. A complete bounded inventory is required. No source content, installation, activation or capability grant is returned.
+         */
+        get: operations["listTaskSkillCandidates"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9332,6 +9432,10 @@ export interface components {
             server_name: string;
             url?: string;
         };
+        InstalledSkillSelectionRequestView: {
+            confirm_untrusted_context: boolean;
+            refs: string[];
+        };
         InstructionAuthority: {
             debug_grant: boolean;
             formatting_guidance: boolean;
@@ -9759,9 +9863,9 @@ export interface components {
             cleanup_state: "not_applicable" | "complete" | "pending_review";
             durable: boolean;
             /** @enum {string} */
-            kind: "file_edit_apply" | "run_wake_consume" | "skill_package_install";
+            kind: "file_edit_apply" | "run_wake_consume" | "skill_package_install" | "skill_package_remove";
             /** @enum {string} */
-            outcome: "applied" | "failed" | "completed" | "installed";
+            outcome: "applied" | "failed" | "completed" | "installed" | "removed";
             /** @enum {string} */
             protocol_version: "operation_receipt.v1";
             /** @enum {string} */
@@ -10078,6 +10182,18 @@ export interface components {
             version: string;
         };
         PluginPublisherRevocationView: {
+            installation_id: string;
+            protocol_version: string;
+            publisher: components["schemas"]["PluginPublisherTrustView"];
+        };
+        PluginPublisherTrustRequestView: {
+            confirm: boolean;
+            expected_publisher_fingerprint: string;
+            /** Format: int64 */
+            expected_publisher_generation: number;
+            version: string;
+        };
+        PluginPublisherTrustResponseView: {
             installation_id: string;
             protocol_version: string;
             publisher: components["schemas"]["PluginPublisherTrustView"];
@@ -12240,6 +12356,62 @@ export interface components {
             user_invocable: boolean;
             version: string;
         };
+        SkillPackageInventoryView: {
+            capability_grant: boolean;
+            include_removed: boolean;
+            items: components["schemas"]["SkillPackageItemView"][];
+            profile: string;
+            /** @enum {string} */
+            protocol_version: "skill_package_inventory.v1";
+            /** Format: int32 */
+            returned_count: number;
+            surface: string;
+            /** Format: int32 */
+            unverified_count: number;
+        };
+        SkillPackageItemView: {
+            /** Format: int32 */
+            archive_bytes: number;
+            archive_sha256: string;
+            completed_at: string;
+            content_body_exposed: boolean;
+            /** Format: int32 */
+            content_bytes: number;
+            content_sha256: string;
+            /** Format: int32 */
+            content_token_upper_bound: number;
+            context_injection_authorized: boolean;
+            created_at: string;
+            /** Format: int32 */
+            entry_count: number;
+            explicit_only: boolean;
+            import_command_execution: boolean;
+            import_network_access: boolean;
+            import_provider_calls: boolean;
+            installed_by: string;
+            model_invocable: boolean;
+            object_verified: boolean;
+            operator_confirmed: boolean;
+            package_fingerprint: string;
+            phases: string[];
+            profiles: string[];
+            removal?: components["schemas"]["SkillPackageRemovalSummaryView"];
+            risk_codes: string[];
+            roles: string[];
+            run_selection_authorized: boolean;
+            skill: string;
+            /** @enum {string} */
+            status: "installed" | "removed";
+            surface: string;
+            surfaces: string[];
+            tool_capability_grant: boolean;
+            tool_dependencies: string[];
+            /** @enum {string} */
+            trust_class: "operator_installed_untrusted";
+            /** Format: int32 */
+            uncompressed_bytes: number;
+            user_invocable: boolean;
+        };
         SkillPackageManifest: {
             /** Format: int32 */
             content_bytes: number;
@@ -12260,6 +12432,41 @@ export interface components {
             tool_dependencies: string[];
             user_invocable?: boolean;
             version: string;
+        };
+        SkillPackageRemovalSummaryView: {
+            context_injection_authorized: boolean;
+            future_selection_enabled: boolean;
+            historical_recovery_preserved: boolean;
+            package_object_retained: boolean;
+            removed_at: string;
+            removed_by: string;
+            run_selection_authorized: boolean;
+            tool_capability_grant: boolean;
+        };
+        SkillPackageRemovalView: {
+            capability_grant: boolean;
+            context_injection_authorized: boolean;
+            future_selection_enabled: boolean;
+            historical_recovery_preserved: boolean;
+            package_object_retained: boolean;
+            /** @enum {string} */
+            protocol_version: "skill_package_removal_control.v1";
+            receipt: components["schemas"]["OperationReceiptView"];
+            removed_at: string;
+            removed_by: string;
+            replayed: boolean;
+            run_selection_authorized: boolean;
+            skill: string;
+            /** @enum {string} */
+            status: "removed";
+            surface: string;
+            tool_capability_grant: boolean;
+        };
+        SkillPackageRemoveRequestView: {
+            confirm_remove: boolean;
+            /** @enum {string} */
+            protocol_version: "skill_package_removal_request.v1";
+            skill: string;
         };
         Snapshot: {
             /** Format: int64 */
@@ -12782,6 +12989,29 @@ export interface components {
             sources: components["schemas"]["ConfigurationSource"][];
             /** @enum {string} */
             version: "task_configuration.v1";
+            workspace_id: string;
+        };
+        TaskSkillCandidateItem: {
+            name: string;
+            ref: string;
+            /** Format: int32 */
+            token_upper_bound: number;
+            version?: string;
+        };
+        TaskSkillCandidatesView: {
+            /** @enum {boolean} */
+            capability_grant: false;
+            items: components["schemas"]["TaskSkillCandidateItem"][];
+            /** @enum {string} */
+            phase: "plan" | "deliver";
+            /** @enum {string} */
+            profile: "code" | "learn" | "review" | "script";
+            /** @enum {string} */
+            surface: "code" | "cyber";
+            /** Format: int32 */
+            unavailable_count: number;
+            /** @enum {string} */
+            version: "task_skill_candidates.v1";
             workspace_id: string;
         };
         ThreadActivityArtifactReferenceView: {
@@ -16184,6 +16414,51 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["PluginPublisherRevocationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    trustPluginPublisher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Signed Plugin installation identity */
+                installation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginPublisherTrustRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PluginPublisherTrustResponseView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
@@ -20103,6 +20378,54 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    selectInstalledSkills: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstalledSkillSelectionRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectSkillSelectionResult"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];
@@ -25072,6 +25395,46 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    listSkillPackages: {
+        parameters: {
+            query?: {
+                /** @description Filter by execution surface */
+                surface?: "code" | "cyber";
+                /** @description Filter by one exact Profile identity */
+                profile?: string;
+                /** @description Include removed packages */
+                include_removed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SkillPackageInventoryView"][];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     installSkillPackage: {
         parameters: {
             query?: never;
@@ -25096,6 +25459,50 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["SkillPackageInstallView"] | components["schemas"]["PluginSkillInstallView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    removeSkillPackage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPackageRemoveRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SkillPackageRemovalView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
@@ -25181,6 +25588,45 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["TaskConfigurationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listTaskSkillCandidates: {
+        parameters: {
+            query: {
+                workspace_id: string;
+                surface: "code" | "cyber";
+                phase: "plan" | "deliver";
+                profile: "code" | "learn" | "review" | "script";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskSkillCandidatesView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

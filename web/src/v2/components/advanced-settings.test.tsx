@@ -92,6 +92,49 @@ describe("shared advanced settings", () => {
     expect(installSkillPackage).not.toHaveBeenCalled();
   });
 
+  it("lists registered Skill packages and gates removal behind explicit confirmation", async () => {
+    const user = userEvent.setup();
+    const item = { skill: "review.helper@1.0.0", surface: "code", profiles: ["review"],
+      surfaces: ["code"], phases: ["deliver"], roles: ["root"], user_invocable: true,
+      model_invocable: false, explicit_only: true, tool_dependencies: ["read_file"],
+      content_sha256: "a".repeat(64), content_bytes: 24, content_token_upper_bound: 24,
+      archive_sha256: "b".repeat(64), package_fingerprint: "c".repeat(64), archive_bytes: 512,
+      uncompressed_bytes: 256, entry_count: 2, trust_class: "operator_installed_untrusted",
+      risk_codes: [], status: "installed", object_verified: false, operator_confirmed: true,
+      import_command_execution: false, import_network_access: false,
+      import_provider_calls: false, run_selection_authorized: false,
+      context_injection_authorized: false, tool_capability_grant: false,
+      content_body_exposed: false, installed_by: "operator",
+      created_at: "2026-10-15T00:00:00Z", completed_at: "2026-10-15T00:00:01Z" };
+    const inventory = { protocol_version: "skill_package_inventory.v1", capability_grant: false,
+      surface: "", profile: "", include_removed: false, items: [item], returned_count: 1,
+      unverified_count: 1 };
+    const listSkillPackages = vi.fn().mockResolvedValue(inventory);
+    const removeSkillPackage = vi.fn().mockResolvedValue({});
+    mount({ hasSkillInstallation: true, listSkillPackages, removeSkillPackage }, "skills");
+    expect(await screen.findByText("review.helper@1.0.0")).toBeInTheDocument();
+    expect(listSkillPackages).toHaveBeenCalledWith({ includeRemoved: false }, expect.any(AbortSignal));
+    expect(screen.getByText(/包内容暂不可读/)).toBeInTheDocument();
+    const remove = screen.getByRole("button", { name: "移除登记" });
+    expect(remove).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: /确认移除此技能包/ }));
+    await user.click(remove);
+    await screen.findByText(/已移除登记/);
+    expect(removeSkillPackage).toHaveBeenCalledTimes(1);
+    expect(removeSkillPackage.mock.calls[0][0]).toEqual({
+      protocol_version: "skill_package_removal_request.v1", skill: "review.helper@1.0.0",
+      confirm_remove: true,
+    });
+    expect(removeSkillPackage.mock.calls[0][1]).toMatch(/^skill-package-remove-/u);
+  });
+
+  it("keeps the Skill registry closed on a read-only web connection", async () => {
+    const listSkillPackages = vi.fn();
+    mount({ hasSkillInstallation: false, listSkillPackages }, "skills");
+    expect(await screen.findByText(/连接具备 Skill 管理权限的服务后/)).toBeInTheDocument();
+    expect(listSkillPackages).not.toHaveBeenCalled();
+  });
+
   it("keeps one conversation default and optional prices under Model advanced settings", async () => {
     const user = userEvent.setup();
     const providerCredentialStatuses = vi.fn().mockResolvedValue({ items: [] });
