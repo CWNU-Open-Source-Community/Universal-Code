@@ -90,6 +90,11 @@ func (m *Manager) discoverNativeSource(ctx context.Context, record ServerRecord)
 		return CapabilitySnapshot{}, err
 	}
 	defer client.Close()
+	roots, err := m.prepareWorkspaceRoots(ctx, record, record.Descriptor.RunID, recheck)
+	if err != nil {
+		return CapabilitySnapshot{}, err
+	}
+	client.setWorkspaceRoots(roots)
 	client.secrets = slices.Clone(secrets)
 	client.descriptor.DeclaredCapabilities = slices.Clone(record.Descriptor.DeclaredCapabilities)
 	capabilities, err := client.DiscoverWithScope(ctx, scope)

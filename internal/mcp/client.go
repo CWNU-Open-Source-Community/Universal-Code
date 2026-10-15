@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/redact"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -25,6 +26,9 @@ type Client struct {
 	inputSecrets     []string
 	inputRecheck     func(context.Context) error
 	legacyInputCount int
+	rootsMu          sync.RWMutex
+	workspaceRoots   *clientWorkspaceRoots
+	pendingRoots     map[jsonrpc.ID]*clientWorkspaceRoots
 	resolved         *resolvedClient
 	remote           *mcpHTTPTransport
 	descriptor       ServerDescriptor
