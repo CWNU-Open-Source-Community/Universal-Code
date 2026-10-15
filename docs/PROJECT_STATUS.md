@@ -3,7 +3,10 @@
 > 2026-10-15 Batch validation: fixed Go/npm checks now select the task's existing
 > Command Runtime adapter and bind the stored child/integration workspace.
 > Receipts record the actual backend; historical or mismatched specialist
-> receipts require revalidation. New live backend acceptance remains pending.
+> receipts require revalidation. Real Local LPAC and Docker Engine runs passed,
+> including Docker cancellation immediately after container start. SBX live
+> verification was skipped for this session; advanced Git remains tracked in
+> [#335](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues/335).
 > See [ADR 0185](adr/0185-batch-validation-selected-runtime.md).
 
 > 2026-10-14 MCP content slice: approved resources, URI templates and prompts are available through the shared model gateway, operation approval and durable receipt path. See [ADR 0177](adr/0177-mcp-resources-prompts.md).
