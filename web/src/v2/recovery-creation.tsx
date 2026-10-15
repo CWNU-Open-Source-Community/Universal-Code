@@ -13,6 +13,7 @@ import { validImageAttachments, type WorkspaceImageAttachment } from "../api/ima
 import { validV2DraftVersion, type V2DraftVersion } from "./draft-version";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 import { validProjectSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
+import { validMCPReferences, type MCPDraftReference } from "../api/mcp-references";
 
 export interface CreationIntent {
   version: "v2_creation_recovery.v1";
@@ -22,6 +23,7 @@ export interface CreationIntent {
   files: V2FileReference[];
   images?: WorkspaceImageAttachment[];
   attachments?: WorkspaceFileAttachment[];
+  mcpReferences?: MCPDraftReference[];
   projectSkills?: ProjectSkillChoice;
   submittedDraft: string;
   draftVersion?: V2DraftVersion;
@@ -66,14 +68,20 @@ function validRequest(value: unknown): value is ThreadCreationControlRequestView
 }
 
 function validIntent(value: unknown): value is CreationIntent {
-  if (!record(value) || Object.keys(value).some((key) => !["version", "operationID", "request", "content", "files", "images", "attachments", "projectSkills", "submittedDraft", "draftVersion", "createdAt"].includes(key)) || value.version !== "v2_creation_recovery.v1" ||
+  if (!record(value)) return false;
+  let expectedGoal = "文件对话";
+  if (Array.isArray(value.mcpReferences) && value.mcpReferences.length) expectedGoal = "MCP 内容";
+  if (Array.isArray(value.images) && value.images.length) expectedGoal = "图片对话";
+  if (typeof value.content === "string" && value.content) expectedGoal = value.content;
+  if (Object.keys(value).some((key) => !["version", "operationID", "request", "content", "files", "images", "attachments", "mcpReferences", "projectSkills", "submittedDraft", "draftVersion", "createdAt"].includes(key)) || value.version !== "v2_creation_recovery.v1" ||
     !identity(value.operationID) || value.operationID.length > 128 || !validRequest(value.request) ||
     typeof value.content !== "string" || new TextEncoder().encode(value.content).byteLength > 16384 ||
     (!text(value.content) && !(Array.isArray(value.images) && value.images.length > 0) &&
-      !(Array.isArray(value.attachments) && value.attachments.length > 0)) ||
-    value.request.goal !== (value.content || (Array.isArray(value.images) && value.images.length > 0 ? "图片对话" : "文件对话")) || !validRecoveryFiles(value.files) ||
+      !(Array.isArray(value.attachments) && value.attachments.length > 0) && !(Array.isArray(value.mcpReferences) && value.mcpReferences.length > 0)) ||
+    value.request.goal !== expectedGoal || !validRecoveryFiles(value.files) ||
     (value.images !== undefined && !validImageAttachments(value.images, value.request.workspace_id)) ||
     (value.attachments !== undefined && !validFileAttachments(value.attachments, value.request.workspace_id)) ||
+    (value.mcpReferences !== undefined && !validMCPReferences(value.mcpReferences)) ||
     (value.projectSkills !== undefined && !validProjectSkillChoice(value.projectSkills)) ||
     (value.draftVersion !== undefined && !validV2DraftVersion(value.draftVersion, value.request.workspace_id)) ||
     typeof value.submittedDraft !== "string" || value.submittedDraft.trim() !== value.content.trim() ||
@@ -90,8 +98,8 @@ function canonical(value: unknown): string {
 }
 // A later edit can return to the same submitted body while its local draft ref
 // advances. Recover that original creation/key; its old ref only governs cleanup.
-const intentBody = ({ request, content, files, images, attachments, projectSkills, submittedDraft }: CreationIntent) =>
-  ({ request, content, files, images, attachments, projectSkills, submittedDraft });
+const intentBody = ({ request, content, files, images, attachments, mcpReferences, projectSkills, submittedDraft }: CreationIntent) =>
+  ({ request, content, files, images, attachments, mcpReferences, projectSkills, submittedDraft });
 
 function boundThread(value: unknown, workspaceID: string, expectedID?: string): ThreadView {
   if (!record(value) || value.protocol_version !== "thread.v1" || !identity(value.id) ||
@@ -110,7 +118,7 @@ type Observation = { thread?: ThreadView; message: string };
 export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   onRecovered: (thread: ThreadView, submittedDraft: string, files: V2FileReference[], input: V2TurnInput) => void,
 ): {
-  prepare(request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice): CreationIntent;
+  prepare(request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice, mcpReferences?: MCPDraftReference[]): CreationIntent;
   resolve(intent: CreationIntent): Promise<ThreadView>;
   handoff(intent: CreationIntent, thread: ThreadView): V2TurnInput;
   notice: ReactNode;
@@ -177,10 +185,11 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, client, workspaceID, refresh]);
 
-  const prepare = (request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice): CreationIntent => {
+  const prepare = (request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice, mcpReferences?: MCPDraftReference[]): CreationIntent => {
     const saved = loadIntents();
     const candidate: CreationIntent = { version: "v2_creation_recovery.v1", operationID: crypto.randomUUID(),
       request, content, files, ...(images?.length ? { images } : {}), ...(attachments?.length ? { attachments } : {}), submittedDraft,
+      ...(mcpReferences?.length ? { mcpReferences } : {}),
       ...(projectSkills?.refs.length ? { projectSkills } : {}),
       ...(draftVersion !== undefined ? { draftVersion } : {}), createdAt: new Date().toISOString() };
     if (!validIntent(candidate) || request.workspace_id !== workspaceID) throw invalid();
@@ -219,6 +228,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
       ...(saved.files.length ? { files: saved.files } : {}),
       ...(saved.images?.length ? { images: saved.images } : {}),
       ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
+      ...(saved.mcpReferences?.length ? { mcpReferences: saved.mcpReferences } : {}),
       ...(saved.draftVersion ? { draftVersion: saved.draftVersion } : {}),
       operationKey: `v2-thread-create-turn-${saved.operationID}`, createdAt: saved.createdAt };
     const previous = store!.read<unknown>(recoveryTurnKey(input), null);

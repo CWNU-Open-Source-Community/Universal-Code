@@ -795,6 +795,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 
 	rebuildHistoryRequest := func(compacted bool) error {
 		prepared.context.history, prepared.context.summary, prepared.context.hasSummary, _, err = s.supervisorConversationContext(ctx, &turn)
+		prepared.context.history = withoutCurrentMCPReferenceEvidence(prepared.context.history, prepared.input.mcpEvidenceIDs)
 		result.Checkpoint = turn.Checkpoint
 		if err == nil {
 			prepared.context.memory, err = supervisorMemoryContextWithinBudget(prepared.context.memoryBudget, prepared.context.threadEndTurn, prepared.context.summary, prepared.context.hasSummary, prepared.context.workItems, prepared.context.notes, prepared.context.inbox.Messages,
@@ -827,6 +828,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		if err != nil {
 			return err
 		}
+		baseRequest.Messages = append(baseRequest.Messages, prepared.input.mcpMessages...)
 		if prepared.input.boundaryContext != "" {
 			baseRequest.Messages = append(baseRequest.Messages,
 				toolBoundaryEvidenceMessage(turn.Run.SessionID, turn.Checkpoint.AttemptID, prepared.input.boundaryContext))

@@ -128,10 +128,11 @@ func (s MCPExecutionScope) Validate() error {
 }
 
 type MCPExecutionResult struct {
-	Content   string
-	IsError   bool
-	Truncated bool
-	Metadata  map[string]string
+	Content     string
+	FullContent string `json:"-"`
+	IsError     bool
+	Truncated   bool
+	Metadata    map[string]string
 }
 
 type MCPExecutor interface {
@@ -187,6 +188,22 @@ func (g *Gateway) invokeMCP(ctx context.Context, call ToolCall) (Outcome, error)
 		"capability_fingerprint": payload.CapabilityFingerprint, "untrusted_output": "true"}
 	for key, value := range result.Metadata {
 		metadata[key] = redact.String(value)
+	}
+	if result.FullContent != "" {
+		// Capture the full JSON after both credential sanitizers and before any
+		// context projection. The store binds it to this charged invocation.
+		full := sanitizeMCPResultContent(strings.ToValidUTF8(result.FullContent, "?"))
+		captured, err := g.captureTerminalArtifacts(ctx, call, call.InvocationID, full, "", "application/json")
+		if err != nil {
+			return Outcome{}, err
+		}
+		for key, value := range captured {
+			metadata[key] = value
+		}
+		read, _ := json.Marshal(domain.HistoryReadRequest{SourceID: "artifact:" + captured["artifact_stdout_id"], Part: "content",
+			ExpectedSHA256: captured["artifact_stdout_sha256"], Limit: domain.HistoryReadDefaultBytes})
+		metadata["full_result_read"] = string(read)
+		metadata["full_result_notice"] = "Complete sanitized MCP JSON was saved; use history_read with full_result_read and follow next_offset to read further pages."
 	}
 	status := StatusCompleted
 	exitCode := 0

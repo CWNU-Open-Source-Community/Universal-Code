@@ -9458,6 +9458,13 @@ export interface components {
         MCPInputResponseView: {
             accepted: boolean;
         };
+        MCPReference: {
+            arguments: unknown;
+            capability_fingerprint: string;
+            /** @enum {string} */
+            method: "resources/read" | "prompts/get";
+            server_id: string;
+        };
         Manifest: {
             backend: string;
             cancellation: components["schemas"]["CancellationSpec"];
@@ -13779,10 +13786,11 @@ export interface components {
         };
         ThreadTurnControlRequestView: {
             attachments?: components["schemas"]["FileAttachmentReference"][];
-            /** @description Trimmed UTF-8 operator text, at most 16 KiB. Empty only with one or more images or uploaded file attachments; no synthetic user text is inserted. */
+            /** @description Trimmed UTF-8 operator text, at most 16 KiB. Empty only with images, uploaded attachments or MCP selections. Reference-only messages use the display label MCP 内容. */
             content: string;
             files?: components["schemas"]["WorkspaceFileReference"][];
             images?: components["schemas"]["ImageReference"][];
+            mcp_references?: components["schemas"]["MCPReference"][];
             /** @enum {string} */
             version: "thread_message_submission.v1";
         } & ({
@@ -13791,6 +13799,8 @@ export interface components {
             images: unknown[];
         } | {
             attachments: unknown[];
+        } | {
+            mcp_references: unknown[];
         });
         ThreadTurnFailureReferenceView: {
             /** Format: int64 */

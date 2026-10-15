@@ -47063,6 +47063,34 @@
         ],
         "type": "object"
       },
+      "MCPReference": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {},
+          "capability_fingerprint": {
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "resources/read",
+              "prompts/get"
+            ],
+            "type": "string"
+          },
+          "server_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_id",
+          "capability_fingerprint",
+          "method",
+          "arguments"
+        ],
+        "type": "object"
+      },
       "Manifest": {
         "additionalProperties": false,
         "properties": {
@@ -64638,7 +64666,7 @@
                 "type": "array"
               },
               "content": {
-                "description": "Trimmed UTF-8 operator text, at most 16 KiB. Empty only with one or more images or uploaded file attachments; no synthetic user text is inserted.",
+                "description": "Trimmed UTF-8 operator text, at most 16 KiB. Empty only with images, uploaded attachments or MCP selections. Reference-only messages use the display label MCP 内容.",
                 "maxLength": 16384,
                 "minLength": 0,
                 "type": "string"
@@ -64653,6 +64681,13 @@
               "images": {
                 "items": {
                   "$ref": "#/components/schemas/ImageReference"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "mcp_references": {
+                "items": {
+                  "$ref": "#/components/schemas/MCPReference"
                 },
                 "maxItems": 4,
                 "type": "array"
@@ -64703,6 +64738,17 @@
                 },
                 "required": [
                   "attachments"
+                ]
+              },
+              {
+                "properties": {
+                  "mcp_references": {
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "mcp_references"
                 ]
               }
             ]

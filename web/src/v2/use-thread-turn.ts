@@ -10,6 +10,8 @@ import { v2ImageReferenceKey } from "./components/image-input";
 import type { V2DraftVersion } from "./draft-version";
 import { fileAttachmentIdentities, validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 import { v2AttachmentReferenceKey } from "./attachment-keys";
+import { mcpReferenceIdentities, validMCPReferences, type MCPDraftReference } from "../api/mcp-references";
+import { v2MCPReferenceKey } from "./components/mcp-reference-picker";
 
 export interface V2TurnInput {
   threadID: string;
@@ -24,6 +26,7 @@ export interface V2TurnInput {
   files?: V2FileReference[];
   images?: WorkspaceImageAttachment[];
   attachments?: WorkspaceFileAttachment[];
+  mcpReferences?: MCPDraftReference[];
   replacesOperationKey?: string;
 }
 
@@ -102,6 +105,7 @@ export function useV2ThreadTurn(client: APIClient) {
       if (input.attachments !== undefined && !validFileAttachments(input.attachments, input.workspaceID)) {
         throw new Error("文件附件的项目或保存身份无效，未发送消息。");
       }
+      if (input.mcpReferences !== undefined && !validMCPReferences(input.mcpReferences)) throw new Error("MCP 引用身份无效，请重新选择。");
       if (recovery) {
         for (const [key, previous] of recovery.entries<unknown>("turn:")) {
           if (!validRecoveryTurn(previous) || key !== recoveryTurnKey(previous)) throw new Error("原提交记录内容异常，未发送新消息。原数据已保留。");
@@ -115,7 +119,7 @@ export function useV2ThreadTurn(client: APIClient) {
         recovery.write(recoveryTurnKey(input), input);
       }
       if (input.deliveryMode === "steer") {
-        if (!input.sessionID || input.files?.length || input.images?.length || input.attachments?.length) {
+        if (!input.sessionID || input.files?.length || input.images?.length || input.attachments?.length || input.mcpReferences?.length) {
           throw new Error("更新当前任务仅支持文字；附件和引用仍保留在草稿中。");
         }
         return client.submitSessionMessage(input.sessionID, {
@@ -130,6 +134,7 @@ export function useV2ThreadTurn(client: APIClient) {
         })) } : {}),
         ...(input.images?.length ? { images: imageIdentities(input.images) } : {}),
         ...(input.attachments?.length ? { attachments: fileAttachmentIdentities(input.attachments) } : {}),
+        ...(input.mcpReferences?.length ? { mcp_references: mcpReferenceIdentities(input.mcpReferences) } : {}),
       }, input.operationKey);
     },
     onSuccess: (_data, input) => {
@@ -137,6 +142,8 @@ export function useV2ThreadTurn(client: APIClient) {
       // Versioned drafts are consumed by their exact branch/ref in settlement.
       // Keep identity-based cache cleanup only for legacy journal entries.
       if (!input.draftVersion) {
+        queryClient.setQueryData<MCPDraftReference[]>(v2MCPReferenceKey(input.workspaceID, input.threadID),
+          (current) => current?.filter(({ id }) => !input.mcpReferences?.some((item) => item.id === id)));
         queryClient.setQueryData<V2FileReference[]>(v2FileReferenceKey(input.workspaceID, input.threadID),
           (current) => current?.filter(({ id }) => !input.files?.some((file) => file.id === id)));
         queryClient.setQueryData<WorkspaceImageAttachment[]>(v2ImageReferenceKey(input.workspaceID, input.threadID),
@@ -169,6 +176,8 @@ export function useV2ThreadTurn(client: APIClient) {
       if (v2TurnOutcomeKnown(error)) {
         try { settleRecoveryTurn(recovery, input, v2TurnFailed(error)); } catch { /* Original identity stays recoverable. */ }
         if (v2TurnFailed(error) && !input.draftVersion) {
+          queryClient.setQueryData<MCPDraftReference[]>(v2MCPReferenceKey(input.workspaceID, input.threadID),
+            (current) => current?.filter(({ id }) => !input.mcpReferences?.some((item) => item.id === id)));
           queryClient.setQueryData<V2FileReference[]>(v2FileReferenceKey(input.workspaceID, input.threadID),
             (current) => current?.filter(({ id }) => !input.files?.some((file) => file.id === id)));
           queryClient.setQueryData<WorkspaceImageAttachment[]>(v2ImageReferenceKey(input.workspaceID, input.threadID),

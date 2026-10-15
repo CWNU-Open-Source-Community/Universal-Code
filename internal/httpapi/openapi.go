@@ -2635,6 +2635,7 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 			map[string]any{"required": []string{"content"}, "properties": map[string]any{"content": map[string]any{"type": "string", "minLength": 1}}},
 			map[string]any{"required": []string{"images"}, "properties": map[string]any{"images": map[string]any{"type": "array", "minItems": 1}}},
 			map[string]any{"required": []string{"attachments"}, "properties": map[string]any{"attachments": map[string]any{"type": "array", "minItems": 1}}},
+			map[string]any{"required": []string{"mcp_references"}, "properties": map[string]any{"mcp_references": map[string]any{"type": "array", "minItems": 1}}},
 		}
 		return map[string]any{"allOf": []any{schema, map[string]any{"anyOf": alternatives}}}
 	}
@@ -3077,9 +3078,12 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 	if typeName == "ThreadTurnControlRequestView" && fieldName == "files" {
 		schema["maxItems"] = domain.MaxThreadMessageFiles
 	}
+	if typeName == "ThreadTurnControlRequestView" && fieldName == "mcp_references" {
+		schema["maxItems"] = domain.MaxThreadMCPReferences
+	}
 	if typeName == "ThreadTurnControlRequestView" && fieldName == "content" {
 		schema["minLength"], schema["maxLength"] = 0, 16384
-		schema["description"] = "Trimmed UTF-8 operator text, at most 16 KiB. Empty only with one or more images or uploaded file attachments; no synthetic user text is inserted."
+		schema["description"] = "Trimmed UTF-8 operator text, at most 16 KiB. Empty only with images, uploaded attachments or MCP selections. Reference-only messages use the display label MCP 内容."
 	}
 	if (typeName == "ThreadTurnControlRequestView" || typeName == "ThreadTranscriptItemView") && fieldName == "attachments" {
 		schema["maxItems"] = domain.MaxThreadMessageAttachments
@@ -3574,6 +3578,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadCreationControlRequestView.network_mode":            {"disabled", "allowlist"},
 	"ThreadMessageControlRequestView.version":                  {domain.ThreadMessageProtocolVersion},
 	"ThreadTurnControlRequestView.version":                     {domain.ThreadMessageProtocolVersion},
+	"MCPReference.method":                                     {"resources/read", "prompts/get"},
 	"ThreadPlanControlRequestView.version":                     {application.PlanDeliveryControlProtocolVersion},
 	"ThreadPlanControlView.version":                            {application.PlanDeliveryControlProtocolVersion},
 	"ThreadPlanControlRequestView.action":                      {"enter_plan", "enter_deliver", "confirm"},

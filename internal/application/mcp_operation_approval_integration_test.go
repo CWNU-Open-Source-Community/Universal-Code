@@ -180,7 +180,8 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		method = contentMethod[0]
 	}
 	largeCatalog := method == "large_catalog"
-	if largeCatalog {
+	largeResult := method == "large_result"
+	if largeCatalog || largeResult {
 		method = ""
 	}
 	f := &mcpApprovalFixture{checker: &mcpReviewChecker{Checker: policy.NewDefaultChecker(), require: require}}
@@ -195,7 +196,8 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		t.Fatal(err)
 	}
 	request := CreateRunRequest{Goal: "Use the reviewed local fixture", Profile: "code", Surface: "code", Phase: "deliver", WorkspaceID: workspace.ID,
-		Budget: domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 8}}
+		Interactive: largeResult && len(contentMethod) > 1 && contentMethod[1] == "run_interactive",
+		Budget:      domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 8}}
 	if cyberPlan {
 		request.Profile, request.Surface, request.Phase = "review", "cyber", "plan"
 	}

@@ -5,14 +5,61 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
+	"image/color"
+	"image/gif"
 	"image/png"
 	"strings"
 	"testing"
 
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/toolgateway"
 )
+
+func TestSupervisorMCPGIFKeepsStaticAndProjectsAnimationFirstFrame(t *testing.T) {
+	palette := color.Palette{color.Black, color.White}
+	first := image.NewPaletted(image.Rect(0, 0, 2, 3), palette)
+	first.SetColorIndex(0, 0, 1)
+	second := image.NewPaletted(image.Rect(0, 0, 2, 3), palette)
+	for _, animated := range []bool{false, true} {
+		var encoded bytes.Buffer
+		animation := gif.GIF{Image: []*image.Paletted{first}, Delay: []int{0}}
+		if animated {
+			animation.Image, animation.Delay = append(animation.Image, second), append(animation.Delay, 1)
+		}
+		if err := gif.EncodeAll(&encoded, &animation); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := imageattachment.Validate(encoded.Bytes(), "image/gif", ""); err != nil {
+			t.Fatal("valid GIF rejected", err)
+		}
+		native := `{"content":[{"type":"image","mimeType":"image/gif","data":"` + base64.StdEncoding.EncodeToString(encoded.Bytes()) + `"}]}`
+		request, rounds := mcpContentFixture(t, native)
+		projected, err := supervisorMCPContent(request, rounds, true)
+		if err != nil || len(projected.Messages[0].Images) != 1 {
+			t.Fatalf("GIF did not reach image input: animated=%t err=%v", animated, err)
+		}
+		actual := projected.Messages[0].Images[0]
+		if animated {
+			pixels, err := png.Decode(bytes.NewReader(actual.Data))
+			if err != nil || actual.MediaType != "image/png" || color.NRGBAModel.Convert(pixels.At(0, 0)) != color.NRGBAModel.Convert(first.At(0, 0)) ||
+				!strings.Contains(projected.Messages[0].ToolResults[0].Content, "first-frame-only") {
+				t.Fatalf("animation first-frame projection is wrong: %+v %v", actual, err)
+			}
+		} else if actual.MediaType != "image/gif" || !bytes.Equal(actual.Data, encoded.Bytes()) {
+			t.Fatal("static GIF format or bytes changed")
+		}
+		contents, omitted, truncated := projectThreadActivityMCPContents(native)
+		if len(contents) != 1 || omitted != 0 || truncated || contents[0].MIMEType != "image/gif" ||
+			contents[0].DataBase64 != base64.StdEncoding.EncodeToString(encoded.Bytes()) {
+			t.Fatal("UI projection lost original GIF", contents, omitted, truncated)
+		}
+		if rounds[0].Calls[0].ResultJSON != request.Messages[0].ToolResults[0].Content {
+			t.Fatal("model projection changed durable GIF history")
+		}
+	}
+}
 
 func mcpContentFixture(t *testing.T, native string) (llm.ChatRequest, []domain.SupervisorToolRound) {
 	t.Helper()

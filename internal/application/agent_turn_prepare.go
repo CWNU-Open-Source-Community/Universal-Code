@@ -52,6 +52,8 @@ type agentTurnInput struct {
 	steeringSequence    int64
 	fileEffectCalls     []domain.SupervisorToolCall
 	fileEffects         string
+	mcpMessages         []llm.Message
+	mcpEvidenceIDs      []int64
 }
 
 type agentTurnCapabilities struct {
@@ -227,6 +229,11 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 		failure := s.recordFailure(ctx, &result, err, 0)
 		return nil, result, failure
 	}
+	mcpMessages, mcpEvidenceIDs, err := s.materializeSupervisorMCPReferences(ctx, *turn, s.router.DescribeVision(ref).State == llm.VisionSupported)
+	if err != nil {
+		return nil, result, s.recordFailure(ctx, &result, err, 0)
+	}
+	history = withoutCurrentMCPReferenceEvidence(history, mcpEvidenceIDs)
 	webEvidenceCapabilities, webEvidenceAuthority, err :=
 		s.supervisorWebEvidenceCapabilities(ctx, *turn, executionPermission)
 	if err != nil {
@@ -274,6 +281,7 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
+	messages = append(messages, mcpMessages...)
 	boundaryContext := boundaryReceipt.Content
 	if boundaryContext != "" {
 		messages = append(messages, toolBoundaryEvidenceMessage(turn.Run.SessionID, turn.Checkpoint.AttemptID, boundaryContext))
@@ -400,6 +408,8 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 			steeringSequence:    steeringSequence,
 			fileEffectCalls:     fileEffectCalls,
 			fileEffects:         fileEffects,
+			mcpMessages:         mcpMessages,
+			mcpEvidenceIDs:      mcpEvidenceIDs,
 		},
 		tools: agentTurnCapabilities{permission: executionPermission, options: toolOptions,
 			standardCode: standardCode, guidance: standardCodeGuidance,

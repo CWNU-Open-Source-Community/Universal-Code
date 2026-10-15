@@ -22,6 +22,12 @@ import (
 
 type v166HistoricalStore struct{ *SQLiteStore }
 
+// Message-selected MCP content was introduced in v195. This historical adapter
+// has no selections while the current runner exercises the exact v165/v166 schema.
+func (*v166HistoricalStore) ListSupervisorMCPReferences(context.Context, domain.SupervisorCheckpoint) ([]domain.ThreadMCPReference, error) {
+	return nil, nil
+}
+
 func (*v166HistoricalStore) PrepareWebFetchAuthorizationHandoff(context.Context, string, string, domain.SupervisorPhase) (domain.RunExecutionHandoff, bool, error) {
 	return domain.RunExecutionHandoff{}, false, nil
 }

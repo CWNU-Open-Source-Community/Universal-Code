@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,7 +30,18 @@ func (s *SQLiteStore) CaptureToolOutput(ctx context.Context, request artifact.Ca
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	descriptors, err := captureToolOutputTx(ctx, tx, normalized)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return descriptors, nil
+}
 
+// Callers normalize the capture request before joining their receipt transaction.
+func captureToolOutputTx(ctx context.Context, tx *sql.Tx, normalized artifact.CaptureRequest) ([]artifact.Descriptor, error) {
 	binding, err := requireArtifactRunBindingTx(ctx, tx, normalized)
 	if err != nil {
 		return nil, err
@@ -91,9 +103,6 @@ func (s *SQLiteStore) CaptureToolOutput(ctx context.Context, request artifact.Ca
 			return nil, err
 		}
 		descriptors = append(descriptors, descriptor)
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
 	}
 	return descriptors, nil
 }
@@ -182,7 +191,25 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 	}
 	var status, stdout, stderr string
 	switch request.ToolName {
+	case mcpReferenceArtifactSource:
+		output, found := requested[artifact.StreamStdout]
+		if len(requested) != 1 || !found || output.MIME != "application/json" || !output.Redacted || !json.Valid([]byte(output.Content)) {
+			return errors.New("MCP selection artifacts require one sanitized JSON result")
+		}
+		var runID, sessionID, workspaceID string
+		if err := tx.QueryRowContext(ctx, `SELECT run.id,run.session_id,COALESCE(mission.workspace_id,'')
+		 FROM thread_mcp_references ref JOIN thread_message_intents intent ON intent.operation_key_digest=ref.intent_digest
+		 JOIN runs run ON run.id=intent.run_id JOIN missions mission ON mission.id=run.mission_id
+		 WHERE ref.operation_id=? AND intent.rejected=0 AND (ref.state='started' OR (ref.state='completed' AND ref.receipt='result_received'))`, request.SourceID).
+			Scan(&runID, &sessionID, &workspaceID); err != nil {
+			return err
+		}
+		if runID != request.RunID || sessionID != request.SessionID || workspaceID != request.WorkspaceID {
+			return errors.New("artifact source scope does not match the stored MCP selection")
+		}
+		return nil
 	case "read_file", "list_workspace",
+		"mcp_tool_call",
 		"workspace_list", "workspace_read", "workspace_glob", "workspace_grep",
 		"workspace_change", "workspace_apply", "workspace_delete":
 		var runID, sessionID, workspaceID, toolName string

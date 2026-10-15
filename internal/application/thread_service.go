@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/toolgateway"
 )
 
 type ThreadStore interface {
@@ -86,15 +87,16 @@ type threadRunExecutionPermissionReader interface {
 }
 
 type SubmitThreadMessageRequest struct {
-	plan         *threadPlanCommitBinding
-	Version      string
-	ThreadID     string
-	Content      string
-	OperationKey string
-	RequestedBy  string
-	Files        []domain.WorkspaceFileReference
-	Images       []domain.ImageReference
-	Attachments  []domain.FileAttachmentReference
+	plan          *threadPlanCommitBinding
+	Version       string
+	ThreadID      string
+	Content       string
+	OperationKey  string
+	RequestedBy   string
+	Files         []domain.WorkspaceFileReference
+	Images        []domain.ImageReference
+	Attachments   []domain.FileAttachmentReference
+	MCPReferences []domain.MCPReference
 }
 
 type threadMessageIntentStore interface {
@@ -111,13 +113,18 @@ type threadMessageSuccessorStore interface {
 
 func threadMessageIntentRequest(request SubmitThreadMessageRequest) domain.ThreadMessageIntentRequest {
 	return domain.ThreadMessageIntentRequest{ThreadID: request.ThreadID, Content: request.Content,
-		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy, Files: request.Files, Images: request.Images, Attachments: request.Attachments}
+		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy, Files: request.Files, Images: request.Images, Attachments: request.Attachments, MCPReferences: request.MCPReferences}
 }
 
 func (s *ThreadService) reserveMessage(ctx context.Context, request SubmitThreadMessageRequest) (domain.ThreadMessageIntent, error) {
+	if len(request.MCPReferences) > 0 {
+		if _, ok := s.store.(supervisorMCPReferenceStore); !ok {
+			return domain.ThreadMessageIntent{}, apperror.New(apperror.CodeFailedPrecondition, "MCP selection persistence is unavailable")
+		}
+	}
 	store, ok := s.store.(threadMessageIntentStore)
 	if !ok {
-		if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 {
+		if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 || len(request.MCPReferences) != 0 {
 			return domain.ThreadMessageIntent{}, apperror.New(apperror.CodeFailedPrecondition, "Thread file reference persistence is unavailable")
 		}
 		return domain.ThreadMessageIntent{}, nil
@@ -191,7 +198,7 @@ func (s *ThreadService) Submit(ctx context.Context,
 	if err != nil {
 		return SubmitThreadMessageResult{}, err
 	}
-	if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 {
+	if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 || len(request.MCPReferences) != 0 {
 		return SubmitThreadMessageResult{}, apperror.New(apperror.CodeInvalidArgument, "File references require the Thread turn endpoint")
 	}
 	intent, err := s.reserveMessage(ctx, request)
@@ -422,6 +429,26 @@ func normalizeSubmitThreadMessageRequest(request SubmitThreadMessageRequest) (
 		!domain.ValidAgentID(request.ThreadID) {
 		return SubmitThreadMessageRequest{}, apperror.New(apperror.CodeInvalidArgument,
 			"Thread message submission Thread id is invalid")
+	}
+	if err := domain.ValidateThreadMCPReferences(request.MCPReferences); err != nil {
+		return SubmitThreadMessageRequest{}, apperror.New(apperror.CodeInvalidArgument, err.Error())
+	}
+	request.MCPReferences = append([]domain.MCPReference(nil), request.MCPReferences...)
+	for index, reference := range request.MCPReferences {
+		toolName := "resources.read"
+		if reference.Method == "prompts/get" {
+			toolName = "prompts.get"
+		}
+		raw, _ := json.Marshal(toolgateway.MCPToolCallPayload{Version: toolgateway.MCPContentToolProtocolVersion,
+			ServerID: reference.ServerID, CapabilityFingerprint: reference.CapabilityFingerprint, Method: reference.Method, ToolName: toolName, Arguments: reference.Arguments})
+		payload, _, err := toolgateway.NormalizeMCPToolPayload(raw)
+		if err != nil {
+			return SubmitThreadMessageRequest{}, apperror.Wrap(apperror.CodeInvalidArgument, "MCP selection arguments are invalid", err)
+		}
+		request.MCPReferences[index].Arguments = payload.Arguments
+	}
+	if strings.TrimSpace(request.Content) == "" && len(request.MCPReferences) > 0 {
+		request.Content = "MCP 内容"
 	}
 	content, err := domain.NormalizeThreadMessageContent(request.Content, request.Images, request.Attachments)
 	if err != nil {

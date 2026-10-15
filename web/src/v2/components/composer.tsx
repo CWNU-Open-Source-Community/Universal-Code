@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen } from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { WorkspaceView } from "../../api/types";
 import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-control";
@@ -18,13 +18,15 @@ import { useV2ImageInput, V2ImagePreview } from "./image-input";
 import { useV2ImageCapability } from "../use-image-capability";
 import { requireV2DraftVersion, useV2DraftDocument } from "../draft-context";
 import type { V2DraftVersion } from "../draft-version";
+import { maximumMCPReferences, mcpReferenceIdentities, type MCPDraftReference } from "../../api/mcp-references";
+import { V2MCPReferenceChips, V2MCPReferencePicker, useV2MCPReferences } from "./mcp-reference-picker";
 
 const maximumContentBytes = 16 * 1024;
 
 export const v2ComposerNotSubmitted = "not_submitted" as const;
 export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 
-export function V2Composer({ client, threadID, workspaceID, workspaces, disabled = false, submitDisabled = false,
+export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
   placeholder = "输入消息…", newThreadControls, threadControls, runActive = false, onManageModels,
   pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, draft, onDraftChange,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
@@ -43,7 +45,7 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
   pendingModelRoute?: V2PendingModelRoute | null;
   onPendingModelRouteChange?: (route: V2PendingModelRoute | null) => void;
   onWorkspaceChange: (workspaceID: string) => void;
-  onSubmit: (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[]) => Promise<V2ComposerSubmitResult>;
+  onSubmit: (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => Promise<V2ComposerSubmitResult>;
   draft?: string;
   onDraftChange?: (content: string, expected?: string) => void;
   fileReferenceUnavailableReason?: string;
@@ -53,6 +55,8 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
   const [localContent, setLocalContent] = useState("");
   const managedDraft = useV2DraftDocument(workspaceID, threadID);
   const references = useV2FileReferences(workspaceID, threadID);
+  const mcp = useV2MCPReferences(workspaceID, threadID);
+  const [mcpPicker, setMCPPicker] = useState<"resource" | "prompt" | null>(null);
   const images = useV2ImageInput({ client, workspaceID, threadID, disabled });
   const attachments = useV2FileInput({ client, workspaceID, threadID, disabled });
   const captureNativeImport = () => {
@@ -123,6 +127,7 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
   const pendingFiles = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
   const pendingImages = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
   const pendingAttachments = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
+  const pendingMCP = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
   const [, refreshPending] = useState(0);
   const submitting = pendingContents.current.size > 0;
   const scope = JSON.stringify([workspaceID, threadID]);
@@ -132,6 +137,8 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
     message: string; reason: unknown; inputFingerprint: string; operationKey?: string;
   } | null>(null);
   useEffect(() => setError(null), [scope]);
+  useEffect(() => setMCPPicker(null), [scope]);
+  useEffect(() => { if (disabled || fileReferenceUnavailableReason) setMCPPicker(null); }, [disabled, fileReferenceUnavailableReason]);
   useEffect(() => {
     setError((current) => {
       if (!current) return current;
@@ -139,7 +146,7 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
       // replace its transport error. A later draft can have its own failure.
       const operationKey = current.operationKey ?? submissions.findLast(({ input, error: reason }) =>
         reason === current.reason && input.workspaceID === workspaceID &&
-        JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments)]) === current.inputFingerprint)?.input.operationKey;
+        JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === current.inputFingerprint)?.input.operationKey;
       if (operationKey && confirmedSubmission?.threadID === threadID &&
         confirmedSubmission.workspaceID === workspaceID && confirmedSubmission.operationKey === operationKey) return null;
       return operationKey && operationKey !== current.operationKey ? { ...current, operationKey } : current;
@@ -148,15 +155,15 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const normalized = content.trim();
   const byteLength = new TextEncoder().encode(normalized).byteLength;
-  const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments)]);
+  const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments), mcpReferenceIdentities(mcp.references)]);
   const sameMessagePending = pendingContents.current.has(fingerprint) ||
-    pendingSubmissions.some(({ input }) => JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments)]) === fingerprint);
-  const ready = !disabled && !submitDisabled && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0) &&
-    byteLength <= maximumContentBytes && !(fileReferenceUnavailableReason && references.files.length > 0);
+    pendingSubmissions.some(({ input }) => JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint);
+  const ready = !disabled && !submitDisabled && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0) &&
+    byteLength <= maximumContentBytes && !(fileReferenceUnavailableReason && (references.files.length > 0 || mcp.references.length > 0));
   // Low-priority hints share a single caption line instead of stacking.
   const draftSavedLocally = Boolean(recovery) && !persistenceWarning &&
     (!managedDraft || managedDraft.state.persisted && !managedDraft.state.error) &&
-    (content || references.files.length > 0 || images.images.length > 0 || attachments.attachments.length > 0);
+    (content || references.files.length > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0);
   const showImageCapability = images.images.length > 0;
 
   useEffect(() => {
@@ -174,9 +181,11 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
     const submittedFiles = references.files;
     const submittedImages = images.images;
     const submittedAttachments = attachments.attachments;
+    const submittedMCP = mcp.references;
     pendingFiles.current.set(fingerprint, submittedFiles.map(({ id }) => id));
     pendingImages.current.set(fingerprint, submittedImages.map(({ id }) => id));
     pendingAttachments.current.set(fingerprint, submittedAttachments.map(({ id }) => id));
+    pendingMCP.current.set(fingerprint, submittedMCP.map(({ id }) => id));
     pendingContents.current.add(fingerprint);
     refreshPending((value) => value + 1);
     setError(null);
@@ -184,9 +193,11 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
     try {
       let result: V2ComposerSubmitResult;
       if (managedDraft) {
-        const version = requireV2DraftVersion(managedDraft, { text: content, files: submittedFiles, images: submittedImages, attachments: submittedAttachments });
-        result = await onSubmit(normalized, submittedFiles, submittedImages, version, submittedAttachments);
+        const version = requireV2DraftVersion(managedDraft, { text: content, files: submittedFiles, images: submittedImages, attachments: submittedAttachments, mcpReferences: submittedMCP });
+        result = submittedMCP.length ? await onSubmit(normalized, submittedFiles, submittedImages, version, submittedAttachments, submittedMCP)
+          : await onSubmit(normalized, submittedFiles, submittedImages, version, submittedAttachments);
       }
+      else if (submittedMCP.length) result = await onSubmit(normalized, submittedFiles, submittedImages, undefined, submittedAttachments, submittedMCP);
       else if (submittedAttachments.length) result = await onSubmit(normalized, submittedFiles, submittedImages, undefined, submittedAttachments);
       else if (submittedImages.length) result = await onSubmit(normalized, submittedFiles, submittedImages);
       else if (submittedFiles.length) result = await onSubmit(normalized, submittedFiles);
@@ -196,6 +207,7 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
         references.update((current) => current.filter(({ id }) => !submittedFiles.some((file) => file.id === id)));
         images.update((current) => current.filter(({ id }) => !submittedImages.some((image) => image.id === id)));
         attachments.update((current) => current.filter(({ id }) => !submittedAttachments.some((file) => file.id === id)));
+        mcp.update((current) => current.filter(({ id }) => !submittedMCP.some((item) => item.id === id)));
         setContent("", submittedContent);
       }
       if (currentScope.current === scope && currentContentRef.current === submittedContent) textareaRef.current?.focus();
@@ -210,12 +222,13 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
             ? "本轮已停止，输入和已完成的工作已保留。可发送新消息继续。"
             : "本轮执行失败，输入和已完成的工作已保留。可发送新消息继续。"
           : reason instanceof Error ? reason.message : "消息发送失败",
-        inputFingerprint: JSON.stringify([normalized, submittedFiles, imageIdentities(submittedImages), fileAttachmentIdentities(submittedAttachments)]), operationKey });
+        inputFingerprint: JSON.stringify([normalized, submittedFiles, imageIdentities(submittedImages), fileAttachmentIdentities(submittedAttachments), mcpReferenceIdentities(submittedMCP)]), operationKey });
     } finally {
       pendingContents.current.delete(fingerprint);
       pendingFiles.current.delete(fingerprint);
       pendingImages.current.delete(fingerprint);
       pendingAttachments.current.delete(fingerprint);
+      pendingMCP.current.delete(fingerprint);
       refreshPending((value) => value + 1);
     }
   };
@@ -247,6 +260,15 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
     detail: fileReferenceUnavailableReason || "选择项目中已有的文件作为参考",
     icon: <FolderOpen aria-hidden="true" size={18} />, disabled: disabled || Boolean(fileReferenceUnavailableReason),
     onSelect: () => setReferencePickerOpen(true) });
+  if (workspaceID && client.hasExtensionControl && client.hasThreadControl) {
+    let unavailable = "";
+    if (fileReferenceUnavailableReason) unavailable = "当前任务结束并处理待批准操作后可引用 MCP 内容";
+    else if (mcp.references.length >= maximumMCPReferences) unavailable = "每条消息最多 4 个 MCP 引用";
+    addActions.push({ id: "mcp-resource", label: "引用 MCP 资源", detail: unavailable || "选择服务器资源或填写资源模板",
+      icon: <Database aria-hidden="true" size={18} />, disabled: disabled || Boolean(unavailable), onSelect: () => setMCPPicker("resource") },
+    { id: "mcp-prompt", label: "使用 MCP Prompt", detail: unavailable || "选择 Prompt 并填写参数",
+      icon: <Command aria-hidden="true" size={18} />, disabled: disabled || Boolean(unavailable), onSelect: () => setMCPPicker("prompt") });
+  }
   if (client.hasThreadControl && desktopClipboardFilesAvailable()) addActions.push({ id: "paste", label: "粘贴文件",
     detail: "添加从资源管理器复制的文件 · Ctrl+V",
     icon: <ClipboardPaste aria-hidden="true" size={18} />,
@@ -270,6 +292,13 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
     if (files.length) { event.preventDefault(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
     <div className="v2-composer-surface">
+      <V2MCPReferenceChips references={mcp.references} disabled={disabled} pendingIDs={[
+        ...[...pendingMCP.current.values()].flat(), ...submissions.filter(({ pending, error }) => pending || Boolean(error) && !v2TurnOutcomeKnown(error))
+          .flatMap(({ input }) => input.mcpReferences?.map(({ id }) => id) ?? []),
+      ]} onRemove={(id) => mcp.update((current) => current.filter((item) => item.id !== id))} />
+      {mcpPicker && !disabled && <V2MCPReferencePicker client={client} key={scope} kind={mcpPicker}
+        workspaceID={workspaceID} runID={runID} returnFocusRef={addTriggerRef} onClose={() => setMCPPicker(null)}
+        onSelect={(item) => mcp.update((current) => current.length < maximumMCPReferences ? [...current, item] : current)} />}
       <V2ImagePreview client={client} images={images.images}
         pendingIDs={[...[...pendingImages.current.values()].flat(), ...submissions.filter(({ pending, error }) =>
           pending || Boolean(error) && !v2TurnOutcomeKnown(error)).flatMap(({ input }) => input.images?.map(({ id }) => id) ?? [])]}
@@ -295,7 +324,7 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
             <input ref={attachmentPicker} type="file" multiple hidden aria-label="选择图片或文件"
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
-          {threadID && threadControls?.(Boolean(content.trim() || references.files.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
+          {threadID && threadControls?.(Boolean(content.trim() || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
             managedDraft?.state.conflict || managedDraft?.state.error))}
           {!threadID ? <label className="v2-workspace-picker">
             <span className="sr-only">工作区</span>
@@ -323,6 +352,8 @@ export function V2Composer({ client, threadID, workspaceID, workspaces, disabled
     {workspaceID && references.files.length > 0 && fileReferenceUnavailableReason &&
       <p className="v2-composer-caption" role="status">{fileReferenceUnavailableReason}
         {" 已选引用与草稿会保留；先移除项目文件引用，即可发送补充文字和上传附件。"}</p>}
+    {mcp.references.length > 0 && fileReferenceUnavailableReason && <p className="v2-composer-caption" role="status">
+      MCP 引用需在当前任务结束并处理待批准操作后发送。草稿和已选内容会保留。</p>}
     {byteLength > maximumContentBytes && <p className="v2-composer-error">消息不能超过 16 KiB</p>}
     {images.uploading && <p className="v2-composer-caption" role="status">正在保存图片，完成后可发送…</p>}
     {(showImageCapability || draftSavedLocally) && <p className="v2-composer-caption" role="status">

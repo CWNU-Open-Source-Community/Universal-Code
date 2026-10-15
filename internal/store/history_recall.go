@@ -298,6 +298,8 @@ func (s *SQLiteStore) readThreadHistory(ctx context.Context, q historyQueryer, r
 			return value, historyNotFound()
 		}
 		value.Record, parts, err = readHistoryContinuity(ctx, q, scope, "r.id=?", ref.Fingerprint, ref.Run)
+	} else if strings.HasPrefix(request.SourceID, "artifact:") {
+		value.Record, parts, err = readHistoryMCPArtifact(ctx, q, scope, strings.TrimPrefix(request.SourceID, "artifact:"))
 	} else if strings.HasPrefix(request.SourceID, "tool:") {
 		var ref historyToolRef
 		if decodeHistoryToken(strings.TrimPrefix(request.SourceID, "tool:"), &ref) != nil {
@@ -337,6 +339,28 @@ func (s *SQLiteStore) readThreadHistory(ctx context.Context, q historyQueryer, r
 	value.TotalBytes = len(content)
 	value.HasMore = end < len(content)
 	return value, nil
+}
+
+func readHistoryMCPArtifact(ctx context.Context, q historyQueryer, scope historyScope, id string) (domain.HistoryRecord, map[string]string, error) {
+	if !domain.ValidAgentID(id) {
+		return domain.HistoryRecord{}, nil, historyNotFound()
+	}
+	blob, err := getRunArtifactRow(q.QueryRowContext(ctx, runArtifactSelect+` WHERE id=?
+		AND tool_name IN ('mcp_tool_call','mcp_reference') AND stream='stdout' AND mime='application/json'
+		AND run_id IN (SELECT run_id FROM thread_runs WHERE thread_id=?)`, id, scope.threadID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.HistoryRecord{}, nil, historyNotFound()
+	}
+	if err != nil {
+		return domain.HistoryRecord{}, nil, err
+	}
+	if scope.sessions[blob.SessionID] != blob.RunID || blob.WorkspaceID != scope.workspaceID {
+		return domain.HistoryRecord{}, nil, historyNotFound()
+	}
+	record, err := safeHistoryMetadata(domain.HistoryRecord{SourceID: "artifact:" + id, Kind: "tool_output_artifact",
+		RunID: blob.RunID, SessionID: blob.SessionID, SourceKind: session.SourceToolResult, SourceRef: blob.SourceID,
+		ToolName: blob.ToolName, ContentSHA256: blob.SHA256, CreatedAt: ts(blob.CreatedAt)})
+	return record, map[string]string{"content": blob.Content}, err
 }
 
 func readHistoryMessage(ctx context.Context, q historyQueryer, scope historyScope, id int64) (domain.HistoryRecord, map[string]string, error) {

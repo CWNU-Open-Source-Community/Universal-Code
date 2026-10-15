@@ -24,6 +24,8 @@ import { useV2Drafts } from "./recovery-session";
 import { readV2Route } from "./navigation";
 import { useV2CreationRecovery } from "./recovery-creation";
 import type { WorkspaceImageAttachment } from "../api/image-attachments";
+import { mcpReferenceIdentities, type MCPDraftReference } from "../api/mcp-references";
+import { v2MCPReferenceKey } from "./components/mcp-reference-picker";
 import { fileAttachmentIdentities, type WorkspaceFileAttachment } from "../api/file-attachments";
 import { v2AttachmentReferenceKey } from "./attachment-keys";
 import { v2ImageReferenceKey } from "./components/image-input";
@@ -61,7 +63,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   workspaceID: string;
   onWorkspaceChange: (workspaceID: string) => void;
   onImported: (workspace: WorkspaceView, currentDraft?: string) => void;
-  onCreated: (thread: ThreadView, submittedDraft: string, files: V2FileReference[], images?: WorkspaceImageAttachment[], version?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], shouldOpen?: boolean) => void;
+  onCreated: (thread: ThreadView, submittedDraft: string, files: V2FileReference[], images?: WorkspaceImageAttachment[], version?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], shouldOpen?: boolean, mcpReferences?: MCPDraftReference[]) => void;
   onTurnSuccess: (threadID: string, submittedDraft: string) => void;
   onManageModels: (prepareForDraft?: boolean) => void;
   onOpenTaskConfiguration: () => void;
@@ -95,13 +97,13 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
   const creationRecovery = useV2CreationRecovery(client, workspaceID, (thread, originalDraft, files, input) => {
     registerV2RecoveredTurn(queryClient, input);
-    onCreated(thread, originalDraft, files, input.images, input.draftVersion, input.attachments);
+    onCreated(thread, originalDraft, files, input.images, input.draftVersion, input.attachments, true, input.mcpReferences);
   });
   const { networkMode, allowedTargets, modelRoute } = options;
   const [modelCatalogError, setModelCatalogError] = useState("");
   const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
   const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
-  const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = []) => {
+  const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = [], mcpReferences: MCPDraftReference[] = []) => {
     if (!webAccessValid) throw new Error("请重新选择网页访问方式，草稿已保留。");
     if (!configurationValid) throw new Error("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。");
     if (projectSkills?.refs.length && !projectSkills.confirmUntrustedContext) throw new Error("请在任务配置中确认所选技能上下文。草稿已保留。");
@@ -131,10 +133,13 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         ? ` ${error.message}` : " 请检查连接后重试。"}`);
       return v2ComposerNotSubmitted;
     }
+    let goal = content || "文件对话";
+    if (!content && images.length) goal = "图片对话";
+    else if (!content && mcpReferences.length) goal = "MCP 内容";
     const request = {
       version: "thread_creation.v1",
       workspace_id: workspaceID,
-      goal: content || (images.length ? "图片对话" : "文件对话"),
+      goal,
       profile: "code",
       surface: "code",
       phase,
@@ -147,20 +152,20 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
     try {
       if (recovery) {
         if (managedDraft) {
-          if (draftVersion) assertV2DraftVersion(managedDraft, draftVersion, { text: submittedDraft, files, images, attachments });
-          else draftVersion = requireV2DraftVersion(managedDraft, { text: submittedDraft, files, images, attachments });
+          if (draftVersion) assertV2DraftVersion(managedDraft, draftVersion, { text: submittedDraft, files, images, attachments, mcpReferences });
+          else draftVersion = requireV2DraftVersion(managedDraft, { text: submittedDraft, files, images, attachments, mcpReferences });
         }
-        const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills);
+        const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills, mcpReferences);
         const thread = await creationRecovery.resolve(intent);
         const input = creationRecovery.handoff(intent, thread);
         const submission = turn.mutateAsync(input);
-        onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent());
+        onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent(), mcpReferences);
         void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
         try { await submission; }
         catch (error) { if (v2TurnFailed(error) && !input.draftVersion) onTurnSuccess(thread.id, submittedDraft); throw error; }
         if (!input.draftVersion) onTurnSuccess(thread.id, submittedDraft);
       } else {
-        const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments), projectSkills]);
+        const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments), projectSkills, mcpReferenceIdentities(mcpReferences)]);
         const operationID = creationAttemptRef.current.get(fingerprint) ?? globalThis.crypto.randomUUID();
         creationAttemptRef.current.set(fingerprint, operationID);
         const result = await client.createThread(request, `v2-thread-create-${operationID}`);
@@ -175,8 +180,9 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
           ...(files.length ? { files } : {}),
           ...(images.length ? { images } : {}),
           ...(attachments.length ? { attachments } : {}),
+          ...(mcpReferences.length ? { mcpReferences } : {}),
           operationKey: `v2-thread-create-turn-${operationID}`, createdAt: new Date().toISOString() });
-        onCreated(result.thread, submittedDraft, files, images, undefined, attachments, requestIsCurrent());
+        onCreated(result.thread, submittedDraft, files, images, undefined, attachments, requestIsCurrent(), mcpReferences);
         creationAttemptRef.current.delete(fingerprint);
         void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
         try { await submission; }
@@ -529,12 +535,16 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             webAccessValid={webAccessDefaults.valid}
             budget={draftTaskConfiguration.budget} configurationValid={draftTaskConfiguration.valid} projectSkills={draftTaskConfiguration.projectSkills}
             onOpenTaskConfiguration={() => setSettingsSection("task-configuration")}
-            onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true) => {
+            onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true, mcpReferences = []) => {
               const source = `new:${thread.workspace_id}`;
               const target = `thread:${thread.id}`;
               // Move the submitted version into the durable Thread's draft.
               // Anything typed or selected during creation stays in its project.
               if (!version) {
+              queryClient.setQueryData<MCPDraftReference[]>(v2MCPReferenceKey(thread.workspace_id ?? "", thread.id),
+                (current) => [...(current ?? []), ...mcpReferences.filter((item) => !current?.some(({ id }) => id === item.id))]);
+              queryClient.setQueryData<MCPDraftReference[]>(v2MCPReferenceKey(thread.workspace_id ?? "", ""),
+                (current) => current?.filter(({ id }) => !mcpReferences.some((item) => item.id === id)));
               setDrafts((current) => ({ ...current,
                 [source]: current[source] === submittedDraft ? "" : current[source] ?? "",
                 [target]: current[target] ?? submittedDraft }));
