@@ -23,6 +23,8 @@ func TestMCPToolSearchFindsLateApprovedOperationAndExecutesThroughGateway(t *tes
 	if err != nil || len(advertisement.Capabilities.Servers[0].Tools) <= 128 {
 		t.Fatalf("full authorized catalog missing: %v", err)
 	}
+	// Catalog refresh can contact the server before the local search starts.
+	requestsBeforeSearch := f.requests.Load()
 	options := supervisorToolOptions{MCP: advertisement}
 	specs := supervisorStructuredToolSpecs(f.turn.Mode.Surface, f.turn.Mode.Phase, permission.Mode, false, false, options)
 	foundSearch := false
@@ -49,8 +51,8 @@ func TestMCPToolSearchFindsLateApprovedOperationAndExecutesThroughGateway(t *tes
 	var envelope supervisorToolResultEnvelope
 	var page mcpSearchPage
 	if json.Unmarshal([]byte(result.ResultJSON), &envelope) != nil || json.Unmarshal([]byte(envelope.Stdout), &page) != nil ||
-		page.TotalMatches != 1 || len(page.Operations) != 1 || page.Operations[0].Name != "zz_read_archive" || f.requests.Load() != 0 {
-		t.Fatalf("late relevant operation not found locally: %s, requests=%d", result.ResultJSON, f.requests.Load())
+		page.TotalMatches != 1 || len(page.Operations) != 1 || page.Operations[0].Name != "zz_read_archive" || f.requests.Load() != requestsBeforeSearch || f.calls.Load() != 0 {
+		t.Fatalf("late relevant operation not found locally: %s, requests=%d before_search=%d calls=%d", result.ResultJSON, f.requests.Load(), requestsBeforeSearch, f.calls.Load())
 	}
 	operation := page.Operations[0]
 	if !strings.Contains(string(operation.InputSchema), `"integer"`) || operation.Invocation.CapabilityFingerprint != f.server.Capabilities.Fingerprint {
