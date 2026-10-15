@@ -9281,9 +9281,12 @@ export interface components {
             binding: components["schemas"]["MCPCredentialBindingView"];
             confirm: boolean;
             expected_reference_fingerprint: string;
+            /** Format: int32 */
+            oauth_callback_port?: number;
             oauth_client_id?: string;
             /** @enum {string} */
-            oauth_client_id_mode?: "pre_registered" | "metadata_url";
+            oauth_client_id_mode?: "auto" | "dynamic" | "pre_registered" | "metadata_url";
+            oauth_client_secret?: string;
             oauth_flow_id?: string;
             oauth_issuer?: string;
             secret?: string;

@@ -31,6 +31,10 @@ type Client struct {
 	secrets          []string
 	secretsMu        sync.RWMutex
 	closed           atomic.Bool
+	catalogRevision  atomic.Uint64
+	catalogChanged   func()
+	catalogError     func(error)
+	catalogListening bool
 	tap              *sdkResponseTap
 	protocolVersion  string
 	transport        sdk.Transport

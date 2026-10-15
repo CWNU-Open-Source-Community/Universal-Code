@@ -62,6 +62,8 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 	stop := context.AfterFunc(t.lifetime, cancel)
 	defer stop()
 	defer cancel()
+	discovery, _ := ctx.Value(resolvedDiscoveryKey{}).(*resolvedDiscovery)
+	subscription := &catalogSubscription{discovery: discovery}
 	options := &sdk.ClientOptions{
 		Capabilities:   &sdk.ClientCapabilities{},
 		MultiRoundTrip: &sdk.MultiRoundTripOptions{Disabled: true},
@@ -75,6 +77,11 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 			}
 		},
 	}
+	if t.catalogChanged != nil {
+		options.ToolListChangedHandler = func(context.Context, *sdk.ToolListChangedRequest) { t.invalidateCatalog() }
+		options.ResourceListChangedHandler = func(context.Context, *sdk.ResourceListChangedRequest) { t.invalidateCatalog() }
+		options.PromptListChangedHandler = func(context.Context, *sdk.PromptListChangedRequest) { t.invalidateCatalog() }
+	}
 	if t.inputHandler != nil {
 		options.Capabilities.Elicitation = &sdk.ElicitationCapabilities{Form: &sdk.FormElicitationCapabilities{}, URL: &sdk.URLElicitationCapabilities{}}
 		options.ElicitationHandler = t.handleLegacyInput
@@ -84,6 +91,14 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 	client := sdk.NewClient(&sdk.Implementation{Name: ClientName, Version: ClientVersion}, options)
 	client.AddSendingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, request sdk.Request) (sdk.Result, error) {
+			if method == "subscriptions/listen" && t.resolved != nil {
+				if t.tap.negotiated != nil {
+					t.tap.negotiated(preferredClientProtocolVersion)
+				}
+				// SDK starts this exact listen with Background. Carry only the bounded
+				// discovery authority, and bind cancellation to this subscription's ID.
+				ctx = context.WithValue(ctx, catalogSubscriptionKey{}, subscription)
+			}
 			capture, _ := ctx.Value(sdkRawResponseKey{}).(*sdkRawResponse)
 			if capture == nil {
 				capture = &sdkRawResponse{}

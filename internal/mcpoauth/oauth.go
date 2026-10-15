@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,8 @@ const prefix = "uc-mcp-oauth-v1:"
 const (
 	ClientIDPreRegistered = "pre_registered"
 	ClientIDMetadataURL   = "metadata_url"
+	ClientIDAuto          = "auto"
+	ClientIDDynamic       = "dynamic"
 )
 
 var ErrOAuth = errors.New("MCP OAuth could not be verified; refresh status or authorize again")
@@ -55,15 +58,17 @@ type OAuthStatus struct {
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 }
 type envelope struct {
-	ReauthorizationRequired bool          `json:"reauthorization_required,omitempty"`
-	Session                 string        `json:"session"`
-	Fingerprint             string        `json:"fingerprint"`
-	Target                  string        `json:"target"`
-	Resource                string        `json:"resource"`
-	Issuer                  string        `json:"issuer"`
-	ClientID                string        `json:"client_id"`
-	TokenEndpoint           string        `json:"token_endpoint"`
-	Token                   *oauth2.Token `json:"token"`
+	ReauthorizationRequired bool             `json:"reauthorization_required,omitempty"`
+	Session                 string           `json:"session"`
+	Fingerprint             string           `json:"fingerprint"`
+	Target                  string           `json:"target"`
+	Resource                string           `json:"resource"`
+	Issuer                  string           `json:"issuer"`
+	ClientID                string           `json:"client_id"`
+	ClientSecret            string           `json:"client_secret,omitempty"`
+	AuthStyle               oauth2.AuthStyle `json:"auth_style,omitempty"`
+	TokenEndpoint           string           `json:"token_endpoint"`
+	Token                   *oauth2.Token    `json:"token"`
 }
 
 func decode(raw string) (*envelope, error) {
@@ -153,6 +158,9 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func clientFor(base *http.Client, allowed func(*http.Request) bool) *http.Client {
+	return clientForAuth(base, allowed, nil)
+}
+func clientForAuth(base *http.Client, allowed, allowAuth func(*http.Request) bool) *http.Client {
 	rt := http.DefaultTransport.(*http.Transport).Clone()
 	rt.Proxy = nil
 	var transport http.RoundTripper = rt
@@ -160,7 +168,7 @@ func clientFor(base *http.Client, allowed func(*http.Request) bool) *http.Client
 		transport = base.Transport
 	}
 	return &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrOAuth }, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if !allowed(r) || r.URL.User != nil || r.URL.Fragment != "" || r.Header.Get("Authorization") != "" {
+		if !allowed(r) || r.URL.User != nil || r.URL.Fragment != "" || (r.Header.Get("Authorization") != "" && (allowAuth == nil || !allowAuth(r))) {
 			return nil, ErrOAuth
 		}
 		response, err := transport.RoundTrip(r)
@@ -303,21 +311,51 @@ func (f *Flow) Cancel() {
 }
 func (f *Flow) Done() <-chan struct{} { return f.done }
 
-// Start returns once an operator URL is ready. persist must recheck the complete
-// descriptor/reference binding while holding its normal mutation lock.
+// Options apply to one operator-initiated login.
+type Options struct {
+	ClientIDMode string
+	ClientSecret string
+	CallbackPort int
+}
+
 func Start(ctx context.Context, b Binding, issuer, clientID, clientIDMode string, base *http.Client, persist func(context.Context, string) error) (*Flow, error) {
-	if !validHTTPS(issuer) || len(clientID) == 0 || len(clientID) > 256 || strings.ContainsAny(clientID, "\r\n\x00") {
+	return StartWithOptions(ctx, b, issuer, clientID, Options{ClientIDMode: clientIDMode}, base, persist)
+}
+
+// StartWithOptions returns once an operator URL is ready. persist must recheck
+// the complete descriptor/reference binding while holding its mutation lock.
+func StartWithOptions(ctx context.Context, b Binding, issuer, clientID string, options Options, base *http.Client, persist func(context.Context, string) error) (*Flow, error) {
+	clientIDMode, clientSecret := options.ClientIDMode, options.ClientSecret
+	if clientIDMode == ClientIDAuto {
+		if clientID != "" {
+			clientIDMode = ClientIDPreRegistered
+		} else {
+			clientIDMode = ClientIDDynamic
+		}
+	}
+	if !validHTTPS(issuer) || options.CallbackPort < 0 || options.CallbackPort > 65535 ||
+		(clientSecret != "" && (!credential.ValidSecret(clientSecret) || len(clientSecret) > 1024)) {
 		return nil, ErrOAuth
 	}
-	if clientIDMode != "" && clientIDMode != ClientIDPreRegistered && clientIDMode != ClientIDMetadataURL {
+	switch clientIDMode {
+	case "", ClientIDPreRegistered, ClientIDMetadataURL:
+		if !validClientID(clientID) {
+			return nil, ErrOAuth
+		}
+	case ClientIDDynamic:
+		if clientID != "" || clientSecret != "" {
+			return nil, ErrOAuth
+		}
+	default:
 		return nil, ErrOAuth
 	}
 	if clientIDMode == ClientIDMetadataURL {
 		u, err := url.Parse(clientID)
-		if err != nil || !validHTTPS(clientID) || u.Path == "" || u.Path == "/" {
+		if err != nil || !validHTTPS(clientID) || u.Path == "" || u.Path == "/" || clientSecret != "" {
 			return nil, ErrOAuth
 		}
 	}
+
 	d, err := discover(ctx, b.Target, base)
 	if err != nil || !slices.Contains(d.resource.AuthorizationServers, issuer) {
 		return nil, ErrOAuth
@@ -351,7 +389,42 @@ func Start(ctx context.Context, b Binding, issuer, clientID, clientIDMode string
 	// a different issuer or endpoint between browser navigation and code exchange.
 	d.resource.AuthorizationServers = []string{issuer}
 	d.snapshots[d.metadataURL], _ = json.Marshal(d.resource)
-	tokenClient := clientFor(base, func(r *http.Request) bool { return r.Method == http.MethodPost && r.URL.String() == asm.TokenEndpoint })
+	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(options.CallbackPort))
+	if err != nil {
+		return nil, ErrOAuth
+	}
+	callback := "http://" + listener.Addr().String() + "/oauth/callback"
+	// Registration is sent only to the endpoint in the frozen, confirmed issuer metadata.
+	if clientIDMode == ClientIDDynamic {
+		if !validHTTPS(asm.RegistrationEndpoint) {
+			listener.Close()
+			return nil, ErrOAuth
+		}
+		registrationClient := clientFor(base, func(r *http.Request) bool {
+			return r.Method == http.MethodPost && r.URL.String() == asm.RegistrationEndpoint
+		})
+		registered, err := oauthex.RegisterClient(ctx, asm.RegistrationEndpoint, &oauthex.ClientRegistrationMetadata{
+			ClientName: "Universal Code", ApplicationType: "native", RedirectURIs: []string{callback}, TokenEndpointAuthMethod: "none",
+			GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"},
+		}, registrationClient)
+		if err != nil || registered == nil || !validClientID(registered.ClientID) || registered.ClientSecret != "" || registered.TokenEndpointAuthMethod != "none" || !slices.Contains(registered.RedirectURIs, callback) {
+			listener.Close()
+			return nil, ErrOAuth
+		}
+		clientID = registered.ClientID
+	}
+	authStyle := oauth2.AuthStyleInParams
+	if clientSecret != "" {
+		switch {
+		case slices.Contains(asm.TokenEndpointAuthMethodsSupported, "client_secret_post"):
+		case len(asm.TokenEndpointAuthMethodsSupported) == 0 || slices.Contains(asm.TokenEndpointAuthMethodsSupported, "client_secret_basic"):
+			authStyle = oauth2.AuthStyleInHeader
+		default:
+			listener.Close()
+			return nil, ErrOAuth
+		}
+	}
+	tokenClient := tokenHTTPClient(base, asm.TokenEndpoint, clientID, clientSecret, authStyle)
 	tokenTransport := tokenClient.Transport
 	tokenClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method == http.MethodGet {
@@ -360,17 +433,8 @@ func Start(ctx context.Context, b Binding, issuer, clientID, clientIDMode string
 			}
 			return nil, ErrOAuth
 		}
-		r, err := publicTokenRequest(r, asm.TokenEndpoint, clientID)
-		if err != nil {
-			return nil, err
-		}
 		return tokenTransport.RoundTrip(r)
 	})
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		return nil, ErrOAuth
-	}
-	callback := "http://" + listener.Addr().String() + "/oauth/callback"
 	flowCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	f := &Flow{id: rand.Text(), binding: b, status: OAuthStatus{State: "starting", Issuer: issuer}, cancel: cancel, done: make(chan struct{})}
 	ready := make(chan struct{})
@@ -438,13 +502,16 @@ func Start(ctx context.Context, b Binding, issuer, clientID, clientIDMode string
 			if !credential.ValidSecret(token.AccessToken) || !token.Valid() || !strings.EqualFold(token.TokenType, "Bearer") {
 				return nil, ErrOAuth
 			}
-			f.result = &envelope{Session: rand.Text(), Fingerprint: b.Fingerprint, Target: b.Target, Resource: d.resource.Resource, Issuer: issuer, ClientID: clientID, TokenEndpoint: cfg.Endpoint.TokenURL, Token: token}
+			f.result = &envelope{Session: rand.Text(), Fingerprint: b.Fingerprint, Target: b.Target, Resource: d.resource.Resource, Issuer: issuer, ClientID: clientID, ClientSecret: clientSecret, AuthStyle: authStyle, TokenEndpoint: cfg.Endpoint.TokenURL, Token: token}
 			return oauth2.StaticTokenSource(token), nil
 		}}
 	if clientIDMode == ClientIDMetadataURL {
 		config.ClientIDMetadataDocumentConfig = &auth.ClientIDMetadataDocumentConfig{URL: clientID}
 	} else {
 		config.PreregisteredClient = &oauthex.ClientCredentials{ClientID: clientID, Issuer: issuer}
+		if clientSecret != "" {
+			config.PreregisteredClient.ClientSecretAuth = &oauthex.ClientSecretAuth{ClientSecret: clientSecret}
+		}
 	}
 	handler, err := auth.NewAuthorizationCodeHandler(config)
 	if err != nil {
@@ -534,7 +601,7 @@ func ResolveRevision(ctx context.Context, store credential.Store, b Binding, bas
 	if e.Token.RefreshToken == "" {
 		return "", ErrOAuth
 	}
-	c := clientFor(base, func(r *http.Request) bool { return r.Method == http.MethodPost && r.URL.String() == e.TokenEndpoint })
+	c := tokenHTTPClient(base, e.TokenEndpoint, e.ClientID, e.ClientSecret, e.AuthStyle)
 	underlying := c.Transport
 	c.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
@@ -553,7 +620,11 @@ func ResolveRevision(ctx context.Context, store credential.Store, b Binding, bas
 		r.ContentLength = int64(len(encoded))
 		return underlying.RoundTrip(r)
 	})
-	cfg := oauth2.Config{ClientID: e.ClientID, Endpoint: oauth2.Endpoint{TokenURL: e.TokenEndpoint, AuthStyle: oauth2.AuthStyleInParams}}
+	style := e.AuthStyle
+	if style == oauth2.AuthStyleAutoDetect {
+		style = oauth2.AuthStyleInParams
+	}
+	cfg := oauth2.Config{ClientID: e.ClientID, ClientSecret: e.ClientSecret, Endpoint: oauth2.Endpoint{TokenURL: e.TokenEndpoint, AuthStyle: style}}
 	token, err := cfg.TokenSource(context.WithValue(ctx, oauth2.HTTPClient, c), e.Token).Token()
 	var rejected *oauth2.RetrieveError
 	if errors.As(err, &rejected) && rejected.ErrorCode == "invalid_grant" {
@@ -590,4 +661,29 @@ func ResolveRevision(ctx context.Context, store credential.Store, b Binding, bas
 		return "", ErrOAuth
 	}
 	return token.AccessToken, nil
+}
+
+func validClientID(id string) bool {
+	return len(id) > 0 && len(id) <= 256 && !strings.ContainsAny(id, "\r\n\x00")
+}
+
+// Only this exact token endpoint may receive this client's authentication header.
+func tokenHTTPClient(base *http.Client, endpoint, id, secret string, style oauth2.AuthStyle) *http.Client {
+	c := clientForAuth(base, func(r *http.Request) bool { return r.Method == http.MethodPost && r.URL.String() == endpoint }, func(r *http.Request) bool {
+		name, password, ok := r.BasicAuth()
+		name, e1 := url.QueryUnescape(name)
+		password, e2 := url.QueryUnescape(password)
+		return secret != "" && style == oauth2.AuthStyleInHeader && len(r.Header.Values("Authorization")) == 1 && ok && e1 == nil && e2 == nil && name == id && password == secret
+	})
+	if secret == "" {
+		underlying := c.Transport
+		c.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			r, err := publicTokenRequest(r, endpoint, id)
+			if err != nil {
+				return nil, err
+			}
+			return underlying.RoundTrip(r)
+		})
+	}
+	return c
 }

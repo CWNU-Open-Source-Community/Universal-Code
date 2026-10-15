@@ -58,7 +58,7 @@ func discoveryProfileMethods(profile string) []string {
 		// initialize/initialized and ping are only legacy fallback traffic;
 		// retaining them in this maximum set does not make them modern RPCs.
 		// See https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning
-		return append(legacy, "server/discover")
+		return append(legacy, "server/discover", "subscriptions/listen")
 	default:
 		return nil
 	}

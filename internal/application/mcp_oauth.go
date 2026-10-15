@@ -63,7 +63,7 @@ func (s *MCPCredentialService) changeOAuth(ctx context.Context, r ChangeMCPCrede
 		return status, err
 	}
 	if r.Action == "oauth-cancel" {
-		if r.OAuthIssuer != "" || r.OAuthClientID != "" || r.OAuthClientIDMode != "" {
+		if r.OAuthIssuer != "" || r.OAuthClientID != "" || r.OAuthClientIDMode != "" || r.OAuthClientSecret != "" || r.OAuthCallbackPort != 0 {
 			return fail()
 		}
 		if flow := s.oauth[r.Binding.CredentialRef]; flow != nil {
@@ -82,7 +82,7 @@ func (s *MCPCredentialService) changeOAuth(ctx context.Context, r ChangeMCPCrede
 		return fail()
 	}
 	if r.Action == "oauth-discover" {
-		if r.OAuthIssuer != "" || r.OAuthClientID != "" || r.OAuthClientIDMode != "" {
+		if r.OAuthIssuer != "" || r.OAuthClientID != "" || r.OAuthClientIDMode != "" || r.OAuthClientSecret != "" || r.OAuthCallbackPort != 0 {
 			return fail()
 		}
 		value, err := mcpoauth.Discover(ctx, r.Binding.Target, s.oauthHTTP)
@@ -107,7 +107,7 @@ func (s *MCPCredentialService) changeOAuth(ctx context.Context, r ChangeMCPCrede
 	if err != nil {
 		return fail()
 	}
-	flow, err := mcpoauth.Start(ctx, oauthBinding(r.Binding), r.OAuthIssuer, r.OAuthClientID, r.OAuthClientIDMode, s.oauthHTTP, func(ctx context.Context, raw string) error {
+	flow, err := mcpoauth.StartWithOptions(ctx, oauthBinding(r.Binding), r.OAuthIssuer, r.OAuthClientID, mcpoauth.Options{ClientIDMode: r.OAuthClientIDMode, ClientSecret: r.OAuthClientSecret, CallbackPort: r.OAuthCallbackPort}, s.oauthHTTP, func(ctx context.Context, raw string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		current, err := s.status(ctx, r.Binding)
@@ -142,7 +142,7 @@ func (s *MCPCredentialService) changeOAuth(ctx context.Context, r ChangeMCPCrede
 		return nil
 	})
 	if err != nil {
-		return MCPCredentialStatus{}, apperror.New(apperror.CodeUnavailable, "MCP OAuth could not start; verify issuer, public client ID and resource metadata")
+		return MCPCredentialStatus{}, apperror.New(apperror.CodeUnavailable, "MCP OAuth could not start; verify issuer, client registration, callback port and resource metadata")
 	}
 	s.oauth[r.Binding.CredentialRef] = flow
 	value := flow.Status()

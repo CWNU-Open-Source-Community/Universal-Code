@@ -7156,7 +7156,9 @@ export class APIClient {
       !body.confirm || !isSHA256(body.expected_reference_fingerprint) || body.secret ||
       !["oauth-discover", "oauth-start", "oauth-cancel"].includes(body.action)) throw new Error("An exact MCP OAuth binding and confirmation are required");
     if (body.oauth_client_id_mode !== undefined &&
-      (body.action !== "oauth-start" || !["pre_registered", "metadata_url"].includes(body.oauth_client_id_mode))) throw new Error("Invalid OAuth client ID mode");
+      (body.action !== "oauth-start" || !["auto", "dynamic", "pre_registered", "metadata_url"].includes(body.oauth_client_id_mode))) throw new Error("Invalid OAuth client ID mode");
+    if (body.oauth_callback_port !== undefined && (body.action !== "oauth-start" || !Number.isInteger(body.oauth_callback_port) || body.oauth_callback_port < 0 || body.oauth_callback_port > 65535)) throw new Error("Invalid OAuth callback port");
+    if (body.oauth_client_secret !== undefined && (body.action !== "oauth-start" || !body.oauth_client_id || !["auto", "pre_registered"].includes(body.oauth_client_id_mode ?? "pre_registered") || !body.oauth_client_secret || body.oauth_client_secret.length > 1024 || /[\r\n\0]/u.test(body.oauth_client_secret))) throw new Error("Invalid OAuth client secret configuration");
     if (body.action === "oauth-start" && body.oauth_client_id_mode === "metadata_url") {
       const url = new URL(body.oauth_client_id ?? "");
       if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash || url.pathname === "/" ||
