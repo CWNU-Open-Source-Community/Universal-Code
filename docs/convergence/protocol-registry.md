@@ -11,7 +11,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 78 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
-| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 51 | true |
+| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 52 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 4 | true |
@@ -40,7 +40,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 53 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 54 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 41 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -273,7 +273,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `universal-tool-binding-reader` (`v1`, active) at `internal/executionauth`
   - `approval-preference-reader` (`v1, v2`, active) at `internal/domain`
 
-<details><summary>51 active identifiers</summary>
+<details><summary>52 active identifiers</summary>
 
 - `approval_grant_consumption.v1`
 - `approval_grant_operation_key.v1`
@@ -318,6 +318,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_execution_permission_current_run_operation.v1`
 - `thread_execution_permission_materialization_operation.v1`
 - `thread_execution_permission_operation.v1`
+- `thread_mcp_references.v1`
 - `thread_message_image_intent_request.v1`
 - `thread_message_intent_operation.v1`
 - `thread_message_intent_request.v1`
@@ -1664,7 +1665,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-run-session-ledgers-reader` (`v0, v1, v2, v3, v4`, active) at `internal/store`
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
 
-<details><summary>53 active identifiers</summary>
+<details><summary>54 active identifiers</summary>
 
 - `context_memory.v1`
 - `continuity_context.v1`
@@ -1676,6 +1677,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `history_recall.v1`
 - `llm.item_stream.identity.v1`
 - `long_term_memory.v1`
+- `mcp_reference_result.v1`
 - `note_context.v1`
 - `observed_browser_controls.v1`
 - `operator_steering_revision_operation.v1`
