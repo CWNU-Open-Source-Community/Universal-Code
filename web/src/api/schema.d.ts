@@ -12809,7 +12809,7 @@ export interface components {
             duration_milliseconds: number;
             label: string;
             /** @enum {string} */
-            name: "command_runtime" | "workspace_list" | "workspace_read" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete" | "web_search" | "web_fetch" | "web_citation" | "mcp_tool_call" | "code_workspace_symbols" | "code_document_symbols" | "code_definition" | "code_references" | "code_implementation" | "code_hover" | "code_signature_help" | "code_diagnostics" | "code_call_hierarchy" | "code_type_hierarchy" | "github_review_evidence_list" | "github_review_evidence_read" | "browser_status" | "browser_navigate" | "browser_snapshot" | "browser_click" | "browser_type" | "browser_screenshot";
+            name: "command_runtime" | "workspace_list" | "workspace_read" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete" | "web_search" | "web_fetch" | "web_citation" | "mcp_tool_search" | "mcp_tool_call" | "code_workspace_symbols" | "code_document_symbols" | "code_definition" | "code_references" | "code_implementation" | "code_hover" | "code_signature_help" | "code_diagnostics" | "code_call_hierarchy" | "code_type_hierarchy" | "github_review_evidence_list" | "github_review_evidence_read" | "browser_status" | "browser_navigate" | "browser_snapshot" | "browser_click" | "browser_type" | "browser_screenshot";
             /** Format: date-time */
             started_at: string;
             /** @enum {string} */

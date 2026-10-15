@@ -60465,6 +60465,7 @@
               "web_search",
               "web_fetch",
               "web_citation",
+              "mcp_tool_search",
               "mcp_tool_call",
               "code_workspace_symbols",
               "code_document_symbols",

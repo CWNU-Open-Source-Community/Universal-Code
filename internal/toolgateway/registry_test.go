@@ -17,7 +17,7 @@ func TestToolRegistryKeepsModelCatalogOrderAndPhaseSets(t *testing.T) {
 		WorkItemCreateTool, NoteCreateTool, HistorySearchTool, HistoryReadTool,
 		SkillReadTool, SpecialistDelegationProposeTool, ChildTaskProposeTool,
 		DockerSandboxRunProposeTool, SkillCandidateProposeTool, DebugTerminalTool,
-		CommandRuntimeTool, MCPToolCallTool, WebSearchTool, SourceSearchTool,
+		CommandRuntimeTool, MCPToolSearchTool, MCPToolCallTool, WebSearchTool, SourceSearchTool,
 		WebFetchTool, WebCitationTool, BrowserStatusTool, BrowserNavigateTool,
 		BrowserSnapshotTool, BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool,
 	}

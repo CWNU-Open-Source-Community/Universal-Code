@@ -62,7 +62,7 @@ func ProjectThreadActivityToolFacts(call domain.SupervisorToolCall) (
 	value = ThreadActivityToolFacts{Version: ThreadActivityToolFactsProtocolVersion,
 		Kind: threadActivityToolKind(name), Operation: threadActivityToolLabel(name),
 		Authorization: "policy_checked", ErrorCode: safeThreadActivityFactIdentity(call.ErrorCode),
-		Untrusted: name == toolgateway.MCPToolCallTool || toolgateway.IsWebEvidenceTool(name) ||
+		Untrusted: name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool || toolgateway.IsWebEvidenceTool(name) ||
 			toolgateway.IsBrowserActionTool(name)}
 	if call.Status == domain.SupervisorToolDenied {
 		value.Authorization = "denied"
@@ -147,7 +147,7 @@ func threadActivityToolKind(name toolgateway.ToolName) string {
 	case toolgateway.IsCodeIntelTool(name) || name == toolgateway.GitHubEvidenceListTool ||
 		name == toolgateway.GitHubEvidenceReadTool:
 		return "verification"
-	case name == toolgateway.MCPToolCallTool:
+	case name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool:
 		return "mcp"
 	case toolgateway.IsBrowserActionTool(name):
 		return "browser"
@@ -164,7 +164,7 @@ func threadActivityToolLabel(name toolgateway.ToolName) string {
 		toolgateway.WorkspaceDeleteTool: "删除文件", toolgateway.WebSearchTool: "联网搜索",
 		toolgateway.SourceSearchTool: "搜索专业来源",
 		toolgateway.WebFetchTool:     "抓取网页", toolgateway.WebCitationTool: "验证网页引用",
-		toolgateway.MCPToolCallTool: "MCP 调用", toolgateway.BrowserStatusTool: "读取浏览器状态",
+		toolgateway.MCPToolCallTool: "MCP 调用", toolgateway.MCPToolSearchTool: "搜索 MCP 操作", toolgateway.BrowserStatusTool: "读取浏览器状态",
 		toolgateway.GitHubEvidenceListTool: "列出 GitHub 审查证据",
 		toolgateway.GitHubEvidenceReadTool: "读取 GitHub 审查证据",
 		toolgateway.BrowserNavigateTool:    "浏览器导航", toolgateway.BrowserSnapshotTool: "读取页面快照",
@@ -184,6 +184,17 @@ func projectThreadActivityInput(value *ThreadActivityToolFacts, name toolgateway
 	raw json.RawMessage,
 ) error {
 	switch {
+	case name == toolgateway.MCPToolSearchTool:
+		input, _, err := toolgateway.NormalizeMCPSearchPayload(raw)
+		if err != nil {
+			return err
+		}
+		value.Target = safeThreadActivityFactValue(input.Query)
+		if value.Target == "" {
+			value.Target = "当前授权的 MCP 目录"
+		}
+		appendThreadActivityFact(&value.Parameters, "limit", "结果上限", strconv.Itoa(input.Limit))
+		return nil
 	case name == toolgateway.MCPToolCallTool:
 		// This is a read-only public projection over durable history. Decode the
 		// exact payload shape without reapplying today's ingress secret policy so

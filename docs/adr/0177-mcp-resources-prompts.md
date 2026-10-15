@@ -15,7 +15,8 @@ Status: Accepted for [Issue #319](https://github.com/CWNU-Open-Source-Community/
 Prompt 的 `{name, arguments}`。Go 只接受已批准目录中的精确 URI、模板和名称；
 模板使用现有 RFC 6570 库展开字符串变量，未提供的变量按 RFC 6570 省略。
 Prompt 参数保留描述和必填标记，拒绝缺少必填参数及未知参数。
-Supervisor 以相同有界目录生成模型 schema，并在审批和执行时重新核对。
+Supervisor 通过 [ADR 0182](0182-mcp-tool-search.md) 的本地搜索按需返回完整 schema，
+并在准备调用、审批和执行时重新核对完整授权目录。
 资源 URI 始终交给已选择的 MCP 服务，不由宿主直接打开文件或抓取网址。
 
 ## 授权与信任边界

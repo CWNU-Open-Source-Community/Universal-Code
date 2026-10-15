@@ -715,6 +715,23 @@ func threadActivityEditSummary(action, source, destination, status string) strin
 func projectThreadActivityMCP(call domain.SupervisorToolCall, facts ThreadActivityToolFacts,
 	envelope threadActivityResultEnvelope, boundary ThreadActivityBoundary,
 ) (ThreadActivityMCPDetail, error) {
+	if call.ToolName == string(toolgateway.MCPToolSearchTool) {
+		input, _, err := toolgateway.NormalizeMCPSearchPayload(json.RawMessage(call.PayloadJSON))
+		if err != nil {
+			return ThreadActivityMCPDetail{}, err
+		}
+		server := input.ServerID
+		if server == "" {
+			server = "当前授权目录"
+		}
+		result := summarizeThreadActivityJSON([]byte(envelope.Stdout))
+		if result.Type == "" {
+			result = ThreadActivityJSONSummary{Type: "unavailable", Summary: "无可展示的结果摘要", Fields: []ThreadActivityJSONFieldSummary{}}
+		}
+		return ThreadActivityMCPDetail{Operation: facts.Operation, Server: server, Tool: "mcp_tool_search",
+			Arguments: summarizeThreadActivityJSONObject(json.RawMessage(call.PayloadJSON)), Result: result,
+			Contents: []ThreadActivityMCPContent{}, Boundary: boundary}, nil
+	}
 	input, err := decodeThreadActivityMCPPayload(json.RawMessage(call.PayloadJSON))
 	if err != nil {
 		return ThreadActivityMCPDetail{}, err
