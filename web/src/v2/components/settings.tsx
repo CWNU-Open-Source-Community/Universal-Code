@@ -185,11 +185,9 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
 }) {
   const [selected, setSelected] = useState<V2ConfiguredModelProviderPreset | null>(null);
-  const [copilotOpen, setCopilotOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(initialAdvancedOpen);
   useEffect(() => { if (initialAdvancedOpen) setAdvancedOpen(true); }, [initialAdvancedOpen]);
   const selectedIDRef = useRef("");
-  const copilotTriggerRef = useRef<HTMLButtonElement | null>(null);
   const credentials = useQuery({
     queryKey: ["v2", "provider-credentials"],
     queryFn: ({ signal }) => client.providerCredentialStatuses(signal),
@@ -200,11 +198,8 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
       .map((status) => status.provider),
   ), [credentials.data?.items]);
   const presets = useMemo<V2ConfiguredModelProviderPreset[]>(() =>
-    v2ModelProviderPresets.map((preset) => preset.kind === "account"
-      ? { ...preset, setup: { kind: "account", connected: false,
-        accountName: "GitHub Copilot" } }
-      : { ...preset, setup: { kind: "api_key",
-        configured: configuredProviderIDs.has(preset.id) } }),
+    v2ModelProviderPresets.map((preset) => ({ ...preset,
+      credentialConfigured: configuredProviderIDs.has(preset.id) })),
   [configuredProviderIDs]);
 
   const restoreCatalogFocus = () => {
@@ -214,14 +209,9 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
       `[data-model-provider-id="${selectedID}"]`,
     )?.focus());
   };
-  const selectPreset = (catalogPreset: V2ModelProviderPreset, trigger: HTMLButtonElement) => {
+  const selectPreset = (catalogPreset: V2ModelProviderPreset) => {
     const preset = presets.find((candidate) => candidate.id === catalogPreset.id);
     if (!preset) return;
-    if (preset.kind === "account") {
-      copilotTriggerRef.current = trigger;
-      setCopilotOpen(true);
-      return;
-    }
     selectedIDRef.current = preset.id;
     setSelected(preset);
   };
@@ -236,7 +226,7 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
         <ModelAvailabilitySettings client={client} /></>}
     </section>;
 
-  if (selected?.draft) {
+  if (selected) {
     return <>{initialAdvancedOpen && advancedPanel}
       <V2ProviderSettings client={client} initialPreset={selected.draft}
         onExit={restoreCatalogFocus} prepareForDraft={prepareForDraft}
@@ -247,11 +237,6 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
     <V2ModelSettings client={client} onSelectPreset={selectPreset} presets={presets}
       prepareForDraft={prepareForDraft} onReady={(source) => onModelReady?.(setupToken, source)} />
     {advancedPanel}
-    <V2ConfirmDialog confirmLabel="返回模型列表"
-      description="GitHub Copilot 账户登录待接入。请返回模型列表，选择已支持的供应商连接模型。"
-      onCancel={() => setCopilotOpen(false)} onConfirm={() => setCopilotOpen(false)}
-      open={copilotOpen} returnFocusRef={copilotTriggerRef}
-      title="GitHub Copilot 账户登录" />
   </>;
 }
 

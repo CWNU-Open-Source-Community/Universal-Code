@@ -2,9 +2,8 @@ import type { V2ModelProviderPreset } from "./model-settings";
 import type { V2ProviderDraftPreset } from "./provider-settings";
 
 export interface V2ConfiguredModelProviderPreset extends V2ModelProviderPreset {
-  /** API providers open the editable provider draft; account providers use a dedicated connector. */
-  draft?: V2ProviderDraftPreset;
-  kind: "api_key" | "account";
+  /** Each preset opens a supported API provider draft. */
+  draft: V2ProviderDraftPreset;
 }
 
 type BrandIconProps = {
@@ -36,7 +35,6 @@ const icons = {
   xiaomi: <BrandIcon path="M12 0C8.016 0 4.756.255 2.493 2.516.23 4.776 0 8.033 0 12.012c0 3.98.23 7.235 2.494 9.497C4.757 23.77 8.017 24 12 24c3.983 0 7.243-.23 9.506-2.491C23.77 19.247 24 15.99 24 12.012c0-3.984-.233-7.243-2.502-9.504C19.234.252 15.978 0 12 0zM4.906 7.405h5.624c1.47 0 3.007.068 3.764.827.746.746.827 2.233.83 3.676v4.54a.15.15 0 0 1-.152.147h-1.947a.15.15 0 0 1-.152-.148V11.83c-.002-.806-.048-1.634-.464-2.051-.358-.36-1.026-.441-1.72-.458H7.158a.15.15 0 0 0-.151.147v6.98a.15.15 0 0 1-.152.148H4.906a.15.15 0 0 1-.15-.148V7.554a.15.15 0 0 1 .15-.149zm12.131 0h1.949a.15.15 0 0 1 .15.15v8.892a.15.15 0 0 1-.15.148h-1.949a.15.15 0 0 1-.151-.148V7.554a.15.15 0 0 1 .151-.149zM8.92 10.948h2.046c.083 0 .15.066.15.147v5.352a.15.15 0 0 1-.15.148H8.92a.15.15 0 0 1-.152-.148v-5.352a.15.15 0 0 1 .152-.147Z" />,
   kimi: <BrandIcon path="M21.765.351C22.998.351 24 1.353 24 2.586S22.998 4.82 21.765 4.82h-1.974c-.15 0-.26-.12-.26-.26V2.586A2.237 2.237 0 0 1 21.765.35M9.41 13.388l8.447-8.377c.16-.16.07-.471-.14-.471h-4.55s-.1.02-.14.06l-9.099 9.029c-.14.14-.35.02-.35-.21V4.81c0-.15-.1-.27-.221-.27H.22c-.12 0-.22.12-.22.27v18.57c0 .15.1.27.22.27h3.137c.12 0 .22-.12.22-.27v-3.79c0-.08.03-.16.08-.21l2.826-2.796c.07-.07.16-.08.241-.03l7.546 5.551a8.9 8.9 0 0 0 4.018 1.493c.12.01.23-.11.23-.27V19.76c0-.14-.08-.25-.19-.26a5.8 5.8 0 0 1-2.355-.942l-6.533-4.73c-.14-.09-.15-.32-.03-.441" />,
   opencode: <BrandIcon path="M22 24H2V0h20zM17 4.8H7v14.4h10z" />,
-  copilot: <BrandIcon path="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z" />,
 } as const;
 
 export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] = [
@@ -45,7 +43,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "Claude",
     modelName: "claude-sonnet-5",
     icon: icons.anthropic,
-    kind: "api_key",
     draft: {
       id: "official-anthropic",
       displayName: "Claude 官方 API",
@@ -65,7 +62,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "OpenAI",
     modelName: "gpt-6.1-sol",
     icon: icons.openai,
-    kind: "api_key",
     draft: {
       id: "official-openai",
       displayName: "OpenAI 官方 API",
@@ -85,7 +81,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "DeepSeek",
     modelName: "deepseek-v4-flash",
     icon: icons.deepseek,
-    kind: "api_key",
     draft: {
       id: "official-deepseek",
       displayName: "DeepSeek 官方 API",
@@ -105,7 +100,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "Gemini",
     modelName: "gemini-3.7-flash",
     icon: icons.gemini,
-    kind: "api_key",
     draft: {
       id: "official-google-gemini",
       displayName: "Google Gemini 官方 API",
@@ -125,7 +119,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "Grok",
     modelName: "grok-4.6",
     icon: <GrokIcon />,
-    kind: "api_key",
     draft: {
       id: "official-xai",
       displayName: "xAI Grok 官方 API",
@@ -145,7 +138,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "MiniMax",
     modelName: "MiniMax-M3",
     icon: icons.minimax,
-    kind: "api_key",
     draft: {
       id: "official-minimax",
       displayName: "MiniMax 官方 API",
@@ -165,7 +157,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "MiMo",
     modelName: "mimo-v2.5-pro",
     icon: icons.xiaomi,
-    kind: "api_key",
     draft: {
       id: "official-mimo",
       displayName: "Xiaomi MiMo 官方 API",
@@ -185,7 +176,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "Kimi",
     modelName: "kimi-k3",
     icon: icons.kimi,
-    kind: "api_key",
     draft: {
       id: "official-kimi",
       displayName: "Kimi 官方 API",
@@ -205,7 +195,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "Kimi for Coding",
     modelName: "kimi-for-coding",
     icon: icons.kimi,
-    kind: "api_key",
     draft: {
       id: "official-kimi-coding",
       displayName: "Kimi for Coding",
@@ -225,7 +214,6 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     providerName: "OpenCode Go",
     modelName: "gpt-5.6-luna",
     icon: icons.opencode,
-    kind: "api_key",
     draft: {
       id: "opencode-go",
       displayName: "OpenCode Go",
@@ -239,13 +227,5 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
       nativeSearchDeclared: true,
       advancedConfig: {},
     },
-  },
-  {
-    id: "github-copilot",
-    providerName: "GitHub Copilot",
-    modelName: "账户接入",
-    icon: icons.copilot,
-    kind: "account",
-    setup: { kind: "account", connected: false, accountName: "GitHub 账户" },
   },
 ] as const;
