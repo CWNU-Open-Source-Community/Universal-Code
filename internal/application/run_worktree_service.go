@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/gitadvanced"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/runworktree"
 	"cyberagent-workbench/internal/sandbox"
 	"cyberagent-workbench/internal/session"
@@ -257,8 +258,22 @@ func (s *RunWorktreeService) ResolveDrydockExecutionBinding(ctx context.Context,
 		return sandbox.WorkspaceBinding{}, apperror.New(apperror.CodeInvalidArgument,
 			"Standard Code Drydock binding is invalid")
 	}
-	workspace, _, observed, err := s.loadExactDrydock(ctx, binding.RunID,
-		binding.DrydockGeneration, false)
+	var workspace runworktree.Workspace
+	var observed repository.DrydockObservation
+	var err error
+	if proof := gitBisectRuntimeFromContext(ctx); proof != nil {
+		if proof.runID != binding.RunID || proof.check == nil || proof.check(ctx) != nil {
+			return sandbox.WorkspaceBinding{}, runner.ErrCommandRuntimeBoundary
+		}
+		workspace, observed, err = s.loadGitBisectDrydock(ctx, binding.RunID, binding.DrydockGeneration, proof.root)
+	} else if source, ok := ctx.Value(gitBisectCleanupRootKey{}).(sandbox.WorkspaceBinding); ok {
+		if requireUnchanged || source.ID != binding.WorkspaceID {
+			return sandbox.WorkspaceBinding{}, runner.ErrCommandRuntimeBoundary
+		}
+		workspace, observed, err = s.loadGitBisectDrydock(ctx, binding.RunID, binding.DrydockGeneration, source.RootPath)
+	} else {
+		workspace, _, observed, err = s.loadExactDrydock(ctx, binding.RunID, binding.DrydockGeneration, false)
+	}
 	if err != nil {
 		return sandbox.WorkspaceBinding{}, err
 	}
@@ -280,8 +295,12 @@ func (s *RunWorktreeService) ResolveDrydockExecutionBinding(ctx context.Context,
 		return sandbox.WorkspaceBinding{}, apperror.New(apperror.CodeConflict,
 			"Standard Code Drydock content changed before container start")
 	}
-	return batchValidationDockerWorkspace(ctx, binding, sandbox.WorkspaceBinding{ID: workspace.SourceWorkspaceID,
+	bound, err := batchValidationDockerWorkspace(ctx, binding, sandbox.WorkspaceBinding{ID: workspace.SourceWorkspaceID,
 		RootPath: workspace.Path})
+	if err != nil {
+		return sandbox.WorkspaceBinding{}, err
+	}
+	return gitBisectDockerWorkspace(ctx, binding, bound)
 }
 
 type DrydockCheckpointRequest struct {

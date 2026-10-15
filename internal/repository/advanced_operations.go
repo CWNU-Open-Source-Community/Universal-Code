@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/gitadvanced"
-	"cyberagent-workbench/internal/runner"
 )
 
 type advancedStash struct {
@@ -181,11 +179,6 @@ func (e *AdvancedExecutor) populateAdvancedPreview(ctx context.Context, root str
 		if spec.ExpectedCurrent != "" && preview.Binding.Head != spec.ExpectedCurrent {
 			preview.BlockedReasons = append(preview.BlockedReasons,
 				"bisect current commit drifted from the reviewed recipe step")
-		}
-		if spec.Operation == gitadvanced.BisectRun {
-			if _, _, err := controlledRecipeCommand(root, spec.Recipe.Name); err != nil {
-				preview.BlockedReasons = append(preview.BlockedReasons, err.Error())
-			}
 		}
 		if err := e.blockIgnoredHistoryCollision(ctx, root, preview); err != nil {
 			return err
@@ -1010,50 +1003,14 @@ func shortOID(value string) string {
 	return value
 }
 
-func controlledRecipeCommand(root string, name gitadvanced.RecipeName) (string, []string, error) {
-	var executable string
-	var args []string
-	var err error
-	switch name {
-	case gitadvanced.RecipeGoTest:
-		executable, err = exec.LookPath("go")
-		args = []string{"test", "-count=1", "./..."}
-	case gitadvanced.RecipeNPMTest:
-		executable, args, err = NPMTestLauncher(root)
-		args = append(args, "test", "--", "--runInBand")
-	default:
-		return "", nil, errors.New("bisect recipe is not a registered Go-owned template")
-	}
-	if err != nil {
-		return "", nil, err
-	}
-	executable, err = canonicalBatchValidationExecutable(root, executable)
-	if err != nil {
-		return "", nil, err
-	}
-	return executable, args, nil
-}
-
 func (e *AdvancedExecutor) executeBisectRecipe(ctx context.Context, root string,
 	spec gitadvanced.Spec, receipt *gitadvanced.Receipt,
 ) (string, string, int, error) {
 	if spec.Recipe == nil {
 		return "", "", 0, errors.New("bisect recipe is required")
 	}
-	path, args, err := controlledRecipeCommand(root, spec.Recipe.Name)
-	if err != nil {
-		return "", "", 0, err
-	}
-	cacheRoot := filepath.Join(os.TempDir(), "cyberagent-git-bisect-cache")
-	if err := checkAdvancedDispatch(ctx); err != nil {
-		return "", "", 0, err
-	}
-	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
-		return "", "", 0, errors.New("bisect recipe cache is unavailable")
-	}
-	starter := e.recipeStarter
-	if starter == nil || !starter.Available() {
-		return "", "", 0, errors.New("bisect recipe process-tree boundary is unavailable")
+	if e.recipeExecutor == nil {
+		return "", "", 0, errors.New("bisect recipe Run-selected execution backend is unavailable")
 	}
 	var allOut, allErr strings.Builder
 	for step := 0; step < spec.Recipe.MaxSteps; step++ {
@@ -1071,14 +1028,21 @@ func (e *AdvancedExecutor) executeBisectRecipe(ctx context.Context, root string,
 			cancel()
 			return allOut.String(), allErr.String(), 0, err
 		}
-		started, runErr := starter.Start(testCtx, runner.OnceStartSpec{
+		started, execution, runErr := e.recipeExecutor.ExecuteBisectRecipe(testCtx, BisectRecipeStep{
 			RequestFingerprint: gitadvanced.Fingerprint("bisect-recipe-step", spec.SequenceID,
 				binding.Head, string(spec.Recipe.Name), fmt.Sprint(step)),
-			ExecutablePath: path, Argv: append([]string(nil), args...),
-			WorkingDirectory: root, Environment: batchValidationEnvironment(cacheRoot),
+			Root: root, SequenceID: spec.SequenceID, Commit: binding.Head, Ordinal: step,
+			RecipeName: spec.Recipe.Name, TimeoutSeconds: spec.Recipe.TimeoutSeconds,
 		})
 		timedOut := errors.Is(testCtx.Err(), context.DeadlineExceeded)
 		cancel()
+		execution.Commit, execution.Ordinal = binding.Head, step
+		if execution.Execution.JobID != "" {
+			if err := execution.Validate(); err != nil {
+				return allOut.String(), allErr.String(), 0, err
+			}
+			receipt.BisectExecutions = append(receipt.BisectExecutions, execution)
+		}
 		maxInt := int(^uint(0) >> 1)
 		if started.Stdout.ObservedBytes < 0 || started.Stderr.ObservedBytes < 0 ||
 			started.Stdout.ObservedBytes > maxInt-started.Stderr.ObservedBytes {
@@ -1109,6 +1073,20 @@ func (e *AdvancedExecutor) executeBisectRecipe(ctx context.Context, root string,
 		if runErr != nil {
 			return allOut.String(), allErr.String(), 0, runErr
 		}
+		if execution.Execution.JobID == "" || !execution.Execution.TreeReaped ||
+			!execution.Execution.StdinClosed {
+			return allOut.String(), allErr.String(), 0,
+				errors.New("bisect recipe backend completion evidence is unavailable")
+		}
+		if started.ExitCode < 0 || started.ExitCode > 127 {
+			return allOut.String(), allErr.String(), 0,
+				errors.New("bisect recipe terminated without a classifiable exit code")
+		}
+		postTest, captureErr := e.CaptureAdvancedBinding(ctx, root)
+		if captureErr != nil || postTest.Head != binding.Head {
+			return allOut.String(), allErr.String(), 0,
+				errors.New("bisect recipe current commit changed while testing; result was not marked")
+		}
 		if reason, collisionErr := e.ignoredHistoryCollision(ctx, root); collisionErr != nil {
 			return allOut.String(), allErr.String(), 0, collisionErr
 		} else if reason != "" {
@@ -1130,10 +1108,16 @@ func (e *AdvancedExecutor) executeBisectRecipe(ctx context.Context, root string,
 		if gitErr != nil || code != 0 {
 			return allOut.String(), allErr.String(), code, gitErr
 		}
-		if strings.Contains(markOut, "is the first bad commit") ||
-			strings.Contains(markOut, "first bad commit could be any") {
-			post, _ := e.CaptureAdvancedBinding(context.WithoutCancel(ctx), root)
-			receipt.TargetOID = post.Head
+		if strings.Contains(markOut, "is the first bad commit") {
+			// Git may leave HEAD on the last good candidate. Its bad ref, not
+			// the checkout, identifies the regression proven by this step.
+			bad, _, code, err := e.git(ctx, root, nil, "rev-parse", "--verify", "refs/bisect/bad")
+			bad = strings.TrimSpace(bad)
+			if err != nil || code != 0 || !gitadvanced.ValidObjectID(bad) {
+				return allOut.String(), allErr.String(), 0,
+					errors.New("bisect first bad commit could not be confirmed")
+			}
+			receipt.TargetOID = bad
 			return allOut.String(), allErr.String(), 0, nil
 		}
 	}

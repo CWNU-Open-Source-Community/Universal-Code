@@ -41,6 +41,12 @@ Batch 交付的 Go/npm 验证也使用任务当前选择的 Command Runtime 后�
 后端未就绪时拒绝执行。收据标明实际 backend、网络策略与 readiness，历史
 验收记录不代表这条新路径已真机通过。见 [Batch 验证边界](batch-delivery.md#验证执行边界--validation-execution-boundary)。
 
+高级 Git 的 `bisect_run` 固定 Go/npm 测试也复用 Run 所选后端。Git 审批与
+检查点继续绑定原仓库，每步只将该仓库交给已授权的后端，收据绑定实际测试提交、
+Job、后端代际与清理状态。Ask / Auto / Full 继续沿用高级 Git 的精确操作审批，
+未就绪、权限变化或退出结果不确定时停止，不将提交误标为好或坏。
+详见 [有界 bisect](git-advanced.md#bounded-bisect--有界-bisect)。
+
 ## Docker Engine 准备
 
 由用户安装并启动 Docker；Windows 使用 Docker Desktop 的 Linux Engine。
@@ -106,7 +112,10 @@ SHA-256、绝对路径和固定参数；正式创建使用 `--static-mcp` 选择
 或删除未确认时，日志保留待处理状态，Command Runtime 保留不确定清理结果。
 合同与版本范围见 [ADR 0172](adr/0172-sbx-owned-namespace-execution.md)。
 
-每个 VM 使用 deny-all 网络、关闭共享技能、工作区挂载和只读 `.git` 文件。
+每个 VM 使用 deny-all 网络、关闭共享技能、工作区挂载和只读 `.git` 挂载。
+普通 Run/Batch 使用 linked worktree 的 `.git` 文件；原生 bisect 也支持原仓库的
+`.git` 目录，整个目录只读。测试可以读取其中的历史和配置，不能修改 Git 元数据；
+切换提交和标记结果仍由已审批的原生 Git 操作执行。
 来宾固定检查先确认 SSH 转发套接字不可用、凭据模式为 `none`，再以 `env -i`
 派发显式命令环境。创建前扫描会拒绝多链接文件、符号链接、Windows reparse point
 和特殊文件。sbx 的可执行身份摘要表示「固定模板与来宾路径绑定」，界面与输出会

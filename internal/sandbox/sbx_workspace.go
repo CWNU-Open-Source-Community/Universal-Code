@@ -15,6 +15,10 @@ const sbxMaximumTreeEntries = 250_000
 // other names live. This is a pre-dispatch check of the granted workspace;
 // it does not make concurrently modified host files immutable.
 func sbxValidateWorkspace(ctx context.Context, root string) error {
+	return sbxValidateWorkspaceForSource(ctx, root, false)
+}
+
+func sbxValidateWorkspaceForSource(ctx context.Context, root string, sourceRepository bool) error {
 	if ctx == nil {
 		return ErrSBXBoundary
 	}
@@ -22,7 +26,7 @@ func sbxValidateWorkspace(ctx context.Context, root string) error {
 		return errors.Join(ErrSBXBoundary, err)
 	}
 	git, err := os.Lstat(filepath.Join(root, ".git"))
-	if err != nil || !git.Mode().IsRegular() {
+	if err != nil || (!git.Mode().IsRegular() && !(sourceRepository && git.IsDir())) {
 		return errors.Join(ErrSBXBoundary, err)
 	}
 	count := 0

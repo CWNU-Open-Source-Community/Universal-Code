@@ -299,6 +299,7 @@ func (b *SBXBackend) Readiness(ctx context.Context) (SBXReadiness, error) {
 type SBXRunRequest struct {
 	OperationKey, RequestFingerprint, RuntimeGeneration string
 	DrydockRoot                                         string
+	SourceRepository                                    bool     // Native source command; .git remains a separate read-only mount.
 	Arguments                                           []string // guest executable followed by literal argv; no CLI flags
 	Environment                                         []string // complete explicit guest environment, used with env -i
 	WorkingDirectory                                    string   // relative to the primary workspace
@@ -380,7 +381,7 @@ func (b *SBXBackend) Run(ctx context.Context, request SBXRunRequest, stdin io.Re
 	// SBX shares the actual host workspace. An existing hard link could alias
 	// an inode outside the granted workspace even when path checks succeed.
 	// Check after the last authority callback, immediately before VM creation.
-	if err := sbxValidateWorkspace(ctx, record.Workspace); err != nil {
+	if err := sbxValidateWorkspaceForSource(ctx, record.Workspace, request.SourceRepository); err != nil {
 		record.Phase = "unused"
 		_ = b.save(record)
 		return result, err
@@ -472,7 +473,7 @@ func (b *SBXBackend) validateRequest(r SBXRunRequest) error {
 		return ErrSBXBoundary
 	}
 	info, err := os.Lstat(filepath.Join(r.DrydockRoot, ".git"))
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || (!info.Mode().IsRegular() && !(r.SourceRepository && info.IsDir())) {
 		return ErrSBXBoundary
 	}
 	for _, values := range [][]string{r.Arguments, r.Environment} {

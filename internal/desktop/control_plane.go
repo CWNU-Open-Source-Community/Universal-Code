@@ -611,6 +611,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	}
 	commandRuntime := commandSet.Runtime
 	batchDelivery.WithValidationCommandRuntime(commandRuntime)
+	gitAdvanced.WithBisectCommandRuntime(commandRuntime)
 	// Backend recovery needs its recorded mounts until owned processes are gone.
 	if _, err := batchDelivery.ReconcileStartup(context.Background(), 256); err != nil {
 		return nil, apperror.Wrap(apperror.CodeUnavailable,

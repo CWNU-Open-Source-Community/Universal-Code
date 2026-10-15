@@ -1319,6 +1319,7 @@ type commandRuntimeFakeProcess struct {
 	stderrWriter   *io.PipeWriter
 	input          strings.Builder
 	wait           chan int
+	waitErr        error
 	finishOnce     sync.Once
 	stdinClosed    bool
 	killFailures   int
@@ -1368,7 +1369,12 @@ func (p *commandRuntimeFakeProcess) CloseStdin() error {
 	p.mu.Unlock()
 	return nil
 }
-func (p *commandRuntimeFakeProcess) Wait() (int, error) { return <-p.wait, nil }
+func (p *commandRuntimeFakeProcess) Wait() (int, error) {
+	code := <-p.wait
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return code, p.waitErr
+}
 func (p *commandRuntimeFakeProcess) Cancel(time.Duration) error {
 	p.finish(125)
 	return nil

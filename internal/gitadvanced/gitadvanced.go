@@ -606,23 +606,24 @@ func (s ReceiptStatus) Valid() bool {
 }
 
 type Receipt struct {
-	ProtocolVersion string            `json:"protocol_version"`
-	ID              string            `json:"id"`
-	PreviewID       string            `json:"preview_id"`
-	Operation       Operation         `json:"operation"`
-	Status          ReceiptStatus     `json:"status"`
-	PreBinding      RepositoryBinding `json:"pre_binding"`
-	PostBinding     RepositoryBinding `json:"post_binding"`
-	Conflict        ConflictState     `json:"conflict"`
-	CheckpointID    string            `json:"checkpoint_id,omitempty"`
-	TargetOID       string            `json:"target_oid,omitempty"`
-	SequenceID      string            `json:"sequence_id,omitempty"`
-	WorktreeID      string            `json:"worktree_id,omitempty"`
-	ObservedBytes   int               `json:"observed_bytes"`
-	ErrorCode       FailureCode       `json:"error_code,omitempty"`
-	ErrorSummary    string            `json:"error_summary,omitempty"`
-	StartedAt       time.Time         `json:"started_at"`
-	CompletedAt     time.Time         `json:"completed_at"`
+	ProtocolVersion  string                   `json:"protocol_version"`
+	ID               string                   `json:"id"`
+	PreviewID        string                   `json:"preview_id"`
+	Operation        Operation                `json:"operation"`
+	Status           ReceiptStatus            `json:"status"`
+	PreBinding       RepositoryBinding        `json:"pre_binding"`
+	PostBinding      RepositoryBinding        `json:"post_binding"`
+	Conflict         ConflictState            `json:"conflict"`
+	CheckpointID     string                   `json:"checkpoint_id,omitempty"`
+	TargetOID        string                   `json:"target_oid,omitempty"`
+	SequenceID       string                   `json:"sequence_id,omitempty"`
+	WorktreeID       string                   `json:"worktree_id,omitempty"`
+	ObservedBytes    int                      `json:"observed_bytes"`
+	ErrorCode        FailureCode              `json:"error_code,omitempty"`
+	ErrorSummary     string                   `json:"error_summary,omitempty"`
+	StartedAt        time.Time                `json:"started_at"`
+	CompletedAt      time.Time                `json:"completed_at"`
+	BisectExecutions []BisectExecutionReceipt `json:"bisect_executions,omitempty"`
 }
 
 func (r Receipt) Validate() error {
@@ -641,6 +642,17 @@ func (r Receipt) Validate() error {
 	}
 	if r.TargetOID != "" && !ValidObjectID(r.TargetOID) {
 		return errors.New("Git advanced receipt target is not an exact object id")
+	}
+	if len(r.BisectExecutions) > MaxCommits || len(r.BisectExecutions) > 0 && r.Operation != BisectRun {
+		return errors.New("Git advanced receipt contains invalid bisect execution evidence")
+	}
+	for index, execution := range r.BisectExecutions {
+		if execution.Ordinal != index {
+			return errors.New("Git advanced bisect execution order is invalid")
+		}
+		if err := execution.Validate(); err != nil {
+			return err
+		}
 	}
 	switch r.Status {
 	case ReceiptSucceeded:

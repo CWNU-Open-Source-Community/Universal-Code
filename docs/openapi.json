@@ -42667,6 +42667,27 @@
         ],
         "type": "object"
       },
+      "GitAdvancedBisectExecutionReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "type": "string"
+          },
+          "execution": {
+            "$ref": "#/components/schemas/BatchValidationExecutionReceipt"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "commit",
+          "ordinal",
+          "execution"
+        ],
+        "type": "object"
+      },
       "GitAdvancedBisectRecipe": {
         "additionalProperties": false,
         "properties": {
@@ -43384,6 +43405,12 @@
       "GitAdvancedReceipt": {
         "additionalProperties": false,
         "properties": {
+          "bisect_executions": {
+            "items": {
+              "$ref": "#/components/schemas/GitAdvancedBisectExecutionReceipt"
+            },
+            "type": "array"
+          },
           "checkpoint_id": {
             "maxLength": 256,
             "minLength": 1,

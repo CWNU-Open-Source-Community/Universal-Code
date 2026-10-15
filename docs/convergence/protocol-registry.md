@@ -43,7 +43,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
 | [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 54 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
-| [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 41 | true |
+| [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 43 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
 | [workspace-repository-ledgers](#workspace-repository-ledgers) | `internal-durable` | Workspace and repository maintainers | 11 | true |
 
@@ -1800,10 +1800,11 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `native-github-review-authority-reader` (`v2`, active) at `internal/application/github_review_operation_authority.go`
   - `tool-mutation-ledgers-reader` (`v1`, active) at `internal/store`
 
-<details><summary>41 active identifiers</summary>
+<details><summary>43 active identifiers</summary>
 
 - `agent_code_file_edit_proposal.v1`
 - `agent_code_file_edit_source.v1`
+- `authorized-native-git-bisect.v1`
 - `authorized-native-git.v2`
 - `file-operation-proposal.v1`
 - `file_edit_apply_operation.v1`
@@ -1817,6 +1818,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `git-advanced-receipt.v1`
 - `git-advanced-sequence.v1`
 - `git-advanced.v1`
+- `git-bisect-job.v1`
 - `git-managed-worktree.v1`
 - `git-review-diff-evidence.v1`
 - `git_advanced_operation.v1`
@@ -1942,6 +1944,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `batch-owner-token.v1` | `test-fixture` | `internal/store/batch_delivery_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `batch-receipt.v1` | `test-fixture` | `internal/store/batch_delivery_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `batch-review.v1` | `test-fixture` | `internal/store/batch_delivery_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
+| `bisect-fixture.v1` | `test-fixture` | `internal/repository/advanced_test.go` | Repository bisect executor fixture identity; never used by a production backend. |
 | `browser_key.v1` | `negative-version-fixture` | `internal/toolgateway/agent_browser_actions_test.go` | Agent browser v2 rejects the prior-version payload in an exact negative test; it is not a production Agent browser protocol. |
 | `browser_navigate.v3` | `negative-version-fixture` | `internal/toolgateway/agent_browser_actions_test.go` | Agent browser v2 rejects the unsupported future-version payload in an exact negative test; it is not a production protocol. |
 | `browser_network_containment_evidence.v0` | `test-fixture` | `internal/browserruntime/readiness_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

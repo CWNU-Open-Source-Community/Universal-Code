@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 )
 
@@ -89,5 +91,70 @@ func TestSBXWorkspacePreflightHonorsCancellation(t *testing.T) {
 	cancel()
 	if err := sbxValidateWorkspace(ctx, r.DrydockRoot); !errors.Is(err, context.Canceled) || !errors.Is(err, ErrSBXBoundary) {
 		t.Fatalf("cancelled scan continued: %v", err)
+	}
+}
+
+func TestSBXSourceRepositoryRequiresNativeRequestAndReadonlyMetadata(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ordinary", true: "native"}[native], func(t *testing.T) {
+			b, fake, r := sbxFixture(t)
+			git := filepath.Join(r.DrydockRoot, ".git")
+			if err := os.Remove(git); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(git, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(git, "HEAD"), []byte("ref: refs/heads/main\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			r.SourceRepository = native
+			if !native {
+				sbxAssertWorkspaceRejectionBeforeDispatch(t, b, fake, r)
+				return
+			}
+			value, err := b.Run(t.Context(), r, nil)
+			if err != nil || !value.TreeReaped || fake.count("exec") != 1 {
+				t.Fatalf("native source refused: %+v %v", value, err)
+			}
+			for _, call := range fake.calls {
+				for _, arg := range call.Arguments {
+					if arg == "create" && call.Arguments[len(call.Arguments)-1] != git+":ro" {
+						t.Fatal("source metadata lost read-only mount")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSBXSourceRepositoryStillRejectsLinks(t *testing.T) {
+	for _, kind := range []string{"hardlink", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			b, fake, r := sbxFixture(t)
+			git := filepath.Join(r.DrydockRoot, ".git")
+			if err := os.Remove(git); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(git, 0700); err != nil {
+				t.Fatal(err)
+			}
+			outside := filepath.Join(filepath.Dir(r.DrydockRoot), "outside.txt")
+			if err := os.WriteFile(outside, []byte("outside"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			create := os.Link
+			if kind == "symlink" {
+				create = os.Symlink
+			}
+			if err := create(outside, filepath.Join(git, "unsafe")); err != nil {
+				if kind == "symlink" && runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+					t.Skip("Windows account cannot create symbolic links")
+				}
+				t.Fatal(err)
+			}
+			r.SourceRepository = true
+			sbxAssertWorkspaceRejectionBeforeDispatch(t, b, fake, r)
+		})
 	}
 }

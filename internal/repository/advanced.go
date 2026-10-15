@@ -37,7 +37,7 @@ type AdvancedExecutor struct {
 	capability     gitadvanced.CapabilitySnapshot
 	maxDuration    time.Duration
 	commandContext func(context.Context, string, ...string) *exec.Cmd
-	recipeStarter  runner.OnceStarter
+	recipeExecutor BisectRecipeExecutor
 	now            func() time.Time
 }
 
@@ -79,8 +79,31 @@ func NewAdvancedExecutor(managedRoot string, enabled bool) (*AdvancedExecutor, e
 	return &AdvancedExecutor{gitPath: gitPath, managedRoot: root,
 		capability: capability, maxDuration: MaxAdvancedGitDuration,
 		commandContext: repositoryCommandContext,
-		recipeStarter:  runner.NewPlatformOnceProcessStarter(),
 		now:            func() time.Time { return time.Now().UTC() }}, nil
+}
+
+// BisectRecipeStep is issued by the native Git loop for the current commit.
+// The application resolves its fixed command through the Run-selected backend.
+type BisectRecipeStep struct {
+	Root, SequenceID, Commit, RequestFingerprint string
+	Ordinal                                      int
+	RecipeName                                   gitadvanced.RecipeName
+	TimeoutSeconds                               int
+}
+
+type BisectRecipeExecutor interface {
+	ExecuteBisectRecipe(context.Context, BisectRecipeStep) (runner.OnceStartResult, gitadvanced.BisectExecutionReceipt, error)
+}
+
+// WithBisectRecipeExecutor scopes execution authority to one operation without
+// changing the shared Git executor. An unbound executor cannot run project code.
+func (e *AdvancedExecutor) WithBisectRecipeExecutor(executor BisectRecipeExecutor) *AdvancedExecutor {
+	if e == nil {
+		return nil
+	}
+	bound := *e
+	bound.recipeExecutor = executor
+	return &bound
 }
 
 func (e *AdvancedExecutor) Available() bool {

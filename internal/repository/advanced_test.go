@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/gitadvanced"
 	"cyberagent-workbench/internal/runner"
 )
@@ -829,9 +830,6 @@ func TestAdvancedBisectResetRestoresOriginalReference(t *testing.T) {
 }
 
 func TestAdvancedBisectRecipeReportsReviewedStepBudget(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain is unavailable")
-	}
 	root := newMutationRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"),
 		[]byte("module example.invalid/bisectfixture\n\ngo 1.22\n"), 0o600); err != nil {
@@ -873,13 +871,48 @@ func TestAdvancedBisectRecipeReportsReviewedStepBudget(t *testing.T) {
 	if err != nil || !runPreview.Executable() {
 		t.Fatalf("bisect run preview: %v %#v", err, runPreview.BlockedReasons)
 	}
+	unbound, unavailableErr := executor.ExecuteAdvanced(t.Context(), root, runPreview)
+	if unavailableErr == nil || unbound.Status != gitadvanced.ReceiptFailed ||
+		!strings.Contains(unbound.ErrorSummary, "Run-selected execution backend") ||
+		fixtureGit(t, "-C", root, "rev-parse", "HEAD") != current {
+		t.Fatalf("unbound bisect executed without a selected runtime: %+v %v", unbound, unavailableErr)
+	}
+	bound := executor.WithBisectRecipeExecutor(bisectFixtureExecutor{})
+	if executor.recipeExecutor != nil {
+		t.Fatal("per-operation binding changed the shared executor")
+	}
+	executor = bound
 	receipt, err := executor.ExecuteAdvanced(t.Context(), root, runPreview)
 	var advancedErr *gitadvanced.Error
 	if !errors.As(err, &advancedErr) || advancedErr.Code != gitadvanced.FailureBudgetExceeded ||
 		receipt.ErrorCode != gitadvanced.FailureBudgetExceeded {
 		t.Fatalf("bisect budget failure err=%v receipt=%#v", err, receipt)
 	}
+	if len(receipt.BisectExecutions) != 1 || receipt.BisectExecutions[0].Commit != current ||
+		receipt.BisectExecutions[0].Ordinal != 0 || receipt.BisectExecutions[0].Execution.JobID == "" || receipt.Validate() != nil {
+		t.Fatalf("tested revision/backend receipt was lost: %+v", receipt)
+	}
 	fixtureGit(t, "-C", root, "bisect", "reset")
+}
+
+type bisectFixtureExecutor struct {
+	starter runner.OnceStarter
+}
+
+func (s bisectFixtureExecutor) ExecuteBisectRecipe(ctx context.Context, step BisectRecipeStep) (runner.OnceStartResult, gitadvanced.BisectExecutionReceipt, error) {
+	now := time.Now().UTC()
+	result := runner.OnceStartResult{StartedAt: now, CompletedAt: now, StdinClosed: true, TreeReaped: true}
+	var err error
+	if s.starter != nil {
+		result, err = s.starter.Start(ctx, runner.OnceStartSpec{WorkingDirectory: step.Root,
+			RequestFingerprint: step.RequestFingerprint})
+	}
+	return result, gitadvanced.BisectExecutionReceipt{Commit: step.Commit, Ordinal: step.Ordinal,
+		Execution: domain.BatchValidationExecutionReceipt{JobID: "bisect-fixture-job", Backend: "test-sandbox",
+			BackendIdentity: "bisect-fixture.v1", BackendGeneration: "fixture-generation",
+			IsolationGrade: "workspace_sandbox", NetworkPolicy: "denied", CredentialPolicy: "none",
+			Readiness: "ready", ReadinessCheckedAt: now, WorkspaceSHA256: gitadvanced.Fingerprint(step.Root),
+			TreeReaped: result.TreeReaped, StdinClosed: result.StdinClosed}}, err
 }
 
 type incompleteBisectProcessTreeStarter struct{ calls int }
@@ -943,7 +976,7 @@ func TestAdvancedBisectRecipeRequiresWholeProcessTreeCompletion(t *testing.T) {
 		t.Fatalf("bisect recipe preview: %v %#v", err, preview.BlockedReasons)
 	}
 	boundary := &incompleteBisectProcessTreeStarter{}
-	executor.recipeStarter = boundary
+	executor = executor.WithBisectRecipeExecutor(bisectFixtureExecutor{starter: boundary})
 	receipt, err := executor.ExecuteAdvanced(t.Context(), root, preview)
 	if err == nil || boundary.calls != 1 || receipt.Status != gitadvanced.ReceiptFailed ||
 		!strings.Contains(receipt.ErrorSummary, "process-tree completion") {
@@ -986,7 +1019,7 @@ func TestAdvancedBisectRecipeHonorsReportedTimeoutAndDiscardsRawOutput(t *testin
 		t.Fatalf("bisect recipe preview: %v %#v", err, preview.BlockedReasons)
 	}
 	boundary := &reportedBisectTimeoutStarter{}
-	executor.recipeStarter = boundary
+	executor = executor.WithBisectRecipeExecutor(bisectFixtureExecutor{starter: boundary})
 	receipt, err := executor.ExecuteAdvanced(t.Context(), root, preview)
 	var advancedErr *gitadvanced.Error
 	if !errors.As(err, &advancedErr) || advancedErr.Code != gitadvanced.FailureTimeout ||
