@@ -312,10 +312,6 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}
 	batchDelivery := application.NewBatchDeliveryService(a.store).
 		WithHostValidationExecution(*batchValidationExecution, permissionCapabilities)
-	if _, err := batchDelivery.ReconcileStartup(ctx, 256); err != nil {
-		return apperror.Wrap(apperror.CodeUnavailable,
-			"batch delivery startup reconciliation failed", err)
-	}
 	var commandRuntimeDrydocks *application.RunWorktreeService
 	if controlToken != "" && permissionCapabilities.WorkspaceSandboxEnabled {
 		drydockExecutor, executorErr := repository.NewRunWorktreeExecutor(
@@ -416,6 +412,13 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		_ = commandSet.Shutdown(shutdownCtx)
 	}()
 	commandRuntime := commandSet.Runtime
+	batchDelivery.WithValidationCommandRuntime(commandRuntime)
+	// Reap owned backend processes before Batch reconciliation can remove an
+	// expired child/integration worktree that their cleanup intent still binds.
+	if _, err := batchDelivery.ReconcileStartup(ctx, 256); err != nil {
+		return apperror.Wrap(apperror.CodeUnavailable,
+			"batch delivery startup reconciliation failed", err)
+	}
 	if commandRuntime != nil {
 		runtimeDependencies.CommandRuntime = commandRuntime
 	}

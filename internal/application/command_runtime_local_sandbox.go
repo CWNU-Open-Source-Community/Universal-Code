@@ -130,6 +130,10 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 		return noProcess, errors.Join(err,
 			runner.ErrCommandRuntimeBoundary)
 	}
+	workspace, err = batchValidationExecutionWorkspace(ctx, workspace, scope, spec)
+	if err != nil {
+		return noProcess, err
+	}
 	profile, err := e.store.GetRunExecutionProfile(ctx, scope.RunID)
 	if err != nil {
 		return noProcess, err

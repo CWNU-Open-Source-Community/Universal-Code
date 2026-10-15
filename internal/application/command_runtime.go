@@ -38,15 +38,16 @@ type CommandRuntimeStore interface {
 }
 
 type CommandRuntimeService struct {
-	store        CommandRuntimeStore
-	manager      *runner.CommandRuntimeManager
-	adapter      commandruntimeadapter.Identity
-	capabilities domain.ExecutionPermissionRuntimeCapabilities
-	checkpoints  *WorkspaceCheckpointService
-	drydocks     *RunWorktreeService
-	sandbox      runner.CommandRuntimeSandboxExecutor
-	checker      policy.Checker
-	policyMu     sync.RWMutex
+	store               CommandRuntimeStore
+	manager             *runner.CommandRuntimeManager
+	adapter             commandruntimeadapter.Identity
+	capabilities        domain.ExecutionPermissionRuntimeCapabilities
+	checkpoints         *WorkspaceCheckpointService
+	drydocks            *RunWorktreeService
+	sandbox             runner.CommandRuntimeSandboxExecutor
+	checker             policy.Checker
+	policyMu            sync.RWMutex
+	batchValidationJobs sync.Map
 }
 
 type commandRuntimeSandboxReadiness interface {
@@ -1081,6 +1082,13 @@ func (s *CommandRuntimeService) commandRuntimeJobBindingsCurrent(ctx context.Con
 			return false, nil
 		}
 		rootPath = owned.Path
+	}
+	if native, ok := s.batchValidationJobs.Load(job.ID); ok {
+		binding := native.(*batchValidationJobBinding)
+		if binding.operationDigest != job.OperationDigest || binding.specFingerprint != job.SpecFingerprint || binding.proof.check(ctx) != nil {
+			return false, nil
+		}
+		rootPath = binding.proof.target.root
 	}
 	rootSHA256, err := runner.CommandRuntimeWorkspaceRootSHA256(rootPath)
 	if err != nil {

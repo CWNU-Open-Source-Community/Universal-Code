@@ -178,7 +178,9 @@ func (e *specialistWorkspaceExecutor) ExecuteSpecialistTool(ctx context.Context,
 			if _, _, err = e.batch.auditBatchDeliveryTool(ctx, binding, "verify", []string{"diff-sha256:" + before.DiffSHA256}); err != nil {
 				return nil, err
 			}
-			v, validationErr := e.batch.runBatchDeliveryValidations(ctx, binding.plan.RunID, binding.workspace.WorktreeRoot, binding.workspace.BaseCommit, binding.task.Validations)
+			v, validationErr := e.batch.runBatchDeliveryValidations(ctx, binding.plan.RunID, binding.workspace.WorktreeRoot, binding.workspace.BaseCommit, binding.task.Validations,
+				batchValidationTargetRef{PlanID: binding.plan.ID, Ordinal: binding.workspace.Ordinal, Generation: binding.workspace.Generation, OperationKey: "verify:" + call.OperationKey,
+					parentLeaseID: call.LeaseID, parentLeaseGeneration: call.LeaseGeneration})
 			after, inspectErr := repository.InspectBatchWorkspaceChanges(ctx, e.root, binding.workspace.Branch, binding.workspace.BaseCommit, binding.plan.Spec.Contract.MaxChangedFiles, repository.MaxBatchWorkspaceDiffPreviewBytes)
 			passed := validationErr == nil && inspectErr == nil && before.Clean && after.Clean && before.HeadCommit == after.HeadCommit && before.DiffSHA256 == after.DiffSHA256 && len(v) == len(binding.task.Validations)
 			value = map[string]any{"passed": passed, "receipts": v, "head_commit": before.HeadCommit, "diff_sha256": before.DiffSHA256}

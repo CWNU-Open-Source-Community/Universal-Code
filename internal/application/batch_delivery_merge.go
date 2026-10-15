@@ -456,7 +456,8 @@ func (s *BatchDeliveryService) runBatchMergeQueue(ctx context.Context,
 		}
 		validation, validationErr := s.runBatchDeliveryValidations(ctx, plan.RunID,
 			queue.IntegrationRoot, queue.LatestBaseCommit,
-			batchMergeValidationRequirements(plan, queue.OrderedOrdinals[:index+1]))
+			batchMergeValidationRequirements(plan, queue.OrderedOrdinals[:index+1]),
+			batchValidationTargetRef{PlanID: plan.ID, QueueID: queue.ID, OperationKey: queue.ID + "-validation-" + fmt.Sprint(index)})
 		if err := verifyBatchIntegrationAndChildren(ctx, sourceRoot, plan, queue,
 			workspaces, receipts, preHead, receipt.HeadCommit, postHead, ordinal); err != nil {
 			return s.failBatchMergeWithoutStep(ctx, result, queue,

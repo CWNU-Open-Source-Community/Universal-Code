@@ -480,6 +480,41 @@ func TestCommandRuntimeManagerStreamsSanitizedOutputAndPersistsTerminalState(t *
 	}
 }
 
+func TestCommandRuntimeManagerDigestOnlyOutputDoesNotRetainBodies(t *testing.T) {
+	store := newCommandRuntimeMemoryStore()
+	starter := &commandRuntimeFakeStarter{}
+	manager, err := NewCommandRuntimeManager(store, starter, "digest-only-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := commandRuntimeTestRequest(manager, 2000)
+	request.DiscardOutput = true
+	job, _, err := manager.Start(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr := "\x1b[31mrepository output\x00\xff\n", "private test failure\n"
+	process := starter.last()
+	_, _ = io.WriteString(process.stdoutWriter, stdout)
+	_, _ = io.WriteString(process.stderrWriter, stderr)
+	process.finish(0)
+	terminal, page := waitCommandRuntimeTerminal(t, manager, job.ID)
+	stored, err := store.GetCommandRuntimeJob(t.Context(), job.ID)
+	if err != nil || terminal.State != CommandRuntimeJobCompleted || len(page.Frames) != 0 || stored.Stdout != "" || stored.Stderr != "" || stored.OutputFramesJSON != "[]" ||
+		stored.StdoutObservedBytes != int64(len(stdout)) || stored.StderrObservedBytes != int64(len(stderr)) ||
+		stored.StdoutSHA256 != commandRuntimeStringSHA256(stdout) || stored.StderrSHA256 != commandRuntimeStringSHA256(stderr) {
+		t.Fatalf("digest-only capture: job=%+v frames=%+v error=%v", stored, page.Frames, err)
+	}
+	_, replayed, err := manager.Start(t.Context(), request)
+	if err != nil || !replayed || starter.starts != 1 {
+		t.Fatalf("digest-only replay started another process: replayed=%v starts=%d error=%v", replayed, starter.starts, err)
+	}
+	request.DiscardOutput = false
+	if _, _, err := manager.Start(t.Context(), request); err == nil {
+		t.Fatal("same key accepted another output-retention contract")
+	}
+}
+
 func TestCommandRuntimeManagerRejectsProcessWithoutCreationTimeTreeOwnership(t *testing.T) {
 	store := newCommandRuntimeMemoryStore()
 	invalid := CommandRuntimeProcessOwnership{PID: 4242, ProcessGroup: 4242,

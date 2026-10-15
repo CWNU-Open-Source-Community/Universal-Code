@@ -60,11 +60,7 @@ func (s *BatchDeliveryService) Cancel(ctx context.Context,
 		return result, apperror.New(apperror.CodeFailedPrecondition,
 			"completed batch delivery cannot be cancelled")
 	}
-	if plan.Status == domain.BatchDeliveryAborted {
-		result.Snapshot, err = s.Snapshot(ctx, plan.ID)
-		result.Replayed = true
-		return result, err
-	}
+	result.Replayed = plan.Status == domain.BatchDeliveryAborted
 	source, err := s.batchDeliverySource(ctx, plan)
 	if err != nil {
 		return result, err
@@ -72,6 +68,27 @@ func (s *BatchDeliveryService) Cancel(ctx context.Context,
 	workspaces, err := s.store.ListBatchDeliveryWorkspaces(ctx, plan.ID)
 	if err != nil {
 		return result, apperror.Normalize(err)
+	}
+	// Aborted is the durable no-new-execution fence. Cancellation can be
+	// retried after unconfirmed process cleanup; nonterminal workspaces remain
+	// in the ledger until their exact resources and directories are cleaned.
+	s.validationMu.Lock()
+	fresh, freshFound, fenceErr := s.store.GetBatchDeliveryPlan(ctx, plan.ID)
+	if fenceErr == nil && (!freshFound || fresh.Status == domain.BatchDeliveryCompleted) {
+		fenceErr = apperror.New(apperror.CodeConflict, "batch delivery cancellation plan changed")
+	}
+	if fenceErr == nil && fresh.Status != domain.BatchDeliveryAborted {
+		fenceErr = s.store.SetBatchDeliveryPlanStatus(ctx, plan.ID, []domain.BatchDeliveryStatus{fresh.Status}, domain.BatchDeliveryAborted, s.now().UTC())
+	}
+	s.validationMu.Unlock()
+	if fenceErr != nil {
+		return result, fenceErr
+	}
+	if err := s.stopBatchValidationJobs(ctx, plan.ID); err != nil {
+		return result, apperror.Wrap(apperror.CodeFailedPrecondition, "batch validation cleanup is unconfirmed; worktrees preserved", err)
+	}
+	if err := s.requireBatchValidationCleanupQuiescent(ctx, plan, workspaces); err != nil {
+		return result, err
 	}
 	var joined error
 	for _, workspace := range workspaces {
@@ -117,7 +134,7 @@ func (s *BatchDeliveryService) Cancel(ctx context.Context,
 		return result, apperror.Wrap(apperror.CodeFailedPrecondition,
 			"batch delivery cancellation preserved unresolved state", joined)
 	}
-	fresh, found, err := s.store.GetBatchDeliveryPlan(ctx, plan.ID)
+	fresh, found, err = s.store.GetBatchDeliveryPlan(ctx, plan.ID)
 	if err != nil || !found {
 		return result, apperror.Normalize(err)
 	}
