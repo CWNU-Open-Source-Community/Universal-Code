@@ -303,15 +303,15 @@ func (*sdkInputRequiredError) Error() string {
 	return "MCP tool requires additional input; host mediation is required before any retry"
 }
 
-// A cancelled response wait stays request-scoped. Only a blocked pipe write
-// fails the connection: its byte framing can no longer be safely shared.
-type stdioSDKConnection struct {
+// A cancelled response wait stays request-scoped. A blocked frame write closes
+// the connection because a partially written frame cannot be reused safely.
+type guardedSDKConnection struct {
 	sdk.Connection
 	writeGate  chan struct{}
 	beforeSend func(context.Context, *jsonrpc.Request, int64) error
 }
 
-func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) error {
+func (c *guardedSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) error {
 	select {
 	case c.writeGate <- struct{}{}:
 	case <-ctx.Done():
@@ -333,7 +333,7 @@ func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) err
 				return err
 			}
 		}
-		// Final stdio guard: after acquiring the writer, before SDK framing.
+		// Final dispatch guard: after acquiring the writer, before SDK framing.
 		if err := beforeSDKDispatch(ctx, request.Method); err != nil {
 			return err
 		}
@@ -345,6 +345,9 @@ func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) err
 		return err
 	case <-ctx.Done():
 		_ = c.Connection.Close()
+		// Close interrupts the socket/pipe, but its writer may still be unwinding.
+		// Keep the gate until it exits so another SDK frame cannot overlap it.
+		<-done
 		return ctx.Err()
 	}
 }
