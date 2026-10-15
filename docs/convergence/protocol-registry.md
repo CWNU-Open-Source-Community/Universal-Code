@@ -11,19 +11,20 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 78 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
-| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 51 | true |
+| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 52 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 4 | true |
+| [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 115 | true |
-| [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 23 | true |
+| [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 18 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 126 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 127 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
@@ -40,7 +41,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 53 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 54 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 41 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -273,7 +274,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `universal-tool-binding-reader` (`v1`, active) at `internal/executionauth`
   - `approval-preference-reader` (`v1, v2`, active) at `internal/domain`
 
-<details><summary>51 active identifiers</summary>
+<details><summary>52 active identifiers</summary>
 
 - `approval_grant_consumption.v1`
 - `approval_grant_operation_key.v1`
@@ -318,6 +319,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_execution_permission_current_run_operation.v1`
 - `thread_execution_permission_materialization_operation.v1`
 - `thread_execution_permission_operation.v1`
+- `thread_mcp_references.v1`
 - `thread_message_image_intent_request.v1`
 - `thread_message_intent_operation.v1`
 - `thread_message_intent_request.v1`
@@ -470,6 +472,25 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `run_capability_readiness.v1`
 - `runtime_capabilities.v1`
 - `search_diagnostics.v1`
+
+</details>
+
+### chatgpt-account-sessions
+
+- Class: `internal-durable`
+- Owner: ChatGPT authentication and credential maintainers
+- Source of truth: `internal/chatgptauth/store.go`, `internal/credential`
+- Persistence/export boundary: The versioned AES-GCM envelope in credentials/chatgpt/accounts.enc preserves account registrations, tokens, pending refresh responses and cached models across restart. Its key remains in the OS credential store; secrets never enter public HTTP DTOs or SQLite.
+- Compatibility rule: Retain the v1 encrypted-session reader while saved accounts or supported backups require it. Reject unknown versions, missing keys and authentication failures without overwriting the saved file or falling back to plaintext. Preserve pending refresh responses so consumed refresh tokens are not replayed after restart.
+- Retirement gate (`migration-or-retention`): An explicit migration or retention decision covers the encrypted account file and its OS-owned key; Encrypted restart, missing-key and tampering tests remain until old accounts and backups are migrated or retained; Rollback preserves the original encrypted file and its matching key; reader retirement never silently signs users out
+- Writers:
+  - `chatgpt-encrypted-session-writer` (`v1`, write-current) at `internal/chatgptauth/store.go`
+- Readers:
+  - `chatgpt-encrypted-session-reader` (`v1`, active) at `internal/chatgptauth/store.go`
+
+<details><summary>1 active identifiers</summary>
+
+- `universal-code.chatgpt.sessions.v1`
 
 </details>
 
@@ -642,14 +663,17 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
   - `credential-provider-ledgers-writer` (`v1`, write-current) at `internal/application`
+  - `chatgpt-runtime-binding-writer` (`v1`, write-current) at `internal/modelregistry/chatgpt.go`
 - Readers:
   - `credential-provider-ledgers-reader` (`v1`, active) at `internal/store`
+  - `chatgpt-runtime-binding-reader` (`v1`, active) at `internal/llm/provider_runtime.go`
 
-<details><summary>23 active identifiers</summary>
+<details><summary>24 active identifiers</summary>
 
 - `anthropic_native_search.v1`
 - `anthropic_native_search_cache.v1`
 - `anthropic_native_search_negative.v1`
+- `chatgpt_request_runtime.v1`
 - `model_cancellation_operation.v1`
 - `model_cancellation_request.v1`
 - `model_context_window.v1`
@@ -893,7 +917,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `http-openapi-contract-reader` (`v0, v1, v2`, active) at `web/src/api`
 
-<details><summary>126 active identifiers</summary>
+<details><summary>127 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -907,6 +931,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `browser_cdp_permission_policy.v1`
 - `browser_network_containment_policy.v2`
 - `browser_safe_web_readiness.v1`
+- `chatgpt_auth.v1`
 - `code-intel-configuration.v1`
 - `code-intel-lsp.v1`
 - `code_handoff.v1`
@@ -1669,7 +1694,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-run-session-ledgers-reader` (`v0, v1, v2, v3, v4`, active) at `internal/store`
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
 
-<details><summary>53 active identifiers</summary>
+<details><summary>54 active identifiers</summary>
 
 - `context_memory.v1`
 - `continuity_context.v1`
@@ -1681,6 +1706,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `history_recall.v1`
 - `llm.item_stream.identity.v1`
 - `long_term_memory.v1`
+- `mcp_reference_result.v1`
 - `note_context.v1`
 - `observed_browser_controls.v1`
 - `operator_steering_revision_operation.v1`

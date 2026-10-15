@@ -494,6 +494,8 @@ func (c openAPIThreadPullRequestController) ImportCredential(ctx context.Context
 
 func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture := newAPIFixture(t)
+	fixture.api.chatGPTAuthEnabled = true
+	fixture.api.chatGPTAuthController = &chatGPTAuthControllerStub{}
 	fixture.api.projectActionsController = &projectActionsControllerStub{}
 	preparationController := &preparationControllerStub{}
 	fixture.api.projectPreparationController = preparationController
@@ -1830,6 +1832,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 						`"confirm_workspace_trust":true}`
 				} else if spec.Path == PlanModeControlPathTemplate {
 					body = `{"version":"plan_delivery_control.v1"}`
+				} else if strings.HasPrefix(spec.Path, ChatGPTAuthPath+"/") {
+					body = `{"version":"chatgpt_auth.v1","confirm":true}`
 				} else if spec.Path != RunExecutionProfileControlPathTemplate {
 					attemptID := fixture.checkpoint.AttemptID
 					modelAttempt := 1

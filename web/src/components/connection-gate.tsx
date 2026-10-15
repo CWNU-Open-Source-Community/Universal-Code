@@ -65,6 +65,7 @@ export function ConnectionGate() {
 
 		modelControlEnabled: bootstrap.model_control_enabled,
 		providerCredentialEnabled: bootstrap.provider_credential_enabled,
+        chatGPTAuthEnabled: bootstrap.chatgpt_auth_enabled === true,
 		fileEditReviewEnabled: bootstrap.file_edit_review_enabled,
 		fileEditProposalEnabled: bootstrap.file_edit_proposal_enabled,
 		fileEditApplyEnabled: bootstrap.file_edit_apply_enabled,

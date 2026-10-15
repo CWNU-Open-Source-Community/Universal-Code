@@ -764,6 +764,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/chatgpt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect ChatGPT accounts and pending sign-in
+         * @description Returns account labels, model choices and a one-time local browser entry point. Tokens, authorization URLs, PKCE values and OAuth state are never returned.
+         */
+        get: operations["getChatGPTAuthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/chatgpt/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel the exact pending ChatGPT sign-in */
+        post: operations["cancelChatGPTLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/chatgpt/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue with ChatGPT in the system browser */
+        post: operations["startChatGPTLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/chatgpt/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke and clear one ChatGPT account session */
+        post: operations["logoutChatGPTAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/chatgpt/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh the selected ChatGPT account model catalog */
+        post: operations["refreshChatGPTModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/chatgpt/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open the fixed ChatGPT usage settings page */
+        post: operations["openChatGPTUsage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/credentials": {
         parameters: {
             query?: never;
@@ -6166,6 +6271,39 @@ export interface components {
             recoverable: boolean;
             to_sha256: string;
         };
+        ChatGPTAccountStatus: {
+            email: string;
+            id: string;
+            label: string;
+            models: components["schemas"]["ChatGPTModelStatus"][];
+            provider: string;
+            state: string;
+        };
+        ChatGPTAuthRequest: {
+            account_id?: string;
+            attempt_id?: string;
+            confirm: boolean;
+            version: string;
+        };
+        ChatGPTAuthStatus: {
+            accounts: components["schemas"]["ChatGPTAccountStatus"][];
+            available: boolean;
+            login?: components["schemas"]["ChatGPTLoginStatus"];
+            protocol_version: string;
+            store_kind: string;
+            usage_url: string;
+        };
+        ChatGPTLoginStatus: {
+            account_id?: string;
+            id: string;
+            message?: string;
+            start_url?: string;
+            state: string;
+        };
+        ChatGPTModelStatus: {
+            id: string;
+            name: string;
+        };
         Check: {
             detail: string;
             id: string;
@@ -9380,6 +9518,13 @@ export interface components {
         MCPInputResponseView: {
             accepted: boolean;
         };
+        MCPReference: {
+            arguments: unknown;
+            capability_fingerprint: string;
+            /** @enum {string} */
+            method: "resources/read" | "prompts/get";
+            server_id: string;
+        };
         Manifest: {
             backend: string;
             cancellation: components["schemas"]["CancellationSpec"];
@@ -10281,7 +10426,7 @@ export interface components {
         ProviderAvailabilityView: {
             configuration_error: boolean;
             /** @enum {string} */
-            credential_source: "none" | "environment" | "system";
+            credential_source: "none" | "environment" | "system" | "chatgpt_oauth";
             custom: boolean;
             /** Format: int64 */
             definition_revision: number;
@@ -11520,6 +11665,7 @@ export interface components {
             batch_delivery_control_enabled: boolean;
             batch_delivery_host_validation_enabled: boolean;
             browser_cdp_permission_control_enabled: boolean;
+            chatgpt_auth_enabled: boolean;
             code_intel_enabled: boolean;
             command_runtime_adapter_installed: boolean;
             command_runtime_adapter_ready: boolean;
@@ -12975,7 +13121,7 @@ export interface components {
             duration_milliseconds: number;
             label: string;
             /** @enum {string} */
-            name: "command_runtime" | "workspace_list" | "workspace_read" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete" | "web_search" | "web_fetch" | "web_citation" | "mcp_tool_call" | "code_workspace_symbols" | "code_document_symbols" | "code_definition" | "code_references" | "code_implementation" | "code_hover" | "code_signature_help" | "code_diagnostics" | "code_call_hierarchy" | "code_type_hierarchy" | "github_review_evidence_list" | "github_review_evidence_read" | "browser_status" | "browser_navigate" | "browser_snapshot" | "browser_click" | "browser_type" | "browser_screenshot";
+            name: "command_runtime" | "workspace_list" | "workspace_read" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete" | "web_search" | "web_fetch" | "web_citation" | "mcp_tool_search" | "mcp_tool_call" | "code_workspace_symbols" | "code_document_symbols" | "code_definition" | "code_references" | "code_implementation" | "code_hover" | "code_signature_help" | "code_diagnostics" | "code_call_hierarchy" | "code_type_hierarchy" | "github_review_evidence_list" | "github_review_evidence_read" | "browser_status" | "browser_navigate" | "browser_snapshot" | "browser_click" | "browser_type" | "browser_screenshot";
             /** Format: date-time */
             started_at: string;
             /** @enum {string} */
@@ -13803,10 +13949,11 @@ export interface components {
         };
         ThreadTurnControlRequestView: {
             attachments?: components["schemas"]["FileAttachmentReference"][];
-            /** @description Trimmed UTF-8 operator text, at most 16 KiB. Empty only with one or more images or uploaded file attachments; no synthetic user text is inserted. */
+            /** @description Trimmed UTF-8 operator text, at most 16 KiB. Empty only with images, uploaded attachments or MCP selections. Reference-only messages use the display label MCP 内容. */
             content: string;
             files?: components["schemas"]["WorkspaceFileReference"][];
             images?: components["schemas"]["ImageReference"][];
+            mcp_references?: components["schemas"]["MCPReference"][];
             /** @enum {string} */
             version: "thread_message_submission.v1";
         } & ({
@@ -13815,6 +13962,8 @@ export interface components {
             images: unknown[];
         } | {
             attachments: unknown[];
+        } | {
+            mcp_references: unknown[];
         });
         ThreadTurnFailureReferenceView: {
             /** Format: int64 */
@@ -16985,6 +17134,244 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getChatGPTAuthStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatGPTAuthStatus"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    cancelChatGPTLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGPTAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatGPTAuthStatus"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    startChatGPTLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGPTAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatGPTAuthStatus"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    logoutChatGPTAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGPTAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatGPTAuthStatus"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    refreshChatGPTModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGPTAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatGPTAuthStatus"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    openChatGPTUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGPTAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ChatGPTAuthStatus"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

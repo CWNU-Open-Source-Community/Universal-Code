@@ -835,6 +835,25 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			Summary: "Inspect Provider credential status", Tag: "Models",
 			Description: "Returns only configured status and OS-store availability. It never reads credential plaintext into an API response.",
 			DataType:    reflect.TypeOf(ProviderCredentialListView{})},
+		{Path: ChatGPTAuthPath, OperationID: "getChatGPTAuthStatus",
+			Summary: "Inspect ChatGPT accounts and pending sign-in", Tag: "Models",
+			Description: "Returns account labels, model choices and a one-time local browser entry point. Tokens, authorization URLs, PKCE values and OAuth state are never returned.",
+			DataType:    reflect.TypeOf(application.ChatGPTAuthStatus{})},
+		{Path: ChatGPTAuthPath + "/login", Method: http.MethodPost, OperationID: "startChatGPTLogin",
+			Summary: "Continue with ChatGPT in the system browser", Tag: "Control", Control: true,
+			RequestType: reflect.TypeOf(application.ChatGPTAuthRequest{}), DataType: reflect.TypeOf(application.ChatGPTAuthStatus{})},
+		{Path: ChatGPTAuthPath + "/cancel", Method: http.MethodPost, OperationID: "cancelChatGPTLogin",
+			Summary: "Cancel the exact pending ChatGPT sign-in", Tag: "Control", Control: true,
+			RequestType: reflect.TypeOf(application.ChatGPTAuthRequest{}), DataType: reflect.TypeOf(application.ChatGPTAuthStatus{})},
+		{Path: ChatGPTAuthPath + "/logout", Method: http.MethodPost, OperationID: "logoutChatGPTAccount",
+			Summary: "Revoke and clear one ChatGPT account session", Tag: "Control", Control: true,
+			RequestType: reflect.TypeOf(application.ChatGPTAuthRequest{}), DataType: reflect.TypeOf(application.ChatGPTAuthStatus{})},
+		{Path: ChatGPTAuthPath + "/models", Method: http.MethodPost, OperationID: "refreshChatGPTModels",
+			Summary: "Refresh the selected ChatGPT account model catalog", Tag: "Control", Control: true,
+			RequestType: reflect.TypeOf(application.ChatGPTAuthRequest{}), DataType: reflect.TypeOf(application.ChatGPTAuthStatus{})},
+		{Path: ChatGPTAuthPath + "/usage", Method: http.MethodPost, OperationID: "openChatGPTUsage",
+			Summary: "Open the fixed ChatGPT usage settings page", Tag: "Control", Control: true,
+			RequestType: reflect.TypeOf(application.ChatGPTAuthRequest{}), DataType: reflect.TypeOf(application.ChatGPTAuthStatus{})},
 		{Path: ProviderCredentialPathTemplate, Method: http.MethodPost,
 			OperationID: "changeProviderCredential", Summary: "Set or delete an OS-owned Provider credential",
 			Tag:         "Control",
@@ -2642,6 +2661,7 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 			map[string]any{"required": []string{"content"}, "properties": map[string]any{"content": map[string]any{"type": "string", "minLength": 1}}},
 			map[string]any{"required": []string{"images"}, "properties": map[string]any{"images": map[string]any{"type": "array", "minItems": 1}}},
 			map[string]any{"required": []string{"attachments"}, "properties": map[string]any{"attachments": map[string]any{"type": "array", "minItems": 1}}},
+			map[string]any{"required": []string{"mcp_references"}, "properties": map[string]any{"mcp_references": map[string]any{"type": "array", "minItems": 1}}},
 		}
 		return map[string]any{"allOf": []any{schema, map[string]any{"anyOf": alternatives}}}
 	}
@@ -3084,9 +3104,12 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 	if typeName == "ThreadTurnControlRequestView" && fieldName == "files" {
 		schema["maxItems"] = domain.MaxThreadMessageFiles
 	}
+	if typeName == "ThreadTurnControlRequestView" && fieldName == "mcp_references" {
+		schema["maxItems"] = domain.MaxThreadMCPReferences
+	}
 	if typeName == "ThreadTurnControlRequestView" && fieldName == "content" {
 		schema["minLength"], schema["maxLength"] = 0, 16384
-		schema["description"] = "Trimmed UTF-8 operator text, at most 16 KiB. Empty only with one or more images or uploaded file attachments; no synthetic user text is inserted."
+		schema["description"] = "Trimmed UTF-8 operator text, at most 16 KiB. Empty only with images, uploaded attachments or MCP selections. Reference-only messages use the display label MCP 内容."
 	}
 	if (typeName == "ThreadTurnControlRequestView" || typeName == "ThreadTranscriptItemView") && fieldName == "attachments" {
 		schema["maxItems"] = domain.MaxThreadMessageAttachments
@@ -3290,7 +3313,7 @@ var openAPIFieldEnums = map[string][]string{
 		string(toolgateway.WorkspaceChangeTool), string(toolgateway.WorkspaceApplyTool),
 		string(toolgateway.WorkspaceDeleteTool), string(toolgateway.WebSearchTool),
 		string(toolgateway.WebFetchTool), string(toolgateway.WebCitationTool),
-		string(toolgateway.MCPToolCallTool), string(toolgateway.CodeWorkspaceSymbolsTool),
+		string(toolgateway.MCPToolSearchTool), string(toolgateway.MCPToolCallTool), string(toolgateway.CodeWorkspaceSymbolsTool),
 		string(toolgateway.CodeDocumentSymbolsTool), string(toolgateway.CodeDefinitionTool),
 		string(toolgateway.CodeReferencesTool), string(toolgateway.CodeImplementationTool),
 		string(toolgateway.CodeHoverTool), string(toolgateway.CodeSignatureHelpTool),
@@ -3561,7 +3584,7 @@ var openAPIFieldEnums = map[string][]string{
 	"OperatorActionItemView.destination":                       {string(operatoraction.DestinationQueue), string(operatoraction.DestinationApprovals), string(operatoraction.DestinationDiffs), string(operatoraction.DestinationWake)},
 	"ProviderAvailabilityView.kind":                            {modelregistry.ProviderKindLocal, modelregistry.ProviderKindAnthropicCompatible, modelregistry.ProviderKindOpenAICompatible, modelregistry.ProviderKindOllama},
 	"ProviderAvailabilityView.status":                          {modelregistry.ProviderAvailable, modelregistry.ProviderNotConfigured, modelregistry.ProviderInvalidConfiguration},
-	"ProviderAvailabilityView.credential_source":               {"none", "environment", "system"},
+	"ProviderAvailabilityView.credential_source":               {"none", "environment", "system", modelregistry.CredentialSourceChatGPT},
 	"ScopeView.web_access_mode":                                {"disabled", "rules", "full"},
 	"RunCreationControlRequestView.web_access_mode":            {"disabled", "rules", "full"},
 	"ThreadCreationControlRequestView.web_access_mode":         {"disabled", "rules", "full"},
@@ -3587,6 +3610,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadCreationControlRequestView.network_mode":            {"disabled", "allowlist"},
 	"ThreadMessageControlRequestView.version":                  {domain.ThreadMessageProtocolVersion},
 	"ThreadTurnControlRequestView.version":                     {domain.ThreadMessageProtocolVersion},
+	"MCPReference.method":                                     {"resources/read", "prompts/get"},
 	"ThreadPlanControlRequestView.version":                     {application.PlanDeliveryControlProtocolVersion},
 	"ThreadPlanControlView.version":                            {application.PlanDeliveryControlProtocolVersion},
 	"ThreadPlanControlRequestView.action":                      {"enter_plan", "enter_deliver", "confirm"},

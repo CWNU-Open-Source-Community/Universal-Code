@@ -66,6 +66,7 @@ type ConnectionBootstrap struct {
 	ApprovalControlEnabled             bool   `json:"approval_control_enabled"`
 	ModelControlEnabled                bool   `json:"model_control_enabled"`
 	ProviderCredentialEnabled          bool   `json:"provider_credential_enabled"`
+	ChatGPTAuthEnabled                 bool   `json:"chatgpt_auth_enabled"`
 	FileEditReviewEnabled              bool   `json:"file_edit_review_enabled"`
 	FileEditProposalEnabled            bool   `json:"file_edit_proposal_enabled"`
 	RunWakeControlEnabled              bool   `json:"run_wake_control_enabled"`
@@ -463,6 +464,7 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 			ApprovalControlEnabled:             config.ApprovalControlEnabled,
 			ModelControlEnabled:                config.ModelControlEnabled,
 			ProviderCredentialEnabled:          config.ProviderCredentialEnabled,
+			ChatGPTAuthEnabled:                 config.ProviderCredentialEnabled && config.ModelControlEnabled,
 			FileEditReviewEnabled:              config.FileEditReviewEnabled,
 			FileEditProposalEnabled:            config.FileEditProposalEnabled,
 			RunWakeControlEnabled:              config.RunWakeControlEnabled,

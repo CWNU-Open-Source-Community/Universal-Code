@@ -13,6 +13,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/browserruntime"
+	"cyberagent-workbench/internal/chatgptauth"
 	"cyberagent-workbench/internal/codeintel"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/credential"
@@ -41,6 +42,7 @@ import (
 // It does not listen on a socket and it adds no renderer authority beyond the
 // tokens explicitly supplied in ControlPlaneConfig.
 type ControlPlane struct {
+	mcpClient                      *mcp.Manager
 	stateStore                     *store.SQLiteStore
 	workspaceManager               *workspace.Manager
 	workspaceImportMu              sync.Mutex
@@ -48,6 +50,7 @@ type ControlPlane struct {
 	closeOnce                      sync.Once
 	closeErr                       error
 	projectPreparation             *application.ProjectPreparationService
+	chatGPTAuth                    *application.ChatGPTAuthService
 	skillInstaller                 *application.SkillPackageRegistryService
 	dockerSandbox                  *application.DockerSandboxService
 	sbxBackend                     *sandbox.SBXBackend
@@ -398,11 +401,18 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			return nil, err
 		}
 	}
+	chatGPTStore := chatgptauth.Store{Dir: filepath.Join(home, "credentials", "chatgpt"), KeyStore: credentialStore}
+	chatGPTClient := chatgptauth.NewClient()
+	models.WithChatGPT(chatGPTClient, chatGPTStore)
 	if err := models.LoadRouteSettings(context.Background(), stateStore); err != nil {
 		_ = stateStore.Close()
 		return nil, err
 	}
-	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker()})
+	var commandRuntimeDrydocks *application.RunWorktreeService
+	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(),
+		WorkspaceRoot: application.NewMCPWorkspaceRootProvider(stateStore, func(context.Context, string) (*application.RunWorktreeService, error) {
+			return commandRuntimeDrydocks, nil
+		})})
 	if err != nil {
 		_ = stateStore.Close()
 		return nil, err
@@ -444,7 +454,6 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		return nil, err
 	}
 	workspaceCheckpoints.WithLifecycleHooks(hookEngine)
-	var commandRuntimeDrydocks *application.RunWorktreeService
 	if config.RunExecutionEnabled &&
 		config.ExecutionPermissionCapabilities.WorkspaceSandboxEnabled {
 		drydockExecutor, executorErr := repository.NewRunWorktreeExecutor(
@@ -702,6 +711,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	providerDefinitionControl.WithModelDiscoveryCredentials(credentialStore)
 	providerCredentialControl := application.NewProviderCredentialService(credentialStore).
 		WithRegistryReload(models, stateStore)
+	chatGPTAuth := application.NewChatGPTAuthService(chatGPTClient, chatGPTStore,
+		models, stateStore, openChatGPTBrowser)
 	fileEditReview := application.NewFileEditReviewService(stateStore).WithRunWorktree(commandRuntimeDrydocks)
 	fileEditProposal := application.NewFileEditProposalService(stateStore, checker).WithRunWorktree(commandRuntimeDrydocks)
 	fileEditApply := application.NewFileEditApplyService(stateStore, checker,
@@ -886,6 +897,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		ModelControlEnabled:                   config.ModelControlEnabled,
 		ProviderDefinitionEnabled:             config.ModelControlEnabled,
 		ProviderCredentialEnabled:             config.ProviderCredentialEnabled,
+		ChatGPTAuthEnabled:                    config.ProviderCredentialEnabled && config.ModelControlEnabled,
 		FileEditReviewEnabled:                 config.FileEditReviewEnabled,
 		FileEditProposalEnabled:               config.FileEditProposalEnabled,
 		RunWakeControlEnabled:                 config.RunWakeControlEnabled,
@@ -927,6 +939,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		ChildTaskControlController:    application.NewChildTaskControlService(stateStore),
 		SpecialistExecutionController: application.NewSpecialistExecutionService(stateStore, models.Router(), checker).WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl),
 		ProviderCredentialController:  providerCredentialControl,
+		ChatGPTAuthController:         chatGPTAuth,
 		FileEditReviewController:      fileEditReview,
 		FileWorkspaceDrydocks:         commandRuntimeDrydocks,
 		ThreadReviewReader: application.NewThreadReviewService(stateStore).WithRunWorktree(commandRuntimeDrydocks).
@@ -985,8 +998,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	}
 	codeIntelTransferred = true
 	commandRuntimeSetTransferred = true
-	return &ControlPlane{stateStore: stateStore, workspaceManager: workspaceManager,
+	return &ControlPlane{mcpClient: mcpClient, stateStore: stateStore, workspaceManager: workspaceManager,
 		projectPreparation: projectPreparation,
+		chatGPTAuth:        chatGPTAuth,
 		handler:            api.Handler(),
 		skillInstaller:     skillInstaller, dockerSandbox: dockerSandbox,
 		userTerminal:                   userTerminal,
@@ -1258,6 +1272,9 @@ func (c *ControlPlane) Close() error {
 		return nil
 	}
 	c.closeOnce.Do(func() {
+		if c.mcpClient != nil {
+			_ = c.mcpClient.Close()
+		}
 		c.workerMu.Lock()
 		c.closed = true
 		cancel, done := c.workerCancel, c.workerDone
@@ -1272,6 +1289,9 @@ func (c *ControlPlane) Close() error {
 		c.workerMu.Unlock()
 		if c.projectPreparation != nil {
 			c.projectPreparation.Close()
+		}
+		if c.chatGPTAuth != nil {
+			c.chatGPTAuth.Close()
 		}
 		var fullCDPShutdown <-chan error
 		var fullCDPShutdownCancel context.CancelFunc

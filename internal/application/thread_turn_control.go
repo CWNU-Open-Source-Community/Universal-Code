@@ -109,7 +109,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	normalized, err := normalizeSubmitThreadMessageRequest(SubmitThreadMessageRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: request.Content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
-		Files: request.Files, Images: request.Images, Attachments: request.Attachments, plan: request.plan,
+		Files: request.Files, Images: request.Images, Attachments: request.Attachments, MCPReferences: request.MCPReferences, plan: request.plan,
 	})
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
@@ -126,7 +126,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		}
 	}
 	canReject := true
-	if len(normalized.Files) > 0 || len(normalized.Images) > 0 || len(normalized.Attachments) > 0 {
+	if len(normalized.Files) > 0 || len(normalized.Images) > 0 || len(normalized.Attachments) > 0 || len(normalized.MCPReferences) > 0 {
 		// A retry of the same still-preparing request must not reject its owner.
 		// Only genuinely separate submissions may receive a durable rejection.
 		defer func() {
@@ -149,7 +149,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	s.turnMu.Lock()
 	if active := s.activeTurns[request.ThreadID]; active != nil {
 		defer s.turnMu.Unlock()
-		if (len(normalized.Files) > 0 || len(normalized.Images) > 0 || len(normalized.Attachments) > 0) &&
+		if (len(normalized.Files) > 0 || len(normalized.Images) > 0 || len(normalized.Attachments) > 0 || len(normalized.MCPReferences) > 0) &&
 			active.operationKey == normalized.OperationKey && intent.MessageID == "" {
 			canReject = false
 			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeUnavailable,
@@ -158,13 +158,13 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		if prepare != nil || active.preparingPlan {
 			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition, "Plan preparation requires an idle task; keep this input and retry after preparation")
 		}
-		if len(normalized.Files) > 0 {
+		if len(normalized.Files) > 0 || len(normalized.MCPReferences) > 0 {
 			if intent.MessageID != "" {
 				submission, _, err := s.threads.prepareMessage(ctx, normalized, intent)
 				return ExecuteThreadTurnResult{Submission: submission, Replayed: true}, err
 			}
 			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition,
-				"Thread project file references require an idle task. Wait for this execution or remove the references")
+				"Thread project file and MCP references require an idle task. Wait for this execution or remove the references")
 		}
 		if active.stopping {
 			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition,

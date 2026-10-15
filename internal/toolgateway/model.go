@@ -50,6 +50,7 @@ const (
 	DebugTerminalTool               ToolName = "debug_terminal"
 	CommandRuntimeTool              ToolName = "command_runtime"
 	MCPToolCallTool                 ToolName = "mcp_tool_call"
+	MCPToolSearchTool               ToolName = "mcp_tool_search"
 	WebSearchTool                   ToolName = "web_search"
 	SourceSearchTool                ToolName = "source_search"
 	WebFetchTool                    ToolName = "web_fetch"

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -178,6 +179,11 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 	if len(contentMethod) > 0 {
 		method = contentMethod[0]
 	}
+	largeCatalog := method == "large_catalog"
+	largeResult := method == "large_result"
+	if largeCatalog || largeResult {
+		method = ""
+	}
 	f := &mcpApprovalFixture{checker: &mcpReviewChecker{Checker: policy.NewDefaultChecker(), require: require}}
 	var err error
 	f.st, err = store.Open(filepath.Join(t.TempDir(), "mcp-approval.db"))
@@ -190,7 +196,8 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		t.Fatal(err)
 	}
 	request := CreateRunRequest{Goal: "Use the reviewed local fixture", Profile: "code", Surface: "code", Phase: "deliver", WorkspaceID: workspace.ID,
-		Budget: domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 8}}
+		Interactive: largeResult && len(contentMethod) > 1 && contentMethod[1] == "run_interactive",
+		Budget:      domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 8}}
 	if cyberPlan {
 		request.Profile, request.Surface, request.Phase = "review", "cyber", "plan"
 	}
@@ -276,6 +283,17 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 			}
 		case "tools/list":
 			result = json.RawMessage(`{"tools":[{"name":"lookup","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"value":{"type":"integer"}},"additionalProperties":false}}]}`)
+			if largeCatalog {
+				var catalog struct {
+					Tools []map[string]any `json:"tools"`
+				}
+				_ = json.Unmarshal(result, &catalog)
+				for i := 0; i < 130; i++ {
+					catalog.Tools = append(catalog.Tools, map[string]any{"name": fmt.Sprintf("note_%03d", i), "description": "Read a note", "inputSchema": map[string]any{"type": "object"}})
+				}
+				catalog.Tools = append(catalog.Tools, map[string]any{"name": "zz_read_archive", "description": "检索归档文档", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"value": map[string]any{"type": "integer"}}, "additionalProperties": false}})
+				result, _ = json.Marshal(catalog)
+			}
 		case "tools/call":
 			f.calls.Add(1)
 			if !strings.Contains(string(request.Params), "9007199254740993") {
@@ -328,6 +346,9 @@ func newMCPOperationApprovalFixture(t *testing.T, mode domain.RunExecutionPermis
 		t.Fatalf("advertisement missing: %v", err)
 	}
 	payload, _ := json.Marshal(toolgateway.MCPToolCallPayload{Version: toolgateway.MCPClientToolProtocolVersion, ServerID: descriptor.ID, ToolName: "lookup", CapabilityFingerprint: f.server.ApprovedCapabilityFingerprint, Arguments: json.RawMessage(`{"value":9007199254740993}`)})
+	if largeCatalog {
+		payload = json.RawMessage(strings.Replace(string(payload), `"tool_name":"lookup"`, `"tool_name":"zz_read_archive"`, 1))
+	}
 	if method != "" {
 		name, args := "resources.read", `{"uri":"fixture://review"}`
 		if method == "prompts/get" {

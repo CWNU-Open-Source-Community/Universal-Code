@@ -39,6 +39,7 @@ type ExecutionPermissionRuntimeAuthority struct {
 	threads    map[string]executionPermissionThreadGrant
 	runs       map[string]ExecutionPermissionRuntimeGrant
 	runFences  map[string]uint64
+	runSignals map[string]chan struct{}
 }
 
 func NewExecutionPermissionRuntimeAuthority() *ExecutionPermissionRuntimeAuthority {
@@ -48,10 +49,11 @@ func NewExecutionPermissionRuntimeAuthority() *ExecutionPermissionRuntimeAuthori
 		epoch = hex.EncodeToString(nonce[:])
 	}
 	return &ExecutionPermissionRuntimeAuthority{
-		epoch:     epoch,
-		threads:   make(map[string]executionPermissionThreadGrant),
-		runs:      make(map[string]ExecutionPermissionRuntimeGrant),
-		runFences: make(map[string]uint64),
+		epoch:      epoch,
+		threads:    make(map[string]executionPermissionThreadGrant),
+		runs:       make(map[string]ExecutionPermissionRuntimeGrant),
+		runFences:  make(map[string]uint64),
+		runSignals: make(map[string]chan struct{}),
 	}
 }
 
@@ -72,6 +74,9 @@ func (a *ExecutionPermissionRuntimeAuthority) nextGenerationLocked() uint64 {
 		a.generation = 1
 		a.threads = make(map[string]executionPermissionThreadGrant)
 		a.runs = make(map[string]ExecutionPermissionRuntimeGrant)
+		for runID := range a.runSignals {
+			a.clearRunFenceLocked(runID)
+		}
 		a.runFences = make(map[string]uint64)
 	}
 	return a.generation
@@ -109,7 +114,7 @@ func (a *ExecutionPermissionRuntimeAuthority) ActivateThreadFullAccess(
 	for runID, grant := range a.runs {
 		if grant.ThreadID == thread.ThreadID {
 			delete(a.runs, runID)
-			delete(a.runFences, runID)
+			a.clearRunFenceLocked(runID)
 		}
 	}
 	a.threads[thread.ThreadID] = executionPermissionThreadGrant{
@@ -141,7 +146,7 @@ func (a *ExecutionPermissionRuntimeAuthority) ActivateRunFullAccess(
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	generation := a.nextGenerationLocked()
-	delete(a.runFences, run.RunID)
+	a.clearRunFenceLocked(run.RunID)
 	grant := ExecutionPermissionRuntimeGrant{Generation: generation, RunID: run.RunID,
 		PermissionSnapshotID: run.ID, PermissionRevision: run.Revision}
 	a.runs[run.RunID] = grant
@@ -177,7 +182,7 @@ func (a *ExecutionPermissionRuntimeAuthority) BindThreadRun(threadID string,
 	for runID, grant := range a.runs {
 		if grant.ThreadID == threadID {
 			delete(a.runs, runID)
-			delete(a.runFences, runID)
+			a.clearRunFenceLocked(runID)
 		}
 	}
 	grant := ExecutionPermissionRuntimeGrant{Generation: generation,
@@ -200,7 +205,7 @@ func (a *ExecutionPermissionRuntimeAuthority) RevokeThread(threadID string) uint
 	for runID, grant := range a.runs {
 		if grant.ThreadID == threadID {
 			delete(a.runs, runID)
-			delete(a.runFences, runID)
+			a.clearRunFenceLocked(runID)
 		}
 	}
 	return generation
@@ -215,7 +220,7 @@ func (a *ExecutionPermissionRuntimeAuthority) RevokeRun(runID string) uint64 {
 	defer a.mu.Unlock()
 	generation := a.nextGenerationLocked()
 	delete(a.runs, runID)
-	delete(a.runFences, runID)
+	a.clearRunFenceLocked(runID)
 	return generation
 }
 
@@ -240,6 +245,7 @@ func (a *ExecutionPermissionRuntimeAuthority) IssueRunAuthorizationFence(
 		return generation, nil
 	}
 	generation := a.nextGenerationLocked()
+	a.clearRunFenceLocked(runID)
 	a.runFences[runID] = generation
 	return generation, nil
 }
@@ -262,6 +268,7 @@ func (a *ExecutionPermissionRuntimeAuthority) RotateRunAuthorizationFence(
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	generation := a.nextGenerationLocked()
+	a.clearRunFenceLocked(runID)
 	a.runFences[runID] = generation
 	return generation, nil
 }
@@ -353,4 +360,37 @@ func validateRuntimeFullAccessRun(run RunExecutionPermissionSnapshot) error {
 			"runtime activation requires a confirmed Full Access Run snapshot")
 	}
 	return nil
+}
+
+// RunAuthorizationDone observes revocation of an existing fence without issuing
+// permission. Passive task resources can release promptly when it is invalidated.
+func (a *ExecutionPermissionRuntimeAuthority) RunAuthorizationDone(runID string, fence uint64) <-chan struct{} {
+	if a == nil {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if fence == 0 || a.runFences[runID] != fence {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	if done := a.runSignals[runID]; done != nil {
+		return done
+	}
+	if a.runSignals == nil {
+		a.runSignals = make(map[string]chan struct{})
+	}
+	done := make(chan struct{})
+	a.runSignals[runID] = done
+	return done
+}
+func (a *ExecutionPermissionRuntimeAuthority) clearRunFenceLocked(runID string) {
+	if done := a.runSignals[runID]; done != nil {
+		close(done)
+		delete(a.runSignals, runID)
+	}
+	delete(a.runFences, runID)
 }

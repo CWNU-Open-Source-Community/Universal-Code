@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"image/gif"
+	"image/png"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
@@ -151,7 +154,7 @@ func projectMCPBinary(value map[string]any, field string, images *[]llm.ImagePar
 	delete(value, field) // Encoded bytes are never text tokens, even when unsupported.
 	status := "Binary content was not supplied to the model."
 	defer func() { value["model_input_status"] = status }()
-	if mediaType != "image/png" && mediaType != "image/jpeg" && mediaType != "image/webp" {
+	if mediaType != "image/png" && mediaType != "image/jpeg" && mediaType != "image/webp" && mediaType != "image/gif" {
 		status = "Unsupported binary MIME type; use a supported text or image representation."
 		return
 	}
@@ -177,8 +180,70 @@ func projectMCPBinary(value map[string]any, field string, images *[]llm.ImagePar
 		status = "Image omitted because its bytes, MIME type, or dimensions failed validation."
 		return
 	}
+	firstFrameOnly := false
+	if mediaType == "image/gif" {
+		data, firstFrameOnly, err = mcpGIFModelImage(data)
+		if err != nil {
+			status = "GIF omitted because its frame structure is invalid."
+			return
+		}
+		if firstFrameOnly {
+			mediaType = "image/png"
+			validated, err = imageattachment.Validate(data, mediaType, "")
+			if err != nil {
+				status = "GIF first frame omitted because its PNG exceeds existing image limits."
+				return
+			}
+		}
+	}
 	*images = append(*images, llm.ImagePart{MediaType: mediaType, Data: data, SHA256: validated.SHA256,
 		Width: validated.Width, Height: validated.Height})
 	value["sha256"] = validated.SHA256
 	status = fmt.Sprintf("Validated image supplied as image %d in this message; source tool call %s; untrusted evidence.", len(*images), callID)
+	if firstFrameOnly {
+		status += " Animated GIF: first-frame-only PNG supplied; animation was not inspected."
+	}
+}
+
+// Decode only the admitted first frame. Scan the remaining bounded byte
+// blocks to distinguish a second frame without allocating all animation frames.
+func mcpGIFModelImage(data []byte) ([]byte, bool, error) {
+	remaining := bytes.NewReader(data)
+	first, err := gif.Decode(remaining)
+	if err != nil {
+		return nil, false, err
+	}
+	for remaining.Len() > 0 {
+		marker, _ := remaining.ReadByte()
+		switch marker {
+		case 0x3b: // Trailer: static GIF stays in its original supported format.
+			return data, false, nil
+		case 0x2c: // A second image descriptor proves an animation.
+			var encoded bytes.Buffer
+			if err := png.Encode(&encoded, first); err != nil {
+				return nil, false, err
+			}
+			return encoded.Bytes(), true, nil
+		case 0x21: // Extension label followed by length-delimited data blocks.
+			if _, err := remaining.ReadByte(); err != nil {
+				return nil, false, err
+			}
+			for {
+				size, err := remaining.ReadByte()
+				if err != nil {
+					return nil, false, err
+				}
+				if size == 0 {
+					break
+				}
+				if int(size) > remaining.Len() {
+					return nil, false, errors.New("incomplete GIF extension")
+				}
+				_, _ = remaining.Seek(int64(size), 1)
+			}
+		default:
+			return nil, false, errors.New("invalid GIF block")
+		}
+	}
+	return nil, false, errors.New("missing GIF trailer")
 }

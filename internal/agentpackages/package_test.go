@@ -152,7 +152,7 @@ func TestPublicLaunchBindingFailureIsolationAndNoExpansion(t *testing.T) {
 	}
 	defer pkg.Close()
 	launches := pkg.Launches()
-	if len(launches) != 2 || len(pkg.Skills()) != 1 || len(pkg.Diagnostics()) != 2 {
+	if len(launches) != 3 || len(pkg.Skills()) != 1 || len(pkg.Diagnostics()) != 1 {
 		t.Fatal("component failures leaked to siblings")
 	}
 	for _, launch := range launches {
@@ -173,7 +173,7 @@ func TestPublicLaunchBindingFailureIsolationAndNoExpansion(t *testing.T) {
 			launch.Stdio.Env["TOKEN"] = "mutated"
 			launch.Stdio.Args[0] = "mutated"
 		}
-		if launch.HTTP != nil {
+		if launch.HTTP != nil && launch.HTTP.Headers != nil {
 			launch.HTTP.Headers["Authorization"] = "mutated"
 		}
 	}
@@ -181,7 +181,7 @@ func TestPublicLaunchBindingFailureIsolationAndNoExpansion(t *testing.T) {
 		if launch.Stdio != nil && (launch.Stdio.Env["TOKEN"] != "test-secret" || launch.Stdio.Args[0] != "${PLUGIN_ROOT}/entry") {
 			t.Fatal("caller mutated stored stdio declaration")
 		}
-		if launch.HTTP != nil && launch.HTTP.Headers["Authorization"] != "test-secret" {
+		if launch.HTTP != nil && launch.Transport == toolcontract.TransportStreamableHTTP && launch.HTTP.Headers["Authorization"] != "test-secret" {
 			t.Fatal("caller mutated stored HTTP declaration")
 		}
 	}

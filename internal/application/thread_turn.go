@@ -48,15 +48,16 @@ type threadEpochTransitionStore interface {
 }
 
 type ExecuteThreadTurnRequest struct {
-	plan         *threadPlanCommitBinding
-	Version      string
-	ThreadID     string
-	Content      string
-	OperationKey string
-	RequestedBy  string
-	Files        []domain.WorkspaceFileReference
-	Images       []domain.ImageReference
-	Attachments  []domain.FileAttachmentReference
+	plan          *threadPlanCommitBinding
+	Version       string
+	ThreadID      string
+	Content       string
+	OperationKey  string
+	RequestedBy   string
+	Files         []domain.WorkspaceFileReference
+	Images        []domain.ImageReference
+	Attachments   []domain.FileAttachmentReference
+	MCPReferences []domain.MCPReference
 }
 
 type ExecuteThreadTurnResult struct {
@@ -149,7 +150,7 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 	normalized, err := normalizeSubmitThreadMessageRequest(SubmitThreadMessageRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: request.Content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
-		Files: request.Files, Images: request.Images, Attachments: request.Attachments, plan: request.plan,
+		Files: request.Files, Images: request.Images, Attachments: request.Attachments, MCPReferences: request.MCPReferences, plan: request.plan,
 	})
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
@@ -172,7 +173,7 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 	}
 
 	var submission SubmitThreadMessageResult
-	if len(normalized.Files) == 0 && len(normalized.Images) == 0 && len(normalized.Attachments) == 0 {
+	if len(normalized.Files) == 0 && len(normalized.Images) == 0 && len(normalized.Attachments) == 0 && len(normalized.MCPReferences) == 0 {
 		submission, err = s.threads.Submit(ctx, normalized)
 	} else {
 		if len(normalized.Files) > 0 && s.evidence == nil {

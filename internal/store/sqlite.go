@@ -453,7 +453,10 @@ func migrationPlan() []migration {
 	previous = append(previous, migration{Version: 191, Name: "Bind continuous Specialist schedules to durable operator intent",
 		Statements: specialistContinuationStatements})
 	previous = append(previous, migration{Version: 192, Name: "Explicit independent Run web access modes", Statements: runWebAccessStatements()})
-	return append(previous, migration{Version: 193, Name: "Lock-bound project dependency preparation receipts", Statements: projectPreparationStatements})
+	previous = append(previous, migration{Version: 193, Name: "Lock-bound project dependency preparation receipts", Statements: projectPreparationStatements})
+	previous = append(previous, migration{Version: 194, Name: "Fenced on-demand MCP catalog search", Statements: mcpToolSearchStatements, DisableForeignKeys: true})
+	previous = append(previous, migration{Version: 195, Name: "Message-bound one-time MCP content selections", Statements: threadMCPReferenceStatements})
+	return append(previous, migration{Version: 196, Name: "SSE and WebSocket MCP transports", Statements: mcpRemoteTransportStatements, DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

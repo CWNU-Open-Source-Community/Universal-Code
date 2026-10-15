@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -33,6 +32,9 @@ type InvocationError struct {
 }
 
 func (e *InvocationError) Error() string {
+	if e.Receipt.State == toolcontract.ReceiptNotDispatched && errors.Is(e.cause, errStaleCatalog) {
+		return errStaleCatalog.Error()
+	}
 	if e.Receipt.State != toolcontract.ReceiptNotDispatched {
 		return fmt.Sprintf("MCP call was dispatched (%s, operation %s); inspect existing evidence and do not automatically repeat the action", e.Receipt.State, e.Receipt.OperationID)
 	}
@@ -71,6 +73,9 @@ func runtimeAuthorityFailure(err error) error {
 }
 
 func (m *Manager) runtimeInvocationFailure(ctx context.Context, record ServerRecord, message string, cause error) error {
+	if errors.Is(cause, errStaleCatalog) {
+		return cause
+	}
 	var stopped *runtimeAuthorityError
 	if errors.As(cause, &stopped) {
 		// A Run revocation/lease loss is not a server outage. In particular it
@@ -95,9 +100,9 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 	if err != nil {
 		return launch, "", err
 	}
-	launch.InstanceID = record.DescriptorFingerprint + "-" + fmt.Sprint(record.Generation)
+	launch.InstanceID = record.DescriptorFingerprint
 	bearer := ""
-	if d.Transport == TransportStreamableHTTP {
+	if d.Transport.Remote() {
 		if d.CredentialRef != "" {
 			if m.credentials == nil {
 				return launch, "", errors.New("MCP credential reader unavailable")
@@ -144,22 +149,29 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	receipt := toolcontract.Receipt{OperationID: request.OperationID, State: toolcontract.ReceiptNotDispatched}
 	defer func() {
 		receipt.OperationID = request.OperationID
-		if err != nil && receipt.Validate() == nil {
+		if request.catalogCheck == nil && err != nil && receipt.Validate() == nil {
 			if receipt.ErrorCode == "" {
 				receipt.ErrorCode = string(apperror.CodeOf(apperror.Normalize(err)))
 			}
 			err = &InvocationError{Receipt: receipt, cause: err}
 		}
 	}()
-	if request.Subject.Validate() != nil || request.Subject.RunID != request.RunID || !validClientIdentity(request.OperationID) {
+	if request.catalogCheck == nil && (request.Subject.Validate() != nil || request.Subject.RunID != request.RunID || !validClientIdentity(request.OperationID)) {
 		return result, apperror.New(apperror.CodeInvalidArgument, "MCP invocation requires a host operation and subject")
 	}
 	ctx, cancel := context.WithTimeout(ctx, InvocationTimeout)
 	defer cancel()
-	key := make([]byte, 32)
-	if _, err = rand.Read(key); err != nil {
+	entry, err := m.session(catalogSessionKey{request.RunID, request.WorkspaceID, request.ServerID})
+	if err != nil {
 		return result, err
 	}
+	if err := entry.acquire(ctx); err != nil {
+		return result, err
+	}
+	defer m.releaseSession(catalogSessionKey{request.RunID, request.WorkspaceID, request.ServerID}, entry)
+	stop := context.AfterFunc(entry.lifetime, cancel)
+	defer stop()
+	key := entry.key
 	var launch toolcontract.ResolvedLaunch
 	var bearer string
 	var secrets []string
@@ -223,7 +235,10 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			}
 			if err == nil {
 				current, checkErr := m.store.GetMCPClientServer(ctx, record.Descriptor.ID)
-				if checkErr != nil || current.Generation != record.Generation || current.State != TrustEnabled || current.DescriptorFingerprint != record.DescriptorFingerprint {
+				if checkErr != nil {
+					return "", catalogStoreError(checkErr)
+				}
+				if current.Generation != record.Generation || current.State != TrustEnabled || current.DescriptorFingerprint != record.DescriptorFingerprint {
 					return "", errors.New("MCP authorization changed during credential refresh")
 				}
 			}
@@ -237,10 +252,13 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		}
 		current, err := m.store.GetMCPClientServer(ctx, record.Descriptor.ID)
 		if err != nil {
-			return err
+			return catalogStoreError(err)
+		}
+		if current.State == TrustEnabled && current.DescriptorFingerprint == record.DescriptorFingerprint && current.Capabilities.Fingerprint != request.CapabilityFingerprint && scopeMatches(current.Descriptor, request.RunID, request.WorkspaceID) {
+			return staleCatalogError()
 		}
 		if current.Generation != record.Generation || current.DescriptorFingerprint != record.DescriptorFingerprint ||
-			current.State != TrustEnabled || current.Health != HealthHealthy || current.ApprovedCapabilityFingerprint != request.CapabilityFingerprint ||
+			current.State != TrustEnabled || (request.catalogCheck == nil && current.Health != HealthHealthy) || current.ApprovedCapabilityFingerprint != request.CapabilityFingerprint ||
 			current.Capabilities.Fingerprint != request.CapabilityFingerprint || !scopeMatches(current.Descriptor, request.RunID, request.WorkspaceID) {
 			return apperror.New(apperror.CodePolicyDenied, "MCP server review or scope changed before dispatch")
 		}
@@ -273,6 +291,25 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		if err := recheckRecord(ctx); err != nil {
 			return nil, nil, runtimeAuthorityFailure(err)
 		}
+		if request.catalogCheck != nil {
+			recheck := func(ctx context.Context) error {
+				if err := recheckRecord(ctx); err != nil {
+					return err
+				}
+				return request.catalogCheck(ctx)
+			}
+			expected, err := toolcontract.FingerprintOperation(operation)
+			if err != nil {
+				return nil, nil, err
+			}
+			guard := func(ctx context.Context, actual string) error {
+				if actual != expected {
+					return errors.New("MCP catalog operation changed")
+				}
+				return recheck(ctx)
+			}
+			return guard, recheck, recheck(ctx)
+		}
 		decision, err := request.Authorizer.Authorize(ctx, request.Subject, operation, "")
 		if err != nil {
 			return nil, nil, runtimeAuthorityFailure(err)
@@ -299,7 +336,7 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	connect := runtimeOperation("mcp-connect-"+digestBytes([]byte(request.OperationID)), toolcontract.OperationConnect, launch, launchFingerprint)
-	connectGuard, _, err := authorize(ctx, connect)
+	connectGuard, connectCheck, err := authorize(ctx, connect)
 	if err != nil {
 		return result, err
 	}
@@ -307,7 +344,7 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		Profile: launch.ProtocolVersions[0], Methods: []string{"initialize", "notifications/initialized", "tools/list", "resources/list", "resources/templates/list", "prompts/list"},
 		MaxRequests: 64, MaxBytes: 1024 * 1024, ExpiresAt: time.Now().Add(time.Duration(record.Descriptor.CallTimeoutMillis) * time.Millisecond)}
 	if discovery.Profile == preferredClientProtocolVersion {
-		discovery.Methods = append(discovery.Methods, "server/discover")
+		discovery.Methods = append(discovery.Methods, "server/discover", "subscriptions/listen")
 	}
 	var toolGuard toolcontract.DispatchGuard
 	guards := toolcontract.ExecutionGuards{
@@ -339,11 +376,62 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			return toolGuard(ctx, actual)
 		},
 	}
-	client, err := NewResolvedClient(launch, key, connect, guards, credential, m.httpClient)
+	entry.checkMu.RLock()
+	persistentRoots := entry.check != nil
+	entry.checkMu.RUnlock()
+	rootCheck := entry.boundTaskCheck()
+	if !persistentRoots {
+		operationCtx := ctx
+		rootCheck = func(ctx context.Context) error {
+			if err := operationCtx.Err(); err != nil {
+				return err
+			}
+			return connectCheck(ctx)
+		}
+	}
+	roots, err := m.prepareWorkspaceRoots(ctx, record, request.RunID, rootCheck)
 	if err != nil {
 		return result, err
 	}
-	defer client.Close()
+	connectionFingerprint := launchFingerprint
+	if roots != nil {
+		connectionFingerprint = digestBytes([]byte(launchFingerprint + "\x00" + roots.fingerprint))
+	}
+	client := entry.client
+	if client != nil && (entry.fingerprint != connectionFingerprint || client.closed.Load()) {
+		_ = client.Close()
+		entry.client = nil
+		client = nil
+	}
+	if client == nil {
+		client, err = NewResolvedClient(launch, key, connect, guards, credential, m.httpClient)
+		if err != nil {
+			return result, err
+		}
+		client.catalogChanged = entry.signal
+		client.catalogError = func(err error) {
+			select {
+			case entry.fault <- catalogFault{client: client, cause: err}:
+			default:
+			}
+		}
+		entry.client, entry.fingerprint = client, connectionFingerprint
+	} else {
+		client.resolved.connect = cloneOperation(connect)
+		client.resolved.guards = guards
+		client.resolved.credential = credential
+	}
+	client.setWorkspaceRoots(roots)
+	defer func() {
+		clearSessionOperation(client)
+		entry.checkMu.RLock()
+		persistent := entry.check != nil
+		entry.checkMu.RUnlock()
+		if !persistent || (err != nil && apperror.CodeOf(err) != apperror.CodeConflict) {
+			_ = client.Close()
+			entry.client = nil
+		}
+	}()
 	resolvedClientForSecrets = client
 	if client.remote != nil && launch.HTTP != nil && launch.HTTP.Credential != nil {
 		stored, found, readErr := m.credentials.Get(ctx, launch.HTTP.Credential.ID)
@@ -354,20 +442,51 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			client.remote.resolveBearer = func(ctx context.Context) (string, error) { return credential(ctx, *launch.HTTP.Credential) }
 		}
 	}
+	client.secretsMu.Lock()
 	client.secrets = slices.Clone(secrets)
+	client.secretsMu.Unlock()
 	client.descriptor.DeclaredCapabilities = slices.Clone(record.Descriptor.DeclaredCapabilities)
 	binding := inputBinding{runID: request.RunID, serverID: record.Descriptor.ID, serverName: record.Descriptor.Name, operationID: request.OperationID, method: request.Method}
 	if binding.method == "" {
 		binding.method = "tools/call"
 	}
 	if m.inputs != nil {
+		client.inputMu.Lock()
 		client.inputHandler = func(context.Context, *sdk.ElicitParams) (*sdk.ElicitResult, error) {
 			return nil, errors.New("MCP input has no authorized invocation")
 		}
+		client.inputMu.Unlock()
 	}
 	current, err := client.DiscoverWithScope(ctx, discovery)
 	if err != nil {
 		return result, m.runtimeInvocationFailure(ctx, record, "runtime discovery failed", err)
+	}
+	if request.catalogCheck != nil {
+		listenCtx, stopListen := context.WithDeadline(ctx, discovery.ExpiresAt)
+		listenErr := client.startCatalogNotifications(listenCtx, func(ctx context.Context) error {
+			if err := recheckRecord(ctx); err != nil {
+				return err
+			}
+			return request.catalogCheck(ctx)
+		})
+		stopListen()
+		if listenErr != nil {
+			return result, m.runtimeInvocationFailure(ctx, record, "catalog notification connection failed", listenErr)
+		}
+		if err := request.catalogCheck(ctx); err != nil {
+			return result, err
+		}
+		if current.Fingerprint == record.Capabilities.Fingerprint && record.Health == HealthHealthy {
+			return result, nil
+		}
+		previous := record.Generation
+		record.Capabilities = current
+		record.ApprovedCapabilityFingerprint = current.Fingerprint
+		record.Health, record.HealthMessage = HealthHealthy, ""
+		record.Generation++
+		record.UpdatedAt = m.now().UTC()
+		_, err = m.store.UpdateMCPClientServer(ctx, record, previous)
+		return result, catalogStoreError(err)
 	}
 	latest, err := m.verifyInvocationSnapshot(ctx, request, record, current)
 	if err != nil {
@@ -388,6 +507,9 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	}
 	operation := runtimeOperation(request.OperationID, toolcontract.OperationToolCall, launch, input)
 	operation.CapabilityFingerprint = client.NativeCapabilityFingerprint()
+	if operation.CapabilityFingerprint == "" {
+		return result, staleCatalogError()
+	}
 	toolGuard, recheckCall, err = authorize(ctx, operation)
 	if err != nil {
 		return result, err
@@ -495,5 +617,9 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		return result, err
 	}
 	content, truncated := BoundResultJSON(raw, record.Descriptor.MaxResultBytes)
-	return ClientCallResult{Content: content, IsError: isError, Bytes: len(content), Truncated: truncated}, nil
+	retained := ""
+	if truncated {
+		retained = string(raw)
+	}
+	return ClientCallResult{Content: content, FullContent: retained, IsError: isError, Bytes: len(content), Truncated: truncated}, nil
 }

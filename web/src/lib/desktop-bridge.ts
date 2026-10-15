@@ -106,6 +106,7 @@ export interface DesktopConnectionBootstrap {
   approval_control_enabled: boolean;
   model_control_enabled: boolean;
   provider_credential_enabled: boolean;
+  chatgpt_auth_enabled?: boolean;
   file_edit_review_enabled: boolean;
   file_edit_proposal_enabled: boolean;
   run_wake_control_enabled: boolean;
@@ -939,7 +940,10 @@ function getDebugRestartBridge(): NativeDebugRestartBridge | null {
 }
 
 function validBootstrap(value: unknown): value is DesktopConnectionBootstrap {
+  const chatGPTKeys = isRecord(value) && Object.hasOwn(value, "chatgpt_auth_enabled")
+    ? ["chatgpt_auth_enabled"] : [];
   if (!hasExactKeys(value, [
+    ...chatGPTKeys,
     "agent_code_tools_enabled", "api_base_url", "api_version", "app_version",
     "code_intel_enabled",
     "approval_control_enabled", "command_runtime_enabled",
@@ -1004,6 +1008,8 @@ function validBootstrap(value: unknown): value is DesktopConnectionBootstrap {
     typeof value.approval_control_enabled === "boolean" &&
 	typeof value.model_control_enabled === "boolean" &&
 	typeof value.provider_credential_enabled === "boolean" &&
+    (value.chatgpt_auth_enabled === undefined || typeof value.chatgpt_auth_enabled === "boolean") &&
+    (!value.chatgpt_auth_enabled || (value.model_control_enabled && value.provider_credential_enabled)) &&
 	typeof value.file_edit_review_enabled === "boolean" &&
 	typeof value.file_edit_proposal_enabled === "boolean" &&
 	typeof value.run_wake_control_enabled === "boolean" &&

@@ -75,7 +75,7 @@ func (s *MCPCredentialService) changeOAuth(ctx context.Context, r ChangeMCPCrede
 		err = s.oauthStatus(ctx, r.Binding, &status)
 		return status, err
 	}
-	if record.Descriptor.Transport != mcp.TransportStreamableHTTP || record.State == mcp.TrustRevoked || !status.StoreAvailable || status.EndpointConflict || status.RegistrationCount != 1 || status.ReferenceFingerprint != r.ExpectedReferenceFingerprint {
+	if (record.Descriptor.Transport != mcp.TransportStreamableHTTP && record.Descriptor.Transport != mcp.TransportSSE) || record.State == mcp.TrustRevoked || !status.StoreAvailable || status.EndpointConflict || status.RegistrationCount != 1 || status.ReferenceFingerprint != r.ExpectedReferenceFingerprint {
 		return fail()
 	}
 	if r.OAuthFlowID != "" {

@@ -62,21 +62,21 @@ describe("V2 model settings", () => {
 
     const list = screen.getByRole("list", { name: "模型供应商" });
     const items = within(list).getAllByRole("listitem");
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     expect(within(items[0]).getByRole("button", { name: "打开自定义模型配置" }))
       .toHaveTextContent("自定义配置自定义模型");
-    expect(within(items[1]).getByRole("button", {
+    expect(within(items[2]).getByRole("button", {
       name: "OpenAI，GPT-5，尚未保存 API Key",
     })).toHaveTextContent("OpenAIGPT-5");
-    expect(within(items[2]).getByRole("button", {
+    expect(within(items[3]).getByRole("button", {
       name: "Anthropic，Claude Opus，已保存 API Key",
     })).toHaveTextContent("AnthropicClaude Opus");
-    expect(within(items[1]).getByText("尚未保存 API Key")).toBeVisible();
-    expect(within(items[2]).getByText("已保存 API Key")).toBeVisible();
-    expect(within(items[3]).getByRole("button", {
+    expect(within(items[2]).getByText("尚未保存 API Key")).toBeVisible();
+    expect(within(items[3]).getByText("已保存 API Key")).toBeVisible();
+    expect(within(items[4]).getByRole("button", {
       name: "GitHub Copilot，Copilot，登录待接入",
     })).toHaveTextContent("GitHub CopilotCopilot");
-    expect(within(items[3]).getByText("登录待接入")).toBeVisible();
+    expect(within(items[4]).getByText("登录待接入")).toBeVisible();
     expect(screen.queryByText("需要 API Key")).not.toBeInTheDocument();
     expect(screen.queryByText("已接入")).not.toBeInTheDocument();
     const openAIButton = screen.getByRole("button", { name: /OpenAI，GPT-5/u });
@@ -132,6 +132,8 @@ describe("V2 model settings", () => {
 
     await user.tab();
     expect(screen.getByRole("button", { name: "打开自定义模型配置" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: /ChatGPT，订阅账户/u })).toHaveFocus();
     await user.tab();
     const openAIButton = screen.getByRole("button", { name: /OpenAI，GPT-5/u });
     expect(openAIButton).toHaveFocus();

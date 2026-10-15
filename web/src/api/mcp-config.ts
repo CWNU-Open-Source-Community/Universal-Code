@@ -2,18 +2,18 @@ const environmentName = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 const headerName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/u;
 const credentialName = /^[\p{L}\p{Nd}_-]+$/u;
 const secretName = /authorization|cookie|token|secret|password|passwd|api[-_]?key|private[-_]?key|credential/iu;
-const controlledHeader = /^(host|content-length|transfer-encoding|connection|trailer|te|upgrade|proxy-authorization|accept|content-type|mcp-protocol-version|mcp-session-id|mcp-method|mcp-name|last-event-id)$/iu;
+const controlledHeader = /^(host|content-length|transfer-encoding|connection|trailer|te|upgrade|proxy-authorization|accept|content-type|mcp-protocol-version|mcp-session-id|mcp-method|mcp-name|last-event-id|sec-websocket-(key|version|extensions|protocol|accept))$/iu;
 const bytes = (value: string) => new TextEncoder().encode(value).length;
 const literal = (value: unknown): value is string => typeof value === "string" && bytes(value) <= 4096 &&
   !/[\p{Cc}]/u.test(value) && !/^\s*bearer\s/iu.test(value) && !value.startsWith("uc-mcp-oauth-v1:") && !/\b(sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{20,}/u.test(value);
 
-export function validManualMCPURL(value: string): boolean {
+export function validManualMCPURL(value: string, websocket = false): boolean {
   if (value !== value.trim() || bytes(value) > 4096 || /[?#\\\p{Cc}]/u.test(value)) return false;
   try {
     const url = new URL(value);
     const host = url.hostname;
     const loopback = host === "localhost" || /^127(?:\.\d{1,3}){3}$/u.test(host) || host === "[::1]";
-    return (url.protocol === "https:" || url.protocol === "http:" && loopback) &&
+    return (websocket ? url.protocol === "wss:" || url.protocol === "ws:" && loopback : url.protocol === "https:" || url.protocol === "http:" && loopback) &&
       !!host && !url.username && !url.password && !url.search && !url.hash;
   } catch { return false; }
 }
@@ -28,7 +28,7 @@ type ConnectionFields = { transport: string; cwd?: string; env?: Record<string, 
 
 export function validMCPConnectionConfig(value: ConnectionFields): boolean {
   if (value.cwd !== undefined && typeof value.cwd !== "string") return false;
-  if (value.transport === "streamable_http" && (value.cwd || value.env && Object.keys(value.env).length ||
+  if (value.transport !== "stdio" && (value.cwd || value.env && Object.keys(value.env).length ||
     value.env_credential_refs && Object.keys(value.env_credential_refs).length)) return false;
   if (value.transport === "stdio" && (value.headers && Object.keys(value.headers).length || value.cwd && !absoluteMCPPath(value.cwd))) return false;
   const names = new Set<string>();

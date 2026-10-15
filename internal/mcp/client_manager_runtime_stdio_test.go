@@ -243,6 +243,7 @@ func newManagerStdioFixture(t *testing.T, scenario string) *managerStdioFixture 
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = f.manager.Close() })
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -640,6 +641,7 @@ func TestManagerRuntimeStdioSupervisorRecoveryDoesNotResend(t *testing.T) {
 				rounds[0].Calls[0].ToolName != string(toolgateway.MCPToolCallTool) {
 				t.Fatal("interrupted result was not left pending in the existing ledger", err)
 			}
+			_ = f.manager.Close()
 			if err := f.state.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -691,10 +693,10 @@ func TestManagerRuntimeStdioSupervisorRecoveryDoesNotResend(t *testing.T) {
 					t.Fatalf("recovery lost conservative receipt: %+v", call)
 				}
 				events := managerStdioEvents(t, f.dir, "runtime")
-				if countManagerStdioEvents(events, "spawn") != 1 || countManagerStdioEvents(events, "tools/call") != 1 {
-					t.Fatalf("recovery %d started another process or resent tools/call", resume)
+				if countManagerStdioEvents(events, "tools/call") != 1 {
+					t.Fatalf("recovery %d resent tools/call", resume)
 				}
-				t.Logf("reopened SQLite, recovery=%d recovered=%t: runtime spawn=1 tools/call=1; durable receipt=outcome_unknown automatic_retry=forbidden", resume, step.Recovered)
+				t.Logf("reopened SQLite, recovery=%d recovered=%t: runtime spawn=%d tools/call=1; new catalog discovery permitted; durable receipt=outcome_unknown automatic_retry=forbidden", resume, step.Recovered, countManagerStdioEvents(events, "spawn"))
 			}
 		})
 	}

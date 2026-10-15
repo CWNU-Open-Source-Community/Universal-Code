@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,7 +121,7 @@ func TestStdioClientTransportRunsApprovedAbsoluteExecutable(t *testing.T) {
 
 func TestStdioClientTransportCancelsBlockedWrite(t *testing.T) {
 	writer := &blockingMCPWriteCloser{closed: make(chan struct{}), entered: make(chan struct{}), returned: make(chan struct{})}
-	transport := &stdioSDKConnection{Connection: writer, writeGate: make(chan struct{}, 1)}
+	transport := &guardedSDKConnection{Connection: writer, writeGate: make(chan struct{}, 1)}
 	defer transport.Close()
 	deadline, stop := context.WithTimeout(t.Context(), 5*time.Second)
 	defer stop()
@@ -148,6 +149,80 @@ func TestStdioClientTransportCancelsBlockedWrite(t *testing.T) {
 	case <-writer.returned:
 	case <-deadline.Done():
 		t.Fatal("cancelled write did not close the pipe and release its writer")
+	}
+}
+
+// Close can interrupt I/O before its writer finishes unwinding. A queued SDK
+// notification must not enter the same writer during that interval.
+type delayedExitMCPWriter struct {
+	*blockingMCPWriteCloser
+	exit   chan struct{}
+	second chan struct{}
+	writes atomic.Int32
+}
+
+func (w *delayedExitMCPWriter) Write(context.Context, jsonrpc.Message) error {
+	if w.writes.Add(1) != 1 {
+		close(w.second)
+		return io.ErrClosedPipe
+	}
+	close(w.entered)
+	defer close(w.returned)
+	<-w.closed
+	<-w.exit
+	return io.ErrClosedPipe
+}
+
+func TestGuardedClientTransportCancellationWaitsForWriterExit(t *testing.T) {
+	writer := &delayedExitMCPWriter{blockingMCPWriteCloser: &blockingMCPWriteCloser{
+		closed: make(chan struct{}), entered: make(chan struct{}), returned: make(chan struct{})},
+		exit: make(chan struct{}), second: make(chan struct{})}
+	var release sync.Once
+	defer release.Do(func() { close(writer.exit) })
+	transport := &guardedSDKConnection{Connection: writer, writeGate: make(chan struct{}, 1)}
+	defer transport.Close()
+	deadline, stop := context.WithTimeout(t.Context(), 3*time.Second)
+	defer stop()
+	ctx, cancel := context.WithCancel(deadline)
+	defer cancel()
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- transport.Write(ctx, &jsonrpc.Request{Method: "notifications/initialized"}) }()
+	select {
+	case <-writer.entered:
+	case <-deadline.Done():
+		t.Fatal("first writer did not enter")
+	}
+	cancel()
+	select {
+	case <-writer.closed:
+	case <-deadline.Done():
+		t.Fatal("cancel did not close connection")
+	}
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- transport.Write(deadline, &jsonrpc.Request{Method: "notifications/initialized"}) }()
+	select {
+	case <-writer.second:
+		t.Fatal("queued write overlapped the cancelled writer")
+	case <-firstDone:
+		t.Fatal("cancelled write returned before its writer exited")
+	case <-time.After(50 * time.Millisecond):
+	}
+	release.Do(func() { close(writer.exit) })
+	select {
+	case err := <-firstDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("first write: %v", err)
+		}
+	case <-deadline.Done():
+		t.Fatal("first write did not finish")
+	}
+	select {
+	case err := <-secondDone:
+		if !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("queued write: %v", err)
+		}
+	case <-deadline.Done():
+		t.Fatal("queued write did not finish")
 	}
 }
 

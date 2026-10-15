@@ -198,3 +198,39 @@ func TestExecutionPermissionRuntimeAuthorityRebindsSuccessorAndIsConcurrentSafe(
 	}
 	wait.Wait()
 }
+
+func TestRunAuthorizationDoneTracksOnlyItsFence(t *testing.T) {
+	a := NewExecutionPermissionRuntimeAuthority()
+	closed := func(ch <-chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}
+	if !closed(a.RunAuthorizationDone("unknown", 1)) || len(a.runSignals) != 0 {
+		t.Fatal("unknown fence created a subscription")
+	}
+	fence, err := a.IssueRunAuthorizationFence("run-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := a.RunAuthorizationDone("run-test", fence)
+	if first != a.RunAuthorizationDone("run-test", fence) || closed(first) {
+		t.Fatal("live fence signal not shared")
+	}
+	next, err := a.RotateRunAuthorizationFence("run-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed(first) {
+		t.Fatal("rotation left previous signal open")
+	}
+	second := a.RunAuthorizationDone("run-test", next)
+	a.RevokeRun("run-test")
+	a.RevokeRun("run-test")
+	if !closed(second) || !closed(a.RunAuthorizationDone("run-test", next)) {
+		t.Fatal("revocation signal remained live")
+	}
+}

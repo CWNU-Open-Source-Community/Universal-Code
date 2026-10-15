@@ -106,11 +106,11 @@ export function ModelAvailabilitySettings({ client }: { client: APIClient }) {
                     const harness = provider.harnesses.find((candidate) => candidate.model === model);
                     const modelReference = `${provider.name}/${model}`;
                     return <div className="model-provider-row" key={modelReference}>
-                      <div><strong>{provider.name}</strong><small>{provider.kind}</small></div>
+                      <div><strong>{provider.display_name}</strong><small>{provider.kind}</small></div>
                       <span>{model || t("未配置模型", "No configured model")}</span>
                       <span>{harness
                         ? `${harness.transport_protocol} · JSON ${harness.json_strategy}`
-                        : provider.credential_source}</span>
+                        : provider.credential_source === "chatgpt_oauth" ? t("ChatGPT 账户", "ChatGPT account") : provider.credential_source}</span>
                       <StatusBadge status={provider.status} />
                       {harness && <StatusBadge status={harness.qualification_status} />}
                       {harness?.latest_qualification_status &&

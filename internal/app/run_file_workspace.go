@@ -7,8 +7,19 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/mcp"
 	"cyberagent-workbench/internal/repository"
 )
+
+func (a *App) newMCPWorkspaceRootProvider() mcp.WorkspaceRootProvider {
+	return application.NewMCPWorkspaceRootProvider(a.store, func(context.Context, string) (*application.RunWorktreeService, error) {
+		executor, err := repository.NewRunWorktreeExecutor(filepath.Join(a.home, "drydocks"))
+		if err != nil {
+			return nil, err
+		}
+		return application.NewRunWorktreeService(a.store, executor)
+	})
+}
 
 // Ordinary source Runs do not acquire a Git dependency. An owned/configured
 // Run uses the same product-managed root as Drydock and command execution.

@@ -52,7 +52,7 @@ func TestSchemaV136AddsDurableRiskEscalationLedger(t *testing.T) {
 	if err := upgraded.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master
 		WHERE type = 'table' AND name = 'run_supervisor_tool_calls'`).Scan(&callsSQL); err != nil ||
 		!strings.Contains(callsSQL,
-			"tool_name IN ('host_command_propose', 'mcp_tool_call', 'workspace_list'") {
+			"tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list'") {
 		t.Fatalf("v136 Supervisor risk authority constraint is missing: %q err=%v",
 			callsSQL, err)
 	}

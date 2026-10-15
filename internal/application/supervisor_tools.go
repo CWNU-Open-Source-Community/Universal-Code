@@ -195,13 +195,11 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 			definition = toolgateway.CommandRuntimeDefinitionForAdapter(
 				configured.CommandRuntime.Adapter)
 		}
-		if definition.Name == toolgateway.MCPToolCallTool {
+		if definition.Name == toolgateway.MCPToolCallTool || definition.Name == toolgateway.MCPToolSearchTool {
 			if len(configured.MCP.Capabilities.Servers) == 0 ||
 				len(configured.MCP.Authority) == 0 {
 				continue
 			}
-			definition.InputSchema = supervisorMCPToolSchema(configured.MCP.Capabilities)
-			definition.Description += " Only the server/tool/fingerprint combinations encoded in this schema are available."
 		}
 		if toolgateway.IsWebEvidenceTool(definition.Name) &&
 			!supervisorWebEvidenceAvailable(definition.Name, configured.WebEvidence.Capabilities) {
@@ -364,6 +362,10 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 					"provider requested an MCP capability absent from the current reviewed snapshot")
 			}
 		}
+		if name == toolgateway.MCPToolSearchTool &&
+			(len(configured.MCP.Capabilities.Servers) == 0 || len(configured.MCP.Authority) == 0) {
+			return nil, errors.New("provider requested MCP search without an authorized catalog")
+		}
 		operationKey := supervisorToolOperationKey(runID, turn, name, payload)
 		callID, err := runmutation.SupervisorToolCallID(operationKey, round)
 		if err != nil {
@@ -391,12 +393,16 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 			}
 			out[index].Authority = append(json.RawMessage(nil), commandRuntimeAuthority...)
 		}
-		if name == toolgateway.MCPToolCallTool {
+		if name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool {
 			authority, err := mcp.DecodeSupervisorCallAuthority(configured.MCP.Authority)
-			if err != nil || authority.RunID != runID {
+			if err != nil || authority.RunID != runID ||
+				(name == toolgateway.MCPToolCallTool && authority.Version == mcp.SupervisorCatalogAuthorityVersion) {
 				return nil, errors.New("MCP advertisement authority is invalid")
 			}
-			if authority.Version == mcp.SupervisorOperationAuthorityVersion {
+			if name == toolgateway.MCPToolSearchTool {
+				authority.Version = mcp.SupervisorCatalogAuthorityVersion
+				authority.ServerID, authority.DescriptorFingerprint, authority.ServerGeneration = "", "", 0
+			} else if authority.Version == mcp.SupervisorOperationAuthorityVersion {
 				request, _, _ := toolgateway.NormalizeMCPToolPayload(payload)
 				for _, server := range configured.MCP.Capabilities.Servers {
 					if server.ServerID == request.ServerID {
@@ -603,12 +609,36 @@ func (s *AgentRunner) supervisorMCPCapabilities(ctx context.Context,
 		}
 		fence = issuedFence
 	}
-	capabilities, err := s.mcpClient.Capabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID)
+	var capabilities mcp.ScopedCapabilities
+	var err error
+	if dynamic, ok := s.mcpClient.(interface {
+		RefreshCapabilities(context.Context, string, string, func(context.Context) error, <-chan struct{}) (mcp.ScopedCapabilities, error)
+	}); ok {
+		lease, found, leaseErr := s.store.GetRunExecutionLease(ctx, turn.Run.ID)
+		if leaseErr != nil {
+			return supervisorMCPTools{}, leaseErr
+		}
+		if !found {
+			return supervisorMCPTools{}, apperror.New(apperror.CodeConflict, "MCP catalog requires a current Run lease")
+		}
+		scope := toolgateway.MCPExecutionScope{RunID: turn.Run.ID, MissionID: turn.Mission.ID, WorkspaceID: turn.Mission.WorkspaceID,
+			PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionMode: permission.Mode,
+			PermissionGeneration: generation, RunAuthorizationFence: fence, PermissionRuntimeEpoch: runtimeEpoch,
+			LeaseID: lease.LeaseID, LeaseGeneration: lease.Generation}
+		executor := &MCPClientToolExecutor{client: s.mcpClient, store: s.store, capabilities: s.executionCapabilities}
+		check := func(ctx context.Context) error { return executor.recheckExecutionScope(ctx, scope) }
+		var revoked <-chan struct{}
+		if s.executionCapabilities.RuntimeAuthority != nil {
+			revoked = s.executionCapabilities.RuntimeAuthority.RunAuthorizationDone(turn.Run.ID, fence)
+		}
+		capabilities, err = dynamic.RefreshCapabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID, check, revoked)
+	} else {
+		capabilities, err = s.mcpClient.Capabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID)
+	}
 	if err != nil {
 		return supervisorMCPTools{}, apperror.Normalize(err)
 	}
-	bounded := boundedSupervisorMCPCapabilities(capabilities)
-	if len(bounded.Servers) == 0 {
+	if capabilities.ProtocolVersion != mcp.ClientProtocolVersion || len(capabilities.Servers) == 0 {
 		return supervisorMCPTools{}, nil
 	}
 	authority, err := mcp.EncodeSupervisorCallAuthority(mcp.SupervisorCallAuthority{
@@ -618,13 +648,13 @@ func (s *AgentRunner) supervisorMCPCapabilities(ctx context.Context,
 		PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision,
 		PermissionMode: permission.Mode, PermissionGeneration: generation,
 		RunAuthorizationFence: fence, PermissionRuntimeEpoch: runtimeEpoch,
-		ServerID: bounded.Servers[0].ServerID, DescriptorFingerprint: bounded.Servers[0].DescriptorFingerprint,
-		ServerGeneration: bounded.Servers[0].RegistrationGeneration,
+		ServerID: capabilities.Servers[0].ServerID, DescriptorFingerprint: capabilities.Servers[0].DescriptorFingerprint,
+		ServerGeneration: capabilities.Servers[0].RegistrationGeneration,
 	})
 	if err != nil {
 		return supervisorMCPTools{}, err
 	}
-	return supervisorMCPTools{Capabilities: bounded, Authority: authority}, nil
+	return supervisorMCPTools{Capabilities: capabilities, Authority: authority}, nil
 }
 
 func runAuthorizationFenceCurrent(
@@ -635,71 +665,6 @@ func runAuthorizationFenceCurrent(
 		return fence == 0
 	}
 	return capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(runID, fence)
-}
-
-const maxSupervisorMCPTools = 128
-
-const maxSupervisorMCPSchemaBytes = 128 * 1024
-
-func boundedSupervisorMCPCapabilities(value mcp.ScopedCapabilities) mcp.ScopedCapabilities {
-	if value.ProtocolVersion != mcp.ClientProtocolVersion {
-		return mcp.ScopedCapabilities{}
-	}
-	result := mcp.ScopedCapabilities{ProtocolVersion: value.ProtocolVersion,
-		Generation: value.Generation}
-	budget := maxSupervisorMCPSchemaBytes
-	count := 0
-	for _, server := range value.Servers {
-		if count >= maxSupervisorMCPTools || len(server.CapabilityFingerprint) != 64 {
-			break
-		}
-		projected := mcp.ScopedServerCapability{ServerID: server.ServerID, Name: server.Name,
-			CapabilityFingerprint: server.CapabilityFingerprint, DescriptorFingerprint: server.DescriptorFingerprint,
-			RegistrationGeneration: server.RegistrationGeneration}
-		for _, tool := range server.Tools {
-			cost := len(tool.Name) + len(tool.Description) + len(tool.InputSchema) + 256
-			if count >= maxSupervisorMCPTools || cost > budget {
-				break
-			}
-			projected.Tools = append(projected.Tools, tool)
-			count++
-			budget -= cost
-		}
-		for _, r := range server.Resources {
-			raw, _ := json.Marshal(r)
-			cost := len(raw) + 512
-			if count >= maxSupervisorMCPTools || cost > budget {
-				break
-			}
-			projected.Resources = append(projected.Resources, r)
-			count++
-			budget -= cost
-		}
-		for _, r := range server.ResourceTemplates {
-			raw, _ := json.Marshal(r)
-			cost := len(raw) + 1024
-			if count >= maxSupervisorMCPTools || cost > budget {
-				break
-			}
-			projected.ResourceTemplates = append(projected.ResourceTemplates, r)
-			count++
-			budget -= cost
-		}
-		for _, p := range server.Prompts {
-			raw, _ := json.Marshal(p)
-			cost := len(raw)*2 + 1024
-			if count >= maxSupervisorMCPTools || cost > budget {
-				break
-			}
-			projected.Prompts = append(projected.Prompts, p)
-			count++
-			budget -= cost
-		}
-		if len(projected.Tools)+len(projected.Resources)+len(projected.ResourceTemplates)+len(projected.Prompts) > 0 {
-			result.Servers = append(result.Servers, projected)
-		}
-	}
-	return result
 }
 
 func supervisorMCPToolAvailable(capabilities mcp.ScopedCapabilities,
@@ -716,51 +681,6 @@ func supervisorMCPToolAvailable(capabilities mcp.ScopedCapabilities,
 		}
 	}
 	return false
-}
-
-func supervisorMCPToolSchema(capabilities mcp.ScopedCapabilities) json.RawMessage {
-	type choiceProperties struct {
-		Method                map[string]string `json:"method,omitempty"`
-		Version               map[string]string `json:"version"`
-		ServerID              map[string]string `json:"server_id"`
-		ToolName              map[string]string `json:"tool_name"`
-		CapabilityFingerprint map[string]string `json:"capability_fingerprint"`
-		Arguments             json.RawMessage   `json:"arguments"`
-	}
-	type choice struct {
-		Type                 string           `json:"type"`
-		AdditionalProperties bool             `json:"additionalProperties"`
-		Required             []string         `json:"required"`
-		Properties           choiceProperties `json:"properties"`
-	}
-	const requiredVersion = toolgateway.MCPClientToolProtocolVersion
-	required := []string{"version", "server_id", "tool_name", "capability_fingerprint", "arguments"}
-	choices := make([]choice, 0)
-	for _, server := range capabilities.Servers {
-		for _, tool := range server.Tools {
-			choices = append(choices, choice{Type: "object", AdditionalProperties: false,
-				Required: required, Properties: choiceProperties{
-					Version:  map[string]string{"const": requiredVersion},
-					ServerID: map[string]string{"const": server.ServerID},
-					ToolName: map[string]string{"const": tool.Name},
-					CapabilityFingerprint: map[string]string{
-						"const": server.CapabilityFingerprint},
-					Arguments: append(json.RawMessage(nil), tool.InputSchema...),
-				}})
-		}
-		for _, content := range server.ContentChoices() {
-			choices = append(choices, choice{Type: "object", AdditionalProperties: false, Required: append(append([]string{}, required...), "method"), Properties: choiceProperties{Version: map[string]string{"const": toolgateway.MCPContentToolProtocolVersion}, Method: map[string]string{"const": content.Method}, ServerID: map[string]string{"const": server.ServerID}, ToolName: map[string]string{"const": content.Name}, CapabilityFingerprint: map[string]string{"const": server.CapabilityFingerprint}, Arguments: content.InputSchema}})
-		}
-
-	}
-	raw, err := json.Marshal(struct {
-		Type  string   `json:"type"`
-		OneOf []choice `json:"oneOf"`
-	}{Type: "object", OneOf: choices})
-	if err != nil || len(raw) > maxSupervisorMCPSchemaBytes {
-		return toolgateway.MCPToolDefinition().InputSchema
-	}
-	return raw
 }
 
 func (s *AgentRunner) supervisorAgentCodeCapabilities(ctx context.Context,
@@ -1092,7 +1012,7 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 		toolCall.SupervisorToolCallID = call.CallID
 		toolCall.SupervisorTurn = call.Turn
 	}
-	if name == toolgateway.MCPToolCallTool {
+	if name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool {
 		authority, authorityErr := mcp.DecodeSupervisorCallAuthority(
 			json.RawMessage(call.AuthorityJSON))
 		permission, permissionErr := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
@@ -1100,7 +1020,9 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 		fenceLive := authorityErr == nil &&
 			mcpRuntimeAuthorityCurrent(s.executionCapabilities,
 				turn.Run.ID, authority.RunAuthorizationFence, authority.PermissionRuntimeEpoch)
-		if authorityErr != nil || permissionErr != nil ||
+		validKind := name == toolgateway.MCPToolSearchTool && authority.Version == mcp.SupervisorCatalogAuthorityVersion ||
+			name == toolgateway.MCPToolCallTool && authority.Version != mcp.SupervisorCatalogAuthorityVersion
+		if authorityErr != nil || !validKind || permissionErr != nil ||
 			authority.RunID != turn.Run.ID || authority.MissionID != turn.Mission.ID ||
 			authority.WorkspaceID != turn.Mission.WorkspaceID ||
 			authority.PermissionSnapshotID != permission.ID ||
@@ -1299,7 +1221,7 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 	}
 	if name == toolgateway.DebugTerminalTool || name == toolgateway.CommandRuntimeTool ||
 		toolgateway.IsHistoryRecallTool(name) || name == toolgateway.SkillReadTool ||
-		name == toolgateway.MCPToolCallTool ||
+		name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool ||
 		toolgateway.IsAgentCodeTool(name) || toolgateway.IsCodeIntelTool(name) ||
 		toolgateway.IsWebEvidenceTool(name) || toolgateway.IsBrowserActionTool(name) {
 		if toolgateway.IsHistoryRecallTool(name) {
@@ -1343,7 +1265,7 @@ func recoverableSupervisorToolError(name toolgateway.ToolName,
 	case apperror.CodeFailedPrecondition, apperror.CodeNotFound, apperror.CodePolicyDenied:
 		return name == toolgateway.DebugTerminalTool || name == toolgateway.CommandRuntimeTool ||
 			toolgateway.IsHistoryRecallTool(name) || name == toolgateway.SkillReadTool ||
-			name == toolgateway.MCPToolCallTool || toolgateway.IsAgentCodeTool(name) ||
+			name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool || toolgateway.IsAgentCodeTool(name) ||
 			toolgateway.IsWebEvidenceTool(name) || toolgateway.IsBrowserActionTool(name) ||
 			toolgateway.IsCodeIntelTool(name)
 	case apperror.CodeUnavailable:

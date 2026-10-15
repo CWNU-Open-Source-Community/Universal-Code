@@ -182,7 +182,7 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   setupToken = "", onModelReady }: {
   client: APIClient; initialAdvancedOpen?: boolean; prepareForDraft?: boolean;
   setupToken?: string;
-  onModelReady?: (token: string, definition: ProviderDefinitionView) => void;
+  onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
 }) {
   const [selected, setSelected] = useState<V2ConfiguredModelProviderPreset | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -244,7 +244,8 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   }
 
   return <>
-    <V2ModelSettings client={client} onSelectPreset={selectPreset} presets={presets} />
+    <V2ModelSettings client={client} onSelectPreset={selectPreset} presets={presets}
+      prepareForDraft={prepareForDraft} onReady={(source) => onModelReady?.(setupToken, source)} />
     {advancedPanel}
     <V2ConfirmDialog confirmLabel="返回模型列表"
       description="GitHub Copilot 账户登录待接入。请返回模型列表，选择已支持的供应商连接模型。"
@@ -361,7 +362,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   onOpenInspector: (returnFocus?: HTMLElement | null) => void;
   prepareModelForDraft?: boolean;
   modelSetupToken?: string;
-  onModelReady?: (token: string, definition: ProviderDefinitionView) => void;
+  onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
   desktop?: boolean;
 }) {
   return <main className="v2-settings-main"><div className="v2-settings-toolbar" />

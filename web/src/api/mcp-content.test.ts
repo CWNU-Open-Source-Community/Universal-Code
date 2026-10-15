@@ -33,6 +33,17 @@ it("reads the Go-projected media response and preserves older history without co
   expect(legacy.mcp.contents).toBeUndefined();
 });
 
+it("accepts on-demand MCP catalog search as typed MCP activity", async () => {
+  const saved = response();
+  saved.data.tools[0].name = "mcp_tool_search";
+  saved.data.tools[0].detail.mcp.operation = "search";
+  saved.data.tools[0].detail.mcp.tool = "mcp_tool_search";
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(saved), { status: 200 })));
+  const actual = await new APIClient("read").threadActivityDetail("thread-media", "call-media");
+  expect(actual.tools[0].name).toBe("mcp_tool_search");
+  expect(actual.tools[0].detail.kind).toBe("mcp");
+});
+
 it.each([
   ["non-string kind", [{ ...image, kind: { toString: null } }]],
   ["SVG MIME", [{ ...image, mime_type: "image/svg+xml" }]],
@@ -55,4 +66,12 @@ it("keeps opaque resource URIs as text and opens only safe HTTP links", () => {
   for (const uri of ["notes://guide", "file:///private", "javascript:alert(1)", "data:text/html,unsafe", "https://user:password@example.com", "https://example.com/#fragment", "https:\\example.com"]) {
     expect(safeMCPContentLink(uri)).toBe(false);
   }
+});
+
+it("accepts validated GIF projections and rejects mismatched GIF headers", () => {
+  const data = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+  const gif = { kind: "image", mime_type: "image/gif", data_base64: data.toString("base64"), byte_size: data.length, width: 1, height: 1 };
+  expect(validMCPContents([gif])).toBe(true);
+  expect(validMCPContents([{ ...gif, mime_type: "image/png" }])).toBe(false);
+  expect(validMCPContents([{ ...image, mime_type: "image/gif" }])).toBe(false);
 });

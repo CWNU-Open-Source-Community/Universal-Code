@@ -704,15 +704,17 @@ func classifyOpenAIWireError(wire openAIError) ProviderFailureReason {
 	for _, signal := range []string{code, wire.Type} {
 		switch strings.ToLower(strings.TrimSpace(signal)) {
 		case "rate_limit", "rate_limit_error", "rate_limit_exceeded",
-			"insufficient_quota", "quota_exceeded":
+			"insufficient_quota", "quota_exceeded", "subscription_sharing_usage_limit_exceeded":
 			return ProviderFailureRateLimit
 		case "server_error", "overloaded", "overloaded_error",
-			"capacity_exceeded":
+			"capacity_exceeded", "subscription_sharing_usage_unavailable", "subscription_sharing_user_unavailable":
 			return ProviderFailureCapacity
 		case "model_not_found", "model_not_exist", "model_not_exists":
 			return ProviderFailureModelNotFound
 		case "authentication_error", "invalid_api_key", "incorrect_api_key",
-			"api_key_invalid", "permission_denied", "insufficient_permissions":
+			"api_key_invalid", "permission_denied", "insufficient_permissions",
+			"subscription_sharing_invalid_user", "subscription_sharing_user_not_eligible",
+			"chatpass_v2_scope_not_authorized", "chatpass_v2_invalid_authorization_context":
 			return ProviderFailureAuthentication
 		case "request_timeout", "timeout_error":
 			return ProviderFailureNetwork

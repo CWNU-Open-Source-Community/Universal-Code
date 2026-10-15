@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/redact"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -25,12 +26,19 @@ type Client struct {
 	inputSecrets     []string
 	inputRecheck     func(context.Context) error
 	legacyInputCount int
+	rootsMu          sync.RWMutex
+	workspaceRoots   *clientWorkspaceRoots
+	pendingRoots     map[jsonrpc.ID]*clientWorkspaceRoots
 	resolved         *resolvedClient
 	remote           *mcpHTTPTransport
 	descriptor       ServerDescriptor
 	secrets          []string
 	secretsMu        sync.RWMutex
 	closed           atomic.Bool
+	catalogRevision  atomic.Uint64
+	catalogChanged   func()
+	catalogError     func(error)
+	catalogListening bool
 	tap              *sdkResponseTap
 	protocolVersion  string
 	transport        sdk.Transport
@@ -250,10 +258,13 @@ func (c *Client) listPrompts(ctx context.Context, session *sdk.ClientSession) ([
 }
 
 type ClientCallResult struct {
-	Content   string
-	IsError   bool
-	Bytes     int
-	Truncated bool
+	Content string
+	// FullContent is sanitized received JSON retained before preview limits.
+	// It is host-only and must never be serialized into model or public DTOs.
+	FullContent string `json:"-"`
+	IsError     bool
+	Bytes       int
+	Truncated   bool
 }
 
 func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMessage,
@@ -294,12 +305,12 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMe
 	if err != nil {
 		return ClientCallResult{}, errors.New("MCP tool result sensitive fields could not be sanitized")
 	}
-	content := string(value)
-	truncated := len([]byte(content)) > maxBytes
+	content, truncated := BoundResultJSON(value, maxBytes)
+	retained := ""
 	if truncated {
-		content = truncateClientUTF8(content, maxBytes)
+		retained = string(value)
 	}
-	return ClientCallResult{Content: content, IsError: result.IsError,
+	return ClientCallResult{Content: content, FullContent: retained, IsError: result.IsError,
 		Bytes: len([]byte(content)), Truncated: truncated}, nil
 }
 

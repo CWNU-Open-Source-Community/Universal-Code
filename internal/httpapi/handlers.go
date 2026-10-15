@@ -134,6 +134,9 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 		if a.providerCredentialEnabled {
 			resources = append(resources, "provider-credential-control")
 		}
+		if a.chatGPTAuthEnabled {
+			resources = append(resources, "chatgpt-auth-control")
+		}
 		if a.fileEditReviewEnabled {
 			resources = append(resources, "file-edit-review-control")
 		}
@@ -220,6 +223,9 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 		}
 		if len(segments) == 2 && segments[1] == "credentials" {
 			return a.providerCredentialStatuses(request)
+		}
+		if len(segments) == 2 && segments[1] == "chatgpt" {
+			return a.chatGPTAuthStatus(request)
 		}
 	case "runs":
 		return a.routeRuns(request, segments)

@@ -478,6 +478,7 @@
         "thread_execution_permission_current_run_operation.v1",
         "thread_execution_permission_materialization_operation.v1",
         "thread_execution_permission_operation.v1",
+        "thread_mcp_references.v1",
         "thread_message_image_intent_request.v1",
         "thread_message_intent_operation.v1",
         "thread_message_intent_request.v1",
@@ -738,6 +739,50 @@
         "run_capability_readiness.v1",
         "runtime_capabilities.v1",
         "search_diagnostics.v1"
+      ],
+      "retired_identifiers": []
+    },
+    {
+      "id": "chatgpt-account-sessions",
+      "class": "internal-durable",
+      "owner": "ChatGPT authentication and credential maintainers",
+      "source_of_truth": [
+        "internal/chatgptauth/store.go",
+        "internal/credential"
+      ],
+      "writers": [
+        {
+          "id": "chatgpt-encrypted-session-writer",
+          "source": "internal/chatgptauth/store.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
+        }
+      ],
+      "readers": [
+        {
+          "id": "chatgpt-encrypted-session-reader",
+          "source": "internal/chatgptauth/store.go",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        }
+      ],
+      "persisted_or_exported": true,
+      "persistence_boundary": "The versioned AES-GCM envelope in credentials/chatgpt/accounts.enc preserves account registrations, tokens, pending refresh responses and cached models across restart. Its key remains in the OS credential store; secrets never enter public HTTP DTOs or SQLite.",
+      "compatibility_rule": "Retain the v1 encrypted-session reader while saved accounts or supported backups require it. Reject unknown versions, missing keys and authentication failures without overwriting the saved file or falling back to plaintext. Preserve pending refresh responses so consumed refresh tokens are not replayed after restart.",
+      "retirement_gate": {
+        "mode": "migration-or-retention",
+        "requirements": [
+          "An explicit migration or retention decision covers the encrypted account file and its OS-owned key",
+          "Encrypted restart, missing-key and tampering tests remain until old accounts and backups are migrated or retained",
+          "Rollback preserves the original encrypted file and its matching key; reader retirement never silently signs users out"
+        ]
+      },
+      "active_identifiers": [
+        "universal-code.chatgpt.sessions.v1"
       ],
       "retired_identifiers": []
     },
@@ -1025,12 +1070,28 @@
             1
           ],
           "mode": "write-current"
+        },
+        {
+          "id": "chatgpt-runtime-binding-writer",
+          "source": "internal/modelregistry/chatgpt.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
         }
       ],
       "readers": [
         {
           "id": "credential-provider-ledgers-reader",
           "source": "internal/store",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        },
+        {
+          "id": "chatgpt-runtime-binding-reader",
+          "source": "internal/llm/provider_runtime.go",
           "versions": [
             1
           ],
@@ -1052,6 +1113,7 @@
         "anthropic_native_search.v1",
         "anthropic_native_search_cache.v1",
         "anthropic_native_search_negative.v1",
+        "chatgpt_request_runtime.v1",
         "model_cancellation_operation.v1",
         "model_cancellation_request.v1",
         "model_context_window.v1",
@@ -1492,6 +1554,7 @@
         "browser_cdp_permission_policy.v1",
         "browser_network_containment_policy.v2",
         "browser_safe_web_readiness.v1",
+        "chatgpt_auth.v1",
         "code-intel-configuration.v1",
         "code-intel-lsp.v1",
         "code_handoff.v1",
@@ -2831,6 +2894,7 @@
         "history_recall.v1",
         "llm.item_stream.identity.v1",
         "long_term_memory.v1",
+        "mcp_reference_result.v1",
         "note_context.v1",
         "observed_browser_controls.v1",
         "operator_steering_revision_operation.v1",

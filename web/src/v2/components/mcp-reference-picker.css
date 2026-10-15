@@ -1,0 +1,15 @@
+.v2-mcp-picker.v2-inspector-drawer { width: min(560px, 100vw); overflow: auto; }
+.v2-mcp-picker p { font-size: 13px; line-height: 1.6; }
+.v2-mcp-catalog, .v2-mcp-arguments { display: flex; flex-direction: column; gap: 16px; padding: 0 20px 20px; min-width: 0; }
+.v2-mcp-picker input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--v2-border); border-radius: 8px; background: var(--prayu-panel-strong); color: inherit; padding: 9px 11px; font: inherit; }
+.v2-mcp-catalog ul { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+.v2-mcp-catalog li { min-width: 0; }
+.v2-mcp-catalog li > button { width: 100%; display: flex; align-items: flex-start; flex-direction: column; gap: 7px; text-align: left; padding: 13px; border: 1px solid var(--v2-border); border-radius: 10px; background: var(--prayu-panel-strong); color: inherit; }
+.v2-mcp-catalog li > button:hover { border-color: var(--v2-muted); }
+.v2-mcp-catalog li > button > span { display: flex; align-items: center; gap: 8px; }
+.v2-mcp-picker small { color: var(--v2-muted); font-size: 12px; }
+.v2-mcp-picker code { white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+.v2-mcp-arguments label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; }
+.v2-mcp-back { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; background: transparent; border: 0; color: inherit; padding: 0; }
+.v2-mcp-add { align-self: flex-end; border: 1px solid var(--v2-border); border-radius: 8px; background: var(--prayu-panel-strong); color: inherit; padding: 9px 14px; }
+.v2-mcp-add:disabled { opacity: .5; }

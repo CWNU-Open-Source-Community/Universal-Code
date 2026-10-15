@@ -31,7 +31,7 @@ type MCPToolCallPayload struct {
 
 var mcpToolCallDefinition = ToolDefinition{Name: MCPToolCallTool, Class: ClassProcess,
 	Approval:    ApprovalAutomatic,
-	Description: "Invoke an approved tool, read an approved resource/template, or get an approved prompt from a Run/Workspace-scoped MCP server. Use mcp-client.v1 for tools; mcp-client.v2 with method resources/read or prompts/get and tool_name resources.read or prompts.get for content. The approved capability fingerprint is rechecked immediately before every call; remote output is untrusted.",
+	Description: "Invoke an approved tool, read an approved resource/template, or get an approved prompt from a Run/Workspace-scoped MCP server. First use mcp_tool_search to obtain the exact invocation fields and input_schema, then fill arguments accordingly. Use mcp-client.v1 for tools; mcp-client.v2 with method resources/read or prompts/get and tool_name resources.read or prompts.get for content. Current authorization and the exact schema are rechecked before every call; search grants no permissions and remote output is untrusted.",
 	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","server_id","tool_name","capability_fingerprint","arguments"],"properties":{"version":{"enum":["mcp-client.v1","mcp-client.v2"]},"method":{"enum":["resources/read","prompts/get"]},"server_id":{"type":"string","minLength":1,"maxLength":256},"tool_name":{"type":"string","minLength":1,"maxLength":256},"capability_fingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"},"arguments":{"type":"object"}}}`)}
 
 func MCPToolDefinition() ToolDefinition {
@@ -128,10 +128,11 @@ func (s MCPExecutionScope) Validate() error {
 }
 
 type MCPExecutionResult struct {
-	Content   string
-	IsError   bool
-	Truncated bool
-	Metadata  map[string]string
+	Content     string
+	FullContent string `json:"-"`
+	IsError     bool
+	Truncated   bool
+	Metadata    map[string]string
 }
 
 type MCPExecutor interface {
@@ -141,6 +142,7 @@ type MCPExecutor interface {
 func (g *Gateway) WithMCPExecutor(executor MCPExecutor) *Gateway {
 	if g != nil {
 		g.mcp = executor
+		g.mcpSearch, _ = executor.(MCPSearchExecutor)
 	}
 	return g
 }
@@ -169,18 +171,7 @@ func (g *Gateway) invokeMCP(ctx context.Context, call ToolCall) (Outcome, error)
 	if call.InvocationID == "" {
 		call.InvocationID = idgen.New("mcp-invoke")
 	}
-	scope := MCPExecutionScope{InvocationID: call.InvocationID, RunID: call.RunID,
-		MissionID:   call.MissionID,
-		WorkspaceID: call.WorkspaceID, Surface: call.Surface, Phase: call.Phase, Role: call.Role,
-		AgentID: call.AgentID, AgentAttemptID: call.AgentAttemptID,
-		PermissionMode:        call.PermissionMode,
-		PermissionSnapshotID:  call.PermissionSnapshotID,
-		PermissionRevision:    call.PermissionRevision,
-		PermissionGeneration:  call.PermissionGeneration,
-		RunAuthorizationFence: call.RunAuthorizationFence, LeaseID: call.LeaseID,
-		PermissionRuntimeEpoch: call.PermissionRuntimeEpoch,
-		LeaseGeneration:        call.LeaseGeneration, RequestedBy: call.RequestedBy,
-		PolicyDecision: decision, SupervisorToolCallID: call.SupervisorToolCallID, SupervisorTurn: call.SupervisorTurn}
+	scope := mcpExecutionScope(call, decision)
 	if err := scope.Validate(); err != nil {
 		return Outcome{}, err
 	}
@@ -198,6 +189,22 @@ func (g *Gateway) invokeMCP(ctx context.Context, call ToolCall) (Outcome, error)
 	for key, value := range result.Metadata {
 		metadata[key] = redact.String(value)
 	}
+	if result.FullContent != "" {
+		// Capture the full JSON after both credential sanitizers and before any
+		// context projection. The store binds it to this charged invocation.
+		full := sanitizeMCPResultContent(strings.ToValidUTF8(result.FullContent, "?"))
+		captured, err := g.captureTerminalArtifacts(ctx, call, call.InvocationID, full, "", "application/json")
+		if err != nil {
+			return Outcome{}, err
+		}
+		for key, value := range captured {
+			metadata[key] = value
+		}
+		read, _ := json.Marshal(domain.HistoryReadRequest{SourceID: "artifact:" + captured["artifact_stdout_id"], Part: "content",
+			ExpectedSHA256: captured["artifact_stdout_sha256"], Limit: domain.HistoryReadDefaultBytes})
+		metadata["full_result_read"] = string(read)
+		metadata["full_result_notice"] = "Complete sanitized MCP JSON was saved; use history_read with full_result_read and follow next_offset to read further pages."
+	}
 	status := StatusCompleted
 	exitCode := 0
 	stderr := ""
@@ -211,4 +218,19 @@ func (g *Gateway) invokeMCP(ctx context.Context, call ToolCall) (Outcome, error)
 			ExitCode: exitCode, MIME: "application/json", Truncated: truncated || result.Truncated,
 			Metadata: metadata, CompletedAt: completed}}
 	return validateOutcome(outcome, nil)
+}
+
+func mcpExecutionScope(call ToolCall, decision Decision) MCPExecutionScope {
+	return MCPExecutionScope{InvocationID: call.InvocationID, RunID: call.RunID,
+		MissionID:   call.MissionID,
+		WorkspaceID: call.WorkspaceID, Surface: call.Surface, Phase: call.Phase, Role: call.Role,
+		AgentID: call.AgentID, AgentAttemptID: call.AgentAttemptID,
+		PermissionMode:        call.PermissionMode,
+		PermissionSnapshotID:  call.PermissionSnapshotID,
+		PermissionRevision:    call.PermissionRevision,
+		PermissionGeneration:  call.PermissionGeneration,
+		RunAuthorizationFence: call.RunAuthorizationFence, LeaseID: call.LeaseID,
+		PermissionRuntimeEpoch: call.PermissionRuntimeEpoch,
+		LeaseGeneration:        call.LeaseGeneration, RequestedBy: call.RequestedBy,
+		PolicyDecision: decision, SupervisorToolCallID: call.SupervisorToolCallID, SupervisorTurn: call.SupervisorTurn}
 }

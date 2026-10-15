@@ -3426,7 +3426,7 @@ CREATE TABLE mcp_client_calls (
 			AND julianday(completed_at) >= julianday(started_at))
 	);
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE mcp_client_servers (
+CREATE TABLE "mcp_client_servers" (
 		id TEXT PRIMARY KEY,
 		protocol_version TEXT NOT NULL,
 		name TEXT NOT NULL,
@@ -3452,7 +3452,7 @@ CREATE TABLE mcp_client_servers (
 		updated_at TEXT NOT NULL,
 		FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE RESTRICT,
 		CHECK(protocol_version = 'mcp-client-server.v1'),
-		CHECK(transport IN ('stdio', 'streamable_http')),
+		CHECK(transport IN ('stdio', 'streamable_http', 'sse', 'websocket')),
 		CHECK(scope IN ('run', 'workspace')),
 		CHECK((scope = 'run' AND length(run_id) BETWEEN 1 AND 256)
 			OR (scope = 'workspace' AND run_id = '')),
@@ -6123,14 +6123,14 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'sandbox_docker_run_propose', 'skill_candidate_propose', 'debug_terminal',
 			'workspace_list', 'workspace_read', 'workspace_glob', 'workspace_grep',
 			'workspace_change', 'workspace_apply', 'workspace_delete', 'command_runtime',
-			'mcp_tool_call', 'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
+			'mcp_tool_call', 'mcp_tool_search', 'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
 			'code_references', 'code_implementation', 'code_hover',
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
 			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key')),
-		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'workspace_list', 'workspace_read', 'workspace_glob',
+		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 			'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
 			'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
@@ -6140,7 +6140,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'browser_status', 'browser_navigate', 'browser_snapshot',
 			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key')
 			AND length(authority_json) BETWEEN 2 AND 4096 AND json_valid(authority_json) = 1)
-			OR (tool_name NOT IN ('mcp_tool_call', 'workspace_list', 'workspace_read', 'workspace_glob',
+			OR (tool_name NOT IN ('mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 				'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
 				'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
@@ -12552,6 +12552,21 @@ CREATE TABLE thread_lifecycle_operations (
 		CHECK(json_valid(result_json)),
 		CHECK(julianday(created_at) IS NOT NULL)
 	);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_mcp_references (
+		intent_digest TEXT NOT NULL REFERENCES thread_message_intents(operation_key_digest) ON DELETE RESTRICT,
+		position INTEGER NOT NULL CHECK(position BETWEEN 1 AND 4),
+		operation_id TEXT NOT NULL UNIQUE,
+		reference_json TEXT NOT NULL CHECK(json_valid(reference_json) AND length(CAST(reference_json AS BLOB))<=20480),
+		requested_by TEXT NOT NULL,
+		state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','started','completed')),
+		receipt TEXT NOT NULL DEFAULT '' CHECK(receipt IN ('','not_dispatched','result_received','outcome_unknown')),
+		result_json TEXT NOT NULL DEFAULT '' CHECK(result_json='' OR (json_valid(result_json) AND length(CAST(result_json AS BLOB))<=393216)),
+		evidence_message_id INTEGER REFERENCES session_messages(id) ON DELETE RESTRICT,
+		PRIMARY KEY(intent_digest,position),
+		CHECK((state IN ('pending','started') AND receipt='' AND result_json='' AND evidence_message_id IS NULL)
+		 OR (state='completed' AND receipt!='' AND result_json!='' AND evidence_message_id IS NOT NULL))
+	) WITHOUT ROWID;
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE thread_message_attachments (
 		message_id TEXT NOT NULL REFERENCES operator_steering_messages(id),
@@ -26456,6 +26471,24 @@ CREATE TRIGGER trg_thread_image_binding BEFORE INSERT ON thread_message_images W
 CREATE TRIGGER trg_thread_image_immutable BEFORE UPDATE ON thread_message_images BEGIN SELECT RAISE(ABORT, 'Thread image binding is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_thread_image_nodelete BEFORE DELETE ON thread_message_images BEGIN SELECT RAISE(ABORT, 'Thread image binding is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_mcp_reference_delete BEFORE DELETE ON thread_mcp_references
+	 BEGIN SELECT RAISE(ABORT,'MCP reference receipts are retained'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_mcp_reference_insert BEFORE INSERT ON thread_mcp_references
+	 WHEN NEW.state!='pending' OR NEW.receipt!='' OR NEW.result_json!='' OR NEW.evidence_message_id IS NOT NULL
+	 BEGIN SELECT RAISE(ABORT,'MCP reference must begin as an unconsumed message selection'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_mcp_reference_update BEFORE UPDATE ON thread_mcp_references
+	 WHEN NEW.intent_digest!=OLD.intent_digest OR NEW.position!=OLD.position OR NEW.operation_id!=OLD.operation_id
+	 OR NEW.reference_json!=OLD.reference_json OR NEW.requested_by!=OLD.requested_by
+	 OR NOT ((OLD.state='pending' AND NEW.state='started') OR (OLD.state='started' AND NEW.state='completed'))
+	 OR (NEW.state='completed' AND NOT EXISTS (SELECT 1 FROM session_messages evidence
+	  JOIN thread_message_intents intent ON intent.operation_key_digest=NEW.intent_digest
+	  JOIN runs run ON run.id=intent.run_id
+	  WHERE evidence.id=NEW.evidence_message_id AND evidence.session_id=run.session_id
+	   AND evidence.source_kind='tool_result' AND evidence.source_ref=NEW.operation_id AND evidence.instruction_authorized=0))
+	 BEGIN SELECT RAISE(ABORT,'MCP reference selection and completed result are immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_thread_message_attachments_immutable BEFORE UPDATE OF attachments_json ON thread_message_intents WHEN NEW.attachments_json<>OLD.attachments_json BEGIN SELECT RAISE(ABORT,'Thread uploaded files are immutable'); END;
 -- traverse-board-clean-install-object-boundary --

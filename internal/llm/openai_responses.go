@@ -27,12 +27,13 @@ type OpenAIResponsesConfig struct {
 }
 
 type OpenAIResponsesProvider struct {
-	name         string
-	baseURL      string
-	apiKey       string
-	defaultModel string
-	client       *http.Client
-	runtime      HTTPProviderRuntime
+	name          string
+	baseURL       string
+	apiKey        string
+	defaultModel  string
+	client        *http.Client
+	runtime       HTTPProviderRuntime
+	toolNamespace string
 }
 
 func NewOpenAIResponsesProvider(config OpenAIResponsesConfig) (*OpenAIResponsesProvider, error) {
@@ -273,6 +274,38 @@ func (p *OpenAIResponsesProvider) prepareRequest(request ChatRequest,
 	if request.JSONMode && !(len(wire.Tools) > 0 && p.usesDeepSeekNativeToolFormat()) {
 		wire.Text = &openAIResponsesText{Format: openAIResponsesTextFormat{Type: "json_object"}}
 	}
+	if p.toolNamespace != "" {
+		wire.MaxOutputTokens = 0
+		wire.Temperature = nil
+		wire.Stream = true
+		wire.Include = []string{"reasoning.encrypted_content"}
+		input := make([]any, 0, len(wire.Input))
+		for _, raw := range wire.Input {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				return "", openAIResponsesRequest{}, errors.New("ChatGPT input item is invalid")
+			}
+			if item["role"] == "system" {
+				if wire.Instructions != "" {
+					wire.Instructions += "\n\n"
+				}
+				wire.Instructions += item["content"].(string)
+				continue
+			}
+			if item["type"] == "function_call" {
+				item["namespace"] = p.toolNamespace
+			}
+			input = append(input, item)
+		}
+		wire.Input = input
+		if len(wire.Input) == 0 {
+			wire.Input = []any{map[string]any{"role": "user", "content": "Hello"}}
+		}
+		if len(wire.Tools) != 0 {
+			wire.Tools = []openAIResponsesTool{{Type: "namespace", Name: p.toolNamespace,
+				Tools: wire.Tools}}
+		}
+	}
 	return selectedModel, wire, nil
 }
 
@@ -298,11 +331,11 @@ func openAIResponsesInput(message Message, replayCallIDs map[string]string) ([]a
 		return nil, nil
 	}
 	switch role {
-	case "system":
+	case "system", "developer":
 		if content == "" || len(message.ToolCalls) != 0 || len(message.ToolResults) != 0 {
 			return nil, errors.New("system message has invalid structured content")
 		}
-		return []any{map[string]any{"role": "system", "content": content}}, nil
+		return []any{map[string]any{"role": role, "content": content}}, nil
 	case "assistant":
 		if len(message.ToolResults) != 0 {
 			return nil, errors.New("assistant message cannot contain tool results")
@@ -617,6 +650,8 @@ func (p *OpenAIResponsesProvider) responsesEndpoint() string {
 
 type openAIResponsesRequest struct {
 	Model           string                `json:"model"`
+	Instructions    string                `json:"instructions,omitempty"`
+	Include         []string              `json:"include,omitempty"`
 	Input           []any                 `json:"input"`
 	Tools           []openAIResponsesTool `json:"tools,omitempty"`
 	Text            *openAIResponsesText  `json:"text,omitempty"`
@@ -627,10 +662,11 @@ type openAIResponsesRequest struct {
 }
 
 type openAIResponsesTool struct {
-	Type        string          `json:"type"`
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Type        string                `json:"type"`
+	Name        string                `json:"name"`
+	Description string                `json:"description,omitempty"`
+	Parameters  json.RawMessage       `json:"parameters,omitempty"`
+	Tools       []openAIResponsesTool `json:"tools,omitempty"`
 }
 
 type openAIResponsesText struct {
@@ -663,6 +699,7 @@ type openAIResponsesOutputItem struct {
 	Content          []openAIResponsesContent `json:"content"`
 	CallID           string                   `json:"call_id"`
 	Name             string                   `json:"name"`
+	Namespace        string                   `json:"namespace,omitempty"`
 	Arguments        string                   `json:"arguments"`
 	EncryptedContent string                   `json:"encrypted_content,omitempty"`
 	Summary          json.RawMessage          `json:"summary,omitempty"`
@@ -802,6 +839,7 @@ type responsesStreamItem struct {
 
 type responsesStreamState struct {
 	provider       string
+	toolNamespace  string
 	selectedModel  string
 	responseID     string
 	events         providerStreamEvents
@@ -1046,6 +1084,7 @@ func (s *responsesStreamState) startItem(item openAIResponsesOutputItem) (*ChatC
 		callID := strings.TrimSpace(item.CallID)
 		name := strings.TrimSpace(item.Name)
 		if validateStreamIdentity(callID, "Responses function call") != nil ||
+			(s.toolNamespace != "" && item.Namespace != s.toolNamespace) ||
 			validateToolName(name) != nil || len(s.toolCalls) >= MaxProviderToolCalls {
 			return nil, false, openAIProtocolError(s.provider, "returned an invalid Responses function start")
 		}
@@ -1173,7 +1212,8 @@ func (s *responsesStreamState) completeItem(wire openAIResponsesOutputItem) (*Ch
 				ItemID: wire.ID, ItemType: StreamItemMessage, ItemStatus: StreamItemCompleted}))
 		}
 	} else {
-		if wire.CallID != item.callID || wire.Name != item.name {
+		if wire.CallID != item.callID || wire.Name != item.name ||
+			(s.toolNamespace != "" && wire.Namespace != s.toolNamespace) {
 			return nil, false, openAIProtocolError(s.provider, "Responses function identity changed at item completion")
 		}
 		if incomplete {
@@ -1233,8 +1273,9 @@ func (p *OpenAIResponsesProvider) readStream(ctx context.Context, body io.ReadCl
 	defer close(chunks)
 	defer body.Close()
 	state := responsesStreamState{provider: p.name, selectedModel: selectedModel,
-		binding: p.DescribeModelHarness(selectedModel).BindingDigest,
-		items:   make(map[string]*responsesStreamItem)}
+		toolNamespace: p.toolNamespace,
+		binding:       p.DescribeModelHarness(selectedModel).BindingDigest,
+		items:         make(map[string]*responsesStreamItem)}
 	send := func(chunk ChatChunk) bool {
 		select {
 		case <-ctx.Done():

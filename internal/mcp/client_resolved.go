@@ -27,6 +27,7 @@ type resolvedClient struct {
 	mu          sync.Mutex
 	capability  string
 	negotiated  string
+	credential  func(context.Context, toolcontract.CredentialRef) (string, error)
 }
 type resolvedDiscoveryKey struct{}
 type resolvedDiscovery struct {
@@ -60,7 +61,7 @@ func NewResolvedClient(launch toolcontract.ResolvedLaunch, hostKey []byte, conne
 			return nil, errors.New("unsupported MCP client profile")
 		}
 	}
-	r := &resolvedClient{launch: launch, key: key, connect: cloneOperation(connect), guards: guards, fingerprint: fingerprint}
+	r := &resolvedClient{launch: launch, key: key, connect: cloneOperation(connect), guards: guards, fingerprint: fingerprint, credential: credential}
 	transport, remote, err := newLaunchClient(launch, base, r.beforeConnect, r.beforeSend)
 	if err != nil {
 		return nil, err
@@ -70,10 +71,10 @@ func NewResolvedClient(launch toolcontract.ResolvedLaunch, hostKey []byte, conne
 			if err := r.beforeConnect(ctx); err != nil {
 				return err
 			}
-			if credential == nil {
+			if r.credential == nil {
 				return errors.New("MCP credential resolver is unavailable")
 			}
-			value, err := credential(ctx, *launch.HTTP.Credential)
+			value, err := r.credential(ctx, *launch.HTTP.Credential)
 			if err != nil || value == "" {
 				return errors.New("bound MCP credential is unavailable")
 			}
@@ -202,11 +203,20 @@ func (r *resolvedClient) beforeSend(ctx context.Context, frame *jsonrpc.Request,
 			matches := r.capability == call.operation.CapabilityFingerprint
 			r.mu.Unlock()
 			if !matches {
-				return errors.New("MCP capability changed during authorization")
+				return staleCatalogError()
 			}
 			return nil
 		}
 		return nil
+	}
+	if subscription, _ := ctx.Value(catalogSubscriptionKey{}).(*catalogSubscription); subscription != nil {
+		if frame.Method == "subscriptions/listen" {
+			return subscription.listen(ctx, r.fingerprint, frame, size)
+		}
+		if frame.Method == "notifications/cancelled" {
+			return subscription.cancel(frame)
+		}
+		return errors.New("MCP subscription cannot send another method")
 	}
 	if frame.Method == "notifications/cancelled" {
 		attempt, _ := ctx.Value(sdkCallAttemptKey{}).(*sdkCallAttempt)
@@ -289,6 +299,7 @@ func (c *Client) DiscoverWithScope(ctx context.Context, scope toolcontract.Disco
 	capture := &resolvedCatalog{}
 	ctx = context.WithValue(ctx, resolvedDiscoveryKey{}, &resolvedDiscovery{scope: scope, guard: guard})
 	ctx = context.WithValue(ctx, resolvedCatalogKey{}, capture)
+	revision := c.catalogRevision.Load()
 	snapshot, err := c.Discover(ctx, time.Now())
 	if err != nil {
 		return CapabilitySnapshot{}, err
@@ -303,6 +314,10 @@ func (c *Client) DiscoverWithScope(ctx context.Context, scope toolcontract.Disco
 	_, _ = hash.Write([]byte("mcp.capabilities.v1\x00"))
 	_, _ = hash.Write(encoded)
 	r.mu.Lock()
+	if c.catalogRevision.Load() != revision {
+		r.mu.Unlock()
+		return CapabilitySnapshot{}, staleCatalogError()
+	}
 	r.capability = hex.EncodeToString(hash.Sum(nil))
 	r.mu.Unlock()
 	return snapshot, nil

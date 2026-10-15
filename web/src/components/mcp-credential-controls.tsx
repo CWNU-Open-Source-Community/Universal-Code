@@ -20,8 +20,8 @@ export function MCPCredentialControls({ client, server, capability }: {
   client: APIClient; server: ExtensionMCPServerView; capability?: boolean;
 }) {
   const { t } = useLocale();
-  if (server.native_source || server.transport !== "streamable_http") return <p>{t(
-    "查看此服务器或插件的接入配置以管理认证。此处的 Bearer 令牌表单适用于 HTTPS 服务器。", "Review this server or plugin integration configuration to manage authentication. The bearer token form here is available for HTTPS servers.")}</p>;
+  if (server.native_source || server.transport === "stdio") return <p>{t(
+    "查看此服务器或插件的接入配置以管理认证。此处的 Bearer 令牌表单适用于远程服务器。", "Review this server or plugin integration configuration to manage authentication. The bearer token form here is available for remote servers.")}</p>;
   if (!server.credential_ref) return <p>{t(
     "描述符未指定凭据。需要认证时，请使用专用凭据名称登记服务器，再在此输入令牌。",
     "No credential is referenced. For authentication, register the server with a dedicated credential name, then enter its token here.")}</p>;
@@ -73,7 +73,7 @@ function BoundMCPCredentialControls({ client, server }: { client: APIClient; ser
       "This registration is revoked. Register and review a new server descriptor to reconnect. You can manage the existing credential name's local token here.")
     : t("保存后，查看服务器的当前审查状态与可用操作，按该阶段继续接入。",
       "After saving, inspect the server's current review state and available actions to continue setup.");
-  return <><MCPOAuthControls client={client} binding={binding} queryKey={queryKey} /><details className="extension-onboarding"><summary>{t("管理 MCP 认证令牌", "Manage MCP authentication token")}</summary>
+  return <>{server.transport !== "websocket" && <MCPOAuthControls client={client} binding={binding} queryKey={queryKey} />}<details className="extension-onboarding"><summary>{t("管理 MCP 认证令牌", "Manage MCP authentication token")}</summary>
     <p>{t("将 Bearer 令牌保存到系统凭据库。", "Store the bearer token in the system credential store.")} {nextStep}</p>
     <p>{t("凭据名称", "Credential name")}: {server.credential_ref} · {server.target}</p>
     <p role="status">{status.isPending ? t("正在读取凭据状态…", "Reading credential presence…") : status.error || !status.data ?

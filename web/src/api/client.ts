@@ -4,6 +4,9 @@ import { parseProjectPreparation, parseProjectPreparationOperation, normalizePre
   validProjectPreparationRequest, type ProjectPreparationRequest, type ProjectPreparationView,
   type ProjectPreparationOperation } from "./project-preparation";
 import { consumeSSE } from "./sse";
+import { chatGPTAuthProtocol, parseChatGPTAuthStatus, validChatGPTIdentity,
+  type ChatGPTAuthStatusView, type ChatGPTAuthRequestView, type ChatGPTAccountRequestView,
+  type ChatGPTLoginRequestView, type ChatGPTCancelRequestView } from "./chatgpt-auth";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
 import { validMCPConnectionConfig } from "./mcp-config";
 import { validMCPContents } from "./mcp-content";
@@ -311,6 +314,7 @@ export interface ClientCapabilities {
   approvalControlEnabled?: boolean;
   modelControlEnabled?: boolean;
   providerCredentialEnabled?: boolean;
+  chatGPTAuthEnabled?: boolean;
   fileEditReviewEnabled?: boolean;
   fileEditProposalEnabled?: boolean;
   fileEditApplyEnabled?: boolean;
@@ -1001,7 +1005,7 @@ const threadActivityKinds = ["command", "web_search", "web_fetch", "file_read", 
   "verification", "mcp", "browser"];
 const threadActivityToolNames = ["command_runtime", "workspace_list", "workspace_read",
   "workspace_glob", "workspace_grep", "workspace_change", "workspace_apply", "workspace_delete",
-  "web_search", "web_fetch", "web_citation", "mcp_tool_call", "code_workspace_symbols",
+  "web_search", "web_fetch", "web_citation", "mcp_tool_search", "mcp_tool_call", "code_workspace_symbols",
   "code_document_symbols", "code_definition", "code_references", "code_implementation",
   "code_hover", "code_signature_help", "code_diagnostics", "code_call_hierarchy",
   "code_type_hierarchy", "github_review_evidence_list", "github_review_evidence_read",
@@ -1252,7 +1256,7 @@ function expectedThreadActivityKind(tool: string): string {
   if (tool === "web_fetch" || tool === "web_citation") return "web_fetch";
   if (["workspace_list", "workspace_read", "workspace_glob", "workspace_grep"].includes(tool)) return "file_read";
   if (["workspace_change", "workspace_apply", "workspace_delete"].includes(tool)) return "file_edit";
-  if (tool === "mcp_tool_call") return "mcp";
+  if (tool === "mcp_tool_call" || tool === "mcp_tool_search") return "mcp";
   if (tool.startsWith("browser_")) return "browser";
   return "verification";
 }
@@ -1431,7 +1435,11 @@ function parseModelAvailability(value: unknown): ModelAvailabilityView {
       (provider.status !== "available" && provider.status !== "not_configured" &&
         provider.status !== "invalid_configuration") ||
       (provider.credential_source !== "none" && provider.credential_source !== "environment" &&
-        provider.credential_source !== "system") ||
+        provider.credential_source !== "system" && provider.credential_source !== "chatgpt_oauth") ||
+      (provider.credential_source === "chatgpt_oauth" && (provider.custom !== false ||
+        !/^chatgpt(?:-[a-f0-9]{32})?$/u.test(String(provider.name)) ||
+        provider.kind !== "openai_compatible" || provider.transport !== "openai_responses" ||
+        provider.network_required !== true)) ||
       typeof provider.network_required !== "boolean" || typeof provider.custom !== "boolean" ||
       typeof provider.enabled !== "boolean" ||
       !safeBoundedCount(provider.definition_revision, Number.MAX_SAFE_INTEGER) ||
@@ -1445,7 +1453,7 @@ function parseModelAvailability(value: unknown): ModelAvailabilityView {
       provider.native_web_search_runtime_enabled !== false ||
       (provider.custom ? (!validCustomProviderID(provider.name) ||
         provider.definition_revision < 1) : (provider.definition_revision !== 0 ||
-        provider.display_name !== provider.name || provider.enabled !== true ||
+        (provider.credential_source !== "chatgpt_oauth" && provider.display_name !== provider.name) || provider.enabled !== true ||
         provider.search_mode !== "disabled" ||
         provider.native_web_search_capability !== "unsupported")) ||
       typeof provider.configuration_error !== "boolean" || !Array.isArray(provider.models) ||
@@ -2970,6 +2978,9 @@ function parseRuntimeCapabilities(value: unknown): RuntimeCapabilitiesView {
   if (isRecord(value) && Object.hasOwn(value, "thread_execution_read_enabled")) {
     capabilityKeys.push("thread_execution_read_enabled");
   }
+  if (isRecord(value) && Object.hasOwn(value, "chatgpt_auth_enabled")) {
+    capabilityKeys.push("chatgpt_auth_enabled");
+  }
   if (!hasExactKeys(value, capabilityKeys) || value.protocol_version !== "runtime_capabilities.v1") {
     throw new APIRequestError("Runtime capability response is invalid", "INVALID_RESPONSE", 502);
   }
@@ -3550,6 +3561,7 @@ export function clientCapabilitiesFromRuntime(value: RuntimeCapabilitiesView): C
 
     modelControlEnabled: value.model_control_enabled,
     providerCredentialEnabled: value.provider_credential_enabled,
+    chatGPTAuthEnabled: value.chatgpt_auth_enabled === true,
     fileEditReviewEnabled: value.file_edit_review_enabled,
     fileEditProposalEnabled: value.file_edit_proposal_enabled,
     fileEditApplyEnabled: value.file_edit_apply_enabled,
@@ -6406,7 +6418,7 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
   for (const item of value.mcp_servers) {
     if (!isRecord(item) || item.protocol_version !== "mcp-client-server.v1" ||
       !boundedIdentity(item.id) || !boundedText(item.name, 256) ||
-      (item.transport !== "stdio" && item.transport !== "streamable_http") ||
+      !["stdio", "streamable_http", "sse", "websocket"].includes(String(item.transport)) ||
       !validExtensionMCPTarget(item) || !boundedIdentity(item.workspace_id) ||
       !isSHA256(item.descriptor_fingerprint) || !safePositiveInteger(item.generation) ||
       !validDate(item.created_at) || !validDate(item.updated_at) ||
@@ -6664,6 +6676,7 @@ export class APIClient {
   readonly hasModelControl: boolean;
   readonly hasProviderDefinitions: boolean;
   readonly hasProviderCredentials: boolean;
+  readonly hasChatGPTAuth: boolean;
   readonly hasFileEditReview: boolean;
   readonly hasFileEditProposals: boolean;
   readonly hasFileEditApply: boolean;
@@ -6726,6 +6739,7 @@ export class APIClient {
     this.hasProviderDefinitions = this.hasModelControl;
     this.hasProviderCredentials = controlPresent &&
       (capabilities.providerCredentialEnabled ?? false);
+    this.hasChatGPTAuth = controlPresent && capabilities.chatGPTAuthEnabled === true;
     this.hasFileEditReview = controlPresent && (capabilities.fileEditReviewEnabled ?? true);
     this.hasFileEditProposals = controlPresent &&
       (capabilities.fileEditProposalEnabled ?? false);
@@ -7184,7 +7198,7 @@ export class APIClient {
       !validMCPConnectionConfig(descriptor) ||
       !boundedIdentity(descriptor.id) || !boundedIdentity(descriptor.workspace_id) ||
       !boundedText(descriptor.name, 256) || !boundedText(descriptor.target, 4_096) ||
-      !["stdio", "streamable_http"].includes(String(descriptor.transport)) ||
+      !["stdio", "streamable_http", "sse", "websocket"].includes(String(descriptor.transport)) ||
       !["workspace", "run"].includes(String(descriptor.scope)) ||
       (descriptor.scope === "run" && !boundedIdentity(descriptor.run_id)) ||
       (descriptor.scope === "workspace" && descriptor.run_id !== undefined && descriptor.run_id !== "") ||
@@ -8104,6 +8118,56 @@ export class APIClient {
       "/models/harness-qualifications", body, signal,
     );
     return parseModelHarnessQualification(result, body);
+  }
+
+  async chatGPTAuthStatus(signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    if (!this.hasChatGPTAuth) {
+      throw new APIRequestError("ChatGPT 账户登录当前未启用。", "PERMISSION_DENIED", 403);
+    }
+    return this.parseChatGPTStatus(await this.get<unknown>("/models/chatgpt", {}, signal));
+  }
+
+  async startChatGPTLogin(body: ChatGPTLoginRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.chatGPTAuthAction("login", body, signal);
+  }
+
+  async cancelChatGPTLogin(body: ChatGPTCancelRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.chatGPTAuthAction("cancel", body, signal);
+  }
+
+  async logoutChatGPTAccount(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.chatGPTAuthAction("logout", body, signal);
+  }
+
+  async refreshChatGPTModels(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.chatGPTAuthAction("models", body, signal);
+  }
+
+  async openChatGPTUsage(body: ChatGPTAuthRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.chatGPTAuthAction("usage", body, signal);
+  }
+
+  private parseChatGPTStatus(value: unknown): ChatGPTAuthStatusView {
+    try { return parseChatGPTAuthStatus(value); }
+    catch { throw new APIRequestError("ChatGPT 账户状态无效，请重新读取。", "INVALID_RESPONSE", 502); }
+  }
+
+  private async chatGPTAuthAction(action: "login" | "cancel" | "logout" | "models" | "usage",
+    body: ChatGPTAuthRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    if (!this.hasChatGPTAuth) {
+      throw new APIRequestError("ChatGPT 账户登录当前未启用。", "PERMISSION_DENIED", 403);
+    }
+    const request = body as unknown;
+    const identity = action === "cancel" ? "attempt_id" : "account_id";
+    const requiresIdentity = action === "cancel" || action === "logout" || action === "models";
+    const allowed = action === "usage" ? ["version", "confirm"] : ["version", "confirm", identity];
+    if (!isRecord(request) || request.version !== chatGPTAuthProtocol || request.confirm !== true ||
+      Object.keys(request).some((key) => !allowed.includes(key)) ||
+      (requiresIdentity && !validChatGPTIdentity(request[identity])) ||
+      (action === "login" && request.account_id !== undefined && !validChatGPTIdentity(request.account_id))) {
+      throw new APIRequestError("ChatGPT 账户操作需要有效身份与明确确认。", "INVALID_ARGUMENT", 400);
+    }
+    return this.parseChatGPTStatus(await this.sendControlRequest<unknown>(`/models/chatgpt/${action}`, body, signal));
   }
 
   async providerDefinitions(signal?: AbortSignal): Promise<ProviderDefinitionCollectionView> {

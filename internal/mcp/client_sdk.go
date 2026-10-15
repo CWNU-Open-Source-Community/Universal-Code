@@ -62,6 +62,8 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 	stop := context.AfterFunc(t.lifetime, cancel)
 	defer stop()
 	defer cancel()
+	discovery, _ := ctx.Value(resolvedDiscoveryKey{}).(*resolvedDiscovery)
+	subscription := &catalogSubscription{discovery: discovery}
 	options := &sdk.ClientOptions{
 		Capabilities:   &sdk.ClientCapabilities{},
 		MultiRoundTrip: &sdk.MultiRoundTripOptions{Disabled: true},
@@ -75,15 +77,32 @@ func (t *Client) connect(ctx context.Context) (*sdk.ClientSession, error) {
 			}
 		},
 	}
+	if t.catalogChanged != nil {
+		options.ToolListChangedHandler = func(context.Context, *sdk.ToolListChangedRequest) { t.invalidateCatalog() }
+		options.ResourceListChangedHandler = func(context.Context, *sdk.ResourceListChangedRequest) { t.invalidateCatalog() }
+		options.PromptListChangedHandler = func(context.Context, *sdk.PromptListChangedRequest) { t.invalidateCatalog() }
+	}
 	if t.inputHandler != nil {
 		options.Capabilities.Elicitation = &sdk.ElicitationCapabilities{Form: &sdk.FormElicitationCapabilities{}, URL: &sdk.URLElicitationCapabilities{}}
 		options.ElicitationHandler = t.handleLegacyInput
 		t.tap.receiveInput = t.receiveLegacyInput
 		t.tap.prepareReply = t.prepareLegacyReply
 	}
+	rootsMiddleware := t.configureSDKRoots(options)
 	client := sdk.NewClient(&sdk.Implementation{Name: ClientName, Version: ClientVersion}, options)
+	if rootsMiddleware != nil {
+		client.AddReceivingMiddleware(rootsMiddleware)
+	}
 	client.AddSendingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, request sdk.Request) (sdk.Result, error) {
+			if method == "subscriptions/listen" && t.resolved != nil {
+				if t.tap.negotiated != nil {
+					t.tap.negotiated(preferredClientProtocolVersion)
+				}
+				// SDK starts this exact listen with Background. Carry only the bounded
+				// discovery authority, and bind cancellation to this subscription's ID.
+				ctx = context.WithValue(ctx, catalogSubscriptionKey{}, subscription)
+			}
 			capture, _ := ctx.Value(sdkRawResponseKey{}).(*sdkRawResponse)
 			if capture == nil {
 				capture = &sdkRawResponse{}
@@ -284,23 +303,23 @@ func (*sdkInputRequiredError) Error() string {
 	return "MCP tool requires additional input; host mediation is required before any retry"
 }
 
-// A cancelled response wait stays request-scoped. Only a blocked pipe write
-// fails the connection: its byte framing can no longer be safely shared.
-type stdioSDKConnection struct {
+// A cancelled response wait stays request-scoped. A blocked frame write closes
+// the connection because a partially written frame cannot be reused safely.
+type guardedSDKConnection struct {
 	sdk.Connection
 	writeGate  chan struct{}
 	beforeSend func(context.Context, *jsonrpc.Request, int64) error
 }
 
-func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) error {
+func (c *guardedSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) error {
 	select {
 	case c.writeGate <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	defer func() { <-c.writeGate }()
-	if response, ok := msg.(*jsonrpc.Response); ok && ctx.Value(legacyReplyKey{}) != nil {
-		if err := authorizeLegacyReply(ctx, response, true); err != nil {
+	if response, ok := msg.(*jsonrpc.Response); ok && (ctx.Value(legacyReplyKey{}) != nil || ctx.Value(rootsReplyKey{}) != nil) {
+		if err := authorizeClientReply(ctx, response, true); err != nil {
 			return err
 		}
 	}
@@ -314,7 +333,7 @@ func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) err
 				return err
 			}
 		}
-		// Final stdio guard: after acquiring the writer, before SDK framing.
+		// Final dispatch guard: after acquiring the writer, before SDK framing.
 		if err := beforeSDKDispatch(ctx, request.Method); err != nil {
 			return err
 		}
@@ -326,6 +345,9 @@ func (c *stdioSDKConnection) Write(ctx context.Context, msg jsonrpc.Message) err
 		return err
 	case <-ctx.Done():
 		_ = c.Connection.Close()
+		// Close interrupts the socket/pipe, but its writer may still be unwinding.
+		// Keep the gate until it exits so another SDK frame cannot overlap it.
+		<-done
 		return ctx.Err()
 	}
 }

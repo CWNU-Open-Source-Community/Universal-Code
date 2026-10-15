@@ -249,10 +249,12 @@ func normalizeSupervisorToolCallsForStore(calls []llm.ToolCall, runID string, tu
 					"command runtime supervisor tool authority is invalid")
 			}
 			normalized[index].Authority = canonicalAuthority
-		} else if name == toolgateway.MCPToolCallTool {
+		} else if name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool {
 			authority, authorityErr := mcp.DecodeSupervisorCallAuthority(
 				normalized[index].Authority)
-			if authorityErr != nil || authority.RunID != runID {
+			validKind := name == toolgateway.MCPToolSearchTool && authority.Version == mcp.SupervisorCatalogAuthorityVersion ||
+				name == toolgateway.MCPToolCallTool && authority.Version != mcp.SupervisorCatalogAuthorityVersion
+			if authorityErr != nil || !validKind || authority.RunID != runID {
 				return nil, apperror.New(apperror.CodeInvalidArgument,
 					"MCP supervisor tool is missing its exact durable authority")
 			}

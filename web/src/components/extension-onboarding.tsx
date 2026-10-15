@@ -50,8 +50,8 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
       ...(transport === "stdio" && cwd.trim() ? { cwd: cwd.trim() } : {}),
       ...(transport === "stdio" && environment.trim() ? { env: parseMCPConfigLines(environment, "=", t("环境变量需每行填写唯一的 NAME=value。", "Use one unique NAME=value environment entry per line.")) } : {}),
       ...(transport === "stdio" && environmentCredentials.trim() ? { env_credential_refs: parseMCPConfigLines(environmentCredentials, "=", t("凭据引用需每行填写唯一的 NAME=凭据名称。", "Use one unique NAME=credential-name reference per line.")) } : {}),
-      ...(transport === "streamable_http" && headers.trim() ? { headers: parseMCPConfigLines(headers, ":", t("HTTP header 需每行填写唯一的 Name: value。", "Use one unique Name: value HTTP header per line.")) } : {}),
-      ...(transport === "streamable_http" && credential.trim() ? { credential_ref: credential.trim() } : {}),
+      ...(transport !== "stdio" && headers.trim() ? { headers: parseMCPConfigLines(headers, ":", t("HTTP header 需每行填写唯一的 Name: value。", "Use one unique Name: value HTTP header per line.")) } : {}),
+      ...(transport !== "stdio" && credential.trim() ? { credential_ref: credential.trim() } : {}),
       declared_capabilities: capabilities, call_timeout_ms: 30_000, max_result_bytes: 65_536,
     } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["extensions"] }),
@@ -69,10 +69,11 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
         <label>{t("显示名称", "Display name")}<input required maxLength={256} value={name} onChange={(event) => change(() => setName(event.target.value))} /></label>
         <label>{t("传输方式", "Transport")}<select value={transport} onChange={(event) => change(() => setTransport(event.target.value))}>
           <option value="streamable_http">HTTP / Streamable HTTP</option><option value="stdio">本地程序 / stdio</option>
+          <option value="sse">Legacy SSE</option><option value="websocket">WebSocket</option>
         </select></label>
-        <label>{transport === "stdio" ? t("可执行文件绝对路径", "Absolute executable path") : t("服务器地址（HTTPS / 本机 HTTP）", "Server URL (HTTPS / local HTTP)")}
+        <label>{transport === "stdio" ? t("可执行文件绝对路径", "Absolute executable path") : transport === "websocket" ? t("服务器地址（WSS / 本机 WS）", "Server URL (WSS / local WS)") : t("服务器地址（HTTPS / 本机 HTTP）", "Server URL (HTTPS / local HTTP)")}
           <input required maxLength={4096} type={transport === "stdio" ? "text" : "url"} value={target}
-            placeholder={transport === "stdio" ? "C:\\tools\\mcp-server.exe" : "https://example.com/mcp"}
+            placeholder={transport === "stdio" ? "C:\\tools\\mcp-server.exe" : transport === "websocket" ? "wss://example.com/mcp" : "https://example.com/mcp"}
             onChange={(event) => change(() => setTarget(event.target.value))} /></label>
         <label>{t("登记范围", "Registration scope")}<select value={scope} onChange={(event) => change(() => setScope(event.target.value))}>
           <option value="workspace">工作区 / Workspace</option><option disabled={!runID} value="run">当前任务执行 / Current Run</option>
@@ -96,7 +97,7 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
             <textarea rows={3} maxLength={16384} value={headers} placeholder="X-Project: example" onChange={(event) => change(() => setHeaders(event.target.value))} /></label>
           <label>{t("凭据名称（认证时填写，登记后输入令牌）", "Credential name (for authentication; enter the token after registration)")}
             <input maxLength={64} value={credential} placeholder="mcp-example" onChange={(event) => change(() => setCredential(event.target.value))} /></label>
-          <p>{t("HTTP 明文地址限本机 loopback。认证与 MCP 协议 header 由服务管理。", "Plain HTTP is limited to local loopback. Authentication and MCP protocol headers are managed by the service.")}</p></>}
+          <p>{t("HTTP / WS 明文地址限本机 loopback。认证与协议 header 由服务管理。", "Plain HTTP / WS is limited to local loopback. Authentication and protocol headers are managed by the service.")}</p></>}
         <button className="settings-action" disabled={!id.trim() || !name.trim() || !target.trim() ||
           capabilities.length === 0 || registration.isSuccess} type="submit">
           {registration.isPending ? t("正在登记…", "Registering…") : t("提交登记", "Register descriptor")}</button>

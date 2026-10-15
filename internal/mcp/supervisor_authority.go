@@ -13,10 +13,11 @@ import (
 
 const SupervisorCallAuthorityVersion = 1
 const SupervisorOperationAuthorityVersion = 2
+const SupervisorCatalogAuthorityVersion = 3
 const OperationApprovalTool = "mcp_tool_call"
 
 // SupervisorCallAuthority is the durable, fail-closed execution authority
-// attached to an mcp_tool_call in the Supervisor ledger. It contains only
+// attached to an MCP call or catalog search in the Supervisor ledger. It contains only
 // scope and revocation facts; server credentials and tool arguments never
 // belong in this envelope.
 type SupervisorCallAuthority struct {
@@ -40,7 +41,7 @@ type SupervisorCallAuthority struct {
 }
 
 func (a SupervisorCallAuthority) Validate() error {
-	if (a.Version != SupervisorCallAuthorityVersion && a.Version != SupervisorOperationAuthorityVersion) || !domain.ValidAgentID(a.RunID) ||
+	if (a.Version != SupervisorCallAuthorityVersion && a.Version != SupervisorOperationAuthorityVersion && a.Version != SupervisorCatalogAuthorityVersion) || !domain.ValidAgentID(a.RunID) ||
 		!domain.ValidAgentID(a.MissionID) || !domain.ValidAgentID(a.WorkspaceID) ||
 		!domain.ValidAgentID(a.PermissionSnapshotID) || a.PermissionRevision < 1 ||
 		!a.PermissionMode.Valid() {
@@ -49,6 +50,10 @@ func (a SupervisorCallAuthority) Validate() error {
 	if a.Version == SupervisorCallAuthorityVersion {
 		if !a.PermissionMode.IncludesFullAccess() || a.ServerID != "" || a.DescriptorFingerprint != "" || a.ServerGeneration != 0 {
 			return errors.New("legacy Supervisor MCP authority is invalid")
+		}
+	} else if a.Version == SupervisorCatalogAuthorityVersion {
+		if a.ServerID != "" || a.DescriptorFingerprint != "" || a.ServerGeneration != 0 {
+			return errors.New("MCP catalog authority cannot bind a remote invocation")
 		}
 	} else if !validClientIdentity(a.ServerID) || !validClientDigest(a.DescriptorFingerprint) || a.ServerGeneration < 1 {
 		return errors.New("Supervisor MCP authority requires its exact reviewed registration")

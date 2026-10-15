@@ -60,7 +60,7 @@ func (m *Manager) discoverNativeSource(ctx context.Context, record ServerRecord)
 		Methods: []string{"initialize", "notifications/initialized", "tools/list", "resources/list", "resources/templates/list", "prompts/list"}, MaxRequests: 64, MaxBytes: 1024 * 1024,
 		ExpiresAt: m.now().Add(time.Duration(record.Descriptor.CallTimeoutMillis) * time.Millisecond)}
 	if scope.Profile == preferredClientProtocolVersion {
-		scope.Methods = append(scope.Methods, "server/discover")
+		scope.Methods = append(scope.Methods, "server/discover", "subscriptions/listen")
 	}
 	scopeFingerprint, err := toolcontract.FingerprintDiscovery(scope)
 	if err != nil {
@@ -90,6 +90,11 @@ func (m *Manager) discoverNativeSource(ctx context.Context, record ServerRecord)
 		return CapabilitySnapshot{}, err
 	}
 	defer client.Close()
+	roots, err := m.prepareWorkspaceRoots(ctx, record, record.Descriptor.RunID, recheck)
+	if err != nil {
+		return CapabilitySnapshot{}, err
+	}
+	client.setWorkspaceRoots(roots)
 	client.secrets = slices.Clone(secrets)
 	client.descriptor.DeclaredCapabilities = slices.Clone(record.Descriptor.DeclaredCapabilities)
 	capabilities, err := client.DiscoverWithScope(ctx, scope)

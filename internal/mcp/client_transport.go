@@ -29,7 +29,7 @@ func newStdioClientTransport(descriptor ServerDescriptor) (clientTransport, erro
 }
 
 func newRemoteClientTransport(descriptor ServerDescriptor, bearer string, base *http.Client) (clientTransport, error) {
-	if descriptor.Transport != TransportStreamableHTTP || descriptor.Validate() != nil {
+	if !descriptor.Transport.Remote() || descriptor.Validate() != nil {
 		return nil, errors.New("valid remote MCP descriptor is required")
 	}
 	if descriptor.CredentialRef != "" && bearer == "" {
@@ -70,6 +70,11 @@ func newLaunchClient(launch toolcontract.ResolvedLaunch, base *http.Client,
 	if err := launch.Validate(); err != nil {
 		return nil, nil, err
 	}
+	for _, version := range launch.ProtocolVersions {
+		if !transportSupportsProtocol(launch.Transport, version) {
+			return nil, nil, errors.New("MCP profile is unsupported by this transport")
+		}
+	}
 	var client *Client
 	var remote *mcpHTTPTransport
 	switch launch.Transport {
@@ -89,13 +94,13 @@ func newLaunchClient(launch toolcontract.ResolvedLaunch, base *http.Client,
 		cmd := exec.Command(launch.Stdio.Command, launch.Stdio.Args...)
 		cmd.Dir, cmd.Env = launch.Stdio.Cwd, launchEnvironmentEntries(env)
 		client = newSDKClient(&commandClientTransport{cmd: cmd, beforeStart: beforeStart, beforeSend: beforeSend})
-	case toolcontract.TransportStreamableHTTP:
+	case toolcontract.TransportStreamableHTTP, toolcontract.TransportSSE, toolcontract.TransportWebSocket:
 		if base == nil {
 			configured := http.DefaultTransport.(*http.Transport).Clone()
 			configured.Proxy = nil
 			base = &http.Client{Transport: configured}
 		}
-		client, remote = makeHTTPClientTransport(launch.HTTP.Endpoint, "", base)
+		client, remote = makeRemoteClientTransport(TransportKind(launch.Transport), launch.HTTP.Endpoint, "", base)
 		remote.headers = make(http.Header, len(launch.HTTP.Headers))
 		for name, value := range launch.HTTP.Headers {
 			remote.headers.Set(name, value)
@@ -114,23 +119,36 @@ func newLaunchClient(launch toolcontract.ResolvedLaunch, base *http.Client,
 }
 
 func makeHTTPClientTransport(endpoint, bearer string, base *http.Client) (*Client, *mcpHTTPTransport) {
+	return makeRemoteClientTransport(TransportStreamableHTTP, endpoint, bearer, base)
+}
+
+func makeRemoteClientTransport(kind TransportKind, endpoint, bearer string, base *http.Client) (*Client, *mcpHTTPTransport) {
 	var roundTripper http.RoundTripper = http.DefaultTransport.(*http.Transport).Clone()
 	if base != nil && base.Transport != nil {
 		roundTripper = base.Transport
 	}
 	origin, _ := url.Parse(endpoint) // Constructors validate the endpoint first.
-	httpTransport := &mcpHTTPTransport{base: roundTripper, bearer: bearer, origin: origin}
+	httpTransport := &mcpHTTPTransport{base: roundTripper, bearer: bearer, origin: origin, legacySSE: kind == TransportSSE}
 	client := &http.Client{Transport: httpTransport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("MCP redirects are forbidden") }}
 	if base != nil {
 		client.Timeout = base.Timeout
 	}
-	transport := newSDKClient(&sdk.StreamableClientTransport{
+	var sdkTransport sdk.Transport = &sdk.StreamableClientTransport{
 		Endpoint: endpoint, HTTPClient: client, MaxEventSize: MaxMessageBytes,
 		// The host owns reconciliation or explicit retry under fresh authority.
 		MaxRetries: -1, DisableStandaloneSSE: true,
 		// No OAuthHandler: authentication and interaction belong to the host.
-	})
+	}
+	switch kind {
+	case TransportSSE:
+		sdkTransport = &persistentSSETransport{transport: &sdk.SSEClientTransport{
+			Endpoint: endpoint, HTTPClient: client, MaxEventSize: MaxMessageBytes,
+		}}
+	case TransportWebSocket:
+		sdkTransport = &webSocketClientTransport{endpoint: endpoint, remote: httpTransport}
+	}
+	transport := newSDKClient(sdkTransport)
 	// The SDK's session-update callback is private and cannot pass through a
 	// public Connection observer. Restore only its negotiated header state;
 	// the other callback behavior (standalone SSE) is explicitly disabled.
@@ -209,7 +227,7 @@ func (t *commandClientTransport) Connect(ctx context.Context) (sdk.Connection, e
 		_ = process.Close()
 		return nil, err
 	}
-	return &stdioSDKConnection{Connection: conn, writeGate: make(chan struct{}, 1), beforeSend: t.beforeSend}, nil
+	return &guardedSDKConnection{Connection: conn, writeGate: make(chan struct{}, 1), beforeSend: t.beforeSend}, nil
 }
 
 type clientProcessTree interface {
@@ -274,7 +292,9 @@ func (p *clientProcess) Close() error {
 
 // SSE is incremental and bounded per event by the SDK, not per stream.
 type mcpHTTPTransport struct {
+	legacySSE       bool
 	protocolVersion atomic.Value
+	sessionID       atomic.Value
 	origin          *url.URL
 	base            http.RoundTripper
 	bearer          string
@@ -350,7 +370,7 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 		// Modern HTTP cancellation is closing the request stream. SDK v1.8.0
 		// also emits a legacy cancellation notification; do not send it on
 		// this profile after the HTTP request context has already been cancelled.
-		if envelope != nil && envelope.Method == "notifications/cancelled" && version == preferredClientProtocolVersion {
+		if !t.legacySSE && envelope != nil && envelope.Method == "notifications/cancelled" && version == preferredClientProtocolVersion {
 			return &http.Response{StatusCode: http.StatusAccepted, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
 		}
 		wireBytes = int64(len(raw))
@@ -359,7 +379,7 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	// SDK-level reconnect and multi-round-trip retries are disabled separately.
 	request.GetBody = nil
 	if reply != nil {
-		if err := authorizeLegacyReply(request.Context(), reply, false); err != nil {
+		if err := authorizeClientReply(request.Context(), reply, false); err != nil {
 			return nil, err
 		}
 	}
@@ -388,7 +408,7 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 		return nil, err
 	}
 	if reply != nil {
-		if err := authorizeLegacyReply(request.Context(), reply, true); err != nil {
+		if err := authorizeClientReply(request.Context(), reply, true); err != nil {
 			return nil, err
 		}
 	}
@@ -400,6 +420,9 @@ func (t *mcpHTTPTransport) RoundTrip(request *http.Request) (*http.Response, err
 	response, err := t.base.RoundTrip(request)
 	if err != nil {
 		return nil, err
+	}
+	if id := response.Header.Get("Mcp-Session-Id"); id != "" && envelope != nil && envelope.Method == "initialize" {
+		t.sessionID.Store(id)
 	}
 	contentType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if contentType != "text/event-stream" {
