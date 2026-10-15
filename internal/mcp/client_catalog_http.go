@@ -17,6 +17,13 @@ import (
 // This single legacy GET carries only catalog notifications for the exact
 // initialized HTTP session. Modern sessions use SDK subscriptions/listen.
 func (c *Client) startCatalogNotifications(ctx context.Context, check func(context.Context) error) error {
+	kind := c.descriptor.Transport
+	if c.resolved != nil {
+		kind = TransportKind(c.resolved.launch.Transport)
+	}
+	if kind != TransportStreamableHTTP {
+		return nil
+	}
 	if c.remote == nil || c.catalogListening || c.session == nil || c.session.InitializeResult().ProtocolVersion == preferredClientProtocolVersion {
 		return nil
 	}
