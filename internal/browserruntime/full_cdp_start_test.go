@@ -490,7 +490,9 @@ func fullCDPLaunchFacts(t *testing.T) (SessionPlan, BrowserExecutableIdentity,
 ) {
 	t.Helper()
 	session, identity, acceptance, permission := fullCDPAuthorizationFacts(t)
-	now := time.Now().UTC().Round(time.Millisecond)
+	// Live launch tests create their review from the wall clock immediately
+	// afterward, so the lease timestamp must never round into the future.
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	ownership, err := BuildProfileOwnershipPlan(session, identity,
 		filepath.Join(directTestPath(t, t.TempDir()), ProfileRuntimeRootName))
 	if err != nil {

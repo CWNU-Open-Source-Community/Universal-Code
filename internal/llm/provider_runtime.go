@@ -22,6 +22,13 @@ type HTTPProviderRuntime interface {
 	BindingDigest() string
 }
 
+// EndpointBoundHTTPProviderRuntime restricts a credential to the endpoint owned
+// by its login flow, even if the runtime is attached to another HTTP adapter.
+type EndpointBoundHTTPProviderRuntime interface {
+	HTTPProviderRuntime
+	AllowsCredentialEndpoint(string) bool
+}
+
 // KeylessHTTPProviderRuntime is an optional, endpoint-bound exception for a
 // validated local provider. Static API-key configurations remain unchanged.
 type KeylessHTTPProviderRuntime interface {
@@ -46,6 +53,10 @@ func providerRequestCredential(ctx context.Context, provider string, static stri
 ) (string, error) {
 	secret := static
 	if runtime != nil {
+		if bound, ok := runtime.(EndpointBoundHTTPProviderRuntime); ok &&
+			!bound.AllowsCredentialEndpoint(endpoint) {
+			return "", errors.New("provider credential endpoint is unavailable")
+		}
 		resolved, err := runtime.ResolveCredential(ctx)
 		if err != nil {
 			return "", errors.New("provider credential is unavailable")

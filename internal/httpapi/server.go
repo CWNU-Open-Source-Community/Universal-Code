@@ -330,6 +330,7 @@ type Config struct {
 	ModelControlEnabled                   bool
 	ProviderDefinitionEnabled             bool
 	ProviderCredentialEnabled             bool
+	ChatGPTAuthEnabled                    bool
 	FileEditReviewEnabled                 bool
 	FileEditProposalEnabled               bool
 	RunWakeControlEnabled                 bool
@@ -382,6 +383,7 @@ type Config struct {
 	ChildTaskControlController            ChildTaskControlController
 	SpecialistExecutionController         SpecialistExecutionController
 	ProviderCredentialController          ProviderCredentialController
+	ChatGPTAuthController                 ChatGPTAuthController
 	FileEditReviewController              FileEditReviewController
 	FileEditProposalController            FileEditProposalController
 	RunWakeController                     RunWakeController
@@ -432,6 +434,7 @@ type API struct {
 	modelControlEnabled                   bool
 	providerDefinitionEnabled             bool
 	providerCredentialEnabled             bool
+	chatGPTAuthEnabled                    bool
 	fileEditReviewEnabled                 bool
 	fileWorkspaceDrydocks                 *application.RunWorktreeService
 	fileEditProposalEnabled               bool
@@ -488,6 +491,7 @@ type API struct {
 	childTaskControlController            ChildTaskControlController
 	specialistExecutionController         SpecialistExecutionController
 	providerCredentialController          ProviderCredentialController
+	chatGPTAuthController                 ChatGPTAuthController
 	fileEditReviewController              FileEditReviewController
 	fileEditProposalController            FileEditProposalController
 	runWakeController                     RunWakeController
@@ -552,6 +556,7 @@ func New(store Store, config Config) (*API, error) {
 		config.ModelControlEnabled ||
 		config.ProviderDefinitionEnabled ||
 		config.ProviderCredentialEnabled ||
+		config.ChatGPTAuthEnabled ||
 		config.FileEditReviewEnabled || config.FileEditProposalEnabled ||
 		config.RunWakeControlEnabled ||
 		config.FileEditApplyEnabled || config.RunWakeExecutionEnabled ||
@@ -644,6 +649,10 @@ func New(store Store, config Config) (*API, error) {
 	if config.ProviderCredentialEnabled && config.ProviderCredentialController == nil {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"HTTP API Provider credential controller is required when enabled")
+	}
+	if config.ChatGPTAuthEnabled && config.ChatGPTAuthController == nil {
+		return nil, apperror.New(apperror.CodeInvalidArgument,
+			"HTTP API ChatGPT sign-in controller is required when enabled")
 	}
 	if config.FileEditReviewEnabled && config.FileEditReviewController == nil {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
@@ -878,6 +887,7 @@ func New(store Store, config Config) (*API, error) {
 		modelControlEnabled:               controlTokenPresent && config.ModelControlEnabled,
 		providerDefinitionEnabled:         controlTokenPresent && config.ProviderDefinitionEnabled,
 		providerCredentialEnabled:         controlTokenPresent && config.ProviderCredentialEnabled,
+		chatGPTAuthEnabled:                controlTokenPresent && config.ChatGPTAuthEnabled,
 		fileEditReviewEnabled:             controlTokenPresent && config.FileEditReviewEnabled,
 		fileEditProposalEnabled:           controlTokenPresent && config.FileEditProposalEnabled,
 		runWakeControlEnabled:             controlTokenPresent && config.RunWakeControlEnabled,
@@ -935,6 +945,7 @@ func New(store Store, config Config) (*API, error) {
 		childTaskControlController:          config.ChildTaskControlController,
 		specialistExecutionController:       config.SpecialistExecutionController,
 		providerCredentialController:        config.ProviderCredentialController,
+		chatGPTAuthController:               config.ChatGPTAuthController,
 		fileEditReviewController:            config.FileEditReviewController,
 		fileEditProposalController:          config.FileEditProposalController,
 		runWakeController:                   config.RunWakeController,
@@ -1299,6 +1310,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if request.URL.Path != AvailableModelRoutesPath {
+		if action, matched := matchChatGPTAuthControlPath(request.URL.Path); matched {
+			a.serveChatGPTAuthControl(tracked, request, requestID, action)
+			return
+		}
 		if route, kind, matched := matchModelControlPath(request.URL.Path); matched {
 			a.serveModelControl(tracked, request, requestID, route, kind)
 			return

@@ -59,6 +59,7 @@ const (
 
 var reservedProviderIDs = map[string]struct{}{
 	"anthropic": {},
+	"chatgpt":   {},
 	"deepseek":  {},
 	"mimo":      {},
 	"mock":      {},
@@ -348,6 +349,9 @@ func validCustomProviderID(value string) bool {
 		return false
 	}
 	if _, reserved := reservedProviderIDs[value]; reserved {
+		return false
+	}
+	if strings.HasPrefix(value, "chatgpt-") {
 		return false
 	}
 	for index, current := range value {

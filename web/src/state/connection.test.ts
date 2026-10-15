@@ -15,6 +15,19 @@ describe("connection store", () => {
     useConnectionStore.getState().disconnect();
   });
 
+  it("passes explicit ChatGPT authority to the client and clears it on disconnect", () => {
+    useConnectionStore.getState().connect("read-token", health, "control-token", { chatGPTAuthEnabled: true });
+    expect(useConnectionStore.getState().chatGPTAuthEnabled).toBe(true);
+    expect(createV2Client(useConnectionStore.getState()).hasChatGPTAuth).toBe(true);
+    useConnectionStore.getState().disconnect();
+    expect(useConnectionStore.getState().chatGPTAuthEnabled).toBe(false);
+    useConnectionStore.getState().connect("read-token", health, "control-token", { chatGPTAuthEnabled: true, runControlEnabled: false });
+    expect(createV2Client(useConnectionStore.getState()).hasControl).toBe(false);
+    expect(createV2Client(useConnectionStore.getState()).hasChatGPTAuth).toBe(true);
+    useConnectionStore.getState().connect("read-token", health, "", { chatGPTAuthEnabled: true });
+    expect(createV2Client(useConnectionStore.getState()).hasChatGPTAuth).toBe(false);
+  });
+
   it("keeps both capability tokens in memory and clears them on disconnect", () => {
     useConnectionStore.getState().connect("ephemeral-token", health, "ephemeral-control-token", {
       githubReviewControlEnabled: true,

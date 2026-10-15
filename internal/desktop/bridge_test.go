@@ -197,7 +197,7 @@ func TestDesktopBridgeBootstrapsMemoryOnlyClosedAuthority(t *testing.T) {
 		bootstrap.WorkspaceOpenEnabled ||
 		bootstrap.WorkspaceImportEnabled ||
 		bootstrap.RendererPathInputSupported ||
-		bootstrap.RiskProfileRestartEnabled {
+		bootstrap.RiskProfileRestartEnabled || bootstrap.ChatGPTAuthEnabled {
 		t.Fatalf("unexpected bootstrap: %#v", bootstrap)
 	}
 	raw, err := json.Marshal(bootstrap)
@@ -217,7 +217,7 @@ func TestDesktopBridgeBootstrapsMemoryOnlyClosedAuthority(t *testing.T) {
 		"command_runtime_adapter_installed", "command_runtime_adapter_ready",
 		"thread_control_enabled",
 		"docker_execution_enabled", "file_edit_review_enabled", "file_edit_proposal_enabled",
-		"model_control_enabled", "provider_credential_enabled",
+		"model_control_enabled", "provider_credential_enabled", "chatgpt_auth_enabled",
 		"file_edit_apply_enabled",
 		"process_execution_enabled", "protocol_version", "read_only_default",
 		"plan_delivery_control_enabled", "read_token", "renderer_path_input_supported",

@@ -38,6 +38,7 @@ interface ConnectionState {
   approvalControlEnabled: boolean;
   modelControlEnabled: boolean;
   providerCredentialEnabled: boolean;
+  chatGPTAuthEnabled: boolean;
   fileEditReviewEnabled: boolean;
   fileEditProposalEnabled: boolean;
   fileEditApplyEnabled: boolean;
@@ -110,6 +111,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
 
   modelControlEnabled: false,
   providerCredentialEnabled: false,
+  chatGPTAuthEnabled: false,
   fileEditReviewEnabled: false,
   fileEditProposalEnabled: false,
   fileEditApplyEnabled: false,
@@ -178,6 +180,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
 
 	  modelControlEnabled: present && (capabilities.modelControlEnabled ?? true),
 	  providerCredentialEnabled: present && (capabilities.providerCredentialEnabled ?? false),
+      chatGPTAuthEnabled: present && capabilities.chatGPTAuthEnabled === true,
 	  fileEditReviewEnabled: present && (capabilities.fileEditReviewEnabled ?? true),
 	  fileEditProposalEnabled: present && (capabilities.fileEditProposalEnabled ?? false),
 	  fileEditApplyEnabled: present && (capabilities.fileEditApplyEnabled ?? true),
@@ -230,7 +233,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
 	planDeliveryControlEnabled: false, approvalControlEnabled: false,
 
 
-	modelControlEnabled: false, providerCredentialEnabled: false,
+	modelControlEnabled: false, providerCredentialEnabled: false, chatGPTAuthEnabled: false,
 	fileEditReviewEnabled: false, fileEditProposalEnabled: false, fileEditApplyEnabled: false,
 	runWakeControlEnabled: false, runWakeExecutionEnabled: false, runWakeWorkerEnabled: false,
 	scheduledJobControlEnabled: false, scheduledJobWorkerEnabled: false,
