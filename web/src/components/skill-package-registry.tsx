@@ -70,7 +70,8 @@ export function SkillPackageRegistry({ enabled, source }: {
       includeRemoved ? "No historical packages are registered here."
         : "No removable historical packages here. New installs are managed under Extensions.")}</p>}
     {list.data && items.length > 0 && <ul className="skill-package-registry-list">
-      {items.map((item) => <li key={item.skill}>
+      {/* name@version is not unique in the Registry, so identity must not be the list key. */}
+      {items.map((item, index) => <li key={`${item.skill}/${index}`}>
         <div className="skill-package-registry-row">
           <code>{item.skill}</code>
           <span>{item.status === "removed" ? t("已移除", "Removed") : t("已登记", "Registered")}</span>

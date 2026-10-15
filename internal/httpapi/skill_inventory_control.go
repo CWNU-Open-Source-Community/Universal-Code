@@ -164,9 +164,7 @@ func ProjectSkillPackageInventory(surface, profile string, includeRemoved bool,
 	}
 	items := make([]SkillPackageItemView, len(inventory.Items))
 	for index, value := range inventory.Items {
-		ref := skills.FormatInstalledPackageRef(value.Installation.Name,
-			value.Installation.Version)
-		items[index] = skillPackageItemView(value, !unverified[ref])
+		items[index] = skillPackageItemView(value, !unverified[value.Installation.ID])
 	}
 	return SkillPackageInventoryView{
 		ProtocolVersion: skills.PackageInventoryProtocolVersion,

@@ -106,9 +106,8 @@ func registryFixturePackage() skills.InstalledPackage {
 func TestDesktopListSkillPackagesStaysBehindInstallationGate(t *testing.T) {
 	packageValue := registryFixturePackage()
 	stub := &registryBridgeStub{inventory: application.SkillPackageInventory{
-		Items: []skills.InstalledPackage{packageValue},
-		Unverified: []string{skills.FormatInstalledPackageRef(
-			packageValue.Installation.Name, packageValue.Installation.Version)},
+		Items:      []skills.InstalledPackage{packageValue},
+		Unverified: []string{packageValue.Installation.ID},
 	}}
 
 	closed := newRegistryBridge(t, stub, false)

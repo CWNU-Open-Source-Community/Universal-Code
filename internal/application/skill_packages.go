@@ -251,6 +251,8 @@ func (s *SkillPackageRegistryService) importPlugin(ctx context.Context, request 
 // SkillPackageInventory is an operator-facing projection. Unlike List, one
 // unreadable retained object is reported per installation instead of hiding the
 // whole Registry, so the operator can still inspect and remove that package.
+// Unverified entries carry the installation identity, which the table does not
+// guarantee to be unique per name@version, so the projection cannot key by ref.
 type SkillPackageInventory struct {
 	Items      []skills.InstalledPackage
 	Unverified []string
@@ -276,8 +278,7 @@ func (s *SkillPackageRegistryService) Inventory(ctx context.Context,
 		if verifyErr != nil ||
 			skills.ValidatePackageObjectReceipt(descriptor, receipt) != nil ||
 			receipt.ObjectKey != value.Result.ObjectKey {
-			result.Unverified = append(result.Unverified, skills.FormatInstalledPackageRef(
-				value.Installation.Name, value.Installation.Version))
+			result.Unverified = append(result.Unverified, value.Installation.ID)
 		}
 		result.Items = append(result.Items, value)
 	}
