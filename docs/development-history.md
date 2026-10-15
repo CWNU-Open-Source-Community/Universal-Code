@@ -264,5 +264,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v193 | 增加项目依赖准备的操作、进度与来源授权记录，绑定 Run、项目文件指纹和执行租约，支持缓存复用、取消和重启后读取 | add project preparation operations, progress and source consent bound to the Run, inspected project fingerprint and execution lease, with cache reuse, cancellation and durable reads after restart |
 | v194 | 将按需 MCP 工具搜索纳入现有 Supervisor 账本，保留旧调用行身份、权限围栏和不可变记录 | admit on-demand MCP tool search to the existing Supervisor ledger while preserving historical call identities, authority fences and immutable records |
 | v195 | 为消息内选定的 MCP 资源与 Prompt 保存不可变参数、一次读取状态、结果收据和参考材料，支持恢复已保存结果并禁止未知结果自动重放 | retain immutable message-selected MCP resource and Prompt parameters, one-time read state, result receipts and evidence, recovering saved results without replaying unknown outcomes |
+| v196 | 在 MCP 服务传输约束中接入 SSE 与 WebSocket，保留历史行身份、描述符、审批及审计关联 | admit SSE and WebSocket in MCP server transport constraints while preserving historical row identities, descriptors, approvals and audit relationships |
 
 </details>

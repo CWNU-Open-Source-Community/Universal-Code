@@ -24,7 +24,7 @@ func bindLaunch(server serverDescription, ref toolcontract.ComponentRef) (toolco
 		}
 		declaration.Transport = toolcontract.TransportStdio
 		declaration.Stdio = &toolcontract.StdioLaunch{Command: fields.Command, Args: fields.Args, Env: fields.Env, Cwd: fields.Cwd}
-	case "streamable-http":
+	case "streamable-http", "sse":
 		var fields struct {
 			URL     string            `json:"url"`
 			Headers map[string]string `json:"headers"`
@@ -33,10 +33,11 @@ func bindLaunch(server serverDescription, ref toolcontract.ComponentRef) (toolco
 			return declaration, errors.New("launch_declaration_invalid")
 		}
 		declaration.Transport = toolcontract.TransportStreamableHTTP
+		if server.transport == "sse" {
+			declaration.Transport = toolcontract.TransportSSE
+		}
 		declaration.HTTP = &toolcontract.HTTPLaunch{Endpoint: fields.URL, Headers: fields.Headers}
 	default:
-		// SSE is a valid portable declaration but not supported by the host's
-		// approved launch contract. Keep the source and report this component.
 		return declaration, errors.New("launch_transport_unsupported")
 	}
 	if declaration.Validate() != nil {

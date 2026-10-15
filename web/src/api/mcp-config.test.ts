@@ -1,6 +1,16 @@
 import { expect, it } from "vitest";
 import { absoluteMCPPath, parseMCPConfigLines, validManualMCPURL, validMCPConnectionConfig } from "./mcp-config";
 
+it("validates WebSocket credentials and excludes process fields from remote transports", () => {
+  for (const url of ["wss://example.org/mcp", "ws://127.0.0.1:8080/mcp"]) expect(validManualMCPURL(url, true)).toBe(true);
+  for (const url of ["ws://example.org/mcp", "wss://user:password@example.org/mcp", "wss://example.org/mcp?token=secret", "https://example.org/mcp"]) expect(validManualMCPURL(url, true)).toBe(false);
+  for (const transport of ["sse", "websocket"]) {
+    expect(validMCPConnectionConfig({ transport, headers: { "X-Project": "one" } })).toBe(true);
+    expect(validMCPConnectionConfig({ transport, cwd: "/project" })).toBe(false);
+    expect(validMCPConnectionConfig({ transport, headers: { "Sec-WebSocket-Key": "injected" } })).toBe(false);
+  }
+});
+
 it("accepts fixed local HTTP and rejects query, credentials and public plaintext endpoints", () => {
   for (const url of ["http://127.0.0.1:8099/mcp", "http://localhost:8099/mcp", "http://[::1]:8099/mcp", "https://remote.invalid/mcp"]) expect(validManualMCPURL(url)).toBe(true);
   for (const url of ["http://remote.invalid/mcp", "https://name:secret@remote.invalid/mcp", "http://127.0.0.1:8099/mcp?", "https://remote.invalid/mcp#", "file:///tmp/mcp"]) expect(validManualMCPURL(url)).toBe(false);

@@ -42,10 +42,16 @@ type TransportKind string
 const (
 	TransportStdio          TransportKind = "stdio"
 	TransportStreamableHTTP TransportKind = "streamable_http"
+	TransportSSE            TransportKind = "sse"
+	TransportWebSocket      TransportKind = "websocket"
 )
 
 func (k TransportKind) Valid() bool {
-	return k == TransportStdio || k == TransportStreamableHTTP
+	return k == TransportStdio || k.Remote()
+}
+
+func (k TransportKind) Remote() bool {
+	return k == TransportStreamableHTTP || k == TransportSSE || k == TransportWebSocket
 }
 
 type ScopeKind string
@@ -189,6 +195,9 @@ func (d ServerDescriptor) Validate() error {
 	} else if d.Cwd != "" || len(d.Env) != 0 || len(d.EnvCredentialRefs) != 0 || len(d.Headers) != 0 {
 		return errors.New("MCP connection configuration requires the manual v3 descriptor protocol")
 	}
+	if d.ProtocolVersion == ClientProtocolVersion && (d.Transport == TransportSSE || d.Transport == TransportWebSocket) {
+		return errors.New("additional MCP transports require a configured or native descriptor")
+	}
 	if d.ProtocolVersion == NativeClientProtocolVersion {
 		if d.NativeSource == nil || d.NativeSource.Validate() != nil || d.Source.Kind != "plugin" ||
 			d.Source.PluginID != d.NativeSource.Component.PackageID || d.Source.SHA256 != d.NativeSource.Revision ||
@@ -204,7 +213,7 @@ func (d ServerDescriptor) Validate() error {
 		}
 	} else {
 		parsed, err := url.Parse(d.Target)
-		if err != nil || (parsed.Scheme != "https" && !(d.ProtocolVersion == ConfigClientProtocolVersion && agentPluginEndpoint(d.Target))) || parsed.Host == "" || parsed.User != nil ||
+		if err != nil || (parsed.Scheme != "https" && !(d.ProtocolVersion == ConfigClientProtocolVersion && validRemoteEndpoint(d.Transport, d.Target))) || parsed.Host == "" || parsed.User != nil ||
 			parsed.RawQuery != "" || parsed.Fragment != "" || len(d.Arguments) != 0 {
 			return errors.New("remote MCP target must be fixed HTTPS or local HTTP without userinfo, query, fragment, or process arguments")
 		}

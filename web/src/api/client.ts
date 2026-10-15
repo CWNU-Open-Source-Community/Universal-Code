@@ -6333,7 +6333,7 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
   for (const item of value.mcp_servers) {
     if (!isRecord(item) || item.protocol_version !== "mcp-client-server.v1" ||
       !boundedIdentity(item.id) || !boundedText(item.name, 256) ||
-      (item.transport !== "stdio" && item.transport !== "streamable_http") ||
+      !["stdio", "streamable_http", "sse", "websocket"].includes(String(item.transport)) ||
       !validExtensionMCPTarget(item) || !boundedIdentity(item.workspace_id) ||
       !isSHA256(item.descriptor_fingerprint) || !safePositiveInteger(item.generation) ||
       !validDate(item.created_at) || !validDate(item.updated_at) ||
@@ -7111,7 +7111,7 @@ export class APIClient {
       !validMCPConnectionConfig(descriptor) ||
       !boundedIdentity(descriptor.id) || !boundedIdentity(descriptor.workspace_id) ||
       !boundedText(descriptor.name, 256) || !boundedText(descriptor.target, 4_096) ||
-      !["stdio", "streamable_http"].includes(String(descriptor.transport)) ||
+      !["stdio", "streamable_http", "sse", "websocket"].includes(String(descriptor.transport)) ||
       !["workspace", "run"].includes(String(descriptor.scope)) ||
       (descriptor.scope === "run" && !boundedIdentity(descriptor.run_id)) ||
       (descriptor.scope === "workspace" && descriptor.run_id !== undefined && descriptor.run_id !== "") ||
