@@ -23,6 +23,21 @@ The Go-owned `code-intel-lsp.v1` runtime starts only explicitly reviewed local l
 
 只有 Server 在 `initialize` 中真实协商成功的 capability 才进入模型工具定义。缺少某项 capability 会让对应工具保持不可见；它不会用猜测或静态语言表补齐。
 
+### 修改后的诊断反馈
+
+`workspace_apply` 成功结果附带 `diagnostics`：文档相对路径、已应用的
+`document_sha256`、`coverage: single_document_single_server`、Server ID 和状态。
+已有就绪且匹配文件类型的 Server 按 ID 排序选一个，沿用 `code_diagnostics`
+的策略、Run 权限和项目路径检查，并使用一秒请求预算刷新能力和查询。
+不会为了反馈启动尚未初始化的 Server。移动文件查询目标路径。
+
+`current` 或 `partial` 包含既有 LSP Result、文档版本与内容哈希；只覆盖这一个
+文档和 Server，不区分本次新增与历史错误。查询前后的文件必须仍匹配已应用
+哈希；push 通知必须明确携带相同文档版本。未收到可信版本返回 `pending`，
+无后端或策略拒绝返回 `unavailable`，请求超时返回 `timeout`。这些状态均保留
+已成功写入的收据，不代表“没有错误”。摘要最多返回五项诊断，超过内联大小
+上限时提示另行调用 `code_diagnostics`。反馈不运行测试，也不改变执行权限。
+
 ## 操作者配置 / Operator configuration
 
 先取得注册 Workspace 的稳定 ID，再计算 Server executable 的 SHA-256：

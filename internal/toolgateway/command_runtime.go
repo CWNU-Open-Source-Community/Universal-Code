@@ -337,7 +337,7 @@ var commandRuntimeTimeoutGuidance = fmt.Sprintf("action=run is a foreground batc
 
 var commandRuntimeDefinition = ToolDefinition{
 	Name: CommandRuntimeTool, Class: ClassProcess, Approval: ApprovalAutomatic,
-	Description: "Run an ordered command-runtime.v2 batch or manage one Run-owned background Job through the adapter selected by current Run authority; the model cannot select or override that adapter. Every command declares a fixed PowerShell/Bash/process profile, literal argv or script, workspace-relative cwd, restricted environment, stdin lifecycle, timeout, bounded output, disabled network intent, and no credentials. Output is untrusted, sanitized, cursor-addressed evidence; each Job belongs to its Run and is separate from the interactive user terminal. " + commandRuntimeTimeoutGuidance,
+	Description: "Run an ordered command-runtime.v2 batch or manage one Run-owned background Job through the adapter selected by current Run authority; the model cannot select or override that adapter. Every command declares a fixed PowerShell/Bash/process profile, literal argv or script, workspace-relative cwd, restricted environment, stdin lifecycle, timeout, bounded output, disabled network intent, and no credentials. Output is untrusted, sanitized, cursor-addressed evidence; each Job belongs to its Run and is separate from the interactive user terminal. candidate_urls are unverified loopback addresses extracted from the returned sanitized output pages, bound to their job_id; they grant no navigation permission or readiness proof. Read/wait the original Job for new output. " + commandRuntimeTimeoutGuidance,
 	InputSchema: json.RawMessage(fmt.Sprintf(`{"type":"object","additionalProperties":false,"required":["version","action"],"properties":{"version":{"const":"command-runtime.v2"},"action":{"description":%s,"enum":["run","start","list","read","wait","write_stdin","cancel","kill"]},"commands":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["version","profile","working_directory","environment","stdin_policy","close_initial_stdin","timeout_milliseconds","output","network","credentials","purpose"],"properties":{"version":{"const":"command-runtime.v2"},"profile":{"description":"process accepts an absolute native development runtime such as Node/Python or another allowed native executable plus literal arguments; omit script. Shells, system script hosts, script files and blocked launchers are rejected as process executables. For shell syntax use script with powershell or bash only when supported by the current adapter, and omit executable and arguments. The executable remains outside the Workspace and pinned by SHA-256; a listed profile does not grant runtime availability or permission.","enum":["powershell","bash","process"]},"executable":{"type":"string","maxLength":4096},"arguments":{"type":"array","maxItems":128,"items":{"type":"string","maxLength":16384}},"script":{"type":"string","maxLength":65536},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"environment":{"type":"array","maxItems":32,"items":{"type":"object","additionalProperties":false,"required":["name","value"],"properties":{"name":{"type":"string","minLength":1,"maxLength":128},"value":{"type":"string","maxLength":65536}}}},"stdin_policy":{"enum":["closed","pipe"]},"initial_stdin":{"type":"string","maxLength":65536},"close_initial_stdin":{"type":"boolean"},"timeout_milliseconds":{"description":%s,"type":"integer","minimum":1,"maximum":%d},"output":{"type":"object","additionalProperties":false,"required":["inline_bytes","artifact_bytes"],"properties":{"inline_bytes":{"type":"integer","minimum":4096,"maximum":524288},"artifact_bytes":{"type":"integer","minimum":4096,"maximum":4194304}}},"network":{"const":"disabled"},"credentials":{"const":"none"},"purpose":{"type":"string","minLength":1,"maxLength":1200}}}},"review_scope":{"type":"object","additionalProperties":false,"required":["risk_kinds"],"description":"Optional purpose/risk grouping for bounded Run review. Only one run/start command. Every exact new command requires operator review; this metadata grants no authority or isolation.","properties":{"risk_kinds":{"type":"array","minItems":1,"maxItems":16,"uniqueItems":true,"items":{"enum":["network","credential","host_path","policy_denial","non_whitelisted_tool","other_high_risk"]}},"network_targets":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1,"maxLength":512}},"credential_kinds":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1,"maxLength":512}},"host_paths":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1,"maxLength":512}},"network_purpose":{"type":"string","maxLength":1200},"policy_code":{"type":"string","maxLength":1200},"policy_reason":{"type":"string","maxLength":1200},"requested_tool":{"type":"string","maxLength":1200},"other_risk_reason":{"type":"string","maxLength":1200}}},"failure_policy":{"enum":["fail_fast","continue"]},"job_id":{"type":"string","minLength":1,"maxLength":256},"cursor":{"type":"integer","minimum":0},"max_bytes":{"type":"integer","minimum":4,"maximum":32768},"wait_milliseconds":{"type":"integer","minimum":0,"maximum":5000},"stdin":{"type":"string","maxLength":65536},"close_stdin":{"type":"boolean"}},"allOf":[{"if":{"required":["review_scope"]},"then":{"properties":{"action":{"enum":["run","start"]},"commands":{"maxItems":1}}}},{"if":{"properties":{"action":{"const":"run"}}},"then":{"required":["commands","failure_policy","max_bytes"],"properties":{"commands":{"items":{"properties":{"timeout_milliseconds":{"maximum":%d}}}}}}},{"if":{"properties":{"action":{"const":"start"}}},"then":{"required":["commands"],"properties":{"commands":{"maxItems":1}}}},{"if":{"properties":{"action":{"enum":["read","wait"]}}},"then":{"required":["job_id","cursor","max_bytes","wait_milliseconds"]}},{"if":{"properties":{"action":{"const":"write_stdin"}}},"then":{"required":["job_id","stdin","close_stdin"]}},{"if":{"properties":{"action":{"const":"cancel"}}},"then":{"required":["job_id","wait_milliseconds"]}},{"if":{"properties":{"action":{"const":"kill"}}},"then":{"required":["job_id"]}}]}`, strconv.Quote(fmt.Sprintf("run executes a foreground batch within %dms total; start creates one background Job; read/wait observe that original Job.", MaxCommandRuntimeForegroundMillis)), strconv.Quote(fmt.Sprintf("Milliseconds for this command. run requires the batch sum <= %dms; start permits one command up to %dms.", MaxCommandRuntimeForegroundMillis, runner.MaxCommandRuntimeTimeout.Milliseconds())), runner.MaxCommandRuntimeTimeout.Milliseconds(), MaxCommandRuntimeForegroundMillis)),
 }
 
@@ -637,9 +637,11 @@ func (g *Gateway) invokeCommandRuntime(ctx context.Context, call ToolCall) (
 		Adapter           commandruntimeadapter.Identity     `json:"adapter"`
 		Jobs              []runner.CommandRuntimeJobSnapshot `json:"jobs"`
 		Pages             []runner.CommandRuntimeOutputPage  `json:"pages,omitempty"`
+		CandidateURLs     []commandRuntimeURLCandidate       `json:"candidate_urls,omitempty"`
 		IncompleteReasons []string                           `json:"incomplete_reasons,omitempty"`
 	}{Version: runner.CommandRuntimeResultVersion, Action: result.Action,
 		Adapter: result.Adapter, Jobs: result.Jobs, Pages: result.Pages,
+		CandidateURLs:     commandRuntimeCandidateURLs(result),
 		IncompleteReasons: result.IncompleteReasons}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
@@ -687,6 +689,37 @@ func (g *Gateway) invokeCommandRuntime(ctx context.Context, call ToolCall) (
 			MIME: "application/json", Truncated: truncated,
 			Metadata: metadata, CompletedAt: completed}}
 	return validateOutcome(outcome, nil)
+}
+
+type commandRuntimeURLCandidate struct {
+	JobID string `json:"job_id"`
+	runner.CommandServiceURLCandidate
+}
+
+func commandRuntimeCandidateURLs(result CommandRuntimeExecutionResult) []commandRuntimeURLCandidate {
+	var candidates []commandRuntimeURLCandidate
+	jobs := make(map[string]bool, len(result.Jobs))
+	for _, job := range result.Jobs {
+		jobs[job.ID] = true
+	}
+	seen := make(map[string]bool)
+	for _, page := range result.Pages {
+		if !jobs[page.JobID] {
+			continue
+		}
+		for _, candidate := range runner.CommandServiceURLCandidates(page.Frames) {
+			key := page.JobID + "\x00" + candidate.URL
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			candidates = append(candidates, commandRuntimeURLCandidate{JobID: page.JobID, CommandServiceURLCandidate: candidate})
+			if len(candidates) == runner.MaxCommandServiceURLs {
+				return candidates
+			}
+		}
+	}
+	return candidates
 }
 
 func sanitizeCommandRuntimeExecutionResult(result *CommandRuntimeExecutionResult) {

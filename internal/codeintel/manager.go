@@ -190,6 +190,19 @@ func (m *Manager) InitializeServer(ctx context.Context, workspaceID, root, serve
 	return cloneSnapshot(current.snapshot), nil
 }
 
+// RefreshInitializedServer follows normal workspace-generation invalidation,
+// but cannot cold-start a replacement configuration that was never offered.
+func (m *Manager) RefreshInitializedServer(ctx context.Context, workspaceID, root, serverID, generation string) (CapabilitySnapshot, error) {
+	if !validDigest(generation) {
+		return CapabilitySnapshot{}, apperror.New(apperror.CodeInvalidArgument, "initialized server generation is required")
+	}
+	current, err := m.ensureClientGeneration(ctx, serverKey(workspaceID, serverID), root, generation)
+	if err != nil {
+		return CapabilitySnapshot{}, err
+	}
+	return cloneSnapshot(current.snapshot), nil
+}
+
 func NewManagerFromConfig(path string) (*Manager, string, error) {
 	config, digest, err := LoadConfig(path)
 	if err != nil {
@@ -325,6 +338,10 @@ func cloneSnapshot(value CapabilitySnapshot) CapabilitySnapshot {
 }
 
 func (m *Manager) ensureClient(ctx context.Context, key, root string) (*client, error) {
+	return m.ensureClientGeneration(ctx, key, root, "")
+}
+
+func (m *Manager) ensureClientGeneration(ctx context.Context, key, root, expectedGeneration string) (*client, error) {
 	if m == nil {
 		return nil, errors.New("code-intel manager is unavailable")
 	}
@@ -342,6 +359,9 @@ func (m *Manager) ensureClient(ctx context.Context, key, root string) (*client, 
 	if m.closing {
 		return nil, apperror.New(apperror.CodeFailedPrecondition,
 			"code-intel manager is shutting down")
+	}
+	if expectedGeneration != "" && (m.clients[key] == nil || m.clients[key].snapshot.Generation != expectedGeneration) {
+		return nil, apperror.New(apperror.CodeConflict, "initialized language server generation changed")
 	}
 	descriptor, exists := m.descriptors[key]
 	if !exists {

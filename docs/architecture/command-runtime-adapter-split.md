@@ -6,6 +6,15 @@ recovery path cannot request an adapter. Go selects at most one installed adapte
 from the current Run profile and permission, and advertises it only for a running
 root Code/Deliver turn with an active execution lease.
 
+Model results may include `candidate_urls`, extracted from the sanitized output
+pages returned by that call. Each entry has `job_id`, `url`,
+`source: command_output`, and `verified: false`. The operator service projection
+and model result share the same loopback normalization and credential/query
+filtering. Candidates are bounded to eight entries and deduplicated per Job;
+identical URLs from different Jobs retain their separate identities. A candidate
+does not prove readiness, grant browser permission, or trigger a network probe.
+`start` need not have output yet; use `read` or `wait` on the original Job.
+
 ## Adapter identities and permissions
 
 Every advertisement, durable Supervisor call, Job, output page, Artifact, and
