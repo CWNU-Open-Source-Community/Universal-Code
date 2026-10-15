@@ -13,6 +13,28 @@ import (
 
 type bisectRegressionExecutor struct{}
 
+func TestBisectFirstBadCommitCompletionHeader(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	for _, tc := range []struct {
+		name, output, want string
+	}{
+		{"git-before-2.55", commit + " is the first bad commit\ncommit " + commit, commit},
+		{"git-2.55", commit + " is the first 'bad' commit\ncommit " + commit, commit},
+		{"windows-newlines", commit + " is the first 'bad' commit\r\n", commit},
+		{"sha256-repository", strings.Repeat("b", 64) + " is the first 'bad' commit\n", strings.Repeat("b", 64)},
+		{"progress-subject", "Bisecting: 1 revision left to test\n[" + commit + "] is the first bad commit\n", ""},
+		{"commit-body", "Bisecting: 0 revisions left to test\n" + commit + " is the first 'bad' commit\n", ""},
+		{"invalid-object", "not-an-oid is the first bad commit\n", ""},
+		{"different-term", commit + " is the first 'new' commit\n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bisectFirstBadCommit(tc.output); got != tc.want {
+				t.Fatalf("completion header returned %q; want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func (bisectRegressionExecutor) ExecuteBisectRecipe(ctx context.Context, step BisectRecipeStep) (runner.OnceStartResult, gitadvanced.BisectExecutionReceipt, error) {
 	result, receipt, err := (bisectFixtureExecutor{}).ExecuteBisectRecipe(ctx, step)
 	content, readErr := os.ReadFile(filepath.Join(step.Root, "base.txt"))

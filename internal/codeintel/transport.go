@@ -71,21 +71,27 @@ func newTransport(descriptor ServerDescriptor, root, runtimeHome string,
 	if err != nil {
 		return nil, fmt.Errorf("open LSP stdin: %w", err)
 	}
-	stdout, err := command.StdoutPipe()
+	// Own the read end ourselves: Cmd.Wait closes StdoutPipe before the
+	// protocol reader necessarily consumes the server's final message.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		_ = stdin.Close()
 		return nil, fmt.Errorf("open LSP stdout: %w", err)
 	}
+	command.Stdout = stdoutWriter
 	stderr := newBoundedBuffer(MaxLogBytes)
 	command.Stderr = stderr
 	process, err := startOwnedCommand(command)
+	_ = stdoutWriter.Close()
 	if err != nil {
 		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, fmt.Errorf("start reviewed LSP server: %w", err)
 	}
 	postStartDigest, available, digestErr := executableDigest(descriptor.Executable)
 	if digestErr != nil || !available || postStartDigest != descriptor.ExecutableSHA256 {
 		_ = stdin.Close()
+		_ = stdout.Close()
 		_ = process.Kill()
 		waitCtx, cancel := context.WithTimeout(context.Background(),
 			MaximumShutdownGracePeriod)
@@ -97,9 +103,19 @@ func newTransport(descriptor ServerDescriptor, root, runtimeHome string,
 		stdout: bufio.NewReaderSize(stdout, 64*1024), stderr: stderr, process: process,
 		onNotify: onNotify, nextID: 1, pending: make(map[int64]chan rpcResponse),
 		done: make(chan struct{})}
-	go value.readLoop()
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		defer stdout.Close()
+		value.readLoop()
+	}()
 	go func() {
 		<-process.done
+		// Prefer a protocol failure already written to stdout over the generic
+		// exit notification. Bound draining when a descendant holds stdout open.
+		stopDrain := time.AfterFunc(MaximumShutdownGracePeriod, func() { _ = stdout.Close() })
+		<-readDone
+		stopDrain.Stop()
 		value.setFailure(fmt.Errorf("language server exited: %v", process.Err()), false)
 	}()
 	return value, nil

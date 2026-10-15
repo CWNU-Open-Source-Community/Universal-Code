@@ -629,9 +629,8 @@ func healthForError(err error) HealthStatus {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return HealthTimedOut
 	}
-	// Cmd.Wait closes the owned process pipes after an unexpected exit. Depending
-	// on scheduling, the reader can therefore observe os.ErrClosed instead of EOF
-	// or the process-exit error; it is still evidence that the owned LSP crashed.
+	// The bounded stdout drain can close the pipe after process exit, so the
+	// reader may observe os.ErrClosed instead of EOF. Both indicate a crashed LSP.
 	if errors.Is(err, os.ErrClosed) {
 		return HealthCrashed
 	}

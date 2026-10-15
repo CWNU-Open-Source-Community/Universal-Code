@@ -1108,12 +1108,12 @@ func (e *AdvancedExecutor) executeBisectRecipe(ctx context.Context, root string,
 		if gitErr != nil || code != 0 {
 			return allOut.String(), allErr.String(), code, gitErr
 		}
-		if strings.Contains(markOut, "is the first bad commit") {
+		if found := bisectFirstBadCommit(markOut); found != "" {
 			// Git may leave HEAD on the last good candidate. Its bad ref, not
 			// the checkout, identifies the regression proven by this step.
 			bad, _, code, err := e.git(ctx, root, nil, "rev-parse", "--verify", "refs/bisect/bad")
 			bad = strings.TrimSpace(bad)
-			if err != nil || code != 0 || !gitadvanced.ValidObjectID(bad) {
+			if err != nil || code != 0 || bad != found {
 				return allOut.String(), allErr.String(), 0,
 					errors.New("bisect first bad commit could not be confirmed")
 			}
@@ -1124,4 +1124,18 @@ func (e *AdvancedExecutor) executeBisectRecipe(ctx context.Context, root string,
 	return allOut.String(), allErr.String(), 0,
 		&gitadvanced.Error{Code: gitadvanced.FailureBudgetExceeded,
 			Message: "bisect recipe exhausted its reviewed step budget"}
+}
+
+func bisectFirstBadCommit(output string) string {
+	line, _, _ := strings.Cut(output, "\n")
+	commit, summary, ok := strings.Cut(strings.TrimSuffix(line, "\r"), " ")
+	if !ok || !gitadvanced.ValidObjectID(commit) {
+		return ""
+	}
+	// Git 2.55 quotes the bad term. Require the completion header so that
+	// commit subjects and bodies printed by Git cannot end the recipe early.
+	if summary != "is the first bad commit" && summary != "is the first 'bad' commit" {
+		return ""
+	}
+	return commit
 }

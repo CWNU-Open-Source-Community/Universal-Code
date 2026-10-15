@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -247,6 +248,60 @@ func TestDiagnosticsDoesNotMaskTransportCrashAsPushFallback(t *testing.T) {
 	inventory := manager.Inventory()
 	if len(inventory) != 1 || inventory[0].Health != HealthCrashed {
 		t.Fatalf("diagnostic transport crash was masked as fallback: %#v", inventory)
+	}
+}
+
+func TestTransportPreservesProtocolFailureWrittenBeforeProcessExit(t *testing.T) {
+	root := testWorkspace(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	current, err := newTransport(testServerDescriptor(t, root, "protocol-after-notification", time.Second),
+		root, t.TempDir(), func(string, json.RawMessage) {
+			close(entered)
+			<-release
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		unblock()
+		ctx, cancel := context.WithTimeout(context.Background(), MaximumShutdownGracePeriod)
+		defer cancel()
+		_ = current.closeGracefully(ctx)
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	response := make(chan error, 1)
+	go func() { response <- current.request(ctx, "initialize", nil, nil) }()
+	select {
+	case <-entered:
+	case <-current.done:
+		t.Fatalf("transport stopped before reading the notification: %v", current.failure())
+	case <-ctx.Done():
+		t.Fatal("server did not send its notification")
+	}
+	select {
+	case <-current.process.done:
+	case <-ctx.Done():
+		t.Fatal("server did not exit after writing its protocol failure")
+	}
+	// The reader is parked in onNotify while the exit observer is runnable.
+	// It must not publish an exit failure before the final frame is parsed.
+	select {
+	case <-current.done:
+		t.Fatalf("process exit overtook buffered protocol output: %v", current.failure())
+	case <-time.After(time.Second):
+	}
+	unblock()
+	select {
+	case err := <-response:
+		if healthForError(err) != HealthProtocolErr || !strings.Contains(err.Error(), "Content-Length") {
+			t.Fatalf("final protocol failure was lost: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("protocol failure did not release the pending request")
 	}
 }
 
@@ -547,6 +602,12 @@ func runCodeIntelLSPHelper(mode string, input io.Reader, output io.Writer) int {
 			}
 			_ = json.Unmarshal(request.Params, &params)
 			root = params.RootURI
+			if mode == "protocol-after-notification" {
+				_ = writeHelperFrame(output, rpcEnvelope{JSONRPC: "2.0", Method: "window/logMessage",
+					Params: json.RawMessage(`{"type":3,"message":"before exit"}`)})
+				_, _ = fmt.Fprintf(output, "Content-Length: %d\r\n\r\n", MaxMessageBytes+1)
+				return 0
+			}
 			if mode == "protocol" {
 				_ = writeHelperFrame(output, map[string]any{"jsonrpc": "1.0", "id": 1,
 					"result": map[string]any{}})
