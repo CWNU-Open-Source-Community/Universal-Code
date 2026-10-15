@@ -59,7 +59,7 @@ func TestSupervisorProjectCommandsDetectUnconfiguredSandboxTest(t *testing.T) {
 	run := domain.Run{}
 	offered := supervisorCommandRuntimeTools{Adapter: commandruntimeadapter.SandboxedWorkspace(CommandRuntimeSBXBackend, "sbx-fixture.v1", "generation"), Authority: json.RawMessage("{}")}
 	messages, err := supervisorProjectCommands(run, nil, offered, root)
-	if err != nil || len(messages) != 1 || !strings.Contains(messages[0].Content, "Detected project go from go.mod") || !strings.Contains(messages[0].Content, "/usr/local/go/bin/go") || !strings.Contains(messages[0].Content, `"-mod=readonly"`) {
+	if err != nil || len(messages) != 1 || !strings.Contains(messages[0].Content, "Detected project go from go.mod") || !strings.Contains(messages[0].Content, "/usr/bin/go") || !strings.Contains(messages[0].Content, `"-mod=readonly"`) {
 		t.Fatalf("detected test context %#v %v", messages, err)
 	}
 	offered.Adapter = commandruntimeadapter.HostUnsandboxed("generation")

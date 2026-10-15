@@ -82,6 +82,11 @@ sbx --app-name traverse-runtime settings get mcp.forceLocalGateway
 在应用中填写 `仓库名@sha256:<64 位小写十六进制>`，启用 Docker Sandboxes，保存并
 重启应用。产品创建使用 `--pull never`，因此所填摘要对应的模板必须已在该环境缓存。
 
+SBX 的项目测试、格式化和 Batch 固定预设要求模板提供 `/usr/bin/go`、
+`/usr/bin/gofmt`、`/usr/bin/node`，以及 `/usr/share/nodejs/npm/bin/npm-cli.js`。
+这些路径对应已验收的 Docker Sandboxes 模板；自定义模板也需提供相同路径。
+依赖准备共用这些来宾工具路径。缺少工具时命令失败，不使用宿主工具链。
+
 应用重启后会自动准备内置辅助服务，再检测 daemon、模板配置、SSH 和 MCP。
 「重新检测」只读取状态。就绪检测通过后，可以为新任务选择 Docker Sandboxes。
 

@@ -109,15 +109,17 @@ func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Ide
 		return executable, nil, nil
 	}
 	if adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && adapter.Backend == CommandRuntimeSBXBackend {
+		// The supported SBX template installs distro Go and Node packages.
+		// These paths are guest paths, independent of the host toolchain.
 		switch id {
 		case "test.go":
-			return "/usr/local/go/bin/go", nil, nil
+			return "/usr/bin/go", nil, nil
 		case "format.go":
-			return "/usr/local/go/bin/gofmt", nil, nil
+			return "/usr/bin/gofmt", nil, nil
 		case "test.node":
-			return "/usr/local/bin/node", nil, nil
+			return "/usr/bin/node", nil, nil
 		case "test.npm":
-			return "/usr/local/bin/node", []string{"/usr/local/lib/node_modules/npm/bin/npm-cli.js"}, nil
+			return "/usr/bin/node", []string{"/usr/share/nodejs/npm/bin/npm-cli.js"}, nil
 		default:
 			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "project preset is unsupported by the SBX toolchain")
 		}

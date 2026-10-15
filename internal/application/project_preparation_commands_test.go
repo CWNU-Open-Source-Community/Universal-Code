@@ -45,7 +45,7 @@ func TestProjectPreparationCommandUsesOnlySandboxFixedOfflinePresets(t *testing.
 	npmPlan, npmRoot := preparationFixture(t, true)
 	for _, tc := range []struct{ backend, goExecutable, nodeExecutable, npmLauncher string }{
 		{application.CommandRuntimeDockerSandboxBackend, "/opt/toolchains/go/bin/go", "/opt/toolchains/node/bin/node", "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js"},
-		{application.CommandRuntimeSBXBackend, "/usr/local/go/bin/go", "/usr/local/bin/node", "/usr/local/lib/node_modules/npm/bin/npm-cli.js"},
+		{application.CommandRuntimeSBXBackend, "/usr/bin/go", "/usr/bin/node", "/usr/share/nodejs/npm/bin/npm-cli.js"},
 	} {
 		t.Run(tc.backend, func(t *testing.T) {
 			adapter := commandruntimeadapter.SandboxedWorkspace(tc.backend, "fixture.v1", "fixture-generation")
@@ -54,7 +54,7 @@ func TestProjectPreparationCommandUsesOnlySandboxFixedOfflinePresets(t *testing.
 				t.Fatalf("go install %#v %v", spec, err)
 			}
 			testSpec, err := application.PrepareProjectPreparationTestCommand(goPlan, adapter, root)
-			if err != nil || !reflect.DeepEqual(testSpec.Arguments, []string{"test", "-mod=readonly", "./..."}) {
+			if err != nil || testSpec.Executable != tc.goExecutable || !reflect.DeepEqual(testSpec.Arguments, []string{"test", "-mod=readonly", "./..."}) {
 				t.Fatalf("go test %#v %v", testSpec, err)
 			}
 			npmSpec, err := application.PrepareProjectPreparationCommand(npmPlan, adapter, npmRoot, false)
@@ -75,7 +75,7 @@ func TestProjectPreparationCommandUsesOnlySandboxFixedOfflinePresets(t *testing.
 				t.Fatalf("explicit scripts choice missing: %#v %v", explicit, err)
 			}
 			npmTest, err := application.PrepareProjectPreparationTestCommand(npmPlan, adapter, npmRoot)
-			if err != nil || npmTest.Arguments[1] != "test" || npmTest.Network != runner.CommandRuntimeNetworkDisabled {
+			if err != nil || npmTest.Executable != tc.nodeExecutable || npmTest.Arguments[0] != tc.npmLauncher || npmTest.Arguments[1] != "test" || npmTest.Network != runner.CommandRuntimeNetworkDisabled {
 				t.Fatalf("npm test %#v %v", npmTest, err)
 			}
 		})
