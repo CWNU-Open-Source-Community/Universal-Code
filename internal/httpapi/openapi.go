@@ -2980,6 +2980,14 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 			schema["maxLength"] = credential.MaxSecretBytes
 		}
 	}
+	if typeName == "MCPCredentialRequestView" {
+		switch fieldName {
+		case "oauth_client_secret":
+			schema["writeOnly"], schema["maxLength"] = true, 1024
+		case "oauth_callback_port":
+			schema["minimum"], schema["maximum"] = 0, 65535
+		}
+	}
 	if typeName == "ModelDiscoveryResult" && fieldName == "models" {
 		schema["maxItems"] = 512
 	}
@@ -3394,7 +3402,7 @@ var openAPIFieldEnums = map[string][]string{
 	"MCPCredentialStatusView.protocol_version":                 {application.MCPCredentialProtocolVersion},
 	"MCPCredentialRequestView.version":                         {application.MCPCredentialProtocolVersion},
 	"MCPCredentialRequestView.action":                          {"set", "delete", "oauth-discover", "oauth-start", "oauth-cancel"},
-	"MCPCredentialRequestView.oauth_client_id_mode":            {"pre_registered", "metadata_url"},
+	"MCPCredentialRequestView.oauth_client_id_mode":            {"auto", "dynamic", "pre_registered", "metadata_url"},
 	"FileEditProposalSourceView.protocol_version":              {application.FileEditProposalProtocolVersion},
 	"FileEditProposalRequestView.version":                      {application.FileEditProposalProtocolVersion},
 	"FileEditProposalView.protocol_version":                    {application.FileEditProposalProtocolVersion},

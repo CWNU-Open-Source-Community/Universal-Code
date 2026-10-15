@@ -21,6 +21,11 @@ import (
 // Optional browser fixture uses the production API and application service with
 // an isolated SQLite database, synthetic issuer and in-memory credential store.
 func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
+	for _, mode := range []string{"metadata_url", "auto", "confidential"} {
+		t.Run(mode, func(t *testing.T) { testMCPOAuthHTTPAndBrowserFixture(t, mode) })
+	}
+}
+func testMCPOAuthHTTPAndBrowserFixture(t *testing.T, mode string) {
 	var mcpRequests atomic.Int32
 	var issuer *httptest.Server
 	issuer = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +34,15 @@ func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
 		case "/.well-known/oauth-protected-resource/mcp":
 			json.NewEncoder(w).Encode(map[string]any{"resource": issuer.URL + "/mcp", "authorization_servers": []string{issuer.URL}})
 		case "/.well-known/oauth-authorization-server":
-			json.NewEncoder(w).Encode(map[string]any{"issuer": issuer.URL, "authorization_endpoint": issuer.URL + "/authorize", "token_endpoint": issuer.URL + "/token", "code_challenge_methods_supported": []string{"S256"}, "response_types_supported": []string{"code"}, "authorization_response_iss_parameter_supported": true, "client_id_metadata_document_supported": true})
+			json.NewEncoder(w).Encode(map[string]any{"issuer": issuer.URL, "authorization_endpoint": issuer.URL + "/authorize", "token_endpoint": issuer.URL + "/token", "code_challenge_methods_supported": []string{"S256"}, "response_types_supported": []string{"code"}, "authorization_response_iss_parameter_supported": true, "client_id_metadata_document_supported": true, "registration_endpoint": issuer.URL + "/register", "token_endpoint_auth_methods_supported": []string{"client_secret_post", "none"}})
+		case "/register":
+			var metadata map[string]any
+			if json.NewDecoder(r.Body).Decode(&metadata) != nil {
+				t.Error("bad DCR metadata")
+			}
+			metadata["client_id"] = "dynamic-fixture"
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(metadata)
 		case "/authorize":
 			query := url.Values{"state": {r.URL.Query().Get("state")}, "code": {"local-fixture-code"}, "iss": {issuer.URL}}
 			callback := r.URL.Query().Get("redirect_uri") + "?" + query.Encode()
@@ -62,6 +75,10 @@ func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": frame.ID, "result": result})
 		case "/token":
+			r.ParseForm()
+			if mode == "confidential" && r.Form.Get("client_secret") != "http-fixture-private-client-secret" {
+				t.Error("missing confidential client secret")
+			}
 			io.WriteString(w, `{"access_token":"http-fixture-private-access","refresh_token":"http-fixture-private-refresh","token_type":"Bearer","expires_in":3600}`)
 		default:
 			http.NotFound(w, r)
@@ -108,6 +125,15 @@ func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
 	var status MCPCredentialStatusView
 	decodeData(t, f.get(t, mcpCredentialStatusPath(binding)), &status)
 	request := MCPCredentialRequestView{Version: application.MCPCredentialProtocolVersion, Binding: binding, Action: "oauth-start", Confirm: true, ExpectedReferenceFingerprint: status.ReferenceFingerprint, OAuthIssuer: issuer.URL, OAuthClientID: "https://client.example/metadata.json", OAuthClientIDMode: "metadata_url"}
+	if mode == "auto" {
+		request.OAuthClientID = ""
+		request.OAuthClientIDMode = "auto"
+	}
+	if mode == "confidential" {
+		request.OAuthClientID = "private-fixture"
+		request.OAuthClientIDMode = "pre_registered"
+		request.OAuthClientSecret = "http-fixture-private-client-secret"
+	}
 	path := "/api/v1/extensions/mcp/" + binding.ServerID + "/credential"
 	// The new actions retain the existing control-token gate.
 	unauthorized := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(extensionJSON(t, request))))
@@ -149,7 +175,7 @@ func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
 		t.Fatal(polled.OAuth.State)
 	}
 	raw, _ := json.Marshal(polled)
-	if strings.Contains(string(raw), "private-access") || strings.Contains(string(raw), "private-refresh") {
+	if strings.Contains(string(raw), "private-access") || strings.Contains(string(raw), "private-refresh") || strings.Contains(string(raw), "private-client-secret") {
 		t.Fatal("secret escaped HTTP")
 	}
 	if mcpRequests.Load() != 0 {
@@ -176,6 +202,7 @@ func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
 	request.OAuthIssuer = ""
 	request.OAuthClientID = ""
 	request.OAuthClientIDMode = ""
+	request.OAuthClientSecret = ""
 	decodeData(t, extensionOnboardingRequest(t, f.api, path, request), &polled)
 	if polled.Configured {
 		t.Fatal("OAuth credential removal failed")

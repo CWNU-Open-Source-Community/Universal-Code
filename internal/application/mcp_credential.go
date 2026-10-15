@@ -52,6 +52,8 @@ type ChangeMCPCredentialRequest struct {
 	OAuthIssuer                  string
 	OAuthClientID                string
 	OAuthClientIDMode            string
+	OAuthClientSecret            string
+	OAuthCallbackPort            int
 	Secret                       string
 	Confirm                      bool
 	ExpectedReferenceFingerprint string
@@ -144,7 +146,7 @@ func (s *MCPCredentialService) Change(ctx context.Context, request ChangeMCPCred
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if request.Version != MCPCredentialProtocolVersion || !request.Confirm || request.OAuthIssuer != "" || request.OAuthClientID != "" || request.OAuthClientIDMode != "" || request.OAuthFlowID != "" ||
+	if request.Version != MCPCredentialProtocolVersion || !request.Confirm || request.OAuthIssuer != "" || request.OAuthClientID != "" || request.OAuthClientIDMode != "" || request.OAuthFlowID != "" || request.OAuthClientSecret != "" || request.OAuthCallbackPort != 0 ||
 		(request.Action != "set" && request.Action != "delete") ||
 		(request.Action == "set" && (len([]byte(request.Secret)) < 8 || !credential.ValidSecret(request.Secret) || mcpoauth.IsEnvelope(request.Secret))) ||
 		(request.Action == "delete" && request.Secret != "") {
