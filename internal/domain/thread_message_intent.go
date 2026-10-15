@@ -46,13 +46,14 @@ func ValidateThreadMessageFiles(files []WorkspaceFileReference) error {
 }
 
 type ThreadMessageIntentRequest struct {
-	ThreadID     string
-	Content      string
-	OperationKey string
-	RequestedBy  string
-	Files        []WorkspaceFileReference
-	Images       []ImageReference
-	Attachments  []FileAttachmentReference
+	ThreadID      string
+	Content       string
+	OperationKey  string
+	RequestedBy   string
+	Files         []WorkspaceFileReference
+	Images        []ImageReference
+	Attachments   []FileAttachmentReference
+	MCPReferences []MCPReference
 }
 
 // An intent reserves content and files before any message is consumable. Its

@@ -43,7 +43,7 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
   return <div className="v2-composer-add" ref={shellRef}>
     <button aria-label="添加附件" aria-expanded={open} aria-haspopup="menu" aria-controls={open ? id : undefined}
       className="v2-composer-icon v2-composer-add-trigger" disabled={disabled} ref={triggerRef}
-      title="添加图片、文件或项目引用" type="button" onClick={() => { focusLastRef.current = false; setOpen((value) => !value); }}
+      title="添加图片、文件、项目引用或 MCP 内容" type="button" onClick={() => { focusLastRef.current = false; setOpen((value) => !value); }}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault(); focusLastRef.current = event.key === "ArrowUp"; setOpen(true);
