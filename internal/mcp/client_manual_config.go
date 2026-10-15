@@ -59,13 +59,13 @@ func (d ServerDescriptor) validateManualConfig() error {
 			return errors.New("manual HTTP configuration cannot carry process fields")
 		}
 		u, err := url.Parse(d.Target)
-		if err != nil || !agentPluginEndpoint(d.Target) || u.RawQuery != "" || u.ForceQuery || strings.Contains(d.Target, "#") {
-			return errors.New("manual HTTP endpoint requires fixed HTTPS or loopback HTTP without query or fragment")
+		if err != nil || !validRemoteEndpoint(d.Transport, d.Target) || u.RawQuery != "" || u.ForceQuery || strings.Contains(d.Target, "#") {
+			return errors.New("manual remote endpoint requires TLS or loopback without query or fragment")
 		}
 		seen := make(map[string]bool, len(d.Headers))
 		for name, value := range d.Headers {
 			canonical := http.CanonicalHeaderKey(name)
-			if !validManualHeaderName(name) || seen[canonical] || hostControlledMCPHeader(name) || sensitiveManualConfigName(name) ||
+			if !validManualHeaderName(name) || seen[canonical] || hostControlledMCPHeader(name) || isWebSocketHeader(name) || sensitiveManualConfigName(name) ||
 				!validManualLiteral(value) {
 				return errors.New("manual MCP headers must be unique, bounded and non-sensitive; authentication uses a credential reference")
 			}
@@ -163,8 +163,8 @@ func resolveManualLaunch(d ServerDescriptor, versions []string, secretEnvironmen
 	}
 	launch := toolcontract.ResolvedLaunch{Component: toolcontract.ComponentRef{PackageID: d.ProtocolVersion, ComponentID: d.ID},
 		InstanceID: d.Fingerprint(), Format: "mcp-client", FormatVersion: formatVersion,
-		ProtocolVersions: slices.Clone(versions), Transport: toolcontract.Transport(d.Transport)}
-	if d.Transport == TransportStreamableHTTP {
+		ProtocolVersions: transportProtocolVersions(toolcontract.Transport(d.Transport), versions), Transport: toolcontract.Transport(d.Transport)}
+	if d.Transport.Remote() {
 		launch.HTTP = &toolcontract.HTTPLaunch{Endpoint: d.Target, Headers: maps.Clone(d.Headers)}
 		return launch, launch.Validate()
 	}

@@ -97,7 +97,7 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 	}
 	launch.InstanceID = record.DescriptorFingerprint + "-" + fmt.Sprint(record.Generation)
 	bearer := ""
-	if d.Transport == TransportStreamableHTTP {
+	if d.Transport.Remote() {
 		if d.CredentialRef != "" {
 			if m.credentials == nil {
 				return launch, "", errors.New("MCP credential reader unavailable")

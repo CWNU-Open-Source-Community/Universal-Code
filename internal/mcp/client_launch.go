@@ -49,10 +49,10 @@ func ResolveLaunch(declaration toolcontract.LaunchDeclaration, host toolcontract
 	}
 	versions := slices.Clone(declaration.ProtocolVersions)
 	if len(versions) == 0 {
-		versions = slices.Clone(host.ProtocolVersions)
+		versions = transportProtocolVersions(declaration.Transport, host.ProtocolVersions)
 	}
 	for _, version := range versions {
-		if !supportedClientProtocol(version) || !slices.Contains(host.ProtocolVersions, version) {
+		if !transportSupportsProtocol(declaration.Transport, version) || !slices.Contains(host.ProtocolVersions, version) {
 			return toolcontract.ResolvedLaunch{}, errors.New("MCP profile is unsupported or outside the host's permitted versions")
 		}
 	}
@@ -103,9 +103,9 @@ func ResolveLaunch(declaration toolcontract.LaunchDeclaration, host toolcontract
 			}
 		}
 		resolved.Stdio = &local
-	case toolcontract.TransportStreamableHTTP:
+	case toolcontract.TransportStreamableHTTP, toolcontract.TransportSSE, toolcontract.TransportWebSocket:
 		remote := *declaration.HTTP
-		if !agentPluginEndpoint(remote.Endpoint) {
+		if !validRemoteEndpoint(TransportKind(declaration.Transport), remote.Endpoint) {
 			return toolcontract.ResolvedLaunch{}, errors.New("Agent Plugins HTTP endpoint is invalid")
 		}
 		remote.Headers = make(map[string]string, len(declaration.HTTP.Headers))
@@ -122,6 +122,23 @@ func ResolveLaunch(declaration toolcontract.LaunchDeclaration, host toolcontract
 		return toolcontract.ResolvedLaunch{}, err
 	}
 	return resolved, nil
+}
+
+// SSE and WebSocket retain the legacy JSON-RPC transport binding. The 2026
+// profile defines bindings for stdio and Streamable HTTP only.
+func transportSupportsProtocol(transport toolcontract.Transport, version string) bool {
+	return supportedClientProtocol(version) &&
+		(version != preferredClientProtocolVersion || transport == toolcontract.TransportStdio || transport == toolcontract.TransportStreamableHTTP)
+}
+
+func transportProtocolVersions(transport toolcontract.Transport, versions []string) []string {
+	result := make([]string, 0, len(versions))
+	for _, version := range versions {
+		if transportSupportsProtocol(transport, version) {
+			result = append(result, version)
+		}
+	}
+	return result
 }
 
 func expandAgentPluginValue(value, root, data string) (string, error) {
@@ -189,6 +206,28 @@ func resolveAgentPluginCommand(command, root string, env map[string]string) (str
 func launchPathWithin(root, value string) bool {
 	relative, err := filepath.Rel(root, value)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+func validRemoteEndpoint(kind TransportKind, value string) bool {
+	if !kind.Remote() {
+		return false
+	}
+	if kind == TransportWebSocket {
+		u, err := url.Parse(value)
+		if err != nil {
+			return false
+		}
+		switch u.Scheme {
+		case "wss":
+			u.Scheme = "https"
+		case "ws":
+			u.Scheme = "http"
+		default:
+			return false
+		}
+		value = u.String()
+	}
+	return agentPluginEndpoint(value)
 }
 
 func agentPluginEndpoint(value string) bool {
