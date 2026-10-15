@@ -265,5 +265,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v194 | 将按需 MCP 工具搜索纳入现有 Supervisor 账本，保留旧调用行身份、权限围栏和不可变记录 | admit on-demand MCP tool search to the existing Supervisor ledger while preserving historical call identities, authority fences and immutable records |
 | v195 | 为消息内选定的 MCP 资源与 Prompt 保存不可变参数、一次读取状态、结果收据和参考材料，支持恢复已保存结果并禁止未知结果自动重放 | retain immutable message-selected MCP resource and Prompt parameters, one-time read state, result receipts and evidence, recovering saved results without replaying unknown outcomes |
 | v196 | 在 MCP 服务传输约束中接入 SSE 与 WebSocket，保留历史行身份、描述符、审批及审计关联 | admit SSE and WebSocket in MCP server transport constraints while preserving historical row identities, descriptors, approvals and audit relationships |
+| v197 | 在既有 Skill 选择账本中支持原生组件的精确安装与代次绑定、可空作者版本和同包多组件选择，保留旧选择行身份、指纹与收据 | admit exact installation and generation bindings, optional author versions and multiple native Skill components per package in the existing selection ledger while preserving historical row identities, fingerprints and receipts |
 
 </details>
