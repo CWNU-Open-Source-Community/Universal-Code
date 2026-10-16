@@ -4297,6 +4297,426 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/memory-candidates": {
+      "get": {
+        "operationId": "listContextMemoryCandidates",
+        "summary": "Review source-linked experience candidates",
+        "description": "Derives a bounded Workspace queue from persisted decision/summary Notes with real completed Run, Thread reply or delivery sources. Pending candidates never enter model context; resolved records retain only content-free audit metadata.",
+        "tags": [
+          "Memory"
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "description": "Workspace identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_resolved",
+            "in": "query",
+            "description": "Include content-free review and stale-source records",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum candidate items",
+            "schema": {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/MemoryCandidate"
+                      },
+                      "type": "array"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/memory-candidates/{candidate_id}": {
+      "get": {
+        "operationId": "getContextMemoryCandidate",
+        "summary": "Inspect an experience candidate and its sources",
+        "description": "",
+        "tags": [
+          "Memory"
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "description": "Experience candidate identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "description": "Workspace identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MemoryCandidate"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/memory-candidates/{candidate_id}/confirm": {
+      "post": {
+        "operationId": "confirmContextMemoryCandidate",
+        "summary": "Confirm reviewed candidate as project memory",
+        "description": "Atomically rechecks the exact reviewed content, source revision and Workspace before explicit operator creation of formal memory. Exact retries return only the recorded identity and never recreate deleted memory.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "description": "Experience candidate identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MemoryCandidateReviewResult"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/memoryCandidateConfirmRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/memory-candidates/{candidate_id}/reject": {
+      "post": {
+        "operationId": "rejectContextMemoryCandidate",
+        "summary": "Dismiss a reviewed experience candidate",
+        "description": "Records an operator dismissal bound to the exact candidate and source version, discards the copied content and prevents regeneration from the same Note.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "description": "Experience candidate identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MemoryCandidateReviewResult"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/memoryCandidateRejectRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/models": {
       "get": {
         "operationId": "getModelAvailability",
@@ -48149,6 +48569,192 @@
         ],
         "type": "object"
       },
+      "MemoryCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "enum": [
+              "operator_review_required"
+            ],
+            "type": "string"
+          },
+          "confidence_reason": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "memory_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "protocol_version": {
+            "enum": [
+              "context_memory_candidate.v1"
+            ],
+            "type": "string"
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reviewed_by": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MemoryCandidateSource"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "confirmed",
+              "rejected",
+              "stale"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "protocol_version",
+          "workspace_id",
+          "fingerprint",
+          "status",
+          "source",
+          "confidence",
+          "confidence_reason",
+          "redacted",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "MemoryCandidateReviewResult": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/MemoryCandidate"
+          },
+          "memory_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "candidate",
+          "replayed"
+        ],
+        "type": "object"
+      },
+      "MemoryCandidateSource": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "decision",
+              "summary"
+            ],
+            "type": "string"
+          },
+          "completion_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "completion_kind": {
+            "enum": [
+              "completed_run",
+              "thread_reply",
+              "delivery_checkpoint",
+              "delivery_receipt"
+            ],
+            "type": "string"
+          },
+          "completion_ref": {
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "note_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "note_version": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "note_id",
+          "note_version",
+          "category",
+          "updated_at",
+          "completion_kind",
+          "completion_ref",
+          "completion_fingerprint"
+        ],
+        "type": "object"
+      },
       "MessageView": {
         "additionalProperties": false,
         "properties": {
@@ -71210,6 +71816,75 @@
           "snapshot_id",
           "operation_key",
           "spec"
+        ],
+        "type": "object"
+      },
+      "memoryCandidateConfirmRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "expected_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "expected_source_version": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expected_version": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "expected_version",
+          "expected_fingerprint",
+          "expected_source_version",
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "memoryCandidateRejectRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "expected_source_version": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expected_version": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "expected_version",
+          "expected_fingerprint",
+          "expected_source_version"
         ],
         "type": "object"
       },

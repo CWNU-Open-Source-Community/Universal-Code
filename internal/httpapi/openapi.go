@@ -322,7 +322,30 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 	batchWorkbenchIdempotencyKey := batchDeliveryIdempotencyKey
 	batchWorkbenchIdempotencyKey.Schema = map[string]any{"type": "string",
 		"minLength": domain.MinAgentOperationKeyBytes, "maxLength": domain.MaxAgentOperationKeyBytes - 32, "pattern": `^\S+$`}
+	memoryCandidateWorkspace := identityQueryParameter("workspace_id", "Workspace identity")
+	memoryCandidateWorkspace.Required = true
 	return []openAPIOperationSpec{
+		{Path: "/api/v1/memory-candidates", OperationID: "listContextMemoryCandidates",
+			Summary: "Review source-linked experience candidates", Tag: "Memory",
+			Description: "Derives a bounded Workspace queue from persisted decision/summary Notes with real completed Run, Thread reply or delivery sources. Pending candidates never enter model context; resolved records retain only content-free audit metadata.",
+			DataType:    reflect.TypeOf(contextmgr.MemoryCandidate{}), Collection: true,
+			Parameters: []openAPIParameter{memoryCandidateWorkspace,
+				booleanQueryParameter("include_resolved", "Include content-free review and stale-source records"),
+				{Name: "limit", In: "query", Description: "Maximum candidate items", Schema: map[string]any{"type": "integer", "minimum": 1, "maximum": contextmgr.MaxMemoryCandidates}}}},
+		{Path: "/api/v1/memory-candidates/{candidate_id}", OperationID: "getContextMemoryCandidate",
+			Summary: "Inspect an experience candidate and its sources", Tag: "Memory", NotFound: true,
+			DataType:   reflect.TypeOf(contextmgr.MemoryCandidate{}),
+			Parameters: []openAPIParameter{pathIdentityParameter("candidate_id", "Experience candidate identity"), memoryCandidateWorkspace}},
+		{Path: "/api/v1/memory-candidates/{candidate_id}/confirm", Method: http.MethodPost,
+			OperationID: "confirmContextMemoryCandidate", Summary: "Confirm reviewed candidate as project memory", Tag: "Control",
+			Description: "Atomically rechecks the exact reviewed content, source revision and Workspace before explicit operator creation of formal memory. Exact retries return only the recorded identity and never recreate deleted memory.",
+			DataType:    reflect.TypeOf(contextmgr.MemoryCandidateReviewResult{}), RequestType: reflect.TypeOf(memoryCandidateConfirmRequestView{}),
+			Control: true, NotFound: true, Parameters: []openAPIParameter{pathIdentityParameter("candidate_id", "Experience candidate identity")}, SuccessStatus: http.StatusOK},
+		{Path: "/api/v1/memory-candidates/{candidate_id}/reject", Method: http.MethodPost,
+			OperationID: "rejectContextMemoryCandidate", Summary: "Dismiss a reviewed experience candidate", Tag: "Control",
+			Description: "Records an operator dismissal bound to the exact candidate and source version, discards the copied content and prevents regeneration from the same Note.",
+			DataType:    reflect.TypeOf(contextmgr.MemoryCandidateReviewResult{}), RequestType: reflect.TypeOf(memoryCandidateRejectRequestView{}),
+			Control: true, NotFound: true, Parameters: []openAPIParameter{pathIdentityParameter("candidate_id", "Experience candidate identity")}, SuccessStatus: http.StatusOK},
 		{Path: "/api/v1/memories", OperationID: "listContextMemories",
 			Summary: "List explicit long-term memories", Tag: "Memory",
 			Description: "Returns only explicitly stored user or project memories. Memory is preference/factual context and never grants authority.",
@@ -2738,6 +2761,20 @@ func jsonField(field reflect.StructField) (string, bool, bool) {
 }
 
 func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[string]any) {
+	if typeName == "MemoryCandidate" && fieldName == "fingerprint" ||
+		typeName == "MemoryCandidateSource" && fieldName == "completion_fingerprint" ||
+		(typeName == "memoryCandidateConfirmRequestView" || typeName == "memoryCandidateRejectRequestView") && fieldName == "expected_fingerprint" {
+		schema["pattern"] = "^[0-9a-f]{64}$"
+	}
+	if (typeName == "MemoryCandidate" && fieldName == "version") ||
+		(typeName == "MemoryCandidateSource" && fieldName == "note_version") ||
+		((typeName == "memoryCandidateConfirmRequestView" || typeName == "memoryCandidateRejectRequestView") &&
+			(fieldName == "expected_version" || fieldName == "expected_source_version")) {
+		schema["minimum"] = 1
+	}
+	if typeName == "memoryCandidateConfirmRequestView" && fieldName == "confirm" {
+		schema["enum"] = []bool{true}
+	}
 	if typeName == "MCPCredentialStatusView" && fieldName == "plaintext_returned" {
 		schema["enum"] = []bool{false}
 	}
@@ -3280,6 +3317,11 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 }
 
 var openAPIFieldEnums = map[string][]string{
+	"MemoryCandidate.protocol_version":                          {contextmgr.MemoryCandidateProtocolVersion},
+	"MemoryCandidate.status":                                    {"pending", "confirmed", "rejected", "stale"},
+	"MemoryCandidate.confidence":                                {"operator_review_required"},
+	"MemoryCandidateSource.category":                            {"decision", "summary"},
+	"MemoryCandidateSource.completion_kind":                     {"completed_run", "thread_reply", "delivery_checkpoint", "delivery_receipt"},
 	"SpecialistContinuationRequestView.version":                 {application.SpecialistContinuationVersion},
 	"SpecialistContinuationView.version":                        {application.SpecialistContinuationVersion},
 	"SpecialistContinuationView.status":                         {"running", "completed", "failed", "cancelled", "abandoned"},

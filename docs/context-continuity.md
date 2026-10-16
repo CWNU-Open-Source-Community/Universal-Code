@@ -1,10 +1,10 @@
 # Project Instructions, Long-Term Memory, And Session Continuity
 
-状态 / Status: implemented in schema v114
+状态 / Status: instructions and explicit memory in schema v114; experience candidates in schema v198
 
 2026-09-11 更新：普通 Thread 的 Supervisor 主链已接入现有持久压缩器；本批没有新增 Schema。超过历史阈值或模型窗口压力时先保存摘要，再组织模型请求，不发送逐条静默删历史后的请求。摘要、原文提取和后继继承均有容量边界；完整原始历史继续保留，摘要不授予权限。实现、重启/重复压缩/工具证据及失败边界验收见 [普通 Thread 上下文连续性验收](UX_CONTEXT_CONTINUITY_VALIDATION.md)。下文 v114 说明仍描述各自原有接口，不代表这些入口自动等同普通 Thread 主链。
 
-协议 / Protocols: `project_instruction_snapshot.v1`, `context_memory.v1`,
+协议 / Protocols: `project_instruction_snapshot.v1`, `context_memory.v1`, `context_memory_candidate.v1`,
 `continuity_snapshot.v1`, `session_continuity_node.v1`, `session_tree.v1`
 
 ## 中文说明
@@ -65,9 +65,9 @@ Desktop 的 **Context / 上下文** 页显示固定/磁盘 fingerprint、为何�
 
 ### 显式 user/project memory
 
-长期记忆没有自动写入路径。只有 CLI、Desktop 或带独立 control bearer 的 HTTP 操作者
-动作可以创建/编辑/启用/禁用/删除。模型回复、Tool result、仓库文件和 compaction 不会
-静默提炼为长期记忆。来源只允许 `operator_explicit` 或显式导入类别。
+只有 CLI、Desktop 或带独立 control bearer 的 HTTP 操作者动作可以创建、编辑、启用、
+禁用或删除正式长期记忆。Go 可以从有来源的决策/总结笔记生成待确认经验；操作者查看并
+确认后，才以 `operator_explicit` 写入项目记忆。候选本身不参与模型上下文或记忆检索。
 
 每条记录保存 scope、title、脱敏后的 content/hash、status、来源引用、排序去重引用、
 可选 retention、创建/更新操作者、版本和时间。user scope 固定为 `local-user`；project
@@ -90,6 +90,57 @@ Secret-like content 默认拒绝；只有 `--redact-sensitive` 或 Desktop 的�
 保存脱敏结果。`.env`、credentials、private keys、Secret、stdin、terminal input、
 keystrokes 等敏感来源/引用始终拒绝，不能用脱敏选项绕过来源边界。正文上限 16 KiB，
 引用最多 32 条、每条 512 bytes。
+
+#### 从任务结论生成待确认经验
+
+**Context / 上下文 → 当前项目 → 待确认经验** 显示来源 Run、Note 版本、引用和完成记录。
+展开候选可查看原文，选择“确认并保存到项目”或“忽略此候选”。确认后沿用下方记忆的编辑、
+禁用和删除入口。只读连接可检查候选，确认和忽略需要 control bearer。
+
+Go 在列表读取时有界检查当前 Workspace 的来源笔记，最多扫描 200 个来源、返回 50 条
+候选。笔记须为 active 的 decision/summary，具有来源引用或证据，且对 root 可见。
+完成依据包括 Run 完成、已完成的 Thread 回复、交付检查点或通过的交付报告。
+Thread 回复完成只说明本次回复结束；候选的置信说明会明确要求核实结论及适用范围。
+单独把 Run 暂停不会被当成完成依据。
+
+候选保留源 Note 版本、完成依据和内容指纹。确认同时提交已查看的候选版本、指纹、
+源 Note 版本和 `confirm=true`；来源发生变化时要求重新检查。SQLite 在同一事务中创建
+正式记忆并处理候选。处理后的候选清除标题、正文和引用内容，只保留来源身份、指纹及
+审核记录；重复请求不会重复写入，删除正式记忆后也不会从候选恢复旧正文。
+
+接口为 `GET /memory-candidates?workspace_id=...`、
+`GET /memory-candidates/{candidate_id}?workspace_id=...` 和
+`POST /memory-candidates/{candidate_id}/confirm|reject`，均在 `/api/v1` 下。
+读取只维护派生待审队列，不调用模型或工具，不创建正式记忆。
+
+#### 模型按需回读和上下文预算
+
+root Supervisor 的 `history_search` / `history_read` 可检索并分页读取：
+
+- 当前本机用户和当前 Workspace 中 active、未过期的已确认记忆；
+- 当前 Thread 的合法 Run 沿革内、对 root 可见的 active 笔记；
+- 原有消息、工具回执、历史摘要及连续性快照。
+
+同一 Workspace 的新 Thread 可取回已确认项目记忆。原始笔记仍受 Thread 沿革和
+可见性限制。记忆和笔记的读取标识绑定当前 Run、Workspace、版本、正文与来源状态；
+每页重新检查。来源改变返回冲突，已禁用、过期、删除或不可见时不返回正文，模型需重新
+搜索。旧搜索游标继续读取旧来源集合，新游标按稳定排序键续页，避免删除导致偏移跳项。
+
+背景上下文为正式记忆预留最多 `min(2048, 总背景预算 / 4, 优先上下文后剩余空间)`
+token。真正必需的任务目标、历史摘要、连续性、inbox 和项目指令保持既有要求；普通
+笔记不会先耗尽记忆预算。记忆按 user 优先、再按 ID 确定排序，单条放不下会继续尝试
+后续较小记录。每个 scope 最多加载 100 条；需要其他记录时可使用检索工具。
+
+每次逻辑模型调用前重新加载 active、未过期记忆；同一轮工具调用后也重新检查。
+transport 对同一次请求的重试保留该请求。已发送给模型的历史文本仍保留其历史身份，
+不能用删除当前记忆反向撤回已经发送的内容。
+
+审计需区分三个事实：
+
+1. **已配置**：当前记忆表中的内容、版本、状态及保留期。
+2. **实际注入**：`model.started` 的 context 审计中，included 来源记录记忆 ID、版本、
+   SHA-256 和估算 token；omitted 来源有明确的配额、必需上下文或项目指令挤占原因。
+3. **模型遵循**：由实际回复及工具结果判断。配置或注入记录本身不证明模型遵循。
 
 #### 删除与隐私
 
@@ -176,8 +227,9 @@ fingerprint and the reviewed live fingerprint to append a new immutable revision
 
 ### Explicit memory and deletion
 
-User/project memory is created only by an explicit operator surface. There is no automatic
-conversation, file, model, or tool extraction. Records carry provenance, optimistic version,
+User/project memory is created only by an explicit operator surface. Go derives a separate
+review queue from source-linked decision/summary notes after a recorded completion boundary.
+Only operator confirmation promotes a candidate to project memory. Records carry provenance, optimistic version,
 status, optional retention, references, redaction metadata, and audit timestamps. Disabled or
 expired records do not enter new prompts. Sensitive content is rejected unless explicit redaction
 is requested; sensitive sources such as credentials, private keys, `.env`, stdin, and terminal
@@ -187,6 +239,34 @@ Deletion physically removes the exact current version and is reported as unrecov
 immutable checkpoints contain only the memory identity/version/digest, never its body, and report a
 deleted-reference warning afterward. Independent exports, backups, and text previously transmitted
 to a Provider remain subject to their own retention policy.
+
+### Experience review and model recall
+
+The Context panel's project scope shows pending candidates with their exact content, source Run,
+Note version, references, and completion record. A finished reply establishes only the reply boundary;
+the operator still verifies accuracy and applicability. Listing scans at most 200 sources and returns
+at most 50 candidates. Confirmation requires the reviewed candidate version, fingerprint, source
+version, and explicit consent. Source validation and promotion occur in one SQLite transaction.
+Resolved candidate tombstones retain audit identities but clear copied content and references,
+so deletion of the resulting memory cannot be undone through candidate replay.
+
+The existing root-only `history_search` and `history_read` tools also read active, unexpired local-user
+and current-Workspace memories, plus active root-visible notes in the current Thread's validated Run
+lineage. New Threads can recall confirmed project memory; raw notes remain Thread-scoped.
+Versioned source handles bind the current Run and Workspace and recheck content, state, visibility,
+and retention on every page. Changed sources require a new search. Legacy cursors retain their
+original source set; new cursors use stable keyset pagination.
+
+The memory subbudget is `min(2048, background budget / 4, space after priority context)`. Required
+goals, summaries, continuity, inbox, and project instructions keep their existing contracts.
+User memory precedes project memory, then IDs determine selection order; oversized entries do not
+prevent smaller entries from fitting. At most 100 active records per scope enter automatic selection.
+Every logical model call reloads current memory, including calls after tools within one turn;
+transport retries retain the original request. Previously delivered historical text cannot be retracted.
+
+Configuration, delivery, and model compliance are separate evidence. `model.started` context audit
+records the included memory ID/version/digest and estimates; omitted records carry a quota,
+required-context, or project-instruction reason. Actual replies and tool receipts establish compliance.
 
 ### Continuity tree
 
@@ -202,8 +282,10 @@ non-authorizing state.
 ### API surface
 
 - Read: `GET /memories`, `/memories/export`, `/memories/{id}`,
+  `/memory-candidates?workspace_id=...`, `/memory-candidates/{id}?workspace_id=...`,
   `/runs/{run_id}/project-instructions`, `/sessions/{session_id}/tree`.
 - Control: `POST /memories`, `PATCH|DELETE /memories/{id}`,
+  `POST /memory-candidates/{id}/confirm|reject`,
   `POST /runs/{run_id}/project-instructions/refresh`,
   `POST /runs/{run_id}/continuity-checkpoints`, and
   `POST /continuity-nodes/{node_id}/fork|resume`.

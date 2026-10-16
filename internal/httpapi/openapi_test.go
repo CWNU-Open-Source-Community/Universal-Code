@@ -997,6 +997,24 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	confirmCandidateNote := createHTTPMemoryCandidateSource(t, fixture)
+	rejectCandidateNote := createHTTPMemoryCandidateSource(t, fixture)
+	openAPICandidates, err := application.NewContextMemoryCandidateService(fixture.store).List(t.Context(),
+		contextmgr.MemoryCandidateFilter{WorkspaceID: fixture.workspace.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var openAPIConfirmCandidate, openAPIRejectCandidate contextmgr.MemoryCandidate
+	for _, candidate := range openAPICandidates {
+		if candidate.Source.NoteID == confirmCandidateNote.ID {
+			openAPIConfirmCandidate = candidate
+		} else if candidate.Source.NoteID == rejectCandidateNote.ID {
+			openAPIRejectCandidate = candidate
+		}
+	}
+	if openAPIConfirmCandidate.ID == "" || openAPIRejectCandidate.ID == "" {
+		t.Fatal("OpenAPI memory candidate fixture was not derived")
+	}
 	openAPIMemory, err := application.NewContextMemoryService(fixture.store).Create(t.Context(),
 		contextmgr.CreateMemoryRequest{Scope: contextmgr.MemoryScopeUser,
 			ScopeID: contextmgr.LocalUserMemoryScope, Title: "OpenAPI memory fixture",
@@ -1183,6 +1201,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"{input_id}":          "mcp-input-openapi",
 		"{installation_id}":   "plugin-openapi",
 		"{memory_id}":         openAPIMemory.ID,
+		"{candidate_id}":      openAPIConfirmCandidate.ID,
 		"{node_id}":           openAPICheckpoint.ID,
 	}
 	for _, spec := range openAPIOperationSpecs() {
@@ -1247,8 +1266,12 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = strings.ReplaceAll(requestPath, "{edit_id}", recoveryProposal.Edit.ID)
 		} else if spec.OperationID == "deleteThread" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", deleteThread.ID)
+		} else if spec.OperationID == "rejectContextMemoryCandidate" {
+			requestPath = strings.ReplaceAll(spec.Path, "{candidate_id}", openAPIRejectCandidate.ID)
 		}
-		if spec.OperationID == "searchWorkspace" {
+		if spec.OperationID == "listContextMemoryCandidates" || spec.OperationID == "getContextMemoryCandidate" {
+			requestPath += "?workspace_id=" + fixture.workspace.ID
+		} else if spec.OperationID == "searchWorkspace" {
 			requestPath += "?query=README"
 		} else if spec.Path == TaskSkillCandidatesPath {
 			requestPath += "?workspace_id=" + fixture.workspace.ID + "&surface=code&phase=deliver&profile=review"
@@ -1417,6 +1440,24 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"agent_browser_close.v1","session_id":"agent-browser-openapi"}`
 				} else if spec.OperationID == "actRunFullCDPPreview" {
 					body = `{"version":"full_cdp_preview_action.v1","expected_session_id":"` + previewView.SessionID + `","expected_snapshot_id":"` + previewView.Page.SnapshotID + `","action":"click","selector":"#press"}`
+				} else if spec.OperationID == "confirmContextMemoryCandidate" {
+					encoded, marshalErr := json.Marshal(memoryCandidateConfirmRequestView{
+						WorkspaceID: openAPIConfirmCandidate.WorkspaceID, ExpectedVersion: openAPIConfirmCandidate.Version,
+						ExpectedFingerprint: openAPIConfirmCandidate.Fingerprint, ExpectedSourceVersion: openAPIConfirmCandidate.Source.NoteVersion, Confirm: true,
+					})
+					if marshalErr != nil {
+						t.Fatal(marshalErr)
+					}
+					body = string(encoded)
+				} else if spec.OperationID == "rejectContextMemoryCandidate" {
+					encoded, marshalErr := json.Marshal(memoryCandidateRejectRequestView{
+						WorkspaceID: openAPIRejectCandidate.WorkspaceID, ExpectedVersion: openAPIRejectCandidate.Version,
+						ExpectedFingerprint: openAPIRejectCandidate.Fingerprint, ExpectedSourceVersion: openAPIRejectCandidate.Source.NoteVersion,
+					})
+					if marshalErr != nil {
+						t.Fatal(marshalErr)
+					}
+					body = string(encoded)
 				} else if spec.OperationID == "createContextMemory" {
 					body = `{"scope":"user","scope_id":"local-user",` +
 						`"title":"OpenAPI created memory","content":"Explicit test memory."}`

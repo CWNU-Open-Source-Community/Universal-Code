@@ -2916,6 +2916,7 @@
       },
       "active_identifiers": [
         "context_memory.v1",
+        "context_memory_candidate.v1",
         "continuity_context.v1",
         "continuity_snapshot.v1",
         "deterministic_id.v1",

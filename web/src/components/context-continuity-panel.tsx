@@ -25,6 +25,7 @@ import { formatDate, shortID } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { v2QueryKeys } from "../v2/query-keys";
 import { ErrorState, LoadingState, StatusBadge } from "./common";
+import { MemoryCandidatesPanel } from "./memory-candidates-panel";
 
 type MemoryScope = "project" | "user";
 type BranchKind = "fork" | "resume";
@@ -250,6 +251,8 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
         "当前连接为只读；可检查和导出记忆，但写入操作需要控制令牌。",
         "This connection is read-only. Memory inspection and export remain available; writes require a control token.",
       )}</div>}
+      {memoryScope === "project" && workspaceID && <MemoryCandidatesPanel key={workspaceID}
+        client={client} workspaceID={workspaceID} onOpenRun={onOpenRun} />}
       <form className="context-memory-form" onSubmit={submitMemory}>
         <input aria-label={t("记忆标题", "Memory title")} maxLength={256}
           onChange={(event) => setMemoryDraft((draft) => ({ ...draft, title: event.target.value }))}

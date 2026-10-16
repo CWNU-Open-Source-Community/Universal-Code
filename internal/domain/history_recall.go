@@ -1,7 +1,7 @@
 package domain
 
-// History recall returns immutable historical evidence. It never restores an
-// earlier instruction's authority or replays an earlier tool operation.
+// History recall returns historical evidence and currently visible memory. It
+// never restores an earlier instruction's authority or replays a tool operation.
 const (
 	HistoryRecallVersion    = "history_recall.v1"
 	HistorySearchScanLimit  = 256
@@ -31,6 +31,13 @@ type HistoryRecord struct {
 	SessionID                     string `json:"session_id"`
 	MessageID                     int64  `json:"message_id,omitempty"`
 	SummaryID                     int64  `json:"summary_id,omitempty"`
+	MemoryID                      string `json:"memory_id,omitempty"`
+	NoteID                        string `json:"note_id,omitempty"`
+	SourceVersion                 int64  `json:"source_version,omitempty"`
+	Scope                         string `json:"scope,omitempty"`
+	ScopeID                       string `json:"scope_id,omitempty"`
+	Title                         string `json:"title,omitempty"`
+	Visibility                    string `json:"visibility,omitempty"`
 	PreviousSummaryID             int64  `json:"previous_summary_id,omitempty"`
 	ContinuityFingerprint         string `json:"continuity_fingerprint,omitempty"`
 	Role                          string `json:"role,omitempty"`
@@ -52,6 +59,8 @@ type HistoryRecord struct {
 	ArgumentsSHA256               string `json:"arguments_sha256,omitempty"`
 	ResultSHA256                  string `json:"result_sha256,omitempty"`
 	CreatedAt                     string `json:"created_at"`
+	UpdatedAt                     string `json:"updated_at,omitempty"`
+	RetentionUntil                string `json:"retention_until,omitempty"`
 	CompletedAt                   string `json:"completed_at,omitempty"`
 	MatchedPart                   string `json:"matched_part,omitempty"`
 	Excerpt                       string `json:"excerpt,omitempty"`

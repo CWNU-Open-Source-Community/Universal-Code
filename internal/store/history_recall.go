@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
@@ -30,14 +31,27 @@ type historyQueryer interface {
 }
 
 type historyCursor struct {
-	Run           string `json:"r"`
-	QuerySHA      string `json:"q"`
-	MaxMessage    int64  `json:"m"`
-	MaxTool       int64  `json:"t"`
-	MaxEvent      int64  `json:"e"`
-	MaxSummary    int64  `json:"s,omitempty"`
-	MaxContinuity int64  `json:"c,omitempty"`
-	Offset        int    `json:"o"`
+	Version       int              `json:"v,omitempty"`
+	Run           string           `json:"r"`
+	Workspace     string           `json:"w,omitempty"`
+	QuerySHA      string           `json:"q"`
+	MaxMessage    int64            `json:"m"`
+	MaxTool       int64            `json:"t"`
+	MaxEvent      int64            `json:"e"`
+	MaxSummary    int64            `json:"s,omitempty"`
+	MaxContinuity int64            `json:"c,omitempty"`
+	MaxMemory     int64            `json:"mm,omitempty"`
+	MaxNote       int64            `json:"n,omitempty"`
+	SnapshotAt    string           `json:"at,omitempty"`
+	Offset        int              `json:"o"`
+	Position      *historyPosition `json:"p,omitempty"`
+}
+
+type historyPosition struct {
+	Ordinal int    `json:"o"`
+	Stamp   string `json:"s"`
+	Kind    string `json:"k"`
+	ID      int64  `json:"i"`
 }
 
 type historyToolRef struct {
@@ -135,9 +149,16 @@ func (s *SQLiteStore) searchThreadHistory(ctx context.Context, q historyQueryer,
 		return value, err
 	}
 	value.ThreadID = scope.threadID
-	cursor := historyCursor{Run: runID, QuerySHA: session.ContentSHA256(request.Query)}
+	cursor := historyCursor{Version: 2, Run: runID, Workspace: session.ContentSHA256(scope.workspaceID), QuerySHA: session.ContentSHA256(request.Query), SnapshotAt: ts(time.Now().UTC())}
 	if request.Cursor != "" {
-		if len(request.Cursor) > 2048 || decodeHistoryToken(request.Cursor, &cursor) != nil || cursor.Run != runID || cursor.QuerySHA != session.ContentSHA256(request.Query) || cursor.Offset < 0 || cursor.Offset > 1000000 || cursor.MaxMessage < 0 || cursor.MaxTool < 0 || cursor.MaxEvent < 0 || cursor.MaxSummary < 0 || cursor.MaxContinuity < 0 {
+		cursor = historyCursor{}
+		if len(request.Cursor) > 2048 || decodeHistoryToken(request.Cursor, &cursor) != nil ||
+			cursor.Run != runID || cursor.QuerySHA != session.ContentSHA256(request.Query) ||
+			cursor.Offset < 0 || cursor.Offset > 1000000 || cursor.MaxMessage < 0 || cursor.MaxTool < 0 ||
+			cursor.MaxEvent < 0 || cursor.MaxSummary < 0 || cursor.MaxContinuity < 0 || cursor.MaxMemory < 0 || cursor.MaxNote < 0 ||
+			(cursor.Version != 0 && cursor.Version != 2) ||
+			(cursor.Version == 2 && (cursor.Workspace != session.ContentSHA256(scope.workspaceID) || parseTS(cursor.SnapshotAt).IsZero())) ||
+			(cursor.Position != nil && (cursor.Version != 2 || cursor.Position.Ordinal < 1 || cursor.Position.ID < 1 || parseTS(cursor.Position.Stamp).IsZero())) {
 			return value, apperror.New(apperror.CodeInvalidArgument, "history search cursor does not match this Run and query")
 		}
 	} else {
@@ -156,10 +177,20 @@ func (s *SQLiteStore) searchThreadHistory(ctx context.Context, q historyQueryer,
 		if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(r.rowid),0) FROM runs r JOIN thread_runs b ON b.run_id=r.id WHERE b.thread_id=?`, scope.threadID).Scan(&cursor.MaxContinuity); err != nil {
 			return value, err
 		}
+		if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid),0) FROM context_memories WHERE (scope='user' AND scope_id='local-user') OR (scope='project' AND scope_id=? AND ?!='')`, scope.workspaceID, scope.workspaceID).Scan(&cursor.MaxMemory); err != nil {
+			return value, err
+		}
+		if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(n.rowid),0) FROM notes n JOIN thread_runs b ON b.run_id=n.run_id WHERE b.thread_id=?`, scope.threadID).Scan(&cursor.MaxNote); err != nil {
+			return value, err
+		}
 	}
 	value.SnapshotCursor = encodeHistoryToken(cursor)
 	// Only identities are materialized. SQLite checks the original stored text;
 	// at most the requested matches are loaded into Go for verified projection.
+	position, positioned := historyPosition{}, 0
+	if cursor.Position != nil {
+		position, positioned = *cursor.Position, 1
+	}
 	rows, err := q.QueryContext(ctx, `WITH candidates AS MATERIALIZED (
 		SELECT 'message' AS kind,m.id AS id,b.ordinal AS ordinal,m.created_at AS stamp FROM session_messages m
 		JOIN thread_runs b ON b.session_id=m.session_id WHERE b.thread_id=? AND m.id<=?
@@ -179,30 +210,47 @@ func (s *SQLiteStore) searchThreadHistory(ctx context.Context, q historyQueryer,
 		SELECT 'continuity',r.rowid,b.ordinal,r.created_at FROM runs r
 		JOIN thread_runs b ON b.run_id=r.id WHERE b.thread_id=? AND r.rowid<=?
 		AND json_type(r.config_json,'$.continuity_context')='object'
-	), selected AS MATERIALIZED (SELECT * FROM candidates ORDER BY ordinal DESC,stamp DESC,kind,id DESC LIMIT ? OFFSET ?)
-	SELECT kind,id,CASE WHEN kind='message' THEN
+		UNION ALL
+		SELECT 'context_memory',m.rowid,?,m.updated_at FROM context_memories m
+		WHERE ?=2 AND m.rowid<=? AND m.updated_at<=? AND `+historyMemoryVisibleSQL+`
+		UNION ALL
+		SELECT 'note',n.rowid,b.ordinal,n.updated_at FROM notes n JOIN thread_runs b ON b.run_id=n.run_id
+		WHERE ?=2 AND b.thread_id=? AND n.rowid<=? AND n.updated_at<=? AND `+historyNoteVisibleSQL+`
+	), selected AS MATERIALIZED (SELECT * FROM candidates WHERE ?=0 OR ordinal<? OR
+		(ordinal=? AND (stamp<? OR (stamp=? AND (kind>? OR (kind=? AND id<?)))))
+		ORDER BY ordinal DESC,stamp DESC,kind,id DESC LIMIT ? OFFSET ?)
+	SELECT kind,id,ordinal,stamp,CASE WHEN kind='message' THEN
 		(SELECT CASE WHEN instr(m.content,?)>0 THEN 'content' ELSE '' END FROM session_messages m WHERE m.id=selected.id)
 		WHEN kind='summary' THEN
 		(SELECT CASE WHEN instr(s.content,?)>0 THEN 'content' ELSE '' END FROM context_summaries s WHERE s.id=selected.id)
 		WHEN kind='continuity' THEN
 		(SELECT CASE WHEN instr(COALESCE(json_extract(r.config_json,'$.continuity_context.summary_content'),''),?)>0 THEN 'summary'
 		 WHEN instr(json_extract(r.config_json,'$.continuity_context'),?)>0 THEN 'content' ELSE '' END FROM runs r WHERE r.rowid=selected.id)
+		WHEN kind='context_memory' THEN
+		(SELECT CASE WHEN instr(m.content,?)>0 THEN 'content' WHEN instr(m.title,?)>0 THEN 'title' ELSE '' END FROM context_memories m WHERE m.rowid=selected.id)
+		WHEN kind='note' THEN
+		(SELECT CASE WHEN instr(n.content,?)>0 THEN 'content' WHEN instr(n.title,?)>0 THEN 'title' ELSE '' END FROM notes n WHERE n.rowid=selected.id)
 		ELSE (SELECT CASE WHEN instr(c.result_json,?)>0 THEN 'result' WHEN instr(c.payload_json,?)>0 OR instr(c.tool_name,?)>0 THEN 'arguments' ELSE '' END FROM run_supervisor_tool_calls c WHERE c.rowid=selected.id) END
 	FROM selected ORDER BY ordinal DESC,stamp DESC,kind,id DESC`, scope.threadID, cursor.MaxMessage, scope.threadID, cursor.MaxTool, cursor.MaxEvent,
-		scope.threadID, cursor.MaxSummary, scope.threadID, cursor.MaxContinuity, domain.HistorySearchScanLimit+1, cursor.Offset,
-		request.Query, request.Query, request.Query, request.Query, request.Query, request.Query, request.Query)
+		scope.threadID, cursor.MaxSummary, scope.threadID, cursor.MaxContinuity,
+		len(scope.sessions), cursor.Version, cursor.MaxMemory, cursor.SnapshotAt, scope.workspaceID, scope.workspaceID, ts(time.Now().UTC()),
+		cursor.Version, scope.threadID, cursor.MaxNote, cursor.SnapshotAt,
+		positioned, position.Ordinal, position.Ordinal, position.Stamp, position.Stamp, position.Kind, position.Kind, position.ID,
+		domain.HistorySearchScanLimit+1, cursor.Offset,
+		request.Query, request.Query, request.Query, request.Query, request.Query, request.Query, request.Query, request.Query, request.Query, request.Query, request.Query)
 	if err != nil {
 		return value, err
 	}
 	type candidate struct {
-		kind string
-		id   int64
-		part string
+		kind     string
+		id       int64
+		part     string
+		position historyPosition
 	}
 	var candidates []candidate
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.kind, &c.id, &c.part); err != nil {
+		if err := rows.Scan(&c.kind, &c.id, &c.position.Ordinal, &c.position.Stamp, &c.part); err != nil {
 			_ = rows.Close()
 			return value, err
 		}
@@ -218,6 +266,10 @@ func (s *SQLiteStore) searchThreadHistory(ctx context.Context, q historyQueryer,
 			break
 		}
 		value.Scanned++
+		c.position.Kind, c.position.ID = c.kind, c.id
+		if cursor.Version == 2 {
+			cursor.Position = &c.position
+		}
 		if c.part == "" {
 			continue
 		}
@@ -230,6 +282,10 @@ func (s *SQLiteStore) searchThreadHistory(ctx context.Context, q historyQueryer,
 			record, parts, err = readHistorySummary(ctx, q, scope, c.id)
 		case "continuity":
 			record, parts, err = readHistoryContinuity(ctx, q, scope, "r.rowid=?", "", c.id)
+		case "context_memory":
+			record, parts, err = readHistoryMemory(ctx, q, scope, "rowid=?", c.id)
+		case "note":
+			record, parts, err = readHistoryNote(ctx, q, scope, "rowid=?", c.id)
 		default:
 			record, parts, err = readHistoryTool(ctx, q, scope, "c.rowid=?", c.id)
 		}
@@ -243,12 +299,18 @@ func (s *SQLiteStore) searchThreadHistory(ctx context.Context, q historyQueryer,
 			return value, err
 		}
 		record.MatchedPart = c.part
-		record.Excerpt = historyExcerpt(parts[c.part], request.Query)
+		if c.part == "title" {
+			record.Excerpt = historyExcerpt(record.Title, request.Query)
+		} else {
+			record.Excerpt = historyExcerpt(parts[c.part], request.Query)
+		}
 		value.Records = append(value.Records, record)
 	}
 	value.HasMore = value.Scanned < len(candidates)
 	if value.HasMore {
-		cursor.Offset += value.Scanned
+		if cursor.Version == 0 {
+			cursor.Offset += value.Scanned
+		}
 		value.NextCursor = encodeHistoryToken(cursor)
 	}
 	return value, nil
@@ -280,7 +342,9 @@ func (s *SQLiteStore) readThreadHistory(ctx context.Context, q historyQueryer, r
 	}
 	value.ThreadID = scope.threadID
 	var parts map[string]string
-	if strings.HasPrefix(request.SourceID, "message:") {
+	if strings.HasPrefix(request.SourceID, "memory:") || strings.HasPrefix(request.SourceID, "note:") {
+		value.Record, parts, err = readHistoryMutableSource(ctx, q, scope, request.SourceID)
+	} else if strings.HasPrefix(request.SourceID, "message:") {
 		id, parseErr := strconv.ParseInt(strings.TrimPrefix(request.SourceID, "message:"), 10, 64)
 		if parseErr != nil || id <= 0 {
 			return value, historyNotFound()
@@ -321,7 +385,7 @@ func (s *SQLiteStore) readThreadHistory(ctx context.Context, q historyQueryer, r
 	}
 	content, ok := parts[request.Part]
 	if !ok {
-		return value, apperror.New(apperror.CodeInvalidArgument, "history part must be content for a message/summary, content/summary for continuity, or arguments/result for a tool call")
+		return value, apperror.New(apperror.CodeInvalidArgument, "history part must be content for a message/summary/memory/note, content/summary for continuity, or arguments/result for a tool call")
 	}
 	value.ContentSHA256 = session.ContentSHA256(content)
 	if request.ExpectedSHA256 != "" && request.ExpectedSHA256 != value.ContentSHA256 {
@@ -410,7 +474,7 @@ func readHistoryTool(ctx context.Context, q historyQueryer, scope historyScope, 
 // Redact that metadata once, preserving its original digest. Never rewrite an
 // exact routing identity into a different identity to make it look safe.
 func safeHistoryMetadata(record domain.HistoryRecord) (domain.HistoryRecord, error) {
-	for _, id := range []string{record.SourceID, record.RunID, record.SessionID, record.CallID, record.AttemptID, record.Role, record.SourceKind, record.ProvenanceVersion, record.ToolName, record.Status} {
+	for _, id := range []string{record.SourceID, record.RunID, record.SessionID, record.CallID, record.AttemptID, record.Role, record.SourceKind, record.ProvenanceVersion, record.ToolName, record.Status, record.NoteID, record.MemoryID, record.Scope, record.ScopeID, record.Visibility} {
 		if redact.String(id) != id {
 			return domain.HistoryRecord{}, apperror.New(apperror.CodeFailedPrecondition, "history source metadata cannot be safely projected with its exact identity")
 		}

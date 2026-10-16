@@ -1,0 +1,938 @@
+{
+  "recorded_at": "2026-10-16T15:08:33.113304+08:00",
+  "issue": 338,
+  "execution_host": "Windows",
+  "composition": "Production Desktop composition, HTTP, SQLite, native tool gateway and real provider in isolated home",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "credential_source": "system",
+  "raw_evidence_root": "C:\\p338-a77cab1f",
+  "source_base": "986ddb88c9602ea14f6a7c7c8f615d3494dd2556",
+  "passed": true,
+  "workflow_model_calls": 14,
+  "workflow_tokens": 176774,
+  "qualification_calls": 2,
+  "candidate_source": {
+    "run_id": "run-20261016065827-9704b898eea9",
+    "note_id": "note-20261016065832-aae4819b52f6",
+    "note_version": 1,
+    "category": "decision",
+    "references": [
+      "thread:thread-run-20261016065827-9704b898eea9"
+    ],
+    "updated_at": "2026-10-16T06:58:32.6878282Z",
+    "completion_kind": "thread_reply",
+    "completion_ref": "run_event:evt-20261016065835-4967627b0fc3",
+    "completion_fingerprint": "27e3e0ee1c82336a39dcb66621b1d5daf4708a98ba2d403cd0ff794dbfc0b0ea"
+  },
+  "confirmation": {
+    "candidate": {
+      "id": "memory-candidate-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+      "protocol_version": "context_memory_candidate.v1",
+      "workspace_id": "ws-import-0ebecb3bae298abd3d58319c",
+      "fingerprint": "38cdab14263aef542d2cbb0afd36ba58cf563b92db271a56c2b89398be241539",
+      "status": "confirmed",
+      "source": {
+        "run_id": "run-20261016065827-9704b898eea9",
+        "note_id": "note-20261016065832-aae4819b52f6",
+        "note_version": 1,
+        "category": "decision",
+        "updated_at": "2026-10-16T06:58:32.6878282Z",
+        "completion_kind": "thread_reply",
+        "completion_ref": "run_event:evt-20261016065835-4967627b0fc3",
+        "completion_fingerprint": "27e3e0ee1c82336a39dcb66621b1d5daf4708a98ba2d403cd0ff794dbfc0b0ea"
+      },
+      "confidence": "operator_review_required",
+      "confidence_reason": "Copied from a source-linked decision or summary Note after a recorded Thread reply finished. Finishing that reply does not establish task, plan or acceptance completion; the conclusion and its reuse require operator review.",
+      "redacted": false,
+      "version": 2,
+      "memory_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+      "reviewed_by": "http_control",
+      "reviewed_at": "2026-10-16T07:03:29.8505502Z",
+      "created_at": "2026-10-16T06:58:48.9987223Z",
+      "updated_at": "2026-10-16T07:03:29.8505502Z"
+    },
+    "memory_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+    "replayed": false
+  },
+  "delete_replay": {
+    "deleted": true,
+    "candidate_body_retained": false,
+    "replayed": true,
+    "recoverable": false,
+    "memory_missing": true
+  },
+  "cases": [
+    {
+      "name": "source",
+      "run_id": "run-20261016065827-9704b898eea9",
+      "thread_id": "thread-run-20261016065827-9704b898eea9",
+      "model_usage": {
+        "input_tokens": 48159,
+        "output_tokens": 832,
+        "total_tokens": 48991,
+        "cache_read_tokens": 37632,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 4,
+        "calls": 4
+      },
+      "run_status": "running",
+      "reply_completion_events": [
+        "evt-20261016065835-4967627b0fc3"
+      ],
+      "execution_permission": {
+        "protocol_version": "run_execution_permission.v2",
+        "revision": 1,
+        "mode": "ask",
+        "approval_mode": "ask",
+        "full_activation": "unavailable",
+        "full_unavailable_reason": "Full runtime activation is unavailable in this process.",
+        "approval_policy": "per_operation",
+        "command_scope": "per_operation",
+        "filesystem_scope": "per_operation",
+        "network_scope": "per_operation",
+        "persistent_terminal": false,
+        "background_process": false,
+        "agent_terminal_input": false,
+        "risk_tier": "minimal",
+        "required_gate": "operation_authority",
+        "policy_version": "execution_permission_policy.v2",
+        "operator_confirmed": false,
+        "runtime_gate_available": true,
+        "runtime": {
+          "workspace_sandbox_enabled": false,
+          "operator_approval_enabled": true,
+          "danger_full_access_enabled": false
+        },
+        "capability_matrix": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "sandboxed_command_runtime": true,
+          "unsandboxed_host_process": true,
+          "network_access": true,
+          "credential_access": true,
+          "user_home_access": true,
+          "persistent_user_terminal": true,
+          "persistent_agent_terminal": true,
+          "full_cdp": false,
+          "out_of_scope_policy": "exact_once_required"
+        },
+        "created_at": "2026-10-16T06:58:27.1489535Z",
+        "process_enabled": false,
+        "execution_authorized": false,
+        "capability_grant": false
+      },
+      "tools": [
+        {
+          "call_id": "toolu_50115d0d1f75d63f8548a9e0",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [],
+            "scanned": 0,
+            "has_more": false
+          }
+        },
+        {
+          "call_id": "toolu_02e66bbde260f345379315ab",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [],
+            "scanned": 0,
+            "has_more": false
+          }
+        },
+        {
+          "call_id": "toolu_0d21c5066ea75812a0c9db80",
+          "tool": "note_create",
+          "status": "completed",
+          "result": {
+            "entity_id": "note-20261016065832-aae4819b52f6",
+            "entity_kind": "note",
+            "status": "active",
+            "version": "1"
+          }
+        }
+      ],
+      "context_audits": [
+        {
+          "event_id": "evt-20261016065827-09abea9d27c8",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016065828-065dd9bc2462",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016065829-6ad5df22d5cc",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016065832-06db907d531e",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        }
+      ],
+      "assistant_replies": [
+        "笔记已保存：标题「QUARTZ-338 发布校验标记」，decision 类、root 可见，entity_id note-20261016065832-aae4819b52f6，状态 active（version 1）。\n\n内容记录：QUARTZ-338 的发布校验标记应为 Amber-17，此前的 Violet-09 已作废。source_refs 含 thread:thread-run-20261016065827-9704b898eea9。\n\n核对情况：先用 history_search 查询，以「QUARTZ-338」和「发布校验标记」两条关键词均返回 0 条记录，即本线程历史中没有该标记的既有记录，本次纠错为该主题的首条记录，也未发现与 Amber-17 冲突的旧记录。\n\n范围说明：未写入或修改任何项目文件，未执行任何命令；该笔记只是本次记录工作完成，不声称已创建长期记忆，也不声称已执行发布。是否长期保留由您审核决定。"
+      ]
+    },
+    {
+      "name": "pending-search",
+      "run_id": "run-20261016070044-e4cfe854c3a7",
+      "thread_id": "thread-run-20261016070044-e4cfe854c3a7",
+      "model_usage": {
+        "input_tokens": 23094,
+        "output_tokens": 228,
+        "total_tokens": 23322,
+        "cache_read_tokens": 22272,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 2,
+        "calls": 2
+      },
+      "run_status": "running",
+      "reply_completion_events": [
+        "evt-20261016070048-eee5f955f55a"
+      ],
+      "execution_permission": {
+        "protocol_version": "run_execution_permission.v2",
+        "revision": 1,
+        "mode": "ask",
+        "approval_mode": "ask",
+        "full_activation": "unavailable",
+        "full_unavailable_reason": "Full runtime activation is unavailable in this process.",
+        "approval_policy": "per_operation",
+        "command_scope": "per_operation",
+        "filesystem_scope": "per_operation",
+        "network_scope": "per_operation",
+        "persistent_terminal": false,
+        "background_process": false,
+        "agent_terminal_input": false,
+        "risk_tier": "minimal",
+        "required_gate": "operation_authority",
+        "policy_version": "execution_permission_policy.v2",
+        "operator_confirmed": false,
+        "runtime_gate_available": true,
+        "runtime": {
+          "workspace_sandbox_enabled": false,
+          "operator_approval_enabled": true,
+          "danger_full_access_enabled": false
+        },
+        "capability_matrix": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "sandboxed_command_runtime": true,
+          "unsandboxed_host_process": true,
+          "network_access": true,
+          "credential_access": true,
+          "user_home_access": true,
+          "persistent_user_terminal": true,
+          "persistent_agent_terminal": true,
+          "full_cdp": false,
+          "out_of_scope_policy": "exact_once_required"
+        },
+        "created_at": "2026-10-16T07:00:44.4467862Z",
+        "process_enabled": false,
+        "execution_authorized": false,
+        "capability_grant": false
+      },
+      "tools": [
+        {
+          "call_id": "toolu_2868f679380f44447db1919d",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [],
+            "scanned": 0,
+            "has_more": false
+          }
+        }
+      ],
+      "context_audits": [
+        {
+          "event_id": "evt-20261016070044-30ecde5c63f1",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016070046-2dfcbbcfdda7",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        }
+      ],
+      "assistant_replies": [
+        "我用 history_search 查询了 “QUARTZ-338”，返回 0 条记录（scanned=0，has_more=false），未返回任何 context_memory 或 note 来源，因此没有可读取的全文。按约定不新建或修改笔记、记忆或文件，也不执行命令。结论：当前未取回任何已确认的记忆来源，也没有任何已确认的记忆事实可报告——我不会推测或声称存在任何校验标记。"
+      ]
+    },
+    {
+      "name": "confirmed-search",
+      "run_id": "run-20261016070329-2b2085a33f39",
+      "thread_id": "thread-run-20261016070329-2b2085a33f39",
+      "model_usage": {
+        "input_tokens": 39712,
+        "output_tokens": 1142,
+        "total_tokens": 40854,
+        "cache_read_tokens": 29440,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 3,
+        "calls": 3
+      },
+      "run_status": "running",
+      "reply_completion_events": [
+        "evt-20261016070343-12544e5c5f7d"
+      ],
+      "execution_permission": {
+        "protocol_version": "run_execution_permission.v2",
+        "revision": 1,
+        "mode": "ask",
+        "approval_mode": "ask",
+        "full_activation": "unavailable",
+        "full_unavailable_reason": "Full runtime activation is unavailable in this process.",
+        "approval_policy": "per_operation",
+        "command_scope": "per_operation",
+        "filesystem_scope": "per_operation",
+        "network_scope": "per_operation",
+        "persistent_terminal": false,
+        "background_process": false,
+        "agent_terminal_input": false,
+        "risk_tier": "minimal",
+        "required_gate": "operation_authority",
+        "policy_version": "execution_permission_policy.v2",
+        "operator_confirmed": false,
+        "runtime_gate_available": true,
+        "runtime": {
+          "workspace_sandbox_enabled": false,
+          "operator_approval_enabled": true,
+          "danger_full_access_enabled": false
+        },
+        "capability_matrix": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "sandboxed_command_runtime": true,
+          "unsandboxed_host_process": true,
+          "network_access": true,
+          "credential_access": true,
+          "user_home_access": true,
+          "persistent_user_terminal": true,
+          "persistent_agent_terminal": true,
+          "full_cdp": false,
+          "out_of_scope_policy": "exact_once_required"
+        },
+        "created_at": "2026-10-16T07:03:29.8905778Z",
+        "process_enabled": false,
+        "execution_authorized": false,
+        "capability_grant": false
+      },
+      "tools": [
+        {
+          "call_id": "toolu_2183d55b8431b1e37eedddb3",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [
+              {
+                "kind": "context_memory",
+                "memory_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+                "note_id": null,
+                "source_version": 1,
+                "scope": "project",
+                "scope_id": "ws-import-0ebecb3bae298abd3d58319c",
+                "content_sha256": "471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb"
+              }
+            ],
+            "scanned": 1,
+            "has_more": false
+          }
+        },
+        {
+          "call_id": "toolu_cd4d37bcbb3cca636320ba15",
+          "tool": "history_read",
+          "status": "completed",
+          "result": {
+            "content": "项目：QUARTZ-338\n\n纠错内容（操作者明确纠正，待审核是否长期保留）：\n- 发布校验标记应为 Amber-17。\n- 此前使用的 Violet-09 已作废，不得再作为 QUARTZ-338 的发布校验标记使用。\n\n核对情况（history_search，本次 Run 内）：\n- 以 \"QUARTZ-338\" 查询：0 条记录。\n- 以 \"发布校验标记\" 查询：0 条记录。\n即本线程历史中未检索到 QUARTZ-338 标记的既有记录，本次为该纠错的首条记录；未发现与 Amber-17 相冲突的既往记录。\n\n范围与限制：\n- 仅记录该纠错约定，未写入或修改任何项目文件，未执行命令。\n- 记录为本次 Run 内的笔记（root 可见），不构成长期记忆的创建，也不代表发布流程已执行。\n- 该约定保留与否需操作者审核决定。",
+            "content_sha256": "471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb",
+            "offset": 0,
+            "next_offset": 815,
+            "total_bytes": 815,
+            "has_more": false,
+            "record": {
+              "kind": "context_memory",
+              "memory_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "source_version": 1,
+              "scope": "project",
+              "scope_id": "ws-import-0ebecb3bae298abd3d58319c",
+              "content_sha256": "471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb"
+            }
+          }
+        }
+      ],
+      "context_audits": [
+        {
+          "event_id": "evt-20261016070329-452ab44f4972",
+          "token_budget": 13824,
+          "memory_included": [
+            {
+              "content_sha256": "471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb",
+              "kind": "long_term_memory",
+              "memory_version": 1,
+              "source_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "tokens": 949
+            }
+          ],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016070335-b3f9a6cad4a9",
+          "token_budget": 13824,
+          "memory_included": [
+            {
+              "content_sha256": "471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb",
+              "kind": "long_term_memory",
+              "memory_version": 1,
+              "source_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "tokens": 949
+            }
+          ],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016070338-98186033d441",
+          "token_budget": 13824,
+          "memory_included": [
+            {
+              "content_sha256": "471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb",
+              "kind": "long_term_memory",
+              "memory_version": 1,
+              "source_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "tokens": 949
+            }
+          ],
+          "memory_omitted": []
+        }
+      ],
+      "assistant_replies": [
+        "已按要求完成只读核对，未修改任何文件、笔记或记忆，也未执行命令。\n\n查询与读取：\n- history_search，查询词 \"QUARTZ-338\"：返回 1 条记录（kind = context_memory，status = active，scanned=1，has_more=false）。该记录即本次任务开始时随上下文提供的项目记忆条目本身，与 long_term_memory.v1 中 memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01 的 memory_version 1 一致（content_sha256 471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb 完全相同），未检索到其它 QUARTZ-338 相关记录。\n- history_read（part=content）读取该 context_memory 正文，读取到全部 815 字节（0–815，has_more=false）。\n\n当前有效已确认记忆给出的结论：\n- QUARTZ-338 的发布校验标记应为 Amber-17。\n- 此前的 Violet-09 已作废，不得再作为 QUARTZ-338 的发布校验标记使用。\n\n引用记忆 ID 及版本：\n- memory_id：memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01\n- memory_version / source_version：1\n- scope：project（scope_id ws-import-0ebecb3bae298abd3d58319c）；标题：QUARTZ-338 发布校验标记；status：active；source_kind：operator_explicit；content_sha256：471b8ac16297f478b79defabd204ec6801691d579088698324851d695186dccb\n\n需要注意的限制（来自该记忆正文本身）：该记录为操作者明确纠正、尚待审核是否长期保留；其内容说明仅记录约定，未写入或修改任何项目文件、未执行命令、不代表发布流程已执行，保留与否需操作者审核决定。因此“发布校验标记 = Amber-17”是当前有效记忆内容，但“Violet-09 已作废、Amber-17 生效”的效力最终取决于操作者审核，且没有仓库文件级证据佐证。"
+      ]
+    },
+    {
+      "name": "edited-search",
+      "run_id": "run-20261016070438-0328a81619f2",
+      "thread_id": "thread-run-20261016070438-0328a81619f2",
+      "model_usage": {
+        "input_tokens": 38892,
+        "output_tokens": 821,
+        "total_tokens": 39713,
+        "cache_read_tokens": 35456,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 3,
+        "calls": 3
+      },
+      "run_status": "running",
+      "reply_completion_events": [
+        "evt-20261016070448-69a2ef5116da"
+      ],
+      "execution_permission": {
+        "protocol_version": "run_execution_permission.v2",
+        "revision": 1,
+        "mode": "ask",
+        "approval_mode": "ask",
+        "full_activation": "unavailable",
+        "full_unavailable_reason": "Full runtime activation is unavailable in this process.",
+        "approval_policy": "per_operation",
+        "command_scope": "per_operation",
+        "filesystem_scope": "per_operation",
+        "network_scope": "per_operation",
+        "persistent_terminal": false,
+        "background_process": false,
+        "agent_terminal_input": false,
+        "risk_tier": "minimal",
+        "required_gate": "operation_authority",
+        "policy_version": "execution_permission_policy.v2",
+        "operator_confirmed": false,
+        "runtime_gate_available": true,
+        "runtime": {
+          "workspace_sandbox_enabled": false,
+          "operator_approval_enabled": true,
+          "danger_full_access_enabled": false
+        },
+        "capability_matrix": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "sandboxed_command_runtime": true,
+          "unsandboxed_host_process": true,
+          "network_access": true,
+          "credential_access": true,
+          "user_home_access": true,
+          "persistent_user_terminal": true,
+          "persistent_agent_terminal": true,
+          "full_cdp": false,
+          "out_of_scope_policy": "exact_once_required"
+        },
+        "created_at": "2026-10-16T07:04:38.4707283Z",
+        "process_enabled": false,
+        "execution_authorized": false,
+        "capability_grant": false
+      },
+      "tools": [
+        {
+          "call_id": "toolu_69d74dfa4a3e59be59e978f1",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [
+              {
+                "kind": "context_memory",
+                "memory_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+                "note_id": null,
+                "source_version": 2,
+                "scope": "project",
+                "scope_id": "ws-import-0ebecb3bae298abd3d58319c",
+                "content_sha256": "4785bf94fe962de8e0fb7a8228998e72e0242fc180e8c2583ff185e44c7dda4a"
+              }
+            ],
+            "scanned": 1,
+            "has_more": false
+          }
+        },
+        {
+          "call_id": "toolu_9ff87b8f6c70e62d0167e62b",
+          "tool": "history_read",
+          "status": "completed",
+          "result": {
+            "content": "项目 QUARTZ-338 当前有效的发布校验标记为 Jade-42。此条已由操作者更新；后续核对使用当前版本。",
+            "content_sha256": "4785bf94fe962de8e0fb7a8228998e72e0242fc180e8c2583ff185e44c7dda4a",
+            "offset": 0,
+            "next_offset": 128,
+            "total_bytes": 128,
+            "has_more": false,
+            "record": {
+              "kind": "context_memory",
+              "memory_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "source_version": 2,
+              "scope": "project",
+              "scope_id": "ws-import-0ebecb3bae298abd3d58319c",
+              "content_sha256": "4785bf94fe962de8e0fb7a8228998e72e0242fc180e8c2583ff185e44c7dda4a"
+            }
+          }
+        }
+      ],
+      "context_audits": [
+        {
+          "event_id": "evt-20261016070438-ff27fe8ae8ca",
+          "token_budget": 13824,
+          "memory_included": [
+            {
+              "content_sha256": "4785bf94fe962de8e0fb7a8228998e72e0242fc180e8c2583ff185e44c7dda4a",
+              "kind": "long_term_memory",
+              "memory_version": 2,
+              "source_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "tokens": 358
+            }
+          ],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016070441-bdddcfd1bde9",
+          "token_budget": 13824,
+          "memory_included": [
+            {
+              "content_sha256": "4785bf94fe962de8e0fb7a8228998e72e0242fc180e8c2583ff185e44c7dda4a",
+              "kind": "long_term_memory",
+              "memory_version": 2,
+              "source_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "tokens": 358
+            }
+          ],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016070444-446146f7e928",
+          "token_budget": 13824,
+          "memory_included": [
+            {
+              "content_sha256": "4785bf94fe962de8e0fb7a8228998e72e0242fc180e8c2583ff185e44c7dda4a",
+              "kind": "long_term_memory",
+              "memory_version": 2,
+              "source_id": "memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01",
+              "tokens": 358
+            }
+          ],
+          "memory_omitted": []
+        }
+      ],
+      "assistant_replies": [
+        "已按只读方式核对完成，未新建、修改或执行任何内容。\n\n搜索命中的唯一相关记录是项目级记忆 context_memory：\n- 记忆 ID：memory-e19542cc3793d59c54c09fbdf7277530c11226b7bc7c3653d710dfe4ebf38d01\n- 版本：source_version 2（状态 active，标题“QUARTZ-338 发布校验标记（已更新）”，scope=project）\n- 正文原文：“项目 QUARTZ-338 当前有效的发布校验标记为 Jade-42。此条已由操作者更新；后续核对使用当前版本。”\n\n因此当前有效的发布校验标记为 Jade-42（记忆 memory-e19542cc…38d01，版本 2）。该记忆被标记为已由操作者更新，故旧版本标记不作数。注意：这是记忆中的声明，我未通过仓库文件、命令或发布系统做独立验证。"
+      ]
+    },
+    {
+      "name": "disabled-search",
+      "run_id": "run-20261016070539-bdaaebdf3f3f",
+      "thread_id": "thread-run-20261016070539-bdaaebdf3f3f",
+      "model_usage": {
+        "input_tokens": 23567,
+        "output_tokens": 327,
+        "total_tokens": 23894,
+        "cache_read_tokens": 22272,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 2,
+        "calls": 2
+      },
+      "run_status": "running",
+      "reply_completion_events": [
+        "evt-20261016070544-ed4c889ec197"
+      ],
+      "execution_permission": {
+        "protocol_version": "run_execution_permission.v2",
+        "revision": 1,
+        "mode": "ask",
+        "approval_mode": "ask",
+        "full_activation": "unavailable",
+        "full_unavailable_reason": "Full runtime activation is unavailable in this process.",
+        "approval_policy": "per_operation",
+        "command_scope": "per_operation",
+        "filesystem_scope": "per_operation",
+        "network_scope": "per_operation",
+        "persistent_terminal": false,
+        "background_process": false,
+        "agent_terminal_input": false,
+        "risk_tier": "minimal",
+        "required_gate": "operation_authority",
+        "policy_version": "execution_permission_policy.v2",
+        "operator_confirmed": false,
+        "runtime_gate_available": true,
+        "runtime": {
+          "workspace_sandbox_enabled": false,
+          "operator_approval_enabled": true,
+          "danger_full_access_enabled": false
+        },
+        "capability_matrix": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "sandboxed_command_runtime": true,
+          "unsandboxed_host_process": true,
+          "network_access": true,
+          "credential_access": true,
+          "user_home_access": true,
+          "persistent_user_terminal": true,
+          "persistent_agent_terminal": true,
+          "full_cdp": false,
+          "out_of_scope_policy": "exact_once_required"
+        },
+        "created_at": "2026-10-16T07:05:39.9955111Z",
+        "process_enabled": false,
+        "execution_authorized": false,
+        "capability_grant": false
+      },
+      "tools": [
+        {
+          "call_id": "toolu_5d83d430c9cf7f36473c150d",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [],
+            "scanned": 0,
+            "has_more": false
+          }
+        },
+        {
+          "call_id": "toolu_61f10fd1fd82e422f7a9a250",
+          "tool": "history_search",
+          "status": "completed",
+          "result": {
+            "records": [],
+            "scanned": 0,
+            "has_more": false
+          }
+        }
+      ],
+      "context_audits": [
+        {
+          "event_id": "evt-20261016070540-04ce27e9bcf6",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        },
+        {
+          "event_id": "evt-20261016070541-d2a45ea15f4a",
+          "token_budget": 13824,
+          "memory_included": [],
+          "memory_omitted": []
+        }
+      ],
+      "assistant_replies": [
+        "我用 history_search 查询了字面串「QUARTZ-338」，并另做了一次空查询浏览可检索范围，两次都返回 0 条记录（scanned=0，has_more=false）。因此没有取回任何来源，包括没有取回当前有效的 context_memory 来源，所以不存在可引用的版本号，我无法确认 QUARTZ-338 的校验标记，也不做任何猜测。注意：搜索范围是本次 Run 谱系内的消息、工具记录、摘要、快照和根可见笔记，加上本工作区已确认且未过期的记忆；未命中并不能证明该主题在别处不存在。本次未新建或修改任何笔记、记忆或文件，未执行命令。"
+      ]
+    }
+  ],
+  "builds": [
+    {
+      "inputs": [
+        {
+          "sha256": "15043156289bbf18c9855be26742f87b5ae3392d58a2e85678c727f17420f362",
+          "path": "internal/application/agent_runner.go"
+        },
+        {
+          "sha256": "8762d25b90649eadc76ac817f67818a6109c96633666f347f015dbe8fb377dd2",
+          "path": "internal/application/agent_turn_context.go"
+        },
+        {
+          "sha256": "a1b7ff9ea96feeb2b1c4b985f0b61c7a2719229107811450a5b9f9e17e6b0965",
+          "path": "internal/application/context_memory_candidate.go"
+        },
+        {
+          "sha256": "ed479296b2746818970717d2e81ede7eb7bf16eb0ebbaf7661da9c82acc4f42c",
+          "path": "internal/application/history_recall_memory_integration_test.go"
+        },
+        {
+          "sha256": "9a7bf70a7b1e225f3e6e86f77cab6d22581dba43ca2efa5a4f46376923728117",
+          "path": "internal/application/history_recall_tool.go"
+        },
+        {
+          "sha256": "7be9c9f5beabb827b2500d108da40ba7e38141a973aea89dbd56e06282a05263",
+          "path": "internal/application/supervisor_long_term_memory_delivery_test.go"
+        },
+        {
+          "sha256": "fa6ceb1c81e8782cb8d81fc083eadb5fa96ab39fa66038ad3bb171cabc048239",
+          "path": "internal/application/supervisor_memory_context_test.go"
+        },
+        {
+          "sha256": "211ce762abe5bea2ab0ddce665cc6eb355b3df1e64faaebfb4cec1e761440e96",
+          "path": "internal/contextmgr/memory_candidate_test.go"
+        },
+        {
+          "sha256": "eb31a3f76d8979064f4ea91dfaf38220f26038acb8dc18f3cbc409482cb75677",
+          "path": "internal/contextmgr/memory_candidate.go"
+        },
+        {
+          "sha256": "a92119bb4f483cff91439d5520d816cd2ba3444e8a6b747ce981571d040291d9",
+          "path": "internal/domain/history_recall.go"
+        },
+        {
+          "sha256": "1d3864973c6128d2ce47e1e0f43997bb975d51853d3085e2f554b21dd93ca21f",
+          "path": "internal/httpapi/context_continuity_handlers.go"
+        },
+        {
+          "sha256": "26c7253ec7a486686f37d2590007c17bce39dce63500967ff638563530a47e88",
+          "path": "internal/httpapi/context_memory_candidate_handlers_test.go"
+        },
+        {
+          "sha256": "610d4c69bf2de27368ee20e38b682e8740f493f55cfa2777b0c02495033adb5d",
+          "path": "internal/httpapi/context_memory_candidate_handlers.go"
+        },
+        {
+          "sha256": "8ac8a9e8d90e93255a94cca6d1bdfa1c5ced9f4007f0a0641a403882ea926de0",
+          "path": "internal/httpapi/handlers.go"
+        },
+        {
+          "sha256": "f9c846819b34c8ffaa2550017cbb65da34d4e546a8bfb149f4ad8775d87eb5a8",
+          "path": "internal/httpapi/openapi_test.go"
+        },
+        {
+          "sha256": "93614b1a152c5d727f9274332029ef837386ae6efe24bf3c2ed0d4b08e1383da",
+          "path": "internal/httpapi/openapi.go"
+        },
+        {
+          "sha256": "139464960d6be8987644156b010fd80b51de19b2d9022fbeb873ade6b32e60f3",
+          "path": "internal/llm/outcome_test.go"
+        },
+        {
+          "sha256": "ad122f479ff6944d7a7367d26f7c0b522ae67d1e705796cda9cbeaa34fe3da01",
+          "path": "internal/llm/outcome.go"
+        },
+        {
+          "sha256": "465a00e9e0dc66bbe4f00baa8b17df03022ad84b1443f80edce9ad6eb26fd9a1",
+          "path": "internal/store/clean_install_baseline_generated.go"
+        },
+        {
+          "sha256": "7d6a7a7fa83ed75c4a3d8b91a58430aaf94c7d19068ec6fbdfb59b6c0f9d8f9a",
+          "path": "internal/store/context_memory_candidates_test.go"
+        },
+        {
+          "sha256": "6b0892ccd87db5f1bfc0106059185d33792e1a30aa678f971c891df78dfcaa26",
+          "path": "internal/store/context_memory_candidates.go"
+        },
+        {
+          "sha256": "4f8bec134392aad62851c57df6dc7e0c3e179fbaef366ee9eaee2df95164d987",
+          "path": "internal/store/history_recall_memory_test.go"
+        },
+        {
+          "sha256": "d29174f5ce25210c3c482b93dbf100e72e304fa34d41a0e6facbe08dd7bb077b",
+          "path": "internal/store/history_recall_memory.go"
+        },
+        {
+          "sha256": "4dcd3c9cf16a6534a6d3aa225db1ae4e670c6f01bdb5339e67550ea9b0d44f7c",
+          "path": "internal/store/history_recall.go"
+        },
+        {
+          "sha256": "20bf1585a3a0754b49fb74a375b941800fa60659b72e95f89281c31b7ef478ff",
+          "path": "internal/store/migration_v198_memory_candidates.go"
+        },
+        {
+          "sha256": "1517180e3a31f884afd9fc61f3bff7f4f0f05465ebe34d62817fa914a082d95e",
+          "path": "internal/store/migrations.go"
+        },
+        {
+          "sha256": "7783cb82b5a5b5e45c6d82500b65335b420f8fac5f55a702d86c838e00df2c7f",
+          "path": "internal/store/sqlite.go"
+        },
+        {
+          "sha256": "e93028dc556816f257ba0e46412ea1a21b1780f9af7b13312a3a3c41b135269e",
+          "path": "internal/store/standard_code_delivery_test.go"
+        },
+        {
+          "sha256": "7c1d9ea6cc5b5bfda22f1e71bf679d1828f0138131adf768121db9254c782e2a",
+          "path": "internal/toolgateway/history_recall_test.go"
+        },
+        {
+          "sha256": "cfac7d6e9f2d88c627c77aee78daf0cbde2dbc74722fd6bd8ab9c5f56ecb1dfe",
+          "path": "internal/toolgateway/history_recall.go"
+        }
+      ],
+      "binary_sha256": "00c495a075dc84bf1ef8c71316e8a9e8362bf771cdd8956e6165f39b64daa1ff",
+      "built_at": "2026-10-16T07:02:42.8077159Z",
+      "source_base": "986ddb88c9602ea14f6a7c7c8f615d3494dd2556"
+    },
+    {
+      "built_at": "2026-10-16T06:57:17.9155599Z",
+      "binary_sha256": "ee61b96a53eb651b6d0767df8dfc86099114b711e351af055a2acb21f01fc230",
+      "inputs": [
+        {
+          "path": "internal/application/agent_runner.go",
+          "sha256": "15043156289bbf18c9855be26742f87b5ae3392d58a2e85678c727f17420f362"
+        },
+        {
+          "path": "internal/application/agent_turn_context.go",
+          "sha256": "8762d25b90649eadc76ac817f67818a6109c96633666f347f015dbe8fb377dd2"
+        },
+        {
+          "path": "internal/application/context_memory_candidate.go",
+          "sha256": "a1b7ff9ea96feeb2b1c4b985f0b61c7a2719229107811450a5b9f9e17e6b0965"
+        },
+        {
+          "path": "internal/application/history_recall_memory_integration_test.go",
+          "sha256": "ed479296b2746818970717d2e81ede7eb7bf16eb0ebbaf7661da9c82acc4f42c"
+        },
+        {
+          "path": "internal/application/history_recall_tool.go",
+          "sha256": "9a7bf70a7b1e225f3e6e86f77cab6d22581dba43ca2efa5a4f46376923728117"
+        },
+        {
+          "path": "internal/application/supervisor_long_term_memory_delivery_test.go",
+          "sha256": "7be9c9f5beabb827b2500d108da40ba7e38141a973aea89dbd56e06282a05263"
+        },
+        {
+          "path": "internal/application/supervisor_memory_context_test.go",
+          "sha256": "fa6ceb1c81e8782cb8d81fc083eadb5fa96ab39fa66038ad3bb171cabc048239"
+        },
+        {
+          "path": "internal/contextmgr/memory_candidate_test.go",
+          "sha256": "211ce762abe5bea2ab0ddce665cc6eb355b3df1e64faaebfb4cec1e761440e96"
+        },
+        {
+          "path": "internal/contextmgr/memory_candidate.go",
+          "sha256": "eb31a3f76d8979064f4ea91dfaf38220f26038acb8dc18f3cbc409482cb75677"
+        },
+        {
+          "path": "internal/domain/history_recall.go",
+          "sha256": "a92119bb4f483cff91439d5520d816cd2ba3444e8a6b747ce981571d040291d9"
+        },
+        {
+          "path": "internal/httpapi/context_continuity_handlers.go",
+          "sha256": "1d3864973c6128d2ce47e1e0f43997bb975d51853d3085e2f554b21dd93ca21f"
+        },
+        {
+          "path": "internal/httpapi/context_memory_candidate_handlers.go",
+          "sha256": "610d4c69bf2de27368ee20e38b682e8740f493f55cfa2777b0c02495033adb5d"
+        },
+        {
+          "path": "internal/httpapi/handlers.go",
+          "sha256": "8ac8a9e8d90e93255a94cca6d1bdfa1c5ced9f4007f0a0641a403882ea926de0"
+        },
+        {
+          "path": "internal/httpapi/openapi.go",
+          "sha256": "93614b1a152c5d727f9274332029ef837386ae6efe24bf3c2ed0d4b08e1383da"
+        },
+        {
+          "path": "internal/llm/outcome_test.go",
+          "sha256": "139464960d6be8987644156b010fd80b51de19b2d9022fbeb873ade6b32e60f3"
+        },
+        {
+          "path": "internal/llm/outcome.go",
+          "sha256": "ad122f479ff6944d7a7367d26f7c0b522ae67d1e705796cda9cbeaa34fe3da01"
+        },
+        {
+          "path": "internal/store/clean_install_baseline_generated.go",
+          "sha256": "465a00e9e0dc66bbe4f00baa8b17df03022ad84b1443f80edce9ad6eb26fd9a1"
+        },
+        {
+          "path": "internal/store/context_memory_candidates_test.go",
+          "sha256": "003c59db8c55230631ba6fb81dd0259e61086f41d1070ad8dcd2c7da61b80660"
+        },
+        {
+          "path": "internal/store/context_memory_candidates.go",
+          "sha256": "54d6723560e7e71b26f741d18846c5dbb33153f402cded49174c6dc37664399a"
+        },
+        {
+          "path": "internal/store/history_recall_memory_test.go",
+          "sha256": "633960082b71648fa12dcf415adacb2e64295faeb966a29f0f9f6a1eaa607859"
+        },
+        {
+          "path": "internal/store/history_recall_memory.go",
+          "sha256": "8c56b3092ae635d0103df1d44e9e466ae563bd30874c06ae94dc8ef856c76421"
+        },
+        {
+          "path": "internal/store/history_recall.go",
+          "sha256": "bce5ef8a63c80a3fd14411988b59bb77975ec6d0ebc3f8045bf2a1a0a99dc593"
+        },
+        {
+          "path": "internal/store/migration_v198_memory_candidates.go",
+          "sha256": "20bf1585a3a0754b49fb74a375b941800fa60659b72e95f89281c31b7ef478ff"
+        },
+        {
+          "path": "internal/store/migrations.go",
+          "sha256": "1517180e3a31f884afd9fc61f3bff7f4f0f05465ebe34d62817fa914a082d95e"
+        },
+        {
+          "path": "internal/store/sqlite.go",
+          "sha256": "7783cb82b5a5b5e45c6d82500b65335b420f8fac5f55a702d86c838e00df2c7f"
+        },
+        {
+          "path": "internal/toolgateway/history_recall_test.go",
+          "sha256": "7c1d9ea6cc5b5bfda22f1e71bf679d1828f0138131adf768121db9254c782e2a"
+        },
+        {
+          "path": "internal/toolgateway/history_recall.go",
+          "sha256": "0aba85c74b484c81cb128f6ec68fabf6123c97181c9f76b33e2fdde2c6772bf3"
+        }
+      ],
+      "source_base": "986ddb88c9602ea14f6a7c7c8f615d3494dd2556"
+    }
+  ],
+  "ui_verification": "Component interaction tests and production build",
+  "post_live_validation_changes": [
+    "Candidate fingerprint binds redacted status; confirmed memory includes evidence references.",
+    "Delivery checkpoint eligibility rechecks current WorkItem, Deliver binding and handoff digest.",
+    "OpenAPI candidate fields carry explicit enums and constraints."
+  ],
+  "post_live_validation_coverage": "Focused contextmgr/store/HTTP tests; real-model sequence above was not repeated after these changes."
+}

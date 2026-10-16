@@ -271,6 +271,8 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 		return a.routeSessions(request, segments)
 	case "memories":
 		return a.contextMemories(request, segments)
+	case "memory-candidates":
+		return a.contextMemoryCandidates(request, segments)
 	case "work-items":
 		if len(segments) == 2 {
 			return a.workItem(request, segments[1])

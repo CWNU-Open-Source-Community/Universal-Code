@@ -181,3 +181,41 @@ func TestModelContextAuditValidation(t *testing.T) {
 		t.Fatalf("valid context audit rejected by model attempt: %v", err)
 	}
 }
+
+func TestModelContextAuditMemoryProvenanceAndOmissionReasons(t *testing.T) {
+	validMemory := ModelContextSource{Kind: "long_term_memory", SourceID: strings.Repeat("m", 256), Tokens: 10,
+		MemoryVersion: 2, ContentSHA256: strings.Repeat("a", 64)}
+	valid := ModelContextAudit{TokenBudget: 100, EstimatedTokens: 10, Included: []ModelContextSource{validMemory},
+		Omitted: []ModelContextSource{{Kind: "long_term_memory", SourceID: "oversized-memory", Tokens: 3000,
+			OmissionReason: "long_term_memory_quota"}}}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("versioned memory audit rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		change func(*ModelContextSource)
+	}{
+		{"missing_version", func(source *ModelContextSource) { source.MemoryVersion = 0 }},
+		{"missing_digest", func(source *ModelContextSource) { source.ContentSHA256 = "" }},
+		{"invalid_digest", func(source *ModelContextSource) { source.ContentSHA256 = strings.Repeat("z", 64) }},
+		{"uppercase_digest", func(source *ModelContextSource) { source.ContentSHA256 = strings.Repeat("A", 64) }},
+		{"other_kind", func(source *ModelContextSource) { source.Kind = "note" }},
+		{"included_omission", func(source *ModelContextSource) { source.OmissionReason = "budget" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := validMemory
+			test.change(&source)
+			audit := valid
+			audit.Included = []ModelContextSource{source}
+			if err := audit.Validate(); err == nil {
+				t.Fatal("invalid memory audit accepted")
+			}
+		})
+	}
+	invalidReason := valid
+	invalidReason.Omitted = []ModelContextSource{{Kind: "long_term_memory", SourceID: "omitted", Tokens: 20,
+		OmissionReason: "unbounded free text"}}
+	if err := invalidReason.Validate(); err == nil {
+		t.Fatal("unknown omission reason accepted")
+	}
+}
