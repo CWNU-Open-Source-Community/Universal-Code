@@ -36,7 +36,7 @@ func TestSupervisorMCPGIFKeepsStaticAndProjectsAnimationFirstFrame(t *testing.T)
 		}
 		native := `{"content":[{"type":"image","mimeType":"image/gif","data":"` + base64.StdEncoding.EncodeToString(encoded.Bytes()) + `"}]}`
 		request, rounds := mcpContentFixture(t, native)
-		projected, err := supervisorMCPContent(request, rounds, true)
+		projected, err := (&AgentRunner{}).supervisorMCPContent(t.Context(), domain.SupervisorTurn{}, request, rounds, true)
 		if err != nil || len(projected.Messages[0].Images) != 1 {
 			t.Fatalf("GIF did not reach image input: animated=%t err=%v", animated, err)
 		}
@@ -89,7 +89,7 @@ func TestSupervisorMCPContentImagesFromToolsResourcesAndPrompts(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			request, rounds := mcpContentFixture(t, native)
 			original := request.Messages[0].ToolResults[0].Content
-			result, err := supervisorMCPContent(request, rounds, true)
+			result, err := (&AgentRunner{}).supervisorMCPContent(t.Context(), domain.SupervisorTurn{}, request, rounds, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -115,7 +115,7 @@ func TestSupervisorMCPContentImagesFromToolsResourcesAndPrompts(t *testing.T) {
 func TestSupervisorMCPContentRejectsUnusablePixelsAndStripsAudio(t *testing.T) {
 	for _, vision := range []bool{false, true} {
 		request, rounds := mcpContentFixture(t, `{"content":[{"type":"image","mimeType":"image/png","data":"aGVsbG8="},{"type":"audio","mimeType":"audio/wav","data":"c2VjcmV0"},{"type":"resource_link","uri":"https://invalid.example/image","name":"reference"}]}`)
-		result, err := supervisorMCPContent(request, rounds, vision)
+		result, err := (&AgentRunner{}).supervisorMCPContent(t.Context(), domain.SupervisorTurn{}, request, rounds, vision)
 		if err != nil || len(result.Messages[0].Images) != 0 {
 			t.Fatalf("invalid image was accepted: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestSupervisorMCPContentRejectsUnusablePixelsAndStripsAudio(t *testing.T) {
 func TestSupervisorMCPContentRequiresExactResult(t *testing.T) {
 	request, rounds := mcpContentFixture(t, `{"content":[]}`)
 	request.Messages[0].ToolResults[0].Content += " "
-	if _, err := supervisorMCPContent(request, rounds, true); err == nil {
+	if _, err := (&AgentRunner{}).supervisorMCPContent(t.Context(), domain.SupervisorTurn{}, request, rounds, true); err == nil {
 		t.Fatal("accepted a tool result other than the recorded call")
 	}
 }
@@ -146,7 +146,7 @@ func TestSupervisorMCPContentPreservesExactNonMediaResult(t *testing.T) {
 			for _, vision := range []bool{false, true} {
 				request, rounds := mcpContentFixture(t, native)
 				original := request.Messages[0].ToolResults[0]
-				result, err := supervisorMCPContent(request, rounds, vision)
+				result, err := (&AgentRunner{}).supervisorMCPContent(t.Context(), domain.SupervisorTurn{}, request, rounds, vision)
 				if err != nil {
 					t.Fatal(err)
 				}

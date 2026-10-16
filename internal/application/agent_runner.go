@@ -929,7 +929,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			modelRequest, err = s.supervisorBrowserImages(ctx, turn.Checkpoint, prepared.ref, modelRequest, prepared.toolRounds)
 		}
 		if err == nil {
-			modelRequest, err = supervisorMCPContent(modelRequest, prepared.toolRounds, s.router.DescribeVision(prepared.ref).State == llm.VisionSupported)
+			modelRequest, err = s.supervisorMCPContent(ctx, turn, modelRequest, prepared.toolRounds, s.router.DescribeVision(prepared.ref).State == llm.VisionSupported)
 		}
 		if err != nil {
 			failure := s.recordFailure(ctx, &result, err, 0)
