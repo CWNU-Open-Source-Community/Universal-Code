@@ -12,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/mcp"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/session"
 )
@@ -329,6 +330,9 @@ func (s *SQLiteStore) authorizeApprovalWithSessionGrant(ctx context.Context, pro
 	}
 	if record.ToolName == "host_command_propose" {
 		return approval.DecisionResult{}, errors.New("historical host grant consumption is retired")
+	}
+	if record.ToolName == mcp.OperationApprovalTool {
+		return approval.DecisionResult{}, errors.New("MCP grants require the built-in application scope verifier")
 	}
 	if (record.ToolName == "command_runtime") != (commandReview != nil) {
 		return approval.DecisionResult{}, errors.New("command grant consumption requires an explicit exact operator review")

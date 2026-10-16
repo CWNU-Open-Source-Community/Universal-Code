@@ -28,6 +28,7 @@ const (
 	ApprovalControlApproveOnce      ApprovalControlAction = "approve_once"
 	ApprovalControlApproveForThread ApprovalControlAction = "approve_for_thread"
 	ApprovalControlApproveForRun    ApprovalControlAction = "approve_for_run"
+	ApprovalControlApproveForRunApp ApprovalControlAction = "approve_for_run_app"
 	ApprovalControlDeny             ApprovalControlAction = "deny"
 )
 
@@ -118,6 +119,9 @@ func (s *ApprovalControlService) Decide(ctx context.Context,
 	}
 	if record.ToolName == string(toolgateway.CommandRuntimeTool) && (request.Action == ApprovalControlApproveForRun || record.GrantID != "") {
 		return s.decideBoundedCommand(ctx, run, record, request)
+	}
+	if record.ToolName == mcp.OperationApprovalTool && (request.Action == ApprovalControlApproveForRunApp || record.GrantID != "") {
+		return s.decideComputerUseApp(ctx, run, record, request)
 	}
 	if record.GrantID != "" {
 		return DecideApprovalControlResult{}, apperror.New(apperror.CodeFailedPrecondition, "approval already belongs to a session grant")
@@ -408,9 +412,10 @@ func normalizeApprovalControlRequest(request *DecideApprovalControlRequest) erro
 	if request.Action != ApprovalControlApproveOnce &&
 		request.Action != ApprovalControlApproveForThread &&
 		request.Action != ApprovalControlApproveForRun &&
+		request.Action != ApprovalControlApproveForRunApp &&
 		request.Action != ApprovalControlDeny {
 		return apperror.New(apperror.CodeInvalidArgument,
-			"approval control action must be approve_once, approve_for_thread, approve_for_run, or deny")
+			"approval control action must be approve_once, approve_for_thread, approve_for_run, approve_for_run_app, or deny")
 	}
 	if request.Action == ApprovalControlApproveForRun {
 		if request.GrantTTLSeconds < 1 || request.GrantTTLSeconds > 900 || request.GrantMaxUses < 1 || request.GrantMaxUses > 8 {
@@ -421,7 +426,7 @@ func normalizeApprovalControlRequest(request *DecideApprovalControlRequest) erro
 	}
 	request.Reason = strings.TrimSpace(request.Reason)
 	if (request.Action == ApprovalControlApproveOnce ||
-		request.Action == ApprovalControlApproveForThread) && request.Reason != "" {
+		request.Action == ApprovalControlApproveForThread || request.Action == ApprovalControlApproveForRunApp) && request.Reason != "" {
 		return apperror.New(apperror.CodeInvalidArgument,
 			"approve-once cannot include a denial reason")
 	}
