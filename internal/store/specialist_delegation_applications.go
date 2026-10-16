@@ -564,7 +564,7 @@ func requireSpecialistDelegationApplicationBindingTx(ctx context.Context, tx *sq
 			apperror.CodeFailedPrecondition,
 			"specialist delegation application requires a running Run")
 	}
-	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		application.RootAgentID))
 	if err != nil {
 		return domain.Run{}, err

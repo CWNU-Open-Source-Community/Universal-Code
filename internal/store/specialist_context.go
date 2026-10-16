@@ -39,7 +39,7 @@ func (s *SQLiteStore) PrepareSpecialistContext(ctx context.Context,
 		return domain.SpecialistContextBatch{}, apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist context must be prepared before model usage is recorded")
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
 		return domain.SpecialistContextBatch{}, err
@@ -227,12 +227,12 @@ func validateEligibleSpecialistContextMessageTx(ctx context.Context, tx *sql.Tx,
 		return apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist context instruction is no longer eligible")
 	}
-	storedChild, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	storedChild, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		child.ID))
 	if err != nil {
 		return err
 	}
-	storedParent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	storedParent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		parent.ID))
 	if err != nil {
 		return err
@@ -461,7 +461,7 @@ func validateSpecialistContextDeliveryProjectionTx(ctx context.Context, tx *sql.
 			return apperror.New(apperror.CodeFailedPrecondition,
 				"Specialist prepared context delivery exceeds its context bound")
 		}
-		parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+		parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 			node.ParentID))
 		if err != nil {
 			return err

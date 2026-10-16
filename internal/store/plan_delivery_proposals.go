@@ -321,7 +321,7 @@ func requirePlanDeliveryProposalBindingTx(ctx context.Context, tx *sql.Tx,
 			apperror.CodeFailedPrecondition,
 			"Plan/Delivery proposal requires the current running Plan-phase Run")
 	}
-	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		operation.RootAgentID))
 	if err != nil {
 		return domain.Run{}, domain.Mission{}, err

@@ -398,7 +398,7 @@ func (s *SQLiteStore) ConsumeAgentMessages(ctx context.Context, agentID string, 
 	if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET updated_at = updated_at WHERE id = ?`, agentID); err != nil {
 		return nil, err
 	}
-	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, agentID))
+	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, agentID))
 	if err != nil {
 		return nil, err
 	}

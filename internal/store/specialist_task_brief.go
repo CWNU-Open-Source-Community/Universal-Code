@@ -136,7 +136,7 @@ func validateSpecialistInstructionSendTx(ctx context.Context, tx *sql.Tx, messag
 		recipient.ParentID != message.SenderAgentID {
 		return apperror.New(apperror.CodeFailedPrecondition, "Specialist operation must come from its direct root parent")
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id=?`, message.SenderAgentID))
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id=?`, message.SenderAgentID))
 	if err != nil {
 		return err
 	}

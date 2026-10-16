@@ -119,7 +119,7 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 			apperror.New(apperror.CodeFailedPrecondition, "specialist admission requires a running Run")
 	}
 
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		admission.ParentAgentID))
 	if err != nil {
 		return domain.AgentNode{}, false, err
@@ -246,8 +246,12 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		child.Version, ts(child.CreatedAt), ts(child.UpdatedAt)); err != nil {
 		return domain.AgentNode{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET allowed_read_paths_json=?,tool_call_limit=?,cost_limit_micros=? WHERE id=?`, string(pathsJSON), child.ToolCallLimit, child.CostLimitMicros, child.ID); err != nil {
-		return domain.AgentNode{}, false, err
+	// The inserted node already has the no-tool defaults. Only an explicit child
+	// grant needs an authority update, in the same admission transaction.
+	if len(child.AllowedReadPaths) > 0 || child.ToolCallLimit > 0 || child.CostLimitMicros > 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET allowed_read_paths_json=?,tool_call_limit=?,cost_limit_micros=? WHERE id=?`, string(pathsJSON), child.ToolCallLimit, child.CostLimitMicros, child.ID); err != nil {
+			return domain.AgentNode{}, false, err
+		}
 	}
 	if err := bindChildTaskAdmissionTx(ctx, tx, binding, child.ID); err != nil {
 		return domain.AgentNode{}, false, err

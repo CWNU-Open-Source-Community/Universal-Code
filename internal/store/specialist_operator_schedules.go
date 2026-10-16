@@ -352,7 +352,7 @@ func requireSpecialistOperatorScheduleBindingTx(ctx context.Context, tx *sql.Tx,
 		return domain.Run{}, apperror.New(apperror.CodeFailedPrecondition,
 			"specialist operator scheduling requires a running Run")
 	}
-	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		request.RootAgentID))
 	if err != nil {
 		return domain.Run{}, err
@@ -383,7 +383,7 @@ func requireSpecialistOperatorScheduleBindingTx(ctx context.Context, tx *sql.Tx,
 				fmt.Sprintf("Agent %s is not an instructed assignment of this application",
 					agentID))
 		}
-		agent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+		agent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 			agentID))
 		if err != nil {
 			return domain.Run{}, err
