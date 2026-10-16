@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"strings"
@@ -21,6 +22,9 @@ type fakeBackend struct {
 	inputs, activations int
 	inputErr            error
 	unavailable         bool
+	afterInput          func()
+	captureErr          error
+	captureBytes        []byte
 }
 
 func fake() *fakeBackend {
@@ -41,6 +45,12 @@ func (f *fakeBackend) inspect(uintptr) (nativeWindow, error) {
 	return f.w, nil
 }
 func (f *fakeBackend) capture(context.Context, nativeWindow) ([]byte, error) {
+	if f.captureErr != nil {
+		return nil, f.captureErr
+	}
+	if f.captureBytes != nil {
+		return f.captureBytes, nil
+	}
 	var b bytes.Buffer
 	err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, f.w.Bounds.Width, f.w.Bounds.Height)))
 	return b.Bytes(), err
@@ -52,6 +62,9 @@ func (f *fakeBackend) activate(context.Context, nativeWindow) error {
 }
 func (f *fakeBackend) input(context.Context, nativeWindow, string, Arguments) error {
 	f.inputs++
+	if f.afterInput != nil {
+		f.afterInput()
+	}
 	return f.inputErr
 }
 func ready(t *testing.T) (*executor, *fakeBackend, Arguments) {
@@ -129,8 +142,13 @@ func TestActionConsumesObservationAndReturnsFreshImage(t *testing.T) {
 func TestFailedInputConsumesObservation(t *testing.T) {
 	e, f, a := ready(t)
 	f.inputErr = errors.New("partial input")
-	if _, _, err := e.run(context.Background(), "computer_click", a); err == nil {
-		t.Fatal("expected input failure")
+	value, image, err := e.run(context.Background(), "computer_click", a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, ok := value.(ObservationUnavailable)
+	if !ok || failed.ActionStatus != "unknown" || failed.ActionSent || len(image) != 0 || !strings.Contains(failed.Reason, "partially sent") {
+		t.Fatalf("partial-input status lost: %#v", value)
 	}
 	f.inputErr = nil
 	if _, _, err := e.run(context.Background(), "computer_click", a); err == nil {
@@ -143,8 +161,10 @@ func TestFailedInputConsumesObservation(t *testing.T) {
 func TestObserveDoesNotActivate(t *testing.T) {
 	e, f, a := ready(t)
 	f.w.Foreground = false
-	if _, _, err := e.run(context.Background(), "computer_observe", a); err == nil {
-		t.Fatal("background captured")
+	if value, image, err := e.run(context.Background(), "computer_observe", a); err != nil || len(image) != 0 {
+		t.Fatalf("unexpected background result: %T, %v", value, err)
+	} else if unavailable, ok := value.(ObservationUnavailable); !ok || unavailable.ActionSent || unavailable.ActionStatus != "not_sent" {
+		t.Fatalf("background capture status missing: %#v", value)
 	}
 	if f.activations != 0 {
 		t.Fatal("observe changed focus")
@@ -165,6 +185,113 @@ func TestCancelledInput(t *testing.T) {
 	}
 	if f.inputs != 0 {
 		t.Fatal("cancelled input performed")
+	}
+}
+
+func TestSentActionSurvivesObservationFailure(t *testing.T) {
+	for _, failure := range []string{"closed", "focus changed", "moved", "capture failed", "cancelled"} {
+		t.Run(failure, func(t *testing.T) {
+			e, f, a := ready(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			f.afterInput = func() {
+				switch failure {
+				case "closed":
+					f.unavailable = true
+				case "focus changed":
+					f.w.Foreground = false
+				case "moved":
+					f.w.Bounds.X++
+				case "capture failed":
+					f.captureErr = errors.New("capture unavailable")
+				case "cancelled":
+					cancel()
+				}
+			}
+			value, data, err := e.run(ctx, "computer_click", a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, ok := value.(ObservationUnavailable)
+			if !ok || !out.ActionSent || out.ActionStatus != "sent" || out.Action != "computer_click" || out.ObservationAvailable || len(data) != 0 || out.LastKnownWindow.WindowID != a.WindowID {
+				t.Fatalf("sent action was lost: %#v", value)
+			}
+			if _, exists := e.observations[a.WindowID]; exists {
+				t.Fatal("unavailable observation was authorized")
+			}
+			r, err := toolResult(value, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !r.IsError || r.StructuredContent == nil || len(r.Content) != 1 {
+				t.Fatal("MCP lost the structured action result")
+			}
+			if text := r.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"action_sent":true`) || !strings.Contains(text, "Do not automatically replay") {
+				t.Fatal("MCP did not explain the sent action and next step")
+			}
+		})
+	}
+}
+
+func TestOversizedScreenshotPreservesActionAndInvalidatesObservation(t *testing.T) {
+	// Use a real, poorly compressible PNG smaller than the host's raw 4 MiB
+	// limit: base64 plus MCP's content envelope is what makes it too large.
+	img := image.NewRGBA(image.Rect(0, 0, 1100, 1000))
+	seed := uint32(1)
+	for i := 0; i < len(img.Pix); i += 4 {
+		for c := 0; c < 3; c++ {
+			seed ^= seed << 13
+			seed ^= seed >> 17
+			seed ^= seed << 5
+			img.Pix[i+c] = byte(seed)
+		}
+		img.Pix[i+3] = 255
+	}
+	var pngBuffer bytes.Buffer
+	if err := png.Encode(&pngBuffer, img); err != nil {
+		t.Fatal(err)
+	}
+	pngData := pngBuffer.Bytes()
+	if len(pngData) >= 4*1024*1024 {
+		t.Fatal("test PNG must fit before base64 encoding")
+	}
+	for _, action := range []bool{false, true} {
+		t.Run(fmt.Sprintf("action=%t", action), func(t *testing.T) {
+			e, f, a := ready(t)
+			f.captureBytes = pngData
+			name := "computer_observe"
+			if action {
+				name = "computer_click"
+			}
+			value, data, err := e.run(context.Background(), name, a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, ok := value.(ObservationUnavailable)
+			if !ok || out.ActionSent != action || out.ObservationAvailable || len(data) != 0 || !strings.Contains(out.Reason, "4 MiB") {
+				t.Fatalf("unexpected oversized result: %#v", value)
+			}
+			if _, exists := e.observations[a.WindowID]; exists {
+				t.Fatal("undelivered image left a usable observation token")
+			}
+			r, err := toolResult(value, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !r.IsError || len(encoded) > maxResultBytes || len(r.Content) != 1 {
+				t.Fatal("oversized result was not replaced with a bounded status")
+			}
+			if _, _, err = e.run(context.Background(), "computer_click", a); err == nil {
+				t.Fatal("old observation accepted after oversized capture")
+			}
+		})
+	}
+	if fits, err := resultFits(Observation{}, pngData); err != nil || fits {
+		t.Fatalf("encoded MCP size not checked: fits=%v err=%v", fits, err)
 	}
 }
 func TestCatalogArgumentValidation(t *testing.T) {
@@ -223,7 +350,8 @@ func TestExecuteReservedArgument(t *testing.T) {
 func TestSDKCatalogAndImageContent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	server := newServer(newExecutor(fake()))
+	f := fake()
+	server := newServer(newExecutor(f))
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, st, nil)
 	if err != nil {
@@ -267,5 +395,24 @@ func TestSDKCatalogAndImageContent(t *testing.T) {
 	}
 	if _, err = png.Decode(bytes.NewReader(img.Data)); err != nil {
 		t.Fatal(err)
+	}
+	var o Observation
+	if err = json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &o); err != nil {
+		t.Fatal(err)
+	}
+	f.afterInput = func() { f.unavailable = true }
+	r, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "computer_key", Arguments: map[string]any{"window_id": w.WindowID, "app_id": w.AppID, "observation_id": o.ObservationID, "key": "ALT+F4"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unavailable ObservationUnavailable
+	if err = json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &unavailable); err != nil {
+		t.Fatal(err)
+	}
+	if !r.IsError || r.StructuredContent == nil || len(r.Content) != 1 || !unavailable.ActionSent || unavailable.ActionStatus != "sent" {
+		t.Fatalf("closed-window action status lost across SDK: %#v", r)
+	}
+	if _, err = cs.ListTools(ctx, nil); err != nil {
+		t.Fatalf("observation failure disconnected MCP: %v", err)
 	}
 }

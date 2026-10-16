@@ -16,6 +16,9 @@ const (
 	ServerName      = "universal-code-computer-use"
 	ServerVersion   = "1"
 	ProtocolVersion = "2026-07-28"
+	// The host accepts 4 MiB JSON-RPC messages. Reserve the maximum inbound
+	// request size for its echoed ID, plus SDK response metadata and envelope.
+	maxResultBytes = 4*1024*1024 - 64*1024 - 1024
 )
 
 type ToolDefinition struct {
@@ -117,18 +120,34 @@ func newServer(e *executor) *mcp.Server {
 			if err != nil {
 				return toolError(err), nil
 			}
-			encoded, err := json.Marshal(value)
-			if err != nil {
-				return nil, err
-			}
-			r := &mcp.CallToolResult{StructuredContent: value, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}
-			if len(png) > 0 {
-				r.Content = append(r.Content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
-			}
-			return r, nil
+			return toolResult(value, png)
 		})
 	}
 	return s
+}
+
+func toolResult(value any, png []byte) (*mcp.CallToolResult, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	r := &mcp.CallToolResult{StructuredContent: value, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}
+	if len(png) > 0 {
+		r.Content = append(r.Content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
+	}
+	_, r.IsError = value.(ObservationUnavailable)
+	return r, nil
+}
+
+func resultFits(value any, png []byte) (bool, error) {
+	r, err := toolResult(value, png)
+	if err != nil {
+		return false, err
+	}
+	// Marshal the actual SDK result, including base64 image encoding, both
+	// structured/text metadata copies, JSON escaping and content discriminators.
+	encoded, err := json.Marshal(r)
+	return len(encoded) <= maxResultBytes, err
 }
 
 func decodeArguments(def ToolDefinition, raw []byte) (Arguments, error) {

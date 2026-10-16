@@ -6,6 +6,8 @@ The normal sequence is list windows, obtain application approval, explicitly act
 
 Screenshots use **GDI visible-desktop capture**, with DWM visible-frame bounds and physical pixels. Capture requires the target to be foreground and fully on screen. Occluding windows remain visible in the screenshot; clicks and scrolling reject points owned by another top-level window. Scroll moves the pointer to the window center and sends wheel detents (`dy` positive up, `dx` positive right). The executor validates live HWND, PID, process creation time, executable path/file identity, bounds and foreground before input. It excludes its own executable and ancestor process executables. Windows may refuse foreground activation or input into elevated applications; these failures are reported.
 
+If input was sent but a fresh image cannot be obtained (for example, `ALT+F4` closed the window), the error result retains `action_sent: true`, the last verified window identity, and instructions to list/observe before further input. Input errors report `action_status: "unknown"` because some events may already have been sent. Neither case supplies an observation ID. Screenshots are checked using the SDK result's actual JSON/base64 encoding against the host's 4 MiB message budget, reserving space for the request ID and SDK envelope. An oversized image returns a bounded status without scaling or a usable observation token; the action's sent/unknown state is retained.
+
 The package does not launch applications. `testfixture` is a separate, opt-in native Go window for live verification:
 
 ```powershell

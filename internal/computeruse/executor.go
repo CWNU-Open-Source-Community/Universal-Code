@@ -37,6 +37,25 @@ type Observation struct {
 	ImageHeight   int    `json:"image_height"`
 	CaptureMethod string `json:"capture_method"`
 	PNG           []byte `json:"-"`
+	Action        string `json:"action,omitempty"`
+	ActionSent    bool   `json:"action_sent,omitempty"`
+}
+
+// ObservationUnavailable preserves what happened when an input was sent but
+// cannot be followed by a usable image, including a window that just closed.
+// ActionStatus is sent, unknown (input may be partial), or not_sent.
+type ObservationUnavailable struct {
+	LastKnownWindow      Window `json:"last_known_window"`
+	Action               string `json:"action,omitempty"`
+	ActionSent           bool   `json:"action_sent"`
+	ActionStatus         string `json:"action_status"`
+	ObservationAvailable bool   `json:"observation_available"`
+	Reason               string `json:"reason"`
+	NextStep             string `json:"next_step"`
+}
+
+func unavailableObservation(w Window, action, status string, err error) ObservationUnavailable {
+	return ObservationUnavailable{LastKnownWindow: w, Action: action, ActionSent: status == "sent", ActionStatus: status, Reason: err.Error(), NextStep: "List windows or obtain a new observation before further input. Do not automatically replay this action; no observation ID or usable image was delivered."}
 }
 
 type Arguments struct {
@@ -145,18 +164,27 @@ func (e *executor) run(ctx context.Context, name string, a Arguments) (any, []by
 		return nil, nil, errors.New("window identity changed; list windows again")
 	}
 	w.WindowID = a.WindowID
+	action, status := "", "not_sent"
+	unavailable := func(err error) (any, []byte, error) {
+		delete(e.observations, a.WindowID)
+		return unavailableObservation(w.Window, action, status, err), nil, nil
+	}
 	switch name {
 	case "computer_observe":
 	case "computer_activate":
+		action = name
 		delete(e.observations, a.WindowID)
 		e.backend.generation(true)
 		if err = e.backend.activate(ctx, w); err != nil {
-			return nil, nil, err
+			status = "unknown"
+			return unavailable(fmt.Errorf("activation may have changed focus: %w", err))
 		}
-		w, err = e.backend.inspect(w.handle)
-		if err != nil || !sameWindow(old, w) {
-			return nil, nil, errors.New("window changed during activation")
+		status = "sent"
+		activated, inspectErr := e.backend.inspect(w.handle)
+		if inspectErr != nil || !sameWindow(old, activated) {
+			return unavailable(errors.New("activation completed, but the window changed before observation"))
 		}
+		w = activated
 		w.WindowID = a.WindowID
 	case "computer_click", "computer_type", "computer_key", "computer_scroll":
 		o, ok := e.observations[a.WindowID]
@@ -170,38 +198,46 @@ func (e *executor) run(ctx context.Context, name string, a Arguments) (any, []by
 			return nil, nil, err
 		}
 		// Consume before input, including partially completed or failed input.
+		action = name
 		e.observations = map[string]observed{}
 		e.backend.generation(true)
 		if err = e.backend.input(ctx, w, name, a); err != nil {
-			return nil, nil, err
+			status = "unknown"
+			return unavailable(fmt.Errorf("input may have been partially sent: %w", err))
 		}
+		status = "sent"
 		select {
 		case <-time.After(80 * time.Millisecond):
 		case <-ctx.Done():
-			return nil, nil, ctx.Err()
+			return unavailable(fmt.Errorf("input was sent; fresh observation cancelled: %w", ctx.Err()))
 		}
 	default:
 		return nil, nil, errors.New("unknown computer tool")
 	}
 	current, err := e.backend.inspect(w.handle)
 	if err != nil || !sameWindow(w, current) || current.Bounds != w.Bounds {
-		return nil, nil, errors.New("window changed; observe it again")
+		return unavailable(errors.New("window closed, moved, or changed before a fresh observation could be captured"))
 	}
 	current.WindowID = a.WindowID
 	if !current.Foreground {
-		return nil, nil, errors.New("target window is not foreground; activate it first")
+		return unavailable(errors.New("target window is no longer foreground"))
 	}
 	data, err := e.backend.capture(ctx, current)
 	if err != nil {
-		return nil, nil, err
+		return unavailable(err)
 	}
 	check, err := e.backend.inspect(w.handle)
 	if err != nil || !sameWindow(current, check) || check.Bounds != current.Bounds || !check.Foreground {
-		return nil, nil, errors.New("window changed during capture; observe again")
+		return unavailable(errors.New("window changed during capture"))
 	}
 	id := token()
+	o := Observation{Window: current.Window, ObservationID: id, ImageWidth: current.Bounds.Width, ImageHeight: current.Bounds.Height, CaptureMethod: "gdi-visible-desktop", PNG: data, Action: action, ActionSent: status == "sent"}
+	if fits, err := resultFits(o, data); err != nil {
+		return unavailable(err)
+	} else if !fits {
+		return unavailable(errors.New("screenshot exceeds the host's 4 MiB MCP message limit at its original dimensions; no image or observation ID was delivered"))
+	}
 	e.observations[a.WindowID] = observed{id, current.Bounds, time.Now(), e.backend.generation(false)}
-	o := Observation{current.Window, id, current.Bounds.Width, current.Bounds.Height, "gdi-visible-desktop", data}
 	return o, data, nil
 }
 func sameWindow(a, b nativeWindow) bool {
