@@ -23,8 +23,13 @@ func (f wakeWorkerHealthFake) Health() application.RunWakeWorkerHealth { return 
 type scheduledWorkerHealthFake struct{ health scheduler.WorkerHealth }
 
 func (f scheduledWorkerHealthFake) Health() scheduler.WorkerHealth { return f.health }
+func (scheduledWorkerHealthFake) SelectionScope() string           { return "all_jobs" }
 
 type runExecutionControllerFake struct{}
+
+func (runExecutionControllerFake) ResumeRiskEscalation(context.Context, application.ResumeRiskEscalationRequest) (application.ResumeRiskEscalationResult, error) {
+	return application.ResumeRiskEscalationResult{}, apperror.New(apperror.CodeFailedPrecondition, "unused risk resume test seam")
+}
 
 func (runExecutionControllerFake) Execute(context.Context,
 	application.ExecuteRunHandoffRequest) (application.ExecuteRunHandoffResult, error) {
@@ -108,7 +113,7 @@ func TestRuntimeCapabilitiesProjectExplicitBatchHostValidation(t *testing.T) {
 	api, err := New(fixture.store, Config{
 		AccessToken: testAccessToken, ControlToken: testControlToken,
 		BatchDeliveryControlEnabled:        true,
-		BatchDeliveryController:            application.NewBatchDeliveryService(fixture.store),
+		BatchDeliveryController:            application.NewBatchDeliveryWorkbenchService(application.NewBatchDeliveryService(fixture.store)),
 		BatchDeliveryHostValidationEnabled: true,
 		ExecutionPermissionControlEnabled:  true,
 		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{
@@ -133,7 +138,7 @@ func TestRuntimeCapabilitiesRejectBatchHostValidationWithoutFullAccess(t *testin
 	_, err := New(fixture.store, Config{
 		AccessToken: testAccessToken, ControlToken: testControlToken,
 		BatchDeliveryControlEnabled:        true,
-		BatchDeliveryController:            application.NewBatchDeliveryService(fixture.store),
+		BatchDeliveryController:            application.NewBatchDeliveryWorkbenchService(application.NewBatchDeliveryService(fixture.store)),
 		BatchDeliveryHostValidationEnabled: true,
 		ExecutionPermissionControlEnabled:  true,
 		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{

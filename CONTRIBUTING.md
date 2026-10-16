@@ -10,6 +10,12 @@ Thank you for contributing to Universal Code. Resumability, auditability, and fa
 2. 对行为变化先开 Issue 或 Draft PR，说明用户目标、信任边界、最小验收条件和明确不在范围内的事项。新增控制平面、授权路径、数据库状态机或跨语言所有权时，先新增 ADR；沿用既有决策的小修复可以在 PR 中引用相关 ADR。
 3. 不要把公开百分比、历史测试记录或 `release_ready` 文案当成验证结果。PR 只声明你在当前提交上实际运行过的检查。
 
+## 控制器装配契约 / Controller assembly contracts
+
+HTTP 控制器窄接口增加方法时，同步更新 `httpapi.New` 的能力开关校验和真实生产控制器的装配、路由或能力投影测试。启用的已发布能力缺接口时应在构造期返回明确错误，不能通过运行时类型断言静默变成 404/503 或 false。关闭的可选能力仍可使用最小控制器；凭据等后端是否可用由显式能力方法表达。Toolgateway 的可选 Script Process 存储通过 `ScriptProcessCapabilities` 返回缺失契约原因，生产 SQLite 装配测试必须保证其能力仍完整。
+
+When extending a narrow HTTP controller interface, update the capability-gated checks in `httpapi.New` and tests using concrete production controllers. An enabled published capability must reject a missing contract during construction rather than silently projecting 404/503 or false. Keep minimal controllers valid for disabled optional capabilities and express backend availability explicitly. Toolgateway reports optional Script Process storage contracts through `ScriptProcessCapabilities`; its production SQLite assembly test must retain complete support.
+
 ## 开发环境 / Development environment
 
 仓库和 CI 当前固定以下主版本：

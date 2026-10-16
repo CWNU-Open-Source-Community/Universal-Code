@@ -90,8 +90,12 @@ func New(store Store, checker policy.Checker) *Gateway {
 	var scriptStore scriptprocess.Store
 	var scriptRunStore ScriptRunStore
 	if store != nil {
-		scriptStore, _ = any(store).(scriptprocess.Store)
-		scriptRunStore, _ = any(store).(ScriptRunStore)
+		if candidate, ok := store.(scriptprocess.Store); ok {
+			scriptStore = candidate
+		}
+		if candidate, ok := store.(ScriptRunStore); ok {
+			scriptRunStore = candidate
+		}
 	}
 	gateway := &Gateway{
 		store: store, grantStore: store, budgetStore: store, artifactStore: store, policyRecorder: store, checker: checker,
@@ -102,6 +106,29 @@ func New(store Store, checker policy.Checker) *Gateway {
 		waitGraph:       waitgraph.Default(),
 	}
 	return gateway
+}
+
+// ScriptProcessCapabilities describes optional storage installed by New.
+// A gateway used only for other tools need not implement either contract.
+type ScriptProcessCapabilities struct {
+	ProposalsAvailable   bool
+	RunCreationAvailable bool
+	UnavailableReasons   []string
+}
+
+func (g *Gateway) ScriptProcessCapabilities() ScriptProcessCapabilities {
+	value := ScriptProcessCapabilities{UnavailableReasons: []string{}}
+	if g != nil && g.scriptStore != nil {
+		value.ProposalsAvailable = true
+	} else {
+		value.UnavailableReasons = append(value.UnavailableReasons, "script_process requires scriptprocess.Store")
+	}
+	if g != nil && g.scriptRunStore != nil {
+		value.RunCreationAvailable = true
+	} else {
+		value.UnavailableReasons = append(value.UnavailableReasons, "script Run creation requires toolgateway.ScriptRunStore")
+	}
+	return value
 }
 
 func (g *Gateway) WithWaitGraph(graph *waitgraph.Graph) *Gateway {
