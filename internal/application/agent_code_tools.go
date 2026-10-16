@@ -21,6 +21,7 @@ import (
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
+	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 type AgentCodeToolStore interface {
@@ -193,12 +194,12 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 		if err := json.Unmarshal(canonical, &input); err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
-		result, err := e.applyChange(ctx, scope, input)
+		result, baseline, err := e.applyChange(ctx, scope, input, pathPolicy)
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
 		applied := agentCodeApplyResult(result)
-		applied["diagnostics"] = e.appliedDocumentDiagnostics(ctx, scope, result, pathPolicy)
+		applied["diagnostics"] = e.appliedDocumentDiagnostics(ctx, scope, result, pathPolicy, baseline)
 		value = applied
 		metadata["edit_id"] = result.Edit.ID
 		metadata["status"] = result.Edit.Status
@@ -556,10 +557,12 @@ func sameAgentCodeProposal(edit fileedit.Edit, proposal fileedit.Proposal) bool 
 
 func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 	scope toolgateway.AgentCodeExecutionScope, input toolgateway.WorkspaceApplyPayload,
-) (ApplyFileEditResult, error) {
+	pathPolicy workspaceidentity.PathPolicy,
+) (ApplyFileEditResult, appliedDiagnosticsFeedback, error) {
+	baseline := appliedDiagnosticsFeedback{Status: "unavailable", Reason: "not_captured"}
 	edit, err := e.store.GetFileEdit(ctx, input.EditID)
 	if err != nil {
-		return ApplyFileEditResult{}, apperror.Normalize(err)
+		return ApplyFileEditResult{}, baseline, apperror.Normalize(err)
 	}
 	expectedOperation := fileedit.OperationReplace
 	if input.ExpectedAction == "create" {
@@ -571,7 +574,7 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 		edit.OriginalHash != input.ExpectedOriginalSHA256 ||
 		edit.ProposedHash != input.ExpectedProposedSHA256 ||
 		edit.Operation == fileedit.OperationDelete {
-		return ApplyFileEditResult{}, apperror.New(apperror.CodeConflict,
+		return ApplyFileEditResult{}, baseline, apperror.New(apperror.CodeConflict,
 			"workspace apply expectations do not match the approved proposal")
 	}
 	operationKey := scope.OperationKey
@@ -580,13 +583,16 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 	}); ok {
 		key, found, lookupErr := reader.GetFailedFileApplyOperationKey(ctx, scope.RunID, edit.ID, scope.RootAgentID)
 		if lookupErr != nil {
-			return ApplyFileEditResult{}, apperror.Normalize(lookupErr)
+			return ApplyFileEditResult{}, baseline, apperror.Normalize(lookupErr)
 		}
 		if found {
 			operationKey = key
 		}
 	}
-	return e.apply.Apply(ctx, ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion,
+	if edit.Operation == fileedit.OperationReplace && edit.Status != fileedit.StatusApplied {
+		baseline = e.documentDiagnostics(ctx, scope, edit.Path, edit.OriginalHash, pathPolicy)
+	}
+	applied, err := e.apply.Apply(ctx, ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion,
 		RunID: scope.RunID, EditID: edit.ID, OperationKey: operationKey,
 		AppliedBy: scope.RootAgentID, InvocationID: scope.CheckpointInvocationID(),
 		CapabilityGeneration: scope.CapabilityGeneration, LeaseID: scope.LeaseID,
@@ -594,6 +600,7 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 		PermissionSnapshotID:   scope.PermissionSnapshotID,
 		PermissionGeneration:   scope.PermissionGeneration,
 		PermissionRuntimeEpoch: scope.PermissionRuntimeEpoch, RunAuthorizationFence: scope.RunAuthorizationFence})
+	return applied, baseline, err
 }
 
 func (e *AgentCodeToolExecutor) applyDelete(ctx context.Context,
