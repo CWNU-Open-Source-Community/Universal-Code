@@ -44,7 +44,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
 | [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 55 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
-| [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 43 | true |
+| [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
 | [workspace-repository-ledgers](#workspace-repository-ledgers) | `internal-durable` | Workspace and repository maintainers | 11 | true |
 
@@ -1829,7 +1829,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `native-github-review-authority-reader` (`v2`, active) at `internal/application/github_review_operation_authority.go`
   - `tool-mutation-ledgers-reader` (`v1`, active) at `internal/store`
 
-<details><summary>43 active identifiers</summary>
+<details><summary>44 active identifiers</summary>
 
 - `agent_code_file_edit_proposal.v1`
 - `agent_code_file_edit_source.v1`
@@ -1870,6 +1870,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `repository_mutation_binding.v1`
 - `repository_remote.v1`
 - `repository_remote_binding.v1`
+- `run-tests.v1`
 - `thread_git.v1`
 - `thread_git_operation.v1`
 - `thread_git_request.v1`

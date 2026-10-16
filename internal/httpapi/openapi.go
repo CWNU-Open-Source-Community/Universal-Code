@@ -3866,6 +3866,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ApprovalPreviewView.effect":                               {"dry_run", "record_git_approval", "file_review_required", "fetch_public_https", "browser_sensitive_action", "mcp_server_and_tool", "computer_use_app", "command_process", "unavailable"},
 	"AgentBrowserStatusView.version":                           {"agent_browser_status.v1"},
 	"AgentBrowserStatusView.state":                             {"unavailable", "idle", "starting", "ready", "loading", "busy", "waiting_user", "failed", "closing", "closed", "cleanup_pending"},
+	"AgentBrowserStatusView.unavailable_code":                  {"platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable"},
 	"AgentBrowserCloseRequestView.version":                     {"agent_browser_close.v1"},
 	"AgentBrowserScreenshotView.mime_type":                     {"image/png"},
 	"ApprovalQueueItemView.status":                             {string(approval.StatusPending), string(approval.StatusApproved), string(approval.StatusDenied)},
