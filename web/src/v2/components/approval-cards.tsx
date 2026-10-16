@@ -2,19 +2,21 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, Globe2, LoaderCircle, ShieldAlert } from "lucide-react";
 import type { APIClient } from "../../api/client";
-import type { ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
+import type { ApprovalDecisionControlRequestView, ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { v2QueryKeys } from "../query-keys";
 
-type Action = "approve_once" | "approve_for_thread" | "approve_for_run" | "deny";
+type Action = ApprovalDecisionControlRequestView["action"];
 const fieldLabels: Record<string, string> = { command: "命令", executable: "可执行文件",
   arguments: "参数（按顺序）", requested_backend: "提案环境", operation: "操作",
   parameters: "精确参数", summary: "影响", path: "文件", destination_path: "目标文件",
   url: "网址", host: "主机", effect: "操作类型", review_scope: "用途与风险范围", bounded_review: "有界审批说明",
+  app_id: "目标应用", app_path: "应用路径", window_id: "目标窗口", tool_name: "操作工具", authorization_scope: "授权范围",
   grant_ttl_seconds: "原定有效秒数", grant_max_uses: "原定命令次数", grant_uses_remaining: "剩余次数", grant_expires_at: "到期时间" };
 const effectText: Record<ApprovalPreviewView["effect"], string> = {
   command_process: "本次批准覆盖这批固定命令或本次标准输入，范围限于来源执行的进程。请按宿主文件与网络可能可达的范围评估影响；输入或权限变化后需重新审批。",
   mcp_server_and_tool: "本次批准覆盖此服务的启动、能力发现和当前工具调用。外部影响仍待核实，请核对服务配置与参数；配置、参数或权限变化后需重新审批。",
+  computer_use_app: "“本次允许”仅批准当前操作；“本任务允许操作该应用”允许 Agent 在当前任务中继续点击、输入和滚动该应用。任务结束后授权失效。",
   dry_run: "批准后只记录这一次模拟执行，不启动真实进程。拒绝会终止这份提案。",
   record_git_approval: "批准后保存这份 Git 提案的单次授权。Git 操作在后续执行时会再次核对仓库、权限和预览；可在工作记录中查看进度。拒绝会关闭此提案的执行入口。",
   file_review_required: "这里可以拒绝这份编辑。批准、差异审阅和写入请使用任务的「审阅改动」入口。",
@@ -69,6 +71,7 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
   const [requestedTTL, setGrantTTL] = useState(120);
   const [requestedUses, setGrantUses] = useState(2);
   const operationKeys = useRef(new Map<string, string>());
+  const decisionPending = useRef(false);
   const preview = useQuery({
     queryKey: ["v2", "approval-preview", runID, item.id, item.version],
     queryFn: async ({ signal }) => {
@@ -81,6 +84,7 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
     retry: false,
   });
   const webFetch = item.tool_name === "web_fetch";
+  const computerUse = item.tool_name === "mcp_tool_call" && preview.data?.effect === "computer_use_app";
   const recovering = item.status === "approved" || item.status === "denied";
   const existingTTL = Number(preview.data?.fields.find((field) => field.name === "grant_ttl_seconds")?.value);
   const existingUses = Number(preview.data?.fields.find((field) => field.name === "grant_max_uses")?.value);
@@ -117,7 +121,13 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
       onDecided(`${action === "deny" ? "已拒绝。" : "已批准。"}${next}`);
     },
     onError: () => { void preview.refetch(); },
+    onSettled: () => { decisionPending.current = false; },
   });
+  const decide = (action: Action) => {
+    if (decisionPending.current) return;
+    decisionPending.current = true;
+    mutation.mutate(action);
+  };
   const canApprove = client.hasApprovalControl && preview.isSuccess && !preview.isFetching && preview.data.source_current &&
     !preview.data.truncated && !mutation.isPending;
   const dryRun = preview.data?.effect === "dry_run";
@@ -125,7 +135,7 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
     <header><span>{webFetch ? <Globe2 aria-hidden="true" size={17} />
       : <ShieldAlert aria-hidden="true" size={17} />}</span>
       <div><strong>{recovering ? webFetch ? "恢复上次网页读取" : "恢复上次审批决定" : webFetch ? "允许读取这个网站？"
-        : dryRun ? "批准这次模拟执行？" : "需要你的批准"}</strong>
+        : computerUse ? "允许操作这个应用？" : dryRun ? "批准这次模拟执行？" : "需要你的批准"}</strong>
         <small>{recovering ? item.status === "approved" ? "已允许，等待恢复" : "已拒绝，等待恢复"
           : webFetch ? item.exact_target : item.tool_name}</small></div></header>
     {preview.isLoading && <p role="status">正在读取这次操作的精确预览…</p>}
@@ -158,21 +168,24 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
       <label>命令次数<input aria-label="有界审批命令次数" type="number" min={1} max={8} value={grantUses} disabled={existingGrant}
         onChange={(event) => setGrantUses(event.target.valueAsNumber)} /></label>
       <button className="primary" type="button" disabled={!canApprove || !Number.isInteger(grantTTL) || grantTTL < 1 || grantTTL > 900 || !Number.isInteger(grantUses) || grantUses < 1 || grantUses > 8}
-        onClick={() => mutation.mutate("approve_for_run")}>确认本条命令并计入有界审批</button>
+        onClick={() => decide("approve_for_run")}>确认本条命令并计入有界审批</button>
     </fieldset>}
     <footer>
       {onReviewFile && preview.isSuccess && preview.data.effect === "file_review_required" && <button
         className="primary" disabled={preview.isFetching} onClick={(event) => onReviewFile({
           runID, editID: item.proposal_id, workspaceID: item.workspace_id }, event.currentTarget)} type="button">审阅文件提案</button>}
       {client.hasApprovalControl && item.allowed_actions.includes("deny") && <button className="secondary" disabled={mutation.isPending}
-        onClick={() => mutation.mutate("deny")} type="button"><Ban aria-hidden="true" size={15} />
+        onClick={() => decide("deny")} type="button"><Ban aria-hidden="true" size={15} />
         {recovering ? "继续恢复" : "拒绝"}</button>}
       {client.hasApprovalControl && item.allowed_actions.includes("approve_once") && <button className="primary" disabled={!canApprove}
-        onClick={() => mutation.mutate("approve_once")} type="button">
+        onClick={() => decide("approve_once")} type="button">
         {mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <Check aria-hidden="true" size={15} />}
-        {recovering ? "继续恢复" : dryRun ? "批准模拟一次" : webFetch ? "允许一次" : "批准一次"}</button>}
+        {recovering ? "继续恢复" : computerUse ? "本次允许" : dryRun ? "批准模拟一次" : webFetch ? "允许一次" : "批准一次"}</button>}
+      {client.hasApprovalControl && computerUse && item.allowed_actions.includes("approve_for_run_app") && <button className="primary"
+        disabled={!canApprove} onClick={() => decide("approve_for_run_app")} type="button">
+        <Check aria-hidden="true" size={15} />本任务允许操作该应用</button>}
       {client.hasApprovalControl && webFetch && item.allowed_actions.includes("approve_for_thread") && <button className="primary"
-        disabled={!canApprove} onClick={() => mutation.mutate("approve_for_thread")} type="button">
+        disabled={!canApprove} onClick={() => decide("approve_for_thread")} type="button">
         <Check aria-hidden="true" size={15} />{recovering ? "继续恢复" : "本对话允许"}</button>}
     </footer>
     {mutation.isError && <p className="v2-inline-error" role="alert">决定未确认，可以重试。

@@ -10,6 +10,7 @@ import { PrayuBrand } from "./prayu-brand";
 import { MCPRegistrationForm, MCPReviewControls, PluginImportForm, PluginReviewControls } from "./extension-onboarding";
 import { LSPConfigurationCard, LSPConfigurationForm } from "./lsp-onboarding";
 import { NativeSkillImport } from "./native-skill-import";
+import { isBuiltinComputerUseServer } from "../api/computer-use";
 
 export { readDensity, persistDensity, type Density } from "../lib/ui-density";
 
@@ -314,7 +315,8 @@ function MCPServerCard({ action, client, server, onOpenTask, credentialCapabilit
   const refreshable = ["discovery_approved", "capabilities_pending", "enabled",
     "quarantined"].includes(server.state);
   const disableable = !["disabled", "revoked"].includes(server.state);
-  const target = server.native_source
+  const builtin = isBuiltinComputerUseServer(server);
+  const target = builtin ? t("由 Universal Code 宿主提供的 Windows 应用操作", "Windows app control provided by the Universal Code host") : server.native_source
     ? `${t("插件组件", "Plugin component")}: ${server.native_source.component_id}` : server.target;
   return <article className="extension-card">
     <header><div><PlugZap aria-hidden="true" size={17} />
@@ -325,8 +327,9 @@ function MCPServerCard({ action, client, server, onOpenTask, credentialCapabilit
       <div><dt>{t("健康", "Health")}</dt><dd>{server.health}</dd></div>
       <div><dt>{t("范围", "Scope")}</dt><dd>{server.scope}</dd></div>
       <div><dt>{t("工具", "Tools")}</dt><dd>{server.capabilities.tools.length}</dd></div>
-      <div><dt>{t("凭据引用", "Credential ref")}</dt><dd>{server.credential_ref || "—"}</dd></div>
-      <div><dt>{t("来源", "Source")}</dt><dd>{server.source.kind}</dd></div>
+      {!builtin && <div><dt>{t("凭据引用", "Credential ref")}</dt><dd>{server.credential_ref || "—"}</dd></div>}
+      <div><dt>{t("来源", "Source")}</dt><dd>{builtin ? t("内置 · 随宿主提供", "Built in · provided by the host") : server.source.kind}</dd></div>
+      {builtin && <div><dt>{t("版本", "Version")}</dt><dd>{server.source.version}</dd></div>}
     </dl>
     <p className="extension-target" title={target}>{target}</p>
     <p className="extension-target" title={server.source.uri}>{server.source.uri}</p>
