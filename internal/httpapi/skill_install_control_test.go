@@ -163,3 +163,122 @@ func TestSkillPackageInstallHTTPNativeSnapshotRetainsLargeResources(t *testing.T
 		t.Fatal("invalid snapshot created an installation", err)
 	}
 }
+
+func TestSkillPackageInstallHTTPNativeDirectoryUploadIsStagedAndReadable(t *testing.T) {
+	api, st := newSkillDirectoryUploadAPI(t)
+	asset := bytes.Repeat([]byte{0, 255, 128}, 24*1024)
+	upload := plugins.UploadedDirectory{RootName: "http-directory", Files: []plugins.UploadedDirectoryFile{
+		{Path: "assets/data.bin", ContentBase64: base64.StdEncoding.EncodeToString(asset)},
+		{Path: "SKILL.md", ContentBase64: base64.StdEncoding.EncodeToString([]byte("---\nname: http-directory\ndescription: Uploaded directory metadata.\n---\nRead the original resource.\n"))},
+	}}
+	view := SkillPackageInstallRequestView{Version: plugins.PortableInstallationProtocol,
+		Directory: &upload, Surface: "code", ConfirmUntrusted: true}
+	body, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performSessionMessageRequest(t, api, http.MethodPost, SkillPackageInstallPath,
+		testControlToken, "http-native-directory-0001", "application/json", bytes.NewReader(body))
+	if response.Code != http.StatusAccepted || strings.Contains(response.Body.String(), upload.Files[0].ContentBase64) {
+		t.Fatalf("directory upload: status=%d body=%s", response.Code, response.Body)
+	}
+	var envelope struct {
+		Data PluginSkillInstallView `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	installation, err := st.GetPluginInstallation(t.Context(), envelope.Data.Installation.ID)
+	if err != nil || installation.State != plugins.StateStaged || installation.Generation != 1 || len(installation.EnabledCapabilities) != 0 ||
+		installation.Snapshot == nil || installation.Snapshot.Name != upload.RootName || installation.Snapshot.Skills[0].Description != "Uploaded directory metadata." ||
+		installation.Source.Kind != "upload" || installation.Source.URI != "sha256:"+installation.ArchiveSHA256 {
+		t.Fatalf("directory was not parsed and staged: %+v %v", installation, err)
+	}
+	retained, err := st.LoadPluginObject(t.Context(), installation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := plugins.OpenPortableSnapshot(t.Context(), *installation.Snapshot, retained, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	got, _, err := reader.Read(t.Context(), installation.Snapshot.Skills[0].Instructions.Component, "assets/data.bin", len(asset))
+	if err != nil || !bytes.Equal(got, asset) {
+		t.Fatal("uploaded binary resource changed", err)
+	}
+	replay := performSessionMessageRequest(t, api, http.MethodPost, SkillPackageInstallPath,
+		testControlToken, "http-native-directory-0001", "application/json", bytes.NewReader(body))
+	if replay.Code != http.StatusAccepted || !strings.Contains(replay.Body.String(), `"replayed":true`) {
+		t.Fatalf("directory replay: %d %s", replay.Code, replay.Body)
+	}
+	readOnly := performSessionMessageRequest(t, api, http.MethodPost, SkillPackageInstallPath,
+		testAccessToken, "http-directory-readonly-0001", "application/json", bytes.NewReader(body))
+	assertAPIError(t, readOnly, http.StatusUnauthorized, "POLICY_DENIED")
+}
+
+func TestSkillPackageInstallHTTPDirectoryRejectsMixedAndInvalidInputs(t *testing.T) {
+	api, st := newSkillDirectoryUploadAPI(t)
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any, map[string]any, map[string]any)
+	}{
+		{"archive field", func(body, _, _ map[string]any) { body["archive_base64"] = "" }},
+		{"snapshot field", func(body, _, _ map[string]any) { body["snapshot"] = nil }},
+		{"null directory", func(body, _, _ map[string]any) { body["directory"] = nil }},
+		{"legacy protocol", func(body, _, _ map[string]any) { body["version"] = skills.PackageInstallationProtocolVersion }},
+		{"unconfirmed", func(body, _, _ map[string]any) { body["confirm_untrusted"] = false }},
+		{"host path", func(_, directory, _ map[string]any) { directory["root_name"] = `C:\private\skill` }},
+		{"host directory field", func(_, directory, _ map[string]any) { directory["host_path"] = `C:\private` }},
+		{"traversal", func(_, _, file map[string]any) { file["path"] = "../SKILL.md" }},
+		{"git administration", func(_, _, file map[string]any) { file["path"] = ".git/config" }},
+		{"invalid base64", func(_, _, file map[string]any) { file["content_base64"] = "invalid!" }},
+		{"link declaration", func(_, _, file map[string]any) { file["kind"] = "symlink" }},
+		{"metadata declaration", func(body, _, _ map[string]any) { body["name"] = "client-supplied" }},
+		{"duplicate file", func(_, directory, file map[string]any) { directory["files"] = []any{file, file} }},
+		{"missing content", func(_, directory, file map[string]any) {
+			directory["files"] = []any{file, map[string]any{"path": "assets/empty.txt"}}
+		}},
+		{"null content", func(_, directory, file map[string]any) {
+			directory["files"] = []any{file, map[string]any{"path": "assets/empty.txt", "content_base64": nil}}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := map[string]any{"path": "SKILL.md", "content_base64": base64.StdEncoding.EncodeToString([]byte("---\nname: http-invalid\ndescription: Native metadata.\n---\nContent.\n"))}
+			directory := map[string]any{"root_name": "http-invalid", "files": []any{file}}
+			body := map[string]any{"version": plugins.PortableInstallationProtocol, "surface": "code", "confirm_untrusted": true, "directory": directory}
+			test.mutate(body, directory, file)
+			raw, _ := json.Marshal(body)
+			response := performSessionMessageRequest(t, api, http.MethodPost, SkillPackageInstallPath,
+				testControlToken, "http-invalid-directory-0001", "application/json", bytes.NewReader(raw))
+			assertAPIError(t, response, http.StatusBadRequest, "INVALID_ARGUMENT")
+		})
+	}
+	values, err := st.ListPluginInstallations(t.Context(), "", 10)
+	if err != nil || len(values) != 0 {
+		t.Fatal("invalid directory upload created an installation", err)
+	}
+}
+
+func newSkillDirectoryUploadAPI(t *testing.T) (*API, *store.SQLiteStore) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "directory-upload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	objects, err := skills.NewLocalPackageObjectStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	builtins, err := skills.BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := New(st, Config{AccessToken: testAccessToken, ControlToken: testControlToken,
+		SkillInstallationEnabled: true, SkillInstallationController: application.NewSkillPackageRegistryService(st, objects, builtins)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return api, st
+}

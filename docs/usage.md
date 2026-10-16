@@ -517,6 +517,18 @@ Signed packages use `skill_package.v2`: the deterministic ZIP holds `manifest.js
 
 `skill catalog trust` is the explicit operator/admin trust decision. A signed package can only be pinned once its publisher is trusted and not revoked; `revoke` blocks new pins without touching already-installed packages. `skill catalog pin` pins the active version for a skill + surface; re-pinning is upgrade or rollback. When a pin exists, `skill select-external` only accepts the pinned version and only while enabled; skills without a pin keep the existing operator-confirmed flow.
 
+Web/Desktop **Settings → Skill packages → Legacy Skill Catalog publisher trust**
+also lists these public keys and their current trust state. To add a publisher,
+enter its name and canonical base64 Ed25519 public key, verify the key's source,
+and explicitly confirm trust. Existing rows offer confirmed revoke or re-trust.
+Each change is bound to the row's observed `updated_at`; a stale decision or an
+uncertain response requires refreshing and confirming the current row again.
+The control API uses `skill-catalog-control.v1` at
+`GET/POST /api/v1/skills/catalog/publishers`, with separate read/control bearer
+authorization. These Catalog identities govern the existing Catalog pin flow;
+Plugin publisher trust remains in Extensions. Catalog pin/enable/disable commands
+remain available through the CLI.
+
 URL imports require an absolute HTTPS URL without credentials plus the expected SHA-256 pin: the response body must match the pin byte-for-byte, redirects must stay HTTPS on the original host, and the body is capped at 1 MiB, so redirects or upstream drift cannot change reviewed content. Git imports require an HTTPS repository URL plus a full lowercase 40-character commit SHA: the staging clone (`--no-checkout`, `core.autocrlf=false`) checks out the exact commit and re-verifies `HEAD`; no hooks, scripts, submodules, or build tools from the repository ever run. Directory/staging packaging accepts only `manifest.json` + `SKILL.md` (+ optional `SIGNATURE.json`) at the root and rejects symlinks, junctions, subdirectories, special files, and oversized or non-UTF-8 content.
 
 Every catalog mutation appends a bounded audit row (`catalog.trusted`, `catalog.revoked`, `catalog.pinned`, `catalog.enabled`, `catalog.disabled`, `import.completed`) to the append-only `skill_catalog_audit` table (schema v104). Audits never contain Skill bodies, secrets, or raw outputs. Skills remain declarative prompt-only resources; declared tool dependencies still grant nothing and all tools flow through the Go Tool Gateway.
@@ -2063,18 +2075,52 @@ submit it through the normal permission and approval flow. Settings shows the
 resulting call status and bounded audit metadata for the selected Run; discovery
 alone is not a successful invocation.
 
-Plugin import accepts an existing supported ZIP of at most 4 MiB. The browser
-computes its SHA-256 and the backend verifies it before staging. Review source,
-signature state and requested capabilities, explicitly confirm an untrusted
-package where required, then enable the selected contributions. Imported or
-enabled does not mean that a contribution has executed. The existing `plugin`
-and `mcp client` CLI flows remain available, including URL/Git acquisition where
-supported. Form errors retain the input so the operator can correct and retry it.
+Plugin import accepts a `plugin.v1` ZIP of at most 4 MiB. Choose a local ZIP,
+a fixed HTTPS ZIP URL plus its SHA-256, or an HTTPS Git repository plus a full
+lowercase 40- or 64-character commit and the ZIP's relative path (default
+`plugin.zip`). URL/Git options require the backend's `plugin_source_import`
+capability; older services retain local ZIP upload. Clicking **Fetch and stage
+Plugin** authorizes that exact source read. Credentials, query parameters,
+fragments and redirects are rejected. Git reads the ordinary blob at the pinned
+commit without checkout, hooks, submodules or builds. HTTPS reads have a 30-second
+timeout; Git acquisition has a five-minute limit, and request cancellation stops
+the fetch. The browser computes a local upload's SHA-256; Go verifies every pin
+and stages the actual bytes.
+
+Review the retained source, signature state and requested capabilities,
+explicitly confirm an untrusted package where required, then enable the selected
+contributions. A source response also identifies this acquisition's URL, commit,
+ZIP path and actual digest, including when the same content already has an
+installation from another source. A retry fetches and verifies the source again
+and returns the installation's current state; it never revives a revoked entry.
+Form errors retain the input for correction or retry. The existing `plugin` and
+`mcp client` CLI flows remain available.
 
 Unavailable onboarding controls mean that this backend lacks the corresponding
 control capability or control authentication. Unregistered servers need setup,
 staged entries need review, and discovery/probe failures require checking the
 reported executable, transport, hash or protocol error before retrying.
+
+### Upload a native Skill directory
+
+In Web **Settings → Skill packages**, choose a directory containing `SKILL.md`
+and its required resources. Inspect the selected file list, then explicitly
+confirm staging to Code. Go parses the native metadata and returns a staged
+Plugin installation. Continue in **Extensions** to review and enable its Skill
+contribution, then select the precise component in a new task's configuration.
+The `native_skill_directory_import` capability must be present; an older service
+keeps the directory picker disabled.
+
+The upload carries the directory name, relative paths and ordinary file bytes;
+it accepts no host absolute path. The limits are 1,024 entries including implied
+directories, 8 MiB of file content, and a 4 MiB frozen archive. Absolute or
+escaping paths, root `.git` metadata, duplicates, case conflicts and file/directory
+collisions are rejected. Uploaded scripts and binaries remain inert resources.
+Changing content under the same directory name produces a new revision of the
+same package identity. A failed submission retains its operation key for an
+exact retry; changed input with that key conflicts, and a revoked installation
+remains revoked after retry or restart. See [ADR 0190](adr/0190-extension-source-and-directory-import-controls.md)
+for the HTTP request shapes and trust boundaries.
 
 ### Read MCP resources and obtain prompts
 

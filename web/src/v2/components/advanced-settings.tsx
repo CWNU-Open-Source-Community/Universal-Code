@@ -4,6 +4,7 @@ import type { APIClient } from "../../api/client";
 import type { ThreadDetailView, WorkspaceView } from "../../api/types";
 import { DesktopSkillPreviewDialog } from "../../components/desktop-skill-preview";
 import { SkillPackageRegistry, type SkillPackageRegistrySource } from "../../components/skill-package-registry";
+import { SkillCatalogTrust } from "../../components/skill-catalog-trust";
 import { listDesktopSkillPackages, removeDesktopSkillPackage } from "../../lib/desktop-bridge";
 import { SafeWebReadinessPanel } from "../../components/safe-web-readiness";
 import { AboutSettings, ExtensionSettings, WebSkillInstall, persistDensity, readDensity,
@@ -66,10 +67,11 @@ export function V2SkillSettings({ client, desktop }: { client: APIClient; deskto
       <DesktopSkillPreviewDialog installationEnabled={client.hasSkillInstallation}
         onClose={() => setPreviewOpen(false)} open={previewOpen} />
     </> : client.hasSkillInstallation ? <>
-      <p>网页端可上传 ZIP 包并登记到 Code。结构校验由服务端执行；本机文件选择预览仅在桌面端提供。</p>
+      <p>网页端可上传 ZIP 包或原生 SKILL.md 目录并登记到 Code。结构校验和内容解析由服务端执行。</p>
       <WebSkillInstall client={client} />
     </> : <p role="status">连接具备 Skill 安装权限的服务后，可选择 ZIP 包加入技能库。</p>}
     <SkillPackageRegistry enabled={client.hasSkillInstallation} source={registry} />
+    <SkillCatalogTrust client={client} />
   </div></section></>;
 }
 

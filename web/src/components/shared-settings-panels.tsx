@@ -9,6 +9,7 @@ import { HookDiagnostics, PluginLifecycleControls } from "./plugin-lifecycle";
 import { PrayuBrand } from "./prayu-brand";
 import { MCPRegistrationForm, MCPReviewControls, PluginImportForm, PluginReviewControls } from "./extension-onboarding";
 import { LSPConfigurationCard, LSPConfigurationForm } from "./lsp-onboarding";
+import { NativeSkillImport } from "./native-skill-import";
 
 export { readDensity, persistDensity, type Density } from "../lib/ui-density";
 
@@ -64,6 +65,7 @@ export function WebSkillInstall({ client }: { client: APIClient }) {
     </div>}
     {message && <span className="projection-placeholder">{message}</span>}
     {install.error && <span className="inline-warning">{install.error instanceof Error ? install.error.message : t("安装失败", "Install failed")}</span>}
+    <NativeSkillImport client={client} />
   </div>;
 }
 
@@ -214,11 +216,12 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
       </div>
     </ExtensionCollection>
     <ExtensionCollection title="Plugin" count={inventory.data?.plugins.length ?? 0}>
-      <PluginImportForm capabilityKnown={Boolean(inventory.data)} client={client} enabled={Boolean(client.hasExtensionControl && onboarding?.plugin_import)} />
+      <PluginImportForm capabilityKnown={Boolean(inventory.data)} client={client} enabled={Boolean(client.hasExtensionControl && onboarding?.plugin_import)}
+        sourceEnabled={Boolean(client.hasExtensionControl && onboarding?.plugin_source_import)} />
       {inventory.data?.plugins.map((installation) => <PluginCard action={action}
         client={client} installation={installation} key={installation.id} lifecycle={onboarding?.plugin_lifecycle} />)}
       {inventory.data && inventory.data.plugins.length === 0 &&
-        <ExtensionEmpty>{t("选择 plugin.v1 ZIP 包开始接入。导入后核对来源与指纹，审查并启用所需能力。", "Choose a plugin.v1 ZIP to get started. After import, inspect its source and fingerprint, then review and enable the capabilities you need.")}</ExtensionEmpty>}
+        <ExtensionEmpty>{t("上传 plugin.v1 ZIP，或指定固定 URL/Git 版本开始接入。导入后核对来源与指纹，审查并启用所需能力。", "Upload a plugin.v1 ZIP or select a pinned URL/Git revision. After import, inspect its source and fingerprint, then review and enable the capabilities you need.")}</ExtensionEmpty>}
     </ExtensionCollection>
     {onboarding?.hook_diagnostics && <HookDiagnostics client={client} runID={selectedRunID} workspaceID={configurationWorkspaceID}
       key={`${selectedRunID}/${configurationWorkspaceID}`} />}

@@ -126,7 +126,12 @@ func fetchPinnedGitArchive(ctx context.Context, repoURL, commit, archivePath,
 	if allowLocalFixture {
 		protocolFile = "always"
 	}
-	if _, err := runPluginGit(importCtx, hooksDir, "init", "--bare", "--quiet", repository); err != nil {
+	objectFormat := "sha1"
+	if len(commit) == sha256.Size*2 {
+		objectFormat = "sha256"
+	}
+	if _, err := runPluginGit(importCtx, hooksDir, "init", "--bare", "--quiet",
+		"--object-format="+objectFormat, repository); err != nil {
 		return nil, err
 	}
 	if _, err := runPluginGit(importCtx, hooksDir, "-C", repository,

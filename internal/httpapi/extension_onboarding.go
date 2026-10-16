@@ -3,7 +3,9 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
@@ -16,15 +18,19 @@ const (
 	ExtensionPluginImportPath    = "/api/v1/extensions/plugins/import"
 	ExtensionOnboardingProtocol  = "extension-onboarding.v1"
 	// Base64 expands the existing 4 MiB archive limit; the small remainder
-	// permits only the version, digest and JSON framing.
-	maxExtensionPluginImportBodyBytes = ((plugins.MaxArchiveBytes + 2) / 3 * 4) + 1024
+	// permits the source pin and JSON framing.
+	maxExtensionPluginImportBodyBytes = ((plugins.MaxArchiveBytes + 2) / 3 * 4) + 8192
 )
 
-// Onboarding is additive. Review-only adapters retain their existing contract
-// and advertise no import capability until this interface is implemented.
+// Onboarding and source acquisition are separate additive controller contracts.
+// Older adapters can keep ZIP upload without advertising remote acquisition.
 type ExtensionOnboardingController interface {
 	RegisterMCP(context.Context, mcp.ServerDescriptor) (mcp.ServerRecord, bool, error)
 	ImportPlugin(context.Context, []byte, string) (plugins.Installation, bool, error)
+}
+
+type ExtensionPluginSourceController interface {
+	ImportPluginSource(context.Context, application.ImportPluginSourceRequest) (application.ImportPluginSourceResult, error)
 }
 
 type ExtensionScopedInventoryController interface {
@@ -57,9 +63,17 @@ type ExtensionMCPRegistrationRequestView struct {
 }
 
 type ExtensionPluginImportRequestView struct {
-	Version       string `json:"version"`
-	ArchiveBase64 string `json:"archive_base64"`
-	ArchiveSHA256 string `json:"archive_sha256"`
+	Version       string                           `json:"version"`
+	ArchiveBase64 string                           `json:"archive_base64,omitempty"`
+	ArchiveSHA256 string                           `json:"archive_sha256,omitempty"`
+	Source        *ExtensionPluginImportSourceView `json:"source,omitempty"`
+}
+
+type ExtensionPluginImportSourceView struct {
+	Kind        string `json:"kind"`
+	URL         string `json:"url"`
+	Commit      string `json:"commit,omitempty"`
+	ArchivePath string `json:"archive_path,omitempty"`
 }
 
 type ExtensionMCPRegistrationView struct {
@@ -74,6 +88,15 @@ type ExtensionPluginImportView struct {
 	Replayed        bool                            `json:"replayed"`
 	NextStep        string                          `json:"next_step"`
 	Installation    ExtensionPluginInstallationView `json:"installation"`
+	Acquisition     *ExtensionPluginAcquisitionView `json:"acquisition,omitempty"`
+}
+
+type ExtensionPluginAcquisitionView struct {
+	Kind        string `json:"kind"`
+	URL         string `json:"url"`
+	SHA256      string `json:"sha256"`
+	Commit      string `json:"commit,omitempty"`
+	ArchivePath string `json:"archive_path,omitempty"`
 }
 
 func (a *API) serveExtensionOnboarding(writer http.ResponseWriter, request *http.Request, requestID string) {
@@ -133,6 +156,40 @@ func (a *API) serveExtensionOnboarding(writer http.ResponseWriter, request *http
 	if view.Version != ExtensionControlProtocol {
 		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument,
 			"extension onboarding version is invalid"), 0)
+		return
+	}
+	if view.Source != nil {
+		if view.ArchiveBase64 != "" {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument,
+				"choose an uploaded archive or a pinned source"), 0)
+			return
+		}
+		sourceController, ok := a.extensionController.(ExtensionPluginSourceController)
+		if !ok || sourceController == nil {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeNotFound,
+				"plugin source acquisition is unavailable"), http.StatusNotFound)
+			return
+		}
+		deadline := time.Now().Add(plugins.MaxPluginImportDuration + 30*time.Second)
+		if err := http.NewResponseController(writer).SetWriteDeadline(deadline); err != nil &&
+			!errors.Is(err, http.ErrNotSupported) {
+			a.writeError(writer, requestID, apperror.Wrap(apperror.CodeUnavailable,
+				"plugin import response deadline could not be configured", err), 0)
+			return
+		}
+		result, err := sourceController.ImportPluginSource(request.Context(), application.ImportPluginSourceRequest{
+			Kind: view.Source.Kind, URL: view.Source.URL, SHA256: view.ArchiveSHA256,
+			Commit: view.Source.Commit, ArchivePath: view.Source.ArchivePath})
+		if err != nil {
+			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		a.writeSuccessStatus(writer, requestID, ExtensionPluginImportView{
+			ProtocolVersion: ExtensionOnboardingProtocol, Replayed: result.Replayed,
+			NextStep: extensionPluginNextStep(result.Installation.State), Installation: extensionImportedPluginView(result.Installation),
+			Acquisition: &ExtensionPluginAcquisitionView{Kind: result.Acquisition.Kind, URL: result.Acquisition.URL,
+				SHA256: result.Acquisition.SHA256, Commit: result.Acquisition.Commit, ArchivePath: result.Acquisition.ArchivePath}}, nil,
+			http.StatusAccepted)
 		return
 	}
 	if len(view.ArchiveBase64) > (plugins.MaxArchiveBytes+2)/3*4 {

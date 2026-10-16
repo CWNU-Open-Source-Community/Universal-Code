@@ -2188,7 +2188,7 @@
       "post": {
         "operationId": "importPlugin",
         "summary": "Import an inert Plugin archive",
-        "description": "Stages a bounded base64 ZIP after verifying its SHA-256. Uses the existing Plugin package validator and never runs package content or implicitly approves capabilities. Exact archive repeats return the current persisted installation.",
+        "description": "Stages a bounded uploaded ZIP or fetches a fixed HTTPS URL/SHA-256 or Git commit/archive path. Remote URLs reject credentials, query parameters and redirects. Uses the existing inert validator and explicit review flow. Exact archive repeats return the current persisted installation.",
         "tags": [
           "Extensions"
         ],
@@ -24774,6 +24774,165 @@
         "x-cyberagent-read-only": true
       }
     },
+    "/api/v1/skills/catalog/publishers": {
+      "get": {
+        "operationId": "listSkillCatalogPublishers",
+        "summary": "List legacy Skill Catalog publisher trust",
+        "description": "Returns public publisher identities and the exact observed trust version. Listing does not grant trust or enable a package.",
+        "tags": [
+          "Extensions"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SkillCatalogPublishersView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "post": {
+        "operationId": "controlSkillCatalogPublisher",
+        "summary": "Review one legacy Skill Catalog publisher",
+        "description": "Explicitly trusts or revokes an exact Ed25519 publisher identity using expected_updated_at for atomic compare-and-swap. Empty expected_updated_at permits only first registration; stale requests cannot restore revoked trust.",
+        "tags": [
+          "Extensions"
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SkillCatalogPublisherView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCatalogPublisherControlRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/skills/packages": {
       "get": {
         "operationId": "listSkillPackages",
@@ -24882,7 +25041,7 @@
       "post": {
         "operationId": "installSkillPackage",
         "summary": "Install one inert Skill package",
-        "description": "Stages one explicitly confirmed package in the existing Plugin lifecycle. Versioned Plugin results identify the actual installation; legacy results are returned only when recovering an already durable legacy intent. Installation executes no scripts, commands or Provider calls. Capabilities require separate Plugin review.",
+        "description": "Stages one explicitly confirmed archive or uploaded native directory in the existing Plugin lifecycle. Directory uploads contain bounded relative file names and base64 bytes; Go parses metadata and creates the snapshot. Archive/snapshot and directory inputs are mutually exclusive. Installation executes no scripts, commands or Provider calls. Capabilities require separate Plugin review.",
         "tags": [
           "Control"
         ],
@@ -40389,10 +40548,16 @@
           "mcp_registration": {
             "type": "boolean"
           },
+          "native_skill_directory_import": {
+            "type": "boolean"
+          },
           "plugin_import": {
             "type": "boolean"
           },
           "plugin_lifecycle": {
+            "type": "boolean"
+          },
+          "plugin_source_import": {
             "type": "boolean"
           }
         },
@@ -40400,6 +40565,32 @@
           "mcp_registration",
           "plugin_import",
           "lsp_configuration"
+        ],
+        "type": "object"
+      },
+      "ExtensionPluginAcquisitionView": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_path": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "url",
+          "sha256"
         ],
         "type": "object"
       },
@@ -40412,20 +40603,53 @@
           "archive_sha256": {
             "type": "string"
           },
+          "source": {
+            "$ref": "#/components/schemas/ExtensionPluginImportSourceView"
+          },
           "version": {
             "type": "string"
           }
         },
         "required": [
-          "version",
-          "archive_base64",
-          "archive_sha256"
+          "version"
+        ],
+        "type": "object"
+      },
+      "ExtensionPluginImportSourceView": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_path": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "commit": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "https",
+              "git"
+            ],
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "url"
         ],
         "type": "object"
       },
       "ExtensionPluginImportView": {
         "additionalProperties": false,
         "properties": {
+          "acquisition": {
+            "$ref": "#/components/schemas/ExtensionPluginAcquisitionView"
+          },
           "installation": {
             "$ref": "#/components/schemas/ExtensionPluginInstallationView"
           },
@@ -58677,6 +58901,129 @@
         ],
         "type": "object"
       },
+      "SkillCatalogPublisherControlRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "trust",
+              "revoke"
+            ],
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          },
+          "expected_updated_at": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 96,
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 44,
+            "type": "string"
+          },
+          "team": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "skill-catalog-control.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "action",
+          "expected_updated_at",
+          "fingerprint",
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "SkillCatalogPublisherView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "trust_class": {
+            "enum": [
+              "trusted",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "trusted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "name",
+          "team",
+          "public_key",
+          "trust_class",
+          "updated_at",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "SkillCatalogPublishersView": {
+        "additionalProperties": false,
+        "properties": {
+          "control_enabled": {
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "enum": [
+              "skill-catalog-control.v1"
+            ],
+            "type": "string"
+          },
+          "publishers": {
+            "items": {
+              "$ref": "#/components/schemas/SkillCatalogPublisherView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "publishers",
+          "control_enabled"
+        ],
+        "type": "object"
+      },
       "SkillPackageInstallRequestView": {
         "additionalProperties": false,
         "properties": {
@@ -58686,6 +59033,9 @@
           },
           "confirm_untrusted": {
             "type": "boolean"
+          },
+          "directory": {
+            "$ref": "#/components/schemas/UploadedDirectory"
           },
           "snapshot": {
             "$ref": "#/components/schemas/PortableSnapshot"
@@ -58707,7 +59057,6 @@
         },
         "required": [
           "version",
-          "archive_base64",
           "surface",
           "confirm_untrusted"
         ],
@@ -67314,6 +67663,44 @@
           "width",
           "height",
           "dpr"
+        ],
+        "type": "object"
+      },
+      "UploadedDirectory": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/UploadedDirectoryFile"
+            },
+            "type": "array"
+          },
+          "root_name": {
+            "maxLength": 255,
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_name",
+          "files"
+        ],
+        "type": "object"
+      },
+      "UploadedDirectoryFile": {
+        "additionalProperties": false,
+        "properties": {
+          "content_base64": {
+            "maxLength": 11184812,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content_base64"
         ],
         "type": "object"
       },

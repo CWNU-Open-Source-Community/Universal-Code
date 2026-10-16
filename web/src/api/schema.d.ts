@@ -399,7 +399,7 @@ export interface paths {
         put?: never;
         /**
          * Import an inert Plugin archive
-         * @description Stages a bounded base64 ZIP after verifying its SHA-256. Uses the existing Plugin package validator and never runs package content or implicitly approves capabilities. Exact archive repeats return the current persisted installation.
+         * @description Stages a bounded uploaded ZIP or fetches a fixed HTTPS URL/SHA-256 or Git commit/archive path. Remote URLs reject credentials, query parameters and redirects. Uses the existing inert validator and explicit review flow. Exact archive repeats return the current persisted installation.
          */
         post: operations["importPlugin"];
         delete?: never;
@@ -4268,6 +4268,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills/catalog/publishers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List legacy Skill Catalog publisher trust
+         * @description Returns public publisher identities and the exact observed trust version. Listing does not grant trust or enable a package.
+         */
+        get: operations["listSkillCatalogPublishers"];
+        put?: never;
+        /**
+         * Review one legacy Skill Catalog publisher
+         * @description Explicitly trusts or revokes an exact Ed25519 publisher identity using expected_updated_at for atomic compare-and-swap. Empty expected_updated_at permits only first registration; stale requests cannot restore revoked trust.
+         */
+        post: operations["controlSkillCatalogPublisher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills/packages": {
         parameters: {
             query?: never;
@@ -4299,7 +4323,7 @@ export interface paths {
         put?: never;
         /**
          * Install one inert Skill package
-         * @description Stages one explicitly confirmed package in the existing Plugin lifecycle. Versioned Plugin results identify the actual installation; legacy results are returned only when recovering an already durable legacy intent. Installation executes no scripts, commands or Provider calls. Capabilities require separate Plugin review.
+         * @description Stages one explicitly confirmed archive or uploaded native directory in the existing Plugin lifecycle. Directory uploads contain bounded relative file names and base64 bytes; Go parses metadata and creates the snapshot. Archive/snapshot and directory inputs are mutually exclusive. Installation executes no scripts, commands or Provider calls. Capabilities require separate Plugin review.
          */
         post: operations["installSkillPackage"];
         delete?: never;
@@ -7699,15 +7723,33 @@ export interface components {
             lsp_configuration: boolean;
             mcp_credentials?: boolean;
             mcp_registration: boolean;
+            native_skill_directory_import?: boolean;
             plugin_import: boolean;
             plugin_lifecycle?: boolean;
+            plugin_source_import?: boolean;
+        };
+        ExtensionPluginAcquisitionView: {
+            archive_path?: string;
+            commit?: string;
+            kind: string;
+            sha256: string;
+            url: string;
         };
         ExtensionPluginImportRequestView: {
-            archive_base64: string;
-            archive_sha256: string;
+            archive_base64?: string;
+            archive_sha256?: string;
+            source?: components["schemas"]["ExtensionPluginImportSourceView"];
             version: string;
         };
+        ExtensionPluginImportSourceView: {
+            archive_path?: string;
+            commit?: string;
+            /** @enum {string} */
+            kind: "https" | "git";
+            url: string;
+        };
         ExtensionPluginImportView: {
+            acquisition?: components["schemas"]["ExtensionPluginAcquisitionView"];
             installation: components["schemas"]["ExtensionPluginInstallationView"];
             next_step: string;
             protocol_version: string;
@@ -12326,9 +12368,44 @@ export interface components {
             updated_at: string;
             workspace_id?: string;
         };
+        SkillCatalogPublisherControlRequestView: {
+            /** @enum {string} */
+            action: "trust" | "revoke";
+            confirm: boolean;
+            expected_updated_at: string;
+            fingerprint: string;
+            name?: string;
+            public_key?: string;
+            team?: string;
+            /** @enum {string} */
+            version: "skill-catalog-control.v1";
+        };
+        SkillCatalogPublisherView: {
+            /** Format: date-time */
+            created_at: string;
+            fingerprint: string;
+            name: string;
+            public_key: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            team: string;
+            /** @enum {string} */
+            trust_class: "trusted" | "revoked";
+            /** Format: date-time */
+            trusted_at?: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SkillCatalogPublishersView: {
+            control_enabled: boolean;
+            /** @enum {string} */
+            protocol_version: "skill-catalog-control.v1";
+            publishers: components["schemas"]["SkillCatalogPublisherView"][];
+        };
         SkillPackageInstallRequestView: {
-            archive_base64: string;
+            archive_base64?: string;
             confirm_untrusted: boolean;
+            directory?: components["schemas"]["UploadedDirectory"];
             snapshot?: components["schemas"]["PortableSnapshot"];
             /** @enum {string} */
             surface: "code" | "cyber";
@@ -14407,6 +14484,14 @@ export interface components {
             height: number;
             /** Format: int32 */
             width: number;
+        };
+        UploadedDirectory: {
+            files: components["schemas"]["UploadedDirectoryFile"][];
+            root_name: string;
+        };
+        UploadedDirectoryFile: {
+            content_base64: string;
+            path: string;
         };
         VerificationAssociationControlView: {
             approval: boolean;
@@ -25396,6 +25481,80 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listSkillCatalogPublishers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SkillCatalogPublishersView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    controlSkillCatalogPublisher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCatalogPublisherControlRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SkillCatalogPublisherView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

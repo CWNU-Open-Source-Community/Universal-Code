@@ -41,12 +41,14 @@ type ExtensionInventoryView struct {
 // These process-local capabilities describe available operator entry points.
 // They never grant extension execution authority or imply a successful call.
 type ExtensionOnboardingCapabilitiesView struct {
-	MCPRegistration  bool `json:"mcp_registration"`
-	MCPCredentials   bool `json:"mcp_credentials,omitempty"`
-	PluginImport     bool `json:"plugin_import"`
-	LSPConfiguration bool `json:"lsp_configuration"`
-	PluginLifecycle  bool `json:"plugin_lifecycle,omitempty"`
-	HookDiagnostics  bool `json:"hook_diagnostics,omitempty"`
+	MCPRegistration            bool `json:"mcp_registration"`
+	MCPCredentials             bool `json:"mcp_credentials,omitempty"`
+	PluginImport               bool `json:"plugin_import"`
+	PluginSourceImport         bool `json:"plugin_source_import,omitempty"`
+	NativeSkillDirectoryImport bool `json:"native_skill_directory_import,omitempty"`
+	LSPConfiguration           bool `json:"lsp_configuration"`
+	PluginLifecycle            bool `json:"plugin_lifecycle,omitempty"`
+	HookDiagnostics            bool `json:"hook_diagnostics,omitempty"`
 }
 
 type ExtensionSourceView struct {
@@ -282,15 +284,18 @@ func (a *API) extensionInventory(request *http.Request) (any, *Page, error) {
 
 func (a *API) extensionOnboardingCapabilities() *ExtensionOnboardingCapabilitiesView {
 	_, onboarding := a.extensionController.(ExtensionOnboardingController)
+	_, sourceImport := a.extensionController.(ExtensionPluginSourceController)
 	_, lifecycle := a.extensionController.(PluginLifecycleController)
 	credentials, credentialsPresent := a.extensionController.(MCPCredentialController)
 	return &ExtensionOnboardingCapabilitiesView{
-		MCPRegistration:  a.extensionControlEnabled && onboarding,
-		MCPCredentials:   credentialsPresent && credentials.HasMCPCredentialControl(),
-		PluginImport:     a.extensionControlEnabled && onboarding,
-		LSPConfiguration: a.extensionControlEnabled && a.codeIntelController != nil,
-		PluginLifecycle:  lifecycle,
-		HookDiagnostics:  lifecycle,
+		MCPRegistration:            a.extensionControlEnabled && onboarding,
+		MCPCredentials:             credentialsPresent && credentials.HasMCPCredentialControl(),
+		PluginImport:               a.extensionControlEnabled && onboarding,
+		PluginSourceImport:         a.extensionControlEnabled && onboarding && sourceImport,
+		NativeSkillDirectoryImport: a.skillInstallationEnabled && a.skillInstallationController != nil,
+		LSPConfiguration:           a.extensionControlEnabled && a.codeIntelController != nil,
+		PluginLifecycle:            lifecycle,
+		HookDiagnostics:            lifecycle,
 	}
 }
 

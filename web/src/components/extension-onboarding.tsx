@@ -109,13 +109,24 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
   </details>;
 }
 
-export function PluginImportForm({ client, enabled, capabilityKnown = true }: { client: APIClient; enabled: boolean; capabilityKnown?: boolean }) {
+export function PluginImportForm({ client, enabled, sourceEnabled = false, capabilityKnown = true }: {
+  client: APIClient; enabled: boolean; sourceEnabled?: boolean; capabilityKnown?: boolean;
+}) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [source, setSource] = useState<"upload" | "https" | "git">("upload");
+  const [url, setURL] = useState("");
+  const [pin, setPin] = useState("");
+  const [archivePath, setArchivePath] = useState("plugin.zip");
   const imported = useMutation({
     mutationFn: async () => {
+      if (source !== "upload" && !sourceEnabled) throw new Error(t("当前服务未开放 URL / Git 导入。", "URL / Git import is unavailable on this service."));
+      if (source !== "upload") return client.importPluginPackage({ version: "extension-control.v1",
+        ...(source === "https" ? { archive_sha256: pin.trim() } : {}),
+        source: { kind: source, url: url.trim(), ...(source === "git" ? { commit: pin.trim(), archive_path: archivePath.trim() } : {}) },
+      });
       if (!file || file.size === 0 || file.size > 4 * 1024 * 1024) throw new Error(t("请选择 1 字节至 4 MiB 的 Plugin ZIP 包。", "Choose a Plugin ZIP between 1 byte and 4 MiB."));
       const buffer = await file.arrayBuffer();
       const digest = await crypto.subtle.digest("SHA-256", buffer);
@@ -127,12 +138,18 @@ export function PluginImportForm({ client, enabled, capabilityKnown = true }: { 
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["extensions"] }),
   });
+  const change = (update: () => void) => { update(); imported.reset(); };
   return <details className="extension-onboarding"><summary>{t("导入 Plugin ZIP", "Import Plugin ZIP")}</summary>
-    <p>{t("选择 plugin.v1 ZIP 包，最大 4 MiB。核对包信息、审查并选择要启用的能力。版本化 Skill ZIP 请前往“Skill 包”设置；原生 SKILL.md 可用 CLI 导入目录后在任务配置中选择。",
-      "Choose a plugin.v1 ZIP up to 4 MiB. Review the package, then select capabilities to enable. Use Skill settings for versioned Skill ZIPs; import native SKILL.md directories with the CLI, then select them in task configuration.")}</p>
+    <p>{t("上传 plugin.v1 ZIP，或从固定的 HTTPS 地址或 Git 提交获取 ZIP，最大 4 MiB。导入后核对包信息、审查并选择要启用的能力。Skill 请前往“Skill 包”设置。",
+      "Upload a plugin.v1 ZIP or fetch it from a pinned HTTPS URL or Git commit, up to 4 MiB. Review the package, then select capabilities to enable. For Skills, open Skill package settings.")}</p>
     {!enabled && <p role="status">{!capabilityKnown ? t("Plugin 接入能力尚未确认，请刷新状态。", "Plugin onboarding capability is unconfirmed; refresh state.") :
       t("当前服务未开放 Plugin 导入或当前连接没有控制权限。请检查服务版本与控制连接。", "Plugin import is unavailable. Check the service version and control connection.")}</p>}
-    <input hidden ref={input} type="file" accept="application/zip,.zip" aria-label={t("选择 Plugin ZIP", "Choose Plugin ZIP")}
+    <label>{t("导入来源", "Import source")}<select value={source} disabled={!enabled || imported.isPending}
+      onChange={(event) => change(() => { setSource(event.target.value as "upload" | "https" | "git"); setPin(""); })}>
+      <option value="upload">{t("本地 ZIP", "Local ZIP")}</option><option disabled={!sourceEnabled} value="https">HTTPS URL + SHA-256</option><option disabled={!sourceEnabled} value="git">Git + commit</option>
+    </select></label>
+    {enabled && !sourceEnabled && <p>{t("当前服务支持本地 ZIP；URL / Git 导入需要服务端开放此能力。", "This service supports local ZIP imports. URL / Git imports require server support.")}</p>}
+    {source === "upload" ? <><input hidden ref={input} type="file" accept="application/zip,.zip" aria-label={t("选择 Plugin ZIP", "Choose Plugin ZIP")}
       disabled={!enabled || imported.isPending} onChange={(event) => {
         const selected = event.target.files?.[0];
         if (selected) { setFile(selected); imported.reset(); }
@@ -145,7 +162,20 @@ export function PluginImportForm({ client, enabled, capabilityKnown = true }: { 
       <p>{t("下一步暂存此包以读取来源与能力。执行权限由后续审查和启用步骤管理。", "Stage this package to inspect its source and capabilities. Execution authority is managed in the subsequent review and enable steps.")}</p>
       <button className="settings-action" disabled={!enabled || imported.isPending || imported.isSuccess}
         onClick={() => imported.mutate()} type="button">{imported.isPending ? t("正在导入…", "Importing…") : t("暂存 Plugin 包", "Stage Plugin package")}</button>
-    </div>}
+    </div>}</> : <form className="extension-form" onSubmit={(event) => { event.preventDefault(); imported.mutate(); }}>
+      <fieldset disabled={!enabled || !sourceEnabled || imported.isPending}>
+        <label>{source === "git" ? t("Git 仓库 HTTPS 地址", "Git repository HTTPS URL") : t("ZIP 的 HTTPS 地址", "ZIP HTTPS URL")}
+          <input required type="url" maxLength={4096} value={url} onChange={(event) => change(() => setURL(event.target.value))} /></label>
+        <label>{source === "git" ? t("完整 Git commit（40 或 64 位）", "Full Git commit (40 or 64 characters)") : "SHA-256"}
+          <input required value={pin} maxLength={64} pattern={source === "git" ? "(?:[a-f0-9]{40}|[a-f0-9]{64})" : "[a-f0-9]{64}"}
+            onChange={(event) => change(() => setPin(event.target.value))} /></label>
+        {source === "git" && <label>{t("仓库内 ZIP 路径", "ZIP path in repository")}
+          <input required value={archivePath} maxLength={512} onChange={(event) => change(() => setArchivePath(event.target.value))} /></label>}
+        <p>{t("点击获取即允许读取此固定来源。地址不能包含账号、密码、查询参数或重定向。", "Fetch authorizes reading this pinned source. URLs cannot contain credentials, query parameters, or redirects.")}</p>
+        <button className="settings-action" disabled={!url.trim() || !pin.trim() || imported.isSuccess} type="submit">
+          {imported.isPending ? t("正在获取…", "Fetching…") : t("获取并暂存 Plugin", "Fetch and stage Plugin")}</button>
+      </fieldset>
+    </form>}
     {imported.data && <p role="status">{t("导入返回状态", "Import returned state")}: {imported.data.installation.state} ·
       {t("下一步：核对下方包来源、能力和指纹，按当前阶段继续审查或启用。", "Next: inspect the package source, capabilities, and fingerprint below, then follow its current review or enable stage.")}</p>}
     <Failure error={imported.error} />

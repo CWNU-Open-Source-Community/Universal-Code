@@ -246,6 +246,9 @@ import type {
   UIEvidenceBundle,
   UIEvidenceStartView,
   SkillPackageInstallRequestView,
+  SkillCatalogPublishersView,
+  SkillCatalogPublisherView,
+  SkillCatalogPublisherControlRequestView,
   SkillPackageInstallView,
   SkillPackageInventoryView,
   SkillPackageRemoveRequestView,
@@ -6441,7 +6444,7 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
     throw new APIRequestError("Extension inventory response is invalid", "INVALID_RESPONSE", 502);
   }
   if (value.onboarding !== undefined && (!hasExactKeys(value.onboarding,
-    ["mcp_registration", "plugin_import", "lsp_configuration", ...["mcp_credentials", "plugin_lifecycle", "hook_diagnostics"].filter((key) => isRecord(value.onboarding) && value.onboarding[key] !== undefined)]) ||
+    ["mcp_registration", "plugin_import", "lsp_configuration", ...["mcp_credentials", "plugin_lifecycle", "hook_diagnostics", "plugin_source_import", "native_skill_directory_import"].filter((key) => isRecord(value.onboarding) && value.onboarding[key] !== undefined)]) ||
     Object.values(value.onboarding).some((flag) => typeof flag !== "boolean"))) {
     throw new APIRequestError("Extension onboarding capabilities are invalid", "INVALID_RESPONSE", 502);
   }
@@ -6503,7 +6506,11 @@ function parseExtensionInventory(value: unknown, hiddenLocalSource = false): Ext
       throw new APIRequestError("Portable plugin installation projection is invalid", "INVALID_RESPONSE", 502);
     }
   }
-  return value as unknown as ExtensionInventoryView;
+  const inventory = value as unknown as ExtensionInventoryView;
+  return inventory.onboarding ? { ...inventory, onboarding: { ...inventory.onboarding,
+    plugin_source_import: inventory.onboarding.plugin_source_import ?? false,
+    native_skill_directory_import: inventory.onboarding.native_skill_directory_import ?? false,
+  } } : inventory;
 }
 
 function validExtensionPromptDetails(capabilities: Record<string, unknown>): boolean {
@@ -6653,18 +6660,45 @@ function parseMCPRegistration(value: unknown,
 
 function parsePluginImport(value: unknown,
   request: ExtensionPluginImportRequestView): ExtensionPluginImportView {
-  if (!hasExactKeys(value, ["protocol_version", "installation", "replayed", "next_step"]) ||
+  if (!hasRequiredOnlyKeys(value, ["protocol_version", "installation", "replayed", "next_step"], ["acquisition"]) ||
     value.protocol_version !== "extension-onboarding.v1" || typeof value.replayed !== "boolean" ||
     !["approve", "enable", "select_contributions", "inspect_state"].includes(String(value.next_step))) {
     throw new APIRequestError("Plugin import response is invalid", "INVALID_RESPONSE", 502);
   }
   const installation = parseExtensionPlugin(value.installation);
-  if (installation.archive_sha256 !== request.archive_sha256 ||
+  const acquisition = value.acquisition;
+  if (request.source) {
+    const source = request.source;
+    if (!hasExactKeys(acquisition, ["kind", "url", "sha256", ...(source.kind === "git" ? ["commit", "archive_path"] : [])]) ||
+      acquisition.kind !== source.kind || acquisition.url !== source.url ||
+      !isSHA256(acquisition.sha256) || acquisition.sha256 !== installation.archive_sha256 ||
+      (source.kind === "git" && (acquisition.commit !== source.commit ||
+        acquisition.archive_path !== (source.archive_path ?? "plugin.zip")))) {
+      throw new APIRequestError("Plugin acquisition binding is invalid", "INVALID_RESPONSE", 502);
+    }
+  } else if (acquisition !== undefined) {
+    throw new APIRequestError("Uploaded Plugin response includes an unexpected acquisition", "INVALID_RESPONSE", 502);
+  }
+  if ((request.archive_sha256 !== undefined && installation.archive_sha256 !== request.archive_sha256) ||
+    (!value.replayed && request.source && (installation.source.kind !== request.source.kind ||
+      installation.source.uri !== request.source.url || (installation.source.commit ?? "") !== (request.source.commit ?? ""))) ||
     (!value.replayed && (installation.state !== "staged" || installation.generation !== 1 ||
       installation.enabled_capabilities.length !== 0))) {
     throw new APIRequestError("Plugin import binding is invalid", "INVALID_RESPONSE", 502);
   }
   return { ...value, installation } as ExtensionPluginImportView;
+}
+
+function parseSkillCatalogPublisher(value: unknown): SkillCatalogPublisherView {
+  if (!isRecord(value) || !hasRequiredOnlyKeys(value,
+    ["fingerprint", "name", "team", "public_key", "trust_class", "updated_at", "created_at"], ["trusted_at", "revoked_at"]) ||
+    !isSHA256(value.fingerprint) || !boundedText(value.name, 96) || typeof value.team !== "string" || value.team.length > 256 ||
+    !validCanonicalBase64(value.public_key, 32) || atob(String(value.public_key)).length !== 32 ||
+    !["trusted", "revoked"].includes(String(value.trust_class)) || !validDate(value.updated_at) || !validDate(value.created_at) ||
+    (value.trusted_at !== undefined && !validDate(value.trusted_at)) || (value.revoked_at !== undefined && !validDate(value.revoked_at))) {
+    throw new APIRequestError("Skill Catalog publisher response is invalid", "INVALID_RESPONSE", 502);
+  }
+  return value as SkillCatalogPublisherView;
 }
 
 // Shared HTTP/Desktop decoder for the actual Plugin lifecycle response.
@@ -7287,8 +7321,22 @@ export class APIClient {
 
   async importPluginPackage(body: ExtensionPluginImportRequestView,
     signal?: AbortSignal): Promise<ExtensionPluginImportView> {
-    if (!this.hasExtensionControl || body.version !== "extension-control.v1" ||
-      !isSHA256(body.archive_sha256) || !validCanonicalBase64(body.archive_base64, 4 * 1_024 * 1_024)) {
+    if (!this.hasExtensionControl || body.version !== "extension-control.v1") {
+      throw new Error("Plugin import control is required");
+    }
+    if (body.source) {
+      const source = body.source;
+      const url = new URL(source.url);
+      if (body.archive_base64 || url.protocol !== "https:" || !url.hostname || url.username || url.password ||
+        url.search || url.hash || source.url.length > 4096 ||
+        (source.kind !== "https" && source.kind !== "git") ||
+        (source.kind === "https" && (!isSHA256(body.archive_sha256) || source.commit || source.archive_path)) ||
+        (source.kind === "git" && (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(source.commit ?? "") ||
+          (body.archive_sha256 !== undefined && !isSHA256(body.archive_sha256)) ||
+          (source.archive_path !== undefined && (!/^(?!\/)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[^\\:\0]+\.zip$/u.test(source.archive_path) || source.archive_path.length > 512))))) {
+        throw new Error("A credential-free HTTPS URL with an exact SHA-256 or Git commit is required");
+      }
+    } else if (!isSHA256(body.archive_sha256) || !validCanonicalBase64(body.archive_base64, 4 * 1_024 * 1_024)) {
       throw new Error("A bounded Plugin ZIP and exact SHA-256 are required");
     }
     return parsePluginImport(await this.sendControlRequest<unknown>("/extensions/plugins/import", body, signal), body);
@@ -8523,6 +8571,37 @@ export class APIClient {
     return parseSkillPackageInstall(await this.sendControl<unknown>(
       "/skills/packages/install", body, idempotencyKey, signal,
     ), body);
+  }
+
+  async listSkillCatalogPublishers(signal?: AbortSignal): Promise<SkillCatalogPublishersView> {
+    const value = await this.get<unknown>("/skills/catalog/publishers", {}, signal);
+    if (!hasExactKeys(value, ["protocol_version", "publishers", "control_enabled"]) ||
+      value.protocol_version !== "skill-catalog-control.v1" || typeof value.control_enabled !== "boolean" || !Array.isArray(value.publishers)) {
+      throw new APIRequestError("Skill Catalog inventory is invalid", "INVALID_RESPONSE", 502);
+    }
+    const publishers = value.publishers.map(parseSkillCatalogPublisher);
+    if (new Set(publishers.map((item) => item.fingerprint)).size !== publishers.length) {
+      throw new APIRequestError("Skill Catalog identities are duplicated", "INVALID_RESPONSE", 502);
+    }
+    return { protocol_version: "skill-catalog-control.v1", publishers, control_enabled: value.control_enabled };
+  }
+
+  async controlSkillCatalogPublisher(body: SkillCatalogPublisherControlRequestView,
+    signal?: AbortSignal): Promise<SkillCatalogPublisherView> {
+    if (!this.hasSkillInstallation || body.version !== "skill-catalog-control.v1" || !body.confirm ||
+      !isSHA256(body.fingerprint) || typeof body.expected_updated_at !== "string" ||
+      (body.expected_updated_at !== "" && !validDate(body.expected_updated_at)) ||
+      !["trust", "revoke"].includes(body.action) ||
+      (body.action === "trust" && (!boundedText(body.name, 96) || !validCanonicalBase64(body.public_key, 32))) ||
+      (body.action === "revoke" && (!body.expected_updated_at || body.name !== undefined || body.public_key !== undefined || body.team !== undefined))) {
+      throw new Error("A confirmed Skill Catalog identity and observed version are required");
+    }
+    const publisher = parseSkillCatalogPublisher(await this.sendControlRequest<unknown>("/skills/catalog/publishers", body, signal));
+    if (publisher.fingerprint !== body.fingerprint || publisher.trust_class !== (body.action === "trust" ? "trusted" : "revoked") ||
+      publisher.updated_at === body.expected_updated_at || (body.action === "trust" && publisher.public_key !== body.public_key)) {
+      throw new APIRequestError("Skill Catalog change is unverified; refresh before retrying", "INVALID_RESPONSE", 502);
+    }
+    return publisher;
   }
 
   async listSkillPackages(filters: { surface?: string; profile?: string;
