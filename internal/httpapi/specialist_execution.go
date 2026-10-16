@@ -12,6 +12,8 @@ import (
 	"cyberagent-workbench/internal/domain"
 )
 
+const SpecialistReadRevokePathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/revoke-read-tools"
+
 const SpecialistExecutionPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/execute"
 const SpecialistContinuationPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/continue"
 const SpecialistToolReceiptsPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_id}/attempts/{attempt_id}/tool-receipts"
@@ -19,6 +21,10 @@ const SpecialistToolReceiptsPathTemplate = "/api/v1/runs/{run_id}/agents/{agent_
 type SpecialistExecutionController interface {
 	ExecuteSpecialist(context.Context, application.ExecuteSpecialistRequest) (application.SpecialistTurnResult, error)
 }
+type SpecialistReadRevokeRequestView struct {
+	Version string `json:"version"`
+}
+
 type SpecialistExecutionRequestView struct {
 	Version        string `json:"version"`
 	OperationKey   string `json:"operation_key"`
@@ -87,7 +93,7 @@ func matchSpecialistExecutionPath(path string) (runID, agentID, attemptID string
 		return
 	}
 	p := strings.Split(strings.TrimPrefix(path, "/api/v1/runs/"), "/")
-	if len(p) == 4 && p[0] != "" && p[1] == "agents" && p[2] != "" && (p[3] == "execute" || p[3] == "continue") {
+	if len(p) == 4 && p[0] != "" && p[1] == "agents" && p[2] != "" && (p[3] == "execute" || p[3] == "continue" || p[3] == "revoke-read-tools") {
 		return p[0], p[2], "", true
 	}
 	if len(p) == 6 && p[0] != "" && p[1] == "agents" && p[2] != "" && p[3] == "attempts" && p[4] != "" && p[5] == "tool-receipts" {
@@ -151,6 +157,35 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	if !a.authorizeRunOperation(w, r, requestID, a.modelControlEnabled, "Specialist execution") {
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/revoke-read-tools") {
+		var body SpecialistReadRevokeRequestView
+		raw, err := readStrictControlBody(r, "child read revocation")
+		if err == nil {
+			err = decodeStrictRunOperation(raw, &body, "child read revocation")
+		}
+		if err != nil {
+			a.writeError(w, requestID, err, 0)
+			return
+		}
+		if body.Version != domain.SpecialistToolsVersion {
+			a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "child read revocation version is required"), 0)
+			return
+		}
+		controller, ok := a.specialistExecutionController.(interface {
+			RevokeSpecialistReadTools(context.Context, string, string) (domain.AgentNode, error)
+		})
+		if !ok {
+			a.writeError(w, requestID, apperror.New(apperror.CodeFailedPrecondition, "child read revocation unavailable"), 0)
+			return
+		}
+		node, err := controller.RevokeSpecialistReadTools(r.Context(), runID, agentID)
+		if err != nil {
+			a.writeError(w, requestID, err, 0)
+			return
+		}
+		a.writeSuccessStatus(w, requestID, agentNodeView(node, nil), nil, http.StatusOK)
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, "/continue") {

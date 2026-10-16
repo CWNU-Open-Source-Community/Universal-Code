@@ -94,3 +94,16 @@ it("requires explicit task resume for a paused Run", () => {
   expect(screen.getByText("The task is paused. Resume it in task controls before running the child.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Run continuously and summarize" })).toBeDisabled();
 });
+
+it("shows the admitted scope and revokes read access without resetting usage", async () => {
+ const fetch = vi.fn().mockResolvedValueOnce(response({ ...child, allowed_read_paths: [], tool_call_limit: 4, tool_calls_used: 2 }));
+ vi.stubGlobal("fetch", fetch);
+ mount(new APIClient("read", "/api/v1", "control"), { ...child, allowed_read_paths: ["src/auth"], tool_call_limit: 4, tool_calls_used: 2 });
+ expect(screen.getByText("Read-only tool child")).toBeInTheDocument();
+ expect(screen.getByText("Read scope: src/auth")).toBeInTheDocument();
+ expect(screen.getByText("Tool calls: 2 / 4")).toBeInTheDocument();
+ await userEvent.setup().click(screen.getByRole("button", { name: "Revoke read access" }));
+ expect(await screen.findByText("No-tool child")).toBeInTheDocument();
+ expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-1/agents/agent-child/revoke-read-tools");
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ version: "specialist_tools.v1" });
+});

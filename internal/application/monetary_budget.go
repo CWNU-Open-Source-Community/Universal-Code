@@ -31,8 +31,8 @@ type monetaryReservationPriceStore interface {
 // MonetaryBudgetService composes the operator price snapshot with the
 // durable run aggregate. Reserve computes the upper-bound cost before a
 // model call; settle closes it with actual usage; release returns the
-// unused portion. Runs without MaxCostUSD stay untracked and skip every
-// gate.
+// unused portion. A child monetary ceiling also enables tracking when the
+// Run has no total cost cap; calls without either ceiling stay untracked.
 type MonetaryBudgetService struct {
 	store MonetaryBudgetStore
 	now   func() time.Time
@@ -52,7 +52,21 @@ func (s *MonetaryBudgetService) ReserveModelCall(ctx context.Context, run domain
 		return domain.MonetaryUsage{}, nil
 	}
 	if run.Budget.MaxCostUSD <= 0 {
-		return domain.MonetaryUsage{}, nil
+		tracked := false
+		if scope == domain.MonetaryScopeSpecialist && attempt.SpecialistAttemptID != "" {
+			if st, ok := s.store.(interface {
+				SpecialistCostLimit(context.Context, string, string) (int64, error)
+			}); ok {
+				limit, err := st.SpecialistCostLimit(ctx, run.ID, attempt.SpecialistAttemptID)
+				if err != nil {
+					return domain.MonetaryUsage{}, err
+				}
+				tracked = limit > 0
+			}
+		}
+		if !tracked {
+			return domain.MonetaryUsage{}, nil
+		}
 	}
 	snapshot, found, err := s.store.ActivePriceSnapshot(ctx)
 	if err != nil {

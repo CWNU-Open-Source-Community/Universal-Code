@@ -89,7 +89,7 @@ func (a *API) delegationView(request *http.Request,
 		view.Assignments[index] = DelegationAssignmentView{Ordinal: assignment.Ordinal,
 			Title: assignment.Title, Goal: assignment.Goal,
 			Skills: append([]string(nil), assignment.Skills...), TurnLimit: assignment.TurnLimit,
-			TokenLimit: assignment.TokenLimit}
+			TokenLimit: assignment.TokenLimit, AllowedReadPaths: assignment.AllowedReadPaths, ToolCallLimit: assignment.ToolCallLimit, CostLimitMicros: assignment.CostLimitMicros}
 	}
 	review, found, err := a.store.GetSpecialistDelegationReviewByProposal(request.Context(), proposal.ID)
 	if err != nil {

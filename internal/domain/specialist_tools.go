@@ -12,15 +12,16 @@ const MaxSpecialistToolCalls = 4
 // SpecialistToolBinding is issued by Go after the current task brief has been
 // prepared. It records the actor and capability ceiling, never credentials.
 type SpecialistToolBinding struct {
-	Ref              AgentAttemptRef
-	SessionID        string
-	WorkspaceID      string
-	RootFingerprint  string
-	BriefFingerprint string
-	Mode             string
-	BatchPlanID      string
-	BatchOrdinal     int
-	BatchGeneration  int64
+	AllowedReadPathsJSON string
+	Ref                  AgentAttemptRef
+	SessionID            string
+	WorkspaceID          string
+	RootFingerprint      string
+	BriefFingerprint     string
+	Mode                 string
+	BatchPlanID          string
+	BatchOrdinal         int
+	BatchGeneration      int64
 }
 
 type SpecialistToolCall struct {

@@ -40,6 +40,9 @@ type ChildTaskAdmitRequestView struct {
 }
 
 type ChildTaskTaskView struct {
+	AllowedReadPaths   []string `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit      int64    `json:"tool_call_limit,omitempty"`
+	CostLimitMicros    int64    `json:"cost_limit_micros,omitempty"`
 	Ordinal            int      `json:"ordinal"`
 	Title              string   `json:"title"`
 	Goal               string   `json:"goal"`
@@ -111,7 +114,7 @@ func (a *API) listChildTaskProposals(request *http.Request, runID string) (any, 
 				Title: task.Title, Goal: task.Goal, Skills: task.Skills,
 				InputRefs: task.InputRefs, DependencyOrdinals: task.DependencyOrdinals,
 				SurfaceHint: string(task.SurfaceHint), TurnLimit: task.TurnLimit,
-				TokenLimit: task.TokenLimit, TimeoutMillis: task.TimeoutMillis})
+				TokenLimit: task.TokenLimit, TimeoutMillis: task.TimeoutMillis, AllowedReadPaths: task.AllowedReadPaths, ToolCallLimit: task.ToolCallLimit, CostLimitMicros: task.CostLimitMicros})
 		}
 		if assignments, listErr := a.childTaskControlController.ListChildTaskAssignments(
 			request.Context(), proposal.ID); listErr == nil {
@@ -256,7 +259,7 @@ func (a *API) childTaskProposalView(ctx context.Context, proposal domain.ChildTa
 			Title: task.Title, Goal: task.Goal, Skills: task.Skills,
 			InputRefs: task.InputRefs, DependencyOrdinals: task.DependencyOrdinals,
 			SurfaceHint: string(task.SurfaceHint), TurnLimit: task.TurnLimit,
-			TokenLimit: task.TokenLimit, TimeoutMillis: task.TimeoutMillis})
+			TokenLimit: task.TokenLimit, TimeoutMillis: task.TimeoutMillis, AllowedReadPaths: task.AllowedReadPaths, ToolCallLimit: task.ToolCallLimit, CostLimitMicros: task.CostLimitMicros})
 	}
 	return view, true, nil
 }

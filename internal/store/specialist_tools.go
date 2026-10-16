@@ -42,6 +42,17 @@ func (s *SQLiteStore) BindSpecialistTools(ctx context.Context, b domain.Speciali
 	if b.WorkspaceID != workspaceID {
 		return errors.New("child tool source workspace differs from its mission")
 	}
+	if b.Mode == "read" {
+		raw, e := json.Marshal(child.AllowedReadPaths)
+		if e != nil {
+			return e
+		}
+		if len(child.AllowedReadPaths) == 0 || child.ToolCallLimit <= 0 || b.AllowedReadPathsJSON != string(raw) {
+			return apperror.New(apperror.CodePolicyDenied, "child read authority differs from admission")
+		}
+	} else {
+		b.AllowedReadPathsJSON = "[]"
+	}
 	if b.Mode == "batch" {
 		var n int
 		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM batch_delivery_workspaces WHERE plan_id=? AND ordinal=? AND generation=? AND agent_id=?`, b.BatchPlanID, b.BatchOrdinal, b.BatchGeneration, child.ID).Scan(&n)
@@ -52,7 +63,7 @@ func (s *SQLiteStore) BindSpecialistTools(ctx context.Context, b domain.Speciali
 			return errors.New("child tool binding lacks its admitted Batch workspace")
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO specialist_tool_bindings(agent_attempt_id,run_id,agent_id,session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, b.Ref.AttemptID, b.Ref.RunID, b.Ref.AgentID, b.SessionID, b.WorkspaceID, b.RootFingerprint, b.BriefFingerprint, b.Mode, b.BatchPlanID, b.BatchOrdinal, b.BatchGeneration, ts(time.Now().UTC()))
+	_, err = tx.ExecContext(ctx, `INSERT INTO specialist_tool_bindings(agent_attempt_id,run_id,agent_id,session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,created_at,allowed_read_paths_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, b.Ref.AttemptID, b.Ref.RunID, b.Ref.AgentID, b.SessionID, b.WorkspaceID, b.RootFingerprint, b.BriefFingerprint, b.Mode, b.BatchPlanID, b.BatchOrdinal, b.BatchGeneration, ts(time.Now().UTC()), b.AllowedReadPathsJSON)
 	if err != nil {
 		return err
 	}
@@ -235,7 +246,7 @@ func (s *SQLiteStore) ValidateSpecialistToolDispatch(ctx context.Context, call t
 	if err != nil {
 		return err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id JOIN specialist_task_briefs brief ON brief.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND b.mode=? AND b.brief_fingerprint=brief.fingerprint AND c.call_id=? AND c.status='pending' AND c.payload_json=? AND c.name=? AND c.charge_id=?`, attempt.ID, call.WorkspaceID, mode, call.SpecialistToolCallID, string(input.Arguments), input.Tool, call.InvocationID).Scan(&n)
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id JOIN specialist_task_briefs brief ON brief.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND b.mode=? AND b.brief_fingerprint=brief.fingerprint AND (b.mode='batch' OR (b.allowed_read_paths_json=(SELECT allowed_read_paths_json FROM agent_nodes WHERE id=b.agent_id) AND json_array_length(b.allowed_read_paths_json)>0)) AND c.call_id=? AND c.status='pending' AND c.payload_json=? AND c.name=? AND c.charge_id=?`, attempt.ID, call.WorkspaceID, mode, call.SpecialistToolCallID, string(input.Arguments), input.Tool, call.InvocationID).Scan(&n)
 	if err != nil {
 		return err
 	}
@@ -275,7 +286,7 @@ func (s *SQLiteStore) CompleteSpecialistToolCall(ctx context.Context, c domain.S
 
 func (s *SQLiteStore) GetSpecialistToolBinding(ctx context.Context, ref domain.AgentAttemptRef) (domain.SpecialistToolBinding, error) {
 	b := domain.SpecialistToolBinding{Ref: ref}
-	err := s.db.QueryRowContext(ctx, `SELECT session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation FROM specialist_tool_bindings WHERE agent_attempt_id=? AND run_id=? AND agent_id=?`, ref.AttemptID, ref.RunID, ref.AgentID).Scan(&b.SessionID, &b.WorkspaceID, &b.RootFingerprint, &b.BriefFingerprint, &b.Mode, &b.BatchPlanID, &b.BatchOrdinal, &b.BatchGeneration)
+	err := s.db.QueryRowContext(ctx, `SELECT session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,allowed_read_paths_json FROM specialist_tool_bindings WHERE agent_attempt_id=? AND run_id=? AND agent_id=?`, ref.AttemptID, ref.RunID, ref.AgentID).Scan(&b.SessionID, &b.WorkspaceID, &b.RootFingerprint, &b.BriefFingerprint, &b.Mode, &b.BatchPlanID, &b.BatchOrdinal, &b.BatchGeneration, &b.AllowedReadPathsJSON)
 	return b, err
 }
 

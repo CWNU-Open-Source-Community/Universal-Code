@@ -28,7 +28,7 @@ func TestSpecialistDelegationApplicationCreatesTwoBoundedChildren(t *testing.T) 
 	}
 	defer st.Close()
 	ctx := context.Background()
-	run, proposal, review := createApprovedDelegationApplicationFixture(t, ctx, st, 2)
+	run, proposal, review := createApprovedDelegationApplicationFixture(t, ctx, st, 2, true)
 	service, err := application.NewDefaultSpecialistDelegationApplicationService(
 		st, policy.NewDefaultChecker())
 	if err != nil {
@@ -47,6 +47,11 @@ func TestSpecialistDelegationApplicationCreatesTwoBoundedChildren(t *testing.T) 
 		t.Fatalf("unexpected application result: %#v", result)
 	}
 	for _, assignment := range result.Application.Assignments {
+		node, e := st.GetAgentNode(ctx, assignment.AgentID)
+		proposed := proposal.Spec.Assignments[assignment.Ordinal-1]
+		if e != nil || strings.Join(node.AllowedReadPaths, ",") != strings.Join(proposed.AllowedReadPaths, ",") || node.ToolCallLimit != proposed.ToolCallLimit || node.CostLimitMicros != proposed.CostLimitMicros {
+			t.Fatalf("approved constraints lost: %+v %v", node, e)
+		}
 		if assignment.Status != domain.SpecialistDelegationAssignmentInstructed ||
 			assignment.AgentID == "" || assignment.MessageID == "" {
 			t.Fatalf("assignment was not fully applied: %#v", assignment)
@@ -515,7 +520,7 @@ func (denyingDelegationApplicationChecker) CheckToolCall(tools.Call) policy.Deci
 }
 
 func createApprovedDelegationApplicationFixture(t *testing.T, ctx context.Context,
-	st *SQLiteStore, assignmentCount int,
+	st *SQLiteStore, assignmentCount int, scoped ...bool,
 ) (domain.Run, domain.SpecialistDelegationProposal, domain.SpecialistDelegationReview) {
 	t.Helper()
 	run, turn, lease := beginDelegationTestTurn(t, ctx, st, "apply approved delegation")
@@ -525,6 +530,11 @@ func createApprovedDelegationApplicationFixture(t *testing.T, ctx context.Contex
 			Title:  "Bounded Specialist " + string(rune('A'+index)),
 			Goal:   "Inspect parser boundary " + string(rune('A'+index)),
 			Skills: []string{"model.chat"}, TurnLimit: 2, TokenLimit: 512,
+		}
+		if len(scoped) > 0 && scoped[0] {
+			assignments[index].AllowedReadPaths = []string{"auth/" + string(rune('A'+index))}
+			assignments[index].ToolCallLimit = int64(index + 1)
+			assignments[index].CostLimitMicros = int64((index + 1) * 1000)
 		}
 	}
 	outcome, err := newDelegationTestGateway(st).Invoke(ctx, toolgateway.ToolCall{

@@ -226,7 +226,11 @@ func (s *SQLiteStore) ReserveModelCost(ctx context.Context,
 		return domain.MonetaryUsage{}, false, apperror.New(apperror.CodeInvalidArgument,
 			"run monetary cap is invalid")
 	}
-	if capMicros <= 0 {
+	agentID, childLimit, err := specialistReservationAgentTx(ctx, tx, normalized)
+	if err != nil {
+		return domain.MonetaryUsage{}, false, err
+	}
+	if capMicros <= 0 && childLimit <= 0 {
 		return domain.MonetaryUsage{}, false, nil
 	}
 	now := time.Now().UTC()
@@ -268,13 +272,23 @@ func (s *SQLiteStore) ReserveModelCost(ctx context.Context,
 		}
 		return usage, true, nil
 	}
+	if childLimit > 0 {
+		var used int64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(reserved_micros-released_micros),0) FROM run_monetary_reservations WHERE run_id=? AND agent_id=?`, normalized.RunID, agentID).Scan(&used); err != nil {
+			return domain.MonetaryUsage{}, false, err
+		}
+		if used > childLimit-normalized.ReservedMicros {
+			return domain.MonetaryUsage{}, false, apperror.New(apperror.CodeResourceExhausted, "child monetary budget exhausted")
+		}
+	}
+
 	aggregate, err := loadMonetaryAggregateTx(ctx, tx, normalized.RunID)
 	if err != nil {
 		return domain.MonetaryUsage{}, false, err
 	}
 	openMicros := aggregate.ReservedMicros - aggregate.SettledMicros - aggregate.ReleasedMicros
 	consumedMicros := aggregate.ReservedMicros - aggregate.ReleasedMicros
-	if consumedMicros > capMicros-normalized.ReservedMicros {
+	if capMicros > 0 && consumedMicros > capMicros-normalized.ReservedMicros {
 		if !aggregate.ExhaustedAt.Valid {
 			if _, err := tx.ExecContext(ctx, `UPDATE run_monetary_usage SET updated_at = ?,
 				exhausted_at = ? WHERE run_id = ? AND exhausted_at IS NULL`, ts(now), ts(now),
@@ -312,10 +326,10 @@ func (s *SQLiteStore) ReserveModelCost(ctx context.Context,
 	if _, err := tx.ExecContext(ctx, `INSERT INTO run_monetary_reservations
 		(id, run_id, scope, provider, model, attempt_number, reserved_micros,
 		settled_micros, released_micros, status, estimate_source, price_fingerprint,
-		created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'reserved', ?, ?, ?)`,
+		created_at,agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'reserved', ?, ?, ?, ?)`,
 		reservationID, normalized.RunID, normalized.Scope, normalized.Provider,
 		normalized.Model, normalized.AttemptNumber, normalized.ReservedMicros,
-		normalized.EstimateSource, normalized.PriceFingerprint, ts(now)); err != nil {
+		normalized.EstimateSource, normalized.PriceFingerprint, ts(now), agentID); err != nil {
 		return domain.MonetaryUsage{}, false, err
 	}
 	event, err := events.New(normalized.RunID, missionID, events.MonetaryBudgetReservedEvent,
@@ -361,8 +375,17 @@ func (s *SQLiteStore) SettleModelCost(ctx context.Context,
 	}
 	_ = status
 	capMicros, err := pricing.USDToMicros(budget.MaxCostUSD)
-	if err != nil || capMicros <= 0 {
-		return domain.MonetaryUsage{}, false, nil
+	if err != nil {
+		return domain.MonetaryUsage{}, false, err
+	}
+	if capMicros <= 0 {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM run_monetary_reservations WHERE run_id=? AND scope=? AND attempt_number=?)`, normalized.RunID, normalized.Scope, normalized.AttemptNumber).Scan(&exists); err != nil {
+			return domain.MonetaryUsage{}, false, err
+		}
+		if !exists {
+			return domain.MonetaryUsage{}, false, nil
+		}
 	}
 	reservation, found, err := getMonetaryReservationTx(ctx, tx, normalized.RunID,
 		normalized.Scope, normalized.AttemptNumber)
@@ -464,8 +487,17 @@ func (s *SQLiteStore) ReleaseModelCost(ctx context.Context,
 		return domain.MonetaryUsage{}, false, err
 	}
 	capMicros, err := pricing.USDToMicros(budget.MaxCostUSD)
-	if err != nil || capMicros <= 0 {
-		return domain.MonetaryUsage{}, false, nil
+	if err != nil {
+		return domain.MonetaryUsage{}, false, err
+	}
+	if capMicros <= 0 {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM run_monetary_reservations WHERE run_id=? AND scope=? AND attempt_number=?)`, normalized.RunID, normalized.Scope, normalized.AttemptNumber).Scan(&exists); err != nil {
+			return domain.MonetaryUsage{}, false, err
+		}
+		if !exists {
+			return domain.MonetaryUsage{}, false, nil
+		}
 	}
 	reservation, found, err := getMonetaryReservationTx(ctx, tx, normalized.RunID,
 		normalized.Scope, normalized.AttemptNumber)
@@ -539,8 +571,8 @@ func (s *SQLiteStore) ReleaseModelCost(ctx context.Context,
 	return usage, false, nil
 }
 
-// GetMonetaryUsage projects the run aggregate. Untracked runs (no cap) return
-// Tracked=false with zero counters.
+// GetMonetaryUsage projects the shared ledger. Child-only budgets have a zero
+// Run cap. Runs without either ceiling or a ledger remain untracked.
 func (s *SQLiteStore) GetMonetaryUsage(ctx context.Context, runID string) (domain.MonetaryUsage, error) {
 	runID = strings.TrimSpace(runID)
 	var budgetJSON string
@@ -554,8 +586,17 @@ func (s *SQLiteStore) GetMonetaryUsage(ctx context.Context, runID string) (domai
 		return domain.MonetaryUsage{}, err
 	}
 	capMicros, err := pricing.USDToMicros(budget.MaxCostUSD)
-	if err != nil || capMicros <= 0 {
-		return domain.MonetaryUsage{}, nil
+	if err != nil {
+		return domain.MonetaryUsage{}, err
+	}
+	if capMicros <= 0 {
+		var tracked bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM run_monetary_usage WHERE run_id=?) OR EXISTS(SELECT 1 FROM agent_nodes WHERE run_id=? AND cost_limit_micros>0)`, runID, runID).Scan(&tracked); err != nil {
+			return domain.MonetaryUsage{}, err
+		}
+		if !tracked {
+			return domain.MonetaryUsage{}, nil
+		}
 	}
 	var hasAggregate, hasReservations bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM run_monetary_usage WHERE run_id=?),

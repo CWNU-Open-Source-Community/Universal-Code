@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -61,11 +62,18 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 	if err != nil {
 		return domain.AgentNode{}, false, err
 	}
+	pathsJSON, err := json.Marshal(admission.AllowedReadPaths)
+	if err != nil {
+		return domain.AgentNode{}, false, err
+	}
 	keyDigest := runmutation.Fingerprint("agent_admission_operation.v1", admission.RunID,
 		normalizedOperationKey)
 	requestFingerprint := runmutation.Fingerprint("agent_admission_request.v1", admission.RunID,
 		admission.ParentAgentID, admission.Title, skillsJSON, strconv.FormatInt(admission.TurnLimit, 10),
 		strconv.FormatInt(admission.TokenLimit, 10), strconv.Itoa(admission.MaxChildren))
+	if len(admission.AllowedReadPaths) > 0 || admission.ToolCallLimit > 0 || admission.CostLimitMicros > 0 {
+		requestFingerprint = runmutation.Fingerprint(requestFingerprint, string(pathsJSON), strconv.FormatInt(admission.ToolCallLimit, 10), strconv.FormatInt(admission.CostLimitMicros, 10))
+	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
@@ -110,6 +118,7 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		return domain.AgentNode{}, false,
 			apperror.New(apperror.CodeFailedPrecondition, "specialist admission requires a running Run")
 	}
+
 	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
 		admission.ParentAgentID))
 	if err != nil {
@@ -185,6 +194,7 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		Role: domain.AgentRoleSpecialist, Profile: parent.Profile, Skills: admission.Skills,
 		Status: domain.AgentReady, Depth: parent.Depth + 1, ChildLimit: 0,
 		TurnLimit: admission.TurnLimit, TokenLimit: admission.TokenLimit,
+		AllowedReadPaths: admission.AllowedReadPaths, ToolCallLimit: admission.ToolCallLimit, CostLimitMicros: admission.CostLimitMicros,
 		StatusReason: "awaiting internal scheduling", Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if binding != nil && len(binding.task.DependencyOrdinals) != 0 {
@@ -234,6 +244,9 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		child.ID, child.RunID, child.ParentID, child.SessionID, child.Role, child.Profile, skillsJSON,
 		child.Status, child.Depth, child.ChildLimit, child.TurnLimit, child.TokenLimit, child.StatusReason,
 		child.Version, ts(child.CreatedAt), ts(child.UpdatedAt)); err != nil {
+		return domain.AgentNode{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET allowed_read_paths_json=?,tool_call_limit=?,cost_limit_micros=? WHERE id=?`, string(pathsJSON), child.ToolCallLimit, child.CostLimitMicros, child.ID); err != nil {
 		return domain.AgentNode{}, false, err
 	}
 	if err := bindChildTaskAdmissionTx(ctx, tx, binding, child.ID); err != nil {

@@ -29,12 +29,15 @@ type SpecialistDelegationStatus string
 const SpecialistDelegationProposed SpecialistDelegationStatus = "proposed"
 
 type SpecialistDelegationAssignment struct {
-	Ordinal    int      `json:"-"`
-	Title      string   `json:"title"`
-	Goal       string   `json:"goal"`
-	Skills     []string `json:"skills"`
-	TurnLimit  int64    `json:"turn_limit"`
-	TokenLimit int64    `json:"token_limit"`
+	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	Ordinal          int      `json:"-"`
+	Title            string   `json:"title"`
+	Goal             string   `json:"goal"`
+	Skills           []string `json:"skills"`
+	TurnLimit        int64    `json:"turn_limit"`
+	TokenLimit       int64    `json:"token_limit"`
 }
 
 type SpecialistDelegationSpec struct {
@@ -101,6 +104,9 @@ func NormalizeSpecialistDelegationSpec(spec SpecialistDelegationSpec) (Specialis
 	seen := make(map[string]struct{}, len(spec.Assignments))
 	for index, assignment := range spec.Assignments {
 		assignment.Ordinal = index + 1
+		if err := ValidateSpecialistReadLimits(assignment.AllowedReadPaths, assignment.ToolCallLimit, assignment.CostLimitMicros); err != nil {
+			return SpecialistDelegationSpec{}, err
+		}
 		assignment.Title = strings.TrimSpace(assignment.Title)
 		assignment.Goal = strings.TrimSpace(assignment.Goal)
 		if !utf8.ValidString(assignment.Title) || assignment.Title == "" || strings.ContainsRune(assignment.Title, 0) ||
@@ -146,7 +152,7 @@ func (s SpecialistDelegationSpec) Validate() error {
 		func(left, right SpecialistDelegationAssignment) bool {
 			return left.Ordinal == right.Ordinal && left.Title == right.Title && left.Goal == right.Goal &&
 				slices.Equal(left.Skills, right.Skills) && left.TurnLimit == right.TurnLimit &&
-				left.TokenLimit == right.TokenLimit
+				left.TokenLimit == right.TokenLimit && slices.Equal(left.AllowedReadPaths, right.AllowedReadPaths) && left.ToolCallLimit == right.ToolCallLimit && left.CostLimitMicros == right.CostLimitMicros
 		}) {
 		return errors.New("specialist delegation specification must be normalized")
 	}

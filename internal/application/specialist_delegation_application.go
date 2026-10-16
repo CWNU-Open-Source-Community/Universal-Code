@@ -205,6 +205,7 @@ func (s *SpecialistDelegationApplicationService) Apply(ctx context.Context,
 			RunID: application.RunID, ParentAgentID: application.RootAgentID,
 			Title: proposed.Title, Skills: proposed.Skills,
 			TurnLimit: proposed.TurnLimit, TokenLimit: proposed.TokenLimit,
+			AllowedReadPaths: proposed.AllowedReadPaths, ToolCallLimit: proposed.ToolCallLimit, CostLimitMicros: proposed.CostLimitMicros,
 			IdempotencyKey: admissionKey,
 		})
 		if err != nil {

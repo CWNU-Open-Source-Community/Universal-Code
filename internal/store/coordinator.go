@@ -20,7 +20,9 @@ import (
 
 const agentNodeSelect = `SELECT id, run_id, parent_id, session_id, role, profile, skills_json, status,
 	depth, child_limit, turn_limit, token_limit, turns_used, tokens_used, active_attempt_id,
-	status_reason, version, created_at, updated_at, finished_at FROM agent_nodes`
+	status_reason, version, created_at, updated_at, finished_at, allowed_read_paths_json, tool_call_limit, cost_limit_micros,
+ (SELECT COUNT(*) FROM specialist_tool_calls c JOIN agent_attempts a ON a.id=c.agent_attempt_id WHERE a.agent_id=agent_nodes.id AND c.charge_id<>''),
+ (SELECT COALESCE(SUM(reserved_micros-released_micros),0) FROM run_monetary_reservations WHERE agent_id=agent_nodes.id AND run_id=agent_nodes.run_id) FROM agent_nodes`
 
 const agentMessageSelect = `SELECT id, run_id, sender_agent_id, recipient_agent_id, sequence, kind,
 	semantic, payload_json, status, created_at, consumed_at FROM agent_messages`
@@ -717,12 +719,16 @@ func getRootAgentTx(ctx context.Context, tx *sql.Tx, runID string) (domain.Agent
 
 func scanAgentNode(row scanner) (domain.AgentNode, error) {
 	var node domain.AgentNode
+	var pathsJSON string
 	var parentID, finished sql.NullString
 	var role, profile, status, skillsJSON, createdAt, updatedAt string
 	if err := row.Scan(&node.ID, &node.RunID, &parentID, &node.SessionID, &role, &profile, &skillsJSON,
 		&status, &node.Depth, &node.ChildLimit, &node.TurnLimit, &node.TokenLimit, &node.TurnsUsed,
 		&node.TokensUsed, &node.ActiveAttemptID, &node.StatusReason, &node.Version, &createdAt,
-		&updatedAt, &finished); err != nil {
+		&updatedAt, &finished, &pathsJSON, &node.ToolCallLimit, &node.CostLimitMicros, &node.ToolCallsUsed, &node.CostUsedMicros); err != nil {
+		return domain.AgentNode{}, err
+	}
+	if err := json.Unmarshal([]byte(pathsJSON), &node.AllowedReadPaths); err != nil {
 		return domain.AgentNode{}, err
 	}
 	node.ParentID = parentID.String

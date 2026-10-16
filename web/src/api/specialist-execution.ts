@@ -37,3 +37,10 @@ export function getSpecialistToolReceipts(client: APIClient, runID: string, agen
   attemptID: string, signal?: AbortSignal): Promise<SpecialistToolReceiptsView> {
   return client.get(`/runs/${encodeURIComponent(runID)}/agents/${encodeURIComponent(agentID)}/attempts/${encodeURIComponent(attemptID)}/tool-receipts`, {}, signal);
 }
+
+export function revokeSpecialistReadTools(client: APIClient, runID: string, agentID: string) {
+  return client.postControl<components["schemas"]["AgentNodeView"]>(
+    `/runs/${encodeURIComponent(runID)}/agents/${encodeURIComponent(agentID)}/revoke-read-tools`,
+    { version: "specialist_tools.v1" }, `revoke-child-read-${globalThis.crypto.randomUUID()}`,
+  );
+}

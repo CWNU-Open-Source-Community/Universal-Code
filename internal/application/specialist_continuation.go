@@ -72,7 +72,10 @@ func (s *SpecialistExecutionService) ContinueSpecialist(ctx context.Context, req
 	}
 	result.ThreadID = thread.ID
 	digest := runmutation.Fingerprint(SpecialistContinuationVersion, request.RunID, request.AgentID, key)
-	runner := NewSubagentRunner(st, s.router, s.checker).WithRunWorktree(s.drydocks).WithWorkspaceTools()
+	runner := NewSubagentRunner(st, s.router, s.checker).WithRunWorktree(s.drydocks)
+	if len(child.AllowedReadPaths) > 0 {
+		runner.WithWorkspaceTools()
+	}
 	if monetary, ok := s.store.(MonetaryBudgetStore); ok {
 		runner.WithMonetaryBudget(NewMonetaryBudgetService(monetary))
 	}

@@ -21,16 +21,16 @@ import (
 
 // ChildTaskProposalContext is the fenced root-call scope for one proposal.
 type ChildTaskProposalContext struct {
-	RunID            string
-	RootAgentID      string
-	SessionID        string
-	WorkspaceID      string
-	InvocationID     string
-	OperationKey     string
-	LeaseID          string
-	LeaseGeneration  int64
-	RequestedBy      string
-	PolicyDecision   Decision
+	RunID           string
+	RootAgentID     string
+	SessionID       string
+	WorkspaceID     string
+	InvocationID    string
+	OperationKey    string
+	LeaseID         string
+	LeaseGeneration int64
+	RequestedBy     string
+	PolicyDecision  Decision
 }
 
 func (c ChildTaskProposalContext) Validate() error {
@@ -78,7 +78,7 @@ type ChildTaskProposalExecutor interface {
 var childTaskProposeDefinition = ToolDefinition{
 	Name: ChildTaskProposeTool, Class: ClassAgentProposal, Approval: ApprovalAutomatic,
 	Description: "Record one review-required proposal for a bounded child task set; Go picks core (max 2) or read-only fan-out (1/2/4/6).",
-	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","tasks"],"properties":{"version":{"const":"child_task_proposal.v1"},"tasks":{"type":"array","minItems":1,"maxItems":6,"items":{"type":"object","additionalProperties":false,"required":["title","goal","skills","turn_limit","token_limit","timeout_millis"],"properties":{"title":{"type":"string","minLength":1,"maxLength":256},"goal":{"type":"string","minLength":1,"maxLength":1200},"skills":{"type":"array","minItems":1,"maxItems":16,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":96,"pattern":"^[A-Za-z0-9._-]+$"}},"input_refs":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1,"maxLength":2048}},"dependency_ordinals":{"type":"array","maxItems":6,"uniqueItems":true,"items":{"type":"integer","minimum":1,"maximum":6}},"surface_hint":{"enum":["auto","core","readonly_fanout"]},"turn_limit":{"type":"integer","minimum":1},"token_limit":{"type":"integer","minimum":1},"timeout_millis":{"type":"integer","minimum":1,"maximum":1800000},"expected_artifacts":{"type":"array","maxItems":8,"items":{"type":"object","additionalProperties":false,"required":["path_hint","kind"],"properties":{"path_hint":{"type":"string","minLength":1,"maxLength":2048},"kind":{"type":"string","minLength":1,"maxLength":64}}}}}}}}}`),
+	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","tasks"],"properties":{"version":{"const":"child_task_proposal.v1"},"tasks":{"type":"array","minItems":1,"maxItems":6,"items":{"type":"object","additionalProperties":false,"required":["title","goal","skills","turn_limit","token_limit","timeout_millis"],"properties":{"title":{"type":"string","minLength":1,"maxLength":256},"goal":{"type":"string","minLength":1,"maxLength":1200},"skills":{"type":"array","minItems":1,"maxItems":16,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":96,"pattern":"^[A-Za-z0-9._-]+$"}},"input_refs":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1,"maxLength":2048}},"dependency_ordinals":{"type":"array","maxItems":6,"uniqueItems":true,"items":{"type":"integer","minimum":1,"maximum":6}},"surface_hint":{"enum":["auto","core","readonly_fanout"]},"turn_limit":{"type":"integer","minimum":1},"allowed_read_paths":{"type":"array","maxItems":32,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":1024}},"tool_call_limit":{"type":"integer","minimum":0},"cost_limit_micros":{"type":"integer","minimum":0},"token_limit":{"type":"integer","minimum":1},"timeout_millis":{"type":"integer","minimum":1,"maximum":1800000},"expected_artifacts":{"type":"array","maxItems":8,"items":{"type":"object","additionalProperties":false,"required":["path_hint","kind"],"properties":{"path_hint":{"type":"string","minLength":1,"maxLength":2048},"kind":{"type":"string","minLength":1,"maxLength":64}}}}}}}}}`),
 }
 
 func normalizeChildTaskProposalPayload(payload json.RawMessage) (domain.ChildTaskProposalSpec,
@@ -158,7 +158,7 @@ func (g *Gateway) invokeChildTaskProposal(ctx context.Context, call ToolCall) (O
 			Metadata: map[string]string{
 				"proposal_id": result.ProposalID, "status": result.Status,
 				"surface": string(result.Surface), "fanout_tier": string(result.FanoutTier),
-				"task_count": strconv.Itoa(result.TaskCount),
+				"task_count":           strconv.Itoa(result.TaskCount),
 				"admission_authorized": "false", "replayed": strconv.FormatBool(result.Replayed),
 			},
 		},
@@ -177,4 +177,3 @@ func (g *Gateway) recordChildTaskPolicyDecision(ctx context.Context, call ToolCa
 		Context: "tool_run." + string(call.Name), Decision: decision,
 	})
 }
-

@@ -34,8 +34,9 @@ type MonetaryUsage struct {
 	EstimateSource  string
 	UpdatedAt       time.Time
 	ExhaustedAt     *time.Time
-	Tracked         bool
-	UnpricedCalls   int64
+	// Tracked can be true with CapMicros=0 when only child limits are configured.
+	Tracked       bool
+	UnpricedCalls int64
 }
 
 func (u MonetaryUsage) Validate() error {
@@ -54,7 +55,7 @@ func (u MonetaryUsage) Validate() error {
 	if u.ReservedMicros < u.SettledMicros || u.ReservedMicros-u.SettledMicros < u.ReleasedMicros {
 		return errors.New("monetary usage settled and released exceed the reservation")
 	}
-	if u.Tracked != (u.CapMicros > 0) {
+	if !u.Tracked && u.CapMicros > 0 {
 		return errors.New("monetary usage tracked flag is inconsistent with the cap")
 	}
 	// Historical ledgers may already exceed a cap. Preserve those facts and
