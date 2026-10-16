@@ -359,7 +359,7 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 			if !supervisorMCPToolAvailable(configured.MCP.Capabilities, request) ||
 				len(configured.MCP.Authority) == 0 {
 				return nil, errors.New(
-					"provider requested an MCP capability absent from the current reviewed snapshot")
+					"MCP invocation does not match the current reviewed capability and input_schema; use mcp_tool_search to obtain the exact invocation fields and complete argument schema before retrying")
 			}
 		}
 		if name == toolgateway.MCPToolSearchTool &&

@@ -217,14 +217,17 @@ func supervisorBoundaryReceiptContent(plan supervisorBoundaryReceipt, tokenBudge
 				continue
 			}
 			// Keep cursors and a complete claim before optional prose. Never trim one.
-			if !keep(i, result, false) {
+			complete := call.ToolName == "mcp_tool_search"
+			if keep(i, result, complete) {
+				whole[i] = complete
+			} else {
 				if toolBoundaryOmitClaim(result) {
 					keep(i, result, false)
 				}
 			}
 		}
 		for i, call := range plan.Calls {
-			if whole[i] || call.ToolName == "workspace_read" || priority.Superseded[supervisorReceiptCallKey(call)] {
+			if whole[i] || call.ToolName == "workspace_read" || call.ToolName == "mcp_tool_search" || priority.Superseded[supervisorReceiptCallKey(call)] {
 				continue
 			}
 			// An eligible contract that did not fit stays wholly omitted, not excerpted.
