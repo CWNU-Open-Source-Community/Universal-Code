@@ -157,6 +157,7 @@ func (i CommandRuntimeInput) Validate() error {
 }
 
 type CommandRuntimeContext struct {
+	ProjectTest            bool // Native run_tests dispatch; never accepted from a model payload.
 	InvocationID           string
 	OperationKey           string
 	RunID                  string
@@ -187,6 +188,9 @@ type CommandRuntimeContext struct {
 }
 
 func (c CommandRuntimeContext) Validate() error {
+	if c.ProjectTest && (!c.PermissionMode.IsApprovalMode() || c.RequestedBy != "run_supervisor") {
+		return errors.New("project tests require current approval authority")
+	}
 	for _, value := range []string{c.InvocationID, c.OperationKey, c.RunID,
 		c.MissionID, c.RootAgentID, c.AgentID,
 		c.SessionID, c.WorkspaceID, c.LeaseID,
@@ -558,6 +562,10 @@ func (g *Gateway) invokeCommandRuntime(ctx context.Context, call ToolCall) (
 		return Outcome{}, err
 	}
 	call.Payload = canonical
+	return g.invokePreparedCommandRuntime(ctx, call, input)
+}
+
+func (g *Gateway) invokePreparedCommandRuntime(ctx context.Context, call ToolCall, input CommandRuntimeInput) (Outcome, error) {
 	policyDecision := policy.Decision{Allowed: true,
 		Reason: "bounded command runtime lifecycle operation allowed", Risk: "low"}
 	if input.Action == CommandRuntimeActionRun || input.Action == CommandRuntimeActionStart {
@@ -597,7 +605,7 @@ func (g *Gateway) invokeCommandRuntime(ctx context.Context, call ToolCall) (
 	if err != nil {
 		return Outcome{}, err
 	}
-	scope := CommandRuntimeContext{InvocationID: call.InvocationID,
+	scope := CommandRuntimeContext{ProjectTest: call.Name == RunTestsTool, InvocationID: call.InvocationID,
 		OperationKey: call.OperationKey, RunID: call.RunID, MissionID: call.MissionID,
 		RootAgentID: call.AgentID, AgentID: call.AgentID,
 		AgentAttemptID: call.AgentAttemptID,

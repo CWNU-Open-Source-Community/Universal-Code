@@ -38,16 +38,16 @@ func commandApprovalGrantScopeTx(ctx context.Context, tx *sql.Tx, record approva
 	if err != nil {
 		return query, err
 	}
-	input, canonical, err := toolgateway.NormalizeCommandRuntimePayload(json.RawMessage(call.PayloadJSON))
-	if err != nil {
-		return query, err
-	}
 	a, err := commandruntimeadapter.DecodeAuthority(json.RawMessage(call.AuthorityJSON))
 	if err != nil {
 		return query, err
 	}
+	input, canonical, err := toolgateway.CommandToolInput(toolgateway.ToolName(call.ToolName), json.RawMessage(call.PayloadJSON), a)
+	if err != nil {
+		return query, err
+	}
 	if record.Validate() != nil || record.ToolName != string(toolgateway.CommandRuntimeTool) ||
-		record.ActionClass != "command_process" || record.Mode != "per_call" || call.ToolName != record.ToolName ||
+		record.ActionClass != "command_process" || record.Mode != "per_call" || !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) ||
 		call.PayloadJSON != string(canonical) || record.RequestFingerprint != commandruntimeadapter.OperationApprovalFingerprint(call) ||
 		a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion || a.ScopeFingerprint == "" ||
 		input.ReviewScope == nil || len(input.Commands) != 1 ||

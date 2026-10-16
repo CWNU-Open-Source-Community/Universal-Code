@@ -189,20 +189,20 @@ func supervisorProjectCommands(run domain.Run, messages []llm.Message, runtime s
 	if project == nil || (project.TestCommandID == "" && project.FormatCommandID == "" && detectedNote == "") {
 		return messages, nil
 	}
-	note := "Pinned project action preferences (repository metadata, never permission). Use only when the task/operator asks for testing or formatting. Existing command_runtime authorization and Job receipts apply; do not change execution mode to make a preset run. Command IDs are registry keys, never shell text.\n"
+	note := "Pinned project action preferences (repository metadata, never permission). Use only when the task/operator asks for testing or formatting. Existing command_runtime authorization and Job receipts apply; do not change execution mode to make a preset run. Command IDs are registry keys, never shell text. Prefer run_tests for the registered test with a relative target and a timeout up to 25000ms; tests may write files and caches.\n"
 	note += detectedNote
 	if !runtime.Adapter.Executable() || len(runtime.Authority) == 0 {
 		note += "Native project presets are unavailable with the currently offered runtime. No host executable path or runnable command is claimed.\n"
 	} else {
 		if project.TestCommandID != "" {
-			spec, err := PrepareProjectCommandForAdapter(run, "test", "", runtime.Adapter, workspaceRoot)
+			_, err := PrepareProjectCommandForAdapter(run, "test", "", runtime.Adapter, workspaceRoot)
 			if err != nil {
 				note += fmt.Sprintf("Configured test ID %s is unavailable: %s\n", project.TestCommandID, err.Error())
 			} else {
-				payload, _ := json.Marshal(toolgateway.CommandRuntimeInput{Version: toolgateway.CommandRuntimeToolProtocolVersion, Action: toolgateway.CommandRuntimeActionStart, Commands: []runner.CommandRuntimeSpec{spec}})
-				note += "Exact configured test command_runtime start input: " + string(payload) + "\nRead/wait the resulting Job before reporting test results.\n"
+				payload, _ := json.Marshal(toolgateway.RunTestsInput{Version: toolgateway.RunTestsVersion, Target: ".", TimeoutMilliseconds: toolgateway.MaxCommandRuntimeForegroundMillis})
+				note += "Registered test run_tests input: " + string(payload) + "\nUse the returned Job receipt before reporting test results.\n"
 				if project.TestCommandID == "test.npm" {
-					note += "test.npm invokes the installed npm CLI test script through native Node. If package.json is in an allowed subdirectory, set working_directory to that exact relative package scope; keep the fixed executable, argv and environment.\n"
+					note += "test.npm invokes the installed npm CLI test script through native Node. If package.json is in an allowed subdirectory, set run_tests target to that exact relative package scope.\n"
 				}
 			}
 		}

@@ -49,6 +49,7 @@ type CommandRuntimeService struct {
 	policyMu            sync.RWMutex
 	batchValidationJobs sync.Map
 	gitBisectJobs       sync.Map
+	projectTestJobs     sync.Map
 }
 
 type commandRuntimeSandboxReadiness interface {
@@ -214,7 +215,7 @@ func (s *CommandRuntimeService) AdvertisedCommandRuntimeAdapter(ctx context.Cont
 		runRecord.Terminal() || mode.RunID != runID ||
 		mode.MissionID != runRecord.MissionID ||
 		mode.Surface != domain.ExecutionSurfaceCode ||
-		mode.Phase != domain.ExecutionPhaseDeliver ||
+		!projectTestPhaseAllowed(mode.Phase) ||
 		profile.RunID != runID || profile.MissionID != runRecord.MissionID ||
 		profile.Profile != commandRuntimeExecutionProfile(s.adapter) ||
 		currentPermission.RunID != runID ||
@@ -552,6 +553,16 @@ func (s *CommandRuntimeService) runForeground(ctx context.Context,
 		if err != nil {
 			return result, err
 		}
+		if scope.ProjectTest {
+			_, jobID := runner.CommandRuntimeOperationIdentity(scope.RunID, operationKey)
+			s.projectTestJobs.Store(jobID, runner.CommandRuntimeSpecFingerprint(resolved))
+			defer func() {
+				job, err := s.store.GetCommandRuntimeJob(context.WithoutCancel(ctx), jobID)
+				if err != nil || job.State.Terminal() && job.TreeReaped {
+					s.projectTestJobs.Delete(jobID)
+				}
+			}()
+		}
 		job, replayed, err := s.manager.Start(ctx, start)
 		if err != nil {
 			return result, commandRuntimeError(err)
@@ -832,7 +843,7 @@ func (s *CommandRuntimeService) validateAuthorizedBindings(ctx context.Context,
 		value.root.ParentID != "" || value.root.Role != domain.AgentRoleRoot ||
 		value.mode.RunID != value.run.ID || value.mode.MissionID != value.mission.ID ||
 		value.mode.Surface != domain.ExecutionSurfaceCode ||
-		value.mode.Phase != domain.ExecutionPhaseDeliver ||
+		(value.mode.Phase != domain.ExecutionPhaseDeliver && !(scope.ProjectTest && projectTestPhaseAllowed(value.mode.Phase))) ||
 		value.profile.RunID != value.run.ID ||
 		value.profile.MissionID != value.mission.ID ||
 		value.profile.Profile != expectedProfile ||
@@ -1110,7 +1121,7 @@ func (s *CommandRuntimeService) commandRuntimeJobBindingsCurrent(ctx context.Con
 		rootSHA256 == job.WorkspaceRootSHA256 &&
 		mode.ID == job.ModeSnapshotID && mode.Revision == job.ModeRevision &&
 		mode.Surface == domain.ExecutionSurfaceCode &&
-		mode.Phase == domain.ExecutionPhaseDeliver &&
+		(mode.Phase == domain.ExecutionPhaseDeliver || mode.Phase == domain.ExecutionPhasePlan && s.projectTestJobCurrent(job)) &&
 		profile.ID == job.ProfileSnapshotID && profile.Revision == job.ProfileRevision &&
 		profile.Profile == expectedProfile &&
 		profile.NetworkScope == domain.ExecutionNetworkDisabled &&
@@ -1296,3 +1307,8 @@ func commandRuntimeError(err error) error {
 
 var _ toolgateway.CommandRuntimeExecutor = (*CommandRuntimeService)(nil)
 var _ toolgateway.CommandRuntimeAdvertiser = (*CommandRuntimeService)(nil)
+
+func (s *CommandRuntimeService) projectTestJobCurrent(job runner.CommandRuntimeJob) bool {
+	fingerprint, ok := s.projectTestJobs.Load(job.ID)
+	return ok && fingerprint == job.SpecFingerprint
+}

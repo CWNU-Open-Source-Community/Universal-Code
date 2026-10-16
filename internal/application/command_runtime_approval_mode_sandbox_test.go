@@ -56,11 +56,18 @@ func (s *commandApprovalSandboxHostTripwire) PrepareCommandRuntimeJobForAgent(co
 }
 
 func newCommandApprovalSandboxFixture(t *testing.T, mode domain.RunExecutionPermissionMode, profile domain.RunExecutionProfile, owned bool, idleRoot ...bool) *commandApprovalSandboxFixture {
+	return newCommandApprovalSandboxPhaseFixture(t, mode, profile, owned, domain.ExecutionPhaseDeliver, nil, idleRoot...)
+}
+
+func newCommandApprovalSandboxPhaseFixture(t *testing.T, mode domain.RunExecutionPermissionMode, profile domain.RunExecutionProfile, owned bool, phase domain.ExecutionPhase, prepare func(drydockApplicationFixture), idleRoot ...bool) *commandApprovalSandboxFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatal("real Git fixture is required; do not silently skip", err)
 	}
-	base := newDrydockApplicationFixture(t, "approval sandbox "+string(mode))
+	base := newDrydockApplicationFixture(t, "approval sandbox "+string(mode), phase)
+	if prepare != nil {
+		prepare(base)
+	}
 	f := &commandApprovalSandboxFixture{drydockFixture: base}
 	if owned {
 		f.owned = mustCreateDrydock(t, base)

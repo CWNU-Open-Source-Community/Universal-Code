@@ -63,7 +63,7 @@ type commandApprovalFixture struct {
 	manager       *runner.CommandRuntimeManager
 }
 
-func newCommandApprovalFixture(t *testing.T, mode domain.RunExecutionPermissionMode, require bool) *commandApprovalFixture {
+func newCommandApprovalFixture(t *testing.T, mode domain.RunExecutionPermissionMode, require bool, phases ...domain.ExecutionPhase) *commandApprovalFixture {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -81,7 +81,11 @@ func newCommandApprovalFixture(t *testing.T, mode domain.RunExecutionPermissionM
 		t.Fatal(err)
 	}
 	runs := NewRunService(f.st)
-	_, run, err := runs.Create(t.Context(), CreateRunRequest{Goal: "Test exact native process review", Profile: "code", Surface: "code", Phase: "deliver", WorkspaceID: workspace.ID,
+	phase := domain.ExecutionPhaseDeliver
+	if len(phases) > 0 {
+		phase = phases[0]
+	}
+	_, run, err := runs.Create(t.Context(), CreateRunRequest{Goal: "Test exact native process review", Profile: "code", Surface: "code", Phase: string(phase), WorkspaceID: workspace.ID,
 		Budget: domain.Budget{MaxTurns: 4, MaxTokens: 10000, MaxToolCalls: 12}})
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +160,11 @@ func commandApprovalNativeInput(t *testing.T, background bool) toolgateway.Comma
 
 func (f *commandApprovalFixture) record(t *testing.T, input toolgateway.CommandRuntimeInput, round int) {
 	t.Helper()
+	raw, _ := json.Marshal(input)
+	f.recordTool(t, toolgateway.CommandRuntimeTool, raw, round)
+}
+func (f *commandApprovalFixture) recordTool(t *testing.T, name toolgateway.ToolName, raw json.RawMessage, round int) {
+	t.Helper()
 	ctx := t.Context()
 	permission, err := f.st.GetRunExecutionPermission(ctx, f.turn.Run.ID)
 	if err != nil {
@@ -165,8 +174,7 @@ func (f *commandApprovalFixture) record(t *testing.T, input toolgateway.CommandR
 	if err != nil || len(advertised.Authority) == 0 {
 		t.Fatalf("native command advertisement missing: %v", err)
 	}
-	raw, _ := json.Marshal(input)
-	calls, err := prepareSupervisorToolCalls([]llm.ToolCall{{ID: "provider-command", Name: string(toolgateway.CommandRuntimeTool), Arguments: raw}}, f.turn.Run.ID, f.turn.Checkpoint.NextTurn, round,
+	calls, err := prepareSupervisorToolCalls([]llm.ToolCall{{ID: "provider-command", Name: string(name), Arguments: raw}}, f.turn.Run.ID, f.turn.Checkpoint.NextTurn, round,
 		f.turn.Mode.Surface, f.turn.Mode.Phase, permission.Mode, false, false, supervisorToolOptions{CommandRuntime: advertised})
 	if err != nil {
 		t.Fatal(err)
@@ -223,11 +231,11 @@ func (f *commandApprovalFixture) scope(t *testing.T) (toolgateway.CommandRuntime
 	if err != nil {
 		t.Fatal(err)
 	}
-	input, _, err := toolgateway.NormalizeCommandRuntimePayload(json.RawMessage(f.call.PayloadJSON))
+	input, _, err := toolgateway.CommandToolInput(toolgateway.ToolName(f.call.ToolName), json.RawMessage(f.call.PayloadJSON), a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return toolgateway.CommandRuntimeContext{InvocationID: "direct-command-operation", OperationKey: runmutation.SupervisorToolExecutionKey(f.call.RunID, f.call.Turn, f.call.ToolName, f.call.PayloadJSON, f.call.CallID),
+	return toolgateway.CommandRuntimeContext{ProjectTest: f.call.ToolName == string(toolgateway.RunTestsTool), InvocationID: "direct-command-operation", OperationKey: runmutation.SupervisorToolExecutionKey(f.call.RunID, f.call.Turn, f.call.ToolName, f.call.PayloadJSON, f.call.CallID),
 		RunID: f.call.RunID, MissionID: f.turn.Mission.ID, RootAgentID: f.call.AgentID, AgentID: f.call.AgentID, AgentAttemptID: f.call.AgentAttemptID, SessionID: f.turn.Run.SessionID, WorkspaceID: f.turn.Mission.WorkspaceID,
 		Surface: f.turn.Mode.Surface, Phase: f.turn.Mode.Phase, Role: domain.AgentRoleRoot, Profile: f.turn.Mode.Profile, ModeRevision: f.turn.Mode.Revision,
 		PermissionMode: a.PermissionMode, PermissionRevision: a.PermissionRevision, PermissionSnapshotID: a.PermissionSnapshotID, PermissionGeneration: a.PermissionGeneration,

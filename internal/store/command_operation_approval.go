@@ -28,15 +28,15 @@ func validateCommandApprovalSourceTx(ctx context.Context, tx *sql.Tx, p approval
 	if err != nil {
 		return err
 	}
-	input, canonical, err := toolgateway.NormalizeCommandRuntimePayload(json.RawMessage(c.PayloadJSON))
+	input, canonical, err := toolgateway.CommandToolInput(toolgateway.ToolName(c.ToolName), json.RawMessage(c.PayloadJSON), a)
 	if err != nil {
 		return err
 	}
-	if started || c.Status != domain.SupervisorToolPending || c.ToolName != string(toolgateway.CommandRuntimeTool) ||
+	if started || c.Status != domain.SupervisorToolPending || !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(c.ToolName)) ||
 		c.AgentAttribution == domain.AgentAttributionLegacyUnknown || c.AgentID == "" || c.AgentAttemptID == "" || c.AgentAttemptID != c.AttemptID ||
 		a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion || a.RunID != c.RunID || a.ScopeFingerprint == "" ||
 		len(a.CommandFingerprints) != len(input.Commands) || ((input.JobID == "") != (a.JobFingerprint == "")) ||
-		string(canonical) != c.PayloadJSON || p.ToolName != c.ToolName || p.ActionClass != "command_process" || p.Mode != "per_call" ||
+		string(canonical) != c.PayloadJSON || p.ToolName != string(toolgateway.CommandRuntimeTool) || p.ActionClass != "command_process" || p.Mode != "per_call" ||
 		p.Status != approval.StatusPending || p.RequestedBy != "run_supervisor" || p.RequestFingerprint != commandruntimeadapter.OperationApprovalFingerprint(c) {
 		return errors.New("command approval source is not the exact pinned undispatched call")
 	}

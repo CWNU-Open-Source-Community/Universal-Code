@@ -56,7 +56,7 @@ func ProjectThreadActivityToolFacts(call domain.SupervisorToolCall) (
 	value ThreadActivityToolFacts, found bool, err error,
 ) {
 	name := toolgateway.ToolName(call.ToolName)
-	if name == toolgateway.CommandRuntimeTool {
+	if toolgateway.IsCommandExecutionTool(name) {
 		return ThreadActivityToolFacts{}, false, nil
 	}
 	value = ThreadActivityToolFacts{Version: ThreadActivityToolFactsProtocolVersion,
@@ -92,7 +92,7 @@ func ProjectThreadActivityToolFacts(call domain.SupervisorToolCall) (
 // expose.
 func SupportsThreadActivityDetail(toolName string) bool {
 	name := toolgateway.ToolName(toolName)
-	return name == toolgateway.CommandRuntimeTool ||
+	return toolgateway.IsCommandExecutionTool(name) ||
 		(threadActivityToolKind(name) != "tool" && threadActivityToolLabel(name) != "")
 }
 

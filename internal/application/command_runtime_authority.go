@@ -20,12 +20,12 @@ import (
 // This is a native host seam, not part of the plugin Operation contract. Input
 // pins are prepared before the immutable Supervisor call enters its ledger.
 type commandRuntimeAuthorityBinder interface {
-	BindCommandRuntimeAuthority(context.Context, json.RawMessage, json.RawMessage) (json.RawMessage, error)
+	BindCommandToolAuthority(context.Context, toolgateway.ToolName, json.RawMessage, json.RawMessage) (json.RawMessage, error)
 }
 
 func (s *AgentRunner) bindCommandRuntimeCalls(ctx context.Context, calls []llm.ToolCall) ([]llm.ToolCall, error) {
 	for i := range calls {
-		if calls[i].Name != string(toolgateway.CommandRuntimeTool) {
+		if !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(calls[i].Name)) {
 			continue
 		}
 		a, err := commandruntimeadapter.DecodeAuthority(calls[i].Authority)
@@ -39,7 +39,7 @@ func (s *AgentRunner) bindCommandRuntimeCalls(ctx context.Context, calls []llm.T
 		if !ok {
 			return nil, errors.New("command runtime input pinning is unavailable")
 		}
-		calls[i].Authority, err = host.BindCommandRuntimeAuthority(ctx, calls[i].Authority, calls[i].Arguments)
+		calls[i].Authority, err = host.BindCommandToolAuthority(ctx, toolgateway.ToolName(calls[i].Name), calls[i].Authority, calls[i].Arguments)
 		if err != nil {
 			return nil, err
 		}
@@ -65,28 +65,52 @@ func (m *CommandRuntimeMultiplexer) SetCommandRuntimePolicy(checker policy.Check
 }
 
 func (m *CommandRuntimeMultiplexer) BindCommandRuntimeAuthority(ctx context.Context, raw, payload json.RawMessage) (json.RawMessage, error) {
+	return m.BindCommandToolAuthority(ctx, toolgateway.CommandRuntimeTool, raw, payload)
+}
+func (m *CommandRuntimeMultiplexer) BindCommandToolAuthority(ctx context.Context, name toolgateway.ToolName, raw, payload json.RawMessage) (json.RawMessage, error) {
 	a, err := commandruntimeadapter.DecodeAuthority(raw)
 	if err != nil {
 		return nil, err
 	}
 	for _, host := range m.adapters {
 		if host.adapter.SameBackend(a.Adapter) {
-			return host.BindCommandRuntimeAuthority(ctx, raw, payload)
+			return host.BindCommandToolAuthority(ctx, name, raw, payload)
 		}
 	}
 	return nil, apperror.New(apperror.CodeConflict, "command runtime adapter changed")
 }
 
 func (s *CommandRuntimeService) BindCommandRuntimeAuthority(ctx context.Context, raw, payload json.RawMessage) (json.RawMessage, error) {
+	return s.BindCommandToolAuthority(ctx, toolgateway.CommandRuntimeTool, raw, payload)
+}
+func (s *CommandRuntimeService) BindCommandToolAuthority(ctx context.Context, name toolgateway.ToolName, raw, payload json.RawMessage) (json.RawMessage, error) {
 	a, err := commandruntimeadapter.DecodeAuthority(raw)
 	if err != nil || a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion {
 		return nil, apperror.New(apperror.CodeFailedPrecondition, "command runtime operation authority is required")
 	}
-	input, canonical, err := toolgateway.NormalizeCommandRuntimePayload(payload)
+	original := a
+	if name == toolgateway.RunTestsTool {
+		i, _, err := toolgateway.NormalizeRunTestsPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		prepared, err := s.prepareProjectTest(ctx, a, i)
+		if err != nil {
+			return nil, err
+		}
+		a.ProjectTestCommand, err = json.Marshal(prepared)
+		if err != nil {
+			return nil, err
+		}
+		if len(original.ProjectTestCommand) != 0 && !bytes.Equal(original.ProjectTestCommand, a.ProjectTestCommand) {
+			return nil, errors.New("project test preset changed")
+		}
+	}
+	input, canonical, err := toolgateway.CommandToolInput(name, payload, a)
 	if err != nil || !bytes.Equal(canonical, payload) {
 		return nil, errors.New("command runtime input is not canonical")
 	}
-	_, bindings, err := s.commandRuntimeAuthorityBindings(ctx, a)
+	_, bindings, err := s.commandRuntimeAuthorityBindingsForTest(ctx, a, name == toolgateway.RunTestsTool)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +153,9 @@ func (s *CommandRuntimeService) BindCommandRuntimeAuthority(ctx context.Context,
 }
 
 func (s *CommandRuntimeService) commandRuntimeAuthorityBindings(ctx context.Context, a commandruntimeadapter.Authority) (toolgateway.CommandRuntimeContext, commandRuntimeBindings, error) {
+	return s.commandRuntimeAuthorityBindingsForTest(ctx, a, false)
+}
+func (s *CommandRuntimeService) commandRuntimeAuthorityBindingsForTest(ctx context.Context, a commandruntimeadapter.Authority, projectTest bool) (toolgateway.CommandRuntimeContext, commandRuntimeBindings, error) {
 	var scope toolgateway.CommandRuntimeContext
 	var bindings commandRuntimeBindings
 	if !s.commandRuntimeAdapterCurrent() || !s.adapter.SameBackend(a.Adapter) {
@@ -148,7 +175,7 @@ func (s *CommandRuntimeService) commandRuntimeAuthorityBindings(ctx context.Cont
 		return scope, bindings, errors.New("command runtime lease is unavailable")
 	}
 	run, mission, root, lease := bindings.run, bindings.mission, bindings.root, bindings.lease
-	scope = toolgateway.CommandRuntimeContext{RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID,
+	scope = toolgateway.CommandRuntimeContext{ProjectTest: projectTest, RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID,
 		WorkspaceID: mission.WorkspaceID, RootAgentID: root.ID, AgentID: root.ID, AgentAttemptID: root.ActiveAttemptID,
 		PermissionSnapshotID: a.PermissionSnapshotID, PermissionMode: a.PermissionMode, PermissionRevision: a.PermissionRevision,
 		PermissionGeneration: a.PermissionGeneration, PermissionRuntimeEpoch: a.PermissionRuntimeEpoch, RunAuthorizationFence: a.RunAuthorizationFence,
@@ -186,7 +213,7 @@ func commandRuntimeMutates(input toolgateway.CommandRuntimeInput) bool {
 
 func commandSourceMatchesScope(source commandApprovalSource, scope toolgateway.CommandRuntimeContext, bindings commandRuntimeBindings, adapter commandruntimeadapter.Identity) bool {
 	a := source.authority
-	return source.started && source.call.AgentID == scope.AgentID && source.call.AgentAttemptID == scope.AgentAttemptID &&
+	return source.started && (source.call.ToolName == string(toolgateway.RunTestsTool)) == scope.ProjectTest && source.call.AgentID == scope.AgentID && source.call.AgentAttemptID == scope.AgentAttemptID &&
 		source.run.SessionID == scope.SessionID && source.workspaceID == scope.WorkspaceID &&
 		a.Adapter.SameBackend(adapter) && a.ScopeFingerprint == commandRuntimeBindingFingerprint(bindings, adapter) &&
 		a.PermissionSnapshotID == scope.PermissionSnapshotID && a.PermissionMode == bindings.permission.Mode &&
@@ -207,12 +234,17 @@ func (s *CommandRuntimeService) checkPreparedCommandCall(ctx context.Context, sc
 		return err
 	}
 	raw, err := json.Marshal(input)
-	if err != nil || string(raw) != source.call.PayloadJSON || !commandSourceMatchesScope(source, scope, bindings, s.adapter) {
+	if err != nil || !bytes.Equal(raw, mustCommandInputJSON(source.input)) || !commandSourceMatchesScope(source, scope, bindings, s.adapter) {
 		return errors.New("command runtime prepared call differs from dispatch")
 	}
-	_, err = s.BindCommandRuntimeAuthority(ctx, json.RawMessage(source.call.AuthorityJSON), json.RawMessage(source.call.PayloadJSON))
+	_, err = s.BindCommandToolAuthority(ctx, toolgateway.ToolName(source.call.ToolName), json.RawMessage(source.call.AuthorityJSON), json.RawMessage(source.call.PayloadJSON))
 	if err == nil && !commandRuntimeMutates(input) {
 		return s.checkCommandLifecycleReview(ctx, st, source)
 	}
 	return err
+}
+
+func mustCommandInputJSON(i toolgateway.CommandRuntimeInput) []byte {
+	raw, _ := json.Marshal(i)
+	return raw
 }

@@ -241,7 +241,7 @@ func NormalizeToolCall(call ToolCall) (ToolCall, error) {
 	}
 	if isAgentCodeTool(call.Name) || IsCodeIntelTool(call.Name) || IsWebEvidenceTool(call.Name) ||
 		IsBrowserActionTool(call.Name) ||
-		call.Name == CommandRuntimeTool {
+		IsCommandExecutionTool(call.Name) {
 		if !call.Surface.Valid() || !call.Phase.Valid() || !domain.ValidAgentRole(call.Role) ||
 			!call.PermissionMode.Valid() || call.ModeRevision <= 0 ||
 			call.PermissionRevision <= 0 || !validAgentCodeDigest(call.CapabilityGeneration, false) {

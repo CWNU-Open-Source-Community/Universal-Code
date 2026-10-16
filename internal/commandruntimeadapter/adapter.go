@@ -186,6 +186,8 @@ type Authority struct {
 	ScopeFingerprint    string   `json:"scope_fingerprint,omitempty"`
 	CommandFingerprints []string `json:"command_fingerprints,omitempty"`
 	JobFingerprint      string   `json:"job_fingerprint,omitempty"`
+	// Host-compiled run_tests command. Recompiled and compared before dispatch.
+	ProjectTestCommand json.RawMessage `json:"project_test_command,omitempty"`
 }
 
 func NewAuthority(runID string, identity Identity) Authority {
@@ -202,7 +204,8 @@ func (a Authority) Validate() error {
 		if !a.PermissionMode.IsApprovalMode() || !domain.ValidAgentID(a.PermissionSnapshotID) ||
 			a.PermissionRevision <= 0 || !ValidRuntimeBinding(a.PermissionMode, a.PermissionRuntimeEpoch, a.PermissionGeneration, a.RunAuthorizationFence) ||
 			(a.ScopeFingerprint != "" && !validDigest(a.ScopeFingerprint)) || len(a.CommandFingerprints) > 4 ||
-			(a.JobFingerprint != "" && !validDigest(a.JobFingerprint)) {
+			(a.JobFingerprint != "" && !validDigest(a.JobFingerprint)) ||
+			(len(a.ProjectTestCommand) != 0 && (!json.Valid(a.ProjectTestCommand) || len(a.ProjectTestCommand) > 32768)) {
 			return errors.New("command runtime operation authority is invalid")
 		}
 		for _, fingerprint := range a.CommandFingerprints {
@@ -213,7 +216,7 @@ func (a Authority) Validate() error {
 		return nil
 	}
 	if a.PermissionMode != "" || a.PermissionRevision != 0 || a.RunAuthorizationFence != 0 ||
-		a.ScopeFingerprint != "" || len(a.CommandFingerprints) != 0 || a.JobFingerprint != "" {
+		a.ScopeFingerprint != "" || len(a.CommandFingerprints) != 0 || a.JobFingerprint != "" || len(a.ProjectTestCommand) != 0 {
 		return errors.New("legacy command runtime authority contains operation fields")
 	}
 	if a.PermissionSnapshotID != "" || a.PermissionGeneration != 0 ||

@@ -58,13 +58,13 @@ func readCommandSource(ctx context.Context, st commandApprovalStore, runID, call
 	}
 	a := s.authority
 	var canonical json.RawMessage
-	s.input, canonical, err = toolgateway.NormalizeCommandRuntimePayload(json.RawMessage(c.PayloadJSON))
+	s.input, canonical, err = toolgateway.CommandToolInput(toolgateway.ToolName(c.ToolName), json.RawMessage(c.PayloadJSON), a)
 	if err != nil {
 		return s, err
 	}
 	completedStart := allowCompletedStart && s.started && c.Status == domain.SupervisorToolCompleted &&
 		c.CompletedAt != nil && c.ErrorCode == "" && s.input.Action == toolgateway.CommandRuntimeActionStart && len(s.input.Commands) == 1
-	if c.ToolName != string(toolgateway.CommandRuntimeTool) || c.RunID != runID || c.CallID != callID ||
+	if !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(c.ToolName)) || c.RunID != runID || c.CallID != callID ||
 		(c.Status != domain.SupervisorToolPending && !completedStart) || c.AgentAttribution == domain.AgentAttributionLegacyUnknown ||
 		c.AgentID == "" || c.AgentAttemptID == "" || c.AgentAttemptID != c.AttemptID ||
 		a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion || a.RunID != runID ||
@@ -153,7 +153,7 @@ func (s *AgentRunner) preflightCommandApproval(ctx context.Context, call domain.
 		if !ok {
 			err = errors.New("command runtime authority reader unavailable")
 		} else {
-			_, err = host.BindCommandRuntimeAuthority(ctx, json.RawMessage(call.AuthorityJSON), json.RawMessage(call.PayloadJSON))
+			_, err = host.BindCommandToolAuthority(ctx, toolgateway.ToolName(call.ToolName), json.RawMessage(call.AuthorityJSON), json.RawMessage(call.PayloadJSON))
 		}
 	}
 	if err != nil {
@@ -277,6 +277,6 @@ func commandCallOutcomeUnknown(call domain.SupervisorToolCall) bool {
 	if err != nil || a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion {
 		return false
 	}
-	input, _, err := toolgateway.NormalizeCommandRuntimePayload(json.RawMessage(call.PayloadJSON))
+	input, _, err := toolgateway.CommandToolInput(toolgateway.ToolName(call.ToolName), json.RawMessage(call.PayloadJSON), a)
 	return err == nil && commandRuntimeMutates(input)
 }

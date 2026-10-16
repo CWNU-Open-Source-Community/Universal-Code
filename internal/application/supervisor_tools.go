@@ -187,6 +187,9 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 			!supervisorDebugTerminalAvailable(surface, phase, permissionMode, debugTerminalEnabled) {
 			continue
 		}
+		if definition.Name == toolgateway.RunTestsTool && !supervisorProjectTestsAvailable(surface, phase, permissionMode, configured.CommandRuntime.Adapter) {
+			continue
+		}
 		if definition.Name == toolgateway.CommandRuntimeTool &&
 			!supervisorCommandRuntimeAvailable(surface, phase, permissionMode, configured.CommandRuntime.Adapter) {
 			continue
@@ -338,6 +341,9 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 			return nil, errors.New(
 				"provider requested Debug terminal outside Code/Deliver with an active terminal input grant")
 		}
+		if name == toolgateway.RunTestsTool && !supervisorProjectTestsAvailable(surface, phase, permissionMode, configured.CommandRuntime.Adapter) {
+			return nil, errors.New("project tests are unavailable for this Run workspace")
+		}
 		if name == toolgateway.CommandRuntimeTool &&
 			!supervisorCommandRuntimeAvailable(surface, phase, permissionMode, configured.CommandRuntime.Adapter) {
 			return nil, errors.New(
@@ -384,7 +390,7 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 		if toolgateway.IsCodeIntelTool(name) {
 			out[index].Authority = append(json.RawMessage(nil), codeIntelAuthority...)
 		}
-		if name == toolgateway.CommandRuntimeTool {
+		if toolgateway.IsCommandExecutionTool(name) {
 			if authority, authorityErr := commandruntimeadapter.DecodeAuthority(
 				commandRuntimeAuthority); authorityErr != nil ||
 				authority.RunID != runID ||
@@ -838,7 +844,7 @@ func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.Sup
 					decision.Allowed, decision.Result, preflightStopped = false, denial, true
 				}
 			}
-			if toolgateway.ToolName(call.ToolName) == toolgateway.CommandRuntimeTool && decision.Allowed {
+			if toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) && decision.Allowed {
 				waiting, denial, preflightErr := s.preflightCommandApproval(ctx, call)
 				if preflightErr != nil {
 					return rounds, false, preflightErr
@@ -943,7 +949,7 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 	}
 	name := toolgateway.ToolName(call.ToolName)
 	operationKey := supervisorToolOperationKey(call.RunID, call.Turn, name, json.RawMessage(call.PayloadJSON))
-	if name == toolgateway.CommandRuntimeTool {
+	if toolgateway.IsCommandExecutionTool(name) {
 		operationKey = runmutation.SupervisorToolExecutionKey(call.RunID, call.Turn, call.ToolName, call.PayloadJSON, call.CallID)
 	}
 	if name == toolgateway.BrowserScreenshotTool {
@@ -991,7 +997,7 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 		toolCall.PermissionRevision = authority.PermissionRevision
 		toolCall.CapabilityGeneration = authority.CapabilityGeneration
 	}
-	if name == toolgateway.CommandRuntimeTool {
+	if toolgateway.IsCommandExecutionTool(name) {
 		authority, authorityErr := commandruntimeadapter.DecodeAuthority(
 			json.RawMessage(call.AuthorityJSON))
 		permission, permissionErr := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
@@ -1244,7 +1250,7 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 		Version: supervisorToolResultVersion, Tool: call.ToolName, Status: string(status),
 		Metadata: metadata, Code: code, Message: message,
 	}
-	if name == toolgateway.DebugTerminalTool || name == toolgateway.CommandRuntimeTool ||
+	if name == toolgateway.DebugTerminalTool || toolgateway.IsCommandExecutionTool(name) ||
 		toolgateway.IsHistoryRecallTool(name) || name == toolgateway.SkillReadTool ||
 		name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool ||
 		toolgateway.IsAgentCodeTool(name) || toolgateway.IsCodeIntelTool(name) ||
@@ -1288,7 +1294,7 @@ func recoverableSupervisorToolError(name toolgateway.ToolName,
 		apperror.CodeResourceExhausted, apperror.CodeDeadlineExceeded:
 		return true
 	case apperror.CodeFailedPrecondition, apperror.CodeNotFound, apperror.CodePolicyDenied:
-		return name == toolgateway.DebugTerminalTool || name == toolgateway.CommandRuntimeTool ||
+		return name == toolgateway.DebugTerminalTool || toolgateway.IsCommandExecutionTool(name) ||
 			toolgateway.IsHistoryRecallTool(name) || name == toolgateway.SkillReadTool ||
 			name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool || toolgateway.IsAgentCodeTool(name) ||
 			toolgateway.IsWebEvidenceTool(name) || toolgateway.IsBrowserActionTool(name) ||

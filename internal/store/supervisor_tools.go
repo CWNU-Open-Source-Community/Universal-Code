@@ -236,10 +236,10 @@ func normalizeSupervisorToolCallsForStore(calls []llm.ToolCall, runID string, tu
 					"agent code supervisor tool authority is invalid")
 			}
 			normalized[index].Authority = canonicalAuthority
-		} else if name == toolgateway.CommandRuntimeTool {
+		} else if toolgateway.IsCommandExecutionTool(name) {
 			authority, authorityErr := commandruntimeadapter.DecodeAuthority(
 				normalized[index].Authority)
-			if authorityErr != nil || authority.RunID != runID {
+			if authorityErr != nil || authority.RunID != runID || (name == toolgateway.RunTestsTool) != (len(authority.ProjectTestCommand) != 0) {
 				return nil, apperror.New(apperror.CodeInvalidArgument,
 					"command runtime supervisor tool is missing its exact durable adapter authority")
 			}
