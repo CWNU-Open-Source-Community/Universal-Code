@@ -25,6 +25,7 @@ type fakeBackend struct {
 	afterInput          func()
 	captureErr          error
 	captureBytes        []byte
+	captures            int
 }
 
 func fake() *fakeBackend {
@@ -45,6 +46,7 @@ func (f *fakeBackend) inspect(uintptr) (nativeWindow, error) {
 	return f.w, nil
 }
 func (f *fakeBackend) capture(context.Context, nativeWindow) ([]byte, error) {
+	f.captures++
 	if f.captureErr != nil {
 		return nil, f.captureErr
 	}
@@ -54,6 +56,39 @@ func (f *fakeBackend) capture(context.Context, nativeWindow) ([]byte, error) {
 	var b bytes.Buffer
 	err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, f.w.Bounds.Width, f.w.Bounds.Height)))
 	return b.Bytes(), err
+}
+
+func TestCaptureDimensionsMatchAttachmentLimits(t *testing.T) {
+	for _, b := range []Bounds{{Width: 1, Height: 1}, {Width: 8192, Height: 2048}, {Width: 4096, Height: 4096}} {
+		if err := captureBoundsAllowed(b); err != nil {
+			t.Fatalf("allowed dimensions rejected: %#v, %v", b, err)
+		}
+	}
+	for _, b := range []Bounds{{Width: 8193, Height: 1}, {Width: 1, Height: 8193}, {Width: 8192, Height: 2049}, {Width: 4097, Height: 4096}, {Width: 0, Height: 1}} {
+		if err := captureBoundsAllowed(b); err == nil {
+			t.Fatalf("oversized dimensions accepted: %#v", b)
+		}
+		if b.Width == 0 {
+			continue
+		}
+		e, f, a := ready(t)
+		f.w.Bounds = b
+		before := f.captures
+		value, png, err := e.run(context.Background(), "computer_observe", a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, ok := value.(ObservationUnavailable)
+		if !ok || out.ObservationAvailable || out.ActionSent || len(png) != 0 || !strings.Contains(out.Reason, "8192") {
+			t.Fatalf("missing dimension-limit result: %#v", value)
+		}
+		if f.captures != before {
+			t.Fatal("oversized window was captured")
+		}
+		if _, ok := e.observations[a.WindowID]; ok {
+			t.Fatal("oversized image retained an observation token")
+		}
+	}
 }
 func (f *fakeBackend) activate(context.Context, nativeWindow) error {
 	f.activations++

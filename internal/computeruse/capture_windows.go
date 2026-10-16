@@ -34,6 +34,9 @@ func (b *winBackend) capture(ctx context.Context, w nativeWindow) ([]byte, error
 	if err := b.guard(ctx, w); err != nil {
 		return nil, err
 	}
+	if err := captureBoundsAllowed(w.Bounds); err != nil {
+		return nil, err
+	}
 	if !screenContains(w.Bounds) {
 		return nil, errors.New("window extends outside the visible desktop; move it fully on screen")
 	}

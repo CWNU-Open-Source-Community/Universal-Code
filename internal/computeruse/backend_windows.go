@@ -284,19 +284,39 @@ func (b *winBackend) activate(ctx context.Context, w nativeWindow) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	setForegroundWindow.Call(w.handle)
-	for i := 0; i < 10; i++ {
-		h, _, _ := getForegroundWindow.Call()
-		if h == w.handle {
+	accepted, _, _ := setForegroundWindow.Call(w.handle)
+	foreground := func() uintptr { h, _, _ := getForegroundWindow.Call(); return h }
+	if foreground() == w.handle {
+		return nil
+	}
+	if accepted == 0 {
+		return errors.New("Windows refused foreground activation; select the target window and observe again")
+	}
+	return waitForeground(ctx, w.handle, foreground)
+}
+
+// Successful SetForegroundWindow can complete asynchronously across input
+// queues. Wait only for its accepted request; never attach to another queue.
+func waitForeground(ctx context.Context, hwnd uintptr, current func() uintptr) error {
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if current() == hwnd {
 			return nil
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(20 * time.Millisecond):
+		case <-deadline.C:
+			return errors.New("Windows accepted activation but the target did not become foreground within two seconds; select the target window and observe again")
+		case <-tick.C:
 		}
 	}
-	return errors.New("Windows refused foreground activation; select the target window and observe again")
 }
 func (b *winBackend) guard(ctx context.Context, w nativeWindow) error {
 	if err := ctx.Err(); err != nil {

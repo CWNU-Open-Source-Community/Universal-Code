@@ -4,12 +4,32 @@ package computeruse
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+func TestAcceptedForegroundActivationWaitsAndCancels(t *testing.T) {
+	reads := 0
+	if err := waitForeground(context.Background(), 123, func() uintptr {
+		reads++
+		if reads < 3 {
+			return 0
+		}
+		return 123
+	}); err != nil || reads != 3 {
+		t.Fatalf("accepted asynchronous activation did not settle: %d %v", reads, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := waitForeground(ctx, 123, func() uintptr { return 0 }); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("activation did not respect cancellation: %v", err)
+	}
+}
 
 func TestNativePointerOutputs(t *testing.T) {
 	if _, err := mapGeneration(windows.InvalidHandle); err == nil {

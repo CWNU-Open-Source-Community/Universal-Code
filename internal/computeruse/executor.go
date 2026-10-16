@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"cyberagent-workbench/internal/imageattachment"
 )
 
 type Bounds struct {
@@ -226,6 +228,9 @@ func (e *executor) run(ctx context.Context, name string, a Arguments) (any, []by
 	if !current.Foreground {
 		return unavailable(errors.New("target window is no longer foreground"))
 	}
+	if err := captureBoundsAllowed(current.Bounds); err != nil {
+		return unavailable(err)
+	}
 	data, err := e.backend.capture(ctx, current)
 	if err != nil {
 		return unavailable(err)
@@ -243,6 +248,13 @@ func (e *executor) run(ctx context.Context, name string, a Arguments) (any, []by
 	}
 	e.observations[a.WindowID] = observed{id, current.Bounds, time.Now(), e.backend.generation(false)}
 	return o, data, nil
+}
+
+func captureBoundsAllowed(b Bounds) error {
+	if b.Width < 1 || b.Height < 1 || b.Width > imageattachment.MaxDimension || b.Height > imageattachment.MaxDimension || int64(b.Width)*int64(b.Height) > imageattachment.MaxPixels {
+		return errors.New("screenshot exceeds the host image limits of 8192 pixels per side or 16 MiPixels; resize the window before observing again; no image or observation ID was delivered")
+	}
+	return nil
 }
 func sameWindow(a, b nativeWindow) bool {
 	return a.handle == b.handle && a.PID == b.PID && a.birth == b.birth && a.AppID == b.AppID &&
