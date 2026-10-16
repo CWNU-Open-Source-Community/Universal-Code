@@ -76,6 +76,10 @@ type contextMemoryDeleteView struct {
 
 func isContextContinuityMutationPath(requestPath string) bool {
 	segments := strings.Split(strings.TrimPrefix(requestPath, "/api/v1/"), "/")
+	if len(segments) == 3 && segments[0] == "memory-candidates" &&
+		(segments[2] == "confirm" || segments[2] == "reject") {
+		return true
+	}
 	if len(segments) == 1 && segments[0] == "memories" {
 		return true
 	}
@@ -133,6 +137,9 @@ func (a *API) serveContextContinuityMutation(writer http.ResponseWriter,
 		}
 	}
 	switch {
+	case len(segments) == 3 && segments[0] == "memory-candidates" &&
+		(segments[2] == "confirm" || segments[2] == "reject"):
+		a.serveContextMemoryCandidateReview(writer, request, requestID, segments[1], segments[2], body)
 	case len(segments) == 1 && segments[0] == "memories":
 		a.serveContextMemoryCreate(writer, request, requestID, body)
 	case len(segments) == 2 && segments[0] == "memories":

@@ -153,6 +153,12 @@ func createStoreDeliveryGateFixture(t *testing.T, suffix string, manual ...domai
 func populateStoreDeliveryGateFixture(t *testing.T, st *SQLiteStore, suffix string,
 	manual ...domain.PlanDeliveryManualAcceptance,
 ) (*SQLiteStore, context.Context, domain.Run, application.SelectPlanDeliveryDirectionResult) {
+	return populateStoreDeliveryGateFixtureInWorkspace(t, st, suffix, "", manual...)
+}
+
+func populateStoreDeliveryGateFixtureInWorkspace(t *testing.T, st *SQLiteStore, suffix, workspaceID string,
+	manual ...domain.PlanDeliveryManualAcceptance,
+) (*SQLiteStore, context.Context, domain.Run, application.SelectPlanDeliveryDirectionResult) {
 	t.Helper()
 	acceptance := domain.PlanDeliveryManualAcceptanceRequired
 	if len(manual) != 0 {
@@ -162,8 +168,9 @@ func populateStoreDeliveryGateFixture(t *testing.T, st *SQLiteStore, suffix stri
 	runService := newMigrationFixtureRunService(t, st)
 	_, run, err := runService.Create(ctx, application.CreateRunRequest{
 		Goal: "exercise Delivery gates " + suffix, Profile: "review", Phase: "plan",
-		ModelRoute: "store-plan/model",
-		Budget:     domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 4},
+		WorkspaceID: workspaceID,
+		ModelRoute:  "store-plan/model",
+		Budget:      domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 4},
 	})
 	if err != nil {
 		t.Fatal(err)

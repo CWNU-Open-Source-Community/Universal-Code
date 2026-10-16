@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -869,6 +870,23 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		prepared.input.modelInput, prepared.input.pendingInstructions, prepared.input.steeringSequence = refreshedInput, count, sequence
 		return rebuildHistoryRequest(false)
 	}
+	refreshLongTermMemories := func() error {
+		memories, err := loadSupervisorLongTermMemories(ctx, s.store, turn.Mission.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		sections, err := longTermMemoryContextSections(memories)
+		if err != nil {
+			return err
+		}
+		if slices.Equal(sections, prepared.context.longTermMemorySections) {
+			return nil
+		}
+		prepared.context.longTermMemorySections = sections
+		result.LongTermMemoryItems = len(memories)
+		baseRequest.Metadata["long_term_memory_items"] = fmt.Sprint(len(memories))
+		return rebuildHistoryRequest(false)
+	}
 	trySegmentReceipt := func() bool {
 		if s.router.RequiresPrivateAssistantHistory(prepared.ref) {
 			return false
@@ -900,6 +918,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 	}
 
 	for {
+		// Each logical model request uses the current confirmed records. A
+		// transport retry remains bound to the same prepared request and audit.
+		if err := refreshLongTermMemories(); err != nil {
+			return result, s.recordFailure(ctx, &result, err, 0)
+		}
 		if err := refreshCurrentSteering(); err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}

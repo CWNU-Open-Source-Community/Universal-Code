@@ -12,12 +12,12 @@ import (
 )
 
 func TestHistoryRecallRejectsScopeArgumentsAndBrokenPaging(t *testing.T) {
-	for _, payload := range []string{``, `  `, `null`, `[]`, `{} {}`, `{"query":"历史","run_id":"another-run"}`, `{"query":"x","limit":21}`} {
+	for _, payload := range []string{``, `  `, `null`, `[]`, `{} {}`, `{"query":"历史","run_id":"another-run"}`, `{"query":"memory","workspace_id":"other-workspace"}`, `{"query":"notes","viewer":"specialist"}`, `{"query":"x","limit":21}`} {
 		if _, err := NormalizeHistoryRecallPayload(HistorySearchTool, json.RawMessage(payload)); err == nil {
 			t.Fatalf("search accepted invalid payload %q", payload)
 		}
 	}
-	for _, payload := range []string{`{}`, `{"source_id":"x","offset":4}`, `{"source_id":"x","limit":3}`, `{"source_id":"x","part":"raw_database"}`, `{"source_id":"x","expected_sha256":"bad"}`, `{"source_id":"x","thread_id":"other"}`} {
+	for _, payload := range []string{`{}`, `{"source_id":"x","offset":4}`, `{"source_id":"x","limit":3}`, `{"source_id":"x","part":"raw_database"}`, `{"source_id":"x","expected_sha256":"bad"}`, `{"source_id":"x","thread_id":"other"}`, `{"source_id":"memory:opaque","source_version":2}`, `{"source_id":"note:opaque","part":"source_refs"}`} {
 		if _, err := NormalizeHistoryRecallPayload(HistoryReadTool, json.RawMessage(payload)); err == nil {
 			t.Fatalf("read accepted invalid payload %q", payload)
 		}

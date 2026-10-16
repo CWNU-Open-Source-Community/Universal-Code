@@ -1135,6 +1135,14 @@ td code { font-size: 11px; }
 .context-memory-list > article > p { margin: 10px 0; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .context-memory-list > article > footer { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 14px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--muted); font-size: 9px; }
 .context-memory-list > article > footer .context-row-actions { margin-left: auto; }
+.context-memory-candidates { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.context-memory-candidates .context-empty { padding: 8px 0; text-align: left; line-height: 1.55; }
+.context-memory-candidates summary { cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.context-memory-candidates summary > span { display: block; margin: 5px 0; color: var(--muted); font-size: 10px; }
+.context-candidate-content { margin: 12px 0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.context-candidate-source { display: grid; grid-template-columns: minmax(70px, auto) minmax(0, 1fr); gap: 6px 12px; font-size: 10px; }
+.context-candidate-source dt { color: var(--muted); }
+.context-candidate-source dd { margin: 0; overflow-wrap: anywhere; }
 .compact-command.danger { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); color: var(--danger); }
 .context-empty { margin: 0; padding: 16px; color: var(--muted); font-size: 11px; text-align: center; }
 .context-checkpoint-form { display: grid; grid-template-columns: minmax(140px, .5fr) minmax(180px, 1fr) auto; gap: 8px; }

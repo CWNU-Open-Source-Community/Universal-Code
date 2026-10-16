@@ -293,9 +293,12 @@ func validSupervisorMonetaryIdentity(value string) bool {
 const MaxModelContextSources = 256
 
 type ModelContextSource struct {
-	Kind     string `json:"kind"`
-	SourceID string `json:"source_id"`
-	Tokens   int    `json:"tokens"`
+	Kind           string `json:"kind"`
+	SourceID       string `json:"source_id"`
+	Tokens         int    `json:"tokens"`
+	MemoryVersion  int64  `json:"memory_version,omitempty"`
+	ContentSHA256  string `json:"content_sha256,omitempty"`
+	OmissionReason string `json:"omission_reason,omitempty"`
 }
 
 type ModelContextAudit struct {
@@ -317,13 +320,29 @@ func (a ModelContextAudit) Validate() error {
 	}
 	seen := make(map[string]struct{}, len(a.Included)+len(a.Omitted))
 	includedTokens := 0
-	for _, group := range [][]ModelContextSource{a.Included, a.Omitted} {
+	for groupIndex, group := range [][]ModelContextSource{a.Included, a.Omitted} {
 		for _, source := range group {
 			if strings.TrimSpace(source.Kind) == "" || strings.TrimSpace(source.SourceID) == "" || source.Tokens <= 0 {
 				return errors.New("model context source kind, id, and positive tokens are required")
 			}
 			if len([]rune(source.Kind)) > 64 || len([]rune(source.SourceID)) > 256 {
 				return errors.New("model context source identity is too long")
+			}
+			if source.MemoryVersion != 0 || source.ContentSHA256 != "" {
+				digest, err := hex.DecodeString(source.ContentSHA256)
+				if source.Kind != "long_term_memory" || source.MemoryVersion < 1 || err != nil ||
+					len(digest) != sha256.Size || strings.ToLower(source.ContentSHA256) != source.ContentSHA256 {
+					return errors.New("model context memory version and digest are invalid")
+				}
+			}
+			if groupIndex == 0 && source.OmissionReason != "" {
+				return errors.New("included model context cannot have an omission reason")
+			}
+			switch source.OmissionReason {
+			case "", "budget", "operator_excluded", "auxiliary_scope", "long_term_memory_quota",
+				"required_context_budget", "project_instruction_budget":
+			default:
+				return errors.New("model context omission reason is invalid")
 			}
 			key := source.Kind + "\x00" + source.SourceID
 			if _, ok := seen[key]; ok {

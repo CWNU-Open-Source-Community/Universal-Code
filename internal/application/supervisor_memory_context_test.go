@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
 )
@@ -84,6 +85,129 @@ func TestSupervisorMemoryContextAlwaysIncludesBoundedRootInboxFirst(t *testing.T
 				message.ID, selection)
 		}
 	}
+}
+
+func TestSupervisorMemoryContextReservesConfirmedMemoryBeforeRunBackground(t *testing.T) {
+	memories, err := longTermMemoryContextSections([]contextmgr.Memory{
+		supervisorTestMemory(t, "confirmed-style", contextmgr.MemoryScopeUser, "Prefer concise reports."),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	background := make([]contextmgr.Section, 8)
+	for index := range background {
+		background[index] = contextmgr.Section{Kind: "note", SourceID: fmt.Sprintf("decision-%d", index),
+			Content: strings.Repeat("n", 4096), Priority: 850}
+	}
+	selection, err := supervisorMemoryContext(contextmgr.Summary{}, false, nil, nil, nil, background, memories)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasContextSource(selection.IncludedSources, "long_term_memory", "confirmed-style") ||
+		!hasContextSource(selection.OmittedSources, "note", "decision-7") ||
+		selection.EstimatedTokens > selection.TokenBudget {
+		t.Fatalf("ordinary background displaced the reserved memory: %+v", selection)
+	}
+}
+
+func TestSupervisorMemoryContextAllocatesInstructionsAndRequiredSourcesBeforeMemory(t *testing.T) {
+	memories, err := longTermMemoryContextSections([]contextmgr.Memory{
+		supervisorTestMemory(t, "confirmed-style", contextmgr.MemoryScopeUser, "Prefer concise reports."),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requiredTokens := range []int{768, 900, 1024} {
+		t.Run(fmt.Sprint(requiredTokens), func(t *testing.T) {
+			protected := []contextmgr.Section{{Kind: "required", SourceID: "existing-rule",
+				Content: strings.Repeat("r", requiredTokens*4), Priority: 1, Required: true}}
+			if requiredTokens == 768 {
+				protected = append(protected, contextmgr.Section{Kind: "project_instruction", SourceID: "AGENTS.md",
+					Content: strings.Repeat("p", 640), Priority: 760})
+			}
+			selection, err := supervisorMemoryContextWithinBudget(1024, false, contextmgr.Summary{}, false,
+				nil, nil, nil, protected, memories)
+			if err != nil || !hasContextSource(selection.IncludedSources, "required", "existing-rule") ||
+				hasContextSource(selection.IncludedSources, "long_term_memory", "confirmed-style") {
+				t.Fatalf("memory displaced protected context or caused refusal: %+v err=%v", selection, err)
+			}
+			if requiredTokens == 768 && !hasContextSource(selection.IncludedSources, "project_instruction", "AGENTS.md") {
+				t.Fatal("memory displaced project instructions")
+			}
+			reason := "required_context_budget"
+			if requiredTokens == 768 {
+				reason = "project_instruction_budget"
+			}
+			if len(selection.OmittedSources) != 1 || selection.OmittedSources[0].OmissionReason != reason {
+				t.Fatalf("memory omission lost its budget reason: %+v", selection.OmittedSources)
+			}
+		})
+	}
+	_, err = supervisorMemoryContextWithinBudget(1024, false, contextmgr.Summary{}, false, nil, nil, nil,
+		[]contextmgr.Section{{Kind: "required", SourceID: "too-large", Content: strings.Repeat("r", 4100), Required: true}}, memories)
+	if apperror.CodeOf(err) != apperror.CodeResourceExhausted {
+		t.Fatalf("impossible Required set no longer refuses delivery: %v", err)
+	}
+}
+
+func TestSupervisorMemoryContextCapsMemoryAndAuditsOversizedEntries(t *testing.T) {
+	memories, err := longTermMemoryContextSections([]contextmgr.Memory{
+		supervisorTestMemory(t, "a-large", contextmgr.MemoryScopeUser, strings.Repeat("l", 12*1024)),
+		supervisorTestMemory(t, "b-small", contextmgr.MemoryScopeUser, "Prefer concise reports."),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, totalBudget := range []int{1024, maxSupervisorMemoryTokens, 32 * 1024} {
+		selection, err := supervisorMemoryContextWithinBudget(totalBudget, false, contextmgr.Summary{}, false,
+			nil, nil, nil, memories)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.Sections) != 1 || selection.Sections[0].SourceID != "b-small" || selection.Sections[0].Required ||
+			selection.EstimatedTokens > min(maxSupervisorLongTermMemoryTokens, totalBudget/4) ||
+			len(selection.OmittedSources) != 1 || selection.OmittedSources[0].SourceID != "a-large" ||
+			selection.OmittedSources[0].OmissionReason != "long_term_memory_quota" {
+			t.Fatalf("memory did not fit its explicit sub-budget: total=%d selection=%+v", totalBudget, selection)
+		}
+	}
+}
+
+func TestSupervisorMemoryContextSortsMemoryByScopeThenIdentity(t *testing.T) {
+	first := supervisorTestMemory(t, "a-user", contextmgr.MemoryScopeUser, strings.Repeat("u", 2400))
+	second := supervisorTestMemory(t, "z-user", contextmgr.MemoryScopeUser, strings.Repeat("v", 2400))
+	project := supervisorTestMemory(t, "a-project", contextmgr.MemoryScopeProject, strings.Repeat("p", 2400))
+	for _, records := range [][]contextmgr.Memory{{project, second, first}, {second, first, project}} {
+		memories, err := longTermMemoryContextSections(records)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selection, err := supervisorMemoryContext(contextmgr.Summary{}, false, nil, nil, nil, memories)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.Sections) != 2 || selection.Sections[0].SourceID != first.ID ||
+			selection.Sections[1].SourceID != second.ID || len(selection.OmittedSources) != 1 ||
+			selection.OmittedSources[0].SourceID != project.ID {
+			t.Fatalf("memory order depended on store/list order: %+v", selection)
+		}
+	}
+}
+
+func supervisorTestMemory(t *testing.T, id string, scope contextmgr.MemoryScope, content string) contextmgr.Memory {
+	t.Helper()
+	scopeID := contextmgr.LocalUserMemoryScope
+	if scope == contextmgr.MemoryScopeProject {
+		scopeID = "workspace-memory-budget"
+	}
+	memory, err := contextmgr.PrepareMemory(contextmgr.CreateMemoryRequest{
+		ID: id, Scope: scope, ScopeID: scopeID, Title: "Confirmed preference", Content: content,
+		RequestedBy: "desktop_operator", ExplicitOperator: true,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return memory
 }
 
 func hasContextSource(sources []contextmgr.Source, kind string, id string) bool {

@@ -312,7 +312,7 @@ func supervisorMemoryContextWithinBudget(memoryBudget int, threadEndTurn bool, s
 			Kind: "note", SourceID: note.ID, Content: content, Priority: supervisorNotePriority(note),
 		})
 	}
-	selection, err := contextmgr.SelectSections(sections, memoryBudget)
+	selection, err := selectSupervisorContextSections(sections, memoryBudget)
 	if err != nil {
 		if errors.Is(err, contextmgr.ErrRequiredContextBudget) {
 			return contextmgr.Selection{}, projectInstructionDeliveryFailure()
@@ -325,6 +325,99 @@ func supervisorMemoryContextWithinBudget(memoryBudget int, threadEndTurn bool, s
 				"bounded root inbox context did not fit the Supervisor memory budget")
 		}
 	}
+	return selection, nil
+}
+
+const maxSupervisorLongTermMemoryTokens = 2 * 1024
+
+func selectSupervisorContextSections(sections []contextmgr.Section, tokenBudget int) (contextmgr.Selection, error) {
+	// Validate the complete set together, including duplicate identities and the
+	// existing Required protection, before assigning optional sub-budgets.
+	selection, err := contextmgr.SelectSections(sections, tokenBudget)
+	if err != nil {
+		return contextmgr.Selection{}, err
+	}
+	var protected, memories, background []contextmgr.Section
+	for _, section := range sections {
+		switch {
+		case section.Required || section.Kind == "project_instruction" || section.Kind == "task_goal" ||
+			section.Kind == "summary" || section.Kind == "continuity_context" || section.Kind == "agent_inbox":
+			protected = append(protected, section)
+		case section.Kind == "long_term_memory":
+			memories = append(memories, section)
+		default:
+			background = append(background, section)
+		}
+	}
+	if len(memories) == 0 {
+		return selection, nil
+	}
+	priorityContext, err := contextmgr.SelectSections(protected, tokenBudget)
+	if err != nil {
+		return contextmgr.Selection{}, err
+	}
+	// Explicit operator and project context is allocated first. Confirmed
+	// memories receive one quarter of the total allocation, capped at 2048
+	// tokens and at the space left by that context, before ordinary background.
+	remaining := tokenBudget - priorityContext.EstimatedTokens
+	memoryQuota := min(maxSupervisorLongTermMemoryTokens, tokenBudget/4)
+	memoryBudget := min(memoryQuota, remaining)
+	requiredRemaining := tokenBudget
+	for index, section := range priorityContext.Sections {
+		if section.Required || section.Kind != "project_instruction" {
+			requiredRemaining -= priorityContext.IncludedSources[index].Tokens
+		}
+	}
+	slices.SortStableFunc(memories, func(left, right contextmgr.Section) int {
+		if left.Priority != right.Priority {
+			return right.Priority - left.Priority
+		}
+		return strings.Compare(left.SourceID, right.SourceID)
+	})
+	memory, err := selectOptionalSupervisorContext(memories, memoryBudget)
+	if err != nil {
+		return contextmgr.Selection{}, err
+	}
+	for index := range memory.OmittedSources {
+		if memory.OmittedSources[index].OmissionReason == "budget" {
+			reason := "long_term_memory_quota"
+			if memoryBudget < memoryQuota && memory.OmittedSources[index].Tokens <= memoryQuota {
+				reason = "project_instruction_budget"
+				if requiredRemaining < memoryQuota {
+					reason = "required_context_budget"
+				}
+			}
+			memory.OmittedSources[index].OmissionReason = reason
+		}
+	}
+	ordinary, err := selectOptionalSupervisorContext(background, remaining-memory.EstimatedTokens)
+	if err != nil {
+		return contextmgr.Selection{}, err
+	}
+	selected := append(priorityContext.Sections, memory.Sections...)
+	selected = append(selected, ordinary.Sections...)
+	selection, err = contextmgr.SelectSections(selected, tokenBudget)
+	if err != nil {
+		return contextmgr.Selection{}, err
+	}
+	selection.OmittedSources = append(selection.OmittedSources, priorityContext.OmittedSources...)
+	selection.OmittedSources = append(selection.OmittedSources, memory.OmittedSources...)
+	selection.OmittedSources = append(selection.OmittedSources, ordinary.OmittedSources...)
+	return selection, nil
+}
+
+func selectOptionalSupervisorContext(sections []contextmgr.Section, tokenBudget int) (contextmgr.Selection, error) {
+	selection, err := contextmgr.SelectSections(sections, max(1, tokenBudget))
+	if err != nil || tokenBudget > 0 {
+		return selection, err
+	}
+	for _, source := range selection.IncludedSources {
+		source.OmissionReason = "budget"
+		selection.OmittedSources = append(selection.OmittedSources, source)
+	}
+	selection.Sections = nil
+	selection.IncludedSources = nil
+	selection.EstimatedTokens, selection.TokenBudget = 0, 0
 	return selection, nil
 }
 
@@ -621,10 +714,26 @@ func supervisorModelContextAudit(selection contextmgr.Selection) *llm.ModelConte
 		Included: make([]llm.ModelContextSource, 0, len(selection.IncludedSources)),
 		Omitted:  make([]llm.ModelContextSource, 0, len(selection.OmittedSources)),
 	}
+	memories := make(map[string]longTermMemorySource)
+	for _, section := range selection.Sections {
+		if section.Kind != "long_term_memory" {
+			continue
+		}
+		var envelope longTermMemoryEnvelope
+		if json.Unmarshal([]byte(section.Content), &envelope) == nil &&
+			envelope.Version == "long_term_memory.v1" && envelope.Source.ID == section.SourceID {
+			memories[section.SourceID] = envelope.Source
+		}
+	}
 	for _, source := range selection.IncludedSources {
-		audit.Included = append(audit.Included, llm.ModelContextSource{
+		item := llm.ModelContextSource{
 			Kind: source.Kind, SourceID: source.SourceID, Tokens: source.Tokens,
-		})
+		}
+		if source.Kind == "long_term_memory" {
+			memory := memories[source.SourceID]
+			item.MemoryVersion, item.ContentSHA256 = memory.Version, memory.ContentSHA256
+		}
+		audit.Included = append(audit.Included, item)
 	}
 	for _, source := range selection.OmittedSources {
 		sourceID := source.SourceID
@@ -632,7 +741,7 @@ func supervisorModelContextAudit(selection contextmgr.Selection) *llm.ModelConte
 			sourceID = "omitted/" + source.OmissionReason + "/" + sourceID
 		}
 		audit.Omitted = append(audit.Omitted, llm.ModelContextSource{
-			Kind: source.Kind, SourceID: sourceID, Tokens: source.Tokens,
+			Kind: source.Kind, SourceID: sourceID, Tokens: source.Tokens, OmissionReason: source.OmissionReason,
 		})
 	}
 	return audit
