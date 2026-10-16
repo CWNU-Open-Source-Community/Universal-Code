@@ -29,6 +29,7 @@ import (
 const (
 	WorkspaceCheckpointAPIProtocolVersion = "workspace-checkpoint-api.v1"
 	workspaceCheckpointListLimit          = 2_000
+	workspaceOpenMutationConflict         = "another workspace mutation boundary is still open for this Run"
 )
 
 type WorkspaceCheckpointStore interface {
@@ -476,16 +477,43 @@ func (s *WorkspaceCheckpointService) workspaceMutationBoundaryConflict(ctx conte
 	binding workspaceCheckpointBinding, requestedKind workspacecheckpoint.TransactionKind,
 	open workspacecheckpoint.Transaction,
 ) error {
-	const message = "another workspace mutation boundary is still open for this Run"
-	if requestedKind != workspacecheckpoint.TransactionFileTool ||
-		open.Kind != workspacecheckpoint.TransactionCommandBatch || open.WorkspaceID != binding.workspace.ID {
-		return apperror.New(apperror.CodeConflict, message)
+	if requestedKind == workspacecheckpoint.TransactionFileTool {
+		if err := s.commandJobBoundaryConflict(ctx, binding, open); err != nil {
+			return err
+		}
+	}
+	return apperror.New(apperror.CodeConflict, workspaceOpenMutationConflict)
+}
+
+// Reject a known command owner before reserving a new per-edit apply intent.
+// BeginBoundary still performs the final check before any file write.
+func (s *WorkspaceCheckpointService) checkCommandBoundaryBeforeFileIntent(ctx context.Context,
+	binding workspaceCheckpointBinding,
+) error {
+	open, err := s.store.ListOpenWorkspaceCheckpointTransactions(ctx, workspaceCheckpointListLimit)
+	if err != nil {
+		return apperror.Normalize(err)
+	}
+	for _, transaction := range open {
+		if err := s.commandJobBoundaryConflict(ctx, binding, transaction); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *WorkspaceCheckpointService) commandJobBoundaryConflict(ctx context.Context,
+	binding workspaceCheckpointBinding, open workspacecheckpoint.Transaction,
+) error {
+	if open.RunID != binding.run.ID || open.Kind != workspacecheckpoint.TransactionCommandBatch ||
+		open.WorkspaceID != binding.workspace.ID {
+		return nil
 	}
 	reader, ok := s.store.(interface {
 		GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error)
 	})
 	if !ok {
-		return apperror.New(apperror.CodeConflict, message)
+		return nil
 	}
 	job, err := reader.GetCommandRuntimeJob(ctx, open.TriggerReceiptID)
 	// A foreground batch uses an invocation receipt, while a background start
@@ -494,13 +522,13 @@ func (s *WorkspaceCheckpointService) workspaceMutationBoundaryConflict(ctx conte
 		job.MissionID != binding.mission.ID || job.SessionID != binding.session.ID ||
 		job.WorkspaceID != binding.workspace.ID || open.OperationKeyDigest !=
 		workspaceBoundaryOperationDigest(job.RunID, open.Kind, job.OperationDigest) {
-		return apperror.New(apperror.CodeConflict, message)
+		return nil
 	}
 	cancel := fmt.Sprintf(`{"version":%q,"action":%q,"job_id":%q,"wait_milliseconds":1000}`,
 		toolgateway.CommandRuntimeToolProtocolVersion, toolgateway.CommandRuntimeActionCancel, job.ID)
 	return apperror.New(apperror.CodeConflict, fmt.Sprintf(
-		"%s: command_runtime job %q owns the command boundary. Wait for this Job to finish, or stop this same Job with command_runtime %s. Use action=read or action=wait with its original job_id until the Job is terminal and its boundary completes, then retry this file edit with the original apply_arguments while the file hashes still match. After the edit succeeds, restart the dev service with action=start and use the new Job's candidate_urls for readiness, navigation and browser verification.",
-		message, job.ID, cancel))
+		"%s: command_runtime job %q owns the command boundary. Wait for this Job to finish, or stop this same Job with command_runtime %s. Use action=read or action=wait with its original job_id until the Job is terminal and its boundary completes, then retry this file edit with the original apply_arguments while the file hashes still match. After the edit succeeds, restart that service with action=start only if this Job was the dev service needed for the task; use the new service Job's candidate_urls for readiness, navigation and browser verification.",
+		workspaceOpenMutationConflict, job.ID, cancel))
 }
 
 func (s *WorkspaceCheckpointService) CompleteBoundary(ctx context.Context,
