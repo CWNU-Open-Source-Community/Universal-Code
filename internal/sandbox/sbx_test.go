@@ -392,6 +392,40 @@ func TestSBXReplacementAtTheConditionalDeleteCannotBeRemoved(t *testing.T) {
 	}
 }
 
+func TestSBXFinalDispatchHandshakeFollowsIdentityAndRetainsRevocation(t *testing.T) {
+	for _, deny := range []bool{false, true} {
+		t.Run(strconv.FormatBool(deny), func(t *testing.T) {
+			b, fake, request := sbxFixture(t)
+			checks, confirmations := 0, 0
+			request.AuthorityCheck = func(context.Context) error { checks++; return nil }
+			denied := errors.New("authority changed at final SBX dispatch")
+			request.BeforeExec = func(ctx context.Context) error {
+				confirmations++
+				data, err := os.ReadFile(filepath.Join(b.config.JournalRoot, sbxDigest(request.OperationKey)+".json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var record sbxRecord
+				if json.Unmarshal(data, &record) != nil || record.Phase != "dispatching" || record.ID == "" ||
+					checks != 3 || fake.count("create") != 1 || fake.count("exec") != 0 {
+					t.Fatalf("handshake did not follow all authority/identity checks: record=%+v checks=%d calls=%+v", record, checks, fake.calls)
+				}
+				if deny {
+					return denied
+				}
+				return ctx.Err()
+			}
+			result, err := b.Run(t.Context(), request, nil)
+			if confirmations != 1 || !result.TreeReaped || result.ReceiptFingerprint == "" || fake.count("rm") != 1 || len(fake.entries) != 0 {
+				t.Fatalf("handshake lost exact VM cleanup: result=%+v confirmations=%d err=%v", result, confirmations, err)
+			}
+			if deny && (!errors.Is(err, denied) || fake.count("exec") != 0) || !deny && (err != nil || fake.count("exec") != 1) {
+				t.Fatalf("final dispatch revocation was ignored: denied=%t result=%+v err=%v", deny, result, err)
+			}
+		})
+	}
+}
+
 func TestSBXReplacementBeforeExecutionPreventsDispatch(t *testing.T) {
 	b, fake, request := sbxFixture(t)
 	request.AuthorityCheck = func(context.Context) error {

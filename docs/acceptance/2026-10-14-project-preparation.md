@@ -4,6 +4,9 @@
 和 [PR #318](https://github.com/CWNU-Open-Source-Community/Universal-Code/pull/318)。
 实现从 main `88a7ba864a0ce8ffb7d2da33bd5ecc6d77254aed` 的独立工作树开始。
 
+Docker React 与 SBX Go 的真实模型修复、原测试及恢复补验见
+[2026-10-16 补验记录](2026-10-16-project-preparation-delivery.md)。下文保留本日原始结果。
+
 ## 范围与真实环境
 
 使用三个独立 Git 项目，锁定真实发布的依赖，并预置保留不变的回归测试：

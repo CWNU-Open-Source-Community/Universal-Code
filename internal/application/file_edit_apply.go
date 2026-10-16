@@ -376,7 +376,7 @@ func (s *FileEditApplyService) applyWithLease(ctx context.Context,
 		}
 		return ApplyFileEditResult{}, apperror.Normalize(completionErr)
 	}
-	cleanup := s.cleanupStaging(ctx, operation)
+	cleanup := s.cleanupStaging(ctx, binding.workspace.RootPath, operation)
 	value = ApplyFileEditResult{Operation: operation, Result: result, Edit: applied,
 		StagingCleanup: cleanup, Replayed: preparedReplay || completionReplay,
 		FileWritten: fileWritten}
@@ -387,17 +387,19 @@ func (s *FileEditApplyService) applyWithLease(ctx context.Context,
 }
 
 func (s *FileEditApplyService) cleanupStaging(ctx context.Context,
-	operation fileedit.ApplyOperation,
+	workspaceRoot string, operation fileedit.ApplyOperation,
 ) fileedit.StagingCleanupResult {
 	if operation.Operation == fileedit.OperationMove ||
 		operation.Operation == fileedit.OperationDelete {
 		return fileedit.StagingCleanupResult{}
 	}
-	binding, err := s.loadOperationBinding(ctx, operation)
-	if err != nil {
+	// The apply already resolved and verified this exact root. Cleanup only
+	// removes old internal staging files with the approved bytes; resolving the
+	// whole Drydock again after committing the receipt adds no write authority.
+	if ctx.Err() != nil {
 		return fileedit.StagingCleanupResult{Pending: true}
 	}
-	result, err := fileedit.CleanupStaleStaging(binding.workspace.RootPath,
+	result, err := fileedit.CleanupStaleStaging(workspaceRoot,
 		operation.Path, operation.ProposedHash, s.now().UTC())
 	if err != nil {
 		return fileedit.StagingCleanupResult{Pending: true}

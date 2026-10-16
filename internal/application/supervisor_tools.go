@@ -926,6 +926,13 @@ func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.Sup
 func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.SupervisorTurn,
 	call domain.SupervisorToolCall,
 ) (domain.SupervisorToolResult, error) {
+	return s.invokeSupervisorToolWithTimeout(ctx, turn, call,
+		supervisorToolExecutionTimeout(toolgateway.ToolName(call.ToolName)))
+}
+
+func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn domain.SupervisorTurn,
+	call domain.SupervisorToolCall, toolTimeout time.Duration,
+) (domain.SupervisorToolResult, error) {
 	if call.AgentAttribution == domain.AgentAttributionLegacyUnknown ||
 		call.AgentID == "" || call.AgentID != turn.Agent.ID ||
 		call.AgentAttemptID == "" ||
@@ -1141,7 +1148,6 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 		toolCall.BrowserPermissionRevision = authority.BrowserPermissionRevision
 	}
 	toolCall.Payload = supervisorAcceptedToolExecutionPayload(name, call.PayloadJSON)
-	toolTimeout := supervisorToolExecutionTimeout(name)
 	toolCtx, cancelTool := context.WithTimeout(ctx, toolTimeout)
 	outcome, err := s.tools.Invoke(toolCtx, toolCall)
 	toolContextErr := toolCtx.Err()
@@ -1150,7 +1156,26 @@ func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.Supe
 		return domain.SupervisorToolResult{}, apperror.Normalize(ctx.Err())
 	}
 	if errors.Is(toolContextErr, context.DeadlineExceeded) {
-		if _, hasReceipt := mcp.InvocationReceipt(err); !hasReceipt {
+		committedApply := false
+		if name == toolgateway.WorkspaceApplyTool && (err == nil ||
+			errors.Is(err, context.DeadlineExceeded) ||
+			apperror.CodeOf(err) == apperror.CodeDeadlineExceeded) {
+			var receiptErr error
+			outcome, committedApply, receiptErr = s.reconcileWorkspaceApplyDeadline(ctx, turn, call, outcome)
+			if receiptErr != nil {
+				if ctx.Err() != nil {
+					return domain.SupervisorToolResult{}, apperror.Normalize(ctx.Err())
+				}
+				return domain.SupervisorToolResult{}, apperror.Normalize(errors.Join(err, receiptErr))
+			}
+			if committedApply {
+				err = nil
+			}
+		}
+		if ctx.Err() != nil {
+			return domain.SupervisorToolResult{}, apperror.Normalize(ctx.Err())
+		}
+		if _, hasReceipt := mcp.InvocationReceipt(err); !hasReceipt && !committedApply {
 			err = apperror.New(apperror.CodeDeadlineExceeded,
 				fmt.Sprintf("structured supervisor tool exceeded its %s execution limit", toolTimeout))
 		}

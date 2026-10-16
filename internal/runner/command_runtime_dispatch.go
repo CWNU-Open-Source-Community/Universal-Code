@@ -3,6 +3,7 @@ package runner
 import "context"
 
 type commandRuntimeDispatchKey struct{}
+type commandRuntimeAdmissionKey struct{}
 
 type commandRuntimeDispatchBinding struct {
 	request context.Context
@@ -69,4 +70,18 @@ func CheckCommandRuntimeDispatch(ctx context.Context, actual CommandRuntimeResol
 		return ctx.Err()
 	}
 	return nil
+}
+
+// ConfirmCommandRuntimeDispatch is called by a sandbox adapter at its final
+// native dispatch boundary. Only the manager's process-local execution context
+// carries this acknowledgement; tool input and stored receipts cannot supply it.
+// Ordinary preflight checks do not release the originating Start call.
+func ConfirmCommandRuntimeDispatch(ctx context.Context, actual CommandRuntimeResolvedSpec) error {
+	if err := CheckCommandRuntimeDispatch(ctx, actual); err != nil {
+		return err
+	}
+	if acknowledge, ok := ctx.Value(commandRuntimeAdmissionKey{}).(func()); ok {
+		acknowledge()
+	}
+	return ctx.Err()
 }

@@ -101,6 +101,11 @@ func (e *sandboxApprovalObservedExecutor) OwnsWorkspaceCheckpoint() bool {
 	return e.CommandRuntimeSandboxExecutor.(commandRuntimeSandboxCheckpointOwner).OwnsWorkspaceCheckpoint()
 }
 
+func (e *sandboxApprovalObservedExecutor) CommandRuntimeAdmissionRequired() bool {
+	adapter, ok := e.CommandRuntimeSandboxExecutor.(interface{ CommandRuntimeAdmissionRequired() bool })
+	return ok && adapter.CommandRuntimeAdmissionRequired()
+}
+
 func (e *sandboxApprovalObservedExecutor) ExecuteSandboxCommand(ctx context.Context, scope runner.CommandRuntimeScope, spec runner.CommandRuntimeResolvedSpec, stdin io.ReadCloser) (runner.CommandRuntimeSandboxResult, error) {
 	start := time.Now()
 	stop, sampled := make(chan struct{}), make(chan struct{})

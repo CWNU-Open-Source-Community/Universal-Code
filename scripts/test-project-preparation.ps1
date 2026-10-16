@@ -5,6 +5,8 @@ param(
     [string]$Mode = 'Prepare',
     [string]$FixtureRoot = '',
     [switch]$IncludeReact,
+    [ValidatePattern('^1\.[0-9]+\.[0-9]+$')]
+    [string]$GoVersion = '1.26.9',
     [string]$ApiURL = 'http://127.0.0.1:8765/api/v1',
     [string]$RunID = '',
     [ValidateSet('npm', 'go', 'react')]
@@ -31,6 +33,9 @@ excluded from reports. This harness neither configures nor substitutes a model.
 
 .EXAMPLE
 ./scripts/test-project-preparation.ps1 -Mode Prepare -IncludeReact
+
+.EXAMPLE
+./scripts/test-project-preparation.ps1 -Mode Prepare -GoVersion 1.26.0
 
 .EXAMPLE
 ./scripts/test-project-preparation.ps1 -Mode Exercise -Project npm -RunID run-...
@@ -97,7 +102,7 @@ test('ordinary text is not a number', () => assert.equal(classify('hello'), fals
     Commit-Fixture $npmRoot 'test.npm'
 
     $goRoot = Join-Path $FixtureRoot 'go'
-    Write-Text (Join-Path $goRoot 'go.mod') "module example.com/preparation-uuid`n`ngo 1.26.9`n`nrequire github.com/google/uuid v1.6.0`n"
+    Write-Text (Join-Path $goRoot 'go.mod') "module example.com/preparation-uuid`n`ngo $GoVersion`n`nrequire github.com/google/uuid v1.6.0`n"
     Write-Text (Join-Path $goRoot 'go.sum') @'
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
@@ -265,9 +270,11 @@ try {
             allowed_sources = @(); confirm_execution = $true; run_install_scripts = $false }
         $denied = Request-API "$runPath/project-preparation" 'POST' $body ('preparation-acceptance-denied-' + [guid]::NewGuid().ToString('N'))
         $deniedResult = Wait-Preparation $denied.latest.id
-        $checks.Add(@{ name = 'unapproved-download-denied'; passed = $deniedResult.state -eq 'failed'; operation_id = $deniedResult.id
+        $sourceDenied = $deniedResult.state -eq 'failed' -and $deniedResult.downloaded_bytes -eq 0 -and
+            ([string]$deniedResult.error).Contains('package source has not been approved')
+        $checks.Add(@{ name = 'unapproved-download-denied'; passed = $sourceDenied; operation_id = $deniedResult.id
             state = $deniedResult.state; downloaded_bytes = $deniedResult.downloaded_bytes; error = $deniedResult.error })
-        if ($deniedResult.state -ne 'failed' -or $deniedResult.downloaded_bytes -ne 0) { throw 'An unapproved missing package must fail without downloading' }
+        if (-not $sourceDenied) { throw 'An unapproved missing package must be denied by source authorization without downloading' }
         $body.allowed_sources = @($view.plan.sources)
         $body.run_install_scripts = $Project -eq 'react'
         $installKey = 'preparation-acceptance-install-' + [guid]::NewGuid().ToString('N')

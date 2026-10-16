@@ -281,9 +281,25 @@ func (s *RunWorktreeService) ResolveDrydockExecutionBinding(ctx context.Context,
 		return sandbox.WorkspaceBinding{}, apperror.New(apperror.CodeFailedPrecondition,
 			"Standard Code Drydock is not ready")
 	}
+	executionRunID, executionSessionID := workspace.RunID, workspace.SessionID
+	if workspace.RunID != binding.RunID {
+		// loadExactDrydock resolved the successor's explicit Thread binding.
+		// Keep the physical creator immutable while checking this execution's
+		// current Run/Session. Historical bindings remain usable for cleanup.
+		current, err := s.loadRunBinding(ctx, binding.RunID, true)
+		if err != nil {
+			return sandbox.WorkspaceBinding{}, err
+		}
+		if requireUnchanged {
+			if err := requireCurrentRunFileDrydock(ctx, s.store, binding.RunID, workspace); err != nil {
+				return sandbox.WorkspaceBinding{}, err
+			}
+		}
+		executionRunID, executionSessionID = current.run.ID, current.run.SessionID
+	}
 	if workspace.ID != binding.DrydockID ||
-		workspace.RunID != binding.RunID || workspace.MissionID != binding.MissionID ||
-		workspace.SessionID != binding.SessionID ||
+		executionRunID != binding.RunID || workspace.MissionID != binding.MissionID ||
+		executionSessionID != binding.SessionID ||
 		workspace.SourceWorkspaceID != binding.WorkspaceID ||
 		workspace.WorkspaceID != binding.DrydockWorkspaceID ||
 		workspace.LastCheckpointID != binding.CheckpointID ||

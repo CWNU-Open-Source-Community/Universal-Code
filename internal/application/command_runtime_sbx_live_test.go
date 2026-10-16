@@ -755,6 +755,11 @@ func (b *sbxLiveProductSetupBackend) Run(ctx context.Context, request sandbox.SB
 	if err := request.AuthorityCheck(ctx); err != nil {
 		return result, err
 	}
+	if request.BeforeExec != nil {
+		if err := request.BeforeExec(ctx); err != nil {
+			return result, err
+		}
+	}
 	close(b.started)
 	if b.cancel {
 		<-ctx.Done()

@@ -108,20 +108,22 @@ func (s commandRuntimeSandboxStarter) Start(ctx context.Context,
 }
 
 type commandRuntimeSandboxProcess struct {
-	cancel       context.CancelFunc
-	stdinReader  *io.PipeReader
-	stdinWriter  *io.PipeWriter
-	stdoutReader *io.PipeReader
-	stdoutWriter *io.PipeWriter
-	stderrReader *io.PipeReader
-	stderrWriter *io.PipeWriter
-	done         chan struct{}
-	closeOnce    sync.Once
-	stdinMu      sync.Mutex
-	mu           sync.Mutex
-	exitCode     int
-	waitErr      error
-	treeReaped   bool
+	cancel            context.CancelFunc
+	stdinReader       *io.PipeReader
+	stdinWriter       *io.PipeWriter
+	stdoutReader      *io.PipeReader
+	stdoutWriter      *io.PipeWriter
+	stderrReader      *io.PipeReader
+	stderrWriter      *io.PipeWriter
+	done              chan struct{}
+	closeOnce         sync.Once
+	stdinMu           sync.Mutex
+	mu                sync.Mutex
+	exitCode          int
+	waitErr           error
+	treeReaped        bool
+	admissionRequired bool
+	admitted          chan struct{}
 }
 
 func newCommandRuntimeSandboxProcess(parent context.Context, executor CommandRuntimeSandboxExecutor,
@@ -139,9 +141,40 @@ func newCommandRuntimeSandboxProcess(parent context.Context, executor CommandRun
 		stdinReader: stdinReader, stdinWriter: stdinWriter,
 		stdoutReader: stdoutReader, stdoutWriter: stdoutWriter,
 		stderrReader: stderrReader, stderrWriter: stderrWriter,
-		done: make(chan struct{}), exitCode: 125}
+		done: make(chan struct{}), exitCode: 125, admitted: make(chan struct{})}
+	if adapter, ok := executor.(interface{ CommandRuntimeAdmissionRequired() bool }); ok && adapter.CommandRuntimeAdmissionRequired() {
+		process.admissionRequired = true
+		var acknowledge sync.Once
+		executionContext = context.WithValue(executionContext, commandRuntimeAdmissionKey{}, func() {
+			acknowledge.Do(func() { close(process.admitted) })
+		})
+	}
 	go process.execute(executionContext, executor, scope, spec)
 	return process
+}
+
+func (p *commandRuntimeSandboxProcess) waitForAdmission(ctx context.Context) error {
+	if !p.admissionRequired {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-p.admitted:
+		return ctx.Err()
+	case <-p.done:
+		select {
+		case <-p.admitted:
+			return ctx.Err()
+		default:
+		}
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.waitErr != nil {
+			return p.waitErr
+		}
+		return ErrCommandRuntimeBoundary
+	}
 }
 
 func (p *commandRuntimeSandboxProcess) execute(ctx context.Context,

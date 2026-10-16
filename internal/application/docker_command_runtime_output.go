@@ -21,16 +21,17 @@ import (
 type dockerCommandRuntimeOutputKey struct{}
 
 type dockerCommandRuntimeOutput struct {
-	mu               sync.Mutex
-	runID            string
-	admissionID      string
-	maximum          int
-	captured         bool
-	dispatchPossible bool
-	cleanupConfirmed bool
-	status           string
-	stdout           string
-	stderr           string
+	mu                 sync.Mutex
+	runID              string
+	admissionID        string
+	maximum            int
+	captured           bool
+	dispatchPossible   bool
+	cleanupConfirmed   bool
+	processFailureExit *int
+	status             string
+	stdout             string
+	stderr             string
 }
 
 // This provenance is private to the live executor. A preparation or admission
@@ -66,6 +67,12 @@ func (output *dockerCommandRuntimeOutput) confirmCleanup(record domain.DockerSan
 		return errors.New("Docker Command Runtime cleanup receipt binding is invalid")
 	}
 	output.cleanupConfirmed = true
+	if record.Receipt.Outcome == domain.DockerSandboxOutcomeFailed &&
+		record.Receipt.ReasonCode == domain.DockerSandboxReasonProcessFailed &&
+		record.Receipt.ExitCode != nil && *record.Receipt.ExitCode > 0 {
+		exit := *record.Receipt.ExitCode
+		output.processFailureExit = &exit
+	}
 	return nil
 }
 
@@ -159,10 +166,14 @@ func (output *dockerCommandRuntimeOutput) terminalResult(result standardcode.Res
 		return runner.CommandRuntimeSandboxResult{}, errors.Join(cause,
 			errors.New("Docker Standard Code terminal exit code is unavailable"))
 	}
-	// A replay can have no transport error while its durable outcome is failed
-	// (for example, a zero-exit process followed by an I/O failure). Preserve that
-	// outcome without changing the real process exit code or discarding its logs.
-	if result.Status != standardcode.StatusSucceeded {
+	// A natural nonzero exit is a program result only when the exact validated
+	// owned receipt says process_failed and confirms cleanup. Other failures,
+	// including receipt-only I/O failures, retain their infrastructure error.
+	output.mu.Lock()
+	programFailure := output.processFailureExit != nil && *output.processFailureExit == *result.ExitCode
+	output.mu.Unlock()
+	if result.Status != standardcode.StatusSucceeded &&
+		!(result.Status == standardcode.StatusFailed && programFailure && cause == nil) {
 		cause = errors.Join(cause, fmt.Errorf("Docker Standard Code terminal status is %s", result.Status))
 	}
 	return output.terminal(*result.ExitCode), cause

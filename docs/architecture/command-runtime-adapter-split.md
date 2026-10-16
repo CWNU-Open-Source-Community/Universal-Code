@@ -164,6 +164,15 @@ remain responsible for stopping owned work, without claiming to undo its effects
 
 Background process lifetime may outlive a request. Before process dispatch, the
 original request's cancellation remains enforced even through a detached context.
+For Docker, Windows Local, and SBX, `start` waits for the adapter's final dispatch
+admission before returning its running Job. The manager first installs the Job's
+output collectors, ownership heartbeat, timeout and initial-stdin workers, so
+waiting for admission does not block backend output or input. A process-local
+callback confirms admission while the originating model attempt is still active;
+SBX confirms only after its final VM identity check, immediately before exec.
+Preparation failure, cancellation or timeout ends that wait and retains the owned
+Job's cleanup and terminal evidence. Model payloads and persisted receipts cannot
+supply this callback or authorize a later dispatch under an old attempt.
 After the manager has durably committed the running Job and started its ownership,
 wait and timeout workers, asynchronous initial stdin uses the Job lifetime. A
 completed HTTP request no longer cancels those already-bound initial bytes. This

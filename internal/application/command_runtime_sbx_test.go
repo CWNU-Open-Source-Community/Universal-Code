@@ -110,6 +110,9 @@ func (b *sbxApplicationBackend) Run(ctx context.Context, r sandbox.SBXRunRequest
 		b.transport.afterCreate()
 	}
 	err := r.AuthorityCheck(ctx)
+	if err == nil && r.BeforeExec != nil {
+		err = r.BeforeExec(ctx)
+	}
 	if err == nil {
 		b.transport.verbs = append(b.transport.verbs, "exec")
 		result.ExitCode = 0

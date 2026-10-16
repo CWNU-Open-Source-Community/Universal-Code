@@ -58,6 +58,16 @@ func assertDockerProofNoMutation(t *testing.T, f *commandApprovalSandboxFixture)
 	}
 }
 
+func TestDockerCommandNaturalNonzeroExitIsAProgramResult(t *testing.T) {
+	_, executor, scope, spec := commandDockerProofFixture(t)
+	transport := executor.service.docker.lifecycleTransport.(*dockerLifecycleSupervisorTestTransport)
+	transport.naturalExitCode = 1
+	result, err := executor.ExecuteSandboxCommand(t.Context(), scope, spec, nil)
+	if err != nil || result.ExitCode != 1 || !result.TreeReaped || transport.deletes != 1 {
+		t.Fatalf("natural program failure became an infrastructure failure: result=%+v cleanup=%d error=%v", result, transport.deletes, err)
+	}
+}
+
 func TestDockerCommandPreDispatchAuthorityRejectionHasNoContainerToReap(t *testing.T) {
 	for _, kind := range []string{"permission", "lease"} {
 		t.Run(kind, func(t *testing.T) {

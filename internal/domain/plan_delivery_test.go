@@ -85,6 +85,20 @@ func TestPlanDeliveryManualAcceptancePreservesRequiredFingerprint(t *testing.T) 
 	}
 }
 
+func TestPlanDeliverySpecCanonicalizesMissingDependenciesToEmptyArray(t *testing.T) {
+	const prefix = `{"version":"plan_delivery.v1","directions":[{"title":"Fix","summary":"Fix one source file","tradeoffs":["Narrow change"],"modules":[{"title":"Implement","objective":"Repair the original regression","acceptance_criteria":["Original tests pass"]`
+	for _, field := range []string{"", `,"dependencies":null`, `,"dependencies":[]`} {
+		spec, err := DecodePlanDeliverySpec([]byte(prefix + field + `}]}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(spec)
+		if err != nil || !strings.Contains(string(encoded), `"dependencies":[]`) {
+			t.Fatalf("empty dependencies must persist as a JSON array: field=%q encoded=%s err=%v", field, encoded, err)
+		}
+	}
+}
+
 func TestPlanDeliverySpecRejectsShapeAndDependencyDrift(t *testing.T) {
 	invalid := [][]byte{
 		[]byte(`{"version":"plan_delivery.v1","directions":[]}`),
