@@ -34,7 +34,7 @@ func TestSpecialistIndependentCostLimitWithoutRunCapSurvivesRetryReopen(t *testi
 	}
 	children := []domain.AgentNode{}
 	for _, name := range []string{"first", "second"} {
-		child, _, err := st.AdmitSpecialist(ctx, domain.SpecialistAdmission{AgentID: idgen.New("agent"), SessionID: idgen.New("sess"), RunID: run.ID, ParentAgentID: root.ID, Title: name, Skills: []string{"model.chat"}, TurnLimit: 3, TokenLimit: 64, MaxChildren: 2, CreatedAt: time.Now().UTC(), CostLimitMicros: 1000}, "cost-child-admission-"+name)
+		child, _, err := st.AdmitSpecialist(ctx, domain.SpecialistAdmission{AgentID: idgen.New("agent"), SessionID: idgen.New("sess"), RunID: run.ID, ParentAgentID: root.ID, Title: name, Skills: []string{"model.chat"}, TurnLimit: 3, TokenLimit: 64, MaxChildren: 2, CreatedAt: time.Now().UTC(), AllowedReadPaths: []string{"notes.txt"}, ToolCallLimit: 1, CostLimitMicros: 1000}, "cost-child-admission-"+name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,6 +119,25 @@ func TestSpecialistIndependentCostLimitWithoutRunCapSurvivesRetryReopen(t *testi
 	node, err = st.GetAgentNode(ctx, children[1].ID)
 	if err != nil || node.CostUsedMicros != 1000 {
 		t.Fatalf("second child cost projection: %+v %v", node, err)
+	}
+	// Lifecycle projection and snapshots must preserve the separate child authority
+	// and cost ledger when pausing and resuming active attempts.
+	for _, transition := range []func(context.Context, string) (domain.Run, error){application.NewRunService(st).Pause, application.NewRunService(st).Resume} {
+		if _, err := transition(ctx, run.ID); err != nil {
+			t.Fatal(err)
+		}
+		graph, err := st.RestoreAgentGraph(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, child := range graph.Nodes {
+			if child.ParentID == "" {
+				continue
+			}
+			if len(child.AllowedReadPaths) != 1 || child.AllowedReadPaths[0] != "notes.txt" || child.ToolCallLimit != 1 || child.CostLimitMicros != 1000 || child.CostUsedMicros != 1000 {
+				t.Fatalf("lifecycle changed child scope or cumulative cost: %+v", child)
+			}
+		}
 	}
 	// Import only the v199 columns into an actual historical schema. Existing
 	// model-start receipts must recover reservation ownership on upgrade, while

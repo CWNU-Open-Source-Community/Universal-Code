@@ -236,7 +236,7 @@ CREATE TABLE agent_nodes (
 		version INTEGER NOT NULL,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL,
-		finished_at TEXT,
+		finished_at TEXT, allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)), tool_call_limit INTEGER NOT NULL DEFAULT 0 CHECK(tool_call_limit>=0), cost_limit_micros INTEGER NOT NULL DEFAULT 0 CHECK(cost_limit_micros>=0),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
 		FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
 		FOREIGN KEY(run_id, parent_id) REFERENCES agent_nodes(run_id, id) ON DELETE CASCADE,
@@ -5884,7 +5884,7 @@ CREATE TABLE run_monetary_reservations (
 		price_fingerprint TEXT NOT NULL,
 		created_at TEXT NOT NULL,
 		settled_at TEXT,
-		released_at TEXT,
+		released_at TEXT, agent_id TEXT NOT NULL DEFAULT '',
 		UNIQUE(run_id, scope, attempt_number),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE RESTRICT,
 		CHECK(scope IN ('root', 'specialist', 'readonly_fanout')),
@@ -12168,7 +12168,7 @@ CREATE TABLE specialist_tool_bindings (
    workspace_id TEXT NOT NULL,root_fingerprint TEXT NOT NULL CHECK(length(root_fingerprint)=64),
    brief_fingerprint TEXT NOT NULL CHECK(length(brief_fingerprint)=64),mode TEXT NOT NULL CHECK(mode IN ('read','batch')),
    batch_plan_id TEXT NOT NULL DEFAULT '',batch_ordinal INTEGER NOT NULL DEFAULT 0,batch_generation INTEGER NOT NULL DEFAULT 0,
-   created_at TEXT NOT NULL,
+   created_at TEXT NOT NULL, allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)),
    FOREIGN KEY(run_id,agent_id) REFERENCES agent_nodes(run_id,id),
    CHECK((mode='read' AND batch_plan_id='' AND batch_ordinal=0 AND batch_generation=0)
     OR (mode='batch' AND length(batch_plan_id)>0 AND batch_ordinal>0 AND batch_generation>0))
@@ -14381,6 +14381,8 @@ CREATE INDEX idx_workspace_checkpoints_run_created
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_workspace_checkpoints_workspace_created
 		ON workspace_checkpoints(workspace_id, created_at DESC, id DESC) WHERE sealed = 1;
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX monetary_reservations_child ON run_monetary_reservations(run_id,agent_id);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX specialist_schedule_continuation ON specialist_schedules(continuation_digest, started_at DESC, id DESC)
 		WHERE continuation_digest <> '';

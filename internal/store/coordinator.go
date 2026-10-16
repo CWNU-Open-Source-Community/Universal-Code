@@ -18,9 +18,15 @@ import (
 	"cyberagent-workbench/internal/runmutation"
 )
 
-const agentNodeSelect = `SELECT id, run_id, parent_id, session_id, role, profile, skills_json, status,
+const agentNodeColumns = `SELECT id, run_id, parent_id, session_id, role, profile, skills_json, status,
 	depth, child_limit, turn_limit, token_limit, turns_used, tokens_used, active_attempt_id,
-	status_reason, version, created_at, updated_at, finished_at, allowed_read_paths_json, tool_call_limit, cost_limit_micros,
+	status_reason, version, created_at, updated_at, finished_at`
+
+// Run lifecycle and immutable graph snapshots do not consume child authority
+// or cumulative usage. Keep their projection independent of the child ledgers.
+const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0 FROM agent_nodes`
+
+const agentNodeSelect = agentNodeColumns + `, allowed_read_paths_json, tool_call_limit, cost_limit_micros,
  (SELECT COUNT(*) FROM specialist_tool_calls c JOIN agent_attempts a ON a.id=c.agent_attempt_id WHERE a.agent_id=agent_nodes.id AND c.charge_id<>''),
  (SELECT COALESCE(SUM(reserved_micros-released_micros),0) FROM run_monetary_reservations WHERE agent_id=agent_nodes.id AND run_id=agent_nodes.run_id) FROM agent_nodes`
 
@@ -95,7 +101,7 @@ func (s *SQLiteStore) GetAgentNode(ctx context.Context, id string) (domain.Agent
 }
 
 func (s *SQLiteStore) GetRootAgent(ctx context.Context, runID string) (domain.AgentNode, bool, error) {
-	node, err := scanAgentNode(s.db.QueryRowContext(ctx, agentNodeSelect+` WHERE run_id = ? AND parent_id IS NULL`,
+	node, err := scanAgentNode(s.db.QueryRowContext(ctx, agentLifecycleSelect+` WHERE run_id = ? AND parent_id IS NULL`,
 		strings.TrimSpace(runID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentNode{}, false, nil
@@ -707,7 +713,7 @@ func insertRootAgentTx(ctx context.Context, tx *sql.Tx, run domain.Run, mission 
 }
 
 func getRootAgentTx(ctx context.Context, tx *sql.Tx, runID string) (domain.AgentNode, bool, error) {
-	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE run_id = ? AND parent_id IS NULL`, runID))
+	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE run_id = ? AND parent_id IS NULL`, runID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentNode{}, false, nil
 	}
@@ -747,7 +753,13 @@ func scanAgentNode(row scanner) (domain.AgentNode, error) {
 func listAgentNodes(ctx context.Context, queryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, runID string) ([]domain.AgentNode, error) {
-	rows, err := queryer.QueryContext(ctx, agentNodeSelect+` WHERE run_id = ? ORDER BY depth, created_at, id`, runID)
+	return listAgentNodesWithSelect(ctx, queryer, runID, agentNodeSelect)
+}
+
+func listAgentNodesWithSelect(ctx context.Context, queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, runID, selectSQL string) ([]domain.AgentNode, error) {
+	rows, err := queryer.QueryContext(ctx, selectSQL+` WHERE run_id = ? ORDER BY depth, created_at, id`, runID)
 	if err != nil {
 		return nil, err
 	}

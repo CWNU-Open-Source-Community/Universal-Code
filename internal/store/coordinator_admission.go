@@ -342,7 +342,7 @@ func effectiveRootBudgetTx(ctx context.Context, tx *sql.Tx, run domain.Run,
 func syncSpecialistLifecycleTx(ctx context.Context, tx *sql.Tx, run domain.Run,
 	rootStatus domain.AgentStatus, at time.Time,
 ) (bool, error) {
-	nodes, err := listAgentNodes(ctx, tx, run.ID)
+	nodes, err := listAgentNodesWithSelect(ctx, tx, run.ID, agentLifecycleSelect)
 	if err != nil {
 		return false, err
 	}
