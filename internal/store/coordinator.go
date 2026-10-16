@@ -22,7 +22,7 @@ const agentNodeColumns = `SELECT id, run_id, parent_id, session_id, role, profil
 	depth, child_limit, turn_limit, token_limit, turns_used, tokens_used, active_attempt_id,
 	status_reason, version, created_at, updated_at, finished_at`
 
-// Run lifecycle and immutable graph snapshots do not consume child authority
+// Identity/lifecycle consumers and immutable graph snapshots do not consume child authority
 // or cumulative usage. Keep their projection independent of the child ledgers.
 const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0 FROM agent_nodes`
 
@@ -214,7 +214,7 @@ func (s *SQLiteStore) SendAgentMessage(ctx context.Context, message domain.Agent
 		keyDigest, message.RecipientAgentID); err != nil {
 		return domain.AgentMessage{}, false, err
 	}
-	recipient, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, message.RecipientAgentID))
+	recipient, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, message.RecipientAgentID))
 	if err != nil {
 		return domain.AgentMessage{}, false, err
 	}
@@ -227,7 +227,7 @@ func (s *SQLiteStore) SendAgentMessage(ctx context.Context, message domain.Agent
 			"terminal agent cannot receive inbox messages")
 	}
 	if message.SenderAgentID != "" {
-		sender, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, message.SenderAgentID))
+		sender, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, message.SenderAgentID))
 		if err != nil {
 			return domain.AgentMessage{}, false, err
 		}
