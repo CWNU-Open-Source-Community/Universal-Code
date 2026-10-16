@@ -774,7 +774,11 @@ read-only until an operator confirms a diff bound to both the old pinned fingerp
 reviewed live fingerprint, then appends a new
 immutable revision. `context_memory.v1` is explicit user/project data with provenance,
 retention, optimistic edit/disable, export, Secret/source rejection, and physical delete;
-there is no model/tool/file extraction path. `continuity_snapshot.v1` and immutable
+schema v198 adds a separate bounded queue of source-linked decision/summary Note candidates.
+Only explicit operator confirmation creates formal memory; source/version checks and candidate
+resolution share a SQLite transaction. Root history recall reads active memory and visible notes
+within its Workspace/Thread boundaries, and each logical model call budgets and audits current
+memory versions. `continuity_snapshot.v1` and immutable
 root/checkpoint/fork/resume nodes capture bounded summary/message provenance, memory
 references, project fingerprints, and exact Git identity. Fork/Resume creates a fresh
 Mission/Run/Session and explicitly resets approvals, capabilities, credentials, network,
