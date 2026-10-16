@@ -13,3 +13,14 @@ go build -o "$env:TEMP\computer-use-fixture.exe" ./internal/computeruse/testfixt
 ```
 
 Launch that executable with `-state <temporary-json-path>`. Its multiline edit box, click counter, and scroll position are recorded in the JSON together with PID, HWND and control rectangles in screen coordinates. Only this dedicated fixture should be manipulated during automated live checks. The ordinary package tests use a fake backend, plus Win32 ABI, executable identity and coordination-object tests; they do not capture or send input to desktop windows.
+
+The opt-in end-to-end test launches its own fixture and the supplied production executable's reserved MCP endpoint. Set all three absolute paths, then run only this test:
+
+```powershell
+$env:UNIVERSAL_CODE_COMPUTER_USE_LIVE_EXE = 'D:\path\to\universal-code.exe'
+$env:UNIVERSAL_CODE_COMPUTER_USE_LIVE_FIXTURE = "$env:TEMP\computer-use-fixture.exe"
+$env:UNIVERSAL_CODE_COMPUTER_USE_LIVE_OUTPUT = 'D:\path\to\test-artifacts'
+go test ./internal/computeruse -run '^TestLiveWindowsFixture$' -count=1 -v -timeout 2m
+```
+
+It verifies Chinese/English text, multiline scrolling, a button click, consumed-observation rejection, and each PNG's actual dimensions. Original PNGs and fixture-only metadata are saved in a new subdirectory. It selects only its own fixture PID/title/HWND, calculates control coordinates from current rectangles, and cleans up only the two child processes it created. Leave the fixture unobstructed during this explicitly enabled desktop test. Missing any variable skips the test before launching processes.
