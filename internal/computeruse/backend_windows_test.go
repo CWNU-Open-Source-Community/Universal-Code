@@ -46,6 +46,34 @@ func TestWindowsInputABI(t *testing.T) {
 		t.Fatal("incorrect keyboard union")
 	}
 }
+
+func TestApplicationFrameRequiresUniqueHostedProcess(t *testing.T) {
+	for _, pids := range [][]uint32{{42, 100}, {100, 42, 100}, {100}} {
+		got, err := uniqueHostedPID(42, pids)
+		if err != nil || got != 100 {
+			t.Fatalf("unique app was not resolved: %v, %d, %v", pids, got, err)
+		}
+	}
+	for _, pids := range [][]uint32{nil, {42}, {42, 0, 100}, {100, 101}, {42, 100, 101, 100}} {
+		if _, err := uniqueHostedPID(42, pids); err == nil {
+			t.Fatalf("ambiguous or unavailable host accepted: %v", pids)
+		}
+	}
+}
+
+func TestHostedWindowRevalidatesOwnerAndApplication(t *testing.T) {
+	w := nativeWindow{Window: Window{PID: 100, AppID: "app", OwnerPID: 42}, handle: 99, birth: 10, ownerBirth: 20, ownerAppID: "frame-host"}
+	for _, change := range []func(*nativeWindow){
+		func(w *nativeWindow) { w.OwnerPID++ }, func(w *nativeWindow) { w.ownerBirth++ }, func(w *nativeWindow) { w.ownerAppID = "replacement host" },
+		func(w *nativeWindow) { w.PID++ }, func(w *nativeWindow) { w.birth++ }, func(w *nativeWindow) { w.AppID = "another packaged app" },
+	} {
+		other := w
+		change(&other)
+		if sameWindow(w, other) {
+			t.Fatalf("hosted window accepted changed identity: %#v", other)
+		}
+	}
+}
 func TestWindowsSelfExclusion(t *testing.T) {
 	b := &winBackend{}
 	b.loadExcluded()

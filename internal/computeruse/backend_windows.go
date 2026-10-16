@@ -202,9 +202,33 @@ func (b *winBackend) inspect(hwnd uintptr) (nativeWindow, error) {
 	if b.excluded[pid] || b.excludedPaths[path] {
 		return result, errors.New("the executor and its host processes cannot be controlled")
 	}
-	app, err := applicationID(path)
+	ownerPID, ownerPath, ownerBirth := pid, path, birth
+	ownerApp, err := applicationID(ownerPath)
 	if err != nil {
 		return result, err
+	}
+	if filepath.Base(path) == "applicationframehost.exe" {
+		pid, err = applicationFramePID(hwnd, ownerPID)
+		if err != nil {
+			return result, err
+		}
+		path, birth, err = processIdentity(pid)
+		if err != nil {
+			return result, errors.New("hosted application process identity is unavailable")
+		}
+		if filepath.Base(path) == "applicationframehost.exe" {
+			return result, errors.New("hosted application resolves to another shared ApplicationFrameHost")
+		}
+		if b.excluded[pid] || b.excludedPaths[path] {
+			return result, errors.New("the hosted application is the executor or its host process")
+		}
+	}
+	app := ownerApp
+	if pid != ownerPID {
+		app, err = applicationID(path)
+		if err != nil {
+			return result, err
+		}
 	}
 	var rect winRect
 	if ok, _, _ := getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rect))); ok == 0 {
@@ -223,7 +247,7 @@ func (b *winBackend) inspect(hwnd uintptr) (nativeWindow, error) {
 	title := make([]uint16, 1024)
 	getWindowText.Call(hwnd, uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
 	foreground, _, _ := getForegroundWindow.Call()
-	return nativeWindow{Window: Window{AppID: app, Title: windows.UTF16ToString(title), PID: pid, ProcessPath: path, HWND: fmt.Sprintf("0x%x", hwnd), Bounds: bounds, Foreground: foreground == hwnd}, handle: hwnd, birth: birth}, nil
+	return nativeWindow{Window: Window{AppID: app, Title: windows.UTF16ToString(title), PID: pid, ProcessPath: path, HWND: fmt.Sprintf("0x%x", hwnd), Bounds: bounds, Foreground: foreground == hwnd, OwnerPID: ownerPID, OwnerProcessPath: ownerPath}, handle: hwnd, birth: birth, ownerBirth: ownerBirth, ownerAppID: ownerApp}, nil
 }
 func (b *winBackend) list(ctx context.Context) ([]nativeWindow, error) {
 	state := windowListState{backend: b, ctx: ctx, windows: []nativeWindow{}}

@@ -20,14 +20,16 @@ type Bounds struct {
 }
 
 type Window struct {
-	WindowID    string `json:"window_id"`
-	AppID       string `json:"app_id"`
-	Title       string `json:"title"`
-	PID         uint32 `json:"pid"`
-	ProcessPath string `json:"process_path"`
-	HWND        string `json:"hwnd"`
-	Bounds      Bounds `json:"bounds"`
-	Foreground  bool   `json:"foreground"`
+	WindowID         string `json:"window_id"`
+	AppID            string `json:"app_id"`
+	Title            string `json:"title"`
+	PID              uint32 `json:"pid"`
+	ProcessPath      string `json:"process_path"`
+	HWND             string `json:"hwnd"`
+	Bounds           Bounds `json:"bounds"`
+	Foreground       bool   `json:"foreground"`
+	OwnerPID         uint32 `json:"window_owner_pid"`
+	OwnerProcessPath string `json:"window_owner_process_path"`
 }
 
 type Observation struct {
@@ -73,8 +75,10 @@ type Arguments struct {
 
 type nativeWindow struct {
 	Window
-	handle uintptr
-	birth  uint64
+	handle     uintptr
+	birth      uint64
+	ownerBirth uint64
+	ownerAppID string
 }
 type backend interface {
 	enter(context.Context) (func(), error)
@@ -241,7 +245,8 @@ func (e *executor) run(ctx context.Context, name string, a Arguments) (any, []by
 	return o, data, nil
 }
 func sameWindow(a, b nativeWindow) bool {
-	return a.handle == b.handle && a.PID == b.PID && a.birth == b.birth && a.AppID == b.AppID
+	return a.handle == b.handle && a.PID == b.PID && a.birth == b.birth && a.AppID == b.AppID &&
+		a.OwnerPID == b.OwnerPID && a.ownerBirth == b.ownerBirth && a.ownerAppID == b.ownerAppID
 }
 func validateInput(name string, a Arguments, b Bounds) error {
 	switch name {
