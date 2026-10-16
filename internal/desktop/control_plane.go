@@ -174,6 +174,7 @@ type ControlPlaneConfig struct {
 	GitHubReviewControlEnabled         bool
 	GitManagedWorktreeRoot             string
 	AppVersion                         string
+	ComputerUseExecutable              string
 	UIHandler                          http.Handler
 	CredentialStore                    credential.Store
 	OnWakeWorkerError                  func(error)
@@ -415,7 +416,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		return nil, err
 	}
 	var commandRuntimeDrydocks *application.RunWorktreeService
-	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(),
+	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(), ComputerUseExecutable: config.ComputerUseExecutable,
 		WorkspaceRoot: application.NewMCPWorkspaceRootProvider(stateStore, func(context.Context, string) (*application.RunWorktreeService, error) {
 			return commandRuntimeDrydocks, nil
 		})})

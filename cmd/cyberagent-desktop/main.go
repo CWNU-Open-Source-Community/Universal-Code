@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	"cyberagent-workbench/internal/app"
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/browserruntime"
+	"cyberagent-workbench/internal/computeruse"
 	"cyberagent-workbench/internal/desktop"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/httpapi"
@@ -238,6 +240,9 @@ type desktopBindingError struct {
 }
 
 func main() {
+	if handled, code := computeruse.Execute(os.Args[1:], os.Stdin, os.Stdout); handled {
+		os.Exit(code)
+	}
 	if handled, code := sbxmcp.Execute(os.Args[1:], os.Stdin, os.Stdout); handled {
 		os.Exit(code)
 	}
@@ -703,10 +708,18 @@ func runDesktop(config desktopOptions) error {
 	}
 
 	databasePath := filepath.Join(homePath, "cyberagent.db")
+	var computerUseExecutable string
+	if goruntime.GOOS == "windows" && config.runExecution {
+		computerUseExecutable, err = os.Executable()
+		if err != nil {
+			return err
+		}
+	}
 	controlPlane, err := desktop.OpenControlPlane(desktop.ControlPlaneConfig{
 		DatabasePath: databasePath, HomePath: homePath, ReadToken: readToken,
-		ControlToken:      controlToken,
-		RunControlEnabled: config.profileControl, RunCreationEnabled: config.runCreation,
+		ControlToken:          controlToken,
+		ComputerUseExecutable: computerUseExecutable,
+		RunControlEnabled:     config.profileControl, RunCreationEnabled: config.runCreation,
 		ExecutionPermissionControlEnabled:  config.permissionControl,
 		ExecutionPermissionCapabilities:    executionPermissionCapabilities,
 		LocalSandboxReadiness:              localReadiness,

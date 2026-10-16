@@ -12,6 +12,7 @@ import { chatGPTAuthProtocol, parseChatGPTAuthStatus, validChatGPTIdentity,
   type ChatGPTLoginRequestView, type ChatGPTCancelRequestView } from "./chatgpt-auth";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
 import { validMCPConnectionConfig } from "./mcp-config";
+import { validBuiltinComputerUseConnection } from "./computer-use";
 import { validMCPContents } from "./mcp-content";
 import type { MCPCredentialBindingView, MCPCredentialRequestView, MCPCredentialStatusView } from "./types";
 import { applicationServiceIdentity, parseThreadApplicationServices, parseThreadApplicationService,
@@ -1650,7 +1651,7 @@ function parseApprovalQueue(value: unknown, expectedRunID: string): ApprovalQueu
       !boundedText(item.mode, 64) || !Array.isArray(item.allowed_actions) ||
       item.allowed_actions.length > 3 ||
       !item.allowed_actions.every((action) => action === "approve_once" ||
-        action === "approve_for_thread" || action === "approve_for_run" || action === "deny") ||
+        action === "approve_for_thread" || action === "approve_for_run" || action === "approve_for_run_app" || action === "deny") ||
       new Set(item.allowed_actions).size !== item.allowed_actions.length ||
       !safePositiveInteger(item.version) || !validDate(item.created_at) ||
       !validDate(item.updated_at) || item.process_execution_enabled !== false ||
@@ -1680,6 +1681,10 @@ function parseApprovalQueue(value: unknown, expectedRunID: string): ApprovalQueu
     }
     if (item.allowed_actions.includes("approve_for_run") && (item.tool_name !== "command_runtime" || item.status !== "pending")) {
       throw new APIRequestError("Bounded approval belongs to another operation", "INVALID_RESPONSE", 502);
+    }
+    if (item.allowed_actions.includes("approve_for_run_app") &&
+      (item.tool_name !== "mcp_tool_call" || item.action_class !== "mcp_server_and_tool" || item.status !== "pending")) {
+      throw new APIRequestError("Application approval belongs to another operation", "INVALID_RESPONSE", 502);
     }
     identities.add(itemID);
   }
@@ -1719,6 +1724,10 @@ function parseApprovalDecision(value: unknown, expectedRunID: string, expectedAp
       grant.use_ordinal > request.grant_max_uses! - grant.uses_remaining || !validDate(grant.expires_at) || grant.each_command_requires_review !== true ||
       (value.replayed && value.session_grant_created)) {
       throw new APIRequestError("Bounded command decision is invalid", "INVALID_RESPONSE", 502);
+    }
+  } else if (request.action === "approve_for_run_app") {
+    if (value.tool_name !== "mcp_tool_call" || value.bounded_grant !== undefined) {
+      throw new APIRequestError("Application approval decision is invalid", "INVALID_RESPONSE", 502);
     }
   } else if (value.bounded_grant !== undefined || value.session_grant_created !== false) {
     throw new APIRequestError("One-call decision unexpectedly created a grant", "INVALID_RESPONSE", 502);
@@ -6541,6 +6550,10 @@ function parseExtensionMCPServer(value: unknown): ExtensionMCPServerView {
 }
 
 function validExtensionMCPTarget(item: Record<string, unknown>): boolean {
+  if ((isRecord(item.source) && item.source.kind === "builtin") ||
+    (typeof item.target === "string" && item.target.startsWith("builtin:"))) {
+    return validBuiltinComputerUseConnection(item);
+  }
   if (item.native_source === undefined) return boundedText(item.target, 4_096) &&
     validMCPConnectionConfig(item as { transport: string });
   const source = item.native_source;
@@ -9637,7 +9650,7 @@ export class APIClient {
       value.run_id !== runID || value.approval_id !== approvalID ||
       !boundedIdentity(value.proposal_id) || !boundedText(value.tool_name, 128) ||
       (value.workspace_id !== "" && !boundedIdentity(value.workspace_id)) ||
-      !["dry_run", "record_git_approval", "file_review_required", "fetch_public_https", "browser_sensitive_action", "mcp_server_and_tool", "command_process", "unavailable"]
+      !["dry_run", "record_git_approval", "file_review_required", "fetch_public_https", "browser_sensitive_action", "mcp_server_and_tool", "computer_use_app", "command_process", "unavailable"]
         .includes(String(value.effect)) || typeof value.working_directory !== "string" ||
       !["", "."].includes(value.working_directory) ||
       typeof value.source_current !== "boolean" || typeof value.redacted !== "boolean" ||
@@ -9653,7 +9666,8 @@ export class APIClient {
       "git.advanced": "record_git_approval", replace_file: "file_review_required",
       create_file: "file_review_required", move_file: "file_review_required", delete_file: "file_review_required",
       web_fetch: "fetch_public_https", agent_browser_sensitive: "browser_sensitive_action", mcp_tool_call: "mcp_server_and_tool", command_runtime: "command_process" };
-    if (value.effect !== (effects[value.tool_name] ?? "unavailable")) {
+    if (value.effect !== (effects[value.tool_name] ?? "unavailable") &&
+      !(value.tool_name === "mcp_tool_call" && value.effect === "computer_use_app")) {
       throw new APIRequestError("Approval preview returned a different effect", "INVALID_RESPONSE", 502);
     }
     return value as unknown as ApprovalPreviewView;
@@ -9744,7 +9758,7 @@ export class APIClient {
     if (!boundedIdentity(runID) || runID.trim() !== runID ||
       !boundedIdentity(approvalID) || approvalID.trim() !== approvalID ||
       body.version !== "approval_control.v1" ||
-      !["approve_once", "approve_for_thread", "approve_for_run", "deny"].includes(body.action) ||
+      !["approve_once", "approve_for_thread", "approve_for_run", "approve_for_run_app", "deny"].includes(body.action) ||
       (body.action !== "deny" && body.action !== "approve_for_run" && body.reason !== undefined) ||
       (body.reason !== undefined && (!boundedText(body.reason, 2_048) ||
         body.reason.trim() !== body.reason || /[\u0000-\u001f\u007f]/u.test(body.reason)))) {

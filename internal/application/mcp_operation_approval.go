@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -121,10 +122,15 @@ func readMCPApprovalSource(ctx context.Context, st mcpApprovalStore, runID, call
 }
 
 func mcpApprovalMatches(record approval.Record, source mcpApprovalSource) bool {
+	grantAllowed := record.GrantID == ""
+	if !grantAllowed && source.permission.Mode == domain.RunExecutionPermissionAsk {
+		target, err := mcpComputerUseTarget(source)
+		grantAllowed = err == nil && target != nil && target.AppID != "" && !target.SystemShortcut
+	}
 	return record.Validate() == nil && record.RunID == source.call.RunID &&
 		record.ProposalID == source.call.CallID && record.ToolName == mcp.OperationApprovalTool &&
 		record.SessionID == source.run.SessionID && record.WorkspaceID == source.authority.WorkspaceID &&
-		record.ActionClass == "mcp_server_and_tool" && record.Mode == "per_call" && record.GrantID == "" &&
+		record.ActionClass == "mcp_server_and_tool" && record.Mode == "per_call" && grantAllowed &&
 		record.RequestFingerprint == mcp.OperationApprovalFingerprint(source.call)
 }
 
@@ -190,6 +196,13 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 	if exists && !mcpApprovalMatches(record, source) {
 		return false, nil, mcpApprovalUnavailable("MCP approval decision identity changed")
 	}
+	if exists && record.GrantID != "" && record.ReviewedBy == "session_grant" &&
+		(policy.NeedsApproval || strings.EqualFold(policy.Risk, "critical")) {
+		return stop("mcp_authority_expired", "Current policy requires exact review of this Computer Use call. Propose a new action for review; this action was not dispatched.", domain.SupervisorToolFailed)
+	}
+	if exists && checkMCPComputerUseAppGrant(ctx, st, record) != nil {
+		return stop("mcp_authority_expired", "The Computer Use application grant was revoked or changed scope. This action was not dispatched.", domain.SupervisorToolFailed)
+	}
 	var proof *approval.Record
 	if exists {
 		proof = &record
@@ -207,6 +220,44 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 			proof = &record
 		}
 		return err
+	}
+	target, err := mcpComputerUseTarget(source)
+	if err != nil {
+		return stop("mcp_authority_expired", "The Computer Use application target is invalid. This action was not dispatched.", domain.SupervisorToolFailed)
+	}
+	forceReview := policy.NeedsApproval || strings.EqualFold(policy.Risk, "critical")
+	if target != nil && !forceReview && source.permission.Mode != domain.RunExecutionPermissionFull {
+		if target.AppID == "" && !exists {
+			// Enabling the built-in permits window metadata discovery. Keep an
+			// exact ledger proof for the ordinary operation authorizer; screenshots
+			// and input remain application-scoped and externally opaque.
+			if err := ensure(); err != nil {
+				return false, nil, err
+			}
+			decision, err := st.DecideApproval(ctx, approval.DecisionRequest{ProposalID: call.CallID,
+				IdempotencyKey: "computer-use-metadata:" + call.CallID, Action: approval.ActionApprove, ReviewedBy: "computer_use_metadata"})
+			if err != nil {
+				return false, nil, err
+			}
+			record, proof = decision.Approval, &decision.Approval
+		} else if target.AppID != "" && !target.SystemShortcut && source.permission.Mode == domain.RunExecutionPermissionAsk && (proof == nil || proof.Status == approval.StatusPending) {
+			grants, ok := st.(computerUseAppApprovalStore)
+			if !ok {
+				return false, nil, mcpApprovalUnavailable("Computer Use application grant store unavailable")
+			}
+			if proof == nil {
+				if err := ensure(); err != nil {
+					return false, nil, err
+				}
+			}
+			approved, found, err := grants.TryAuthorizeMCPComputerUseAppApproval(ctx, call.CallID)
+			if err != nil {
+				return false, nil, err
+			}
+			if found {
+				record, proof = approved, &approved
+			}
+		}
 	}
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {

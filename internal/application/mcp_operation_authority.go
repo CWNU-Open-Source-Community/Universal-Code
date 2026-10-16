@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
@@ -203,6 +204,13 @@ func (e *MCPClientToolExecutor) mcpDispatchApproval(ctx context.Context, scope t
 	}
 	if !mcpApprovalMatches(record, source) {
 		return nil, mcpApprovalUnavailable("MCP dispatch approval identity changed")
+	}
+	if record.GrantID != "" && record.ReviewedBy == "session_grant" &&
+		(scope.PolicyDecision.Approval == toolgateway.ApprovalPerCall || strings.EqualFold(scope.PolicyDecision.Risk, "critical")) {
+		return nil, mcpApprovalUnavailable("current policy requires exact review of this Computer Use call")
+	}
+	if err := checkMCPComputerUseAppGrant(ctx, st, record); err != nil {
+		return nil, err
 	}
 	return &record, nil
 }

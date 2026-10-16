@@ -2,14 +2,17 @@ package application
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image/gif"
 	"image/png"
+	"strconv"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/artifact"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/llm"
@@ -20,7 +23,7 @@ import (
 // MCP content remains an untrusted tool result, including prompt messages whose
 // remote role is "assistant". Only validated pixels enter the image channel.
 // URLs are references; constructing model context never fetches them.
-func supervisorMCPContent(request llm.ChatRequest, rounds []domain.SupervisorToolRound, vision bool) (llm.ChatRequest, error) {
+func (s *AgentRunner) supervisorMCPContent(ctx context.Context, turn domain.SupervisorTurn, request llm.ChatRequest, rounds []domain.SupervisorToolRound, vision bool) (llm.ChatRequest, error) {
 	calls := make(map[string]domain.SupervisorToolCall)
 	for _, round := range rounds {
 		for _, call := range round.Calls {
@@ -53,8 +56,12 @@ func supervisorMCPContent(request llm.ChatRequest, rounds []domain.SupervisorToo
 			if json.Unmarshal([]byte(call.ResultJSON), &envelope) != nil || envelope.Stdout == "" {
 				continue
 			}
+			content, retained, err := s.supervisorMCPResultContent(ctx, turn, call, envelope, vision)
+			if err != nil {
+				return llm.ChatRequest{}, err
+			}
 			var native map[string]any
-			decoder := json.NewDecoder(bytes.NewBufferString(envelope.Stdout))
+			decoder := json.NewDecoder(bytes.NewBufferString(content))
 			decoder.UseNumber()
 			if decoder.Decode(&native) != nil || native == nil {
 				// Historical truncated results may not be JSON. Their existing
@@ -67,18 +74,22 @@ func supervisorMCPContent(request llm.ChatRequest, rounds []domain.SupervisorToo
 				// JSON formatting and key order, across approval continuation.
 				continue
 			}
-			raw, err := json.Marshal(native)
-			if err != nil {
-				return llm.ChatRequest{}, err
+			if !retained {
+				raw, err := json.Marshal(native)
+				if err != nil {
+					return llm.ChatRequest{}, err
+				}
+				var truncated bool
+				envelope.Stdout, truncated = mcp.BoundResultJSON(raw, mcp.MaxClientResultBytes)
+				envelope.Truncated = envelope.Truncated || truncated
+				encoded, err := marshalSupervisorToolResultEnvelope(envelope)
+				if err != nil {
+					return llm.ChatRequest{}, err
+				}
+				message.ToolResults[resultIndex].Content = string(encoded)
 			}
-			var truncated bool
-			envelope.Stdout, truncated = mcp.BoundResultJSON(raw, mcp.MaxClientResultBytes)
-			envelope.Truncated = envelope.Truncated || truncated
-			encoded, err := marshalSupervisorToolResultEnvelope(envelope)
-			if err != nil {
-				return llm.ChatRequest{}, err
-			}
-			message.ToolResults[resultIndex].Content = string(encoded)
+			// Retained content supplies pixels only. Keep the original bounded
+			// envelope so a server's configured text limit cannot be widened here.
 			if len(message.Images) > imageCount {
 				note, _ := json.Marshal(map[string]any{"source_kind": "mcp", "source_ref": call.CallID,
 					"untrusted_evidence": true, "instruction_authorized": false, "images_supplied": len(message.Images) - imageCount})
@@ -91,6 +102,63 @@ func supervisorMCPContent(request llm.ChatRequest, rounds []domain.SupervisorToo
 		request.Messages[index] = message
 	}
 	return request, nil
+}
+
+func (s *AgentRunner) supervisorMCPResultContent(ctx context.Context, turn domain.SupervisorTurn,
+	call domain.SupervisorToolCall, envelope supervisorToolResultEnvelope, vision bool,
+) (string, bool, error) {
+	id := envelope.Metadata["artifact_stdout_id"]
+	if !vision || !envelope.Truncated || id == "" {
+		return envelope.Stdout, false, nil
+	}
+	fail := func() (string, bool, error) {
+		return "", false, apperror.New(apperror.CodeFailedPrecondition, "saved MCP result artifact does not match its completed tool evidence")
+	}
+	if s == nil || s.store == nil || ctx == nil {
+		return fail()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	reader, ok := s.store.(interface {
+		GetRunArtifact(context.Context, string) (artifact.Blob, error)
+	})
+	if !ok {
+		return fail()
+	}
+	authority, err := mcp.DecodeSupervisorCallAuthority(json.RawMessage(call.AuthorityJSON))
+	payload, canonical, payloadErr := toolgateway.NormalizeMCPToolPayload(json.RawMessage(call.PayloadJSON))
+	// Historical rounds retain their own actor/permission snapshot. Reading their
+	// saved evidence neither repeats the invocation nor renews execution authority.
+	if err != nil || payloadErr != nil || call.Validate() != nil ||
+		call.AgentAttribution == domain.AgentAttributionLegacyUnknown || call.AgentID == "" ||
+		call.AgentAttemptID != call.AttemptID || call.RunID != turn.Run.ID ||
+		turn.Run.SessionID == "" || turn.Mission.ID != turn.Run.MissionID ||
+		authority.RunID != call.RunID || authority.MissionID != turn.Mission.ID ||
+		authority.WorkspaceID != turn.Mission.WorkspaceID ||
+		authority.Version == mcp.SupervisorCatalogAuthorityVersion ||
+		(authority.Version == mcp.SupervisorOperationAuthorityVersion && authority.ServerID != payload.ServerID) ||
+		call.PayloadJSON != string(canonical) || envelope.Version != supervisorToolResultVersion ||
+		envelope.Tool != call.ToolName || envelope.Status != string(call.Status) ||
+		envelope.Metadata["server_id"] != payload.ServerID || envelope.Metadata["tool_name"] != payload.ToolName ||
+		envelope.Metadata["capability_fingerprint"] != payload.CapabilityFingerprint ||
+		!domain.ValidAgentID(envelope.Metadata["operation_id"]) {
+		return fail()
+	}
+	blob, err := reader.GetRunArtifact(ctx, id)
+	if err != nil {
+		return "", false, apperror.Wrap(apperror.CodeFailedPrecondition, "saved MCP result artifact could not be read", err)
+	}
+	if blob.Validate() != nil || blob.ID != id || blob.RunID != call.RunID ||
+		blob.SessionID != turn.Run.SessionID || blob.WorkspaceID != authority.WorkspaceID ||
+		blob.SourceID != envelope.Metadata["operation_id"] || blob.ToolName != call.ToolName ||
+		blob.Stream != artifact.StreamStdout || blob.MIME != "application/json" ||
+		blob.SHA256 != envelope.Metadata["artifact_stdout_sha256"] ||
+		strconv.FormatInt(blob.SizeBytes, 10) != envelope.Metadata["artifact_stdout_bytes"] ||
+		!json.Valid([]byte(blob.Content)) {
+		return fail()
+	}
+	return blob.Content, true, nil
 }
 
 func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bool, callID string) bool {
@@ -154,6 +222,11 @@ func projectMCPBinary(value map[string]any, field string, images *[]llm.ImagePar
 	delete(value, field) // Encoded bytes are never text tokens, even when unsupported.
 	status := "Binary content was not supplied to the model."
 	defer func() { value["model_input_status"] = status }()
+	if images == nil {
+		// Historical receipts carry outcome metadata, never a current image.
+		status = "Historical binary content was omitted from this text receipt. Obtain a fresh observation before judging the current visual state."
+		return
+	}
 	if mediaType != "image/png" && mediaType != "image/jpeg" && mediaType != "image/webp" && mediaType != "image/gif" {
 		status = "Unsupported binary MIME type; use a supported text or image representation."
 		return

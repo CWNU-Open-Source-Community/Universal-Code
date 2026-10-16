@@ -556,6 +556,17 @@ CREATE TABLE analyzer_start_requests (
 		CHECK(json_type(payload_json, '$.authority') = 'object')
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE approval_computer_use_app_grant_scopes (
+		grant_id TEXT PRIMARY KEY,
+		source_approval_id TEXT NOT NULL,
+		app_id TEXT NOT NULL,
+		scope_fingerprint TEXT NOT NULL,
+		FOREIGN KEY(grant_id) REFERENCES approval_session_grants(id) ON DELETE CASCADE,
+		FOREIGN KEY(source_approval_id) REFERENCES tool_approvals(id) ON DELETE CASCADE,
+		CHECK(length(app_id) BETWEEN 1 AND 65536 AND instr(app_id, char(0)) = 0),
+		CHECK(length(scope_fingerprint) = 64 AND scope_fingerprint NOT GLOB '*[^0-9a-f]*')
+	);
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE approval_grant_consumptions (
 		id TEXT PRIMARY KEY,
 		grant_id TEXT NOT NULL,
@@ -13682,6 +13693,8 @@ CREATE INDEX idx_command_runtime_jobs_active
 CREATE INDEX idx_command_runtime_jobs_run_created
 		ON command_runtime_jobs(run_id, created_at DESC, id);
 -- traverse-board-clean-install-object-boundary --
+CREATE INDEX idx_computer_use_app_grant_scope ON approval_computer_use_app_grant_scopes(scope_fingerprint);
+-- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_context_memories_scope_status_updated
 		ON context_memories(scope, scope_id, status, updated_at DESC, id DESC);
 -- traverse-board-clean-install-object-boundary --
@@ -15516,6 +15529,10 @@ CREATE TRIGGER trg_completion_requires_agent_attempt
 		BEGIN
 			SELECT RAISE(ABORT, 'completion report requires a usage-recorded Agent attempt');
 		END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_computer_use_app_grant_scope_immutable
+		BEFORE UPDATE ON approval_computer_use_app_grant_scopes BEGIN
+		SELECT RAISE(ABORT, 'Computer Use app grant scope is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_context_memories_identity_immutable
 		BEFORE UPDATE ON context_memories

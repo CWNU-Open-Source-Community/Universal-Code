@@ -1,0 +1,11 @@
+.computer-use-preview { min-width: 0; margin: 14px 0; }
+.computer-use-preview dl { display: grid; gap: 10px; margin: 12px 0; font-size: 13px; }
+.computer-use-preview dl > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; }
+.computer-use-preview dt { color: var(--prayu-muted); overflow-wrap: anywhere; }
+.computer-use-preview dd { min-width: 0; margin: 0; }
+.computer-use-preview code, .computer-use-preview pre { font: inherit; overflow-wrap: anywhere; white-space: pre-wrap; }
+.computer-use-preview pre { margin: 0; max-height: 240px; overflow: auto; }
+.computer-use-preview summary { color: var(--prayu-muted); cursor: pointer; font-size: 12px; }
+@media (max-width: 520px) {
+  .computer-use-preview dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+}

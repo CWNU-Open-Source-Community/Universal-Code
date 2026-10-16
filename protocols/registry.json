@@ -396,6 +396,22 @@
             2
           ],
           "mode": "write-new"
+        },
+        {
+          "id": "computer-use-app-scope-fingerprint-writer",
+          "source": "internal/approval/computer_use_app.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
+        },
+        {
+          "id": "computer-use-app-grant-fingerprint-writer",
+          "source": "internal/store/computer_use_app_approval.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
         }
       ],
       "readers": [
@@ -423,11 +439,19 @@
             2
           ],
           "status": "active"
+        },
+        {
+          "id": "computer-use-app-grant-fingerprint-reader",
+          "source": "internal/store/computer_use_app_approval.go",
+          "versions": [
+            1
+          ],
+          "status": "active"
         }
       ],
       "persisted_or_exported": true,
-      "persistence_boundary": "SQLite snapshots preserve permission, profile, interaction, approval, lease, and generation facts.",
-      "compatibility_rule": "Authority changes are additive and fail closed; old readers remain for every supported stored snapshot.",
+      "persistence_boundary": "SQLite snapshots preserve permission, profile, interaction, approval, lease, and generation facts. Computer Use app approval hashes persist in the same ledger: computer_use_app_scope.v1 binds the Run, permission/runtime fences, built-in registration and executable app identity in approval_computer_use_app_grant_scopes.scope_fingerprint; computer_use_app_grant.v1 fingerprints grant creation in approval_session_grants.request_fingerprint; computer_use_app_review.v1 binds the exact review request and grant ID in approval_operations.request_fingerprint. Constructors and readers are in internal/approval/computer_use_app.go and internal/store/computer_use_app_approval.go. Real SQLite approval, idempotent review replay, scope separation and revocation evidence is in internal/application/computer_use_app_approval_test.go.",
+      "compatibility_rule": "Authority changes are additive and fail closed; old readers remain for every supported stored snapshot. The Computer Use app identifiers version internal SHA-256 fingerprint domain separators and their ordered field bindings. Retain stored grant evidence and review replay compatibility; decisions continue through the existing MCP and approval-control DTOs.",
       "retirement_gate": {
         "mode": "migration-or-retention",
         "requirements": [
@@ -441,6 +465,9 @@
         "approval_grant_operation_key.v1",
         "approval_operation_key.v1",
         "approval_record.v1",
+        "computer_use_app_grant.v1",
+        "computer_use_app_review.v1",
+        "computer_use_app_scope.v1",
         "executionauth.authorization.v1",
         "full-cdp-session-operation.v1",
         "once_command.v1",

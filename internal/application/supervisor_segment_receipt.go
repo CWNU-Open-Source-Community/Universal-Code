@@ -275,7 +275,7 @@ func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound
 			}
 			previous := entries[index].Calls[position]
 			entry := previous
-			entry.Result, entry.ResultExcerpted, entry.DetailsOmitted = projection, true, false
+			entry.Result, entry.ResultExcerpted, entry.DetailsOmitted = projection, receipted[index].Calls[position].ToolName != "mcp_tool_search", false
 			entries[index].Calls[position] = entry
 			if updated, renderErr := render(); renderErr != nil || receiptTokens(updated) > tokenBudget {
 				entries[index].Calls[position] = previous
@@ -302,11 +302,17 @@ func supervisorSegmentReceiptProjection(call domain.SupervisorToolCall) (any, bo
 	if json.Unmarshal([]byte(projected), &envelope) != nil || envelope.Stdout == "" {
 		return nil, false
 	}
+	if call.ToolName == "mcp_tool_search" {
+		// Schemas and page membership are indivisible: clipping required/enum
+		// arrays or nested properties changes the advertised contract. The
+		// caller either fits the whole page or retains only its exact readback.
+		return json.RawMessage(envelope.Stdout), json.Valid([]byte(envelope.Stdout))
+	}
 	var structured any
 	if json.Unmarshal([]byte(envelope.Stdout), &structured) != nil {
 		return nil, false
 	}
-	return workspacePageReceiptValue(call, supervisorHistoricalBrowserResult(call, structured)), true
+	return workspacePageReceiptValue(call, supervisorHistoricalToolResult(call, structured)), true
 }
 
 // supervisorSegmentReceiptMessage projects the receipt as an untrusted

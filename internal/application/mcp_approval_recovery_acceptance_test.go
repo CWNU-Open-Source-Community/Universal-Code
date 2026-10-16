@@ -58,6 +58,7 @@ type mcpRecoveryAcceptanceProvider struct {
 	mu       sync.Mutex
 	requests int
 	results  []llm.ToolResult
+	respond  func(llm.ChatRequest, int) (*llm.ChatResponse, error)
 }
 
 func (*mcpRecoveryAcceptanceProvider) Name() string              { return "mcp-recovery-acceptance" }
@@ -66,6 +67,11 @@ func (p *mcpRecoveryAcceptanceProvider) Chat(_ context.Context, request llm.Chat
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.requests++
+	if p.respond != nil {
+		if response, err := p.respond(request, p.requests); response != nil || err != nil {
+			return response, err
+		}
+	}
 	var results []llm.ToolResult
 	for _, message := range request.Messages {
 		results = append(results, message.ToolResults...)

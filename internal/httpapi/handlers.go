@@ -911,6 +911,11 @@ func (a *API) runApprovals(request *http.Request, runID string) (any, *Page, err
 				}
 			}
 		}
+		if record.ToolName == string(toolgateway.MCPToolCallTool) {
+			if base, ok := a.store.(application.ApprovalControlStore); ok {
+				item.AllowedActions = application.MCPApprovalDecisionActions(request.Context(), base, record, run.Terminal())
+			}
+		}
 		if record.ToolName == "web_fetch" {
 			if recovering {
 				items[index] = item

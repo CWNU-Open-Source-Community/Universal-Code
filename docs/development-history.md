@@ -267,5 +267,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v196 | 在 MCP 服务传输约束中接入 SSE 与 WebSocket，保留历史行身份、描述符、审批及审计关联 | admit SSE and WebSocket in MCP server transport constraints while preserving historical row identities, descriptors, approvals and audit relationships |
 | v197 | 在既有 Skill 选择账本中支持原生组件的精确安装与代次绑定、可空作者版本和同包多组件选择，保留旧选择行身份、指纹与收据 | admit exact installation and generation bindings, optional author versions and multiple native Skill components per package in the existing selection ledger while preserving historical row identities, fingerprints and receipts |
 | v198 | 增加有来源的待确认经验队列，确认事务写入既有项目记忆，终态仅保留无正文审核记录，防止重复确认或删除后复活 | add source-bound experience candidates, atomically promote explicitly confirmed entries to existing project memory, and retain content-free resolution records to prevent duplicate confirmation or revival after deletion |
+| v199 | 复用既有审批与撤销账本，为 Computer Use 应用授权保存不可变的应用身份、来源审批及范围指纹 | persist immutable application identity, source approval and scope fingerprints for Computer Use app grants using the existing approval and revocation ledger |
 
 </details>

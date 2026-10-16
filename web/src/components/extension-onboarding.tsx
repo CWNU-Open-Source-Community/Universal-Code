@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { APIClient } from "../api/client";
 import type { ExtensionMCPServerView, ExtensionPluginInstallationView } from "../api/types";
+import { isBuiltinComputerUseServer } from "../api/computer-use";
 import { useLocale } from "../lib/locale";
 import { MCPCredentialControls } from "./mcp-credential-controls";
 import { MCPEnvironmentCredentialControls } from "./mcp-environment-credentials";
@@ -189,6 +190,7 @@ export function MCPReviewControls({ client, server, onOpenTask, credentialCapabi
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
+  const builtin = isBuiltinComputerUseServer(server);
   const action = server.state === "capabilities_pending" ? "enable_capabilities" : "approve_discovery";
   const reviewable = ["staged", "disabled", "quarantined", "capabilities_pending"].includes(server.state);
   const review = useMutation({ mutationFn: () => client.reviewMCPServer(server.id, {
@@ -199,10 +201,11 @@ export function MCPReviewControls({ client, server, onOpenTask, credentialCapabi
   const draft = t(`请在当前任务中通过现有 MCP 权限与审批路径调用 Server ${server.id} 的工具 ${firstTool}，使用该工具需要的明确参数。请报告实际调用结果、调用状态以及任务中的证据。`,
     `In this task, call tool ${firstTool} on MCP server ${server.id} through the existing task permissions and approval flow, with explicit arguments required by the tool. Report the actual result, call status, and evidence in the task.`);
   return <div className="extension-review">
-    {server.state !== "revoked" && <ExtensionSteps current={server.state === "enabled" ? 3 : server.state === "capabilities_pending" ? 2 : server.state === "discovery_approved" ? 1 : 0}
+    {builtin && <p>{t("Windows Computer Use 随宿主自动登记，操作时沿用当前任务的 Agent 权限与审批。", "Windows Computer Use is registered automatically by the host. App control follows the current task's Agent permissions and approvals.")}</p>}
+    {!builtin && server.state !== "revoked" && <ExtensionSteps current={server.state === "enabled" ? 3 : server.state === "capabilities_pending" ? 2 : server.state === "discovery_approved" ? 1 : 0}
       steps={[t("核对登记", "Review registration"), t("批准并发现", "Approve and discover"), t("审查并启用", "Review and enable"), t("任务中调用", "Call in a task")]} />}
-    {server.transport === "stdio" ? <MCPEnvironmentCredentialControls client={client} server={server} capability={credentialCapability} /> :
-      <MCPCredentialControls client={client} server={server} capability={credentialCapability} />}
+    {!builtin && (server.transport === "stdio" ? <MCPEnvironmentCredentialControls client={client} server={server} capability={credentialCapability} /> :
+      <MCPCredentialControls client={client} server={server} capability={credentialCapability} />)}
     {server.cwd && <p>{t("工作目录", "Working directory")}: {server.cwd}</p>}
     {server.env && Object.keys(server.env).length > 0 && <p>{t("显式非敏感环境", "Explicit non-sensitive environment")}: {Object.entries(server.env).map(([name, value]) => `${name}=${value}`).join(" · ")}</p>}
     {server.headers && Object.keys(server.headers).length > 0 && <p>{t("固定 HTTP header", "Fixed HTTP headers")}: {Object.entries(server.headers).map(([name, value]) => `${name}: ${value}`).join(" · ")}</p>}

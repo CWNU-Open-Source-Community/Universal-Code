@@ -14,6 +14,10 @@ import (
 )
 
 func validateMCPApprovalSourceTx(ctx context.Context, tx *sql.Tx, p approval.Proposal) error {
+	return validateMCPApprovalSourceStateTx(ctx, tx, p, false)
+}
+
+func validateMCPApprovalSourceStateTx(ctx context.Context, tx *sql.Tx, p approval.Proposal, allowStarted bool) error {
 	binding, bound, err := runBindingForSessionTx(ctx, tx, p.SessionID)
 	if err != nil {
 		return err
@@ -33,7 +37,7 @@ func validateMCPApprovalSourceTx(ctx context.Context, tx *sql.Tx, p approval.Pro
 	if err != nil {
 		return err
 	}
-	if started || c.Status != domain.SupervisorToolPending || c.ToolName != mcp.OperationApprovalTool ||
+	if (started && !allowStarted) || c.Status != domain.SupervisorToolPending || c.ToolName != mcp.OperationApprovalTool ||
 		c.AgentAttribution == domain.AgentAttributionLegacyUnknown || c.AgentID == "" || c.AgentAttemptID != c.AttemptID ||
 		a.Version != mcp.SupervisorOperationAuthorityVersion || a.RunID != c.RunID || a.ServerID != payload.ServerID ||
 		string(canonical) != c.PayloadJSON || p.WorkspaceID != a.WorkspaceID || p.ToolName != mcp.OperationApprovalTool ||

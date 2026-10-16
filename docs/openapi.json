@@ -33194,6 +33194,7 @@
               "approve_once",
               "approve_for_thread",
               "approve_for_run",
+              "approve_for_run_app",
               "deny"
             ],
             "type": "string"
@@ -33235,6 +33236,7 @@
               "approve_once",
               "approve_for_thread",
               "approve_for_run",
+              "approve_for_run_app",
               "deny"
             ],
             "type": "string"
@@ -33360,6 +33362,7 @@
               "fetch_public_https",
               "browser_sensitive_action",
               "mcp_server_and_tool",
+              "computer_use_app",
               "command_process",
               "unavailable"
             ],
