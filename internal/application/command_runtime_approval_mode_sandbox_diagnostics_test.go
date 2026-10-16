@@ -173,25 +173,31 @@ func (x *sandboxApprovalObservedIO) ExportOwnedOutputs(ctx context.Context, requ
 	return x.fakeDockerContainerIOTransport.ExportOwnedOutputs(ctx, request, plan)
 }
 
-// This barrier is after the real transaction commits. It neither edits the
-// candidate's budget snapshot nor intercepts normal Supervisor accounting.
-type sandboxApprovalCandidateBarrier struct {
+// Capture the committed candidate without blocking admission. Hold the native
+// wait after final start authority passes so Supervisor wait can run concurrently.
+type sandboxApprovalNativeWaitBarrier struct {
 	*store.SQLiteStore
+	*sandboxApprovalObservedLifecycle
 	captured chan sandbox.ExecutionCandidate
+	waiting  chan struct{}
 	release  chan struct{}
 }
 
-func (s *sandboxApprovalCandidateBarrier) CreateSandboxExecutionCandidate(ctx context.Context, candidate sandbox.ExecutionCandidate, operation sandbox.CandidateOperation) (sandbox.ValidatedExecutionCandidate, bool, error) {
+func (s *sandboxApprovalNativeWaitBarrier) CreateSandboxExecutionCandidate(ctx context.Context, candidate sandbox.ExecutionCandidate, operation sandbox.CandidateOperation) (sandbox.ValidatedExecutionCandidate, bool, error) {
 	value, replayed, err := s.SQLiteStore.CreateSandboxExecutionCandidate(ctx, candidate, operation)
-	if err != nil || replayed {
-		return value, replayed, err
+	if err == nil && !replayed {
+		s.captured <- value.Candidate
 	}
-	s.captured <- value.Candidate
+	return value, replayed, err
+}
+
+func (s *sandboxApprovalNativeWaitBarrier) Wait(ctx context.Context, request sandbox.DockerContainerLifecycleRequest, fence sandbox.DockerContainerLifecycleFence) (sandbox.DockerContainerLifecycleObservation, error) {
+	close(s.waiting)
 	select {
 	case <-s.release:
-		return value, replayed, nil
+		return s.sandboxApprovalObservedLifecycle.Wait(ctx, request, fence)
 	case <-ctx.Done():
-		return value, replayed, ctx.Err()
+		return sandbox.DockerContainerLifecycleObservation{}, ctx.Err()
 	}
 }
 
@@ -340,12 +346,20 @@ func TestCommandRuntimeApprovalModeSandboxConcurrentSupervisorWait(t *testing.T)
 	for _, mode := range []domain.RunExecutionPermissionMode{domain.RunExecutionPermissionAsk, domain.RunExecutionPermissionAuto, domain.RunExecutionPermissionFull} {
 		t.Run(string(mode), func(t *testing.T) {
 			f, probe, standard := newSandboxApprovalObservedFixture(t, mode)
-			barrier := &sandboxApprovalCandidateBarrier{SQLiteStore: f.st, captured: make(chan sandbox.ExecutionCandidate, 1), release: make(chan struct{})}
+			barrier := &sandboxApprovalNativeWaitBarrier{SQLiteStore: f.st,
+				sandboxApprovalObservedLifecycle: standard.docker.lifecycleTransport.(*sandboxApprovalObservedLifecycle),
+				captured:                         make(chan sandbox.ExecutionCandidate, 1), waiting: make(chan struct{}), release: make(chan struct{})}
 			standard.manifests.store = barrier
+			standard.docker.lifecycleTransport = barrier
 			var releaseOnce sync.Once
 			release := func() { releaseOnce.Do(func() { close(barrier.release) }) }
 			t.Cleanup(release)
 			jobID := sandboxApprovalObservedStart(t, f)
+			select {
+			case <-barrier.waiting:
+			case <-time.After(45 * time.Second):
+				t.Fatal("admitted native process did not reach wait")
+			}
 			var candidate sandbox.ExecutionCandidate
 			select {
 			case candidate = <-barrier.captured:
@@ -354,19 +368,29 @@ func TestCommandRuntimeApprovalModeSandboxConcurrentSupervisorWait(t *testing.T)
 			}
 			sandboxApprovalObservedWait(t, f, jobID, 2)
 			usage, err := f.st.GetToolCallUsage(t.Context(), f.turn.Run.ID)
-			if err != nil || candidate.ToolCallsUsed != 1 || usage.Consumed != 2 || usage.Consumed >= int64(f.turn.Run.Budget.MaxToolCalls) {
-				t.Fatalf("normal wait accounting precondition was not established: candidate=%d current=%d budget=%d err=%v", candidate.ToolCallsUsed, usage.Consumed, f.turn.Run.Budget.MaxToolCalls, err)
+			running, jobErr := f.st.GetCommandRuntimeJob(t.Context(), jobID)
+			if err != nil || jobErr != nil || running.State != runner.CommandRuntimeJobRunning || candidate.ToolCallsUsed != 1 || usage.Consumed != 2 || usage.Consumed >= int64(f.turn.Run.Budget.MaxToolCalls) {
+				t.Fatalf("normal concurrent wait accounting precondition was not established: state=%s candidate=%d current=%d budget=%d err=%v jobErr=%v", running.State, candidate.ToolCallsUsed, usage.Consumed, f.turn.Run.Budget.MaxToolCalls, err, jobErr)
 			}
 			release()
 			job := sandboxApprovalObservedTerminal(t, f, probe, jobID)
 			call := sandboxApprovalObservedWait(t, f, jobID, 3)
 			sandboxApprovalDiagnosticReport(t, f, probe, job)
-			// This remains red while an ordinary accounted wait poisons the
-			// admission snapshot. Do not relax the budget guard to green it.
+			// An ordinary accounted wait must preserve the admitted Job's
+			// completion and its original candidate budget snapshot.
 			if job.State != runner.CommandRuntimeJobCompleted || !strings.Contains(call.ResultJSON, "controlled sandbox output") {
 				t.Fatalf("normal concurrent Supervisor wait invalidated its still-budgeted job: state=%s frames=%s", job.State, job.OutputFramesJSON)
 			}
 			f.assertDispatchCounts(t, 1, 1)
+			creates := 0
+			for _, event := range f.recorder.snapshot() {
+				if event == "mutate:create" {
+					creates++
+				}
+			}
+			if creates != 1 {
+				t.Fatalf("concurrent Supervisor wait created %d native containers", creates)
+			}
 		})
 	}
 }
