@@ -22,13 +22,15 @@ const (
 	maxExtensionPluginImportBodyBytes = ((plugins.MaxArchiveBytes + 2) / 3 * 4) + 8192
 )
 
-// Onboarding and source acquisition are separate additive controller contracts.
-// Older adapters can keep ZIP upload without advertising remote acquisition.
+// Onboarding is additive. Review-only adapters retain their existing contract
+// and advertise no import capability until this interface is implemented.
 type ExtensionOnboardingController interface {
 	RegisterMCP(context.Context, mcp.ServerDescriptor) (mcp.ServerRecord, bool, error)
 	ImportPlugin(context.Context, []byte, string) (plugins.Installation, bool, error)
 }
 
+// Source acquisition is additive to ZIP upload; older adapters need not
+// advertise remote acquisition.
 type ExtensionPluginSourceController interface {
 	ImportPluginSource(context.Context, application.ImportPluginSourceRequest) (application.ImportPluginSourceResult, error)
 }
