@@ -520,7 +520,7 @@ func (s *WorkspaceCheckpointService) commandJobBoundaryConflict(ctx context.Cont
 	// uses its exact Job and operation. Only the latter supports this guidance.
 	if err != nil || job.ID != open.TriggerReceiptID || job.RunID != binding.run.ID ||
 		job.MissionID != binding.mission.ID || job.SessionID != binding.session.ID ||
-		job.WorkspaceID != binding.workspace.ID || open.OperationKeyDigest !=
+		!s.commandJobMatchesFileWorkspace(ctx, binding, job) || open.OperationKeyDigest !=
 		workspaceBoundaryOperationDigest(job.RunID, open.Kind, job.OperationDigest) {
 		return nil
 	}
@@ -529,6 +529,32 @@ func (s *WorkspaceCheckpointService) commandJobBoundaryConflict(ctx context.Cont
 	return apperror.New(apperror.CodeConflict, fmt.Sprintf(
 		"%s: command_runtime job %q owns the command boundary. Wait for this Job to finish, or stop this same Job with command_runtime %s. Use action=read or action=wait with its original job_id until the Job is terminal and its boundary completes, then retry this file edit with the original apply_arguments while the file hashes still match. After the edit succeeds, restart that service with action=start only if this Job was the dev service needed for the task; use the new service Job's candidate_urls for readiness, navigation and browser verification.",
 		workspaceOpenMutationConflict, job.ID, cancel))
+}
+
+func (s *WorkspaceCheckpointService) commandJobMatchesFileWorkspace(ctx context.Context,
+	binding workspaceCheckpointBinding, job runner.CommandRuntimeJob,
+) bool {
+	ownedStore, owned := s.store.(*drydockFileBoundaryStore)
+	if !owned {
+		return job.WorkspaceID == binding.workspace.ID
+	}
+	// Sandbox Jobs retain their logical source identity. Verify the current
+	// logical holder and physical Drydock root without rewriting the Job.
+	if ownedStore.owner == nil || job.WorkspaceID != binding.mission.WorkspaceID {
+		return false
+	}
+	workspace, found, err := readRunFileDrydock(ctx, ownedStore.owner.store, binding.run.ID)
+	if err != nil || !found || workspace.WorkspaceID != binding.workspace.ID ||
+		workspace.Path != binding.workspace.RootPath {
+		return false
+	}
+	bound, err := commandRuntimeDrydockBound(ctx, ownedStore.owner.store, workspace,
+		binding.run.ID, binding.mission.ID, binding.session.ID, job.WorkspaceID)
+	if err != nil || !bound {
+		return false
+	}
+	rootSHA, err := runner.CommandRuntimeWorkspaceRootSHA256(binding.workspace.RootPath)
+	return err == nil && job.WorkspaceRootSHA256 == rootSHA
 }
 
 func (s *WorkspaceCheckpointService) CompleteBoundary(ctx context.Context,

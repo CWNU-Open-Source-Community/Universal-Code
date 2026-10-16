@@ -7,6 +7,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/runworktree"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/workspacecheckpoint"
@@ -44,6 +45,17 @@ type drydockFileBoundaryStore struct {
 	WorkspaceCheckpointStore
 	owner       *RunWorktreeService
 	gitMutation bool
+}
+
+func (s *drydockFileBoundaryStore) GetCommandRuntimeJob(ctx context.Context, id string) (runner.CommandRuntimeJob, error) {
+	reader, ok := s.WorkspaceCheckpointStore.(interface {
+		GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error)
+	})
+	if !ok {
+		return runner.CommandRuntimeJob{}, apperror.New(apperror.CodeFailedPrecondition,
+			"command runtime Job metadata is unavailable")
+	}
+	return reader.GetCommandRuntimeJob(ctx, id)
 }
 
 func (s *RunWorktreeService) gitMutationCheckpointService() *WorkspaceCheckpointService {
