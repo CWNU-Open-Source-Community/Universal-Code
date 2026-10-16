@@ -1,0 +1,233 @@
+{
+  "date": "2026-10-16",
+  "platform": "Windows Host",
+  "configured_model": "deepseek-v4-flash",
+  "provider_reported_model": "deepseek-flash",
+  "cases": [
+    {
+      "case": "diagnostics",
+      "run_id": "run-20261016140440-f45001d9ceda",
+      "model_calls": 12,
+      "image_requests": 0,
+      "provider_qualification_calls": 2,
+      "steps": [
+        {
+          "call_id": "toolu_a5f026a46fd6936766985dfa",
+          "turn": 1,
+          "tool": "workspace_apply",
+          "status": "completed",
+          "edit_id": "edit-1de227a84e5e02debb8f33f438fbafd7",
+          "file_written": true,
+          "original_sha256": "79f9a34cf932633844c267c945ecc41f248897c381beeaf83d0e98af762e7a06",
+          "proposed_sha256": "0220d069d745c4aceb9ea40bdbeb223c224b2c30386abf0916a15f5fee95d46f",
+          "path": "sample.go",
+          "diagnostics_status": "current",
+          "delta_status": "current",
+          "delta_reason": "",
+          "delta": {
+            "added": [
+              "6db288536f48f2d7951d7cb01fdcb46e2adb464479ffde99f526499e06d33088"
+            ],
+            "resolved": [],
+            "persisting": [
+              "b4ca039d69c473e94166f99c871770f88d15e2edc985e963526b10fbca6a20ef"
+            ]
+          },
+          "document_version": 2,
+          "baseline_document_version": 1
+        },
+        {
+          "call_id": "toolu_a9785bbdbcd0fcb766de22b7",
+          "turn": 2,
+          "tool": "workspace_apply",
+          "status": "completed",
+          "edit_id": "edit-fd9e384b8dc182c444a19226ed9bd4ff",
+          "file_written": true,
+          "original_sha256": "0220d069d745c4aceb9ea40bdbeb223c224b2c30386abf0916a15f5fee95d46f",
+          "proposed_sha256": "79f9a34cf932633844c267c945ecc41f248897c381beeaf83d0e98af762e7a06",
+          "path": "sample.go",
+          "diagnostics_status": "current",
+          "delta_status": "current",
+          "delta_reason": "",
+          "delta": {
+            "added": [],
+            "resolved": [
+              "6db288536f48f2d7951d7cb01fdcb46e2adb464479ffde99f526499e06d33088"
+            ],
+            "persisting": [
+              "b4ca039d69c473e94166f99c871770f88d15e2edc985e963526b10fbca6a20ef"
+            ]
+          },
+          "document_version": 3,
+          "baseline_document_version": 2
+        }
+      ],
+      "final_source": "package sample\nvar Existing int = \"old\"\nvar Updated int = 1\n",
+      "final_source_sha256": "79f9a34cf932633844c267c945ecc41f248897c381beeaf83d0e98af762e7a06",
+      "jobs_after_control_plane_close": [],
+      "verification": "persisted diagnostic deltas and final source independently checked"
+    },
+    {
+      "case": "browser",
+      "run_id": "run-20261016144540-1651c5e08763",
+      "model_calls": 30,
+      "image_requests": 1,
+      "provider_qualification_calls": 2,
+      "steps": [
+        {
+          "call_id": "toolu_7e47474b4aaab319ad200cb6",
+          "turn": 1,
+          "tool": "browser_navigate",
+          "status": "completed",
+          "canonical_url": "http://127.0.0.1:55204/",
+          "service": {
+            "job_id": "command-job-26aae1ab326e817bcfe0913c",
+            "url": "http://127.0.0.1:55204/",
+            "source": "command_output",
+            "state": "ready",
+            "http_status": 200,
+            "verified": true,
+            "checked_at": "2026-10-16T14:45:47.4365551Z"
+          },
+          "navigated": true
+        },
+        {
+          "call_id": "toolu_25a617e46ce7ff65e2cc24cf",
+          "turn": 1,
+          "tool": "browser_snapshot",
+          "status": "completed",
+          "text": "计数器验收\n\n点击按钮应该增加计数。\n\n计数：0\n增加计数",
+          "button_disabled": [
+            true
+          ]
+        },
+        {
+          "call_id": "toolu_aaa297f836d41068ee59da0f",
+          "turn": 2,
+          "tool": "workspace_apply",
+          "status": "failed",
+          "code": "CONFLICT",
+          "message": "another workspace mutation boundary is still open for this Run: command_runtime job \"command-job-26aae1ab326e817bcfe0913c\" owns the command boundary. Wait for this Job to finish, or stop this same Job with command_runtime {\"version\":\"command-runtime.v2\",\"action\":\"cancel\",\"job_id\":\"command-job-26aae1ab326e817bcfe0913c\",\"wait_milliseconds\":1000}. Use action=read or action=wait with its original job_id until the Job is terminal and its boundary completes, then retry this file edit with the original apply_arguments while the file hashes still match. After the edit succeeds, restart that service with action=start only if this Job was the dev service needed for the task; use the new service Job's candidate_urls for readiness, navigation and browser verification."
+        },
+        {
+          "call_id": "toolu_766d0663dd5705acf771a408",
+          "turn": 3,
+          "tool": "workspace_apply",
+          "status": "completed",
+          "edit_id": "edit-b1150a8479107a5614442ef0cf4e76a4",
+          "file_written": true,
+          "original_sha256": "cd5e20a09d8f86ad220139363c2a127ee7cd11cfb2adaf9592e25a46da6a335e",
+          "proposed_sha256": "84a61b42011b9eeab8707b9351e681d44d49e9b00291ba197a9de5f248d3493d",
+          "path": "index.html",
+          "diagnostics_status": "unavailable",
+          "delta_status": "unavailable",
+          "delta_reason": "baseline_no_ready_diagnostics_server",
+          "delta": {
+            "added": [],
+            "resolved": [],
+            "persisting": []
+          }
+        },
+        {
+          "call_id": "toolu_3fa5e4361f7a452c3e6272dd",
+          "turn": 4,
+          "tool": "browser_navigate",
+          "status": "completed",
+          "canonical_url": "http://127.0.0.1:60332/",
+          "service": {
+            "job_id": "command-job-edb5e7a47dced6f46487f330",
+            "url": "http://127.0.0.1:60332/",
+            "source": "command_output",
+            "state": "ready",
+            "http_status": 200,
+            "verified": true,
+            "checked_at": "2026-10-16T14:46:25.0647359Z"
+          },
+          "navigated": true
+        },
+        {
+          "call_id": "toolu_c2c7c43f06f8e414674322c5",
+          "turn": 4,
+          "tool": "browser_snapshot",
+          "status": "completed",
+          "text": "计数器验收\n\n点击按钮应该增加计数。\n\n计数：0\n增加计数",
+          "button_disabled": [
+            false
+          ]
+        },
+        {
+          "call_id": "toolu_7ae3d0071c85500d5e1a6166",
+          "turn": 4,
+          "tool": "browser_screenshot",
+          "status": "completed",
+          "sha256": "44f6b7c445e056f7c2cf696c12b2bcb7218a24d32245855d408ac15228573a4a",
+          "bytes": 15786,
+          "document_epoch": 12,
+          "artifact": "counter-before-click.png"
+        },
+        {
+          "call_id": "toolu_f273d4b4694242111b02e81a",
+          "turn": 5,
+          "tool": "browser_snapshot",
+          "status": "completed",
+          "text": "计数器验收\n\n点击按钮应该增加计数。\n\n计数：0\n增加计数",
+          "button_disabled": [
+            false
+          ]
+        },
+        {
+          "call_id": "toolu_6c53162080fc9977a2a6225a",
+          "turn": 5,
+          "tool": "browser_click",
+          "status": "completed",
+          "dispatched": true
+        },
+        {
+          "call_id": "toolu_ff11732da82090906fb27d4e",
+          "turn": 5,
+          "tool": "browser_snapshot",
+          "status": "completed",
+          "text": "计数器验收\n\n点击按钮应该增加计数。\n\n计数：1\n增加计数",
+          "button_disabled": [
+            false
+          ]
+        },
+        {
+          "call_id": "toolu_56164535a58366e2a6614e60",
+          "turn": 5,
+          "tool": "browser_screenshot",
+          "status": "completed",
+          "sha256": "6e2417a0ac15f317f5daff20f6604cf01ecd4b3b12e1b0d0a37a3534bb7c5cf9",
+          "bytes": 15651,
+          "document_epoch": 12,
+          "artifact": "counter-after-click.png"
+        },
+        {
+          "call_id": "toolu_4812c1e60db4755ab9a096fc",
+          "turn": 5,
+          "tool": "browser_snapshot",
+          "status": "completed",
+          "text": "计数器验收\n\n点击按钮应该增加计数。\n\n计数：1\n增加计数",
+          "button_disabled": [
+            false
+          ]
+        }
+      ],
+      "final_source": "<!doctype html><meta charset=\"utf-8\"><title>Counter acceptance</title><style>body{font:18px system-ui;margin:48px}button{padding:12px 22px}output{display:block;margin:20px 0}</style><h1>计数器验收</h1><p>点击按钮应该增加计数。</p><output id=\"count\">计数：0</output><button onclick=\"document.getElementById('count').textContent='计数：'+(++window.count)\">增加计数</button><script>window.count=0</script>",
+      "final_source_sha256": "84a61b42011b9eeab8707b9351e681d44d49e9b00291ba197a9de5f248d3493d",
+      "jobs_after_control_plane_close": [
+        {
+          "id": "command-job-26aae1ab326e817bcfe0913c",
+          "state": "cancelled",
+          "tree_reaped": 1
+        },
+        {
+          "id": "command-job-edb5e7a47dced6f46487f330",
+          "state": "interrupted",
+          "tree_reaped": 1
+        }
+      ],
+      "verification": "persisted tool receipts and final source independently checked; final browser image visually inspected"
+    }
+  ]
+}

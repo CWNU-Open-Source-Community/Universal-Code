@@ -60,4 +60,5 @@ Agent 浏览器目前仅在 Windows 启用。状态 API 增加可选 `unavailabl
 清洗后的分 Job URL 输出，以及 Windows Job 内外的真实 IPv4/IPv6 HTTP
 监听器。诊断增量另以
 gopls v0.21.1 在 Windows 普通目录和 Git 项目中实测新增、遗留与修复后消失的
-类型错误。模型修复任务与 dev server 浏览器整体验收仍需单独记录。
+类型错误。2026-10-16 的真实 DeepSeek 诊断修复、浏览器修复与开发服务复验
+见[完整链路验收记录](../acceptance/2026-10-16-agent-verification-feedback.md)。
