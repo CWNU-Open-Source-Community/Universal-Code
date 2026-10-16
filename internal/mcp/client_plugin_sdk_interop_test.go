@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/agentpackages"
+	"cyberagent-workbench/internal/computeruse"
 	"cyberagent-workbench/internal/toolcontract"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -28,6 +29,9 @@ const sdkSharedFixtureEnv = "TRAVERSE_MCP_SDK_SHARED_FIXTURE"
 // Go test flags. The copied test executable therefore enters the SDK server
 // here, without changing the manifest or writing test-runner output to stdout.
 func TestMain(m *testing.M) {
+	if handled, code := computeruse.Execute(os.Args[1:], os.Stdin, os.Stdout); handled {
+		os.Exit(code)
+	}
 	if os.Getenv(sdkSharedFixtureEnv) == "1" && filepath.Base(os.Args[0]) == "helper.exe" {
 		if err := sharedFixtureSDKServer().Run(context.Background(), &sdk.StdioTransport{}); err != nil {
 			fmt.Fprintln(os.Stderr, err)

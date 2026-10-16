@@ -2,11 +2,43 @@ package mcp
 
 import (
 	"context"
+	"net"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/computeruse"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// Discover the production service without observing or controlling the desktop.
+// The pinned host snapshot must match what the SDK actually negotiates, or the
+// first authorized call would invalidate the operator's approval.
+func TestComputerUseShippedCatalogMatchesSDKDiscovery(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	t.Cleanup(func() { _ = serverConn.Close(); _ = clientConn.Close() })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- computeruse.Serve(ctx, serverConn, serverConn) }()
+	client := newClient(newSDKClient(&sdk.IOTransport{Reader: clientConn, Writer: clientConn}), computerUseDescriptor("workspace"))
+	defer client.Close()
+	actual, err := client.Discover(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := computerUseCapabilities(time.Now())
+	if err != nil || actual.Fingerprint != expected.Fingerprint {
+		t.Fatalf("shipped catalog differs from SDK discovery: expected=%+v actual=%+v err=%v", expected, actual, err)
+	}
+	_ = client.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Computer Use service did not exit after its host disconnected")
+	}
+}
 
 type computerUseStoreFake struct{ clientStoreFake }
 

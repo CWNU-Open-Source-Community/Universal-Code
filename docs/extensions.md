@@ -2,6 +2,8 @@
 
 本文说明 schema v120-v121 引入的低信任扩展运行时及后续 Universal Code 接线。英文说明见下半部分。
 
+Windows 桌面版内置的应用操作服务见 [Computer Use 使用与授权](computer-use.md)。它复用下述 MCP 运行时，由宿主提供固定执行器和工具清单。
+
 ## 安全模型
 
 MCP Server、Plugin 包、Skill 正文、Hook 注释和远程返回值都不是新的控制平面。Go 仍拥有状态机、凭证、工具注册表、JSON Schema 校验、Policy、预算、Run/Workspace Scope 和最终调用权。

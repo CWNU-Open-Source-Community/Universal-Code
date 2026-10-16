@@ -156,6 +156,26 @@ func (a *API) runApprovalPreview(request *http.Request, runID, approvalID string
 		add("tool", payload.ToolName)
 		add("arguments", string(payload.Arguments))
 		add("summary", "Start/connect to this reviewed MCP server, discover its capabilities and invoke this exact tool. External effects are unverified.")
+		if ok {
+			target, targetErr := application.MCPComputerUseApprovalPreview(ctx, base, record)
+			if targetErr != nil {
+				return stale()
+			}
+			if target != nil {
+				view.Effect = "computer_use_app"
+				view.Fields = nil
+				add("app_path", target.Executable)
+				add("app_id", target.AppID)
+				add("window_id", target.WindowID)
+				add("tool_name", target.ToolName)
+				add("arguments", string(payload.Arguments))
+				if target.SystemShortcut {
+					add("authorization_scope", "仅本次系统快捷键；可能影响桌面或其他应用（"+run.ID+"）")
+				} else {
+					add("authorization_scope", "当前任务（"+run.ID+"）")
+				}
+			}
+		}
 	case "shell":
 		source, ok := a.store.(interface {
 			GetToolRun(context.Context, string) (toolrun.ToolRun, error)

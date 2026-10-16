@@ -28,3 +28,5 @@ go test ./internal/computeruse -run '^TestLiveWindowsFixture$' -count=1 -v -time
 ```
 
 It verifies Chinese/English text, multiline scrolling, a button click, consumed-observation rejection, and each PNG's actual dimensions. Original PNGs and fixture-only metadata are saved in a new subdirectory. It selects only its own fixture PID/title/HWND, calculates control coordinates from current rectangles, and cleans up only the two child processes it created. Leave the fixture unobstructed during this explicitly enabled desktop test. Missing any variable skips the test before launching processes.
+
+If Windows refuses foreground activation, the test fails before input. To verify the documented manual-selection path, also set `UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS=1`. After refusal, the runner waits at most 60 seconds for the user to select its own fixture; it sends no input during that wait. The result records `activation_method: "manual_selection"` instead of claiming automatic activation succeeded. If the fixture is not selected, the test fails and closes only its own children.

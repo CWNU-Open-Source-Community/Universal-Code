@@ -83,6 +83,9 @@ func (s *ExtensionControlService) InventoryForScope(ctx context.Context, runID, 
 			return ExtensionInventory{}, err
 		}
 		result.WorkspaceID = workspaceID
+		if err := s.mcp.EnsureComputerUse(ctx, workspaceID); err != nil {
+			return ExtensionInventory{}, err
+		}
 		result.MCPServers, err = s.store.ListMCPClientServers(ctx, "", workspaceID,
 			mcp.MaxClientServers)
 		if err != nil {
@@ -103,6 +106,9 @@ func (s *ExtensionControlService) InventoryForScope(ctx context.Context, runID, 
 			"extension Run and Workspace scopes do not match")
 	}
 	result.RunID, result.WorkspaceID = run.ID, mission.WorkspaceID
+	if err := s.mcp.EnsureComputerUse(ctx, mission.WorkspaceID); err != nil {
+		return ExtensionInventory{}, err
+	}
 	result.MCPServers, err = s.store.ListMCPClientServers(ctx, run.ID,
 		mission.WorkspaceID, mcp.MaxClientServers)
 	if err != nil {

@@ -7,10 +7,14 @@ import (
 	"syscall"
 
 	"cyberagent-workbench/internal/app"
+	"cyberagent-workbench/internal/computeruse"
 	"cyberagent-workbench/internal/sbxmcp"
 )
 
 func main() {
+	if handled, code := computeruse.Execute(os.Args[1:], os.Stdin, os.Stdout); handled {
+		os.Exit(code)
+	}
 	if handled, code := sbxmcp.Execute(os.Args[1:], os.Stdin, os.Stdout); handled {
 		os.Exit(code)
 	}

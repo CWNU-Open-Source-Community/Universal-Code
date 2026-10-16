@@ -4,6 +4,7 @@ import { Ban, Check, Globe2, LoaderCircle, ShieldAlert } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ApprovalDecisionControlRequestView, ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
+import { ComputerUsePreview } from "../../components/computer-use-preview";
 import { v2QueryKeys } from "../query-keys";
 
 type Action = ApprovalDecisionControlRequestView["action"];
@@ -137,20 +138,22 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
       <div><strong>{recovering ? webFetch ? "恢复上次网页读取" : "恢复上次审批决定" : webFetch ? "允许读取这个网站？"
         : computerUse ? "允许操作这个应用？" : dryRun ? "批准这次模拟执行？" : "需要你的批准"}</strong>
         <small>{recovering ? item.status === "approved" ? "已允许，等待恢复" : "已拒绝，等待恢复"
-          : webFetch ? item.exact_target : item.tool_name}</small></div></header>
+          : webFetch ? item.exact_target : computerUse ? "Computer Use" : item.tool_name}</small></div></header>
     {preview.isLoading && <p role="status">正在读取这次操作的精确预览…</p>}
     {preview.isError && <div role="alert"><p>操作预览读取失败，请重新读取后确认批准范围。</p>
       <button onClick={() => void preview.refetch()} type="button">重试操作预览</button></div>}
     {preview.data && <>
-      <dl className="v2-approval-facts">
+      {computerUse ? <ComputerUsePreview preview={preview.data} /> : <dl className="v2-approval-facts">
         {preview.data.working_directory && <div><dt>工作目录</dt><dd>提案绑定目录内 <code>{preview.data.working_directory}</code></dd></div>}
         {preview.data.fields.map((field, index) => <div key={`${field.name}:${index}`}>
           <dt>{fieldLabels[field.name] ?? field.name}</dt><dd><pre>{field.value}</pre></dd>
         </div>)}
-      </dl>
+      </dl>}
       {preview.data.workspace_id && <details><summary>查看操作目录身份</summary><code>{preview.data.workspace_id}</code></details>}
       <p>{preview.data.effect === "file_review_required" && onReviewFile
-        ? "先查看这份编辑的差异，再决定是否批准和应用。" : effectText[preview.data.effect]}</p>
+        ? "先查看这份编辑的差异，再决定是否批准和应用。"
+        : computerUse && !item.allowed_actions.includes("approve_for_run_app")
+          ? "本次允许仅批准当前操作；后续需要授权的操作将再次询问。" : effectText[preview.data.effect]}</p>
       {preview.data.redacted && <p>敏感内容已脱敏，请按可见内容核对操作。</p>}
       {(!preview.data.source_current || preview.data.truncated) && <p role="alert">
         {preview.data.truncated ? "预览超过显示上限，需读取完整内容后再批准。" : "操作已变化或审批已处理，请刷新最新状态。"}

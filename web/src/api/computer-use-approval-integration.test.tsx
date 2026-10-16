@@ -36,9 +36,14 @@ function respond(data: unknown, status = 200) {
     { status, headers: { "Content-Type": "application/json" } });
 }
 
-function mount(kind: "v2" | "legacy", options: { external?: boolean; pending?: boolean } = {}) {
+function mount(kind: "v2" | "legacy", options: { external?: boolean; pending?: boolean; onceOnly?: boolean } = {}) {
   const { item, preview } = approval();
   if (options.external) preview.effect = "mcp_server_and_tool";
+  if (options.onceOnly) {
+    item.allowed_actions = ["approve_once", "deny"];
+    preview.fields = preview.fields.map((field) => field.name === "arguments"
+      ? { ...field, value: '{"window_id":"window-notepad","key":"WIN+D"}' } : field);
+  }
   let decided = false;
   let completeDecision: (() => void) | undefined;
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
@@ -78,6 +83,9 @@ describe.each(["v2", "legacy"] as const)("%s Computer Use approval", (kind) => {
     const { fetch } = mount(kind);
     expect(await screen.findByText("允许操作这个应用？")).toBeVisible();
     expect(screen.getByText("C:\\Windows\\notepad.exe")).toBeVisible();
+    expect(screen.getByText(/"text": "task notes"/)).toBeVisible();
+    expect(screen.getByText("window-notepad")).not.toBeVisible();
+    await userEvent.click(screen.getByText("查看应用身份与完整参数"));
     expect(screen.getByText("window-notepad")).toBeVisible();
     expect(screen.getByText("当前任务（run-app）")).toBeVisible();
     expect(screen.getByText('{"window_id":"window-notepad","text":"task notes"}')).toBeVisible();
@@ -98,6 +106,14 @@ describe.each(["v2", "legacy"] as const)("%s Computer Use approval", (kind) => {
     await waitFor(() => expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1));
     const post = fetch.mock.calls.find(([, init]) => init?.method === "POST")!;
     expect(JSON.parse(String(post[1]?.body))).toEqual({ version: "approval_control.v1", action: "approve_once" });
+  });
+
+  it("shows once-only desktop operations without implying an application grant", async () => {
+    mount(kind, { onceOnly: true });
+    expect(await screen.findByText(/"key": "WIN\+D"/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "本次允许" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "本任务允许操作该应用" })).not.toBeInTheDocument();
+    expect(screen.getByText("本次允许仅批准当前操作；后续需要授权的操作将再次询问。")).toBeVisible();
   });
 
   it("disables all decisions while submitting and ignores a duplicate click", async () => {

@@ -64,7 +64,9 @@ func TestLiveWindowsFixture(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	fixtureCmd := exec.CommandContext(ctx, fixture, "-state", statePath)
-	fixtureCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	// Hide only the console. STARTF_USESHOWWINDOW/SW_HIDE would also override
+	// the fixture's first ShowWindow call and leave its actual UI invisible.
+	fixtureCmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000} // CREATE_NO_WINDOW
 	if err = fixtureCmd.Start(); err != nil {
 		t.Fatalf("start fixture: %v", err)
 	}
@@ -228,7 +230,34 @@ func TestLiveWindowsFixture(t *testing.T) {
 		}
 		action(label, "computer_click", map[string]any{"x": x, "y": y, "button": "left"})
 	}
-	observeResult("activate", call("computer_activate", identity()))
+	activation := call("computer_activate", identity())
+	activationMethod := "automatic"
+	if activation.IsError && os.Getenv("UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS") == "1" {
+		t.Log("Windows did not activate the fixture. Select the Universal Code Computer Use Fixture window; waiting up to 60 seconds without sending input.")
+		deadline := time.Now().Add(60 * time.Second)
+		selected := false
+		for time.Now().Before(deadline) && ctx.Err() == nil {
+			var current struct {
+				Windows []Window `json:"windows"`
+			}
+			decode(call("computer_list_windows", map[string]any{}), &current)
+			for _, w := range current.Windows {
+				if w.WindowID == target.WindowID && w.PID == uint32(fixturePID) && w.HWND == initial.HWND && w.Foreground {
+					selected = true
+				}
+			}
+			if selected {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if !selected {
+			t.Fatal("own fixture was not manually selected; no input verification was performed")
+		}
+		activationMethod = "manual_selection"
+		activation = call("computer_observe", identity())
+	}
+	observeResult("initial-observation", activation)
 	clickControl("focus-edit", initial.EditRect)
 	action("select-all", "computer_key", map[string]any{"key": "CTRL+A"})
 	lines := make([]string, 40)
@@ -254,14 +283,15 @@ func TestLiveWindowsFixture(t *testing.T) {
 		t.Fatal("production helper accepted a consumed observation")
 	}
 	report := struct {
-		FixturePID               int  `json:"fixture_pid"`
-		ImageCount               int  `json:"image_count"`
-		UnicodeTextVerified      bool `json:"unicode_text_verified"`
-		ScrollFrom               int  `json:"scroll_from"`
-		ScrollTo                 int  `json:"scroll_to"`
-		ButtonClicks             int  `json:"button_clicks"`
-		StaleObservationRejected bool `json:"stale_observation_rejected"`
-	}{fixturePID, imageCount, true, before.FirstVisibleLine, after.FirstVisibleLine, final.Clicks, true}
+		FixturePID               int    `json:"fixture_pid"`
+		ActivationMethod         string `json:"activation_method"`
+		ImageCount               int    `json:"image_count"`
+		UnicodeTextVerified      bool   `json:"unicode_text_verified"`
+		ScrollFrom               int    `json:"scroll_from"`
+		ScrollTo                 int    `json:"scroll_to"`
+		ButtonClicks             int    `json:"button_clicks"`
+		StaleObservationRejected bool   `json:"stale_observation_rejected"`
+	}{fixturePID, activationMethod, imageCount, true, before.FirstVisibleLine, after.FirstVisibleLine, final.Clicks, true}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		t.Fatal(err)

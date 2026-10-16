@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { ControlledCommandProposalPanel } from "./controlled-command-proposal-panel";
 import { HostCommandProposalPanel } from "./host-command-proposal-panel";
 import { useLocale } from "../lib/locale";
+import { ComputerUsePreview } from "./computer-use-preview";
 
 type ApprovalAction = ApprovalDecisionControlRequestView["action"];
 
@@ -90,7 +91,7 @@ export function ApprovalPanel({ client, runID, threadID = "" }: {
             const canApprove = client.hasApprovalControl &&
               item.allowed_actions.includes("approve_once");
             const canDeny = client.hasApprovalControl && item.allowed_actions.includes("deny");
-            if (item.tool_name === "mcp_tool_call" && item.allowed_actions.includes("approve_for_run_app")) {
+            if (item.tool_name === "mcp_tool_call") {
               return <ComputerUseApprovalRow key={item.id} client={client} item={item} runID={runID}
                 busy={busy} reason={reasons[item.id] ?? ""}
                 onReasonChange={(value) => setReasons((current) => ({ ...current, [item.id]: value }))}
@@ -160,11 +161,6 @@ function ComputerUseApprovalRow({ client, item, runID, busy, reason, onReasonCha
   const canApprove = client.hasApprovalControl && preview.isSuccess && !preview.isFetching &&
     preview.data.source_current && !preview.data.truncated && !busy;
   const canDeny = client.hasApprovalControl && item.allowed_actions.includes("deny");
-  const labels: Record<string, string> = {
-    app_id: t("目标应用", "Target app"), app_path: t("应用路径", "Application path"),
-    window_id: t("目标窗口", "Target window"), tool_name: t("操作工具", "Tool"),
-    authorization_scope: t("授权范围", "Authorization scope"), arguments: t("操作参数", "Arguments"),
-  };
   return <article className="approval-row">
     <div className="approval-row-main">
       <span><strong>{computerUse ? t("允许操作这个应用？", "Allow control of this app?") : item.tool_name}</strong>
@@ -176,14 +172,17 @@ function ComputerUseApprovalRow({ client, item, runID, busy, reason, onReasonCha
     {preview.isError && <div role="alert"><p>{t("操作预览读取失败，请重新读取后确认批准范围。", "The operation preview could not be read. Retry to confirm the approval scope.")}</p>
       <button className="command-button" onClick={() => void preview.refetch()} type="button">{t("重试操作预览", "Retry operation preview")}</button></div>}
     {computerUse && preview.data && <>
-      <dl className="host-command-envelope">{preview.data.fields.map((field, index) => <Fragment key={`${field.name}:${index}`}>
-        <dt>{labels[field.name] ?? field.name}</dt><dd><code>{field.value}</code></dd>
-      </Fragment>)}</dl>
-      <p>{t("“本次允许”仅批准当前操作；“本任务允许操作该应用”允许 Agent 在当前任务中继续点击、输入和滚动该应用。任务结束后授权失效。",
-        "Allow once approves this operation. Allow this app for this task lets the Agent continue clicking, typing, and scrolling in this app until the task ends.")}</p>
+      <ComputerUsePreview preview={preview.data} />
+      <p>{item.allowed_actions.includes("approve_for_run_app")
+        ? t("“本次允许”仅批准当前操作；“本任务允许操作该应用”允许 Agent 在当前任务中继续点击、输入和滚动该应用。任务结束后授权失效。",
+          "Allow once approves this operation. Allow this app for this task lets the Agent continue clicking, typing, and scrolling in this app until the task ends.")
+        : t("本次允许仅批准当前操作；后续需要授权的操作将再次询问。", "Allow once approves only this operation. Later operations that need authorization will ask again.")}</p>
       {(!preview.data.source_current || preview.data.truncated) && <p role="alert">{t("操作已变化或预览不完整，请刷新后再批准。", "The operation changed or its preview is incomplete. Refresh before approving.")}
         <button className="command-button" disabled={busy} onClick={() => void preview.refetch()} type="button">{t("刷新操作预览", "Refresh operation preview")}</button></p>}
     </>}
+    {!computerUse && preview.data && <dl className="host-command-envelope">
+      {preview.data.fields.map((field, index) => <Fragment key={`${field.name}:${index}`}><dt>{field.name}</dt><dd><code>{field.value}</code></dd></Fragment>)}
+    </dl>}
     {client.hasApprovalControl && <div className="approval-actions">
       {canDeny && <input aria-label={t(`${item.tool_name} 的拒绝原因`, `Denial reason for ${item.tool_name}`)}
         disabled={busy} maxLength={2048} onChange={(event) => onReasonChange(event.target.value)}

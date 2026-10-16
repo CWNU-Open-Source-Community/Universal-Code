@@ -5766,7 +5766,7 @@ export interface components {
         };
         ApprovalDecisionControlRequestView: {
             /** @enum {string} */
-            action: "approve_once" | "approve_for_thread" | "approve_for_run" | "deny";
+            action: "approve_once" | "approve_for_thread" | "approve_for_run" | "approve_for_run_app" | "deny";
             /** Format: int32 */
             grant_max_uses?: number;
             /** Format: int32 */
@@ -5777,7 +5777,7 @@ export interface components {
         };
         ApprovalDecisionControlView: {
             /** @enum {string} */
-            action: "approve_once" | "approve_for_thread" | "approve_for_run" | "deny";
+            action: "approve_once" | "approve_for_thread" | "approve_for_run" | "approve_for_run_app" | "deny";
             approval_id: string;
             bounded_grant?: components["schemas"]["BoundedCommandGrantView"];
             capability_grant: boolean;
@@ -5806,7 +5806,7 @@ export interface components {
         ApprovalPreviewView: {
             approval_id: string;
             /** @enum {string} */
-            effect: "dry_run" | "record_git_approval" | "file_review_required" | "fetch_public_https" | "browser_sensitive_action" | "mcp_server_and_tool" | "command_process" | "unavailable";
+            effect: "dry_run" | "record_git_approval" | "file_review_required" | "fetch_public_https" | "browser_sensitive_action" | "mcp_server_and_tool" | "computer_use_app" | "command_process" | "unavailable";
             fields: components["schemas"]["ApprovalPreviewFieldView"][];
             proposal_id: string;
             /** @enum {string} */
