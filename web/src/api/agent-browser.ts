@@ -27,6 +27,7 @@ export interface AgentBrowserStatus {
   updated_at: string;
   screenshot?: AgentBrowserScreenshot;
   failure_code?: "action_failed" | "browser_unavailable";
+  unavailable_code?: "platform_unsupported" | "full_access_required" | "runtime_unavailable" | "run_unavailable" | "session_unavailable";
   cleanup_pending: boolean;
   tree_reaped: boolean;
   profile_removed: boolean;
@@ -34,6 +35,7 @@ export interface AgentBrowserStatus {
 
 const states = new Set<AgentBrowserStatus["state"]>(["unavailable", "idle", "starting", "ready", "loading", "busy", "waiting_user", "failed", "closing", "closed", "cleanup_pending"]);
 const sha256 = /^[0-9a-f]{64}$/u;
+const unavailableCodes = new Set(["platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable"]);
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -74,6 +76,7 @@ export function parseAgentBrowserStatus(value: unknown, runID: string): AgentBro
     typeof value.cleanup_pending !== "boolean" || typeof value.tree_reaped !== "boolean" || typeof value.profile_removed !== "boolean" ||
     (value.session_id !== undefined && !identity(value.session_id)) ||
     (value.failure_code !== undefined && value.failure_code !== "action_failed" && value.failure_code !== "browser_unavailable") ||
+    (value.unavailable_code !== undefined && (typeof value.unavailable_code !== "string" || !unavailableCodes.has(value.unavailable_code))) ||
     (value.screenshot !== undefined && !validScreenshot(value.screenshot))) {
     throw new Error("Agent 浏览器状态响应无效。");
   }

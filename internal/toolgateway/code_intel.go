@@ -289,7 +289,7 @@ func codeIntelSchema(name ToolName, servers []CodeIntelServerCapability) json.Ra
 		for index := range servers {
 			choices = append(choices, makeSchema(&servers[index]))
 		}
-		value = map[string]any{"oneOf": choices}
+		value = map[string]any{"type": "object", "oneOf": choices}
 	}
 	raw, _ := json.Marshal(value)
 	return raw

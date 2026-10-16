@@ -112,6 +112,9 @@ func TestCodeIntelVisibleDefinitionsPinExactServerGeneration(t *testing.T) {
 		if json.Unmarshal(definition.InputSchema, &schema) != nil {
 			t.Fatalf("invalid semantic schema: %s", definition.InputSchema)
 		}
+		if schema["type"] != "object" {
+			t.Fatalf("provider function schemas require an object root: %s", definition.InputSchema)
+		}
 		raw := string(definition.InputSchema)
 		for _, binding := range []string{"gopls", strings.Repeat("a", 64),
 			strings.Repeat("b", 64)} {
