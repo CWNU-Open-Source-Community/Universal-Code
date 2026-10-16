@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -39,22 +40,26 @@ type ManagerOptions struct {
 	Now              func() time.Time
 	NativeSources    NativeSourceResolver
 	WorkspaceRoot    WorkspaceRootProvider
+	// ComputerUseExecutable is supplied only by a host that implements the
+	// reserved Computer Use stdio entrypoint. Empty disables the built-in service.
+	ComputerUseExecutable string
 }
 
 type Manager struct {
-	inputs        *InputBroker
-	store         ClientStore
-	credentials   CredentialReader
-	factory       TransportFactory
-	httpClient    *http.Client
-	nativeSources NativeSourceResolver
-	workspaceRoot WorkspaceRootProvider
-	now           func() time.Time
-	locksMu       sync.Mutex
-	locks         map[string]*sync.Mutex
-	sessionsMu    sync.Mutex
-	sessions      map[catalogSessionKey]*catalogSession
-	closed        bool
+	inputs                *InputBroker
+	store                 ClientStore
+	credentials           CredentialReader
+	factory               TransportFactory
+	httpClient            *http.Client
+	nativeSources         NativeSourceResolver
+	workspaceRoot         WorkspaceRootProvider
+	computerUseExecutable string
+	now                   func() time.Time
+	locksMu               sync.Mutex
+	locks                 map[string]*sync.Mutex
+	sessionsMu            sync.Mutex
+	sessions              map[catalogSessionKey]*catalogSession
+	closed                bool
 }
 
 // ReconcileStartup deterministically fences discovery whose durable lease has
@@ -107,6 +112,9 @@ func NewClientManager(store ClientStore, credentials CredentialReader,
 	if store == nil {
 		return nil, errors.New("MCP client manager requires a durable store")
 	}
+	if options.ComputerUseExecutable != "" && !filepath.IsAbs(options.ComputerUseExecutable) {
+		return nil, errors.New("Computer Use host executable must be absolute")
+	}
 	now := options.Now
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
@@ -120,11 +128,14 @@ func NewClientManager(store ClientStore, credentials CredentialReader,
 			return newRemoteClientTransport(descriptor, bearer, options.HTTPClient)
 		}
 	}
-	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, workspaceRoot: options.WorkspaceRoot, now: now,
+	return &Manager{inputs: options.InputBroker, store: store, credentials: credentials, factory: factory, httpClient: options.HTTPClient, nativeSources: options.NativeSources, workspaceRoot: options.WorkspaceRoot, computerUseExecutable: options.ComputerUseExecutable, now: now,
 		locks: make(map[string]*sync.Mutex), sessions: make(map[catalogSessionKey]*catalogSession)}, nil
 }
 
 func (m *Manager) Stage(ctx context.Context, descriptor ServerDescriptor) (ServerRecord, bool, error) {
+	if descriptor.Source.Kind == "builtin" || strings.HasPrefix(descriptor.ID, computerUseServerPrefix) {
+		return ServerRecord{}, false, apperror.New(apperror.CodePolicyDenied, "built-in MCP registrations are owned by the host")
+	}
 	if err := descriptor.Validate(); err != nil {
 		return ServerRecord{}, false, apperror.Wrap(apperror.CodeInvalidArgument,
 			"MCP server descriptor is invalid", err)
@@ -243,6 +254,9 @@ func (m *Manager) refreshLocked(ctx context.Context, record ServerRecord) (Serve
 		record.State != TrustEnabled && record.State != TrustQuarantined {
 		return ServerRecord{}, apperror.New(apperror.CodeFailedPrecondition,
 			"MCP server discovery is not operator-approved")
+	}
+	if IsComputerUseServer(record.Descriptor) {
+		return m.refreshComputerUse(ctx, record)
 	}
 	previousGeneration := record.Generation
 	startedAt := m.now().UTC()
@@ -390,12 +404,18 @@ func (m *Manager) Capabilities(ctx context.Context, runID, workspaceID string) (
 	if !validClientIdentity(runID) || !validClientIdentity(workspaceID) {
 		return ScopedCapabilities{}, errors.New("MCP capability scope is invalid")
 	}
+	if err := m.EnsureComputerUse(ctx, workspaceID); err != nil {
+		return ScopedCapabilities{}, err
+	}
 	records, err := m.store.ListMCPClientServers(ctx, runID, workspaceID, MaxClientServers)
 	if err != nil {
 		return ScopedCapabilities{}, err
 	}
 	result := ScopedCapabilities{ProtocolVersion: ClientProtocolVersion}
 	for _, record := range records {
+		if IsComputerUseServer(record.Descriptor) && m.computerUseExecutable == "" {
+			continue
+		}
 		if record.State != TrustEnabled || record.Health != HealthHealthy ||
 			record.ApprovedCapabilityFingerprint != record.Capabilities.Fingerprint ||
 			!scopeMatches(record.Descriptor, runID, workspaceID) {
@@ -515,7 +535,7 @@ func (m *Manager) Invoke(ctx context.Context, request InvokeRequest) (result Cli
 		locked = false
 		return m.invokeResolved(ctx, request, record)
 	}
-	if record.Descriptor.NativeSource != nil {
+	if record.Descriptor.NativeSource != nil || IsComputerUseServer(record.Descriptor) {
 		return ClientCallResult{}, apperror.New(apperror.CodePolicyDenied, "native MCP invocation requires common host authority")
 	}
 	callCtx, cancel := context.WithTimeout(ctx,

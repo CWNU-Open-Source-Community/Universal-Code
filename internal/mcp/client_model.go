@@ -128,8 +128,8 @@ type Source struct {
 }
 
 func (s Source) Validate() error {
-	if s.Kind != "manual" && s.Kind != "plugin" {
-		return errors.New("MCP source kind must be manual or plugin")
+	if s.Kind != "manual" && s.Kind != "plugin" && s.Kind != "builtin" {
+		return errors.New("MCP source kind must be manual, plugin or builtin")
 	}
 	for label, value := range map[string]string{"uri": s.URI, "version": s.Version,
 		"commit": s.Commit, "plugin_id": s.PluginID, "publisher": s.Publisher} {
@@ -187,6 +187,12 @@ func (d ServerDescriptor) Validate() error {
 	}
 	if err := d.Source.Validate(); err != nil {
 		return err
+	}
+	if d.Source.Kind == "builtin" {
+		if !IsComputerUseServer(d) {
+			return errors.New("built-in MCP source must be the fixed Computer Use registration")
+		}
+		return nil
 	}
 	if d.ProtocolVersion == ConfigClientProtocolVersion {
 		if err := d.validateManualConfig(); err != nil {

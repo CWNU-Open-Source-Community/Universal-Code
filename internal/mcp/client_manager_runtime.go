@@ -92,6 +92,10 @@ func (m *Manager) resolveLegacyRuntime(ctx context.Context, record ServerRecord,
 	if d.Validate() != nil {
 		return toolcontract.ResolvedLaunch{}, "", errors.New("invalid persisted MCP descriptor")
 	}
+	if IsComputerUseServer(d) {
+		launch, err := m.resolveComputerUse(d, record.Capabilities.ProtocolVersion)
+		return launch, "", err
+	}
 	environment, err := m.readManualEnvironment(ctx, d)
 	if err != nil {
 		return toolcontract.ResolvedLaunch{}, "", err

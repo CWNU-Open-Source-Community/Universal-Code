@@ -125,11 +125,17 @@ func (m *Manager) RefreshCapabilities(ctx context.Context, runID, workspaceID st
 		m.CloseRun(runID)
 		return ScopedCapabilities{}, err
 	}
+	if err := m.EnsureComputerUse(ctx, workspaceID); err != nil {
+		return ScopedCapabilities{}, err
+	}
 	records, err := m.store.ListMCPClientServers(ctx, runID, workspaceID, MaxClientServers)
 	if err != nil {
 		return ScopedCapabilities{}, err
 	}
 	for _, record := range records {
+		if IsComputerUseServer(record.Descriptor) && m.computerUseExecutable == "" {
+			continue
+		}
 		if record.State != TrustEnabled || record.Health == HealthConnecting || !scopeMatches(record.Descriptor, runID, workspaceID) {
 			continue
 		}
