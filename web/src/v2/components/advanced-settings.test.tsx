@@ -11,7 +11,7 @@ function mount(client: Partial<APIClient>, section: V2SettingsSection, threadID 
   window.localStorage.setItem("prayu.locale.v1", "zh-CN");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (currentSection: V2SettingsSection) => <QueryClientProvider client={queryClient}><LocaleProvider>
-    <V2Settings client={client as APIClient} desktop={desktop} onOpenInspector={vi.fn()}
+    <V2Settings client={{ extensionInventory: vi.fn().mockResolvedValue(emptyExtensions), ...client } as APIClient} desktop={desktop} onOpenInspector={vi.fn()}
       onSelectSection={vi.fn()} section={currentSection} threadID={threadID} workspaces={[]} />
   </LocaleProvider></QueryClientProvider>;
   const rendered = render(view(section));

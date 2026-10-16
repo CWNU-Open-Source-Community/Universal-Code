@@ -155,6 +155,12 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 		if a.scheduledJobControlEnabled {
 			resources = append(resources, "scheduled-job-control")
 		}
+		if a.skillCatalogController != nil {
+			resources = append(resources, "skill-catalog")
+		}
+		if a.skillCatalogControlEnabled {
+			resources = append(resources, "skill-catalog-control")
+		}
 		if a.skillInstallationEnabled {
 			resources = append(resources, "skill-installation-control")
 		}

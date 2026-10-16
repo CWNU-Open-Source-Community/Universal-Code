@@ -20,6 +20,7 @@ import (
 
 // SkillCatalogStore is the bounded store surface the catalog service touches.
 type SkillCatalogStore interface {
+	CompareAndSetSkillCatalogPublisher(context.Context, skills.CatalogPublisher, string, string, string) (skills.CatalogPublisher, error)
 	UpsertTrustedPublisher(context.Context, skills.CatalogPublisher, string) error
 	RevokeSkillCatalogPublisher(context.Context, string, string) error
 	GetSkillCatalogPublisher(context.Context, string) (skills.CatalogPublisher, bool, error)

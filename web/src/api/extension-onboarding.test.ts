@@ -86,6 +86,90 @@ it("retains old inventories without onboarding controls and rejects noncanonical
 });
 
 const maximumPluginBytes = 4 * 1_024 * 1_024;
+
+it("defaults newly added onboarding capabilities to false for old services", async () => {
+  const onboarding = { mcp_registration: true, plugin_import: true, lsp_configuration: false };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(envelope({ protocol_version: "extension-inventory.v1",
+    mcp_servers: [], plugins: [], mcp_calls: [], onboarding }))));
+  expect((await new APIClient("read").extensionInventory()).onboarding).toEqual({ ...onboarding,
+    plugin_source_import: false, native_skill_directory_import: false });
+});
+
+it.each(["plugin_source_import", "native_skill_directory_import"])("validates the optional %s capability", async (flag) => {
+  const onboarding = { mcp_registration: true, plugin_import: true, lsp_configuration: false, [flag]: true };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(respond(envelope({ protocol_version: "extension-inventory.v1",
+    mcp_servers: [], plugins: [], mcp_calls: [], onboarding }))).mockResolvedValueOnce(respond(envelope({
+    protocol_version: "extension-inventory.v1", mcp_servers: [], plugins: [], mcp_calls: [], onboarding: { ...onboarding, [flag]: "true" },
+  }))));
+  const client = new APIClient("read");
+  expect((await client.extensionInventory()).onboarding).toMatchObject({ [flag]: true });
+  await expect(client.extensionInventory()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+});
+
+it.each(["https", "git"] as const)("binds pinned %s imports and rejects a changed source", async (kind) => {
+  const source = { kind, url: "https://example.invalid/plugin", ...(kind === "git" ? { commit: "a".repeat(40), archive_path: "dist/plugin.zip" } : {}) };
+  const installation = { ...plugin(), source: { kind, uri: source.url, sha256: fingerprint,
+    ...(kind === "git" ? { commit: source.commit } : {}) } };
+  const response = { protocol_version: "extension-onboarding.v1", replayed: false, next_step: "approve", installation,
+    acquisition: { ...source, sha256: fingerprint } };
+  const fetchMock = vi.fn().mockResolvedValueOnce(respond(envelope(response))).mockResolvedValueOnce(respond(envelope({
+    ...response, installation: { ...installation, source: { ...installation.source, uri: "https://different.invalid/plugin" } },
+  })));
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new APIClient("read", "/api/v1", "control");
+  const request = { version: "extension-control.v1", source, ...(kind === "https" ? { archive_sha256: fingerprint } : {}) };
+  await expect(client.importPluginPackage(request)).resolves.toMatchObject({ installation: { state: "staged" } });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(request);
+  await expect(client.importPluginPackage(request)).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+});
+
+it.each([undefined, "dist/plugin.zip"])("binds replay acquisition while retaining the installation's original provenance: %s", async (archivePath) => {
+  const source = { kind: "git" as const, url: "https://selected.invalid/repo", commit: "a".repeat(40),
+    ...(archivePath === undefined ? {} : { archive_path: archivePath }) };
+  const installation = { ...plugin("revoked"), generation: 3 };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(envelope({ protocol_version: "extension-onboarding.v1",
+    replayed: true, next_step: "inspect_state", installation,
+    acquisition: { ...source, archive_path: archivePath ?? "plugin.zip", sha256: fingerprint },
+  }))));
+  const result = await new APIClient("read", "/api/v1", "control").importPluginPackage({
+    version: "extension-control.v1", source });
+  expect(result.installation).toEqual(installation);
+  expect(result.acquisition).toMatchObject({ url: source.url, archive_path: archivePath ?? "plugin.zip", sha256: fingerprint });
+});
+
+it.each(["missing", "kind", "url", "commit", "archive_path", "sha256", "installation"])(
+  "rejects unbound Git replay acquisition: %s", async (drift) => {
+    const source = { kind: "git" as const, url: "https://selected.invalid/repo", commit: "a".repeat(40), archive_path: "dist/plugin.zip" };
+    const acquisition = { ...source, kind: String(source.kind), sha256: fingerprint };
+    const installation = plugin("revoked");
+    if (drift === "kind") acquisition.kind = "https";
+    if (drift === "url") acquisition.url = "https://different.invalid/repo";
+    if (drift === "commit") acquisition.commit = "b".repeat(40);
+    if (drift === "archive_path") acquisition.archive_path = "other.zip";
+    if (drift === "sha256") acquisition.sha256 = "d".repeat(64);
+    if (drift === "installation") installation.archive_sha256 = "d".repeat(64);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(envelope({ protocol_version: "extension-onboarding.v1",
+      replayed: true, next_step: "inspect_state", installation, ...(drift === "missing" ? {} : { acquisition }),
+    }))));
+    await expect(new APIClient("read", "/api/v1", "control").importPluginPackage({ version: "extension-control.v1", source }))
+      .rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  },
+);
+
+it.each([
+  { kind: "https", url: "https://user:password@example.invalid/plugin.zip" },
+  { kind: "https", url: "https://example.invalid/plugin.zip?token=secret" },
+  { kind: "https", url: "http://127.0.0.1/plugin.zip" },
+  { kind: "git", url: "https://example.invalid/repo", commit: "main" },
+  { kind: "git", url: "https://example.invalid/repo", commit: "a".repeat(40), archive_path: "../plugin.zip" },
+] as const)("rejects unsafe pinned source before the request: $url $commit", async (source) => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(new APIClient("read", "/api/v1", "control").importPluginPackage({ version: "extension-control.v1", source,
+    archive_sha256: fingerprint })).rejects.toThrow("credential-free HTTPS");
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 function pluginPayload(bytes: number) { return Buffer.alloc(bytes, 0x61).toString("base64"); }
 
 it.each([3.5 * 1_024 * 1_024, maximumPluginBytes - 1, maximumPluginBytes])(

@@ -43,6 +43,7 @@ type SkillPackageRegistryService struct {
 type ImportSkillPackageRequest struct {
 	Raw              []byte
 	Snapshot         *plugins.PortableSnapshot
+	Directory        *plugins.UploadedDirectory
 	Source           plugins.InstallSource
 	EnableSkills     bool
 	Surface          domain.ExecutionSurface
@@ -94,13 +95,18 @@ func (s *SkillPackageRegistryService) Import(ctx context.Context,
 		return ImportSkillPackageResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"untrusted Skill package installation requires explicit operator confirmation")
 	}
+	if request.Directory != nil && (len(request.Raw) != 0 || request.Snapshot != nil ||
+		request.Source != (plugins.InstallSource{}) || request.EnableSkills) {
+		return ImportSkillPackageResult{}, apperror.New(apperror.CodeInvalidArgument,
+			"directory upload must be the only source and requires separate Plugin review")
+	}
 	surface, err := domain.ParseExecutionSurface(string(request.Surface))
 	if err != nil || surface != request.Surface {
 		return ImportSkillPackageResult{}, apperror.New(apperror.CodeInvalidArgument,
 			"Skill package installation surface is invalid")
 	}
 	operationKey := request.OperationKey
-	if request.Snapshot != nil {
+	if request.Snapshot != nil || request.Directory != nil {
 		// Existing native-directory operations accepted 1..512 bytes. Keep the
 		// exact key/digest stable when their writer moves into this service.
 		if operationKey == "" || len(operationKey) > 512 || strings.TrimSpace(operationKey) != operationKey || !utf8.ValidString(operationKey) {
@@ -112,6 +118,17 @@ func (s *SkillPackageRegistryService) Import(ctx context.Context,
 	installedBy, err := normalizeSkillPackageActor(request.InstalledBy, "cli_operator")
 	if err != nil {
 		return ImportSkillPackageResult{}, err
+	}
+	if request.Directory != nil {
+		// Like native CLI imports, identity follows the selected source rather
+		// than the acquired content. A content edit changes only the revision.
+		packageID := "portable-" + portableIdentity("upload-directory\x00"+request.Directory.RootName)
+		pkg, err := plugins.CaptureUploadedDirectory(ctx, *request.Directory, packageID,
+			toolcontract.SourceRef{URI: "upload-directory:" + request.Directory.RootName}, "")
+		if err != nil {
+			return ImportSkillPackageResult{}, apperror.Normalize(err)
+		}
+		request.Raw, request.Snapshot = pkg.Archive(), &pkg.Snapshot
 	}
 	keyDigest := runmutation.Fingerprint("skill_package_install_operation.v1", operationKey)
 	existing, found, err := s.store.GetPackageInstallOperation(ctx, keyDigest)

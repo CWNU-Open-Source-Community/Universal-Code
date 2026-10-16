@@ -340,6 +340,7 @@ type Config struct {
 	ScheduledJobControlEnabled            bool
 	ScheduledJobWorkerEnabled             bool
 	SkillInstallationEnabled              bool
+	SkillCatalogControlEnabled            bool
 	EvidenceAttachmentEnabled             bool
 	VerificationEvidenceEnabled           bool
 	EmbeddedAnalyzerExecutionEnabled      bool
@@ -393,6 +394,7 @@ type Config struct {
 	ScheduledJobController                ScheduledJobController
 	ScheduledJobWorkerHealthSource        ScheduledJobWorkerHealthSource
 	SkillInstallationController           SkillInstallationController
+	SkillCatalogController                SkillCatalogController
 	EmbeddedAnalyzerExecutionController   EmbeddedAnalyzerExecutionController
 	WorkspaceCheckpointController         WorkspaceCheckpointController
 	GitAdvancedController                 GitAdvancedController
@@ -445,6 +447,7 @@ type API struct {
 	scheduledJobControlEnabled            bool
 	scheduledJobWorkerEnabled             bool
 	skillInstallationEnabled              bool
+	skillCatalogControlEnabled            bool
 	evidenceAttachmentEnabled             bool
 	verificationEvidenceEnabled           bool
 	embeddedAnalyzerExecutionEnabled      bool
@@ -502,6 +505,7 @@ type API struct {
 	scheduledJobWorkerHealthSource        ScheduledJobWorkerHealthSource
 	diagnostics                           *application.DiagnosticsService
 	skillInstallationController           SkillInstallationController
+	skillCatalogController                SkillCatalogController
 	embeddedAnalyzerExecutionController   EmbeddedAnalyzerExecutionController
 	workspaceCheckpointController         WorkspaceCheckpointController
 	gitAdvancedController                 GitAdvancedController
@@ -562,7 +566,7 @@ func New(store Store, config Config) (*API, error) {
 		config.FileEditApplyEnabled || config.RunWakeExecutionEnabled ||
 		config.RunWakeWorkerEnabled ||
 		config.ScheduledJobControlEnabled || config.ScheduledJobWorkerEnabled ||
-		config.SkillInstallationEnabled || config.EvidenceAttachmentEnabled ||
+		config.SkillInstallationEnabled || config.SkillCatalogControlEnabled || config.EvidenceAttachmentEnabled ||
 		config.VerificationEvidenceEnabled || config.EmbeddedAnalyzerExecutionEnabled ||
 		config.WorkspaceCheckpointControlEnabled || config.BatchDeliveryControlEnabled ||
 		config.GitAdvancedControlEnabled || config.GitHubReviewControlEnabled ||
@@ -685,6 +689,9 @@ func New(store Store, config Config) (*API, error) {
 	if config.ScheduledJobWorkerEnabled != (config.ScheduledJobWorkerHealthSource != nil) {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"HTTP API scheduled job worker health source must exactly match enablement")
+	}
+	if config.SkillCatalogControlEnabled && config.SkillCatalogController == nil {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "HTTP API Skill catalog control requires a controller")
 	}
 	if config.SkillInstallationEnabled && config.SkillInstallationController == nil {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
@@ -900,6 +907,7 @@ func New(store Store, config Config) (*API, error) {
 		scheduledJobControlEnabled:        controlTokenPresent && config.ScheduledJobControlEnabled,
 		scheduledJobWorkerEnabled:         controlTokenPresent && config.ScheduledJobWorkerEnabled,
 		skillInstallationEnabled:          controlTokenPresent && config.SkillInstallationEnabled,
+		skillCatalogControlEnabled:        controlTokenPresent && config.SkillCatalogControlEnabled,
 		evidenceAttachmentEnabled:         controlTokenPresent && config.EvidenceAttachmentEnabled,
 		verificationEvidenceEnabled:       controlTokenPresent && config.VerificationEvidenceEnabled,
 		embeddedAnalyzerExecutionEnabled:  controlTokenPresent && config.EmbeddedAnalyzerExecutionEnabled,
@@ -959,6 +967,7 @@ func New(store Store, config Config) (*API, error) {
 		scheduledJobWorkerHealthSource:      config.ScheduledJobWorkerHealthSource,
 		diagnostics:                         application.NewDiagnosticsService(store, modelRegistry),
 		skillInstallationController:         config.SkillInstallationController,
+		skillCatalogController:              config.SkillCatalogController,
 		embeddedAnalyzerExecutionController: config.EmbeddedAnalyzerExecutionController,
 		workspaceCheckpointController:       config.WorkspaceCheckpointController,
 		gitAdvancedController:               config.GitAdvancedController,
@@ -1375,6 +1384,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, matched := matchRunWakeExecutionPath(request.URL.Path); matched {
 		a.serveRunWakeExecutionControl(tracked, request, requestID, runID)
+		return
+	}
+	if request.URL.Path == SkillCatalogPublishersPath {
+		a.serveSkillCatalogPublishers(tracked, request, requestID)
 		return
 	}
 	if request.URL.Path == SkillPackageInstallPath {

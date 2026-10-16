@@ -1640,6 +1640,7 @@
         "session_steering_cancellation.v1",
         "session_steering_promotion.v1",
         "session_steering_revision.v1",
+        "skill-catalog-control.v1",
         "skill_package_installation.v1",
         "skill_package_inventory.v1",
         "skill_package_removal_control.v1",

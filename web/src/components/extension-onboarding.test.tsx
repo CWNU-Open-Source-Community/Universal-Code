@@ -8,7 +8,7 @@ import type { ExtensionInventoryView } from "../api/types";
 import { LocaleProvider } from "../lib/locale";
 import { lspConfiguration, lspTest, mcpServer, plugin } from "../test/extension-onboarding-fixtures";
 import { ExtensionSettings } from "./shared-settings-panels";
-import { MCPRegistrationForm } from "./extension-onboarding";
+import { MCPRegistrationForm, PluginImportForm } from "./extension-onboarding";
 import { V2ExtensionSettings } from "../v2/components/advanced-settings";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -61,6 +61,35 @@ it("shows prompt required and optional parameters before enabling discovered cap
 });
 function inventory(): ExtensionInventoryView { return { protocol_version: "extension-inventory.v1", workspace_id: "project-one",
   mcp_servers: [], mcp_calls: [], plugins: [], onboarding: { mcp_registration: true, plugin_import: true, lsp_configuration: true } }; }
+
+it("fetches only after explicit pinned-source submission and retains the pin on retry", async () => {
+  const user = userEvent.setup();
+  const importPluginPackage = vi.fn().mockRejectedValueOnce(new Error("fetch unavailable"))
+    .mockResolvedValueOnce({ installation: plugin(), replayed: false });
+  mount(<PluginImportForm client={{ importPluginPackage } as unknown as APIClient} enabled sourceEnabled />);
+  await user.click(screen.getByText("导入 Plugin ZIP"));
+  await user.selectOptions(screen.getByRole("combobox", { name: "导入来源" }), "git");
+  await user.type(screen.getByRole("textbox", { name: "Git 仓库 HTTPS 地址" }), "https://example.invalid/repo");
+  await user.type(screen.getByRole("textbox", { name: /完整 Git commit/ }), "a".repeat(40));
+  expect(importPluginPackage).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "获取并暂存 Plugin" }));
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("button", { name: "获取并暂存 Plugin" }));
+  await screen.findByRole("status");
+  expect(importPluginPackage).toHaveBeenCalledTimes(2);
+  expect(importPluginPackage.mock.calls[0]).toEqual(importPluginPackage.mock.calls[1]);
+  expect(importPluginPackage.mock.calls[0][0]).toEqual({ version: "extension-control.v1", source: {
+    kind: "git", url: "https://example.invalid/repo", commit: "a".repeat(40), archive_path: "plugin.zip",
+  } });
+});
+
+it("keeps remote sources disabled for a service that only advertises ZIP import", async () => {
+  mount(<PluginImportForm client={{} as APIClient} enabled />);
+  await userEvent.click(screen.getByText("导入 Plugin ZIP"));
+  expect(screen.getByRole("option", { name: "HTTPS URL + SHA-256" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "Git + commit" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "选择 Plugin ZIP" })).toBeEnabled();
+});
 
 it("registers MCP only on submit, reviews each pinned stage, and reads actual call metadata", async () => {
   const user = userEvent.setup();

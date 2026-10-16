@@ -33,81 +33,109 @@ func validPublisherFingerprint(value string) bool {
 	return len(value) == 64 && value == strings.ToLower(value)
 }
 
-// UpsertTrustedPublisher records (or re-records) a trusted publisher. It is
-// idempotent per fingerprint and appends a catalog.trusted audit row.
+// UpsertTrustedPublisher retains the CLI's explicit unconditional trust action.
+// Every write advances the version used by observed HTTP control requests.
 func (s *SQLiteStore) UpsertTrustedPublisher(ctx context.Context, publisher SkillCatalogPublisher, actor string) error {
-	if !validPublisherFingerprint(publisher.Fingerprint) || strings.TrimSpace(publisher.Name) == "" ||
-		len(publisher.Name) > 96 || strings.TrimSpace(publisher.PublicKey) == "" || len(publisher.PublicKey) > 128 {
-		return apperror.New(apperror.CodeInvalidArgument, "Skill catalog publisher identity is invalid")
-	}
-	actor = strings.TrimSpace(actor)
-	if actor == "" {
-		return apperror.New(apperror.CodeInvalidArgument, "Skill catalog actor is required")
-	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	now := time.Now().UTC()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO skill_catalog_publishers
-		(fingerprint, name, team, public_key, trust_class, trusted_by, trusted_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'trusted', ?, ?, ?, ?)
-		ON CONFLICT(fingerprint) DO UPDATE SET name = excluded.name, team = excluded.team,
-			public_key = excluded.public_key, trust_class = 'trusted',
-			trusted_by = excluded.trusted_by, trusted_at = excluded.trusted_at,
-			revoked_by = '', revoked_at = NULL, updated_at = excluded.updated_at`,
-		publisher.Fingerprint, publisher.Name, publisher.Team, publisher.PublicKey,
-		actor, ts(now), ts(now), ts(now)); err != nil {
-		return err
-	}
-	if err := insertSkillCatalogAuditTx(ctx, tx, SkillCatalogTrustedEventType,
-		publisher.Fingerprint, map[string]any{"name": publisher.Name, "team": publisher.Team}, actor, now); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err := s.changeSkillCatalogPublisher(ctx, publisher, "trust", nil, actor)
+	return err
 }
 
-// RevokeSkillCatalogPublisher flips a trusted publisher to revoked. Revoked
-// publishers cannot be newly pinned; existing pins stay but new trust is blocked.
 func (s *SQLiteStore) RevokeSkillCatalogPublisher(ctx context.Context, fingerprint, actor string) error {
-	if !validPublisherFingerprint(fingerprint) {
-		return apperror.New(apperror.CodeInvalidArgument, "Skill catalog publisher fingerprint is invalid")
+	_, err := s.changeSkillCatalogPublisher(ctx, SkillCatalogPublisher{Fingerprint: fingerprint}, "revoke", nil, actor)
+	return err
+}
+
+// CompareAndSetSkillCatalogPublisher binds a decision to the exact observed
+// version. Empty expectedUpdatedAt permits creation only, never re-trust.
+func (s *SQLiteStore) CompareAndSetSkillCatalogPublisher(ctx context.Context, publisher SkillCatalogPublisher, action, expectedUpdatedAt, actor string) (SkillCatalogPublisher, error) {
+	return s.changeSkillCatalogPublisher(ctx, publisher, action, &expectedUpdatedAt, actor)
+}
+
+func (s *SQLiteStore) changeSkillCatalogPublisher(ctx context.Context, publisher SkillCatalogPublisher, action string, expected *string, actor string) (SkillCatalogPublisher, error) {
+	invalid := func() (SkillCatalogPublisher, error) {
+		return SkillCatalogPublisher{}, apperror.New(apperror.CodeInvalidArgument, "Skill catalog publisher decision is invalid")
+	}
+	if !validPublisherFingerprint(publisher.Fingerprint) || (action != "trust" && action != "revoke") {
+		return invalid()
+	}
+	if action == "trust" && (strings.TrimSpace(publisher.Name) == "" || len(publisher.Name) > 96 || strings.TrimSpace(publisher.PublicKey) == "" || len(publisher.PublicKey) > 128) {
+		return invalid()
 	}
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
-		return apperror.New(apperror.CodeInvalidArgument, "Skill catalog actor is required")
+		return invalid()
 	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return err
+		return SkillCatalogPublisher{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	previous, found, err := scanSkillCatalogPublisher(tx.QueryRowContext(ctx, `SELECT fingerprint, name, team, public_key, trust_class,
+ trusted_by, trusted_at, revoked_by, revoked_at, created_at, updated_at FROM skill_catalog_publishers WHERE fingerprint = ?`, publisher.Fingerprint))
+	if err != nil {
+		return SkillCatalogPublisher{}, err
+	}
+	if expected != nil && ((!found && *expected != "") || (found && (*expected == "" || *expected != ts(previous.UpdatedAt)))) {
+		return SkillCatalogPublisher{}, apperror.New(apperror.CodeConflict, "Skill catalog publisher changed; refresh before deciding")
+	}
+	if action == "revoke" && !found {
+		return SkillCatalogPublisher{}, apperror.New(apperror.CodeNotFound, "Skill catalog publisher was not found")
+	}
 	now := time.Now().UTC()
-	result, err := tx.ExecContext(ctx, `UPDATE skill_catalog_publishers
-		SET trust_class = 'revoked', revoked_by = ?, revoked_at = ?, updated_at = ?
-		WHERE fingerprint = ?`, actor, ts(now), ts(now), fingerprint)
+	// Clock resolution or a backwards wall-clock adjustment must not reuse an
+	// observed version, including when the intervening decision came from CLI.
+	if found && !now.After(previous.UpdatedAt) {
+		now = previous.UpdatedAt.Add(time.Nanosecond)
+	}
+	eventType := SkillCatalogTrustedEventType
+	payload := map[string]any{}
+	if action == "trust" {
+		_, err = tx.ExecContext(ctx, `INSERT INTO skill_catalog_publishers
+   (fingerprint,name,team,public_key,trust_class,trusted_by,trusted_at,created_at,updated_at)
+   VALUES (?,?,?,?,'trusted',?,?,?,?)
+   ON CONFLICT(fingerprint) DO UPDATE SET name=excluded.name,team=excluded.team,
+    public_key=excluded.public_key,trust_class='trusted',trusted_by=excluded.trusted_by,
+    trusted_at=excluded.trusted_at,revoked_by='',revoked_at=NULL,updated_at=excluded.updated_at`,
+			publisher.Fingerprint, publisher.Name, publisher.Team, publisher.PublicKey, actor, ts(now), ts(now), ts(now))
+		publisher.TrustClass = "trusted"
+		publisher.TrustedBy = actor
+		publisher.TrustedAt = &now
+		publisher.RevokedBy = ""
+		publisher.RevokedAt = nil
+		publisher.CreatedAt = now
+		if found {
+			publisher.CreatedAt = previous.CreatedAt
+		}
+		payload = map[string]any{"name": publisher.Name, "team": publisher.Team}
+	} else {
+		_, err = tx.ExecContext(ctx, `UPDATE skill_catalog_publishers SET trust_class='revoked',revoked_by=?,revoked_at=?,updated_at=? WHERE fingerprint=?`, actor, ts(now), ts(now), publisher.Fingerprint)
+		publisher = previous
+		publisher.TrustClass = "revoked"
+		publisher.RevokedBy = actor
+		publisher.RevokedAt = &now
+		eventType = SkillCatalogRevokedEventType
+	}
 	if err != nil {
-		return err
+		return SkillCatalogPublisher{}, err
 	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
+	publisher.UpdatedAt = now
+	if err := insertSkillCatalogAuditTx(ctx, tx, eventType, publisher.Fingerprint, payload, actor, now); err != nil {
+		return SkillCatalogPublisher{}, err
 	}
-	if rows != 1 {
-		return apperror.New(apperror.CodeNotFound, "trusted skill catalog publisher was not found")
+	if err := tx.Commit(); err != nil {
+		return SkillCatalogPublisher{}, err
 	}
-	if err := insertSkillCatalogAuditTx(ctx, tx, SkillCatalogRevokedEventType,
-		fingerprint, map[string]any{}, actor, now); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return publisher, nil
 }
 
 func (s *SQLiteStore) GetSkillCatalogPublisher(ctx context.Context, fingerprint string) (SkillCatalogPublisher, bool, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT fingerprint, name, team, public_key, trust_class,
 		trusted_by, trusted_at, revoked_by, revoked_at, created_at, updated_at
 		FROM skill_catalog_publishers WHERE fingerprint = ?`, fingerprint)
+	return scanSkillCatalogPublisher(row)
+}
+
+func scanSkillCatalogPublisher(row interface{ Scan(...any) error }) (SkillCatalogPublisher, bool, error) {
 	var publisher SkillCatalogPublisher
 	var trustedAt, revokedAt sql.NullString
 	var created, updated string

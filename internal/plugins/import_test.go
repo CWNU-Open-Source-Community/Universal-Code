@@ -50,8 +50,17 @@ func TestFetchPinnedGitArchiveReadsOnlyExactCommitBlob(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is unavailable")
 	}
+	for _, objectFormat := range []string{"sha1", "sha256"} {
+		t.Run(objectFormat, func(t *testing.T) {
+			testFetchPinnedGitArchiveReadsOnlyExactCommitBlob(t, objectFormat)
+		})
+	}
+}
+
+func testFetchPinnedGitArchiveReadsOnlyExactCommitBlob(t *testing.T, objectFormat string) {
+	t.Helper()
 	repository := t.TempDir()
-	runPluginImportTestGit(t, repository, "init", "--quiet")
+	runPluginImportTestGit(t, repository, "init", "--quiet", "--object-format="+objectFormat)
 	runPluginImportTestGit(t, repository, "config", "user.name", "Plugin Import Test")
 	runPluginImportTestGit(t, repository, "config", "user.email", "plugin-import@example.invalid")
 
@@ -67,6 +76,13 @@ func TestFetchPinnedGitArchiveReadsOnlyExactCommitBlob(t *testing.T) {
 	runPluginImportTestGit(t, repository, "add", "--", "plugin.zip")
 	runPluginImportTestGit(t, repository, "commit", "--quiet", "-m", "first")
 	firstCommit := strings.TrimSpace(runPluginImportTestGit(t, repository, "rev-parse", "HEAD"))
+	wantCommitLength := 40
+	if objectFormat == "sha256" {
+		wantCommitLength = 64
+	}
+	if len(firstCommit) != wantCommitLength {
+		t.Fatalf("Git fixture object format %s produced commit %q", objectFormat, firstCommit)
+	}
 
 	manifest.Version = "2.0.0"
 	second, err := BuildUnsignedPackage(manifest, files)

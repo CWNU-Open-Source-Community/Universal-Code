@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -16,7 +17,7 @@ import (
 
 const (
 	SkillPackageInstallPath         = "/api/v1/skills/packages/install"
-	MaxSkillPackageInstallBodyBytes = (plugins.MaxArchiveBytes+2)/3*4 + plugins.MaxManifestBytes + 4096
+	MaxSkillPackageInstallBodyBytes = 16 * 1024 * 1024
 )
 
 type SkillInstallationController interface {
@@ -29,11 +30,12 @@ type SkillInstallationController interface {
 }
 
 type SkillPackageInstallRequestView struct {
-	Snapshot         *plugins.PortableSnapshot `json:"snapshot,omitempty"`
-	Version          string                    `json:"version"`
-	ArchiveBase64    string                    `json:"archive_base64"`
-	Surface          string                    `json:"surface"`
-	ConfirmUntrusted bool                      `json:"confirm_untrusted"`
+	Snapshot         *plugins.PortableSnapshot  `json:"snapshot,omitempty"`
+	Directory        *plugins.UploadedDirectory `json:"directory,omitempty"`
+	Version          string                     `json:"version"`
+	ArchiveBase64    string                     `json:"archive_base64,omitempty"`
+	Surface          string                     `json:"surface"`
+	ConfirmUntrusted bool                       `json:"confirm_untrusted"`
 }
 
 // PluginSkillInstallView carries a real Plugin installation, without fabricated
@@ -106,19 +108,32 @@ func (a *API) serveSkillPackageInstallControl(writer http.ResponseWriter,
 		return
 	}
 	if (view.Version != skills.PackageInstallationProtocolVersion && view.Version != plugins.PortableInstallationProtocol) ||
-		(view.Version == skills.PackageInstallationProtocolVersion && view.Snapshot != nil) ||
+		(view.Version == skills.PackageInstallationProtocolVersion && (view.Snapshot != nil || view.Directory != nil)) ||
 		!view.ConfirmUntrusted || strings.TrimSpace(view.ArchiveBase64) != view.ArchiveBase64 ||
 		strings.ContainsAny(view.ArchiveBase64, " \t\r\n") {
 		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument,
 			"Skill package installation confirmation or archive encoding is invalid"), 0)
 		return
 	}
-	raw, err := base64.StdEncoding.Strict().DecodeString(view.ArchiveBase64)
-	if err != nil || len(raw) == 0 || len(raw) > plugins.MaxArchiveBytes ||
-		(view.Version == skills.PackageInstallationProtocolVersion && len(raw) > skills.MaxPackageArchiveBytes) {
-		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument,
-			"Skill package archive must be canonical bounded base64"), 0)
-		return
+	var raw []byte
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(body, &fields) // Strict JSON and duplicate fields were checked above.
+	if _, directoryPresent := fields["directory"]; directoryPresent {
+		_, archivePresent := fields["archive_base64"]
+		_, snapshotPresent := fields["snapshot"]
+		if view.Directory == nil || archivePresent || snapshotPresent {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument,
+				"directory upload cannot be combined with archive or snapshot fields"), 0)
+			return
+		}
+	} else {
+		raw, err = base64.StdEncoding.Strict().DecodeString(view.ArchiveBase64)
+		if err != nil || len(raw) == 0 || len(raw) > plugins.MaxArchiveBytes ||
+			(view.Version == skills.PackageInstallationProtocolVersion && len(raw) > skills.MaxPackageArchiveBytes) {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument,
+				"Skill package archive must be canonical bounded base64"), 0)
+			return
+		}
 	}
 	surface, err := domain.ParseExecutionSurface(view.Surface)
 	if err != nil {
@@ -126,7 +141,7 @@ func (a *API) serveSkillPackageInstallControl(writer http.ResponseWriter,
 		return
 	}
 	result, err := a.skillInstallationController.Import(request.Context(),
-		application.ImportSkillPackageRequest{Raw: raw, Snapshot: view.Snapshot, Surface: surface,
+		application.ImportSkillPackageRequest{Raw: raw, Snapshot: view.Snapshot, Directory: view.Directory, Surface: surface,
 			OperationKey: operationKey, InstalledBy: "http_operator",
 			ConfirmUntrusted: true})
 	if err != nil {

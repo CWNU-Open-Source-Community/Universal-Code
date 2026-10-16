@@ -494,6 +494,8 @@ func (c openAPIThreadPullRequestController) ImportCredential(ctx context.Context
 
 func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture := newAPIFixture(t)
+	fixture.api.skillCatalogController = application.NewSkillCatalogService(fixture.store, nil)
+	fixture.api.skillCatalogControlEnabled = true
 	fixture.api.chatGPTAuthEnabled = true
 	fixture.api.chatGPTAuthController = &chatGPTAuthControllerStub{}
 	fixture.api.projectActionsController = &projectActionsControllerStub{}
@@ -1775,6 +1777,11 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					}
 					body = `{"version":"scheduled-job-control.v1","observation_consent_version":1,"expected_revision":` +
 						fmt.Sprint(current.Job.Revision) + `}`
+				} else if spec.Path == SkillCatalogPublishersPath {
+					publicKey := []byte(strings.Repeat("a", 32))
+					fingerprint := sha256.Sum256(publicKey)
+					body = `{"version":"skill-catalog-control.v1","action":"trust","expected_updated_at":"","confirm":true,"name":"OpenAPI publisher","public_key":"` +
+						base64.StdEncoding.EncodeToString(publicKey) + `","fingerprint":"` + hex.EncodeToString(fingerprint[:]) + `"}`
 				} else if spec.Path == SkillPackageInstallPath {
 					body = `{"version":"skill_package_installation.v1","archive_base64":"` +
 						base64.StdEncoding.EncodeToString(skillArchive) +
