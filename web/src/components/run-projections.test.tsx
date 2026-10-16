@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import type { AgentGraphView, BatchDeliverySnapshotView, ExternalSkillProjectionView, FindingReportView } from "../api/types";
-import { AgentGraphPanel, BatchDeliveriesPanel, DelegationsPanel, ExternalSkillsPanel, FanoutPanel, FindingsPanel } from "./run-projections";
+import { AgentGraphPanel, BatchDeliveriesPanel, ChildTasksPanel, DelegationsPanel, ExternalSkillsPanel, FanoutPanel, FindingsPanel } from "./run-projections";
 import { batchWorkbenchFixture } from "../test/batch-workbench-fixture";
 
 function provider(children: React.ReactNode) {
@@ -11,6 +11,20 @@ function provider(children: React.ReactNode) {
 }
 
 describe("Run projection panels", () => {
+  it.each(["delegation", "child-task"])("shows scoped limits before reviewing a %s proposal", async (kind) => {
+    const task = { ordinal: 1, title: "Scoped review", goal: "Review parser", skills: ["model.chat"],
+      turn_limit: 2, token_limit: 300, timeout_millis: 1000, dependency_ordinals: [],
+      allowed_read_paths: ["src/parser"], tool_call_limit: 7, cost_limit_micros: 250000 };
+    const item = { id: "proposal-1", run_id: "run-1", root_agent_id: "root-1", status: "proposed",
+      surface: "core", created_at: "2026-07-13T00:00:00Z", assignments: kind === "delegation" ? [task] : [], tasks: [task] };
+    const client = { getPage: vi.fn().mockResolvedValue({ items: [item], page: { limit: 50 } }),
+      getRunChildTaskProposals: vi.fn().mockResolvedValue({ items: [item] }) } as unknown as APIClient;
+    render(provider(kind === "delegation" ? <DelegationsPanel client={client} runID="run-1" /> : <ChildTasksPanel client={client} runID="run-1" />));
+    expect(await screen.findByText("Read scope: src/parser")).toBeInTheDocument();
+    expect(screen.getByText("Cumulative tool-call limit: 7")).toBeInTheDocument();
+    expect(screen.getByText("Cumulative cost limit: 0.250000 USD")).toBeInTheDocument();
+  });
+
   it.each([false, true])("keeps batch host validation separate from batch control when enabled=%s", async (enabled) => {
     const client = { hasBatchDeliveryControl: true, hasBatchDeliveryHostValidation: enabled,
       getRunBatchDeliveries: vi.fn().mockResolvedValue({ items: [] }),
