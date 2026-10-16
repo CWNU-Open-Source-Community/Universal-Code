@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/standardcodedelivery"
@@ -44,6 +45,17 @@ func TestStandardCodeDeliveryLedgerSealsReplaysAndRejectsMutation(t *testing.T) 
 	}
 	workspace := *created.Workspace
 	checkpoint := *created.Checkpoint
+	if _, err := application.NewRunService(state).Start(ctx, runRecord.ID); err != nil {
+		t.Fatal(err)
+	}
+	conclusion, err := application.NewNoteService(state).Create(ctx, application.CreateNoteRequest{
+		RunID: runRecord.ID, Title: "Delivery validation conclusion",
+		Content: "The captured revision passed its recorded verification.", Category: "summary",
+		Visibility: "run", SourceRefs: []string{"file.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	evidence, err := executor.CaptureDelivery(ctx, workspace.Path, workspace.BaseCommit)
 	if err != nil {
 		t.Fatal(err)
@@ -134,4 +146,15 @@ func TestStandardCodeDeliveryLedgerSealsReplaysAndRejectsMutation(t *testing.T) 
 	if _, _, err := state.GetStandardCodeDeliveryByOperation(ctx, "invalid digest"); err == nil {
 		t.Fatal("invalid operation digest was accepted")
 	}
+	if _, err := application.NewRunService(state).Pause(ctx, runRecord.ID); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := state.ListContextMemoryCandidates(ctx,
+		contextmgr.MemoryCandidateFilter{WorkspaceID: mission.WorkspaceID}, time.Time{})
+	if err != nil || len(candidates) != 1 || candidates[0].Source.NoteID != conclusion.ID ||
+		candidates[0].Source.CompletionKind != "delivery_receipt" ||
+		candidates[0].Source.CompletionFingerprint != stored.ReceiptSHA256 {
+		t.Fatalf("paused delivery did not yield a source-bound candidate: %#v err=%v", candidates, err)
+	}
+	assertMemoryCandidateFormalCount(t, state, mission.WorkspaceID, 0)
 }

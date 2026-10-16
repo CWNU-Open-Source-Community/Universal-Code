@@ -1777,8 +1777,11 @@ without one of these presets do not become shell commands.
 Schema v114 adds hierarchical `AGENTS.md`/`CLAUDE.md`/`.prayu` instruction discovery,
 operator-explicit user/project memory, and a browsable Session checkpoint/Fork/Resume tree.
 项目指令在 Run 创建时固定；磁盘漂移只有在显示 diff 并以旧 fingerprint 显式确认后才会
-追加新 revision。长期记忆不会从对话、模型输出、工具结果或仓库文件自动提炼，支持编辑、
-禁用、保留期、导出和不可恢复的物理删除。Checkpoint 只携带有界脱敏上下文；Fork/Resume
+追加新 revision。长期记忆由操作者确认写入，支持编辑、禁用、保留期、导出和不可恢复的
+物理删除。Schema v198 从带来源的决策/总结笔记生成待确认经验：在 **Context → 当前项目
+→ 待确认经验** 展开原文与来源，再确认保存或忽略；确认后沿用记忆的编辑与失效控件。
+新任务可通过 `history_search` / `history_read` 取回同工作区的有效项目记忆；原始笔记
+仍只在当前 Thread 合法 Run 沿革内可见。Checkpoint 只携带有界脱敏上下文；Fork/Resume
 创建新的 Run/Session，永不继承审批、capability、凭据、网络权限、进程、终端/执行 lease
 或 execution profile。
 
@@ -1787,6 +1790,13 @@ Use `cyberagent context instructions`, `cyberagent context memory ...`, and
 source explanations, drift, memory lifecycle, tree, and branch comparison. Complete commands,
 limits, threat model, privacy deletion semantics, and English/Chinese guidance are in
 [Project Instructions, Long-Term Memory, And Session Continuity](context-continuity.md).
+
+The project Context panel also reviews source-bound experience candidates. Pending candidates
+remain outside later tasks until the operator confirms them. Configured memory is distinct from
+actual delivery: `model.started` context audit records included memory versions/hashes and
+explains omissions under the reserved budget. Replies and tool receipts show whether the model
+followed that context. Edits and disabled/expired/deleted status are reloaded before the next logical
+model call, including subsequent calls within the same tool loop.
 
 
 ## Remote Git and Pull Requests

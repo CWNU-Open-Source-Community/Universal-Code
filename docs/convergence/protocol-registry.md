@@ -42,7 +42,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 54 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 55 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 43 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -1726,9 +1726,10 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-run-session-ledgers-reader` (`v0, v1, v2, v3, v4`, active) at `internal/store`
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
 
-<details><summary>54 active identifiers</summary>
+<details><summary>55 active identifiers</summary>
 
 - `context_memory.v1`
+- `context_memory_candidate.v1`
 - `continuity_context.v1`
 - `continuity_snapshot.v1`
 - `deterministic_id.v1`

@@ -11,6 +11,7 @@ describe("ContextContinuityPanel", () => {
     const get = vi.fn().mockImplementation((path: string) => {
       if (path.includes("project-instructions")) return Promise.resolve(instructionState);
       if (path === "/memories") return Promise.resolve([memoryView()]);
+      if (path === "/memory-candidates") return Promise.resolve([]);
       if (path.includes("/tree")) return Promise.resolve(sessionTree());
       return Promise.reject(new Error(`unexpected read ${path}`));
     });
@@ -60,7 +61,7 @@ describe("ContextContinuityPanel", () => {
     renderPanel({ hasControl: false,
       get: vi.fn().mockImplementation((path: string) => path.includes("project-instructions")
         ? Promise.resolve({ ...projectInstructionState(), stale: false })
-        : path === "/memories" ? Promise.resolve([]) : Promise.resolve(sessionTree())),
+        : path === "/memories" || path === "/memory-candidates" ? Promise.resolve([]) : Promise.resolve(sessionTree())),
     } as unknown as APIClient);
 
     expect(await screen.findByText(/This connection is read-only/)).toBeInTheDocument();

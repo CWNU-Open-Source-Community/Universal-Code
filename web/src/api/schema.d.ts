@@ -744,6 +744,83 @@ export interface paths {
         patch: operations["updateContextMemory"];
         trace?: never;
     };
+    "/api/v1/memory-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Review source-linked experience candidates
+         * @description Derives a bounded Workspace queue from persisted decision/summary Notes with real completed Run, Thread reply or delivery sources. Pending candidates never enter model context; resolved records retain only content-free audit metadata.
+         */
+        get: operations["listContextMemoryCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-candidates/{candidate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect an experience candidate and its sources */
+        get: operations["getContextMemoryCandidate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-candidates/{candidate_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm reviewed candidate as project memory
+         * @description Atomically rechecks the exact reviewed content, source revision and Workspace before explicit operator creation of formal memory. Exact retries return only the recorded identity and never recreate deleted memory.
+         */
+        post: operations["confirmContextMemoryCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-candidates/{candidate_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss a reviewed experience candidate
+         * @description Records an operator dismissal bound to the exact candidate and source version, discards the copied content and prevents regeneration from the same Note.
+         */
+        post: operations["rejectContextMemoryCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models": {
         parameters: {
             query?: never;
@@ -9675,6 +9752,53 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        MemoryCandidate: {
+            /** @enum {string} */
+            confidence: "operator_review_required";
+            confidence_reason: string;
+            content?: string;
+            /** Format: date-time */
+            created_at: string;
+            fingerprint: string;
+            id: string;
+            memory_id?: string;
+            /** @enum {string} */
+            protocol_version: "context_memory_candidate.v1";
+            redacted: boolean;
+            /** Format: date-time */
+            reviewed_at?: string;
+            reviewed_by?: string;
+            source: components["schemas"]["MemoryCandidateSource"];
+            /** @enum {string} */
+            status: "pending" | "confirmed" | "rejected" | "stale";
+            title?: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: int64 */
+            version: number;
+            workspace_id: string;
+        };
+        MemoryCandidateReviewResult: {
+            candidate: components["schemas"]["MemoryCandidate"];
+            memory_id?: string;
+            replayed: boolean;
+        };
+        MemoryCandidateSource: {
+            /** @enum {string} */
+            category: "decision" | "summary";
+            completion_fingerprint: string;
+            /** @enum {string} */
+            completion_kind: "completed_run" | "thread_reply" | "delivery_checkpoint" | "delivery_receipt";
+            completion_ref: string;
+            evidence_ids?: string[];
+            note_id: string;
+            /** Format: int64 */
+            note_version: number;
+            references?: string[];
+            run_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         MessageView: {
             compacted: boolean;
             content: string;
@@ -15343,6 +15467,24 @@ export interface components {
             snapshot_id: string;
             spec: components["schemas"]["GitHubReviewWriteSpec"];
         };
+        memoryCandidateConfirmRequestView: {
+            /** @enum {boolean} */
+            confirm: true;
+            expected_fingerprint: string;
+            /** Format: int64 */
+            expected_source_version: number;
+            /** Format: int64 */
+            expected_version: number;
+            workspace_id: string;
+        };
+        memoryCandidateRejectRequestView: {
+            expected_fingerprint: string;
+            /** Format: int64 */
+            expected_source_version: number;
+            /** Format: int64 */
+            expected_version: number;
+            workspace_id: string;
+        };
         projectInstructionRefreshRequestView: {
             classifications?: components["schemas"]["InstructionSourceDelivery"][];
             confirm: boolean;
@@ -17270,6 +17412,176 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Memory"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listContextMemoryCandidates: {
+        parameters: {
+            query: {
+                /** @description Workspace identity */
+                workspace_id: string;
+                /** @description Include content-free review and stale-source records */
+                include_resolved?: boolean;
+                /** @description Maximum candidate items */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MemoryCandidate"][];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getContextMemoryCandidate: {
+        parameters: {
+            query: {
+                /** @description Workspace identity */
+                workspace_id: string;
+            };
+            header?: never;
+            path: {
+                /** @description Experience candidate identity */
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MemoryCandidate"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    confirmContextMemoryCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Experience candidate identity */
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["memoryCandidateConfirmRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MemoryCandidateReviewResult"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    rejectContextMemoryCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Experience candidate identity */
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["memoryCandidateRejectRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MemoryCandidateReviewResult"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
