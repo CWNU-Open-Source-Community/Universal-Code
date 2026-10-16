@@ -66,8 +66,9 @@ func validRiskRestartReadyDescriptor(value string) bool {
 
 func configureRiskRestartHelperCommand(command *exec.Cmd, ready *riskRestartReadyChannel) {
 	command.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags:              windows.CREATE_NEW_PROCESS_GROUP,
-		HideWindow:                 true,
+		// This helper becomes the Wails app. Hide only a console: HideWindow
+		// sets STARTF_USESHOWWINDOW/SW_HIDE and hides Wails' first ShowWindow.
+		CreationFlags:              windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW,
 		AdditionalInheritedHandles: []syscall.Handle{syscall.Handle(ready.writer.Fd())},
 	}
 }

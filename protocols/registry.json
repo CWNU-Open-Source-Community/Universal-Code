@@ -1187,6 +1187,32 @@
       "retired_identifiers": []
     },
     {
+      "id": "desktop-verification-settings",
+      "class": "internal-durable",
+      "owner": "Desktop verification settings maintainers",
+      "source_of_truth": ["internal/application", "internal/desktop"],
+      "writers": [
+        { "id": "desktop-verification-settings-writer", "source": "internal/application", "versions": [1], "mode": "write-current" }
+      ],
+      "readers": [
+        { "id": "desktop-verification-settings-reader", "source": "internal/application", "versions": [1], "status": "active" },
+        { "id": "desktop-verification-settings-ui-reader", "source": "web/src/lib", "versions": [1], "status": "active" }
+      ],
+      "persisted_or_exported": true,
+      "persistence_boundary": "Native confirmation saves revision-bound browser and batch verification preferences in the Go-owned application home. Ordinary product startup and fixed native restarts read them; explicit granular CLI startup does not.",
+      "compatibility_rule": "Retain the versioned two-boolean reader and compare-and-swap revisions. Saved preferences install services but never restore Run execution authority, leases, permissions or tokens. HTTP only projects startup guidance.",
+      "retirement_gate": {
+        "mode": "migration-or-retention",
+        "requirements": [
+          "ADR-backed retirement decision and rollback path",
+          "Old-version fixtures remain until every supported source is migrated or retained",
+          "Reader history is append-only; retirement requires migration or retention evidence"
+        ]
+      },
+      "active_identifiers": ["desktop_verification_settings.v1"],
+      "retired_identifiers": []
+    },
+    {
       "id": "desktop-web-presentation-state",
       "class": "projection",
       "owner": "Desktop and React workbench maintainers",

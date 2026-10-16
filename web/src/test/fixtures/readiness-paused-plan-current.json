@@ -1,5 +1,15 @@
 {
   "data": {
+    "batch_validation": {
+      "blocked_by": [
+        "startup_gate_closed",
+        "native_control_unavailable"
+      ],
+      "installed": false,
+      "remediation": [
+        "open_desktop_settings"
+      ]
+    },
     "browser_cdp_permissions": [
       {
         "blocked_by": [
@@ -210,7 +220,17 @@
       }
     ],
     "protocol_version": "run_capability_readiness.v1",
-    "run_id": "run-readiness-current"
+    "run_id": "run-readiness-current",
+    "ui_evidence": {
+      "blocked_by": [
+        "startup_gate_closed",
+        "native_control_unavailable"
+      ],
+      "installed": false,
+      "remediation": [
+        "open_desktop_settings"
+      ]
+    }
   },
   "request_id": "req-readiness-current",
   "version": "api.v1"

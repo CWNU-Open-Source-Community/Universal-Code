@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../api/client";
 import type { UIEvidenceArtifactMetadata, UIEvidenceAttempt, UIEvidenceStartView } from "../api/types";
 import { UIEvidencePanel } from "./ui-evidence-panel";
+import { V2RecoveryProvider } from "../v2/recovery-storage";
+import { uiEvidenceIntentKey } from "./ui-evidence-recovery";
 
 vi.mock("../lib/locale", () => ({
   useLocale: () => ({ t: (chinese: string) => chinese }),
@@ -58,11 +60,16 @@ function attempt(status: "not_run" | "passed", id: string): UIEvidenceAttempt {
   } as UIEvidenceAttempt;
 }
 
-function renderPanel(client: APIClient) {
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: {
+function panel(client: APIClient, scopeID: string | undefined = "ui-evidence-test-store", runID = "run-1", threadID?: string) {
+  return <QueryClientProvider client={new QueryClient({ defaultOptions: {
     mutations: { retry: false }, queries: { retry: false },
-  } })}><UIEvidencePanel client={client} runID="run-1" /></QueryClientProvider>);
+  } })}><V2RecoveryProvider client={{ baseURL: client.baseURL || "/api/v1" }} scopeID={scopeID}>
+    <UIEvidencePanel client={client} runID={runID} threadID={threadID} />
+  </V2RecoveryProvider></QueryClientProvider>;
 }
+function renderPanel(client: APIClient) { return render(panel(client)); }
+beforeEach(() => localStorage.clear());
+afterEach(() => vi.restoreAllMocks());
 
 describe("UIEvidencePanel", () => {
   it("previews only a verified screenshot download and releases its object URL", async () => {
@@ -100,8 +107,7 @@ describe("UIEvidencePanel", () => {
     const startUIEvidence = vi.fn().mockRejectedValueOnce(new Error("response lost")).mockResolvedValueOnce(created);
     const client = { hasUIEvidence: true, startUIEvidence, uiEvidence: vi.fn().mockResolvedValue([]),
       uiEvidenceBundle: vi.fn().mockResolvedValue({ attempt: created, steps: [], artifacts: [] }) } as unknown as APIClient;
-    const queries = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    const content = () => <QueryClientProvider client={queries}><UIEvidencePanel client={client} runID="run-1" /></QueryClientProvider>;
+    const content = () => panel(client);
     const view = render(content()); const user = userEvent.setup(); await prepare(user);
     await user.click(screen.getByRole("button", { name: "启动真实浏览器验证" }));
     await screen.findByText(/启动结果待确认/);
@@ -110,7 +116,83 @@ describe("UIEvidencePanel", () => {
     await waitFor(() => expect(startUIEvidence).toHaveBeenCalledTimes(2));
     expect(startUIEvidence.mock.calls[1]).toEqual(["run-1", original]);
     await waitFor(() => expect(screen.queryByText(/启动结果待确认/)).not.toBeInTheDocument());
+    expect(localStorage.length).toBe(0);
     expect(client.uiEvidenceBundle).toHaveBeenCalledWith("attempt-recovered", expect.any(AbortSignal));
+  });
+
+  it("restores a draft with a new provider and query cache, isolates store and Run, and requires fresh review", async () => {
+    const startUIEvidence = vi.fn();
+    const client = { hasUIEvidence: true, startUIEvidence, uiEvidence: vi.fn().mockResolvedValue([]) } as unknown as APIClient;
+    const user = userEvent.setup(); const first = render(panel(client)); await prepare(user);
+    const manifest = screen.getByLabelText("本次精确验证清单").textContent;
+    first.unmount();
+    const otherStore = render(panel(client, "another-store"));
+    await user.click(screen.getByText("准备并启动浏览器验证")); expect(screen.getByLabelText("应用名称")).toHaveValue("");
+    otherStore.unmount();
+    const otherRun = render(panel(client, "ui-evidence-test-store", "run-2"));
+    await user.click(screen.getByText("准备并启动浏览器验证")); expect(screen.getByLabelText("应用名称")).toHaveValue("");
+    otherRun.unmount(); render(panel(client)); await user.click(screen.getByText("准备并启动浏览器验证"));
+    expect(screen.getByLabelText("应用名称")).toHaveValue("测试应用");
+    expect(screen.getByLabelText("启动命令（PowerShell）")).toHaveValue("node preview-server.js --port 5011");
+    expect(screen.getByLabelText("本次精确验证清单").textContent).toBe(manifest);
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "启动真实浏览器验证" })).toBeDisabled();
+    expect(startUIEvidence).not.toHaveBeenCalled();
+  });
+
+  it("restores an interrupted pending start as unknown and never executes it until the original request is checked", async () => {
+    const created = attempt("not_run", "attempt-pending-recovered");
+    const startUIEvidence = vi.fn().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce(created);
+    const client = { hasUIEvidence: true, startUIEvidence, uiEvidence: vi.fn().mockResolvedValue([]),
+      uiEvidenceBundle: vi.fn().mockResolvedValue({ attempt: created, steps: [], artifacts: [] }) } as unknown as APIClient;
+    const user = userEvent.setup(); const first = render(panel(client)); await prepare(user);
+    await user.click(screen.getByRole("button", { name: "启动真实浏览器验证" }));
+    await waitFor(() => expect(startUIEvidence).toHaveBeenCalledOnce()); const original = startUIEvidence.mock.calls[0];
+    const savedKey = Object.keys(localStorage).find((key) => key.endsWith(encodeURIComponent(uiEvidenceIntentKey("run-1"))))!;
+    const saved = JSON.parse(localStorage.getItem(savedKey)!); saved.value.state = "pending";
+    localStorage.setItem(savedKey, JSON.stringify(saved)); first.unmount();
+    const other = render(panel(client, "another-store"));
+    expect(screen.queryByRole("button", { name: "核对原请求" })).not.toBeInTheDocument(); expect(startUIEvidence).toHaveBeenCalledOnce(); other.unmount();
+    render(panel(client)); expect(screen.getByText(/启动结果待确认/)).toBeInTheDocument(); expect(startUIEvidence).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "核对原请求" }));
+    await waitFor(() => expect(startUIEvidence).toHaveBeenCalledTimes(2)); expect(startUIEvidence.mock.calls[1]).toEqual(original);
+    await waitFor(() => expect(localStorage.length).toBe(0));
+  });
+
+  it("does not execute when persisting the exact start request fails", async () => {
+    const startUIEvidence = vi.fn(); const client = { hasUIEvidence: true, startUIEvidence,
+      uiEvidence: vi.fn().mockResolvedValue([]) } as unknown as APIClient;
+    const user = userEvent.setup(); renderPanel(client); await prepare(user);
+    const write = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key.endsWith(encodeURIComponent(uiEvidenceIntentKey("run-1")))) throw new Error("quota");
+      write.call(this, key, value);
+    });
+    await user.click(screen.getByRole("button", { name: "启动真实浏览器验证" }));
+    expect(startUIEvidence).not.toHaveBeenCalled(); expect(await screen.findByRole("alert")).toHaveTextContent("无法保存本机恢复数据");
+  });
+
+  it("retains a mismatched recovered Run record and prevents a replacement operation", async () => {
+    const startUIEvidence = vi.fn().mockRejectedValue(new Error("response lost"));
+    const client = { hasUIEvidence: true, startUIEvidence, uiEvidence: vi.fn().mockResolvedValue([]) } as unknown as APIClient;
+    const user = userEvent.setup(); const first = renderPanel(client); await prepare(user);
+    await user.click(screen.getByRole("button", { name: "启动真实浏览器验证" })); await screen.findByRole("alert"); first.unmount();
+    const key = Object.keys(localStorage).find((entry) => entry.endsWith(encodeURIComponent(uiEvidenceIntentKey("run-1"))))!;
+    const stored = JSON.parse(localStorage.getItem(key)!); stored.value.runID = "another-run";
+    const corrupt = JSON.stringify(stored); localStorage.setItem(key, corrupt);
+    renderPanel(client); await user.click(screen.getByText("准备并启动浏览器验证")); await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "启动真实浏览器验证" }));
+    expect(startUIEvidence).toHaveBeenCalledOnce(); expect(localStorage.getItem(key)).toBe(corrupt);
+    expect(screen.getAllByText(/恢复记录格式异常/).length).toBeGreaterThan(0);
+  });
+
+  it("shows unavailable persistence without a data-store provider and keeps starting disabled", async () => {
+    const startUIEvidence = vi.fn(); const client = { hasUIEvidence: true, startUIEvidence,
+      uiEvidence: vi.fn().mockResolvedValue([]) } as unknown as APIClient;
+    render(<QueryClientProvider client={new QueryClient()}><UIEvidencePanel client={client} runID="run-1" /></QueryClientProvider>);
+    expect(screen.getAllByText(/无法持久保存验证草稿或原请求/).length).toBeGreaterThan(0);
+    const user = userEvent.setup(); await prepare(user);
+    expect(screen.getByRole("button", { name: "启动真实浏览器验证" })).toBeDisabled(); expect(startUIEvidence).not.toHaveBeenCalled();
   });
 
   it("invalidates review when launch settings change and rejects remote addresses before mutation", async () => {
@@ -133,7 +215,7 @@ describe("UIEvidencePanel", () => {
     const startUIEvidence = vi.fn().mockResolvedValue(attempt("not_run", "attempt-service"));
     const client = { hasUIEvidence: true, listThreadApplicationServices, getThreadApplicationService, threadActivityDetail, startUIEvidence,
       uiEvidence: vi.fn().mockResolvedValue([]), uiEvidenceBundle: vi.fn().mockResolvedValue({ attempt: attempt("not_run", "attempt-service"), artifacts: [], steps: [] }) } as unknown as APIClient;
-    render(<QueryClientProvider client={new QueryClient()}><UIEvidencePanel client={client} runID="run-1" threadID="thread-1" /></QueryClientProvider>);
+    render(panel(client, "ui-evidence-test-store", "run-1", "thread-1"));
     const user = userEvent.setup(); await user.click(screen.getByText("准备并启动浏览器验证"));
     await user.selectOptions(await screen.findByLabelText("应用服务"), "job-selected");
     expect(screen.queryByRole("option", { name: /job-other/ })).not.toBeInTheDocument();
@@ -207,7 +289,7 @@ describe("UIEvidencePanel", () => {
       uiEvidence } as unknown as APIClient;
     const user = userEvent.setup();
     renderPanel(client);
-    await screen.findByText("还没有浏览器验证。先按上方「配置浏览器验证」完成连接与启动配置。");
+    await screen.findByText("还没有浏览器验证。请在上方验证设置中保存启用偏好，重启后连接当前服务。");
     await user.click(screen.getByRole("button", { name: "刷新 UI 证据" }));
     await screen.findByText(/历史证据状态待确认/);
     expect(screen.queryByText(/还没有浏览器验证/)).not.toBeInTheDocument();
@@ -248,9 +330,9 @@ describe("UIEvidencePanel", () => {
 
   it.each([
     ["missing_control_credential", "先刷新列表以查看历史证据"],
-    ["ui_evidence_disabled", "启用 --enable-ui-evidence"],
-    ["run_execution_disabled", "启用 --enable-run-execution"],
-    ["browser_cdp_control_disabled", "启用 --enable-browser-cdp-control"],
+    ["ui_evidence_disabled", "在下方验证设置中启用浏览器验证"],
+    ["run_execution_disabled", "恢复浏览器验证所需的任务执行能力"],
+    ["browser_cdp_control_disabled", "重新连接当前控制服务"],
     [undefined, "先刷新列表以查看历史记录"],
   ])("explains unavailable UI evidence accurately for %s and keeps launch disabled", async (reason, message) => {
     const startUIEvidence = vi.fn();
@@ -260,15 +342,15 @@ describe("UIEvidencePanel", () => {
     const user = userEvent.setup();
     const { container } = renderPanel(client);
     expect(screen.getByText(new RegExp(message, "u"))).toBeInTheDocument();
-    expect(screen.getByText(/在 Windows Desktop 连接控制凭证/)).toBeInTheDocument();
+    expect(screen.getByText(/仅在手工启动 Windows Desktop 时/)).toBeInTheDocument();
     expect(container.textContent).toContain("--enable-ui-evidence");
     expect(container.textContent).toContain("--enable-run-execution");
     expect(container.textContent).toContain("--enable-browser-cdp-control");
     expect(container.textContent).not.toContain("当前连接为只读");
-    await screen.findByText("还没有浏览器验证。先按上方「配置浏览器验证」完成连接与启动配置。");
+    await screen.findByText("还没有浏览器验证。请在上方验证设置中保存启用偏好，重启后连接当前服务。");
     expect(screen.queryByText("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。")).not.toBeInTheDocument();
-    await user.click(screen.getByText("配置浏览器验证"));
-    expect(screen.getByText(/在 Windows Desktop 连接控制凭证/)).toBeVisible();
+    await user.click(screen.getByText("高级：启动参数与独立 CLI"));
+    expect(screen.getByText(/仅在手工启动 Windows Desktop 时/)).toBeVisible();
     await user.click(screen.getByText("准备并启动浏览器验证"));
     expect(screen.getByRole("button", { name: "预览验证清单" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "启动真实浏览器验证" })).toBeDisabled();

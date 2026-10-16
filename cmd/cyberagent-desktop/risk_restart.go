@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/app"
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/desktop"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -150,7 +151,7 @@ func desktopOptionsForRiskProfile(profile desktop.DesktopRiskProfile) (desktopOp
 	}
 	config := desktopOptions{riskProfileRestart: true, sandboxSettings: true}
 	enableSafeDesktopProductBundle(&config)
-	if profile == desktop.DesktopRiskProfileDebug || profile == desktop.DesktopRiskProfileSandboxDebug {
+	if profile == desktop.DesktopRiskProfileDebug || profile == desktop.DesktopRiskProfileSandboxDebug || profile == desktop.DesktopRiskProfileVerificationDebug {
 		config.userTerminal = true
 	}
 	return config, nil
@@ -221,11 +222,7 @@ func confirmDesktopRiskRestart(ctx context.Context,
 	if err != nil {
 		return false, err
 	}
-	answer, err := runtime.MessageDialog(ctx, options)
-	if err != nil {
-		return false, err
-	}
-	return answer == "确认并重启", nil
+	return confirmDesktopRiskDialog(ctx, options, "确认并重启")
 }
 
 func desktopRiskRestartDialogOptions(profile desktop.DesktopRiskProfile) (
@@ -240,6 +237,9 @@ func desktopRiskRestartDialogOptions(profile desktop.DesktopRiskProfile) (
 		message = "重启以启用用户终端。终端由用户所有，Agent 输入默认关闭。\n\n" +
 			"Agent 输入仍需要当前任务的 Full 激活、Debug 交互和单独的限时终端授权。" +
 			"重启不会恢复已保存任务的执行权；终端撤销、取消和退出清理继续生效。"
+	case desktop.DesktopRiskProfileVerification, desktop.DesktopRiskProfileVerificationDebug:
+		message = "重启以应用已保存的浏览器验证和批量验证偏好。正在运行的任务会先停止并清理。\n\n" +
+			"重启保留当前用户终端的启用状态。具体执行仍需当前任务权限、执行环境及各项检查；重启不会恢复旧执行权。"
 	default:
 		return runtime.MessageDialogOptions{}, errors.New("desktop risk profile is invalid")
 	}
@@ -251,6 +251,31 @@ func desktopRiskRestartDialogOptions(profile desktop.DesktopRiskProfile) (
 		DefaultButton: "取消",
 		CancelButton:  "取消",
 	}, nil
+}
+
+type nativeVerificationSettingsConfirmer struct{}
+
+func (nativeVerificationSettingsConfirmer) ConfirmVerificationSettings(ctx context.Context, settings application.DesktopVerificationSettings) (bool, error) {
+	if ctx == nil || ctx.Err() != nil {
+		return false, errors.New("native verification settings context is invalid")
+	}
+	return confirmDesktopRiskDialog(ctx, desktopVerificationSettingsDialogOptions(settings), "确认保存")
+}
+
+func desktopVerificationSettingsDialogOptions(settings application.DesktopVerificationSettings) runtime.MessageDialogOptions {
+	choice := func(enabled bool) string {
+		if enabled {
+			return "启用"
+		}
+		return "关闭"
+	}
+	return runtime.MessageDialogOptions{Type: runtime.WarningDialog, Title: app.Name + " 验证能力设置",
+		Message: "保存以下偏好，用于以后普通启动和受管重启：\n\n" +
+			"浏览器验证：" + choice(settings.UIEvidenceEnabled) + "\n批量验证：" + choice(settings.BatchValidationEnabled) +
+			"\n\n保存后当前应用继续运行；可准备完成后再重启应用以生效。" +
+			"启用后，浏览器验证可启动项目服务和受管浏览器，批量验证可在任务所选环境运行 Go/npm 检查。" +
+			"具体执行仍需当前任务权限及各项检查；保存偏好和重启都不会恢复旧执行权。",
+		Buttons: []string{"确认保存", "取消"}, DefaultButton: "取消", CancelButton: "取消"}
 }
 
 func startDesktopRiskRestartHelper(profile desktop.DesktopRiskProfile, parentPID int) error {

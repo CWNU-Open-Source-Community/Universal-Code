@@ -29,6 +29,7 @@ import "./settings.css";
 
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
 const SandboxEnvironmentPanel = lazy(() => import("../../components/sandbox-environment-panel").then((module) => ({ default: module.SandboxEnvironmentPanel })));
+const VerificationSettingsPanel = lazy(() => import("../../components/verification-settings-panel").then((module) => ({ default: module.VerificationSettingsPanel })));
 
 function SettingRow({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return <div className="v2-setting-row"><div><strong>{title}</strong><span>{detail}</span></div>
@@ -369,7 +370,8 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
       {section === "appearance" && <AppearanceSettings />}
       {section === "environment" && <><h1>执行环境设置</h1><p className="v2-settings-lead">检测用户安装，保存下次启动配置，再回到任务选择编码环境。</p>
-        <Suspense fallback={<p role="status">正在加载执行环境设置…</p>}><SandboxEnvironmentPanel client={client} /></Suspense></>}
+        <Suspense fallback={<p role="status">正在加载执行环境设置…</p>}><SandboxEnvironmentPanel client={client} />
+          <VerificationSettingsPanel client={client} /></Suspense></>}
       {section === "connections" && <ConnectionsSettings client={client} threadID={threadID} sourceRunID={sourceRunID}
         onOpenGithubReview={onOpenGithubReview} onOpenTask={onOpenTask} onSelect={onSelectSection} />}
       {section === "task-configuration" && <Suspense fallback={<p role="status">正在加载任务配置…</p>}>

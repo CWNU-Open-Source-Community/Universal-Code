@@ -600,6 +600,10 @@ func runDesktop(config desktopOptions) error {
 		return err
 	}
 	homePath := app.DefaultHome()
+	config, verificationSettingsStore, err := loadDesktopVerificationPreferences(context.Background(), config, homePath)
+	if err != nil {
+		return err
+	}
 	config, environmentSettings, err := loadDesktopSandboxSettings(context.Background(), config, homePath)
 	if err != nil {
 		return err
@@ -749,6 +753,8 @@ func runDesktop(config desktopOptions) error {
 		BatchDeliveryControlEnabled:        config.batchDeliveryControl,
 		BatchDeliveryHostValidationEnabled: config.batchValidation,
 		UIEvidenceControlEnabled:           config.uiEvidence,
+		VerificationSettingsReader:         verificationSettingsStore,
+		VerificationSettingsControlEnabled: config.riskProfileRestart,
 		BrowserRuntimeCapabilities: browserruntime.ProductionRuntimeCapabilities{
 			SafeWebStartEnabled: true, DisposableProfileEnabled: true,
 			NetworkContainmentEnabled: true, RestrictedCDPEnabled: true,
@@ -844,6 +850,13 @@ func runDesktop(config desktopOptions) error {
 		UserTerminalController:            controlPlane.UserTerminalController(),
 		DebugTerminalAgentInputController: controlPlane.DebugTerminalAgentInputController(),
 		RiskProfileRestartEnabled:         config.riskProfileRestart,
+		VerificationSettingsStore:         verificationSettingsStore,
+		VerificationSettingsConfirmer: func() desktop.DesktopVerificationSettingsConfirmer {
+			if verificationSettingsStore == nil {
+				return nil
+			}
+			return nativeVerificationSettingsConfirmer{}
+		}(),
 		RiskProfileRestarter: func() desktop.DesktopRiskProfileRestarter {
 			if !config.riskProfileRestart {
 				return nil

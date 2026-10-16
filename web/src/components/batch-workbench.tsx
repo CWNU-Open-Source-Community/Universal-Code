@@ -1,40 +1,73 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { APIRequestError, type APIClient } from "../api/client";
 import type { BatchWorkbenchPrepareRequestView, BatchWorkbenchView, ChildTaskProposalView } from "../api/types";
 import { useLocale } from "../lib/locale";
 import { ErrorState, LoadingState } from "./common";
+import { recoveryObject, recoveryPath, recoveryText, useVerificationRecord } from "./verification-recovery";
 import "./batch-workbench.css";
 
 const version = "batch-delivery-workbench.v1";
-type PrepareIntent = { key: string; body: BatchWorkbenchPrepareRequestView };
-type ChildIntent = { key: string; kind: "owner" | "execute"; generation: number; retry: boolean };
+type PrepareIntent = { version: 1; runID: string; key: string; body: BatchWorkbenchPrepareRequestView; legacy?: true };
+type ChildIntent = { version: 1; runID: string; planID: string; ordinal: number; key: string; kind: "owner" | "execute"; generation: number; retry: boolean; legacy?: true };
+const selectionKey = (runID: string) => `batch-workbench-selection:${JSON.stringify([runID])}`;
+const draftKey = (runID: string, proposalID: string) => `batch-workbench-draft:${JSON.stringify([runID, proposalID])}`;
+const settlementKey = (runID: string, suffix: string) => `batch-workbench-legacy-settled:${JSON.stringify([runID, suffix])}`;
 
-function storageKey(client: APIClient, runID: string, suffix: string) {
-  return `universal-code.batch-workbench.v1:${client.baseURL}:${runID}:${suffix}`;
+function readLegacy<T>(client: APIClient, runID: string, suffix: string, convert: (value: unknown) => T | null): { intent: T | null; error: string } {
+  // Old windows did not record data_store_id. Read only this endpoint/Run key;
+  // the current service must independently confirm the Run before migration.
+  try {
+    const raw = sessionStorage.getItem(`universal-code.batch-workbench.v1:${client.baseURL}:${runID}:${suffix}`);
+    if (raw === null) return { intent: null, error: "" };
+    if (new TextEncoder().encode(raw).byteLength > 2 * 1024 * 1024) throw new Error("legacy request exceeds recovery capacity");
+    const intent = convert(JSON.parse(raw));
+    if (!intent) throw new Error("invalid legacy request");
+    return { intent, error: "" };
+  } catch { return { intent: null, error: "无法核对旧窗口的批量请求；原记录已保留，当前不能创建新操作。" }; }
 }
-function retain(key: string, intent: PrepareIntent | ChildIntent | null) {
-  try { if (intent) sessionStorage.setItem(key, JSON.stringify(intent)); else sessionStorage.removeItem(key); } catch { /* In-memory request still retains the original identity. */ }
+function useLegacyBatchRecovery<T extends PrepareIntent | ChildIntent>(client: APIClient, runID: string, suffix: string,
+  journal: ReturnType<typeof useVerificationRecord<T | null>>, readiness: boolean | ((request: T) => boolean), convert: (value: unknown) => T | null) {
+  const source = useMemo(() => readLegacy(client, runID, suffix, convert), [client.baseURL, runID, suffix]);
+  const ready = Boolean(source.intent && (typeof readiness === "function" ? readiness(source.intent) : readiness));
+  const settled = useVerificationRecord<{ version: 1; runID: string; key: string } | null>(settlementKey(runID, suffix), null,
+    (value): value is { version: 1; runID: string; key: string } | null => value === null || recoveryObject(value) && value.version === 1 && value.runID === runID && isKey(value));
+  const pending = Boolean(source.intent && !journal.value && settled.value?.key !== source.intent.key);
+  const [failure, setFailure] = useState({ store: journal.store, key: journal.key, message: "" });
+  const recover = () => {
+    if (!pending || !ready || !source.intent) return;
+    try {
+      if (settled.error) throw new Error(settled.error);
+      journal.save({ ...source.intent, legacy: true });
+      setFailure({ store: journal.store, key: journal.key, message: "" });
+    } catch (error) { setFailure({ store: journal.store, key: journal.key, message: error instanceof Error ? error.message : String(error) }); }
+  };
+  useEffect(() => { recover(); }, [journal.store, journal.key, journal.value, ready, source, settled.value]);
+  return { blocked: !journal.value && Boolean(source.error || pending), pending,
+    error: source.error || (failure.store === journal.store && failure.key === journal.key ? failure.message : ""), recover };
 }
-function readIntent<T>(key: string, validate: (value: unknown) => boolean): T | null {
-  try { const value: unknown = JSON.parse(sessionStorage.getItem(key) ?? "null"); return validate(value) ? value as T : null; } catch { return null; }
+function settleLegacy(request: PrepareIntent | ChildIntent, journal: { store: ReturnType<typeof useVerificationRecord>["store"] }, suffix: string) {
+  if (request.legacy) journal.store!.write(settlementKey(request.runID, suffix), { version: 1, runID: request.runID, key: request.key });
 }
 function isKey(value: unknown): value is { key: string } {
   return Boolean(value && typeof value === "object" && "key" in value && typeof value.key === "string" &&
     /^web-batch-[a-z]+-[a-f0-9-]{36}$/u.test(value.key));
 }
-function isPrepareIntent(value: unknown): boolean {
-  if (!isKey(value) || !("body" in value) || !value.body || typeof value.body !== "object") return false;
+function isPrepareIntent(value: unknown, runID: string): value is PrepareIntent | null {
+  if (value === null) return true;
+  if (!isKey(value) || !("version" in value) || value.version !== 1 || !("runID" in value) || value.runID !== runID || !("body" in value) || !recoveryObject(value.body)) return false;
   const body = value.body as Partial<BatchWorkbenchPrepareRequestView>;
-  return body.version === version && body.confirm === true && typeof body.proposal_id === "string" &&
+  return (!("legacy" in value) || value.legacy === true) && body.version === version && body.confirm === true && recoveryText(body.proposal_id, 256) && body.proposal_id.length > 0 &&
     Array.isArray(body.tasks) && body.tasks.length > 0 && body.tasks.length <= 2 && body.tasks.every((task, index) =>
-      task.ordinal === index + 1 && Array.isArray(task.ownership_hints) && task.ownership_hints.length <= 32 &&
-      task.ownership_hints.every((hint) => typeof hint.path === "string" && ["file", "directory"].includes(hint.kind)) &&
-      Array.isArray(task.validations) && task.validations.length <= 16);
+      recoveryObject(task) && task.ordinal === index + 1 && Array.isArray(task.ownership_hints) && task.ownership_hints.length > 0 && task.ownership_hints.length <= 32 &&
+      task.ownership_hints.every((hint) => recoveryObject(hint) && recoveryPath(hint.path) && ["file", "directory"].includes(String(hint.kind))) &&
+      Array.isArray(task.validations) && task.validations.length > 0 && task.validations.length <= 16 && task.validations.some((test) => test?.kind === "git_diff_check") &&
+      task.validations.every((test) => recoveryObject(test) && recoveryText(test.id, 256) && ["git_diff_check", "go_test", "npm_test"].includes(String(test.kind)) && recoveryPath(test.scope)));
 }
-function isChildIntent(value: unknown): boolean {
-  return isKey(value) && "generation" in value && Number.isSafeInteger(value.generation) &&
-    Number(value.generation) >= 1 && Number(value.generation) <= 8 && "kind" in value &&
+function isChildIntent(value: unknown, runID: string, planID: string, ordinal: number): value is ChildIntent | null {
+  return value === null || isKey(value) && "version" in value && value.version === 1 && "runID" in value && value.runID === runID &&
+    "planID" in value && value.planID === planID && "ordinal" in value && value.ordinal === ordinal && "generation" in value && Number.isSafeInteger(value.generation) &&
+    Number(value.generation) >= 1 && Number(value.generation) <= 8 && (!("legacy" in value) || value.legacy === true) && "kind" in value &&
     ["owner", "execute"].includes(String(value.kind)) && "retry" in value && typeof value.retry === "boolean";
 }
 
@@ -43,17 +76,33 @@ export function BatchPreparation({ client, runID, usedProposalIDs, onReviewPropo
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
-  const retentionKey = storageKey(client, runID, "prepare");
-  const [intent, setIntent] = useState(() => readIntent<PrepareIntent>(retentionKey, isPrepareIntent));
-  const [selected, setSelected] = useState(intent?.body.proposal_id ?? "");
+  const journal = useVerificationRecord<PrepareIntent | null>(`batch-workbench-prepare:${JSON.stringify([runID])}`, null,
+    (value): value is PrepareIntent | null => isPrepareIntent(value, runID));
+  const intent = journal.value;
+  const selection = useVerificationRecord(selectionKey(runID), { version: 1, runID, selected: "" },
+    (value): value is { version: number; runID: string; selected: string } => recoveryObject(value) && value.version === 1 && value.runID === runID && recoveryText(value.selected, 256));
+  const selected = selection.value.selected || intent?.body.proposal_id || "";
+  const [localError, setLocalError] = useState("");
   const query = useQuery({ queryKey: ["run", runID, "child-tasks"],
     queryFn: ({ signal }) => client.getRunChildTaskProposals(runID, signal) });
-  const action = useMutation({ mutationFn: (request: PrepareIntent) =>
-    client.prepareBatchWorkbench(runID, request.body, request.key),
-    onSuccess: (result) => {
-      retain(retentionKey, null); setIntent(null);
-      cache.setQueryData(["run", runID, "batch-workbench", result.snapshot.plan.id], result);
-      void cache.invalidateQueries({ queryKey: ["run", runID, "batch-deliveries"] });
+  const legacy = useLegacyBatchRecovery(client, runID, "prepare", journal,
+    (request) => query.isSuccess && query.data.items.some((proposal) => proposal.run_id === runID && proposal.id === request.body.proposal_id),
+    (value) => {
+      if (!recoveryObject(value)) return null;
+      const request = { version: 1, runID, key: value.key, body: value.body };
+      return isPrepareIntent(request, runID) ? request : null;
+    });
+  const action = useMutation({ mutationFn: (submission: { request: PrepareIntent; client: APIClient; journal: typeof journal }) =>
+    submission.client.prepareBatchWorkbench(submission.request.runID, submission.request.body, submission.request.key),
+    onSuccess: (result, submission) => {
+      try {
+        settleLegacy(submission.request, submission.journal, "prepare");
+        submission.journal.store!.remove(draftKey(submission.request.runID, submission.request.body.proposal_id));
+        submission.journal.store!.remove(selectionKey(submission.request.runID));
+        submission.journal.remove();
+      } catch (failure) { setLocalError(failure instanceof Error ? failure.message : String(failure)); }
+      cache.setQueryData(["run", submission.request.runID, "batch-workbench", result.snapshot.plan.id], result);
+      void cache.invalidateQueries({ queryKey: ["run", submission.request.runID, "batch-deliveries"] });
     },
   });
   const candidates = query.data?.items.filter((proposal) => proposal.surface === "core" &&
@@ -61,9 +110,14 @@ export function BatchPreparation({ client, runID, usedProposalIDs, onReviewPropo
     proposal.assignments.length === proposal.tasks.length &&
     proposal.assignments.every((assignment) => assignment.status === "admitted") && !usedProposalIDs.includes(proposal.id)) ?? [];
   const proposal = candidates.find((candidate) => candidate.id === selected) ?? candidates[0];
+  const dispatch = (request: PrepareIntent) => {
+    if (legacy.blocked) return;
+    try { journal.save(request); setLocalError(""); action.mutate({ request, client, journal }); }
+    catch (failure) { setLocalError(failure instanceof Error ? failure.message : String(failure)); }
+  };
   const submit = (body: BatchWorkbenchPrepareRequestView) => {
-    const request = { key: `web-batch-prepare-${crypto.randomUUID()}`, body };
-    retain(retentionKey, request); setIntent(request); action.mutate(request);
+    if (intent || action.isPending || legacy.blocked) return;
+    dispatch({ version: 1, runID, key: `web-batch-prepare-${crypto.randomUUID()}`, body });
   };
   return <section className="batch-workbench-preparation" aria-label={t("准备独立任务", "Prepare isolated tasks")}>
     <div className="section-heading"><h3>{t("准备独立任务", "Prepare isolated tasks")}</h3>
@@ -77,40 +131,56 @@ export function BatchPreparation({ client, runID, usedProposalIDs, onReviewPropo
     {intent ? <div className="batch-workbench-recovery" role="status">
       <p>{t("原准备请求已保存。选择“核对准备结果”，继续确认这次请求。", "The original preparation request is saved. Choose Check preparation result to confirm this request.")}</p>
       <ul>{intent.body.tasks.map((task) => <li key={task.ordinal}>#{task.ordinal}: {task.ownership_hints.map((hint) => hint.path).join(", ")}</li>)}</ul>
-      <button type="button" className="command-button" disabled={action.isPending} onClick={() => action.mutate(intent)}>{t("核对准备结果", "Check preparation result")}</button>
+      <button type="button" className="command-button" disabled={action.isPending} onClick={() => dispatch(intent)}>{t("核对准备结果", "Check preparation result")}</button>
       {action.error instanceof APIRequestError && action.error.status >= 400 && action.error.status < 500 &&
-        <button type="button" className="compact-command" onClick={() => { retain(retentionKey, null); setIntent(null); action.reset(); }}>{t("调整准备请求", "Revise preparation request")}</button>}
+        <button type="button" className="compact-command" onClick={() => { try { settleLegacy(intent, journal, "prepare"); journal.remove(); action.reset(); setLocalError(""); } catch (failure) { setLocalError(String(failure)); } }}>{t("调整准备请求", "Revise preparation request")}</button>}
+    </div> : legacy.blocked ? <div role="status"><p>{legacy.error || t("旧窗口原请求待保存；先读取当前任务身份，再保存原请求以核对结果。", "The old window's request needs saving. Read the current task identity, then save the original request to check its result.")}</p>
+      {legacy.pending && <button type="button" className="compact-command" onClick={legacy.recover}>{t("重新保存原请求", "Retry saving original request")}</button>}
     </div> : proposal ? <>
-      <label>{t("子任务提案", "Child task proposal")}<select value={proposal.id} onChange={(event) => setSelected(event.target.value)}>
+      <label>{t("子任务提案", "Child task proposal")}<select value={proposal.id} onChange={(event) => selection.edit({ version: 1, runID, selected: event.target.value })}>
         {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.tasks.map((task) => task.title).join(" / ")}</option>)}
       </select></label>
-      <BatchPreparationForm key={proposal.id} proposal={proposal} hostValidation={client.hasBatchDeliveryHostValidation}
+      <BatchPreparationForm key={`${runID}:${proposal.id}`} runID={runID} proposal={proposal} hostValidation={client.hasBatchDeliveryHostValidation}
         pending={action.isPending} onPrepare={submit} />
     </> : !query.isLoading && !query.isError && <p>{t("先在“审阅子任务提案”中批准并准入 1–2 个独立任务，再回来准备负责路径。", "Approve and admit 1–2 isolated tasks in Review child proposals, then return to assign their paths.")}</p>}
     {action.isError && <p className="inline-warning" role="alert">{action.error instanceof Error ? action.error.message : t("准备结果读取失败", "Preparation result could not be read")}</p>}
+    {(localError || journal.error || selection.error) && <p className="inline-warning" role="status">{localError || journal.error || selection.error}</p>}
   </section>;
 }
 
-function BatchPreparationForm({ proposal, hostValidation, pending, onPrepare }: {
-  proposal: ChildTaskProposalView; hostValidation: boolean; pending: boolean;
+interface BatchDraft { version: 1; runID: string; proposalID: string; paths: Record<number, string>; kinds: Record<number, "file" | "directory">; goScopes: Record<number, string>; npmScopes: Record<number, string> }
+function validBatchDraft(value: unknown, runID: string, proposalID: string): value is BatchDraft {
+  if (!recoveryObject(value) || value.version !== 1 || value.runID !== runID || value.proposalID !== proposalID) return false;
+  return ["paths", "kinds", "goScopes", "npmScopes"].every((field) => recoveryObject(value[field]) &&
+    Object.entries(value[field]).every(([ordinal, entry]) => ["1", "2"].includes(ordinal) &&
+      (field === "kinds" ? ["file", "directory"].includes(String(entry)) : recoveryText(entry, field === "paths" ? 131072 : 4096))));
+}
+function BatchPreparationForm({ runID, proposal, hostValidation, pending, onPrepare }: {
+  runID: string; proposal: ChildTaskProposalView; hostValidation: boolean; pending: boolean;
   onPrepare: (body: BatchWorkbenchPrepareRequestView) => void;
 }) {
   const { t } = useLocale();
-  const [paths, setPaths] = useState<Record<number, string>>({});
-  const [kinds, setKinds] = useState<Record<number, "file" | "directory">>({});
-  const [goScopes, setGoScopes] = useState<Record<number, string>>({});
-  const [npmScopes, setNpmScopes] = useState<Record<number, string>>({});
-  const [confirmed, setConfirmed] = useState(false);
+  const draft = useVerificationRecord<BatchDraft>(draftKey(runID, proposal.id), { version: 1, runID, proposalID: proposal.id,
+    paths: {}, kinds: {}, goScopes: {}, npmScopes: {} }, (value): value is BatchDraft => validBatchDraft(value, runID, proposal.id));
+  const { paths, kinds, goScopes, npmScopes } = draft.value;
+  const [review, setReview] = useState({ store: draft.store, key: draft.key, checked: false });
+  const confirmed = review.store === draft.store && review.key === draft.key && review.checked;
+  const setConfirmed = (checked: boolean) => setReview({ store: draft.store, key: draft.key, checked });
+  const change = <K extends "paths" | "kinds" | "goScopes" | "npmScopes",>(field: K, value: BatchDraft[K]) => {
+    draft.edit((current) => ({ ...current, [field]: value })); setConfirmed(false);
+  };
+  const setPaths = (value: BatchDraft["paths"]) => change("paths", value), setKinds = (value: BatchDraft["kinds"]) => change("kinds", value);
+  const setGoScopes = (value: BatchDraft["goScopes"]) => change("goScopes", value), setNpmScopes = (value: BatchDraft["npmScopes"]) => change("npmScopes", value);
   const hasPaths = proposal.tasks.every((task) => (paths[task.ordinal] ?? "").trim());
   return <form className="batch-workbench-form" onSubmit={(event) => {
     event.preventDefault();
-    if (!confirmed || !hasPaths || pending) return;
+    if (!confirmed || !hasPaths || pending || draft.error) return;
     onPrepare({ version, proposal_id: proposal.id, confirm: true, tasks: proposal.tasks.map((task) => ({
       ordinal: task.ordinal, ownership_hints: (paths[task.ordinal] ?? "").split(/\r?\n/u).map((path) => path.trim()).filter(Boolean)
         .map((path) => ({ path, kind: kinds[task.ordinal] ?? "file" })),
       validations: [{ id: "diff", kind: "git_diff_check", scope: "." },
-        ...(goScopes[task.ordinal]?.trim() ? [{ id: "go", kind: "go_test", scope: goScopes[task.ordinal].trim() }] : []),
-        ...(npmScopes[task.ordinal]?.trim() ? [{ id: "npm", kind: "npm_test", scope: npmScopes[task.ordinal].trim() }] : [])],
+        ...(hostValidation && goScopes[task.ordinal]?.trim() ? [{ id: "go", kind: "go_test", scope: goScopes[task.ordinal].trim() }] : []),
+        ...(hostValidation && npmScopes[task.ordinal]?.trim() ? [{ id: "npm", kind: "npm_test", scope: npmScopes[task.ordinal].trim() }] : [])],
     })) });
   }}>
     {proposal.tasks.map((task) => <fieldset key={task.ordinal} disabled={pending}>
@@ -132,7 +202,11 @@ function BatchPreparationForm({ proposal, hostValidation, pending, onPrepare }: 
     </fieldset>)}
     <label className="checkbox-row"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
       {t("已核对任务、负责路径和验证范围，准备独立工作区", "I reviewed the tasks, owned paths, and validations; prepare independent workspaces")}</label>
-    <button type="submit" className="command-button" disabled={pending || !confirmed || !hasPaths}>{t("准备独立任务", "Prepare isolated tasks")}</button>
+    {draft.error && <div className="inline-warning" role="status"><p>{draft.error}</p>
+      {draft.store && <button type="button" className="compact-command" disabled={pending}
+        onClick={() => { try { draft.discard(); setConfirmed(false); } catch { /* The record keeps its visible persistence error. */ } }}>{t("放弃未保存草稿", "Discard unsaved draft")}</button>}
+    </div>}
+    <button type="submit" className="command-button" disabled={pending || !confirmed || !hasPaths || Boolean(draft.error)}>{t("准备独立任务", "Prepare isolated tasks")}</button>
   </form>;
 }
 
@@ -141,21 +215,30 @@ export function BatchWorkbenchControls({ client, runID, planID, ordinal }: {
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
-  const retentionKey = storageKey(client, runID, `${planID}/${ordinal}`);
-  const [intent, setIntent] = useState(() => readIntent<ChildIntent>(retentionKey, isChildIntent));
+  const journal = useVerificationRecord<ChildIntent | null>(`batch-workbench-child:${JSON.stringify([runID, planID, ordinal])}`, null,
+    (value): value is ChildIntent | null => isChildIntent(value, runID, planID, ordinal));
+  const intent = journal.value;
+  const [localError, setLocalError] = useState("");
   const query = useQuery({ queryKey: ["run", runID, "batch-workbench", planID],
     queryFn: ({ signal }) => client.getBatchWorkbench(runID, planID, signal),
     refetchInterval: (state) => state.state.data?.children.some((child) => child.executing) ? 1500 : false });
-  const invalidate = (result: BatchWorkbenchView) => {
-    cache.setQueryData(["run", runID, "batch-workbench", planID], result);
-    void cache.invalidateQueries({ queryKey: ["run", runID, "batch-delivery", planID] });
-    void cache.invalidateQueries({ queryKey: ["run", runID, "batch-deliveries"] });
-    void cache.invalidateQueries({ queryKey: ["run", runID, "agent-graph"] });
+  const legacy = useLegacyBatchRecovery(client, runID, `${planID}/${ordinal}`, journal,
+    query.isSuccess && query.data.snapshot.plan.run_id === runID && query.data.snapshot.plan.id === planID && query.data.children.some((child) => child.ordinal === ordinal),
+    (value) => {
+      if (!recoveryObject(value)) return null;
+      const request = { version: 1, runID, planID, ordinal, key: value.key, kind: value.kind, retry: value.retry, generation: value.generation };
+      return isChildIntent(request, runID, planID, ordinal) ? request : null;
+    });
+  const invalidate = (result: BatchWorkbenchView, sourceRunID: string, sourcePlanID: string) => {
+    cache.setQueryData(["run", sourceRunID, "batch-workbench", sourcePlanID], result);
+    void cache.invalidateQueries({ queryKey: ["run", sourceRunID, "batch-delivery", sourcePlanID] });
+    void cache.invalidateQueries({ queryKey: ["run", sourceRunID, "batch-deliveries"] });
+    void cache.invalidateQueries({ queryKey: ["run", sourceRunID, "agent-graph"] });
   };
-  const action = useMutation({ mutationFn: (request: ChildIntent) => request.kind === "owner"
-    ? client.recoverBatchWorkbenchOwner(runID, planID, ordinal, { version, confirm: true, retry: request.retry, expected_generation: request.generation }, request.key)
-    : client.executeBatchWorkbenchChild(runID, planID, ordinal, { version, confirm: true, expected_generation: request.generation }, request.key),
-    onSuccess: (result) => { retain(retentionKey, null); setIntent(null); invalidate(result); },
+  const action = useMutation({ mutationFn: ({ request, client: source }: { request: ChildIntent; client: APIClient; journal: typeof journal }) => request.kind === "owner"
+    ? source.recoverBatchWorkbenchOwner(request.runID, request.planID, request.ordinal, { version, confirm: true, retry: request.retry, expected_generation: request.generation }, request.key)
+    : source.executeBatchWorkbenchChild(request.runID, request.planID, request.ordinal, { version, confirm: true, expected_generation: request.generation }, request.key),
+    onSuccess: (result, submission) => { try { settleLegacy(submission.request, submission.journal, `${submission.request.planID}/${submission.request.ordinal}`); submission.journal.remove(); } catch (failure) { setLocalError(String(failure)); } invalidate(result, submission.request.runID, submission.request.planID); },
     onError: () => { void query.refetch(); },
   });
   if (query.isLoading) return <p role="status">{t("读取任务准备状态…", "Reading task readiness…")}</p>;
@@ -168,8 +251,13 @@ export function BatchWorkbenchControls({ client, runID, planID, ordinal }: {
   const waiting = query.data.snapshot.plan.spec.tasks[ordinal - 1].dependency_ordinals.some((dependency) =>
     !query.data?.snapshot.children.some((item) => item.workspace.ordinal === dependency && ["accepted", "merged"].includes(item.workspace.status)));
   const submit = (kind: ChildIntent["kind"], retry = false) => {
-    const request = { kind, retry, generation: child.generation, key: `web-batch-${kind}-${crypto.randomUUID()}` };
-    retain(retentionKey, request); setIntent(request); action.mutate(request);
+    if (intent || action.isPending || legacy.blocked) return;
+    dispatch({ version: 1, runID, planID, ordinal, kind, retry, generation: child.generation, key: `web-batch-${kind}-${crypto.randomUUID()}` });
+  };
+  const dispatch = (request: ChildIntent) => {
+    if (legacy.blocked) return;
+    try { journal.save(request); setLocalError(""); action.mutate({ request, client, journal }); }
+    catch (failure) { setLocalError(failure instanceof Error ? failure.message : String(failure)); }
   };
   return <div className="batch-workbench-controls">
     {!query.data.worker_available && <p>{t("任务已准备。连接当前运行时的批量执行能力后，可在这里启动子任务。", "Tasks are prepared. Connect the current runtime’s batch execution capability to start a child here.")}</p>}
@@ -178,9 +266,11 @@ export function BatchWorkbenchControls({ client, runID, planID, ordinal }: {
     {child.outcome_unresolved && <p>{t("上次执行结果需要核对。刷新交付记录，或恢复新的代次后继续。", "The previous execution needs confirmation. Refresh its delivery record, or recover a new generation to continue.")}</p>}
     {waiting && <p>{t("先验收依赖任务，再启动这个任务。", "Accept the dependency task before starting this task.")}</p>}
     {intent ? <div role="status"><p>{t("原操作已保存。核对结果会沿用这次请求。", "The original operation is saved. Checking the result keeps this request’s identity.")}</p>
-      <button type="button" className="command-button" disabled={action.isPending} onClick={() => action.mutate(intent)}>{t("核对任务操作结果", "Check child operation result")}</button>
+      <button type="button" className="command-button" disabled={action.isPending} onClick={() => dispatch(intent)}>{t("核对任务操作结果", "Check child operation result")}</button>
       {action.error instanceof APIRequestError && action.error.status >= 400 && action.error.status < 500 &&
-        <button type="button" className="compact-command" onClick={() => { retain(retentionKey, null); setIntent(null); action.reset(); }}>{t("查看当前任务并继续", "Continue from the current task")}</button>}
+        <button type="button" className="compact-command" onClick={() => { try { settleLegacy(intent, journal, `${planID}/${ordinal}`); journal.remove(); action.reset(); setLocalError(""); } catch (failure) { setLocalError(String(failure)); } }}>{t("查看当前任务并继续", "Continue from the current task")}</button>}
+    </div> : legacy.blocked ? <div role="status"><p>{legacy.error || t("旧窗口原操作待保存；核对当前任务身份后才能继续。", "The old window's operation needs saving. Confirm the current task identity before continuing.")}</p>
+      {legacy.pending && <button type="button" className="compact-command" onClick={legacy.recover}>{t("重新保存原请求", "Retry saving original request")}</button>}
     </div> : <>
       {active && child.owner_available && !child.outcome_unresolved && <button type="button" className="command-button"
         disabled={action.isPending || child.executing || !query.data.worker_available || waiting}
@@ -194,6 +284,7 @@ export function BatchWorkbenchControls({ client, runID, planID, ordinal }: {
     </>}
     {action.isPending && <p role="status">{t("正在处理子任务操作…", "Processing child operation…")}</p>}
     {action.isError && <p className="inline-warning" role="alert">{action.error instanceof Error ? action.error.message : t("操作结果读取失败", "Operation result could not be read")}</p>}
+    {(localError || journal.error) && <p className="inline-warning" role="status">{localError || journal.error}</p>}
     <button type="button" className="compact-command" disabled={query.isFetching} onClick={() => void query.refetch()}>{t("刷新任务进度", "Refresh child progress")}</button>
   </div>;
 }

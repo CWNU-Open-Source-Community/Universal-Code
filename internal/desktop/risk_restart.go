@@ -11,14 +11,17 @@ const DesktopRiskRestartProtocolVersion = "desktop_risk_restart.v1"
 type DesktopRiskProfile string
 
 const (
-	DesktopRiskProfileFullAccess   DesktopRiskProfile = "full_access"
-	DesktopRiskProfileDebug        DesktopRiskProfile = "debug"
-	DesktopRiskProfileSandbox      DesktopRiskProfile = "sandbox_settings"
-	DesktopRiskProfileSandboxDebug DesktopRiskProfile = "sandbox_settings_debug"
+	DesktopRiskProfileFullAccess        DesktopRiskProfile = "full_access"
+	DesktopRiskProfileDebug             DesktopRiskProfile = "debug"
+	DesktopRiskProfileSandbox           DesktopRiskProfile = "sandbox_settings"
+	DesktopRiskProfileSandboxDebug      DesktopRiskProfile = "sandbox_settings_debug"
+	DesktopRiskProfileVerification      DesktopRiskProfile = "verification_settings"
+	DesktopRiskProfileVerificationDebug DesktopRiskProfile = "verification_settings_debug"
 )
 
 func (p DesktopRiskProfile) Valid() bool {
-	return p == DesktopRiskProfileDebug || p == DesktopRiskProfileSandbox || p == DesktopRiskProfileSandboxDebug
+	return p == DesktopRiskProfileDebug || p == DesktopRiskProfileSandbox || p == DesktopRiskProfileSandboxDebug ||
+		p == DesktopRiskProfileVerification || p == DesktopRiskProfileVerificationDebug
 }
 
 type DesktopRiskRestartStatus string

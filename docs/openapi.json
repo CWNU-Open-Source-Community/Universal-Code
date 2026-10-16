@@ -54318,6 +54318,9 @@
       "RunCapabilityReadinessView": {
         "additionalProperties": false,
         "properties": {
+          "batch_validation": {
+            "$ref": "#/components/schemas/VerificationFeatureReadinessView"
+          },
           "browser_cdp_permissions": {
             "items": {
               "$ref": "#/components/schemas/CapabilityReadinessOptionView"
@@ -54364,6 +54367,9 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "ui_evidence": {
+            "$ref": "#/components/schemas/VerificationFeatureReadinessView"
           }
         },
         "required": [
@@ -54375,6 +54381,8 @@
           "browser_cdp_permissions",
           "presets",
           "command_runtime",
+          "ui_evidence",
+          "batch_validation",
           "capability_grant"
         ],
         "type": "object"
@@ -68208,6 +68216,41 @@
           "outcome",
           "title",
           "summary"
+        ],
+        "type": "object"
+      },
+      "VerificationFeatureReadinessView": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked_by": {
+            "items": {
+              "enum": [
+                "startup_gate_closed",
+                "native_control_unavailable"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "remediation": {
+            "items": {
+              "enum": [
+                "enable_and_restart",
+                "restart_application",
+                "open_desktop_settings"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "installed",
+          "blocked_by",
+          "remediation"
         ],
         "type": "object"
       },

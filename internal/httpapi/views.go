@@ -1038,15 +1038,25 @@ type CommandRuntimeReadinessView struct {
 }
 
 type RunCapabilityReadinessView struct {
-	ProtocolVersion       string                          `json:"protocol_version"`
-	RunID                 string                          `json:"run_id"`
-	Permissions           []CapabilityReadinessOptionView `json:"permissions"`
-	Profiles              []CapabilityReadinessOptionView `json:"profiles"`
-	Interactions          []CapabilityReadinessOptionView `json:"interactions"`
-	BrowserCDPPermissions []CapabilityReadinessOptionView `json:"browser_cdp_permissions"`
-	Presets               []CapabilityReadinessOptionView `json:"presets"`
-	CommandRuntime        CommandRuntimeReadinessView     `json:"command_runtime"`
-	CapabilityGrant       bool                            `json:"capability_grant"`
+	ProtocolVersion       string                           `json:"protocol_version"`
+	RunID                 string                           `json:"run_id"`
+	Permissions           []CapabilityReadinessOptionView  `json:"permissions"`
+	Profiles              []CapabilityReadinessOptionView  `json:"profiles"`
+	Interactions          []CapabilityReadinessOptionView  `json:"interactions"`
+	BrowserCDPPermissions []CapabilityReadinessOptionView  `json:"browser_cdp_permissions"`
+	Presets               []CapabilityReadinessOptionView  `json:"presets"`
+	CommandRuntime        CommandRuntimeReadinessView      `json:"command_runtime"`
+	UIEvidence            VerificationFeatureReadinessView `json:"ui_evidence"`
+	BatchValidation       VerificationFeatureReadinessView `json:"batch_validation"`
+	CapabilityGrant       bool                             `json:"capability_grant"`
+}
+
+// Startup guidance is read-only. Changes are available only through the
+// Desktop native confirmation, never through a capability-readiness request.
+type VerificationFeatureReadinessView struct {
+	Installed   bool     `json:"installed"`
+	BlockedBy   []string `json:"blocked_by"`
+	Remediation []string `json:"remediation"`
 }
 
 func runCapabilityReadinessView(
@@ -1068,6 +1078,8 @@ func runCapabilityReadinessView(
 			Backend:           value.CommandRuntime.Backend,
 		},
 		CapabilityGrant: false,
+		UIEvidence:      VerificationFeatureReadinessView(value.UIEvidence),
+		BatchValidation: VerificationFeatureReadinessView(value.BatchValidation),
 	}
 }
 

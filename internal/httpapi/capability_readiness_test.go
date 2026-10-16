@@ -168,3 +168,54 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestVerificationStartupReadinessProjectsNativePreferencesWithoutHTTPWrites(t *testing.T) {
+	f := newAPIFixture(t)
+	preferences, err := application.NewFileDesktopVerificationSettingsStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := application.CapabilityReadinessRuntime{VerificationSettingsReader: preferences, VerificationSettingsControlEnabled: true}
+	f.api.capabilityReadiness = application.NewRunCapabilityReadinessService(f.store, runtime)
+	path := "/api/v1/runs/" + f.run.ID + "/capability-readiness"
+	read := func() RunCapabilityReadinessView {
+		t.Helper()
+		response := performSessionMessageRequest(t, f.api, http.MethodGet, path, testAccessToken, "", "", nil)
+		var view RunCapabilityReadinessView
+		decodeDataStatus(t, response, http.StatusOK, &view)
+		return view
+	}
+	initial := read()
+	if initial.UIEvidence.Installed || initial.BatchValidation.Installed || initial.CapabilityGrant ||
+		!reflect.DeepEqual(initial.UIEvidence.Remediation, []string{"enable_and_restart"}) ||
+		!reflect.DeepEqual(initial.BatchValidation.Remediation, []string{"enable_and_restart"}) {
+		t.Fatalf("disabled runtime lacks native enable guidance: %+v", initial)
+	}
+	// Model a preference already saved by the native-confirmed path. HTTP has
+	// access only to Load through the narrow reader interface.
+	settings := application.DesktopVerificationSettings{UIEvidenceEnabled: true}
+	if _, _, err := preferences.Save(t.Context(), 1, settings); err != nil {
+		t.Fatal(err)
+	}
+	pending := read()
+	if pending.UIEvidence.Installed || !reflect.DeepEqual(pending.UIEvidence.Remediation, []string{"restart_application"}) ||
+		!reflect.DeepEqual(pending.BatchValidation.Remediation, []string{"enable_and_restart"}) || pending.CapabilityGrant {
+		t.Fatalf("readiness did not separate saved preference and active service: %+v", pending)
+	}
+	body := strings.NewReader(`{"settings":{"ui_evidence_enabled":false,"batch_validation_enabled":true},"expected_revision":2}`)
+	response := performSessionMessageRequest(t, f.api, http.MethodPost, path, testAccessToken, "", "", body)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("readiness exposed an HTTP write: status=%d body=%s", response.Code, response.Body.String())
+	}
+	unchanged, err := preferences.Load(t.Context())
+	if err != nil || unchanged.Revision != 2 || unchanged.Settings != settings {
+		t.Fatalf("HTTP changed native preferences: %+v err=%v", unchanged, err)
+	}
+	runtime.UIEvidenceInstalled = true
+	f.api.capabilityReadiness = application.NewRunCapabilityReadinessService(f.store, runtime)
+	active := read()
+	if !active.UIEvidence.Installed || len(active.UIEvidence.BlockedBy) != 0 || len(active.UIEvidence.Remediation) != 0 ||
+		active.BatchValidation.Installed || active.CapabilityGrant || active.CommandRuntime.CurrentRunGranted {
+		t.Fatalf("installed startup services became an execution grant: %+v", active)
+	}
+}

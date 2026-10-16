@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -85,7 +86,8 @@ func TestBatchDeliveryHTTPProjectionOmitsPrivateGitAndOwnerState(t *testing.T) {
 			Budget: domain.BatchDeliveryBudget{TurnLimit: 2, TokenLimit: 128,
 				TimeoutMillis: 60_000},
 			Validations: []domain.BatchDeliveryValidationRequirement{{
-				ID: "diff", Kind: domain.BatchValidationGitDiffCheck, Scope: "."}}}},
+				ID: "diff", Kind: domain.BatchValidationGitDiffCheck, Scope: "."}},
+			ExpectedArtifacts: []domain.ChildTaskExpectedArtifact{}}},
 		Contract: domain.BatchDeliveryContract{RequireClean: true,
 			RequireIndependentReview: true, RequireAllValidations: true,
 			MaxChangedFiles: 16, MaxDiffBytes: 1024 * 1024}})
@@ -109,8 +111,13 @@ func TestBatchDeliveryHTTPProjectionOmitsPrivateGitAndOwnerState(t *testing.T) {
 	controller := &batchDeliveryControllerStub{snapshot: application.BatchDeliverySnapshot{
 		Plan: plan, Workspaces: []domain.BatchDeliveryWorkspace{workspace},
 		Mailbox: map[int][]domain.BatchDeliveryMailboxMessage{1: {{
+			ID: "batch-message-http-dispatch", PlanID: plan.ID, Ordinal: 1, Generation: 1,
+			Sequence: 1, Kind: domain.BatchMailboxDispatch,
+			Actor: plan.RootAgentID, Summary: "child worktree and narrowed tool profile dispatched",
+			EvidenceRefs: []string{}, OperationDigest: strings.Repeat("3", 64),
+			RequestFingerprint: strings.Repeat("4", 64), CreatedAt: now}, {
 			ID: "batch-message-http-0001", PlanID: plan.ID, Ordinal: 1, Generation: 1,
-			Sequence: 1, Kind: domain.BatchMailboxReadyForReview,
+			Sequence: 2, Kind: domain.BatchMailboxReadyForReview,
 			Actor: "agent-child-http-0001", Summary: "ready for review",
 			EvidenceRefs: []string{"test://http"}, OperationDigest: strings.Repeat("1", 64),
 			RequestFingerprint: strings.Repeat("2", 64), CreatedAt: now}}}}}
@@ -126,6 +133,24 @@ func TestBatchDeliveryHTTPProjectionOmitsPrivateGitAndOwnerState(t *testing.T) {
 	if detail.Code != http.StatusOK {
 		t.Fatalf("detail status=%d body=%s", detail.Code, detail.Body.String())
 	}
+	t.Run("mailbox_empty_evidence_serializes_as_array", func(t *testing.T) {
+		var payload struct {
+			Data BatchDeliverySnapshotView `json:"data"`
+		}
+		if err := json.Unmarshal(detail.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Data.Children) != 1 || len(payload.Data.Children[0].Mailbox) != 2 {
+			t.Fatalf("missing mailbox messages: %s", detail.Body.String())
+		}
+		messages := payload.Data.Children[0].Mailbox
+		if messages[0].Kind != "dispatch" || messages[0].EvidenceRefs == nil || len(messages[0].EvidenceRefs) != 0 {
+			t.Fatalf("normal dispatch evidence_refs must be []: %s", detail.Body.String())
+		}
+		if len(messages[1].EvidenceRefs) != 1 || messages[1].EvidenceRefs[0] != "test://http" {
+			t.Fatalf("populated evidence refs changed: %#v", messages[1].EvidenceRefs)
+		}
+	})
 	raw := strings.ToLower(detail.Body.String())
 	for _, forbidden := range []string{"private\\batch-worktree", "owner-token-digest-private",
 		"operation_digest", "request_fingerprint", "tool_profile_fingerprint",

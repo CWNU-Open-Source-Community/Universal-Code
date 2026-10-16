@@ -16,6 +16,29 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("V2 scoped recovery storage", () => {
+  it("retains unsaved draft warnings across reads and other writes until that draft saves or is discarded", async () => {
+    const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning() }), { wrapper });
+    act(() => {
+      result.current.store.write("draft:a", "saved");
+      result.current.store.markUnsaved("draft:a", "draft exceeds capacity");
+      expect(result.current.store.read("draft:a", "")).toBe("saved");
+      result.current.store.write("draft:b", "other draft");
+      expect(() => result.current.store.assertReadable("draft:a")).not.toThrow();
+      expect(() => result.current.store.assertReadable()).toThrow("draft exceeds capacity");
+    });
+    await waitFor(() => expect(result.current.warning).toBe("draft exceeds capacity"));
+    expect(window.localStorage.getItem(storageKey("draft:a"))).toBe(envelope("saved"));
+    act(() => result.current.store.write("draft:a", "corrected"));
+    expect(() => result.current.store.assertReadable()).not.toThrow();
+    await waitFor(() => expect(result.current.warning).toBeNull());
+    act(() => {
+      result.current.store.markUnsaved("draft:a", "draft exceeds capacity");
+      result.current.store.remove("draft:a");
+    });
+    expect(() => result.current.store.assertReadable()).not.toThrow();
+    await waitFor(() => expect(result.current.warning).toBeNull());
+  });
+
   it("restores JSON records after a provider remount without an initialization write", () => {
     const first = renderHook(() => useV2RecoveryStore(), { wrapper });
     act(() => first.result.current!.write("draft:thread-一", { text: "继续 🧭", refs: ["README.md"] }));

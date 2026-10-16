@@ -119,6 +119,58 @@ describe("desktop native bridge", () => {
     delete window.go;
   });
 
+  it("saves only the confirmed verification choices and restarts through a separate fixed request", async () => {
+    const initial = verificationView();
+    const saved = verificationView(true);
+    const confirm = vi.fn().mockResolvedValue({ protocol_version: initial.protocol_version, status: "saved", replayed: false, view: saved });
+    const restartResult = { protocol_version: initial.protocol_version, status: "restarting", restart_required: true,
+      arbitrary_arguments_accepted: false, persistent_runtime_grant: false };
+    const restart = vi.fn().mockResolvedValue(restartResult);
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue(restartBootstrap), GetVerificationSettings: vi.fn().mockResolvedValue(initial),
+      ConfirmVerificationSettings: confirm, RestartWithVerificationSettings: restart });
+    const module = await import("./desktop-bridge");
+    expect(module.desktopVerificationSettingsAvailable()).toBe(false);
+    await module.loadDesktopBootstrap();
+    expect(module.desktopVerificationSettingsAvailable()).toBe(true);
+    await expect(module.getDesktopVerificationSettings()).resolves.toEqual(initial);
+    const request: import("./desktop-bridge").DesktopVerificationSettingsRequest = {
+      protocol_version: module.desktopVerificationSettingsProtocol, expected_revision: 1, settings: saved.settings };
+    expect((await module.confirmDesktopVerificationSettings(request)).view).toEqual(saved);
+    expect(confirm).toHaveBeenCalledWith(request);
+    expect(restart).not.toHaveBeenCalled();
+    await expect(module.restartDesktopWithVerificationSettings()).resolves.toEqual(restartResult);
+    expect(restart).toHaveBeenCalledWith({ protocol_version: module.desktopVerificationSettingsProtocol });
+  });
+
+  it("rejects mismatched native settings and execution grants instead of reporting a successful save", async () => {
+    const initial = verificationView();
+    const confirm = vi.fn().mockResolvedValue({ protocol_version: initial.protocol_version, status: "saved", replayed: false, view: initial });
+    const restart = vi.fn().mockResolvedValue({ protocol_version: initial.protocol_version, status: "restarting", restart_required: true,
+      arbitrary_arguments_accepted: false, persistent_runtime_grant: true });
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue(restartBootstrap), GetVerificationSettings: vi.fn().mockResolvedValue(initial),
+      ConfirmVerificationSettings: confirm, RestartWithVerificationSettings: restart });
+    const module = await import("./desktop-bridge");
+    await module.loadDesktopBootstrap();
+    await expect(module.confirmDesktopVerificationSettings({ protocol_version: module.desktopVerificationSettingsProtocol,
+      expected_revision: 1, settings: { ...initial.settings, ui_evidence_enabled: true } })).rejects.toThrow("不一致");
+    await expect(module.restartDesktopWithVerificationSettings()).rejects.toThrow("无法核对");
+    for (const invalid of [{ ...initial, capability_grant: true }, { ...initial, restart_required: true },
+      { ...initial, revision: Number.MAX_SAFE_INTEGER + 1 }, { ...initial, settings: { ...initial.settings, command: "injected" } },
+      { ...initial, ui_evidence: { installed: true, blocked_by: [], remediation: [] } }]) {
+      expect(() => module.parseDesktopVerificationSettings(invalid)).toThrow("无法核对");
+    }
+  });
+
+  it("keeps verification settings unavailable without the verified native startup capability", async () => {
+    const read = vi.fn();
+    installBridge({ GetVerificationSettings: read, ConfirmVerificationSettings: vi.fn(), RestartWithVerificationSettings: vi.fn() });
+    const module = await import("./desktop-bridge");
+    await module.loadDesktopBootstrap();
+    expect(module.desktopVerificationSettingsAvailable()).toBe(false);
+    await expect(module.getDesktopVerificationSettings()).rejects.toThrow("不支持");
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("detects absence without changing ordinary browser behavior", async () => {
     const module = await import("./desktop-bridge");
     expect(module.desktopBridgeAvailable()).toBe(false);
@@ -1024,7 +1076,19 @@ describe("desktop native bridge", () => {
   });
 });
 
+function verificationView(enabled = false) {
+  return { protocol_version: "desktop_verification_settings.v1", revision: enabled ? 2 : 1,
+    settings: { ui_evidence_enabled: enabled, batch_validation_enabled: false },
+    active_settings: { ui_evidence_enabled: false, batch_validation_enabled: false },
+    restart_required: enabled, can_save: true, can_restart: enabled, capability_grant: false,
+    ui_evidence: { installed: false, blocked_by: ["startup_gate_closed"], remediation: [enabled ? "restart_application" : "enable_and_restart"] },
+    batch_validation: { installed: false, blocked_by: ["startup_gate_closed"], remediation: ["enable_and_restart"] } };
+}
+
 function installBridge(overrides: Partial<{
+  GetVerificationSettings: () => Promise<unknown>;
+  ConfirmVerificationSettings: (request: unknown) => Promise<unknown>;
+  RestartWithVerificationSettings: (request: unknown) => Promise<unknown>;
   Bootstrap: () => Promise<unknown>;
   ImportWorkspace: () => Promise<unknown>;
   InstallSkillPackage: (request: unknown) => Promise<unknown>;

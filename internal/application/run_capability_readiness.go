@@ -111,15 +111,17 @@ type CapabilityReadinessOption struct {
 }
 
 type RunCapabilityReadiness struct {
-	ProtocolVersion       string                      `json:"protocol_version"`
-	RunID                 string                      `json:"run_id"`
-	Permissions           []CapabilityReadinessOption `json:"permissions"`
-	Profiles              []CapabilityReadinessOption `json:"profiles"`
-	Interactions          []CapabilityReadinessOption `json:"interactions"`
-	BrowserCDPPermissions []CapabilityReadinessOption `json:"browser_cdp_permissions"`
-	Presets               []CapabilityReadinessOption `json:"presets"`
-	CommandRuntime        CommandRuntimeReadiness     `json:"command_runtime"`
-	CapabilityGrant       bool                        `json:"capability_grant"`
+	ProtocolVersion       string                       `json:"protocol_version"`
+	RunID                 string                       `json:"run_id"`
+	Permissions           []CapabilityReadinessOption  `json:"permissions"`
+	Profiles              []CapabilityReadinessOption  `json:"profiles"`
+	Interactions          []CapabilityReadinessOption  `json:"interactions"`
+	BrowserCDPPermissions []CapabilityReadinessOption  `json:"browser_cdp_permissions"`
+	Presets               []CapabilityReadinessOption  `json:"presets"`
+	CommandRuntime        CommandRuntimeReadiness      `json:"command_runtime"`
+	UIEvidence            VerificationFeatureReadiness `json:"ui_evidence"`
+	BatchValidation       VerificationFeatureReadiness `json:"batch_validation"`
+	CapabilityGrant       bool                         `json:"capability_grant"`
 }
 
 // CommandRuntimeReadiness separates a compiled protocol, a process-installed
@@ -154,6 +156,10 @@ type CapabilityReadinessRuntime struct {
 	SBXBackendReady                    bool
 	BrowserBackendReady                bool
 	CommandRuntimeAdapters             []commandruntimeadapter.Identity
+	UIEvidenceInstalled                bool
+	BatchValidationInstalled           bool
+	VerificationSettingsControlEnabled bool
+	VerificationSettingsReader         DesktopVerificationSettingsReader
 }
 
 // WithLocalSandboxReadiness consumes a validated, non-authorizing Local backend
@@ -341,10 +347,22 @@ func (s *RunCapabilityReadinessService) Project(ctx context.Context,
 		}
 	}
 	activeLease := found && lease.ActiveAt(s.now())
+	verificationSettings := DesktopVerificationSettings{UIEvidenceEnabled: s.runtime.UIEvidenceInstalled, BatchValidationEnabled: s.runtime.BatchValidationInstalled}
+	if s.runtime.VerificationSettingsReader != nil {
+		snapshot, err := s.runtime.VerificationSettingsReader.Load(ctx)
+		if err != nil {
+			return RunCapabilityReadiness{}, err
+		}
+		if snapshot.Revision < 1 {
+			return RunCapabilityReadiness{}, apperror.New(apperror.CodeFailedPrecondition, "verification settings revision is invalid")
+		}
+		verificationSettings = snapshot.Settings
+	}
 	value := capabilityReadinessProjection{run: run, mode: mode, profile: profile,
 		permission: permission, cdp: cdp, interaction: interaction,
 		activeLease: activeLease, drydockReady: drydockReady, runtime: s.runtime,
 		advertisedAdapter: advertisedAdapter, advertised: advertised,
+		verificationSettings:       verificationSettings,
 		advertisementAuthoritative: s.commandRuntime != nil}.project()
 	if err := value.Validate(); err != nil {
 		return RunCapabilityReadiness{}, apperror.Wrap(apperror.CodeInternal,
@@ -396,6 +414,7 @@ type capabilityReadinessProjection struct {
 	advertisedAdapter          commandruntimeadapter.Identity
 	advertised                 bool
 	advertisementAuthoritative bool
+	verificationSettings       DesktopVerificationSettings
 }
 
 func (p capabilityReadinessProjection) project() RunCapabilityReadiness {
@@ -405,6 +424,8 @@ func (p capabilityReadinessProjection) project() RunCapabilityReadiness {
 		Interactions:          p.interactionOptions(),
 		BrowserCDPPermissions: p.browserCDPOptions(), Presets: p.presetOptions(),
 		CommandRuntime:  p.commandRuntimeReadiness(),
+		UIEvidence:      BuildVerificationFeatureReadiness(p.runtime.UIEvidenceInstalled, p.verificationSettings.UIEvidenceEnabled, p.runtime.VerificationSettingsControlEnabled),
+		BatchValidation: BuildVerificationFeatureReadiness(p.runtime.BatchValidationInstalled, p.verificationSettings.BatchValidationEnabled, p.runtime.VerificationSettingsControlEnabled),
 		CapabilityGrant: false,
 	}
 }
