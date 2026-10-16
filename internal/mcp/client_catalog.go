@@ -146,8 +146,22 @@ func (m *Manager) RefreshCapabilities(ctx context.Context, runID, workspaceID st
 		}
 		s.checkMu.RLock()
 		oldCheck := s.check
+		oldRevoked := s.revoked
 		s.checkMu.RUnlock()
-		if oldCheck != nil && oldCheck(ctx) != nil {
+		// A completed execution lease is not a task revocation. Ask approval
+		// resumes with a new lease; preserve the peer's window/observation state
+		// only while the same live runtime fence owns this task. The new check
+		// passed above, and every dispatch still installs fresh operation guards.
+		sameFence := oldRevoked != nil && oldRevoked == revoked
+		closedFence := false
+		if oldRevoked != nil {
+			select {
+			case <-oldRevoked:
+				closedFence = true
+			default:
+			}
+		}
+		if oldCheck != nil && (oldRevoked != revoked || closedFence || (!sameFence && oldCheck(ctx) != nil)) {
 			m.closeSessions(func(k catalogSessionKey) bool { return k == key })
 			s, err = m.session(key)
 			if err != nil {

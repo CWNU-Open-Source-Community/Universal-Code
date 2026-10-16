@@ -19,6 +19,9 @@ func prepareSupervisorToolBoundaryTx(ctx context.Context, tx *sql.Tx, run domain
 	checkpoint domain.SupervisorCheckpoint,
 ) (domain.OperatorSteeringMessage, string, error) {
 	var messageID, handoffID string
+	// Ask can complete the original handoff with root_wait while its input is
+	// still prepared. Approval resumes that input under a new execution lease;
+	// it must remain eligible for further tool segments until finally committed.
 	err := tx.QueryRowContext(ctx, `SELECT delivery.message_id,operation.id
 		FROM operator_steering_deliveries delivery
 		JOIN operator_steering_messages message ON message.id=delivery.message_id
@@ -27,7 +30,9 @@ func prepareSupervisorToolBoundaryTx(ctx context.Context, tx *sql.Tx, run domain
 		WHERE delivery.run_id=? AND delivery.attempt_id=? AND delivery.turn=? AND delivery.status='prepared'
 		AND message.status='pending' AND message.session_id=? AND message.content=?
 		AND operation.run_id=message.run_id AND operation.session_id=message.session_id
-		AND NOT EXISTS (SELECT 1 FROM run_execution_handoff_results result WHERE result.operation_id=operation.id)
+		AND (NOT EXISTS (SELECT 1 FROM run_execution_handoff_results result WHERE result.operation_id=operation.id)
+			OR EXISTS (SELECT 1 FROM run_execution_handoff_results result WHERE result.operation_id=operation.id
+				AND result.status='completed' AND result.stop_reason='root_wait' AND result.error_code=''))
 		ORDER BY operation.event_sequence DESC LIMIT 1`, run.ID, checkpoint.AttemptID, checkpoint.NextTurn,
 		run.SessionID, checkpoint.PendingInput).Scan(&messageID, &handoffID)
 	if errors.Is(err, sql.ErrNoRows) {

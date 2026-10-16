@@ -20,7 +20,7 @@ go build -o "$env:TEMP\computer-use-fixture.exe" ./internal/computeruse/testfixt
 
 Launch that executable with `-state <temporary-json-path>`. Its multiline edit box, click counter, and scroll position are recorded in the JSON together with PID, HWND and control rectangles in screen coordinates. Only this dedicated fixture should be manipulated during automated live checks. The ordinary package tests use a fake backend, plus Win32 ABI, executable identity and coordination-object tests; they do not capture or send input to desktop windows.
 
-The opt-in end-to-end test launches its own fixture and the supplied production executable's reserved MCP endpoint. Set all three absolute paths, then run only this test:
+The opt-in scripted test launches its own fixture and the supplied production executable's reserved MCP endpoint. It drives fixed actions without a model. Set all three absolute paths, then run only this test:
 
 ```powershell
 $env:UNIVERSAL_CODE_COMPUTER_USE_LIVE_EXE = 'D:\path\to\universal-code.exe'
@@ -32,3 +32,7 @@ go test ./internal/computeruse -run '^TestLiveWindowsFixture$' -count=1 -v -time
 It verifies Chinese/English text, multiline scrolling, a button click, consumed-observation rejection, and each PNG's actual dimensions. Original PNGs and fixture-only metadata are saved in a new subdirectory. It selects only its own fixture PID/title/HWND, calculates control coordinates from current rectangles, and cleans up only the two child processes it created. Leave the fixture unobstructed during this explicitly enabled desktop test. Missing any variable skips the test before launching processes.
 
 If Windows refuses foreground activation, the test fails before input. To verify the documented manual-selection path, also set `UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS=1` and use `-timeout 5m`. After refusal, the runner waits at most three minutes for the user to select its own fixture; it sends no input during that wait. The result records `activation_method: "manual_selection"` instead of claiming automatic activation succeeded. If the fixture is not selected, the test fails and closes only its own children.
+
+For real-model acceptance, start the fixture with `-visual-challenge`. It displays a fresh random task code, target click count, and a different marker on line 80; the button can appear on either side. Ask a vision-capable production Agent to read those values from screenshots, scroll to the last line, preserve the original text while appending `验收完成：<task code>` and `Desktop vision OK`, click to the target count, and inspect a final screenshot. Keep the fixture in the foreground throughout the task.
+
+Keep `-state` output outside the Agent's workspace and never include its answers or control rectangles in model input. Use that state only to independently check the result. Acceptance requires preserved original text, the exact two appended lines, actual scrolling, the exact click count, and a completion report containing both random values. Retain evidence that actual PNGs entered the provider's image channel and drove later tool calls. A script passing, a successful tool dispatch, or the model choosing `finish` alone does not establish completion of this task.

@@ -102,7 +102,11 @@ func TestTaskCatalogSDKNotificationsAndStaleCalls(t *testing.T) {
 				t.Fatal(err)
 			}
 			revoked := make(chan struct{})
+			var oldLeaseExpired atomic.Bool
 			check := func(context.Context) error {
+				if oldLeaseExpired.Load() {
+					return errors.New("previous execution lease ended while awaiting approval")
+				}
 				select {
 				case <-revoked:
 					return errors.New("revoked")
@@ -122,6 +126,33 @@ func TestTaskCatalogSDKNotificationsAndStaleCalls(t *testing.T) {
 			if connects.Load() != baseline {
 				t.Fatal("task catalog reconnected")
 			}
+			oldLeaseExpired.Store(true)
+			var renewedChecks atomic.Int32
+			check = func(context.Context) error {
+				renewedChecks.Add(1)
+				select {
+				case <-revoked:
+					return errors.New("revoked")
+				default:
+					return nil
+				}
+			}
+			if _, err = manager.RefreshCapabilities(t.Context(), "run-1", "workspace-1", check, revoked); err != nil {
+				t.Fatal(err)
+			}
+			if connects.Load() != baseline || renewedChecks.Load() == 0 {
+				t.Fatal("approval lease handover lost the stateful peer or its current authority check")
+			}
+			// A new runtime fence must not inherit the old peer even when both
+			// check closures still succeed (for example two live runtime instances).
+			revoked = make(chan struct{})
+			if _, err = manager.RefreshCapabilities(t.Context(), "run-1", "workspace-1", check, revoked); err != nil {
+				t.Fatal(err)
+			}
+			if connects.Load() <= baseline {
+				t.Fatal("a different runtime fence retained the previous connection")
+			}
+			baseline = connects.Load()
 			wait := func(predicate func(ServerRecord) bool) ServerRecord {
 				t.Helper()
 				deadline := time.Now().Add(5 * time.Second)

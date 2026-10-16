@@ -6,6 +6,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -57,6 +59,9 @@ var edit, status, button uintptr
 var clicks int
 var statePath string
 var previous []byte
+var visualChallenge bool
+var challengeCode, finishMarker string
+var targetClicks int
 
 func wide(s string) *uint16 {
 	p, err := windows.UTF16PtrFromString(s)
@@ -85,7 +90,10 @@ func save(hwnd uintptr) {
 		WindowRect       rect   `json:"window_rect"`
 		EditRect         rect   `json:"edit_rect"`
 		ButtonRect       rect   `json:"button_rect"`
-	}{os.Getpid(), fmt.Sprintf("0x%x", hwnd), windows.UTF16ToString(buf), clicks, int(line), windowRect, editRect, buttonRect}
+		ChallengeCode    string `json:"challenge_code,omitempty"`
+		FinishMarker     string `json:"finish_marker,omitempty"`
+		TargetClicks     int    `json:"target_clicks,omitempty"`
+	}{os.Getpid(), fmt.Sprintf("0x%x", hwnd), windows.UTF16ToString(buf), clicks, int(line), windowRect, editRect, buttonRect, challengeCode, finishMarker, targetClicks}
 	data, _ := json.MarshalIndent(v, "", "  ")
 	if !bytes.Equal(data, previous) {
 		if os.WriteFile(statePath, data, 0600) == nil {
@@ -95,7 +103,23 @@ func save(hwnd uintptr) {
 }
 func main() {
 	flag.StringVar(&statePath, "state", "", "Optional JSON state output path for the test runner")
+	flag.BoolVar(&visualChallenge, "visual-challenge", false, "Display randomized tasks for a real vision model; state output is only for independent verification")
 	flag.Parse()
+	buttonX, statusX := 24, 184
+	header := "Harmless test fixture. Edit text, click the button, and scroll the text area."
+	if visualChallenge {
+		var random [7]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			panic(err)
+		}
+		challengeCode = strings.ToUpper(hex.EncodeToString(random[:3]))
+		finishMarker = strings.ToUpper(hex.EncodeToString(random[3:6]))
+		targetClicks = 2 + int(random[6]%3)
+		header = fmt.Sprintf("Visual task code: %s     Click target: %d", challengeCode, targetClicks)
+		if random[6]&4 != 0 {
+			buttonX, statusX = 454, 24
+		}
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	setDPI.Call(^uintptr(3))
@@ -138,14 +162,17 @@ func main() {
 		handle, _, _ := create.Call(0, uintptr(unsafe.Pointer(c)), uintptr(unsafe.Pointer(t)), 0x50000000|style, uintptr(x), uintptr(y), uintptr(w), uintptr(h), hwnd, uintptr(id), uintptr(instance), 0)
 		return handle
 	}
-	child("STATIC", "Harmless test fixture. Edit text, click the button, and scroll the text area.", 0, 24, 16, 580, 30, 0)
+	child("STATIC", header, 0, 24, 16, 580, 30, 0)
 	lines := []string{}
 	for i := 1; i <= 80; i++ {
 		lines = append(lines, fmt.Sprintf("Fixture line %02d", i))
 	}
+	if visualChallenge {
+		lines[len(lines)-1] += " | Finish marker: " + finishMarker
+	}
 	edit = child("EDIT", strings.Join(lines, "\r\n"), 0x00200000|0x00000004|0x00000040|0x00800000, 24, 52, 570, 260, 1)
-	button = child("BUTTON", "Count click", 0, 24, 332, 140, 36, 2)
-	status = child("STATIC", "Clicks: 0", 0, 184, 340, 300, 30, 3)
+	button = child("BUTTON", "Count click", 0, buttonX, 332, 140, 36, 2)
+	status = child("STATIC", "Clicks: 0", 0, statusX, 340, 300, 30, 3)
 	setTimer.Call(hwnd, 1, 200, 0)
 	show.Call(hwnd, 5)
 	save(hwnd)
