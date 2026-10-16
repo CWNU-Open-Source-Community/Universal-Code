@@ -306,7 +306,7 @@ func supervisorSegmentReceiptProjection(call domain.SupervisorToolCall) (any, bo
 	if json.Unmarshal([]byte(envelope.Stdout), &structured) != nil {
 		return nil, false
 	}
-	return workspacePageReceiptValue(call, supervisorHistoricalBrowserResult(call, structured)), true
+	return workspacePageReceiptValue(call, supervisorHistoricalToolResult(call, structured)), true
 }
 
 // supervisorSegmentReceiptMessage projects the receipt as an untrusted

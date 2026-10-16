@@ -243,7 +243,7 @@ func supervisorBoundaryReceiptContent(plan supervisorBoundaryReceipt, tokenBudge
 			previous := entries[i]
 			entry := cloneBoundaryReceiptEntry(previous)
 			if json.Unmarshal([]byte(envelope.Stdout), &result) == nil {
-				entry["result"] = compactToolBoundaryValue(supervisorHistoricalBrowserResult(call, result), "", 0)
+				entry["result"] = compactToolBoundaryValue(supervisorHistoricalToolResult(call, result), "", 0)
 				delete(entry, "operation_outcome_omitted")
 			}
 			metadata := map[string]any{}

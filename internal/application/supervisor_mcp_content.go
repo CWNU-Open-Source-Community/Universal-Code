@@ -222,6 +222,11 @@ func projectMCPBinary(value map[string]any, field string, images *[]llm.ImagePar
 	delete(value, field) // Encoded bytes are never text tokens, even when unsupported.
 	status := "Binary content was not supplied to the model."
 	defer func() { value["model_input_status"] = status }()
+	if images == nil {
+		// Historical receipts carry outcome metadata, never a current image.
+		status = "Historical binary content was omitted from this text receipt. Obtain a fresh observation before judging the current visual state."
+		return
+	}
 	if mediaType != "image/png" && mediaType != "image/jpeg" && mediaType != "image/webp" && mediaType != "image/gif" {
 		status = "Unsupported binary MIME type; use a supported text or image representation."
 		return

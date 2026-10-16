@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
@@ -151,5 +152,43 @@ func TestToolBoundaryBudgetRetainsInnerFailureAndNeverPromisesRecallWrapper(t *t
 		if err != nil || len(boundaryBudgetEntries(t, content)) != 0 || !strings.Contains(content, "Selected 0 of 1 returned") {
 			t.Fatal("promised an unreadable recall-wrapper source", tool, err)
 		}
+	}
+}
+
+func TestToolBoundaryMCPHistoryOmitsBinaryWithoutLosingOutcome(t *testing.T) {
+	encoded := strings.Repeat("cGl4ZWxzLW9yLWF1ZGlv", 500)
+	call := boundaryBudgetCall(t, "mcp-image", "mcp_tool_call", map[string]any{
+		"content": []any{
+			map[string]any{"type": "image", "mimeType": "image/png", "data": encoded},
+			map[string]any{"type": "audio", "mimeType": "audio/wav", "data": encoded},
+			map[string]any{"type": "resource", "resource": map[string]any{"uri": "fixture://image", "mimeType": "image/png", "blob": encoded}},
+		},
+		"contents":          []any{map[string]any{"uri": "fixture://resource", "mimeType": "image/png", "blob": encoded}},
+		"messages":          []any{map[string]any{"role": "assistant", "content": map[string]any{"type": "image", "mimeType": "image/png", "data": encoded}}},
+		"structuredContent": map[string]any{"observation_id": "old-observation", "action_sent": true, "data": "business-data"},
+	})
+	call.Round, call.Position, call.ModelAttempt = 1, 1, 1
+	call.PayloadJSON, call.AuthorityJSON = `{"tool_name":"computer_observe"}`, `{}`
+	call.CreatedAt = time.Now().UTC()
+	call.CompletedAt = &call.CreatedAt
+	plan, err := minimalSupervisorBoundaryReceipt([]domain.SupervisorToolCall{call}, "session-budget", "attempt-current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := supervisorBoundaryReceiptContent(plan, 12000, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := boundaryBudgetEntries(t, content)[call.CallID]
+	if entry == nil || entry["result"] == nil || entry["result_sha256"] != session.ContentSHA256(call.ResultJSON) || entry["original_result"] == nil {
+		t.Fatal("historical result lost its outcome or exact durable readback")
+	}
+	for _, required := range []string{"old-observation", `"action_sent":true`, "business-data", "image/png", "audio/wav", "fixture://image", "fixture://resource", "Historical binary content"} {
+		if !strings.Contains(content, required) {
+			t.Fatal("historical result lost", required)
+		}
+	}
+	if strings.Contains(content, encoded[:20]) || strings.Contains(content, `"blob"`) || strings.Contains(content, "vision support is not established") || !strings.Contains(call.ResultJSON, encoded) {
+		t.Fatal("historical bytes were retained, vision was misrepresented, or the durable source changed")
 	}
 }
