@@ -6,9 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/windows"
+	"strings"
 	"unicode/utf16"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func windowsDLL(name string) *windows.LazyDLL { return windows.NewLazySystemDLL(name) }
@@ -37,6 +39,14 @@ func keyEvent(vk, scan uint16, flags uint32) inputEvent {
 	*(*keyboardInput)(unsafe.Pointer(&e.Mouse)) = keyboardInput{VK: vk, Scan: scan, Flags: flags}
 	return e
 }
+
+func textInputUnits(text string) []uint16 {
+	// KEYEVENTF_UNICODE becomes WM_CHAR verbatim. EDIT expects a typed CR,
+	// rather than a lone LF or both characters of a stored CRLF line ending.
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\r"), "\n", "\r")
+	return utf16.Encode([]rune(text))
+}
+
 func mouseEvent(flags, data uint32) inputEvent {
 	return inputEvent{Mouse: mouseInput{Flags: flags, Data: data}}
 }
@@ -141,7 +151,7 @@ func (b *winBackend) input(ctx context.Context, w nativeWindow, name string, a A
 		}
 		return submit(events)
 	case "computer_type":
-		for _, u := range utf16.Encode([]rune(a.Text)) {
+		for _, u := range textInputUnits(a.Text) {
 			if err := b.guard(ctx, w); err != nil {
 				return err
 			}

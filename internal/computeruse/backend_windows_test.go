@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"testing"
 	"time"
 	"unsafe"
@@ -64,6 +65,20 @@ func TestWindowsInputABI(t *testing.T) {
 	k := (*keyboardInput)(unsafe.Pointer(&e.Mouse))
 	if e.Kind != 1 || k.VK != 0x41 || k.Flags != 2 {
 		t.Fatal("incorrect keyboard union")
+	}
+}
+
+func TestWindowsTypedTextLineEndings(t *testing.T) {
+	for _, text := range []string{"a\nb", "a\r\nb", "a\rb"} {
+		if got := textInputUnits(text); !slices.Equal(got, []uint16{'a', '\r', 'b'}) {
+			t.Fatalf("typed line ending %q produced %x", text, got)
+		}
+	}
+	// Preserve consecutive mixed line endings, tabs and non-BMP Unicode.
+	got := textInputUnits("中\n\r\n\r\t文😀")
+	want := []uint16{0x4e2d, '\r', '\r', '\r', '\t', 0x6587, 0xd83d, 0xde00}
+	if !slices.Equal(got, want) {
+		t.Fatalf("mixed Unicode text produced %x, want %x", got, want)
 	}
 }
 

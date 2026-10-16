@@ -10,6 +10,8 @@ For `ApplicationFrameHost.exe` frames, the application identity comes from the u
 
 If input was sent but a fresh image cannot be obtained (for example, `ALT+F4` closed the window), the error result retains `action_sent: true`, the last verified window identity, and instructions to list/observe before further input. Input errors report `action_status: "unknown"` because some events may already have been sent. Neither case supplies an observation ID. Screenshots are checked using the SDK result's actual JSON/base64 encoding against the host's 4 MiB message budget, reserving space for the request ID and SDK envelope. An oversized image returns a bounded status without scaling or a usable observation token; the action's sent/unknown state is retained.
 
+Unicode text input normalizes LF and CRLF to a single typed carriage return for Windows controls. Other characters, including UTF-16 surrogate pairs, are preserved.
+
 The package does not launch applications. `testfixture` is a separate, opt-in native Go window for live verification:
 
 ```powershell
@@ -29,4 +31,4 @@ go test ./internal/computeruse -run '^TestLiveWindowsFixture$' -count=1 -v -time
 
 It verifies Chinese/English text, multiline scrolling, a button click, consumed-observation rejection, and each PNG's actual dimensions. Original PNGs and fixture-only metadata are saved in a new subdirectory. It selects only its own fixture PID/title/HWND, calculates control coordinates from current rectangles, and cleans up only the two child processes it created. Leave the fixture unobstructed during this explicitly enabled desktop test. Missing any variable skips the test before launching processes.
 
-If Windows refuses foreground activation, the test fails before input. To verify the documented manual-selection path, also set `UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS=1`. After refusal, the runner waits at most 60 seconds for the user to select its own fixture; it sends no input during that wait. The result records `activation_method: "manual_selection"` instead of claiming automatic activation succeeded. If the fixture is not selected, the test fails and closes only its own children.
+If Windows refuses foreground activation, the test fails before input. To verify the documented manual-selection path, also set `UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS=1` and use `-timeout 5m`. After refusal, the runner waits at most three minutes for the user to select its own fixture; it sends no input during that wait. The result records `activation_method: "manual_selection"` instead of claiming automatic activation succeeded. If the fixture is not selected, the test fails and closes only its own children.

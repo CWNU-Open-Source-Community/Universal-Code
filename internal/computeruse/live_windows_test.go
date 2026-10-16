@@ -61,7 +61,12 @@ func TestLiveWindowsFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(runDir, "fixture-state.json")
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	manualFocus := os.Getenv("UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS") == "1"
+	timeout := 90 * time.Second
+	if manualFocus {
+		timeout = 4 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	fixtureCmd := exec.CommandContext(ctx, fixture, "-state", statePath)
 	// Hide only the console. STARTF_USESHOWWINDOW/SW_HIDE would also override
@@ -178,7 +183,9 @@ func TestLiveWindowsFixture(t *testing.T) {
 	imageCount := 0
 	observeResult := func(label string, r *mcp.CallToolResult) {
 		t.Helper()
-		decode(r, &observation)
+		var current Observation
+		decode(r, &current)
+		observation = current
 		if observation.Window.WindowID != target.WindowID || observation.Window.AppID != target.AppID || observation.Window.PID != uint32(fixturePID) || observation.Window.HWND != initial.HWND || observation.ObservationID == "" {
 			t.Fatal("observation no longer identifies our fixture")
 		}
@@ -232,9 +239,9 @@ func TestLiveWindowsFixture(t *testing.T) {
 	}
 	activation := call("computer_activate", identity())
 	activationMethod := "automatic"
-	if activation.IsError && os.Getenv("UNIVERSAL_CODE_COMPUTER_USE_LIVE_MANUAL_FOCUS") == "1" {
-		t.Log("Windows did not activate the fixture. Select the Universal Code Computer Use Fixture window; waiting up to 60 seconds without sending input.")
-		deadline := time.Now().Add(60 * time.Second)
+	if activation.IsError && manualFocus {
+		t.Log("Windows did not activate the fixture. Select the Universal Code Computer Use Fixture window; waiting up to 3 minutes without sending input.")
+		deadline := time.Now().Add(3 * time.Minute)
 		selected := false
 		for time.Now().Before(deadline) && ctx.Err() == nil {
 			var current struct {
@@ -242,7 +249,9 @@ func TestLiveWindowsFixture(t *testing.T) {
 			}
 			decode(call("computer_list_windows", map[string]any{}), &current)
 			for _, w := range current.Windows {
-				if w.WindowID == target.WindowID && w.PID == uint32(fixturePID) && w.HWND == initial.HWND && w.Foreground {
+				// Clicking the title bar activates the window on mouse-down.
+				// Wait for release before handing control to injected input.
+				if w.WindowID == target.WindowID && w.PID == uint32(fixturePID) && w.HWND == initial.HWND && w.Foreground && modifiersClear() == nil {
 					selected = true
 				}
 			}
@@ -259,14 +268,16 @@ func TestLiveWindowsFixture(t *testing.T) {
 	}
 	observeResult("initial-observation", activation)
 	clickControl("focus-edit", initial.EditRect)
-	action("select-all", "computer_key", map[string]any{"key": "CTRL+A"})
+	// The classic multiline EDIT does not implement the application's usual
+	// Ctrl+A shortcut. Select its full contents using its navigation keys.
+	action("selection-start", "computer_key", map[string]any{"key": "CTRL+HOME"})
+	action("select-all", "computer_key", map[string]any{"key": "CTRL+SHIFT+END"})
 	lines := make([]string, 40)
 	for i := range lines {
 		lines[i] = fmt.Sprintf("中文 English line %02d", i+1)
 	}
 	wantedText := strings.Join(lines, "\n")
-	// Native EDIT uses carriage return as the typed newline key, then stores CRLF.
-	action("unicode-text", "computer_type", map[string]any{"text": strings.Join(lines, "\r")})
+	action("unicode-text", "computer_type", map[string]any{"text": wantedText})
 	normalize := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n") }
 	awaitState("exact Chinese and English text", func(s fixtureState) bool { return normalize(s.Text) == wantedText })
 	action("scroll-start", "computer_key", map[string]any{"key": "CTRL+HOME"})
@@ -281,6 +292,12 @@ func TestLiveWindowsFixture(t *testing.T) {
 	oldArgs["key"] = "ENTER"
 	if r := call("computer_key", oldArgs); !r.IsError {
 		t.Fatal("production helper accepted a consumed observation")
+	}
+	// Input can be queued before the control repaints. Retain a final image
+	// after the fixture has acknowledged the exact text, scroll and click.
+	observeResult("verified-final-state", call("computer_observe", identity()))
+	if observation.Action != "" || observation.ActionSent {
+		t.Fatal("pure observation was reported as an input action")
 	}
 	report := struct {
 		FixturePID               int    `json:"fixture_pid"`

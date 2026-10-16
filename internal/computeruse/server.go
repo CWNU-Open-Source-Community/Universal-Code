@@ -35,7 +35,7 @@ func Catalog() []ToolDefinition {
 		"Capture the foreground target window from the visible desktop using GDI; returns exact image dimensions and observation_id. Occluding windows are visible in the image.",
 		"Activate the identified window and return a fresh observation. Requires host approval for this application.",
 		"Click window-relative image pixel x,y using the latest unchanged observation; button is left (default), right or middle. Returns a fresh observation.",
-		"Type Unicode text (up to 8192 UTF-8 bytes) into the foreground window using the latest unchanged observation. Returns a fresh observation.",
+		"Type Unicode text (up to 8192 UTF-8 bytes) into the foreground window using the latest unchanged observation. LF and CRLF line endings each become one typed carriage return. Returns a fresh observation.",
 		"Send a key chord, e.g. CTRL+A, ENTER, ALT+F4. Supported modifiers CTRL, SHIFT, ALT, WIN; letters, digits, F1-F12 and navigation keys. Returns a fresh observation.",
 		"Scroll the foreground window in wheel detents, dx positive right and dy positive up, each -10 to 10. Uses the latest unchanged observation and returns a fresh observation.",
 	}
