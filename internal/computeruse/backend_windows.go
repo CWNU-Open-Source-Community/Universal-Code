@@ -33,11 +33,12 @@ var windowFromPoint = user32.NewProc("WindowFromPoint")
 var getSystemMetrics = user32.NewProc("GetSystemMetrics")
 var setThreadDPI = user32.NewProc("SetThreadDpiAwarenessContext")
 var dwm = windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
+var ntMapViewOfSection = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtMapViewOfSection")
 
 type winBackend struct {
 	mutex         windows.Handle
 	mapping       windows.Handle
-	epoch         uintptr
+	epoch         *uint64
 	excluded      map[uint32]bool
 	excludedPaths map[string]bool
 }
@@ -67,14 +68,14 @@ func (b *winBackend) enter(ctx context.Context) (func(), error) {
 	if status != windows.WAIT_OBJECT_0 && status != windows.WAIT_ABANDONED {
 		return fail(errors.New("desktop executor busy; obtain a new observation before retrying"))
 	}
-	if b.epoch == 0 {
+	if b.epoch == nil {
 		n, _ := windows.UTF16PtrFromString(`Local\UniversalCodeComputerUseGeneration-v1`)
 		h, err := windows.CreateFileMapping(windows.InvalidHandle, nil, windows.PAGE_READWRITE, 0, 8, n)
 		if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 			windows.ReleaseMutex(b.mutex)
 			return fail(err)
 		}
-		p, err := windows.MapViewOfFile(h, windows.FILE_MAP_READ|windows.FILE_MAP_WRITE, 0, 0, 8)
+		p, err := mapGeneration(h)
 		if err != nil {
 			windows.CloseHandle(h)
 			windows.ReleaseMutex(b.mutex)
@@ -96,11 +97,31 @@ func (b *winBackend) enter(ctx context.Context) (func(), error) {
 	return func() { setThreadDPI.Call(prev); windows.ReleaseMutex(b.mutex); runtime.UnlockOSThread() }, nil
 }
 func (b *winBackend) generation(advance bool) uint64 {
-	p := (*uint64)(unsafe.Pointer(b.epoch))
 	if advance {
-		*p++
+		*b.epoch++
 	}
-	return *p
+	return *b.epoch
+}
+
+// NtMapViewOfSection returns the address through PVOID *BaseAddress, so the
+// native pointer can remain a pointer throughout its lifetime. In contrast,
+// x/sys MapViewOfFile returns uintptr, which cannot safely be stored and later
+// converted to a Go pointer. The view is owned by this helper until process exit.
+// https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-zwmapviewofsection
+func mapGeneration(section windows.Handle) (*uint64, error) {
+	var address unsafe.Pointer
+	size := uintptr(8)
+	status, _, _ := ntMapViewOfSection.Call(
+		uintptr(section), uintptr(windows.CurrentProcess()), uintptr(unsafe.Pointer(&address)),
+		0, 0, 0, uintptr(unsafe.Pointer(&size)), 2, 0, windows.PAGE_READWRITE, // ViewUnmap
+	)
+	if int32(status) < 0 {
+		return nil, windows.NTStatus(status)
+	}
+	if address == nil || size < 8 {
+		return nil, errors.New("invalid shared generation mapping")
+	}
+	return (*uint64)(address), nil
 }
 
 func (b *winBackend) loadExcluded() {

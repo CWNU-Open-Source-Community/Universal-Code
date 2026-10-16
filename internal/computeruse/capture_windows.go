@@ -48,9 +48,9 @@ func (b *winBackend) capture(ctx context.Context, w nativeWindow) ([]byte, error
 	}
 	defer deleteDC.Call(mem)
 	info := bitmapInfo{Size: 40, Width: int32(w.Bounds.Width), Height: -int32(w.Bounds.Height), Planes: 1, BitCount: 32}
-	var pixels uintptr
+	var pixels unsafe.Pointer
 	bitmap, _, _ := createDIBSection.Call(dc, uintptr(unsafe.Pointer(&info)), 0, uintptr(unsafe.Pointer(&pixels)), 0, 0)
-	if bitmap == 0 || pixels == 0 {
+	if bitmap == 0 || pixels == nil {
 		return nil, errors.New("cannot create capture bitmap")
 	}
 	defer deleteObject.Call(bitmap)
@@ -64,7 +64,7 @@ func (b *winBackend) capture(ctx context.Context, w nativeWindow) ([]byte, error
 		return nil, errors.New("GDI desktop capture failed")
 	}
 	img := image.NewRGBA(image.Rect(0, 0, w.Bounds.Width, w.Bounds.Height))
-	raw := unsafe.Slice((*byte)(unsafe.Pointer(pixels)), len(img.Pix))
+	raw := unsafe.Slice((*byte)(pixels), len(img.Pix))
 	for y := 0; y < w.Bounds.Height; y++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err

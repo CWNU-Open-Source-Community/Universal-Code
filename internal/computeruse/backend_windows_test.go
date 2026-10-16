@@ -7,7 +7,28 @@ import (
 	"os"
 	"testing"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
+
+func TestNativePointerOutputs(t *testing.T) {
+	if _, err := mapGeneration(windows.InvalidHandle); err == nil {
+		t.Fatal("invalid section handle mapped")
+	}
+	// Allocate an off-screen DIB only; no desktop capture or window is needed.
+	info := bitmapInfo{Size: 40, Width: 2, Height: -2, Planes: 1, BitCount: 32}
+	var pixels unsafe.Pointer
+	bitmap, _, err := createDIBSection.Call(0, uintptr(unsafe.Pointer(&info)), 0, uintptr(unsafe.Pointer(&pixels)), 0, 0)
+	if bitmap == 0 || pixels == nil {
+		t.Fatalf("DIB pointer output unavailable: %v", err)
+	}
+	defer deleteObject.Call(bitmap)
+	data := unsafe.Slice((*byte)(pixels), 16)
+	data[0], data[15] = 17, 31
+	if data[0] != 17 || data[15] != 31 {
+		t.Fatal("DIB memory is not writable")
+	}
+}
 
 func TestWindowsInputABI(t *testing.T) {
 	want := uintptr(40)
