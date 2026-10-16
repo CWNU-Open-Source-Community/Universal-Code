@@ -2,6 +2,7 @@ import { parsePluginSkillInstall, parseSkillPackageInventory, parseSkillPackageR
 import type { PluginSkillInstallView, SkillPackageInventoryView, SkillPackageRemovalView } from "../api/types";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
+import { validVerificationFeatureReadiness, type VerificationFeatureReadiness } from "../api/verification-readiness";
 
 export const desktopConnectionProtocol = "desktop_connection_bootstrap.v1";
 export const desktopClipboardFilesProtocol = "desktop_clipboard_files.v1";
@@ -34,6 +35,42 @@ export const desktopDebugTerminalAgentInputProtocol =
   "desktop_debug_terminal_agent_input.v1";
 export const desktopRiskRestartProtocol = "desktop_risk_restart.v1";
 export const desktopSandboxRestartProtocol = "desktop_sandbox_restart.v1";
+export const desktopVerificationSettingsProtocol = "desktop_verification_settings.v1";
+
+export interface DesktopVerificationSettings {
+  ui_evidence_enabled: boolean;
+  batch_validation_enabled: boolean;
+}
+export interface DesktopVerificationSettingsView {
+  protocol_version: typeof desktopVerificationSettingsProtocol;
+  revision: number;
+  settings: DesktopVerificationSettings;
+  active_settings: DesktopVerificationSettings;
+  restart_required: boolean;
+  can_save: boolean;
+  can_restart: boolean;
+  ui_evidence: VerificationFeatureReadiness;
+  batch_validation: VerificationFeatureReadiness;
+  capability_grant: false;
+}
+export interface DesktopVerificationSettingsRequest {
+  protocol_version: typeof desktopVerificationSettingsProtocol;
+  expected_revision: number;
+  settings: DesktopVerificationSettings;
+}
+export interface DesktopVerificationSettingsResult {
+  protocol_version: typeof desktopVerificationSettingsProtocol;
+  status: "cancelled" | "saved";
+  replayed: boolean;
+  view: DesktopVerificationSettingsView;
+}
+export interface DesktopVerificationRestartResult {
+  protocol_version: typeof desktopVerificationSettingsProtocol;
+  status: "cancelled" | "restarting";
+  restart_required: true;
+  arbitrary_arguments_accepted: false;
+  persistent_runtime_grant: false;
+}
 
 export interface DesktopSandboxRestartRequest {
   protocol_version: typeof desktopSandboxRestartProtocol;
@@ -401,6 +438,9 @@ interface NativeDesktopBridge {
   }) => Promise<void>;
   RestartWithRiskProfile?: (request: DesktopDebugRestartRequest) => Promise<unknown>;
   RestartWithSandboxSettings?: (request: DesktopSandboxRestartRequest) => Promise<unknown>;
+  GetVerificationSettings?: () => Promise<unknown>;
+  ConfirmVerificationSettings?: (request: DesktopVerificationSettingsRequest) => Promise<unknown>;
+  RestartWithVerificationSettings?: (request: { protocol_version: typeof desktopVerificationSettingsProtocol }) => Promise<unknown>;
 }
 
 type NativeWorkspaceBridge = NativeDesktopBridge & Required<Pick<NativeDesktopBridge,
@@ -505,6 +545,75 @@ export function desktopDebugRestartEnabled(): boolean {
 export function desktopSandboxRestartEnabled(): boolean {
   return activeBootstrap?.risk_profile_restart_enabled === true &&
     typeof getBridge()?.RestartWithSandboxSettings === "function";
+}
+
+export function desktopVerificationSettingsAvailable(): boolean {
+  const bridge = getBridge();
+  return activeBootstrap?.risk_profile_restart_enabled === true &&
+    typeof bridge?.GetVerificationSettings === "function" &&
+    typeof bridge?.ConfirmVerificationSettings === "function" &&
+    typeof bridge?.RestartWithVerificationSettings === "function";
+}
+
+function validVerificationSettings(value: unknown): value is DesktopVerificationSettings {
+  return hasExactKeys(value, ["ui_evidence_enabled", "batch_validation_enabled"]) &&
+    typeof value.ui_evidence_enabled === "boolean" && typeof value.batch_validation_enabled === "boolean";
+}
+
+export function parseDesktopVerificationSettings(value: unknown): DesktopVerificationSettingsView {
+  if (!hasExactKeys(value, ["protocol_version", "revision", "settings", "active_settings", "restart_required",
+    "can_save", "can_restart", "ui_evidence", "batch_validation", "capability_grant"]) ||
+    value.protocol_version !== desktopVerificationSettingsProtocol || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1 ||
+    !validVerificationSettings(value.settings) || !validVerificationSettings(value.active_settings) ||
+    typeof value.restart_required !== "boolean" || typeof value.can_save !== "boolean" || typeof value.can_restart !== "boolean" ||
+    value.capability_grant !== false || !validVerificationFeatureReadiness(value.ui_evidence) ||
+    !validVerificationFeatureReadiness(value.batch_validation) ||
+    value.ui_evidence.installed !== value.active_settings.ui_evidence_enabled ||
+    value.batch_validation.installed !== value.active_settings.batch_validation_enabled ||
+    value.restart_required !== (value.settings.ui_evidence_enabled !== value.active_settings.ui_evidence_enabled ||
+      value.settings.batch_validation_enabled !== value.active_settings.batch_validation_enabled) ||
+    (value.can_restart && !value.restart_required)) {
+    throw new Error("原生验证设置无法核对，请重新读取设置。");
+  }
+  return value as unknown as DesktopVerificationSettingsView;
+}
+
+export async function getDesktopVerificationSettings(): Promise<DesktopVerificationSettingsView> {
+  const bridge = getBridge();
+  if (!desktopVerificationSettingsAvailable() || !bridge?.GetVerificationSettings) throw new Error("当前连接不支持原生验证设置。");
+  return parseDesktopVerificationSettings(await bridge.GetVerificationSettings());
+}
+
+export async function confirmDesktopVerificationSettings(request: DesktopVerificationSettingsRequest): Promise<DesktopVerificationSettingsResult> {
+  const bridge = getBridge();
+  if (!desktopVerificationSettingsAvailable() || !bridge?.ConfirmVerificationSettings) throw new Error("当前连接不支持原生验证设置。");
+  if (!hasExactKeys(request, ["protocol_version", "expected_revision", "settings"]) ||
+    request.protocol_version !== desktopVerificationSettingsProtocol || !Number.isSafeInteger(request.expected_revision) ||
+    request.expected_revision < 1 || !validVerificationSettings(request.settings)) throw new Error("验证设置请求无效。");
+  const value = await bridge.ConfirmVerificationSettings(request);
+  if (!hasExactKeys(value, ["protocol_version", "status", "replayed", "view"]) ||
+    value.protocol_version !== desktopVerificationSettingsProtocol || !["cancelled", "saved"].includes(String(value.status)) ||
+    typeof value.replayed !== "boolean" || (value.status === "cancelled" && value.replayed)) throw new Error("原生保存结果无法核对，请重新读取设置。");
+  const view = parseDesktopVerificationSettings(value.view);
+  if (value.status === "saved" && (view.settings.ui_evidence_enabled !== request.settings.ui_evidence_enabled ||
+    view.settings.batch_validation_enabled !== request.settings.batch_validation_enabled ||
+    ![request.expected_revision, request.expected_revision + 1].includes(view.revision) ||
+    (value.replayed && view.revision !== request.expected_revision + 1))) {
+    throw new Error("原生保存结果与所选设置不一致，请重新读取设置。");
+  }
+  return { ...value, view } as unknown as DesktopVerificationSettingsResult;
+}
+
+export async function restartDesktopWithVerificationSettings(): Promise<DesktopVerificationRestartResult> {
+  const bridge = getBridge();
+  if (!desktopVerificationSettingsAvailable() || !bridge?.RestartWithVerificationSettings) throw new Error("当前连接不支持原生验证设置重启。");
+  const value = await bridge.RestartWithVerificationSettings({ protocol_version: desktopVerificationSettingsProtocol });
+  if (!hasExactKeys(value, ["protocol_version", "status", "restart_required", "arbitrary_arguments_accepted", "persistent_runtime_grant"]) ||
+    value.protocol_version !== desktopVerificationSettingsProtocol || !["cancelled", "restarting"].includes(String(value.status)) ||
+    value.restart_required !== true || value.arbitrary_arguments_accepted !== false || value.persistent_runtime_grant !== false) {
+    throw new Error("原生重启结果无法核对，保存的设置会在下次启动时读取。");
+  }
+  return value as unknown as DesktopVerificationRestartResult;
 }
 
 export async function restartDesktopWithSandboxSettings(): Promise<DesktopSandboxRestartResult> {

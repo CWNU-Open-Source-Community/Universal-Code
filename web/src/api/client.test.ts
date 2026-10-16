@@ -780,6 +780,19 @@ describe("APIClient", () => {
     expect(init.headers).toMatchObject({ Authorization: "Bearer read-secret" });
   });
 
+  it.each([
+    { installed: true, blocked_by: ["startup_gate_closed"], remediation: [] },
+    { installed: false, blocked_by: [], remediation: [] },
+    { installed: false, blocked_by: ["startup_gate_closed"], remediation: ["grant_full_access"] },
+    { installed: false, blocked_by: ["startup_gate_closed"], remediation: ["enable_and_restart"], capability_grant: true },
+  ])("rejects inconsistent verification startup guidance %j", async (feature) => {
+    const data = { ...capabilityReadinessData(), ui_evidence: feature };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      version: "api.v1", request_id: "req-verification-invalid", data,
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    await expect(new APIClient("read-secret").runCapabilityReadiness("run-1")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  });
+
   it("accepts the current Go paused Plan response with three permissions and an installed LPAC adapter without a Run grant", async () => {
     const envelope = capabilityReadinessEnvelope();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(envelope), {

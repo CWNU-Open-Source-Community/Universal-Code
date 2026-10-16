@@ -21,6 +21,7 @@ import { useLocale } from "../lib/locale";
 import { diagnosticVocabulary } from "../lib/vocabulary";
 import { EmptyState, ErrorState, LoadMoreButton, LoadingState, StatusBadge } from "./common";
 import { BatchPreparation, BatchWorkbenchControls } from "./batch-workbench";
+import { VerificationSettingsPanel } from "./verification-settings-panel";
 import { SpecialistExecutionControl } from "./specialist-execution";
 
 export function ExternalSkillsPanel({ projection }: { projection: ExternalSkillProjectionView }) {
@@ -437,12 +438,13 @@ export function BatchDeliveriesPanel({ client, runID }: ProjectionProps) {
         : t("当前可检查 Git 差异。运行 Go/npm 验证需要完成下方执行配置。",
           "Git diff checks are available. Complete the execution settings below to run Go/npm validation.")}</p>
       <details><summary>{t("核对批量交付配置", "Review batch delivery settings")}</summary>
-        <p>{t("Go/npm 验证需要明确启用 --enable-batch-validation-execution、--enable-permission-control 和 --enable-danger-full-access，并连接批量交付控制、控制凭证和操作员审批能力。开始时，所选执行须正在运行且具有当前 Full 进程激活。",
-          "Go/npm validation requires explicit --enable-batch-validation-execution, --enable-permission-control, and --enable-danger-full-access settings, plus batch delivery control, a control credential, and operator approval capability. The selected execution must be running with current Full process activation at the start.")}</p>
+        <p>{t("在下方启用并保存批量验证，重启应用后生效。开始验证时，所选执行须正在运行、执行环境就绪，并具有当前 Full 进程激活和所需操作审批。",
+          "Enable and save batch validation below, then restart the app. Starting validation requires a running execution, a ready environment, current Full process activation, and the required operation approval.")}</p>
+        <VerificationSettingsPanel client={client} />
       </details>
       {!client.hasBatchDeliveryControl && <p className="projection-placeholder">{t(
-        "当前可查看批量交付。Desktop 明确启用 --enable-batch-delivery-control 并连接控制凭证后，可验收、要求修改、合并或检查恢复状态。Go/npm 验证需另行完成上述配置。",
-        "Batch deliveries are available for review. Explicitly enable --enable-batch-delivery-control in Desktop and connect a control credential to accept, request changes, merge, or reconcile. Configure Go/npm validation separately as described above.",
+        "当前连接可查看批量交付。请连接桌面控制入口后验收、要求修改、合并或检查恢复状态；Go/npm 验证可在上方配置。",
+        "This connection can view batch deliveries. Connect the Desktop control entry to accept, request changes, merge, or reconcile; configure Go/npm validation above.",
       )}</p>}
       {client.hasBatchDeliveryControl && typeof client.getRunChildTaskProposals === "function" && <>
         <BatchPreparation key={`${client.baseURL}/${runID}`} client={client} runID={runID}

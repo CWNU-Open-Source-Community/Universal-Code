@@ -6,6 +6,7 @@ import { parseProjectPreparation, parseProjectPreparationOperation, normalizePre
   validProjectPreparationRequest, type ProjectPreparationRequest, type ProjectPreparationView,
   type ProjectPreparationOperation } from "./project-preparation";
 import { consumeSSE } from "./sse";
+import { validVerificationFeatureReadiness } from "./verification-readiness";
 import { chatGPTAuthProtocol, parseChatGPTAuthStatus, validChatGPTIdentity,
   type ChatGPTAuthStatusView, type ChatGPTAuthRequestView, type ChatGPTAccountRequestView,
   type ChatGPTLoginRequestView, type ChatGPTCancelRequestView } from "./chatgpt-auth";
@@ -3328,10 +3329,11 @@ function parseRunCapabilityReadiness(value: unknown,
   expectedRunID: string): RunCapabilityReadinessView {
   if (!hasExactKeys(value, ["browser_cdp_permissions", "capability_grant",
     "command_runtime", "interactions", "permissions", "presets", "profiles",
-    "protocol_version", "run_id"]) ||
+    "protocol_version", "run_id", "ui_evidence", "batch_validation"]) ||
     value.protocol_version !== "run_capability_readiness.v1" ||
     value.run_id !== expectedRunID || !boundedIdentity(value.run_id) ||
-    value.capability_grant !== false) {
+    value.capability_grant !== false || !validVerificationFeatureReadiness(value.ui_evidence) ||
+    !validVerificationFeatureReadiness(value.batch_validation)) {
     throw new APIRequestError("Run capability readiness response is invalid",
       "INVALID_RESPONSE", 502);
   }

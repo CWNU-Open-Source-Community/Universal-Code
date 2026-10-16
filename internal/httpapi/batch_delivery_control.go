@@ -583,7 +583,7 @@ func batchDeliveryMailboxView(value domain.BatchDeliveryMailboxMessage) BatchDel
 	return BatchDeliveryMailboxView{ID: value.ID, Ordinal: value.Ordinal,
 		Generation: value.Generation, Sequence: value.Sequence, Kind: string(value.Kind),
 		Actor: value.Actor, Summary: value.Summary,
-		EvidenceRefs: append([]string(nil), value.EvidenceRefs...), CreatedAt: value.CreatedAt}
+		EvidenceRefs: append([]string{}, value.EvidenceRefs...), CreatedAt: value.CreatedAt}
 }
 
 func batchDeliveryReceiptView(value domain.BatchDeliveryReceipt) BatchDeliveryReceiptView {

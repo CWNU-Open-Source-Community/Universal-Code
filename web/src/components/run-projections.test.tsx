@@ -17,17 +17,15 @@ describe("Run projection panels", () => {
     } as unknown as APIClient;
     const { container } = render(provider(<BatchDeliveriesPanel client={client} runID="run-1" />));
     await screen.findByText("No batch delivery plans yet. Describe independently deliverable subtasks in the conversation to prepare one.");
-    expect(container.textContent).toContain("selected execution");
+    expect(container.textContent).toContain("a running execution");
     expect(container.textContent).toContain("current Full process activation");
     if (enabled) {
       expect(container.textContent).toContain("selected Local, Docker, or SBX environment");
       expect(container.textContent).toContain("refuses execution when it is not ready");
     } else {
-      expect(container.textContent).toContain("--enable-batch-validation-execution");
-      expect(container.textContent).toContain("--enable-permission-control");
-      expect(container.textContent).toContain("--enable-danger-full-access");
-      expect(container.textContent).toContain("control credential");
-      expect(container.textContent).toContain("operator approval");
+      expect(container.textContent).toContain("Enable and save batch validation below, then restart the app");
+      expect(container.textContent).toContain("required operation approval");
+      expect(screen.getByRole("region", { name: "验证功能设置" })).toBeInTheDocument();
     }
     expect(screen.queryByRole("button", { name: "Merge in dependency order" })).not.toBeInTheDocument();
   });
@@ -57,7 +55,7 @@ describe("Run projection panels", () => {
     const client = { hasBatchDeliveryControl: false, hasBatchDeliveryHostValidation: false,
       getRunBatchDeliveries } as unknown as APIClient;
     render(provider(<BatchDeliveriesPanel client={client} runID="run-1" />));
-    expect(await screen.findByText(/--enable-batch-delivery-control/)).toBeInTheDocument();
+    expect(await screen.findByText(/Connect the Desktop control entry/)).toBeInTheDocument();
     expect(getRunBatchDeliveries).toHaveBeenCalledWith("run-1", expect.any(AbortSignal));
     expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
   });

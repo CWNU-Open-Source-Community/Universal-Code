@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { APIClient } from "../api/client";
 import type { UIEvidenceStartView } from "../api/types";
 import { useLocale } from "../lib/locale";
 import { ErrorState } from "./common";
+import { useVerificationRecord } from "./verification-recovery";
+import { emptyUIEvidenceDraft, uiEvidenceDraftKey, validUIEvidenceDraft, validUIEvidenceRequest,
+  type UIEvidenceDraft } from "./ui-evidence-recovery";
 
 type StepKind = UIEvidenceStartView["steps"][number]["step"]["kind"];
-interface DraftStep { id: string; kind: StepKind; selector: string; input: string }
 const emptyFixtureSHA256 = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
 
 function localPageURL(value: string): URL | null {
@@ -22,19 +24,27 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
   onStart: (request: UIEvidenceStartView) => void;
 }) {
   const { t } = useLocale();
-  const [serviceID, setServiceID] = useState("");
-  const [name, setName] = useState("");
-  const [command, setCommand] = useState("");
-  const [directory, setDirectory] = useState(".");
-  const [url, setURL] = useState("");
-  const [viewport, setViewport] = useState("desktop");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [steps, setSteps] = useState<DraftStep[]>([]);
-  const [prepared, setPrepared] = useState<UIEvidenceStartView | null>(null);
-  const [reviewed, setReviewed] = useState(false);
+  const draft = useVerificationRecord(uiEvidenceDraftKey(runID), emptyUIEvidenceDraft(runID),
+    (value): value is UIEvidenceDraft => validUIEvidenceDraft(value, runID));
+  const { serviceID, name, command, directory, url, viewport, theme, steps, advanced } = draft.value;
+  const field = <K extends keyof UIEvidenceDraft,>(key: K) => (update: SetStateAction<UIEvidenceDraft[K]>) =>
+    draft.edit((current) => ({ ...current, [key]: typeof update === "function"
+      ? (update as (previous: UIEvidenceDraft[K]) => UIEvidenceDraft[K])(current[key]) : update }));
+  const setServiceID = field("serviceID"), setName = field("name"), setCommand = field("command");
+  const setDirectory = field("directory"), setURL = field("url"), setViewport = field("viewport"), setTheme = field("theme");
+  const setSteps = field("steps"), setAdvanced = field("advanced");
+  const prepared = useMemo(() => {
+    if (!draft.value.prepared) return null;
+    try { const value: unknown = JSON.parse(advanced); return validUIEvidenceRequest(value) ? value : null; }
+    catch { return null; }
+  }, [draft.value.prepared, advanced]);
+  const setPrepared = (value: UIEvidenceStartView | null) => draft.edit((current) => ({ ...current,
+    prepared: Boolean(value), ...(value ? { advanced: JSON.stringify(value, null, 2) } : {}) }));
+  const [review, setReview] = useState({ store: draft.store, key: draft.key, checked: false });
+  const reviewed = review.store === draft.store && review.key === draft.key && review.checked;
+  const setReviewed = (checked: boolean) => setReview({ store: draft.store, key: draft.key, checked });
   const [error, setError] = useState("");
   const [preparing, setPreparing] = useState(false);
-  const [advanced, setAdvanced] = useState("");
   const locked = pending || unresolved || !client.hasUIEvidence;
   const services = useQuery({ queryKey: ["run", runID, "ui-evidence-services", threadID],
     queryFn: ({ signal }) => client.listThreadApplicationServices(threadID!, signal),
@@ -96,6 +106,10 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
   };
   const kinds: Array<[StepKind, string]> = [["click", t("点击", "Click")], ["type", t("输入测试文字", "Type test text")], ["assert_present", t("确认元素存在", "Assert present")], ["assert_absent", t("确认元素消失", "Assert absent")], ["capture", t("截图", "Capture")]];
   return <details className="ui-evidence-launch"><summary>{t("准备并启动浏览器验证", "Prepare and start browser verification")}</summary>
+    {draft.error && <div className="inline-warning" role="status"><p>{draft.error}</p>
+      {draft.store && <button type="button" className="compact-command" disabled={pending || unresolved || preparing}
+        onClick={() => { try { draft.discard(); setReviewed(false); setError(""); } catch (failure) { setError(String(failure)); } }}>{t("放弃未保存草稿", "Discard unsaved draft")}</button>}
+    </div>}
     <p>{t("选择应用服务的启动记录，或填写项目启动方式。验证会启动本次专用服务和浏览器，完成后清理；请选用测试数据与空闲端口。", "Choose an application service's launch record or enter the project's launch settings. Verification starts its own service and browser and cleans them up afterward. Use test data and a free port.")}</p>
     <details><summary>{t("准备本次执行权限", "Prepare execution authority")}</summary><p>{t("在任务设置选择 Code、Local 和 Deliver，并在任务权限中激活 Full 与 restricted 浏览器控制。启动时会核对当前根执行租约。", "Choose Code, Local, and Deliver in task settings, then activate Full and restricted browser control in task permissions. Starting verifies the current root execution lease.")}</p></details>
     <fieldset disabled={locked || preparing}>
@@ -111,10 +125,10 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
         {(source.isError || service.isError) && <ErrorState error={source.error || service.error} />}</>}
       {services.data?.services.filter((entry) => entry.run_id === runID).length === 0 && <p>{t("当前执行尚无应用服务记录。可填写项目启动命令，或回任务要求启动应用后再读取。", "This execution has no application service records yet. Enter its launch command or ask the task to start the application, then read the records again.")}</p>}</>}
       <label>{t("应用名称", "Application name")}<input maxLength={256} value={name} onChange={(event) => { setName(event.target.value); invalidate(); }} /></label>
-      <label>{t("启动命令（PowerShell）", "Launch command (PowerShell)")}<textarea rows={3} value={command} onChange={(event) => { setCommand(event.target.value); invalidate(); }} /></label>
-      <label>{t("项目内工作目录", "Working directory in project")}<input value={directory} onChange={(event) => { setDirectory(event.target.value); invalidate(); }} /></label>
-      <label>{t("本次页面地址", "Page address for this verification")}<input type="url" value={url} onChange={(event) => { setURL(event.target.value); invalidate(); }} /></label>
-      <label>{t("页面尺寸", "Page size")}<select value={viewport} onChange={(event) => { setViewport(event.target.value); invalidate(); }}><option value="desktop">1440 × 900</option><option value="mobile">390 × 844</option></select></label>
+      <label>{t("启动命令（PowerShell）", "Launch command (PowerShell)")}<textarea rows={3} maxLength={65536} value={command} onChange={(event) => { setCommand(event.target.value); invalidate(); }} /></label>
+      <label>{t("项目内工作目录", "Working directory in project")}<input maxLength={4096} value={directory} onChange={(event) => { setDirectory(event.target.value); invalidate(); }} /></label>
+      <label>{t("本次页面地址", "Page address for this verification")}<input type="url" maxLength={4096} value={url} onChange={(event) => { setURL(event.target.value); invalidate(); }} /></label>
+      <label>{t("页面尺寸", "Page size")}<select value={viewport} onChange={(event) => { setViewport(event.target.value as "desktop" | "mobile"); invalidate(); }}><option value="desktop">1440 × 900</option><option value="mobile">390 × 844</option></select></label>
       <label>{t("主题", "Theme")}<select value={theme} onChange={(event) => { setTheme(event.target.value as "light" | "dark"); invalidate(); }}><option value="light">{t("浅色", "Light")}</option><option value="dark">{t("深色", "Dark")}</option></select></label>
       <p>{t("先打开页面并收集截图、结构、无障碍与错误记录。按需要添加后续检查。", "The first step opens the page and collects screenshots, structure, accessibility, and errors. Add further checks as needed.")}</p>
       {steps.map((step, index) => <div key={step.id} className="ui-evidence-draft-step">
@@ -132,9 +146,9 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
         <textarea aria-label={t("精确 UI 证据启动 JSON", "Exact UI evidence launch JSON")} disabled={locked} value={advanced} onChange={(event) => { setAdvanced(event.target.value); setReviewed(false); setPrepared(null); }} />
       </details></>}
     {!prepared && advanced && <details open><summary>{t("高级：编辑完整 JSON", "Advanced: edit complete JSON")}</summary><textarea aria-label={t("精确 UI 证据启动 JSON", "Exact UI evidence launch JSON")} disabled={locked} value={advanced} onChange={(event) => { setAdvanced(event.target.value); setReviewed(false); }} />
-      <button type="button" disabled={locked} onClick={() => { try { const parsed = JSON.parse(advanced) as UIEvidenceStartView; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !parsed.operation_key) throw new Error(t("填写完整启动清单。", "Enter a complete launch manifest.")); setPrepared(parsed); setReviewed(false); setError(""); } catch (caught) { setError(String(caught)); } }}>{t("预览编辑后的清单", "Preview edited manifest")}</button></details>}
+      <button type="button" disabled={locked} onClick={() => { try { const parsed: unknown = JSON.parse(advanced); if (!validUIEvidenceRequest(parsed)) throw new Error(t("填写完整且符合执行边界的启动清单。", "Enter a complete launch manifest within the execution boundaries.")); setPrepared(parsed); setReviewed(false); setError(""); } catch (caught) { setError(String(caught)); } }}>{t("预览编辑后的清单", "Preview edited manifest")}</button></details>}
     <label><input type="checkbox" checked={reviewed} disabled={locked || !prepared} onChange={(event) => setReviewed(event.target.checked)} />{t("我已核对命令、端口与检查步骤；应用使用可复现的测试数据，输入与页面不含秘密或个人数据。", "I reviewed the command, port, and steps. The application uses reproducible test data, and inputs and pages contain no secrets or personal data.")}</label>
-    <button type="button" className="command-button" disabled={locked || !prepared || !reviewed} onClick={() => { if (prepared && reviewed) onStart(prepared); }}>{t("启动真实浏览器验证", "Start real-browser verification")}</button>
+    <button type="button" className="command-button" disabled={locked || !prepared || !reviewed || Boolean(draft.error)} onClick={() => { if (prepared && reviewed && !draft.error) onStart(prepared); }}>{t("启动真实浏览器验证", "Start real-browser verification")}</button>
     {error && <p role="alert">{error}</p>}
   </details>;
 }

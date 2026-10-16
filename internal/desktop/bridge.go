@@ -242,6 +242,8 @@ type DesktopBridgeConfig struct {
 	DebugTerminalAgentInputController  application.DebugTerminalAgentInputController
 	RiskProfileRestartEnabled          bool
 	RiskProfileRestarter               DesktopRiskProfileRestarter
+	VerificationSettingsStore          application.DesktopVerificationSettingsStore
+	VerificationSettingsConfirmer      DesktopVerificationSettingsConfirmer
 }
 
 // DesktopBridge is the complete renderer binding surface for D0-A. Keep this
@@ -264,6 +266,8 @@ type DesktopBridge struct {
 	userTerminal             UserTerminalController
 	debugTerminalAgentInput  application.DebugTerminalAgentInputController
 	riskProfileRestarter     DesktopRiskProfileRestarter
+	verificationSettings     application.DesktopVerificationSettingsStore
+	verificationConfirmer    DesktopVerificationSettingsConfirmer
 	bootstrap                ConnectionBootstrap
 	dialogActive             atomic.Bool
 	workspaceOpenActive      atomic.Bool
@@ -341,6 +345,10 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 	if !config.RiskProfileRestartEnabled && config.RiskProfileRestarter != nil {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"desktop risk-profile restarter requires its explicit capability")
+	}
+	if (config.VerificationSettingsStore == nil) != (config.VerificationSettingsConfirmer == nil) ||
+		(config.VerificationSettingsStore != nil && !config.RiskProfileRestartEnabled) {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "desktop verification settings require their native confirmation and restart boundary")
 	}
 	permissionCapabilities := domain.ExecutionPermissionRuntimeCapabilities{
 		WorkspaceSandboxEnabled: config.WorkspaceSandboxEnabled,
@@ -437,6 +445,8 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 		userTerminal:             config.UserTerminalController,
 		debugTerminalAgentInput:  config.DebugTerminalAgentInputController,
 		riskProfileRestarter:     config.RiskProfileRestarter,
+		verificationSettings:     config.VerificationSettingsStore,
+		verificationConfirmer:    config.VerificationSettingsConfirmer,
 		bootstrap: ConnectionBootstrap{
 			ProtocolVersion: ConnectionBootstrapProtocolVersion,
 			APIBaseURL:      DesktopAPIBasePath, APIVersion: apiVersion, AppVersion: appVersion,

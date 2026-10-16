@@ -20,6 +20,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 115 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
+| [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
 | [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 18 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
@@ -718,6 +719,26 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 - `desktop_risk_restart.ready.v1`
 - `desktop_sandbox_restart.v1`
+
+</details>
+
+### desktop-verification-settings
+
+- Class: `internal-durable`
+- Owner: Desktop verification settings maintainers
+- Source of truth: `internal/application`, `internal/desktop`
+- Persistence/export boundary: Native confirmation saves revision-bound browser and batch verification preferences in the Go-owned application home. Ordinary product startup and fixed native restarts read them; explicit granular CLI startup does not.
+- Compatibility rule: Retain the versioned two-boolean reader and compare-and-swap revisions. Saved preferences install services but never restore Run execution authority, leases, permissions or tokens. HTTP only projects startup guidance.
+- Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
+- Writers:
+  - `desktop-verification-settings-writer` (`v1`, write-current) at `internal/application`
+- Readers:
+  - `desktop-verification-settings-reader` (`v1`, active) at `internal/application`
+  - `desktop-verification-settings-ui-reader` (`v1`, active) at `web/src/lib`
+
+<details><summary>1 active identifiers</summary>
+
+- `desktop_verification_settings.v1`
 
 </details>
 

@@ -162,6 +162,8 @@ type ControlPlaneConfig struct {
 	BatchDeliveryControlEnabled        bool
 	BatchDeliveryHostValidationEnabled bool
 	UIEvidenceControlEnabled           bool
+	VerificationSettingsReader         application.DesktopVerificationSettingsReader
+	VerificationSettingsControlEnabled bool
 	BrowserRuntimeCapabilities         browserruntime.ProductionRuntimeCapabilities
 	FullCDPSessionControlEnabled       bool
 	FullCDPRuntimeCapabilities         browserruntime.FullCDPRuntimeCapabilities
@@ -318,14 +320,18 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			config.ExecutionPermissionControlEnabled,
 		BrowserCDPPermissionControlEnabled: config.ControlToken != "" &&
 			config.BrowserCDPPermissionControlEnabled,
-		ExecutionPermissionCapabilities:  config.ExecutionPermissionCapabilities,
-		BrowserCDPPermissionCapabilities: config.BrowserCDPPermissionCapabilities,
-		LocalSandboxInstalled:            localReady,
-		DockerStartupGateEnabled:         config.DockerExecutionEnabled,
-		DockerAvailable:                  config.StandardCodeDockerReadiness != nil && config.StandardCodeDockerReadiness.DaemonReachable,
-		SBXStartupGateEnabled:            config.SBXReadiness != nil && config.SBXReadiness.FeatureEnabled,
-		SBXAvailable:                     config.SBXReadiness != nil && config.SBXReadiness.CLIInstalled,
-		SBXBackendReady:                  sbxReady,
+		ExecutionPermissionCapabilities:    config.ExecutionPermissionCapabilities,
+		BrowserCDPPermissionCapabilities:   config.BrowserCDPPermissionCapabilities,
+		LocalSandboxInstalled:              localReady,
+		DockerStartupGateEnabled:           config.DockerExecutionEnabled,
+		DockerAvailable:                    config.StandardCodeDockerReadiness != nil && config.StandardCodeDockerReadiness.DaemonReachable,
+		SBXStartupGateEnabled:              config.SBXReadiness != nil && config.SBXReadiness.FeatureEnabled,
+		SBXAvailable:                       config.SBXReadiness != nil && config.SBXReadiness.CLIInstalled,
+		SBXBackendReady:                    sbxReady,
+		UIEvidenceInstalled:                config.UIEvidenceControlEnabled,
+		BatchValidationInstalled:           config.BatchDeliveryHostValidationEnabled,
+		VerificationSettingsReader:         config.VerificationSettingsReader,
+		VerificationSettingsControlEnabled: config.VerificationSettingsControlEnabled,
 	}
 	if config.LocalSandboxReadiness != nil {
 		projected, projectionErr := capabilityReadinessRuntime.

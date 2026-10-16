@@ -122,21 +122,21 @@ func (p *testSkillPackagePicker) OpenSkillPackage(ctx context.Context) (string, 
 	return path, err
 }
 
-func TestDesktopBridgeBindsOnlyTwentyBoundedMethods(t *testing.T) {
+func TestDesktopBridgeBindsOnlyReviewedMethods(t *testing.T) {
 	typ := reflect.TypeFor[*DesktopBridge]()
-	if typ.NumMethod() != 22 {
-		t.Fatalf("exported method count = %d, want 22", typ.NumMethod())
-	}
 	want := []string{
-		"Bootstrap", "CloseUserTerminal", "GetDebugTerminalAgentInput",
-		"GetUserTerminal", "GrantDebugTerminalAgentInput",
+		"Bootstrap", "CloseUserTerminal", "ConfirmVerificationSettings", "GetDebugTerminalAgentInput",
+		"GetUserTerminal", "GetVerificationSettings", "GrantDebugTerminalAgentInput",
 		"ImportWorkspace", "InspectClipboardFiles", "InstallSkillPackage",
 		"ListSkillPackages", "OpenWorkspace", "PasteClipboardFiles", "PreviewSkillPackage",
 		"ReadUserTerminal", "RemoveSkillPackage", "ResizeUserTerminal",
-		"RestartWithRiskProfile", "RestartWithSandboxSettings",
+		"RestartWithRiskProfile", "RestartWithSandboxSettings", "RestartWithVerificationSettings",
 		"RevokeDebugTerminalAgentInput",
 		"SelectSkillPackage",
 		"StartUserTerminal", "WorkspaceLaunchers", "WriteUserTerminal",
+	}
+	if typ.NumMethod() != len(want) {
+		t.Fatalf("exported method count = %d, want %d", typ.NumMethod(), len(want))
 	}
 	for index, name := range want {
 		if method := typ.Method(index); method.Name != name {

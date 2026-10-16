@@ -18,9 +18,15 @@ import { formatBytes, formatDate, shortID } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { UIEvidencePreparation } from "./ui-evidence-preparation";
+import { useVerificationRecord } from "./verification-recovery";
+import { uiEvidenceDraftKey, uiEvidenceIntentKey, validUIEvidenceIntent, type UIEvidenceIntent } from "./ui-evidence-recovery";
+import type { V2RecoveryStore } from "../v2/recovery-storage";
+import { VerificationSettingsPanel } from "./verification-settings-panel";
 
-interface UIEvidenceIntent { request: UIEvidenceStartView; state: "pending" | "unknown" | "rejected"; error?: string }
-interface UIEvidenceSubmission { request: UIEvidenceStartView; runID: string; client: APIClient }
+interface UIEvidenceSubmission {
+  request: UIEvidenceStartView; runID: string; client: APIClient;
+  journal: { store: V2RecoveryStore | null; save: (intent: UIEvidenceIntent | null) => void; remove: () => void };
+}
 
 export function UIEvidencePanel({ client, runID, threadID }: {
   client: APIClient;
@@ -34,12 +40,12 @@ export function UIEvidencePanel({ client, runID, threadID }: {
 
   const [localError, setLocalError] = useState("");
   const [preview, setPreview] = useState<{ attemptID: string; artifactID: string; url: string } | null>(null);
+  const journal = useVerificationRecord<UIEvidenceIntent | null>(uiEvidenceIntentKey(runID), null,
+    (value): value is UIEvidenceIntent | null => validUIEvidenceIntent(value, runID));
+  const intent = journal.value?.state === "pending" ? { ...journal.value, state: "unknown" as const } : journal.value;
   const currentAttempt = useRef("");
-  const currentScope = useRef({ runID, client });
-  currentScope.current = { runID, client };
-  const intentKey = ["run", runID, "ui-evidence-start-intent"];
-  const intent = useQuery<UIEvidenceIntent | null>({ queryKey: intentKey, queryFn: () => null,
-    enabled: false, initialData: null, gcTime: Infinity });
+  const currentScope = useRef({ runID, client, store: journal.store });
+  currentScope.current = { runID, client, store: journal.store };
   const attempts = useQuery({
     queryKey: ["run", runID, "ui-evidence"],
     queryFn: ({ signal }) => client.uiEvidence(runID, signal),
@@ -74,8 +80,15 @@ export function UIEvidencePanel({ client, runID, threadID }: {
   const start = useMutation({
     mutationFn: (submission: UIEvidenceSubmission) => submission.client.startUIEvidence(submission.runID, submission.request),
     onSuccess: async (attempt, submission) => {
-      queryClient.setQueryData(["run", submission.runID, "ui-evidence-start-intent"], null);
-      if (currentScope.current.runID === submission.runID && currentScope.current.client === submission.client) {
+      let cleared = false;
+      try {
+        submission.journal.store!.assertReadable(uiEvidenceDraftKey(submission.runID));
+        submission.journal.store!.remove(uiEvidenceDraftKey(submission.runID));
+        submission.journal.remove(); cleared = true;
+      } catch (failure) {
+        if (currentScope.current.store === submission.journal.store && currentScope.current.runID === submission.runID) setLocalError(humanError(failure));
+      }
+      if (cleared && currentScope.current.runID === submission.runID && currentScope.current.client === submission.client && currentScope.current.store === submission.journal.store) {
         setPreparationGeneration((generation) => generation + 1);
         setSelection({ runID: submission.runID, attemptID: attempt.manifest.attempt_id }); setLocalError("");
       }
@@ -84,16 +97,21 @@ export function UIEvidencePanel({ client, runID, threadID }: {
         queryClient.invalidateQueries({ queryKey: ["ui-evidence", attempt.manifest.attempt_id] }),
       ]);
     },
-    onError: (error, submission) => queryClient.setQueryData<UIEvidenceIntent>(["run", submission.runID, "ui-evidence-start-intent"], {
-      request: submission.request, state: error instanceof APIRequestError && error.status < 500 ? "rejected" : "unknown", error: humanError(error),
-    }),
+    onError: (error, submission) => {
+      try { submission.journal.save({ version: 1, runID: submission.runID, request: submission.request,
+        state: error instanceof APIRequestError && error.status < 500 ? "rejected" : "unknown" }); }
+      catch (failure) { if (currentScope.current.store === submission.journal.store && currentScope.current.runID === submission.runID) setLocalError(humanError(failure)); }
+    },
   });
   const submit = (request: UIEvidenceStartView) => {
-    const current = queryClient.getQueryData<UIEvidenceIntent | null>(intentKey);
-    if (!client.hasUIEvidence || current?.state === "pending" ||
-      (current?.state === "unknown" && current.request.operation_key !== request.operation_key)) return;
-    queryClient.setQueryData<UIEvidenceIntent>(intentKey, { request, state: "pending" });
-    start.mutate({ request, runID, client });
+    if (!client.hasUIEvidence || start.isPending ||
+      (intent?.state === "unknown" && intent.request.operation_key !== request.operation_key)) return;
+    try {
+      // An interrupted start is always restored as unknown, never re-dispatched
+      // by mounting the panel. Persist its exact identity before the API call.
+      journal.save({ version: 1, runID, request, state: "unknown" });
+      setLocalError(""); start.mutate({ request, runID, client, journal });
+    } catch (failure) { setLocalError(humanError(failure)); }
   };
   const cancel = useMutation({
     mutationFn: (attemptID: string) => client.cancelUIEvidence(attemptID),
@@ -150,19 +168,20 @@ export function UIEvidencePanel({ client, runID, threadID }: {
         ? t("先刷新列表以查看历史证据。连接控制凭证后可启动或取消浏览器验证。",
           "Refresh the list to inspect historical evidence. Connect a control credential to start or cancel browser verification.")
         : client.uiEvidenceUnavailableReason === "ui_evidence_disabled"
-          ? t("启用 --enable-ui-evidence 并重启 Desktop 后，可运行浏览器验证。",
-            "Enable --enable-ui-evidence and restart Desktop to run browser verification.")
+          ? t("在下方验证设置中启用浏览器验证，保存后重启应用。",
+            "Enable browser verification in the settings below, save, and restart the application.")
           : client.uiEvidenceUnavailableReason === "run_execution_disabled"
-            ? t("启用 --enable-run-execution 并重启 Desktop，准备浏览器验证所需的执行能力。",
-              "Enable --enable-run-execution and restart Desktop to prepare execution for browser verification.")
+            ? t("使用桌面默认启动方式并连接控制凭证，恢复浏览器验证所需的任务执行能力。",
+              "Use the desktop's default startup and connect a control credential to restore task execution for browser verification.")
             : client.uiEvidenceUnavailableReason === "browser_cdp_control_disabled"
-              ? t("启用 --enable-browser-cdp-control 并重启 Desktop，准备浏览器控制能力。",
-                "Enable --enable-browser-cdp-control and restart Desktop to prepare browser control.")
-              : t("先刷新列表以查看历史记录。按下方配置完成 Windows Desktop 的浏览器验证控制。",
-                "Refresh the list to inspect historical records. Use the settings below to configure browser verification control in Windows Desktop.")}</p>
-      <details><summary>{t("配置浏览器验证", "Configure browser verification")}</summary>
-      <p>{t("在 Windows Desktop 连接控制凭证，并在桌面启动参数中明确启用以下能力：",
-        "Connect a control credential in Windows Desktop and explicitly enable these capabilities in its startup options:")}
+              ? t("使用桌面默认启动方式并重新连接当前控制服务，准备浏览器控制能力。",
+                "Use the desktop's default startup and reconnect the current control service to prepare browser control.")
+              : t("先刷新列表以查看历史记录。在下方验证设置中保存启用偏好并重启应用。",
+                "Refresh the list to inspect historical records. Save your verification preferences below and restart the application.")}</p>
+      <VerificationSettingsPanel client={client} />
+      <details><summary>{t("高级：启动参数与独立 CLI", "Advanced: startup options and standalone CLI")}</summary>
+      <p>{t("仅在手工启动 Windows Desktop 时，连接控制凭证并明确启用以下能力：",
+        "When starting Windows Desktop manually, connect a control credential and explicitly enable these capabilities:")}
         {" "}<code>--enable-permission-control --enable-danger-full-access --enable-run-execution --enable-browser-cdp-control --enable-ui-evidence</code>
         {t("。独立 CLI 提供历史证据读取与导出；浏览器启动和取消请使用 Windows Desktop。",
           ". Use the standalone CLI to read and export historical evidence, and Windows Desktop to start or cancel a browser.")}
@@ -178,7 +197,7 @@ export function UIEvidencePanel({ client, runID, threadID }: {
       : <ErrorState error={attempts.error} />)}
     {attempts.isSuccess && attempts.data.length === 0 && <EmptyState>{client.hasUIEvidence
       ? t("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。", "No browser verification yet. Expand the launch form below, enter the application launch settings and review its steps to begin.")
-      : t("还没有浏览器验证。先按上方「配置浏览器验证」完成连接与启动配置。", "No browser verification yet. Complete connection and startup settings in Configure browser verification above.")}</EmptyState>}
+      : t("还没有浏览器验证。请在上方验证设置中保存启用偏好，重启后连接当前服务。", "No browser verification yet. Save your verification preferences above, then restart and connect to the current service.")}</EmptyState>}
 
     {attempts.data && attempts.data.length > 0 && <div className="ui-evidence-layout">
       <section className="ui-evidence-attempts" aria-label={t("UI 证据 Attempts", "UI evidence attempts")}>
@@ -204,13 +223,14 @@ export function UIEvidencePanel({ client, runID, threadID }: {
       {t("取消并清理 Attempt", "Cancel and clean up attempt")}
     </button>}
 
-    {intent.data?.state === "unknown" && <div role="status" className="projection-placeholder">
+    {journal.error && <p className="inline-warning" role="status">{journal.error}</p>}
+    {intent?.state === "unknown" && <div role="status" className="projection-placeholder">
       <p>{t("启动结果待确认。核对原请求以读取或恢复同一次验证。", "The start outcome needs confirmation. Check the original request to read or recover the same verification.")}</p>
-      <details><summary>{t("原请求记录", "Original request")}</summary><pre>{JSON.stringify(intent.data.request, null, 2)}</pre></details>
+      <details><summary>{t("原请求记录", "Original request")}</summary><pre>{JSON.stringify(intent.request, null, 2)}</pre></details>
       <button className="command-button" disabled={!client.hasUIEvidence || start.isPending} type="button"
-        onClick={() => submit(intent.data!.request)}>{t("核对原请求", "Check original request")}</button>
+        onClick={() => submit(intent.request)}>{t("核对原请求", "Check original request")}</button>
     </div>}
-    <UIEvidencePreparation key={`${runID}:${preparationGeneration}`} client={client} runID={runID} threadID={threadID} pending={intent.data?.state === "pending"} unresolved={intent.data?.state === "unknown"} onStart={submit} />
+    <UIEvidencePreparation key={`${runID}:${preparationGeneration}`} client={client} runID={runID} threadID={threadID} pending={start.isPending} unresolved={intent?.state === "unknown"} onStart={submit} />
     {(localError || mutationError) && <div className="inline-warning" role="alert">
       {localError || humanError(mutationError)}</div>}
   </div>;

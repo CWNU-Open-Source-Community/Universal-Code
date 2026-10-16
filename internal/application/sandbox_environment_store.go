@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -256,11 +257,17 @@ func lockSandboxEnvironmentSettings(root *os.Root) (*os.File, error) {
 }
 
 func persistSandboxEnvironmentSettings(ctx context.Context, root *os.Root, raw []byte) error {
+	return persistDesktopSettingsFile(ctx, root, sandboxEnvironmentSettingsFile, raw)
+}
+
+// Both callers supply a fixed Go-owned settings filename. No renderer path
+// crosses this atomic publication boundary.
+func persistDesktopSettingsFile(ctx context.Context, root *os.Root, name string, raw []byte) error {
 	var entropy [16]byte
 	if _, err := rand.Read(entropy[:]); err != nil {
 		return apperror.New(apperror.CodeUnavailable, "sandbox settings publication could not be prepared")
 	}
-	temporary := ".sandbox-environment-" + hex.EncodeToString(entropy[:])
+	temporary := "." + strings.TrimSuffix(name, ".json") + "-" + hex.EncodeToString(entropy[:])
 	file, err := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return apperror.New(apperror.CodeUnavailable, "sandbox settings could not be written")
@@ -278,7 +285,7 @@ func persistSandboxEnvironmentSettings(ctx context.Context, root *os.Root, raw [
 		err = ctx.Err()
 	}
 	if err == nil {
-		err = root.Rename(temporary, sandboxEnvironmentSettingsFile)
+		err = root.Rename(temporary, name)
 	}
 	if err != nil {
 		return apperror.New(apperror.CodeUnavailable, "sandbox settings publication failed; retry the same request to inspect its result")

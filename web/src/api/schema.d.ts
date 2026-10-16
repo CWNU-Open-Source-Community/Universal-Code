@@ -11210,6 +11210,7 @@ export interface components {
             transport_enabled: boolean;
         };
         RunCapabilityReadinessView: {
+            batch_validation: components["schemas"]["VerificationFeatureReadinessView"];
             browser_cdp_permissions: components["schemas"]["CapabilityReadinessOptionView"][];
             capability_grant: boolean;
             command_runtime: components["schemas"]["CommandRuntimeReadinessView"];
@@ -11220,6 +11221,7 @@ export interface components {
             /** @enum {string} */
             protocol_version: "run_capability_readiness.v1";
             run_id: string;
+            ui_evidence: components["schemas"]["VerificationFeatureReadinessView"];
         };
         RunConfigView: {
             continuity_context_fingerprint?: string;
@@ -14612,6 +14614,11 @@ export interface components {
             title: string;
             /** @enum {string} */
             version: "operator_verification_evidence.v1";
+        };
+        VerificationFeatureReadinessView: {
+            blocked_by: ("startup_gate_closed" | "native_control_unavailable")[];
+            installed: boolean;
+            remediation: ("enable_and_restart" | "restart_application" | "open_desktop_settings")[];
         };
         VerificationPlanControlView: {
             approval: boolean;

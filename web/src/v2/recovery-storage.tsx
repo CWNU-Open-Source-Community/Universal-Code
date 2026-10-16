@@ -23,6 +23,8 @@ export interface V2RecoveryStore {
   entries<T>(prefix: string): Array<[string, T]>;
   assertReadable(prefix?: string): void;
   reject(key: string): void;
+  markUnsaved(key: string, message: string): void;
+  unsavedWarning(key: string): string | null;
   subscribePrefix?(prefix: string, listener: () => void): () => void;
 }
 
@@ -43,6 +45,7 @@ class RecoveryStorage implements V2RecoveryStore {
   private readonly prefixListeners = new Map<string, Set<() => void>>();
   private readonly warningListeners = new Set<() => void>();
   private readonly failures = new Map<string, string>();
+  private readonly unsaved = new Map<string, string>();
   private warning: string | null = null;
   private warningNotificationQueued = false;
 
@@ -62,7 +65,7 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 
   private updateWarning(): void {
-    const warning = this.failures.values().next().value ?? null;
+    const warning = this.failures.values().next().value ?? this.unsaved.values().next().value ?? null;
     if (warning === this.warning) return;
     this.warning = warning;
     // Reads can occur during render. Notify warning consumers after that render,
@@ -107,6 +110,7 @@ class RecoveryStorage implements V2RecoveryStore {
       decodeRecord(raw);
       window.localStorage.setItem(this.storageKey(key), raw);
     } catch { throw this.fail(`write:${key}`, WRITE_FAILED); }
+    this.unsaved.delete(key);
     this.clearFailure(`write:${key}`, `remove:${key}`);
     this.notify(key);
   }
@@ -114,6 +118,7 @@ class RecoveryStorage implements V2RecoveryStore {
   remove(key: string): void {
     try { window.localStorage.removeItem(this.storageKey(key)); }
     catch { throw this.fail(`remove:${key}`, REMOVE_FAILED); }
+    this.unsaved.delete(key);
     this.clearFailure(`read:${key}`, `write:${key}`, `remove:${key}`, `invalid:${key}`);
     this.notify(key);
   }
@@ -161,7 +166,17 @@ class RecoveryStorage implements V2RecoveryStore {
         throw new V2PersistenceError(message);
       }
     }
+    // A store-wide check guards restart against edits that never reached
+    // storage. Scoped readers/writers must still be able to repair that draft.
+    if (prefix === undefined && this.unsaved.size) throw new V2PersistenceError(this.unsaved.values().next().value!);
   }
+
+  markUnsaved(key: string, message: string): void {
+    this.unsaved.set(key, message);
+    this.updateWarning();
+  }
+
+  unsavedWarning(key: string): string | null { return this.unsaved.get(key) ?? null; }
 
   reject(key: string): void {
     // Valid JSON can still contain an invalid business payload. Do not allow

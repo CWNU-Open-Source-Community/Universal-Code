@@ -22,6 +22,8 @@ export function capabilityReadinessFixture(
     protocol_version: "run_capability_readiness.v1",
     run_id: runID,
     capability_grant: false,
+    ui_evidence: { installed: false, blocked_by: ["startup_gate_closed", "native_control_unavailable"], remediation: ["open_desktop_settings"] },
+    batch_validation: { installed: false, blocked_by: ["startup_gate_closed", "native_control_unavailable"], remediation: ["open_desktop_settings"] },
     permissions: [
       option("ask", true),
       option("auto", false),
