@@ -27,7 +27,7 @@ func mcpComputerUseTarget(source mcpApprovalSource) (*ComputerUseApprovalTarget,
 	}
 	target, err := approval.ParseComputerUseTarget(source.payload.ToolName, source.payload.Arguments)
 	if err != nil {
-		return nil, mcpApprovalUnavailable("Computer Use application identity is invalid")
+		return nil, mcpApprovalUnavailable("Computer Use target or key chord is invalid")
 	}
 	return &target, nil
 }
@@ -55,7 +55,7 @@ func MCPApprovalDecisionActions(ctx context.Context, base ApprovalControlStore, 
 		return actions
 	}
 	target, err := MCPComputerUseApprovalPreview(ctx, base, record)
-	if err != nil || target == nil || target.AppID == "" {
+	if err != nil || target == nil || target.AppID == "" || target.SystemShortcut {
 		return actions
 	}
 	permission, err := base.(mcpApprovalStore).GetRunExecutionPermission(ctx, record.RunID)
@@ -81,6 +81,9 @@ func (s *ApprovalControlService) decideComputerUseApp(ctx context.Context, run d
 		target, err := MCPComputerUseApprovalPreview(ctx, s.store, record)
 		if err != nil || target == nil || target.AppID == "" {
 			return result, mcpApprovalUnavailable("task application approval requires the exact built-in application target")
+		}
+		if target.SystemShortcut {
+			return result, mcpApprovalUnavailable("system shortcuts require an exact single-call approval")
 		}
 		permission, err := s.store.(mcpApprovalStore).GetRunExecutionPermission(ctx, run.ID)
 		if err != nil {

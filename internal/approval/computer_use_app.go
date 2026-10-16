@@ -11,10 +11,11 @@ import (
 )
 
 type ComputerUseTarget struct {
-	AppID      string `json:"app_id"`
-	WindowID   string `json:"window_id"`
-	ToolName   string `json:"tool_name"`
-	Executable string `json:"executable"`
+	AppID          string `json:"app_id"`
+	WindowID       string `json:"window_id"`
+	ToolName       string `json:"tool_name"`
+	Executable     string `json:"executable"`
+	SystemShortcut bool   `json:"system_shortcut,omitempty"`
 }
 
 // ParseComputerUseTarget checks only the stored target's shape. The native
@@ -37,6 +38,16 @@ func ParseComputerUseTarget(tool string, arguments json.RawMessage) (ComputerUse
 	}
 	var err error
 	target.Executable, err = computeruse.ParseAppID(target.AppID)
+	if err != nil {
+		return target, err
+	}
+	if tool == "computer_key" {
+		var key string
+		if json.Unmarshal(fields["key"], &key) != nil {
+			return target, errors.New("Computer Use key chord is invalid")
+		}
+		target.SystemShortcut, err = computeruse.KeyRequiresDesktopApproval(key)
+	}
 	return target, err
 }
 

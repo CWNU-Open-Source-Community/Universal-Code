@@ -51,6 +51,9 @@ func computerUseAppScopeTx(ctx context.Context, tx *sql.Tx, record approval.Reco
 	if err != nil || target.AppID == "" || (payload.Method != "" && payload.Method != "tools/call") {
 		return scope, errors.New("application approval requires an exact Computer Use application target")
 	}
+	if target.SystemShortcut {
+		return scope, errors.New("system shortcuts require an exact single-call approval")
+	}
 	return approval.ComputerUseAppScope{RunID: record.RunID, SessionID: record.SessionID, WorkspaceID: record.WorkspaceID,
 		AppID: target.AppID, PermissionSnapshotID: authority.PermissionSnapshotID, PermissionRevision: authority.PermissionRevision,
 		PermissionMode: string(authority.PermissionMode), PermissionGeneration: authority.PermissionGeneration,

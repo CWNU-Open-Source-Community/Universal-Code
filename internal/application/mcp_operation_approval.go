@@ -125,7 +125,7 @@ func mcpApprovalMatches(record approval.Record, source mcpApprovalSource) bool {
 	grantAllowed := record.GrantID == ""
 	if !grantAllowed && source.permission.Mode == domain.RunExecutionPermissionAsk {
 		target, err := mcpComputerUseTarget(source)
-		grantAllowed = err == nil && target != nil && target.AppID != ""
+		grantAllowed = err == nil && target != nil && target.AppID != "" && !target.SystemShortcut
 	}
 	return record.Validate() == nil && record.RunID == source.call.RunID &&
 		record.ProposalID == source.call.CallID && record.ToolName == mcp.OperationApprovalTool &&
@@ -240,7 +240,7 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 				return false, nil, err
 			}
 			record, proof = decision.Approval, &decision.Approval
-		} else if target.AppID != "" && source.permission.Mode == domain.RunExecutionPermissionAsk && (proof == nil || proof.Status == approval.StatusPending) {
+		} else if target.AppID != "" && !target.SystemShortcut && source.permission.Mode == domain.RunExecutionPermissionAsk && (proof == nil || proof.Status == approval.StatusPending) {
 			grants, ok := st.(computerUseAppApprovalStore)
 			if !ok {
 				return false, nil, mcpApprovalUnavailable("Computer Use application grant store unavailable")

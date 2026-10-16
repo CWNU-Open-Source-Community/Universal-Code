@@ -35,3 +35,32 @@ func parseChord(s string) ([]uint16, error) {
 	}
 	return out, nil
 }
+
+// KeyRequiresDesktopApproval identifies known Windows shortcuts whose routing
+// reaches the desktop or another application. It uses the same virtual keys as
+// validation and SendInput; an application grant cannot authorize these calls.
+func KeyRequiresDesktopApproval(s string) (bool, error) {
+	keys, err := parseChord(s)
+	if err != nil {
+		return false, err
+	}
+	var ctrl, alt, shift, win bool
+	var key uint16
+	for _, vk := range keys {
+		switch vk {
+		case 0x11:
+			ctrl = true
+		case 0x12:
+			alt = true
+		case 0x10:
+			shift = true
+		case 0x5b:
+			win = true
+		default:
+			key = vk
+		}
+	}
+	return win || (alt && (key == 9 || key == 0x1b)) || (ctrl && key == 0x1b) ||
+		(ctrl && alt && (key == 0x2e || key == 0x2d)) ||
+		(key == 0 && shift && (alt || ctrl)), nil
+}
