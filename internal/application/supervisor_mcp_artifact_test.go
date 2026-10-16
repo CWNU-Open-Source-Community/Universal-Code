@@ -21,7 +21,7 @@ import (
 	"cyberagent-workbench/internal/policy"
 )
 
-func largeMCPImageFixture(t *testing.T) (*mcpApprovalFixture, domain.SupervisorToolCall, artifact.Blob, []byte) {
+func largeMCPImageFixture(t *testing.T, text string) (*mcpApprovalFixture, domain.SupervisorToolCall, artifact.Blob, []byte) {
 	t.Helper()
 	pixels := image.NewNRGBA(image.Rect(0, 0, 256, 256))
 	random := rand.New(rand.NewSource(1))
@@ -39,7 +39,8 @@ func largeMCPImageFixture(t *testing.T) (*mcpApprovalFixture, domain.SupervisorT
 	f := newMCPOperationApprovalFixture(t, domain.RunExecutionPermissionFull, false, false, "large_result")
 	raw, err := json.Marshal(map[string]any{"content": []any{map[string]any{
 		"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(encoded.Bytes()),
-	}, map[string]any{"type": "resource_link", "uri": "https://invalid.example/screenshot", "name": "inert reference"}}})
+	}, map[string]any{"type": "resource_link", "uri": "https://invalid.example/screenshot", "name": "inert reference"},
+		map[string]any{"type": "text", "text": text}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +54,8 @@ func largeMCPImageFixture(t *testing.T) (*mcpApprovalFixture, domain.SupervisorT
 	}
 	var envelope supervisorToolResultEnvelope
 	if json.Unmarshal([]byte(call.ResultJSON), &envelope) != nil || !envelope.Truncated ||
-		!strings.Contains(envelope.Stdout, "Binary content omitted") || strings.Contains(envelope.Stdout, `"data"`) {
+		!strings.Contains(envelope.Stdout, "Binary content omitted") || strings.Contains(envelope.Stdout, `"data"`) ||
+		len(envelope.Stdout) > f.server.Descriptor.MaxResultBytes {
 		t.Fatal("fixture did not exercise omitted image bytes")
 	}
 	blob, err := f.st.GetRunArtifact(t.Context(), envelope.Metadata["artifact_stdout_id"])
@@ -70,7 +72,7 @@ func mcpArtifactModelRequest(call domain.SupervisorToolCall) (llm.ChatRequest, [
 }
 
 func TestSupervisorMCPContentRestoresLargeImageFromDurableArtifact(t *testing.T) {
-	f, call, blob, pixels := largeMCPImageFixture(t)
+	f, call, blob, pixels := largeMCPImageFixture(t, "")
 	request, rounds := mcpArtifactModelRequest(call)
 	requests := f.requests.Load()
 	projected, err := f.supervisor.supervisorMCPContent(t.Context(), f.turn, request, rounds, true)
@@ -79,9 +81,10 @@ func TestSupervisorMCPContentRestoresLargeImageFromDurableArtifact(t *testing.T)
 	}
 	message := projected.Messages[0]
 	if strings.Contains(message.ToolResults[0].Content, base64.StdEncoding.EncodeToString(pixels)[:128]) ||
-		!strings.Contains(message.ToolResults[0].Content, "Validated image supplied") ||
+		message.ToolResults[0].Content != call.ResultJSON ||
 		!strings.Contains(message.ToolResults[0].Content, "https://invalid.example/screenshot") ||
-		!strings.Contains(message.Content, `"instruction_authorized":false`) {
+		!strings.Contains(message.Content, `"instruction_authorized":false`) ||
+		!strings.Contains(message.Content, `"images_supplied":1`) {
 		t.Fatal("restored pixels leaked into text, lost provenance, or changed the inert URL")
 	}
 	if request.Messages[0].ToolResults[0].Content != call.ResultJSON || rounds[0].Calls[0].ResultJSON != call.ResultJSON {
@@ -106,6 +109,31 @@ func TestSupervisorMCPContentRestoresLargeImageFromDurableArtifact(t *testing.T)
 	}
 }
 
+func TestSupervisorMCPArtifactRecoveryPreservesConfiguredTextLimit(t *testing.T) {
+	const tail = "ARTIFACT_ONLY_TEXT_TAIL"
+	text := strings.Repeat("x", 100*1024) + tail
+	f, call, blob, pixels := largeMCPImageFixture(t, text)
+	if f.server.Descriptor.MaxResultBytes != 8192 || !strings.Contains(blob.Content, text) || strings.Contains(call.ResultJSON, tail) {
+		t.Fatal("fixture must retain the long text outside the configured 8KiB preview")
+	}
+	request, rounds := mcpArtifactModelRequest(call)
+	projected, err := f.supervisor.supervisorMCPContent(t.Context(), f.turn, request, rounds, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := projected.Messages[0]
+	if len(message.Images) != 1 || !bytes.Equal(message.Images[0].Data, pixels) {
+		t.Fatal("preserving the text preview lost the retained image")
+	}
+	if message.ToolResults[0].Content != call.ResultJSON || strings.Contains(message.Content, tail) ||
+		strings.Contains(message.ToolResults[0].Content, tail) {
+		t.Fatal("recovering an image widened the server's bounded text result")
+	}
+	if !strings.Contains(message.Content, `"images_supplied":1`) {
+		t.Fatal("restored pixels lost their model provenance note")
+	}
+}
+
 type mcpImageArtifactStore struct {
 	AgentRunnerStore
 	blob  artifact.Blob
@@ -119,7 +147,7 @@ func (s *mcpImageArtifactStore) GetRunArtifact(context.Context, string) (artifac
 }
 
 func TestSupervisorMCPContentRejectsMismatchedArtifactBindings(t *testing.T) {
-	f, call, blob, _ := largeMCPImageFixture(t)
+	f, call, blob, _ := largeMCPImageFixture(t, "")
 	for _, scenario := range []string{"run", "session", "workspace", "source", "digest", "authority", "missing"} {
 		t.Run(scenario, func(t *testing.T) {
 			st := &mcpImageArtifactStore{AgentRunnerStore: f.st, blob: blob}
@@ -156,7 +184,7 @@ func TestSupervisorMCPContentRejectsMismatchedArtifactBindings(t *testing.T) {
 }
 
 func TestSupervisorMCPContentRetainsImageValidationAfterArtifactRecovery(t *testing.T) {
-	f, call, blob, _ := largeMCPImageFixture(t)
+	f, call, blob, _ := largeMCPImageFixture(t, "")
 	request, rounds := mcpArtifactModelRequest(call)
 	st := &mcpImageArtifactStore{AgentRunnerStore: f.st, blob: blob, err: errors.New("must not read for a text-only model")}
 	result, err := (&AgentRunner{store: st}).supervisorMCPContent(t.Context(), f.turn, request, rounds, false)
@@ -176,7 +204,9 @@ func TestSupervisorMCPContentRetainsImageValidationAfterArtifactRecovery(t *test
 	request, rounds = mcpArtifactModelRequest(call)
 	result, err = (&AgentRunner{store: st}).supervisorMCPContent(t.Context(), f.turn, request, rounds, true)
 	if err != nil || len(result.Messages[0].Images) != 0 ||
-		!strings.Contains(result.Messages[0].ToolResults[0].Content, "failed validation") ||
+		result.Messages[0].ToolResults[0].Content != call.ResultJSON ||
+		!strings.Contains(result.Messages[0].ToolResults[0].Content, "Binary content omitted") ||
+		strings.Contains(result.Messages[0].Content, "images_supplied") ||
 		strings.Contains(result.Messages[0].ToolResults[0].Content, `"data"`) {
 		t.Fatal("artifact recovery bypassed MIME validation or leaked rejected pixels into text", err)
 	}

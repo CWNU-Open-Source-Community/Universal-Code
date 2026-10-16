@@ -56,7 +56,7 @@ func (s *AgentRunner) supervisorMCPContent(ctx context.Context, turn domain.Supe
 			if json.Unmarshal([]byte(call.ResultJSON), &envelope) != nil || envelope.Stdout == "" {
 				continue
 			}
-			content, err := s.supervisorMCPResultContent(ctx, turn, call, envelope, vision)
+			content, retained, err := s.supervisorMCPResultContent(ctx, turn, call, envelope, vision)
 			if err != nil {
 				return llm.ChatRequest{}, err
 			}
@@ -74,18 +74,22 @@ func (s *AgentRunner) supervisorMCPContent(ctx context.Context, turn domain.Supe
 				// JSON formatting and key order, across approval continuation.
 				continue
 			}
-			raw, err := json.Marshal(native)
-			if err != nil {
-				return llm.ChatRequest{}, err
+			if !retained {
+				raw, err := json.Marshal(native)
+				if err != nil {
+					return llm.ChatRequest{}, err
+				}
+				var truncated bool
+				envelope.Stdout, truncated = mcp.BoundResultJSON(raw, mcp.MaxClientResultBytes)
+				envelope.Truncated = envelope.Truncated || truncated
+				encoded, err := marshalSupervisorToolResultEnvelope(envelope)
+				if err != nil {
+					return llm.ChatRequest{}, err
+				}
+				message.ToolResults[resultIndex].Content = string(encoded)
 			}
-			var truncated bool
-			envelope.Stdout, truncated = mcp.BoundResultJSON(raw, mcp.MaxClientResultBytes)
-			envelope.Truncated = envelope.Truncated || truncated
-			encoded, err := marshalSupervisorToolResultEnvelope(envelope)
-			if err != nil {
-				return llm.ChatRequest{}, err
-			}
-			message.ToolResults[resultIndex].Content = string(encoded)
+			// Retained content supplies pixels only. Keep the original bounded
+			// envelope so a server's configured text limit cannot be widened here.
 			if len(message.Images) > imageCount {
 				note, _ := json.Marshal(map[string]any{"source_kind": "mcp", "source_ref": call.CallID,
 					"untrusted_evidence": true, "instruction_authorized": false, "images_supplied": len(message.Images) - imageCount})
@@ -102,19 +106,19 @@ func (s *AgentRunner) supervisorMCPContent(ctx context.Context, turn domain.Supe
 
 func (s *AgentRunner) supervisorMCPResultContent(ctx context.Context, turn domain.SupervisorTurn,
 	call domain.SupervisorToolCall, envelope supervisorToolResultEnvelope, vision bool,
-) (string, error) {
+) (string, bool, error) {
 	id := envelope.Metadata["artifact_stdout_id"]
 	if !vision || !envelope.Truncated || id == "" {
-		return envelope.Stdout, nil
+		return envelope.Stdout, false, nil
 	}
-	fail := func() (string, error) {
-		return "", apperror.New(apperror.CodeFailedPrecondition, "saved MCP result artifact does not match its completed tool evidence")
+	fail := func() (string, bool, error) {
+		return "", false, apperror.New(apperror.CodeFailedPrecondition, "saved MCP result artifact does not match its completed tool evidence")
 	}
 	if s == nil || s.store == nil || ctx == nil {
 		return fail()
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	reader, ok := s.store.(interface {
 		GetRunArtifact(context.Context, string) (artifact.Blob, error)
@@ -143,7 +147,7 @@ func (s *AgentRunner) supervisorMCPResultContent(ctx context.Context, turn domai
 	}
 	blob, err := reader.GetRunArtifact(ctx, id)
 	if err != nil {
-		return "", apperror.Wrap(apperror.CodeFailedPrecondition, "saved MCP result artifact could not be read", err)
+		return "", false, apperror.Wrap(apperror.CodeFailedPrecondition, "saved MCP result artifact could not be read", err)
 	}
 	if blob.Validate() != nil || blob.ID != id || blob.RunID != call.RunID ||
 		blob.SessionID != turn.Run.SessionID || blob.WorkspaceID != authority.WorkspaceID ||
@@ -154,7 +158,7 @@ func (s *AgentRunner) supervisorMCPResultContent(ctx context.Context, turn domai
 		!json.Valid([]byte(blob.Content)) {
 		return fail()
 	}
-	return blob.Content, nil
+	return blob.Content, true, nil
 }
 
 func projectMCPContent(result map[string]any, images *[]llm.ImagePart, vision bool, callID string) bool {
