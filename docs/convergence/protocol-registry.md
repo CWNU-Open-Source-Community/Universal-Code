@@ -11,7 +11,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 80 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
-| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 52 | true |
+| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 55 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
@@ -265,24 +265,30 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Class: `internal-durable`
 - Owner: Execution authority and approval maintainers
 - Source of truth: `internal/approval`, `internal/executionauth`, `internal/store`, `internal/toolcontract`
-- Persistence/export boundary: SQLite snapshots preserve permission, profile, interaction, approval, lease, and generation facts.
-- Compatibility rule: Authority changes are additive and fail closed; old readers remain for every supported stored snapshot.
+- Persistence/export boundary: SQLite snapshots preserve permission, profile, interaction, approval, lease, and generation facts. Computer Use app approval hashes persist in the same ledger: computer_use_app_scope.v1 binds the Run, permission/runtime fences, built-in registration and executable app identity in approval_computer_use_app_grant_scopes.scope_fingerprint; computer_use_app_grant.v1 fingerprints grant creation in approval_session_grants.request_fingerprint; computer_use_app_review.v1 binds the exact review request and grant ID in approval_operations.request_fingerprint. Constructors and readers are in internal/approval/computer_use_app.go and internal/store/computer_use_app_approval.go. Real SQLite approval, idempotent review replay, scope separation and revocation evidence is in internal/application/computer_use_app_approval_test.go.
+- Compatibility rule: Authority changes are additive and fail closed; old readers remain for every supported stored snapshot. The Computer Use app identifiers version internal SHA-256 fingerprint domain separators and their ordered field bindings. Retain stored grant evidence and review replay compatibility; decisions continue through the existing MCP and approval-control DTOs.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
   - `authority-approval-ledgers-writer` (`v1`, write-current) at `internal/application`
   - `universal-tool-binding-writer` (`v1`, write-new) at `internal/toolcontract`
   - `approval-preference-writer` (`v2`, write-new) at `internal/application/run_execution_permission.go`
+  - `computer-use-app-scope-fingerprint-writer` (`v1`, write-current) at `internal/approval/computer_use_app.go`
+  - `computer-use-app-grant-fingerprint-writer` (`v1`, write-current) at `internal/store/computer_use_app_approval.go`
 - Readers:
   - `authority-approval-ledgers-reader` (`v1`, active) at `internal/store`
   - `universal-tool-binding-reader` (`v1`, active) at `internal/executionauth`
   - `approval-preference-reader` (`v1, v2`, active) at `internal/domain`
+  - `computer-use-app-grant-fingerprint-reader` (`v1`, active) at `internal/store/computer_use_app_approval.go`
 
-<details><summary>52 active identifiers</summary>
+<details><summary>55 active identifiers</summary>
 
 - `approval_grant_consumption.v1`
 - `approval_grant_operation_key.v1`
 - `approval_operation_key.v1`
 - `approval_record.v1`
+- `computer_use_app_grant.v1`
+- `computer_use_app_review.v1`
+- `computer_use_app_scope.v1`
 - `executionauth.authorization.v1`
 - `full-cdp-session-operation.v1`
 - `once_command.v1`
