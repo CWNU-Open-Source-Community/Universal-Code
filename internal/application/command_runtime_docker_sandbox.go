@@ -27,6 +27,24 @@ type DockerSandboxCommandRuntimeExecutor struct {
 	identity commandruntimeadapter.Identity
 }
 
+type dockerCommandRuntimeAdmissionKey struct{}
+type dockerCommandRuntimeAdmission struct {
+	runID   string
+	confirm func(context.Context) error
+}
+
+func confirmDockerCommandRuntimeAdmission(ctx context.Context, runID string) error {
+	if admission, ok := ctx.Value(dockerCommandRuntimeAdmissionKey{}).(dockerCommandRuntimeAdmission); ok {
+		if admission.runID != runID || admission.confirm == nil {
+			return runner.ErrCommandRuntimeBoundary
+		}
+		return admission.confirm(ctx)
+	}
+	return nil
+}
+
+func (*DockerSandboxCommandRuntimeExecutor) CommandRuntimeAdmissionRequired() bool { return true }
+
 func NewDockerSandboxCommandRuntimeExecutor(service *StandardCodeDockerService) (
 	*DockerSandboxCommandRuntimeExecutor, error,
 ) {
@@ -178,6 +196,9 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 	}
 	executionCtx, output := withDockerCommandRuntimeOutput(ctx, scope.RunID,
 		spec.Spec.Output.ArtifactBytes)
+	executionCtx = context.WithValue(executionCtx, dockerCommandRuntimeAdmissionKey{}, dockerCommandRuntimeAdmission{
+		runID: scope.RunID, confirm: func(current context.Context) error { return runner.ConfirmCommandRuntimeDispatch(current, spec) },
+	})
 	if err := runner.CheckCommandRuntimeDispatch(executionCtx, spec); err != nil {
 		return noProcess, err
 	}

@@ -1,0 +1,14 @@
+--- a/normalize.go
++++ b/normalize.go
+@@ -1,6 +1,9 @@
+ package uuidfixture
+ import "github.com/google/uuid"
+ func Normalize(value string) (string, error) {
+-    _, err := uuid.Parse(value)
+-    return value, err
++    parsed, err := uuid.Parse(value)
++    if err != nil {
++        return "", err
++    }
++    return parsed.String(), nil
+ }

@@ -1,0 +1,1872 @@
+{
+  "protocol_version": "issue317-delivery-acceptance.v1",
+  "recorded_at": "2026-10-16T02:48:38.1651588Z",
+  "source_base": "7fee2d48284dff41f2e340a5035e397d9c71c77f",
+  "execution_host": "Windows",
+  "api_composition": "unchanged production Desktop composition and HTTP handler in isolated acceptance home",
+  "docker_image": "sha256:c3fbe9ca922a26b4230203d277c19651963314dce67b06e59be030b027259850",
+  "sbx_template": "docker.io/docker/sandbox-templates@sha256:bbef0c36f33daa5da4b57b7a504e8c945cdac52bcfe94141a51aee63333fc36e",
+  "cases": [
+    {
+      "backend": "sbx",
+      "project": "go",
+      "passed": true,
+      "run_id": "run-20261016000903-dcb3e3ca7926",
+      "thread_id": "thread-run-20261016000854-98b61389fa91",
+      "raw_evidence_root": "C:\\p317sbx-6a89c429",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "credential_source": "system",
+      "host_source_patches": 0,
+      "model_usage": {
+        "input_tokens": 352267,
+        "output_tokens": 5992,
+        "total_tokens": 358259,
+        "cache_read_tokens": 53632,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 18,
+        "calls": 18
+      },
+      "tool_usage": {
+        "consumed": 25,
+        "limit": 64,
+        "remaining": 39
+      },
+      "preparation": {
+        "acceptance_version": 1,
+        "mode": "Exercise",
+        "project": "go",
+        "run_id": "run-20261016000903-dcb3e3ca7926",
+        "recorded_at": "2026-10-16T00:11:54.921312Z",
+        "checks": [
+          {
+            "downloaded_bytes": 0,
+            "passed": true,
+            "name": "unapproved-download-denied",
+            "state": "failed",
+            "operation_id": "prep-98c2e0d67e5128762b36c8c62e85a3e2d43b5ff72aeb91700041b24ef166b334",
+            "error": "dependency download failed: web request is outside Run authority: package source has not been approved"
+          },
+          {
+            "package_count": 2,
+            "job_id": "command-job-e3f3835128bb958db5b16b58",
+            "downloaded_bytes": 32011,
+            "passed": true,
+            "name": "real-sandbox-install",
+            "state": "ready",
+            "operation_id": "prep-9dd31cabaed45db672ff3033a9bdd137d8fc0f8f0e61a610dcd859ad4eba7dab"
+          },
+          {
+            "name": "same-key-replay",
+            "passed": true,
+            "operation_id": "prep-9dd31cabaed45db672ff3033a9bdd137d8fc0f8f0e61a610dcd859ad4eba7dab"
+          },
+          {
+            "job_id": "command-job-d06c28a7b3893e218f193f77",
+            "name": "original-regression-fails",
+            "passed": true,
+            "state": "failed",
+            "exit_code": 1
+          },
+          {
+            "total_packages": 2,
+            "downloaded_bytes": 0,
+            "passed": true,
+            "name": "offline-cache-reuse",
+            "cache_hits": 2,
+            "state": "ready",
+            "operation_id": "prep-c4526c4626b81f31168cd3df352abadb355c57a4d06e65a0cc4412556e2f9722"
+          }
+        ],
+        "completed": true,
+        "passed": true
+      },
+      "independent_verification": {
+        "acceptance_version": 1,
+        "mode": "VerifyRepair",
+        "project": "go",
+        "run_id": "run-20261016000903-dcb3e3ca7926",
+        "recorded_at": "2026-10-16T00:16:19.3579469Z",
+        "checks": [
+          {
+            "exit_code": 0,
+            "name": "repaired-project-test",
+            "passed": true,
+            "state": "completed",
+            "job_id": "command-job-4cfcb87966a1a9046dab9193"
+          }
+        ],
+        "completed": true,
+        "passed": true
+      },
+      "actual_test_jobs": [
+        {
+          "id": "command-job-d06c28a7b3893e218f193f77",
+          "operator_invocation": 1,
+          "state": "failed",
+          "exit_code": 1,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_sandboxes",
+          "command": {
+            "profile": "process",
+            "executable_path": "/usr/bin/go",
+            "argv": [
+              "test",
+              "./..."
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.go 107a51e400d7f0e0f9f04bfe4f9dbb6c29a9453b8dcdd079f6dadee1e0b8f9c1"
+          },
+          "stdout": "--- FAIL: TestNormalizeCanonicalUUID (0.00s)\n    normalize_test.go:6: canonical UUID: 6BA7B810-9DAD-11D1-80B4-00C04FD430C8\nFAIL\nFAIL    example.com/preparation-uuid    0.003s\nFAIL\n",
+          "stderr": ""
+        },
+        {
+          "id": "command-job-ffacef155ec5925b094f98da",
+          "operator_invocation": 0,
+          "state": "completed",
+          "exit_code": 0,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_sandboxes",
+          "command": {
+            "profile": "process",
+            "executable_path": "/usr/bin/go",
+            "argv": [
+              "test",
+              "./..."
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.go"
+          },
+          "stdout": "ok      example.com/preparation-uuid    0.002s\n",
+          "stderr": ""
+        },
+        {
+          "id": "command-job-4cfcb87966a1a9046dab9193",
+          "operator_invocation": 1,
+          "state": "completed",
+          "exit_code": 0,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_sandboxes",
+          "command": {
+            "profile": "process",
+            "executable_path": "/usr/bin/go",
+            "argv": [
+              "test",
+              "./..."
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.go 107a51e400d7f0e0f9f04bfe4f9dbb6c29a9453b8dcdd079f6dadee1e0b8f9c1"
+          },
+          "stdout": "ok      example.com/preparation-uuid    0.002s\n",
+          "stderr": ""
+        }
+      ],
+      "model_apply": {
+        "proposed_hash": "43fe4c939e12bc913764955f5588e5ebd39692db637464573b73d772abf98cd0",
+        "diff_file": "issue317-sbx-go-model-source.diff",
+        "original_hash": "fd2e42f827d3c0971555b5e593fe50ea1587dd7a4972e43b899aa9e405735469",
+        "path": "normalize.go",
+        "id": "edit-581d1854b71b6af908be4497d357349e"
+      },
+      "hashes_before": [
+        {
+          "sha256": "fd2e42f827d3c0971555b5e593fe50ea1587dd7a4972e43b899aa9e405735469",
+          "path": "normalize.go"
+        },
+        {
+          "sha256": "9fc803e9a6257befa2bec2aaed3a32cf0aa59aebb057791e298d75a8571359be",
+          "path": "normalize_test.go"
+        },
+        {
+          "sha256": "1860d8a8df45aa2f1533787979c95a240e71ea2ce67a95fbd0832f8afc45c367",
+          "path": "go.mod"
+        },
+        {
+          "sha256": "409a24014343db302996d81db7055b5ca71df728f0be2b2c442cfdeff1844e8e",
+          "path": "go.sum"
+        },
+        {
+          "sha256": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4",
+          "path": "README.md"
+        }
+      ],
+      "hashes_after": [
+        {
+          "sha256": "43fe4c939e12bc913764955f5588e5ebd39692db637464573b73d772abf98cd0",
+          "path": "normalize.go"
+        },
+        {
+          "sha256": "9fc803e9a6257befa2bec2aaed3a32cf0aa59aebb057791e298d75a8571359be",
+          "path": "normalize_test.go"
+        },
+        {
+          "sha256": "1860d8a8df45aa2f1533787979c95a240e71ea2ce67a95fbd0832f8afc45c367",
+          "path": "go.mod"
+        },
+        {
+          "sha256": "409a24014343db302996d81db7055b5ca71df728f0be2b2c442cfdeff1844e8e",
+          "path": "go.sum"
+        },
+        {
+          "sha256": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4",
+          "path": "README.md"
+        }
+      ],
+      "protected_files_unchanged": true,
+      "final_status": {
+        "ready_checkpoints": 1,
+        "lease_active": false,
+        "run_status": "paused",
+        "required_checkpoints": 1,
+        "phase": "deliver"
+      },
+      "selected_work_items": [
+        {
+          "id": "work-20261016001102-d8a3c56599d2",
+          "status": "completed",
+          "title": "模块 1（唯一）：normalize.go 的 Normalize 规范化输出最小修复"
+        }
+      ],
+      "unselected_work_items": [],
+      "operator_actions": {
+        "recorded_workflow_actions": [
+          "create",
+          "preset",
+          "auto",
+          "model-plan",
+          "direction",
+          "deliver",
+          "model-repair",
+          "pause-for-acceptance",
+          "module-1-start",
+          "module-1-checkpoint",
+          "module-1-complete"
+        ],
+        "semantic_total": 17,
+        "additional_file_edit_approvals": 0,
+        "extra_independent_test_actions": 1,
+        "extra_exercise_control_actions": 5,
+        "initial_trust_preview_additional_post": 1,
+        "manual_continue_messages": 0
+      },
+      "quiescent_host_restart": {
+        "operation_ids_after": [
+          "prep-98c2e0d67e5128762b36c8c62e85a3e2d43b5ff72aeb91700041b24ef166b334",
+          "prep-9dd31cabaed45db672ff3033a9bdd137d8fc0f8f0e61a610dcd859ad4eba7dab",
+          "prep-c4526c4626b81f31168cd3df352abadb355c57a4d06e65a0cc4412556e2f9722"
+        ],
+        "jobs_after": 5,
+        "model_calls_before": 18,
+        "passed": true,
+        "operations_unchanged": true,
+        "operation_ids_before": [
+          "prep-98c2e0d67e5128762b36c8c62e85a3e2d43b5ff72aeb91700041b24ef166b334",
+          "prep-9dd31cabaed45db672ff3033a9bdd137d8fc0f8f0e61a610dcd859ad4eba7dab",
+          "prep-c4526c4626b81f31168cd3df352abadb355c57a4d06e65a0cc4412556e2f9722"
+        ],
+        "jobs_before": 5,
+        "model_calls_after": 18,
+        "interrupted_live_job": false
+      },
+      "bootstrap_deadline_startup_failures": 1,
+      "build_manifests": [
+        {
+          "built_at": "2026-10-16T00:04:18.0722154Z",
+          "source_commit": "7fee2d48284dff41f2e340a5035e397d9c71c77f",
+          "inputs": [
+            {
+              "path": "output/playwright/issue317/server/main.go",
+              "sha256": "97237e5e0d702be42de9f058064d318104d8aa9d008182eed582bf356d6cb959"
+            },
+            {
+              "path": "internal/domain/plan_delivery.go",
+              "sha256": "62f22f8aded49362b270ef6dd16ca5654517087f81fd4ed7c4e13e69409c1150"
+            },
+            {
+              "path": "internal/application/run_worktree_service.go",
+              "sha256": "0ae6a2d4e1b9bdc4ab3aebdf7825ac54d70b3dba31c713dcbe7a44fe3675b39a"
+            }
+          ],
+          "binary_sha256": "2641ee31b07f3dd0e2278ca02ea327e42f93451fe1045e7635074a1b966b4c67",
+          "go_version": "go version go1.26.9 windows/amd64"
+        },
+        {
+          "built_at": "2026-10-16T00:21:36.6944357Z",
+          "source_commit": "7fee2d48284dff41f2e340a5035e397d9c71c77f",
+          "inputs": [
+            {
+              "path": "output/playwright/issue317/server/main.go",
+              "sha256": "97237e5e0d702be42de9f058064d318104d8aa9d008182eed582bf356d6cb959"
+            },
+            {
+              "path": "internal/domain/plan_delivery.go",
+              "sha256": "62f22f8aded49362b270ef6dd16ca5654517087f81fd4ed7c4e13e69409c1150"
+            },
+            {
+              "path": "internal/application/run_worktree_service.go",
+              "sha256": "0ae6a2d4e1b9bdc4ab3aebdf7825ac54d70b3dba31c713dcbe7a44fe3675b39a"
+            },
+            {
+              "path": "internal/application/docker_command_runtime_output.go",
+              "sha256": "b7273f702bc7b99bb5c9c536f45519c3f7900476dd0cfa766231dbfca6475ee3"
+            }
+          ],
+          "binary_sha256": "0fe571be67d09b8fbd44153790e15c8960ccddd9f1d7a21072054360aeaf9ac2",
+          "go_version": "go version go1.26.9 windows/amd64"
+        }
+      ]
+    },
+    {
+      "backend": "docker",
+      "project": "react",
+      "passed": true,
+      "run_id": "run-20261016003514-1ff14d1939c5",
+      "thread_id": "thread-run-20261016003506-4abba4d016d4",
+      "raw_evidence_root": "C:\\p317docker-f72112e9",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "credential_source": "system",
+      "host_source_patches": 0,
+      "model_usage": {
+        "input_tokens": 320977,
+        "output_tokens": 3730,
+        "total_tokens": 324707,
+        "cache_read_tokens": 59648,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 17,
+        "calls": 17
+      },
+      "tool_usage": {
+        "consumed": 19,
+        "limit": 64,
+        "remaining": 45
+      },
+      "preparation": {
+        "acceptance_version": 1,
+        "mode": "Exercise",
+        "project": "react",
+        "run_id": "run-20261016003514-1ff14d1939c5",
+        "recorded_at": "2026-10-16T00:40:14.9123059Z",
+        "checks": [
+          {
+            "state": "failed",
+            "passed": true,
+            "name": "unapproved-download-denied",
+            "downloaded_bytes": 0,
+            "error": "dependency download failed: web request is outside Run authority: package source has not been approved",
+            "operation_id": "prep-2fe87e2208b4e15d2a3394863b34f6a4c92a8e6bafd55391e9f75b6aafc66bf8"
+          },
+          {
+            "state": "ready",
+            "passed": true,
+            "name": "real-sandbox-install",
+            "downloaded_bytes": 151589763,
+            "package_count": 42,
+            "operation_id": "prep-088d250860daac0a8dff166d596da305746dca49ecbf1e95dbb833917b01228e",
+            "job_id": "command-job-7987e21f8f9445bf3482bdf1"
+          },
+          {
+            "name": "same-key-replay",
+            "operation_id": "prep-088d250860daac0a8dff166d596da305746dca49ecbf1e95dbb833917b01228e",
+            "passed": true
+          },
+          {
+            "name": "original-regression-fails",
+            "state": "failed",
+            "passed": true,
+            "exit_code": 1,
+            "job_id": "command-job-78737846d0d627f3c51eb0c4"
+          },
+          {
+            "state": "ready",
+            "downloaded_bytes": 0,
+            "passed": true,
+            "name": "offline-cache-reuse",
+            "total_packages": 42,
+            "cache_hits": 42,
+            "operation_id": "prep-394071fd4e89d2f6f389259172fe6212f77576bc50a1141680d1b4e6777db4af"
+          }
+        ],
+        "completed": true,
+        "passed": true
+      },
+      "independent_verification": {
+        "acceptance_version": 1,
+        "mode": "VerifyRepair",
+        "project": "react",
+        "run_id": "run-20261016003514-1ff14d1939c5",
+        "recorded_at": "2026-10-16T00:43:08.5813777Z",
+        "checks": [
+          {
+            "state": "completed",
+            "passed": true,
+            "exit_code": 0,
+            "name": "repaired-project-test",
+            "job_id": "command-job-0ea8a405abc9fbfdd593adda"
+          }
+        ],
+        "completed": true,
+        "passed": true
+      },
+      "actual_test_jobs": [
+        {
+          "id": "command-job-78737846d0d627f3c51eb0c4",
+          "operator_invocation": 1,
+          "state": "failed",
+          "exit_code": 1,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_standard_code",
+          "command": {
+            "profile": "process",
+            "executable_path": "/opt/toolchains/node/bin/node",
+            "argv": [
+              "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js",
+              "test"
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.npm 84d78bf01c4d0ac7f34c0a8595f3044d1c0ddd8753f3bf593dab186aa94c3759"
+          },
+          "stdout": "\n> preparation-react-fixture@1.0.0 test\n> node --test && vite build\n\n✖ counter increments by the requested step (1.126876ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 84.876492\n\n✖ failing tests:\n\ntest at counter.test.js:4:1\n✖ counter increments by the requested step (1.126876ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  -1 !== 5\n  \n      at TestContext.<anonymous> (file:///workspace/counter.test.js:4:63)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.start (node:internal/test_runner/test:1262:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: -1,\n    expected: 5,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n",
+          "stderr": ""
+        },
+        {
+          "id": "command-job-9337736ef8d35b1d2c9653e8",
+          "operator_invocation": 0,
+          "state": "completed",
+          "exit_code": 0,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_standard_code",
+          "command": {
+            "profile": "process",
+            "executable_path": "/opt/toolchains/node/bin/node",
+            "argv": [
+              "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js",
+              "test"
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.npm: node --test && vite build"
+          },
+          "stdout": "\n> preparation-react-fixture@1.0.0 test\n> node --test && vite build\n\n✔ counter increments by the requested step (0.608863ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 86.749176\nvite v8.2.1 building client environment for production...\ntransforming...✓ 15 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                  0.25 kB │ gzip:  0.22 kB\ndist/assets/index-C321_C0y.js  191.02 kB │ gzip: 60.30 kB\n\n✓ built in 323ms\n",
+          "stderr": ""
+        },
+        {
+          "id": "command-job-0ea8a405abc9fbfdd593adda",
+          "operator_invocation": 1,
+          "state": "completed",
+          "exit_code": 0,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_standard_code",
+          "command": {
+            "profile": "process",
+            "executable_path": "/opt/toolchains/node/bin/node",
+            "argv": [
+              "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js",
+              "test"
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.npm 84d78bf01c4d0ac7f34c0a8595f3044d1c0ddd8753f3bf593dab186aa94c3759"
+          },
+          "stdout": "\n> preparation-react-fixture@1.0.0 test\n> node --test && vite build\n\n✔ counter increments by the requested step (1.068777ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 142.293693\nvite v8.2.1 building client environment for production...\ntransforming...✓ 15 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                  0.25 kB │ gzip:  0.22 kB\ndist/assets/index-C321_C0y.js  191.02 kB │ gzip: 60.30 kB\n\n✓ built in 333ms\n",
+          "stderr": ""
+        }
+      ],
+      "model_apply": {
+        "proposed_hash": "3bb5bf8d6c2eea7b2c6ccd488e18cb84c6f84177e4d11662daa45f61b80a01db",
+        "diff_file": "issue317-docker-react-model-source.diff",
+        "original_hash": "6a40402208187322dc88887a304bfc6e7b70747a071fc58a222142cb670f9f02",
+        "path": "src/counter.js",
+        "id": "edit-fe369a4753b812fa57b6fda72d6d8351"
+      },
+      "hashes_before": [
+        {
+          "sha256": "6a40402208187322dc88887a304bfc6e7b70747a071fc58a222142cb670f9f02",
+          "path": "src/counter.js"
+        },
+        {
+          "sha256": "733e1c89604bf67f9a38b5cec68ac5d35b0de36f9657291762d41e2b03ba92a1",
+          "path": "counter.test.js"
+        },
+        {
+          "sha256": "f3f866d9d83bdc7c953ccfb9f45544e60835f863a201e25667f3ed7d4339c0a3",
+          "path": "package.json"
+        },
+        {
+          "sha256": "5dfbe87edb350c2d1480d9ef0a0ca3e3d98861a8a04af19ec227032338815984",
+          "path": "package-lock.json"
+        },
+        {
+          "sha256": "3ba631054898df4347224cc6d12c21b93cfc5699e04602a61db40d1354e36cef",
+          "path": "README.md"
+        },
+        {
+          "sha256": "2e9653b60ae09f7017d87cbc68e2e1d62ad6e9b46dc30db393c717cd1ff36aeb",
+          "path": "src/main.jsx"
+        }
+      ],
+      "hashes_after": [
+        {
+          "sha256": "3bb5bf8d6c2eea7b2c6ccd488e18cb84c6f84177e4d11662daa45f61b80a01db",
+          "path": "src/counter.js"
+        },
+        {
+          "sha256": "733e1c89604bf67f9a38b5cec68ac5d35b0de36f9657291762d41e2b03ba92a1",
+          "path": "counter.test.js"
+        },
+        {
+          "sha256": "f3f866d9d83bdc7c953ccfb9f45544e60835f863a201e25667f3ed7d4339c0a3",
+          "path": "package.json"
+        },
+        {
+          "sha256": "5dfbe87edb350c2d1480d9ef0a0ca3e3d98861a8a04af19ec227032338815984",
+          "path": "package-lock.json"
+        },
+        {
+          "sha256": "3ba631054898df4347224cc6d12c21b93cfc5699e04602a61db40d1354e36cef",
+          "path": "README.md"
+        },
+        {
+          "sha256": "2e9653b60ae09f7017d87cbc68e2e1d62ad6e9b46dc30db393c717cd1ff36aeb",
+          "path": "src/main.jsx"
+        }
+      ],
+      "protected_files_unchanged": true,
+      "final_status": {
+        "run_status": "paused",
+        "required_checkpoints": 1,
+        "phase": "deliver",
+        "ready_checkpoints": 1,
+        "lease_active": false
+      },
+      "selected_work_items": [
+        {
+          "id": "work-20261016003634-3fa0f5195e22",
+          "status": "completed",
+          "title": "最小源码修复与真实验证"
+        }
+      ],
+      "unselected_work_items": [],
+      "operator_actions": {
+        "recorded_workflow_actions": [
+          "create",
+          "preset",
+          "auto",
+          "model-plan",
+          "direction",
+          "deliver",
+          "model-repair",
+          "pause-for-acceptance",
+          "module-1-start",
+          "module-1-checkpoint",
+          "module-1-complete"
+        ],
+        "semantic_total": 17,
+        "additional_file_edit_approvals": 0,
+        "extra_independent_test_actions": 1,
+        "extra_exercise_control_actions": 5,
+        "initial_trust_preview_additional_post": 1,
+        "manual_continue_messages": 0
+      },
+      "quiescent_host_restart": {
+        "operation_ids_after": [
+          "prep-088d250860daac0a8dff166d596da305746dca49ecbf1e95dbb833917b01228e",
+          "prep-2fe87e2208b4e15d2a3394863b34f6a4c92a8e6bafd55391e9f75b6aafc66bf8",
+          "prep-394071fd4e89d2f6f389259172fe6212f77576bc50a1141680d1b4e6777db4af"
+        ],
+        "jobs_after": 7,
+        "model_calls_before": 17,
+        "passed": true,
+        "operations_unchanged": true,
+        "operation_ids_before": [
+          "prep-088d250860daac0a8dff166d596da305746dca49ecbf1e95dbb833917b01228e",
+          "prep-2fe87e2208b4e15d2a3394863b34f6a4c92a8e6bafd55391e9f75b6aafc66bf8",
+          "prep-394071fd4e89d2f6f389259172fe6212f77576bc50a1141680d1b4e6777db4af"
+        ],
+        "jobs_before": 7,
+        "model_calls_after": 17,
+        "interrupted_live_job": false
+      },
+      "bootstrap_deadline_startup_failures": 1,
+      "build_manifests": [
+        {
+          "built_at": "2026-10-16T00:33:50.4026134Z",
+          "source_commit": "7fee2d48284dff41f2e340a5035e397d9c71c77f",
+          "inputs": [
+            {
+              "sha256": "97237e5e0d702be42de9f058064d318104d8aa9d008182eed582bf356d6cb959",
+              "path": "output/playwright/issue317/server/main.go"
+            },
+            {
+              "sha256": "62f22f8aded49362b270ef6dd16ca5654517087f81fd4ed7c4e13e69409c1150",
+              "path": "internal/domain/plan_delivery.go"
+            },
+            {
+              "sha256": "0ae6a2d4e1b9bdc4ab3aebdf7825ac54d70b3dba31c713dcbe7a44fe3675b39a",
+              "path": "internal/application/run_worktree_service.go"
+            },
+            {
+              "sha256": "b7273f702bc7b99bb5c9c536f45519c3f7900476dd0cfa766231dbfca6475ee3",
+              "path": "internal/application/docker_command_runtime_output.go"
+            },
+            {
+              "sha256": "42efbbf52011054d32a66f7c28ba92eeaff2fe5e84ac292df5b41055cc5e1ec9",
+              "path": "internal/store/supervisor.go"
+            }
+          ],
+          "binary_sha256": "9b031e959d6101fd80a9ababcc98e4ff091cdcb954dce2e61572b2dd491a49ff",
+          "go_version": "go version go1.26.9 windows/amd64"
+        }
+      ]
+    },
+    {
+      "backend": "docker",
+      "project": "go",
+      "passed": true,
+      "run_id": "run-20261016023833-b221dda42a0b",
+      "thread_id": "thread-run-20261016023827-74f8989177eb",
+      "raw_evidence_root": "C:\\p317go-bg-22ad3fc1",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "credential_source": "system",
+      "host_source_patches": 0,
+      "model_usage": {
+        "input_tokens": 199178,
+        "output_tokens": 2297,
+        "total_tokens": 201475,
+        "cache_read_tokens": 74112,
+        "cache_creation_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "cache_usage_reported_calls": 12,
+        "calls": 12
+      },
+      "tool_usage": {
+        "consumed": 12,
+        "limit": 64,
+        "remaining": 52
+      },
+      "preparation": {
+        "acceptance_version": 1,
+        "mode": "Exercise",
+        "project": "go",
+        "run_id": "run-20261016023833-b221dda42a0b",
+        "recorded_at": "2026-10-16T02:40:14.5300179Z",
+        "checks": [
+          {
+            "error": "dependency download failed: web request is outside Run authority: package source has not been approved",
+            "operation_id": "prep-a8c36ba54a5d820a957efdb14d6962fe43ebfaa1649e589b864198411360d5f3",
+            "name": "unapproved-download-denied",
+            "passed": true,
+            "downloaded_bytes": 0,
+            "state": "failed"
+          },
+          {
+            "package_count": 2,
+            "operation_id": "prep-75516fa8bc131050b43fa7d80a3b43237bd5c0f331c03aad2aa7b5d7d667e2ad",
+            "name": "real-sandbox-install",
+            "passed": true,
+            "downloaded_bytes": 32011,
+            "job_id": "command-job-af9c2ee904cc95d034007e1d",
+            "state": "ready"
+          },
+          {
+            "name": "same-key-replay",
+            "operation_id": "prep-75516fa8bc131050b43fa7d80a3b43237bd5c0f331c03aad2aa7b5d7d667e2ad",
+            "passed": true
+          },
+          {
+            "job_id": "command-job-45441170d09c8dc40741dd85",
+            "name": "original-regression-fails",
+            "state": "failed",
+            "exit_code": 1,
+            "passed": true
+          },
+          {
+            "operation_id": "prep-c17f43e6f33abf9c457eac53e745383826241e089ffac67d2ddfc86a08e199c6",
+            "name": "offline-cache-reuse",
+            "passed": true,
+            "downloaded_bytes": 0,
+            "state": "ready",
+            "cache_hits": 2,
+            "total_packages": 2
+          }
+        ],
+        "completed": true,
+        "passed": true
+      },
+      "independent_verification": {
+        "acceptance_version": 1,
+        "mode": "VerifyRepair",
+        "project": "go",
+        "run_id": "run-20261016023833-b221dda42a0b",
+        "recorded_at": "2026-10-16T02:42:15.9905281Z",
+        "checks": [
+          {
+            "exit_code": 0,
+            "name": "repaired-project-test",
+            "passed": true,
+            "job_id": "command-job-0742e95199587e73192c0fd3",
+            "state": "completed"
+          }
+        ],
+        "completed": true,
+        "passed": true
+      },
+      "actual_test_jobs": [
+        {
+          "id": "command-job-45441170d09c8dc40741dd85",
+          "operator_invocation": 1,
+          "state": "failed",
+          "exit_code": 1,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_standard_code",
+          "command": {
+            "profile": "process",
+            "executable_path": "/opt/toolchains/go/bin/go",
+            "argv": [
+              "test",
+              "./..."
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.go 206b3d0f45a4592659df467c29738fe73dfbe12aac730fbab28d551b7dda8e24"
+          },
+          "stdout": "--- FAIL: TestNormalizeCanonicalUUID (0.00s)\n    normalize_test.go:6: canonical UUID: 6BA7B810-9DAD-11D1-80B4-00C04FD430C8\nFAIL\nFAIL    example.com/preparation-uuid    0.001s\nFAIL\n",
+          "stderr": ""
+        },
+        {
+          "id": "command-job-e8503ca14be6ea6b2cf1bcec",
+          "operator_invocation": 0,
+          "state": "completed",
+          "exit_code": 0,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_standard_code",
+          "command": {
+            "profile": "process",
+            "executable_path": "/opt/toolchains/go/bin/go",
+            "argv": [
+              "test",
+              "./..."
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.go"
+          },
+          "stdout": "ok      example.com/preparation-uuid    0.001s\n",
+          "stderr": ""
+        },
+        {
+          "id": "command-job-0742e95199587e73192c0fd3",
+          "operator_invocation": 1,
+          "state": "completed",
+          "exit_code": 0,
+          "tree_reaped": 1,
+          "network": "disabled",
+          "credentials": "none",
+          "adapter_backend": "docker_standard_code",
+          "command": {
+            "profile": "process",
+            "executable_path": "/opt/toolchains/go/bin/go",
+            "argv": [
+              "test",
+              "./..."
+            ],
+            "working_directory": ".",
+            "purpose": "Configured project action test.go 206b3d0f45a4592659df467c29738fe73dfbe12aac730fbab28d551b7dda8e24"
+          },
+          "stdout": "ok      example.com/preparation-uuid    0.001s\n",
+          "stderr": ""
+        }
+      ],
+      "model_apply": {
+        "proposed_hash": "a057d7f46cd1077673fe5693cbcd00b233f3f29dafb64e2d3315499358c09c86",
+        "diff_file": "issue317-docker-go-model-source.diff",
+        "original_hash": "fd2e42f827d3c0971555b5e593fe50ea1587dd7a4972e43b899aa9e405735469",
+        "path": "normalize.go",
+        "id": "edit-7aedddb5c12da479cb8265e141f93f64"
+      },
+      "hashes_before": [
+        {
+          "path": "normalize.go",
+          "sha256": "fd2e42f827d3c0971555b5e593fe50ea1587dd7a4972e43b899aa9e405735469"
+        },
+        {
+          "path": "normalize_test.go",
+          "sha256": "9fc803e9a6257befa2bec2aaed3a32cf0aa59aebb057791e298d75a8571359be"
+        },
+        {
+          "path": "go.mod",
+          "sha256": "fdacbe438a9c79c9da1d504dbe4ba9358b603567398f066320e669e9c960fd71"
+        },
+        {
+          "path": "go.sum",
+          "sha256": "409a24014343db302996d81db7055b5ca71df728f0be2b2c442cfdeff1844e8e"
+        },
+        {
+          "path": "README.md",
+          "sha256": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4"
+        }
+      ],
+      "hashes_after": [
+        {
+          "sha256": "a057d7f46cd1077673fe5693cbcd00b233f3f29dafb64e2d3315499358c09c86",
+          "path": "normalize.go"
+        },
+        {
+          "sha256": "9fc803e9a6257befa2bec2aaed3a32cf0aa59aebb057791e298d75a8571359be",
+          "path": "normalize_test.go"
+        },
+        {
+          "sha256": "fdacbe438a9c79c9da1d504dbe4ba9358b603567398f066320e669e9c960fd71",
+          "path": "go.mod"
+        },
+        {
+          "sha256": "409a24014343db302996d81db7055b5ca71df728f0be2b2c442cfdeff1844e8e",
+          "path": "go.sum"
+        },
+        {
+          "sha256": "d18cc0bb4a0ede388df84799d784c262fd171370dc149c1b5da47070b09b01e4",
+          "path": "README.md"
+        }
+      ],
+      "protected_files_unchanged": true,
+      "final_status": {
+        "ready_checkpoints": 1,
+        "lease_active": false,
+        "run_status": "paused",
+        "phase": "deliver",
+        "required_checkpoints": 1
+      },
+      "selected_work_items": [
+        {
+          "id": "work-20261016023911-0ba71ad24d42",
+          "status": "completed",
+          "title": "normalize.go 规范化返回值修复"
+        }
+      ],
+      "unselected_work_items": [],
+      "operator_actions": {
+        "recorded_workflow_actions": [
+          "create",
+          "preset",
+          "auto",
+          "model-plan",
+          "direction",
+          "deliver",
+          "model-repair",
+          "pause-for-acceptance",
+          "module-1-start",
+          "module-1-checkpoint",
+          "module-1-complete"
+        ],
+        "semantic_total": 17,
+        "additional_file_edit_approvals": 0,
+        "extra_independent_test_actions": 1,
+        "extra_exercise_control_actions": 5,
+        "initial_trust_preview_additional_post": 1,
+        "manual_continue_messages": 0
+      },
+      "quiescent_host_restart": {
+        "operation_ids_after": [
+          "prep-75516fa8bc131050b43fa7d80a3b43237bd5c0f331c03aad2aa7b5d7d667e2ad",
+          "prep-a8c36ba54a5d820a957efdb14d6962fe43ebfaa1649e589b864198411360d5f3",
+          "prep-c17f43e6f33abf9c457eac53e745383826241e089ffac67d2ddfc86a08e199c6"
+        ],
+        "jobs_after": 5,
+        "model_calls_before": 12,
+        "passed": true,
+        "operations_unchanged": true,
+        "operation_ids_before": [
+          "prep-75516fa8bc131050b43fa7d80a3b43237bd5c0f331c03aad2aa7b5d7d667e2ad",
+          "prep-a8c36ba54a5d820a957efdb14d6962fe43ebfaa1649e589b864198411360d5f3",
+          "prep-c17f43e6f33abf9c457eac53e745383826241e089ffac67d2ddfc86a08e199c6"
+        ],
+        "jobs_before": 5,
+        "model_calls_after": 12,
+        "interrupted_live_job": false
+      },
+      "bootstrap_deadline_startup_failures": 0,
+      "build_manifests": [
+        {
+          "built_at": "2026-10-16T02:25:38.421892Z",
+          "source_commit": "7fee2d48284dff41f2e340a5035e397d9c71c77f",
+          "inputs": [
+            {
+              "path": "internal/application/command_runtime_approval_mode_sandbox_diagnostics_test.go",
+              "sha256": "c7b6f3a696dbb7fed5e9be689f9ea54b4eac4a1716bd193eb6c826d01f91c661"
+            },
+            {
+              "path": "internal/application/command_runtime_docker_admission_test.go",
+              "sha256": "9f5086657288b66e4a98db98ce54164029cdc39936390dda162bd08dbcde1276"
+            },
+            {
+              "path": "internal/application/command_runtime_docker_sandbox_test.go",
+              "sha256": "1297e9f66140587bb9fe993bde03e2706c817f28830dce208ad4f0fe106449aa"
+            },
+            {
+              "path": "internal/application/command_runtime_docker_sandbox.go",
+              "sha256": "3edc6f01c75f8db85e5471352cfc4d0e03fa24fc1129395dffa6dd650561f64f"
+            },
+            {
+              "path": "internal/application/command_runtime_local_sandbox.go",
+              "sha256": "73ab7fec28a7e7164277890ea79ed6207e97533cf16267278e005da7b40a519b"
+            },
+            {
+              "path": "internal/application/command_runtime_sbx_live_test.go",
+              "sha256": "f1323d8e52d957b4a6ef3c75999273b120f1c759b6c389265459ba7cbda2c97f"
+            },
+            {
+              "path": "internal/application/command_runtime_sbx_test.go",
+              "sha256": "156b3723b5d7b2ba6211a4070f7853b238219d069cdf077318a48a0d39f9b001"
+            },
+            {
+              "path": "internal/application/command_runtime_sbx.go",
+              "sha256": "75d7c5be788fc9b7a0eb407387685d290e53079f64474ddec20d484ee9c59809"
+            },
+            {
+              "path": "internal/application/docker_command_runtime_output.go",
+              "sha256": "b7273f702bc7b99bb5c9c536f45519c3f7900476dd0cfa766231dbfca6475ee3"
+            },
+            {
+              "path": "internal/application/docker_container_lifecycle_test.go",
+              "sha256": "f22307c727c35cfff6b6edcbba3abbf72f01b4d6d1ef479d0dc845deef9f2d40"
+            },
+            {
+              "path": "internal/application/docker_sandbox_execution.go",
+              "sha256": "d20f280354e5bc7685ba09e6913a6ec1001362e2672fcd4a6ff3b9043bfaef0c"
+            },
+            {
+              "path": "internal/application/file_edit_apply.go",
+              "sha256": "d4722a9765cfb816798fa467c826c96e6256049d13f38651de60ab5853014543"
+            },
+            {
+              "path": "internal/application/run_worktree_service_test.go",
+              "sha256": "283fd1777739814186624cce0497ea6ae606ac8ede52d8a08c69fbbba39cc5c0"
+            },
+            {
+              "path": "internal/application/run_worktree_service.go",
+              "sha256": "0ae6a2d4e1b9bdc4ab3aebdf7825ac54d70b3dba31c713dcbe7a44fe3675b39a"
+            },
+            {
+              "path": "internal/application/supervisor_tools.go",
+              "sha256": "1db00ef96d3780fa15a2acb740165055d9408bd7140a7e6f7645ca2cdb197760"
+            },
+            {
+              "path": "internal/application/supervisor_workspace_apply_receipt_test.go",
+              "sha256": "e6ae73cd12079e9155591214fcb75b37c590de47155a06fb522c5388e72a72e7"
+            },
+            {
+              "path": "internal/application/supervisor_workspace_apply_receipt.go",
+              "sha256": "fbfea40a7931bda221df507f1fa0711f3c4e491921a96f1a6dd521c2ef6b707d"
+            },
+            {
+              "path": "internal/domain/plan_delivery_test.go",
+              "sha256": "ae51a7a33377ff33d795332fd57d9ecb96a6c421ed4ea092c1f804c1a029ab50"
+            },
+            {
+              "path": "internal/domain/plan_delivery.go",
+              "sha256": "62f22f8aded49362b270ef6dd16ca5654517087f81fd4ed7c4e13e69409c1150"
+            },
+            {
+              "path": "internal/runner/command_runtime_admission_test.go",
+              "sha256": "1df7a1ccd51157be082e5581cbb7ad5b00ea2fd793933f9c7e06b6face935583"
+            },
+            {
+              "path": "internal/runner/command_runtime_dispatch.go",
+              "sha256": "9926a32781deea5dcecc8c01cc69b7bc0eae4dad3c55e64e40e1cdc53bf40622"
+            },
+            {
+              "path": "internal/runner/command_runtime_job.go",
+              "sha256": "2244a308c3e134e197756a71901f12bffc49f12447c54962630e333dc4120b35"
+            },
+            {
+              "path": "internal/runner/command_runtime_sandbox.go",
+              "sha256": "6fb32d7a5d67e6f88b9ce95858e8a19965a5555d12f5173bb5579a88803f49be"
+            },
+            {
+              "path": "internal/sandbox/sbx_test.go",
+              "sha256": "9d61612e6c5a59d8bc962946e18e9f9a0afd9f60b3c4f4821f641330407f693a"
+            },
+            {
+              "path": "internal/sandbox/sbx.go",
+              "sha256": "9dd60f7de4d7d387fde46097150ccbb8432958704ad13bc4551c97488dffc7ec"
+            },
+            {
+              "path": "internal/store/plan_delivery_test.go",
+              "sha256": "f3d5127bfa041456f826633004d19a3756b6d2262d22f8572b37e6b0e9ec3f4a"
+            },
+            {
+              "path": "internal/store/run_agent_usage_test.go",
+              "sha256": "1ca93a7b3bdd0c3bd8cf5028af398f03502dc0e5dcf244090ecc0ec725560b53"
+            },
+            {
+              "path": "internal/store/supervisor.go",
+              "sha256": "42efbbf52011054d32a66f7c28ba92eeaff2fe5e84ac292df5b41055cc5e1ec9"
+            },
+            {
+              "path": "output/playwright/issue317/server/main.go",
+              "sha256": "97237e5e0d702be42de9f058064d318104d8aa9d008182eed582bf356d6cb959"
+            }
+          ],
+          "binary_sha256": "2b48860e40f5c4784f1dc3e25f824db71c53ae6ea5809deda9ce2d981c27a44f",
+          "go_version": "go version go1.26.9 windows/amd64"
+        },
+        {
+          "built_at": "2026-10-16T02:36:59.5793786Z",
+          "source_commit": "7fee2d48284dff41f2e340a5035e397d9c71c77f",
+          "inputs": [
+            {
+              "sha256": "c7b6f3a696dbb7fed5e9be689f9ea54b4eac4a1716bd193eb6c826d01f91c661",
+              "path": "internal/application/command_runtime_approval_mode_sandbox_diagnostics_test.go"
+            },
+            {
+              "sha256": "9f5086657288b66e4a98db98ce54164029cdc39936390dda162bd08dbcde1276",
+              "path": "internal/application/command_runtime_docker_admission_test.go"
+            },
+            {
+              "sha256": "1297e9f66140587bb9fe993bde03e2706c817f28830dce208ad4f0fe106449aa",
+              "path": "internal/application/command_runtime_docker_sandbox_test.go"
+            },
+            {
+              "sha256": "3edc6f01c75f8db85e5471352cfc4d0e03fa24fc1129395dffa6dd650561f64f",
+              "path": "internal/application/command_runtime_docker_sandbox.go"
+            },
+            {
+              "sha256": "73ab7fec28a7e7164277890ea79ed6207e97533cf16267278e005da7b40a519b",
+              "path": "internal/application/command_runtime_local_sandbox.go"
+            },
+            {
+              "sha256": "f1323d8e52d957b4a6ef3c75999273b120f1c759b6c389265459ba7cbda2c97f",
+              "path": "internal/application/command_runtime_sbx_live_test.go"
+            },
+            {
+              "sha256": "156b3723b5d7b2ba6211a4070f7853b238219d069cdf077318a48a0d39f9b001",
+              "path": "internal/application/command_runtime_sbx_test.go"
+            },
+            {
+              "sha256": "75d7c5be788fc9b7a0eb407387685d290e53079f64474ddec20d484ee9c59809",
+              "path": "internal/application/command_runtime_sbx.go"
+            },
+            {
+              "sha256": "b7273f702bc7b99bb5c9c536f45519c3f7900476dd0cfa766231dbfca6475ee3",
+              "path": "internal/application/docker_command_runtime_output.go"
+            },
+            {
+              "sha256": "f22307c727c35cfff6b6edcbba3abbf72f01b4d6d1ef479d0dc845deef9f2d40",
+              "path": "internal/application/docker_container_lifecycle_test.go"
+            },
+            {
+              "sha256": "d20f280354e5bc7685ba09e6913a6ec1001362e2672fcd4a6ff3b9043bfaef0c",
+              "path": "internal/application/docker_sandbox_execution.go"
+            },
+            {
+              "sha256": "d4722a9765cfb816798fa467c826c96e6256049d13f38651de60ab5853014543",
+              "path": "internal/application/file_edit_apply.go"
+            },
+            {
+              "sha256": "283fd1777739814186624cce0497ea6ae606ac8ede52d8a08c69fbbba39cc5c0",
+              "path": "internal/application/run_worktree_service_test.go"
+            },
+            {
+              "sha256": "0ae6a2d4e1b9bdc4ab3aebdf7825ac54d70b3dba31c713dcbe7a44fe3675b39a",
+              "path": "internal/application/run_worktree_service.go"
+            },
+            {
+              "sha256": "1db00ef96d3780fa15a2acb740165055d9408bd7140a7e6f7645ca2cdb197760",
+              "path": "internal/application/supervisor_tools.go"
+            },
+            {
+              "sha256": "e6ae73cd12079e9155591214fcb75b37c590de47155a06fb522c5388e72a72e7",
+              "path": "internal/application/supervisor_workspace_apply_receipt_test.go"
+            },
+            {
+              "sha256": "fbfea40a7931bda221df507f1fa0711f3c4e491921a96f1a6dd521c2ef6b707d",
+              "path": "internal/application/supervisor_workspace_apply_receipt.go"
+            },
+            {
+              "sha256": "ae51a7a33377ff33d795332fd57d9ecb96a6c421ed4ea092c1f804c1a029ab50",
+              "path": "internal/domain/plan_delivery_test.go"
+            },
+            {
+              "sha256": "62f22f8aded49362b270ef6dd16ca5654517087f81fd4ed7c4e13e69409c1150",
+              "path": "internal/domain/plan_delivery.go"
+            },
+            {
+              "sha256": "240e524ce90fb3a3a75ce9fb870b2834f5740072cf0c5d8154f1f1bc76ace809",
+              "path": "internal/runner/command_runtime_admission_test.go"
+            },
+            {
+              "sha256": "9926a32781deea5dcecc8c01cc69b7bc0eae4dad3c55e64e40e1cdc53bf40622",
+              "path": "internal/runner/command_runtime_dispatch.go"
+            },
+            {
+              "sha256": "2244a308c3e134e197756a71901f12bffc49f12447c54962630e333dc4120b35",
+              "path": "internal/runner/command_runtime_job.go"
+            },
+            {
+              "sha256": "6fb32d7a5d67e6f88b9ce95858e8a19965a5555d12f5173bb5579a88803f49be",
+              "path": "internal/runner/command_runtime_sandbox.go"
+            },
+            {
+              "sha256": "9d61612e6c5a59d8bc962946e18e9f9a0afd9f60b3c4f4821f641330407f693a",
+              "path": "internal/sandbox/sbx_test.go"
+            },
+            {
+              "sha256": "9dd60f7de4d7d387fde46097150ccbb8432958704ad13bc4551c97488dffc7ec",
+              "path": "internal/sandbox/sbx.go"
+            },
+            {
+              "sha256": "f3d5127bfa041456f826633004d19a3756b6d2262d22f8572b37e6b0e9ec3f4a",
+              "path": "internal/store/plan_delivery_test.go"
+            },
+            {
+              "sha256": "1ca93a7b3bdd0c3bd8cf5028af398f03502dc0e5dcf244090ecc0ec725560b53",
+              "path": "internal/store/run_agent_usage_test.go"
+            },
+            {
+              "sha256": "42efbbf52011054d32a66f7c28ba92eeaff2fe5e84ac292df5b41055cc5e1ec9",
+              "path": "internal/store/supervisor.go"
+            },
+            {
+              "sha256": "97237e5e0d702be42de9f058064d318104d8aa9d008182eed582bf356d6cb959",
+              "path": "output/playwright/issue317/server/main.go"
+            }
+          ],
+          "binary_sha256": "2b48860e40f5c4784f1dc3e25f824db71c53ae6ea5809deda9ce2d981c27a44f",
+          "go_version": "go version go1.26.9 windows/amd64"
+        }
+      ],
+      "model_background_start": {
+        "run_id": "run-20261016023833-b221dda42a0b",
+        "job_id": "command-job-e8503ca14be6ea6b2cf1bcec",
+        "passed": true,
+        "mode": "model background start then two waits on same job",
+        "tool_calls": [
+          {
+            "call_id": "toolu_9b4a0321a52ccae57915521d",
+            "turn": 2,
+            "attempt_id": "attempt-20261016024048-8d02dfdfc9aa",
+            "action": "start",
+            "requested_job_id": null,
+            "job_ids": [
+              "command-job-e8503ca14be6ea6b2cf1bcec"
+            ],
+            "states": [
+              "running"
+            ],
+            "exit_codes": [
+              null
+            ],
+            "tree_reaped": [
+              false
+            ],
+            "status": "completed",
+            "created_at": "2026-10-16T02:41:20.3927104Z",
+            "completed_at": "2026-10-16T02:41:31.6806602Z"
+          },
+          {
+            "call_id": "toolu_b186c2a08a741828664985fe",
+            "turn": 3,
+            "attempt_id": "attempt-20261016024133-50c097aa0dc4",
+            "action": "wait",
+            "requested_job_id": "command-job-e8503ca14be6ea6b2cf1bcec",
+            "job_ids": [
+              "command-job-e8503ca14be6ea6b2cf1bcec"
+            ],
+            "states": [
+              "running"
+            ],
+            "exit_codes": [
+              null
+            ],
+            "tree_reaped": [
+              false
+            ],
+            "status": "completed",
+            "created_at": "2026-10-16T02:41:38.0386522Z",
+            "completed_at": "2026-10-16T02:41:40.9235315Z"
+          },
+          {
+            "call_id": "toolu_4ead724102e8b10dbd1de2f3",
+            "turn": 3,
+            "attempt_id": "attempt-20261016024133-50c097aa0dc4",
+            "action": "wait",
+            "requested_job_id": "command-job-e8503ca14be6ea6b2cf1bcec",
+            "job_ids": [
+              "command-job-e8503ca14be6ea6b2cf1bcec"
+            ],
+            "states": [
+              "completed"
+            ],
+            "exit_codes": [
+              0
+            ],
+            "tree_reaped": [
+              true
+            ],
+            "status": "completed",
+            "created_at": "2026-10-16T02:41:42.2674822Z",
+            "completed_at": "2026-10-16T02:41:42.3015814Z"
+          }
+        ],
+        "manifest_prepared_at": "2026-10-16T02:41:21.8808074Z",
+        "start_completed_at": "2026-10-16T02:41:31.6806602Z",
+        "next_attempt_started_at": "2026-10-16T02:41:33.2856031Z",
+        "start_completed_after_manifest_and_before_next_attempt": true,
+        "model_final_wait_observed_exit_code": 0,
+        "manual_continue_messages": 0,
+        "raw_tool_receipts": "C:\\p317go-bg-22ad3fc1\\background-command-tool-receipts.json",
+        "raw_attempt_ledgers": "C:\\p317go-bg-22ad3fc1\\background-start-attempt-ledgers.json"
+      },
+      "qualification_history": {
+        "total_qualification_calls": 3,
+        "failed_network_request": {
+          "duration_ms": 5000,
+          "raw_record": "C:\\p317go-bg-22ad3fc1\\docker-model-qualification-network-failed-1.json",
+          "status": "unreachable",
+          "outcome": "retryable",
+          "model_calls": 1
+        },
+        "successful_retry": {
+          "status": "qualified",
+          "model_calls": 2
+        },
+        "qualification_and_route_control_posts": 3
+      }
+    }
+  ],
+  "unsuccessful_attempts": [
+    {
+      "manual_continue_messages": 1,
+      "run_id": "run-20261015235433-3c55cf0cd4f3",
+      "total_tokens": 375147,
+      "raw_evidence_root": "C:\\p317-805ae248",
+      "project": "go",
+      "model_calls": 20,
+      "backend": "docker",
+      "outcome": "incomplete",
+      "reason": "null Plan dependencies / successor Drydock / natural exit / root token projection defects discovered; independent verification 0 did not replace failed model test"
+    },
+    {
+      "manual_continue_messages": 2,
+      "run_id": "run-20261016001022-eecf43cd3c3f",
+      "total_tokens": 138294,
+      "raw_evidence_root": "C:\\p317-805ae248",
+      "project": "react",
+      "model_calls": 9,
+      "backend": "docker",
+      "outcome": "incomplete",
+      "reason": "Plan field bound and completion guard stopped"
+    },
+    {
+      "manual_continue_messages": 2,
+      "run_id": "run-20261016002008-70899337ca15",
+      "total_tokens": 158482,
+      "raw_evidence_root": "C:\\p317-805ae248",
+      "project": "react",
+      "model_calls": 11,
+      "backend": "docker",
+      "outcome": "incomplete",
+      "reason": "model proposed before two consecutive pure read rounds; Plan read budget stopped"
+    },
+    {
+      "manual_continue_messages": 0,
+      "run_id": "run-20261015235638-0bfa4559a8db",
+      "total_tokens": 61043,
+      "raw_evidence_root": "C:\\p317-805ae248",
+      "project": "go",
+      "model_calls": 5,
+      "backend": "sbx",
+      "outcome": "incomplete",
+      "reason": "fixture go1.26.9 exceeds pinned template Go1.26.0; genuine downloaded modules preserved"
+    },
+    {
+      "manual_continue_messages": 1,
+      "run_id": "run-20261016003432-ebbfa02d1919",
+      "total_tokens": 293979,
+      "raw_evidence_root": "C:\\p317docker-f72112e9",
+      "project": "go",
+      "model_calls": 17,
+      "backend": "docker",
+      "outcome": "incomplete",
+      "reason": "model apply committed, tool deadline replaced its outcome; no model test job; Continue did not bypass guard"
+    },
+    {
+      "manual_continue_messages": 0,
+      "run_id": "run-20261016010026-d9495acaa458",
+      "total_tokens": 248824,
+      "raw_evidence_root": "C:\\p317go-final-299132e2",
+      "project": "go",
+      "model_calls": 15,
+      "backend": "docker",
+      "outcome": "incomplete",
+      "reason": "model apply completed across original tool deadline; background test start failed before dispatch because Agent attempt changed; no extra Continue or mode retry",
+      "background_start_failure": {
+        "tool_calls": [
+          {
+            "call_id": "toolu_f6201039779b5747b0c31fa4",
+            "turn": 2,
+            "attempt_id": "attempt-20261016010406-d0a4a0512f75",
+            "tool_name": "workspace_apply",
+            "status": "completed",
+            "error_code": "",
+            "created_at": "2026-10-16T01:04:43.556546Z",
+            "completed_at": "2026-10-16T01:05:13.6272611Z"
+          },
+          {
+            "call_id": "toolu_5b23dc92d88f3384f7189944",
+            "turn": 2,
+            "attempt_id": "attempt-20261016010406-d0a4a0512f75",
+            "tool_name": "command_runtime",
+            "status": "completed",
+            "error_code": "",
+            "created_at": "2026-10-16T01:05:15.9919217Z",
+            "completed_at": "2026-10-16T01:05:16.1712348Z"
+          },
+          {
+            "call_id": "toolu_d8731d5f5c50bc170eb0671f",
+            "turn": 3,
+            "attempt_id": "attempt-20261016010517-0b0e3c0b484d",
+            "tool_name": "command_runtime",
+            "status": "completed",
+            "error_code": "",
+            "created_at": "2026-10-16T01:05:26.0704843Z",
+            "completed_at": "2026-10-16T01:05:26.1769917Z"
+          },
+          {
+            "call_id": "toolu_4a26be29be1a34c592e4d476",
+            "turn": 3,
+            "attempt_id": "attempt-20261016010517-0b0e3c0b484d",
+            "tool_name": "command_runtime",
+            "status": "denied",
+            "error_code": "POLICY_DENIED",
+            "created_at": "2026-10-16T01:05:29.411205Z",
+            "completed_at": "2026-10-16T01:05:29.4616188Z"
+          },
+          {
+            "call_id": "toolu_727d2f8c2ec58a7faa1176a2",
+            "turn": 3,
+            "attempt_id": "attempt-20261016010517-0b0e3c0b484d",
+            "tool_name": "command_runtime",
+            "status": "denied",
+            "error_code": "POLICY_DENIED",
+            "created_at": "2026-10-16T01:05:43.1222393Z",
+            "completed_at": "2026-10-16T01:05:43.1610667Z"
+          }
+        ],
+        "job_agents": [
+          {
+            "job_id": "command-job-d6bba250e704a5d370530197",
+            "run_id": "run-20261016010026-d9495acaa458",
+            "agent_id": "agent-20261016010028-321fa315eed5",
+            "agent_attempt_id": null,
+            "attribution_source": "operator_root",
+            "created_at": "2026-10-16T01:01:45.5644044Z"
+          },
+          {
+            "job_id": "command-job-ae3bdf66a53f2b4ce8b1bbd4",
+            "run_id": "run-20261016010026-d9495acaa458",
+            "agent_id": "agent-20261016010028-321fa315eed5",
+            "agent_attempt_id": null,
+            "attribution_source": "operator_root",
+            "created_at": "2026-10-16T01:02:35.1412714Z"
+          },
+          {
+            "job_id": "command-job-06c8ad582ea0832f80c7e355",
+            "run_id": "run-20261016010026-d9495acaa458",
+            "agent_id": "agent-20261016010028-321fa315eed5",
+            "agent_attempt_id": null,
+            "attribution_source": "operator_root",
+            "created_at": "2026-10-16T01:03:30.9163701Z"
+          },
+          {
+            "job_id": "command-job-5171b6d3c60122dfcf1825b5",
+            "run_id": "run-20261016010026-d9495acaa458",
+            "agent_id": "agent-20261016010028-321fa315eed5",
+            "agent_attempt_id": "attempt-20261016010406-d0a4a0512f75",
+            "attribution_source": "recorded",
+            "created_at": "2026-10-16T01:05:16.12133Z"
+          }
+        ],
+        "job": [
+          {
+            "id": "command-job-5171b6d3c60122dfcf1825b5",
+            "invocation_id": "toolcall-20261016010516-7cd47ad5fb95",
+            "state": "failed",
+            "root_agent_id": "agent-20261016010028-321fa315eed5",
+            "lease_id": "lease-20261016010406-6344a908dbff",
+            "lease_generation": 6,
+            "lease_owner_id": "worker-20261016010008-ba269d0296aa",
+            "owner_id": "command-runtime-docker-owner-20261016010008-dbb3d6ec6d12",
+            "created_at": "2026-10-16T01:05:16.12133Z",
+            "started_at": "2026-10-16T01:05:16.1659511Z",
+            "completed_at": "2026-10-16T01:05:19.8539832Z",
+            "exit_code": -1,
+            "stderr": "command operation Agent attempt changed before dispatch"
+          }
+        ],
+        "timeline": [
+          {
+            "sequence": 301,
+            "type": "agent.status_changed",
+            "subject_id": "agent-20261016010028-321fa315eed5",
+            "created_at": "2026-10-16T01:05:15.9756582Z",
+            "payload": {
+              "active_attempt_id": "attempt-20261016010406-d0a4a0512f75",
+              "from": "running",
+              "to": "running"
+            }
+          },
+          {
+            "sequence": 305,
+            "type": "supervisor.tool_execution_started",
+            "subject_id": "toolu_5b23dc92d88f3384f7189944",
+            "created_at": "2026-10-16T01:05:16.0509049Z",
+            "payload": {
+              "attempt_id": "attempt-20261016010406-d0a4a0512f75",
+              "status": "pending",
+              "turn": 2
+            }
+          },
+          {
+            "sequence": 308,
+            "type": "supervisor.tool_execution_completed",
+            "subject_id": "toolu_5b23dc92d88f3384f7189944",
+            "created_at": "2026-10-16T01:05:16.1761812Z",
+            "payload": {
+              "attempt_id": "attempt-20261016010406-d0a4a0512f75",
+              "status": "completed",
+              "turn": 2
+            }
+          },
+          {
+            "sequence": 320,
+            "type": "agent.status_changed",
+            "subject_id": "agent-20261016010028-321fa315eed5",
+            "created_at": "2026-10-16T01:05:17.8280689Z",
+            "payload": {
+              "active_attempt_id": "attempt-20261016010406-d0a4a0512f75",
+              "from": "running",
+              "to": "running"
+            }
+          },
+          {
+            "sequence": 328,
+            "type": "agent.turn_completed",
+            "subject_id": "attempt-20261016010406-d0a4a0512f75",
+            "created_at": "2026-10-16T01:05:17.8993596Z",
+            "payload": {
+              "attempt_id": "attempt-20261016010406-d0a4a0512f75",
+              "turn": 2
+            }
+          },
+          {
+            "sequence": 329,
+            "type": "agent.status_changed",
+            "subject_id": "agent-20261016010028-321fa315eed5",
+            "created_at": "2026-10-16T01:05:17.905227Z",
+            "payload": {
+              "active_attempt_id": "",
+              "from": "running",
+              "to": "ready"
+            }
+          },
+          {
+            "sequence": 331,
+            "type": "agent.status_changed",
+            "subject_id": "agent-20261016010028-321fa315eed5",
+            "created_at": "2026-10-16T01:05:17.9181256Z",
+            "payload": {
+              "active_attempt_id": "attempt-20261016010517-0b0e3c0b484d",
+              "from": "ready",
+              "to": "running"
+            }
+          },
+          {
+            "sequence": 332,
+            "type": "agent.turn_started",
+            "subject_id": "attempt-20261016010517-0b0e3c0b484d",
+            "created_at": "2026-10-16T01:05:17.9240591Z",
+            "payload": {
+              "attempt_id": "attempt-20261016010517-0b0e3c0b484d",
+              "turn": 3
+            }
+          },
+          {
+            "sequence": 333,
+            "type": "supervisor.checkpointed",
+            "subject_id": "run-20261016010026-d9495acaa458",
+            "created_at": "2026-10-16T01:05:17.9297688Z",
+            "payload": {
+              "completed_turn": 2,
+              "next_turn": 3
+            }
+          },
+          {
+            "sequence": 334,
+            "type": "supervisor.action_committed",
+            "subject_id": "run-20261016010026-d9495acaa458",
+            "created_at": "2026-10-16T01:05:17.9354051Z",
+            "payload": {
+              "action": "continue",
+              "turn": 2
+            }
+          },
+          {
+            "sequence": 335,
+            "type": "sandbox.manifest_prepared",
+            "subject_id": "sandbox-manifest-20261016010519-16e207aa658f",
+            "created_at": "2026-10-16T01:05:19.8030775Z",
+            "payload": {}
+          },
+          {
+            "sequence": 336,
+            "type": "sandbox.manifest_validated",
+            "subject_id": "sandbox-manifest-20261016010519-16e207aa658f",
+            "created_at": "2026-10-16T01:05:19.8030775Z",
+            "payload": {}
+          },
+          {
+            "sequence": 338,
+            "type": "approval.decided",
+            "subject_id": "approval-20261016010519-01ac3abd2f93",
+            "created_at": "2026-10-16T01:05:19.8338622Z",
+            "payload": {
+              "status": "approved"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "local_node": {
+    "node_test_explicit_relative": "timed_out_exit125",
+    "raw_log": "C:\\p317-805ae248\\local-node-pipe-current.log",
+    "version": "24.14.0",
+    "eval": "passed",
+    "limits_relaxed": false,
+    "private_file_and_network_child_boundaries": "passed"
+  },
+  "ui_screenshot": {
+    "alternate_launch_attempted": false,
+    "captured_this_round": false,
+    "vite_launch": "automatic approval review rejected: blocked by policy"
+  },
+  "completion_definition": "selected Deliver modules completed with required manual checkpoints and verified original tests; Run remains paused, not RunCompleted",
+  "recovery_scope": "quiescent paused host restart and exact result readback; no interrupted active job claim",
+  "post_fix_reacceptance": {
+    "status": "passed",
+    "recorded_at": "2026-10-16T02:48:38.1486987Z",
+    "raw_evidence_root": "C:\\p317go-bg-22ad3fc1",
+    "run_id": "run-20261016023833-b221dda42a0b",
+    "live_reacceptance_completed": true,
+    "binary_sha256": "2b48860e40f5c4784f1dc3e25f824db71c53ae6ea5809deda9ce2d981c27a44f",
+    "manifest_file": "C:\\p317go-bg-22ad3fc1\\prep317-55f377d0cfee.exe.manifest.json",
+    "frozen_production_sources": [
+      {
+        "path": "internal/runner/command_runtime_dispatch.go",
+        "sha256": "9926a32781deea5dcecc8c01cc69b7bc0eae4dad3c55e64e40e1cdc53bf40622"
+      },
+      {
+        "path": "internal/runner/command_runtime_job.go",
+        "sha256": "2244a308c3e134e197756a71901f12bffc49f12447c54962630e333dc4120b35"
+      },
+      {
+        "path": "internal/runner/command_runtime_sandbox.go",
+        "sha256": "6fb32d7a5d67e6f88b9ce95858e8a19965a5555d12f5173bb5579a88803f49be"
+      },
+      {
+        "path": "internal/application/command_runtime_docker_sandbox.go",
+        "sha256": "3edc6f01c75f8db85e5471352cfc4d0e03fa24fc1129395dffa6dd650561f64f"
+      },
+      {
+        "path": "internal/application/command_runtime_local_sandbox.go",
+        "sha256": "73ab7fec28a7e7164277890ea79ed6207e97533cf16267278e005da7b40a519b"
+      },
+      {
+        "path": "internal/application/command_runtime_sbx.go",
+        "sha256": "75d7c5be788fc9b7a0eb407387685d290e53079f64474ddec20d484ee9c59809"
+      },
+      {
+        "path": "internal/application/docker_sandbox_execution.go",
+        "sha256": "d20f280354e5bc7685ba09e6913a6ec1001362e2672fcd4a6ff3b9043bfaef0c"
+      },
+      {
+        "path": "internal/sandbox/sbx.go",
+        "sha256": "9dd60f7de4d7d387fde46097150ccbb8432958704ad13bc4551c97488dffc7ec"
+      }
+    ],
+    "manifest_matches_frozen_production": true,
+    "focused_regressions": [
+      {
+        "sha256": "fd4ea186ecec7f5bea2e6493a2b45203c394ea2259f44731594a59f91ca08ebe",
+        "result": "passed",
+        "uses_live_docker_engine_or_sbx_vm": false,
+        "raw_log": "D:\\CodexProjects\\worktrees\\mcp-oauth-compatibility\\Universal-Code-layering-audit\\output\\playwright\\issue317-background-admission\\after-fix-final.log",
+        "result_line": "ok  \tcyberagent-workbench/internal/application\t23.505s"
+      },
+      {
+        "sha256": "b345d2e9687ebc85f04908b30d0347638a395357106bbca41cdfc4273a2e7ad8",
+        "result": "passed",
+        "uses_live_docker_engine_or_sbx_vm": false,
+        "raw_log": "D:\\CodexProjects\\worktrees\\mcp-oauth-compatibility\\Universal-Code-layering-audit\\output\\playwright\\issue317-background-admission\\runner-final-regressions.log",
+        "result_line": "ok  \tcyberagent-workbench/internal/runner\t0.953s"
+      },
+      {
+        "sha256": "50ebace89d5063b92d1274ca2544049b1a29f201b413ddf6758e7fde5fe18751",
+        "result": "passed",
+        "uses_live_docker_engine_or_sbx_vm": false,
+        "raw_log": "D:\\CodexProjects\\worktrees\\mcp-oauth-compatibility\\Universal-Code-layering-audit\\output\\playwright\\issue317-background-admission\\sbx-final-regressions.log",
+        "result_line": "ok  \tcyberagent-workbench/internal/sandbox\t1.144s"
+      }
+    ],
+    "background_start_handshake": {
+      "run_id": "run-20261016023833-b221dda42a0b",
+      "job_id": "command-job-e8503ca14be6ea6b2cf1bcec",
+      "passed": true,
+      "mode": "model background start then two waits on same job",
+      "tool_calls": [
+        {
+          "call_id": "toolu_9b4a0321a52ccae57915521d",
+          "turn": 2,
+          "attempt_id": "attempt-20261016024048-8d02dfdfc9aa",
+          "action": "start",
+          "requested_job_id": null,
+          "job_ids": [
+            "command-job-e8503ca14be6ea6b2cf1bcec"
+          ],
+          "states": [
+            "running"
+          ],
+          "exit_codes": [
+            null
+          ],
+          "tree_reaped": [
+            false
+          ],
+          "status": "completed",
+          "created_at": "2026-10-16T02:41:20.3927104Z",
+          "completed_at": "2026-10-16T02:41:31.6806602Z"
+        },
+        {
+          "call_id": "toolu_b186c2a08a741828664985fe",
+          "turn": 3,
+          "attempt_id": "attempt-20261016024133-50c097aa0dc4",
+          "action": "wait",
+          "requested_job_id": "command-job-e8503ca14be6ea6b2cf1bcec",
+          "job_ids": [
+            "command-job-e8503ca14be6ea6b2cf1bcec"
+          ],
+          "states": [
+            "running"
+          ],
+          "exit_codes": [
+            null
+          ],
+          "tree_reaped": [
+            false
+          ],
+          "status": "completed",
+          "created_at": "2026-10-16T02:41:38.0386522Z",
+          "completed_at": "2026-10-16T02:41:40.9235315Z"
+        },
+        {
+          "call_id": "toolu_4ead724102e8b10dbd1de2f3",
+          "turn": 3,
+          "attempt_id": "attempt-20261016024133-50c097aa0dc4",
+          "action": "wait",
+          "requested_job_id": "command-job-e8503ca14be6ea6b2cf1bcec",
+          "job_ids": [
+            "command-job-e8503ca14be6ea6b2cf1bcec"
+          ],
+          "states": [
+            "completed"
+          ],
+          "exit_codes": [
+            0
+          ],
+          "tree_reaped": [
+            true
+          ],
+          "status": "completed",
+          "created_at": "2026-10-16T02:41:42.2674822Z",
+          "completed_at": "2026-10-16T02:41:42.3015814Z"
+        }
+      ],
+      "manifest_prepared_at": "2026-10-16T02:41:21.8808074Z",
+      "start_completed_at": "2026-10-16T02:41:31.6806602Z",
+      "next_attempt_started_at": "2026-10-16T02:41:33.2856031Z",
+      "start_completed_after_manifest_and_before_next_attempt": true,
+      "model_final_wait_observed_exit_code": 0,
+      "manual_continue_messages": 0,
+      "raw_tool_receipts": "C:\\p317go-bg-22ad3fc1\\background-command-tool-receipts.json",
+      "raw_attempt_ledgers": "C:\\p317go-bg-22ad3fc1\\background-start-attempt-ledgers.json"
+    },
+    "pre_run_environment_failures": {
+      "cleanup_before_followup_recovery": {
+        "exit_code": 0,
+        "stopped_at": "2026-10-16T02:28:05.825502Z",
+        "official_entry": "docker desktop stop --force --timeout 20"
+      },
+      "no_run_or_run_model_calls_at_that_point": true,
+      "docker_force_stop_retry": "completed exit 0",
+      "docker_error": "starting services: initializing Inference manager: cannot remove existing dockerInference socket: The file cannot be accessed by the system",
+      "docker_error_observed_at": [
+        "2026-10-16T02:21:25.526825Z",
+        "2026-10-16T02:26:43.742641Z"
+      ],
+      "docker_normal_stop": "failed; did not exit within the requested wait",
+      "docker_start_attempts": [
+        {
+          "result": "backend_crashed_before_engine_ready",
+          "started_at": "2026-10-16T02:21:21.8173584Z",
+          "hidden": true,
+          "official_entry": "Docker Desktop.exe"
+        },
+        {
+          "result": "same_backend_error_before_engine_ready",
+          "started_at": "2026-10-16T02:26:40.1371042Z",
+          "hidden": true,
+          "official_entry": "docker desktop start --timeout 45"
+        }
+      ]
+    },
+    "desktop_recovery": {
+      "docker_config_modified": false,
+      "socket_directory_backups": [
+        {
+          "record": {
+            "recorded_utc": "2026-10-16T02:32:08.7095627Z",
+            "action": "renamed stopped Docker runtime directory; preserved all entries",
+            "original_path": "C:\\Users\\22977\\AppData\\Local\\Docker\\run",
+            "backup_path": "C:\\Users\\22977\\AppData\\Local\\Docker\\run.stale-20261016-023208",
+            "entries": [
+              {
+                "Name": "dockerEthernetVfkit",
+                "Length": 0,
+                "Attributes": 1056
+              },
+              {
+                "Name": "dockerInference",
+                "Length": 0,
+                "Attributes": 1056
+              },
+              {
+                "Name": "userAnalyticsOtlpHttp.sock",
+                "Length": 0,
+                "Attributes": 1056
+              }
+            ],
+            "docker_process_count_before": 0,
+            "container_data_modified": false
+          },
+          "raw_record": "C:\\p317go-bg-22ad3fc1\\docker-runtime-recovery.json"
+        },
+        {
+          "record": {
+            "recorded_utc": "2026-10-16T02:33:40.9623941Z",
+            "action": "renamed stopped Docker socket-only directory; preserved entry",
+            "original_path": "C:\\Users\\22977\\AppData\\Local\\docker-secrets-engine",
+            "backup_path": "C:\\Users\\22977\\AppData\\Local\\docker-secrets-engine.stale-20261016-023340",
+            "entries": [
+              {
+                "Name": "engine.sock",
+                "Length": 0,
+                "Attributes": 1056
+              }
+            ],
+            "docker_process_count_before": 0,
+            "container_data_modified": false
+          },
+          "raw_record": "C:\\p317go-bg-22ad3fc1\\docker-secrets-socket-recovery.json"
+        },
+        {
+          "record": {
+            "recorded_utc": "2026-10-16T02:35:19.8039902Z",
+            "original_path": "C:\\Users\\22977\\AppData\\Local\\Docker\\run",
+            "backup_path": "C:\\Users\\22977\\AppData\\Local\\Docker\\run.stale-20261016-023519",
+            "entry": "dockerInference",
+            "length": 0,
+            "secrets_runtime_path_absent": true,
+            "docker_process_count_before": 0,
+            "container_data_modified": false
+          },
+          "raw_record": "C:\\p317go-bg-22ad3fc1\\docker-runtime-recovery-followup.json"
+        }
+      ],
+      "resolved": true,
+      "server_evidence": "C:\\p317go-bg-22ad3fc1\\docker-server-after-recovery.json",
+      "operator_surface": "actual Docker Desktop window Quit and restart, then official daemon verification",
+      "container_data_modified": false,
+      "server_version": "29.6.2",
+      "container_delete_or_prune_performed": false
+    },
+    "container_preservation": {
+      "raw_comparison": "C:\\p317go-bg-22ad3fc1\\docker-container-preservation.json",
+      "baseline_count": 9,
+      "extra_containers": 0,
+      "all_baseline_ids_names_created_at_and_state_unchanged": true,
+      "after_file": "C:\\p317go-bg-22ad3fc1\\docker-containers-after.jsonl",
+      "after_count": 9,
+      "baseline_file": "C:\\p317go-bg-22ad3fc1\\docker-baseline-after-recovery.jsonl",
+      "passed": true
+    },
+    "acceptance_service_final_stop": {
+      "graceful_stop_file": true,
+      "exit_code": null,
+      "stopped_at": "2026-10-16T02:47:43.8791111Z",
+      "pid": 8112,
+      "confirmed_process_exited": true,
+      "exit_code_observed": false
+    },
+    "provider_qualification": {
+      "total_qualification_calls": 3,
+      "failed_network_request": {
+        "duration_ms": 5000,
+        "raw_record": "C:\\p317go-bg-22ad3fc1\\docker-model-qualification-network-failed-1.json",
+        "status": "unreachable",
+        "outcome": "retryable",
+        "model_calls": 1
+      },
+      "successful_retry": {
+        "status": "qualified",
+        "model_calls": 2
+      },
+      "qualification_and_route_control_posts": 3
+    },
+    "sbx_followup": {
+      "daemon_start_attempted": false,
+      "raw_status": "C:\\p317go-bg-22ad3fc1\\sbx-daemon-status-after-docker.txt",
+      "new_live_background_regression_run": false,
+      "app_name": "traverse-runtime",
+      "status": "stopped",
+      "socket_connected": false
+    }
+  },
+  "session_summary": {
+    "qualification_calls_and_environment_recovery_excluded": true,
+    "total_sessions": 9,
+    "successful_selected_plan_sessions": 3,
+    "run_model_calls": 124,
+    "unsuccessful_or_incomplete_sessions": 6,
+    "selected_plan_completion_rate": "3/9",
+    "run_model_total_tokens": 2160210
+  }
+}

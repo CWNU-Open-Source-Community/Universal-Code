@@ -662,7 +662,12 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeUnavailable
 	}
 	m.startMu.Lock()
-	defer m.startMu.Unlock()
+	startLocked := true
+	defer func() {
+		if startLocked {
+			m.startMu.Unlock()
+		}
+	}()
 	if request.Spec.Spec.Version != CommandRuntimeProtocolVersion ||
 		request.Spec.ExecutableIdentityKind != CommandRuntimeExecutableIdentityKind(request.Scope.Adapter) ||
 		request.Spec.WorkspaceRootSHA256 != request.Scope.WorkspaceRootSHA256 ||
@@ -782,6 +787,21 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 			return ProjectCommandRuntimeJob(stored), true, nil
 		}
 		if entry := m.entry(jobID); entry != nil {
+			if admission, ok := entry.process.(interface{ waitForAdmission(context.Context) error }); ok {
+				// Replays share the owner's admission without acquiring its
+				// cancellation authority. Neither waiter may hold off Shutdown.
+				m.startMu.Unlock()
+				startLocked = false
+				if err := admission.waitForAdmission(ctx); err != nil {
+					if ctx.Err() == nil {
+						select {
+						case <-entry.done:
+						case <-ctx.Done():
+						}
+					}
+					return entry.snapshot(), true, errors.Join(err, ctx.Err(), entry.persistError())
+				}
+			}
 			return entry.snapshot(), true, entry.persistError()
 		}
 		return ProjectCommandRuntimeJob(stored), true, ErrCommandRuntimeUncertain
@@ -861,7 +881,7 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 	running.StartedAt = &started
 	running.Version++
 	running.UpdatedAt = started
-	// Native dispatch has already happened. Finish the bounded ownership
+	// Process ownership is established. Finish the bounded ownership
 	// handoff even if the caller cancels between the SQL update and readback;
 	// otherwise an owned process can lose its terminal-receipt collector.
 	// Foreground cancellation is handled after this Job is registered.
@@ -910,6 +930,26 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 			request.Spec.Spec.CloseInitialStdin, func() error {
 				return CheckCommandRuntimeDispatch(initialInputCtx, request.Spec)
 			})
+	}
+	// Keep the originating attempt live until an asynchronous sandbox adapter
+	// has passed its final native dispatch check. Collectors, owner renewal,
+	// timeout and initial stdin must already run while admission is pending.
+	if admission, ok := process.(interface{ waitForAdmission(context.Context) error }); ok {
+		// The entry is fully registered. Shutdown must be able to acquire the
+		// start lock and stop a backend that never finishes admission.
+		m.startMu.Unlock()
+		startLocked = false
+		if err := admission.waitForAdmission(ctx); err != nil {
+			if ctx.Err() == nil {
+				select {
+				case <-entry.done:
+					return entry.snapshot(), false, errors.Join(err, entry.persistError())
+				case <-ctx.Done():
+				}
+			}
+			_, stopErr := m.Stop(context.WithoutCancel(ctx), jobID, true, 0)
+			return entry.snapshot(), false, errors.Join(err, ctx.Err(), stopErr)
+		}
 	}
 	return entry.snapshot(), false, nil
 }

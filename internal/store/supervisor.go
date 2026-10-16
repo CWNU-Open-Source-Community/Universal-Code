@@ -1327,6 +1327,25 @@ func (s *SQLiteStore) recordSupervisorModelTerminal(ctx context.Context, checkpo
 	if err := upsertSupervisorCheckpointTx(ctx, tx, current); err != nil {
 		return domain.SupervisorCheckpoint{}, err
 	}
+	// Tools can execute before the turn completes. Publish their charged root
+	// usage atomically, deriving lifecycle state from the current Run so late
+	// accounting after Stop cannot revive an Agent or restore an old attempt.
+	mission, err := scanMission(tx.QueryRowContext(ctx, `SELECT id, goal, profile,
+		workspace_id, scope_json, created_at, updated_at FROM missions WHERE id = ?`, run.MissionID))
+	if err != nil {
+		return domain.SupervisorCheckpoint{}, err
+	}
+	projection, err := rootAgentProjectionForRunTx(ctx, tx, run)
+	if err != nil {
+		return domain.SupervisorCheckpoint{}, err
+	}
+	if _, _, changed, err := syncRootAgentTx(ctx, tx, run, mission, projection, current.UpdatedAt); err != nil {
+		return domain.SupervisorCheckpoint{}, err
+	} else if changed {
+		if _, err := createAgentGraphSnapshotTx(ctx, tx, run); err != nil {
+			return domain.SupervisorCheckpoint{}, err
+		}
+	}
 	if err := appendSupervisorEventTx(ctx, tx, run, eventType, "model_gateway", subject, payload); err != nil {
 		return domain.SupervisorCheckpoint{}, err
 	}

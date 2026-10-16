@@ -310,6 +310,73 @@ func TestResolveDrydockExecutionBindingDistinguishesPrestartDriftFromOwnedOutput
 	}
 }
 
+func TestResolveDrydockExecutionBindingUsesSuccessorIdentityAndRetainsPhysicalOwner(t *testing.T) {
+	f := newDrydockApplicationFixture(t, "continued Docker dependency preparation")
+	owned := mustCreateDrydock(t, f)
+	ctx := t.Context()
+	thread, err := f.state.GetThreadByRun(ctx, f.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := NewRunService(f.state)
+	if _, err := runs.Start(ctx, f.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.Fail(ctx, f.run.ID, "retain working directory for continuation"); err != nil {
+		t.Fatal(err)
+	}
+	threads := NewThreadServiceWithExecutionCapabilities(f.state, standardCodeThreadTestRuntime().ExecutionPermissionCapabilities).WithRunWorktree(f.service)
+	next, err := threads.Submit(ctx, SubmitThreadMessageRequest{Version: domain.ThreadMessageProtocolVersion,
+		ThreadID: thread.ID, Content: "Continue the prepared project", OperationKey: "docker-binding-successor", RequestedBy: "operator"})
+	if err != nil || !next.SuccessorCreated {
+		t.Fatalf("successor=%+v err=%v", next, err)
+	}
+	binding := sandbox.DockerStandardCodeRunnerBinding{
+		RunID: next.Run.ID, MissionID: owned.MissionID, SessionID: next.Run.SessionID,
+		WorkspaceID: owned.SourceWorkspaceID, DrydockID: owned.ID, DrydockWorkspaceID: owned.WorkspaceID,
+		DrydockGeneration: owned.Generation, CheckpointID: owned.LastCheckpointID, DrydockBindingSHA256: owned.ExpectedBindingFingerprint,
+		ProfileSnapshotID: "continued-profile", ProfileRevision: 1, PermissionSnapshotID: "continued-permission", PermissionRevision: 1,
+		CapabilityGeneration: strings.Repeat("c", 64), CommandSHA256: strings.Repeat("d", 64),
+		StdinPolicy: sandbox.DockerStandardCodeStdinClosed, Toolchain: sandbox.DockerStandardCodeToolchainGo,
+		WorkingDirectory: ".", Arguments: []string{"test", "./..."}, TimeoutSeconds: 60,
+	}
+	resolved, err := f.service.ResolveDrydockExecutionBinding(ctx, binding, true)
+	if err != nil || resolved.RootPath != owned.Path {
+		t.Fatalf("continued Docker binding=%+v err=%v", resolved, err)
+	}
+	for _, change := range []func(*sandbox.DockerStandardCodeRunnerBinding){
+		func(b *sandbox.DockerStandardCodeRunnerBinding) { b.SessionID = owned.SessionID },
+		func(b *sandbox.DockerStandardCodeRunnerBinding) { b.MissionID = "unrelated-mission" },
+		func(b *sandbox.DockerStandardCodeRunnerBinding) { b.DrydockID = "unrelated-drydock" },
+	} {
+		other := binding
+		change(&other)
+		if _, err := f.service.ResolveDrydockExecutionBinding(ctx, other, true); err == nil {
+			t.Fatal("continued Docker binding accepted changed authority")
+		}
+	}
+	if _, err := runs.Start(ctx, next.Run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.Fail(ctx, next.Run.ID, "continue again"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := threads.Submit(ctx, SubmitThreadMessageRequest{Version: domain.ThreadMessageProtocolVersion,
+		ThreadID: thread.ID, Content: "Continue again", OperationKey: "docker-binding-next-successor", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.ResolveDrydockExecutionBinding(ctx, binding, true); err == nil {
+		t.Fatal("previous successor retained launch authority after the next epoch")
+	}
+	if _, err := f.service.ResolveDrydockExecutionBinding(ctx, binding, false); err != nil {
+		t.Fatalf("historical exact binding blocked owned cleanup: %v", err)
+	}
+	physical, found, err := f.state.GetDrydockByRun(ctx, f.run.ID)
+	if err != nil || !found || physical.RunID != owned.RunID || physical.SessionID != owned.SessionID || physical.Generation != owned.Generation {
+		t.Fatalf("read-only continuation changed physical ownership: %+v found=%t err=%v", physical, found, err)
+	}
+}
+
 func TestDrydockRunBindingAndRootBranchBaseDriftFailClosed(t *testing.T) {
 	t.Run("another Run cannot claim the Drydock", func(t *testing.T) {
 		fixture := newDrydockApplicationFixture(t, "shared repo")

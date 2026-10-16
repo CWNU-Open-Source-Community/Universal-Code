@@ -306,6 +306,9 @@ type SBXRunRequest struct {
 	Timeout                                             time.Duration
 	OutputLimit                                         int
 	AuthorityCheck                                      func(context.Context) error
+	// BeforeExec completes a process-local manager admission handshake only
+	// after all VM identity and ownership checks. It is never a wire input.
+	BeforeExec func(context.Context) error `json:"-"`
 }
 
 type SBXExecutionResult struct {
@@ -448,6 +451,12 @@ func (b *SBXBackend) Run(ctx context.Context, request SBXRunRequest, stdin io.Re
 		return cleanup(err)
 	}
 	executionCtx, cancel := context.WithTimeout(ctx, request.Timeout)
+	if request.BeforeExec != nil {
+		if err := request.BeforeExec(executionCtx); err != nil {
+			cancel()
+			return cleanup(err)
+		}
+	}
 	executed, runErr := b.call(executionCtx, args, stdin, request.OutputLimit)
 	cancel()
 	result.ExitCode, result.Stdout, result.Stderr = executed.ExitCode, executed.Stdout, executed.Stderr

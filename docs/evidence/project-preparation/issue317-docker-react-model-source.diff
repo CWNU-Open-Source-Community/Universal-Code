@@ -1,0 +1,5 @@
+--- a/src/counter.js
++++ b/src/counter.js
+@@ -1,1 +1,1 @@
+-export const add = (value, step) => value - step;
++export const add = (value, step) => value + step;

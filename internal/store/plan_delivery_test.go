@@ -188,6 +188,53 @@ func TestPlanDeliverySQLiteRejectsDuplicateTitlesBeforeOperationCommit(t *testin
 	}
 }
 
+func TestPlanDeliveryNullDependenciesPersistAndSettleTool(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "plan-null-dependencies.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := t.Context()
+	runs := application.NewRunService(st)
+	_, run, err := runs.Create(ctx, application.CreateRunRequest{
+		Goal: "persist a model plan with no dependencies", Profile: "review", Phase: "plan",
+		ModelRoute: "store-plan/model", Budget: domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.Start(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	provider := &storePlanProvider{responses: []*llm.ChatResponse{
+		{Provider: "store-plan", Model: "model", Usage: llm.Usage{InputTokens: 2, OutputTokens: 2, TotalTokens: 4},
+			ToolCalls: []llm.ToolCall{{ID: "null-dependencies-plan", Name: "plan_delivery_propose",
+				Arguments: json.RawMessage(strings.ReplaceAll(storePlanDeliveryPayload, `"dependencies":[]`, `"dependencies":null`))}}},
+		{Text: storeRootWaitResponse(t), Provider: "store-plan", Model: "model", Usage: llm.Usage{InputTokens: 2, OutputTokens: 2, TotalTokens: 4}},
+	}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	if _, err := application.NewAgentRunner(st, router, policy.NewDefaultChecker()).Step(ctx, run.ID); err != nil {
+		t.Fatalf("model plan with null dependencies did not finish: %v", err)
+	}
+	proposals, err := st.ListPlanDeliveryProposals(ctx, run.ID, 10)
+	if err != nil || len(proposals) != 1 {
+		t.Fatalf("model proposal was not persisted: proposals=%d err=%v", len(proposals), err)
+	}
+	var emptyArrays, pending int
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plan_delivery_modules WHERE proposal_id=? AND dependencies_json='[]'`, proposals[0].ID).Scan(&emptyArrays); err != nil || emptyArrays != 3 {
+		t.Fatalf("empty module dependencies were not stored as arrays: count=%d err=%v", emptyArrays, err)
+	}
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM run_supervisor_tool_calls WHERE run_id=? AND status='pending'`, run.ID).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("plan tool left unresolved work: pending=%d err=%v", pending, err)
+	}
+	if _, err := application.NewPlanDeliveryService(st).Select(ctx, application.SelectPlanDeliveryDirectionRequest{
+		ProposalID: proposals[0].ID, Direction: 2, OperationKey: "select-null-dependencies", RequestedBy: "operator",
+	}); err != nil {
+		t.Fatalf("persisted model plan cannot be selected: %v", err)
+	}
+}
+
 type storePlanProvider struct {
 	responses []*llm.ChatResponse
 }

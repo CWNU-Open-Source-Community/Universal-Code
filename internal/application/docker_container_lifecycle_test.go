@@ -267,20 +267,21 @@ func (authority dockerLifecycleSupervisorTestAuthority) RevalidateDockerContaine
 }
 
 type dockerLifecycleSupervisorTestTransport struct {
-	endpoint   sandbox.DockerObservationEndpoint
-	recorder   *dockerLifecycleTestRecorder
-	state      string
-	resourceID string
-	waitErr    error
-	stageCalls int
-	startCalls int
-	waitCalls  int
-	cleanup    int
-	terminate  int
-	creates    int
-	starts     int
-	terms      int
-	deletes    int
+	endpoint        sandbox.DockerObservationEndpoint
+	recorder        *dockerLifecycleTestRecorder
+	state           string
+	resourceID      string
+	waitErr         error
+	stageCalls      int
+	startCalls      int
+	waitCalls       int
+	cleanup         int
+	terminate       int
+	creates         int
+	starts          int
+	terms           int
+	deletes         int
+	naturalExitCode int
 }
 
 func (transport *dockerLifecycleSupervisorTestTransport) Endpoint() sandbox.DockerObservationEndpoint {
@@ -409,6 +410,9 @@ func (transport *dockerLifecycleSupervisorTestTransport) observation(
 ) sandbox.DockerContainerLifecycleObservation {
 	present := state != sandbox.DockerContainerLifecycleStateAbsent
 	exitCode := 0
+	if state == sandbox.DockerContainerLifecycleStateExited {
+		exitCode = transport.naturalExitCode
+	}
 	observation, _ := sandbox.NewDockerContainerLifecycleObservation(transport.endpoint,
 		request, state, map[bool]string{true: transport.resourceID}[present], exitCode, 1)
 	return observation

@@ -214,7 +214,13 @@ func (e *SBXCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.Context, s
 		RequestFingerprint: hex.EncodeToString(requestFingerprint[:]), RuntimeGeneration: e.identity.Generation,
 		DrydockRoot: spec.WorkspaceRoot, SourceRepository: gitBisectRuntimeFromContext(ctx) != nil, Arguments: append([]string{spec.ExecutablePath}, spec.CanonicalArgv...),
 		Environment: append([]string{}, spec.Environment...), WorkingDirectory: spec.Spec.WorkingDirectory,
-		Timeout: time.Duration(spec.Spec.TimeoutMilliseconds) * time.Millisecond, OutputLimit: spec.Spec.Output.ArtifactBytes, AuthorityCheck: check}, stdin)
+		Timeout: time.Duration(spec.Spec.TimeoutMilliseconds) * time.Millisecond, OutputLimit: spec.Spec.Output.ArtifactBytes, AuthorityCheck: check,
+		BeforeExec: func(current context.Context) error {
+			if err := e.checkAuthority(current, scope, spec); err != nil {
+				return err
+			}
+			return runner.ConfirmCommandRuntimeDispatch(current, spec)
+		}}, stdin)
 	value := runner.CommandRuntimeSandboxResult{ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, TreeReaped: result.TreeReaped}
 	if value.ExitCode < 0 {
 		value.ExitCode = 125
@@ -229,6 +235,8 @@ func (e *SBXCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.Context, s
 	}
 	return value, runErr
 }
+
+func (*SBXCommandRuntimeExecutor) CommandRuntimeAdmissionRequired() bool { return true }
 
 func (e *SBXCommandRuntimeExecutor) checkAuthority(ctx context.Context, scope runner.CommandRuntimeScope, spec runner.CommandRuntimeResolvedSpec) error {
 	normalized, err := e.NormalizeCommandRuntimeSpec(spec.Spec, spec.WorkspaceRoot)

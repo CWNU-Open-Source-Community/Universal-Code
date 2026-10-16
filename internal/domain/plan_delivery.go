@@ -533,7 +533,9 @@ func normalizePlanDeliveryDependencies(values []int, moduleOrdinal int) ([]int, 
 	if len(values) > MaxPlanDeliveryModules-1 {
 		return nil, errors.New("module dependency list is too large")
 	}
-	out := slices.Clone(values)
+	// Empty model input must retain the array shape required by the proposal
+	// ledger, including when JSON decoded an omitted or null dependency list.
+	out := append([]int{}, values...)
 	slices.Sort(out)
 	compact := slices.Compact(out)
 	if len(compact) != len(out) {

@@ -561,8 +561,17 @@ func (s *DockerSandboxService) AuthorizeDockerContainerLifecycleStart(ctx contex
 	if record.Start == nil {
 		return errors.New("Docker Sandbox lifecycle launch has no durable start request")
 	}
-	return s.requireCurrentDockerSandboxStartAuthority(ctx, record.Admission,
-		request.Plan, request.WriteRequest)
+	if err := s.requireCurrentDockerSandboxStartAuthority(ctx, record.Admission,
+		request.Plan, request.WriteRequest); err != nil {
+		return err
+	}
+	// Create is still preparation. Release the Command Runtime start only at
+	// the final native start gate, after the current Run lease and product
+	// authority passed. The container's own lease owns its later lifetime.
+	if request.Action == sandbox.DockerContainerLifecycleActionStart {
+		return confirmDockerCommandRuntimeAdmission(ctx, record.Admission.RunID)
+	}
+	return nil
 }
 
 func (s *DockerSandboxService) requireCurrentDockerSandboxStartAuthority(ctx context.Context,

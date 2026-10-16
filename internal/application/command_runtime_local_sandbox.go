@@ -183,7 +183,7 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 	}
 	var value sandbox.LocalExecutionResult
 	var runErr error
-	if err := runner.CheckCommandRuntimeDispatch(ctx, spec); err != nil {
+	if err := runner.ConfirmCommandRuntimeDispatch(ctx, spec); err != nil {
 		return noProcess, err
 	}
 	if spec.Spec.StdinPolicy == runner.CommandRuntimeStdinPipe {
@@ -202,6 +202,8 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 	}
 	return result, runErr
 }
+
+func (*LocalSandboxCommandRuntimeExecutor) CommandRuntimeAdmissionRequired() bool { return true }
 
 func (e *LocalSandboxCommandRuntimeExecutor) compile(scope runner.CommandRuntimeScope,
 	spec runner.CommandRuntimeResolvedSpec, workspace runworktree.Workspace,
