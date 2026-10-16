@@ -387,23 +387,27 @@ export function ChildTasksPanel({ client, runID }: ProjectionProps) {
             </dl>
           )}
           {client.hasControl && item.status === "proposed" && (
-            <div className="run-execution-control">
-              <label htmlFor={`child-task-tier-${item.id}`}>{t("fan-out 档位上限", "Fan-out tier ceiling")}</label>
-              <select id={`child-task-tier-${item.id}`} onChange={(event) => setTier(event.target.value)} value={tier}>
-                {["1", "2", "4", "6"].map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-              <button className="command-button" disabled={review.isPending || admit.isPending}
-                onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "approve" }); }} type="button">
-                {t("批准", "Approve")}
-              </button>
-              <button className="command-button danger" disabled={review.isPending || admit.isPending}
-                onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "deny" }); }} type="button">
-                {t("拒绝", "Deny")}
-              </button>
+            <div className="run-execution-control child-task-controls">
+              <div className="child-task-tier-control">
+                <label htmlFor={`child-task-tier-${item.id}`}>{t("fan-out 档位上限", "Fan-out tier ceiling")}</label>
+                <select id={`child-task-tier-${item.id}`} onChange={(event) => setTier(event.target.value)} value={tier}>
+                  {["1", "2", "4", "6"].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </div>
+              <div className="child-task-review-actions">
+                <button className="command-button" disabled={review.isPending || admit.isPending}
+                  onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "approve" }); }} type="button">
+                  {t("批准", "Approve")}
+                </button>
+                <button className="command-button danger" disabled={review.isPending || admit.isPending}
+                  onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "deny" }); }} type="button">
+                  {t("拒绝", "Deny")}
+                </button>
+              </div>
             </div>
           )}
           {client.hasControl && item.status === "approved" && (
-            <div className="run-execution-control">
+            <div className="run-execution-control child-task-controls">
               <button className="command-button" disabled={admit.isPending}
                 onClick={() => admit.mutate(item.id)} type="button">
                 {admit.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={15} /> : <Network aria-hidden="true" size={15} />}

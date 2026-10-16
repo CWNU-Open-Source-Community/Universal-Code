@@ -256,6 +256,11 @@ code, pre { font-family: var(--prayu-font-mono); }
 .run-execution-control { display: flex; align-items: center; gap: 8px; }
 .run-execution-control label { color: var(--muted); font-size: 11px; }
 .run-execution-control input { width: 58px; height: 34px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.child-task-controls { flex-wrap: wrap; min-width: 0; padding: 12px 15px; gap: 8px 12px; }
+.child-task-tier-control { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; gap: 8px; }
+.child-task-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.child-task-tier-control label { overflow-wrap: anywhere; }
+.child-task-tier-control select { min-width: 64px; height: 34px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .run-execution-control .batch-review-input { min-width: 180px; flex: 1 1 240px; }
 .command-button { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 6px 11px; border: 1px solid var(--prayu-border); border-radius: 5px; background: var(--surface); color: var(--ink); cursor: pointer; }
 .command-button:hover:not(:disabled) { border-color: var(--prayu-border-strong); background: var(--accent-soft); color: var(--prayu-text); }
