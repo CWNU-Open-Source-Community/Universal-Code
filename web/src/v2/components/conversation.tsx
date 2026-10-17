@@ -1078,7 +1078,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       setHasNewContent(false);
     }} type="button">有新内容 · 回到最新</button>}
     <div className="v2-composer-dock">
+      {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />
+      {currentRun.status === "paused" && <V2PausedThreadControl client={client} threadID={threadID} runID={currentRun.id} />}
+      </div>}
       {previewRequest.data && <p className="v2-composer-caption" role={previewRequest.data.phase === "failed" ? "alert" : "status"}>
         {applicationPreviewRequestCopy(previewRequest.data, !previewServices.isError && Boolean(previewRequest.data.runID &&
           previewRequest.data.messageID && previewServices.data?.services.some((service) =>
@@ -1087,7 +1090,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </p>}
       {managedDraft && <V2DraftConflict key={threadID} client={client} workspaceID={detail.thread.workspace_id ?? ""}
         state={managedDraft.state} onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
-      {currentRun.status === "paused" && <V2PausedThreadControl client={client} threadID={threadID} runID={currentRun.id} />}
       {executionQuery.data?.state === "stop_failed" && <p className="v2-composer-caption" role="alert">
         停止尚未完成。请重试停止，确认后再发送；已受理的要求会保留。
       </p>}

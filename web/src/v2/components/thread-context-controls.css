@@ -10,29 +10,42 @@
 .v2-context-resolved-reply { padding:10px 0; border-bottom:1px solid var(--v2-border); white-space:pre-wrap; }
 .v2-composer-dock:has(.v2-context-pin-card) { display:flex; flex-direction:column; box-sizing:border-box; max-height:calc(100% - 24px); overflow-y:auto; overscroll-behavior-y:contain; }
 .v2-composer-dock:has(.v2-context-pin-card) > :not(.v2-context-pin-card) { flex-shrink:0; }
-.v2-context-pin-card { display:flex; flex-direction:column; flex-shrink:1; box-sizing:border-box; margin:0 auto 12px; width:100%; max-width:var(--v2-composer-width); min-height:240px; max-height:min(480px, 60dvh); overflow:hidden; overflow-wrap:anywhere; border:1px solid var(--v2-border); border-radius:24px; background:var(--prayu-surface-solid); color:var(--v2-ink); font-size:14px; line-height:1.55; }
-.v2-context-pin-card > header { display:flex; align-items:center; gap:9px; flex-shrink:0; padding:14px 20px 8px; color:var(--v2-muted); }
+.v2-composer-dock:has(.v2-context-pin-card) .v2-composer-surface { min-height:0; }
+.v2-composer-dock:has(.v2-context-pin-card) .v2-markdown-input:has(> p:only-child > br:only-child) { min-height:0; padding-block:8px 2px; }
+.v2-composer-dock:has(.v2-context-pin-card) .v2-composer textarea:placeholder-shown { min-height:32px; padding-block:8px 2px; }
+.v2-composer-dock:has(.v2-context-pin-card) .v2-composer-footer { min-height:40px; padding-block:4px 8px; }
+.v2-composer-dock:has(.v2-context-pin-card) .v2-composer[data-empty="true"][data-editor-expanded="false"] {
+  .v2-composer-surface { display:flex; align-items:center; gap:8px; padding:8px 10px; }
+  .v2-composer-compact-trigger, .v2-composer-add, .v2-composer-actions { position:relative; z-index:2; }
+  .v2-composer-compact-trigger { display:block; flex:1; order:2; min-width:0; padding:8px 0; border:0; background:transparent; color:var(--v2-muted); font:inherit; font-size:14px; text-align:start; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; }
+  .v2-composer-surface > textarea, .v2-markdown-input-host { display:none; }
+  .v2-composer-footer, .v2-composer-tools { display:contents; }
+  .v2-composer-tools > :not(.v2-composer-add) { display:none; }
+  .v2-composer-add { order:1; }
+  .v2-composer-actions { order:3; flex-shrink:0; max-width:60%; }
+}
+.v2-context-pin-card { display:flex; flex-direction:column; flex-shrink:1; box-sizing:border-box; margin:0 auto 8px; width:100%; max-width:var(--v2-composer-width); min-height:0; max-height:min(320px, 42dvh); overflow:hidden; overflow-wrap:anywhere; border:1px solid var(--v2-border); border-radius:20px; background:var(--prayu-surface-solid); color:var(--v2-ink); font-size:14px; line-height:1.5; }
+.v2-context-pin-card > header { display:flex; align-items:center; gap:9px; flex-shrink:0; padding:8px 16px 2px; color:var(--v2-muted); }
 .v2-context-pin-card button { font:inherit; color:inherit; cursor:pointer; }
 .v2-context-pin-card > header button { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; width:30px; height:30px; padding:0; border:0; border-radius:50%; background:transparent; }
 .v2-context-pin-card button:hover:not(:disabled) { background:var(--v2-control-hover); }
 .v2-context-pin-card button:disabled { opacity:.45; cursor:default; }
 .v2-context-pin-card :is(button, textarea, input[type=checkbox]):focus-visible { outline:2px solid var(--v2-accent); outline-offset:2px; }
-.v2-context-pin-card h2 { margin:0 0 10px; font-size:14px; line-height:1.6; font-weight:600; }
-.v2-context-pin-body { min-height:0; min-width:0; overflow:auto; overscroll-behavior:contain; padding:4px 20px 8px; }
+.v2-context-pin-card h2 { margin:0 0 6px; font-size:14px; line-height:1.5; font-weight:600; }
+.v2-context-pin-body { min-height:0; min-width:0; overflow:auto; overscroll-behavior:contain; padding:2px 16px 4px; }
 .v2-context-pin-body > p { margin:10px 0; color:var(--v2-muted); }
-.v2-context-pin-card blockquote { margin:0 0 12px; padding:0 0 0 12px; white-space:pre-wrap; border-left:2px solid var(--v2-border-strong); color:var(--v2-muted); font-size:13px; }
+.v2-context-pin-card blockquote { margin:0 0 6px; padding:0 0 0 10px; white-space:pre-wrap; border-left:2px solid var(--v2-border-strong); color:var(--v2-muted); font-size:13px; }
 .v2-context-pin-card fieldset { min-width:0; border:0; padding:0; margin:0; }
-.v2-context-pin-option { display:flex; align-items:flex-start; gap:12px; position:relative; padding:8px 6px; margin:2px -6px; border-radius:10px; cursor:pointer; }
+.v2-context-pin-option { display:flex; align-items:center; gap:10px; position:relative; padding:5px 6px; margin:0 -6px; border-radius:8px; cursor:pointer; }
 .v2-context-pin-option:hover { background:var(--v2-control-hover); }
 .v2-context-pin-option input { position:absolute; opacity:0; width:1px; height:1px; }
 .v2-context-pin-option > span { min-width:0; }
-.v2-context-pin-number { display:flex; align-items:center; justify-content:center; flex:0 0 26px; height:26px; box-sizing:border-box; border:1px solid var(--v2-border); border-radius:7px; color:var(--v2-muted); background:var(--v2-control); }
+.v2-context-pin-number { display:flex; align-items:center; justify-content:center; flex:0 0 24px; height:24px; box-sizing:border-box; border:1px solid var(--v2-border); border-radius:6px; color:var(--v2-muted); background:var(--v2-control); }
 .v2-context-pin-option:has(input:checked) .v2-context-pin-number { border-color:var(--v2-accent); color:var(--prayu-surface-solid); background:var(--v2-accent); }
 .v2-context-pin-option:has(input:focus-visible) { outline:2px solid var(--v2-accent); outline-offset:0; }
 .v2-context-pin-option:has(input:disabled) { cursor:default; opacity:.65; }
-.v2-context-pin-option strong { display:block; padding-top:2px; font-size:14px; font-weight:500; }
-.v2-context-pin-option small { display:block; margin-top:2px; font-size:12px; color:var(--v2-muted); }
-.v2-context-pin-card > footer { display:flex; align-items:flex-end; flex-shrink:0; gap:12px; padding:10px 20px 18px; }
+.v2-context-pin-option strong { display:block; font-size:14px; font-weight:500; }
+.v2-context-pin-card > footer { display:flex; align-items:flex-end; flex-shrink:0; gap:12px; padding:4px 16px 10px; }
 .v2-context-pin-custom { flex:1; min-width:0; color:var(--v2-muted); }
 .v2-context-pin-custom.is-active { color:var(--v2-ink); }
 .v2-context-pin-reply { display:flex; align-items:center; gap:10px; }
@@ -47,10 +60,7 @@
 .v2-context-pin-actions .primary:hover:not(:disabled) { background:var(--v2-accent); filter:brightness(.9); }
 .v2-context-pin-card [role=alert] { color:var(--v2-ink); border:1px solid var(--v2-border); border-radius:8px; padding:10px; }
 @media (max-width:600px) {
-  .v2-context-pin-card { border-radius:20px; min-height:280px; }
-  .v2-context-pin-card > header { padding-inline:16px; }
-  .v2-context-pin-body { padding-inline:16px; }
-  .v2-context-pin-card > footer { padding-inline:16px; flex-wrap:wrap; }
-  .v2-context-pin-custom { flex-basis:100%; }
-  .v2-context-pin-actions { margin-left:auto; }
+  .v2-context-pin-card > footer { gap:8px; }
+  .v2-context-pin-actions { gap:6px; }
+  .v2-context-pin-actions button { padding-inline:10px; }
 }

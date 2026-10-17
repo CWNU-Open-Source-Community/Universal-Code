@@ -27,7 +27,9 @@
 .v2-command-approvals { min-width: 0; }
 .v2-history-scope { font-size: 11px; line-height: 1.6; color: var(--v2-muted); margin: 8px 14px; }
 .v2-load-history { display: block; margin: 12px auto; border: 1px solid var(--v2-border); border-radius: 7px; padding: 6px 12px; background: var(--v2-control); cursor: pointer; }
-.v2-paused-thread { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; color: var(--v2-muted); }
+.v2-composer-status { display: flex; flex-wrap: wrap; align-items: center; box-sizing: border-box; gap: 6px 12px; width: 100%; max-width: var(--v2-composer-width); margin: 0 auto 8px; padding-inline: 16px; }
+.v2-composer-status > .v2-agent-activity { flex: 0 0 auto; margin: 0; padding: 0; }
+.v2-paused-thread { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--v2-muted); }
 .v2-paused-thread button { border: 1px solid var(--v2-border); border-radius: 7px; background: var(--v2-control); padding: 6px 10px; }
 .v2-paused-thread p { flex-basis: 100%; margin: 0; color: var(--v2-danger); }
 .v2-file-references { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
@@ -1139,6 +1141,7 @@
 .v2-run-recovery small { color: var(--v2-muted); font-size: 11px; line-height: 1.4; }
 .v2-run-recovery .v2-run-recovery-waiting { color: var(--prayu-warning); }
 .v2-composer { container: composer / inline-size; margin: 0 auto; max-width: var(--v2-composer-width); position: relative; }
+.v2-composer-compact-trigger { display: none; }
 .v2-composer-surface {
   backdrop-filter: blur(20px);
   background: var(--v2-floating-surface);
@@ -1279,6 +1282,7 @@
 .v2-composer-attachment-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .v2-composer-attachment-actions .compact-command { min-height: 32px; max-width: 100%; white-space: normal; text-align: left; }
 
+.v2-permission-host.is-menu { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
 .v2-permission-control { position: relative; }
 .v2-permission-popover {
   backdrop-filter: blur(38px) saturate(100%);

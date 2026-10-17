@@ -25,7 +25,7 @@ it("only lifts a pause on an explicit click without resubmitting the failed tool
   try {
     const user = userEvent.setup();
     const button = screen.getByRole("button", { name: "解除暂停" });
-    expect(screen.getByRole("status")).toHaveTextContent("本轮已暂停。发送新消息会恢复任务并继续处理；也可以仅解除暂停。");
+    expect(screen.getByRole("status")).toHaveTextContent("发送消息即可继续，也可以仅解除暂停。");
     expect(button).toHaveAttribute("title", expect.stringContaining("失败的操作需另行发起"));
     expect(controlRunLifecycle).not.toHaveBeenCalled();
     await user.click(button);

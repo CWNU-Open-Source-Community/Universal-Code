@@ -200,10 +200,10 @@ function PinPromptCard({ client, threadID, state, proposal, onReply, onInteracti
     <fieldset disabled={pending || Boolean(resolved)} aria-label="选择处理方式">
       <label className="v2-context-pin-option"><input type="radio" name="pin-choice" value="pin_task"
         checked={choice === "pin_task"} onChange={() => choose("pin_task")} />
-        <span className="v2-context-pin-number">1</span><span><strong>本次任务始终保留</strong><small>按上方原文固定，压缩后继续使用。</small></span></label>
+        <span className="v2-context-pin-number">1</span><span><strong>本次任务始终保留</strong></span></label>
       <label className="v2-context-pin-option"><input type="radio" name="pin-choice" value="discussion_only"
         checked={choice === "discussion_only"} onChange={() => choose("discussion_only")} />
-        <span className="v2-context-pin-number">2</span><span><strong>仅当前讨论</strong><small>发送普通答复，不加入固定要求。</small></span></label>
+        <span className="v2-context-pin-number">2</span><span><strong>仅当前讨论</strong></span></label>
     </fieldset>
     {resolved && error && <p>选择已保存，答复尚待核对。重试会沿用同一条答复。</p>}
     {error && <p role="alert">{error}</p>}

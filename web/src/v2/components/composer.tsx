@@ -157,6 +157,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   }, [confirmedSubmission, threadID, workspaceID, submissions, error?.reason, error?.inputFingerprint]);
   const inputRef = useRef<MarkdownInputHandle>(null);
   const normalized = content.trim();
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
+    managedDraft?.state.conflict || managedDraft?.state.error);
   const byteLength = new TextEncoder().encode(normalized).byteLength;
   const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments), mcpReferenceIdentities(mcp.references)]);
   const sameMessagePending = pendingContents.current.has(fingerprint) ||
@@ -206,7 +209,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         mcp.update((current) => current.filter(({ id }) => !submittedMCP.some((item) => item.id === id)));
         setContent("", submittedContent);
       }
-      if (currentScope.current === scope && currentContentRef.current === submittedContent) inputRef.current?.focus();
+      if (currentScope.current === scope && currentContentRef.current === submittedContent) {
+        setEditorExpanded(false); inputRef.current?.focus();
+      }
     } catch (failure) {
       const reason = failure instanceof V2SubmissionError ? failure.reason : failure;
       const operationKey = failure instanceof V2SubmissionError &&
@@ -267,7 +272,8 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     disabled: disabled || !workspaceID || nativeClipboard.busy || nativeClipboard.pending,
     onSelect: () => void nativeClipboard.onPasteFallback() });
 
-  return <form className="v2-composer" onSubmit={(event) => void submit(event)} onKeyDownCapture={onKeyDown} onPasteCapture={(event) => {
+  return <form className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
+    onSubmit={(event) => void submit(event)} onKeyDownCapture={onKeyDown} onPasteCapture={(event) => {
     if (pasteGesture.current?.plain) return;
     const files = clipboardFiles(event.clipboardData);
     if (files.length) {
@@ -284,6 +290,8 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     if (files.length) { event.preventDefault(); event.stopPropagation(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
     <div className="v2-composer-surface">
+      <button className="v2-composer-compact-trigger" type="button" aria-label="展开消息编辑器" disabled={disabled}
+        onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{placeholder}</button>
       <V2MCPReferenceChips references={mcp.references} disabled={disabled} pendingIDs={[
         ...[...pendingMCP.current.values()].flat(), ...submissions.filter(({ pending, error }) => pending || Boolean(error) && !v2TurnOutcomeKnown(error))
           .flatMap(({ input }) => input.mcpReferences?.map(({ id }) => id) ?? []),
@@ -325,8 +333,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
             <input ref={attachmentPicker} type="file" multiple hidden aria-label="选择图片或文件"
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
-          {threadID && threadControls?.(Boolean(content.trim() || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
-            managedDraft?.state.conflict || managedDraft?.state.error))}
+          {threadID && threadControls?.(hasUnsentDraft)}
           {!threadID ? <label className="v2-workspace-picker">
             <span className="sr-only">工作区</span>
             <select aria-label="选择工作区" disabled={submitting || workspaces.length === 0}
