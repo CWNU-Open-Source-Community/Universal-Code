@@ -23,7 +23,7 @@ export function parseProjectHooks(value: unknown, threadID: string): ProjectHook
   for (const hook of value.hooks) {
     if (!record(hook) || typeof hook.event !== "string" || seen.has(hook.event) || typeof hook.target !== "string" || !hook.target.trim() ||
       !(hook.event === "after_edit" && hook.command_id === "format.go" ||
-        hook.event === "before_finish" && ["test.go", "test.npm"].includes(String(hook.command_id)))) throw invalid();
+        hook.event === "before_finish" && ["test.go", "test.npm", "test.node"].includes(String(hook.command_id)))) throw invalid();
     seen.add(hook.event);
   }
   return value as unknown as ProjectHooksView;

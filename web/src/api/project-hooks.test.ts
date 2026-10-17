@@ -52,3 +52,14 @@ it("requires control and rejects a changed or stale review response", async () =
     await expect(reviewProjectHooks(client, current, "trust")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   }
 });
+
+it("reads and trusts the registered native Node test action", async () => {
+  const node = { ...view, hooks: [{ event: "before_finish", command_id: "test.node", target: "." }] };
+  const fetch = vi.fn().mockResolvedValueOnce(response(node))
+    .mockResolvedValueOnce(response({ ...node, trusted: true, state: "trusted", revision: 1 }));
+  vi.stubGlobal("fetch", fetch);
+  const client = new APIClient("read", "/api/v1", "control");
+  const current = await readProjectHooks(client, "thread-1");
+  expect(current.hooks[0].command_id).toBe("test.node");
+  expect((await reviewProjectHooks(client, current, "trust")).trusted).toBe(true);
+});

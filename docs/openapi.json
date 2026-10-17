@@ -53023,7 +53023,8 @@
             "enum": [
               "format.go",
               "test.go",
-              "test.npm"
+              "test.npm",
+              "test.node"
             ],
             "maxLength": 256,
             "minLength": 1,
