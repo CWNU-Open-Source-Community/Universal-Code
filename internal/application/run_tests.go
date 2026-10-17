@@ -52,13 +52,18 @@ func mustProjectTestJSON(i toolgateway.RunTestsInput) json.RawMessage {
 
 func (s *CommandRuntimeService) PrepareProjectTest(ctx context.Context, call toolgateway.ToolCall,
 	i toolgateway.RunTestsInput) (toolgateway.CommandRuntimeInput, error) {
-	if call.Name != toolgateway.RunTestsTool || call.RequestedBy != "run_supervisor" || call.Role != domain.AgentRoleRoot {
-		return toolgateway.CommandRuntimeInput{}, apperror.New(apperror.CodePolicyDenied, "project tests require the root Supervisor")
+	root := call.RequestedBy == "run_supervisor" && call.Role == domain.AgentRoleRoot
+	worker := call.RequestedBy == "specialist_runner" && call.Role == domain.AgentRoleSpecialist && call.SpecialistToolCallID != ""
+	if call.Name != toolgateway.RunTestsTool || (!root && !worker) {
+		return toolgateway.CommandRuntimeInput{}, apperror.New(apperror.CodePolicyDenied, "project tests require recorded Supervisor or worker execution")
 	}
 	a := commandruntimeadapter.Authority{ProtocolVersion: commandruntimeadapter.OperationAuthorityVersion,
 		RunID: call.RunID, Adapter: call.CommandRuntimeAdapter, PermissionSnapshotID: call.PermissionSnapshotID,
 		PermissionGeneration: call.PermissionGeneration, PermissionRuntimeEpoch: call.PermissionRuntimeEpoch,
 		PermissionMode: call.PermissionMode, PermissionRevision: call.PermissionRevision, RunAuthorizationFence: call.RunAuthorizationFence}
+	if worker {
+		a.Worker = &commandruntimeadapter.WorkerAuthority{AgentID: call.AgentID, AttemptID: call.AgentAttemptID, SessionID: call.SessionID}
+	}
 	return s.prepareProjectTest(ctx, a, i)
 }
 

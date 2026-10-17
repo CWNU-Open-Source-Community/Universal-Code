@@ -233,7 +233,7 @@ func TestBatchDeliveryReceiptRechecksLeaseAndRunAtCommit(t *testing.T) {
 	}
 }
 
-func newBatchDeliveryStoreFixture(t *testing.T) (*SQLiteStore, domain.BatchDeliveryPlan,
+func newBatchDeliveryStoreFixture(t *testing.T, workers ...*domain.WorkerProfile) (*SQLiteStore, domain.BatchDeliveryPlan,
 	[]domain.BatchDeliveryWorkspace,
 ) {
 	t.Helper()
@@ -262,9 +262,13 @@ func newBatchDeliveryStoreFixture(t *testing.T) (*SQLiteStore, domain.BatchDeliv
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
+	var worker *domain.WorkerProfile
+	if len(workers) > 0 {
+		worker = workers[0]
+	}
 	childSpec, err := domain.NormalizeChildTaskProposalSpec(domain.ChildTaskProposalSpec{
 		Version: domain.ChildTaskProposalVersion, Tasks: []domain.ChildTask{
-			{Title: "code one", Goal: "change first directory", Skills: []string{"model.chat"},
+			{Worker: worker, Title: "code one", Goal: "change first directory", Skills: []string{"model.chat"},
 				SurfaceHint: domain.ChildTaskSurfaceHintCore,
 				TurnLimit:   2, TokenLimit: 256, TimeoutMillis: 60000,
 				ExpectedArtifacts: []domain.ChildTaskExpectedArtifact{{PathHint: "internal/one", Kind: "code"}}},

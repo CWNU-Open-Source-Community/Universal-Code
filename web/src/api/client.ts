@@ -1,3 +1,4 @@
+import { WorkflowClient } from "./workflows";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import { parseTaskSkillCandidates, type TaskSkillCandidateScope } from "./task-skill-candidates";
 import { validSkillSelectionRef } from "./project-skills";
@@ -9244,6 +9245,13 @@ export class APIClient {
     );
     return parseFanoutExecution(result);
   }
+  get workflows(): WorkflowClient {
+    return new WorkflowClient({
+      get: (path, signal) => this.get<unknown>(path, {}, signal),
+      post: (path, body, key, signal) => this.sendControl<unknown>(path, body, key, signal),
+    });
+  }
+
   async getRunChildTaskProposals(runID: string,
     signal?: AbortSignal): Promise<ChildTaskProposalsListView> {
     if (!boundedIdentity(runID)) {

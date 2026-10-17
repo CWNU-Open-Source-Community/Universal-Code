@@ -461,7 +461,9 @@ func migrationPlan() []migration {
 	previous = append(previous, migration{Version: 198, Name: "Source-bound operator-reviewed experience memory candidates", Statements: memoryCandidateStatements})
 	previous = append(previous, migration{Version: 199, Name: "Run-bound built-in Computer Use application approval scopes", Statements: computerUseAppGrantStatements})
 	return append(previous, migration{Version: 200, Name: "Per-child read scopes and cumulative tool and monetary budgets", Statements: specialistReadLimitsStatements},
-		migration{Version: 201, Name: "Bounded project test calls in Plan and Deliver", Statements: projectTestToolStatements(), DisableForeignKeys: true})
+		migration{Version: 201, Name: "Bounded project test calls in Plan and Deliver", Statements: projectTestToolStatements(), DisableForeignKeys: true},
+		migration{Version: 202, Name: "Admitted execution workers and durable child tool authority", Statements: specialistWorkerStatements(), DisableForeignKeys: true},
+		migration{Version: 203, Name: "Bounded reusable worker workflows", Statements: workflowStatements})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

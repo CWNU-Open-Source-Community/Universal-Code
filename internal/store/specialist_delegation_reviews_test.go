@@ -213,7 +213,7 @@ func TestSpecialistDelegationReviewEventRequiresExplicitNonAuthorization(t *test
 
 func TestSchemaV30ProposalSurvivesReviewMigration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "delegation-review-upgrade.db")
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	st := openCurrentTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"))
 
 	ctx := context.Background()
 	_, proposal := createDelegationReviewProposal(t, ctx, st, "v30 review migration")

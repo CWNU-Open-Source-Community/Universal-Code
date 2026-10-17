@@ -156,6 +156,16 @@ func TestSpecialistSkillContextPreparesRecoversAndCommitsMetadataOnce(t *testing
 	if err != nil || inserted {
 		t.Fatalf("model start replay was not idempotent: inserted=%t err=%v", inserted, err)
 	}
+	modelAttempt.Outcome, modelAttempt.Elapsed = llm.OutcomePermanent, time.Millisecond
+	modelAttempt.ErrorText = "fixture model failure after usage"
+	usage := llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}
+	if _, err := st.RecordSpecialistModelFailed(ctx, attemptRef(attempt), modelAttempt, &usage); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := st.PrepareSpecialistSkillContext(ctx, attemptRef(attempt), request)
+	if err != nil || !recovered.Recovered || recovered.ID != prepared.ID || recovered.SpecialistContextPreparationRequest != prepared.SpecialistContextPreparationRequest {
+		t.Fatalf("recorded usage prevented exact Skill recovery: %+v %v", recovered, err)
+	}
 	var preparationCount, commitCount int
 	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*)
 		FROM specialist_skill_context_preparations WHERE agent_attempt_id = ?`, attempt.ID).

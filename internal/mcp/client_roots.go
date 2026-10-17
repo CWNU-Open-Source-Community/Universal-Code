@@ -21,6 +21,13 @@ type WorkspaceRoot struct{ Path, Fingerprint string }
 
 type WorkspaceRootProvider func(context.Context, string, string) (WorkspaceRoot, error)
 
+// InvocationWorkspace is provided by the host for an execution worker. It is
+// never decoded from an MCP argument and is re-resolved before roots are sent.
+type InvocationWorkspace struct {
+	ScopeID string
+	Resolve func(context.Context) (WorkspaceRoot, error)
+}
+
 type clientWorkspaceRoots struct {
 	fingerprint string
 	root        WorkspaceRoot
@@ -40,8 +47,16 @@ type rootsReplyPermit struct {
 
 func (m *Manager) prepareWorkspaceRoots(ctx context.Context, record ServerRecord, runID string,
 	taskCheck func(context.Context) error,
+	workspaces ...*InvocationWorkspace,
 ) (*clientWorkspaceRoots, error) {
-	if m.workspaceRoot == nil {
+	var owned *InvocationWorkspace
+	if len(workspaces) > 0 {
+		owned = workspaces[0]
+	}
+	if owned != nil && (!validClientIdentity(owned.ScopeID) || owned.Resolve == nil) {
+		return nil, errors.New("MCP worker workspace identity is invalid")
+	}
+	if m.workspaceRoot == nil && owned == nil {
 		return nil, nil
 	}
 	if taskCheck == nil {
@@ -82,6 +97,9 @@ func (m *Manager) prepareWorkspaceRoots(ctx context.Context, record ServerRecord
 		return nil, err
 	}
 	resolve := func(ctx context.Context) (WorkspaceRoot, error) {
+		if owned != nil {
+			return owned.Resolve(ctx)
+		}
 		return m.workspaceRoot(ctx, runID, record.Descriptor.WorkspaceID)
 	}
 	root, err := resolve(ctx)

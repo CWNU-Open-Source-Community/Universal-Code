@@ -1,0 +1,11 @@
+.workflow-panel { min-width: 0; }
+.workflow-form { display: grid; gap: 10px; margin-block: 14px; max-width: 780px; }
+.workflow-form label { display: grid; gap: 5px; }
+.workflow-form input:not([type="checkbox"]), .workflow-form select, .workflow-form textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+.workflow-form textarea { resize: vertical; }
+.workflow-form .workflow-checkbox { display: flex; align-items: center; gap: 8px; }
+.workflow-form button { justify-self: start; }
+.workflow-panel pre, .workflow-form .workflow-json { font-family: var(--prayu-font-mono); font-size: 12px; line-height: 1.5; }
+.workflow-panel pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workflow-panel code { overflow-wrap: anywhere; }
+.workflow-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 10px; }

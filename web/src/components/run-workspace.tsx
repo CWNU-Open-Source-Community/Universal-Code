@@ -1,3 +1,4 @@
+import { WorkflowPanel } from "./workflow-panel";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -470,7 +471,7 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
         {tab === "receipts" && <OperationReceiptHistory client={client} runID={runID} />}
         {tab === "checkpoints" && <WorkspaceCheckpointPanel client={client} runID={runID}
           runStatus={detail.run.status} onOpenRun={onOpenRun} />}
-        {tab === "agents" && <AgentGraphPanel client={client} runID={runID} />}
+        {tab === "agents" && <div className="projection-stack"><WorkflowPanel client={client} runID={runID} runStatus={detail.run.status} /><AgentGraphPanel client={client} runID={runID} /></div>}
         {tab === "delegations" && <DelegationsPanel client={client} runID={runID} />}
         {tab === "fanout" && <FanoutPanel client={client} runID={runID} />}
         {tab === "child-tasks" && <div className="projection-stack">

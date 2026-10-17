@@ -149,7 +149,7 @@ func TestAgentCoordinatorSchemaKeepsChildCreationDisabled(t *testing.T) {
 		VALUES (?, ?, ?, ?, 'specialist', 'code', '["model.chat"]', 'ready', 1, 0,
 		1, 0, 0, 0, '', '', 1, ?, ?, NULL)`, idgen.New("agent"), run.ID, root.ID,
 		childSession.ID, ts(now), ts(now))
-	if err == nil || !strings.Contains(err.Error(), "child depth or limit") {
+	if err == nil || !strings.Contains(err.Error(), "agent child depth or active limit is invalid") {
 		t.Fatalf("schema allowed a child while root child_limit=0: %v", err)
 	}
 	var count int
@@ -440,7 +440,7 @@ func TestSpecialistAdmissionIsAtomicPrivateAndReducesSupervisorBudget(t *testing
 
 func TestSQLiteUpgradesV20ToSpecialistAdmissionLedger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v20.db")
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	st := openCurrentTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"))
 
 	ctx := context.Background()
 	_, run, err := newMigrationFixtureRunService(t, st).Create(ctx, application.CreateRunRequest{

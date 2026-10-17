@@ -10,6 +10,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/runmutation"
@@ -180,6 +181,10 @@ func (s *CommandRuntimeService) commandRuntimeAuthorityBindingsForTest(ctx conte
 		PermissionSnapshotID: a.PermissionSnapshotID, PermissionMode: a.PermissionMode, PermissionRevision: a.PermissionRevision,
 		PermissionGeneration: a.PermissionGeneration, PermissionRuntimeEpoch: a.PermissionRuntimeEpoch, RunAuthorizationFence: a.RunAuthorizationFence,
 		LeaseID: lease.LeaseID, LeaseGeneration: lease.Generation, RequestedBy: "run_supervisor", Adapter: s.adapter}
+	if a.Worker != nil {
+		scope.AgentID, scope.AgentAttemptID, scope.SessionID = a.Worker.AgentID, a.Worker.AttemptID, a.Worker.SessionID
+		scope.RequestedBy = "specialist_runner"
+	}
 	bindings, err = s.validateAuthorizedBindings(ctx, scope, false, bindings)
 	return scope, bindings, err
 }
@@ -187,6 +192,23 @@ func (s *CommandRuntimeService) commandRuntimeAuthorityBindingsForTest(ctx conte
 func commandRuntimeBindingFingerprint(b commandRuntimeBindings, adapter commandruntimeadapter.Identity) string {
 	// Lease ownership is reacquired for the same waiting turn; snapshot, actor,
 	// adapter, runtime fence and original input pins cannot be refreshed that way.
+	if b.worker != nil {
+		raw, _ := json.Marshal(struct {
+			Run, Mission, Workspace, Root                     string
+			Actor                                             domain.AgentNode
+			Binding                                           domain.SpecialistToolBinding
+			ExecutionRoot                                     string
+			ModeID, ProfileID, PermissionID                   string
+			ModeRevision, ProfileRevision, PermissionRevision int64
+			Adapter                                           commandruntimeadapter.Identity
+		}{b.run.ID, b.mission.ID, b.workspace.ID, b.root.ID,
+			// Do not pin mutable usage, status text or heartbeat fields.
+			domain.AgentNode{ID: b.actor.ID, RunID: b.actor.RunID, ParentID: b.actor.ParentID, SessionID: b.actor.SessionID, Role: b.actor.Role},
+			*b.worker, b.rootSHA256, b.mode.ID, b.profile.ID, b.permission.ID,
+			b.mode.Revision, b.profile.Revision, b.permission.Revision, adapter})
+		sum := sha256.Sum256(raw)
+		return hex.EncodeToString(sum[:])
+	}
 	raw, _ := json.Marshal(struct {
 		Run, Mission, Session, Workspace, Root, RootSHA, Mode, Profile, Permission string
 		ModeRevision, ProfileRevision, PermissionRevision                          int64
@@ -213,6 +235,20 @@ func commandRuntimeMutates(input toolgateway.CommandRuntimeInput) bool {
 
 func commandSourceMatchesScope(source commandApprovalSource, scope toolgateway.CommandRuntimeContext, bindings commandRuntimeBindings, adapter commandruntimeadapter.Identity) bool {
 	a := source.authority
+	if source.specialist != nil {
+		c := source.specialist
+		return source.started && bindings.worker != nil && a.Worker != nil &&
+			(c.Name == string(toolgateway.RunTestsTool)) == scope.ProjectTest &&
+			c.Ref == bindings.worker.Ref && c.CallID == scope.SpecialistToolCallID &&
+			c.Ref.AgentID == scope.AgentID && c.Ref.AttemptID == scope.AgentAttemptID &&
+			c.ChargeID == scope.InvocationID && source.sessionID == scope.SessionID &&
+			source.workspaceID == scope.WorkspaceID &&
+			a.Worker.AgentID == scope.AgentID && a.Worker.AttemptID == scope.AgentAttemptID && a.Worker.SessionID == scope.SessionID &&
+			a.Adapter.SameBackend(adapter) && a.ScopeFingerprint == commandRuntimeBindingFingerprint(bindings, adapter) &&
+			a.PermissionSnapshotID == scope.PermissionSnapshotID && a.PermissionMode == bindings.permission.Mode &&
+			a.PermissionGeneration == scope.PermissionGeneration && a.PermissionRuntimeEpoch == scope.PermissionRuntimeEpoch &&
+			a.RunAuthorizationFence == scope.RunAuthorizationFence && SpecialistCommandOperationKey(*c) == scope.OperationKey
+	}
 	return source.started && (source.call.ToolName == string(toolgateway.RunTestsTool)) == scope.ProjectTest && source.call.AgentID == scope.AgentID && source.call.AgentAttemptID == scope.AgentAttemptID &&
 		source.run.SessionID == scope.SessionID && source.workspaceID == scope.WorkspaceID &&
 		a.Adapter.SameBackend(adapter) && a.ScopeFingerprint == commandRuntimeBindingFingerprint(bindings, adapter) &&
@@ -222,20 +258,29 @@ func commandSourceMatchesScope(source commandApprovalSource, scope toolgateway.C
 }
 
 func (s *CommandRuntimeService) checkPreparedCommandCall(ctx context.Context, scope toolgateway.CommandRuntimeContext, bindings commandRuntimeBindings, input toolgateway.CommandRuntimeInput) error {
-	if !bindings.permission.Mode.IsApprovalMode() || scope.RequestedBy != "run_supervisor" {
+	if !bindings.permission.Mode.IsApprovalMode() || (scope.RequestedBy != "run_supervisor" && scope.RequestedBy != "specialist_runner") {
 		return nil
 	}
 	st, ok := s.store.(commandApprovalStore)
-	if !ok || scope.SupervisorToolCallID == "" {
+	if !ok || (scope.SupervisorToolCallID == "" && scope.SpecialistToolCallID == "") {
 		return errors.New("command runtime prepared call is required")
 	}
-	source, err := readCommandApprovalSource(ctx, st, scope.RunID, scope.SupervisorToolCallID)
+	sourceID := scope.SupervisorToolCallID
+	if scope.RequestedBy == "specialist_runner" {
+		sourceID = domain.SpecialistToolApprovalID(domain.AgentAttemptRef{RunID: scope.RunID, AgentID: scope.AgentID, AttemptID: scope.AgentAttemptID}, scope.SpecialistToolCallID)
+	}
+	source, err := readCommandApprovalSource(ctx, st, scope.RunID, sourceID)
 	if err != nil {
 		return err
 	}
 	raw, err := json.Marshal(input)
 	if err != nil || !bytes.Equal(raw, mustCommandInputJSON(source.input)) || !commandSourceMatchesScope(source, scope, bindings, s.adapter) {
 		return errors.New("command runtime prepared call differs from dispatch")
+	}
+	if source.specialist != nil {
+		if err := s.validateWorkerCommandDispatch(ctx, scope, source); err != nil {
+			return err
+		}
 	}
 	_, err = s.BindCommandToolAuthority(ctx, toolgateway.ToolName(source.call.ToolName), json.RawMessage(source.call.AuthorityJSON), json.RawMessage(source.call.PayloadJSON))
 	if err == nil && !commandRuntimeMutates(input) {

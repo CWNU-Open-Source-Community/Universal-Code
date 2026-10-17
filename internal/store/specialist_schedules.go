@@ -79,8 +79,17 @@ func (s *SQLiteStore) StartSpecialistSchedule(ctx context.Context,
 			if existing.Schedule.RunID != start.RunID || existing.Schedule.MaxRounds != start.MaxRounds || !slices.Equal(existing.Schedule.AgentIDs, start.AgentIDs) {
 				return domain.SpecialistScheduleStartResult{}, apperror.New(apperror.CodeConflict, "Specialist continuation intent changed")
 			}
-			if existing.Schedule.Status.Terminal() && existing.Schedule.Status != domain.SpecialistScheduleAbandoned {
+			if existing.Schedule.Status.Terminal() && existing.Schedule.Status != domain.SpecialistScheduleAbandoned && existing.Schedule.StopReason != "waiting_approval" {
 				return domain.SpecialistScheduleStartResult{Schedule: existing.Schedule}, tx.Commit()
+			}
+			if existing.Schedule.StopReason == "waiting_approval" {
+				var pending bool
+				if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM specialist_schedule_agents target JOIN agent_nodes n ON n.id=target.agent_id JOIN specialist_tool_calls c ON c.agent_attempt_id=n.active_attempt_id JOIN tool_approvals p ON p.id=c.approval_id WHERE target.schedule_id=? AND c.status='pending' AND c.started_at IS NULL AND p.status='pending')`, existing.Schedule.ID).Scan(&pending); err != nil {
+					return domain.SpecialistScheduleStartResult{}, err
+				}
+				if pending {
+					return domain.SpecialistScheduleStartResult{Schedule: existing.Schedule}, tx.Commit()
+				}
 			}
 		}
 	}

@@ -48,6 +48,12 @@ type CaptureRequest struct {
 	SourceID    string
 	ToolName    string
 	Outputs     []Output
+	// Child outputs retain the exact in-flight host-issued invocation, even
+	// when SourceID identifies an owned background command Job.
+	AgentID              string
+	AgentAttemptID       string
+	SpecialistToolCallID string
+	InvocationID         string
 }
 
 func NormalizeCaptureRequest(request CaptureRequest) (CaptureRequest, error) {
@@ -56,9 +62,15 @@ func NormalizeCaptureRequest(request CaptureRequest) (CaptureRequest, error) {
 	request.WorkspaceID = strings.TrimSpace(request.WorkspaceID)
 	request.SourceID = strings.TrimSpace(request.SourceID)
 	request.ToolName = strings.TrimSpace(request.ToolName)
+	request.AgentID = strings.TrimSpace(request.AgentID)
+	request.AgentAttemptID = strings.TrimSpace(request.AgentAttemptID)
+	request.SpecialistToolCallID = strings.TrimSpace(request.SpecialistToolCallID)
+	request.InvocationID = strings.TrimSpace(request.InvocationID)
 	for label, value := range map[string]string{
 		"run id": request.RunID, "session id": request.SessionID, "workspace id": request.WorkspaceID,
 		"source id": request.SourceID, "tool name": request.ToolName,
+		"agent id": request.AgentID, "agent attempt id": request.AgentAttemptID,
+		"specialist tool call id": request.SpecialistToolCallID, "invocation id": request.InvocationID,
 	} {
 		if !utf8.ValidString(value) || strings.TrimSpace(value) != value || len([]rune(value)) > MaxIdentityRunes {
 			return CaptureRequest{}, fmt.Errorf("artifact %s must be normalized and bounded UTF-8", label)
@@ -66,6 +78,11 @@ func NormalizeCaptureRequest(request CaptureRequest) (CaptureRequest, error) {
 	}
 	if request.RunID == "" || request.SessionID == "" || request.SourceID == "" || request.ToolName == "" {
 		return CaptureRequest{}, errors.New("artifact Run, Session, source, and tool identities are required")
+	}
+	if request.AgentID != "" || request.AgentAttemptID != "" || request.SpecialistToolCallID != "" || request.InvocationID != "" {
+		if request.AgentID == "" || request.AgentAttemptID == "" || request.SpecialistToolCallID == "" || request.InvocationID == "" {
+			return CaptureRequest{}, errors.New("child artifact capture requires its complete invocation identity")
+		}
 	}
 	if len(request.Outputs) == 0 || len(request.Outputs) > 2 {
 		return CaptureRequest{}, errors.New("artifact capture requires one or two output streams")

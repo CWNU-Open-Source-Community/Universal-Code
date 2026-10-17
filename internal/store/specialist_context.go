@@ -35,10 +35,6 @@ func (s *SQLiteStore) PrepareSpecialistContext(ctx context.Context,
 	if err != nil {
 		return domain.SpecialistContextBatch{}, err
 	}
-	if attempt.UsageRecordedAt != nil {
-		return domain.SpecialistContextBatch{}, apperror.New(apperror.CodeFailedPrecondition,
-			"Specialist context must be prepared before model usage is recorded")
-	}
 	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
@@ -76,6 +72,10 @@ func (s *SQLiteStore) PrepareSpecialistContext(ctx context.Context,
 			return domain.SpecialistContextBatch{}, err
 		}
 		return batch, nil
+	}
+	if attempt.UsageRecordedAt != nil {
+		return domain.SpecialistContextBatch{}, apperror.New(apperror.CodeFailedPrecondition,
+			"Specialist context must be prepared before model usage is recorded")
 	}
 	now := time.Now().UTC()
 	superseded, err := supersedeSpecialistContextDeliveriesTx(ctx, tx, run, child.ID,

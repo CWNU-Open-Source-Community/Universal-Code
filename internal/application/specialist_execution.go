@@ -20,6 +20,24 @@ type SpecialistExecutionService struct {
 	checker        policy.Checker
 	drydocks       *RunWorktreeService
 	summaryHandoff RunWakeExecutionHandoff
+	workerRuntime  *AgentRunner
+}
+
+func (s *SpecialistExecutionService) WithExecutionRuntime(runtime *RunExecutionHandoffService) *SpecialistExecutionService {
+	if runtime != nil {
+		s.workerRuntime = runtime.supervisor
+	}
+	return s
+}
+
+func (s *SpecialistExecutionService) WithWorkerRuntime(runtime *AgentRunner) *SpecialistExecutionService {
+	s.workerRuntime = runtime
+	return s
+}
+
+func (r *SubagentRunner) WithWorkerRuntime(runtime *AgentRunner) *SubagentRunner {
+	r.workerRuntime = runtime
+	return r
 }
 
 func (s *SpecialistExecutionService) WithCompletionSummary(handoff RunWakeExecutionHandoff) *SpecialistExecutionService {
@@ -43,7 +61,17 @@ func (s *SpecialistExecutionService) RevokeSpecialistReadTools(ctx context.Conte
 	if !ok {
 		return domain.AgentNode{}, apperror.New(apperror.CodeFailedPrecondition, "child read revocation is unavailable")
 	}
-	return st.RevokeSpecialistReadTools(ctx, runID, agentID)
+	before, err := s.store.GetAgentNode(ctx, agentID)
+	if err != nil {
+		return domain.AgentNode{}, err
+	}
+	node, err := st.RevokeSpecialistReadTools(ctx, runID, agentID)
+	if err == nil && before.Worker != nil && before.ActiveAttemptID != "" && s.workerRuntime != nil {
+		// Approval waits deliberately retain owned resources after yielding. There
+		// is no remaining runner to close them once their authority is revoked.
+		s.workerRuntime.closeWorkerResources(domain.AgentAttemptRef{RunID: runID, AgentID: agentID, AttemptID: before.ActiveAttemptID})
+	}
+	return node, err
 }
 
 type ExecuteSpecialistRequest struct {
@@ -58,6 +86,7 @@ func (s *SpecialistExecutionService) ExecuteSpecialist(ctx context.Context, requ
 	}
 	runner := NewSubagentRunner(s.store, s.router, s.checker)
 	runner.WithRunWorktree(s.drydocks)
+	runner.WithWorkerRuntime(s.workerRuntime)
 	runner.operationKey = key
 	if request.WorkspaceTools {
 		runner.WithWorkspaceTools()
@@ -94,7 +123,11 @@ func (r *SubagentRunner) operationReplay(ctx context.Context, result *Specialist
 		binding, e := st.GetSpecialistToolBinding(ctx, specialistAttemptRef(attempt))
 		toolMode = e == nil && binding.Mode != ""
 	}
-	if toolMode != r.workspaceTools && attempt.UsageRecordedAt != nil {
+	child, err := r.store.GetAgentNode(ctx, result.AgentID)
+	if err != nil {
+		return false, err
+	}
+	if toolMode != (r.workspaceTools || child.Worker != nil) && attempt.UsageRecordedAt != nil {
 		return false, apperror.New(apperror.CodeConflict, "child operation key was used with a different tool profile")
 	}
 	result.AttemptID = attempt.ID

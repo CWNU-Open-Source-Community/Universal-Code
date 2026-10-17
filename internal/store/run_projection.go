@@ -185,7 +185,7 @@ func projectFileEditWithAuthorizationSourceTx(ctx context.Context, tx *sql.Tx,
 		payload["destination_original_hash"] = edit.DestinationOriginalHash
 		payload["destination_proposed_hash"] = edit.DestinationProposedHash
 	}
-	return appendRunEventForSessionTx(ctx, tx, edit.SessionID, eventType, "fileedit_store", edit.ID, payload)
+	return appendFileEditRunEventForSessionTx(ctx, tx, edit.SessionID, eventType, "fileedit_store", edit.ID, payload)
 }
 
 func fileEditEventType(status string) (string, bool) {

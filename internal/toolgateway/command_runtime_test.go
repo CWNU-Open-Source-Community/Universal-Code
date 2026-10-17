@@ -235,6 +235,39 @@ func TestCommandRuntimeGatewayAuditsEveryCommandBeforeDenyingBatch(t *testing.T)
 	}
 }
 
+func TestCommandRuntimeWorkerContextRequiresItsOwnIntent(t *testing.T) {
+	scope := CommandRuntimeContext{InvocationID: "charge-worker", OperationKey: "child-operation", RunID: "run-worker",
+		MissionID: "mission-worker", RootAgentID: "root-worker", AgentID: "child-worker", AgentAttemptID: "child-attempt",
+		SessionID: "child-session", WorkspaceID: "workspace-worker", LeaseID: "lease-worker", LeaseGeneration: 1,
+		RequestedBy: "specialist_runner", SpecialistToolCallID: "provider-call", Surface: domain.ExecutionSurfaceCode,
+		Phase: domain.ExecutionPhaseDeliver, Role: domain.AgentRoleSpecialist, Profile: domain.ProfileCode,
+		ModeRevision: 1, PermissionRevision: 1, PermissionMode: domain.RunExecutionPermissionAuto, PermissionSnapshotID: "permission-worker",
+		Adapter: commandruntimeadapter.HostUnsandboxed(strings.Repeat("a", 64)), CapabilityGeneration: strings.Repeat("a", 64),
+		PolicyDecision: Decision{Allowed: true, Approval: ApprovalAutomatic, Risk: "low", Reason: "recorded child intent"}}
+	if err := scope.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if actor := scope.Attribution(); actor.Source != domain.AgentAttributionRecorded || actor.AgentID != scope.AgentID || actor.AgentAttemptID != scope.AgentAttemptID {
+		t.Fatalf("child attribution changed: %+v", actor)
+	}
+	for name, mutate := range map[string]func(*CommandRuntimeContext){
+		"missing recorded child call": func(c *CommandRuntimeContext) { c.SpecialistToolCallID = "" },
+		"root masquerade":             func(c *CommandRuntimeContext) { c.AgentID = c.RootAgentID },
+		"wrong actor role":            func(c *CommandRuntimeContext) { c.Role = domain.AgentRoleRoot },
+		"supervisor source":           func(c *CommandRuntimeContext) { c.SupervisorToolCallID = "root-call" },
+		"root dispatcher":             func(c *CommandRuntimeContext) { c.RequestedBy = "run_supervisor" },
+		"missing child attempt":       func(c *CommandRuntimeContext) { c.AgentAttemptID = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := scope
+			mutate(&invalid)
+			if invalid.Validate() == nil {
+				t.Fatal("partial or relabelled worker authority was accepted")
+			}
+		})
+	}
+}
+
 func commandRuntimeValidPayload(script string) json.RawMessage {
 	payload, _ := json.Marshal(CommandRuntimeInput{
 		Version: CommandRuntimeToolProtocolVersion, Action: CommandRuntimeActionRun,

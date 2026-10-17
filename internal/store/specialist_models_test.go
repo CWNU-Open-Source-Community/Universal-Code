@@ -531,7 +531,7 @@ func TestSpecialistModelSQLiteTriggersRejectSkippedAndStaleTerminalWrites(t *tes
 
 func TestSchemaV26PreservesSpecialistRuntimeAndAddsModelLedger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v25.db")
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	st := openCurrentTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"))
 
 	ctx := context.Background()
 	fixture := prepareSpecialistAttemptFixtureWithoutLease(t, ctx, st,
@@ -564,7 +564,7 @@ func TestSchemaV26PreservesSpecialistRuntimeAndAddsModelLedger(t *testing.T) {
 
 func TestSchemaV28PreservesV27SpecialistModelLedger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v27.db")
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	st := openCurrentTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"))
 
 	ctx := context.Background()
 	fixture := prepareSpecialistAttemptFixture(t, ctx, st,

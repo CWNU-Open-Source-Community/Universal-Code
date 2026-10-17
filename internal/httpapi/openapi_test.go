@@ -494,6 +494,7 @@ func (c openAPIThreadPullRequestController) ImportCredential(ctx context.Context
 
 func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture := newAPIFixture(t)
+	workflowController, workflowRun, workflowDefinition, workflowExecution := prepareOpenAPIWorkflowTarget(t, fixture)
 	fixture.api.skillCatalogController = application.NewSkillCatalogService(fixture.store, nil)
 	fixture.api.skillCatalogControlEnabled = true
 	fixture.api.chatGPTAuthEnabled = true
@@ -1182,6 +1183,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"{artifact_id}":       fixture.artifactID,
 		"{report_id}":         "report-openapi-missing-0001",
 		"{execution_id}":      "fanout-execution-openapi-missing-0001",
+		"{definition_id}":     workflowDefinition.ID,
 		"{approval_id}":       approvalRecord.ID,
 		"{proposal_id}":       "controlled-command-proposal-openapi",
 		"{batch_delivery_id}": "batch-openapi-missing-0001",
@@ -1208,6 +1210,10 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		requestPath := spec.Path
 		for placeholder, value := range replacements {
 			requestPath = strings.ReplaceAll(requestPath, placeholder, value)
+		}
+		if strings.HasPrefix(spec.Path, "/api/v1/runs/{run_id}/workflows") {
+			requestPath = strings.ReplaceAll(requestPath, fixture.run.ID, workflowRun.ID)
+			requestPath = strings.ReplaceAll(requestPath, replacements["{execution_id}"], workflowExecution.ID)
 		}
 		if spec.Path == SessionSteeringRevisionPathTemplate || spec.Path == SessionSteeringRevisionObservationPathTemplate {
 			requestPath = strings.ReplaceAll(requestPath, steering.Message.ID, revisionSteering.Message.ID)
@@ -1401,7 +1407,33 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				response = previewConfigurationRequest(fixture.api, testAccessToken, `{"workspace_id":"`+fixture.workspace.ID+`"}`)
 			} else if spec.Control {
 				body := `{"profile":"docker"}`
-				if spec.OperationID == "selectProjectSkills" || spec.OperationID == "selectInstalledSkills" {
+				if spec.OperationID == "saveWorkflowDefinition" {
+					encoded, err := json.Marshal(workflowDefinition.Spec)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body = string(encoded)
+				} else if spec.OperationID == "startRunWorkflow" {
+					body = `{"version":"workflow_start.v1","definition_id":"` + workflowDefinition.ID + `","inputs":{},"confirm_start":true}`
+				} else if strings.HasPrefix(spec.Path, "/api/v1/runs/{run_id}/workflows/{execution_id}/") {
+					// Each control receives its own state so route ordering cannot
+					// change the revision or accidentally dispatch a model turn.
+					execution, err := workflowController.Start(t.Context(), application.StartWorkflowRequest{
+						RunID: workflowRun.ID, DefinitionID: workflowDefinition.ID,
+						OperationKey: "openapi-workflow-target-" + spec.OperationID,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if spec.OperationID == "advanceRunWorkflow" || spec.OperationID == "resumeRunWorkflow" {
+						execution, err = workflowController.Pause(t.Context(), execution.ID, execution.Version)
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
+					requestPath = strings.ReplaceAll(requestPath, workflowExecution.ID, execution.ID)
+					body = fmt.Sprintf(`{"version":"workflow_control.v1","revision":%d,"confirm_start":true}`, execution.Version)
+				} else if spec.OperationID == "selectProjectSkills" || spec.OperationID == "selectInstalledSkills" {
 					body = `{"refs":["` + projectSkillRef + `"],"confirm_untrusted_context":false}`
 				} else if spec.OperationID == "executeRunSpecialist" {
 					body = `{"version":"specialist_tools.v1","operation_key":"openapi-child-execute-0001","workspace_tools":true,"confirm_execute":true}`

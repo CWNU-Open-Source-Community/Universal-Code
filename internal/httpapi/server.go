@@ -382,6 +382,7 @@ type Config struct {
 	PriceSnapshotController               PriceSnapshotController
 	FanoutExecutionController             FanoutExecutionController
 	ChildTaskControlController            ChildTaskControlController
+	WorkflowController                    WorkflowController
 	SpecialistExecutionController         SpecialistExecutionController
 	ProviderCredentialController          ProviderCredentialController
 	ChatGPTAuthController                 ChatGPTAuthController
@@ -492,6 +493,7 @@ type API struct {
 	priceSnapshotController               PriceSnapshotController
 	fanoutExecutionController             FanoutExecutionController
 	childTaskControlController            ChildTaskControlController
+	workflowController                    WorkflowController
 	specialistExecutionController         SpecialistExecutionController
 	providerCredentialController          ProviderCredentialController
 	chatGPTAuthController                 ChatGPTAuthController
@@ -954,6 +956,7 @@ func New(store Store, config Config) (*API, error) {
 		priceSnapshotController:             config.PriceSnapshotController,
 		fanoutExecutionController:           config.FanoutExecutionController,
 		childTaskControlController:          config.ChildTaskControlController,
+		workflowController:                  config.WorkflowController,
 		specialistExecutionController:       config.SpecialistExecutionController,
 		providerCredentialController:        config.ProviderCredentialController,
 		chatGPTAuthController:               config.ChatGPTAuthController,
@@ -1485,6 +1488,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, executionID, matched := matchFanoutExecutionCancelPath(request.URL.Path); matched {
 		a.serveFanoutExecutionCancel(tracked, request, requestID, runID, executionID)
+		return
+	}
+	if runID, id, action, matched := matchWorkflowPath(request.URL.Path); matched {
+		a.serveWorkflow(tracked, request, requestID, runID, id, action)
 		return
 	}
 	if runID, proposalID, matched := matchChildTaskProposalReviewPath(request.URL.Path); matched {

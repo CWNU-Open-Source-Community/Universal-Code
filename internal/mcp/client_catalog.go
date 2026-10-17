@@ -18,7 +18,7 @@ var errStaleCatalog = apperror.New(apperror.CodeConflict, "MCP catalog changed; 
 
 func staleCatalogError() error { return errStaleCatalog }
 
-type catalogSessionKey struct{ run, workspace, server string }
+type catalogSessionKey struct{ run, workspace, server, scope string }
 type catalogRefreshFailure struct{ cause error }
 type catalogStoreFailure struct{ cause error }
 
@@ -52,6 +52,7 @@ type catalogSession struct {
 	fault       chan catalogFault
 	checkMu     sync.RWMutex
 	check       func(context.Context) error
+	workspace   *InvocationWorkspace
 	revoked     <-chan struct{}
 	changed     chan struct{}
 	done        chan struct{}
@@ -118,11 +119,29 @@ func (s *catalogSession) boundTaskCheck() func(context.Context) error {
 // check must re-read current task authority, and must not capture a one-shot tool
 // approval. Searches can use Capabilities without reconnecting every page.
 func (m *Manager) RefreshCapabilities(ctx context.Context, runID, workspaceID string, check func(context.Context) error, revoked <-chan struct{}) (ScopedCapabilities, error) {
+	return m.refreshCapabilities(ctx, runID, workspaceID, check, revoked, nil)
+}
+
+func (m *Manager) RefreshWorkerCapabilities(ctx context.Context, runID, workspaceID string, check func(context.Context) error, revoked <-chan struct{}, owned *InvocationWorkspace) (ScopedCapabilities, error) {
+	if owned == nil || !validClientIdentity(owned.ScopeID) || owned.Resolve == nil {
+		return ScopedCapabilities{}, errors.New("MCP worker catalog requires its host workspace")
+	}
+	return m.refreshCapabilities(ctx, runID, workspaceID, check, revoked, owned)
+}
+
+func (m *Manager) refreshCapabilities(ctx context.Context, runID, workspaceID string, check func(context.Context) error, revoked <-chan struct{}, owned *InvocationWorkspace) (ScopedCapabilities, error) {
+	closeScope := func() {
+		if owned != nil {
+			m.CloseWorkspaceScope(runID, owned.ScopeID)
+		} else {
+			m.CloseRun(runID)
+		}
+	}
 	if !validClientIdentity(runID) || !validClientIdentity(workspaceID) || check == nil {
 		return ScopedCapabilities{}, errors.New("MCP catalog task scope is invalid")
 	}
 	if err := check(ctx); err != nil {
-		m.CloseRun(runID)
+		closeScope()
 		return ScopedCapabilities{}, err
 	}
 	if err := m.EnsureComputerUse(ctx, workspaceID); err != nil {
@@ -139,7 +158,10 @@ func (m *Manager) RefreshCapabilities(ctx context.Context, runID, workspaceID st
 		if record.State != TrustEnabled || record.Health == HealthConnecting || !scopeMatches(record.Descriptor, runID, workspaceID) {
 			continue
 		}
-		key := catalogSessionKey{runID, workspaceID, record.Descriptor.ID}
+		key := catalogSessionKey{run: runID, workspace: workspaceID, server: record.Descriptor.ID}
+		if owned != nil {
+			key.scope = owned.ScopeID
+		}
 		s, err := m.session(key)
 		if err != nil {
 			return ScopedCapabilities{}, err
@@ -170,6 +192,7 @@ func (m *Manager) RefreshCapabilities(ctx context.Context, runID, workspaceID st
 		}
 		s.checkMu.Lock()
 		s.check = check
+		s.workspace = owned
 		s.revoked = revoked
 		s.checkMu.Unlock()
 		select {
@@ -184,7 +207,7 @@ func (m *Manager) RefreshCapabilities(ctx context.Context, runID, workspaceID st
 		}
 	}
 	if err := check(ctx); err != nil {
-		m.CloseRun(runID)
+		closeScope()
 		return ScopedCapabilities{}, err
 	}
 	return m.Capabilities(ctx, runID, workspaceID)
@@ -204,7 +227,10 @@ func (m *Manager) refreshTaskCatalog(ctx context.Context, key catalogSessionKey,
 		s.stop()
 		return &catalogRefreshFailure{cause: apperror.New(apperror.CodePolicyDenied, "MCP server is no longer enabled for this task")}
 	}
-	_, err = m.invokeResolved(ctx, InvokeRequest{RunID: key.run, WorkspaceID: key.workspace, ServerID: key.server,
+	s.checkMu.RLock()
+	owned := s.workspace
+	s.checkMu.RUnlock()
+	_, err = m.invokeResolved(ctx, InvokeRequest{RunID: key.run, WorkspaceID: key.workspace, ServerID: key.server, Workspace: owned,
 		CapabilityFingerprint: record.Capabilities.Fingerprint, OperationID: idgen.New("mcp-catalog"), catalogCheck: check}, record)
 	if err != nil {
 		if checkErr := check(ctx); checkErr != nil {
@@ -304,6 +330,12 @@ func (m *Manager) closeSessions(match func(catalogSessionKey) bool) {
 }
 func (m *Manager) CloseRun(runID string) {
 	m.closeSessions(func(k catalogSessionKey) bool { return k.run == runID })
+}
+
+func (m *Manager) CloseWorkspaceScope(runID, scopeID string) {
+	if scopeID != "" {
+		m.closeSessions(func(k catalogSessionKey) bool { return k.run == runID && k.scope == scopeID })
+	}
 }
 func (m *Manager) Close() error {
 	m.sessionsMu.Lock()

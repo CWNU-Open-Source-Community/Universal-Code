@@ -17,6 +17,7 @@ const (
 	AgentGraphProtocolVersion   = "agent_graph.v1"
 	MaxAgentIdentityRunes       = 256
 	MaxAgentNodesPerRun         = 3
+	MaxAgentHistoryNodesPerRun  = 257
 	MaxAgentChildren            = 2
 	MaxAgentDepth               = 1
 	MaxAgentSkills              = 16
@@ -28,7 +29,7 @@ const (
 	MaxAgentMessagePayloadBytes = 16 * 1024
 	MinAgentOperationKeyBytes   = 16
 	MaxAgentOperationKeyBytes   = 256
-	MaxAgentGraphSnapshotBytes  = 128 * 1024
+	MaxAgentGraphSnapshotBytes  = 2 * 1024 * 1024
 	MaxAgentGraphSnapshots      = 32
 )
 
@@ -95,11 +96,12 @@ type AgentDependencyPayload struct {
 }
 
 type AgentNode struct {
-	ToolCallsUsed    int64    `json:"tool_calls_used"`
-	CostUsedMicros   int64    `json:"cost_used_micros"`
-	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
-	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	Worker           *WorkerProfile `json:"worker,omitempty"`
+	ToolCallsUsed    int64          `json:"tool_calls_used"`
+	CostUsedMicros   int64          `json:"cost_used_micros"`
+	AllowedReadPaths []string       `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64          `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64          `json:"cost_limit_micros,omitempty"`
 	ID               string
 	RunID            string
 	ParentID         string
@@ -226,6 +228,9 @@ func (a AgentNode) CanTransition(to AgentStatus) bool {
 }
 
 func (a AgentNode) Validate() error {
+	if err := a.Worker.Validate(); err != nil {
+		return err
+	}
 	if err := ValidateSpecialistReadLimits(a.AllowedReadPaths, a.ToolCallLimit, a.CostLimitMicros); err != nil {
 		return err
 	}
@@ -392,10 +397,10 @@ func (s AgentGraphSnapshot) Validate() error {
 	if s.Version <= 0 || s.ProtocolVersion != AgentGraphProtocolVersion {
 		return errors.New("agent graph snapshot version is invalid")
 	}
-	if s.NodeCount <= 0 || s.NodeCount > MaxAgentNodesPerRun {
-		return fmt.Errorf("agent graph snapshot node count must be between 1 and %d", MaxAgentNodesPerRun)
+	if s.NodeCount <= 0 || s.NodeCount > MaxAgentHistoryNodesPerRun {
+		return fmt.Errorf("agent graph snapshot node count must be between 1 and %d", MaxAgentHistoryNodesPerRun)
 	}
-	if s.PendingMessageCount < 0 || s.PendingMessageCount > MaxAgentInboxMessages*MaxAgentNodesPerRun {
+	if s.PendingMessageCount < 0 || s.PendingMessageCount > MaxAgentInboxMessages*MaxAgentHistoryNodesPerRun {
 		return errors.New("agent graph snapshot pending message count is invalid")
 	}
 	if len([]byte(s.StateJSON)) == 0 || len([]byte(s.StateJSON)) > MaxAgentGraphSnapshotBytes || !json.Valid([]byte(s.StateJSON)) {
@@ -411,7 +416,7 @@ func (g AgentGraph) Validate() error {
 	if !validAgentIdentity(g.RunID, false) || !validAgentIdentity(g.RootAgentID, false) {
 		return errors.New("agent graph run and root identities are required")
 	}
-	if len(g.Nodes) == 0 || len(g.Nodes) > MaxAgentNodesPerRun {
+	if len(g.Nodes) == 0 || len(g.Nodes) > MaxAgentHistoryNodesPerRun {
 		return errors.New("agent graph node count is invalid")
 	}
 	foundRoot := false

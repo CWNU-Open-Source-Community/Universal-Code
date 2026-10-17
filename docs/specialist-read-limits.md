@@ -1,5 +1,8 @@
 # Scoped read-only Specialists
 
+This page describes legacy/scoped readers (`worker` omitted). For admitted
+execution workers and saved orchestration, see [execution workers](execution-workers.md).
+
 Schema v200 stores each child's `allowed_read_paths`, `tool_call_limit`, and
 `cost_limit_micros` at admission. The specialist-delegation and child-task proposal
 schemas accept these optional fields; operator review and admission still precede

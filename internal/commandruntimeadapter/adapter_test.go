@@ -86,3 +86,28 @@ func TestCommandRuntimeAuthorityBindsOptionalLiveFullAccessGrant(t *testing.T) {
 		t.Fatal("partial live Full Access grant authority was accepted")
 	}
 }
+
+func TestCommandRuntimeWorkerAuthorityPreservesActor(t *testing.T) {
+	authority := Authority{ProtocolVersion: OperationAuthorityVersion, RunID: "run-worker",
+		Adapter: HostUnsandboxed("host-generation-1"), PermissionMode: domain.RunExecutionPermissionAuto,
+		PermissionSnapshotID: "permission-worker", PermissionRevision: 1,
+		Worker: &WorkerAuthority{AgentID: "child-worker", AttemptID: "attempt-worker", SessionID: "session-worker"}}
+	encoded, err := EncodeAuthority(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeAuthority(encoded)
+	if err != nil || !reflect.DeepEqual(decoded, authority) {
+		t.Fatalf("worker authority=%+v err=%v", decoded, err)
+	}
+	invalid := authority
+	invalid.Worker = &WorkerAuthority{AgentID: authority.Worker.AgentID, SessionID: authority.Worker.SessionID}
+	if invalid.Validate() == nil {
+		t.Fatal("worker authority accepted a missing original attempt")
+	}
+	legacy := NewAuthority("run-worker", authority.Adapter)
+	legacy.Worker = authority.Worker
+	if legacy.Validate() == nil {
+		t.Fatal("legacy authority accepted child execution")
+	}
+}

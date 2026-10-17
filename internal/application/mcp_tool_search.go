@@ -52,6 +52,11 @@ func (e *MCPClientToolExecutor) SearchMCP(ctx context.Context, scope toolgateway
 	if err := e.recheckMCPSearchScope(ctx, scope); err != nil {
 		return nil, err
 	}
+	if scope.RequestedBy == "specialist_runner" {
+		if err := e.checkWorkerMCPSearch(ctx, scope, request); err != nil {
+			return nil, err
+		}
+	}
 	catalog, err := e.client.Capabilities(ctx, scope.RunID, scope.WorkspaceID)
 	if err != nil {
 		return nil, apperror.Normalize(err)
@@ -63,7 +68,44 @@ func (e *MCPClientToolExecutor) SearchMCP(ctx context.Context, scope toolgateway
 	if err := e.recheckMCPSearchScope(ctx, scope); err != nil {
 		return nil, err
 	}
+	if scope.RequestedBy == "specialist_runner" {
+		if err := e.checkWorkerMCPSearch(ctx, scope, request); err != nil {
+			return nil, err
+		}
+	}
 	return page, nil
+}
+
+func (e *MCPClientToolExecutor) checkWorkerMCPSearch(ctx context.Context, scope toolgateway.MCPExecutionScope, request toolgateway.MCPSearchPayload) error {
+	st, ok := e.store.(workerToolSourceStore)
+	if !ok {
+		return errors.New("worker MCP search source is unavailable")
+	}
+	ref := domain.AgentAttemptRef{RunID: scope.RunID, AgentID: scope.AgentID, AttemptID: scope.AgentAttemptID}
+	if _, err := readWorkerExecutionContext(ctx, e.store, ref, e.drydocks); err != nil {
+		return err
+	}
+	c, err := st.GetSpecialistToolCall(ctx, ref, scope.SpecialistToolCallID)
+	if err != nil {
+		return err
+	}
+	a, err := mcp.DecodeSupervisorCallAuthority(json.RawMessage(c.AuthorityJSON))
+	if err != nil {
+		return err
+	}
+	if a.Version != mcp.SupervisorCatalogAuthorityVersion || a.MissionID != scope.MissionID || a.WorkspaceID != scope.WorkspaceID || a.PermissionMode != scope.PermissionMode || a.PermissionSnapshotID != scope.PermissionSnapshotID || a.PermissionRevision != scope.PermissionRevision || a.PermissionGeneration != scope.PermissionGeneration || a.PermissionRuntimeEpoch != scope.PermissionRuntimeEpoch || a.RunAuthorizationFence != scope.RunAuthorizationFence {
+		return errors.New("worker MCP search authority changed")
+	}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	canonical, err := toolgateway.NormalizeSupervisorToolPayload(toolgateway.MCPToolSearchTool, raw)
+	if err != nil {
+		return err
+	}
+	_, err = st.ValidateSpecialistToolSource(ctx, domain.SpecialistToolSource{Ref: ref, CallID: c.CallID, SessionID: scope.SessionID, WorkspaceID: scope.WorkspaceID, Name: string(toolgateway.MCPToolSearchTool), PayloadJSON: string(canonical), AuthorityJSON: c.AuthorityJSON, ChargeID: scope.InvocationID, LeaseID: scope.LeaseID, LeaseGeneration: scope.LeaseGeneration, RequireStarted: true})
+	return err
 }
 
 func (e *MCPClientToolExecutor) recheckMCPSearchScope(ctx context.Context, scope toolgateway.MCPExecutionScope) error {

@@ -43,13 +43,13 @@ type fileEditWorkspaceHistoryStore interface {
 func fileEditWorkspaceBelongsToRun(ctx context.Context, store any, run domain.Run,
 	mission domain.Mission, sessionID, workspaceID string,
 ) (bool, error) {
-	if run.SessionID != sessionID || run.MissionID != mission.ID || workspaceID == "" {
+	if run.MissionID != mission.ID || workspaceID == "" {
 		return false, nil
 	}
 	if history, ok := store.(fileEditWorkspaceHistoryStore); ok {
 		return history.FileEditWorkspaceBelongsToRun(ctx, run.ID, sessionID, workspaceID)
 	}
-	return workspaceID == mission.WorkspaceID, nil
+	return run.SessionID == sessionID && workspaceID == mission.WorkspaceID, nil
 }
 
 func (s *FileEditReviewService) WithRunWorktree(drydocks *RunWorktreeService) *FileEditReviewService {
@@ -147,7 +147,7 @@ func (s *FileEditReviewService) Review(ctx context.Context,
 		if approvalErr != nil {
 			return ReviewFileEditResult{}, apperror.Normalize(approvalErr)
 		}
-		if record.RunID != run.ID || record.SessionID != run.SessionID ||
+		if record.RunID != run.ID || record.SessionID != edit.SessionID ||
 			record.WorkspaceID != edit.WorkspaceID || record.ProposalID != edit.ID ||
 			record.ToolName != fileedit.ApprovalToolName(edit) ||
 			record.ActionClass != "workspace_write" {
@@ -201,7 +201,7 @@ func (s *FileEditReviewService) Review(ctx context.Context,
 	if err != nil {
 		return ReviewFileEditResult{}, apperror.Normalize(err)
 	}
-	if reviewed.ID != edit.ID || reviewed.SessionID != run.SessionID ||
+	if reviewed.ID != edit.ID || reviewed.SessionID != edit.SessionID ||
 		reviewed.WorkspaceID != edit.WorkspaceID || reviewed.Status != expected ||
 		strings.TrimSpace(reviewed.Path) == "" {
 		return ReviewFileEditResult{}, apperror.New(apperror.CodeInternal,

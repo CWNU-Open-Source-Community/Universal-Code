@@ -255,6 +255,9 @@ func validateApprovalProposalSourceTx(ctx context.Context, tx *sql.Tx, proposal 
 			return err
 		}
 	}
+	if proposal.RequestedBy == "specialist_runner" {
+		return validateSpecialistApprovalSourceTx(ctx, tx, proposal)
+	}
 	switch proposal.ToolName {
 	case string(toolgateway.CommandRuntimeTool):
 		return validateCommandApprovalSourceTx(ctx, tx, proposal)
@@ -428,12 +431,18 @@ func syncFileEditApprovalTx(ctx context.Context, tx *sql.Tx, edit fileedit.Edit,
 		decisionReason = "Current operation policy automatically authorized this exact file edit"
 	}
 	toolName := fileedit.ApprovalToolName(edit)
+	requestedBy := "tool_gateway"
+	if _, _, child, err := specialistFileEditBindingTx(ctx, tx, edit.SessionID, false); err != nil {
+		return err
+	} else if child {
+		requestedBy = "specialist_fileedit"
+	}
 	proposal := approval.Proposal{
 		IdempotencyKey: approval.ProposalIdempotencyKey(toolName, edit.ID), ProposalID: edit.ID,
 		SessionID: edit.SessionID, WorkspaceID: edit.WorkspaceID, ToolName: toolName, ActionClass: "workspace_write",
 		Mode: mode, Status: status,
 		RequestFingerprint: fileedit.ApprovalFingerprint(edit.SessionID, edit.WorkspaceID, edit),
-		DecisionReason:     decisionReason, RequestedBy: "tool_gateway", ReviewedBy: reviewer,
+		DecisionReason:     decisionReason, RequestedBy: requestedBy, ReviewedBy: reviewer,
 		CreatedAt: edit.CreatedAt, UpdatedAt: edit.UpdatedAt, DecidedAt: decidedAt,
 	}
 	if !existed || previousStatus == edit.Status {
@@ -499,6 +508,12 @@ func ensureApprovalTx(ctx context.Context, tx *sql.Tx, proposal approval.Proposa
 	binding, bound, err := runBindingForSessionTx(ctx, tx, proposal.SessionID)
 	if err != nil {
 		return approval.Record{}, false, err
+	}
+	if !bound && (proposal.RequestedBy == "specialist_runner" || proposal.RequestedBy == "specialist_fileedit") {
+		binding, bound, err = specialistApprovalRunBindingTx(ctx, tx, proposal.SessionID)
+		if err != nil {
+			return approval.Record{}, false, err
+		}
 	}
 	runID := ""
 	if bound {

@@ -9,7 +9,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 5 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
-| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 80 | true |
+| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 86 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 55 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
@@ -28,7 +28,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 128 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
-| [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
+| [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
 | [mcp-live-input](#mcp-live-input) | `ephemeral` | MCP client maintainers | 1 | false |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 60 | true |
@@ -117,7 +117,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `agent-scheduling-delivery-ledgers-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>80 active identifiers</summary>
+<details><summary>86 active identifiers</summary>
 
 - `agent-code-edit.v1`
 - `agent_admission_operation.v1`
@@ -199,6 +199,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `specialist_delegation_request.v1`
 - `specialist_delegation_review.v1`
 - `specialist_operator_step.v1`
+- `specialist_tool_approval.v1`
+- `workflow-summary.v1`
+- `workflow.v1`
+- `workflow_control.v1`
+- `workflow_start.v1`
+- `workflow_step.v1`
 
 </details>
 
@@ -1140,7 +1146,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `mcp-interchange-reader` (`v1, v2, v3`, active) at `internal/mcp`
 
-<details><summary>8 active identifiers</summary>
+<details><summary>9 active identifiers</summary>
 
 - `mcp-client-call-audit.v1`
 - `mcp-client-server.v1`
@@ -1150,6 +1156,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `mcp.call.input.v1`
 - `mcp.capabilities.v1`
 - `mcp.content.input.v1`
+- `mcp_worker_scope.v1`
 
 </details>
 

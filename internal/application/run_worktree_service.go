@@ -316,7 +316,11 @@ func (s *RunWorktreeService) ResolveDrydockExecutionBinding(ctx context.Context,
 	if err != nil {
 		return sandbox.WorkspaceBinding{}, err
 	}
-	return gitBisectDockerWorkspace(ctx, binding, bound)
+	bound, err = gitBisectDockerWorkspace(ctx, binding, bound)
+	if err != nil {
+		return sandbox.WorkspaceBinding{}, err
+	}
+	return workerCommandDockerWorkspace(ctx, binding, bound)
 }
 
 type DrydockCheckpointRequest struct {

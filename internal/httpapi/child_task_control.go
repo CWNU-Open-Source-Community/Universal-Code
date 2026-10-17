@@ -40,19 +40,20 @@ type ChildTaskAdmitRequestView struct {
 }
 
 type ChildTaskTaskView struct {
-	AllowedReadPaths   []string `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit      int64    `json:"tool_call_limit,omitempty"`
-	CostLimitMicros    int64    `json:"cost_limit_micros,omitempty"`
-	Ordinal            int      `json:"ordinal"`
-	Title              string   `json:"title"`
-	Goal               string   `json:"goal"`
-	Skills             []string `json:"skills"`
-	InputRefs          []string `json:"input_refs"`
-	DependencyOrdinals []int    `json:"dependency_ordinals"`
-	SurfaceHint        string   `json:"surface_hint"`
-	TurnLimit          int64    `json:"turn_limit"`
-	TokenLimit         int64    `json:"token_limit"`
-	TimeoutMillis      int64    `json:"timeout_millis"`
+	Worker             *domain.WorkerProfile `json:"worker,omitempty"`
+	AllowedReadPaths   []string              `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit      int64                 `json:"tool_call_limit,omitempty"`
+	CostLimitMicros    int64                 `json:"cost_limit_micros,omitempty"`
+	Ordinal            int                   `json:"ordinal"`
+	Title              string                `json:"title"`
+	Goal               string                `json:"goal"`
+	Skills             []string              `json:"skills"`
+	InputRefs          []string              `json:"input_refs"`
+	DependencyOrdinals []int                 `json:"dependency_ordinals"`
+	SurfaceHint        string                `json:"surface_hint"`
+	TurnLimit          int64                 `json:"turn_limit"`
+	TokenLimit         int64                 `json:"token_limit"`
+	TimeoutMillis      int64                 `json:"timeout_millis"`
 }
 
 type ChildTaskAssignmentView struct {
@@ -110,7 +111,7 @@ func (a *API) listChildTaskProposals(request *http.Request, runID string) (any, 
 			Tasks:       make([]ChildTaskTaskView, 0, len(proposal.Spec.Tasks)),
 			Assignments: make([]ChildTaskAssignmentView, 0, len(proposal.Spec.Tasks))}
 		for _, task := range proposal.Spec.Tasks {
-			item.Tasks = append(item.Tasks, ChildTaskTaskView{Ordinal: task.Ordinal,
+			item.Tasks = append(item.Tasks, ChildTaskTaskView{Worker: task.Worker, Ordinal: task.Ordinal,
 				Title: task.Title, Goal: task.Goal, Skills: task.Skills,
 				InputRefs: task.InputRefs, DependencyOrdinals: task.DependencyOrdinals,
 				SurfaceHint: string(task.SurfaceHint), TurnLimit: task.TurnLimit,
@@ -255,7 +256,7 @@ func (a *API) childTaskProposalView(ctx context.Context, proposal domain.ChildTa
 		RequestedBy: proposal.RequestedBy, CreatedAt: proposal.CreatedAt,
 		Tasks: make([]ChildTaskTaskView, 0, len(proposal.Spec.Tasks))}
 	for _, task := range proposal.Spec.Tasks {
-		view.Tasks = append(view.Tasks, ChildTaskTaskView{Ordinal: task.Ordinal,
+		view.Tasks = append(view.Tasks, ChildTaskTaskView{Worker: task.Worker, Ordinal: task.Ordinal,
 			Title: task.Title, Goal: task.Goal, Skills: task.Skills,
 			InputRefs: task.InputRefs, DependencyOrdinals: task.DependencyOrdinals,
 			SurfaceHint: string(task.SurfaceHint), TurnLimit: task.TurnLimit,

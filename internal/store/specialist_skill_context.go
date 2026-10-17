@@ -50,11 +50,6 @@ func (s *SQLiteStore) PrepareSpecialistSkillContext(ctx context.Context,
 	if err != nil {
 		return skills.SpecialistContextPreparation{}, err
 	}
-	if attempt.UsageRecordedAt != nil {
-		return skills.SpecialistContextPreparation{}, apperror.New(
-			apperror.CodeFailedPrecondition,
-			"Specialist Skill context must be prepared before model usage is recorded")
-	}
 	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
@@ -93,6 +88,11 @@ func (s *SQLiteStore) PrepareSpecialistSkillContext(ctx context.Context,
 			return skills.SpecialistContextPreparation{}, err
 		}
 		return existing, nil
+	}
+	if attempt.UsageRecordedAt != nil {
+		return skills.SpecialistContextPreparation{}, apperror.New(
+			apperror.CodeFailedPrecondition,
+			"Specialist Skill context must be prepared before model usage is recorded")
 	}
 	now := time.Now().UTC()
 	preparation := skills.SpecialistContextPreparation{

@@ -507,6 +507,12 @@ func (s *DockerSandboxService) loadCurrentDockerSandboxAuthority(ctx context.Con
 		return dockerSandboxAuthority{}, apperror.New(apperror.CodeConflict,
 			"Docker Sandbox requester does not own the exact compiled plan")
 	}
+	if isWorkerCommandDockerRequester(plan.RequestedBy) {
+		proof := workerCommandRuntimeFromContext(ctx)
+		if proof == nil || proof.scope.RunID != plan.RunID || workerCommandDockerRequester(proof) != plan.RequestedBy || proof.check(ctx, proof.nativeScope, proof.binding.rootPath) != nil {
+			return dockerSandboxAuthority{}, apperror.New(apperror.CodePolicyDenied, "worker Docker execution requires its live child authority")
+		}
+	}
 	if isBatchValidationDockerRequester(plan.RequestedBy) {
 		proof := batchValidationRuntimeFromContext(ctx)
 		if proof == nil || proof.target.runID != plan.RunID || batchValidationDockerRequester(proof.target) != plan.RequestedBy || proof.check(ctx) != nil {
