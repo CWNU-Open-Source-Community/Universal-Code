@@ -1,0 +1,18 @@
+{
+  "protocol": "skill.v1",
+  "name": "plan-delivery",
+  "version": "1.2.0",
+  "description": "Three-direction planning, sliced delivery, focused audit, and durable handoff guidance.",
+  "profiles": ["code", "learn", "review", "script"],
+  "surfaces": ["code", "cyber"],
+  "phases": ["plan", "deliver"],
+  "roles": ["root"],
+  "user_invocable": true,
+  "model_invocable": false,
+  "explicit_only": true,
+  "tool_dependencies": [],
+  "content_path": "SKILL.md",
+  "content_sha256": "64459bd1e9138b5ca107540c3d498d00b585f303917228a834b88cb208578b6f",
+  "content_bytes": 1844,
+  "content_token_upper_bound": 1844
+}
