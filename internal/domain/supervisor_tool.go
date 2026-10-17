@@ -11,8 +11,9 @@ import (
 
 const (
 	MaxSupervisorToolRounds = 4
-	// Execution sequence also includes at most one format per native call and
-	// one finish test. This does not grant more model batches or Run budget.
+	// Reserve 4 native batches + 16 possible per-call formats + 1 finish test.
+	// Repairs share this fixed execution sequence; native batches and Run
+	// budgets remain unchanged. Exhaustion stops instead of adding capacity.
 	MaxSupervisorExecutionRounds    = MaxSupervisorToolRounds*(MaxSupervisorToolCallsPerRound+1) + 1
 	MaxSupervisorToolCallsPerRound  = 4
 	MaxSupervisorToolPayloadBytes   = 96 * 1024

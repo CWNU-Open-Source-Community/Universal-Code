@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
+	"cyberagent-workbench/internal/workspacecheckpoint"
 )
 
 type projectHookFinishProvider struct {
@@ -133,21 +134,6 @@ func newProjectHookRuntimeFixture(t *testing.T, mode domain.RunExecutionPermissi
 		t.Fatal(err)
 	}
 	defer db.Close()
-	var hasOrigin int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('run_supervisor_tool_rounds') WHERE name='origin'`).Scan(&hasOrigin); err != nil {
-		t.Fatal(err)
-	}
-	if hasOrigin == 0 {
-		if _, err := db.Exec(`ALTER TABLE run_supervisor_tool_rounds ADD COLUMN origin TEXT NOT NULL DEFAULT 'model'`); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// The runtime patch is developed beside migration 203. IF NOT EXISTS also
-	// makes this fixture use the production table after the branches integrate.
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS project_hook_calls(run_id TEXT NOT NULL,turn INTEGER NOT NULL,attempt_id TEXT NOT NULL,call_id TEXT NOT NULL,trigger_key TEXT NOT NULL,slot TEXT NOT NULL CHECK(slot IN ('format','test')),target TEXT NOT NULL,config_fingerprint TEXT NOT NULL,workspace_version TEXT NOT NULL,PRIMARY KEY(run_id,turn,attempt_id,call_id),UNIQUE(run_id,trigger_key),FOREIGN KEY(run_id,turn,attempt_id,call_id) REFERENCES run_supervisor_tool_calls(run_id,turn,attempt_id,call_id))`)
-	if err != nil {
-		t.Fatal(err)
-	}
 	pin := pinActionConfig(projectconfig.Effective{Protocol: projectconfig.ProtocolVersion, TestCommandID: "test.go", FormatCommandID: "format.go"})
 	f.turn.Run.Config.ProjectConfig = pin.ProjectConfig
 	f.turn.Run.Config.ProjectConfigFingerprint = pin.ProjectConfigFingerprint
@@ -240,8 +226,8 @@ func TestProjectHookFailedTestsBlockFinishAndChangedVersionCanRetry(t *testing.T
 }
 
 func TestProjectHookAskResumeRetainsIntentAndRechecksTrust(t *testing.T) {
-	for _, changed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "approved", true: "trust_revoked"}[changed], func(t *testing.T) {
+	for _, state := range []string{"approved", "disabled", "disabled_denied", "changed"} {
+		t.Run(state, func(t *testing.T) {
 			f, trust := newProjectHookRuntimeFixture(t, domain.RunExecutionPermissionAsk, false, true)
 			result, retry, err := projectHookFinish(t, f, 1, nil)
 			if err != nil || retry || result.RunStatus != domain.RunWaitingApproval {
@@ -249,9 +235,16 @@ func TestProjectHookAskResumeRetainsIntentAndRechecksTrust(t *testing.T) {
 			}
 			rounds, _ := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
 			f.call = rounds[0].Calls[0]
-			f.decide(t, ApprovalControlApproveOnce)
-			if changed {
+			decision := ApprovalControlApproveOnce
+			if state == "disabled_denied" {
+				decision = ApprovalControlDeny
+			}
+			f.decide(t, decision)
+			if strings.HasPrefix(state, "disabled") {
 				trust.selection = ProjectHookSelection{}
+			}
+			if state == "changed" {
+				trust.err = apperror.New(apperror.CodeFailedPrecondition, "project hook configuration changed")
 			}
 			// Reconstruct the runner, release the old execution lease and enter
 			// the public ResumeApproval path for the original durable call.
@@ -271,19 +264,28 @@ func TestProjectHookAskResumeRetainsIntentAndRechecksTrust(t *testing.T) {
 			resume := ApprovalContinuationRequest{RunID: f.turn.Run.ID, Kind: "command_runtime", ProposalID: f.call.CallID}
 			continued := turns.ResumeApproval(t.Context(), resume)
 			jobs, _ := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
-			if changed {
+			if state == "changed" {
 				if continued.State != "failed" || len(jobs) != 0 || provider.calls != 0 {
 					t.Fatalf("changed trust dispatched: %+v %+v calls=%d", continued, jobs, provider.calls)
 				}
 				return
 			}
-			if continued.State != "completed" || len(jobs) != 1 || provider.calls != 1 {
+			wantJobs := 1
+			if strings.HasPrefix(state, "disabled") {
+				wantJobs = 0
+				recovered, _ := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
+				if len(recovered) != 1 || recovered[0].Calls[0].Status != domain.SupervisorToolDenied {
+					checkpoint, _, _ := f.st.GetSupervisorCheckpoint(t.Context(), f.turn.Run.ID)
+					t.Fatalf("disabled hook left pending: continuation=%+v checkpoint=%+v rounds=%+v", continued, checkpoint, recovered)
+				}
+			}
+			if continued.State != "completed" || len(jobs) != wantJobs || provider.calls != 1 {
 				checkpoint, _, _ := f.st.GetSupervisorCheckpoint(t.Context(), f.turn.Run.ID)
 				t.Fatalf("resume: %+v checkpoint=%+v calls=%d", continued, checkpoint, provider.calls)
 			}
 			turns.ResumeApproval(t.Context(), resume)
 			again, _ := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
-			if len(again) != 1 || provider.calls != 1 {
+			if len(again) != wantJobs || provider.calls != 1 {
 				t.Fatal("approval replay duplicated command or model")
 			}
 
@@ -330,5 +332,193 @@ func TestProjectHookAppliedFileFormatsOnce(t *testing.T) {
 	jobs, _ := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
 	if len(jobs) != 1 {
 		t.Fatal("format recursed or duplicated")
+	}
+}
+
+func TestProjectHookWorkspaceVersionRejectsIncompleteContents(t *testing.T) {
+	for _, reason := range []string{"workspace manifest exceeds the entry limit", "case-colliding Workspace paths cannot be restored safely", "Workspace path casing differs from the Git index"} {
+		if _, err := projectHookSnapshotVersion(workspacecheckpoint.Snapshot{Checkpoint: workspacecheckpoint.Checkpoint{IncompleteReasons: []string{reason}}}); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+			t.Fatalf("accepted %s: %v", reason, err)
+		}
+	}
+	for _, policy := range []workspacecheckpoint.StoragePolicy{workspacecheckpoint.StorageUnreadable, workspacecheckpoint.StorageExcludedLink, workspacecheckpoint.StorageExcludedSpecial} {
+		if _, err := projectHookSnapshotVersion(workspacecheckpoint.Snapshot{Entries: []workspacecheckpoint.Entry{{Path: "file.go", State: workspacecheckpoint.StatePresent, StoragePolicy: policy, WorktreeSHA256: "missing"}}}); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+			t.Fatalf("accepted %s: %v", policy, err)
+		}
+	}
+	if _, err := projectHookSnapshotVersion(workspacecheckpoint.Snapshot{Checkpoint: workspacecheckpoint.Checkpoint{RecoveryLevel: workspacecheckpoint.RecoveryUnavailable, IncompleteReasons: []string{"workspace is not an exact Git worktree"}}, Entries: []workspacecheckpoint.Entry{{Path: "deleted.go", Tracked: true, State: workspacecheckpoint.StateMissing, StoragePolicy: workspacecheckpoint.StorageMissing, WorktreeSHA256: "missing"}}}); err != nil {
+		t.Fatalf("complete non-Git inventory or tracked deletion rejected: %v", err)
+	}
+}
+
+func TestProjectHookMoveAndDeleteSupersedeOldFormatTargets(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "move", true: "move_then_delete"}[deleted], func(t *testing.T) {
+			f, _ := newProjectHookRuntimeFixture(t, domain.RunExecutionPermissionFull, true, false)
+			if err := os.WriteFile(filepath.Join(f.root, "a.go"), []byte("package hooksfixture\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			apply := func(operation, path, destination, content string) {
+				t.Helper()
+				destinationHash := ""
+				if operation == fileedit.OperationMove {
+					destinationHash = "missing"
+				}
+				edit, err := fileedit.NewManager(f.st).Propose(t.Context(), fileedit.Proposal{SessionID: f.turn.Run.SessionID, WorkspaceID: f.turn.Mission.WorkspaceID, WorkspaceRoot: f.root, Path: path, Operation: operation, DestinationPath: destination, ProposedText: content, ExpectedDestinationHash: destinationHash})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = NewFileEditReviewService(f.st).Review(t.Context(), ReviewFileEditRequest{Version: FileEditReviewProtocolVersion, RunID: f.turn.Run.ID, EditID: edit.ID, Action: FileEditApproveIntent}); err != nil {
+					t.Fatal(err)
+				}
+				permission, err := f.st.GetRunExecutionPermission(t.Context(), f.turn.Run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				snapshot, generation, epoch, fence, _ := bindAgentCodeRuntime(f.caps, permission)
+				_, err = NewFileEditApplyService(f.st, f.checker).WithExecutionPermissionCapabilities(f.caps).Apply(t.Context(), ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion, RunID: f.turn.Run.ID, EditID: edit.ID, OperationKey: "hook-" + edit.ID, AppliedBy: "test_operator", LeaseID: f.turn.Checkpoint.LeaseID, LeaseGeneration: f.turn.Checkpoint.LeaseGeneration, PermissionSnapshotID: snapshot, PermissionGeneration: generation, PermissionRuntimeEpoch: epoch, RunAuthorizationFence: fence})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			apply(fileedit.OperationReplace, "a.go", "", "package hooksfixture\nvar X=  1\n")
+			apply(fileedit.OperationMove, "a.go", "b.go", "")
+			if deleted {
+				apply(fileedit.OperationDelete, "b.go", "", "")
+			}
+			_, retry, err := projectHookFinish(t, f, 1, nil)
+			if err != nil || retry == deleted {
+				t.Fatalf("retry=%v err=%v", retry, err)
+			}
+			rounds, err := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if deleted {
+				if len(rounds) != 0 {
+					t.Fatal("formatted deleted source")
+				}
+				return
+			}
+			if len(rounds) != 1 || rounds[0].Calls[0].ProjectHook.Target != "b.go" || !projectHookCommandPassed(rounds[0].Calls[0]) {
+				t.Fatalf("wrong formatting: %+v", rounds)
+			}
+		})
+	}
+}
+
+func TestProjectHookFormatCannotCertifyStandardCodeVerification(t *testing.T) {
+	machine, _ := newStandardCodeSupervisorTestMachine(domain.StandardCodeSupervisorExecute, domain.ExecutionPhaseDeliver)
+	machine.snapshot.MutationEpoch = 1
+	machine.snapshot.VerifiedMutationEpoch = 1
+	machine.snapshot.VerificationJobIDs = []string{"old-test"}
+	call := standardCodeCommandCall(t, "format-hook", toolgateway.CommandRuntimeActionRun, "gofmt -w value.go", "", 0)
+	call.ProjectHook = &domain.ProjectHookCallOrigin{Slot: "format"}
+	exit := 0
+	standardCodeObserveCompleted(t, machine, call, nil, standardCodeCommandOutput(t, toolgateway.CommandRuntimeActionRun, []runner.CommandRuntimeJobSnapshot{{ID: "formatter", State: runner.CommandRuntimeJobCompleted, ExitCode: &exit, TreeReaped: true}}, nil))
+	if machine.snapshot.MutationEpoch != 2 || machine.snapshot.VerifiedMutationEpoch != 1 || len(machine.snapshot.VerificationJobIDs) != 0 || machine.snapshot.State != domain.StandardCodeSupervisorExecute {
+		t.Fatalf("formatter certified verification: %+v", machine.snapshot)
+	}
+}
+
+func TestProjectHookFailedTestRepairsAcrossNativeRoundBoundary(t *testing.T) {
+	f, trust := newProjectHookRuntimeFixture(t, domain.RunExecutionPermissionFull, true, true)
+	before := "package hooksfixture\nvar Answer = 1\n"
+	after := "package hooksfixture\nvar Answer=  2\n"
+	if err := os.WriteFile(filepath.Join(f.root, "value.go"), []byte(before), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.root, "fixture_test.go"), []byte("package hooksfixture\nimport \"testing\"\nfunc TestFixture(t *testing.T) { if Answer != 1 { t.Fatal(Answer) } }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &projectHookFinishProvider{}
+	provider.respond = func(request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		name := ""
+		var payload any
+		switch index {
+		case 0:
+			name = "workspace_read"
+			payload = toolgateway.WorkspaceReadPayload{Version: toolgateway.AgentCodeRegistryVersion, Path: "value.go", StartLine: 1, EndLine: 10}
+		case 1:
+			name = "workspace_change"
+			payload = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "replace", Path: "value.go", ExpectedSHA256: fileedit.HashText(before), Content: after}
+		case 2, 6:
+			edits, err := f.st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: f.turn.Run.SessionID})
+			if err != nil || len(edits) != map[int]int{2: 1, 6: 2}[index] {
+				t.Fatalf("proposal missing: %+v %v", edits, err)
+			}
+			name = "workspace_apply"
+			payload = toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion, EditID: edits[0].ID, ExpectedAction: "replace", ExpectedOriginalSHA256: edits[0].OriginalHash, ExpectedProposedSHA256: edits[0].ProposedHash}
+		case 4:
+			content, err := os.ReadFile(filepath.Join(f.root, "value.go"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			name = "workspace_change"
+			payload = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "replace", Path: "value.go", ExpectedSHA256: fileedit.HashText(string(content)), Content: "package hooksfixture\nvar Answer=  1\n"}
+		case 5:
+			if len(request.Tools) != 0 {
+				t.Fatal("native fourth round did not close tool dispatch")
+			}
+			return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", Text: `{"version":"root_lifecycle.v1","action":"continue","message":"Apply the prepared repair in the next turn."}`}, nil
+		default:
+			if index > 8 {
+				t.Fatal("unexpected model loop")
+			}
+			content, err := os.ReadFile(filepath.Join(f.root, "value.go"))
+			if err != nil || !strings.Contains(string(content), map[bool]string{true: "var Answer = 2", false: "var Answer = 1"}[index == 3]) {
+				t.Fatalf("finish observed unformatted file: %q %v", content, err)
+			}
+			return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", Text: `{"version":"root_lifecycle.v1","action":"finish","message":"verified","summary":"verified"}`}, nil
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", ToolCalls: []llm.ToolCall{{ID: "provider-hook-source", Name: name, Arguments: raw}}}, nil
+	}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	f.supervisor = NewAgentRunner(f.st, router, f.checker).WithExecutionPermissionCapabilities(f.caps).WithCommandRuntime(f.service).WithProjectHooks(trust)
+	lease, _, err := f.st.GetRunExecutionLease(t.Context(), f.turn.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := f.supervisor.stepWithLease(t.Context(), lease, "")
+	if err != nil || result.Status != LifecycleTurnCompleted || result.Action.Kind != domain.RootActionContinue {
+		t.Fatalf("failed verification boundary: %+v %v", result, err)
+	}
+	rounds, err := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
+	if err != nil || supervisorNativeToolRounds(rounds) != 4 || len(rounds) != 6 || projectHookCommandPassed(rounds[4].Calls[0]) {
+		t.Fatalf("native cap/failing test lost: %+v %v", rounds, err)
+	}
+	result, err = f.supervisor.stepWithLease(t.Context(), lease, "")
+	if err != nil || result.Status != LifecycleTurnCompleted || result.Action.Kind != domain.RootActionFinish {
+		t.Fatalf("repair continuation failed: %+v %v", result, err)
+	}
+	jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
+	if err != nil || len(jobs) != 4 || provider.calls != 9 {
+		t.Fatalf("repair did not format and retest once: jobs=%+v calls=%d err=%v", jobs, provider.calls, err)
+	}
+}
+
+func TestProjectHookDisabledDispatchedCallRemainsUnknown(t *testing.T) {
+	f, trust := newProjectHookRuntimeFixture(t, domain.RunExecutionPermissionAsk, false, true)
+	if _, _, err := projectHookFinish(t, f, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	rounds, err := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.call = rounds[0].Calls[0]
+	f.decide(t, ApprovalControlApproveOnce)
+	if _, err = f.st.RecordSupervisorToolExecutionStarted(t.Context(), f.turn.Checkpoint, f.call.CallID); err != nil {
+		t.Fatal(err)
+	}
+	trust.selection = ProjectHookSelection{}
+	if disabled, err := f.supervisor.checkPendingProjectHook(t.Context(), f.call); disabled || apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+		t.Fatalf("uncertain dispatch was declared cancelled: %v %v", disabled, err)
 	}
 }

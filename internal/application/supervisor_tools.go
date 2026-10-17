@@ -797,8 +797,22 @@ func (s *AgentRunner) resumeSupervisorToolsRaw(ctx context.Context, turn domain.
 				}
 				continue
 			}
-			if err := s.checkPendingProjectHook(ctx, call); err != nil {
-				return rounds, false, err
+			disabledHook, hookErr := s.checkPendingProjectHook(ctx, call)
+			if hookErr != nil {
+				return rounds, false, hookErr
+			}
+			if disabledHook {
+				denied := commandPreflightResult(call, "policy_denied", "Project automatic actions were disabled; this hook was not dispatched.", domain.SupervisorToolDenied)
+				stored, _, err := s.store.RecordSupervisorToolResult(ctx, turn.Checkpoint, denied)
+				if err != nil {
+					return rounds, false, apperror.Normalize(err)
+				}
+				if completion != nil {
+					if err := completion.ObserveCall(ctx, stored); err != nil {
+						return rounds, false, apperror.Normalize(err)
+					}
+				}
+				continue
 			}
 			if fence, ok := s.store.(interface {
 				SupersedeSupervisorToolIfSteeringChanged(context.Context, domain.SupervisorCheckpoint, string) (bool, error)

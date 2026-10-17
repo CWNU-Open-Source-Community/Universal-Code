@@ -67,11 +67,7 @@ func (s *SQLiteStore) GetProjectHookCall(ctx context.Context, runID, key string)
 	if err != nil {
 		return call, false, err
 	}
-	rounds := []domain.SupervisorToolRound{{Calls: []domain.SupervisorToolCall{call}}}
-	if err := enrichProjectHookRounds(ctx, tx, rounds); err != nil {
-		return call, false, err
-	}
-	return rounds[0].Calls[0], true, tx.Commit()
+	return call, true, tx.Commit()
 }
 
 // RecordProjectHookCall creates no model response or usage. ModelAttempt on the

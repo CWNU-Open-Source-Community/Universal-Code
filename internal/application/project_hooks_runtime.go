@@ -32,20 +32,39 @@ func (s *AgentRunner) projectHookSelection(ctx context.Context, runID string) (P
 	return s.projectHooks.AuthorizeProjectHooks(ctx, runID)
 }
 
-func (s *AgentRunner) checkPendingProjectHook(ctx context.Context, call domain.SupervisorToolCall) error {
+func (s *AgentRunner) checkPendingProjectHook(ctx context.Context, call domain.SupervisorToolCall) (disabled bool, err error) {
 	if call.ProjectHook == nil {
-		return nil
+		return false, nil
+	}
+	if s.projectHooks == nil {
+		return false, apperror.New(apperror.CodeFailedPrecondition, "project hook authorization is unavailable")
 	}
 	selection, err := s.projectHookSelection(ctx, call.RunID)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if selection.Fingerprint == "" && !selection.AfterEditFormat && !selection.BeforeFinishTest {
+		reader, ok := s.store.(interface {
+			GetSupervisorApprovalCall(context.Context, string, string) (domain.SupervisorToolCall, bool, error)
+		})
+		if !ok {
+			return false, apperror.New(apperror.CodeFailedPrecondition, "project hook dispatch observation is unavailable")
+		}
+		_, started, err := reader.GetSupervisorApprovalCall(ctx, call.RunID, call.CallID)
+		if err != nil {
+			return false, err
+		}
+		if started {
+			return false, apperror.New(apperror.CodeFailedPrecondition, "project hook was dispatched without a completed receipt; inspect its existing command job before continuing")
+		}
+		return true, nil
 	}
 	if selection.Fingerprint != call.ProjectHook.ConfigFingerprint ||
 		(call.ProjectHook.Slot == "format" && !selection.AfterEditFormat) ||
 		(call.ProjectHook.Slot == "test" && !selection.BeforeFinishTest) {
-		return apperror.New(apperror.CodeFailedPrecondition, "queued project hook configuration is no longer trusted or enabled")
+		return false, apperror.New(apperror.CodeFailedPrecondition, "queued project hook configuration is no longer trusted")
 	}
-	return nil
+	return false, nil
 }
 
 // A host hook uses the ordinary durable call, budget, approval and job path.
@@ -58,7 +77,9 @@ func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.Sup
 		var waiting bool
 		var err error
 		rounds, waiting, err = s.resumeSupervisorToolsRaw(ctx, turn, rounds, standardCode...)
-		if err != nil || waiting {
+		if err != nil || waiting || len(rounds) == 0 {
+			// A new turn has no accepted model boundary yet. Pre-existing manual
+			// edits are checked at its next tool or finish boundary instead.
 			return rounds, waiting, err
 		}
 		added, err := s.prepareProjectFormat(ctx, turn, rounds, false)
@@ -96,6 +117,8 @@ func (s *AgentRunner) prepareProjectFormat(ctx context.Context, turn domain.Supe
 			target := edit.Path
 			if edit.Operation == fileedit.OperationMove {
 				target = edit.DestinationPath
+				// A move supersedes both the old source and destination histories.
+				seen[edit.Path] = true
 			}
 			if seen[target] {
 				continue
@@ -262,12 +285,22 @@ func (s *AgentRunner) projectHookWorkspaceVersion(ctx context.Context, turn doma
 	if err != nil {
 		return "", err
 	}
+	return projectHookSnapshotVersion(snapshot)
+}
+
+func projectHookSnapshotVersion(snapshot workspacecheckpoint.Snapshot) (string, error) {
+	for _, reason := range snapshot.Checkpoint.IncompleteReasons {
+		switch reason {
+		case "workspace manifest exceeds the entry limit", "case-colliding Workspace paths cannot be restored safely", "Workspace path casing differs from the Git index":
+			return "", apperror.New(apperror.CodeFailedPrecondition, "project verification cannot identify the complete workspace: "+reason)
+		}
+	}
 	parts := []string{"project-hook-workspace.v1", snapshot.Checkpoint.RootFingerprint, snapshot.Checkpoint.BaseCommit}
 	for _, entry := range snapshot.Entries {
 		if !entry.Tracked && (entry.State == workspacecheckpoint.StateIgnored || entry.State == workspacecheckpoint.StateGenerated) {
 			continue
 		}
-		if entry.WorktreeSHA256 == "" {
+		if entry.StoragePolicy == workspacecheckpoint.StorageUnreadable || entry.StoragePolicy == workspacecheckpoint.StorageExcludedLink || entry.StoragePolicy == workspacecheckpoint.StorageExcludedSpecial || entry.WorktreeSHA256 == "" || (entry.WorktreeSHA256 == "missing" && entry.State != workspacecheckpoint.StateMissing) {
 			return "", apperror.New(apperror.CodeFailedPrecondition, "project verification cannot identify file version: "+entry.Path)
 		}
 		parts = append(parts, entry.Path, entry.WorktreeSHA256, fmt.Sprint(entry.Mode))
