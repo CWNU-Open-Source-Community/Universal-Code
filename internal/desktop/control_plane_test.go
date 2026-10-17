@@ -850,9 +850,9 @@ func TestControlPlanePRFollowupWorkerUsesDesktopLifetime(t *testing.T) {
 		DatabasePath: filepath.Join(t.TempDir(), "pr-followup-worker.db"),
 		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
 		RunExecutionEnabled: true, GitHubReviewControlEnabled: true, ScheduledJobWorkerEnabled: true,
-		ExecutionPermissionControlEnabled: true,
-		ExecutionPermissionCapabilities:   domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true},
-		AppVersion:                        "desktop-pr-followup-test",
+		ExecutionPermissionControlEnabled: true, ApprovalControlEnabled: true,
+		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true},
+		AppVersion:                      "desktop-pr-followup-test",
 	})
 	if err != nil {
 		t.Fatal(err)
