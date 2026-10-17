@@ -220,7 +220,7 @@ func (s *SQLiteStore) enrichSupervisorToolRoundAttribution(ctx context.Context,
 			}
 		}
 	}
-	return nil
+	return enrichProjectHookRounds(ctx, s.db, rounds)
 }
 
 func insertCommandRuntimeAgentAttributionTx(ctx context.Context, tx *sql.Tx,

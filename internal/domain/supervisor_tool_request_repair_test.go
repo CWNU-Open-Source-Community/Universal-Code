@@ -6,7 +6,7 @@ func TestSupervisorToolRequestRepairReasonRequiresExactGoPrefix(t *testing.T) {
 	for reason, want := range map[string]bool{
 		SupervisorToolRequestRepairReasonPrefix + "round=0; unknown argument field":  true,
 		SupervisorToolRequestRepairReasonPrefix + "round=3; unknown argument field":  true,
-		SupervisorToolRequestRepairReasonPrefix + "round=4; unknown argument field":  false,
+		SupervisorToolRequestRepairReasonPrefix + "round=21; unknown argument field": false,
 		SupervisorToolRequestRepairReasonPrefix + "round=00; unknown argument field": false,
 		SupervisorToolRequestRepairReasonPrefix:                                      false,
 		SupervisorToolRequestRepairReasonPrefix + " \n":                              false,
@@ -18,14 +18,14 @@ func TestSupervisorToolRequestRepairReasonRequiresExactGoPrefix(t *testing.T) {
 			t.Fatalf("repair reason %q classified as %t, want %t", reason, got, want)
 		}
 	}
-	for round := 0; round < MaxSupervisorToolRounds; round++ {
+	for round := 0; round < MaxSupervisorExecutionRounds; round++ {
 		reason, err := NewSupervisorToolRequestRepairReason(round, "invalid tool field")
 		parsed, ok := SupervisorToolRequestRepairRound(reason)
 		if err != nil || !ok || parsed != round {
 			t.Fatalf("round identity lost: %q / %v", reason, err)
 		}
 	}
-	if _, err := NewSupervisorToolRequestRepairReason(MaxSupervisorToolRounds, "no rounds left"); err == nil {
+	if _, err := NewSupervisorToolRequestRepairReason(MaxSupervisorExecutionRounds, "no rounds left"); err == nil {
 		t.Fatal("exhausted tool budget permitted another repair")
 	}
 }

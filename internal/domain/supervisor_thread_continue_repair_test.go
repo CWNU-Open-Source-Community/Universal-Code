@@ -3,9 +3,9 @@ package domain
 import "testing"
 
 func TestSupervisorThreadContinueRepairMarkerIsBoundedAndDistinct(t *testing.T) {
-	for round := 0; round <= MaxSupervisorToolRounds; round++ {
+	for round := 0; round <= MaxSupervisorExecutionRounds; round++ {
 		reason, err := NewSupervisorThreadContinueRepairReason(round)
-		if round == 0 || round == MaxSupervisorToolRounds {
+		if round == 0 || round == MaxSupervisorExecutionRounds {
 			if err == nil {
 				t.Fatal("non-tool or scheduling boundary accepted")
 			}

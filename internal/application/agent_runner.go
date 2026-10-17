@@ -937,11 +937,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		}
 		modelRequest := request
 		modelContextLayout := prepared.layout
-		if len(prepared.toolRounds) == domain.MaxSupervisorToolRounds {
+		if supervisorNativeToolRounds(prepared.toolRounds) == domain.MaxSupervisorToolRounds {
 			modelRequest = supervisorToolBoundaryRequest(modelRequest)
 		}
 		if protocolRepair == 1 {
-			modelRequest = supervisorProtocolRepairRequest(modelRequest, repairReason, supervisorRepairContext{ThreadEndTurn: prepared.context.threadEndTurn, ToolRounds: len(prepared.toolRounds)})
+			modelRequest = supervisorProtocolRepairRequest(modelRequest, repairReason, supervisorRepairContext{ThreadEndTurn: prepared.context.threadEndTurn, ToolRounds: len(prepared.toolRounds), HostToolRounds: len(prepared.toolRounds) - supervisorNativeToolRounds(prepared.toolRounds)})
 			modelContextLayout = modelContextLayout.shifted(1)
 		}
 		modelRequest, err = s.requestWithBuiltinSkillReads(ctx, turn, modelRequest)
@@ -1160,7 +1160,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			switch {
 			case protocolRepair != 0 && !domain.IsSupervisorToolRequestRepair(repairReason) && !continuationRepair && !textToolRepair:
 				parseErr = errors.New("protocol repair response cannot request tools")
-			case len(prepared.toolRounds) >= domain.MaxSupervisorToolRounds:
+			case supervisorNativeToolRounds(prepared.toolRounds) >= domain.MaxSupervisorToolRounds:
 				parseErr = fmt.Errorf("supervisor tool round limit of %d was exhausted",
 					domain.MaxSupervisorToolRounds)
 			default:
@@ -1321,9 +1321,14 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			return result, failure
 		}
 		completed, retry, err := s.commitAgentRootAction(ctx, &turn, result, modelCall,
-			action, rootActionRecovery, len(prepared.toolRounds))
+			action, rootActionRecovery, prepared)
 		if retry {
 			result = completed
+			request, err = rebuildToolRequest()
+			if err != nil {
+				return result, s.recordFailure(ctx, &result, err, 0)
+			}
+			result.ToolRounds, result.ToolCalls = supervisorToolStats(prepared.toolRounds)
 			continue
 		}
 		return completed, err

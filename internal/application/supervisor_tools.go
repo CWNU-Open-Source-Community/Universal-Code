@@ -780,7 +780,7 @@ func supervisorToolOperationKey(runID string, turn int, name toolgateway.ToolNam
 	return runmutation.SupervisorToolOperationKey(runID, turn, string(name), string(payload))
 }
 
-func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.SupervisorTurn,
+func (s *AgentRunner) resumeSupervisorToolsRaw(ctx context.Context, turn domain.SupervisorTurn,
 	rounds []domain.SupervisorToolRound, standardCode ...*standardCodeSupervisorTurn,
 ) ([]domain.SupervisorToolRound, bool, error) {
 	var completion *standardCodeSupervisorTurn
@@ -796,6 +796,9 @@ func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.Sup
 					}
 				}
 				continue
+			}
+			if err := s.checkPendingProjectHook(ctx, call); err != nil {
+				return rounds, false, err
 			}
 			if fence, ok := s.store.(interface {
 				SupersedeSupervisorToolIfSteeringChanged(context.Context, domain.SupervisorCheckpoint, string) (bool, error)
@@ -1345,6 +1348,20 @@ func supervisorRequestWithToolRounds(request llm.ChatRequest,
 		}
 		if !round.Complete() {
 			return llm.ChatRequest{}, errors.New("cannot build model context with pending supervisor tools")
+		}
+		if round.ProjectHook() {
+			for _, call := range round.Calls {
+				evidence, err := json.Marshal(struct {
+					Source string                        `json:"source"`
+					Hook   *domain.ProjectHookCallOrigin `json:"hook"`
+					Result json.RawMessage               `json:"result"`
+				}{"project_hook", call.ProjectHook, json.RawMessage(call.ResultJSON)})
+				if err != nil {
+					return llm.ChatRequest{}, err
+				}
+				messages = append(messages, toolBoundaryEvidenceMessage("project-hook", call.AttemptID, string(evidence)))
+			}
+			continue
 		}
 		calls := make([]llm.ToolCall, 0, len(round.Calls))
 		results := make([]llm.ToolResult, 0, len(round.Calls))

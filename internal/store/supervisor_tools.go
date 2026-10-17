@@ -41,7 +41,7 @@ func (s *SQLiteStore) ListSupervisorToolRounds(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	rounds, err := scanSupervisorToolRounds(rows, domain.MaxSupervisorToolRounds)
+	rounds, err := scanSupervisorToolRounds(rows, domain.MaxSupervisorExecutionRounds)
 	_ = rows.Close()
 	if err != nil {
 		return nil, err
@@ -128,6 +128,13 @@ func insertSupervisorToolRoundTx(ctx context.Context, tx *sql.Tx, run domain.Run
 	checkpoint domain.SupervisorCheckpoint, attempt llm.ModelAttempt, calls []llm.ToolCall,
 	requestedAttribution *domain.AgentAttribution,
 ) error {
+	return insertSupervisorToolRoundSourceTx(ctx, tx, run, checkpoint, attempt, calls, requestedAttribution, "run_supervisor")
+}
+
+func insertSupervisorToolRoundSourceTx(ctx context.Context, tx *sql.Tx, run domain.Run,
+	checkpoint domain.SupervisorCheckpoint, attempt llm.ModelAttempt, calls []llm.ToolCall,
+	requestedAttribution *domain.AgentAttribution, source string,
+) error {
 	normalized, err := normalizeSupervisorToolCallsForStore(calls, checkpoint.RunID,
 		checkpoint.NextTurn, attempt.ToolRound+1)
 	if err != nil {
@@ -143,9 +150,18 @@ func insertSupervisorToolRoundTx(ctx context.Context, tx *sql.Tx, run domain.Run
 		return err
 	}
 	round := previous + 1
-	if round > domain.MaxSupervisorToolRounds || attempt.ToolRound != previous {
+	if round > domain.MaxSupervisorExecutionRounds || attempt.ToolRound != previous {
 		return apperror.New(apperror.CodeResourceExhausted,
 			"supervisor structured tool round limit was exhausted")
+	}
+	if source == "run_supervisor" {
+		native, err := supervisorNativeToolRoundCountTx(ctx, tx, checkpoint, false)
+		if err != nil {
+			return err
+		}
+		if native >= domain.MaxSupervisorToolRounds {
+			return apperror.New(apperror.CodeResourceExhausted, "supervisor native model tool round limit was exhausted")
+		}
 	}
 	now := time.Now().UTC()
 	attribution, err := inferredSupervisorRootAttributionTx(ctx, tx, run.ID,
@@ -160,9 +176,15 @@ func insertSupervisorToolRoundTx(ctx context.Context, tx *sql.Tx, run domain.Run
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO run_supervisor_tool_rounds
+	roundSQL := `INSERT INTO run_supervisor_tool_rounds
 		(run_id, turn, attempt_id, round, model_attempt, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, NULL)`, checkpoint.RunID, checkpoint.NextTurn, checkpoint.AttemptID,
+		VALUES (?, ?, ?, ?, ?, ?, NULL)`
+	if source == "project_hook" {
+		roundSQL = `INSERT INTO run_supervisor_tool_rounds
+		(run_id, turn, attempt_id, round, model_attempt, created_at, completed_at, origin)
+		VALUES (?, ?, ?, ?, ?, ?, NULL, 'project_hook')`
+	}
+	if _, err := tx.ExecContext(ctx, roundSQL, checkpoint.RunID, checkpoint.NextTurn, checkpoint.AttemptID,
 		round, attempt.Number, ts(now)); err != nil {
 		return err
 	}
@@ -189,7 +211,7 @@ func insertSupervisorToolRoundTx(ctx context.Context, tx *sql.Tx, run domain.Run
 		}
 		names = append(names, call.Name)
 	}
-	return appendSupervisorEventTx(ctx, tx, run, events.SupervisorToolBatchEvent, "run_supervisor",
+	return appendSupervisorEventTx(ctx, tx, run, events.SupervisorToolBatchEvent, source,
 		supervisorToolRoundSubject(checkpoint, round), map[string]any{
 			"turn": checkpoint.NextTurn, "attempt_id": checkpoint.AttemptID, "round": round,
 			"model_attempt": attempt.Number, "tool_count": len(normalized), "tools": names,
@@ -463,7 +485,11 @@ func supervisorToolStreamEventPayload(call domain.SupervisorToolCall,
 		"stream_response_id": call.StreamResponseID, "stream_item_id": call.StreamItemID,
 		"stream_call_id": call.StreamCallID, "durable_call_id": call.CallID,
 	}
-	if eventType == llm.StreamToolExecutionStarted || eventType == llm.StreamToolExecutionCompleted {
+	if call.ProjectHook != nil {
+		payload["project_hook"] = call.ProjectHook
+		payload["source_kind"] = "project_hook"
+	}
+	if call.ProjectHook == nil && (eventType == llm.StreamToolExecutionStarted || eventType == llm.StreamToolExecutionCompleted) {
 		itemStatus := llm.StreamItemInProgress
 		if eventType == llm.StreamToolExecutionCompleted {
 			itemStatus = llm.StreamItemCompleted
@@ -798,12 +824,20 @@ func supervisorWebEvidenceResultEnvelope(raw string) bool {
 func getSupervisorToolCallTx(ctx context.Context, tx *sql.Tx, checkpoint domain.SupervisorCheckpoint,
 	callID string,
 ) (domain.SupervisorToolCall, error) {
-	return scanSupervisorToolCall(tx.QueryRowContext(ctx, `SELECT run_id, turn, attempt_id, round, position,
+	call, err := scanSupervisorToolCall(tx.QueryRowContext(ctx, `SELECT run_id, turn, attempt_id, round, position,
 		model_attempt, call_id, stream_response_id, stream_item_id, stream_call_id,
 		tool_name, payload_json, authority_json, status, result_json, error_code, created_at, completed_at
 		FROM run_supervisor_tool_calls
 		WHERE run_id = ? AND turn = ? AND attempt_id = ? AND call_id = ?`, checkpoint.RunID,
 		checkpoint.NextTurn, checkpoint.AttemptID, strings.TrimSpace(callID)))
+	if err != nil {
+		return call, err
+	}
+	rounds := []domain.SupervisorToolRound{{Calls: []domain.SupervisorToolCall{call}}}
+	if err := enrichProjectHookRounds(ctx, tx, rounds); err != nil {
+		return call, err
+	}
+	return rounds[0].Calls[0], nil
 }
 
 func scanSupervisorToolRoundCall(row scanner) (domain.SupervisorToolRound, domain.SupervisorToolCall, error) {
