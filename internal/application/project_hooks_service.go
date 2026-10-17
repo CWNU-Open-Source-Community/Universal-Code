@@ -7,6 +7,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
@@ -63,9 +64,19 @@ func (s *ProjectHooksService) WithRunWorktree(d *RunWorktreeService) *ProjectHoo
 type projectHooksBinding struct {
 	run                          domain.Run
 	workspaceID, rootFingerprint string
+	rootPath                     string
+	profile                      domain.Profile
 	current, pinned              *projectconfig.Effective
 	trust                        domain.ProjectHookTrust
 	found                        bool
+}
+
+func (b projectHooksBinding) reviewFingerprint() string {
+	configuration := b.current.HooksFingerprint()
+	if configuration == "" {
+		return ""
+	}
+	return runmutation.Fingerprint(ProjectHooksVersion, b.workspaceID, b.rootFingerprint, configuration)
 }
 
 func (s *ProjectHooksService) bind(ctx context.Context, runID string) (projectHooksBinding, error) {
@@ -88,17 +99,23 @@ func (s *ProjectHooksService) bind(ctx context.Context, runID string) (projectHo
 		return b, err
 	}
 	b.workspaceID = files.Workspace.ID
+	b.rootPath, b.profile = files.Workspace.RootPath, mission.Profile
 	b.rootFingerprint, err = workspaceidentity.Fingerprint(files.Workspace.RootPath)
 	if err != nil {
 		return b, apperror.New(apperror.CodeFailedPrecondition, "project hook workspace identity is unavailable")
 	}
-	var rejected []projectconfig.Rejection
-	b.current, rejected, err = projectconfig.ResolveWorkspace(ctx, files.Workspace.RootPath, mission.Profile, b.run.Config.CreationBudget(), toolgateway.TypedActionIDs())
-	if err != nil || len(rejected) > 0 {
-		return b, apperror.New(apperror.CodeFailedPrecondition, "project hook configuration could not be safely loaded; check .prayu/config.yaml")
-	}
 	b.trust, b.found, err = s.store.GetProjectHookTrust(ctx, b.workspaceID)
 	return b, apperror.Normalize(err)
+}
+
+func (b *projectHooksBinding) loadConfiguration(ctx context.Context) error {
+	var rejected []projectconfig.Rejection
+	var err error
+	b.current, rejected, err = projectconfig.ResolveWorkspace(ctx, b.rootPath, b.profile, b.run.Config.CreationBudget(), toolgateway.TypedActionIDs())
+	if err != nil || len(rejected) > 0 {
+		return apperror.New(apperror.CodeFailedPrecondition, "project hook configuration could not be safely loaded; check .prayu/config.yaml")
+	}
+	return nil
 }
 
 func (s *ProjectHooksService) threadRun(ctx context.Context, threadID string) (string, error) {
@@ -120,7 +137,7 @@ func (s *ProjectHooksService) threadRun(ctx context.Context, threadID string) (s
 
 func projectHooksView(threadID string, b projectHooksBinding) ProjectHooksView {
 	fingerprint := b.current.HooksFingerprint()
-	v := ProjectHooksView{Version: ProjectHooksVersion, ThreadID: threadID, WorkspaceID: b.workspaceID, Fingerprint: fingerprint,
+	v := ProjectHooksView{Version: ProjectHooksVersion, ThreadID: threadID, WorkspaceID: b.workspaceID, Fingerprint: b.reviewFingerprint(),
 		Revision: b.trust.Revision, MatchesTask: fingerprint == b.pinned.HooksFingerprint(), Hooks: []ProjectHookView{}, State: "not_configured", Message: "项目尚未配置自动格式化或结束前测试。"}
 	if fingerprint == "" {
 		return v
@@ -158,6 +175,9 @@ func (s *ProjectHooksService) Get(ctx context.Context, threadID string) (Project
 	if err != nil {
 		return ProjectHooksView{}, err
 	}
+	if err := b.loadConfiguration(ctx); err != nil {
+		return ProjectHooksView{}, err
+	}
 	return projectHooksView(threadID, b), nil
 }
 
@@ -173,8 +193,11 @@ func (s *ProjectHooksService) Review(ctx context.Context, threadID, action strin
 	if err != nil {
 		return ProjectHooksView{}, err
 	}
+	if err := b.loadConfiguration(ctx); err != nil {
+		return ProjectHooksView{}, err
+	}
 	fingerprint := b.current.HooksFingerprint()
-	if fingerprint == "" || fingerprint != r.ExpectedFingerprint {
+	if fingerprint == "" || b.reviewFingerprint() != r.ExpectedFingerprint {
 		return ProjectHooksView{}, apperror.New(apperror.CodeConflict, "project hook definition changed; refresh before confirming")
 	}
 	b.trust, err = s.store.ReviewProjectHooks(ctx, domain.ProjectHookTrust{WorkspaceID: b.workspaceID, RootFingerprint: b.rootFingerprint, Fingerprint: fingerprint, Trusted: action == "trust"}, r.ExpectedRevision)
@@ -203,6 +226,9 @@ func (s *ProjectHooksService) AuthorizeProjectHooks(ctx context.Context, runID s
 	}
 	if b.found && !b.trust.Trusted {
 		return ProjectHookSelection{}, nil
+	}
+	if err := b.loadConfiguration(ctx); err != nil {
+		return ProjectHookSelection{}, err
 	}
 	fingerprint := b.current.HooksFingerprint()
 	if fingerprint == "" || fingerprint != pinned.HooksFingerprint() {

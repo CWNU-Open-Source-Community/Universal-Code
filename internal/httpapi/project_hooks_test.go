@@ -107,7 +107,7 @@ func TestProjectHooksHTTPAuthorityAndStrictInput(t *testing.T) {
 		{name: "missing revision", body: `{"version":"project-hooks.v1","expected_fingerprint":"` + projectHooksHTTPFingerprint + `"}`, status: http.StatusBadRequest},
 		{name: "null revision", body: strings.Replace(projectHooksHTTPBody, `"expected_revision":0`, `"expected_revision":null`, 1), status: http.StatusBadRequest},
 		{name: "negative revision", body: strings.Replace(projectHooksHTTPBody, `"expected_revision":0`, `"expected_revision":-1`, 1), status: http.StatusBadRequest},
-		{name: "version", body: strings.Replace(projectHooksHTTPBody, "project-hooks.v1", "project-hooks.v2", 1), status: http.StatusBadRequest},
+		{name: "version", body: strings.Replace(projectHooksHTTPBody, "project-hooks.v1", "unsupported", 1), status: http.StatusBadRequest},
 		{name: "fingerprint", body: strings.Replace(projectHooksHTTPBody, projectHooksHTTPFingerprint, "unknown", 1), status: http.StatusBadRequest},
 		{name: "trailing data", body: projectHooksHTTPBody + `{}`, status: http.StatusBadRequest},
 	} {

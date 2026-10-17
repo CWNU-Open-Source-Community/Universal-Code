@@ -97,4 +97,50 @@ func TestProjectHooksTrustPersistsAcrossTasksAndRejectsChangedDefinition(t *test
 	if _, err := service.Review(t.Context(), thirdThread, "trust", request); apperror.CodeOf(err) != apperror.CodeConflict {
 		t.Fatalf("stale consent reenabled hooks: %v", err)
 	}
+	if err := os.WriteFile(path, []byte("protocol: project_config.v1\nhooks: []\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if selected, err := service.AuthorizeProjectHooks(t.Context(), third.Run.ID); err != nil || selected.Fingerprint != "" {
+		t.Fatalf("disabled hook still blocks on an edited config: %+v %v", selected, err)
+	}
+}
+
+func TestProjectHooksReviewRejectsReplacedWorkspace(t *testing.T) {
+	state := openRunCreationStore(t, filepath.Join(t.TempDir(), "hooks.db"))
+	workspace := saveRunCreationWorkspace(t, state)
+	writeConfig := func() {
+		t.Helper()
+		dir := filepath.Join(workspace.RootPath, ".prayu")
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("protocol: project_config.v1\ntest_command_id: test.go\nhooks:\n  before_finish_test: true\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeConfig()
+	created, err := application.NewControlledRunCreationService(state).Create(t.Context(), application.ControlledRunCreationRequest{
+		Version: domain.RunCreationProtocolVersion, Goal: "review exact workspace", WorkspaceID: workspace.ID, Profile: "code", OperationKey: "project-hooks-replaced-root-0001", RequestedBy: "test_operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread := domain.InitialThreadID(created.Run.ID)
+	service := application.NewProjectHooksService(state)
+	view, err := service.Get(t.Context(), thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(workspace.RootPath, filepath.Join(t.TempDir(), "original")); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig()
+	request := application.ProjectHooksReviewRequest{Version: application.ProjectHooksVersion, ExpectedFingerprint: view.Fingerprint, ExpectedRevision: view.Revision}
+	if _, err := service.Review(t.Context(), thread, "trust", request); apperror.CodeOf(err) != apperror.CodeConflict {
+		t.Fatalf("stale review trusted a different workspace: %v", err)
+	}
+	current, err := service.Get(t.Context(), thread)
+	if err != nil || current.Trusted || current.Fingerprint == view.Fingerprint || current.Revision != 0 {
+		t.Fatalf("replacement trust=%+v err=%v", current, err)
+	}
 }
