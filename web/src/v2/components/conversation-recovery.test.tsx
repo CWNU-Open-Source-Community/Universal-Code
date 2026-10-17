@@ -213,7 +213,8 @@ it("continues a paused task by sending a message without a separate lifecycle ac
     get: vi.fn().mockResolvedValue(paused) });
   const user = userEvent.setup();
   const input = await screen.findByRole("textbox", { name: "继续对话" });
-  expect(screen.getByText(/本轮已暂停。发送新消息会恢复任务并继续处理/)).toBeInTheDocument();
+  expect(screen.getByText("已暂停", { exact: true })).toBeInTheDocument();
+  expect(screen.getByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
   await user.type(input, "Continue with this requirement");
   expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "发送消息" }));
