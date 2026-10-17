@@ -32,6 +32,9 @@ func (s *SQLiteStore) RevokeSpecialistReadTools(ctx context.Context, runID, agen
 		if err = appendSupervisorEventTx(ctx, tx, run, "agent.read_tools.revoked", "operator", agentID, map[string]any{"agent_id": agentID}); err != nil {
 			return domain.AgentNode{}, err
 		}
+		if _, err = createAgentGraphSnapshotTx(ctx, tx, run); err != nil {
+			return domain.AgentNode{}, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return domain.AgentNode{}, err
