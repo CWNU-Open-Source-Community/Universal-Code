@@ -163,24 +163,7 @@ CREATE TABLE agent_dependency_wakes (
 		CHECK(julianday(created_at) IS NOT NULL)
 	) WITHOUT ROWID;
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE agent_graph_snapshots (
-		id TEXT PRIMARY KEY,
-		run_id TEXT NOT NULL,
-		version INTEGER NOT NULL,
-		protocol_version TEXT NOT NULL,
-		root_agent_id TEXT NOT NULL,
-		node_count INTEGER NOT NULL,
-		pending_message_count INTEGER NOT NULL,
-		state_json TEXT NOT NULL,
-		created_at TEXT NOT NULL,
-		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
-		FOREIGN KEY(run_id, root_agent_id) REFERENCES agent_nodes(run_id, id) ON DELETE CASCADE,
-		UNIQUE(run_id, version),
-		CHECK(version > 0),
-		CHECK(protocol_version = 'agent_graph.v1'),
-		CHECK(node_count BETWEEN 1 AND 3),
-		CHECK(pending_message_count BETWEEN 0 AND 384)
-	);
+CREATE TABLE "agent_graph_snapshots" (id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,version INTEGER NOT NULL CHECK(version>0),protocol_version TEXT NOT NULL CHECK(protocol_version='agent_graph.v1'),root_agent_id TEXT NOT NULL,node_count INTEGER NOT NULL CHECK(node_count BETWEEN 1 AND 257),pending_message_count INTEGER NOT NULL CHECK(pending_message_count BETWEEN 0 AND 32896),state_json TEXT NOT NULL,created_at TEXT NOT NULL,FOREIGN KEY(run_id,root_agent_id) REFERENCES agent_nodes(run_id,id) ON DELETE CASCADE,UNIQUE(run_id,version));
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE agent_message_operations (
 		operation_key_digest TEXT PRIMARY KEY,
@@ -236,7 +219,7 @@ CREATE TABLE agent_nodes (
 		version INTEGER NOT NULL,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL,
-		finished_at TEXT, allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)), tool_call_limit INTEGER NOT NULL DEFAULT 0 CHECK(tool_call_limit>=0), cost_limit_micros INTEGER NOT NULL DEFAULT 0 CHECK(cost_limit_micros>=0),
+		finished_at TEXT, allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)), tool_call_limit INTEGER NOT NULL DEFAULT 0 CHECK(tool_call_limit>=0), cost_limit_micros INTEGER NOT NULL DEFAULT 0 CHECK(cost_limit_micros>=0), worker_profile_json TEXT NOT NULL DEFAULT 'null' CHECK(json_valid(worker_profile_json)),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
 		FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
 		FOREIGN KEY(run_id, parent_id) REFERENCES agent_nodes(run_id, id) ON DELETE CASCADE,
@@ -11643,7 +11626,7 @@ CREATE TABLE specialist_delegation_assignments (
 		goal TEXT NOT NULL,
 		skills_json TEXT NOT NULL,
 		turn_limit INTEGER NOT NULL,
-		token_limit INTEGER NOT NULL,
+		token_limit INTEGER NOT NULL, allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)), tool_call_limit INTEGER NOT NULL DEFAULT 0 CHECK(tool_call_limit>=0), cost_limit_micros INTEGER NOT NULL DEFAULT 0 CHECK(cost_limit_micros>=0), worker_profile_json TEXT NOT NULL DEFAULT 'null' CHECK(json_valid(worker_profile_json)),
 		PRIMARY KEY(proposal_id, ordinal),
 		FOREIGN KEY(proposal_id) REFERENCES specialist_delegation_proposals(id) ON DELETE CASCADE,
 		CHECK(ordinal BETWEEN 1 AND 2),
@@ -12184,16 +12167,16 @@ CREATE TABLE specialist_task_briefs (
    CHECK(json_extract(brief_json,'$.fingerprint')=fingerprint)
   );
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE specialist_tool_bindings (
+CREATE TABLE "specialist_tool_bindings" (
    agent_attempt_id TEXT PRIMARY KEY REFERENCES agent_attempts(id) ON DELETE CASCADE,
    run_id TEXT NOT NULL,agent_id TEXT NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),
    workspace_id TEXT NOT NULL,root_fingerprint TEXT NOT NULL CHECK(length(root_fingerprint)=64),
-   brief_fingerprint TEXT NOT NULL CHECK(length(brief_fingerprint)=64),mode TEXT NOT NULL CHECK(mode IN ('read','batch')),
+   brief_fingerprint TEXT NOT NULL CHECK(length(brief_fingerprint)=64),mode TEXT NOT NULL CHECK(mode IN ('read','batch','worker')),
    batch_plan_id TEXT NOT NULL DEFAULT '',batch_ordinal INTEGER NOT NULL DEFAULT 0,batch_generation INTEGER NOT NULL DEFAULT 0,
-   created_at TEXT NOT NULL, allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)),
+   created_at TEXT NOT NULL,allowed_read_paths_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(allowed_read_paths_json)),worker_profile_json TEXT NOT NULL DEFAULT 'null' CHECK(json_valid(worker_profile_json)),
    FOREIGN KEY(run_id,agent_id) REFERENCES agent_nodes(run_id,id),
    CHECK((mode='read' AND batch_plan_id='' AND batch_ordinal=0 AND batch_generation=0)
-    OR (mode='batch' AND length(batch_plan_id)>0 AND batch_ordinal>0 AND batch_generation>0))
+    OR (mode='batch' AND length(batch_plan_id)>0 AND batch_ordinal>0 AND batch_generation>0) OR (mode='worker' AND ((batch_plan_id='' AND batch_ordinal=0 AND batch_generation=0) OR (length(batch_plan_id)>0 AND batch_ordinal>0 AND batch_generation>0))))
   );
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE specialist_tool_calls (
@@ -12201,7 +12184,7 @@ CREATE TABLE specialist_tool_calls (
    call_id TEXT NOT NULL,name TEXT NOT NULL,payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
    status TEXT NOT NULL CHECK(status IN ('pending','completed','denied','failed')),
    result_json TEXT NOT NULL DEFAULT '',error_code TEXT NOT NULL DEFAULT '',charge_id TEXT NOT NULL DEFAULT '',
-   created_at TEXT NOT NULL,completed_at TEXT,
+   created_at TEXT NOT NULL,completed_at TEXT, authority_json TEXT NOT NULL DEFAULT '' CHECK(authority_json='' OR json_valid(authority_json)), approval_source_id TEXT NOT NULL DEFAULT '', approval_id TEXT NOT NULL DEFAULT '', started_at TEXT,
    PRIMARY KEY(agent_attempt_id,round,position),UNIQUE(agent_attempt_id,call_id),
    FOREIGN KEY(agent_attempt_id,round) REFERENCES specialist_tool_rounds(agent_attempt_id,round) ON DELETE CASCADE,
    CHECK((status='pending' AND result_json='' AND error_code='' AND completed_at IS NULL)
@@ -13105,6 +13088,12 @@ CREATE TABLE work_items (
 		CHECK((status = 'completed' AND completed_at IS NOT NULL) OR (status <> 'completed' AND completed_at IS NULL))
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE workflow_definitions (id TEXT PRIMARY KEY, digest TEXT NOT NULL UNIQUE, spec_json TEXT NOT NULL CHECK(json_valid(spec_json)), created_at TEXT NOT NULL);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE workflow_executions (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL REFERENCES workflow_definitions(id), run_id TEXT NOT NULL REFERENCES runs(id), inputs_json TEXT NOT NULL CHECK(json_valid(inputs_json)), status TEXT NOT NULL CHECK(status IN ('running','waiting','waiting_approval','paused','completed','failed')), reason TEXT NOT NULL DEFAULT '', state_json TEXT NOT NULL CHECK(json_valid(state_json)), usage_before_json TEXT NOT NULL CHECK(json_valid(usage_before_json)), version INTEGER NOT NULL DEFAULT 1, claim_owner TEXT NOT NULL DEFAULT '', claim_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, turns_before INTEGER NOT NULL DEFAULT 0);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE workflow_steps (id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES workflow_executions(id), step_id TEXT NOT NULL, agent_id TEXT NOT NULL, session_id TEXT NOT NULL, inputs_json TEXT NOT NULL CHECK(json_valid(inputs_json)), status TEXT NOT NULL CHECK(status IN ('pending','completed','failed')), output_json TEXT NOT NULL DEFAULT 'null' CHECK(json_valid(output_json)), reason TEXT NOT NULL DEFAULT '');
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE workspace_checkpoint_blobs (
 		sha256 TEXT PRIMARY KEY,
 		size_bytes INTEGER NOT NULL,
@@ -13624,8 +13613,7 @@ CREATE UNIQUE INDEX idx_agent_dependency_edges_open
 CREATE INDEX idx_agent_dependency_edges_target
 		ON agent_dependency_edges(run_id, target_kind, target_id) WHERE state = 'wait';
 -- traverse-board-clean-install-object-boundary --
-CREATE INDEX idx_agent_graph_snapshots_latest
-		ON agent_graph_snapshots(run_id, version DESC);
+CREATE INDEX idx_agent_graph_snapshots_latest ON agent_graph_snapshots(run_id,version DESC);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_agent_messages_inbox
 		ON agent_messages(recipient_agent_id, status, sequence);
@@ -14414,6 +14402,12 @@ CREATE INDEX monetary_reservations_child ON run_monetary_reservations(run_id,age
 CREATE INDEX specialist_schedule_continuation ON specialist_schedules(continuation_digest, started_at DESC, id DESC)
 		WHERE continuation_digest <> '';
 -- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX specialist_tool_approval_source ON specialist_tool_calls(approval_source_id) WHERE approval_source_id<>'';
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX workflow_run ON workflow_executions(run_id, created_at);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX workflow_step_execution ON workflow_steps(execution_id);
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER skill_candidate_import_insert_guard
 		BEFORE INSERT ON skill_candidate_imports
 		BEGIN
@@ -14681,12 +14675,14 @@ CREATE TRIGGER specialist_schedule_continuation_immutable
 		BEFORE UPDATE OF continuation_digest ON specialist_schedules
 		BEGIN SELECT RAISE(ABORT, 'Specialist continuation identity is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
-CREATE TRIGGER trg_agent_attempt_identity_immutable
-		BEFORE UPDATE OF id, run_id, agent_id, parent_agent_id, lease_id, lease_generation,
-			turn_number, started_at ON agent_attempts
-		BEGIN
-			SELECT RAISE(ABORT, 'Agent attempt identity is immutable');
-		END;
+CREATE TRIGGER trg_agent_attempt_identity_immutable BEFORE UPDATE OF id,run_id,agent_id,parent_agent_id,lease_id,lease_generation,turn_number,started_at ON agent_attempts
+ WHEN NEW.id<>OLD.id OR NEW.run_id<>OLD.run_id OR NEW.agent_id<>OLD.agent_id OR NEW.parent_agent_id<>OLD.parent_agent_id OR NEW.turn_number<>OLD.turn_number OR NEW.started_at<>OLD.started_at
+ OR ((NEW.lease_id<>OLD.lease_id OR NEW.lease_generation<>OLD.lease_generation) AND NOT
+  (OLD.status='running' AND NEW.status='running' AND NEW.lease_generation>OLD.lease_generation
+   AND EXISTS(SELECT 1 FROM specialist_tool_calls c JOIN tool_approvals p ON p.id=c.approval_id
+    WHERE c.agent_attempt_id=OLD.id AND c.status='pending' AND c.started_at IS NULL AND p.status IN ('approved','denied') AND (p.proposal_id=c.approval_source_id OR (c.name IN ('workspace_apply','workspace_delete') AND p.proposal_id=json_extract(c.payload_json,'$.edit_id') AND p.action_class='workspace_write')))
+   AND EXISTS(SELECT 1 FROM run_execution_leases l WHERE l.run_id=NEW.run_id AND l.lease_id=NEW.lease_id AND l.generation=NEW.lease_generation AND l.status='active' AND julianday(l.expires_at)>julianday('now'))))
+ BEGIN SELECT RAISE(ABORT,'Agent attempt identity is immutable outside approval resume');END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_agent_attempt_notification_matches
 		BEFORE UPDATE OF status, notification_message_id ON agent_attempts
@@ -14780,19 +14776,7 @@ CREATE TRIGGER trg_agent_attempt_usage_requires_lease
 			SELECT RAISE(ABORT, 'Agent attempt usage requires its active Run lease');
 		END;
 -- traverse-board-clean-install-object-boundary --
-CREATE TRIGGER trg_agent_child_depth
-		BEFORE INSERT ON agent_nodes
-		WHEN NEW.parent_id IS NOT NULL AND NOT EXISTS (
-			SELECT 1 FROM agent_nodes parent
-			WHERE parent.run_id = NEW.run_id AND parent.id = NEW.parent_id
-				AND NEW.depth = parent.depth + 1 AND parent.child_limit > (
-					SELECT COUNT(*) FROM agent_nodes child
-					WHERE child.run_id = NEW.run_id AND child.parent_id = parent.id
-				)
-		)
-		BEGIN
-			SELECT RAISE(ABORT, 'agent child depth or limit is invalid');
-		END;
+CREATE TRIGGER trg_agent_child_depth BEFORE INSERT ON agent_nodes WHEN NEW.parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM agent_nodes parent WHERE parent.run_id=NEW.run_id AND parent.id=NEW.parent_id AND NEW.depth=parent.depth+1 AND parent.child_limit>(SELECT COUNT(*) FROM agent_nodes child WHERE child.run_id=NEW.run_id AND child.parent_id=parent.id AND child.status NOT IN ('completed','failed','cancelled'))) BEGIN SELECT RAISE(ABORT, 'agent child depth or active limit is invalid'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_agent_completed_requires_report
 		BEFORE UPDATE OF status ON agent_nodes
@@ -14877,12 +14861,7 @@ CREATE TRIGGER trg_agent_message_prepared_specialist_delivery
 			SELECT RAISE(ABORT, 'prepared Specialist instruction must commit through its Agent attempt');
 		END;
 -- traverse-board-clean-install-object-boundary --
-CREATE TRIGGER trg_agent_node_limit
-		BEFORE INSERT ON agent_nodes
-		WHEN (SELECT COUNT(*) FROM agent_nodes WHERE run_id = NEW.run_id) >= 3
-		BEGIN
-			SELECT RAISE(ABORT, 'agent graph node limit reached');
-		END;
+CREATE TRIGGER trg_agent_node_limit BEFORE INSERT ON agent_nodes WHEN (SELECT COUNT(*) FROM agent_nodes WHERE run_id=NEW.run_id)>=257 BEGIN SELECT RAISE(ABORT, 'agent history limit reached'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_agent_root_session_matches_run
 		BEFORE INSERT ON agent_nodes
@@ -15448,11 +15427,77 @@ CREATE TRIGGER trg_command_runtime_job_insert_scope
 			JOIN run_execution_permission_snapshots permission ON permission.id = NEW.permission_snapshot_id
 			JOIN run_execution_leases lease ON lease.run_id = run.id
 			WHERE run.id = NEW.run_id AND run.mission_id = NEW.mission_id
-				AND run.session_id = NEW.session_id AND mission.workspace_id = NEW.workspace_id
+				AND (run.session_id = NEW.session_id OR (EXISTS (SELECT 1 FROM agent_nodes child
+		JOIN agent_attempts attempt ON attempt.agent_id=child.id AND attempt.run_id=child.run_id
+		JOIN specialist_tool_bindings b ON b.agent_attempt_id=attempt.id AND b.agent_id=child.id AND b.run_id=child.run_id
+		JOIN specialist_tool_calls call ON call.agent_attempt_id=attempt.id
+		JOIN specialist_task_briefs brief ON brief.agent_attempt_id=attempt.id
+		JOIN sessions child_session ON child_session.id=child.session_id
+		WHERE child.run_id=run.id AND child.parent_id=root.id AND child.role='specialist'
+		AND child.session_id=NEW.session_id AND child_session.status='active'
+		AND child_session.workspace_id=mission.workspace_id AND child.status='running'
+		AND child.active_attempt_id=attempt.id AND attempt.status='running'
+		AND attempt.lease_id=NEW.lease_id AND attempt.lease_generation=NEW.lease_generation
+		AND b.session_id=child.session_id AND b.workspace_id=NEW.workspace_id AND b.mode='worker'
+		AND b.worker_profile_json=child.worker_profile_json AND b.brief_fingerprint=brief.fingerprint
+		AND (json_type(child.worker_profile_json,'$.tools')='null' OR EXISTS
+		 (SELECT 1 FROM json_each(child.worker_profile_json,'$.tools') tool WHERE tool.value=call.name))
+		AND call.name IN ('command_runtime','run_tests') AND call.status='pending'
+		AND call.started_at IS NOT NULL AND call.charge_id=NEW.invocation_id AND call.authority_json<>''
+		AND json_extract(call.authority_json,'$.protocol_version')='command-runtime-adapter-authority.v2'
+		AND json_extract(call.authority_json,'$.run_id')=NEW.run_id
+		AND json_extract(call.authority_json,'$.worker.agent_id')=child.id
+		AND json_extract(call.authority_json,'$.worker.attempt_id')=attempt.id
+		AND json_extract(call.authority_json,'$.worker.session_id')=child.session_id
+		AND json_extract(call.authority_json,'$.scope_fingerprint') IS NOT NULL
+		AND json_extract(call.authority_json,'$.permission_snapshot_id')=NEW.permission_snapshot_id
+		AND json_extract(call.authority_json,'$.permission_revision')=NEW.permission_revision
+		AND json_extract(call.authority_json,'$.permission_mode')=NEW.permission_mode
+		AND json_extract(call.authority_json,'$.adapter.backend_identity')=NEW.adapter_backend_identity
+		AND json_extract(call.authority_json,'$.adapter.generation')=NEW.adapter_generation
+		AND EXISTS(SELECT 1 FROM json_each(call.authority_json,'$.command_fingerprints') pin WHERE pin.value=NEW.spec_fingerprint)))) AND mission.workspace_id = NEW.workspace_id
 				AND (run.status = 'running' OR (NEW.operator_invocation = 1 AND run.status IN ('created', 'paused'))) AND root.parent_id IS NULL AND root.role = 'root'
 				AND mode.run_id = run.id AND mode.mission_id = mission.id
 				AND mode.revision = NEW.mode_revision AND mode.surface = 'code'
-				AND (mode.phase = 'deliver' OR (mode.phase = 'plan'
+				AND (mode.phase = 'deliver' OR (mode.phase='plan' AND NEW.operator_invocation=0
+		AND NEW.profile='process' AND NEW.network='disabled' AND NEW.credentials='none'
+		AND NEW.stdin_policy='closed' AND NEW.timeout_milliseconds BETWEEN 1 AND 25000
+		AND permission.mode IN ('ask','auto','full') AND (EXISTS (SELECT 1 FROM agent_nodes child
+		JOIN agent_attempts attempt ON attempt.agent_id=child.id AND attempt.run_id=child.run_id
+		JOIN specialist_tool_bindings b ON b.agent_attempt_id=attempt.id AND b.agent_id=child.id AND b.run_id=child.run_id
+		JOIN specialist_tool_calls call ON call.agent_attempt_id=attempt.id
+		JOIN specialist_task_briefs brief ON brief.agent_attempt_id=attempt.id
+		JOIN sessions child_session ON child_session.id=child.session_id
+		WHERE child.run_id=run.id AND child.parent_id=root.id AND child.role='specialist'
+		AND child.session_id=NEW.session_id AND child_session.status='active'
+		AND child_session.workspace_id=mission.workspace_id AND child.status='running'
+		AND child.active_attempt_id=attempt.id AND attempt.status='running'
+		AND attempt.lease_id=NEW.lease_id AND attempt.lease_generation=NEW.lease_generation
+		AND b.session_id=child.session_id AND b.workspace_id=NEW.workspace_id AND b.mode='worker'
+		AND b.worker_profile_json=child.worker_profile_json AND b.brief_fingerprint=brief.fingerprint
+		AND (json_type(child.worker_profile_json,'$.tools')='null' OR EXISTS
+		 (SELECT 1 FROM json_each(child.worker_profile_json,'$.tools') tool WHERE tool.value=call.name))
+		AND call.name IN ('command_runtime','run_tests') AND call.status='pending'
+		AND call.started_at IS NOT NULL AND call.charge_id=NEW.invocation_id AND call.authority_json<>''
+		AND json_extract(call.authority_json,'$.protocol_version')='command-runtime-adapter-authority.v2'
+		AND json_extract(call.authority_json,'$.run_id')=NEW.run_id
+		AND json_extract(call.authority_json,'$.worker.agent_id')=child.id
+		AND json_extract(call.authority_json,'$.worker.attempt_id')=attempt.id
+		AND json_extract(call.authority_json,'$.worker.session_id')=child.session_id
+		AND json_extract(call.authority_json,'$.scope_fingerprint') IS NOT NULL
+		AND json_extract(call.authority_json,'$.permission_snapshot_id')=NEW.permission_snapshot_id
+		AND json_extract(call.authority_json,'$.permission_revision')=NEW.permission_revision
+		AND json_extract(call.authority_json,'$.permission_mode')=NEW.permission_mode
+		AND json_extract(call.authority_json,'$.adapter.backend_identity')=NEW.adapter_backend_identity
+		AND json_extract(call.authority_json,'$.adapter.generation')=NEW.adapter_generation
+		AND EXISTS(SELECT 1 FROM json_each(call.authority_json,'$.command_fingerprints') pin WHERE pin.value=NEW.spec_fingerprint)))
+		AND EXISTS(SELECT 1 FROM specialist_tool_calls call JOIN agent_attempts attempt ON attempt.id=call.agent_attempt_id
+		 WHERE attempt.run_id=run.id AND call.charge_id=NEW.invocation_id AND call.name='run_tests'
+		 AND json_extract(call.authority_json,'$.project_test_command.action')='run'
+		 AND json_array_length(call.authority_json,'$.project_test_command.commands')=1
+		 AND json_extract(call.authority_json,'$.project_test_command.commands[0].purpose')=json_extract(NEW.intent_json,'$.purpose')
+		 AND json_extract(call.payload_json,'$.timeout_milliseconds')=NEW.timeout_milliseconds
+		 AND json_extract(call.payload_json,'$.target')=NEW.working_directory)) OR (mode.phase = 'plan'
 		AND NEW.operator_invocation = 0 AND NEW.profile = 'process'
 		AND NEW.network = 'disabled' AND NEW.credentials = 'none'
 		AND NEW.stdin_policy = 'closed' AND NEW.timeout_milliseconds BETWEEN 1 AND 25000
@@ -16276,11 +16321,22 @@ CREATE TRIGGER trg_file_edit_apply_operation_insert
 		WHEN NOT EXISTS (
 			SELECT 1 FROM runs run
 			JOIN missions mission ON mission.id = run.mission_id
-			JOIN sessions session_record ON session_record.id = run.session_id
+			JOIN sessions session_record ON session_record.id = NEW.session_id
 			JOIN file_edits edit ON edit.id = NEW.edit_id
 			JOIN tool_approvals approval ON approval.proposal_id = edit.id
 			JOIN run_events event ON event.run_id = run.id AND event.sequence = NEW.event_sequence
-			WHERE run.id = NEW.run_id AND run.session_id = NEW.session_id
+			WHERE run.id = NEW.run_id AND (run.session_id = NEW.session_id OR (EXISTS(SELECT 1 FROM agent_nodes child JOIN agent_attempts attempt ON attempt.id=child.active_attempt_id
+ JOIN specialist_tool_bindings b ON b.agent_attempt_id=attempt.id JOIN specialist_tool_calls call ON call.agent_attempt_id=attempt.id
+ JOIN run_execution_leases lease ON lease.run_id=child.run_id
+ WHERE child.run_id=run.id AND child.id=NEW.applied_by AND child.session_id=NEW.session_id AND child.role='specialist'
+ AND child.status='running' AND attempt.status='running' AND attempt.agent_id=child.id AND attempt.run_id=run.id
+ AND attempt.lease_id=lease.lease_id AND attempt.lease_generation=lease.generation AND lease.status='active' AND julianday(lease.expires_at)>julianday('now')
+ AND b.mode='worker' AND b.batch_plan_id='' AND b.session_id=child.session_id AND b.workspace_id=mission.workspace_id
+ AND b.worker_profile_json=child.worker_profile_json AND child.worker_profile_json<>'null'
+ AND call.name IN ('workspace_apply','workspace_delete') AND call.status='pending' AND call.started_at IS NOT NULL AND call.charge_id<>''
+ AND (json_type(child.worker_profile_json,'$.tools')='null' OR EXISTS(SELECT 1 FROM json_each(child.worker_profile_json,'$.tools') tool WHERE tool.value=call.name))
+ AND json_extract(call.payload_json,'$.edit_id')=NEW.edit_id
+ AND json_extract(call.authority_json,'$.worker.agent_id')=child.id AND json_extract(call.authority_json,'$.worker.attempt_id')=attempt.id)))
 				AND run.status = 'running' AND session_record.status = 'active'
 				AND session_record.workspace_id = mission.workspace_id
 				AND ((mission.workspace_id = NEW.workspace_id
@@ -16440,9 +16496,22 @@ CREATE TRIGGER trg_file_edit_auto_authorization_insert
 		BEFORE INSERT ON file_edit_auto_authorizations
 		WHEN NOT EXISTS (
 			SELECT 1 FROM file_edits edit
-			JOIN runs run ON run.id=NEW.run_id AND run.session_id=NEW.session_id
+			JOIN runs run ON run.id=NEW.run_id AND (run.session_id=NEW.session_id OR (EXISTS(SELECT 1 FROM agent_nodes child JOIN agent_attempts attempt ON attempt.id=child.active_attempt_id
+ JOIN specialist_tool_bindings b ON b.agent_attempt_id=attempt.id JOIN specialist_tool_calls call ON call.agent_attempt_id=attempt.id
+ WHERE child.run_id=run.id AND child.id=NEW.agent_id AND child.session_id=NEW.session_id AND child.role='specialist'
+ AND child.status='running' AND attempt.status='running' AND attempt.agent_id=child.id AND attempt.run_id=run.id
+ AND attempt.lease_id=NEW.lease_id AND attempt.lease_generation=NEW.lease_generation
+ AND b.mode='worker' AND b.batch_plan_id='' AND b.session_id=child.session_id AND b.workspace_id=mission.workspace_id
+ AND b.worker_profile_json=child.worker_profile_json AND child.worker_profile_json<>'null'
+ AND (json_type(child.worker_profile_json,'$.tools')='null' OR EXISTS(SELECT 1 FROM json_each(child.worker_profile_json,'$.tools') tool WHERE tool.value=call.name))
+ AND call.name IN ('workspace_change','workspace_delete') AND (call.name<>'workspace_delete' OR json_extract(call.payload_json,'$.action')='propose')
+ AND call.status='pending' AND call.started_at IS NOT NULL AND call.charge_id<>''
+ AND json_extract(call.payload_json,'$.path')=NEW.path AND json_extract(call.payload_json,'$.expected_sha256')=NEW.original_hash
+ AND json_extract(call.authority_json,'$.worker.agent_id')=child.id AND json_extract(call.authority_json,'$.worker.attempt_id')=attempt.id
+ AND json_extract(call.authority_json,'$.permission_snapshot_id')=NEW.permission_snapshot_id
+ AND json_extract(call.authority_json,'$.permission_revision')=NEW.permission_revision)))
 			JOIN missions mission ON mission.id=run.mission_id
-			JOIN sessions session_record ON session_record.id=run.session_id
+			JOIN sessions session_record ON session_record.id=NEW.session_id
 			JOIN run_execution_permission_snapshots permission
 				ON permission.id=NEW.permission_snapshot_id AND permission.run_id=run.id
 			JOIN run_mode_snapshots mode ON mode.run_id=run.id AND mode.revision=NEW.mode_revision
@@ -16471,8 +16540,20 @@ CREATE TRIGGER trg_file_edit_auto_authorization_insert
 				AND mode.mission_id=mission.id AND mode.surface='code' AND mode.phase='deliver'
 				AND NOT EXISTS (SELECT 1 FROM run_mode_snapshots later
 					WHERE later.run_id=run.id AND later.revision>mode.revision)
-				AND agent.session_id=run.session_id AND agent.role='root'
-				AND agent.parent_id IS NULL AND agent.depth=0
+				AND ((agent.session_id=run.session_id AND agent.role='root' AND agent.parent_id IS NULL AND agent.depth=0) OR (agent.session_id=NEW.session_id AND agent.role='specialist' AND (EXISTS(SELECT 1 FROM agent_nodes child JOIN agent_attempts attempt ON attempt.id=child.active_attempt_id
+ JOIN specialist_tool_bindings b ON b.agent_attempt_id=attempt.id JOIN specialist_tool_calls call ON call.agent_attempt_id=attempt.id
+ WHERE child.run_id=run.id AND child.id=NEW.agent_id AND child.session_id=NEW.session_id AND child.role='specialist'
+ AND child.status='running' AND attempt.status='running' AND attempt.agent_id=child.id AND attempt.run_id=run.id
+ AND attempt.lease_id=NEW.lease_id AND attempt.lease_generation=NEW.lease_generation
+ AND b.mode='worker' AND b.batch_plan_id='' AND b.session_id=child.session_id AND b.workspace_id=mission.workspace_id
+ AND b.worker_profile_json=child.worker_profile_json AND child.worker_profile_json<>'null'
+ AND (json_type(child.worker_profile_json,'$.tools')='null' OR EXISTS(SELECT 1 FROM json_each(child.worker_profile_json,'$.tools') tool WHERE tool.value=call.name))
+ AND call.name IN ('workspace_change','workspace_delete') AND (call.name<>'workspace_delete' OR json_extract(call.payload_json,'$.action')='propose')
+ AND call.status='pending' AND call.started_at IS NOT NULL AND call.charge_id<>''
+ AND json_extract(call.payload_json,'$.path')=NEW.path AND json_extract(call.payload_json,'$.expected_sha256')=NEW.original_hash
+ AND json_extract(call.authority_json,'$.worker.agent_id')=child.id AND json_extract(call.authority_json,'$.worker.attempt_id')=attempt.id
+ AND json_extract(call.authority_json,'$.permission_snapshot_id')=NEW.permission_snapshot_id
+ AND json_extract(call.authority_json,'$.permission_revision')=NEW.permission_revision))))
 				AND agent.status IN ('ready','running','waiting')
 				AND lease.lease_id=NEW.lease_id AND lease.generation=NEW.lease_generation
 				AND lease.status='active' AND julianday(lease.expires_at)>julianday('now')
@@ -24895,7 +24976,7 @@ CREATE TRIGGER trg_specialist_delegation_application_insert
 				AND root.child_limit IN (0, NEW.max_children)
 				AND julianday(NEW.created_at) >= julianday(review.created_at)
 				AND (SELECT COUNT(*) FROM agent_nodes child
-					WHERE child.run_id = NEW.run_id AND child.parent_id = NEW.root_agent_id)
+					WHERE child.run_id = NEW.run_id AND child.parent_id = NEW.root_agent_id AND child.status NOT IN ('completed','failed','cancelled'))
 					+ NEW.assignment_count <= NEW.max_children
 				AND NOT EXISTS (
 					SELECT 1 FROM specialist_delegation_assignments assignment
@@ -24909,14 +24990,14 @@ CREATE TRIGGER trg_specialist_delegation_application_insert
 									OR NOT EXISTS (SELECT 1 FROM json_each(root.skills_json) available
 										WHERE available.type = 'text' AND available.value = requested.value))))
 				AND root.turns_used
-					+ COALESCE((SELECT SUM(child.turn_limit) FROM agent_nodes child
+					+ COALESCE((SELECT SUM(CASE WHEN child.status IN ('completed','failed','cancelled') THEN child.turns_used ELSE MAX(child.turn_limit,child.turns_used) END) FROM agent_nodes child
 						WHERE child.run_id = NEW.run_id AND child.parent_id = NEW.root_agent_id), 0)
 					+ (SELECT SUM(assignment.turn_limit) FROM specialist_delegation_assignments assignment
 						WHERE assignment.proposal_id = NEW.proposal_id)
 					< json_extract(run.budget_json, '$.max_turns')
 				AND (COALESCE(json_extract(run.budget_json, '$.max_tokens'), 0) = 0
 					OR root.tokens_used
-						+ COALESCE((SELECT SUM(child.token_limit) FROM agent_nodes child
+						+ COALESCE((SELECT SUM(CASE WHEN child.status IN ('completed','failed','cancelled') THEN child.tokens_used ELSE MAX(child.token_limit,child.tokens_used) END) FROM agent_nodes child
 							WHERE child.run_id = NEW.run_id AND child.parent_id = NEW.root_agent_id), 0)
 						+ (SELECT SUM(assignment.token_limit) FROM specialist_delegation_assignments assignment
 							WHERE assignment.proposal_id = NEW.proposal_id)
@@ -25046,7 +25127,7 @@ CREATE TRIGGER trg_specialist_delegation_operation_insert
 				AND (SELECT COUNT(*) FROM specialist_delegation_assignments assignment
 					WHERE assignment.proposal_id = proposal.id) = proposal.assignment_count
 				AND (SELECT COUNT(*) FROM agent_nodes child
-					WHERE child.run_id = proposal.run_id AND child.parent_id = root.id)
+					WHERE child.run_id = proposal.run_id AND child.parent_id = root.id AND child.status NOT IN ('completed','failed','cancelled'))
 					+ proposal.assignment_count <= 2
 				AND COALESCE((SELECT SUM(assignment.turn_limit)
 					FROM specialist_delegation_assignments assignment
@@ -25861,6 +25942,10 @@ CREATE TRIGGER trg_specialist_tool_call_immutable BEFORE UPDATE ON specialist_to
    WHEN OLD.status<>'pending' OR NEW.agent_attempt_id<>OLD.agent_attempt_id OR NEW.round<>OLD.round
 		    OR NEW.position<>OLD.position OR NEW.call_id<>OLD.call_id OR NEW.name<>OLD.name OR NEW.payload_json<>OLD.payload_json OR NEW.created_at<>OLD.created_at
 		    OR (OLD.charge_id<>'' AND NEW.charge_id<>OLD.charge_id)
+    OR (OLD.authority_json<>'' AND NEW.authority_json<>OLD.authority_json)
+    OR (OLD.approval_source_id<>'' AND NEW.approval_source_id<>OLD.approval_source_id)
+    OR (OLD.approval_id<>'' AND NEW.approval_id<>OLD.approval_id)
+    OR (OLD.started_at IS NOT NULL AND NEW.started_at IS NOT OLD.started_at)
    BEGIN SELECT RAISE(ABORT,'Specialist tool receipt is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_specialist_tool_call_terminal_lease BEFORE UPDATE OF status ON specialist_tool_calls
@@ -25883,6 +25968,12 @@ CREATE TRIGGER trg_specialist_tool_round_insert BEFORE INSERT ON specialist_tool
 		   AND c.status='running' AND c.active_attempt_id=a.id AND l.lease_id=a.lease_id AND l.generation=a.lease_generation
 		   AND l.status='active' AND julianday(l.expires_at)>julianday('now'))
 		 BEGIN SELECT RAISE(ABORT,'child tool round requires its completed active leased model response');END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_tool_start BEFORE UPDATE OF started_at ON specialist_tool_calls
+ WHEN OLD.started_at IS NULL AND NEW.started_at IS NOT NULL AND
+ (NEW.status<>'pending' OR NEW.charge_id='' OR NEW.authority_json='' OR
+  (NEW.approval_id<>'' AND NOT EXISTS(SELECT 1 FROM tool_approvals p WHERE p.id=NEW.approval_id AND (p.proposal_id=NEW.approval_source_id OR (NEW.name IN ('workspace_apply','workspace_delete') AND p.proposal_id=json_extract(NEW.payload_json,'$.edit_id') AND p.action_class='workspace_write')) AND p.status='approved')))
+ BEGIN SELECT RAISE(ABORT,'child tool start requires charged authority and approved review');END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_standard_code_delivery_delete_immutable
 		BEFORE DELETE ON standard_code_deliveries BEGIN
@@ -27357,3 +27448,5 @@ CREATE TRIGGER trg_workspace_file_attachment_nodelete BEFORE DELETE ON workspace
 CREATE TRIGGER trg_workspace_image_immutable BEFORE UPDATE ON workspace_image_attachments BEGIN SELECT RAISE(ABORT, 'Workspace image is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_workspace_image_nodelete BEFORE DELETE ON workspace_image_attachments BEGIN SELECT RAISE(ABORT, 'Workspace image is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER workflow_definition_immutable BEFORE UPDATE ON workflow_definitions BEGIN SELECT RAISE(ABORT, 'workflow definitions are immutable'); END;

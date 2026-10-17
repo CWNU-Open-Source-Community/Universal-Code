@@ -171,6 +171,7 @@ func agentCodeCapabilityGeneration(scope AgentCodeCapabilityContext,
 // to a provider tool call after its arguments have been normalized. It is not
 // part of the provider-visible schema and cannot be supplied by the model.
 type AgentCodeCallAuthority struct {
+	Worker                 *AgentCodeWorkerAuthority         `json:"worker,omitempty"`
 	ProtocolVersion        string                            `json:"protocol_version"`
 	RunID                  string                            `json:"run_id"`
 	MissionID              string                            `json:"mission_id"`
@@ -190,6 +191,12 @@ type AgentCodeCallAuthority struct {
 	ModeRevision           int64                             `json:"mode_revision"`
 	PermissionRevision     int64                             `json:"permission_revision"`
 	CapabilityGeneration   string                            `json:"capability_generation"`
+}
+
+type AgentCodeWorkerAuthority struct {
+	AgentID   string `json:"agent_id"`
+	AttemptID string `json:"attempt_id"`
+	SessionID string `json:"session_id"`
 }
 
 func NewAgentCodeCallAuthority(scope AgentCodeCapabilityContext, sessionID string) (
@@ -222,7 +229,7 @@ func (a AgentCodeCallAuthority) Validate() error {
 	if a.ProtocolVersion != AgentCodeRegistryVersion ||
 		!validAgentCodeDigest(a.RootFingerprint, false) ||
 		!validAgentCodeDigest(a.CapabilityGeneration, false) ||
-		a.Surface != domain.ExecutionSurfaceCode || a.Role != domain.AgentRoleRoot ||
+		a.Surface != domain.ExecutionSurfaceCode || (a.Role != domain.AgentRoleRoot && a.Role != domain.AgentRoleSpecialist) ||
 		!a.Phase.Valid() || !a.PermissionMode.Valid() || a.ModeRevision <= 0 ||
 		a.PermissionRevision <= 0 {
 		return errors.New("agent code authority scope is invalid")
@@ -235,10 +242,17 @@ func (a AgentCodeCallAuthority) Validate() error {
 	if _, err := domain.ParseProfile(string(a.Profile)); err != nil {
 		return err
 	}
+	if (a.Worker == nil) != (a.Role == domain.AgentRoleRoot) || (a.Worker != nil && (!validAgentCodeIdentity(a.Worker.AgentID) || !validAgentCodeIdentity(a.Worker.AttemptID) || a.Worker.SessionID != a.SessionID || a.Worker.AgentID == a.RootAgentID)) {
+		return errors.New("agent code worker authority is incomplete")
+	}
+	catalogueRole := a.Role
+	if a.Worker != nil {
+		catalogueRole = domain.AgentRoleRoot
+	}
 	expected := AgentCodeCapabilities(AgentCodeCapabilityContext{RunID: a.RunID,
 		MissionID: a.MissionID, RootAgentID: a.RootAgentID, WorkspaceID: a.WorkspaceID,
 		RootFingerprint: a.RootFingerprint, Surface: a.Surface, Phase: a.Phase,
-		Role: a.Role, Profile: a.Profile, PermissionMode: a.PermissionMode,
+		Role: catalogueRole, Profile: a.Profile, PermissionMode: a.PermissionMode,
 		PermissionSnapshotID:   a.PermissionSnapshotID,
 		PermissionGeneration:   a.PermissionGeneration,
 		PermissionRuntimeEpoch: a.PermissionRuntimeEpoch,
@@ -701,6 +715,9 @@ func validAgentCodeDigest(value string, allowMissing bool) bool {
 }
 
 type AgentCodeExecutionScope struct {
+	AgentID                string
+	AgentAttemptID         string
+	SpecialistToolCallID   string
 	InvocationID           string
 	SupervisorToolCallID   string
 	OperationKey           string
@@ -730,6 +747,13 @@ type AgentCodeExecutionScope struct {
 	PolicyDecision         Decision
 }
 
+func (s AgentCodeExecutionScope) ActorID() string {
+	if s.AgentID != "" {
+		return s.AgentID
+	}
+	return s.RootAgentID
+}
+
 func (s AgentCodeExecutionScope) ControlWorkspaceID() string {
 	if s.SourceWorkspaceID != "" {
 		return s.SourceWorkspaceID
@@ -740,6 +764,9 @@ func (s AgentCodeExecutionScope) ControlWorkspaceID() string {
 // CheckpointInvocationID identifies the durable Supervisor call whose attempt
 // owns the mutation. InvocationID remains the separate gateway budget charge.
 func (s AgentCodeExecutionScope) CheckpointInvocationID() string {
+	if s.SpecialistToolCallID != "" {
+		return s.SpecialistToolCallID
+	}
 	if s.SupervisorToolCallID != "" {
 		return s.SupervisorToolCallID
 	}
@@ -747,6 +774,10 @@ func (s AgentCodeExecutionScope) CheckpointInvocationID() string {
 }
 
 func (s AgentCodeExecutionScope) Validate() error {
+	worker := s.RequestedBy == "specialist_runner"
+	if worker && (s.Role != domain.AgentRoleSpecialist || !validAgentCodeIdentity(s.AgentID) || !validAgentCodeIdentity(s.AgentAttemptID) || !validAgentCodeIdentity(s.SpecialistToolCallID) || s.AgentID == s.RootAgentID || s.SupervisorToolCallID != "") {
+		return errors.New("agent code worker requires its own recorded child attempt and call")
+	}
 	if !validAgentCodeIdentity(s.InvocationID) || s.OperationKey == "" ||
 		!validAgentCodeIdentity(s.RunID) || !validAgentCodeIdentity(s.MissionID) ||
 		!validAgentCodeIdentity(s.RootAgentID) || !validAgentCodeIdentity(s.SessionID) ||
@@ -755,11 +786,11 @@ func (s AgentCodeExecutionScope) Validate() error {
 		(s.SupervisorToolCallID != "" && !validAgentCodeIdentity(s.SupervisorToolCallID)) ||
 		!validAgentCodeDigest(s.RootFingerprint, false) ||
 		!validAgentCodeDigest(s.CapabilityGeneration, false) ||
-		s.Surface != domain.ExecutionSurfaceCode || s.Role != domain.AgentRoleRoot ||
+		s.Surface != domain.ExecutionSurfaceCode || (!worker && s.Role != domain.AgentRoleRoot) ||
 		!s.Phase.Valid() || !s.PermissionMode.Valid() || s.ModeRevision <= 0 ||
 		s.PermissionRevision <= 0 || s.LeaseID == "" || s.LeaseGeneration <= 0 ||
 		!validAgentCodeRuntimeBinding(s.PermissionMode, s.PermissionSnapshotID, s.PermissionGeneration, s.PermissionRuntimeEpoch, s.RunAuthorizationFence) ||
-		s.RequestedBy != "run_supervisor" {
+		(!worker && s.RequestedBy != "run_supervisor") {
 		return errors.New("agent code tool requires an exact fenced Code/Root capability scope")
 	}
 	if _, err := domain.ParseProfile(string(s.Profile)); err != nil {
@@ -835,6 +866,12 @@ func (g *Gateway) invokeAgentCode(ctx context.Context, call ToolCall) (Outcome, 
 		CapabilityGeneration:   call.CapabilityGeneration, LeaseID: call.LeaseID,
 		LeaseGeneration: call.LeaseGeneration, RequestedBy: call.RequestedBy,
 		PolicyDecision: decision}
+	if call.RequestedBy == "specialist_runner" {
+		scope.RootAgentID = call.RootAgentID
+		scope.AgentID = call.AgentID
+		scope.AgentAttemptID = call.AgentAttemptID
+		scope.SpecialistToolCallID = call.SpecialistToolCallID
+	}
 	if err := scope.Validate(); err != nil {
 		return Outcome{}, err
 	}

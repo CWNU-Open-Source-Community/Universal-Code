@@ -79,6 +79,9 @@ func (s *FileEditApplyService) fileEditDispatchCheck(ctx context.Context,
 		if err := s.checkCurrentPolicy(checkCtx, current); err != nil {
 			return executionauth.OperationAuthority{}, err
 		}
+		if err := s.checkWorkerFileEditSource(checkCtx, current, request); err != nil {
+			return executionauth.OperationAuthority{}, err
+		}
 		if err := s.checkAutomaticFileEditAuthorization(checkCtx, current, request); err != nil {
 			return executionauth.OperationAuthority{}, err
 		}

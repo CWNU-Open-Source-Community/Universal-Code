@@ -409,7 +409,7 @@ func TestRunPauseInterruptsAttemptBeforeSpecialistProjectionMoves(t *testing.T) 
 
 func TestSchemaV24PreservesReadySpecialistAndAddsAttemptRuntime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v23.db")
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	st := openCurrentTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"))
 
 	ctx := context.Background()
 	fixture := prepareSpecialistAttemptFixtureWithoutLease(t, ctx, st,

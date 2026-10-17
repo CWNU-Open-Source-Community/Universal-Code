@@ -39,6 +39,26 @@ type commandRuntimeJobScanner interface {
 	Scan(...any) error
 }
 
+// GetCommandRuntimeJobAttribution reads the immutable native Job actor without
+// requiring a UI Thread. Runtime owners use it to isolate siblings' Jobs.
+func (s *SQLiteStore) GetCommandRuntimeJobAttribution(ctx context.Context, jobID string) (domain.AgentAttribution, error) {
+	var agentID, attemptID sql.NullString
+	var source string
+	err := s.db.QueryRowContext(ctx, `SELECT agent_id,agent_attempt_id,attribution_source
+		FROM command_runtime_job_agents WHERE job_id=?`, jobID).Scan(&agentID, &attemptID, &source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.AgentAttribution{Source: domain.AgentAttributionLegacyUnknown}, nil
+	}
+	if err != nil {
+		return domain.AgentAttribution{}, err
+	}
+	value := domain.AgentAttribution{AgentID: agentID.String, AgentAttemptID: attemptID.String, Source: domain.AgentAttributionSource(source)}
+	if err := value.Validate(); err != nil {
+		return domain.AgentAttribution{}, apperror.Wrap(apperror.CodeFailedPrecondition, "invalid command Job actor", err)
+	}
+	return value, nil
+}
+
 func (s *SQLiteStore) PrepareCommandRuntimeJob(ctx context.Context,
 	job runner.CommandRuntimeJob,
 ) (runner.CommandRuntimeJob, bool, error) {

@@ -24,6 +24,7 @@ type MCPClientToolExecutor struct {
 	client       AgentRunnerMCPClient
 	store        MCPExecutionPermissionStore
 	capabilities domain.ExecutionPermissionRuntimeCapabilities
+	drydocks     *RunWorktreeService
 }
 
 type MCPExecutionPermissionStore interface {
@@ -64,12 +65,20 @@ func (e *MCPClientToolExecutor) ExecuteMCP(ctx context.Context,
 	if err != nil {
 		return toolgateway.MCPExecutionResult{}, err
 	}
+	var owned *mcp.InvocationWorkspace
+	if scope.RequestedBy == "specialist_runner" {
+		owned, err = workerMCPWorkspace(ctx, e.store, domain.AgentAttemptRef{RunID: scope.RunID, AgentID: scope.AgentID, AttemptID: scope.AgentAttemptID}, e.drydocks)
+		if err != nil {
+			return toolgateway.MCPExecutionResult{}, err
+		}
+	}
 	result, err := e.client.Invoke(ctx, mcp.InvokeRequest{
 		RunID: scope.RunID, WorkspaceID: scope.WorkspaceID,
 		ServerID: payload.ServerID, ToolName: payload.ToolName, Method: payload.Method,
 		CapabilityFingerprint: payload.CapabilityFingerprint,
 		Arguments:             payload.Arguments,
 		OperationID:           scope.InvocationID, Subject: subject, Authorizer: authorizer,
+		Workspace:             owned,
 	})
 	if err != nil {
 		return toolgateway.MCPExecutionResult{}, err

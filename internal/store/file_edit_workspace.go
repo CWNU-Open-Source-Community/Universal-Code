@@ -24,11 +24,11 @@ func (s *SQLiteStore) FileEditWorkspaceBelongsToRun(ctx context.Context,
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
 		SELECT 1 FROM runs r JOIN missions m ON m.id = r.mission_id
 		JOIN sessions se ON se.id = r.session_id
-		WHERE r.id = ? AND r.session_id = ? AND se.workspace_id = m.workspace_id
+		WHERE r.id = ? AND (r.session_id = ? OR EXISTS(SELECT 1 FROM agent_nodes child WHERE child.run_id=r.id AND child.role='specialist' AND child.session_id=?)) AND se.workspace_id = m.workspace_id
 		AND (m.workspace_id = ? OR EXISTS (SELECT 1 FROM `+ownerTable+` d
 			WHERE d.run_id = r.id AND d.mission_id = m.id AND d.session_id = se.id
 			AND d.source_workspace_id = m.workspace_id AND d.workspace_id = ?)))`,
-		runID, sessionID, workspaceID, workspaceID).Scan(&owned)
+		runID, sessionID, sessionID, workspaceID, workspaceID).Scan(&owned)
 	return owned, err
 }
 
@@ -36,8 +36,18 @@ func requireFileEditWorkspaceTx(ctx context.Context, tx *sql.Tx,
 	sessionID, workspaceID string, current bool,
 ) error {
 	binding, bound, err := runBindingForSessionTx(ctx, tx, sessionID)
-	if err != nil || !bound {
+	if err != nil {
 		return err
+	}
+	if !bound {
+		_, rootSession, child, err := specialistFileEditBindingTx(ctx, tx, sessionID, current)
+		if err != nil {
+			return err
+		}
+		if child {
+			return requireFileEditWorkspaceTx(ctx, tx, rootSession, workspaceID, current)
+		}
+		return nil
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	if !current && binding.WorkspaceID == workspaceID {

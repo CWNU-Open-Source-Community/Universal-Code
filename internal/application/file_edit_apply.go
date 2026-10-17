@@ -61,6 +61,7 @@ func (s *FileEditApplyService) WithRunWorktree(drydocks *RunWorktreeService) *Fi
 }
 
 type ApplyFileEditRequest struct {
+	WorkerSource           *domain.SpecialistToolSource
 	Version                string
 	RunID                  string
 	EditID                 string
@@ -234,7 +235,7 @@ func (s *FileEditApplyService) applyWithLease(ctx context.Context,
 		operation = fileedit.ApplyOperation{
 			ProtocolVersion: fileedit.FileEditApplyProtocolVersion,
 			KeyDigest:       keyDigest, RequestFingerprint: fingerprint,
-			RunID: binding.run.ID, SessionID: binding.run.SessionID,
+			RunID: binding.run.ID, SessionID: binding.edit.SessionID,
 			WorkspaceID: binding.edit.WorkspaceID, EditID: binding.edit.ID,
 			Operation: binding.edit.Operation, Path: binding.edit.Path,
 			DestinationPath: binding.edit.DestinationPath,
@@ -439,13 +440,24 @@ func (s *FileEditApplyService) loadBinding(ctx context.Context, runID string,
 	if err != nil {
 		return fileEditApplyBinding{}, apperror.Normalize(err)
 	}
-	linkedSession, err := s.store.GetSession(ctx, run.SessionID)
-	if err != nil {
-		return fileEditApplyBinding{}, apperror.Normalize(err)
-	}
 	edit, err := s.store.GetFileEdit(ctx, editID)
 	if err != nil {
 		return fileEditApplyBinding{}, apperror.Normalize(err)
+	}
+	linkedSession, err := s.store.GetSession(ctx, edit.SessionID)
+	if err != nil {
+		return fileEditApplyBinding{}, apperror.Normalize(err)
+	}
+	if edit.SessionID != run.SessionID {
+		owner, ok := s.store.(interface {
+			GetSpecialistFileEditOwner(context.Context, string, string) (domain.AgentNode, error)
+		})
+		if !ok {
+			return fileEditApplyBinding{}, errors.New("worker FileEdit ownership reader is unavailable")
+		}
+		if _, err := owner.GetSpecialistFileEditOwner(ctx, run.ID, edit.ID); err != nil {
+			return fileEditApplyBinding{}, err
+		}
 	}
 	if err := checkRunProjectPaths(run, edit.Path, edit.DestinationPath); err != nil {
 		return fileEditApplyBinding{}, err
@@ -459,10 +471,10 @@ func (s *FileEditApplyService) loadBinding(ctx context.Context, runID string,
 		return fileEditApplyBinding{}, apperror.Normalize(err)
 	}
 	if run.SessionID == "" || mission.WorkspaceID == "" ||
-		linkedSession.ID != run.SessionID ||
+		linkedSession.ID != edit.SessionID ||
 		linkedSession.WorkspaceID != mission.WorkspaceID ||
-		edit.SessionID != run.SessionID || edit.WorkspaceID != target.Workspace.ID ||
-		record.RunID != run.ID || record.SessionID != run.SessionID ||
+		edit.WorkspaceID != target.Workspace.ID ||
+		record.RunID != run.ID || record.SessionID != edit.SessionID ||
 		record.WorkspaceID != target.Workspace.ID ||
 		record.ProposalID != edit.ID || record.ToolName != fileedit.ApprovalToolName(edit) ||
 		record.ActionClass != "workspace_write" || record.Status != approval.StatusApproved {
@@ -503,7 +515,7 @@ func (s *FileEditApplyService) fileEditPolicyDecision(ctx context.Context, bindi
 			"destination_proposed_hash": binding.edit.DestinationProposedHash,
 		}})
 	if err := s.store.RecordPolicyDecision(ctx, policy.DecisionRecord{
-		SessionID: binding.run.SessionID, SubjectID: binding.edit.ID,
+		SessionID: binding.edit.SessionID, SubjectID: binding.edit.ID,
 		Context: "file_edit_apply", Decision: decision,
 	}); err != nil {
 		return decision, apperror.Normalize(err)
@@ -596,7 +608,7 @@ func (s *FileEditApplyService) loadOperationBinding(ctx context.Context,
 	if err != nil {
 		return fileEditApplyBinding{}, err
 	}
-	if binding.run.SessionID != operation.SessionID ||
+	if binding.edit.SessionID != operation.SessionID ||
 		binding.edit.WorkspaceID != operation.WorkspaceID ||
 		binding.edit.Operation != operation.Operation ||
 		binding.edit.Path != operation.Path ||
@@ -626,6 +638,9 @@ func normalizeFileEditApplyRequest(request ApplyFileEditRequest) (
 			"FileEdit apply idempotency key is invalid")
 	}
 	request.OperationKey = key
+	if request.WorkerSource != nil && (request.WorkerSource.Ref.RunID != request.RunID || request.WorkerSource.Ref.AgentID != request.AppliedBy || request.WorkerSource.CallID == "" || !request.WorkerSource.RequireStarted) {
+		return ApplyFileEditRequest{}, errors.New("worker FileEdit apply source is incomplete")
+	}
 	request.AppliedBy = strings.TrimSpace(request.AppliedBy)
 	request.InvocationID = strings.TrimSpace(request.InvocationID)
 	request.CapabilityGeneration = strings.TrimSpace(request.CapabilityGeneration)

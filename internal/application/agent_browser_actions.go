@@ -37,8 +37,11 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		return toolgateway.BrowserActionExecutionResult{}, e
 	}
 	s.mu.Lock()
-	slot := s.slots[a.RunID]
+	slot := s.slots[agentBrowserSlotKey(a)]
 	s.mu.Unlock()
+	if slot == nil {
+		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser session is unavailable")
+	}
 	slot.action.Lock()
 	defer slot.action.Unlock()
 	if e = s.check(ctx, a); e != nil {
@@ -47,10 +50,14 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 	if e = s.checkDurableDispatch(ctx, scope, canonical); e != nil {
 		return toolgateway.BrowserActionExecutionResult{}, e
 	}
-	if slot.consumed[scope.Call.SupervisorToolCallID] {
+	callID := scope.Call.SupervisorToolCallID
+	if scope.Call.SpecialistToolCallID != "" {
+		callID = scope.Call.SpecialistToolCallID
+	}
+	if slot.consumed[callID] {
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("outcome_unknown: this browser call was already dispatched; do not repeat")
 	}
-	slot.consumed[scope.Call.SupervisorToolCallID] = true
+	slot.consumed[callID] = true
 	var readiness *runner.CommandServiceReadiness
 	if p.ServiceJobID != "" {
 		if s.options.ServiceReadiness == nil {
@@ -73,7 +80,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		}
 	}
 	s.mu.Lock()
-	if s.closed || slot.closed || s.slots[a.RunID] != slot {
+	if s.closed || slot.closed || s.slots[agentBrowserSlotKey(a)] != slot {
 		s.mu.Unlock()
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser session retired before dispatch; original authority cannot be rebound")
 	}
@@ -146,8 +153,26 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 	}
 	switch name {
 	case toolgateway.BrowserStatusTool:
-		value, e = s.GetStatus(ctx, a.RunID)
+		s.mu.Lock()
+		value = s.projectSlotLocked(slot)
+		s.mu.Unlock()
 	case toolgateway.BrowserNavigateTool:
+		if p.ServiceJobID != "" {
+			// Browser startup may take seconds. Recheck the owned service at the
+			// actual navigation boundary rather than relying on its earlier probe.
+			observed, err := s.options.ServiceReadiness.CheckAgentBrowserService(ctx, a, p.ServiceJobID, p.URL)
+			if err != nil {
+				return toolgateway.BrowserActionExecutionResult{}, err
+			}
+			readiness = &observed
+			if !observed.Verified || observed.State != "ready" {
+				encoded, err := json.Marshal(struct {
+					Service *runner.CommandServiceReadiness `json:"service"`
+					Navigated bool `json:"navigated"`
+				}{readiness, false})
+				return toolgateway.BrowserActionExecutionResult{Content: string(encoded)}, err
+			}
+		}
 		if p.Viewport == nil {
 			value, e = r.Navigate(ctx, p.URL)
 		} else if navigator, ok := r.(agentBrowserViewportNavigator); ok {
@@ -214,7 +239,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 				if slot.screenshotCalls == nil {
 					slot.screenshotCalls = map[string]string{}
 				}
-				slot.screenshotCalls[locator] = scope.Call.SupervisorToolCallID
+				slot.screenshotCalls[locator] = callID
 				s.mu.Unlock()
 			}
 		}

@@ -165,14 +165,21 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 	}
 	ctx, cancel := context.WithTimeout(ctx, InvocationTimeout)
 	defer cancel()
-	entry, err := m.session(catalogSessionKey{request.RunID, request.WorkspaceID, request.ServerID})
+	sessionKey := catalogSessionKey{run: request.RunID, workspace: request.WorkspaceID, server: request.ServerID}
+	if request.Workspace != nil {
+		if !validClientIdentity(request.Workspace.ScopeID) || request.Workspace.Resolve == nil {
+			return result, apperror.New(apperror.CodeInvalidArgument, "MCP invocation workspace requires a host execution scope")
+		}
+		sessionKey.scope = request.Workspace.ScopeID
+	}
+	entry, err := m.session(sessionKey)
 	if err != nil {
 		return result, err
 	}
 	if err := entry.acquire(ctx); err != nil {
 		return result, err
 	}
-	defer m.releaseSession(catalogSessionKey{request.RunID, request.WorkspaceID, request.ServerID}, entry)
+	defer m.releaseSession(sessionKey, entry)
 	stop := context.AfterFunc(entry.lifetime, cancel)
 	defer stop()
 	key := entry.key
@@ -393,7 +400,7 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 			return connectCheck(ctx)
 		}
 	}
-	roots, err := m.prepareWorkspaceRoots(ctx, record, request.RunID, rootCheck)
+	roots, err := m.prepareWorkspaceRoots(ctx, record, request.RunID, rootCheck, request.Workspace)
 	if err != nil {
 		return result, err
 	}

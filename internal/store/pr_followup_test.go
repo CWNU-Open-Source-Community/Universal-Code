@@ -253,14 +253,32 @@ func TestPRFollowupSaveProtectsIdentityObservationsAndPendingReplay(t *testing.T
 	}
 }
 
-func TestPRFollowupMigrationFromV201(t *testing.T) {
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "upgrade.db"), 201)
+func TestPRFollowupMigrationFromV203PreservesMainHistory(t *testing.T) {
+	// main's v203 baseline pins the complete released migration history.
+	const mainPlanSHA256 = "87c7652da7a4574f627c6f359f8e98f2e400fad0118dcf43a4d0ff13d7fd0b61"
+	if got := migrationPlanDigest(migrationPlan()[:203]); got != mainPlanSHA256 {
+		t.Fatalf("released main migration history changed: %s", got)
+	}
+	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "upgrade.db"), 203)
+	before, err := st.loadAppliedMigrations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	var version int
-	if err := st.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 202 {
+	if err := st.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != LatestSchemaVersion {
 		t.Fatalf("migration version=%d err=%v", version, err)
+	}
+	after, err := st.loadAppliedMigrations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version, entry := range before {
+		if after[version] != entry {
+			t.Fatalf("main migration %d changed: before=%+v after=%+v", version, entry, after[version])
+		}
 	}
 	if _, err := st.ListPRFollowups(t.Context(), "", 10); err != nil {
 		t.Fatal(err)

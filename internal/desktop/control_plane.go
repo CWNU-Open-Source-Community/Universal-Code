@@ -699,6 +699,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	runtimeDependencies.DockerSandbox = dockerProposalExecutor
 	executionControl := application.NewRunExecutionHandoffWithRuntime(stateStore,
 		models.Router(), checker, runtimeDependencies)
+	specialistExecution := application.NewSpecialistExecutionService(stateStore, models.Router(), checker).
+		WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl).
+		WithExecutionRuntime(executionControl)
 	planDeliveryControl := application.NewPlanDeliveryControlService(stateStore)
 	approvalGateway := toolgateway.New(stateStore, checker).
 		WithDockerSandboxProposalExecutor(dockerProposalExecutor).
@@ -959,7 +962,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		FanoutExecutionController: application.NewReadOnlyFanoutExecutionService(
 			stateStore, models.Router(), checker),
 		ChildTaskControlController:    application.NewChildTaskControlService(stateStore),
-		SpecialistExecutionController: application.NewSpecialistExecutionService(stateStore, models.Router(), checker).WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl),
+		SpecialistExecutionController: specialistExecution,
+		WorkflowController:            application.NewWorkflowService(stateStore, specialistExecution),
 		ProviderCredentialController:  providerCredentialControl,
 		ChatGPTAuthController:         chatGPTAuth,
 		FileEditReviewController:      fileEditReview,

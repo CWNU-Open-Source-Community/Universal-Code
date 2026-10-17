@@ -362,7 +362,7 @@ func listPendingAgentMessagesTx(ctx context.Context, tx *sql.Tx,
 	if err != nil {
 		return nil, err
 	}
-	if len(messages) > domain.MaxAgentInboxMessages*domain.MaxAgentNodesPerRun {
+	if len(messages) > domain.MaxAgentInboxMessages*domain.MaxAgentHistoryNodesPerRun {
 		return nil, apperror.New(apperror.CodeResourceExhausted, "agent graph pending inbox limit was exceeded")
 	}
 	return messages, nil

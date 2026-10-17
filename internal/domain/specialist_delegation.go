@@ -29,15 +29,16 @@ type SpecialistDelegationStatus string
 const SpecialistDelegationProposed SpecialistDelegationStatus = "proposed"
 
 type SpecialistDelegationAssignment struct {
-	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
-	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
-	Ordinal          int      `json:"-"`
-	Title            string   `json:"title"`
-	Goal             string   `json:"goal"`
-	Skills           []string `json:"skills"`
-	TurnLimit        int64    `json:"turn_limit"`
-	TokenLimit       int64    `json:"token_limit"`
+	Worker           *WorkerProfile `json:"worker,omitempty"`
+	AllowedReadPaths []string       `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64          `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64          `json:"cost_limit_micros,omitempty"`
+	Ordinal          int            `json:"-"`
+	Title            string         `json:"title"`
+	Goal             string         `json:"goal"`
+	Skills           []string       `json:"skills"`
+	TurnLimit        int64          `json:"turn_limit"`
+	TokenLimit       int64          `json:"token_limit"`
 }
 
 type SpecialistDelegationSpec struct {
@@ -104,6 +105,11 @@ func NormalizeSpecialistDelegationSpec(spec SpecialistDelegationSpec) (Specialis
 	seen := make(map[string]struct{}, len(spec.Assignments))
 	for index, assignment := range spec.Assignments {
 		assignment.Ordinal = index + 1
+		worker, err := NormalizeWorkerProfile(assignment.Worker)
+		if err != nil {
+			return SpecialistDelegationSpec{}, err
+		}
+		assignment.Worker = worker
 		if err := ValidateSpecialistReadLimits(assignment.AllowedReadPaths, assignment.ToolCallLimit, assignment.CostLimitMicros); err != nil {
 			return SpecialistDelegationSpec{}, err
 		}
@@ -152,7 +158,7 @@ func (s SpecialistDelegationSpec) Validate() error {
 		func(left, right SpecialistDelegationAssignment) bool {
 			return left.Ordinal == right.Ordinal && left.Title == right.Title && left.Goal == right.Goal &&
 				slices.Equal(left.Skills, right.Skills) && left.TurnLimit == right.TurnLimit &&
-				left.TokenLimit == right.TokenLimit && slices.Equal(left.AllowedReadPaths, right.AllowedReadPaths) && left.ToolCallLimit == right.ToolCallLimit && left.CostLimitMicros == right.CostLimitMicros
+				left.TokenLimit == right.TokenLimit && slices.Equal(left.AllowedReadPaths, right.AllowedReadPaths) && left.ToolCallLimit == right.ToolCallLimit && left.CostLimitMicros == right.CostLimitMicros && EqualWorkerProfiles(left.Worker, right.Worker)
 		}) {
 		return errors.New("specialist delegation specification must be normalized")
 	}

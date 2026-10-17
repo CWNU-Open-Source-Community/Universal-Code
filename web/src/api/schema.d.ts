@@ -3813,6 +3813,121 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run workflow executions */
+        get: operations["listRunWorkflowExecutions"];
+        put?: never;
+        /** Start a saved workflow with inputs */
+        post: operations["startRunWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/workflows/{execution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read workflow state and committed outputs */
+        get: operations["getRunWorkflow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/advance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * advance a saved workflow execution
+         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         */
+        post: operations["advanceRunWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * pause a saved workflow execution
+         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         */
+        post: operations["pauseRunWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * rerun a saved workflow execution
+         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         */
+        post: operations["rerunRunWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * resume a saved workflow execution
+         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         */
+        post: operations["resumeRunWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/workspace-checkpoints": {
         parameters: {
             query?: never;
@@ -5391,6 +5506,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List saved workflow definitions */
+        get: operations["listWorkflowDefinitions"];
+        put?: never;
+        /** Save an immutable bounded workflow */
+        post: operations["saveWorkflowDefinition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{definition_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a saved workflow */
+        get: operations["getWorkflowDefinition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -5933,6 +6083,7 @@ export interface components {
             updated_at: string;
             /** Format: int64 */
             version: number;
+            worker?: components["schemas"]["WorkerProfile"];
         };
         ApprovalContinuationResult: {
             error_code?: string;
@@ -6602,6 +6753,27 @@ export interface components {
             trigger_receipt_id: string;
             workspace_id: string;
         };
+        ChildTask: {
+            allowed_read_paths?: string[];
+            /** Format: int64 */
+            cost_limit_micros?: number;
+            dependency_ordinals: number[];
+            expected_artifacts: components["schemas"]["ChildTaskExpectedArtifact"][];
+            goal: string;
+            input_refs: string[];
+            skills: string[];
+            surface_hint: string;
+            /** Format: int64 */
+            timeout_millis: number;
+            title: string;
+            /** Format: int64 */
+            token_limit: number;
+            /** Format: int64 */
+            tool_call_limit?: number;
+            /** Format: int64 */
+            turn_limit: number;
+            worker?: components["schemas"]["WorkerProfile"];
+        };
         ChildTaskAdmitRequestView: {
             confirm_admit: boolean;
             version: string;
@@ -6669,6 +6841,7 @@ export interface components {
             tool_call_limit?: number;
             /** Format: int64 */
             turn_limit: number;
+            worker?: components["schemas"]["WorkerProfile"];
         };
         CitationPresentation: {
             citation_id: string;
@@ -7421,6 +7594,7 @@ export interface components {
             tool_call_limit?: number;
             /** Format: int64 */
             turn_limit: number;
+            worker?: components["schemas"]["WorkerProfile"];
         };
         DelegationReviewView: {
             /** Format: date-time */
@@ -11463,6 +11637,25 @@ export interface components {
             /** @enum {string} */
             version: "run_activity.v1";
         };
+        RunAgentUsage: {
+            /** Format: int64 */
+            read_only_fanout_millis: number;
+            /** Format: int64 */
+            read_only_fanout_tokens: number;
+            /** Format: int64 */
+            root_execution_millis: number;
+            /** Format: int64 */
+            root_tokens: number;
+            run_id: string;
+            /** Format: int64 */
+            specialist_execution_millis: number;
+            /** Format: int64 */
+            specialist_tokens: number;
+            /** Format: int64 */
+            total_execution_millis: number;
+            /** Format: int64 */
+            total_tokens: number;
+        };
         RunBrowserCDPPermissionControlRequestView: {
             confirm_full_cdp_debug?: boolean;
             /** @enum {string} */
@@ -12934,6 +13127,7 @@ export interface components {
             turns_started: number;
             /** @enum {string} */
             version: "specialist_continuation.v1";
+            waiting_approval: boolean;
             wake_id?: string;
         };
         SpecialistExecutionRequestView: {
@@ -12956,6 +13150,7 @@ export interface components {
             tool_rounds: number;
             usage: components["schemas"]["AgentAttemptUsage"];
             version: string;
+            waiting_approval: boolean;
         };
         SpecialistModelCancellationView: {
             agent_id: string;
@@ -12974,6 +13169,7 @@ export interface components {
             version: string;
         };
         SpecialistToolCallView: {
+            approval_id?: string;
             call_id: string;
             error_code?: string;
             name: string;
@@ -15384,6 +15580,112 @@ export interface components {
             updated_at: string;
             /** Format: int64 */
             version: number;
+        };
+        WorkerProfile: {
+            tools?: string[] | null;
+        };
+        WorkflowCondition: {
+            equals: unknown;
+            ref: components["schemas"]["WorkflowValueRef"];
+        };
+        WorkflowControlView: {
+            confirm_start?: boolean;
+            /** Format: int64 */
+            revision: number;
+            version: string;
+        };
+        WorkflowDefinition: {
+            /** Format: date-time */
+            created_at: string;
+            digest: string;
+            id: string;
+            spec: components["schemas"]["WorkflowSpec"];
+        };
+        WorkflowDefinitionsView: {
+            items: components["schemas"]["WorkflowDefinition"][];
+        };
+        WorkflowExecution: {
+            /** Format: date-time */
+            created_at: string;
+            definition_id: string;
+            id: string;
+            inputs: unknown;
+            reason?: string;
+            /** Format: int64 */
+            revision: number;
+            run_id: string;
+            state: components["schemas"]["WorkflowState"];
+            status: string;
+            /** Format: int64 */
+            turns_before: number;
+            /** Format: date-time */
+            updated_at: string;
+            usage_before: components["schemas"]["RunAgentUsage"];
+        };
+        WorkflowExecutionsView: {
+            items: components["schemas"]["WorkflowExecution"][];
+        };
+        WorkflowFrame: {
+            block: string;
+            /** Format: int32 */
+            index: number;
+            /** Format: int32 */
+            iteration?: number;
+        };
+        WorkflowLimits: {
+            /** Format: int32 */
+            max_jobs: number;
+            /** Format: int32 */
+            max_steps: number;
+            /** Format: int64 */
+            max_tokens: number;
+            /** Format: int64 */
+            max_turns: number;
+            /** Format: int64 */
+            timeout_millis: number;
+        };
+        WorkflowSpec: {
+            limits: components["schemas"]["WorkflowLimits"];
+            name: string;
+            steps: components["schemas"]["WorkflowStep"][];
+            version: string;
+        };
+        WorkflowStartView: {
+            confirm_start: boolean;
+            definition_id: string;
+            inputs: unknown;
+            version: string;
+        };
+        WorkflowState: {
+            iterations: {
+                [key: string]: number;
+            };
+            /** Format: int32 */
+            jobs: number;
+            outputs: {
+                [key: string]: unknown;
+            };
+            stack: components["schemas"]["WorkflowFrame"][];
+            /** Format: int32 */
+            steps: number;
+        };
+        WorkflowStep: {
+            body?: components["schemas"]["WorkflowStep"][];
+            condition?: components["schemas"]["WorkflowCondition"];
+            else?: components["schemas"]["WorkflowStep"][];
+            id: string;
+            inputs?: {
+                [key: string]: components["schemas"]["WorkflowValueRef"];
+            };
+            kind: string;
+            /** Format: int32 */
+            max_iterations?: number;
+            task?: components["schemas"]["ChildTask"];
+            then?: components["schemas"]["WorkflowStep"][];
+        };
+        WorkflowValueRef: {
+            path?: string;
+            step: string;
         };
         WorkspaceCheckpointTimeline: {
             checkpoints: components["schemas"]["Checkpoint"][];
@@ -24761,6 +25063,325 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    listRunWorkflowExecutions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecutionsView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    startRunWorkflow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowStartView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getRunWorkflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+                /** @description Workflow execution */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    advanceRunWorkflow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+                /** @description Workflow execution */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowControlView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    pauseRunWorkflow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+                /** @description Workflow execution */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowControlView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    rerunRunWorkflow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+                /** @description Workflow execution */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowControlView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    resumeRunWorkflow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+                /** @description Workflow execution */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowControlView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     listWorkspaceCheckpoints: {
         parameters: {
             query?: {
@@ -28500,6 +29121,121 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["WorkItemView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listWorkflowDefinitions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowDefinitionsView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    saveWorkflowDefinition: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowSpec"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowDefinition"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getWorkflowDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Immutable saved definition */
+                definition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowDefinition"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

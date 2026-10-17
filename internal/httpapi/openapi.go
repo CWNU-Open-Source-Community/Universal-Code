@@ -324,7 +324,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 		"minLength": domain.MinAgentOperationKeyBytes, "maxLength": domain.MaxAgentOperationKeyBytes - 32, "pattern": `^\S+$`}
 	memoryCandidateWorkspace := identityQueryParameter("workspace_id", "Workspace identity")
 	memoryCandidateWorkspace.Required = true
-	return []openAPIOperationSpec{
+	return append([]openAPIOperationSpec{
 		{Path: "/api/v1/memory-candidates", OperationID: "listContextMemoryCandidates",
 			Summary: "Review source-linked experience candidates", Tag: "Memory",
 			Description: "Derives a bounded Workspace queue from persisted decision/summary Notes with real completed Run, Thread reply or delivery sources. Pending candidates never enter model context; resolved records retain only content-free audit metadata.",
@@ -2302,7 +2302,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 		{Path: "/api/v1/artifacts/{artifact_id}", OperationID: "getArtifact", Summary: "Inspect an Artifact descriptor",
 			Tag: "Artifacts", Description: "Returns content-free Artifact metadata and its integrity hash.",
 			DataType: reflect.TypeOf(ArtifactView{}), NotFound: true, Parameters: []openAPIParameter{artifactID}},
-	}
+	}, workflowOperationSpecs()...)
 }
 
 func buildOpenAPIOperation(spec openAPIOperationSpec, registry *openAPISchemaRegistry) (openAPIOperation, error) {
@@ -2663,6 +2663,9 @@ func (r *openAPISchemaRegistry) schema(valueType reflect.Type) map[string]any {
 }
 
 func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]any {
+	if valueType == reflect.TypeOf(domain.WorkerProfile{}) {
+		return map[string]any{"type": "object", "properties": map[string]any{"tools": map[string]any{"anyOf": []any{map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, map[string]any{"type": "null"}}}}, "additionalProperties": false}
+	}
 	// The HTTP-only sidecar is flattened beside the sealed Report. Keep the
 	// original Report schema/field metadata intact instead of adding receipt data.
 	if valueType == reflect.TypeOf(StandardCodeDeliveryReportView{}) {

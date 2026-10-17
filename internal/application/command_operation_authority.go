@@ -167,13 +167,17 @@ func (s *CommandRuntimeService) commandOperationCheck(scope toolgateway.CommandR
 		var source commandApprovalSource
 		var st commandApprovalStore
 		var err error
-		if bindings.permission.Mode.IsApprovalMode() && scope.RequestedBy == "run_supervisor" {
+		if bindings.permission.Mode.IsApprovalMode() && (scope.RequestedBy == "run_supervisor" || scope.RequestedBy == "specialist_runner") {
 			var ok bool
 			st, ok = s.store.(commandApprovalStore)
-			if !ok || scope.SupervisorToolCallID == "" {
+			if !ok || (scope.SupervisorToolCallID == "" && scope.SpecialistToolCallID == "") {
 				return executionauth.OperationAuthority{}, errors.New("command operation source is unavailable")
 			}
-			source, err = readCommandSource(ctx, st, scope.RunID, scope.SupervisorToolCallID, jobID == "" && input.Action == toolgateway.CommandRuntimeActionStart)
+			sourceID := scope.SupervisorToolCallID
+			if scope.RequestedBy == "specialist_runner" {
+				sourceID = domain.SpecialistToolApprovalID(domain.AgentAttemptRef{RunID: scope.RunID, AgentID: scope.AgentID, AttemptID: scope.AgentAttemptID}, scope.SpecialistToolCallID)
+			}
+			source, err = readCommandSource(ctx, st, scope.RunID, sourceID, jobID == "" && input.Action == toolgateway.CommandRuntimeActionStart)
 			if err != nil {
 				return executionauth.OperationAuthority{}, err
 			}
@@ -189,8 +193,8 @@ func (s *CommandRuntimeService) commandOperationCheck(scope toolgateway.CommandR
 			if err != nil {
 				return executionauth.OperationAuthority{}, err
 			}
-			if scope.RequestedBy == "run_supervisor" && (scope.AgentID != current.root.ID ||
-				current.root.Status != domain.AgentRunning || current.root.ActiveAttemptID != scope.AgentAttemptID) {
+			if (scope.RequestedBy == "run_supervisor" || scope.RequestedBy == "specialist_runner") && (scope.AgentID != current.actor.ID ||
+				current.actor.Status != domain.AgentRunning || current.actor.ActiveAttemptID != scope.AgentAttemptID) {
 				return executionauth.OperationAuthority{}, apperror.New(apperror.CodeConflict,
 					"command operation Agent attempt changed before dispatch")
 			}
@@ -211,10 +215,15 @@ func (s *CommandRuntimeService) commandOperationCheck(scope toolgateway.CommandR
 		}
 		var proof *approval.Record
 		policyInput := input
-		if current.permission.Mode.IsApprovalMode() && scope.RequestedBy == "run_supervisor" {
+		if current.permission.Mode.IsApprovalMode() && (scope.RequestedBy == "run_supervisor" || scope.RequestedBy == "specialist_runner") {
 			if !commandSourceMatchesScope(source, scope, current, s.adapter) || pinned == nil || !pinned(source) ||
 				(jobID != "" && source.authority.JobFingerprint != commandRuntimeJobFingerprint(activeJob)) {
 				return executionauth.OperationAuthority{}, errors.New("command operation input or native source changed")
+			}
+			if source.specialist != nil && source.call.Status == domain.SupervisorToolPending {
+				if err := s.validateWorkerCommandDispatch(ctx, scope, source); err != nil {
+					return executionauth.OperationAuthority{}, err
+				}
 			}
 			if source.call.Status == domain.SupervisorToolCompleted {
 				// Returning action=start completes the tool call, not its owned

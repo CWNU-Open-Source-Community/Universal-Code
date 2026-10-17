@@ -31,9 +31,10 @@ func (p SpecialistAdmissionPolicy) Validate() error {
 }
 
 type AdmitSpecialistRequest struct {
-	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
-	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	Worker           *domain.WorkerProfile `json:"worker,omitempty"`
+	AllowedReadPaths []string              `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64                 `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64                 `json:"cost_limit_micros,omitempty"`
 	RunID            string
 	ParentAgentID    string
 	Title            string
@@ -92,7 +93,12 @@ func (c *Coordinator) AdmitSpecialist(ctx context.Context,
 		return AdmitSpecialistResult{}, apperror.New(apperror.CodeInvalidArgument,
 			"specialist admission exceeds its per-child budget policy")
 	}
+	worker, err := domain.NormalizeWorkerProfile(req.Worker)
+	if err != nil {
+		return AdmitSpecialistResult{}, apperror.Wrap(apperror.CodeInvalidArgument, "specialist worker profile is invalid", err)
+	}
 	admission := domain.SpecialistAdmission{
+		Worker:  worker,
 		AgentID: idgen.New("agent"), SessionID: idgen.New("sess"),
 		RunID: strings.TrimSpace(req.RunID), ParentAgentID: strings.TrimSpace(req.ParentAgentID),
 		Title: strings.TrimSpace(req.Title), Skills: skills, TurnLimit: req.TurnLimit,

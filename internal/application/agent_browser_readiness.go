@@ -26,6 +26,18 @@ func (s *CommandRuntimeService) CheckAgentBrowserService(ctx context.Context, a 
 			job.PermissionSnapshotID != a.PermissionSnapshotID || job.PermissionRevision != a.PermissionRevision || job.RunAuthorizationFence != a.RunAuthorizationFence || job.ModeRevision != a.ModeRevision {
 			return runner.ErrCommandRuntimeBoundary
 		}
+		if a.Role == domain.AgentRoleSpecialist {
+			owners, ok := s.store.(interface {
+				GetCommandRuntimeJobAttribution(context.Context, string) (domain.AgentAttribution, error)
+			})
+			if !ok {
+				return runner.ErrCommandRuntimeBoundary
+			}
+			owner, err := owners.GetCommandRuntimeJobAttribution(c, jobID)
+			if err != nil || owner.Source != domain.AgentAttributionRecorded || owner.AgentID != a.AgentID || owner.AgentAttemptID != a.AgentAttemptID {
+				return runner.ErrCommandRuntimeBoundary
+			}
+		}
 		current, err := s.commandRuntimeJobBindingsCurrent(c, job)
 		if err != nil {
 			return err
