@@ -846,8 +846,13 @@ func desktopControlRequest(handler http.Handler, method string, path string,
 }
 
 func TestControlPlanePRFollowupWorkerUsesDesktopLifetime(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	plane, err := OpenControlPlane(ControlPlaneConfig{
-		DatabasePath: filepath.Join(t.TempDir(), "pr-followup-worker.db"),
+		DatabasePath: filepath.Join(root, "pr-followup-worker.db"),
+		HomePath:     root,
 		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
 		RunExecutionEnabled: true, GitHubReviewControlEnabled: true, ScheduledJobWorkerEnabled: true,
 		ExecutionPermissionControlEnabled: true, ApprovalControlEnabled: true,
