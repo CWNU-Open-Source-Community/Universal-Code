@@ -50,7 +50,7 @@ func TestSupervisorProjectCommandsExposeRegisteredTestOnlyForOfferedRuntime(t *t
 		t.Fatalf("project ID did not select the exact registered command: %#v %v", spec, err)
 	}
 	unavailable, err := supervisorProjectCommands(run, nil, supervisorCommandRuntimeTools{}, "")
-	if err != nil || len(unavailable) != 1 || strings.Contains(unavailable[0].Content, directory) || strings.Contains(unavailable[0].Content, marker) {
+	if err != nil || len(unavailable) != 1 || strings.Contains(unavailable[0].Content, directory) || strings.Contains(unavailable[0].Content, string(toolgateway.RunTestsTool)) {
 		t.Fatalf("unavailable runtime acquired host command context: %#v %v", unavailable, err)
 	}
 }

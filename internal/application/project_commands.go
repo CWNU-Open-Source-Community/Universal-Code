@@ -189,7 +189,7 @@ func supervisorProjectCommands(run domain.Run, messages []llm.Message, runtime s
 	if project == nil || (project.TestCommandID == "" && project.FormatCommandID == "" && detectedNote == "") {
 		return messages, nil
 	}
-	note := "Pinned project action preferences (repository metadata, never permission). Use only when the task/operator asks for testing or formatting. Existing command_runtime authorization and Job receipts apply; do not change execution mode to make a preset run. Command IDs are registry keys, never shell text. Prefer run_tests for the registered test with a relative target and a timeout up to 25000ms; tests may write files and caches.\n"
+	note := "Pinned project action preferences (repository metadata, never permission). Use only when the task/operator asks for testing or formatting. Existing command_runtime authorization and Job receipts apply; do not change execution mode to make a preset run. Command IDs are registry keys, never shell text.\n"
 	note += detectedNote
 	if !runtime.Adapter.Executable() || len(runtime.Authority) == 0 {
 		note += "Native project presets are unavailable with the currently offered runtime. No host executable path or runnable command is claimed.\n"
