@@ -26,11 +26,29 @@ func specialistFileEditBindingTx(ctx context.Context, tx *sql.Tx, sessionID stri
 	}
 	var b runBinding
 	var rootSession string
-	var active bool
-	query := `SELECT r.id,r.mission_id,m.workspace_id,r.session_id,(child.status='running' AND child.worker_profile_json<>'null') FROM agent_nodes child JOIN runs r ON r.id=child.run_id JOIN missions m ON m.id=r.mission_id WHERE child.session_id=? AND child.role='specialist'`
-	err := tx.QueryRowContext(ctx, query, sessionID).Scan(&b.RunID, &b.MissionID, &b.WorkspaceID, &rootSession, &active)
+	var active, legacyBatch bool
+	query := `SELECT r.id,r.mission_id,m.workspace_id,r.session_id,
+		(child.status='running' AND child.worker_profile_json<>'null'),
+		(child.worker_profile_json='null' AND EXISTS (
+			SELECT 1 FROM batch_delivery_workspaces batch
+			JOIN batch_delivery_plans plan ON plan.id=batch.plan_id AND plan.run_id=child.run_id
+			JOIN child_task_proposals proposal ON proposal.id=plan.proposal_id
+			WHERE batch.agent_id=child.id AND plan.root_agent_id=child.parent_id
+			AND json_type(proposal.spec_json,'$.tasks['||(batch.ordinal-1)||']')='object'
+			AND COALESCE(json_type(proposal.spec_json,'$.tasks['||(batch.ordinal-1)||'].worker'),'null')='null')
+		AND NOT EXISTS (SELECT 1 FROM specialist_tool_bindings binding
+			WHERE binding.run_id=child.run_id AND binding.agent_id=child.id AND binding.mode='worker'))
+		FROM agent_nodes child JOIN runs r ON r.id=child.run_id
+		JOIN missions m ON m.id=r.mission_id WHERE child.session_id=? AND child.role='specialist'`
+	err := tx.QueryRowContext(ctx, query, sessionID).Scan(&b.RunID, &b.MissionID, &b.WorkspaceID, &rootSession, &active, &legacyBatch)
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, "", false, nil
+	}
+	// Legacy Batch tools retain their separate owner-token/generation boundary.
+	// A nil current profile alone is insufficient: revocation clears it, so also
+	// exclude the original Worker grant and every recorded Worker binding.
+	if err == nil && legacyBatch {
+		return runBinding{}, "", false, nil
 	}
 	if err == nil && current && !active {
 		return b, rootSession, true, errors.New("worker FileEdit owner is no longer active")

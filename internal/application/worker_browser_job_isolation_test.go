@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
@@ -63,6 +65,18 @@ func TestWorkerBrowserReadinessCannotBorrowSiblingCommandJob(t *testing.T) {
 		defer cancel()
 		_ = browser.Shutdown(ctx)
 	})
+	// Readiness checks command ownership without launching a browser. Exercise
+	// both availability branches on every OS; installed-browser coverage lives
+	// in TestExecutionWorkersRealBrowserRejectSiblingSnapshot.
+	browser.launch = func(context.Context, browserruntime.AgentBrowserStartRequest) (agentBrowserRuntime, error) {
+		t.Error("command readiness must not launch a platform browser")
+		return nil, errors.New("platform browser launch is outside the readiness ownership test")
+	}
+	browser.available = false
+	if _, err := browser.WorkerToolAuthority(t.Context(), a.ref); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+		t.Fatalf("unavailable browser advertised worker authority: %v", err)
+	}
+	browser.available = true
 	raw, err := browser.WorkerToolAuthority(t.Context(), a.ref)
 	if err != nil {
 		t.Fatal(err)

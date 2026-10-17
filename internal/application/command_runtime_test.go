@@ -712,11 +712,13 @@ func TestCommandRuntimeReadableAuthorizationAllowsTerminalOwnershipTransition(t 
 	terminal.State = runner.CommandRuntimeJobCompleted
 	state := &commandRuntimeTerminalTransitionStore{running: running, terminal: terminal}
 	service := &CommandRuntimeService{store: state}
+	root := domain.AgentNode{ID: running.RootAgentID, SessionID: running.SessionID, Role: domain.AgentRoleRoot}
 	bindings := commandRuntimeBindings{
 		run:       domain.Run{ID: running.RunID, SessionID: running.SessionID},
 		mission:   domain.Mission{ID: running.MissionID},
 		workspace: store.WorkspaceRecord{ID: running.WorkspaceID},
-		root:      domain.AgentNode{ID: running.RootAgentID},
+		root:      root,
+		actor:     root,
 	}
 	result, err := service.authorizeReadableJob(context.Background(), running.ID, bindings)
 	if err != nil || result.State != runner.CommandRuntimeJobCompleted || state.calls != 3 {

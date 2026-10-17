@@ -1,9 +1,12 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +21,31 @@ import (
 	"cyberagent-workbench/internal/tools"
 	"cyberagent-workbench/internal/workspace"
 )
+
+func TestRevokedBatchExecutionWorkerCannotUseLegacyFileEdits(t *testing.T) {
+	st, plan, workspaces := newBatchDeliveryStoreFixture(t, &domain.WorkerProfile{})
+	ctx := t.Context()
+	if _, _, _, err := st.CreateBatchDeliveryPlan(ctx, plan, workspaces); err != nil {
+		t.Fatal(err)
+	}
+	child, err := st.RevokeSpecialistReadTools(ctx, plan.RunID, workspaces[0].AgentID)
+	if err != nil || child.Worker != nil {
+		t.Fatalf("worker revocation: %+v %v", child, err)
+	}
+	// No Worker tool binding has been created yet. The original admission
+	// proposal must still distinguish this revoked Worker from a legacy Batch.
+	edit := fileedit.Edit{ID: idgen.New("edit"), SessionID: child.SessionID,
+		WorkspaceID: plan.WorkspaceID, Path: "internal/one/revoked.txt",
+		Operation: fileedit.OperationReplace, Status: fileedit.StatusProposed,
+		OriginalText: "before", ProposedText: "after",
+		OriginalHash: fileedit.HashText("before"), ProposedHash: fileedit.HashText("after")}
+	if _, err := st.SaveFileEdit(ctx, edit); err == nil || !strings.Contains(err.Error(), "worker FileEdit owner is no longer active") {
+		t.Fatalf("revoked Worker used legacy Batch file authority: %v", err)
+	}
+	if _, err := st.GetFileEdit(ctx, edit.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("rejected proposal was persisted: %v", err)
+	}
+}
 
 type workerFileReviewPolicy struct {
 	policy.Checker
