@@ -344,10 +344,10 @@ func supervisorRequestWithSegmentReceipt(baseRequest llm.ChatRequest,
 	case len(plan.ReceiptedRounds) == 0:
 		return request, nil
 	}
-	insertAt := len(request.Messages) - 2*len(plan.NativeRounds)
-	if insertAt < 0 {
-		return llm.ChatRequest{}, errors.New("segment receipt plan does not match the base request")
-	}
+	// A retained model batch expands to a call/result pair, while a Go-owned
+	// project hook expands to one evidence message. The original base boundary
+	// remains exact for either shape and keeps input/instructions in place.
+	insertAt := len(baseRequest.Messages)
 	messages := make([]llm.Message, 0, len(request.Messages)+1)
 	messages = append(messages, request.Messages[:insertAt]...)
 	messages = append(messages, supervisorSegmentReceiptMessage(sessionID, attemptID, plan.ReceiptContent))
