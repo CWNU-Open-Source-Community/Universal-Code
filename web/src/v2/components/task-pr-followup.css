@@ -1,0 +1,18 @@
+.v2-pr-followup { display: grid; gap: 10px; min-width: 0; border: 1px solid var(--v2-border); border-radius: 9px; padding: 12px 14px; }
+.v2-pr-followup > header, .v2-pr-followup-record > header, .v2-pr-followup-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+.v2-pr-followup h3 { margin: 0; }
+.v2-pr-followup p, .v2-pr-followup strong, .v2-pr-followup dd { overflow-wrap: anywhere; min-width: 0; }
+.v2-pr-followup-muted, .v2-pr-followup-record > header > span { color: var(--v2-muted); }
+.v2-pr-followup-record, .v2-pr-followup-recovery, .v2-pr-followup-setup > form { display: grid; gap: 10px; min-width: 0; }
+.v2-pr-followup-recovery, .v2-pr-followup-setup { border-top: 1px solid var(--v2-border); padding-top: 10px; }
+.v2-pr-followup-setup > form { margin-top: 12px; }
+.v2-pr-followup-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.v2-pr-followup .v2-pr-followup-checkbox { display: flex; align-items: center; gap: 8px; }
+.v2-pr-followup .v2-pr-followup-checkbox input { margin: 0; }
+.v2-pr-followup-actions { justify-content: flex-start; }
+.v2-pr-followup-setup button { justify-self: start; }
+@media (max-width: 640px) {
+  .v2-pr-followup { padding: 12px; }
+  .v2-pr-followup-fields { grid-template-columns: minmax(0, 1fr); }
+  .v2-pr-followup button { max-width: 100%; white-space: normal; text-align: left; }
+}

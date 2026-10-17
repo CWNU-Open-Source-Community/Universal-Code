@@ -6,6 +6,7 @@ import { createPullRequest, discoverPullRequest, observePullRequest, previewPull
 import { ErrorState, LoadingState, StatusBadge } from "../../components/common";
 import { useV2PersistentState, useV2RecoveryStore } from "../recovery-storage";
 import { taskGitKey } from "./task-git";
+import { TaskPRFollowup } from "./task-pr-followup";
 import "./task-delivery.css";
 import "./task-pull-request.css";
 
@@ -175,6 +176,10 @@ export function TaskPullRequest({ client, threadID, working, onFeedback, onGit }
         {selectedNumber > 0 && <button type="button" disabled={refresh.isPending || pending} onClick={() => refresh.mutate({ connection: connectionID, pr: selectedNumber })}>{refresh.isPending ? "正在从 GitHub 抓取…" : "刷新远端 CI 和评论"}</button>}
         <button type="button" disabled={discovery.isFetching} onClick={findPullRequests}>查找当前分支的 PR</button>
       </div>
+    </>}
+    <TaskPRFollowup client={client} threadID={threadID} connectionID={connectionID} pullRequest={selectedNumber}
+      canStart={Boolean(connectionID && selectedPR?.state === "open" && !selectedPR.merged && !discovery.isFetching && !discovery.isError)} />
+    {connectionID && <>
       {selectedNumber > 0 && <>
         {refresh.isError && <ErrorState error={refresh.error} />}{projection.isError && <ErrorState error={projection.error} />}
         {!snapshot && <p>尚无这份 PR 的 CI 或评论快照，请刷新远端。</p>}

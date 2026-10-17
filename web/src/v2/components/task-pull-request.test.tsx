@@ -24,7 +24,8 @@ const discovery = { version: "thread_pull_request.v1", context, connection_id: "
 function fixture() {
   let state = "not_received";
   let currentApproval: typeof approval | undefined = approval;
-  const get = vi.fn(async (path: string, _query?: unknown, _signal?: AbortSignal): Promise<unknown> => path.endsWith("/git") ? { version: "thread_git.v1", ...context, branches: ["main", "feature/test"], changes: [], truncated: false, can_execute: true }
+  const get = vi.fn(async (path: string, _query?: unknown, _signal?: AbortSignal): Promise<unknown> => path.endsWith("/pr-followups") ? { version: "pr-followup.v1", thread_id: path.split("/")[2], worker_state: "running", items: [] }
+    : path.endsWith("/git") ? { version: "thread_git.v1", ...context, branches: ["main", "feature/test"], changes: [], truncated: false, can_execute: true }
     : path.endsWith("/request") ? { version: "thread_pull_request.v1", thread_id: "thread-1", state,
       ...(state === "proposed" ? { preview, approval: currentApproval } : {}), ...(state === "created" ? { pull_request: pr, head_matches_reviewed: true } : {}) }
       : discovery);
