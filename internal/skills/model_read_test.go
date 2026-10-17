@@ -51,6 +51,7 @@ func TestNewSkillVersionsRetainPreviousBytes(t *testing.T) {
 	for _, want := range []struct{ name, version, digest string }{
 		{"code", "1.2.0", "279113f96392f4a0a86cf09246f9146ce4bf661892f9f085f6e19c998e3ccd0f"},
 		{"run-verify", "1.1.0", "93a5ccb961c1169f7f08e419514a1ab957f1d6a410440acd766e35b45aefbd6a"},
+		{"plan-delivery", "1.2.0", "64459bd1e9138b5ca107540c3d498d00b585f303917228a834b88cb208578b6f"},
 	} {
 		entry, ok := r.version(want.name, want.version)
 		if !ok || entry.manifest.ContentSHA256 != want.digest {

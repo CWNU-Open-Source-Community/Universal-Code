@@ -958,7 +958,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			modelRequest = supervisorProtocolRepairRequest(modelRequest, repairReason, supervisorRepairContext{ThreadEndTurn: prepared.context.threadEndTurn, ToolRounds: len(prepared.toolRounds), HostToolRounds: len(prepared.toolRounds) - supervisorNativeToolRounds(prepared.toolRounds)})
 			modelContextLayout = modelContextLayout.shifted(1)
 		}
-		modelRequest, err = s.requestWithBuiltinSkillReads(ctx, turn, modelRequest)
+		modelRequest, skillReadGuidance, err := s.requestWithBuiltinSkillReads(ctx, turn, modelRequest)
 		if err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
@@ -1062,11 +1062,12 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			continue
 		}
 		modelRequest = boundedRequest
+		modelRequest, skillReadGuidance = skillReadGuidance.retainPresent(modelRequest)
 		if err := requirePinnedProjectInstructionRequest(turn.Run.Config, modelRequest); err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
 		modelCall, err := s.callModelWithRetry(ctx, turn, prepared.ref, modelRequest, protocolRepair,
-			len(prepared.toolRounds), prepared.input.steeringSequence, supervisorModelContextAudit(modelMemory))
+			len(prepared.toolRounds), prepared.input.steeringSequence, supervisorModelContextAudit(modelMemory), skillReadGuidance)
 		if modelCall.Checkpoint.RunID != "" {
 			turn.Checkpoint = modelCall.Checkpoint
 			result.Checkpoint = modelCall.Checkpoint

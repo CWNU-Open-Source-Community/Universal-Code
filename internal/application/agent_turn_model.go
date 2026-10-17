@@ -25,7 +25,7 @@ type modelCallResult struct {
 
 func (s *AgentRunner) callModelWithRetry(ctx context.Context, turn domain.SupervisorTurn, ref llm.ModelRef,
 	request llm.ChatRequest, protocolRepair int, toolRound int, steeringSequence int64,
-	contextAudit *llm.ModelContextAudit,
+	contextAudit *llm.ModelContextAudit, skillReadGuidance portableSkillReadGuidance,
 ) (modelCallResult, error) {
 	policy := normalizeModelRetryPolicy(s.retryPolicy)
 	var nextGlobalAttempt, nextTransportAttempt int
@@ -58,6 +58,9 @@ func (s *AgentRunner) callModelWithRetry(ctx context.Context, turn domain.Superv
 			return result, apperror.Normalize(err)
 		}
 		if err := s.requireCurrentPinnedProjectInstructions(ctx, turn.Run); err != nil {
+			return result, err
+		}
+		if err := skillReadGuidance.requireCurrent(ctx, s.store, turn.Mode, request); err != nil {
 			return result, err
 		}
 		request, err = supervisorRequestWithinBudget(request, turn.Run.Budget, result.Checkpoint)

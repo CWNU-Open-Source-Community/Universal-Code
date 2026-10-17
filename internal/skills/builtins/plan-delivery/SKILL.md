@@ -4,15 +4,11 @@ Use this workflow to turn a broad objective into a reviewable delivery path. Thi
 
 ## Plan phase
 
-Understand the objective and available context before proposing work. When the boundary is clear, submit exactly three tailored directions through `plan_delivery_propose`:
+Understand the objective and available context before proposing work. When the boundary is clear, submit one to three tailored directions through `plan_delivery_propose`. Prefer one direction for a clear, bounded task; add alternatives only when they offer meaningful tradeoffs in scope, risk, or independent preparation.
 
-1. A conservative direction that minimizes behavioral and recovery risk.
-2. A balanced direction that delivers a coherent vertical path.
-3. An accelerated direction that increases bounded parallel preparation where independence is real.
+Each direction must explain its tradeoffs and contain one to eight ordered modules. Every module needs a concrete objective, observable acceptance criteria, and only backward references to earlier module ordinals. When offering alternatives, keep them meaningfully different; do not vary labels while keeping the same plan.
 
-Each direction must explain its tradeoffs and contain one to eight ordered modules. Every module needs a concrete objective, observable acceptance criteria, and only backward references to earlier module ordinals. Keep the directions meaningfully different; do not vary labels while keeping the same plan.
-
-The proposal does not select a direction, create execution authority, or switch phase. After it is recorded, return `wait`, summarize the choices for the user, and request an operator choice of direction 1, 2, or 3.
+The proposal does not select a direction, create execution authority, or switch phase. After it is recorded, return `wait`, summarize the actual proposed directions, and ask the operator to confirm one of them and its manual acceptance mode.
 
 ## Delivery phase
 

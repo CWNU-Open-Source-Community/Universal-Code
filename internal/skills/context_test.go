@@ -122,6 +122,48 @@ func TestBuiltinRegistryRetainsArchivedPinnedContext(t *testing.T) {
 	}
 }
 
+func TestPlanDeliveryCurrentGuidanceAndPinnedHistory(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := registry.ResolveSelection(ResolveSelectionRequest{
+		SelectionID: "selection-plan", RunID: "run-plan", MissionID: "mission-plan",
+		Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhasePlan,
+		Profile: domain.ProfileCode, Names: []string{"plan-delivery"},
+		TokenBudget: DefaultSelectionTokenBudget, RequestedBy: "operator", CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode := ExecutionContext{Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhasePlan, Profile: domain.ProfileCode, Role: domain.AgentRoleRoot}
+	current, err := registry.AssembleContextFor(selection, mode)
+	if err != nil || len(current.Items) != 1 {
+		t.Fatal("current plan guidance unavailable", err)
+	}
+	manifest, _ := registry.Get("plan-delivery")
+	if manifest.Version != "1.3.0" || strings.Contains(manifest.Description, "Three-direction") ||
+		!strings.Contains(current.Items[0].Content, "submit one to three tailored directions") ||
+		!strings.Contains(current.Items[0].Content, "Prefer one direction for a clear, bounded task") ||
+		!strings.Contains(current.Items[0].Content, "actual proposed directions") ||
+		strings.Contains(current.Items[0].Content, "direction 1, 2, or 3") {
+		t.Fatal("current Plan Skill contradicts proportionate proposals")
+	}
+	archived := registry.versions["plan-delivery"]["1.2.0"]
+	selection.Items[0].Version = archived.manifest.Version
+	selection.Items[0].ContentSHA256 = archived.manifest.ContentSHA256
+	selection.Items[0].ContentBytes = archived.manifest.ContentBytes
+	selection.Items[0].TokenUpperBound = archived.manifest.ContentTokenUpperBound
+	selection.TokenUpperBound = archived.manifest.ContentTokenUpperBound
+	selection.Fingerprint = SelectionFingerprint(selection)
+	restored, err := registry.AssembleContextFor(selection, mode)
+	if err != nil || len(restored.Items) != 1 || restored.Items[0].Content != string(archived.content) ||
+		restored.Items[0].SourceSHA256 != "64459bd1e9138b5ca107540c3d498d00b585f303917228a834b88cb208578b6f" ||
+		!strings.Contains(restored.Items[0].Content, "submit exactly three tailored directions") {
+		t.Fatal("existing Plan Skill pin no longer restores its exact body", err)
+	}
+}
+
 func TestRegistryRedactsSkillContextBeforeBudgeting(t *testing.T) {
 	secret := "s" + "k-" + strings.Repeat("z", 28)
 	content := []byte("# Safe workflow\n\nAPI_KEY=" + secret + "\n")

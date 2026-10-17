@@ -19,7 +19,13 @@ type projectInstructionToolContextStore interface {
 }
 
 func (s *AgentRunner) requireCurrentPinnedProjectInstructions(ctx context.Context, run domain.Run) error {
-	current, err := s.store.GetRun(ctx, run.ID)
+	return requireCurrentPinnedProjectInstructions(ctx, s.store, run)
+}
+
+func requireCurrentPinnedProjectInstructions(ctx context.Context, store interface {
+	GetRun(context.Context, string) (domain.Run, error)
+}, run domain.Run) error {
+	current, err := store.GetRun(ctx, run.ID)
 	if err != nil {
 		return err
 	}
@@ -177,4 +183,36 @@ func requirePinnedProjectInstructionRequest(config domain.RunConfig, request llm
 func projectInstructionDeliveryFailure() error {
 	return supervisorContextWindowFailure(apperror.New(apperror.CodeResourceExhausted,
 		"mandatory pinned project instructions could not be delivered; history is preserved"))
+}
+
+func (r *SubagentRunner) requirePinnedProjectInstructionToolOrigins(ctx context.Context, run domain.Run, ref domain.AgentAttemptRef, rounds []domain.SpecialistToolRound) error {
+	if len(run.Config.ProjectInstructions) == 0 {
+		return nil
+	}
+	var snapshot projectconfig.InstructionSnapshot
+	if err := json.Unmarshal(run.Config.ProjectInstructions, &snapshot); err != nil {
+		return err
+	}
+	if snapshot.Delivery == nil || len(snapshot.Sources) == 0 {
+		return nil
+	}
+	for _, round := range rounds {
+		pending := false
+		for _, call := range round.Calls {
+			pending = pending || !call.Status.Terminal()
+		}
+		if !pending {
+			continue
+		}
+		store, ok := r.store.(interface {
+			CheckSpecialistProjectInstructionToolContext(context.Context, domain.AgentAttemptRef, domain.SpecialistToolRound, string) error
+		})
+		if !ok {
+			return apperror.New(apperror.CodeFailedPrecondition, "resumed child tools require pinned project instruction delivery provenance")
+		}
+		if err := store.CheckSpecialistProjectInstructionToolContext(ctx, ref, round, snapshot.Fingerprint); err != nil {
+			return err
+		}
+	}
+	return nil
 }
