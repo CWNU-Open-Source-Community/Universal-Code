@@ -75,7 +75,9 @@ deadline can still expire while paused or waiting, and resume never resets the
 saved time, token or turn limits.
 
 After the host restarts, it can continue from committed checkpoints and approval
-stops. If the process ended during a model/tool attempt whose result is unknown,
+stops. A clean shutdown releases the workflow claim; after an abnormal exit, the
+next host waits for the existing claim's remaining lease (at most 15 minutes).
+If the process ended during a model/tool attempt whose result is unknown,
 the existing recovery marks that attempt interrupted and the workflow reports the
 failure rather than repeating its possible side effects. A fresh rerun remains an
 explicit operator action. The computer and host must be running to make progress.
