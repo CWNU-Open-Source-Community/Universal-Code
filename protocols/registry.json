@@ -4361,6 +4361,7 @@
         "internal/application/command_runtime_test.go",
         "internal/application/supervisor_tool_permission_test.go",
         "internal/desktop/standard_code_security_ledger_windows_test.go",
+        "internal/store/migration_v207_test.go",
         "internal/store/supervisor_tool_registry_migration_test.go",
         "internal/store/supervisor_tools_test.go"
       ],

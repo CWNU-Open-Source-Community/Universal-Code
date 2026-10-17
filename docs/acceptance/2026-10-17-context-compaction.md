@@ -67,6 +67,8 @@ Store upgrade/clean-install tests passed (88.908s). A populated v205 fixture ret
 
 Before the merge commit, OCR delegate preview and rules were rerun. Independent reviewers inspected runtime interactions and Store migration integration; the integrating agent reviewed HTTP/OpenAPI routing, protocol registration, shared Windows test changes and documentation. All 108 preview entries are accounted for: 72 reviewed, 5 generated artifacts verified through their generators/tests, and 31 inherited unchanged from main outside the integration scope. The merge review covers changed hunks and relevant callers, without claiming a new full review of those inherited files.
 
+The first integration CI run caught a missing test-source registration added after protocol generation: the populated migration fixture also uses the existing test-only `windows-local-sandbox.v1` identifier. Its exact source path is now registered, the protocol document regenerated, and the same history/inventory check passes on the final tree. This follow-up changed only the registry and documentation and received a three-file OCR delegate review (two handwritten files reviewed, one generated file verified).
+
 ## Operational boundaries
 
 This run used controlled local providers to inspect actual requests, state changes and UI behavior; it does not measure a hosted model's adherence rate. A process exit with an unconfirmed prepared/started manual summary operation retains that pending operation and refuses to resend it automatically. There is currently no operator reconciliation UI for clearing that slot; ordinary Thread continuation remains available, subject to the retained usage/budget. Kimi's required native replay remains intact and cannot always be compacted into a generic summary.
