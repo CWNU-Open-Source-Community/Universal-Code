@@ -38,6 +38,8 @@ func seedProjectTest(t *testing.T, f *commandApprovalFixture) {
 }
 
 func TestRunTestsRealNativeApprovalAndPhases(t *testing.T) {
+	// A desktop launch need not set GOCACHE, unlike the parent go test command.
+	t.Setenv("GOCACHE", "")
 	for _, phase := range []domain.ExecutionPhase{domain.ExecutionPhasePlan, domain.ExecutionPhaseDeliver} {
 		for _, mode := range []domain.RunExecutionPermissionMode{domain.RunExecutionPermissionAsk, domain.RunExecutionPermissionAuto, domain.RunExecutionPermissionFull} {
 			t.Run(string(phase)+"/"+string(mode), func(t *testing.T) {
