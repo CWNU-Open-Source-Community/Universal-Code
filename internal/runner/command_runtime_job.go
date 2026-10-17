@@ -1405,7 +1405,11 @@ func (m *CommandRuntimeManager) maintainOwnership(entry *commandRuntimeEntry) {
 			}
 			cancel()
 			if err != nil {
-				if entry.setDesired(CommandRuntimeJobInterrupted) {
+				// Keep the diagnostic in the same snapshot as the interrupted
+				// state if the child exits before Kill reaches it.
+				entry.persistMu.Lock()
+				interrupted := entry.setDesired(CommandRuntimeJobInterrupted)
+				if interrupted {
 					// Host failures may have no child stderr. Keep their reason in
 					// the existing sanitized, bounded output before killing the Job.
 					if !entry.discardOutput {
@@ -1417,6 +1421,9 @@ func (m *CommandRuntimeManager) maintainOwnership(entry *commandRuntimeEntry) {
 						entry.observe(CommandRuntimeStderr, len(diagnostic))
 						entry.appendOutput(CommandRuntimeStderr, diagnostic, time.Now().UTC())
 					}
+				}
+				entry.persistMu.Unlock()
+				if interrupted {
 					_ = entry.process.Kill()
 				}
 				return
