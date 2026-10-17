@@ -97,11 +97,12 @@ type PRFollowupTurn struct {
 // Internal observations, turn bodies and lease credentials are never serialized
 // with the public record. The store persists them separately.
 type PRFollowupState struct {
-	Record      PRFollowup        `json:"record"`
-	Observed    map[string]string `json:"-"`
-	Initialized bool              `json:"-"`
-	Pending     *PRFollowupTurn   `json:"-"`
-	LeaseOwner  string            `json:"-"`
-	LeaseToken  string            `json:"-"`
-	LeaseUntil  time.Time         `json:"-"`
+	Record         PRFollowup        `json:"record"`
+	Observed       map[string]string `json:"-"`
+	Initialized    bool              `json:"-"`
+	Pending        *PRFollowupTurn   `json:"-"`
+	ReviewedTurnID string            `json:"-"`
+	LeaseOwner     string            `json:"-"`
+	LeaseToken     string            `json:"-"`
+	LeaseUntil     time.Time         `json:"-"`
 }

@@ -845,6 +845,45 @@ func desktopControlRequest(handler http.Handler, method string, path string,
 	return response
 }
 
+func TestControlPlanePRFollowupWorkerUsesDesktopLifetime(t *testing.T) {
+	plane, err := OpenControlPlane(ControlPlaneConfig{
+		DatabasePath: filepath.Join(t.TempDir(), "pr-followup-worker.db"),
+		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
+		RunExecutionEnabled: true, GitHubReviewControlEnabled: true, ScheduledJobWorkerEnabled: true,
+		ExecutionPermissionControlEnabled: true,
+		ExecutionPermissionCapabilities:   domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true},
+		AppVersion:                        "desktop-pr-followup-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = plane.Close() })
+	if plane.prFollowupWorker == nil {
+		t.Fatal("PR follow-up service was not installed")
+	}
+	if err = plane.StartWakeWorker(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	done := plane.prFollowupDone
+	if done == nil {
+		t.Fatal("PR follow-up worker was not started")
+	}
+	if err = plane.StartWakeWorker(t.Context()); err == nil {
+		t.Fatal("duplicate worker started")
+	}
+	if err = plane.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	default:
+		t.Fatal("close returned before PR follow-up worker stopped")
+	}
+	if err = plane.StartWakeWorker(t.Context()); err == nil {
+		t.Fatal("closed control plane restarted PR follow-up")
+	}
+}
+
 func readDesktopEventPoll(t *testing.T, handler http.Handler, runID string,
 	cursor string,
 ) httpapi.RunEventPollView {

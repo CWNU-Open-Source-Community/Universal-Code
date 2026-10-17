@@ -1,19 +1,11 @@
 import type { APIClient } from "./client";
+import type { components } from "./schema";
 
 export const PR_FOLLOWUP_VERSION = "pr-followup.v1";
 export type PRFollowupStatus = "active" | "paused" | "blocked" | "ready" | "completed" | "cancelled" | "exhausted";
-export interface PRFollowup {
-  id: string; thread_id: string; connection_id: string; repository: string; workspace_id: string;
-  root_path_sha256: string; branch: string; pull_request: number; interval_seconds: number; deadline_at: string;
-  max_turns: number; include_existing_comments: boolean; status: PRFollowupStatus; revision: number; turns_started: number;
-  next_check_at: string; created_at: string; updated_at: string; last_checked_at?: string;
-  last_head_sha?: string; last_result?: string; last_error?: string;
-}
-export interface PRFollowupList { version: typeof PR_FOLLOWUP_VERSION; thread_id: string; worker_state: string; items: PRFollowup[] }
-export interface PRFollowupCreateRequest {
-  version: typeof PR_FOLLOWUP_VERSION; connection_id: string; pull_request: number; interval_seconds: number;
-  deadline_at: string; max_turns: number; include_existing_comments: boolean;
-}
+export type PRFollowup = Omit<components["schemas"]["PRFollowup"], "status"> & { status: PRFollowupStatus };
+export type PRFollowupList = Omit<components["schemas"]["PRFollowupList"], "items"> & { items: PRFollowup[] };
+export type PRFollowupCreateRequest = components["schemas"]["PRFollowupCreateRequest"];
 export type PRFollowupAction = "pause" | "resume" | "cancel";
 
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));

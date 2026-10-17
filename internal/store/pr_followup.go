@@ -17,9 +17,10 @@ import (
 const prFollowupLeaseTTL = 30 * time.Second
 
 type prFollowupInternal struct {
-	Observed    map[string]string      `json:"observed"`
-	Initialized bool                   `json:"initialized"`
-	Pending     *domain.PRFollowupTurn `json:"pending,omitempty"`
+	Observed       map[string]string      `json:"observed"`
+	Initialized    bool                   `json:"initialized"`
+	Pending        *domain.PRFollowupTurn `json:"pending,omitempty"`
+	ReviewedTurnID string                 `json:"reviewed_turn_id,omitempty"`
 }
 
 type prFollowupQuerier interface {
@@ -270,7 +271,7 @@ func getPRFollowup(ctx context.Context, query prFollowupQuerier, id string) (dom
 	if err := json.Unmarshal([]byte(internalJSON), &internal); err != nil {
 		return state, "", err
 	}
-	state.Observed, state.Initialized, state.Pending = internal.Observed, internal.Initialized, internal.Pending
+	state.Observed, state.Initialized, state.Pending, state.ReviewedTurnID = internal.Observed, internal.Initialized, internal.Pending, internal.ReviewedTurnID
 	if leaseUntil != 0 {
 		state.LeaseUntil = time.Unix(0, leaseUntil).UTC()
 	}
@@ -282,7 +283,7 @@ func marshalPRFollowup(state domain.PRFollowupState) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	internalJSON, err := json.Marshal(prFollowupInternal{Observed: state.Observed, Initialized: state.Initialized, Pending: state.Pending})
+	internalJSON, err := json.Marshal(prFollowupInternal{Observed: state.Observed, Initialized: state.Initialized, Pending: state.Pending, ReviewedTurnID: state.ReviewedTurnID})
 	return string(recordJSON), string(internalJSON), err
 }
 

@@ -9,7 +9,7 @@ import "./task-pr-followup.css";
 interface CreateAttempt { version: "pr-followup-intent.v1"; threadID: string; key: string; body: PRFollowupCreateRequest }
 const storageKey = (threadID: string) => `thread:${threadID}:pr-followup-create`;
 const queryKey = (threadID: string) => ["thread", threadID, "pr-followups"] as const;
-const labels: Record<PRFollowupStatus, string> = { active: "持续跟进中", paused: "已暂停", blocked: "等待处理", ready: "待继续", completed: "已完成", cancelled: "已停止", exhausted: "已达上限" };
+const labels: Record<PRFollowupStatus, string> = { active: "持续跟进中", paused: "已暂停", blocked: "等待处理", ready: "待复核", completed: "已完成", cancelled: "已停止", exhausted: "已结束（期限或次数）" };
 const time = (value?: string) => value ? new Date(value).toLocaleString() : "—";
 function validAttempt(value: unknown, threadID: string): value is CreateAttempt {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

@@ -604,6 +604,15 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		threadGit = application.NewThreadGitService(a.store, localGit, remoteGit,
 			workspaceCheckpoints, commandRuntimeDrydocks, permissionCapabilities).WithAdvanced(gitAdvancedService)
 	}
+	var prFollowupWorker *application.PRFollowupService
+	var prFollowupController httpapi.PRFollowupController
+	if *githubReviewEnabled && controlToken != "" && *scheduledJobWorker {
+		prFollowupWorker, err = application.NewPRFollowupService(a.store, githubReviewService, threadGit, threadTurnControl)
+		if err != nil {
+			return err
+		}
+		prFollowupController = prFollowupWorker
+	}
 	api, err := httpapi.New(a.store, httpapi.Config{
 		AccessToken: accessToken, ControlToken: controlToken,
 		WorkspaceImportEnabled: *workspaceImport, WorkspaceImporter: workspaceImporter,
@@ -689,6 +698,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		GitAdvancedController:               gitAdvancedService,
 		ThreadGitController:                 threadGit,
 		ThreadPullRequestController:         application.NewThreadPullRequestService(a.store, githubReviewService, threadGit),
+		PRFollowupController:                prFollowupController,
 		GitHubReviewController:              githubReviewService,
 		BatchDeliveryController: application.NewBatchDeliveryWorkbenchService(batchDelivery).
 			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, a.store, a.router, a.checker).WithNativeTools()),
@@ -802,6 +812,12 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			scheduleWorkerCancel()
 			<-scheduleWorkerDone
 		}()
+	}
+	if prFollowupWorker != nil {
+		followupCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { defer close(done); _ = prFollowupWorker.Run(followupCtx) }()
+		defer func() { cancel(); <-done }()
 	}
 	fmt.Fprintf(a.out, "file_edit_proposals_enabled: %t\nprovider_credentials_enabled: %t\nwake_worker_enabled: %t\nwake_worker_concurrency: %d\nwake_worker_max_steps: %d\n",
 		*fileEditProposals, *providerCredentials, *wakeWorker,
