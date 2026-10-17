@@ -367,6 +367,7 @@ type Config struct {
 	ProjectActionsController              ProjectActionsController
 	ProjectPreparationController          ProjectPreparationController
 	ThreadPullRequestController           ThreadPullRequestController
+	PRFollowupController                  PRFollowupController
 	StandardCodePresetController          StandardCodePresetController
 	StandardCodeDeliveryController        StandardCodeDeliveryController
 	RunExecutionController                RunExecutionController
@@ -477,6 +478,7 @@ type API struct {
 	projectActionsController              ProjectActionsController
 	projectPreparationController          ProjectPreparationController
 	threadPullRequestController           ThreadPullRequestController
+	prFollowupController                  PRFollowupController
 	standardCodePresetController          StandardCodePresetController
 	standardCodeDeliveryController        StandardCodeDeliveryController
 	runExecutionController                RunExecutionController
@@ -939,6 +941,7 @@ func New(store Store, config Config) (*API, error) {
 		threadGitController:                 config.ThreadGitController,
 		threadApplicationServiceController:  threadApplicationServices,
 		threadPullRequestController:         config.ThreadPullRequestController,
+		prFollowupController:                config.PRFollowupController,
 		standardCodePresetController:        config.StandardCodePresetController,
 		standardCodeDeliveryController:      config.StandardCodeDeliveryController,
 		runExecutionController:              config.RunExecutionController,
@@ -1181,6 +1184,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if route, matched := matchThreadPullRequestPath(request.URL.Path); matched {
 		a.serveThreadPullRequest(tracked, request, requestID, route)
+		return
+	}
+	if route, matched := matchPRFollowupPath(request.URL.Path); matched {
+		a.servePRFollowup(tracked, request, requestID, route)
 		return
 	}
 	if request.Method != http.MethodGet && isContextContinuityMutationPath(request.URL.Path) {
