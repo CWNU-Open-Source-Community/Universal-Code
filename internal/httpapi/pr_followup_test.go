@@ -20,6 +20,7 @@ const prFollowupTransitionBody = `{"version":"pr-followup.v1","expected_revision
 
 type prFollowupControllerStub struct {
 	threadID, id, key, action string
+	expectedThreadID          string
 	create                    application.PRFollowupCreateRequest
 	transition                application.PRFollowupTransitionRequest
 	calls                     int
@@ -40,7 +41,11 @@ func (s *prFollowupControllerStub) Create(_ context.Context, threadID, key strin
 func (s *prFollowupControllerStub) Transition(_ context.Context, threadID, id, action string, request application.PRFollowupTransitionRequest) (domain.PRFollowup, error) {
 	s.threadID, s.id, s.action, s.transition = threadID, id, action, request
 	s.calls++
-	if threadID != "thread-one" {
+	expectedThreadID := s.expectedThreadID
+	if expectedThreadID == "" {
+		expectedThreadID = "thread-one"
+	}
+	if threadID != expectedThreadID {
 		return domain.PRFollowup{}, apperror.New(apperror.CodeNotFound, "PR followup was not found in this task")
 	}
 	if request.ExpectedRevision != 7 {
