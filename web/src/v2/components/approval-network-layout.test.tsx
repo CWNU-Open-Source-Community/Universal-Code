@@ -280,3 +280,6 @@ describe("Composer network layout and interaction", () => {
     expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
   });
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

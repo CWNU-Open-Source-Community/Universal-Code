@@ -508,6 +508,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     row?: HTMLElement; offset?: number } | null>(null);
   const readingThreadRef = useRef("");
   const followLatestRef = useRef(true);
+  const scrollSizeRef = useRef<{ content: number; viewport: number } | null>(null);
   const [hasNewContent, setHasNewContent] = useState(false);
   const optimistic = useMemo(() => submissions.filter(({ pending }) => pending).map(({ input }) => ({
     id: input.operationKey, text: input.content, images: input.images, attachments: input.attachments, createdAt: input.createdAt,
@@ -642,6 +643,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       const saved = queryClient.getQueryData<{ top: number; following: boolean }>(["v2", "reading", threadID]);
       followLatestRef.current = saved?.following ?? true;
       element.scrollTop = saved && !saved.following ? saved.top : element.scrollHeight;
+      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       setHasNewContent(false);
       return;
     }
@@ -665,6 +667,23 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [visibleNarrative, detailQuery.data?.active_run?.status, liveSnapshot?.revision,
     transcriptQuery.data?.pages.length, transcriptQuery.isLoading, transcriptQuery.isFetchNextPageError,
     transcriptQuery.isFetchingNextPage, threadID, queryClient, view]);
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    const content = element?.firstElementChild;
+    if (view !== "conversation" || !element || !content || typeof ResizeObserver === "undefined") return;
+    // Composer growth and asynchronously loaded cards change the viewport or
+    // content without changing the transcript. Keep the latest content visible
+    // only while following it; leave historical reading/pagination anchored.
+    const observer = new ResizeObserver(() => {
+      if (readingThreadRef.current === threadID && followLatestRef.current &&
+        olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
+      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
+    });
+    observer.observe(element);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [detailQuery.isSuccess, threadID, view]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -691,7 +710,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const frame = requestAnimationFrame(() => {
       const container = composerContainerRef.current;
       if (container?.dataset.threadId === composerFocusRequest.threadID && !container.hidden) {
-        container.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+        container.querySelector<HTMLElement>('textarea, [contenteditable="true"][role="textbox"]')?.focus();
       }
       setComposerFocusRequest((current) => current === composerFocusRequest ? null : current);
     });
@@ -939,8 +958,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
       onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
       onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextTrigger} />}
-    {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
-      paused={working || activePane !== null || menuOpen} onReply={replyToPinProposal} />}
     {!docked && companion}
     {previewOpen && <V2LazySurface loadingText="正在加载应用预览…" errorLabel="应用预览" resetKey={threadID}
       onDismiss={() => { setPreviewOpen(false); previewTrigger.current?.focus(); }}>
@@ -977,6 +994,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <div className="v2-conversation-scroll" ref={scrollRef} onScroll={(event) => {
       if (view !== "conversation") return;
       const element = event.currentTarget;
+      const size = scrollSizeRef.current;
+      // Replacing the editor can briefly expand the transcript, clamp its
+      // scrollTop, then shrink it again before ResizeObserver runs. That scroll
+      // event is a layout change, not a request to stop following the latest.
+      if (followLatestRef.current && size && size.viewport > 0 && size.content === element.scrollHeight &&
+        size.viewport !== element.clientHeight && olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
+      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       const following = element.scrollHeight - element.clientHeight - element.scrollTop <= 48;
       followLatestRef.current = following;
       if (following) setHasNewContent(false);
@@ -1054,7 +1078,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       setHasNewContent(false);
     }} type="button">有新内容 · 回到最新</button>}
     <div className="v2-composer-dock">
+      {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />
+      {currentRun.status === "paused" && <V2PausedThreadControl client={client} threadID={threadID} runID={currentRun.id} />}
+      </div>}
       {previewRequest.data && <p className="v2-composer-caption" role={previewRequest.data.phase === "failed" ? "alert" : "status"}>
         {applicationPreviewRequestCopy(previewRequest.data, !previewServices.isError && Boolean(previewRequest.data.runID &&
           previewRequest.data.messageID && previewServices.data?.services.some((service) =>
@@ -1063,7 +1090,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </p>}
       {managedDraft && <V2DraftConflict key={threadID} client={client} workspaceID={detail.thread.workspace_id ?? ""}
         state={managedDraft.state} onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
-      {currentRun.status === "paused" && <V2PausedThreadControl client={client} threadID={threadID} runID={currentRun.id} />}
       {executionQuery.data?.state === "stop_failed" && <p className="v2-composer-caption" role="alert">
         停止尚未完成。请重试停止，确认后再发送；已受理的要求会保留。
       </p>}
@@ -1090,6 +1116,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         <button className="v2-composer-chip" onClick={() => setDeliveryMode("next_turn")} type="button">切换为下一轮处理</button>
       </p>}
       </div>
+      {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
+        paused={working || activePane !== null || menuOpen || view !== "conversation"} onReply={replyToPinProposal}
+        onClose={() => setComposerFocusRequest({ threadID })} />}
       <div className="v2-queue-composer-stack">
       {currentRun.session_id && <V2QueuedMessages client={client} threadID={threadID} runID={currentRun.id} sessionID={currentRun.session_id}
         workspaceID={detail.thread.workspace_id ?? ""} running={working || runActive}
@@ -1119,7 +1148,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         ? deliveryMode === "steer"
           ? "文字纠正会进入当前任务后续模型请求；已经开始的操作会保留。"
           : "发送后将在下一轮处理，进度会显示在对话中。"
-        : "Enter 发送，Shift + Enter 换行"}</small>
+        : "Ctrl + Enter 发送，Shift + Enter 换行"}</small>
       </div>
       </div>
     </div>

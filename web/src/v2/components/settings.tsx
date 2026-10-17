@@ -389,7 +389,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "skills" && <V2SkillSettings client={client} desktop={desktop} />}
       {section === "about" && <V2AboutSettings client={client} desktop={desktop} />}
       {(section === "shortcuts" || section === "keyboard") && <div className="v2-shared-settings">
-        <ShortcutSettings /><p>使用方向键与 Enter 操作当前菜单或对话框；在输入框中按 Enter 发送、Shift+Enter 换行。</p>
+        <ShortcutSettings /><p>使用方向键与 Enter 操作当前菜单或对话框；输入普通段落时按 Enter 发送，列表和代码块中按 Enter 续行。Ctrl+Enter 发送，Shift+Enter 换行。</p>
       </div>}
       {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
       {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",

@@ -182,3 +182,6 @@ it("retains an unknown first-turn identity beyond the default cache lifetime and
     vi.useRealTimers();
   }
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

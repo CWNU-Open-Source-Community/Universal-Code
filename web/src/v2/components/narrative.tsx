@@ -85,7 +85,7 @@ function MarkdownCodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreE
 
   return <div className="v2-markdown-code-block">
     <div className="v2-markdown-code-header">
-      <span className="v2-markdown-code-lang">{language || "代码"}</span>
+      <span className="v2-markdown-code-lang">{!language || language === "text" || language === "plaintext" ? "文本" : language}</span>
       <button
         aria-label={copied === "success" ? "已复制代码" : copied === "error" ? "复制失败" : "复制代码"}
         className={`v2-copy-code-button${copied === "success" ? " is-copied" : copied === "error" ? " is-error" : ""}`}
@@ -141,24 +141,11 @@ interface NarrativeRowProps {
   }) => void;
 }
 
-const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile }: NarrativeRowProps) {
-  if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn">
-    <details className="v2-promoted-message-history">
-      <summary title={entry.text}>排队消息已转为引导</summary>
-      <div className="v2-promoted-message-content">{entry.text}<V2ImagePreview client={client} images={entry.images ?? []} />
-        <V2FileAttachments client={client} attachments={entry.attachments ?? []} /></div>
-    </details></li>;
-  if (entry.kind === "user") return <li className="v2-user-turn">
-    <div>{entry.text}<V2ImagePreview client={client} images={entry.images ?? []} />
-      <V2FileAttachments client={client} attachments={entry.attachments ?? []} />{entry.status === "cancelled" &&
-      <small className="v2-message-status">已取消，不会继续处理</small>}
-      {entry.status === "pending" && <small className="v2-message-status">已接收</small>}
-      {entry.deliveryMode === "steer" && entry.status !== "cancelled" && entry.status !== "pending" &&
-        <small className="v2-message-status">已加入当前任务</small>}
-      {entry.provisional && !entry.status && <small className="v2-message-status">正在发送…</small>}</div></li>;
-  if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
-    className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}`}>
-    <ReactMarkdown
+function MessageMarkdown({ entry, onOpenFile }: {
+  entry: Extract<NarrativeEntry, { kind: "user" | "assistant" }>;
+  onOpenFile: NarrativeRowProps["onOpenFile"];
+}) {
+  return <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkCjkAutolinks]}
       urlTransform={(url) => (parseProjectFileLink(url) ? url : defaultUrlTransform(url))}
       components={{
@@ -174,7 +161,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
                 onOpenFile?.({
                   path: fileLink.path,
                   line: fileLink.line,
-                  runID: entry.runId,
+                  runID: "runId" in entry ? entry.runId : undefined,
                   triggerElement: event.currentTarget,
                 });
               }}
@@ -185,7 +172,27 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
         },
         pre: ({ children, ...props }) => <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>,
       }}
-    >{entry.text}</ReactMarkdown>
+    >{entry.text}</ReactMarkdown>;
+}
+
+const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile }: NarrativeRowProps) {
+  if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn">
+    <details className="v2-promoted-message-history">
+      <summary title={entry.text}>排队消息已转为引导</summary>
+      <div className="v2-promoted-message-content">{entry.text}<V2ImagePreview client={client} images={entry.images ?? []} />
+        <V2FileAttachments client={client} attachments={entry.attachments ?? []} /></div>
+    </details></li>;
+  if (entry.kind === "user") return <li className="v2-user-turn">
+    <div><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
+      <V2FileAttachments client={client} attachments={entry.attachments ?? []} />{entry.status === "cancelled" &&
+      <small className="v2-message-status">已取消，不会继续处理</small>}
+      {entry.status === "pending" && <small className="v2-message-status">已接收</small>}
+      {entry.deliveryMode === "steer" && entry.status !== "cancelled" && entry.status !== "pending" &&
+        <small className="v2-message-status">已加入当前任务</small>}
+      {entry.provisional && !entry.status && <small className="v2-message-status">正在发送…</small>}</div></li>;
+  if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
+    className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}`}>
+    <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
     {!entry.provisional && <AssistantMessageActions text={entry.text} />}
   </li>;
   if (entry.kind === "activity") return <li className="v2-activity-turn">

@@ -71,3 +71,6 @@ it("keeps navigation and the draft available when an advanced module fails to lo
     expect(mutation).not.toHaveBeenCalled();
   }
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

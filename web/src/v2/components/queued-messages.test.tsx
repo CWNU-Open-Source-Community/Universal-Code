@@ -719,3 +719,6 @@ it("keeps the operation recoverable if persisting a verified unchanged result fa
   expect(screen.getByRole("button", { name: "核对保存结果" })).toBeEnabled();
   expect(f.postControl).toHaveBeenCalledTimes(1);
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

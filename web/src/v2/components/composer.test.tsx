@@ -139,3 +139,6 @@ describe("V2Composer", () => {
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   });
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

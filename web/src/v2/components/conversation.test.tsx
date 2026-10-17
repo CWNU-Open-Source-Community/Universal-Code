@@ -567,6 +567,41 @@ describe("V2Conversation", () => {
     expect(view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!.scrollTop).toBe(180);
   });
 
+  it("follows viewport and card size changes without moving a reader looking at history", async () => {
+    const resize = new Map<Element, () => void>();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(element: Element) { resize.set(element, () => this.callback([], this as unknown as ResizeObserver)); }
+      disconnect() {}
+    });
+    try {
+      const view = renderConversation(baseClient());
+      await screen.findByText("Title thread-a");
+      await waitFor(() => expect(view.queryClient.getQueryState(v2QueryKeys.transcript("thread-a"))?.status).toBe("success"));
+      const scroller = view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+      const content = scroller.firstElementChild!;
+      let height = 2000, viewport = 500, top = 1500;
+      Object.defineProperties(scroller, {
+        scrollHeight: { get: () => height, configurable: true },
+        clientHeight: { get: () => viewport, configurable: true },
+        scrollTop: { get: () => top, set: (value: number) => { top = Math.min(value, height - viewport); }, configurable: true },
+      });
+      fireEvent.scroll(scroller);
+      expect(resize.has(scroller)).toBe(true); expect(resize.has(content)).toBe(true);
+      await act(async () => { viewport = 350; resize.get(scroller)!(); });
+      expect(scroller.scrollTop).toBe(1650);
+      await act(async () => { height = 2200; resize.get(content)!(); });
+      expect(scroller.scrollTop).toBe(1850);
+      // Switching editors briefly clamps scrollTop before delivering a resize.
+      viewport = 320; scroller.scrollTop = 1600; fireEvent.scroll(scroller);
+      expect(scroller.scrollTop).toBe(1880);
+      scroller.scrollTop = 180; fireEvent.scroll(scroller);
+      await act(async () => { viewport = 300; height = 2400; resize.get(scroller)!(); resize.get(content)!(); });
+      expect(scroller.scrollTop).toBe(180);
+      expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 180, following: false });
+    } finally { cleanup(); vi.unstubAllGlobals(); }
+  });
+
   it("shows the current Run's pending approval and exact preview in a read-only conversation", async () => {
     const item = { id: "approval-readonly", proposal_id: "proposal-readonly", run_id: "run-thread-a",
       workspace_id: "", tool_name: "web_fetch", canonical_url: "https://example.org/public",
@@ -938,13 +973,14 @@ describe("V2Conversation", () => {
 
   it("docks without trapping Tab and retains the selected file when narrowed", async () => {
     let width = 1140;
-    let resize = () => {};
+    const resizes = new Set<() => void>();
     const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get")
       .mockImplementation(function (this: HTMLElement) { return this.classList.contains("v2-conversation") ? width : 0; });
     vi.stubGlobal("ResizeObserver", class {
-      constructor(callback: ResizeObserverCallback) { resize = () => callback([], this as unknown as ResizeObserver); }
+      private resize: () => void;
+      constructor(callback: ResizeObserverCallback) { this.resize = () => callback([], this as unknown as ResizeObserver); resizes.add(this.resize); }
       observe() {}
-      disconnect() {}
+      disconnect() { resizes.delete(this.resize); }
     });
     try {
       const user = userEvent.setup();
@@ -963,7 +999,7 @@ describe("V2Conversation", () => {
       expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
       await user.click(await within(dock).findByRole("button", { name: /index.ts/u }));
       expect(await within(dock).findByText("export const value = 1;")).toBeInTheDocument();
-      await act(async () => { width = 800; resize(); });
+      await act(async () => { width = 800; resizes.forEach((resize) => resize()); });
       const modal = screen.getByRole("dialog", { name: "工作区文件" });
       expect(modal).toHaveAttribute("aria-modal", "true");
       expect(modal.parentElement?.parentElement).toBe(document.body);

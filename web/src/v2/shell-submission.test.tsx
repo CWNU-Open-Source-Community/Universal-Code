@@ -82,3 +82,6 @@ it("preserves an unknown submission across Inspector/settings and confirms only 
   expect(client.executeRun).not.toHaveBeenCalled();
   expect(client.transitionThread).not.toHaveBeenCalled();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

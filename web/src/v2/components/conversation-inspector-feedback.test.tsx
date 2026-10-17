@@ -150,3 +150,6 @@ it("retains the conversation-to-Inspector entry and consumes feedback focus befo
   expect(screen.getByRole("textbox", { name: "继续对话" })).toHaveValue("保留新修改");
   expectNoWrites();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

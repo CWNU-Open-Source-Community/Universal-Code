@@ -213,7 +213,8 @@ it("continues a paused task by sending a message without a separate lifecycle ac
     get: vi.fn().mockResolvedValue(paused) });
   const user = userEvent.setup();
   const input = await screen.findByRole("textbox", { name: "继续对话" });
-  expect(screen.getByText(/本轮已暂停。发送新消息会恢复任务并继续处理/)).toBeInTheDocument();
+  expect(screen.getByText("已暂停", { exact: true })).toBeInTheDocument();
+  expect(screen.getByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
   await user.type(input, "Continue with this requirement");
   expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "发送消息" }));
@@ -414,3 +415,6 @@ it("does not clear another task's error or draft when an automatic confirmation 
   expect(submit.mock.calls[0]![0]).toBe("thread-a");
   expect(submit.mock.calls[2]![0]).toBe("thread-b");
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

@@ -40,6 +40,33 @@ false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
 
+### Markdown 输入与复制
+
+Web/Desktop 的输入框默认显示 Markdown 格式，支持标题、粗体、引用、列表、任务列表、
+表格和代码块。输入 `# `、`- ` 等前缀可开始对应格式；粘贴 Markdown 会保留结构。
+点击输入框底部的“Markdown”可切换到“纯文本”编辑原文，偏好保存在当前设备。
+切换视图不会改写尚未编辑的原稿，发送和草稿恢复仍使用 Markdown 文本。
+
+普通段落中 Enter 发送；标题、列表、引用、表格和代码块中 Enter 继续编辑。
+Ctrl+Enter（macOS 为 Cmd+Enter）始终发送，Shift+Enter 换行。
+Ctrl+Shift+V（macOS 为 Cmd+Shift+V）按纯文本粘贴，保留 Markdown 标点符号。
+
+用户消息与模型回复使用相同的 Markdown 展示。需要单独复制的文字可放在 `text`
+围栏块中；块顶部显示“文本”和复制按钮，复制内容不包含围栏。代码围栏显示语言名称。
+普通段落保留整条回复的复制入口。
+
+Agent 建议固定任务要求时，问题会显示在输入框上方的独立卡片中。可选择“本次任务始终保留”
+或“仅当前讨论”，也可直接撰写回复，再点击“发送”。自定义回复只有勾选“将这段回复固定到本次任务”
+才会成为固定要求；“跳过”不固定内容，也不发送答复。回答失败时可重试原答复。
+卡片沿用任务要求确认流程，当前用于确认压缩后仍需保留的要求。
+提问期间，空消息编辑器收为单行；点击“输入消息”展开编辑与权限、网络等控制。
+已有草稿或附件时保持完整编辑器。暂停状态与继续操作沿同一条底栏排列。
+
+输入框变高或切换编辑模式时，对话仍会跟随最新内容；主动向上阅读历史时保留阅读位置。
+窄窗口中的问题内容可以单独滚动，回答和主输入框分别保留自己的操作区。
+
+### 任务与执行
+
 In Web and Desktop, a newly created task opens automatically only while its
 original waiting page is still current. After navigating elsewhere, use the
 creation notice to open it; its first message continues with the original

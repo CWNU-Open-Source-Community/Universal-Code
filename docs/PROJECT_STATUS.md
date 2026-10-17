@@ -1,5 +1,14 @@
 # Project Status
 
+> 2026-10-17 #368 Markdown 输入：共享输入框使用 Tiptap/ProseMirror 显示格式，
+> 可切换纯文本原文，继续使用既有 Markdown 草稿与提交接口。用户消息与模型回复
+> 共用 Markdown 展示和文本/代码块复制。浏览器已验证粘贴、模式切换、提交及复制，
+> 并查看浅色、深色、雾透与 390px 窄屏；Windows 原生中文输入法尚未人工验收。
+> 固定任务要求的提问已改为输入框上方卡片，沿用选择、自定义答复、显式固定与重试流程。
+> 已实测回答后继续执行、深浅色与窄窗口；修复输入框高度变化后的最新内容跟随，同时保留历史阅读位置。
+> 提问卡片已缩减重复说明和留白，空消息编辑器在提问期间收为单行，暂停提示统一对齐。
+> 操作方式见 [Markdown 输入与复制](usage.md#markdown-输入与复制)。
+
 > 2026-10-15 Batch validation: fixed Go/npm checks now select the task's existing
 > Command Runtime adapter and bind the stored child/integration workspace.
 > Receipts record the actual backend; historical or mismatched specialist

@@ -239,3 +239,6 @@ it("merges the image capability and local draft hints into one caption line", as
     el.classList.contains("v2-composer-caption") && /图片|草稿/.test(el.textContent ?? ""));
   expect(hintLines).toHaveLength(1);
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

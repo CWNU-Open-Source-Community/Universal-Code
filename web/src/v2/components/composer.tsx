@@ -20,6 +20,7 @@ import { requireV2DraftVersion, useV2DraftDocument } from "../draft-context";
 import type { V2DraftVersion } from "../draft-version";
 import { maximumMCPReferences, mcpReferenceIdentities, type MCPDraftReference } from "../../api/mcp-references";
 import { V2MCPReferenceChips, V2MCPReferencePicker, useV2MCPReferences } from "./mcp-reference-picker";
+import { MarkdownInput, composerPlainTextKey, readComposerPlainText, type MarkdownInputHandle } from "./markdown-input";
 
 const maximumContentBytes = 16 * 1024;
 
@@ -53,6 +54,8 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   presentedSubmissionErrors?: ReadonlyArray<Pick<V2TurnInput, "threadID" | "workspaceID" | "operationKey">>;
 }) {
   const [localContent, setLocalContent] = useState("");
+  const [plainText, setPlainText] = useState(readComposerPlainText);
+  const [modeSaveError, setModeSaveError] = useState(false);
   const managedDraft = useV2DraftDocument(workspaceID, threadID);
   const references = useV2FileReferences(workspaceID, threadID);
   const mcp = useV2MCPReferences(workspaceID, threadID);
@@ -121,7 +124,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   };
   const currentContentRef = useRef(content);
   currentContentRef.current = content;
-  // Keep the textarea mounted while the initial project loads, but scope local
+  // Keep the input mounted while the initial project loads, but scope local
   // submission bookkeeping so a late response cannot affect another draft.
   const pendingContents = useMemo(() => ({ current: new Set<string>() }), [workspaceID, threadID]);
   const pendingFiles = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
@@ -152,8 +155,11 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       return operationKey && operationKey !== current.operationKey ? { ...current, operationKey } : current;
     });
   }, [confirmedSubmission, threadID, workspaceID, submissions, error?.reason, error?.inputFingerprint]);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<MarkdownInputHandle>(null);
   const normalized = content.trim();
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
+    managedDraft?.state.conflict || managedDraft?.state.error);
   const byteLength = new TextEncoder().encode(normalized).byteLength;
   const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments), mcpReferenceIdentities(mcp.references)]);
   const sameMessagePending = pendingContents.current.has(fingerprint) ||
@@ -165,13 +171,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     (!managedDraft || managedDraft.state.persisted && !managedDraft.state.error) &&
     (content || references.files.length > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0);
   const showImageCapability = images.images.length > 0;
-
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = "0px";
-    textarea.style.height = `${Math.min(176, Math.max(34, textarea.scrollHeight))}px`;
-  }, [content]);
 
   const submit = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -210,7 +209,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         mcp.update((current) => current.filter(({ id }) => !submittedMCP.some((item) => item.id === id)));
         setContent("", submittedContent);
       }
-      if (currentScope.current === scope && currentContentRef.current === submittedContent) textareaRef.current?.focus();
+      if (currentScope.current === scope && currentContentRef.current === submittedContent) {
+        setEditorExpanded(false); inputRef.current?.focus();
+      }
     } catch (failure) {
       const reason = failure instanceof V2SubmissionError ? failure.reason : failure;
       const operationKey = failure instanceof V2SubmissionError &&
@@ -232,7 +233,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       refreshPending((value) => value + 1);
     }
   };
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
     if (!event.nativeEvent.isComposing && !event.altKey &&
         ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" || event.shiftKey && event.key === "Insert")) {
       const gesture = { handled: false, plain: event.shiftKey && event.key.toLowerCase() === "v" };
@@ -243,10 +244,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         if (pasteGesture.current === gesture) pasteGesture.current = null;
         if (!gesture.handled && !gesture.plain && desktopClipboardFilesAvailable()) void nativeClipboard.onPasteFallback();
       }, 0);
-    }
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void submit();
     }
   };
 
@@ -275,23 +272,26 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     disabled: disabled || !workspaceID || nativeClipboard.busy || nativeClipboard.pending,
     onSelect: () => void nativeClipboard.onPasteFallback() });
 
-  return <form className="v2-composer" onSubmit={(event) => void submit(event)} onPaste={(event) => {
+  return <form className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
+    onSubmit={(event) => void submit(event)} onKeyDownCapture={onKeyDown} onPasteCapture={(event) => {
     if (pasteGesture.current?.plain) return;
     const files = clipboardFiles(event.clipboardData);
     if (files.length) {
       if (pasteGesture.current) pasteGesture.current.handled = true;
-      // Native textarea editing retains accompanying text and its undo entry.
+      // The editor retains accompanying text and its undo entry.
       if (!event.clipboardData.getData?.("text/plain")) event.preventDefault();
       void addFiles(files);
     } else if (Array.from(event.clipboardData.types ?? []).includes("Files") && desktopClipboardFilesAvailable()) {
       if (pasteGesture.current) pasteGesture.current.handled = true;
       void nativeClipboard.onPasteFallback();
     }
-  }} onDrop={(event) => {
+  }} onDropCapture={(event) => {
     const files = clipboardFiles(event.dataTransfer);
-    if (files.length) { event.preventDefault(); void addFiles(files); }
+    if (files.length) { event.preventDefault(); event.stopPropagation(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
     <div className="v2-composer-surface">
+      <button className="v2-composer-compact-trigger" type="button" aria-label="展开消息编辑器" disabled={disabled}
+        onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{placeholder}</button>
       <V2MCPReferenceChips references={mcp.references} disabled={disabled} pendingIDs={[
         ...[...pendingMCP.current.values()].flat(), ...submissions.filter(({ pending, error }) => pending || Boolean(error) && !v2TurnOutcomeKnown(error))
           .flatMap(({ input }) => input.mcpReferences?.map(({ id }) => id) ?? []),
@@ -314,18 +314,26 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         ]} unavailableReason={fileReferenceUnavailableReason} open={referencePickerOpen}
         onOpenChange={setReferencePickerOpen} returnFocusRef={addTriggerRef}
         onChange={references.update} workspaceID={workspaceID} />}
-      <textarea aria-label={threadID ? "继续对话" : "开始新对话"} disabled={disabled}
-        maxLength={maximumContentBytes} onChange={(event) => { setContent(event.target.value); setError(null); }}
-        onKeyDown={onKeyDown} placeholder={placeholder} ref={textareaRef} rows={1} value={content} />
+      <MarkdownInput label={threadID ? "继续对话" : "开始新对话"} disabled={disabled}
+        onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
+        placeholder={placeholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
       <div className="v2-composer-footer">
         <div className="v2-composer-tools">
           <V2ComposerAddMenu actions={addActions} disabled={disabled} key={scope} triggerRef={addTriggerRef} />
+          <button className="v2-composer-mode-toggle" type="button" disabled={disabled}
+            aria-label={plainText ? "切换为 Markdown 编辑" : "切换为纯文本编辑"}
+            title={plainText ? "显示格式；Ctrl+Enter 发送" : "编辑 Markdown 原文"}
+            onClick={() => {
+              const next = !plainText; setPlainText(next);
+              try { localStorage.setItem(composerPlainTextKey, String(next)); setModeSaveError(false); }
+              catch { setModeSaveError(true); }
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}>{plainText ? "纯文本" : "Markdown"}</button>
           {client.hasThreadControl &&
             <input ref={attachmentPicker} type="file" multiple hidden aria-label="选择图片或文件"
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
-          {threadID && threadControls?.(Boolean(content.trim() || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
-            managedDraft?.state.conflict || managedDraft?.state.error))}
+          {threadID && threadControls?.(hasUnsentDraft)}
           {!threadID ? <label className="v2-workspace-picker">
             <span className="sr-only">工作区</span>
             <select aria-label="选择工作区" disabled={submitting || workspaces.length === 0}
@@ -355,6 +363,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     {mcp.references.length > 0 && fileReferenceUnavailableReason && <p className="v2-composer-caption" role="status">
       MCP 引用需在当前任务结束并处理待批准操作后发送。草稿和已选内容会保留。</p>}
     {byteLength > maximumContentBytes && <p className="v2-composer-error">消息不能超过 16 KiB</p>}
+    {modeSaveError && <p className="v2-composer-caption" role="status">编辑模式已切换，但偏好未能保存；下次打开时会使用默认模式。</p>}
     {images.uploading && <p className="v2-composer-caption" role="status">正在保存图片，完成后可发送…</p>}
     {(showImageCapability || draftSavedLocally) && <p className="v2-composer-caption" role="status">
       {showImageCapability && <>{imageCapability.hint}

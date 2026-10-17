@@ -79,3 +79,6 @@ test("blocks confirmation while a real image upload is pending, stays blocked fo
   expect(input).toHaveValue("");
   expect(page.submit).not.toHaveBeenCalled();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

@@ -101,3 +101,6 @@ it("loads each advanced surface on first use while keeping drafts, focus, and la
     expect(mutation).not.toHaveBeenCalled();
   }
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

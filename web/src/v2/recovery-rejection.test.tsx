@@ -151,3 +151,6 @@ it.each([false, true])("retains a whitespace-only newer draft after old confirma
   expect(f.inspect).toHaveBeenCalledTimes(1);
   expect(f.submit).toHaveBeenCalledTimes(2);
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

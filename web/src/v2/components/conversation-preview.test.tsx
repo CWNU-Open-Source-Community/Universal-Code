@@ -113,3 +113,6 @@ it("keeps an unknown submission unconfirmed with its original key and draft", as
   fireEvent.click(screen.getByRole("button", { name: "查看应用服务" }));
   expect(await screen.findByRole("button", { name: "把启动要求放回草稿" })).toBeDisabled();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

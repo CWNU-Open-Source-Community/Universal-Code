@@ -101,8 +101,7 @@ function ThreadPermissionControl({ client, threadID, variant = "menu", onOpenMod
     client={client} runID={query.data.current_run_id ?? ""} threadID={threadID}
     onOpenModelSettings={onOpenModelSettings} onConfirmationOpenChange={onNetworkConfirmationOpenChange}
     onWebAccessModeChange={onWebAccessModeChange} />;
-  return <div className={`v2-permission-host is-${variant}`}
-    style={variant === "menu" ? { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, minWidth: 0, maxWidth: "100%" } : undefined}>
+  return <div className={`v2-permission-host is-${variant}`}>
     <V2ApprovalModeControl mode={permission.approval_mode} fullActivation={permission.full_activation}
       fullUnavailableReason={permission.full_unavailable_reason} pending={mutation.isPending}
       disabled={!client.hasExecutionPermissionControl} variant={variant}
