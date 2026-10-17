@@ -25,7 +25,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 128 | true |
+| [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 129 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 8 | true |
@@ -42,7 +43,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 55 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 56 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -934,6 +935,27 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 </details>
 
+### github-pr-followup-observation
+
+- Class: `projection`
+- Owner: GitHub review and task follow-up maintainers
+- Source of truth: `internal/application/pr_followup_worker.go`, `internal/githubreview/followup.go`
+- Persistence/export boundary: Each poll derives bounded, sanitized review/comment and CI evidence from GitHub. The snapshot itself is not persisted; observed item digests and exact pending Thread input remain separate durable pr_followups state.
+- Compatibility rule: Preserve repository/PR/head binding, per-resource completeness, final identity recheck, redaction and stable fingerprints. Stale or incomplete observations require another read and cannot prove CI success or grant execution authority.
+- Retirement gate (`rebuild-from-source`): Rebuild source remains retained and independently verifiable; Replacement preserves ordering, cursor, invalidation, and redaction behavior; Retirement evidence proves a complete rebuild from the named source
+- Rebuild source: The credential-scoped GitHub PR, review, inline/issue comment, check-run, workflow-run and combined-status endpoints for the exact repository and PR head. Historical observation cursors and pending repair inputs are retained in pr_followups rather than reconstructed from a later snapshot.
+- Writers:
+  - `github-pr-followup-snapshot-writer` (`v1`, write-current) at `internal/githubreview/followup.go`
+- Readers:
+  - `github-pr-followup-application-reader` (`v1`, active) at `internal/application/pr_followup_worker.go`
+  - `github-pr-followup-snapshot-reader` (`v1`, active) at `internal/githubreview/followup.go`
+
+<details><summary>1 active identifiers</summary>
+
+- `github-pr-followup-snapshot.v1`
+
+</details>
+
 ### http-openapi-contract
 
 - Class: `external-durable`
@@ -946,8 +968,10 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `http-openapi-contract-writer` (`v0, v1, v2`, write-new) at `internal/httpapi/openapi.go`
 - Readers:
   - `http-openapi-contract-reader` (`v0, v1, v2`, active) at `web/src/api`
+  - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
+  - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>128 active identifiers</summary>
+<details><summary>129 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -1006,6 +1030,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `plan_delivery.v1`
 - `plan_delivery_control.v1`
 - `plugin-lifecycle.v1`
+- `pr-followup.v1`
 - `provider_credential.v1`
 - `provider_diagnostic.v1`
 - `provider_model_discovery.v1`
@@ -1725,8 +1750,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `thread-run-session-ledgers-reader` (`v0, v1, v2, v3, v4`, active) at `internal/store`
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
+  - `pr-followup-local-intent-reader` (`v1`, active) at `web/src/v2/components/task-pr-followup.tsx`
 
-<details><summary>55 active identifiers</summary>
+<details><summary>56 active identifiers</summary>
 
 - `context_memory.v1`
 - `context_memory_candidate.v1`
@@ -1744,6 +1770,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `observed_browser_controls.v1`
 - `operator_steering_revision_operation.v1`
 - `operator_steering_revision_request.v1`
+- `pr-followup-intent.v1`
 - `queue_edit.v1`
 - `queue_operation.v1`
 - `queue_revision_unchanged.v1`
