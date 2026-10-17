@@ -56,6 +56,8 @@ func (s *ThreadTurnService) CheckAutomaticTurn(ctx context.Context, threadID str
 }
 
 type automaticThreadStore interface {
+	ListAgentNodes(context.Context, string) ([]domain.AgentNode, error)
+	SpecialistToolApprovalState(context.Context, domain.AgentAttemptRef) (bool, bool, error)
 	GetThreadExecutionFacts(context.Context, []string) (map[string]domain.ThreadExecutionFacts, error)
 	ListApprovals(context.Context, approval.ListFilter) ([]approval.Record, error)
 	GetThreadExecutionPermission(context.Context, string) (domain.ThreadExecutionPermissionSnapshot, error)
@@ -131,6 +133,11 @@ func (s *ThreadTurnService) checkAutomaticTurn(ctx context.Context, threadID, ow
 	}
 	if len(approvals) > 0 {
 		return apperror.New(apperror.CodeFailedPrecondition, "The task is waiting for approval; resume it through the existing approval")
+	}
+	if waiting, err := automaticWorkerAwaitingResume(ctx, st, run.ID); err != nil {
+		return apperror.Normalize(err)
+	} else if waiting {
+		return apperror.New(apperror.CodeFailedPrecondition, "A worker tool is waiting to resume after review; resume the existing worker before automatic continuation")
 	}
 	ownPending := false
 	if ownMessageID != "" {
@@ -324,6 +331,11 @@ func (s *ThreadTurnService) ObserveAutomaticTurn(ctx context.Context, threadID, 
 	if active || leased && lease.ActiveAt(time.Now().UTC()) {
 		return observation("running", "The task execution is active")
 	}
+	if waiting, err := automaticWorkerAwaitingResume(ctx, st, runID); err != nil {
+		return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
+	} else if waiting {
+		return observation("running", "A worker tool is waiting to resume after review; resume the existing worker")
+	}
 	if found && cp.AttemptID != "" {
 		rounds, err := runner.store.ListSupervisorToolRounds(ctx, cp)
 		if err != nil {
@@ -358,4 +370,25 @@ func (s *ThreadTurnService) ObserveAutomaticTurn(ctx context.Context, threadID, 
 		return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
 	}
 	return observation("completed", "")
+}
+
+// A decided approval is not a completed worker call. Its original attempt stays
+// suspended until the worker's existing resume path records the tool outcome.
+func automaticWorkerAwaitingResume(ctx context.Context, st automaticThreadStore, runID string) (bool, error) {
+	nodes, err := st.ListAgentNodes(ctx, runID)
+	if err != nil {
+		return false, err
+	}
+	for _, node := range nodes {
+		if node.Worker == nil || node.Status != domain.AgentRunning || node.ActiveAttemptID == "" {
+			continue
+		}
+		waiting, _, err := st.SpecialistToolApprovalState(ctx, domain.AgentAttemptRef{
+			RunID: runID, AgentID: node.ID, AttemptID: node.ActiveAttemptID,
+		})
+		if err != nil || waiting {
+			return waiting, err
+		}
+	}
+	return false, nil
 }
