@@ -24,6 +24,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/approval"
+	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/httpapi"
 	"cyberagent-workbench/internal/store"
@@ -857,6 +858,7 @@ func TestControlPlanePRFollowupWorkerUsesDesktopLifetime(t *testing.T) {
 		RunExecutionEnabled: true, GitHubReviewControlEnabled: true, ScheduledJobWorkerEnabled: true,
 		ExecutionPermissionControlEnabled: true, ApprovalControlEnabled: true,
 		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true},
+		CredentialStore:                 credential.NewMemoryStore(),
 		AppVersion:                      "desktop-pr-followup-test",
 	})
 	if err != nil {
