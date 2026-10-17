@@ -90,6 +90,7 @@ type MCPExecutionScope struct {
 	RunID                  string
 	MissionID              string
 	WorkspaceID            string
+	SessionID              string
 	AgentID                string
 	AgentAttemptID         string
 	Surface                domain.ExecutionSurface
@@ -106,6 +107,7 @@ type MCPExecutionScope struct {
 	RequestedBy            string
 	PolicyDecision         Decision
 	SupervisorToolCallID   string
+	SpecialistToolCallID   string
 	SupervisorTurn         int
 }
 
@@ -117,12 +119,18 @@ func (s MCPExecutionScope) Validate() error {
 		!s.PermissionMode.Valid() ||
 		!validMCPIdentity(s.PermissionSnapshotID) || s.PermissionRevision < 1 ||
 		!validMCPIdentity(s.LeaseID) || s.LeaseGeneration < 1 ||
-		s.RequestedBy != "run_supervisor" || s.PolicyDecision.Validate() != nil ||
+		(s.RequestedBy != "run_supervisor" && s.RequestedBy != "specialist_runner") || s.PolicyDecision.Validate() != nil ||
 		!s.PolicyDecision.Allowed || (s.PolicyDecision.Approval != ApprovalAutomatic && s.PolicyDecision.Approval != ApprovalPerCall) {
 		return errors.New("MCP tool call requires a current host actor, permission and Run lease scope")
 	}
 	if s.SupervisorToolCallID != "" && (!validMCPIdentity(s.SupervisorToolCallID) || s.SupervisorTurn < 1) {
 		return errors.New("MCP durable call identity is invalid")
+	}
+	if s.RequestedBy == "specialist_runner" && (s.Role != domain.AgentRoleSpecialist || !validMCPIdentity(s.SpecialistToolCallID) || !validMCPIdentity(s.AgentID) || !validMCPIdentity(s.AgentAttemptID) || !validMCPIdentity(s.SessionID) || s.SupervisorToolCallID != "" || s.SupervisorTurn != 0) {
+		return errors.New("MCP worker call requires its exact child intent")
+	}
+	if s.RequestedBy != "specialist_runner" && s.SpecialistToolCallID != "" {
+		return errors.New("MCP worker intent cannot be attributed to the supervisor")
 	}
 	return nil
 }
@@ -223,7 +231,7 @@ func (g *Gateway) invokeMCP(ctx context.Context, call ToolCall) (Outcome, error)
 func mcpExecutionScope(call ToolCall, decision Decision) MCPExecutionScope {
 	return MCPExecutionScope{InvocationID: call.InvocationID, RunID: call.RunID,
 		MissionID:   call.MissionID,
-		WorkspaceID: call.WorkspaceID, Surface: call.Surface, Phase: call.Phase, Role: call.Role,
+		WorkspaceID: call.WorkspaceID, SessionID: call.SessionID, Surface: call.Surface, Phase: call.Phase, Role: call.Role,
 		AgentID: call.AgentID, AgentAttemptID: call.AgentAttemptID,
 		PermissionMode:        call.PermissionMode,
 		PermissionSnapshotID:  call.PermissionSnapshotID,
@@ -232,5 +240,5 @@ func mcpExecutionScope(call ToolCall, decision Decision) MCPExecutionScope {
 		RunAuthorizationFence: call.RunAuthorizationFence, LeaseID: call.LeaseID,
 		PermissionRuntimeEpoch: call.PermissionRuntimeEpoch,
 		LeaseGeneration:        call.LeaseGeneration, RequestedBy: call.RequestedBy,
-		PolicyDecision: decision, SupervisorToolCallID: call.SupervisorToolCallID, SupervisorTurn: call.SupervisorTurn}
+		PolicyDecision: decision, SupervisorToolCallID: call.SupervisorToolCallID, SupervisorTurn: call.SupervisorTurn, SpecialistToolCallID: call.SpecialistToolCallID}
 }

@@ -84,6 +84,7 @@ type externalSpecialistSkillContextStore interface {
 }
 
 type SpecialistTurnResult struct {
+	WaitingApproval bool
 	// Internal provenance: executable consumers must not apply display-redacted text.
 	actionMessageRedacted   bool
 	RunID                   string
@@ -133,8 +134,8 @@ type specialistTurnLimits struct {
 }
 
 // SubagentRunner executes bounded child turns under their own Session, lease
-// and usage ledger. Operator services enable the Go-owned read/search profile;
-// the Batch adapter alone supplies isolated edit and verification authority.
+// and usage ledger. Admission selects scoped reads, isolated Batch tools, or an
+// execution worker inheriting current parent capabilities with optional narrowing.
 // Model text and ordinary tool calls cannot construct or widen these grants.
 type SubagentRunner struct {
 	store                    SubagentRunnerStore
@@ -157,6 +158,7 @@ type SubagentRunner struct {
 	batchEditProtocol       bool
 	operationKey            string
 	drydocks                *RunWorktreeService
+	workerRuntime           *AgentRunner
 }
 
 func NewSubagentRunner(store SubagentRunnerStore, router *llm.Router,
@@ -312,7 +314,7 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 		return apperror.Normalize(err)
 	}
 	if child.RunID != result.RunID || child.Role != domain.AgentRoleSpecialist ||
-		child.ParentID != result.ParentAgentID || child.Status != domain.AgentReady {
+		child.ParentID != result.ParentAgentID || (child.Status != domain.AgentReady && !(child.Worker != nil && child.Status == domain.AgentRunning)) {
 		return apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist is not ready after lease recovery")
 	}
@@ -320,16 +322,26 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 	if r.operationKey != "" {
 		attemptID = "attempt-" + runmutation.Fingerprint("specialist_operator_step.v1", child.RunID, child.ID, r.operationKey)
 	}
-	attempt, _, err := r.store.BeginSpecialistAttempt(ctx, domain.AgentAttemptStart{
-		AttemptID: attemptID, RunID: child.RunID, AgentID: child.ID,
-		ParentAgentID: child.ParentID, Lease: lease, StartedAt: time.Now().UTC(),
-	}, "specialist-start-"+attemptID)
+	var attempt domain.AgentAttempt
+	if child.Worker != nil && child.Status == domain.AgentRunning {
+		var waiting bool
+		attempt, waiting, err = r.resumeWorkerAttempt(ctx, child, lease, result)
+		if err != nil || waiting {
+			return err
+		}
+	} else {
+		attempt, _, err = r.store.BeginSpecialistAttempt(ctx, domain.AgentAttemptStart{
+			AttemptID: attemptID, RunID: child.RunID, AgentID: child.ID,
+			ParentAgentID: child.ParentID, Lease: lease, StartedAt: time.Now().UTC(),
+		}, "specialist-start-"+attemptID)
+	}
 	if err != nil {
 		return apperror.Normalize(err)
 	}
 	result.AttemptID = attempt.ID
 	result.Turn = attempt.Turn
 	result.AttemptStatus = attempt.Status
+	result.Usage = attempt.Usage
 	ref := specialistAttemptRef(attempt)
 	child, err = r.store.GetAgentNode(ctx, child.ID)
 	if err != nil {
@@ -453,6 +465,11 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 	if err != nil {
 		return r.failAttempt(ctx, result, ref, err)
 	}
+	// Run usage already includes earlier model calls from a resumed attempt.
+	// Native-loop accounting compares its cumulative attempt usage to this cap.
+	if turnTokenLimit > 0 {
+		turnTokenLimit += attempt.Usage.TotalTokens
+	}
 	turnExecutionLimit, err := specialistTurnExecutionLimit(run.Budget, runUsage,
 		limits.MaxExecutionMillis)
 	if err != nil {
@@ -463,7 +480,7 @@ func (r *SubagentRunner) stepReadyWithLease(ctx context.Context,
 		return r.failAttempt(ctx, result, ref, err)
 	}
 	contextAudit := supervisorModelContextAudit(contextSelection)
-	if r.workspaceTools {
+	if r.workspaceTools || child.Worker != nil {
 		return r.stepNativeTools(ctx, result, run, mission, child, attempt, contextBatch.TaskBrief, input, request, contextLayout, contextAudit, refModel, turnTokenLimit, turnExecutionLimit)
 	}
 	budgetState := specialistModelBudgetState{}

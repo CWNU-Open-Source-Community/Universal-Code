@@ -1,5 +1,7 @@
 # Usage
 
+See [Execution workers and saved workflows](execution-workers.md) for delegated command, file, browser and MCP execution.
+
 ## Canonical product vocabulary / 规范产品词汇
 
 | User term / 用户词汇 | Meaning / 含义 |

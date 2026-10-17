@@ -41,7 +41,7 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
       return continueSpecialist(client, runID, agent.id, key);
     },
     onSuccess: (result) => {
-      if (result.summary_status !== "queued" && result.summary_status !== "failed") {
+      if (result.stop_reason !== "waiting_approval" && result.summary_status !== "queued" && result.summary_status !== "failed") {
         setPendingKey(null);
         retainPendingKey(storageKey, null);
       }
@@ -68,16 +68,17 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
   const canExecute = client.hasControl && client.hasModelControl && (agent.status === "ready" || Boolean(pendingKey));
   const runBlocked = !pendingKey && runStatus !== "running";
   return <div className="agent-execution-control">
-    <p>{readPaths.length > 0 ? t("只读工具子代理", "Read-only tool child") : t("无工具子代理", "No-tool child")}</p>
-    {readPaths.length > 0 && <>
+    <p>{agent.worker ? t("执行型子代理", "Execution worker") : readPaths.length > 0 ? t("只读工具子代理", "Read-only tool child") : t("无工具子代理", "No-tool child")}</p>
+    {agent.worker && <p>{t("委派工具：", "Delegated tools: ")}{agent.worker.tools == null ? t("继承主代理", "Inherit parent tools") : agent.worker.tools.length ? agent.worker.tools.join(", ") : t("无工具", "No tools")}</p>}
+    {!agent.worker && readPaths.length > 0 && <>
       <p>{t("允许读取：", "Read scope: ")}{readPaths.join(", ")}</p>
       <p>{t("工具次数：", "Tool calls: ")}{agent.tool_calls_used ?? 0} / {agent.tool_call_limit}</p>
-      {client.hasControl && client.hasModelControl && <button type="button" disabled={revoke.isPending} onClick={() => revoke.mutate()}>{t("撤回读取权限", "Revoke read access")}</button>}
     </>}
+    {(agent.worker || readPaths.length > 0) && client.hasControl && client.hasModelControl && <button type="button" disabled={revoke.isPending} onClick={() => revoke.mutate()}>{agent.worker ? t("撤回工具权限", "Revoke tool access") : t("撤回读取权限", "Revoke read access")}</button>}
     {(agent.cost_limit_micros ?? 0) > 0 && <p>{t("费用（含预留）：", "Cost including reservations: ")}{((agent.cost_used_micros ?? 0) / 1_000_000).toFixed(6)} / {((agent.cost_limit_micros ?? 0) / 1_000_000).toFixed(6)} USD</p>}
     {revoke.error && <ErrorState error={revoke.error} />}
     {canExecute && <>
-      <p className="projection-placeholder">{readPaths.length === 0 ? t("子代理将根据已委托材料继续分析，完成后由主会话汇总。", "The child continues analyzing its delegated material; the main conversation summarizes completion.") : t("子代理将在已授权预算内连续读取、搜索任务文件，完成后由主会话自动汇总。修改与验证请使用批量交付。",
+      <p className="projection-placeholder">{agent.worker ? t("子代理将在委派权限和预算内执行；需要批准的工具会等待审批。", "The child runs within delegated permissions and budgets; tools requiring approval will wait for a decision.") : readPaths.length === 0 ? t("子代理将根据已委托材料继续分析，完成后由主会话汇总。", "The child continues analyzing its delegated material; the main conversation summarizes completion.") : t("子代理将在已授权预算内连续读取、搜索任务文件，完成后由主会话自动汇总。修改与验证请使用批量交付。",
         "The child continues reading and searching task files within its approved budget. On completion, the main conversation summarizes its findings automatically. Use batch delivery for edits and validation.")}</p>
       {runBlocked && <p>{runStatus === "paused" ? t("任务已暂停。请先在任务控制中恢复，再运行子代理。", "The task is paused. Resume it in task controls before running the child.")
         : t("等待任务处于运行状态后执行。", "The task must be running before child execution.")}</p>}
@@ -110,6 +111,7 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
         <strong>{t(`第 ${round.round} 轮`, `Round ${round.round}`)}</strong>
         {round.calls.map((call) => <details key={call.call_id}>
           <summary><code>{call.name}</code> <StatusBadge status={call.status} />{call.error_code && ` · ${call.error_code}`}</summary>
+          {call.approval_id && <p>{t("审批记录：", "Approval: ")}<code>{call.approval_id}</code></p>}
           {call.result_json && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflow: "auto" }}>{call.result_json}</pre>}
         </details>)}
       </section>)}
@@ -121,6 +123,7 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
 type Translate = (zh: string, en: string) => string;
 function executionStopLabel(reason: string, errorCode: string | undefined, t: Translate) {
   switch (reason) {
+    case "waiting_approval": return t("等待工具审批；审批后继续执行", "Waiting for tool approval; continue after approval");
     case "all_terminal": return t("子代理已完成", "Child completed");
     case "no_ready_child": return t("等待后续消息", "Waiting for further input");
     case "round_limit": return t("达到连续执行轮数上限", "Continuation round limit reached");

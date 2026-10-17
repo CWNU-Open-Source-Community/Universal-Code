@@ -135,6 +135,7 @@ type ToolCall struct {
 	InvocationID                string                            `json:"invocation_id,omitempty"`
 	OperationKey                string                            `json:"-"`
 	RunID                       string                            `json:"run_id,omitempty"`
+	RootAgentID                 string                            `json:"-"`
 	AgentID                     string                            `json:"agent_id,omitempty"`
 	AgentAttemptID              string                            `json:"-"`
 	SpecialistToolCallID        string                            `json:"-"`
@@ -175,6 +176,7 @@ func NormalizeToolCall(call ToolCall) (ToolCall, error) {
 	call.InvocationID = strings.TrimSpace(call.InvocationID)
 	call.OperationKey = strings.TrimSpace(call.OperationKey)
 	call.RunID = strings.TrimSpace(call.RunID)
+	call.RootAgentID = strings.TrimSpace(call.RootAgentID)
 	call.AgentID = strings.TrimSpace(call.AgentID)
 	call.AgentAttemptID = strings.TrimSpace(call.AgentAttemptID)
 	call.SpecialistToolCallID = strings.TrimSpace(call.SpecialistToolCallID)
@@ -203,7 +205,7 @@ func NormalizeToolCall(call ToolCall) (ToolCall, error) {
 	}
 	for label, value := range map[string]string{
 		"invocation id": call.InvocationID, "operation key": call.OperationKey,
-		"run id": call.RunID, "agent id": call.AgentID,
+		"run id": call.RunID, "root agent id": call.RootAgentID, "agent id": call.AgentID,
 		"agent attempt id": call.AgentAttemptID, "session id": call.SessionID,
 		"specialist tool call id": call.SpecialistToolCallID,
 		"workspace id":            call.WorkspaceID, "lease id": call.LeaseID, "requester": call.RequestedBy,
@@ -314,7 +316,7 @@ func (c ToolCall) Validate() error {
 		return err
 	}
 	if normalized.Name != c.Name || !bytes.Equal(normalized.Payload, c.Payload) || normalized.InvocationID != c.InvocationID ||
-		normalized.OperationKey != c.OperationKey || normalized.RunID != c.RunID ||
+		normalized.OperationKey != c.OperationKey || normalized.RunID != c.RunID || normalized.RootAgentID != c.RootAgentID ||
 		normalized.AgentID != c.AgentID || normalized.AgentAttemptID != c.AgentAttemptID ||
 		normalized.SpecialistToolCallID != c.SpecialistToolCallID ||
 		normalized.SessionID != c.SessionID ||

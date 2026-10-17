@@ -27,6 +27,7 @@ const (
 	SpecialistScheduleExecutionBudget SpecialistScheduleStopReason = "execution_budget_exhausted"
 	SpecialistScheduleChildError      SpecialistScheduleStopReason = "child_error"
 	SpecialistScheduleCancelled       SpecialistScheduleStopReason = "cancelled"
+	SpecialistScheduleWaitingApproval SpecialistScheduleStopReason = "waiting_approval"
 )
 
 type SpecialistScheduleRequest struct {
@@ -44,6 +45,7 @@ type SpecialistScheduleFailure struct {
 }
 
 type SpecialistScheduleResult struct {
+	WaitingApproval    bool
 	ScheduleID         string
 	OperatorRequestID  string
 	ContinuationDigest string
@@ -177,6 +179,7 @@ func (s *SpecialistScheduler) executeWithLease(ctx context.Context,
 		result.RoundsCompleted = started.Schedule.RoundsCompleted
 		result.TurnsStarted = started.Schedule.TurnsStarted
 		result.StopReason = SpecialistScheduleStopReason(started.Schedule.StopReason)
+		result.WaitingApproval = result.StopReason == SpecialistScheduleWaitingApproval
 		result.UsageBefore = started.Schedule.UsageBefore
 		result.UsageAfter = started.Schedule.UsageAfter
 		return specialistOperatorScheduleTerminalError(started.Schedule)
@@ -240,6 +243,7 @@ func (s *SpecialistScheduler) executeWithLease(ctx context.Context,
 		var roundErrors []specialistRoundOutcome
 		for _, outcome := range outcomes {
 			result.Turns = append(result.Turns, outcome.result)
+			result.WaitingApproval = result.WaitingApproval || outcome.result.WaitingApproval
 			if outcome.result.AttemptID != "" {
 				result.TurnsStarted++
 			}
@@ -259,6 +263,10 @@ func (s *SpecialistScheduler) executeWithLease(ctx context.Context,
 			return apperror.Normalize(err)
 		}
 		result.UsageAfter = usage
+		if result.WaitingApproval && len(roundErrors) == 0 {
+			result.StopReason = SpecialistScheduleWaitingApproval
+			return nil
+		}
 		if len(roundErrors) != 0 {
 			if ctx.Err() != nil {
 				result.StopReason = SpecialistScheduleCancelled
@@ -347,6 +355,20 @@ func (s *SpecialistScheduler) scheduleCandidates(ctx context.Context, runID stri
 		case child.Status == domain.AgentWaiting:
 			// Waiting children remain dormant until an authenticated wake/message transition.
 		case child.Status == domain.AgentRunning:
+			if child.Worker != nil {
+				if state, ok := s.runner.store.(interface {
+					SpecialistToolApprovalState(context.Context, domain.AgentAttemptRef) (bool, bool, error)
+				}); ok {
+					waiting, _, err := state.SpecialistToolApprovalState(ctx, domain.AgentAttemptRef{RunID: runID, AgentID: child.ID, AttemptID: child.ActiveAttemptID})
+					if err != nil {
+						return nil, 0, err
+					}
+					if waiting {
+						ready = append(ready, child)
+						continue
+					}
+				}
+			}
 			return nil, 0, apperror.New(apperror.CodeConflict,
 				fmt.Sprintf("Specialist %s remained running after lease recovery", child.ID))
 		default:

@@ -36,10 +36,15 @@ func (g *Gateway) captureTerminalArtifacts(ctx context.Context, call ToolCall, s
 			Stream: artifact.StreamStderr, MIME: "text/plain; charset=utf-8", Content: stderr,
 		})
 	}
-	descriptors, err := g.artifacts.Capture(ctx, artifact.CaptureRequest{
+	request := artifact.CaptureRequest{
 		RunID: call.RunID, SessionID: call.SessionID, WorkspaceID: call.WorkspaceID,
 		SourceID: sourceID, ToolName: string(call.Name), Outputs: outputs,
-	})
+	}
+	if call.SpecialistToolCallID != "" {
+		request.AgentID, request.AgentAttemptID = call.AgentID, call.AgentAttemptID
+		request.SpecialistToolCallID, request.InvocationID = call.SpecialistToolCallID, call.InvocationID
+	}
+	descriptors, err := g.artifacts.Capture(ctx, request)
 	if err != nil {
 		return nil, err
 	}

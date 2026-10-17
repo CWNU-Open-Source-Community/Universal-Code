@@ -164,6 +164,9 @@ func (e *MCPClientToolExecutor) operationAuthorizer(ctx context.Context, scope t
 // binds the actual launch, discovery budget and wire input with its keyed
 // fingerprints before each side effect; server declarations grant no authority.
 func (e *MCPClientToolExecutor) mcpDispatchApproval(ctx context.Context, scope toolgateway.MCPExecutionScope, payload toolgateway.MCPToolCallPayload) (*approval.Record, error) {
+	if scope.RequestedBy == "specialist_runner" {
+		return e.workerMCPDispatchApproval(ctx, scope, payload)
+	}
 	if scope.SupervisorToolCallID == "" {
 		if scope.PolicyDecision.Approval == toolgateway.ApprovalPerCall {
 			return nil, mcpApprovalUnavailable("MCP per-call approval requires a durable intent")

@@ -32,7 +32,7 @@ func (e *AgentCodeToolExecutor) authorizeAgentCodeRead(ctx context.Context, scop
 		AdapterID: "host-rooted-files", AdapterRevision: "1", InputFingerprint: hex.EncodeToString(mac.Sum(nil)),
 		Targets: []toolcontract.Target{{Kind: "directory", Locator: scope.WorkspaceID + ":" + scope.RootFingerprint}},
 		Effects: []toolcontract.Effect{toolcontract.EffectWorkspaceRead}}
-	subject := executionauth.SubjectRef{RunID: scope.RunID, ActorID: scope.RootAgentID}
+	subject := executionauth.SubjectRef{RunID: scope.RunID, ActorID: scope.ActorID()}
 	raw, err := json.Marshal(scope)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,11 @@ func bindAgentCodeRuntime(capabilities domain.ExecutionPermissionRuntimeCapabili
 func (e *AgentCodeToolExecutor) automaticallyAuthorizePreparedFileEdit(ctx context.Context,
 	scope toolgateway.AgentCodeExecutionScope, edit fileedit.Edit,
 ) (bool, error) {
-	if err := e.validateScope(ctx, scope, toolgateway.WorkspaceChangeTool); err != nil {
+	proposalTool := toolgateway.WorkspaceChangeTool
+	if edit.Operation == fileedit.OperationDelete {
+		proposalTool = toolgateway.WorkspaceDeleteTool
+	}
+	if err := e.validateScope(ctx, scope, proposalTool); err != nil {
 		return false, err
 	}
 	permission, err := e.store.GetRunExecutionPermission(ctx, scope.RunID)
@@ -156,14 +160,14 @@ func (e *AgentCodeToolExecutor) automaticallyAuthorizePreparedFileEdit(ctx conte
 	if err != nil {
 		return false, err
 	}
-	subject := executionauth.SubjectRef{RunID: scope.RunID, ActorID: scope.RootAgentID}
+	subject := executionauth.SubjectRef{RunID: scope.RunID, ActorID: scope.ActorID()}
 	authorizer := executionauth.NewPolicyAuthorizer(func(checkCtx context.Context, actual executionauth.SubjectRef,
 		_ toolcontract.Operation, approvalRef string,
 	) (executionauth.OperationAuthority, error) {
 		if actual != subject || approvalRef != "" {
 			return executionauth.OperationAuthority{}, apperror.New(apperror.CodePolicyDenied, "file proposal authority changed")
 		}
-		if err := e.validateScope(checkCtx, scope, toolgateway.WorkspaceChangeTool); err != nil {
+		if err := e.validateScope(checkCtx, scope, proposalTool); err != nil {
 			return executionauth.OperationAuthority{}, err
 		}
 		return executionauth.OperationAuthority{Mode: projection.Mode, BindingFingerprint: fileedit.HashText(string(raw)),

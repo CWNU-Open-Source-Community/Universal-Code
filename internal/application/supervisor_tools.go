@@ -591,6 +591,7 @@ func (s *AgentRunner) supervisorBrowserActionCapabilities(ctx context.Context,
 
 func (s *AgentRunner) supervisorMCPCapabilities(ctx context.Context,
 	turn domain.SupervisorTurn, permission domain.RunExecutionPermissionSnapshot,
+	worker ...domain.AgentAttemptRef,
 ) (supervisorMCPTools, error) {
 	if s.mcpClient == nil ||
 		strings.TrimSpace(turn.Mission.WorkspaceID) == "" {
@@ -637,7 +638,29 @@ func (s *AgentRunner) supervisorMCPCapabilities(ctx context.Context,
 		if s.executionCapabilities.RuntimeAuthority != nil {
 			revoked = s.executionCapabilities.RuntimeAuthority.RunAuthorizationDone(turn.Run.ID, fence)
 		}
-		capabilities, err = dynamic.RefreshCapabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID, check, revoked)
+		if len(worker) > 0 {
+			ref := worker[0]
+			owned, e := workerMCPWorkspace(ctx, s.store, ref, s.drydocks)
+			if e != nil {
+				return supervisorMCPTools{}, e
+			}
+			refresh, ok := s.mcpClient.(interface {
+				RefreshWorkerCapabilities(context.Context, string, string, func(context.Context) error, <-chan struct{}, *mcp.InvocationWorkspace) (mcp.ScopedCapabilities, error)
+			})
+			if !ok {
+				return supervisorMCPTools{}, errors.New("MCP client cannot bind a worker workspace")
+			}
+			workerCheck := func(ctx context.Context) error {
+				if e := check(ctx); e != nil {
+					return e
+				}
+				_, e := readWorkerExecutionContext(ctx, s.store, ref, s.drydocks)
+				return e
+			}
+			capabilities, err = refresh.RefreshWorkerCapabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID, workerCheck, revoked, owned)
+		} else {
+			capabilities, err = dynamic.RefreshCapabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID, check, revoked)
+		}
 	} else {
 		capabilities, err = s.mcpClient.Capabilities(ctx, turn.Run.ID, turn.Mission.WorkspaceID)
 	}

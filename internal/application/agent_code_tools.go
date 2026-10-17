@@ -89,6 +89,15 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 	if err := e.validateScope(ctx, scope, name); err != nil {
 		return toolgateway.AgentCodeExecutionResult{}, err
 	}
+	if scope.RequestedBy == "specialist_runner" {
+		call, err := e.workerAgentCodeCall(ctx, scope, name, true)
+		if err != nil {
+			return toolgateway.AgentCodeExecutionResult{}, err
+		}
+		if call.PayloadJSON != string(payload) {
+			return toolgateway.AgentCodeExecutionResult{}, apperror.New(apperror.CodeConflict, "worker file payload differs from its durable call")
+		}
+	}
 	run, err := e.store.GetRun(ctx, scope.RunID)
 	if err != nil {
 		return toolgateway.AgentCodeExecutionResult{}, apperror.Normalize(err)
@@ -256,6 +265,10 @@ func (e *AgentCodeToolExecutor) validateScope(ctx context.Context,
 	if err := scope.Validate(); err != nil {
 		return apperror.Wrap(apperror.CodeFailedPrecondition,
 			"agent code tool scope is invalid", err)
+	}
+	if scope.RequestedBy == "specialist_runner" {
+		_, err := e.workerAgentCodeCall(ctx, scope, name, true)
+		return err
 	}
 	run, err := e.store.GetRun(ctx, scope.RunID)
 	if err != nil {
@@ -517,12 +530,16 @@ func (e *AgentCodeToolExecutor) saveAutomaticallyAuthorizedPreparedProposal(ctx 
 	}
 	// Recheck the exact live grant, lease, permission revision, and capability
 	// after reading and preparing the file but before the atomic durable insert.
-	if err := e.validateScope(ctx, scope, toolgateway.WorkspaceChangeTool); err != nil {
+	proposalTool := toolgateway.WorkspaceChangeTool
+	if edit.Operation == fileedit.OperationDelete {
+		proposalTool = toolgateway.WorkspaceDeleteTool
+	}
+	if err := e.validateScope(ctx, scope, proposalTool); err != nil {
 		return fileedit.Edit{}, false, err
 	}
 	auth := fileedit.AutoAuthorization{
 		RunID: scope.RunID, SessionID: scope.SessionID,
-		WorkspaceID: scope.WorkspaceID, AgentID: scope.RootAgentID,
+		WorkspaceID: scope.WorkspaceID, AgentID: scope.ActorID(),
 		OperationKeyDigest: runmutation.Fingerprint("agent_code_file_edit_source.v1",
 			scope.RunID, scope.OperationKey),
 		ProposalFingerprint: runmutation.Fingerprint("agent_code_file_edit_proposal.v1",
@@ -581,7 +598,7 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 	if reader, ok := e.store.(interface {
 		GetFailedFileApplyOperationKey(context.Context, string, string, string) (string, bool, error)
 	}); ok {
-		key, found, lookupErr := reader.GetFailedFileApplyOperationKey(ctx, scope.RunID, edit.ID, scope.RootAgentID)
+		key, found, lookupErr := reader.GetFailedFileApplyOperationKey(ctx, scope.RunID, edit.ID, scope.ActorID())
 		if lookupErr != nil {
 			return ApplyFileEditResult{}, baseline, apperror.Normalize(lookupErr)
 		}
@@ -592,9 +609,14 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 	if edit.Operation == fileedit.OperationReplace && edit.Status != fileedit.StatusApplied {
 		baseline = e.documentDiagnostics(ctx, scope, edit.Path, edit.OriginalHash, pathPolicy)
 	}
+	workerSource, err := e.workerFileApplySource(ctx, scope, toolgateway.WorkspaceApplyTool)
+	if err != nil {
+		return ApplyFileEditResult{}, baseline, err
+	}
 	applied, err := e.apply.Apply(ctx, ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion,
 		RunID: scope.RunID, EditID: edit.ID, OperationKey: operationKey,
-		AppliedBy: scope.RootAgentID, InvocationID: scope.CheckpointInvocationID(),
+		AppliedBy: scope.ActorID(), InvocationID: scope.CheckpointInvocationID(),
+		WorkerSource:         workerSource,
 		CapabilityGeneration: scope.CapabilityGeneration, LeaseID: scope.LeaseID,
 		LeaseGeneration:        scope.LeaseGeneration,
 		PermissionSnapshotID:   scope.PermissionSnapshotID,
@@ -616,9 +638,14 @@ func (e *AgentCodeToolExecutor) applyDelete(ctx context.Context,
 		return ApplyFileEditResult{}, apperror.New(apperror.CodeConflict,
 			"workspace delete expectations do not match the approved proposal")
 	}
+	workerSource, err := e.workerFileApplySource(ctx, scope, toolgateway.WorkspaceDeleteTool)
+	if err != nil {
+		return ApplyFileEditResult{}, err
+	}
 	return e.apply.Apply(ctx, ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion,
 		RunID: scope.RunID, EditID: edit.ID, OperationKey: scope.OperationKey,
-		AppliedBy: scope.RootAgentID, InvocationID: scope.CheckpointInvocationID(),
+		AppliedBy: scope.ActorID(), InvocationID: scope.CheckpointInvocationID(),
+		WorkerSource:         workerSource,
 		CapabilityGeneration: scope.CapabilityGeneration, LeaseID: scope.LeaseID,
 		LeaseGeneration: scope.LeaseGeneration, PermissionSnapshotID: scope.PermissionSnapshotID,
 		PermissionGeneration: scope.PermissionGeneration, PermissionRuntimeEpoch: scope.PermissionRuntimeEpoch,

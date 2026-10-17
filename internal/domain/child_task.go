@@ -64,6 +64,7 @@ type ChildTaskExpectedArtifact struct {
 // ChildTask is one bounded child proposal. All limits are upper bounds the
 // Go control plane validates against the Run aggregate before admission.
 type ChildTask struct {
+	Worker             *WorkerProfile              `json:"worker,omitempty"`
 	AllowedReadPaths   []string                    `json:"allowed_read_paths,omitempty"`
 	ToolCallLimit      int64                       `json:"tool_call_limit,omitempty"`
 	CostLimitMicros    int64                       `json:"cost_limit_micros,omitempty"`
@@ -172,6 +173,11 @@ func NormalizeChildTaskProposalSpec(spec ChildTaskProposalSpec) (ChildTaskPropos
 			return ChildTaskProposalSpec{}, fmt.Errorf("child task %d skills are invalid", index+1)
 		}
 		task.Skills = skills
+		worker, err := NormalizeWorkerProfile(task.Worker)
+		if err != nil {
+			return ChildTaskProposalSpec{}, err
+		}
+		task.Worker = worker
 		if len(task.InputRefs) > MaxChildTaskInputRefs {
 			return ChildTaskProposalSpec{}, fmt.Errorf("child task %d input references exceed %d",
 				index+1, MaxChildTaskInputRefs)
@@ -296,9 +302,9 @@ func ResolveChildTaskSurface(spec ChildTaskProposalSpec) (ChildTaskSurface, Read
 	requiresCore := false
 	readonlyEligible := true
 	for _, task := range normalized.Tasks {
-		if len(task.AllowedReadPaths) > 0 || task.ToolCallLimit > 0 || task.CostLimitMicros > 0 {
+		if task.Worker != nil || len(task.AllowedReadPaths) > 0 || task.ToolCallLimit > 0 || task.CostLimitMicros > 0 {
 			if task.SurfaceHint == ChildTaskSurfaceHintReadOnlyFanout {
-				return "", "", errors.New("independent read and cost limits require the core child surface")
+				return "", "", errors.New("execution workers and independent read and cost limits require the core child surface")
 			}
 			requiresCore = true
 		}

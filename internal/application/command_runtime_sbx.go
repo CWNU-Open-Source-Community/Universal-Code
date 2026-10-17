@@ -247,6 +247,10 @@ func (e *SBXCommandRuntimeExecutor) checkAuthority(ctx context.Context, scope ru
 	if err != nil || !found {
 		return errors.Join(err, runner.ErrCommandRuntimeBoundary)
 	}
+	workspace, resourceSessionID, err := workerCommandSandboxWorkspace(ctx, workspace, scope, spec)
+	if err != nil {
+		return err
+	}
 	workspace, err = batchValidationExecutionWorkspace(ctx, workspace, scope, spec)
 	if err != nil {
 		return err
@@ -255,7 +259,7 @@ func (e *SBXCommandRuntimeExecutor) checkAuthority(ctx context.Context, scope ru
 	if err != nil {
 		return err
 	}
-	bound, err := commandRuntimeDrydockBound(ctx, e.store, workspace, scope.RunID, scope.MissionID, scope.SessionID, scope.WorkspaceID)
+	bound, err := commandRuntimeDrydockBound(ctx, e.store, workspace, scope.RunID, scope.MissionID, resourceSessionID, scope.WorkspaceID)
 	if err != nil || !bound || workspace.Path != spec.WorkspaceRoot {
 		return errors.Join(err, runner.ErrCommandRuntimeBoundary)
 	}

@@ -187,6 +187,9 @@ type AgentBrowserCallAuthority struct {
 	MissionID             string                            `json:"mission_id"`
 	SessionID             string                            `json:"session_id"`
 	RootAgentID           string                            `json:"root_agent_id"`
+	AgentID               string                            `json:"agent_id,omitempty"`
+	AgentAttemptID        string                            `json:"agent_attempt_id,omitempty"`
+	WorkspaceFingerprint  string                            `json:"workspace_fingerprint,omitempty"`
 	WorkspaceID           string                            `json:"workspace_id"`
 	Surface               domain.ExecutionSurface           `json:"surface"`
 	Phase                 domain.ExecutionPhase             `json:"phase"`
@@ -216,11 +219,20 @@ func (a AgentBrowserCallAuthority) Validate() error {
 			return errors.New("invalid Agent browser authority identity")
 		}
 	}
-	if (a.WorkspaceID != "" && !validMCPIdentity(a.WorkspaceID)) || a.ProtocolVersion != AgentBrowserAuthorityVersion || a.Role != domain.AgentRoleRoot || !a.Surface.Valid() || !a.Phase.Valid() || !a.PermissionMode.IncludesFullAccess() || a.ModeRevision < 1 || a.PermissionRevision < 1 || a.RunAuthorizationFence == 0 || a.SessionGeneration == 0 || a.Generation != a.Fingerprint() {
+	worker := a.Role == domain.AgentRoleSpecialist && validMCPIdentity(a.AgentID) && a.AgentID != a.RootAgentID && validMCPIdentity(a.AgentAttemptID) && validAgentCodeDigest(a.WorkspaceFingerprint, false)
+	root := a.Role == domain.AgentRoleRoot && a.AgentID == "" && a.AgentAttemptID == "" && a.WorkspaceFingerprint == ""
+	if (a.WorkspaceID != "" && !validMCPIdentity(a.WorkspaceID)) || a.ProtocolVersion != AgentBrowserAuthorityVersion || (!root && !worker) || !a.Surface.Valid() || !a.Phase.Valid() || !a.PermissionMode.IncludesFullAccess() || a.ModeRevision < 1 || a.PermissionRevision < 1 || a.RunAuthorizationFence == 0 || a.SessionGeneration == 0 || a.Generation != a.Fingerprint() {
 		return errors.New("invalid Agent browser authority")
 	}
 	_, e := domain.ParseProfile(string(a.Profile))
 	return e
+}
+
+func (a AgentBrowserCallAuthority) ActorID() string {
+	if a.AgentID != "" {
+		return a.AgentID
+	}
+	return a.RootAgentID
 }
 func DecodeAgentBrowserAuthority(raw json.RawMessage) (AgentBrowserCallAuthority, error) {
 	var a AgentBrowserCallAuthority
@@ -330,8 +342,10 @@ func (g *Gateway) invokeAgentBrowser(ctx context.Context, call ToolCall) (Outcom
 	if e != nil {
 		return Outcome{}, e
 	}
-	if call.Surface != a.Surface || call.Phase != a.Phase || call.Role != a.Role || call.Profile != a.Profile || call.PermissionMode != a.PermissionMode || call.ModeRevision != a.ModeRevision || call.PermissionSnapshotID != a.PermissionSnapshotID || call.PermissionRevision != a.PermissionRevision || call.PermissionGeneration != a.PermissionActivation || call.RunAuthorizationFence != a.RunAuthorizationFence || call.CapabilityGeneration != a.Generation || call.AgentAttemptID == "" || call.SupervisorTurn < 1 || call.OperationKey == "" || call.RunID != a.RunID || call.AgentID != a.RootAgentID || call.SessionID != a.SessionID || call.MissionID != a.MissionID || call.WorkspaceID != a.WorkspaceID || call.LeaseID == "" || call.LeaseGeneration < 1 || call.RequestedBy != "run_supervisor" || call.SupervisorToolCallID == "" {
-		return Outcome{}, errors.New("Agent browser requires exact root call")
+	root := call.RequestedBy == "run_supervisor" && call.SupervisorToolCallID != "" && call.SupervisorTurn > 0 && call.SpecialistToolCallID == "" && a.Role == domain.AgentRoleRoot
+	worker := call.RequestedBy == "specialist_runner" && call.SpecialistToolCallID != "" && call.SupervisorToolCallID == "" && call.SupervisorTurn == 0 && a.Role == domain.AgentRoleSpecialist && call.RootAgentID == a.RootAgentID && call.AgentAttemptID == a.AgentAttemptID
+	if (!root && !worker) || call.Surface != a.Surface || call.Phase != a.Phase || call.Role != a.Role || call.Profile != a.Profile || call.PermissionMode != a.PermissionMode || call.ModeRevision != a.ModeRevision || call.PermissionSnapshotID != a.PermissionSnapshotID || call.PermissionRevision != a.PermissionRevision || call.PermissionGeneration != a.PermissionActivation || call.RunAuthorizationFence != a.RunAuthorizationFence || call.CapabilityGeneration != a.Generation || call.AgentAttemptID == "" || call.OperationKey == "" || call.RunID != a.RunID || call.AgentID != a.ActorID() || call.SessionID != a.SessionID || call.MissionID != a.MissionID || call.WorkspaceID != a.WorkspaceID || call.LeaseID == "" || call.LeaseGeneration < 1 {
+		return Outcome{}, errors.New("Agent browser requires its exact recorded actor")
 	}
 	canonical, e := NormalizeAgentBrowserPayload(call.Name, call.Payload)
 	if e != nil {

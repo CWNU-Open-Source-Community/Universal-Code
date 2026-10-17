@@ -429,6 +429,7 @@ func (s *SQLiteStore) RecoverSpecialistAttempts(ctx context.Context,
 			"Specialist recovery requires a running Run")
 	}
 	rows, err := tx.QueryContext(ctx, agentAttemptSelect+` WHERE run_id = ? AND status = ?
+		AND NOT EXISTS(SELECT 1 FROM specialist_tool_calls pending JOIN specialist_tool_bindings binding ON binding.agent_attempt_id=pending.agent_attempt_id JOIN agent_nodes child ON child.id=binding.agent_id WHERE pending.agent_attempt_id=agent_attempts.id AND pending.status='pending' AND pending.started_at IS NULL AND pending.approval_id<>'' AND binding.mode='worker' AND child.worker_profile_json<>'null' AND binding.worker_profile_json=child.worker_profile_json)
 		AND (lease_id <> ? OR lease_generation <> ?) ORDER BY started_at, id`, lease.RunID,
 		domain.AgentAttemptRunning, lease.LeaseID, lease.Generation)
 	if err != nil {

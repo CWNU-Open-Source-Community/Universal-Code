@@ -64,10 +64,16 @@ func (s *SQLiteStore) CreateFileEditIfAbsent(ctx context.Context, edit fileedit.
 	// A new interactive proposal must still be bound to a live Run in this
 	// transaction. Existing records above remain readable after that Run ends.
 	var runStatus, sessionStatus string
+	runSessionID := edit.SessionID
+	if _, rootSession, child, err := specialistFileEditBindingTx(ctx, tx, edit.SessionID, true); err != nil {
+		return fileedit.Edit{}, false, err
+	} else if child {
+		runSessionID = rootSession
+	}
 	if err := tx.QueryRowContext(ctx, `SELECT r.status, s.status
-		FROM runs r JOIN sessions s ON s.id = r.session_id
+		FROM runs r JOIN sessions s ON s.id = ?
 		JOIN missions m ON m.id = r.mission_id
-		WHERE r.session_id = ? AND s.workspace_id = m.workspace_id`, edit.SessionID).
+		WHERE r.session_id = ? AND s.workspace_id = m.workspace_id`, edit.SessionID, runSessionID).
 		Scan(&runStatus, &sessionStatus); err != nil {
 		return fileedit.Edit{}, false, err
 	}

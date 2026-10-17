@@ -3,6 +3,7 @@ package toolgateway
 import (
 	"bytes"
 	"context"
+	"cyberagent-workbench/internal/domain"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -256,6 +257,11 @@ func (g *Gateway) Invoke(ctx context.Context, call ToolCall) (outcome Outcome, r
 		if usage.Tracked {
 			normalized.RunID = usage.RunID
 			normalized.InvocationID = usage.LastCharge
+		}
+	}
+	if normalized.RequestedBy == "specialist_runner" && normalized.Name != SpecialistTool {
+		if err := g.markWorkerDispatchStarted(ctx, normalized); err != nil {
+			return Outcome{}, err
 		}
 	}
 	return registration.invoke(g, ctx, normalized)
@@ -817,9 +823,10 @@ func validateToolArguments(call ToolCall) error {
 		return err
 	}
 	if isAgentCodeTool(call.Name) {
+		worker := call.RequestedBy == "specialist_runner" && call.Role == domain.AgentRoleSpecialist && call.RootAgentID != "" && call.AgentAttemptID != "" && call.SpecialistToolCallID != ""
 		if len(call.Arguments) != 0 || call.RunID == "" || call.MissionID == "" ||
 			call.AgentID == "" || call.SessionID == "" || call.WorkspaceID == "" ||
-			call.RequestedBy != "run_supervisor" || call.OperationKey == "" ||
+			(!worker && call.RequestedBy != "run_supervisor") || call.OperationKey == "" ||
 			call.LeaseID == "" {
 			return errors.New("agent code tools require a structured fenced root Supervisor scope")
 		}
@@ -873,18 +880,18 @@ func validateToolArguments(call ToolCall) error {
 				return errors.New("debug terminal calls require a fenced root Supervisor")
 			}
 		case CommandRuntimeTool, RunTestsTool:
-			if call.RequestedBy != "run_supervisor" || call.AgentID == "" ||
+			if !recordedExecutionActor(call) || call.AgentID == "" ||
 				call.WorkspaceID == "" || call.LeaseID == "" {
 				return errors.New("command runtime calls require a fenced root Supervisor")
 			}
 		case MCPToolCallTool, MCPToolSearchTool:
-			if call.RequestedBy != "run_supervisor" || call.AgentID == "" ||
+			if !recordedExecutionActor(call) || call.AgentID == "" ||
 				call.WorkspaceID == "" || call.LeaseID == "" {
 				return errors.New("MCP tool calls require a fenced host actor")
 			}
 		case BrowserStatusTool, BrowserNavigateTool, BrowserSnapshotTool,
 			BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool:
-			if call.RequestedBy != "run_supervisor" || call.AgentID == "" ||
+			if !recordedExecutionActor(call) || call.AgentID == "" ||
 				call.LeaseID == "" {
 				return errors.New("browser actions require a fenced root Supervisor")
 			}

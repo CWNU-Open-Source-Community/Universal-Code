@@ -188,6 +188,23 @@ type Authority struct {
 	JobFingerprint      string   `json:"job_fingerprint,omitempty"`
 	// Host-compiled run_tests command. Recompiled and compared before dispatch.
 	ProjectTestCommand json.RawMessage `json:"project_test_command,omitempty"`
+	// Worker pins the real child actor. The Run root remains the authority
+	// anchor; child execution never adopts its Session or model attempt.
+	Worker *WorkerAuthority `json:"worker,omitempty"`
+}
+
+type WorkerAuthority struct {
+	AgentID   string `json:"agent_id"`
+	AttemptID string `json:"attempt_id"`
+	SessionID string `json:"session_id"`
+}
+
+func (w WorkerAuthority) Validate() error {
+	if !domain.ValidAgentID(w.AgentID) || !domain.ValidAgentID(w.AttemptID) ||
+		!domain.ValidAgentID(w.SessionID) {
+		return errors.New("command runtime worker actor is invalid")
+	}
+	return nil
 }
 
 func NewAuthority(runID string, identity Identity) Authority {
@@ -201,6 +218,9 @@ func (a Authority) Validate() error {
 		return errors.New("command runtime adapter authority is invalid")
 	}
 	if a.ProtocolVersion == OperationAuthorityVersion {
+		if a.Worker != nil && a.Worker.Validate() != nil {
+			return errors.New("command runtime worker authority is invalid")
+		}
 		if !a.PermissionMode.IsApprovalMode() || !domain.ValidAgentID(a.PermissionSnapshotID) ||
 			a.PermissionRevision <= 0 || !ValidRuntimeBinding(a.PermissionMode, a.PermissionRuntimeEpoch, a.PermissionGeneration, a.RunAuthorizationFence) ||
 			(a.ScopeFingerprint != "" && !validDigest(a.ScopeFingerprint)) || len(a.CommandFingerprints) > 4 ||
@@ -216,7 +236,7 @@ func (a Authority) Validate() error {
 		return nil
 	}
 	if a.PermissionMode != "" || a.PermissionRevision != 0 || a.RunAuthorizationFence != 0 ||
-		a.ScopeFingerprint != "" || len(a.CommandFingerprints) != 0 || a.JobFingerprint != "" || len(a.ProjectTestCommand) != 0 {
+		a.ScopeFingerprint != "" || len(a.CommandFingerprints) != 0 || a.JobFingerprint != "" || len(a.ProjectTestCommand) != 0 || a.Worker != nil {
 		return errors.New("legacy command runtime authority contains operation fields")
 	}
 	if a.PermissionSnapshotID != "" || a.PermissionGeneration != 0 ||

@@ -498,6 +498,7 @@ func (s *AgentRunner) installMCPExecutor() {
 		s.tools.WithMCPExecutor(nil)
 		return
 	}
+	executor.drydocks = s.drydocks
 	s.tools.WithMCPExecutor(executor)
 }
 
@@ -526,6 +527,10 @@ func (s *AgentRunner) WithRunWorktree(drydocks *RunWorktreeService) *AgentRunner
 	}
 	s.drydocks = drydocks
 	s.WithProjectHooks(s.projectHooks)
+	s.installMCPExecutor()
+	if s.agentBrowser != nil {
+		s.agentBrowser.WithRunWorktree(drydocks)
+	}
 	if store, ok := s.store.(AgentCodeToolStore); ok && s.tools != nil {
 		s.tools.WithAgentCodeWorkspaceResolver(NewAgentCodeWorkspaceResolver(store, drydocks)).
 			WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).

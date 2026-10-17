@@ -53,6 +53,10 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		return domain.AgentNode{}, false,
 			apperror.Wrap(apperror.CodeInvalidArgument, "specialist admission is invalid", err)
 	}
+	workerJSON, err := json.Marshal(admission.Worker)
+	if err != nil {
+		return domain.AgentNode{}, false, err
+	}
 	normalizedOperationKey, err := domain.NormalizeAgentOperationKey(operationKey)
 	if err != nil {
 		return domain.AgentNode{}, false,
@@ -75,6 +79,9 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		requestFingerprint = runmutation.Fingerprint(requestFingerprint, string(pathsJSON), strconv.FormatInt(admission.ToolCallLimit, 10), strconv.FormatInt(admission.CostLimitMicros, 10))
 	}
 
+	if admission.Worker != nil {
+		requestFingerprint = runmutation.Fingerprint(requestFingerprint, string(workerJSON))
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return domain.AgentNode{}, false, err
@@ -137,13 +144,20 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 			"root Agent already uses a different child capacity")
 	}
 	var childCount int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes WHERE run_id = ? AND parent_id = ?`,
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes WHERE run_id = ? AND parent_id = ? AND status NOT IN ('completed','failed','cancelled')`,
 		run.ID, parent.ID).Scan(&childCount); err != nil {
 		return domain.AgentNode{}, false, err
 	}
 	if childCount >= admission.MaxChildren || childCount >= domain.MaxAgentChildren {
 		return domain.AgentNode{}, false,
 			apperror.New(apperror.CodeResourceExhausted, "root Agent child capacity is exhausted")
+	}
+	var historyCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes WHERE run_id=?`, run.ID).Scan(&historyCount); err != nil {
+		return domain.AgentNode{}, false, err
+	}
+	if historyCount >= domain.MaxAgentHistoryNodesPerRun {
+		return domain.AgentNode{}, false, apperror.New(apperror.CodeResourceExhausted, "Run worker history bound exhausted")
 	}
 	parentSkills := make(map[string]struct{}, len(parent.Skills))
 	for _, skill := range parent.Skills {
@@ -191,7 +205,7 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 	}
 	child := domain.AgentNode{
 		ID: admission.AgentID, RunID: run.ID, ParentID: parent.ID, SessionID: childSession.ID,
-		Role: domain.AgentRoleSpecialist, Profile: parent.Profile, Skills: admission.Skills,
+		Role: domain.AgentRoleSpecialist, Profile: parent.Profile, Skills: admission.Skills, Worker: admission.Worker,
 		Status: domain.AgentReady, Depth: parent.Depth + 1, ChildLimit: 0,
 		TurnLimit: admission.TurnLimit, TokenLimit: admission.TokenLimit,
 		AllowedReadPaths: admission.AllowedReadPaths, ToolCallLimit: admission.ToolCallLimit, CostLimitMicros: admission.CostLimitMicros,
@@ -245,6 +259,11 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		child.Status, child.Depth, child.ChildLimit, child.TurnLimit, child.TokenLimit, child.StatusReason,
 		child.Version, ts(child.CreatedAt), ts(child.UpdatedAt)); err != nil {
 		return domain.AgentNode{}, false, err
+	}
+	if admission.Worker != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET worker_profile_json=? WHERE id=?`, string(workerJSON), child.ID); err != nil {
+			return domain.AgentNode{}, false, err
+		}
 	}
 	// The inserted node already has the no-tool defaults. Only an explicit child
 	// grant needs an authority update, in the same admission transaction.
@@ -308,7 +327,7 @@ func specialistReservationsTx(ctx context.Context, queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, runID string, parentID string) (int64, int64, error) {
 	var turns, tokens sql.NullInt64
-	err := queryer.QueryRowContext(ctx, `SELECT SUM(turn_limit), SUM(token_limit) FROM agent_nodes
+	err := queryer.QueryRowContext(ctx, `SELECT SUM(CASE WHEN status IN ('completed','failed','cancelled') THEN turns_used ELSE MAX(turn_limit,turns_used) END), SUM(CASE WHEN status IN ('completed','failed','cancelled') THEN tokens_used ELSE MAX(token_limit,tokens_used) END) FROM agent_nodes
 		WHERE run_id = ? AND parent_id = ? AND role = ?`, runID, parentID, domain.AgentRoleSpecialist).
 		Scan(&turns, &tokens)
 	if err != nil {

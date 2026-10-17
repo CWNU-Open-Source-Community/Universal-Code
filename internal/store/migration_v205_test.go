@@ -7,8 +7,8 @@ import (
 	"cyberagent-workbench/internal/llm"
 )
 
-func TestSchemaV203PreservesRoundsAndNativeModelUniqueness(t *testing.T) {
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "project-hooks.db"), 202)
+func TestSchemaV205PreservesRoundsAndNativeModelUniqueness(t *testing.T) {
+	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "project-hooks.db"), 204)
 	defer st.Close()
 	f := providerReplayFixtureAtStore(t, st)
 	f.start(t)
@@ -30,7 +30,7 @@ func TestSchemaV203PreservesRoundsAndNativeModelUniqueness(t *testing.T) {
 	if err := st.db.QueryRow(`SELECT rowid,CAST(replay_blob AS TEXT) FROM run_supervisor_provider_replay WHERE run_id=?`, cp.RunID).Scan(&replayRowBefore, &replayBefore); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.applyMigration(t.Context(), migrationPlan()[202]); err != nil {
+	if err := st.applyMigration(t.Context(), migrationPlan()[204]); err != nil {
 		t.Fatal(err)
 	}
 	var rowAfter, callAfter int64

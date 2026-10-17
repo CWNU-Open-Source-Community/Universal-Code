@@ -217,7 +217,7 @@ func TestTaskCatalogSDKNotificationsAndStaleCalls(t *testing.T) {
 			if _, err = manager.RefreshCapabilities(t.Context(), "run-1", "workspace-1", check, revoked); err != nil {
 				t.Fatalf("future catalog did not recover: %v", err)
 			}
-			session, _ := manager.session(catalogSessionKey{"run-1", "workspace-1", d.ID})
+			session, _ := manager.session(catalogSessionKey{run: "run-1", workspace: "workspace-1", server: d.ID})
 			close(revoked)
 			select {
 			case <-session.done:
@@ -228,7 +228,7 @@ func TestTaskCatalogSDKNotificationsAndStaleCalls(t *testing.T) {
 			if _, err = manager.RefreshCapabilities(t.Context(), "run-1", "workspace-1", func(context.Context) error { return nil }, fresh); err != nil {
 				t.Fatal(err)
 			}
-			session, _ = manager.session(catalogSessionKey{"run-1", "workspace-1", d.ID})
+			session, _ = manager.session(catalogSessionKey{run: "run-1", workspace: "workspace-1", server: d.ID})
 			if _, err = manager.Review(t.Context(), d.ID, ReviewRequest{Action: ReviewDisable, ExpectedDescriptorFingerprint: d.Fingerprint(), ReviewedBy: "operator"}); err != nil {
 				t.Fatal(err)
 			}

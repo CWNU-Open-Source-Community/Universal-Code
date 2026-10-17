@@ -15,11 +15,11 @@ var projectHookStatements = func() []string {
 		`DROP TRIGGER trg_supervisor_tool_round_active_attempt;`,
 		`DROP TRIGGER trg_supervisor_tool_round_completed_model;`,
 		`DROP TRIGGER trg_supervisor_tool_round_completion;`,
-		`ALTER TABLE run_supervisor_tool_rounds RENAME TO run_supervisor_tool_rounds_v202;`,
+		`ALTER TABLE run_supervisor_tool_rounds RENAME TO run_supervisor_tool_rounds_v204;`,
 		create,
 		`INSERT INTO run_supervisor_tool_rounds(rowid,run_id,turn,attempt_id,round,model_attempt,created_at,completed_at)
-		 SELECT rowid,run_id,turn,attempt_id,round,model_attempt,created_at,completed_at FROM run_supervisor_tool_rounds_v202;`,
-		`DROP TABLE run_supervisor_tool_rounds_v202;`,
+		 SELECT rowid,run_id,turn,attempt_id,round,model_attempt,created_at,completed_at FROM run_supervisor_tool_rounds_v204;`,
+		`DROP TABLE run_supervisor_tool_rounds_v204;`,
 		`CREATE UNIQUE INDEX idx_supervisor_native_model_round ON run_supervisor_tool_rounds(run_id,turn,attempt_id,model_attempt) WHERE origin='model';`,
 		`CREATE TRIGGER trg_supervisor_native_round_limit BEFORE INSERT ON run_supervisor_tool_rounds
 		 WHEN NEW.origin='model' AND (SELECT COUNT(*) FROM run_supervisor_tool_rounds
@@ -49,9 +49,9 @@ var projectHookStatements = func() []string {
 		}
 		create := strings.ReplaceAll(table.source[table.create], "AND 4)", "AND 21)")
 		statements = append(statements,
-			"ALTER TABLE "+table.name+" RENAME TO "+table.name+"_v202;", create,
-			"INSERT INTO "+table.name+"(rowid,"+table.columns+") SELECT rowid,"+table.columns+" FROM "+table.name+"_v202;",
-			"DROP TABLE "+table.name+"_v202;")
+			"ALTER TABLE "+table.name+" RENAME TO "+table.name+"_v204;", create,
+			"INSERT INTO "+table.name+"(rowid,"+table.columns+") SELECT rowid,"+table.columns+" FROM "+table.name+"_v204;",
+			"DROP TABLE "+table.name+"_v204;")
 		for _, trigger := range table.triggers {
 			definition := requireMigrationTrigger(trigger, table.source)
 			if trigger == "trg_supervisor_provider_replay_source" {

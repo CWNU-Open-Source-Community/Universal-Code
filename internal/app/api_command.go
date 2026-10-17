@@ -468,6 +468,9 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}
 	executionControl := application.NewRunExecutionHandoffWithRuntime(a.store, a.router,
 		a.checker, runtimeDependencies)
+	specialistExecution := application.NewSpecialistExecutionService(a.store, a.router, a.checker).
+		WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl).
+		WithExecutionRuntime(executionControl)
 	planDeliveryControl := application.NewPlanDeliveryControlService(a.store)
 	approvalControl := application.NewApprovalControlService(a.store,
 		a.newToolGateway().WithAgentCodeWorkspaceResolver(
@@ -681,7 +684,8 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		FanoutExecutionController: application.NewReadOnlyFanoutExecutionService(
 			a.store, a.router, a.checker),
 		ChildTaskControlController:    application.NewChildTaskControlService(a.store),
-		SpecialistExecutionController: application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl),
+		SpecialistExecutionController: specialistExecution,
+		WorkflowController:            application.NewWorkflowService(a.store, specialistExecution),
 		ProviderCredentialController:  providerCredentialControl,
 		FileEditReviewController:      fileEditReview,
 		FileEditProposalController:    fileEditProposal,

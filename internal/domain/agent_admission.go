@@ -15,9 +15,10 @@ const (
 )
 
 type SpecialistAdmission struct {
-	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
-	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	Worker           *WorkerProfile `json:"worker,omitempty"`
+	AllowedReadPaths []string       `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64          `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64          `json:"cost_limit_micros,omitempty"`
 	AgentID          string
 	SessionID        string
 	RunID            string
@@ -31,6 +32,9 @@ type SpecialistAdmission struct {
 }
 
 func (a SpecialistAdmission) Validate() error {
+	if err := a.Worker.Validate(); err != nil {
+		return err
+	}
 	if err := ValidateSpecialistReadLimits(a.AllowedReadPaths, a.ToolCallLimit, a.CostLimitMicros); err != nil {
 		return err
 	}

@@ -174,7 +174,7 @@ func requireCoreChildTaskBudgetTx(ctx context.Context, tx *sql.Tx,
 ) error {
 	var children int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes
-		WHERE run_id = ? AND role = ?`, proposal.RunID, domain.AgentRoleSpecialist).
+		WHERE run_id = ? AND role = ? AND status NOT IN ('completed','failed','cancelled')`, proposal.RunID, domain.AgentRoleSpecialist).
 		Scan(&children); err != nil {
 		return err
 	}
@@ -397,7 +397,7 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 			admitted, _, err := s.admitSpecialist(ctx, domain.SpecialistAdmission{
 				AgentID: idgen.New("agent"), SessionID: idgen.New("sess"),
 				RunID: proposal.RunID, ParentAgentID: proposal.RootAgentID,
-				Title: task.Title, Skills: task.Skills,
+				Title: task.Title, Skills: task.Skills, Worker: task.Worker,
 				TurnLimit: task.TurnLimit, TokenLimit: task.TokenLimit,
 				AllowedReadPaths: task.AllowedReadPaths, ToolCallLimit: task.ToolCallLimit, CostLimitMicros: task.CostLimitMicros,
 				MaxChildren: domain.MaxAgentChildren, CreatedAt: time.Now().UTC(),

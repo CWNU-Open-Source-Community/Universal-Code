@@ -22183,6 +22183,842 @@
         "x-cyberagent-read-only": true
       }
     },
+    "/api/v1/runs/{run_id}/workflows": {
+      "get": {
+        "operationId": "listRunWorkflowExecutions",
+        "summary": "List Run workflow executions",
+        "description": "",
+        "tags": [
+          "Analysis"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecutionsView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "post": {
+        "operationId": "startRunWorkflow",
+        "summary": "Start a saved workflow with inputs",
+        "description": "",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowStartView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/workflows/{execution_id}": {
+      "get": {
+        "operationId": "getRunWorkflow",
+        "summary": "Read workflow state and committed outputs",
+        "description": "",
+        "tags": [
+          "Analysis"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "description": "Workflow execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/advance": {
+      "post": {
+        "operationId": "advanceRunWorkflow",
+        "summary": "advance a saved workflow execution",
+        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "description": "Workflow execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowControlView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/pause": {
+      "post": {
+        "operationId": "pauseRunWorkflow",
+        "summary": "pause a saved workflow execution",
+        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "description": "Workflow execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowControlView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/rerun": {
+      "post": {
+        "operationId": "rerunRunWorkflow",
+        "summary": "rerun a saved workflow execution",
+        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "description": "Workflow execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowControlView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/resume": {
+      "post": {
+        "operationId": "resumeRunWorkflow",
+        "summary": "resume a saved workflow execution",
+        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "description": "Workflow execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowControlView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/runs/{run_id}/workspace-checkpoints": {
       "get": {
         "operationId": "listWorkspaceCheckpoints",
@@ -31781,6 +32617,268 @@
         "x-cyberagent-read-only": true
       }
     },
+    "/api/v1/workflows": {
+      "get": {
+        "operationId": "listWorkflowDefinitions",
+        "summary": "List saved workflow definitions",
+        "description": "",
+        "tags": [
+          "Analysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowDefinitionsView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "post": {
+        "operationId": "saveWorkflowDefinition",
+        "summary": "Save an immutable bounded workflow",
+        "description": "",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowDefinition"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowSpec"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/workflows/{definition_id}": {
+      "get": {
+        "operationId": "getWorkflowDefinition",
+        "summary": "Read a saved workflow",
+        "description": "",
+        "tags": [
+          "Analysis"
+        ],
+        "parameters": [
+          {
+            "name": "definition_id",
+            "in": "path",
+            "description": "Immutable saved definition",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowDefinition"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
     "/api/v1/workspaces": {
       "get": {
         "operationId": "listWorkspaces",
@@ -34158,6 +35256,9 @@
           "version": {
             "format": "int64",
             "type": "integer"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/WorkerProfile"
           }
         },
         "required": [
@@ -36892,6 +37993,87 @@
         ],
         "type": "object"
       },
+      "ChildTask": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_read_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "cost_limit_micros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dependency_ordinals": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "expected_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ChildTaskExpectedArtifact"
+            },
+            "type": "array"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "input_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "surface_hint": {
+            "type": "string"
+          },
+          "timeout_millis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "token_limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tool_call_limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "turn_limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/WorkerProfile"
+          }
+        },
+        "required": [
+          "title",
+          "goal",
+          "skills",
+          "input_refs",
+          "dependency_ordinals",
+          "surface_hint",
+          "turn_limit",
+          "token_limit",
+          "timeout_millis",
+          "expected_artifacts"
+        ],
+        "type": "object"
+      },
       "ChildTaskAdmitRequestView": {
         "additionalProperties": false,
         "properties": {
@@ -37142,6 +38324,9 @@
           "turn_limit": {
             "format": "int64",
             "type": "integer"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/WorkerProfile"
           }
         },
         "required": [
@@ -40094,6 +41279,9 @@
           "turn_limit": {
             "format": "int64",
             "type": "integer"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/WorkerProfile"
           }
         },
         "required": [
@@ -56159,6 +57347,60 @@
         ],
         "type": "object"
       },
+      "RunAgentUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "read_only_fanout_millis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "read_only_fanout_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "root_execution_millis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "root_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "specialist_execution_millis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "specialist_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_execution_millis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "root_tokens",
+          "specialist_tokens",
+          "read_only_fanout_tokens",
+          "total_tokens",
+          "root_execution_millis",
+          "specialist_execution_millis",
+          "read_only_fanout_millis",
+          "total_execution_millis"
+        ],
+        "type": "object"
+      },
       "RunBrowserCDPPermissionControlRequestView": {
         "additionalProperties": false,
         "properties": {
@@ -61955,6 +63197,9 @@
             ],
             "type": "string"
           },
+          "waiting_approval": {
+            "type": "boolean"
+          },
           "wake_id": {
             "maxLength": 256,
             "minLength": 1,
@@ -61962,6 +63207,7 @@
           }
         },
         "required": [
+          "waiting_approval",
           "version",
           "run_id",
           "agent_id",
@@ -62044,9 +63290,13 @@
           },
           "version": {
             "type": "string"
+          },
+          "waiting_approval": {
+            "type": "boolean"
           }
         },
         "required": [
+          "waiting_approval",
           "version",
           "run_id",
           "agent_id",
@@ -62131,6 +63381,11 @@
       "SpecialistToolCallView": {
         "additionalProperties": false,
         "properties": {
+          "approval_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
           "call_id": {
             "maxLength": 256,
             "minLength": 1,
@@ -72177,6 +73432,389 @@
           "version",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "WorkerProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "WorkflowCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "equals": {},
+          "ref": {
+            "$ref": "#/components/schemas/WorkflowValueRef"
+          }
+        },
+        "required": [
+          "ref",
+          "equals"
+        ],
+        "type": "object"
+      },
+      "WorkflowControlView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_start": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "WorkflowDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/WorkflowSpec"
+          }
+        },
+        "required": [
+          "id",
+          "digest",
+          "spec",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "WorkflowDefinitionsView": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowDefinition"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "WorkflowExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "definition_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputs": {},
+          "reason": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkflowState"
+          },
+          "status": {
+            "type": "string"
+          },
+          "turns_before": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "usage_before": {
+            "$ref": "#/components/schemas/RunAgentUsage"
+          }
+        },
+        "required": [
+          "id",
+          "definition_id",
+          "run_id",
+          "inputs",
+          "status",
+          "state",
+          "usage_before",
+          "turns_before",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "WorkflowExecutionsView": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowExecution"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "WorkflowFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "block": {
+            "type": "string"
+          },
+          "index": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "iteration": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "block",
+          "index"
+        ],
+        "type": "object"
+      },
+      "WorkflowLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "max_jobs": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "max_steps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "max_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_turns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "timeout_millis": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_steps",
+          "max_jobs",
+          "max_tokens",
+          "max_turns",
+          "timeout_millis"
+        ],
+        "type": "object"
+      },
+      "WorkflowSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "limits": {
+            "$ref": "#/components/schemas/WorkflowLimits"
+          },
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStep"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "name",
+          "limits",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "WorkflowStartView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_start": {
+            "type": "boolean"
+          },
+          "definition_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputs": {},
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "definition_id",
+          "inputs",
+          "confirm_start"
+        ],
+        "type": "object"
+      },
+      "WorkflowState": {
+        "additionalProperties": false,
+        "properties": {
+          "iterations": {
+            "additionalProperties": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "jobs": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "outputs": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "stack": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFrame"
+            },
+            "type": "array"
+          },
+          "steps": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stack",
+          "outputs",
+          "iterations",
+          "steps",
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "WorkflowStep": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStep"
+            },
+            "type": "array"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/WorkflowCondition"
+          },
+          "else": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStep"
+            },
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkflowValueRef"
+            },
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "max_iterations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "task": {
+            "$ref": "#/components/schemas/ChildTask"
+          },
+          "then": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStep"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "WorkflowValueRef": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
         ],
         "type": "object"
       },

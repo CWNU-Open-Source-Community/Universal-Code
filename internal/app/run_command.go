@@ -1233,22 +1233,53 @@ func (a *App) runDelegationSchedule(ctx context.Context, action string, args []s
 	return err
 }
 
-func (a *App) runSpecialistStep(ctx context.Context, args []string) error {
+func (a *App) runSpecialistStep(ctx context.Context, args []string) (resultErr error) {
 	fs := newFlagSet("run specialist-step", a.errOut)
 	agent := fs.String("agent", "", "already admitted child Agent id")
 	key := fs.String("operation-key", "", "stable child execution operation key")
 	tools := fs.Bool("tools", false, "enable independent child read/search tools")
-	if err := fs.Parse(reorderFlags(args, map[string]bool{"agent": true, "operation-key": true, "tools": false})); err != nil {
+	confirmFull := fs.Bool("confirm-full", false, "activate the current Full preference for this invocation")
+	enablePermissionControl := fs.Bool("enable-permission-control", false, "enable execution permission evaluation for this process")
+	enableFullAccess := fs.Bool("enable-danger-full-access", false, "enable the ordinary full-access command runtime for this process")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"agent": true, "operation-key": true, "tools": false, "confirm-full": false,
+		"enable-permission-control": false, "enable-danger-full-access": false,
+	})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 || *agent == "" || *key == "" {
-		return errors.New("usage: cyberagent run specialist-step <run-id> --agent <child-id> --operation-key <key> [--tools]")
+		return errors.New("usage: cyberagent run specialist-step <run-id> --agent <child-id> --operation-key <key> [--tools] [--enable-permission-control --enable-danger-full-access --confirm-full]")
 	}
 	drydocks, err := a.newRunFileDrydockService(ctx, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	result, err := application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(drydocks).ExecuteSpecialist(ctx, application.ExecuteSpecialistRequest{RunID: fs.Arg(0), AgentID: *agent, OperationKey: *key, WorkspaceTools: *tools})
+	service := application.NewSpecialistExecutionService(a.store, a.router, a.checker).WithRunWorktree(drydocks)
+	child, err := a.store.GetAgentNode(ctx, *agent)
+	if err != nil {
+		return err
+	}
+	if child.Worker != nil {
+		capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
+		releaseFull, err := a.activateCLIInvocationFull(ctx, fs.Arg(0), capabilities, *confirmFull)
+		if err != nil {
+			return err
+		}
+		defer releaseFull()
+		runtime, err := a.newCLIExecutionRuntime(ctx, capabilities, true)
+		if err != nil {
+			return err
+		}
+		defer func() { resultErr = errors.Join(resultErr, runtime.close()) }()
+		dependencies := runtime.dependencies(a)
+		dependencies.Drydocks = drydocks
+		parent := application.NewAgentRunnerWithRuntime(a.store, a.router, a.checker, dependencies)
+		if err := a.attachStandardCodeDelivery(ctx, parent, fs.Arg(0)); err != nil {
+			return err
+		}
+		service.WithWorkerRuntime(parent)
+	}
+	result, err := service.ExecuteSpecialist(ctx, application.ExecuteSpecialistRequest{RunID: fs.Arg(0), AgentID: *agent, OperationKey: *key, WorkspaceTools: *tools})
 	if result.AttemptID != "" {
 		fmt.Fprintf(a.out, "agent: %s\nattempt: %s\nstatus: %s\ntokens: %d\ntool_calls: %d\ntool_rounds: %d\nreplayed: %t\n", result.AgentID, result.AttemptID, result.AttemptStatus, result.Usage.TotalTokens, result.ToolCalls, result.ToolRounds, result.Replayed)
 	}

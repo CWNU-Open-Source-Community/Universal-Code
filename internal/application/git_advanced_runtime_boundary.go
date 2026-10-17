@@ -52,7 +52,7 @@ func isGitBisectDockerRequester(value string) bool {
 }
 
 func isNativeCommandDockerRequester(value string) bool {
-	return isBatchValidationDockerRequester(value) || isGitBisectDockerRequester(value)
+	return isBatchValidationDockerRequester(value) || isGitBisectDockerRequester(value) || isWorkerCommandDockerRequester(value)
 }
 
 func parseGitBisectDockerRequester(value string) (string, string, error) {
