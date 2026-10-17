@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/outputsafe"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
@@ -420,7 +421,9 @@ func TestCommandOperationApprovalExpiredAndUnknownNeverResends(t *testing.T) {
 
 func TestCommandOperationApprovalStdinHasIndependentConsent(t *testing.T) {
 	f := newCommandApprovalFixture(t, domain.RunExecutionPermissionAsk, false)
-	f.record(t, commandApprovalNativeInput(t, true), 1)
+	input := commandApprovalNativeInput(t, true)
+	input.Commands[0].TimeoutMilliseconds = 30000
+	f.record(t, input, 1)
 	if waiting, err := f.resume(t); err != nil || !waiting {
 		t.Fatal("missing launch review", err)
 	}
@@ -432,10 +435,40 @@ func TestCommandOperationApprovalStdinHasIndependentConsent(t *testing.T) {
 	if err != nil || len(jobs) != 1 {
 		t.Fatal(jobs, err)
 	}
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		job, readErr := f.st.GetCommandRuntimeJob(ctx, jobs[0].ID)
+		t.Logf("stdin Job diagnostic: state=%s created=%s started=%v completed=%v owner_renewed=%s owner_expires=%s stderr=%q error=%v",
+			job.State, job.CreatedAt, job.StartedAt, job.CompletedAt, job.OwnerRenewedAt, job.OwnerExpiresAt,
+			outputsafe.Sanitize([]byte(job.Stderr)), readErr)
+		call, started, readErr := f.st.GetSupervisorApprovalCall(ctx, f.call.RunID, f.call.CallID)
+		t.Logf("stdin call diagnostic: status=%s started=%t code=%s result=%q error=%v",
+			call.Status, started, call.ErrorCode, outputsafe.Sanitize([]byte(call.ResultJSON)), readErr)
+	})
 	data, closeAfter := "exact reviewed stdin", true
 	f.record(t, toolgateway.CommandRuntimeInput{Version: toolgateway.CommandRuntimeToolProtocolVersion, Action: toolgateway.CommandRuntimeActionWriteStdin, JobID: jobs[0].ID, Stdin: &data, CloseStdin: &closeAfter}, 2)
 	if waiting, err := f.resume(t); err != nil || !waiting {
 		t.Fatal("launch approval leaked to stdin", err)
+	}
+	f.assertNoMarker(t, "stdin.txt")
+	// Observe a real owner renewal while the independent stdin review is
+	// pending, rather than letting fast hosts finish before the first heartbeat.
+	waitingAt := time.Now().UTC()
+	for {
+		current, err := f.st.GetCommandRuntimeJob(t.Context(), jobs[0].ID)
+		if err != nil || current.State.Terminal() {
+			t.Fatalf("stdin review lost its owned Job: state=%s error=%v", current.State, err)
+		}
+		if current.State == runner.CommandRuntimeJobRunning && current.OwnerRenewedAt.After(waitingAt) {
+			break
+		}
+		if _, _, err := f.manager.Wait(t.Context(), jobs[0].ID, 100*time.Millisecond, ^uint64(0), runner.MinCommandRuntimeOutputRead); err != nil {
+			t.Fatal(err)
+		}
 	}
 	f.assertNoMarker(t, "stdin.txt")
 	f.decide(t, ApprovalControlApproveOnce)
