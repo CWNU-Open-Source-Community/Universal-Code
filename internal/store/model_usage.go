@@ -15,6 +15,7 @@ import (
 func (s *SQLiteStore) GetModelUsage(ctx context.Context, runID string) (domain.ModelUsage, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT json_extract(payload_json,'$.usage') FROM run_events WHERE run_id=? AND
 		((source IN ('model_gateway','specialist_model_gateway') AND type IN ('model.completed','model.failed'))
+		OR (source='thread_context_compaction' AND type IN ('context_compaction.model_completed','context_compaction.model_failed'))
 		OR (source='readonly_fanout' AND type IN ('readonly_fanout.shard_completed','readonly_fanout.shard_failed','readonly_fanout.shard_cancelled')))
 		AND COALESCE(json_extract(payload_json,'$.dispatch'),'')<>'not_sent'
 		AND json_type(payload_json,'$.usage')='object' ORDER BY sequence`, runID)

@@ -32,7 +32,7 @@ func failedProductTurnError(failure domain.ThreadTurnFailure) error {
 	if code == apperror.CodeCancelled {
 		message = "This turn was stopped. Your input and completed work are preserved; send a new message to continue this conversation"
 	} else if code == apperror.CodeResourceExhausted && failure.FailureStage == domain.ThreadFailureContextWindowExceeded {
-		message = "The task context exceeds this model's input window. History and completed work are preserved; shorten the current input or select a model with a larger context window"
+		message = "The task context exceeds this model's input window. History and completed work are preserved; shorten the current input, shorten or remove a fixed requirement, or select a model with a larger context window"
 	} else if code == apperror.CodeFailedPrecondition {
 		switch failure.FailureStage {
 		case domain.ThreadFailureToolRequestRejected:

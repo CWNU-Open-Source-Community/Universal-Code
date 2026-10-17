@@ -5,6 +5,7 @@ import "testing"
 // Current queue writers/readers and Supervisor context queries need v168's four
 // message columns and two receipt tables, plus v171's steering mode identity.
 // Current Web fetch readers also need v192's empty web access selection ledger.
+// Current context readers use empty v207/v208 ledgers only during this seed.
 // This fixture-only compatibility does not record a migration or change
 // v165/v166's handoff and authorization guards. Its restore rejects revisions,
 // edited identities, attachment evidence, committed corrections and web
@@ -12,6 +13,7 @@ import "testing"
 // and foreign keys.
 func addV166FixtureQueueCompatibility(t testing.TB, state *SQLiteStore) func() {
 	t.Helper()
+	restoreContext := addEmptyCurrentContextForLegacySeed(t, state)
 	setup := append(append([]string{}, operatorSteeringRevisionStatements...), midTurnSteeringStatements[:3]...)
 	setup = append(setup, runWebAccessStatements()[0])
 	restore := append([]string{}, removeCurrentSteeringForLegacySeedStatements()...)
@@ -33,5 +35,9 @@ func addV166FixtureQueueCompatibility(t testing.TB, state *SQLiteStore) func() {
 		`ALTER TABLE operator_steering_messages DROP COLUMN original_content_sha256;`,
 		`ALTER TABLE operator_steering_messages DROP COLUMN edited_at;`,
 		migrationTriggerBeforeForTest("trg_operator_steering_update_monotonic", 168))
-	return withLegacySeedSchema(t, state, setup, restore)
+	restoreQueue := withLegacySeedSchema(t, state, setup, restore)
+	return func() {
+		restoreQueue()
+		restoreContext()
+	}
 }

@@ -95,6 +95,7 @@ func TestSchemaV49UpgradeAddsDisabledSandboxLifecycleWithoutLosingCandidate(t *t
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "v49.db")
 	st, run, _ := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	service := newSandboxFixtureService(t, st)
 	prepared, err := service.Prepare(ctx, application.PrepareSandboxManifestRequest{
 		RunID: run.ID, Manifest: sandboxStoreTestManifest(),
@@ -111,6 +112,7 @@ func TestSchemaV49UpgradeAddsDisabledSandboxLifecycleWithoutLosingCandidate(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, path, 49)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

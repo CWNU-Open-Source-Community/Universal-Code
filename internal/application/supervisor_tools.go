@@ -170,6 +170,9 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 	}
 	out := make([]llm.ToolSpec, 0, len(definitions))
 	for _, definition := range definitions {
+		if definition.Name == toolgateway.ContextPinProposeTool && !configured.HistoryRecall {
+			continue
+		}
 		if definition.Name == toolgateway.SkillReadTool {
 			if len(configured.BuiltinSkills) == 0 {
 				continue
@@ -274,6 +277,13 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 	if err != nil {
 		return nil, err
 	}
+	if len(normalized) > 1 {
+		for _, call := range normalized {
+			if call.Name == string(toolgateway.ContextPinProposeTool) {
+				return nil, errors.New("context pin proposal must be the only call in its batch so the user can answer before further work")
+			}
+		}
+	}
 	out := make([]llm.ToolCall, len(normalized))
 	seen := make(map[string]struct{}, len(normalized))
 	for index, call := range normalized {
@@ -311,6 +321,9 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 		}
 		if toolgateway.IsHistoryRecallTool(name) && !configured.HistoryRecall {
 			return nil, fmt.Errorf("provider requested unavailable history recall tool %q", call.Name)
+		}
+		if name == toolgateway.ContextPinProposeTool && !configured.HistoryRecall {
+			return nil, errors.New("context pin proposals require an interactive Thread")
 		}
 		if toolgateway.IsCodeIntelTool(name) && (len(codeIntelAuthority) == 0 ||
 			surface != domain.ExecutionSurfaceCode ||

@@ -390,6 +390,7 @@ func TestSchemaV56UpgradePreservesV55Rehearsal(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "docker-attempt-v55.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	_, manifest, observation := createDockerContainerPlanStoreAuthority(t, ctx, st,
 		run.ID, root, "docker-attempt-upgrade")
 	plan, planOperation := newDockerContainerPlanStoreRecord(t, ctx, observation, manifest,
@@ -402,6 +403,7 @@ func TestSchemaV56UpgradePreservesV55Rehearsal(t *testing.T) {
 	if _, _, err := st.CreateDockerContainerRehearsal(ctx, rehearsal, operation); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, path, 55)
 	if version, err := st.SchemaVersion(ctx); err != nil || version != 55 {
 		t.Fatalf("fixture schema=%d want=55 err=%v", version, err)

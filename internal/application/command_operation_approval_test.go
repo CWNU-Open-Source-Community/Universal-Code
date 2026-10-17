@@ -896,6 +896,27 @@ func TestCommandOperationApprovalBackgroundJobSurvivesTurnAndLeaseHandoff(t *tes
 		t.Fatalf("background start: %+v %v", result, err)
 	}
 	jobID := result.Jobs[0].ID
+	// record() can fail before execute() returns. Capture the durable Job before
+	// fixture cleanup shuts down its owner, including when a helper calls Fatal.
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		job, err := f.st.GetCommandRuntimeJob(ctx, jobID)
+		if err != nil {
+			t.Logf("background handoff Job diagnostic: %v", err)
+			return
+		}
+		exitCode := "unset"
+		if job.ExitCode != nil {
+			exitCode = fmt.Sprint(*job.ExitCode)
+		}
+		t.Logf("background handoff Job: state=%s exit_code=%s owner_renewed_at=%s owner_expires_at=%s observed_at=%s",
+			job.State, exitCode, job.OwnerRenewedAt.Format(time.RFC3339Nano),
+			job.OwnerExpiresAt.Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano))
+	})
 	f.nextTurnWithBackgroundJob(t, f.manager, jobID)
 	text, closeInput := "cross-turn\n", true
 	if _, err := f.execute(t, t.Context(), toolgateway.CommandRuntimeInput{Version: toolgateway.CommandRuntimeToolProtocolVersion, Action: toolgateway.CommandRuntimeActionWriteStdin, JobID: jobID, Stdin: &text, CloseStdin: &closeInput}, 1); err != nil {

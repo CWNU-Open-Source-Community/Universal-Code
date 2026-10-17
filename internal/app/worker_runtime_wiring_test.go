@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,14 +162,28 @@ func testCLISpecialistWorkerRuntime(t *testing.T, largeResult bool) {
 			if err != nil || len(requests) == 0 {
 				t.Fatalf("worker model requests=%d err=%v", len(requests), err)
 			}
-			if !active {
-				if len(requests) != 1 || len(requests[0].Tools) != 0 {
-					t.Fatalf("disabled runtime advertised execution: %+v", requests)
-				}
-				return
+			wantRequests := 1
+			// Reading this attempt's existing receipts is context maintenance;
+			// command execution still requires the current runtime gates.
+			wantTools := []string{domain.SpecialistResultReadName}
+			if active {
+				wantRequests = 2
+				wantTools = append([]string{"command_runtime"}, wantTools...)
 			}
-			if len(requests) != 2 || len(requests[0].Tools) != 1 || requests[0].Tools[0].Name != "command_runtime" {
-				t.Fatalf("worker did not receive its narrowed current catalogue: %+v", requests)
+			if len(requests) != wantRequests {
+				t.Fatalf("worker model requests=%d, want %d", len(requests), wantRequests)
+			}
+			for index, request := range requests {
+				names := make([]string, len(request.Tools))
+				for toolIndex, tool := range request.Tools {
+					names[toolIndex] = tool.Name
+				}
+				if !slices.Equal(names, wantTools) {
+					t.Fatalf("worker request %d tools=%v, want exactly %v", index, names, wantTools)
+				}
+			}
+			if !active {
+				return
 			}
 			found := false
 			for _, message := range requests[1].Messages {

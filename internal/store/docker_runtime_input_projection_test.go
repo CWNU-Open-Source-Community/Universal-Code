@@ -172,8 +172,10 @@ func TestSchemaV60PreservesV59HandoffWithoutFabricatingProjection(t *testing.T) 
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-runtime-input-v59.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	plan, _ := prepareDockerRuntimeInputProjectionStoreFixture(t, ctx, st, run.ID,
 		root, "docker-runtime-input-upgrade")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 59)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

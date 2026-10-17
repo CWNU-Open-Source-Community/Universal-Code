@@ -1035,6 +1035,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture.api.threadContextCompactionController = application.NewThreadContextCompactionService(fixture.store, llm.NewDefaultRouter())
 	openAPIThread, err := fixture.store.GetThreadByRun(t.Context(), openAPIThreadRun.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1629,6 +1630,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					spec.Path == DockerSandboxCancelPath {
 					body = `{"admission_id":"docker-sandbox-admission-openapi",` +
 						`"requested_by":"openapi_test"}`
+				} else if spec.OperationID == "compactThreadContext" {
+					body = `{"version":"thread_context_compaction.v1","expected_run_id":"` + openAPIThreadRun.ID + `"}`
 				} else if spec.OperationID == "createThread" {
 					body = `{"version":"thread_creation.v1","goal":"OpenAPI live Thread",` +
 						`"workspace_id":"` + fixture.workspace.ID + `"}`
@@ -1636,6 +1639,10 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					spec.OperationID == "executeThreadTurn" {
 					body = `{"version":"thread_message_submission.v1",` +
 						`"content":"OpenAPI live Thread message"}`
+				} else if spec.OperationID == "controlThreadContextPin" {
+					body = `{"version":"thread_context_pins.v1","action":"add","expected_revision":0,"text":"Preserve the public interface."}`
+				} else if spec.OperationID == "resolveThreadContextPinProposal" {
+					body = `{"version":"thread_context_pins.v1","expected_revision":0,"expected_proposal_version":1,"choice":"discussion_only"}`
 				} else if spec.OperationID == "interruptThreadExecution" {
 					body = `{"version":"thread_execution.v1","execution_id":"thread-execution-openapi"}`
 				} else if spec.OperationID == "archiveThread" ||

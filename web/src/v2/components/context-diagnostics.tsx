@@ -53,7 +53,7 @@ export function ContextDiagnosticsPanel({ value, unavailable, recovery, runID, r
   return <section aria-labelledby="context-diagnostics-title">
     <h3 id="context-diagnostics-title">压缩与恢复进展</h3>
     {unavailable ? <p role="status">压缩过程记录暂不可读取；下方已保存摘要仍可查看，请稍后刷新重试。</p> : value === undefined ? <p>当前服务未提供压缩过程记录，仍可查看下方已保存摘要。</p> : !latest ?
-      <p>此执行没有已记录的生成压缩过程。历史版本或规则压缩可能仅保存了摘要。</p> : <>
+      <p>此执行尚无自动生成压缩记录。手动压缩与历史摘要可在下方查看。</p> : <>
         <div className="v2-context-notice" role="status"><strong>最近记录：{phases[latest.phase].title}</strong><p>{phases[latest.phase].detail}</p>
           {latest.fallback_code && <p>已采用规则摘要回退：{fallbackLabels[latest.fallback_code]}。</p>}
           {latest.phase === "generation_started" && runStatus !== "running" && <p>当前执行未在运行，最近显示的是生成开始记录。请刷新查看后续记录。</p>}

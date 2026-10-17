@@ -26,7 +26,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 129 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 132 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -43,7 +43,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 56 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 62 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -977,7 +977,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>129 active identifiers</summary>
+<details><summary>132 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -996,6 +996,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `code-intel-lsp.v1`
 - `code_handoff.v1`
 - `command-runtime.v2`
+- `context_pin_proposal.v1`
 - `context_provenance.v0`
 - `context_provenance.v1`
 - `debug-query.v1`
@@ -1089,6 +1090,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_activity_detail.v2`
 - `thread_activity_summary.v1`
 - `thread_application_services.v1`
+- `thread_context_compaction.v1`
+- `thread_context_pins.v1`
 - `thread_creation.v1`
 - `thread_execution.v1`
 - `thread_export.v1`
@@ -1764,7 +1767,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
   - `pr-followup-local-intent-reader` (`v1`, active) at `web/src/v2/components/task-pr-followup.tsx`
 
-<details><summary>56 active identifiers</summary>
+<details><summary>62 active identifiers</summary>
 
 - `context_memory.v1`
 - `context_memory_candidate.v1`
@@ -1786,6 +1789,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `queue_edit.v1`
 - `queue_operation.v1`
 - `queue_revision_unchanged.v1`
+- `recent_operator_history.v1`
 - `root_action_compatibility.v1`
 - `root_inbox_context.v1`
 - `root_lifecycle.v1`
@@ -1807,7 +1811,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `session_grant.v1`
 - `session_grant_revoke.v1`
 - `session_tree.v1`
+- `specialist_result_page.v1`
 - `task_goal.v1`
+- `thread_context_operation.v1`
+- `thread_context_pin.v1`
+- `thread_context_request.v1`
+- `thread_context_source.v1`
 - `thread_epoch_transition_operation.v1`
 - `thread_epoch_transition_request.v1`
 - `thread_lifecycle_operation.v1`
@@ -2092,7 +2101,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `unknown.v1` | `negative-version-fixture` | `internal/analyzer/descriptor_test.go`, `internal/httpapi/project_preparation_test.go`, `web/src/api/queued-messages.test.ts` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `web-mode-test.v1` | `test-fixture` | `internal/application/web_permissions_integration_test.go` | Test connector identity for the real Supervisor search path across Ask, Auto, and cold Full; not a production protocol. |
 | `web_search.v0` | `test-fixture` | `internal/toolgateway/web_evidence_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
-| `windows-local-sandbox.v1` | `test-fixture` | `internal/application/command_runtime_test.go`, `internal/application/supervisor_tool_permission_test.go`, `internal/desktop/standard_code_security_ledger_windows_test.go`, `internal/store/supervisor_tool_registry_migration_test.go`, `internal/store/supervisor_tools_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
+| `windows-local-sandbox.v1` | `test-fixture` | `internal/application/command_runtime_test.go`, `internal/application/supervisor_tool_permission_test.go`, `internal/desktop/standard_code_security_ledger_windows_test.go`, `internal/store/migration_v207_test.go`, `internal/store/supervisor_tool_registry_migration_test.go`, `internal/store/supervisor_tools_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `windows_appcontainer.v1` | `test-fixture` | `internal/runner/command_runtime_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `windows_appcontainer.windows_appcontainer_policy.v1` | `test-fixture` | `internal/store/migration_v131_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `windows_inherited_read_handle.v1` | `test-fixture` | `internal/analyzer/isolation_boundary_conformance_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

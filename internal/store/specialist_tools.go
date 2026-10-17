@@ -130,11 +130,11 @@ func (s *SQLiteStore) RecordSpecialistToolModelCompleted(ctx context.Context, re
 		var canonical json.RawMessage
 		var err error
 		if binding.Mode == "worker" {
-			if !worker.AllowsTool(calls[i].Name) {
+			if calls[i].Name != domain.SpecialistResultReadName && !worker.AllowsTool(calls[i].Name) {
 				return domain.AgentAttempt{}, apperror.New(apperror.CodePolicyDenied, "child tool is outside its admitted profile")
 			}
 			switch calls[i].Name {
-			case "git_status", "git_diff", "git_commit", "verify":
+			case domain.SpecialistResultReadName, "git_status", "git_diff", "git_commit", "verify":
 				canonical, err = toolgateway.NormalizeSpecialistNativePayload(calls[i].Name, calls[i].Arguments)
 			default:
 				canonical, err = toolgateway.NormalizeSupervisorToolPayload(toolgateway.ToolName(calls[i].Name), calls[i].Arguments)
@@ -228,10 +228,14 @@ func insertSpecialistToolRoundTx(ctx context.Context, tx *sql.Tx, ref domain.Age
 }
 
 func (s *SQLiteStore) ListSpecialistToolRounds(ctx context.Context, ref domain.AgentAttemptRef) ([]domain.SpecialistToolRound, error) {
+	return listSpecialistToolRounds(ctx, s.db, ref)
+}
+
+func listSpecialistToolRounds(ctx context.Context, q specialistContextQueryer, ref domain.AgentAttemptRef) ([]domain.SpecialistToolRound, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT r.round,r.model_attempt,r.assistant_text,r.provider_replay,c.position,c.call_id,c.name,c.payload_json,c.status,c.result_json,c.error_code,c.charge_id,c.created_at,c.completed_at,c.authority_json,c.approval_source_id,c.approval_id,c.started_at FROM specialist_tool_rounds r JOIN specialist_tool_calls c ON c.agent_attempt_id=r.agent_attempt_id AND c.round=r.round JOIN specialist_tool_bindings b ON b.agent_attempt_id=r.agent_attempt_id WHERE b.agent_attempt_id=? AND b.run_id=? AND b.agent_id=? ORDER BY r.round,c.position`, ref.AttemptID, ref.RunID, ref.AgentID)
+	rows, err := q.QueryContext(ctx, `SELECT r.round,r.model_attempt,r.assistant_text,r.provider_replay,c.position,c.call_id,c.name,c.payload_json,c.status,c.result_json,c.error_code,c.charge_id,c.created_at,c.completed_at,c.authority_json,c.approval_source_id,c.approval_id,c.started_at FROM specialist_tool_rounds r JOIN specialist_tool_calls c ON c.agent_attempt_id=r.agent_attempt_id AND c.round=r.round JOIN specialist_tool_bindings b ON b.agent_attempt_id=r.agent_attempt_id WHERE b.agent_attempt_id=? AND b.run_id=? AND b.agent_id=? ORDER BY r.round,c.position`, ref.AttemptID, ref.RunID, ref.AgentID)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +287,7 @@ func (s *SQLiteStore) ValidateSpecialistToolDispatch(ctx context.Context, call t
 	if err != nil {
 		return err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id JOIN specialist_task_briefs brief ON brief.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND b.mode=? AND b.brief_fingerprint=brief.fingerprint AND (b.mode='batch' OR (b.allowed_read_paths_json=(SELECT allowed_read_paths_json FROM agent_nodes WHERE id=b.agent_id) AND json_array_length(b.allowed_read_paths_json)>0)) AND c.call_id=? AND c.status='pending' AND c.payload_json=? AND c.name=? AND c.charge_id=?`, attempt.ID, call.WorkspaceID, mode, call.SpecialistToolCallID, string(input.Arguments), input.Tool, call.InvocationID).Scan(&n)
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id JOIN specialist_task_briefs brief ON brief.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND b.mode=? AND b.brief_fingerprint=brief.fingerprint AND (b.mode='batch' OR (b.mode='worker' AND c.name='specialist_result_read' AND b.worker_profile_json=(SELECT worker_profile_json FROM agent_nodes WHERE id=b.agent_id)) OR (b.mode='read' AND b.allowed_read_paths_json=(SELECT allowed_read_paths_json FROM agent_nodes WHERE id=b.agent_id) AND json_array_length(b.allowed_read_paths_json)>0)) AND c.call_id=? AND c.status='pending' AND c.payload_json=? AND c.name=? AND c.charge_id=?`, attempt.ID, call.WorkspaceID, mode, call.SpecialistToolCallID, string(input.Arguments), input.Tool, call.InvocationID).Scan(&n)
 	if err != nil {
 		return err
 	}

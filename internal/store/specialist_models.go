@@ -148,6 +148,10 @@ func (s *SQLiteStore) NextSpecialistModelAttempt(ctx context.Context,
 		return 0, 0, 0, apperror.New(apperror.CodeConflict,
 			"Specialist already has an active model call")
 	}
+	phaseCount, err = specialistContextTransportCountTx(ctx, tx, attempt.ID, toolRound, protocolRepair, phaseCount)
+	if err != nil {
+		return 0, 0, 0, err
+	}
 	var executionMillis int64
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(elapsed_millis), 0)
 		FROM specialist_model_calls WHERE agent_id = ?`, attempt.AgentID).
@@ -243,6 +247,10 @@ func (s *SQLiteStore) RecordSpecialistModelStarted(ctx context.Context,
 		COALESCE(SUM(CASE WHEN status = 'started' THEN 1 ELSE 0 END), 0)
 		FROM specialist_model_calls WHERE agent_attempt_id = ?`, modelAttempt.ProtocolRepair, modelAttempt.ToolRound, attempt.ID).
 		Scan(&count, &phaseCount, &active); err != nil {
+		return false, err
+	}
+	phaseCount, err = specialistContextTransportCountTx(ctx, tx, attempt.ID, modelAttempt.ToolRound, modelAttempt.ProtocolRepair, phaseCount)
+	if err != nil {
 		return false, err
 	}
 	if active != 0 || modelAttempt.Number != count+1 ||
@@ -688,6 +696,7 @@ func (s *SQLiteStore) recordSpecialistModelTerminal(ctx context.Context,
 		payload["session_assistant_message_id"] = terminal.assistantMessageID
 	} else {
 		payload["error"] = modelAttempt.ErrorText
+		payload["failure_reason"] = modelAttempt.FailureReason
 		payload["retry_after_millis"] = modelAttempt.RetryAfter.Milliseconds()
 		payload["retry_planned"] = modelAttempt.RetryPlanned
 		if usageRecorded {

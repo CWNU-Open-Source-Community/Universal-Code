@@ -81,14 +81,7 @@ func (e *SessionRunChatExecutor) PrepareSessionCommand(ctx context.Context, sess
 			"This Session is bound to its Run; select a model through Thread model control and continue the Thread to use it")
 	}
 	if fields[0] == "/compact" {
-		privateHistory, err := e.supervisor.requiresSupervisorPrivateHistory(run.Config.ModelRoute)
-		if err != nil {
-			return session.Session{}, err
-		}
-		if privateHistory {
-			return session.Session{}, apperror.New(apperror.CodeFailedPrecondition,
-				"native private assistant history cannot be replaced by a context summary")
-		}
+		return session.Session{}, apperror.New(apperror.CodeFailedPrecondition, "This Session is bound to its Run; compact the idle current Thread through thread compact <thread-id> or the Thread context control")
 	}
 	// The Run is the executor's route authority, even when an older Session
 	// record contains a route written by the former slash-command path.

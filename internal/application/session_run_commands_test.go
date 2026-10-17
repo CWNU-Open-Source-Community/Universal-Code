@@ -60,7 +60,7 @@ func TestRunBoundSessionCompactPreservesKimiHistory(t *testing.T) {
 				t.Fatal(err)
 			}
 			beforeCalls := calls.Load()
-			if _, err := manager.Send(t.Context(), run.SessionID, "/compact"); apperror.CodeOf(err) != apperror.CodeFailedPrecondition || !strings.Contains(err.Error(), "private assistant history") {
+			if _, err := manager.Send(t.Context(), run.SessionID, "/compact"); apperror.CodeOf(err) != apperror.CodeFailedPrecondition || !strings.Contains(err.Error(), "thread compact") {
 				t.Fatalf("private-history compaction was not refused: %v", err)
 			}
 			after, err := st.ListSessionMessages(t.Context(), run.SessionID, true)
@@ -115,14 +115,17 @@ func TestRunBoundSessionModelRejectsMutationAndReportsExecutionRoute(t *testing.
 	}
 }
 
-func TestRunBoundSessionCompactAllowsPublicHistory(t *testing.T) {
+func TestRunBoundSessionCompactGuidesToThreadControl(t *testing.T) {
 	provider := &lifecycleProvider{responses: []string{rootActionResponse(domain.RootActionContinue, "Continued with summary", "", "")}}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 	router.RegisterProvider(provider)
-	_, run, manager := sessionCommandFixture(t, router, "lifecycle-test/model")
+	st, run, manager := sessionCommandFixture(t, router, "lifecycle-test/model")
 	result, err := manager.Send(t.Context(), run.SessionID, "/compact")
-	if err != nil || !result.Compacted || result.SummaryID == 0 {
-		t.Fatalf("public-history compaction failed: %+v %v", result, err)
+	if apperror.CodeOf(err) != apperror.CodeFailedPrecondition || !strings.Contains(err.Error(), "thread compact") {
+		t.Fatalf("Run-bound compact bypassed Thread control: %+v %v", result, err)
+	}
+	if history, err := st.ListSessionMessages(t.Context(), run.SessionID, true); err != nil || len(history) != 0 {
+		t.Fatalf("rejected slash mutated history: %+v %v", history, err)
 	}
 	result, err = manager.Send(t.Context(), run.SessionID, "Continue the task")
 	if err != nil || result.Text != "Continued with summary" {

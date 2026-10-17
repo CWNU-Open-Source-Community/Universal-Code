@@ -251,6 +251,9 @@ func NewAgentRunner(store AgentRunnerStore, router *llm.Router, checker policy.C
 	if childTaskStore, ok := store.(ChildTaskMutationStore); ok {
 		gateway.WithChildTaskProposalExecutor(NewChildTaskToolExecutor(childTaskStore))
 	}
+	if pinStore, ok := store.(ThreadContextPinProposalStore); ok {
+		gateway.WithContextPinExecutor(contextPinToolExecutor{store: pinStore})
+	}
 	historyStore, historyRecallEnabled := store.(HistoryRecallToolStore)
 	if historyRecallEnabled {
 		gateway.WithHistoryRecallExecutor(NewHistoryRecallToolExecutor(historyStore))
@@ -811,8 +814,14 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		prepared.context.history = withoutCurrentMCPReferenceEvidence(prepared.context.history, prepared.input.mcpEvidenceIDs)
 		result.Checkpoint = turn.Checkpoint
 		if err == nil {
+			prepared.context.recentOperatorSections, err = loadRecentOperatorContext(ctx, s.store, turn.Run.ID, prepared.context.memoryBudget)
+		}
+		if err == nil {
+			prepared.context.threadPinSections, err = LoadThreadContextPinSections(ctx, s.store, turn.Run.ID)
+		}
+		if err == nil {
 			prepared.context.memory, err = supervisorMemoryContextWithinBudget(prepared.context.memoryBudget, prepared.context.threadEndTurn, prepared.context.summary, prepared.context.hasSummary, prepared.context.workItems, prepared.context.notes, prepared.context.inbox.Messages,
-				prepared.context.projectInstructionSections, prepared.context.longTermMemorySections, prepared.context.continuitySections, supervisorGoalContext(turn))
+				prepared.context.projectInstructionSections, prepared.context.threadPinSections, prepared.context.longTermMemorySections, prepared.context.continuitySections, supervisorGoalContext(turn), prepared.context.recentOperatorSections)
 		}
 		if err == nil {
 			err = requireSupervisorContinuityContext(prepared.context.memory, prepared.context.summary, prepared.context.hasSummary, turn.Mission.ID, turn.Run.Config.ContinuityContextFingerprint)
@@ -823,7 +832,6 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		if err != nil {
 			return err
 		}
-		prepared.context.contextAudit = supervisorModelContextAudit(prepared.context.memory)
 		if compacted {
 			result.ContextCompacted, result.ContextSummaryID = true, prepared.context.summary.ID
 		}
@@ -941,6 +949,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			request.Tools = refreshBrowserModelTools(request.Tools, prepared.tools.options.BrowserActions.Capabilities)
 		}
 		modelRequest := request
+		pinConfirmationWaiting := contextPinConfirmationBoundary(prepared.toolRounds)
 		modelContextLayout := prepared.layout
 		if supervisorNativeToolRounds(prepared.toolRounds) == domain.MaxSupervisorToolRounds {
 			modelRequest = supervisorToolBoundaryRequest(modelRequest)
@@ -952,6 +961,9 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		modelRequest, err = s.requestWithBuiltinSkillReads(ctx, turn, modelRequest)
 		if err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
+		}
+		if pinConfirmationWaiting {
+			modelRequest = contextPinConfirmationRequest(modelRequest)
 		}
 		modelRequest, err = prepareModelHarnessRequest(s.router, prepared.ref,
 			llm.HarnessWorkloadRoot, modelRequest)
@@ -1013,6 +1025,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 				return result, s.recordFailure(ctx, &result, err, 0)
 			}
 		}
+		modelMemory := prepared.context.memory
+		modelRequest, modelContextLayout, modelMemory, err = fitRecentOperatorRequest(modelRequest, modelContextLayout, modelMemory, inputLimit)
+		if err != nil {
+			return result, s.recordFailure(ctx, &result, err, 0)
+		}
 		boundedRequest, contextPlan, err := constrainRequestToModelWindow(modelRequest,
 			modelWindow, modelContextLayout, inputLimit)
 		if err != nil && contextPlan.HistoryOmitted == 0 {
@@ -1049,7 +1066,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
 		modelCall, err := s.callModelWithRetry(ctx, turn, prepared.ref, modelRequest, protocolRepair,
-			len(prepared.toolRounds), prepared.input.steeringSequence, prepared.context.contextAudit)
+			len(prepared.toolRounds), prepared.input.steeringSequence, supervisorModelContextAudit(modelMemory))
 		if modelCall.Checkpoint.RunID != "" {
 			turn.Checkpoint = modelCall.Checkpoint
 			result.Checkpoint = modelCall.Checkpoint
@@ -1163,6 +1180,8 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			_, continuationRepair := domain.SupervisorThreadContinueRepairRound(repairReason)
 			_, textToolRepair := domain.SupervisorTextToolRepairRound(repairReason)
 			switch {
+			case pinConfirmationWaiting:
+				parseErr = errors.New("context pin proposal requires user input; no further tools may run before the user replies")
 			case protocolRepair != 0 && !domain.IsSupervisorToolRequestRepair(repairReason) && !continuationRepair && !textToolRepair:
 				parseErr = errors.New("protocol repair response cannot request tools")
 			case supervisorNativeToolRounds(prepared.toolRounds) >= domain.MaxSupervisorToolRounds:
@@ -1273,6 +1292,9 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			evaluated := s.evaluateAgentRootAction(ctx, turn, response, prepared, protocolRepair, repairReason)
 			action, parseErr = evaluated.action, evaluated.err
 			rootActionRecovery, repairableRootResponse = evaluated.recovery, evaluated.repairable
+			if parseErr == nil && pinConfirmationWaiting && action.Kind != domain.RootActionWait {
+				parseErr = errors.New("context pin confirmation is pending: return root_lifecycle action=wait and wait for the user's selection")
+			}
 		}
 		if parseErr != nil {
 			reason := supervisorProtocolRepairReason(parseErr)

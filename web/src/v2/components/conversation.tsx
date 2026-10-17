@@ -33,6 +33,7 @@ import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import type { V2RunPane } from "../navigation";
 import type { TaskReviewToolMemory } from "./task-review-tools";
 import { V2ThreadContext } from "./thread-context";
+import { V2ThreadPinPrompt } from "./thread-context-controls";
 import { V2ThreadPlanControl } from "./thread-plan";
 import { useV2ThreadSubmissions, useV2ThreadTurn, V2SubmissionError, V2RecoveredSubmissionError, removeV2Submission, v2TurnFailed, v2TurnOutcomeKnown, v2TurnWasNotQueued, type V2TurnInput } from "../use-thread-turn";
 import { inspectV2SteeringRequest, inspectV2TurnRequest } from "../recovery-api";
@@ -748,6 +749,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     (publicStream.status === "live" || publicStream.status === "finalizing");
   const working = turnSubmitting || modelActive || (!executionQuery.isError &&
     (executionQuery.data?.state === "running" || executionQuery.data?.state === "stopping"));
+  const replyToPinProposal = async (content: string, operationKey: string) => {
+    const previous = submissions.find((item) => item.input.operationKey === operationKey)?.input;
+    if (previous && previous.content !== content) throw new Error("原答复身份与当前内容不一致，请重新读取。");
+    await submitTrackedTurn(previous ?? { threadID, workspaceID: detail.thread.workspace_id ?? "",
+      content, operationKey, createdAt: new Date().toISOString() });
+  };
   const canSteer = executionQuery.data?.state === "running" ||
     (!executionQuery.data && detail.active_run?.status === "running");
   // A paused run is not gone: steer stays unavailable, but the explanation
@@ -928,9 +935,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </>}
     </nav>}
     {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}
+      onReply={replyToPinProposal}
       onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
       onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
       onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextTrigger} />}
+    {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
+      paused={working || activePane !== null || menuOpen} onReply={replyToPinProposal} />}
     {!docked && companion}
     {previewOpen && <V2LazySurface loadingText="正在加载应用预览…" errorLabel="应用预览" resetKey={threadID}
       onDismiss={() => { setPreviewOpen(false); previewTrigger.current?.focus(); }}>

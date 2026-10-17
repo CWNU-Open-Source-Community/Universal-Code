@@ -82,6 +82,11 @@ func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.Sup
 			// edits are checked at its next tool or finish boundary instead.
 			return rounds, waiting, err
 		}
+		// A pin proposal ends tool execution until the user has answered.
+		// Host hooks share this boundary with model-requested tools.
+		if contextPinConfirmationBoundary(rounds) {
+			return rounds, false, nil
+		}
 		added, err := s.prepareProjectFormat(ctx, turn, rounds, false)
 		if err != nil || !added {
 			return rounds, false, err

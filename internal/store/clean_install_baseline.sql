@@ -5898,8 +5898,8 @@ CREATE TABLE run_model_cancellations (
 			OR (status = 'resolved' AND resolved_at IS NOT NULL AND length(resolution) > 0))
 	);
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE run_monetary_reservations (
-		id TEXT PRIMARY KEY,
+CREATE TABLE "run_monetary_reservations" (
+		id TEXT PRIMARY KEY, agent_id TEXT NOT NULL DEFAULT '',
 		run_id TEXT NOT NULL,
 		scope TEXT NOT NULL,
 		provider TEXT NOT NULL,
@@ -5913,10 +5913,10 @@ CREATE TABLE run_monetary_reservations (
 		price_fingerprint TEXT NOT NULL,
 		created_at TEXT NOT NULL,
 		settled_at TEXT,
-		released_at TEXT, agent_id TEXT NOT NULL DEFAULT '',
+		released_at TEXT,
 		UNIQUE(run_id, scope, attempt_number),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE RESTRICT,
-		CHECK(scope IN ('root', 'specialist', 'readonly_fanout')),
+		CHECK(scope IN ('root', 'specialist', 'readonly_fanout', 'context_compaction')),
 		CHECK(attempt_number >= 1),
 		CHECK(reserved_micros >= 1 AND settled_micros >= 0 AND released_micros >= 0),
 		CHECK(settled_micros + released_micros <= reserved_micros),
@@ -6191,7 +6191,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 		CHECK(position BETWEEN 1 AND 4),
 		CHECK(model_attempt > 0),
 		CHECK(tool_name IN ('skill_read', 'history_search', 'history_read', 'work_item_create', 'note_create',
-			'specialist_delegation_propose', 'child_task_propose',
+			'specialist_delegation_propose', 'child_task_propose', 'context_pin_propose',
 			'plan_delivery_propose', 'controlled_command_propose',
 			'one_shot_command_propose', 'host_command_propose',
 			'sandbox_docker_run_propose', 'skill_candidate_propose', 'debug_terminal',
@@ -11554,6 +11554,16 @@ CREATE TABLE specialist_context_deliveries (
 			OR (status IN ('committed', 'superseded') AND resolved_at IS NOT NULL))
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE specialist_context_projections (
+ agent_attempt_id TEXT PRIMARY KEY REFERENCES agent_attempts(id),
+ through_round INTEGER NOT NULL DEFAULT 0 CHECK(through_round BETWEEN 0 AND 16),
+ source_sha256 TEXT NOT NULL DEFAULT '',
+ rejected_model INTEGER NOT NULL DEFAULT 0 CHECK(rejected_model >= 0),
+ recovery_input_limit INTEGER NOT NULL DEFAULT 0 CHECK(recovery_input_limit >= 0),
+ CHECK((through_round=0 AND source_sha256='') OR (through_round>0 AND length(source_sha256)=64)),
+ CHECK((rejected_model=0 AND recovery_input_limit=0) OR (rejected_model>0 AND recovery_input_limit>0))
+);
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE specialist_delegation_application_assignments (
 		application_id TEXT NOT NULL,
 		proposal_id TEXT NOT NULL,
@@ -12477,6 +12487,38 @@ CREATE TABLE terminal_sessions (
 		CHECK(length(cwd) <= 4096 AND instr(cwd, char(0)) = 0),
 		CHECK(julianday(created_at) IS NOT NULL AND julianday(last_activity_at) IS NOT NULL)
 	);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_context_compactions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			operation_id TEXT NOT NULL UNIQUE,
+			thread_id TEXT NOT NULL REFERENCES threads(id),
+			run_id TEXT NOT NULL REFERENCES runs(id),
+			session_id TEXT NOT NULL REFERENCES sessions(id),
+			key_digest TEXT NOT NULL,
+			request_fingerprint TEXT NOT NULL,
+			source_sha256 TEXT NOT NULL,
+            input_fingerprint TEXT NOT NULL DEFAULT '',
+            input_messages_omitted INTEGER NOT NULL DEFAULT 0 CHECK(input_messages_omitted>=0),
+			status TEXT NOT NULL CHECK(status IN ('prepared','started','generated','completed','noop','failed')),
+			provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
+			response_text TEXT NOT NULL DEFAULT '', usage_json TEXT NOT NULL DEFAULT 'null' CHECK(json_valid(usage_json)),
+			reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK(reserved_tokens>=0),
+			elapsed_millis INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_millis>=0),
+			completion_sequence INTEGER NOT NULL DEFAULT 0,
+			result_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(result_json)),
+			error_code TEXT NOT NULL DEFAULT '', error_message TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL, started_at TEXT, terminal_at TEXT,
+			UNIQUE(thread_id,key_digest));
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_context_pin_operations (thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,operation_key_digest TEXT NOT NULL,request_fingerprint TEXT NOT NULL,result_json TEXT NOT NULL CHECK(json_valid(result_json)),PRIMARY KEY(thread_id,operation_key_digest));
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_context_pin_proposals (id TEXT PRIMARY KEY,thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,version INTEGER NOT NULL CHECK(version>0),status TEXT NOT NULL CHECK(status IN ('pending','resolved','dismissed')),operation_key_digest TEXT NOT NULL UNIQUE,request_fingerprint TEXT NOT NULL,invocation_id TEXT NOT NULL UNIQUE REFERENCES run_tool_calls(id),payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),created_at TEXT NOT NULL);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_context_pin_revisions (pin_id TEXT NOT NULL REFERENCES thread_context_pins(id) ON DELETE CASCADE,version INTEGER NOT NULL CHECK(version>0),payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),PRIMARY KEY(pin_id,version));
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_context_pin_sets (thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,revision INTEGER NOT NULL CHECK(revision>=0));
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_context_pins (id TEXT PRIMARY KEY,thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,version INTEGER NOT NULL CHECK(version>0),status TEXT NOT NULL CHECK(status IN ('active','removed')),payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),UNIQUE(thread_id,id));
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE thread_drydock_bindings (
   run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE RESTRICT,
@@ -14430,6 +14472,13 @@ CREATE INDEX specialist_schedule_continuation ON specialist_schedules(continuati
 -- traverse-board-clean-install-object-boundary --
 CREATE UNIQUE INDEX specialist_tool_approval_source ON specialist_tool_calls(approval_source_id) WHERE approval_source_id<>'';
 -- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX thread_context_compaction_active ON thread_context_compactions(thread_id)
+			WHERE status IN ('prepared','started','generated');
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX thread_context_pin_proposals_pending ON thread_context_pin_proposals(thread_id,status,created_at);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX thread_context_pins_active ON thread_context_pins(thread_id,status,id);
+-- traverse-board-clean-install-object-boundary --
 CREATE INDEX workflow_run ON workflow_executions(run_id, created_at);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX workflow_step_execution ON workflow_steps(execution_id);
@@ -14700,6 +14749,8 @@ CREATE TRIGGER skill_package_remove_operations_no_update
 CREATE TRIGGER specialist_schedule_continuation_immutable
 		BEFORE UPDATE OF continuation_digest ON specialist_schedules
 		BEGIN SELECT RAISE(ABORT, 'Specialist continuation identity is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER thread_context_pin_revision_immutable BEFORE UPDATE ON thread_context_pin_revisions BEGIN SELECT RAISE(ABORT,'context pin revisions are immutable');END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_agent_attempt_identity_immutable BEFORE UPDATE OF id,run_id,agent_id,parent_agent_id,lease_id,lease_generation,turn_number,started_at ON agent_attempts
  WHEN NEW.id<>OLD.id OR NEW.run_id<>OLD.run_id OR NEW.agent_id<>OLD.agent_id OR NEW.parent_agent_id<>OLD.parent_agent_id OR NEW.turn_number<>OLD.turn_number OR NEW.started_at<>OLD.started_at
@@ -24864,6 +24915,12 @@ CREATE TRIGGER trg_specialist_context_delivery_terminal_immutable
 			SELECT RAISE(ABORT, 'terminal Specialist context delivery is immutable');
 		END;
 -- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_specialist_context_projection_monotonic BEFORE UPDATE ON specialist_context_projections
+ WHEN NEW.agent_attempt_id<>OLD.agent_attempt_id OR NEW.through_round<OLD.through_round
+ OR (NEW.through_round=OLD.through_round AND NEW.source_sha256<>OLD.source_sha256)
+ OR (OLD.rejected_model>0 AND (NEW.rejected_model<>OLD.rejected_model OR NEW.recovery_input_limit<>OLD.recovery_input_limit))
+ BEGIN SELECT RAISE(ABORT,'Child context projection cannot rewind'); END;
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_specialist_delegation_application_assignment_admitted
 		BEFORE UPDATE ON specialist_delegation_application_assignments
 		WHEN NEW.status = 'admitted' AND NOT EXISTS (
@@ -25344,15 +25401,13 @@ CREATE TRIGGER trg_specialist_model_call_insert
 		END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_specialist_model_call_phase_sequence
-		BEFORE INSERT ON specialist_model_calls
-		WHEN NEW.transport_attempt <> (
-			SELECT COUNT(*) + 1 FROM specialist_model_calls
-			WHERE agent_attempt_id = NEW.agent_attempt_id
-				AND protocol_repair = NEW.protocol_repair AND tool_round = NEW.tool_round
-		)
-		BEGIN
-			SELECT RAISE(ABORT, 'Specialist model call is not the next phase transport attempt');
-		END;
+ BEFORE INSERT ON specialist_model_calls
+ WHEN NEW.transport_attempt <> (
+  SELECT COUNT(*) + 1 FROM specialist_model_calls
+  WHERE agent_attempt_id=NEW.agent_attempt_id AND protocol_repair=NEW.protocol_repair AND tool_round=NEW.tool_round
+   AND model_attempt_number<>COALESCE((SELECT rejected_model FROM specialist_context_projections WHERE agent_attempt_id=NEW.agent_attempt_id),0)
+ )
+ BEGIN SELECT RAISE(ABORT,'Specialist model call is not the next phase transport attempt'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_specialist_model_call_sequence
 		BEFORE INSERT ON specialist_model_calls

@@ -14,6 +14,7 @@ func TestSchemaV132PreservesLifecycleActionsAndFencesStdinAttach(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "docker-stdin-v131.db")
 	state, runRecord, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, state)
 	intent, request := newDockerContainerLifecycleStoreIntent(t, ctx, state,
 		runRecord.ID, root, "docker-stdin-v132")
 	record, _, err := state.BeginDockerContainerLifecycle(ctx, intent,
@@ -69,6 +70,7 @@ func TestSchemaV132PreservesLifecycleActionsAndFencesStdinAttach(t *testing.T) {
 	original := append([]sandbox.DockerContainerLifecyclePreparedAction(nil),
 		record.Actions...)
 
+	restoreLegacyContext()
 	state = historicalTestDatabaseFromSeed(t, state, path, 131)
 	if version, err := state.SchemaVersion(ctx); err != nil || version != 131 {
 		state.Close()

@@ -209,6 +209,7 @@ func TestDockerContainerRehearsalLimitAndSchemaV54Upgrade(t *testing.T) {
 				seedPath = filepath.Join(t.TempDir(), "seed.db")
 			}
 			st, run, root := openSandboxManifestStoreAt(t, ctx, seedPath, historicalVersion...)
+			restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 			t.Cleanup(func() { _ = st.Close() })
 			_, manifest, observation := createDockerContainerPlanStoreAuthority(t, ctx, st,
 				run.ID, root, "docker-rehearsal-limit")
@@ -233,6 +234,7 @@ func TestDockerContainerRehearsalLimitAndSchemaV54Upgrade(t *testing.T) {
 				return
 			}
 
+			restoreLegacyContext()
 			st = historicalTestDatabaseFromSeed(t, st, path, 54)
 			if err := st.Close(); err != nil {
 				t.Fatal(err)

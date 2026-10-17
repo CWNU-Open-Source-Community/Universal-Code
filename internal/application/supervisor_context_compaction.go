@@ -60,7 +60,8 @@ func (s *AgentRunner) compactSupervisorHistory(ctx context.Context, turn *domain
 		return false, err
 	}
 	if privateHistory {
-		return false, apperror.New(apperror.CodeResourceExhausted, "native private assistant history cannot be replaced by a context summary")
+		return false, supervisorContextWindowFailure(apperror.New(apperror.CodeResourceExhausted,
+			"this model requires native private assistant history; select a model that supports summarized history and send a new message to continue in a new execution"))
 	}
 	store, ok := s.store.(supervisorContextCompactionStore)
 	if !ok {
@@ -108,7 +109,16 @@ func (s *AgentRunner) supervisorConversationContext(ctx context.Context, turn *d
 	// This replaces the old last-20-message slice. Small conversations remain
 	// intact; model-window pressure may request an earlier compaction below.
 	if len(history) > maxSupervisorHistoryMessages {
-		compacted, err := s.compactSupervisorHistory(ctx, turn, 4)
+		// A count-based optimization must not block a provider that requires
+		// native history while its complete request still fits the window.
+		privateHistory, err := s.requiresSupervisorPrivateHistory(turn.Run.Config.ModelRoute)
+		if err != nil {
+			return nil, contextmgr.Summary{}, false, false, err
+		}
+		compacted := false
+		if !privateHistory {
+			compacted, err = s.compactSupervisorHistory(ctx, turn, 4)
+		}
 		if err != nil {
 			return nil, contextmgr.Summary{}, false, false, err
 		}

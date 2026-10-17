@@ -335,6 +335,63 @@ func TestProjectHookAppliedFileFormatsOnce(t *testing.T) {
 	}
 }
 
+func TestProjectHookWaitsForContextPinConfirmation(t *testing.T) {
+	f, trust := newProjectHookRuntimeFixture(t, domain.RunExecutionPermissionFull, true, true)
+	path := filepath.Join(f.root, "format.go")
+	const unformatted = "package hooksfixture\nvar X=  1\n"
+	if err := os.WriteFile(path, []byte("package hooksfixture\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	edit, err := fileedit.NewManager(f.st).Propose(t.Context(), fileedit.Proposal{SessionID: f.turn.Run.SessionID, WorkspaceID: f.turn.Mission.WorkspaceID, WorkspaceRoot: f.root, Path: "format.go", ProposedText: unformatted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileEditReviewService(f.st).Review(t.Context(), ReviewFileEditRequest{Version: FileEditReviewProtocolVersion, RunID: f.turn.Run.ID, EditID: edit.ID, Action: FileEditApproveIntent}); err != nil {
+		t.Fatal(err)
+	}
+	permission, err := f.st.GetRunExecutionPermission(t.Context(), f.turn.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, generation, epoch, fence, _ := bindAgentCodeRuntime(f.caps, permission)
+	if _, err := NewFileEditApplyService(f.st, f.checker).WithExecutionPermissionCapabilities(f.caps).Apply(t.Context(), ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion, RunID: f.turn.Run.ID, EditID: edit.ID, OperationKey: "pin-confirmation-hook-edit", AppliedBy: "test_operator", LeaseID: f.turn.Checkpoint.LeaseID, LeaseGeneration: f.turn.Checkpoint.LeaseGeneration, PermissionSnapshotID: snapshot, PermissionGeneration: generation, PermissionRuntimeEpoch: epoch, RunAuthorizationFence: fence}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &projectHookFinishProvider{}
+	provider.respond = func(request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		if index == 0 {
+			return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", ToolCalls: []llm.ToolCall{{ID: "pin-before-hooks", Name: "context_pin_propose", Arguments: json.RawMessage(`{"version":"context_pin_proposal.v1","text":"Keep the interface stable","question":"Pin this?"}`)}}}, nil
+		}
+		if index != 1 || len(request.Tools) != 0 {
+			t.Fatalf("pin confirmation did not reach a tool-free wait: index=%d tools=%d", index, len(request.Tools))
+		}
+		return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", Text: `{"version":"root_lifecycle.v1","action":"wait","message":"Pin this?","reason":"user context pin confirmation required"}`}, nil
+	}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	f.supervisor = NewAgentRunner(f.st, router, f.checker).WithExecutionPermissionCapabilities(f.caps).WithCommandRuntime(f.service).WithProjectHooks(trust)
+	lease, _, err := f.st.GetRunExecutionLease(t.Context(), f.turn.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.supervisor.stepWithLease(t.Context(), lease, "")
+	if err != nil || result.RequestedAction != domain.RootActionWait || len(provider.requests) != 2 {
+		t.Fatalf("pin did not wait: result=%+v requests=%d err=%v", result, len(provider.requests), err)
+	}
+	state, err := f.st.ThreadContextPinsForRun(t.Context(), f.turn.Run.ID)
+	if err != nil || len(state.Proposals) != 1 || state.Proposals[0].Status != "pending" || len(state.Pins) != 0 {
+		t.Fatalf("pin proposal not pending: %+v %v", state, err)
+	}
+	jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
+	if err != nil || len(jobs) != 0 {
+		t.Fatalf("host hook ran while awaiting pin confirmation: %+v %v", jobs, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != unformatted {
+		t.Fatalf("formatting crossed the confirmation boundary: %q %v", content, err)
+	}
+}
+
 func TestProjectHookWorkspaceVersionRejectsIncompleteContents(t *testing.T) {
 	for _, reason := range []string{"workspace manifest exceeds the entry limit", "case-colliding Workspace paths cannot be restored safely", "Workspace path casing differs from the Git index"} {
 		if _, err := projectHookSnapshotVersion(workspacecheckpoint.Snapshot{Checkpoint: workspacecheckpoint.Checkpoint{IncompleteReasons: []string{reason}}}); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {

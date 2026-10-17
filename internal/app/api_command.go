@@ -667,6 +667,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		LifecycleHooks:                        hookEngine,
 		RunLifecycleController:                lifecycleControl,
 		ThreadTurnController:                  threadTurnControl,
+		ThreadContextCompactionController:     application.NewThreadContextCompactionService(a.store, a.router).WithExecutionState(threadTurnControl),
 		StandardCodePresetController:          standardCodePreset,
 		StandardCodeDeliveryController:        standardCodeDeliveryController,
 		RunExecutionController:                executionControl,

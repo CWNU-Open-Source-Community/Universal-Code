@@ -315,7 +315,7 @@ func supervisorMemoryContextWithinBudget(memoryBudget int, threadEndTurn bool, s
 	selection, err := selectSupervisorContextSections(sections, memoryBudget)
 	if err != nil {
 		if errors.Is(err, contextmgr.ErrRequiredContextBudget) {
-			return contextmgr.Selection{}, projectInstructionDeliveryFailure()
+			return contextmgr.Selection{}, requiredThreadContextDeliveryFailure(sections, memoryBudget)
 		}
 		return contextmgr.Selection{}, err
 	}
@@ -337,11 +337,16 @@ func selectSupervisorContextSections(sections []contextmgr.Section, tokenBudget 
 	if err != nil {
 		return contextmgr.Selection{}, err
 	}
+	sections = fitRecentOperatorContext(sections, tokenBudget)
+	selection, err = contextmgr.SelectSections(sections, tokenBudget)
+	if err != nil {
+		return contextmgr.Selection{}, err
+	}
 	var protected, memories, background []contextmgr.Section
 	for _, section := range sections {
 		switch {
 		case section.Required || section.Kind == "project_instruction" || section.Kind == "task_goal" ||
-			section.Kind == "summary" || section.Kind == "continuity_context" || section.Kind == "agent_inbox":
+			section.Kind == "summary" || section.Kind == "continuity_context" || section.Kind == "agent_inbox" || section.Kind == "recent_operator_history":
 			protected = append(protected, section)
 		case section.Kind == "long_term_memory":
 			memories = append(memories, section)

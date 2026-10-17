@@ -321,6 +321,7 @@ func TestFindingAcceptanceRemediationAndFixConvergeAcrossStores(t *testing.T) {
 func TestSchemaV36ValidatedFindingSurvivesRemediationMigration(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "finding-remediation-v36.db")
 	st, run, _ := createReadOnlyFanoutFixture(t, "seed.db", 1, 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	ctx := context.Background()
 	execution := createFindingReportSourceExecution(t, ctx, st, run.ID,
 		"finding-remediation-v36-plan", "finding-remediation-v36-execution")
@@ -346,6 +347,7 @@ func TestSchemaV36ValidatedFindingSurvivesRemediationMigration(t *testing.T) {
 		}); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 36)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

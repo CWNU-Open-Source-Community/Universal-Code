@@ -465,7 +465,10 @@ func migrationPlan() []migration {
 		migration{Version: 202, Name: "Admitted execution workers and durable child tool authority", Statements: specialistWorkerStatements(), DisableForeignKeys: true},
 		migration{Version: 203, Name: "Bounded reusable worker workflows", Statements: workflowStatements},
 		migration{Version: 204, Name: "Bounded PR followup subscriptions on existing Threads", Statements: prFollowupStatements},
-		migration{Version: 205, Name: "Reviewed project command hooks", Statements: projectHookStatements, DisableForeignKeys: true})
+		migration{Version: 205, Name: "Reviewed project command hooks", Statements: projectHookStatements, DisableForeignKeys: true},
+		migration{Version: 206, Name: "Attempt scoped child context projections", Statements: specialistContextStatements},
+		migration{Version: 207, Name: "User-confirmed Thread context requirements", Statements: threadContextPinStatements, DisableForeignKeys: true},
+		migration{Version: 208, Name: "Fenced idle Thread context compaction", Statements: threadContextCompactionStatements()})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

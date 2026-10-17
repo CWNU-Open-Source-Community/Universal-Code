@@ -15,6 +15,7 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/tools"
 )
@@ -38,7 +39,11 @@ func TestExecutionWorkerReadsWritesAndResumesExactFileApproval(t *testing.T) {
 	for _, mode := range []domain.RunExecutionPermissionMode{domain.RunExecutionPermissionAsk, domain.RunExecutionPermissionFull} {
 		t.Run(string(mode), func(t *testing.T) {
 			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "input.txt"), []byte("worker evidence\n"), 0600); err != nil {
+			input := "worker evidence\n"
+			if mode == domain.RunExecutionPermissionAsk {
+				input = "worker evidence " + strings.Repeat("中", 10000) + "\n"
+			}
+			if err := os.WriteFile(filepath.Join(root, "input.txt"), []byte(input), 0600); err != nil {
 				t.Fatal(err)
 			}
 			var editID string
@@ -58,7 +63,10 @@ func TestExecutionWorkerReadsWritesAndResumesExactFileApproval(t *testing.T) {
 				case 0:
 					return respond("workspace_read", "read-proof", json.RawMessage(`{"version":"agent-code-tools.v1","path":"input.txt","start_line":1,"end_line":2}`))
 				case 1:
-					if !strings.Contains(last(), "worker evidence") {
+					if mode == domain.RunExecutionPermissionAsk && request.Metadata["context_specialist_receipted_rounds"] != "1" {
+						t.Fatal("large read was not compacted before proposing edit")
+					}
+					if mode != domain.RunExecutionPermissionAsk && !strings.Contains(last(), "worker evidence") {
 						t.Fatalf("read failed: %s", last())
 					}
 					return respond("workspace_change", "create-proof", json.RawMessage(`{"version":"agent-code-tools.v1","action":"create","path":"output.txt","expected_sha256":"missing","content":"verified worker output\n"}`))
@@ -97,7 +105,8 @@ func TestExecutionWorkerReadsWritesAndResumesExactFileApproval(t *testing.T) {
 					return llm.ChatResponse{}, nil
 				}
 			}
-			st, run, child, _ := newScopedSubagentFixture(t, provider, domain.Budget{MaxTurns: 10, MaxTokens: 10000, MaxToolCalls: 12}, 4, 1000, false, domain.SpecialistAdmission{Worker: &domain.WorkerProfile{}, ToolCallLimit: 12}, "", root)
+			home := t.TempDir()
+			st, run, child, _ := newScopedSubagentFixture(t, provider, domain.Budget{MaxTurns: 10, MaxTokens: 10000, MaxToolCalls: 12}, 4, 1000, false, domain.SpecialistAdmission{Worker: &domain.WorkerProfile{}, ToolCallLimit: 12}, home, root)
 			capabilities := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
 			if mode != domain.RunExecutionPermissionAsk {
 				if _, err := application.NewRunService(st).Pause(t.Context(), run.ID); err != nil {
@@ -154,6 +163,20 @@ func TestExecutionWorkerReadsWritesAndResumesExactFileApproval(t *testing.T) {
 				if _, err := application.NewFileEditReviewService(st).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: editID, Action: application.FileEditApproveIntent}); err != nil {
 					t.Fatal(err)
 				}
+				if err := st.Close(); err != nil {
+					t.Fatal(err)
+				}
+				st, err = store.Open(filepath.Join(home, "cyberagent.db"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = st.Close() })
+				state, err := st.GetSpecialistContextState(t.Context(), domain.AgentAttemptRef{RunID: run.ID, AgentID: child.ID, AttemptID: attemptID})
+				if err != nil || state.ThroughRound != 1 {
+					t.Fatalf("approval reopen lost projection: %+v %v", state, err)
+				}
+				runtime = application.NewAgentRunner(st, router, checker).WithExecutionPermissionCapabilities(capabilities)
+				service = application.NewSpecialistExecutionService(st, router, checker).WithWorkerRuntime(runtime)
 				result, err = service.ExecuteSpecialist(t.Context(), request)
 				if err != nil {
 					t.Fatalf("worker resume: %+v %v", result, err)
@@ -204,7 +227,7 @@ func TestExecutionWorkerNarrowedToolsRejectUnadvertisedWrite(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "outside its admitted profile") {
 		t.Fatalf("narrowed tool was not rejected: %+v %v", result, err)
 	}
-	if len(provider.requests[0].Tools) != 1 || provider.requests[0].Tools[0].Name != "workspace_read" {
+	if len(provider.requests[0].Tools) != 2 || provider.requests[0].Tools[0].Name != "workspace_read" || provider.requests[0].Tools[1].Name != domain.SpecialistResultReadName {
 		t.Fatalf("narrowed advertisement: %+v", provider.requests[0].Tools)
 	}
 	rounds, err := st.ListSpecialistToolRounds(t.Context(), domain.AgentAttemptRef{RunID: run.ID, AgentID: child.ID, AttemptID: result.AttemptID})

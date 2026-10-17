@@ -62,6 +62,7 @@ func buildToolRegistry() toolRegistry {
 	}
 
 	// Child calls use an internal gateway envelope, outside the Supervisor catalog.
+	add(toolRegistration{definition: specialistResultReadDefinition})
 	add(toolRegistration{definition: SpecialistToolDefinition(false), valid: true,
 		normalize: func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
 			_, canonical, err := NormalizeSpecialistToolPayload(payload)
@@ -75,6 +76,12 @@ func buildToolRegistry() toolRegistry {
 		requireExecutor("structured memory", func(g *Gateway, _ ToolCall) bool { return g.structuredMemory != nil }), true, true)
 	addSupervisor(HistoryRecallToolDefinitions(), NormalizeHistoryRecallPayload,
 		(*Gateway).invokeHistoryRecall, nil, true, true)
+	addSupervisor([]ToolDefinition{contextPinProposeDefinition},
+		func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
+			_, canonical, err := normalizeContextPinPayload(payload)
+			return canonical, err
+		}, (*Gateway).invokeContextPin,
+		requireExecutor("context pin proposal", func(g *Gateway, _ ToolCall) bool { return g.contextPins != nil }), true, true)
 	addSupervisor([]ToolDefinition{SkillReadToolDefinition(nil)},
 		func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
 			_, canonical, err := NormalizeSkillReadPayload(payload)

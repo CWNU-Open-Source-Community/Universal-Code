@@ -33,6 +33,7 @@ type agentTurnContext struct {
 	externalSkillContext       skills.ExternalContextAssembly
 	memoryBudget               int
 	projectInstructionSections []contextmgr.Section
+	threadPinSections          []contextmgr.Section
 	history                    []session.Message
 	summary                    contextmgr.Summary
 	hasSummary                 bool
@@ -40,8 +41,8 @@ type agentTurnContext struct {
 	notes                      []domain.Note
 	longTermMemorySections     []contextmgr.Section
 	continuitySections         []contextmgr.Section
+	recentOperatorSections     []contextmgr.Section
 	memory                     contextmgr.Selection
-	contextAudit               *llm.ModelContextAudit
 }
 
 type agentTurnInput struct {
@@ -133,11 +134,16 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
+	threadPinSections, err := LoadThreadContextPinSections(ctx, s.store, turn.Run.ID)
+	if err != nil {
+		return nil, result, s.recordFailure(ctx, &result, err, 0)
+	}
 	// Refuse an impossible mandatory set before optional generated history
 	// compaction can spend another model call.
-	if _, err := contextmgr.SelectSections(projectInstructionSections, memoryBudget); err != nil {
+	requiredSections := append(slices.Clone(projectInstructionSections), threadPinSections...)
+	if _, err := contextmgr.SelectSections(requiredSections, memoryBudget); err != nil {
 		if errors.Is(err, contextmgr.ErrRequiredContextBudget) {
-			err = projectInstructionDeliveryFailure()
+			err = requiredThreadContextDeliveryFailure(requiredSections, memoryBudget)
 		}
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
@@ -184,8 +190,12 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 		failure := s.recordFailure(ctx, &result, err, 0)
 		return nil, result, failure
 	}
+	recentOperatorSections, err := loadRecentOperatorContext(ctx, s.store, turn.Run.ID, memoryBudget)
+	if err != nil {
+		return nil, result, s.recordFailure(ctx, &result, err, 0)
+	}
 	memory, err := supervisorMemoryContextWithinBudget(memoryBudget, threadEndTurn, summary, hasSummary, workItems, notes, inbox.Messages,
-		projectInstructionSections, longTermMemorySections, continuitySections, supervisorGoalContext(*turn))
+		projectInstructionSections, threadPinSections, longTermMemorySections, continuitySections, supervisorGoalContext(*turn), recentOperatorSections)
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
 		return nil, result, failure
@@ -197,7 +207,6 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err := requirePinnedProjectInstructionSelection(turn.Run.Config, memory); err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
-	contextAudit := supervisorModelContextAudit(memory)
 	executionPermission, err := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
@@ -390,6 +399,7 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 			externalSkillContext:       externalSkillContext,
 			memoryBudget:               memoryBudget,
 			projectInstructionSections: projectInstructionSections,
+			threadPinSections:          threadPinSections,
 			history:                    history,
 			summary:                    summary,
 			hasSummary:                 hasSummary,
@@ -397,8 +407,8 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 			notes:                      notes,
 			longTermMemorySections:     longTermMemorySections,
 			continuitySections:         continuitySections,
+			recentOperatorSections:     recentOperatorSections,
 			memory:                     memory,
-			contextAudit:               contextAudit,
 		},
 		input: agentTurnInput{
 			boundaryReceipt:     boundaryReceipt,

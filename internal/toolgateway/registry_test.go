@@ -14,7 +14,7 @@ import (
 
 func TestToolRegistryKeepsModelCatalogOrderAndPhaseSets(t *testing.T) {
 	wantDefault := []ToolName{
-		WorkItemCreateTool, NoteCreateTool, HistorySearchTool, HistoryReadTool,
+		WorkItemCreateTool, NoteCreateTool, HistorySearchTool, HistoryReadTool, ContextPinProposeTool,
 		SkillReadTool, SpecialistDelegationProposeTool, ChildTaskProposeTool,
 		DockerSandboxRunProposeTool, SkillCandidateProposeTool, DebugTerminalTool,
 		CommandRuntimeTool, RunTestsTool, MCPToolSearchTool, MCPToolCallTool, WebSearchTool, SourceSearchTool,

@@ -85,7 +85,10 @@ func TestAgentRunnerCompletesOneTurnAndEnforcesBudget(t *testing.T) {
 }
 
 func TestAgentRunnerAppliesAggregateContextWindowAndCompactsOldestHistory(t *testing.T) {
-	for _, windowTokens := range []int{8192, 10000} {
+	// The current tool catalogue adds 185 tokens for pin proposals. Keep the
+	// former narrow window as a refusal case and give the success case room for
+	// that required catalogue; raw history alone still exceeds both windows.
+	for _, windowTokens := range []int{8192, 10000, 10240} {
 		t.Run(fmt.Sprintf("window_%d", windowTokens), func(t *testing.T) {
 			verifyAggregateContextCompaction(t, windowTokens)
 		})
@@ -164,9 +167,9 @@ func verifyAggregateContextCompaction(t *testing.T, windowTokens int) {
 	if err != nil || !found || summary.Content == "" || summary.CompactedMessageCount != 19 {
 		t.Fatalf("window pressure did not persist the exact history compaction: summary=%+v found=%t err=%v", summary, found, err)
 	}
-	// 8192 fits the original mandatory context but cannot also hold the
-	// committed summary. Preserve that rejection instead of dropping history.
-	if windowTokens == 8192 {
+	// These windows cannot hold the committed summary plus the current tool
+	// catalogue. Preserve that rejection instead of dropping durable history.
+	if windowTokens <= 10000 {
 		if apperror.CodeOf(stepErr) != apperror.CodeResourceExhausted || len(provider.requests) != 0 {
 			t.Fatalf("summary overflow reached provider: calls=%d err=%v", len(provider.requests), stepErr)
 		}
