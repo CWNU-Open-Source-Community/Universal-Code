@@ -11,7 +11,7 @@ func addEmptyCurrentContextForLegacySeed(t testing.TB, state *SQLiteStore) func(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version >= 206 {
+	if version >= 208 {
 		return func() {}
 	}
 	tables := []struct {
@@ -19,7 +19,7 @@ func addEmptyCurrentContextForLegacySeed(t testing.TB, state *SQLiteStore) func(
 	}{
 		{"thread_context_compactions", threadContextCompactionStatements()[0]},
 	}
-	if version < 205 {
+	if version < 207 {
 		for _, name := range []string{"thread_context_pin_sets", "thread_context_pins", "thread_context_pin_proposals"} {
 			tables = append(tables, struct{ name, statement string }{
 				name, requireMigrationStatement("CREATE TABLE "+name+" (", threadContextPinStatements),

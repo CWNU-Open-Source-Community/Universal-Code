@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { APIClient } from "../../api/client";
 import { ProjectActions } from "./project-actions";
+import { ProjectHooks } from "./project-hooks";
 import { ProjectPreparation } from "./project-preparation";
 
 interface ProjectChecksProps {
@@ -19,6 +20,7 @@ function ProjectChecksForRun(props: ProjectChecksProps) {
   const [testTarget, setTestTarget] = useState("");
   return <>
     <ProjectPreparation {...props} onPrepared={setTestTarget} />
+    <ProjectHooks client={props.client} threadID={props.threadID} />
     <ProjectActions {...props} testTarget={testTarget} onTestTargetChange={setTestTarget} />
   </>;
 }

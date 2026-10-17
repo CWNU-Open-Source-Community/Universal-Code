@@ -690,8 +690,7 @@ func (c *Client) readActions(ctx context.Context, repoPath, headSHA string,
 ) ([]WorkflowJob, []ArtifactMetadata, []PageEvidence, error) {
 	runs, runPage, err := fetchWrappedPages[workflowRunResponse](c, ctx,
 		repoPath+"/actions/runs", "workflow_runs",
-		url.Values{"head_sha": []string{headSHA},
-			"event": []string{"pull_request"}}, request.Credential,
+		url.Values{"head_sha": []string{headSHA}}, request.Credential,
 		MaxWorkflowRuns, "workflow_runs")
 	if err != nil {
 		return nil, nil, nil, err
@@ -701,6 +700,9 @@ func (c *Client) readActions(ctx context.Context, repoPath, headSHA string,
 	pages := []PageEvidence{runPage}
 	failedLogs := 0
 	for _, run := range runs {
+		if !strings.EqualFold(run.HeadSHA, headSHA) {
+			return nil, nil, pages, &Error{Code: FailureDrift, Message: "GitHub Actions run belongs to a different commit"}
+		}
 		if len(jobs) >= MaxJobs || len(artifacts) >= MaxArtifacts {
 			break
 		}
@@ -713,6 +715,9 @@ func (c *Client) readActions(ctx context.Context, repoPath, headSHA string,
 		}
 		pages = append(pages, jobPage)
 		for _, rawJob := range rawJobs {
+			if !strings.EqualFold(rawJob.HeadSHA, headSHA) {
+				return nil, nil, pages, &Error{Code: FailureDrift, Message: "GitHub Actions job belongs to a different commit"}
+			}
 			job := WorkflowJob{ID: rawJob.ID, RunID: run.ID,
 				Name:       sanitizeIdentity(rawJob.Name, 300),
 				Status:     sanitizeIdentity(rawJob.Status, 32),

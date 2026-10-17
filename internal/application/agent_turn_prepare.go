@@ -16,13 +16,14 @@ import (
 // agentTurnPreparation groups the context, capability snapshots and request for
 // one turn. Compaction and steering rebuild the request from these same inputs.
 type agentTurnPreparation struct {
-	context    agentTurnContext
-	input      agentTurnInput
-	tools      agentTurnCapabilities
-	request    llm.ChatRequest
-	layout     modelContextLayout
-	ref        llm.ModelRef
-	toolRounds []domain.SupervisorToolRound
+	context                   agentTurnContext
+	input                     agentTurnInput
+	tools                     agentTurnCapabilities
+	request                   llm.ChatRequest
+	layout                    modelContextLayout
+	ref                       llm.ModelRef
+	toolRounds                []domain.SupervisorToolRound
+	deferCompletionValidation bool
 }
 
 type agentTurnContext struct {

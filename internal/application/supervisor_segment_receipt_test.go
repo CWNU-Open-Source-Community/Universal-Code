@@ -308,3 +308,57 @@ func TestSupervisorSegmentReceiptRebuiltRequestFitsModelWindow(t *testing.T) {
 	}
 	t.Fatal("unreachable receipt loop exit")
 }
+
+func TestSupervisorSegmentReceiptKeepsMixedHookAndNativeMessageOrder(t *testing.T) {
+	for _, hookCount := range []int{1, 3} {
+		t.Run(fmt.Sprintf("hooks_%d", hookCount), func(t *testing.T) {
+			base := llm.ChatRequest{Messages: []llm.Message{{Role: "system", Content: "original instructions"}, {Role: "user", Content: "original current input"}}}
+			rounds := []domain.SupervisorToolRound{
+				segmentReceiptRound(t, 1, 1, func(int) string { return segmentReceiptFatBody }),
+				segmentReceiptRound(t, 2, 2, func(int) string { return "native result" }),
+			}
+			for i := 0; i < hookCount; i++ {
+				round := segmentReceiptRound(t, i+3, 1, func(int) string { return "host result" })
+				call := &round.Calls[0]
+				call.ToolName = "command_runtime"
+				call.ProjectHook = &domain.ProjectHookCallOrigin{TriggerKey: strings.Repeat("a", 64), ConfigFingerprint: strings.Repeat("b", 64), WorkspaceVersion: strings.Repeat("c", 64), Slot: "format", Target: fmt.Sprintf("file%d.go", i)}
+				raw, err := marshalSupervisorToolResultEnvelope(supervisorToolResultEnvelope{Version: supervisorToolResultVersion, Tool: call.ToolName, Status: "completed", Stdout: fmt.Sprintf("host result %d", i)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				call.ResultJSON = string(raw)
+				rounds = append(rounds, round)
+			}
+			plan, err := supervisorSegmentReceiptPlan(rounds, 1, supervisorSegmentReceiptTokenBudget, "attempt-receipt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained, err := supervisorRequestWithToolRounds(base, plan.NativeRounds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rebuilt, err := supervisorRequestWithSegmentReceipt(base, plan, "session-receipt", "attempt-receipt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := len(base.Messages)
+			if !reflect.DeepEqual(rebuilt.Messages[:prefix], base.Messages) {
+				t.Fatal("receipt displaced original input or instructions")
+			}
+			if !reflect.DeepEqual(rebuilt.Messages[prefix], supervisorSegmentReceiptMessage("session-receipt", "attempt-receipt", plan.ReceiptContent)) {
+				t.Fatal("receipt not at original base boundary")
+			}
+			if !reflect.DeepEqual(rebuilt.Messages[prefix+1:], retained.Messages[prefix:]) {
+				t.Fatal("retained tool identity, result pairing or hook order changed")
+			}
+			if referenced := segmentReceiptReferencedCallIDs(rebuilt.Messages); referenced["call-1-1"] || !referenced["call-2-1"] || !referenced["call-2-2"] {
+				t.Fatalf("receipt/native pairing changed: %+v", referenced)
+			}
+			for _, round := range rounds[2:] {
+				if segmentReceiptReferencedCallIDs(rebuilt.Messages)[round.Calls[0].CallID] {
+					t.Fatal("host evidence became a native tool call")
+				}
+			}
+		})
+	}
+}

@@ -48,6 +48,7 @@ type threadEpochTransitionStore interface {
 }
 
 type ExecuteThreadTurnRequest struct {
+	automatic     bool
 	plan          *threadPlanCommitBinding
 	Version       string
 	ThreadID      string
@@ -162,14 +163,20 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 	if replay, found, err := s.findCompletedReplay(ctx, normalized); err != nil || found {
 		return replay, err
 	}
-	if err := s.advancePastFailedTurn(ctx, normalized); err != nil {
-		return ExecuteThreadTurnResult{}, err
-	}
-	if err := s.advancePastExhaustedBudget(ctx, normalized); err != nil {
-		return ExecuteThreadTurnResult{}, err
-	}
-	if err := s.advanceForPendingConfiguration(ctx, normalized); err != nil {
-		return ExecuteThreadTurnResult{}, err
+	if request.automatic {
+		if err := s.checkAutomaticTurn(ctx, normalized.ThreadID, intent.MessageID); err != nil {
+			return ExecuteThreadTurnResult{}, err
+		}
+	} else {
+		if err := s.advancePastFailedTurn(ctx, normalized); err != nil {
+			return ExecuteThreadTurnResult{}, err
+		}
+		if err := s.advancePastExhaustedBudget(ctx, normalized); err != nil {
+			return ExecuteThreadTurnResult{}, err
+		}
+		if err := s.advanceForPendingConfiguration(ctx, normalized); err != nil {
+			return ExecuteThreadTurnResult{}, err
+		}
 	}
 
 	var submission SubmitThreadMessageResult
@@ -207,7 +214,7 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 			}
 			// No lifecycle action or model-visible persistence occurs until all
 			// selected snapshots have been validated against their expected hash.
-			ready, readyErr := s.prepareSubmissionLifecycle(ctx, normalized, ExecuteThreadTurnResult{Submission: submission})
+			ready, readyErr := s.prepareSubmissionLifecycleMode(ctx, normalized, ExecuteThreadTurnResult{Submission: submission}, request.automatic)
 			if readyErr != nil {
 				return ExecuteThreadTurnResult{}, readyErr
 			}
@@ -233,11 +240,17 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 			return s.refresh(ctx, result)
 		}
 	}
-	return s.executeSubmission(ctx, normalized, result)
+	return s.executeSubmissionMode(ctx, normalized, result, request.automatic)
 }
 
 func (s *ThreadTurnService) executeSubmission(ctx context.Context,
 	normalized SubmitThreadMessageRequest, result ExecuteThreadTurnResult,
+) (ExecuteThreadTurnResult, error) {
+	return s.executeSubmissionMode(ctx, normalized, result, false)
+}
+
+func (s *ThreadTurnService) executeSubmissionMode(ctx context.Context,
+	normalized SubmitThreadMessageRequest, result ExecuteThreadTurnResult, automatic bool,
 ) (ExecuteThreadTurnResult, error) {
 	submission := result.Submission
 	if submission.Message.Status == domain.OperatorSteeringCancelled ||
@@ -246,7 +259,7 @@ func (s *ThreadTurnService) executeSubmission(ctx context.Context,
 	}
 
 	var err error
-	result, err = s.prepareSubmissionLifecycle(ctx, normalized, result)
+	result, err = s.prepareSubmissionLifecycleMode(ctx, normalized, result, automatic)
 	if err != nil {
 		return result, err
 	}
@@ -311,6 +324,12 @@ func (s *ThreadTurnService) executeSubmission(ctx context.Context,
 func (s *ThreadTurnService) prepareSubmissionLifecycle(ctx context.Context,
 	normalized SubmitThreadMessageRequest, result ExecuteThreadTurnResult,
 ) (ExecuteThreadTurnResult, error) {
+	return s.prepareSubmissionLifecycleMode(ctx, normalized, result, false)
+}
+
+func (s *ThreadTurnService) prepareSubmissionLifecycleMode(ctx context.Context,
+	normalized SubmitThreadMessageRequest, result ExecuteThreadTurnResult, automatic bool,
+) (ExecuteThreadTurnResult, error) {
 	submission := result.Submission
 	switch submission.Run.Status {
 	case domain.RunCreated:
@@ -327,6 +346,9 @@ func (s *ThreadTurnService) prepareSubmissionLifecycle(ctx context.Context,
 		result.Submission.Run = controlled.Run
 		result.Replayed = result.Replayed || controlled.Replayed
 	case domain.RunPaused:
+		if automatic {
+			return result, apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation cannot resume a paused task")
+		}
 		controlled, err := s.lifecycle.Apply(ctx, ControlRunLifecycleRequest{
 			Version: domain.RunLifecycleControlProtocolVersion, RunID: submission.Run.ID,
 			Action: domain.RunLifecycleResume,

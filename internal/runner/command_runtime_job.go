@@ -1395,15 +1395,35 @@ func (m *CommandRuntimeManager) maintainOwnership(entry *commandRuntimeEntry) {
 			}
 			ctx, cancel := context.WithTimeout(entry.authorityContext, m.ownerRenewTimeout)
 			var err error
+			phase := "authority recheck"
 			if entry.authorityCheck != nil {
 				err = entry.authorityCheck(ctx)
 			}
 			if err == nil {
+				phase = "owner renewal"
 				err = m.renewOwnership(ctx, entry)
 			}
 			cancel()
 			if err != nil {
-				if entry.setDesired(CommandRuntimeJobInterrupted) {
+				// Keep the diagnostic in the same snapshot as the interrupted
+				// state if the child exits before Kill reaches it.
+				entry.persistMu.Lock()
+				interrupted := entry.setDesired(CommandRuntimeJobInterrupted)
+				if interrupted {
+					// Host failures may have no child stderr. Keep their reason in
+					// the existing sanitized, bounded output before killing the Job.
+					if !entry.discardOutput {
+						detail := err
+						if cause := errors.Unwrap(err); cause != nil {
+							detail = errors.Join(err, cause)
+						}
+						diagnostic := "\ncommand runtime " + phase + " failed: " + outputsafe.Sanitize([]byte(detail.Error())) + "\n"
+						entry.observe(CommandRuntimeStderr, len(diagnostic))
+						entry.appendOutput(CommandRuntimeStderr, diagnostic, time.Now().UTC())
+					}
+				}
+				entry.persistMu.Unlock()
+				if interrupted {
 					_ = entry.process.Kill()
 				}
 				return

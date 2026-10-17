@@ -1774,6 +1774,33 @@ after restart, without starting the action again. Docker needs the updated
 [fixed image](standard-code-docker.md#fixed-image) for npm and gofmt. Tool IDs
 without one of these presets do not become shell commands.
 
+### Project command hooks / 项目自动动作
+
+To format Go edits applied by the main Agent and run tests before it finishes its response,
+declare the existing project actions in `.prayu/config.yaml`:
+
+```yaml
+protocol: project_config.v1
+format_command_id: format.go
+test_command_id: test.go
+hooks:
+  after_edit_format: true
+  before_finish_test: true
+```
+
+在 **改动与交付 → 检查与交付 → 项目自动动作** 审阅并信任具体配置。同一工作区的后续
+任务沿用该信任；修改启用事件、命令或路径限制后需要再次确认。可以在同一卡片停用。
+任务创建时固定了项目配置；配置变化后，在新任务中使用重新审阅的配置。
+
+`after_edit_format` 通过 `format.go` 处理主 Agent 成功应用的 FileEdit 中的 `.go` 文件；
+`before_finish_test` 在任务工作区根目录运行 `test.go`、`test.node` 或 `test.npm`。
+测试失败会回到 Agent 的修复循环，尚未通过的版本不能直接报告完成。动作使用当前
+命令后端、Full／Ask／Auto 规则及任务预算，并记录普通命令 Job；信任项目配置不增加
+执行权限。审批后的恢复继续原调用，不重复运行已完成的动作。
+当前自动动作沿用前台命令的 25 秒上限；超时会保留失败回执并阻止完成。
+等待审批时停用自动动作后，可拒绝已有审批以继续任务；已经派发但缺少完成回执的
+命令仍需先核对原 Job 的状态。
+
 ## Durable Context Continuity / 持久上下文连续性
 
 Schema v114 adds hierarchical `AGENTS.md`/`CLAUDE.md`/`.prayu` instruction discovery,

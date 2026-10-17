@@ -55,6 +55,18 @@ The initial Windows background-job handoff failure did not reproduce in the loca
 
 Before the follow-up commit, OCR delegate selection and rule resolution were run again. Independent reviewers covered the six context/CLI files and 26 Store/history files; the integrating agent reviewed the Windows test diagnostic and this acceptance update. All 34 changed files were reviewed, with no generated-file skips or outstanding findings. The three production files selected by OCR were all covered; default-excluded tests and documentation were explicitly reviewed as well.
 
+## Integration with main after #364/#365
+
+Merged main `43c91f009aad5a8e21dfb6c19607fbac5332148a` into this branch. Main's released v204 PR-followup and v205 project-hook migrations are unchanged. The context migrations now occupy v206 (child projection), v207 (pins) and v208 (manual compaction); historical seed boundaries, the schema history and generated baseline follow that order.
+
+OCR delegate review found a concrete interaction: after a completed pin proposal, a pending applied Go FileEdit could trigger a host formatting job before the user answered. The tool-resume wrapper now returns to the existing tool-free pin confirmation boundary before scheduling hooks. The new integration test failed with an actual formatting job before this fix and passed afterward. It checks the pending proposal, unchanged file bytes, no command job and the final wait response while both project hooks are enabled.
+
+Focused application regressions passed for context capacity, recent originals, pins, child context, automatic turns and hooks (66.547s); after the fix, hooks and the fourth-native-round pin boundary passed (24.863s). PR-followup and mixed hook/native receipt tests passed (7.534s). HTTP/OpenAPI, CLI and desktop controller tests passed, as did affected application/Store vet checks and the Windows background-job handoff regression. Web type checking and 23 combined context-dialog, project-hook and PR-followup tests passed.
+
+Store upgrade/clean-install tests passed (88.908s). A populated v205 fixture retains native replay, all call bytes and non-default rowids, Agent attribution and canonical foreign keys after upgrading to v208, including the 21st physical hook round. Its test also pins main's released migration-plan digest. The populated upgrade and child-cost migration tests passed together (19.122s); the final digest assertion passed again (10.039s). OpenAPI, TypeScript, baseline and protocol artifacts were regenerated; protocol evolution was checked against the merged main commit.
+
+Before the merge commit, OCR delegate preview and rules were rerun. Independent reviewers inspected runtime interactions and Store migration integration; the integrating agent reviewed HTTP/OpenAPI routing, protocol registration, shared Windows test changes and documentation. All 108 preview entries are accounted for: 72 reviewed, 5 generated artifacts verified through their generators/tests, and 31 inherited unchanged from main outside the integration scope. The merge review covers changed hunks and relevant callers, without claiming a new full review of those inherited files.
+
 ## Operational boundaries
 
 This run used controlled local providers to inspect actual requests, state changes and UI behavior; it does not measure a hosted model's adherence rate. A process exit with an unconfirmed prepared/started manual summary operation retains that pending operation and refuses to resend it automatically. There is currently no operator reconciliation UI for clearing that slot; ordinary Thread continuation remains available, subject to the retained usage/budget. Kimi's required native replay remains intact and cannot always be compacted into a generic summary.

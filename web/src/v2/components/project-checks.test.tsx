@@ -12,6 +12,8 @@ it("selects the prepared subdirectory for tests only after preparation becomes r
   let finish!: (value: ReturnType<typeof preparationOperation>) => void;
   const running = preparationOperation({ target: "web", state: "installing", can_cancel: true });
   const client = { baseURL: "/api/v1", hasControl: true, hasRunExecution: true,
+    get: vi.fn().mockResolvedValue({ version: "project-hooks.v1", thread_id: "thread-1", workspace_id: "workspace-1", fingerprint: "",
+      trusted: false, revision: 0, matches_task: true, hooks: [], state: "not_configured", message: "项目尚未配置自动动作。" }),
     getProjectPreparation: vi.fn().mockImplementation((runID: string, target: string) => Promise.resolve(preparationView({ run_id: runID, target }))),
     prepareProject: vi.fn().mockResolvedValue(preparationView({ target: "web", latest: running })),
     getProjectPreparationOperation: vi.fn().mockImplementation(() => new Promise((resolve) => { finish = resolve; })),

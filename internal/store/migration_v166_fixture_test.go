@@ -5,7 +5,7 @@ import "testing"
 // Current queue writers/readers and Supervisor context queries need v168's four
 // message columns and two receipt tables, plus v171's steering mode identity.
 // Current Web fetch readers also need v192's empty web access selection ledger.
-// Current context readers use empty v205/v206 ledgers only during this seed.
+// Current context readers use empty v207/v208 ledgers only during this seed.
 // This fixture-only compatibility does not record a migration or change
 // v165/v166's handoff and authorization guards. Its restore rejects revisions,
 // edited identities, attachment evidence, committed corrections and web

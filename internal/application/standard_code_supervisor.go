@@ -71,14 +71,15 @@ type standardCodeCallDecision struct {
 }
 
 type standardCodeCallDescriptor struct {
-	ProjectTest  bool
-	Kind         domain.StandardCodeSupervisorToolKind
-	Action       string
-	Intent       string
-	Command      toolgateway.CommandRuntimeInput
-	CommandCount int
-	JobID        string
-	EditID       string
+	ProjectTest   bool
+	ProjectFormat bool
+	Kind          domain.StandardCodeSupervisorToolKind
+	Action        string
+	Intent        string
+	Command       toolgateway.CommandRuntimeInput
+	CommandCount  int
+	JobID         string
+	EditID        string
 }
 
 type standardCodeCommandProjection struct {
@@ -1065,6 +1066,24 @@ func (m *standardCodeSupervisorTurn) observeCommand(ctx context.Context, call do
 			break
 		}
 	}
+	if d.ProjectFormat {
+		// Formatting can mutate files even when the process fails. Its command
+		// receipt consumes the normal budget but never verifies the new version.
+		m.snapshot.MutationEpoch++
+		m.snapshot.VerificationJobIDs = nil
+		m.snapshot.DeliveryID = ""
+		m.snapshot.DeliveryReceiptSHA256 = ""
+		m.snapshot.DeliveryCheckpointID = ""
+		m.snapshot.DeliveryRevisionSHA256 = ""
+		if projectHookCommandPassed(call) {
+			m.snapshot.State = domain.StandardCodeSupervisorExecute
+			m.snapshot.NoProgressCount = 0
+			return "project_format_completed", structural, nil
+		}
+		m.observeFailure(failureFingerprint)
+		m.snapshot.State = domain.StandardCodeSupervisorDiagnose
+		return "project_format_failed", structural, nil
+	}
 	if success && d.ProjectTest && (m.turn.Mode.Phase == domain.ExecutionPhasePlan || m.snapshot.MutationEpoch == 0) {
 		m.snapshot.LastFailureFingerprint = ""
 		m.snapshot.RepeatedFailureCount = 0
@@ -1282,7 +1301,8 @@ func describeStandardCodeCall(call domain.SupervisorToolCall,
 	mutationEpoch int,
 ) (standardCodeCallDescriptor, error) {
 	name := toolgateway.ToolName(call.ToolName)
-	d := standardCodeCallDescriptor{Kind: domain.StandardCodeToolOther}
+	d := standardCodeCallDescriptor{Kind: domain.StandardCodeToolOther,
+		ProjectFormat: call.ProjectHook != nil && call.ProjectHook.Slot == "format"}
 	switch {
 	case name == toolgateway.WorkspaceListTool || name == toolgateway.WorkspaceReadTool ||
 		name == toolgateway.WorkspaceGlobTool || name == toolgateway.WorkspaceGrepTool ||

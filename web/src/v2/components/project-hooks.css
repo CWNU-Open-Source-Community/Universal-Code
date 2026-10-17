@@ -1,0 +1,11 @@
+.v2-project-hooks { gap: 12px; min-width: 0; }
+.v2-project-hooks .v2-project-hooks-state { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.v2-project-hooks .v2-project-hooks-state > span { color: var(--v2-muted); }
+.v2-project-hooks .v2-project-hooks-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.v2-project-hooks .v2-project-hooks-list > li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 18px; border: 1px solid var(--v2-border); border-radius: 9px; padding: 10px 12px; min-width: 0; }
+.v2-project-hooks .v2-project-hooks-list > li > strong { min-width: 100px; }
+.v2-project-hooks .v2-project-hooks-list > li > span { overflow-wrap: anywhere; min-width: 0; }
+.v2-project-hooks code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-project-hooks details > dl { margin-top: 8px; }
+.v2-project-hooks summary { color: var(--v2-muted); }
+@media (max-width: 640px) { .v2-project-hooks .v2-project-hooks-list > li { display: grid; gap: 4px; } }

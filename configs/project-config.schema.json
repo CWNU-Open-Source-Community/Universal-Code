@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Traverse Board project config (project_config.v1)",
-  "description": "Narrowing-only project file at <workspace>/.prayu/config.yaml. Every field can only reduce operator/process/policy limits; widening attempts are rejected fail-closed.",
+  "description": "Project file at <workspace>/.prayu/config.yaml. Restrictions can only reduce operator/process/policy limits. Declared commands and hooks retain existing permissions; hooks require review of their exact configuration.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -71,6 +71,21 @@
       "type": "string",
       "maxLength": 128,
       "pattern": "^\\S+$"
+    },
+    "hooks": {
+      "description": "Optional registered project actions. Trust this specific configuration in Checks and delivery before execution. Changed definitions require review again.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "after_edit_format": {
+          "description": "Format successfully applied Go files; requires format_command_id: format.go.",
+          "type": "boolean"
+        },
+        "before_finish_test": {
+          "description": "Run the configured test action at the workspace root before completing an Agent response; requires test.go, test.node or test.npm.",
+          "type": "boolean"
+        }
+      }
     }
   }
 }

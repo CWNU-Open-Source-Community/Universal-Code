@@ -24,6 +24,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/approval"
+	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/httpapi"
 	"cyberagent-workbench/internal/store"
@@ -843,6 +844,51 @@ func desktopControlRequest(handler http.Handler, method string, path string,
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+func TestControlPlanePRFollowupWorkerUsesDesktopLifetime(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plane, err := OpenControlPlane(ControlPlaneConfig{
+		DatabasePath: filepath.Join(root, "pr-followup-worker.db"),
+		HomePath:     root,
+		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
+		RunExecutionEnabled: true, GitHubReviewControlEnabled: true, ScheduledJobWorkerEnabled: true,
+		ExecutionPermissionControlEnabled: true, ApprovalControlEnabled: true,
+		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true},
+		CredentialStore:                 credential.NewMemoryStore(),
+		AppVersion:                      "desktop-pr-followup-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = plane.Close() })
+	if plane.prFollowupWorker == nil {
+		t.Fatal("PR follow-up service was not installed")
+	}
+	if err = plane.StartWakeWorker(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	done := plane.prFollowupDone
+	if done == nil {
+		t.Fatal("PR follow-up worker was not started")
+	}
+	if err = plane.StartWakeWorker(t.Context()); err == nil {
+		t.Fatal("duplicate worker started")
+	}
+	if err = plane.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	default:
+		t.Fatal("close returned before PR follow-up worker stopped")
+	}
+	if err = plane.StartWakeWorker(t.Context()); err == nil {
+		t.Fatal("closed control plane restarted PR follow-up")
+	}
 }
 
 func readDesktopEventPoll(t *testing.T, handler http.Handler, runID string,

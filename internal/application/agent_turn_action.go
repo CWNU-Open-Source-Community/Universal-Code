@@ -28,7 +28,7 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 	var repairableRootResponse bool
 	action, parseErr = parseRootActionForTurn(response.Text, prepared.context.threadEndTurn)
 	structuredReply := parseErr == nil
-	if parseErr != nil && prepared.context.threadEndTurn && len(prepared.toolRounds) < domain.MaxSupervisorToolRounds &&
+	if parseErr != nil && prepared.context.threadEndTurn && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds &&
 		domain.RootActionHasTrailingToolCalls(response.Text) {
 		reason, _ := domain.NewSupervisorTextToolRepairReason(len(prepared.toolRounds))
 		parseErr = errors.New(reason)
@@ -55,7 +55,16 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 	if parseErr == nil {
 		parseErr = validateRootActionAgainstWorkBoard(validationAction, prepared.context.workItems, turn.Mode.Phase)
 	}
-	if parseErr == nil && prepared.tools.standardCode != nil {
+	prepared.deferCompletionValidation = false
+	if parseErr == nil && action.Kind == domain.RootActionFinish && s.projectHooks != nil {
+		selection, err := s.projectHookSelection(ctx, turn.Run.ID)
+		if err != nil {
+			parseErr = err
+		} else {
+			prepared.deferCompletionValidation = selection.AfterEditFormat || selection.BeforeFinishTest
+		}
+	}
+	if parseErr == nil && prepared.tools.standardCode != nil && !prepared.deferCompletionValidation {
 		parseErr = prepared.tools.standardCode.ValidateAction(ctx, validationAction)
 		if parseErr == nil && validationAction.Kind == domain.RootActionFinish {
 			action = prepared.tools.standardCode.ProjectDeliveryAction(action)
@@ -69,8 +78,8 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 	}
 	_, textToolRepair := domain.SupervisorTextToolRepairRound(repairReason)
 	if parseErr == nil && prepared.context.threadEndTurn && action.Kind == domain.RootActionContinue &&
-		((structuredReply && len(prepared.toolRounds) > 0 && len(prepared.toolRounds) < domain.MaxSupervisorToolRounds) ||
-			(protocolRepair == 1 && textToolRepair && len(prepared.toolRounds) < domain.MaxSupervisorToolRounds)) {
+		((structuredReply && len(prepared.toolRounds) > 0 && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds) ||
+			(protocolRepair == 1 && textToolRepair && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds)) {
 		// The model explicitly selected continue after actual tool work.
 		// Do not consume the input as if it had selected an end-of-reply.
 		// Reuse the one durable repair; finish/wait remain valid exits.
@@ -89,7 +98,7 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 // existing steering-conflict path; the caller retains the updated checkpoint.
 func (s *AgentRunner) commitAgentRootAction(ctx context.Context, turn *domain.SupervisorTurn,
 	result LifecycleResult, modelCall modelCallResult, action domain.RootAction,
-	rootActionRecovery rootActionTrailingCommentaryRecovery, toolRoundCount int,
+	rootActionRecovery rootActionTrailingCommentaryRecovery, prepared *agentTurnPreparation,
 ) (completed LifecycleResult, retry bool, returnErr error) {
 	response := modelCall.Response
 	modelCall.Attempt.Outcome = llm.OutcomeSuccess
@@ -123,6 +132,29 @@ func (s *AgentRunner) commitAgentRootAction(ctx context.Context, turn *domain.Su
 	if !safeResponse.Replay.RequiresPrivateAssistantHistory() {
 		safeResponse.Text = safeAction.Message
 	}
+	if safeAction.Kind == domain.RootActionFinish || (prepared.context.threadEndTurn && safeAction.Kind == domain.RootActionContinue && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds) {
+		rounds, added, waiting, hookErr := s.beforeProjectHookFinish(ctx, *turn, prepared.toolRounds, prepared.tools.standardCode)
+		prepared.toolRounds = rounds
+		if hookErr != nil {
+			return result, false, s.recordFailure(ctx, &result, hookErr, 0)
+		}
+		if waiting {
+			return supervisorApprovalWaitingResult(result, rounds), false, nil
+		}
+		if added {
+			return result, true, nil
+		}
+	}
+	if prepared.deferCompletionValidation && prepared.tools.standardCode != nil {
+		if err := prepared.tools.standardCode.ValidateAction(ctx, supervisorValidationAction(safeAction, prepared.context.threadEndTurn)); err != nil {
+			return result, false, s.recordFailure(ctx, &result, err, 0)
+		}
+		safeAction = prepared.tools.standardCode.ProjectDeliveryAction(safeAction)
+		if !safeResponse.Replay.RequiresPrivateAssistantHistory() {
+			safeResponse.Text = safeAction.Message
+		}
+	}
+	toolRoundCount := supervisorNativeToolRounds(prepared.toolRounds)
 	var updatedRun domain.Run
 	var checkpoint domain.SupervisorCheckpoint
 	var messages session.TurnMessages

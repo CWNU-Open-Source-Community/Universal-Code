@@ -5,7 +5,7 @@ import "strings"
 func threadContextCompactionStatements() []string {
 	// Keep the existing reservation constraints and child attribution intact.
 	create := requireMigrationStatement("CREATE TABLE run_monetary_reservations (", monetaryBudgetStatements)
-	create = strings.Replace(create, "CREATE TABLE run_monetary_reservations (", "CREATE TABLE run_monetary_reservations_v206 (", 1)
+	create = strings.Replace(create, "CREATE TABLE run_monetary_reservations (", "CREATE TABLE run_monetary_reservations_v208 (", 1)
 	create = strings.Replace(create, "'readonly_fanout'))", "'readonly_fanout', 'context_compaction'))", 1)
 	create = strings.Replace(create, "id TEXT PRIMARY KEY,", "id TEXT PRIMARY KEY, agent_id TEXT NOT NULL DEFAULT '',", 1)
 	return []string{
@@ -33,10 +33,10 @@ func threadContextCompactionStatements() []string {
 		`CREATE UNIQUE INDEX thread_context_compaction_active ON thread_context_compactions(thread_id)
 			WHERE status IN ('prepared','started','generated')`,
 		create,
-		`INSERT INTO run_monetary_reservations_v206 (id,run_id,scope,provider,model,attempt_number,reserved_micros,settled_micros,released_micros,status,estimate_source,price_fingerprint,created_at,settled_at,released_at,agent_id)
+		`INSERT INTO run_monetary_reservations_v208 (id,run_id,scope,provider,model,attempt_number,reserved_micros,settled_micros,released_micros,status,estimate_source,price_fingerprint,created_at,settled_at,released_at,agent_id)
 			SELECT id,run_id,scope,provider,model,attempt_number,reserved_micros,settled_micros,released_micros,status,estimate_source,price_fingerprint,created_at,settled_at,released_at,agent_id FROM run_monetary_reservations`,
 		`DROP TABLE run_monetary_reservations`,
-		`ALTER TABLE run_monetary_reservations_v206 RENAME TO run_monetary_reservations`,
+		`ALTER TABLE run_monetary_reservations_v208 RENAME TO run_monetary_reservations`,
 		`CREATE INDEX monetary_reservations_child ON run_monetary_reservations(run_id,agent_id)`,
 	}
 }

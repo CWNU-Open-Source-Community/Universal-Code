@@ -816,7 +816,7 @@ func supervisorToolOperationKey(runID string, turn int, name toolgateway.ToolNam
 	return runmutation.SupervisorToolOperationKey(runID, turn, string(name), string(payload))
 }
 
-func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.SupervisorTurn,
+func (s *AgentRunner) resumeSupervisorToolsRaw(ctx context.Context, turn domain.SupervisorTurn,
 	rounds []domain.SupervisorToolRound, standardCode ...*standardCodeSupervisorTurn,
 ) ([]domain.SupervisorToolRound, bool, error) {
 	var completion *standardCodeSupervisorTurn
@@ -828,6 +828,23 @@ func (s *AgentRunner) resumeSupervisorTools(ctx context.Context, turn domain.Sup
 			if call.Status != domain.SupervisorToolPending {
 				if completion != nil {
 					if err := completion.ObserveCall(ctx, call); err != nil {
+						return rounds, false, apperror.Normalize(err)
+					}
+				}
+				continue
+			}
+			disabledHook, hookErr := s.checkPendingProjectHook(ctx, call)
+			if hookErr != nil {
+				return rounds, false, hookErr
+			}
+			if disabledHook {
+				denied := commandPreflightResult(call, "policy_denied", "Project automatic actions were disabled; this hook was not dispatched.", domain.SupervisorToolDenied)
+				stored, _, err := s.store.RecordSupervisorToolResult(ctx, turn.Checkpoint, denied)
+				if err != nil {
+					return rounds, false, apperror.Normalize(err)
+				}
+				if completion != nil {
+					if err := completion.ObserveCall(ctx, stored); err != nil {
 						return rounds, false, apperror.Normalize(err)
 					}
 				}
@@ -1381,6 +1398,20 @@ func supervisorRequestWithToolRounds(request llm.ChatRequest,
 		}
 		if !round.Complete() {
 			return llm.ChatRequest{}, errors.New("cannot build model context with pending supervisor tools")
+		}
+		if round.ProjectHook() {
+			for _, call := range round.Calls {
+				evidence, err := json.Marshal(struct {
+					Source string                        `json:"source"`
+					Hook   *domain.ProjectHookCallOrigin `json:"hook"`
+					Result json.RawMessage               `json:"result"`
+				}{"project_hook", call.ProjectHook, json.RawMessage(call.ResultJSON)})
+				if err != nil {
+					return llm.ChatRequest{}, err
+				}
+				messages = append(messages, toolBoundaryEvidenceMessage("project-hook", call.AttemptID, string(evidence)))
+			}
+			continue
 		}
 		calls := make([]llm.ToolCall, 0, len(round.Calls))
 		results := make([]llm.ToolResult, 0, len(round.Calls))

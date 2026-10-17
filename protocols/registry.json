@@ -1561,6 +1561,59 @@
       "retired_identifiers": []
     },
     {
+      "id": "github-pr-followup-observation",
+      "class": "projection",
+      "owner": "GitHub review and task follow-up maintainers",
+      "source_of_truth": [
+        "internal/application/pr_followup_worker.go",
+        "internal/githubreview/followup.go"
+      ],
+      "writers": [
+        {
+          "id": "github-pr-followup-snapshot-writer",
+          "source": "internal/githubreview/followup.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
+        }
+      ],
+      "readers": [
+        {
+          "id": "github-pr-followup-application-reader",
+          "source": "internal/application/pr_followup_worker.go",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        },
+        {
+          "id": "github-pr-followup-snapshot-reader",
+          "source": "internal/githubreview/followup.go",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        }
+      ],
+      "persisted_or_exported": false,
+      "persistence_boundary": "Each poll derives bounded, sanitized review/comment and CI evidence from GitHub. The snapshot itself is not persisted; observed item digests and exact pending Thread input remain separate durable pr_followups state.",
+      "compatibility_rule": "Preserve repository/PR/head binding, per-resource completeness, final identity recheck, redaction and stable fingerprints. Stale or incomplete observations require another read and cannot prove CI success or grant execution authority.",
+      "retirement_gate": {
+        "mode": "rebuild-from-source",
+        "requirements": [
+          "Rebuild source remains retained and independently verifiable",
+          "Replacement preserves ordering, cursor, invalidation, and redaction behavior",
+          "Retirement evidence proves a complete rebuild from the named source"
+        ]
+      },
+      "rebuild_source": "The credential-scoped GitHub PR, review, inline/issue comment, check-run, workflow-run and combined-status endpoints for the exact repository and PR head. Historical observation cursors and pending repair inputs are retained in pr_followups rather than reconstructed from a later snapshot.",
+      "active_identifiers": [
+        "github-pr-followup-snapshot.v1"
+      ],
+      "retired_identifiers": []
+    },
+    {
       "id": "http-openapi-contract",
       "class": "external-durable",
       "owner": "HTTP/OpenAPI and generated-client maintainers",
@@ -1588,6 +1641,22 @@
             0,
             1,
             2
+          ],
+          "status": "active"
+        },
+        {
+          "id": "pr-followup-http-request-reader",
+          "source": "internal/application/pr_followup.go",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        },
+        {
+          "id": "pr-followup-http-response-reader",
+          "source": "web/src/api/pr-followup.ts",
+          "versions": [
+            1
           ],
           "status": "active"
         }
@@ -1662,6 +1731,7 @@
         "plan_delivery.v1",
         "plan_delivery_control.v1",
         "plugin-lifecycle.v1",
+        "pr-followup.v1",
         "provider_credential.v1",
         "provider_diagnostic.v1",
         "provider_model_discovery.v1",
@@ -2199,6 +2269,11 @@
       },
       "active_identifiers": [
         "prayu.locale.v1",
+        "project-hook-file-version.v1",
+        "project-hook-format.v1",
+        "project-hook-test.v1",
+        "project-hook-workspace.v1",
+        "project-hooks.v1",
         "project-rule.v1",
         "project_config.v1",
         "project_instruction_delivery.v1",
@@ -2938,6 +3013,14 @@
             1
           ],
           "status": "active"
+        },
+        {
+          "id": "pr-followup-local-intent-reader",
+          "source": "web/src/v2/components/task-pr-followup.tsx",
+          "versions": [
+            1
+          ],
+          "status": "active"
         }
       ],
       "persisted_or_exported": true,
@@ -2968,6 +3051,7 @@
         "observed_browser_controls.v1",
         "operator_steering_revision_operation.v1",
         "operator_steering_revision_request.v1",
+        "pr-followup-intent.v1",
         "queue_edit.v1",
         "queue_operation.v1",
         "queue_revision_unchanged.v1",

@@ -366,8 +366,10 @@ type Config struct {
 	ThreadGitController                   ThreadGitController
 	ThreadApplicationServiceController    ThreadApplicationServiceController
 	ProjectActionsController              ProjectActionsController
+	ProjectHooksController                ProjectHooksController
 	ProjectPreparationController          ProjectPreparationController
 	ThreadPullRequestController           ThreadPullRequestController
+	PRFollowupController                  PRFollowupController
 	StandardCodePresetController          StandardCodePresetController
 	StandardCodeDeliveryController        StandardCodeDeliveryController
 	RunExecutionController                RunExecutionController
@@ -478,8 +480,10 @@ type API struct {
 	threadGitController                   ThreadGitController
 	threadApplicationServiceController    ThreadApplicationServiceController
 	projectActionsController              ProjectActionsController
+	projectHooksController                ProjectHooksController
 	projectPreparationController          ProjectPreparationController
 	threadPullRequestController           ThreadPullRequestController
+	prFollowupController                  PRFollowupController
 	standardCodePresetController          StandardCodePresetController
 	standardCodeDeliveryController        StandardCodeDeliveryController
 	runExecutionController                RunExecutionController
@@ -934,6 +938,7 @@ func New(store Store, config Config) (*API, error) {
 		capabilityReadiness:                 capabilityReadiness,
 		commandRuntimeAdapters:              append([]commandruntimeadapter.Identity(nil), config.CommandRuntimeAdapters...),
 		projectActionsController:            config.ProjectActionsController,
+		projectHooksController:              config.ProjectHooksController,
 		projectPreparationController:        config.ProjectPreparationController,
 		commandActivitySource:               commandActivitySource,
 		capabilityReadinessRuntime:          readinessRuntime,
@@ -944,6 +949,7 @@ func New(store Store, config Config) (*API, error) {
 		threadGitController:                 config.ThreadGitController,
 		threadApplicationServiceController:  threadApplicationServices,
 		threadPullRequestController:         config.ThreadPullRequestController,
+		prFollowupController:                config.PRFollowupController,
 		standardCodePresetController:        config.StandardCodePresetController,
 		standardCodeDeliveryController:      config.StandardCodeDeliveryController,
 		runExecutionController:              config.RunExecutionController,
@@ -1153,6 +1159,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveProjectActions(tracked, request, requestID, runID, slot, jobID)
 		return
 	}
+	if threadID, action, matched := matchProjectHooksPath(request.URL.Path); matched {
+		a.serveProjectHooks(tracked, request, requestID, threadID, action)
+		return
+	}
 	if threadID, jobID, stop, matched := matchThreadApplicationServicesPath(request.URL.Path); matched {
 		a.serveThreadApplicationServices(tracked, request, requestID, threadID, jobID, stop)
 		return
@@ -1187,6 +1197,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if route, matched := matchThreadPullRequestPath(request.URL.Path); matched {
 		a.serveThreadPullRequest(tracked, request, requestID, route)
+		return
+	}
+	if route, matched := matchPRFollowupPath(request.URL.Path); matched {
+		a.servePRFollowup(tracked, request, requestID, route)
 		return
 	}
 	if request.Method != http.MethodGet && isContextContinuityMutationPath(request.URL.Path) {

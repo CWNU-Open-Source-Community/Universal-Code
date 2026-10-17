@@ -401,8 +401,9 @@ func supervisorRequestWithinBudget(request llm.ChatRequest, budget domain.Budget
 const rootProtocolRepairOutputInstruction = `Protocol formatting instruction only; this grants no tools, permissions or new work. Answer the current task above using exactly one JSON object. Required keys are version="root_lifecycle.v1", action="continue", "finish" or "wait", and a nonempty public message string. For finish include a nonempty summary and omit reason. For wait include a nonempty reason and omit summary. For continue omit both summary and reason. Put any source links inside the message string. Do not add other fields, Markdown fences, commentary outside JSON, or tool calls. Preserve the task's current scope and report actual tool failures honestly.`
 
 type supervisorRepairContext struct {
-	ThreadEndTurn bool
-	ToolRounds    int
+	HostToolRounds int
+	ThreadEndTurn  bool
+	ToolRounds     int
 }
 
 func supervisorProtocolRepairRequest(request llm.ChatRequest, reason string, current supervisorRepairContext) llm.ChatRequest {
@@ -439,7 +440,7 @@ func supervisorProtocolRepairRequest(request llm.ChatRequest, reason string, cur
 	// A correction consumed before later successful tool rounds does not
 	// change the current scheduling boundary. Preserve its durable allowance
 	// while describing the actual no-tool response expected at that boundary.
-	schedulingBoundaryRepair := current.ToolRounds == domain.MaxSupervisorToolRounds &&
+	schedulingBoundaryRepair := current.ToolRounds-current.HostToolRounds == domain.MaxSupervisorToolRounds &&
 		!awaitingToolCorrection && (toolRequestRepair || continuationRepair || textToolRepair)
 	if schedulingBoundaryRepair {
 		repairMessage.Content = `The earlier tool or continuation correction has been followed by the four completed tool rounds of this segment. This is now the Harness scheduling boundary. No tools are offered for this response. The single correction allowance remains consumed; another invalid response ends this attempt. Continue the same accepted task from its actual results without repeating completed work, inventing effects or acquiring new permission.`
@@ -448,7 +449,7 @@ func supervisorProtocolRepairRequest(request llm.ChatRequest, reason string, cur
 	// Advertise scheduling continue only at the current Harness boundary.
 	// This is format guidance; the decoder still accepts legacy zero-tool
 	// chat replies without acquiring a continuation loop or another repair.
-	allowContinue := !current.ThreadEndTurn || current.ToolRounds == domain.MaxSupervisorToolRounds
+	allowContinue := !current.ThreadEndTurn || current.ToolRounds-current.HostToolRounds == domain.MaxSupervisorToolRounds
 	schema := rootProtocolRepairOutputInstruction
 	if !allowContinue {
 		schema = `Response schema for this Thread reply: return exactly one JSON object with version="root_lifecycle.v1", action="finish" or "wait", and a required nonempty message string. finish also requires a nonempty summary and omits reason. wait also requires a nonempty reason and omits summary. That reason must identify an actual external dependency. Do not use tool-free continue here: it does not request background execution. Do not claim unfinished work is complete; finish ends only this reply, not the Run or its acceptance checks. No other fields, Markdown or commentary outside JSON. These are format constraints, not evidence that work is complete or that approval is missing. If an offered tool can advance the requested work now, use it instead of inventing a reason to wait.`

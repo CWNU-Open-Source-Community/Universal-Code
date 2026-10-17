@@ -10,7 +10,11 @@ import (
 )
 
 const (
-	MaxSupervisorToolRounds         = 4
+	MaxSupervisorToolRounds = 4
+	// Reserve 4 native batches + 16 possible per-call formats + 1 finish test.
+	// Repairs share this fixed execution sequence; native batches and Run
+	// budgets remain unchanged. Exhaustion stops instead of adding capacity.
+	MaxSupervisorExecutionRounds    = MaxSupervisorToolRounds*(MaxSupervisorToolCallsPerRound+1) + 1
 	MaxSupervisorToolCallsPerRound  = 4
 	MaxSupervisorToolPayloadBytes   = 96 * 1024
 	MaxSupervisorToolResultBytes    = 384 * 1024
@@ -41,6 +45,7 @@ func (s SupervisorToolCallStatus) Terminal() bool {
 }
 
 type SupervisorToolCall struct {
+	ProjectHook      *ProjectHookCallOrigin
 	RunID            string
 	AgentID          string
 	AgentAttemptID   string
@@ -65,6 +70,14 @@ type SupervisorToolCall struct {
 }
 
 func (c SupervisorToolCall) Validate() error {
+	if c.ProjectHook != nil {
+		if err := c.ProjectHook.Validate(); err != nil {
+			return err
+		}
+		if (c.ToolName != "command_runtime" && c.ToolName != "run_tests") || c.StreamResponseID != "" || c.StreamItemID != "" || c.StreamCallID != "" {
+			return errors.New("host project hook cannot carry native model stream output")
+		}
+	}
 	for label, value := range map[string]string{
 		"run id": c.RunID, "attempt id": c.AttemptID, "call id": c.CallID, "tool name": c.ToolName,
 		"error code": c.ErrorCode,
@@ -105,7 +118,7 @@ func (c SupervisorToolCall) Validate() error {
 	if streamCount != 0 && streamCount != len(streamIDs) {
 		return errors.New("supervisor tool stream identities must be all present or all absent")
 	}
-	if c.Turn <= 0 || c.Round <= 0 || c.Round > MaxSupervisorToolRounds ||
+	if c.Turn <= 0 || c.Round <= 0 || c.Round > MaxSupervisorExecutionRounds ||
 		c.Position <= 0 || c.Position > MaxSupervisorToolCallsPerRound || c.ModelAttempt <= 0 {
 		return errors.New("supervisor tool turn, round, position, and model attempt are invalid")
 	}
@@ -241,7 +254,7 @@ func (r SupervisorToolRound) Validate() error {
 		r.RunID != strings.TrimSpace(r.RunID) || r.AttemptID != strings.TrimSpace(r.AttemptID) {
 		return errors.New("supervisor tool round Run and attempt identities are required and normalized")
 	}
-	if r.Turn <= 0 || r.Round <= 0 || r.Round > MaxSupervisorToolRounds || r.ModelAttempt <= 0 {
+	if r.Turn <= 0 || r.Round <= 0 || r.Round > MaxSupervisorExecutionRounds || r.ModelAttempt <= 0 {
 		return errors.New("supervisor tool round counters are invalid")
 	}
 	if len(r.Calls) == 0 || len(r.Calls) > MaxSupervisorToolCallsPerRound || r.CreatedAt.IsZero() {
