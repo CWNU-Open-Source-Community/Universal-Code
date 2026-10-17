@@ -5,10 +5,56 @@ import (
 	"strings"
 	"testing"
 
+	"cyberagent-workbench/internal/commandruntimeadapter"
+	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/skills"
 	"cyberagent-workbench/internal/toolgateway"
 )
+
+func TestSupervisorProjectTestGuidanceFollowsOfferedTool(t *testing.T) {
+	for _, phase := range []domain.ExecutionPhase{domain.ExecutionPhasePlan, domain.ExecutionPhaseDeliver} {
+		for _, available := range []bool{false, true} {
+			name := string(phase) + "/unavailable"
+			options := supervisorToolOptions{}
+			if available {
+				name = string(phase) + "/available"
+				options.CommandRuntime.Adapter = commandruntimeadapter.HostUnsandboxed(strings.Repeat("a", 64))
+			}
+			t.Run(name, func(t *testing.T) {
+				request := llm.ChatRequest{
+					Messages: supervisorMessages(nil, "inspect the project", contextmgr.Selection{},
+						skills.ContextAssembly{}, skills.ExternalContextAssembly{}, domain.RunModeSnapshot{
+							Surface: domain.ExecutionSurfaceCode, Phase: phase}),
+					Tools: supervisorStructuredToolSpecs(domain.ExecutionSurfaceCode, phase,
+						domain.RunExecutionPermissionFull, false, false, options),
+				}
+				for _, message := range request.Messages {
+					if strings.Contains(message.Content, string(toolgateway.RunTestsTool)) {
+						t.Fatal("root policy contains unconditional project test guidance")
+					}
+				}
+				found := false
+				for _, tool := range request.Tools {
+					if tool.Name != string(toolgateway.RunTestsTool) {
+						continue
+					}
+					found = true
+					for _, clause := range []string{"Prefer this tool for project tests", "relative directory",
+						"bounded timeout", "write files and caches", "approval rules", "Job receipts"} {
+						if !strings.Contains(tool.Description, clause) {
+							t.Fatalf("offered run_tests omits %q", clause)
+						}
+					}
+				}
+				if found != available {
+					t.Fatalf("run_tests offered=%t want=%t", found, available)
+				}
+			})
+		}
+	}
+}
 
 func TestSupervisorUnavailableWebSearchRejectionExplainsOperatorPath(t *testing.T) {
 	// A missing search provider leaves per-call authorized web fetch available.

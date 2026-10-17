@@ -39,7 +39,7 @@ func NormalizeRunTestsPayload(raw json.RawMessage) (RunTestsInput, json.RawMessa
 }
 
 var runTestsDefinition = ToolDefinition{Name: RunTestsTool, Class: ClassProcess, Approval: ApprovalAutomatic,
-	Description: "Run the registered or detected project test in a relative directory, with a bounded timeout and the current execution backend. Tests execute project code and can write files and caches. Plan uses the same selected backend and approval rules as Deliver. Current command approval, network restrictions, Run budget and Job receipts apply.",
+	Description: "Prefer this tool for project tests. Run the registered or detected test in a relative directory, with a bounded timeout and the current execution backend. Tests execute project code and can write files and caches. Plan uses the same selected backend and approval rules as Deliver. Current command approval, network restrictions, Run budget and Job receipts apply.",
 	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","target","timeout_milliseconds"],"properties":{"version":{"type":"string","const":"run-tests.v1"},"target":{"type":"string","minLength":1},"timeout_milliseconds":{"type":"integer","minimum":1,"maximum":25000}}}`),
 }
 
