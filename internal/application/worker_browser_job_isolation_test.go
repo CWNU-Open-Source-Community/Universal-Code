@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -86,8 +87,18 @@ func TestWorkerBrowserReadinessCannotBorrowSiblingCommandJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	readiness, err := service.CheckAgentBrowserService(t.Context(), owner, jobID, url)
-	if err != nil || !readiness.Verified {
+	if err != nil {
 		t.Fatalf("own command service was inaccessible: %+v %v", readiness, err)
+	}
+	// Native listener ownership is implemented only for the Windows Job Object.
+	// Unix must report the unsupported boundary without probing the service;
+	// both sibling authorization checks below still run on every platform.
+	if runtime.GOOS == "windows" {
+		if !readiness.Verified {
+			t.Fatalf("own command service was inaccessible: %+v", readiness)
+		}
+	} else if readiness.State != "unavailable" || readiness.Reason != "listener_ownership_unavailable" || readiness.Verified || readiness.HTTPStatus != 0 {
+		t.Fatalf("unsupported listener ownership produced a readiness claim: %+v", readiness)
 	}
 	raw, err = browser.WorkerToolAuthority(t.Context(), b.ref)
 	if err != nil {
