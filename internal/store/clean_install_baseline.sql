@@ -6167,8 +6167,8 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'one_shot_command_propose', 'host_command_propose',
 			'sandbox_docker_run_propose', 'skill_candidate_propose', 'debug_terminal',
 			'workspace_list', 'workspace_read', 'workspace_glob', 'workspace_grep',
-			'workspace_change', 'workspace_apply', 'workspace_delete', 'command_runtime',
-			'mcp_tool_call', 'mcp_tool_search', 'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
+			'workspace_change', 'workspace_apply', 'workspace_delete', 'command_runtime', 'run_tests',
+			'mcp_tool_call', 'mcp_tool_search', 'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
 			'code_references', 'code_implementation', 'code_hover',
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
@@ -6177,7 +6177,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key')),
 		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 			'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
-			'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
+			'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
 			'code_references', 'code_implementation', 'code_hover',
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
@@ -6187,7 +6187,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			AND length(authority_json) BETWEEN 2 AND 4096 AND json_valid(authority_json) = 1)
 			OR (tool_name NOT IN ('mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 				'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
-				'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'web_search', 'source_search', 'web_fetch', 'web_citation',
+				'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
 			'code_references', 'code_implementation', 'code_hover',
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
@@ -15425,7 +15425,25 @@ CREATE TRIGGER trg_command_runtime_job_insert_scope
 				AND (run.status = 'running' OR (NEW.operator_invocation = 1 AND run.status IN ('created', 'paused'))) AND root.parent_id IS NULL AND root.role = 'root'
 				AND mode.run_id = run.id AND mode.mission_id = mission.id
 				AND mode.revision = NEW.mode_revision AND mode.surface = 'code'
-				AND mode.phase = 'deliver' AND mode.revision = (
+				AND (mode.phase = 'deliver' OR (mode.phase = 'plan'
+		AND NEW.operator_invocation = 0 AND NEW.profile = 'process'
+		AND NEW.network = 'disabled' AND NEW.credentials = 'none'
+		AND NEW.stdin_policy = 'closed' AND NEW.timeout_milliseconds BETWEEN 1 AND 25000
+		AND permission.mode IN ('ask','auto','full')
+		AND EXISTS (SELECT 1 FROM run_supervisor_tool_calls call
+			JOIN run_supervisor_tool_call_agents actor ON actor.run_id=call.run_id AND actor.call_id=call.call_id
+			WHERE call.run_id=run.id AND call.tool_name='run_tests' AND call.status='pending'
+			AND actor.agent_id=root.id AND actor.agent_attempt_id=root.active_attempt_id
+			AND json_extract(call.authority_json,'$.scope_fingerprint') IS NOT NULL
+			AND json_extract(call.authority_json,'$.command_fingerprints[0]')=NEW.spec_fingerprint
+			AND json_extract(call.authority_json,'$.permission_snapshot_id')=NEW.permission_snapshot_id
+			AND json_extract(call.authority_json,'$.adapter.backend_identity')=NEW.adapter_backend_identity
+			AND json_extract(call.authority_json,'$.project_test_command.action')='run'
+			AND json_array_length(call.authority_json,'$.project_test_command.commands')=1
+			AND json_extract(call.authority_json,'$.project_test_command.commands[0].purpose')=json_extract(NEW.intent_json,'$.purpose')
+			AND json_extract(call.payload_json,'$.timeout_milliseconds')=NEW.timeout_milliseconds
+			AND json_extract(call.payload_json,'$.target')=NEW.working_directory
+		))) AND mode.revision = (
 					SELECT MAX(current.revision) FROM run_mode_snapshots current
 					WHERE current.run_id = run.id)
 				AND profile.run_id = run.id AND profile.mission_id = mission.id

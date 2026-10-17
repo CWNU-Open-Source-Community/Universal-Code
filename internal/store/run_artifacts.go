@@ -251,7 +251,7 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 		if status != string(scriptprocess.StatusCompleted) && status != string(scriptprocess.StatusFailed) {
 			return errors.New("artifact ScriptProcess source must be terminal")
 		}
-	case "command_runtime":
+	case "command_runtime", "run_tests":
 		var runID, sessionID, workspaceID string
 		if err := tx.QueryRowContext(ctx, `SELECT run_id, session_id, workspace_id,
 			state, stdout, stderr FROM command_runtime_jobs WHERE id = ?`, request.SourceID).

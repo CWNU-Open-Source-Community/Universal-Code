@@ -73,13 +73,25 @@ func commandRuntimeFixedEnvironment() []string {
 func commandRuntimePlatformEnvironment(_ string, _ string,
 	environment []string, _ CommandRuntimeNetwork, _ []CommandRuntimeEnvironment,
 ) []string {
+	for _, entry := range environment {
+		name, value, _ := strings.Cut(entry, "=")
+		if name == "GOCACHE" && value != "" {
+			return environment
+		}
+	}
+	// HOME is cleared in the child. Preserve Go's default build cache by
+	// resolving its path here, without exposing the operator's home config.
+	if cacheRoot, err := os.UserCacheDir(); err == nil {
+		environment = replaceCommandRuntimeEnvironment(environment, "GOCACHE",
+			filepath.Join(cacheRoot, "go-build"))
+	}
 	return environment
 }
 
 func commandRuntimePlatformEnvironmentWithoutProxy(_ string, _ string,
 	environment []string, _ CommandRuntimeNetwork, _ []CommandRuntimeEnvironment,
 ) []string {
-	return environment
+	return commandRuntimePlatformEnvironment("", "", environment, "", nil)
 }
 
 func commandRuntimePlatformHostProxy() (hostproxy.Config, bool) {

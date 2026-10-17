@@ -454,7 +454,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	var agentBrowserController httpapi.AgentBrowserController
 	if controlToken != "" {
 		agentBrowser := application.NewAgentBrowserService(a.store, application.AgentBrowserOptions{
-			HomePath: a.home, Capabilities: permissionCapabilities, Headless: true,
+			HomePath: a.home, Capabilities: permissionCapabilities, Headless: true, ServiceReadiness: commandRuntime,
 		})
 		runtimeDependencies.AgentBrowser = agentBrowser
 		agentBrowserController = agentBrowser

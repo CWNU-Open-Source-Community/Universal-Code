@@ -20,13 +20,16 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspacecheckpoint"
 )
 
 const (
 	WorkspaceCheckpointAPIProtocolVersion = "workspace-checkpoint-api.v1"
 	workspaceCheckpointListLimit          = 2_000
+	workspaceOpenMutationConflict         = "another workspace mutation boundary is still open for this Run"
 )
 
 type WorkspaceCheckpointStore interface {
@@ -381,8 +384,8 @@ func (s *WorkspaceCheckpointService) BeginBoundary(ctx context.Context,
 	}
 	for _, openTransaction := range openTransactions {
 		if openTransaction.RunID == binding.run.ID {
-			return WorkspaceMutationBoundary{}, apperror.New(apperror.CodeConflict,
-				"another workspace mutation boundary is still open for this Run")
+			return WorkspaceMutationBoundary{}, s.workspaceMutationBoundaryConflict(ctx,
+				binding, request.Kind, openTransaction)
 		}
 	}
 	incomplete := append([]string{}, request.IncompleteReasons...)
@@ -468,6 +471,90 @@ func (s *WorkspaceCheckpointService) BeginBoundary(ctx context.Context,
 	}
 	return WorkspaceMutationBoundary{Transaction: transaction, Before: before.Checkpoint,
 		Replayed: replayed || cursorReplay}, nil
+}
+
+func (s *WorkspaceCheckpointService) workspaceMutationBoundaryConflict(ctx context.Context,
+	binding workspaceCheckpointBinding, requestedKind workspacecheckpoint.TransactionKind,
+	open workspacecheckpoint.Transaction,
+) error {
+	if requestedKind == workspacecheckpoint.TransactionFileTool {
+		if err := s.commandJobBoundaryConflict(ctx, binding, open); err != nil {
+			return err
+		}
+	}
+	return apperror.New(apperror.CodeConflict, workspaceOpenMutationConflict)
+}
+
+// Reject a known command owner before reserving a new per-edit apply intent.
+// BeginBoundary still performs the final check before any file write.
+func (s *WorkspaceCheckpointService) checkCommandBoundaryBeforeFileIntent(ctx context.Context,
+	binding workspaceCheckpointBinding,
+) error {
+	open, err := s.store.ListOpenWorkspaceCheckpointTransactions(ctx, workspaceCheckpointListLimit)
+	if err != nil {
+		return apperror.Normalize(err)
+	}
+	for _, transaction := range open {
+		if err := s.commandJobBoundaryConflict(ctx, binding, transaction); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *WorkspaceCheckpointService) commandJobBoundaryConflict(ctx context.Context,
+	binding workspaceCheckpointBinding, open workspacecheckpoint.Transaction,
+) error {
+	if open.RunID != binding.run.ID || open.Kind != workspacecheckpoint.TransactionCommandBatch ||
+		open.WorkspaceID != binding.workspace.ID {
+		return nil
+	}
+	reader, ok := s.store.(interface {
+		GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error)
+	})
+	if !ok {
+		return nil
+	}
+	job, err := reader.GetCommandRuntimeJob(ctx, open.TriggerReceiptID)
+	// A foreground batch uses an invocation receipt, while a background start
+	// uses its exact Job and operation. Only the latter supports this guidance.
+	if err != nil || job.ID != open.TriggerReceiptID || job.RunID != binding.run.ID ||
+		job.MissionID != binding.mission.ID || job.SessionID != binding.session.ID ||
+		!s.commandJobMatchesFileWorkspace(ctx, binding, job) || open.OperationKeyDigest !=
+		workspaceBoundaryOperationDigest(job.RunID, open.Kind, job.OperationDigest) {
+		return nil
+	}
+	cancel := fmt.Sprintf(`{"version":%q,"action":%q,"job_id":%q,"wait_milliseconds":1000}`,
+		toolgateway.CommandRuntimeToolProtocolVersion, toolgateway.CommandRuntimeActionCancel, job.ID)
+	return apperror.New(apperror.CodeConflict, fmt.Sprintf(
+		"%s: command_runtime job %q owns the command boundary. Wait for this Job to finish, or stop this same Job with command_runtime %s. Use action=read or action=wait with its original job_id until the Job is terminal and its boundary completes, then retry this file edit with the original apply_arguments while the file hashes still match. After the edit succeeds, restart that service with action=start only if this Job was the dev service needed for the task; use the new service Job's candidate_urls for readiness, navigation and browser verification.",
+		workspaceOpenMutationConflict, job.ID, cancel))
+}
+
+func (s *WorkspaceCheckpointService) commandJobMatchesFileWorkspace(ctx context.Context,
+	binding workspaceCheckpointBinding, job runner.CommandRuntimeJob,
+) bool {
+	ownedStore, owned := s.store.(*drydockFileBoundaryStore)
+	if !owned {
+		return job.WorkspaceID == binding.workspace.ID
+	}
+	// Sandbox Jobs retain their logical source identity. Verify the current
+	// logical holder and physical Drydock root without rewriting the Job.
+	if ownedStore.owner == nil || job.WorkspaceID != binding.mission.WorkspaceID {
+		return false
+	}
+	workspace, found, err := readRunFileDrydock(ctx, ownedStore.owner.store, binding.run.ID)
+	if err != nil || !found || workspace.WorkspaceID != binding.workspace.ID ||
+		workspace.Path != binding.workspace.RootPath {
+		return false
+	}
+	bound, err := commandRuntimeDrydockBound(ctx, ownedStore.owner.store, workspace,
+		binding.run.ID, binding.mission.ID, binding.session.ID, job.WorkspaceID)
+	if err != nil || !bound {
+		return false
+	}
+	rootSHA, err := runner.CommandRuntimeWorkspaceRootSHA256(binding.workspace.RootPath)
+	return err == nil && job.WorkspaceRootSHA256 == rootSHA
 }
 
 func (s *WorkspaceCheckpointService) CompleteBoundary(ctx context.Context,

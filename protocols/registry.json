@@ -3165,6 +3165,7 @@
         "repository_mutation_binding.v1",
         "repository_remote.v1",
         "repository_remote_binding.v1",
+        "run-tests.v1",
         "thread_git.v1",
         "thread_git_operation.v1",
         "thread_git_request.v1",

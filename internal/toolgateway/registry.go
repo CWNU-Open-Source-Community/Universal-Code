@@ -116,6 +116,12 @@ func buildToolRegistry() toolRegistry {
 			return canonical, err
 		}, (*Gateway).invokeCommandRuntime,
 		requireExecutor("command runtime", func(g *Gateway, _ ToolCall) bool { return g.commandRuntime != nil }), false, true)
+	addSupervisor([]ToolDefinition{runTestsDefinition},
+		func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
+			_, canonical, err := NormalizeRunTestsPayload(payload)
+			return canonical, err
+		}, (*Gateway).invokeRunTests,
+		requireExecutor("project tests", func(g *Gateway, _ ToolCall) bool { _, ok := g.commandRuntime.(ProjectTestPreparer); return ok }), false, true)
 	addSupervisor([]ToolDefinition{mcpSearchDefinition},
 		func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
 			_, canonical, err := NormalizeMCPSearchPayload(payload)

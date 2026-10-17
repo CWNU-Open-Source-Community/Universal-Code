@@ -18,6 +18,7 @@ import (
 // lets a caller choose an adapter; selection remains a consequence of current
 // Run profile, permission, and installed readiness.
 type CommandRuntimeRuntime interface {
+	AgentBrowserServiceReadiness
 	ThreadApplicationServiceCommandRuntime
 	toolgateway.CommandRuntimeExecutor
 	toolgateway.CommandRuntimeAdvertiser

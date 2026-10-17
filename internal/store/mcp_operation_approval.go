@@ -86,7 +86,7 @@ func validatePendingOperationPreflightResultTx(ctx context.Context, tx *sql.Tx, 
 	prefix, expired, fingerprint := "mcp", "mcp_authority_expired", mcp.OperationApprovalFingerprint
 	switch call.ToolName {
 	case mcp.OperationApprovalTool:
-	case string(toolgateway.CommandRuntimeTool):
+	case string(toolgateway.CommandRuntimeTool), string(toolgateway.RunTestsTool):
 		prefix, expired, fingerprint = "command", "command_authority_expired", commandruntimeadapter.OperationApprovalFingerprint
 	default:
 		return false, nil

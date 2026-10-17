@@ -886,7 +886,7 @@ type drydockApplicationFixture struct {
 	sourceRoot   string
 }
 
-func newDrydockApplicationFixture(t *testing.T, rootName string) drydockApplicationFixture {
+func newDrydockApplicationFixture(t *testing.T, rootName string, phases ...domain.ExecutionPhase) drydockApplicationFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is unavailable")
@@ -904,8 +904,12 @@ func newDrydockApplicationFixture(t *testing.T, rootName string) drydockApplicat
 	if err := state.SaveWorkspace(context.Background(), workspace); err != nil {
 		t.Fatal(err)
 	}
+	phase := domain.ExecutionPhaseDeliver
+	if len(phases) > 0 {
+		phase = phases[0]
+	}
 	_, run, err := NewRunService(state).Create(context.Background(), CreateRunRequest{
-		Goal: "test Drydock lifecycle", Profile: "code", Surface: "code", Phase: "deliver",
+		Goal: "test Drydock lifecycle", Profile: "code", Surface: "code", Phase: string(phase),
 		WorkspaceID: workspace.ID,
 		Budget:      domain.Budget{MaxTurns: 8, MaxTokens: 2_000, MaxToolCalls: 32}})
 	if err != nil {

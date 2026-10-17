@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -18,16 +19,26 @@ import (
 const appliedDiagnosticsTimeout = time.Second
 const maxAppliedDiagnosticsBytes = 12 * 1024
 
-// This feedback describes one applied document and one language server. It is
-// not a comparison with historical errors or a project-wide verification.
+// Feedback and its comparison cover one applied document and one server.
 type appliedDiagnosticsFeedback struct {
-	Status         string            `json:"status"`
-	Path           string            `json:"path"`
-	DocumentSHA256 string            `json:"document_sha256"`
-	Coverage       string            `json:"coverage"`
-	ServerID       string            `json:"server_id,omitempty"`
-	Reason         string            `json:"reason,omitempty"`
-	Result         *codeintel.Result `json:"result,omitempty"`
+	Status         string                   `json:"status"`
+	Path           string                   `json:"path"`
+	DocumentSHA256 string                   `json:"document_sha256"`
+	Coverage       string                   `json:"coverage"`
+	ServerID       string                   `json:"server_id,omitempty"`
+	Reason         string                   `json:"reason,omitempty"`
+	Result         *codeintel.Result        `json:"result,omitempty"`
+	Delta          *appliedDiagnosticsDelta `json:"delta,omitempty"`
+	snapshot       codeintel.CapabilitySnapshot
+}
+
+type appliedDiagnosticsDelta struct {
+	Status     string                   `json:"status"`
+	Reason     string                   `json:"reason,omitempty"`
+	Baseline   *codeintel.Provenance    `json:"baseline_provenance,omitempty"`
+	Added      []codeintel.EvidenceItem `json:"added,omitempty"`
+	Resolved   []codeintel.EvidenceItem `json:"resolved,omitempty"`
+	Persisting []codeintel.EvidenceItem `json:"persisting,omitempty"`
 }
 
 func (e *AgentCodeToolExecutor) WithCodeIntel(manager *codeintel.Manager) *AgentCodeToolExecutor {
@@ -39,12 +50,24 @@ func (e *AgentCodeToolExecutor) WithCodeIntel(manager *codeintel.Manager) *Agent
 
 func (e *AgentCodeToolExecutor) appliedDocumentDiagnostics(ctx context.Context,
 	scope toolgateway.AgentCodeExecutionScope, applied ApplyFileEditResult,
-	pathPolicy workspaceidentity.PathPolicy,
+	pathPolicy workspaceidentity.PathPolicy, baseline appliedDiagnosticsFeedback,
 ) appliedDiagnosticsFeedback {
 	path, hash := applied.Edit.Path, applied.Edit.ProposedHash
 	if applied.Edit.Operation == fileedit.OperationMove {
 		path, hash = applied.Edit.DestinationPath, applied.Edit.DestinationProposedHash
 	}
+	feedback := e.documentDiagnostics(ctx, scope, path, hash, pathPolicy)
+	feedback.Delta = compareAppliedDiagnostics(baseline, feedback, applied)
+	if raw, err := json.Marshal(feedback); err != nil || len(raw) > maxAppliedDiagnosticsBytes {
+		feedback.Delta = &appliedDiagnosticsDelta{Status: "unavailable", Reason: "inline_summary_limit"}
+	}
+	return feedback
+}
+
+func (e *AgentCodeToolExecutor) documentDiagnostics(ctx context.Context,
+	scope toolgateway.AgentCodeExecutionScope, path, hash string,
+	pathPolicy workspaceidentity.PathPolicy,
+) appliedDiagnosticsFeedback {
 	feedback := appliedDiagnosticsFeedback{Status: "unavailable", Path: path,
 		DocumentSHA256: hash, Coverage: "single_document_single_server", Reason: "no_semantic_backend"}
 	if e.codeIntel == nil {
@@ -152,5 +175,78 @@ func (e *AgentCodeToolExecutor) appliedDocumentDiagnostics(ctx context.Context,
 		return feedback
 	}
 	feedback.Status, feedback.Reason, feedback.Result = string(result.State), "", &result
+	feedback.snapshot = selected
 	return feedback
+}
+
+func compareAppliedDiagnostics(before, after appliedDiagnosticsFeedback, applied ApplyFileEditResult) *appliedDiagnosticsDelta {
+	delta := &appliedDiagnosticsDelta{Status: "unavailable"}
+	switch {
+	case applied.Replayed:
+		delta.Reason = "apply_replayed"
+	case applied.Edit.Operation != fileedit.OperationReplace:
+		delta.Reason = "operation_has_no_baseline"
+	case before.Result == nil:
+		delta.Reason = "baseline_" + before.Reason
+	case !completeAppliedDiagnostics(before.Result):
+		delta.Reason = "baseline_incomplete"
+	case after.Result == nil:
+		delta.Reason = "current_diagnostics_unavailable"
+	case !completeAppliedDiagnostics(after.Result):
+		delta.Reason = "current_diagnostics_incomplete"
+	default:
+		original, current := before.Result.Provenance, after.Result.Provenance
+		delta.Baseline = &original
+		switch {
+		case original.WorkspaceID != current.WorkspaceID || original.RootFingerprint != current.RootFingerprint ||
+			original.RepositoryAvailable != current.RepositoryAvailable || original.Commit != current.Commit || original.Branch != current.Branch ||
+			original.DocumentPath != current.DocumentPath || original.DocumentURI != current.DocumentURI:
+			delta.Reason = "workspace_or_document_changed"
+		case original.DocumentSHA256 != applied.Edit.OriginalHash || current.DocumentSHA256 != applied.Edit.ProposedHash ||
+			original.DocumentVersion <= 0 || current.DocumentVersion <= 0:
+			delta.Reason = "document_version_not_comparable"
+		case original.ServerID != current.ServerID || original.CapabilityFingerprint != current.CapabilityFingerprint ||
+			before.snapshot.DescriptorFingerprint == "" || before.snapshot.DescriptorFingerprint != after.snapshot.DescriptorFingerprint ||
+			before.snapshot.Generation != original.ServerGeneration || after.snapshot.Generation != current.ServerGeneration:
+			delta.Reason = "server_changed"
+		case original.ServerGeneration == current.ServerGeneration && original.DocumentSHA256 != current.DocumentSHA256 &&
+			current.DocumentVersion <= original.DocumentVersion:
+			delta.Reason = "document_version_not_comparable"
+		default:
+			// Both results were obtained in this apply call against its exact
+			// original/applied bytes. A Git dirty-state refresh may restart the
+			// same reviewed server; it does not make an older cached result a
+			// baseline. Descriptor and capability changes remain incomparable.
+			delta.Status = "current"
+			previous := make(map[string]bool, len(before.Result.Items))
+			for _, item := range before.Result.Items {
+				previous[diagnosticIdentity(item)] = false
+			}
+			for _, item := range after.Result.Items {
+				key := diagnosticIdentity(item)
+				if _, exists := previous[key]; exists {
+					delta.Persisting = append(delta.Persisting, item)
+					previous[key] = true
+				} else {
+					delta.Added = append(delta.Added, item)
+				}
+			}
+			for _, item := range before.Result.Items {
+				if !previous[diagnosticIdentity(item)] {
+					delta.Resolved = append(delta.Resolved, item)
+				}
+			}
+		}
+	}
+	return delta
+}
+
+func completeAppliedDiagnostics(result *codeintel.Result) bool {
+	return result.State == codeintel.EvidenceCurrent && !result.Page.Truncated &&
+		len(result.Warnings) == 0 && result.Page.Returned == result.Page.Total
+}
+
+func diagnosticIdentity(item codeintel.EvidenceItem) string {
+	// Evidence IDs bind source, message, code and range; include severity too.
+	return item.ID + ":" + strconv.Itoa(item.Severity)
 }

@@ -32905,6 +32905,16 @@
           "tree_reaped": {
             "type": "boolean"
           },
+          "unavailable_code": {
+            "enum": [
+              "platform_unsupported",
+              "full_access_required",
+              "runtime_unavailable",
+              "run_unavailable",
+              "session_unavailable"
+            ],
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"

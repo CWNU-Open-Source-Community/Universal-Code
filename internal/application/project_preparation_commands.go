@@ -47,8 +47,11 @@ func PrepareProjectPreparationTestCommand(plan projectprep.Plan, adapter command
 }
 
 func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing, runInstallScripts bool) (runner.CommandRuntimeSpec, error) {
-	if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace ||
-		(adapter.Backend != CommandRuntimeLocalSandboxBackend && adapter.Backend != CommandRuntimeDockerSandboxBackend && adapter.Backend != CommandRuntimeSBXBackend) {
+	// Test preparation emits an intent; execution still needs the selected
+	// backend and exact command approval. Dependency installation stays sandboxed.
+	if !(testing && adapter.Kind == commandruntimeadapter.KindHostUnsandboxed) &&
+		(adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace ||
+			(adapter.Backend != CommandRuntimeLocalSandboxBackend && adapter.Backend != CommandRuntimeDockerSandboxBackend && adapter.Backend != CommandRuntimeSBXBackend)) {
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodePolicyDenied, "project preparation requires the selected sandbox runtime")
 	}
 	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {

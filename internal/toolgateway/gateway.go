@@ -872,7 +872,7 @@ func validateToolArguments(call ToolCall) error {
 				call.WorkspaceID == "" || call.LeaseID == "" {
 				return errors.New("debug terminal calls require a fenced root Supervisor")
 			}
-		case CommandRuntimeTool:
+		case CommandRuntimeTool, RunTestsTool:
 			if call.RequestedBy != "run_supervisor" || call.AgentID == "" ||
 				call.WorkspaceID == "" || call.LeaseID == "" {
 				return errors.New("command runtime calls require a fenced root Supervisor")

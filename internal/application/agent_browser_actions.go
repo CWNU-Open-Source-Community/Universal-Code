@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/imageattachment"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
 )
 
@@ -49,6 +51,27 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("outcome_unknown: this browser call was already dispatched; do not repeat")
 	}
 	slot.consumed[scope.Call.SupervisorToolCallID] = true
+	var readiness *runner.CommandServiceReadiness
+	if p.ServiceJobID != "" {
+		if s.options.ServiceReadiness == nil {
+			return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("service readiness is unavailable")
+		}
+		observed, err := s.options.ServiceReadiness.CheckAgentBrowserService(ctx, a, p.ServiceJobID, p.URL)
+		if err != nil {
+			return toolgateway.BrowserActionExecutionResult{}, err
+		}
+		if err = s.check(ctx, a); err != nil {
+			return toolgateway.BrowserActionExecutionResult{}, err
+		}
+		readiness = &observed
+		if !observed.Verified || observed.State != "ready" {
+			encoded, err := json.Marshal(struct {
+				Service   *runner.CommandServiceReadiness `json:"service"`
+				Navigated bool                            `json:"navigated"`
+			}{readiness, false})
+			return toolgateway.BrowserActionExecutionResult{Content: string(encoded)}, err
+		}
+	}
 	s.mu.Lock()
 	if s.closed || slot.closed || s.slots[a.RunID] != slot {
 		s.mu.Unlock()
@@ -132,6 +155,20 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		} else {
 			e = agentBrowserUnavailable("this owned browser does not support viewport navigation")
 		}
+		if e == nil && readiness != nil {
+			navigation, ok := value.(browserruntime.AgentBrowserNavigation)
+			requested, _ := url.Parse(p.URL)
+			observed, parseErr := url.Parse(navigation.CanonicalURL)
+			if !ok || parseErr != nil || observed.Scheme != requested.Scheme || observed.Hostname() != requested.Hostname() || agentBrowserOriginPort(observed) != agentBrowserOriginPort(requested) {
+				e = agentBrowserUnavailable("service navigation left the verified origin")
+			} else {
+				value = struct {
+					browserruntime.AgentBrowserNavigation
+					Service   *runner.CommandServiceReadiness `json:"service"`
+					Navigated bool                            `json:"navigated"`
+				}{navigation, readiness, true}
+			}
+		}
 	case toolgateway.BrowserSnapshotTool:
 		var snapshot browserruntime.AgentBrowserSnapshot
 		snapshot, e = r.Snapshot(ctx)
@@ -210,6 +247,16 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 	}
 	encoded, e := json.Marshal(value)
 	return toolgateway.BrowserActionExecutionResult{Content: string(encoded), Metadata: metadata}, e
+}
+
+func agentBrowserOriginPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }
 func normalizeAgentBrowserActionError(err error) error {
 	var action *browserruntime.AgentBrowserActionError

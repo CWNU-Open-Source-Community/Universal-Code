@@ -28,15 +28,29 @@ The Go-owned `code-intel-lsp.v1` runtime starts only explicitly reviewed local l
 `workspace_apply` 成功结果附带 `diagnostics`：文档相对路径、已应用的
 `document_sha256`、`coverage: single_document_single_server`、Server ID 和状态。
 已有就绪且匹配文件类型的 Server 按 ID 排序选一个，沿用 `code_diagnostics`
-的策略、Run 权限和项目路径检查，并使用一秒请求预算刷新能力和查询。
+的策略、Run 权限和项目路径检查；写前基线和写后查询各有一秒预算。
 不会为了反馈启动尚未初始化的 Server。移动文件查询目标路径。
 
 `current` 或 `partial` 包含既有 LSP Result、文档版本与内容哈希；只覆盖这一个
-文档和 Server，不区分本次新增与历史错误。查询前后的文件必须仍匹配已应用
-哈希；push 通知必须明确携带相同文档版本。未收到可信版本返回 `pending`，
+文档和 Server。查询前后的文件必须仍匹配已应用哈希；push 通知必须明确携带
+相同文档版本。未收到可信版本返回 `pending`，
 无后端或策略拒绝返回 `unavailable`，请求超时返回 `timeout`。这些状态均保留
 已成功写入的收据，不代表“没有错误”。摘要最多返回五项诊断，超过内联大小
 上限时提示另行调用 `code_diagnostics`。反馈不运行测试，也不改变执行权限。
+
+对于 replace，写入前即时取得绑定 `original_sha256` 的完整诊断，并与本次
+`proposed_sha256` 的结果比较。`diagnostics.delta.status: current` 附带
+`baseline_provenance`；`added` 是新出现的诊断，`resolved` 是已消失的诊断，
+`persisting` 是两版都有的历史诊断，空类别省略。匹配包含 source、code、
+severity、message 和 range；位置变化也记为旧位置消失、新位置出现。它记录
+两次观察间的诊断差异，同时修改的其他文件也可能影响这些诊断。
+
+比较要求两版诊断均为 `current`、完整且未截断，Workspace、文档 URI、commit、branch、Server
+描述指纹及协商能力相同。Git 内容变化引起的同一受审 Server 重启允许产生新的
+generation；两版 provenance 分别保留实际 generation。历史缓存不作为基线。
+无可信版本、摘要截断、配置或能力更换、create/move、操作重放等情况下，
+`delta.status: unavailable` 和 `reason` 说明原因，省略分类结果，仍保留当前
+文档反馈和成功写入收据。
 
 ## 操作者配置 / Operator configuration
 
@@ -191,3 +205,16 @@ Git 来源绑定复用仓库的 exact-root 检查；带重定向 `.git` 文件�
 ## 验证 / Verification
 
 普通测试使用协议级假 Server 覆盖崩溃、hang、cancel、oversize、非法 JSON-RPC、restart、进程回收、恶意 URI/link/secret 和稳定分页。CI 另在 Linux、macOS、Windows 安装固定版本的 `gopls v0.21.1`、`typescript-language-server 6.0.0` 和 `typescript 5.9.3`：gopls 必须协商并执行全部十项工具；TypeScript Server 必须执行其实际声明的九项工具，完整集合由两者共同覆盖。Linux 还运行 race/fault suite。
+
+`TestRealGoplsAppliedDiagnosticDelta` 使用同一 gopls 版本，经操作者配置加载和
+初始化，在普通目录及有初始 commit 的 Git 项目中执行
+`workspace_change → workspace_apply`：新增类型错误、保留原错误，再修复新增
+错误，并核对实际文件和前后诊断 SHA。包加载在自动反馈前预热，反馈沿用各一秒
+预算。设置本地二进制路径后运行（PowerShell）：
+
+```powershell
+$env:CYBERAGENT_GOPLS_SMOKE_BINARY = 'C:\Tools\gopls.exe'
+go test ./internal/application -run '^TestRealGoplsAppliedDiagnosticDelta$' -count=1 -v
+```
+
+未设置该环境变量时，此项真实后端测试会跳过。

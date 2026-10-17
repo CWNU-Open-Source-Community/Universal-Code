@@ -120,7 +120,7 @@ func (c SupervisorToolCall) Validate() error {
 		c.ToolName != "sandbox_docker_run_propose" &&
 		c.ToolName != "skill_candidate_propose" &&
 		c.ToolName != "debug_terminal" &&
-		c.ToolName != "command_runtime" &&
+		c.ToolName != "command_runtime" && c.ToolName != "run_tests" &&
 		c.ToolName != "mcp_tool_call" &&
 		c.ToolName != "mcp_tool_search" &&
 		!isWebEvidenceSupervisorTool(c.ToolName) &&
@@ -139,7 +139,7 @@ func (c SupervisorToolCall) Validate() error {
 		return errors.New("supervisor tool payload must be bounded valid UTF-8 JSON")
 	}
 	if isAgentCodeSupervisorTool(c.ToolName) || isCodeIntelSupervisorTool(c.ToolName) ||
-		c.ToolName == "command_runtime" || c.ToolName == "mcp_tool_call" || c.ToolName == "mcp_tool_search" ||
+		c.ToolName == "command_runtime" || c.ToolName == "run_tests" || c.ToolName == "mcp_tool_call" || c.ToolName == "mcp_tool_search" ||
 		isWebEvidenceSupervisorTool(c.ToolName) ||
 		isBrowserActionSupervisorTool(c.ToolName) ||
 		isRiskEscalationSupervisorTool(c.ToolName, c.PayloadJSON) {

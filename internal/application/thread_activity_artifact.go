@@ -188,7 +188,7 @@ func validThreadActivityArtifactDescriptor(descriptor artifact.Descriptor,
 		descriptor.SessionID == job.SessionID && descriptor.WorkspaceID == job.WorkspaceID &&
 		job.State.Terminal() &&
 		descriptor.SourceID == job.ID &&
-		descriptor.ToolName == string(toolgateway.CommandRuntimeTool) &&
+		toolgateway.IsCommandExecutionTool(toolgateway.ToolName(descriptor.ToolName)) &&
 		descriptor.Kind == artifact.KindToolOutput && descriptor.Encoding == artifact.EncodingUTF8 &&
 		descriptor.MIME == "text/plain; charset=utf-8"
 }
@@ -221,7 +221,7 @@ func validateThreadActivityArtifactBinding(call domain.SupervisorToolCall,
 	descriptor artifact.Descriptor, job runner.CommandRuntimeJobMetadata,
 ) (toolgateway.CommandRuntimeInput, error) {
 	var empty toolgateway.CommandRuntimeInput
-	if call.ToolName != string(toolgateway.CommandRuntimeTool) || call.RunID != job.RunID ||
+	if !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) || call.RunID != job.RunID ||
 		!validThreadActivityArtifactDescriptor(descriptor, runner.CommandRuntimeJob{
 			ID: job.ID, RunID: job.RunID, SessionID: job.SessionID,
 			WorkspaceID: job.WorkspaceID, State: job.State}) ||
@@ -229,7 +229,7 @@ func validateThreadActivityArtifactBinding(call domain.SupervisorToolCall,
 		job.Credentials != runner.CommandRuntimeCredentialsNone {
 		return empty, threadActivityArtifactNotFound()
 	}
-	input, err := decodeThreadCommandActivityInput(call.PayloadJSON)
+	input, err := decodeThreadCommandActivityCall(call)
 	if err != nil {
 		return empty, apperror.Wrap(apperror.CodeFailedPrecondition,
 			"durable Thread command activity could not be projected", err)

@@ -5766,6 +5766,8 @@ export interface components {
             state: "unavailable" | "idle" | "starting" | "ready" | "loading" | "busy" | "waiting_user" | "failed" | "closing" | "closed" | "cleanup_pending";
             title?: string;
             tree_reaped: boolean;
+            /** @enum {string} */
+            unavailable_code?: "platform_unsupported" | "full_access_required" | "runtime_unavailable" | "run_unavailable" | "session_unavailable";
             /** Format: date-time */
             updated_at: string;
             url?: string;

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
@@ -70,6 +71,7 @@ type standardCodeCallDecision struct {
 }
 
 type standardCodeCallDescriptor struct {
+	ProjectTest  bool
 	Kind         domain.StandardCodeSupervisorToolKind
 	Action       string
 	Intent       string
@@ -618,8 +620,8 @@ func (m *standardCodeSupervisorTurn) Authorize(ctx context.Context,
 		if descriptor.Kind == domain.StandardCodeToolCommandStart {
 			m.snapshot.JobsStarted++
 		}
-		if descriptor.Kind == domain.StandardCodeToolCommandRun ||
-			descriptor.Kind == domain.StandardCodeToolCommandStart {
+		if (descriptor.Kind == domain.StandardCodeToolCommandRun ||
+			descriptor.Kind == domain.StandardCodeToolCommandStart) && !(descriptor.ProjectTest && (m.turn.Mode.Phase == domain.ExecutionPhasePlan || m.snapshot.MutationEpoch == 0)) {
 			m.snapshot.State = domain.StandardCodeSupervisorObserve
 		}
 		if err := m.appendFrom(ctx, previous,
@@ -703,6 +705,12 @@ func (m *standardCodeSupervisorTurn) authorizeDescriptor(
 		}
 		return true, "", ""
 	case domain.StandardCodeToolCommandRun, domain.StandardCodeToolCommandStart:
+		if d.ProjectTest {
+			if d.CommandCount != 1 || s.CommandsUsed+1 > s.Limits.MaximumCommands {
+				return false, "command_budget_exhausted", "command_budget_exhausted"
+			}
+			return true, "", ""
+		}
 		if m.turn.Mode.Phase != domain.ExecutionPhaseDeliver || s.MutationEpoch <= 0 ||
 			(s.State != domain.StandardCodeSupervisorExecute &&
 				s.State != domain.StandardCodeSupervisorObserve &&
@@ -942,6 +950,14 @@ func (m *standardCodeSupervisorTurn) observeWorkspaceMutation(ctx context.Contex
 func (m *standardCodeSupervisorTurn) observeCommand(ctx context.Context, call domain.SupervisorToolCall,
 	d standardCodeCallDescriptor, envelope supervisorToolResultEnvelope,
 ) (string, string, error) {
+	if d.ProjectTest && (m.turn.Mode.Phase == domain.ExecutionPhasePlan || m.snapshot.MutationEpoch == 0) {
+		state := m.snapshot.State
+		defer func() {
+			if m.snapshot.State != domain.StandardCodeSupervisorStopped {
+				m.snapshot.State = state
+			}
+		}()
+	}
 	failureFingerprint := runmutation.Fingerprint("standard_code_command_failure.v1", d.Action,
 		string(call.Status), call.ErrorCode)
 	if call.Status != domain.SupervisorToolCompleted {
@@ -1048,6 +1064,16 @@ func (m *standardCodeSupervisorTurn) observeCommand(ctx context.Context, call do
 			success = false
 			break
 		}
+	}
+	if success && d.ProjectTest && (m.turn.Mode.Phase == domain.ExecutionPhasePlan || m.snapshot.MutationEpoch == 0) {
+		m.snapshot.LastFailureFingerprint = ""
+		m.snapshot.RepeatedFailureCount = 0
+		m.snapshot.NoProgressCount = 0
+		return "project_tests_passed", structural, nil
+	}
+	if !success && d.ProjectTest && (m.turn.Mode.Phase == domain.ExecutionPhasePlan || m.snapshot.MutationEpoch == 0) {
+		m.observeFailure(failureFingerprint)
+		return "project_tests_failed", structural, nil
 	}
 	if success {
 		m.snapshot.VerificationJobIDs = make([]string, 0, len(projection.Jobs))
@@ -1296,8 +1322,18 @@ func describeStandardCodeCall(call domain.SupervisorToolCall,
 		} else {
 			d.Kind = domain.StandardCodeToolWorkspaceProposal
 		}
-	case name == toolgateway.CommandRuntimeTool:
-		if err := json.Unmarshal([]byte(call.PayloadJSON), &d.Command); err != nil {
+	case toolgateway.IsCommandExecutionTool(name):
+		if name == toolgateway.RunTestsTool {
+			a, err := commandruntimeadapter.DecodeAuthority(json.RawMessage(call.AuthorityJSON))
+			if err != nil {
+				return d, err
+			}
+			d.Command, _, err = toolgateway.CommandToolInput(name, json.RawMessage(call.PayloadJSON), a)
+			if err != nil {
+				return d, err
+			}
+			d.ProjectTest = true
+		} else if err := json.Unmarshal([]byte(call.PayloadJSON), &d.Command); err != nil {
 			return d, err
 		}
 		if err := d.Command.Validate(); err != nil {

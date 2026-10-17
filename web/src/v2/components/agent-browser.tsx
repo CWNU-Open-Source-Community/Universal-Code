@@ -32,6 +32,16 @@ function actionText(action?: string): string {
   return labels[action] ?? "浏览器操作";
 }
 
+function unavailableText(code: AgentBrowserStatus["unavailable_code"]): string {
+  switch (code) {
+    case "platform_unsupported": return "当前 macOS / Linux 版本尚不支持 Agent 浏览器复验。你可以自行打开应用页面检查，Agent 不会把它记为已完成浏览器验收。";
+    case "full_access_required": return "Agent 浏览器需要当前任务启用完全访问（Full）。启用后，Agent 可打开独立浏览器检查页面。";
+    case "run_unavailable": return "当前任务已暂停、结束或权限已变更，浏览器暂不可用。";
+    case "session_unavailable": return "上一浏览器会话尚未完成清理，请稍后重新读取状态。";
+    default: return "当前环境没有可用的 Agent 浏览器运行时，请检查本机浏览器和执行权限配置。";
+  }
+}
+
 function screenshotPath(runID: string, status: AgentBrowserStatus): string {
   const image = status.screenshot!;
   return `/runs/${encodeURIComponent(runID)}/agent-browser/screenshot?${new URLSearchParams({
@@ -69,7 +79,6 @@ function AgentBrowserCard({ client, runID, running }: { client: APIClient; runID
   }, [client, imageBinding, runID]);
 
   if (status.isError && agentBrowserAPIAbsent(status.error)) return null;
-  if (!status.isError && current && !current.available && !current.session_id) return null;
   if (status.isPending) return null;
   if (status.isError) return <section className="v2-agent-browser" aria-label="Agent 浏览器"><header><strong>Agent 浏览器</strong>
     <button type="button" onClick={() => status.refetch()}><RefreshCw size={15} />重新读取</button></header>
@@ -80,6 +89,8 @@ function AgentBrowserCard({ client, runID, running }: { client: APIClient; runID
   return <section className="v2-agent-browser" aria-label="Agent 浏览器">
     <header><div><strong>Agent 浏览器</strong><span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current)}</span></div>
       {canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>停止浏览器</button>}</header>
+    {!current.available && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code)}</p>}
+    {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? "页面将在独立的后台浏览器中打开，通过截图查看。" : "页面将在独立浏览器窗口中打开。"}</p>}
     {current.headless && active && <p className="v2-agent-browser-note">浏览器在后台运行，当前页面以已验证的截图展示。需要结束网页操作时可停止浏览器；整个任务可在对话中停止。</p>}
     {!current.headless && canClose && <p className="v2-agent-browser-note">需要结束网页操作时可停止浏览器；整个任务可在对话中停止。</p>}
     {(current.title || current.url) && <div className="v2-agent-browser-page">

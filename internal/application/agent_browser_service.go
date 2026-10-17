@@ -25,11 +25,12 @@ type AgentBrowserStore interface {
 	GetRunExecutionPermission(context.Context, string) (domain.RunExecutionPermissionSnapshot, error)
 }
 type AgentBrowserOptions struct {
-	HomePath        string
-	Capabilities    domain.ExecutionPermissionRuntimeCapabilities
-	Product         browserruntime.BrowserProduct
-	Headless        bool
-	SessionLifetime time.Duration
+	ServiceReadiness AgentBrowserServiceReadiness
+	HomePath         string
+	Capabilities     domain.ExecutionPermissionRuntimeCapabilities
+	Product          browserruntime.BrowserProduct
+	Headless         bool
+	SessionLifetime  time.Duration
 }
 type AgentBrowserCapabilities struct {
 	ProtocolVersion  string   `json:"protocol_version"`
@@ -37,6 +38,7 @@ type AgentBrowserCapabilities struct {
 	CanStart         bool     `json:"can_start"`
 	SupportedActions []string `json:"supported_actions"`
 	RefusalReason    string   `json:"refusal_reason,omitempty"`
+	UnavailableCode  string   `json:"unavailable_code,omitempty"`
 }
 type AgentBrowserView struct {
 	Version          string                              `json:"version"`
@@ -272,6 +274,7 @@ func (s *AgentBrowserService) Capabilities(ctx context.Context, runID string) (A
 	a, e := s.currentAuthority(ctx, runID)
 	if e != nil {
 		c.RefusalReason = e.Error()
+		c.UnavailableCode = s.unavailableCode(ctx, runID)
 		return c, nil
 	}
 	s.mu.Lock()
@@ -290,8 +293,23 @@ func (s *AgentBrowserService) Capabilities(ctx context.Context, runID string) (A
 	}
 	if e != nil {
 		c.RefusalReason = e.Error()
+		c.UnavailableCode = "session_unavailable"
 	}
 	return c, nil
+}
+
+func (s *AgentBrowserService) unavailableCode(ctx context.Context, runID string) string {
+	if runtime.GOOS != "windows" {
+		return "platform_unsupported"
+	}
+	if s == nil || s.store == nil || !s.available {
+		return "runtime_unavailable"
+	}
+	permission, err := s.store.GetRunExecutionPermission(ctx, runID)
+	if err == nil && permission.Mode != domain.RunExecutionPermissionFull {
+		return "full_access_required"
+	}
+	return "run_unavailable"
 }
 func (s *AgentBrowserService) projectSlotLocked(slot *agentBrowserSlot) AgentBrowserView {
 	v := slot.view

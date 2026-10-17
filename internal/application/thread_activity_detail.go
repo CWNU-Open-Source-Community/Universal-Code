@@ -144,7 +144,7 @@ func (s *ThreadActivityDetailService) Get(ctx context.Context, threadID,
 	if err != nil {
 		return ThreadActivityDetail{}, err
 	}
-	if call.ToolName != string(toolgateway.CommandRuntimeTool) {
+	if !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) {
 		detail, found, projectionErr := ProjectThreadActivityTypedDetail(call)
 		if projectionErr != nil {
 			return ThreadActivityDetail{}, apperror.Wrap(apperror.CodeFailedPrecondition,
@@ -193,7 +193,7 @@ func (s *ThreadActivityDetailService) Get(ctx context.Context, threadID,
 		return ThreadActivityDetail{}, apperror.New(apperror.CodeFailedPrecondition,
 			"durable Thread command authority anchor is invalid")
 	}
-	input, err := decodeThreadCommandActivityInput(call.PayloadJSON)
+	input, err := decodeThreadCommandActivityCall(call)
 	if err != nil {
 		return ThreadActivityDetail{}, apperror.Wrap(apperror.CodeFailedPrecondition,
 			"durable Thread command activity could not be projected", err)
@@ -247,7 +247,7 @@ func (s *ThreadActivityDetailService) Get(ctx context.Context, threadID,
 	commands := projectThreadActivityCommands(input, jobs, jobsByID, adapter,
 		workspace.RootPath, call.Status, liveCommands, artifactReferences)
 	tool := ThreadActivityToolDetail{
-		Name: string(toolgateway.CommandRuntimeTool), Label: "运行命令",
+		Name: call.ToolName, Label: threadActivityCommandToolLabel(call.ToolName),
 		AgentID: agent.ID, AgentRole: agent.Role, AgentLabel: agent.Label,
 		Status: string(call.Status), StartedAt: call.CreatedAt,
 		CompletedAt: cloneActivityTime(call.CompletedAt),
@@ -280,11 +280,11 @@ func (s *ThreadActivityDetailService) Summary(ctx context.Context, threadID,
 	if err != nil {
 		return ThreadActivitySummary{}, apperror.Normalize(err)
 	}
-	if call.ToolName != string(toolgateway.CommandRuntimeTool) {
+	if !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) {
 		return ThreadActivitySummary{}, apperror.New(
 			apperror.CodeNotFound, "Thread activity detail was not found")
 	}
-	input, err := decodeThreadCommandActivityInput(call.PayloadJSON)
+	input, err := decodeThreadCommandActivityCall(call)
 	if err != nil {
 		return ThreadActivitySummary{}, apperror.Wrap(apperror.CodeFailedPrecondition,
 			"durable Thread command activity could not be projected", err)
@@ -381,7 +381,7 @@ func (d ThreadActivityDetail) Validate() error {
 			tool.DurationMilliseconds < 0 || len(tool.Commands) > MaxThreadActivityCommands {
 			return errors.New("Thread activity tool projection is invalid")
 		}
-		if tool.Name == string(toolgateway.CommandRuntimeTool) {
+		if toolgateway.IsCommandExecutionTool(toolgateway.ToolName(tool.Name)) {
 			if tool.Detail.Kind != "command" || tool.Detail.Command == nil ||
 				len(tool.Detail.Command.Commands) != len(tool.Commands) {
 				return errors.New("command activity requires its typed command branch")
@@ -416,6 +416,18 @@ func (d ThreadActivityDetail) Validate() error {
 		}
 	}
 	return nil
+}
+
+func decodeThreadCommandActivityCall(call domain.SupervisorToolCall) (toolgateway.CommandRuntimeInput, error) {
+	if call.ToolName == string(toolgateway.RunTestsTool) {
+		a, err := commandruntimeadapter.DecodeAuthority(json.RawMessage(call.AuthorityJSON))
+		if err != nil {
+			return toolgateway.CommandRuntimeInput{}, err
+		}
+		input, _, err := toolgateway.CommandToolInput(toolgateway.RunTestsTool, json.RawMessage(call.PayloadJSON), a)
+		return input, err
+	}
+	return decodeThreadCommandActivityInput(call.PayloadJSON)
 }
 
 func decodeThreadCommandActivityInput(raw string) (toolgateway.CommandRuntimeInput, error) {
@@ -488,7 +500,7 @@ func threadCommandActivityJobBindings(call domain.SupervisorToolCall,
 	}
 	if json.Unmarshal([]byte(call.ResultJSON), &envelope) != nil ||
 		envelope.Version != "supervisor_tool_result.v1" ||
-		envelope.Tool != string(toolgateway.CommandRuntimeTool) {
+		envelope.Tool != call.ToolName {
 		return bindings
 	}
 	var projection struct {
@@ -935,4 +947,11 @@ func maxActivityCount(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func threadActivityCommandToolLabel(name string) string {
+	if name == string(toolgateway.RunTestsTool) {
+		return "运行测试"
+	}
+	return "运行命令"
 }

@@ -111,6 +111,20 @@ it("renders a failed browser with a stop control", async () => {
   expect(screen.getByRole("button", { name: "停止浏览器" })).toBeEnabled();
 });
 
+it.each([
+  ["platform_unsupported", /macOS \/ Linux/],
+  ["full_access_required", /完全访问（Full）/],
+  ["runtime_unavailable", /没有可用的 Agent 浏览器运行时/],
+])("shows the actual unavailable state: %s", async (code, message) => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), available: false, can_start: false,
+    session_id: undefined, screenshot: undefined, state: "unavailable", unavailable_code: code })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByText(message)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "停止浏览器" })).not.toBeInTheDocument();
+  expect(client.postControl).not.toHaveBeenCalled();
+});
+
 it("hides an older server without the status route and has a narrow wrapping layout", async () => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => { throw new APIRequestError("missing", "NOT_FOUND", 404); }),
     postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;

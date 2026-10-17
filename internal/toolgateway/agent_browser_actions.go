@@ -17,6 +17,7 @@ import (
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/tools"
 )
 
@@ -40,18 +41,19 @@ type AgentBrowserSensitiveIntent struct {
 	DocumentEpoch uint64 `json:"document_epoch"`
 }
 type AgentBrowserPayload struct {
-	Key        string                       `json:"key,omitempty"`
-	DeltaX     *float64                     `json:"delta_x,omitempty"`
-	DeltaY     *float64                     `json:"delta_y,omitempty"`
-	Version    string                       `json:"version"`
-	URL        string                       `json:"url,omitempty"`
-	SnapshotID string                       `json:"snapshot_id,omitempty"`
-	ElementRef string                       `json:"element_ref,omitempty"`
-	Target     *AgentBrowserTarget          `json:"target,omitempty"`
-	Value      string                       `json:"value,omitempty"`
-	Mode       string                       `json:"mode,omitempty"`
-	Sensitive  *AgentBrowserSensitiveIntent `json:"sensitive_intent,omitempty"`
-	Viewport   *AgentBrowserViewport        `json:"viewport,omitempty"`
+	ServiceJobID string                       `json:"service_job_id,omitempty"`
+	Key          string                       `json:"key,omitempty"`
+	DeltaX       *float64                     `json:"delta_x,omitempty"`
+	DeltaY       *float64                     `json:"delta_y,omitempty"`
+	Version      string                       `json:"version"`
+	URL          string                       `json:"url,omitempty"`
+	SnapshotID   string                       `json:"snapshot_id,omitempty"`
+	ElementRef   string                       `json:"element_ref,omitempty"`
+	Target       *AgentBrowserTarget          `json:"target,omitempty"`
+	Value        string                       `json:"value,omitempty"`
+	Mode         string                       `json:"mode,omitempty"`
+	Sensitive    *AgentBrowserSensitiveIntent `json:"sensitive_intent,omitempty"`
+	Viewport     *AgentBrowserViewport        `json:"viewport,omitempty"`
 }
 
 type AgentBrowserViewport struct {
@@ -94,6 +96,13 @@ func NormalizeAgentBrowserPayload(name ToolName, raw json.RawMessage) (json.RawM
 	}
 	if name != BrowserKeyTool && p.Key != "" {
 		return fail()
+	}
+	if p.ServiceJobID != "" {
+		canonical, ok := runner.CanonicalCommandServiceURL(p.URL)
+		if name != BrowserNavigateTool || !validMCPIdentity(p.ServiceJobID) || !ok {
+			return fail()
+		}
+		p.URL = canonical
 	}
 	if name != BrowserScrollTool && (p.DeltaX != nil || p.DeltaY != nil) {
 		return fail()
@@ -257,6 +266,7 @@ func AgentBrowserToolDefinition(name ToolName) (ToolDefinition, bool) {
 		}
 	case BrowserNavigateTool:
 		add("url", 4096)
+		properties["service_job_id"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 256}
 		properties["viewport"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"width", "height"}, "properties": map[string]any{
 			"width":  map[string]any{"type": "integer", "minimum": 240, "maximum": 3840},
 			"height": map[string]any{"type": "integer", "minimum": 240, "maximum": 2160},
@@ -286,6 +296,7 @@ func AgentBrowserToolDefinition(name ToolName) (ToolDefinition, bool) {
 	d.Description += " Request version must be " + requestVersion + "; copy it from this input schema. The result envelope agent-browser-runtime.v1 is output evidence, never a request version."
 	switch name {
 	case BrowserNavigateTool:
+		d.Description += " For a candidate_urls address from command_runtime, include its service_job_id. This checks the same Run's live Job, owned listener and HTTP readiness before automatically navigating; a not_ready/unavailable result does not navigate. It does not grant network access. Use the original Job to observe startup and retry the check, never restart it just to read output."
 		d.Description += " Optional viewport sets CSS width/height in this owned browser (for example 390x844); this is responsive layout testing, not physical phone or touch emulation. Navigation resets page state and invalidates all refs. The result reports the observed viewport. You may batch navigate, then snapshot, then screenshot."
 	case BrowserSnapshotTool:
 		d.Description += " Every successful snapshot replaces ALL previous refs. Use it to continue checks in an already-open live browser, including after a tool scheduling boundary; another navigate would reset page state. Match the intended control's name, role and type to the returned ref. It returns a bounded layout observation with CSS viewport, document widths and visible container/text rectangles and clipping styles; inspect layout.truncated and coverage before drawing conclusions. Leaf rendered_text is actual DOM text, separate from aria/title name, with text_truncated for excerpts. CSS clipping may still hide some characters: inspect that text node's client/scroll widths, white_space, visible_rect and visibility_uncertain. focused=true observes the current activeElement; absent nodes do not prove lost focus. Layout coordinates are observations, not clickable refs. Never batch a new snapshot before an input that uses an old ref."

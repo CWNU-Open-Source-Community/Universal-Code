@@ -220,6 +220,17 @@ func (s *FileEditApplyService) applyWithLease(ctx context.Context,
 					"workspace move destination changed after review; refusing to apply")
 			}
 		}
+		checkpoints := s.checkpoints
+		if binding.target.Drydock != nil {
+			checkpoints = s.drydocks.FileEditCheckpointService()
+		}
+		if checkpoints != nil {
+			if err := checkpoints.checkCommandBoundaryBeforeFileIntent(ctx, workspaceCheckpointBinding{
+				run: binding.run, mission: binding.mission, session: binding.session, workspace: binding.workspace,
+			}); err != nil {
+				return ApplyFileEditResult{}, err
+			}
+		}
 		operation = fileedit.ApplyOperation{
 			ProtocolVersion: fileedit.FileEditApplyProtocolVersion,
 			KeyDigest:       keyDigest, RequestFingerprint: fingerprint,

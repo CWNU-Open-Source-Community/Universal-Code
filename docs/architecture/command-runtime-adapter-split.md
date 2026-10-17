@@ -15,6 +15,15 @@ identical URLs from different Jobs retain their separate identities. A candidate
 does not prove readiness, grant browser permission, or trigger a network probe.
 `start` need not have output yet; use `read` or `wait` on the original Job.
 
+On Windows Host, `browser_navigate.v2` can supply `service_job_id` with a
+candidate URL. The shared runtime checks the live Job and its current authority,
+requires the URL in that Job's retained output, and verifies the TCP listener is
+in its retained Job Object. A bounded two-second HTTP GET must return 2xx before
+navigation; it follows no redirects and uses no proxy or credentials. The browser
+must remain on the verified origin. The returned `service` observation and
+`navigated` flag distinguish a responding service from an unready or unsupported
+backend. This probe grants no permissions and does not verify page behavior.
+
 ## Adapter identities and permissions
 
 Every advertisement, durable Supervisor call, Job, output page, Artifact, and
