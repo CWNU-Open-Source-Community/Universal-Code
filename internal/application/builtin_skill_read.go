@@ -213,29 +213,30 @@ func (e *builtinSkillReader) ReadBuiltinSkill(ctx context.Context, call toolgate
 	}{read.Name, read.Version, read.SourceSHA256, read.DeliveredSHA256, read.Content, "model", false})
 }
 
-func (s *AgentRunner) requestWithBuiltinSkillReads(ctx context.Context, turn domain.SupervisorTurn, request llm.ChatRequest) (llm.ChatRequest, error) {
+func (s *AgentRunner) requestWithBuiltinSkillReads(ctx context.Context, turn domain.SupervisorTurn, request llm.ChatRequest) (llm.ChatRequest, portableSkillReadGuidance, error) {
+	var guidance portableSkillReadGuidance
 	reader, ok := s.store.(builtinSkillReadStore)
 	if !ok {
-		return request, nil
+		return request, guidance, nil
 	}
 	if s.skillRegistry == nil || s.skillRegistryErr != nil {
 		calls, err := reader.ListBuiltinSkillReadCalls(ctx, turn.Run.ID)
 		if err != nil {
-			return request, err
+			return request, guidance, err
 		}
 		if len(calls) > 0 {
-			return request, apperror.New(apperror.CodeFailedPrecondition, "embedded registry unavailable for previously read Skill guidance")
+			return request, guidance, apperror.New(apperror.CodeFailedPrecondition, "embedded registry unavailable for previously read Skill guidance")
 		}
-		return request, nil
+		return request, guidance, nil
 	}
 	items, unavailable, err := (&builtinSkillReader{reader, s.skillRegistry}).contextItems(ctx, turn.Run.ID, turn.Mode, nil)
 	if err != nil {
-		return request, err
+		return request, guidance, err
 	}
 	request.Messages = append([]llm.Message(nil), request.Messages...)
-	portable, err := portableSkillReadReferences(ctx, reader, turn.Run.ID, turn.Mode)
+	portable, guidance, err := portableSkillReadReferences(ctx, reader, turn.Run.ID, turn.Mode, request.Messages)
 	if err != nil {
-		return request, err
+		return request, guidance, err
 	}
 	request.Messages = append(request.Messages, portable...)
 	for _, item := range items {
@@ -246,5 +247,5 @@ func (s *AgentRunner) requestWithBuiltinSkillReads(ctx context.Context, turn dom
 	if len(unavailable) > 0 {
 		request.Messages = append(request.Messages, llm.Message{Role: "system", Content: fmt.Sprintf("Previously read embedded skills unavailable in the current mode or registry: %v. Their bodies are not supplied; do not infer a replacement or treat historical excerpts as active skill guidance.", unavailable)})
 	}
-	return request, nil
+	return request, guidance, nil
 }

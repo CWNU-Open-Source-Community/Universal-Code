@@ -105,6 +105,7 @@ func assertInstalledReadResult(t *testing.T, request llm.ChatRequest, pin toolga
 				Encoding  string                       `json:"encoding"`
 				Source    string                       `json:"source_sha256"`
 				Delivered string                       `json:"delivered_sha256"`
+				Guidance  *bool                        `json:"workflow_guidance"`
 				Grant     bool                         `json:"capability_grant"`
 			}
 			if err := json.Unmarshal([]byte(envelope.Stdout), &body); err != nil {
@@ -123,13 +124,39 @@ func assertInstalledReadResult(t *testing.T, request llm.ChatRequest, pin toolga
 			}
 			originalHash := sha256.Sum256(want)
 			deliveredHash := sha256.Sum256(delivered)
-			if body.Source != hex.EncodeToString(originalHash[:]) || body.Delivered != hex.EncodeToString(deliveredHash[:]) || body.Grant || !bytes.Equal(delivered, []byte(redact.String(string(want)))) {
+			if body.Source != hex.EncodeToString(originalHash[:]) || body.Delivered != hex.EncodeToString(deliveredHash[:]) || body.Guidance == nil || *body.Guidance != (resource == "") || body.Grant || !bytes.Equal(delivered, []byte(redact.String(string(want)))) {
 				t.Fatalf("native bytes/digests/authority changed: source=%s delivered=%s bytes=%d want=%d", body.Source, body.Delivered, len(delivered), len(want))
 			}
 			return
 		}
 	}
 	t.Fatalf("read result missing for %+v", pin)
+}
+
+func installedGuidanceBinding(t *testing.T, request llm.ChatRequest, pin toolgateway.SkillReadRequest) bool {
+	t.Helper()
+	for _, message := range request.Messages {
+		if message.Role != "system" || !strings.HasPrefix(message.Content, "Go-bound installed Skill main reads in this request.") {
+			continue
+		}
+		_, raw, _ := strings.Cut(message.Content, "safety exceptions: ")
+		var reads []struct {
+			CallID string                       `json:"tool_call_id"`
+			Read   toolgateway.SkillReadRequest `json:"read"`
+		}
+		if err := json.Unmarshal([]byte(raw), &reads); err != nil {
+			t.Fatal("invalid Go Skill binding", err)
+		}
+		for _, read := range reads {
+			if read.Read == pin {
+				if read.CallID == "" {
+					t.Fatal("Skill binding lacks a native call identity")
+				}
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestPortableSkillUpstreamImportReadResourceAndRestart(t *testing.T) {
@@ -179,6 +206,11 @@ func TestPortableSkillUpstreamImportReadResourceAndRestart(t *testing.T) {
 			}
 			assertInstalledReadResult(t, requests[1], pin, "", body)
 			assertInstalledReadResult(t, requests[2], pin, fixture.resource, resource)
+			resourcePin := pin
+			resourcePin.Resource = fixture.resource
+			if installedGuidanceBinding(t, requests[0], pin) || !installedGuidanceBinding(t, requests[1], pin) || !installedGuidanceBinding(t, requests[2], pin) || installedGuidanceBinding(t, requests[2], resourcePin) {
+				t.Fatal("workflow guidance did not bind only the successful native main read")
+			}
 			reads, err := st.ListBuiltinSkillReadCalls(t.Context(), run.ID)
 			if err != nil || len(reads) != 1 {
 				t.Fatal("resource displaced or duplicated activation", len(reads), err)
@@ -207,6 +239,9 @@ func TestPortableSkillUpstreamImportReadResourceAndRestart(t *testing.T) {
 			}
 			if !restored {
 				t.Fatal("restart lost exact activation reference")
+			}
+			if installedGuidanceBinding(t, requests[0], pin) || !installedGuidanceBinding(t, requests[1], pin) {
+				t.Fatal("restored reference activated historical output instead of requiring a main read")
 			}
 			assertInstalledReadResult(t, requests[1], pin, "", body)
 		})
@@ -377,6 +412,9 @@ func TestPortableSkillBinaryEmptyAndContainedResources(t *testing.T) {
 	request := p.Requests()[1]
 	assertInstalledReadResult(t, request, pin, "resources/data.bin", []byte{0xff, 0x00, 0xfe, 0x01})
 	assertInstalledReadResult(t, request, pin, "resources/empty.txt", nil)
+	if installedGuidanceBinding(t, request, pin) {
+		t.Fatal("resource reads acquired a main-guidance binding")
+	}
 	if !hasErrorToolResult(request, string(apperror.CodeFailedPrecondition)) {
 		t.Fatal("missing resource was not refused")
 	}
@@ -536,5 +574,121 @@ func TestPortableSkillActivationRetiresOnDisableWithoutPromotingHistory(t *testi
 	}
 	if !unavailable {
 		t.Fatal("disabled activation not explicitly retired")
+	}
+}
+
+func TestPortableSkillCurrentStateRetiresGuidanceWhileOldNativeBodyRemains(t *testing.T) {
+	for _, change := range []string{"disabled", "generation", "revision"} {
+		t.Run(change, func(t *testing.T) {
+			st := openHistoryRecallStore(t, filepath.Join(t.TempDir(), "live-guidance.db"))
+			defer st.Close()
+			directory := nativeTinySkill(t)
+			value := importPortableFixture(t, st, directory, "live-v1")
+			pin := installedReadPin(value)
+			var next plugins.Installation
+			if change == "revision" {
+				if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte("---\nname: native-fixture\ndescription: Updated instructions.\n---\nUse the revised workflow.\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				_, err := portableCatalogService(t, st).ImportFromDirectory(t.Context(), application.ImportSkillFromDirectoryRequest{
+					Directory: directory, Surface: domain.ExecutionSurfaceCode, OperationKey: "live-v2", InstalledBy: "operator", ConfirmUntrusted: true})
+				if apperror.CodeOf(err) != apperror.CodeConflict {
+					t.Fatal("revision fixture replaced the enabled predecessor", err)
+				}
+				values, err := st.ListPluginInstallations(t.Context(), value.PackageID(), 10)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, candidate := range values {
+					if candidate.ID != value.ID {
+						next = candidate
+					}
+				}
+				if next.ID == "" || next.Revision() == value.Revision() {
+					t.Fatal("revision fixture did not retain a separate revision")
+				}
+			}
+			run := startedSkillRun(t, st)
+			provider := &scriptedToolProvider{respond: func(request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+				switch index {
+				case 0:
+					return &llm.ChatResponse{ToolCalls: []llm.ToolCall{installedReadCall(pin, "main", "")}}, nil
+				case 1:
+					if !installedGuidanceBinding(t, request, pin) {
+						t.Fatal("successful main read lacks current Go binding")
+					}
+					current := reviewInstalledFixture(t, st, value, plugins.ReviewDisable)
+					if change == "generation" {
+						reviewInstalledFixture(t, st, current, plugins.ReviewEnable)
+					} else if change == "revision" {
+						reviewInstalledFixture(t, st, next, plugins.ReviewEnable)
+					}
+					return &llm.ChatResponse{ToolCalls: []llm.ToolCall{installedReadCall(pin, "old-pin", "")}}, nil
+				default:
+					if !hasToolResult(request, "Retained native body") || !hasErrorToolResult(request, string(apperror.CodePolicyDenied)) || installedGuidanceBinding(t, request, pin) {
+						t.Fatal("historical successful body or failed reread restored retired Skill guidance")
+					}
+					if next.ID != "" && installedGuidanceBinding(t, request, installedReadPin(next)) {
+						t.Fatal("new revision became guidance without a successful main read")
+					}
+					return textResponse(rootActionResponse(domain.RootActionContinue, "Retired Skill guidance", "", "")), nil
+				}
+			}}
+			if _, err := newToolLoopSupervisor(st, provider).Step(t.Context(), run.ID); err != nil {
+				t.Fatal(err)
+			}
+			if len(provider.Requests()) != 3 {
+				t.Fatal("live-state fixture did not deliver all requests")
+			}
+		})
+	}
+}
+
+func TestPortableSkillTransportRetryRequiresCurrentGuidance(t *testing.T) {
+	for _, disable := range []bool{false, true} {
+		t.Run(map[bool]string{false: "enabled", true: "disabled"}[disable], func(t *testing.T) {
+			st := openHistoryRecallStore(t, filepath.Join(t.TempDir(), "retry-guidance.db"))
+			defer st.Close()
+			value := importPortableFixture(t, st, nativeTinySkill(t), "retry-import")
+			pin := installedReadPin(value)
+			run := startedSkillRun(t, st)
+			provider := &scriptedToolProvider{respond: func(request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+				switch index {
+				case 0:
+					return &llm.ChatResponse{ToolCalls: []llm.ToolCall{installedReadCall(pin, "read-before-retry", "")}}, nil
+				case 1:
+					if !installedGuidanceBinding(t, request, pin) {
+						t.Fatal("successful main read lacks the initial binding")
+					}
+					if disable {
+						current := reviewInstalledFixture(t, st, value, plugins.ReviewDisable)
+						if current.State != plugins.StateDisabled {
+							t.Fatal("fixture did not disable the installation")
+						}
+					}
+					return nil, llm.NewProviderError(llm.OutcomeRetryable, "tool-loop", "temporary failure after Skill read", nil)
+				case 2:
+					if disable {
+						t.Fatal("disabled Skill guidance reached a transport retry")
+					}
+					if !installedGuidanceBinding(t, request, pin) {
+						t.Fatal("valid transport retry lost its Skill guidance")
+					}
+					return textResponse(rootActionResponse(domain.RootActionContinue, "Retried with current Skill guidance", "", "")), nil
+				default:
+					t.Fatalf("unexpected provider request %d", index)
+					return nil, nil
+				}
+			}}
+			supervisor := newToolLoopSupervisor(st, provider).WithModelRetryPolicy(application.ModelRetryPolicy{MaxAttempts: 2})
+			_, err := supervisor.Step(t.Context(), run.ID)
+			if disable {
+				if apperror.CodeOf(err) != apperror.CodeFailedPrecondition || len(provider.Requests()) != 2 {
+					t.Fatalf("stale retry was not rejected before dispatch: requests=%d err=%v", len(provider.Requests()), err)
+				}
+			} else if err != nil || len(provider.Requests()) != 3 {
+				t.Fatalf("current Skill guidance prevented a normal retry: requests=%d err=%v", len(provider.Requests()), err)
+			}
+		})
 	}
 }

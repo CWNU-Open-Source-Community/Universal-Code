@@ -17,11 +17,15 @@ import (
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
+
+	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 type nativeBatchTestProvider struct {
 	t        *testing.T
 	requests []llm.ChatRequest
+	create   bool
+	root     string
 }
 
 func (*nativeBatchTestProvider) Name() string { return "batch-native-test" }
@@ -63,12 +67,34 @@ func (p *nativeBatchTestProvider) Chat(_ context.Context, request llm.ChatReques
 		previous(&read)
 		name = "workspace_change"
 		args = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "propose_patch", Path: read.Path, ExpectedSHA256: read.ContentSHA256, Replacements: []toolgateway.WorkspaceReplacement{{OldText: "base", NewText: "native child", ExpectedOccurrences: 1}}}
+		if p.create {
+			args = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "create", Path: "internal/one/native.txt", ExpectedSHA256: "missing", Content: "native child\n"}
+		}
 	case 4:
-		var edit fileedit.Preview
+		var edit struct {
+			fileedit.Preview
+			ApplyArguments json.RawMessage `json:"apply_arguments"`
+		}
 		previous(&edit)
+		if edit.ID == "" || edit.Status != fileedit.StatusProposed || !strings.Contains(edit.Diff, "+native child") || len(edit.ApplyArguments) == 0 {
+			p.t.Fatalf("proposal did not provide a reviewable diff and apply arguments: %+v", edit)
+		}
+		before, err := os.ReadFile(filepath.Join(p.root, filepath.FromSlash(edit.Path)))
+		if p.create {
+			if !os.IsNotExist(err) {
+				p.t.Fatalf("proposal wrote a new file before apply: %v", err)
+			}
+		} else if err != nil || string(before) != "base\n" {
+			p.t.Fatalf("proposal wrote the patch before apply: %q %v", before, err)
+		}
 		name = "workspace_apply"
-		args = toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion, EditID: edit.ID, ExpectedAction: "propose_patch", ExpectedOriginalSHA256: edit.OriginalHash, ExpectedProposedSHA256: edit.ProposedHash}
+		args = edit.ApplyArguments
 	case 5:
+		var applied fileedit.Preview
+		previous(&applied)
+		if applied.Status != fileedit.StatusApplied || applied.ProposedHash != fileedit.HashText("native child\n") {
+			p.t.Fatalf("proposal arguments did not apply the reviewed edit: %+v", applied)
+		}
 		name = "git_commit"
 		args = map[string]string{"message": "apply independently observed child edit"}
 	case 6:
@@ -89,6 +115,34 @@ func (p *nativeBatchTestProvider) Chat(_ context.Context, request llm.ChatReques
 		p.t.Fatal("unbounded native loop")
 	}
 	payload, _ := json.Marshal(args)
+	found := false
+	for _, tool := range request.Tools {
+		if tool.Name != name {
+			continue
+		}
+		found = true
+		compiler := jsonschema.NewCompiler()
+		if err := compiler.AddResource("native-tool.json", strings.NewReader(string(tool.Parameters))); err != nil {
+			p.t.Fatal(err)
+		}
+		schema, err := compiler.Compile("native-tool.json")
+		if err != nil {
+			p.t.Fatal(err)
+		}
+		var value any
+		if err := json.Unmarshal(payload, &value); err != nil {
+			p.t.Fatal(err)
+		}
+		if err := schema.Validate(value); err != nil {
+			p.t.Fatalf("%s does not accept its model-visible arguments: %s %v", name, payload, err)
+		}
+		if (name == "workspace_change" || name == "workspace_apply") && !strings.Contains(tool.Description, "apply_arguments") {
+			p.t.Fatalf("%s description omitted the proposal/apply handoff: %s", name, tool.Description)
+		}
+	}
+	if !found {
+		p.t.Fatalf("native tool was not advertised: %s", name)
+	}
 	return &llm.ChatResponse{Provider: p.Name(), Model: "model", ToolCalls: []llm.ToolCall{{ID: fmt.Sprintf("batch-native-%d", n), Name: name, Arguments: payload}}, Usage: llm.Usage{InputTokens: 3, OutputTokens: 2, TotalTokens: 5}}, nil
 }
 func (p *nativeBatchTestProvider) StreamChat(ctx context.Context, r llm.ChatRequest) (<-chan llm.ChatChunk, error) {
@@ -123,7 +177,7 @@ func TestNativeBatchChildDiscoversBeyondFourFilesEditsVerifiesAndCommits(t *test
 	fixtureGit(t, "-C", fixture.repository, "commit", "--quiet", "-m", "seed beyond snapshot ceiling")
 	// Reuse admission/owner setup; the native provider replaces the bridge provider.
 	_, work, _ := batchModelWorkerFixture(t, fixture, &batchEditTestProvider{}, fixture.store)
-	provider := &nativeBatchTestProvider{t: t}
+	provider := &nativeBatchTestProvider{t: t, root: work.Workspace.WorktreeRoot}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 	router.RegisterProvider(provider)
 	worker := NewBatchDeliveryModelWorker(fixture.service, fixture.store, router, policy.NewDefaultChecker()).WithNativeTools()
@@ -207,5 +261,23 @@ func TestNativeBatchChildDiscoversBeyondFourFilesEditsVerifiesAndCommits(t *test
 	}
 	if !reflect.DeepEqual(receipt.TestReceipts, verified.Result.Receipts) {
 		t.Fatalf("Submit repeated or changed the final native verification: %+v %+v", receipt.TestReceipts, verified.Result.Receipts)
+	}
+}
+
+func TestNativeBatchChildCreatesFromReviewableProposalArguments(t *testing.T) {
+	fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
+	_, work, _ := batchModelWorkerFixture(t, fixture, &batchEditTestProvider{}, fixture.store)
+	provider := &nativeBatchTestProvider{t: t, create: true, root: work.Workspace.WorktreeRoot}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	worker := NewBatchDeliveryModelWorker(fixture.service, fixture.store, router, policy.NewDefaultChecker()).WithNativeTools()
+	if _, err := worker.ExecuteBatchChild(t.Context(), work); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(work.Workspace.WorktreeRoot, "internal", "one", "native.txt")); err != nil || string(got) != "native child\n" {
+		t.Fatalf("isolated created source=%q %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.repository, "internal", "one", "native.txt")); !os.IsNotExist(err) {
+		t.Fatalf("native child created a parent file: %v", err)
 	}
 }

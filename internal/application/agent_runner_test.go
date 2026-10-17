@@ -85,10 +85,10 @@ func TestAgentRunnerCompletesOneTurnAndEnforcesBudget(t *testing.T) {
 }
 
 func TestAgentRunnerAppliesAggregateContextWindowAndCompactsOldestHistory(t *testing.T) {
-	// The current tool catalogue adds 185 tokens for pin proposals. Keep the
-	// former narrow window as a refusal case and give the success case room for
-	// that required catalogue; raw history alone still exceeds both windows.
-	for _, windowTokens := range []int{8192, 10000, 10240} {
+	// This fixture's measured compacted request uses roughly 14k tokens including
+	// policy/tool guidance and output/safety reserves. Keep smaller windows as
+	// refusals; the larger history fixture still exerts pressure at 16384.
+	for _, windowTokens := range []int{8192, 10000, 10240, 16384} {
 		t.Run(fmt.Sprintf("window_%d", windowTokens), func(t *testing.T) {
 			verifyAggregateContextCompaction(t, windowTokens)
 		})
@@ -122,7 +122,7 @@ func verifyAggregateContextCompaction(t *testing.T, windowTokens int) {
 		if index%2 == 1 {
 			role = "assistant"
 		}
-		content := fmt.Sprintf("history-%02d %s", index, strings.Repeat("a", 2000))
+		content := fmt.Sprintf("history-%02d %s", index, strings.Repeat("a", 8000))
 		if _, err := st.SaveSessionMessage(ctx, session.NewMessage(run.SessionID, role, content)); err != nil {
 			t.Fatal(err)
 		}
@@ -167,11 +167,9 @@ func verifyAggregateContextCompaction(t *testing.T, windowTokens int) {
 	if err != nil || !found || summary.Content == "" || summary.CompactedMessageCount != 19 {
 		t.Fatalf("window pressure did not persist the exact history compaction: summary=%+v found=%t err=%v", summary, found, err)
 	}
-	// These windows cannot hold the committed summary plus the current tool
-	// catalogue. Preserve that rejection instead of dropping durable history.
-	if windowTokens <= 10000 {
+	if windowTokens <= 10240 {
 		if apperror.CodeOf(stepErr) != apperror.CodeResourceExhausted || len(provider.requests) != 0 {
-			t.Fatalf("summary overflow reached provider: calls=%d err=%v", len(provider.requests), stepErr)
+			t.Fatalf("summary overflow reached provider: window=%d calls=%d err=%v", windowTokens, len(provider.requests), stepErr)
 		}
 		return
 	}
@@ -183,6 +181,7 @@ func verifyAggregateContextCompaction(t *testing.T, windowTokens int) {
 	}
 	request := provider.requests[0]
 	if request.MaxTokens != outputTokens || request.Metadata["context_output_reserve"] != "256" ||
+		request.Metadata["context_safety_margin"] != "256" ||
 		request.Metadata["context_input_limit"] != strconv.Itoa(inputLimit) ||
 		request.Metadata["context_window_source"] != "integration_test" ||
 		request.Metadata["context_history_omitted"] != "0" ||
@@ -195,7 +194,8 @@ func verifyAggregateContextCompaction(t *testing.T, windowTokens int) {
 	if err != nil || estimated > inputLimit {
 		t.Fatalf("complete compacted request exceeds input capacity: estimate=%d limit=%d err=%v", estimated, inputLimit, err)
 	}
-	t.Logf("raw history=%d compacted request=%d input_limit=%d output_reserve=%d", historyTokens, estimated, inputLimit, request.MaxTokens)
+	t.Logf("raw history=%d compacted request=%d input_limit=%d output_reserve=%d safety_margin=%d",
+		historyTokens, estimated, inputLimit, request.MaxTokens, safetyTokens)
 	joined := ""
 	for _, message := range request.Messages {
 		joined += message.Content

@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/projectconfig"
 )
 
@@ -116,10 +117,20 @@ func (s *SQLiteStore) CheckRunProjectInstructionToolContext(ctx context.Context,
 		return apperror.New(apperror.CodeFailedPrecondition,
 			"resumed tool has no matching project instruction context audit")
 	}
+	return requireProjectInstructionModelAudit(snapshot, start.Context)
+}
+
+func requireProjectInstructionModelAudit(snapshot projectconfig.InstructionSnapshot, audit *llm.ModelContextAudit) error {
+	if audit == nil {
+		return apperror.New(apperror.CodeFailedPrecondition, "resumed tool has no project instruction context audit")
+	}
+	if err := audit.Validate(); err != nil {
+		return err
+	}
 	for index, item := range snapshot.Delivery.Sources {
 		id := snapshot.DeliverySourceID(index)
 		matched := false
-		for _, source := range start.Context.Included {
+		for _, source := range audit.Included {
 			matched = matched || (source.Kind == "project_instruction" && source.SourceID == id &&
 				item.Requirement != projectconfig.InstructionExcluded)
 		}
@@ -128,7 +139,7 @@ func (s *SQLiteStore) CheckRunProjectInstructionToolContext(ctx context.Context,
 			if item.Requirement == projectconfig.InstructionExcluded {
 				reason = "operator_excluded"
 			}
-			for _, source := range start.Context.Omitted {
+			for _, source := range audit.Omitted {
 				matched = matched || (source.Kind == "project_instruction" &&
 					source.SourceID == "omitted/"+reason+"/"+id)
 			}
@@ -331,4 +342,51 @@ func scanRunInstructionSnapshot(row scanner) (projectconfig.RunInstructionSnapsh
 		return projectconfig.RunInstructionSnapshot{}, err
 	}
 	return record, nil
+}
+
+// Child pending calls must be checked against the model request that proposed
+// them. An upgraded attempt may have no project-rule delivery audit.
+func (s *SQLiteStore) CheckSpecialistProjectInstructionToolContext(ctx context.Context, ref domain.AgentAttemptRef, round domain.SpecialistToolRound, expectedFingerprint string) error {
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	for _, call := range round.Calls {
+		if call.Ref != ref || call.ModelAttempt != round.ModelAttempt || call.Round != round.Round {
+			return apperror.New(apperror.CodeFailedPrecondition, "project instruction tool origin differs from the child attempt")
+		}
+	}
+	run, err := s.GetRun(ctx, ref.RunID)
+	if err != nil {
+		return err
+	}
+	if run.Config.ProjectInstructionsFingerprint != expectedFingerprint {
+		return apperror.New(apperror.CodeFailedPrecondition, "project instruction snapshot changed before child tool resumption")
+	}
+	var snapshot projectconfig.InstructionSnapshot
+	if err := json.Unmarshal(run.Config.ProjectInstructions, &snapshot); err != nil {
+		return err
+	}
+	if err := snapshot.Validate(); err != nil {
+		return err
+	}
+	if snapshot.Delivery == nil {
+		return nil
+	}
+	var raw string
+	if err := s.db.QueryRowContext(ctx, `SELECT payload_json FROM run_events WHERE run_id = ? AND type = ? AND source = 'specialist_model_gateway' AND subject_id = ?`, run.ID, events.ModelStartedEvent, specialistModelSubject(ref.AttemptID, round.ModelAttempt)).Scan(&raw); err != nil {
+		return apperror.New(apperror.CodeFailedPrecondition, "resumed child tool has no source-bound project instruction model start")
+	}
+	var start struct {
+		AgentID      string                 `json:"agent_id"`
+		AttemptID    string                 `json:"agent_attempt_id"`
+		ModelAttempt int                    `json:"model_attempt"`
+		Context      *llm.ModelContextAudit `json:"context"`
+	}
+	if err := json.Unmarshal([]byte(raw), &start); err != nil {
+		return err
+	}
+	if start.AgentID != ref.AgentID || start.AttemptID != ref.AttemptID || start.ModelAttempt != round.ModelAttempt {
+		return apperror.New(apperror.CodeFailedPrecondition, "resumed child tool has no matching project instruction context audit")
+	}
+	return requireProjectInstructionModelAudit(snapshot, start.Context)
 }

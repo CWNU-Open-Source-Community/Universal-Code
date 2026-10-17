@@ -61,6 +61,21 @@ func TestExecutionWorkerReadsWritesAndResumesExactFileApproval(t *testing.T) {
 				}
 				switch index {
 				case 0:
+					for _, name := range []toolgateway.ToolName{toolgateway.WorkspaceChangeTool, toolgateway.WorkspaceApplyTool} {
+						expected, _ := toolgateway.AgentCodeToolDefinition(name)
+						found := false
+						for _, tool := range request.Tools {
+							if tool.Name == string(name) {
+								found = true
+								if string(tool.Parameters) != string(expected.InputSchema) || tool.Description != expected.Description {
+									t.Fatalf("execution worker inherited a narrowed Batch definition: %s", name)
+								}
+							}
+						}
+						if !found {
+							t.Fatalf("execution worker lost its workspace tool: %s", name)
+						}
+					}
 					return respond("workspace_read", "read-proof", json.RawMessage(`{"version":"agent-code-tools.v1","path":"input.txt","start_line":1,"end_line":2}`))
 				case 1:
 					if mode == domain.RunExecutionPermissionAsk && request.Metadata["context_specialist_receipted_rounds"] != "1" {
