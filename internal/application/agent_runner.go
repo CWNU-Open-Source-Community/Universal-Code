@@ -236,6 +236,7 @@ type AgentRunner struct {
 	agentBrowser                          *AgentBrowserService
 	standardCodeDelivery                  *StandardCodeDeliveryService
 	drydocks                              *RunWorktreeService
+	projectHooks                          ProjectHookAuthorizer
 }
 
 func NewAgentRunner(store AgentRunnerStore, router *llm.Router, checker policy.Checker) *AgentRunner {
