@@ -259,8 +259,8 @@ func TestPRFollowupMigrationFromV201(t *testing.T) {
 		t.Fatal(err)
 	}
 	var version int
-	if err := st.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 202 {
-		t.Fatalf("migration version=%d err=%v", version, err)
+	if err := st.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != LatestSchemaVersion {
+		t.Fatalf("migration version=%d want=%d err=%v", version, LatestSchemaVersion, err)
 	}
 	if _, err := st.ListPRFollowups(t.Context(), "", 10); err != nil {
 		t.Fatal(err)
