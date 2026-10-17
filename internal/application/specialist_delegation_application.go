@@ -202,7 +202,8 @@ func (s *SpecialistDelegationApplicationService) Apply(ctx context.Context,
 			return ApplySpecialistDelegationResult{}, err
 		}
 		admitted, err := admit(ctx, coordinator.AdmitSpecialistRequest{
-			RunID: application.RunID, ParentAgentID: application.RootAgentID,
+			Worker: proposed.Worker,
+			RunID:  application.RunID, ParentAgentID: application.RootAgentID,
 			Title: proposed.Title, Skills: proposed.Skills,
 			TurnLimit: proposed.TurnLimit, TokenLimit: proposed.TokenLimit,
 			AllowedReadPaths: proposed.AllowedReadPaths, ToolCallLimit: proposed.ToolCallLimit, CostLimitMicros: proposed.CostLimitMicros,

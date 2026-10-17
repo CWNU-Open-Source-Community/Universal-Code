@@ -35,6 +35,8 @@ type mcpApprovalStore interface {
 }
 
 type mcpApprovalSource struct {
+	worker     *domain.SpecialistToolCall
+	actorSessionID string
 	call       domain.SupervisorToolCall
 	authority  mcp.SupervisorCallAuthority
 	payload    toolgateway.MCPToolCallPayload
@@ -54,7 +56,7 @@ func mcpApprovalUnavailable(message string) error {
 func readMCPApprovalSource(ctx context.Context, st mcpApprovalStore, runID, callID string) (mcpApprovalSource, error) {
 	var source mcpApprovalSource
 	var err error
-	source.call, source.started, err = st.GetSupervisorApprovalCall(ctx, runID, callID)
+	source.call, source.started, source.worker, err = readMCPApprovalIntent(ctx, st, runID, callID)
 	if err != nil {
 		return source, err
 	}
@@ -87,6 +89,10 @@ func readMCPApprovalSource(ctx context.Context, st mcpApprovalStore, runID, call
 	actor, err := st.GetAgentNode(ctx, c.AgentID)
 	if err != nil {
 		return source, err
+	}
+	source.actorSessionID = actor.SessionID
+	if source.worker != nil && (actor.Role != domain.AgentRoleSpecialist || !actor.Worker.AllowsTool(c.ToolName)) {
+		return source, mcpApprovalUnavailable("worker no longer permits this MCP tool")
 	}
 	source.permission, err = st.GetRunExecutionPermission(ctx, runID)
 	if err != nil {
@@ -123,15 +129,15 @@ func readMCPApprovalSource(ctx context.Context, st mcpApprovalStore, runID, call
 
 func mcpApprovalMatches(record approval.Record, source mcpApprovalSource) bool {
 	grantAllowed := record.GrantID == ""
-	if !grantAllowed && source.permission.Mode == domain.RunExecutionPermissionAsk {
+	if !grantAllowed && source.worker == nil && source.permission.Mode == domain.RunExecutionPermissionAsk {
 		target, err := mcpComputerUseTarget(source)
 		grantAllowed = err == nil && target != nil && target.AppID != "" && !target.SystemShortcut
 	}
 	return record.Validate() == nil && record.RunID == source.call.RunID &&
 		record.ProposalID == source.call.CallID && record.ToolName == mcp.OperationApprovalTool &&
-		record.SessionID == source.run.SessionID && record.WorkspaceID == source.authority.WorkspaceID &&
+		record.SessionID == source.actorSessionID && record.WorkspaceID == source.authority.WorkspaceID &&
 		record.ActionClass == "mcp_server_and_tool" && record.Mode == "per_call" && grantAllowed &&
-		record.RequestFingerprint == mcp.OperationApprovalFingerprint(source.call)
+		record.RequestFingerprint == source.fingerprint()
 }
 
 // Shared by the approval controller and its read-only preview. This never
@@ -156,7 +162,7 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 	if !ok {
 		return false, nil, mcpApprovalUnavailable("MCP approval storage unavailable")
 	}
-	stored, started, err := st.GetSupervisorApprovalCall(ctx, call.RunID, call.CallID)
+	stored, started, _, err := readMCPApprovalIntent(ctx, st, call.RunID, call.CallID)
 	if err != nil {
 		return false, nil, err
 	}
@@ -211,9 +217,9 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 		now := time.Now().UTC()
 		record, err = st.EnsureApproval(ctx, approval.Proposal{
 			IdempotencyKey: approval.ProposalIdempotencyKey(mcp.OperationApprovalTool, call.CallID), ProposalID: call.CallID,
-			SessionID: source.run.SessionID, WorkspaceID: source.authority.WorkspaceID,
+			SessionID: source.actorSessionID, WorkspaceID: source.authority.WorkspaceID,
 			ToolName: mcp.OperationApprovalTool, ActionClass: "mcp_server_and_tool", Mode: "per_call", Status: approval.StatusPending,
-			RequestFingerprint: mcp.OperationApprovalFingerprint(call), RequestedBy: "run_supervisor",
+			RequestFingerprint: source.fingerprint(), RequestedBy: source.requester(),
 			DecisionReason: "Approve this exact MCP server startup/discovery and tool call; its external effects are unverified.",
 			CreatedAt:      now, UpdatedAt: now})
 		if err == nil {
@@ -226,7 +232,7 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 		return stop("mcp_authority_expired", "The Computer Use application target is invalid. This action was not dispatched.", domain.SupervisorToolFailed)
 	}
 	forceReview := policy.NeedsApproval || strings.EqualFold(policy.Risk, "critical")
-	if target != nil && !forceReview && source.permission.Mode != domain.RunExecutionPermissionFull {
+	if target != nil && source.worker == nil && !forceReview && source.permission.Mode != domain.RunExecutionPermissionFull {
 		if target.AppID == "" && !exists {
 			// Enabling the built-in permits window metadata discovery. Keep an
 			// exact ledger proof for the ordinary operation authorizer; screenshots
@@ -264,7 +270,7 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 		return false, nil, err
 	}
 	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(mcp.OperationApprovalFingerprint(call)))
+	_, _ = mac.Write([]byte(source.fingerprint()))
 	component := toolcontract.ComponentRef{PackageID: source.server.Descriptor.ProtocolVersion, ComponentID: p.ServerID}
 	if source.server.Descriptor.NativeSource != nil {
 		component = source.server.Descriptor.NativeSource.Component
@@ -275,7 +281,7 @@ func (s *AgentRunner) preflightMCPApproval(ctx context.Context, call domain.Supe
 		Targets: []toolcontract.Target{{Kind: "endpoint", Locator: p.ServerID}}, Effects: []toolcontract.Effect{toolcontract.EffectUnknown}}
 	waiting, allowed, err := decidePendingOperation(ctx, source.permission,
 		executionauth.SubjectRef{RunID: call.RunID, ActorID: call.AgentID}, operation,
-		mcp.OperationApprovalFingerprint(call), &proof, ensure, policy.NeedsApproval, false)
+		source.fingerprint(), &proof, ensure, policy.NeedsApproval, false)
 	if err != nil || waiting {
 		return waiting, nil, err
 	}

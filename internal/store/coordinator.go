@@ -24,11 +24,11 @@ const agentNodeColumns = `SELECT id, run_id, parent_id, session_id, role, profil
 
 // Identity/lifecycle consumers and immutable graph snapshots do not consume child authority
 // or cumulative usage. Keep their projection independent of the child ledgers.
-const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0 FROM agent_nodes`
+const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0, worker_profile_json FROM agent_nodes`
 
 const agentNodeSelect = agentNodeColumns + `, allowed_read_paths_json, tool_call_limit, cost_limit_micros,
  (SELECT COUNT(*) FROM specialist_tool_calls c JOIN agent_attempts a ON a.id=c.agent_attempt_id WHERE a.agent_id=agent_nodes.id AND c.charge_id<>''),
- (SELECT COALESCE(SUM(reserved_micros-released_micros),0) FROM run_monetary_reservations WHERE agent_id=agent_nodes.id AND run_id=agent_nodes.run_id) FROM agent_nodes`
+ (SELECT COALESCE(SUM(reserved_micros-released_micros),0) FROM run_monetary_reservations WHERE agent_id=agent_nodes.id AND run_id=agent_nodes.run_id), worker_profile_json FROM agent_nodes`
 
 const agentMessageSelect = `SELECT id, run_id, sender_agent_id, recipient_agent_id, sequence, kind,
 	semantic, payload_json, status, created_at, consumed_at FROM agent_messages`
@@ -725,13 +725,13 @@ func getRootAgentTx(ctx context.Context, tx *sql.Tx, runID string) (domain.Agent
 
 func scanAgentNode(row scanner) (domain.AgentNode, error) {
 	var node domain.AgentNode
-	var pathsJSON string
+	var pathsJSON, workerJSON string
 	var parentID, finished sql.NullString
 	var role, profile, status, skillsJSON, createdAt, updatedAt string
 	if err := row.Scan(&node.ID, &node.RunID, &parentID, &node.SessionID, &role, &profile, &skillsJSON,
 		&status, &node.Depth, &node.ChildLimit, &node.TurnLimit, &node.TokenLimit, &node.TurnsUsed,
 		&node.TokensUsed, &node.ActiveAttemptID, &node.StatusReason, &node.Version, &createdAt,
-		&updatedAt, &finished, &pathsJSON, &node.ToolCallLimit, &node.CostLimitMicros, &node.ToolCallsUsed, &node.CostUsedMicros); err != nil {
+		&updatedAt, &finished, &pathsJSON, &node.ToolCallLimit, &node.CostLimitMicros, &node.ToolCallsUsed, &node.CostUsedMicros, &workerJSON); err != nil {
 		return domain.AgentNode{}, err
 	}
 	if err := json.Unmarshal([]byte(pathsJSON), &node.AllowedReadPaths); err != nil {
@@ -743,6 +743,11 @@ func scanAgentNode(row scanner) (domain.AgentNode, error) {
 	node.Status = domain.AgentStatus(status)
 	if err := json.Unmarshal([]byte(skillsJSON), &node.Skills); err != nil {
 		return domain.AgentNode{}, err
+	}
+	if workerJSON != "" && workerJSON != "null" {
+		if err := json.Unmarshal([]byte(workerJSON), &node.Worker); err != nil {
+			return domain.AgentNode{}, err
+		}
 	}
 	node.CreatedAt = parseTS(createdAt)
 	node.UpdatedAt = parseTS(updatedAt)
@@ -775,7 +780,7 @@ func listAgentNodesWithSelect(ctx context.Context, queryer interface {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(nodes) > domain.MaxAgentNodesPerRun {
+	if len(nodes) > domain.MaxAgentHistoryNodesPerRun {
 		return nil, apperror.New(apperror.CodeResourceExhausted, "agent graph node limit was exceeded")
 	}
 	return nodes, nil

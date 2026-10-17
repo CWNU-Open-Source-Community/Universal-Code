@@ -92,11 +92,19 @@ func (s *SQLiteStore) CreateSpecialistDelegationProposal(ctx context.Context,
 		if err != nil {
 			return domain.SpecialistDelegationProposal{}, false, err
 		}
+		pathsJSON, err := json.Marshal(assignment.AllowedReadPaths)
+		if err != nil {
+			return domain.SpecialistDelegationProposal{}, false, err
+		}
+		workerJSON, err := domain.WorkerProfileJSON(assignment.Worker)
+		if err != nil {
+			return domain.SpecialistDelegationProposal{}, false, err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO specialist_delegation_assignments
-			(proposal_id, ordinal, title, goal, skills_json, turn_limit, token_limit)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, proposal.ID, assignment.Ordinal,
+			(proposal_id, ordinal, title, goal, skills_json, turn_limit, token_limit,allowed_read_paths_json,tool_call_limit,cost_limit_micros,worker_profile_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, proposal.ID, assignment.Ordinal,
 			assignment.Title, assignment.Goal, string(skillsJSON), assignment.TurnLimit,
-			assignment.TokenLimit); err != nil {
+			assignment.TokenLimit, string(pathsJSON), assignment.ToolCallLimit, assignment.CostLimitMicros, workerJSON); err != nil {
 			return domain.SpecialistDelegationProposal{}, false, err
 		}
 	}
@@ -328,12 +336,19 @@ func validateSpecialistDelegationCapacityTx(ctx context.Context, tx *sql.Tx,
 ) error {
 	var childCount int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes
-		WHERE run_id = ? AND parent_id = ?`, run.ID, root.ID).Scan(&childCount); err != nil {
+		WHERE run_id = ? AND parent_id = ? AND status NOT IN ('completed','failed','cancelled')`, run.ID, root.ID).Scan(&childCount); err != nil {
 		return err
 	}
 	if childCount+len(spec.Assignments) > domain.MaxAgentChildren {
 		return apperror.New(apperror.CodeResourceExhausted,
 			"specialist delegation exceeds the remaining child capacity")
+	}
+	var historyCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes WHERE run_id=?`, run.ID).Scan(&historyCount); err != nil {
+		return err
+	}
+	if historyCount+len(spec.Assignments) > domain.MaxAgentHistoryNodesPerRun {
+		return apperror.New(apperror.CodeResourceExhausted, "specialist delegation exceeds worker history bound")
 	}
 	allowedSkills := make(map[string]struct{}, len(root.Skills))
 	for _, skill := range root.Skills {
@@ -481,7 +496,7 @@ func listSpecialistDelegationAssignments(ctx context.Context, queryer specialist
 	proposalID string, expected int,
 ) ([]domain.SpecialistDelegationAssignment, error) {
 	rows, err := queryer.QueryContext(ctx, `SELECT ordinal, title, goal, skills_json,
-		turn_limit, token_limit FROM specialist_delegation_assignments
+		turn_limit, token_limit,allowed_read_paths_json,tool_call_limit,cost_limit_micros,worker_profile_json FROM specialist_delegation_assignments
 		WHERE proposal_id = ? ORDER BY ordinal`, proposalID)
 	if err != nil {
 		return nil, err
@@ -491,11 +506,18 @@ func listSpecialistDelegationAssignments(ctx context.Context, queryer specialist
 	for rows.Next() {
 		var assignment domain.SpecialistDelegationAssignment
 		var skillsJSON string
+		var pathsJSON, workerJSON string
 		if err := rows.Scan(&assignment.Ordinal, &assignment.Title, &assignment.Goal,
-			&skillsJSON, &assignment.TurnLimit, &assignment.TokenLimit); err != nil {
+			&skillsJSON, &assignment.TurnLimit, &assignment.TokenLimit, &pathsJSON, &assignment.ToolCallLimit, &assignment.CostLimitMicros, &workerJSON); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(skillsJSON), &assignment.Skills); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(pathsJSON), &assignment.AllowedReadPaths); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(workerJSON), &assignment.Worker); err != nil {
 			return nil, err
 		}
 		assignments = append(assignments, assignment)

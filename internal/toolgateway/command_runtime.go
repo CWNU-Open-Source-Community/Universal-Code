@@ -184,6 +184,7 @@ type CommandRuntimeContext struct {
 	PermissionRuntimeEpoch string
 	RunAuthorizationFence  uint64
 	SupervisorToolCallID   string
+	SpecialistToolCallID   string
 	LeaseID                string
 	LeaseGeneration        int64
 	RequestedBy            string
@@ -192,7 +193,8 @@ type CommandRuntimeContext struct {
 }
 
 func (c CommandRuntimeContext) Validate() error {
-	if c.ProjectTest && (!c.PermissionMode.IsApprovalMode() || c.RequestedBy != "run_supervisor") {
+	if c.ProjectTest && (!c.PermissionMode.IsApprovalMode() ||
+		(c.RequestedBy != "run_supervisor" && c.RequestedBy != "specialist_runner")) {
 		return errors.New("project tests require current approval authority")
 	}
 	for _, value := range []string{c.InvocationID, c.OperationKey, c.RunID,
@@ -221,10 +223,19 @@ func (c CommandRuntimeContext) Validate() error {
 		c.Surface != "" || c.Phase != "" || c.Role != "" || c.Profile != "" ||
 		c.PermissionMode != ""
 	if hasAuthority && (!c.Surface.Valid() || !c.Phase.Valid() ||
-		!domain.ValidAgentRole(c.Role) || c.Role != domain.AgentRoleRoot ||
+		!domain.ValidAgentRole(c.Role) || (c.Role != domain.AgentRoleRoot && c.Role != domain.AgentRoleSpecialist) ||
 		c.Profile != domain.ProfileCode || !c.PermissionMode.Valid() ||
 		c.ModeRevision <= 0 || c.PermissionRevision <= 0) {
 		return errors.New("command runtime authority tuple is invalid or partial")
+	}
+	if c.RequestedBy == "specialist_runner" {
+		if c.Role != domain.AgentRoleSpecialist || c.AgentID == c.RootAgentID ||
+			c.AgentAttemptID == "" || !domain.ValidAgentID(c.SpecialistToolCallID) ||
+			c.SupervisorToolCallID != "" || !c.PermissionMode.IsApprovalMode() || !hasAuthority {
+			return errors.New("command runtime worker requires its recorded child call and authority")
+		}
+	} else if c.SpecialistToolCallID != "" || c.Role == domain.AgentRoleSpecialist {
+		return errors.New("command runtime child actor requires worker dispatch")
 	}
 	if c.PermissionMode.IsApprovalMode() {
 		if !domain.ValidAgentID(c.PermissionSnapshotID) || !commandruntimeadapter.ValidRuntimeBinding(c.PermissionMode, c.PermissionRuntimeEpoch, c.PermissionGeneration, c.RunAuthorizationFence) {
@@ -247,7 +258,7 @@ func (c CommandRuntimeContext) Validate() error {
 // no AgentAttemptID.
 func (c CommandRuntimeContext) Attribution() domain.AgentAttribution {
 	switch c.RequestedBy {
-	case "run_supervisor":
+	case "run_supervisor", "specialist_runner":
 		return domain.AgentAttribution{AgentID: c.AgentID,
 			AgentAttemptID: c.AgentAttemptID, Source: domain.AgentAttributionRecorded}
 	case CommandRuntimeRequestedByUIEvidenceOperator, CommandRuntimeRequestedByOperator:
@@ -572,6 +583,10 @@ func (g *Gateway) invokeCommandRuntime(ctx context.Context, call ToolCall) (
 }
 
 func (g *Gateway) invokePreparedCommandRuntime(ctx context.Context, call ToolCall, input CommandRuntimeInput) (Outcome, error) {
+	rootAgentID := call.AgentID
+	if call.RequestedBy == "specialist_runner" {
+		rootAgentID = call.RootAgentID
+	}
 	policyDecision := policy.Decision{Allowed: true,
 		Reason: "bounded command runtime lifecycle operation allowed", Risk: "low"}
 	if input.Action == CommandRuntimeActionRun || input.Action == CommandRuntimeActionStart {
@@ -585,7 +600,8 @@ func (g *Gateway) invokePreparedCommandRuntime(ctx context.Context, call ToolCal
 					Reason: "host network requires an available host adapter and operation authorization"}
 			} else {
 				commandDecision = CommandRuntimeCommandPolicy(g.checker, command)
-				if commandDecision.NeedsApproval && (!call.PermissionMode.IsApprovalMode() || call.SupervisorToolCallID == "") {
+				if commandDecision.NeedsApproval && (!call.PermissionMode.IsApprovalMode() ||
+					(call.SupervisorToolCallID == "" && call.SpecialistToolCallID == "")) {
 					commandDecision.Allowed = false
 					commandDecision.Reason = "command runtime cannot bypass a required per-command review: " + commandDecision.Reason
 				}
@@ -613,7 +629,7 @@ func (g *Gateway) invokePreparedCommandRuntime(ctx context.Context, call ToolCal
 	}
 	scope := CommandRuntimeContext{ProjectTest: call.Name == RunTestsTool, InvocationID: call.InvocationID,
 		OperationKey: call.OperationKey, RunID: call.RunID, MissionID: call.MissionID,
-		RootAgentID: call.AgentID, AgentID: call.AgentID,
+		RootAgentID: rootAgentID, AgentID: call.AgentID,
 		AgentAttemptID: call.AgentAttemptID,
 		SessionID:      call.SessionID, WorkspaceID: call.WorkspaceID,
 		Surface: call.Surface, Phase: call.Phase, Role: call.Role,
@@ -625,6 +641,7 @@ func (g *Gateway) invokePreparedCommandRuntime(ctx context.Context, call ToolCal
 		PermissionRuntimeEpoch: call.PermissionRuntimeEpoch,
 		RunAuthorizationFence:  call.RunAuthorizationFence,
 		SupervisorToolCallID:   call.SupervisorToolCallID,
+		SpecialistToolCallID:   call.SpecialistToolCallID,
 		LeaseID:                call.LeaseID, LeaseGeneration: call.LeaseGeneration,
 		RequestedBy: call.RequestedBy, PolicyDecision: decision,
 		Adapter: call.CommandRuntimeAdapter}

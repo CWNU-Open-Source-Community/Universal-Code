@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"cyberagent-workbench/internal/approval"
@@ -20,6 +21,9 @@ type agentBrowserApprovalStore interface {
 }
 
 func recheckAgentBrowserApproval(ctx context.Context, base ApprovalControlStore, record approval.Record) error {
+	if strings.HasPrefix(record.ProposalID, "specialist-tool-") {
+		return recheckWorkerBrowserApproval(ctx, base, record)
+	}
 	st, ok := base.(agentBrowserApprovalStore)
 	if !ok {
 		return agentBrowserUnavailable("browser approval source unavailable")
@@ -113,6 +117,9 @@ func agentBrowserStoppedResult(call domain.SupervisorToolCall, code, message str
 	return domain.SupervisorToolResult{CallID: call.CallID, Status: status, ResultJSON: string(b), ErrorCode: code, CompletedAt: time.Now().UTC()}
 }
 func (s *AgentBrowserService) checkDurableDispatch(ctx context.Context, scope toolgateway.AgentBrowserExecutionScope, canonical json.RawMessage) error {
+	if scope.Call.RequestedBy == "specialist_runner" {
+		return s.checkWorkerDurableBrowserDispatch(ctx, scope, canonical)
+	}
 	st, ok := s.store.(agentBrowserApprovalStore)
 	if !ok {
 		return agentBrowserUnavailable("durable browser call storage unavailable")

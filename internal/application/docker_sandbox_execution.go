@@ -767,6 +767,9 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 	// Cleanup reconstructs the immutable mount without borrowing the foreground
 	// proof, which may have expired. Create/start still requires that live proof.
 	workspaceCtx := ctx
+	if isWorkerCommandDockerRequester(admission.RequestedBy) {
+		workspaceCtx = context.WithValue(workspaceCtx, workerCommandRuntimeKey{}, (*workerCommandRuntimeProof)(nil))
+	}
 	if isBatchValidationDockerRequester(admission.RequestedBy) {
 		workspaceCtx = context.WithValue(ctx, batchValidationRuntimeKey{}, (*batchValidationRuntimeProof)(nil))
 	}
@@ -782,6 +785,12 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 		admission.WorkspaceID, manifest, false)
 	if err != nil {
 		return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
+	}
+	if isWorkerCommandDockerRequester(admission.RequestedBy) {
+		workspace, err = s.workerCommandCleanupWorkspace(ctx, admission, workspace)
+		if err != nil {
+			return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
+		}
 	}
 	if isBatchValidationDockerRequester(admission.RequestedBy) {
 		workspace, err = s.batchValidationCleanupWorkspace(ctx, admission, workspace)

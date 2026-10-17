@@ -610,7 +610,7 @@ func validateSpecialistDelegationApplicationCapacityTx(ctx context.Context, tx *
 ) error {
 	var childCount int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes
-		WHERE run_id = ? AND parent_id = ?`, run.ID, root.ID).Scan(&childCount); err != nil {
+		WHERE run_id = ? AND parent_id = ? AND status NOT IN ('completed','failed','cancelled')`, run.ID, root.ID).Scan(&childCount); err != nil {
 		return err
 	}
 	if childCount+len(spec.Assignments) > application.MaxChildren ||
@@ -621,6 +621,13 @@ func validateSpecialistDelegationApplicationCapacityTx(ctx context.Context, tx *
 	if root.ChildLimit != 0 && root.ChildLimit != application.MaxChildren {
 		return apperror.New(apperror.CodeConflict,
 			"root Agent already uses a different child capacity policy")
+	}
+	var historyCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_nodes WHERE run_id=?`, run.ID).Scan(&historyCount); err != nil {
+		return err
+	}
+	if historyCount+len(spec.Assignments) > domain.MaxAgentHistoryNodesPerRun {
+		return apperror.New(apperror.CodeResourceExhausted, "specialist delegation exceeds worker history bound")
 	}
 	allowedSkills := make(map[string]struct{}, len(root.Skills))
 	for _, skill := range root.Skills {

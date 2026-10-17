@@ -137,7 +137,14 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 	if err != nil {
 		return noProcess, err
 	}
-	requestedBy := scope.RootAgentID
+	ctx, err = workerCommandDockerContext(ctx, scope, spec, command)
+	if err != nil {
+		return noProcess, err
+	}
+	requestedBy := scope.AgentID
+	if proof := workerCommandRuntimeFromContext(ctx); proof != nil {
+		requestedBy = workerCommandDockerRequester(proof)
+	}
 	if proof := batchValidationRuntimeFromContext(ctx); proof != nil {
 		if err := proof.check(ctx); err != nil {
 			return noProcess, err

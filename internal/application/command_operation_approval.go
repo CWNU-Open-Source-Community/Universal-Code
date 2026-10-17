@@ -8,6 +8,7 @@ import (
 	"errors"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
@@ -28,13 +29,37 @@ type commandApprovalStore interface {
 }
 
 type commandApprovalSource struct {
-	call        domain.SupervisorToolCall
+	call        commandCallIntent
+	supervisor  *domain.SupervisorToolCall
+	specialist  *domain.SpecialistToolCall
 	authority   commandruntimeadapter.Authority
 	input       toolgateway.CommandRuntimeInput
 	permission  domain.RunExecutionPermissionSnapshot
 	run         domain.Run
 	workspaceID string
 	started     bool
+	sessionID   string
+}
+
+// This is an internal projection of either ledger, not a Supervisor record.
+// A child retains its own source key, actor, Session and approval fingerprint.
+type commandCallIntent struct {
+	RunID, CallID, AgentID, AgentAttemptID, AttemptID string
+	ToolName, PayloadJSON, AuthorityJSON, ErrorCode   string
+	Turn                                              int
+	Status                                            domain.SupervisorToolCallStatus
+	AgentAttribution                                  domain.AgentAttributionSource
+	CompletedAt                                       *time.Time
+}
+
+func (s commandApprovalSource) approvalFingerprint() string {
+	if s.specialist != nil {
+		return domain.SpecialistToolApprovalFingerprint(*s.specialist)
+	}
+	if s.supervisor != nil {
+		return commandruntimeadapter.OperationApprovalFingerprint(*s.supervisor)
+	}
+	return ""
 }
 
 func readCommandApprovalSource(ctx context.Context, st commandApprovalStore, runID, callID string) (commandApprovalSource, error) {
@@ -47,10 +72,18 @@ func readCommandApprovalSource(ctx context.Context, st commandApprovalStore, run
 func readCommandSource(ctx context.Context, st commandApprovalStore, runID, callID string, allowCompletedStart bool) (commandApprovalSource, error) {
 	var s commandApprovalSource
 	var err error
-	s.call, s.started, err = st.GetSupervisorApprovalCall(ctx, runID, callID)
+	call, started, err := st.GetSupervisorApprovalCall(ctx, runID, callID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || apperror.CodeOf(err) == apperror.CodeNotFound {
+			return readWorkerCommandSource(ctx, st, runID, callID, allowCompletedStart)
+		}
 		return s, err
 	}
+	s.supervisor, s.started = &call, started
+	s.call = commandCallIntent{RunID: call.RunID, CallID: call.CallID,
+		AgentID: call.AgentID, AgentAttemptID: call.AgentAttemptID, AttemptID: call.AttemptID,
+		ToolName: call.ToolName, PayloadJSON: call.PayloadJSON, AuthorityJSON: call.AuthorityJSON, ErrorCode: call.ErrorCode,
+		Turn: call.Turn, Status: call.Status, AgentAttribution: call.AgentAttribution, CompletedAt: call.CompletedAt}
 	c := s.call
 	s.authority, err = commandruntimeadapter.DecodeAuthority(json.RawMessage(c.AuthorityJSON))
 	if err != nil {
@@ -67,7 +100,7 @@ func readCommandSource(ctx context.Context, st commandApprovalStore, runID, call
 	if !toolgateway.IsCommandExecutionTool(toolgateway.ToolName(c.ToolName)) || c.RunID != runID || c.CallID != callID ||
 		(c.Status != domain.SupervisorToolPending && !completedStart) || c.AgentAttribution == domain.AgentAttributionLegacyUnknown ||
 		c.AgentID == "" || c.AgentAttemptID == "" || c.AgentAttemptID != c.AttemptID ||
-		a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion || a.RunID != runID ||
+		a.ProtocolVersion != commandruntimeadapter.OperationAuthorityVersion || a.RunID != runID || a.Worker != nil ||
 		a.ScopeFingerprint == "" || c.PayloadJSON != string(canonical) ||
 		len(a.CommandFingerprints) != len(s.input.Commands) || ((s.input.JobID == "") != (a.JobFingerprint == "")) {
 		return s, pendingToolApprovalUnavailable("command approval requires the exact pinned pending call")
@@ -76,6 +109,7 @@ func readCommandSource(ctx context.Context, st commandApprovalStore, runID, call
 	if err != nil {
 		return s, err
 	}
+	s.sessionID = s.run.SessionID
 	mission, err := st.GetMission(ctx, s.run.MissionID)
 	if err != nil {
 		return s, err
@@ -99,9 +133,9 @@ func readCommandSource(ctx context.Context, st commandApprovalStore, runID, call
 
 func commandApprovalMatches(record approval.Record, source commandApprovalSource) bool {
 	return record.Validate() == nil && record.RunID == source.call.RunID && record.ProposalID == source.call.CallID &&
-		record.ToolName == string(toolgateway.CommandRuntimeTool) && record.SessionID == source.run.SessionID &&
+		record.ToolName == string(toolgateway.CommandRuntimeTool) && record.SessionID == source.sessionID &&
 		record.WorkspaceID == source.workspaceID && record.ActionClass == "command_process" && record.Mode == "per_call" &&
-		record.RequestFingerprint == commandruntimeadapter.OperationApprovalFingerprint(source.call)
+		record.RequestFingerprint == source.approvalFingerprint()
 }
 
 // Operator review binds the exact pending call. Filesystem inputs, adapter,
@@ -252,7 +286,7 @@ func (s *CommandRuntimeService) checkCommandLifecycleReview(ctx context.Context,
 	}
 	proof := &value
 	waiting, allowed, err := decidePendingOperation(ctx, source.permission, executionauth.SubjectRef{RunID: source.call.RunID, ActorID: source.call.AgentID},
-		operation, commandruntimeadapter.OperationApprovalFingerprint(source.call), &proof,
+		operation, source.approvalFingerprint(), &proof,
 		func() error { return errors.New("dispatch cannot create a new lifecycle review") }, decision.NeedsApproval, false)
 	if err != nil || waiting || !allowed {
 		return errors.Join(err, errors.New("command lifecycle review did not authorize dispatch"))

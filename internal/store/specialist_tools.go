@@ -20,7 +20,7 @@ func (s *SQLiteStore) BindSpecialistTools(ctx context.Context, b domain.Speciali
 	if err := b.Ref.Validate(); err != nil {
 		return err
 	}
-	if b.Mode != "read" && b.Mode != "batch" {
+	if b.Mode != "read" && b.Mode != "batch" && b.Mode != "worker" {
 		return errors.New("invalid Specialist tool mode")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -42,6 +42,17 @@ func (s *SQLiteStore) BindSpecialistTools(ctx context.Context, b domain.Speciali
 	if b.WorkspaceID != workspaceID {
 		return errors.New("child tool source workspace differs from its mission")
 	}
+	if b.Mode == "worker" {
+		profile, err := domain.WorkerProfileJSON(child.Worker)
+		if err != nil || child.Worker == nil || b.WorkerProfileJSON != profile {
+			return apperror.New(apperror.CodePolicyDenied, "child worker authority differs from admission")
+		}
+	} else if b.WorkerProfileJSON != "" && b.WorkerProfileJSON != "null" {
+		return errors.New("legacy child binding cannot supply a worker profile")
+	}
+	if b.WorkerProfileJSON == "" {
+		b.WorkerProfileJSON = "null"
+	}
 	if b.Mode == "read" {
 		raw, e := json.Marshal(child.AllowedReadPaths)
 		if e != nil {
@@ -53,7 +64,7 @@ func (s *SQLiteStore) BindSpecialistTools(ctx context.Context, b domain.Speciali
 	} else {
 		b.AllowedReadPathsJSON = "[]"
 	}
-	if b.Mode == "batch" {
+	if b.Mode == "batch" || b.BatchPlanID != "" {
 		var n int
 		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM batch_delivery_workspaces WHERE plan_id=? AND ordinal=? AND generation=? AND agent_id=?`, b.BatchPlanID, b.BatchOrdinal, b.BatchGeneration, child.ID).Scan(&n)
 		if err != nil {
@@ -63,7 +74,7 @@ func (s *SQLiteStore) BindSpecialistTools(ctx context.Context, b domain.Speciali
 			return errors.New("child tool binding lacks its admitted Batch workspace")
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO specialist_tool_bindings(agent_attempt_id,run_id,agent_id,session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,created_at,allowed_read_paths_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, b.Ref.AttemptID, b.Ref.RunID, b.Ref.AgentID, b.SessionID, b.WorkspaceID, b.RootFingerprint, b.BriefFingerprint, b.Mode, b.BatchPlanID, b.BatchOrdinal, b.BatchGeneration, ts(time.Now().UTC()), b.AllowedReadPathsJSON)
+	_, err = tx.ExecContext(ctx, `INSERT INTO specialist_tool_bindings(agent_attempt_id,run_id,agent_id,session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,created_at,allowed_read_paths_json,worker_profile_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, b.Ref.AttemptID, b.Ref.RunID, b.Ref.AgentID, b.SessionID, b.WorkspaceID, b.RootFingerprint, b.BriefFingerprint, b.Mode, b.BatchPlanID, b.BatchOrdinal, b.BatchGeneration, ts(time.Now().UTC()), b.AllowedReadPathsJSON, b.WorkerProfileJSON)
 	if err != nil {
 		return err
 	}
@@ -105,8 +116,32 @@ func (s *SQLiteStore) RecordSpecialistToolModelCompleted(ctx context.Context, re
 	if err != nil {
 		return domain.AgentAttempt{}, err
 	}
+	binding, err := s.GetSpecialistToolBinding(ctx, ref)
+	if err != nil {
+		return domain.AgentAttempt{}, err
+	}
+	var worker *domain.WorkerProfile
+	if binding.Mode == "worker" {
+		if err := json.Unmarshal([]byte(binding.WorkerProfileJSON), &worker); err != nil || worker == nil {
+			return domain.AgentAttempt{}, errors.New("child worker profile is unavailable")
+		}
+	}
 	for i := range calls {
-		canonical, err := toolgateway.NormalizeSpecialistNativePayload(calls[i].Name, calls[i].Arguments)
+		var canonical json.RawMessage
+		var err error
+		if binding.Mode == "worker" {
+			if !worker.AllowsTool(calls[i].Name) {
+				return domain.AgentAttempt{}, apperror.New(apperror.CodePolicyDenied, "child tool is outside its admitted profile")
+			}
+			switch calls[i].Name {
+			case "git_status", "git_diff", "git_commit", "verify":
+				canonical, err = toolgateway.NormalizeSpecialistNativePayload(calls[i].Name, calls[i].Arguments)
+			default:
+				canonical, err = toolgateway.NormalizeSupervisorToolPayload(toolgateway.ToolName(calls[i].Name), calls[i].Arguments)
+			}
+		} else {
+			canonical, err = toolgateway.NormalizeSpecialistNativePayload(calls[i].Name, calls[i].Arguments)
+		}
 		if err != nil {
 			return domain.AgentAttempt{}, err
 		}
@@ -196,7 +231,7 @@ func (s *SQLiteStore) ListSpecialistToolRounds(ctx context.Context, ref domain.A
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT r.round,r.model_attempt,r.assistant_text,r.provider_replay,c.position,c.call_id,c.name,c.payload_json,c.status,c.result_json,c.error_code,c.charge_id,c.created_at,c.completed_at FROM specialist_tool_rounds r JOIN specialist_tool_calls c ON c.agent_attempt_id=r.agent_attempt_id AND c.round=r.round JOIN specialist_tool_bindings b ON b.agent_attempt_id=r.agent_attempt_id WHERE b.agent_attempt_id=? AND b.run_id=? AND b.agent_id=? ORDER BY r.round,c.position`, ref.AttemptID, ref.RunID, ref.AgentID)
+	rows, err := s.db.QueryContext(ctx, `SELECT r.round,r.model_attempt,r.assistant_text,r.provider_replay,c.position,c.call_id,c.name,c.payload_json,c.status,c.result_json,c.error_code,c.charge_id,c.created_at,c.completed_at,c.authority_json,c.approval_source_id,c.approval_id,c.started_at FROM specialist_tool_rounds r JOIN specialist_tool_calls c ON c.agent_attempt_id=r.agent_attempt_id AND c.round=r.round JOIN specialist_tool_bindings b ON b.agent_attempt_id=r.agent_attempt_id WHERE b.agent_attempt_id=? AND b.run_id=? AND b.agent_id=? ORDER BY r.round,c.position`, ref.AttemptID, ref.RunID, ref.AgentID)
 	if err != nil {
 		return nil, err
 	}
@@ -207,8 +242,9 @@ func (s *SQLiteStore) ListSpecialistToolRounds(ctx context.Context, ref domain.A
 		var c domain.SpecialistToolCall
 		var created string
 		var completed sql.NullString
+		var started sql.NullString
 		var replay []byte
-		if err := rows.Scan(&round.Round, &round.ModelAttempt, &round.AssistantText, &replay, &c.Position, &c.CallID, &c.Name, &c.PayloadJSON, &c.Status, &c.ResultJSON, &c.ErrorCode, &c.ChargeID, &created, &completed); err != nil {
+		if err := rows.Scan(&round.Round, &round.ModelAttempt, &round.AssistantText, &replay, &c.Position, &c.CallID, &c.Name, &c.PayloadJSON, &c.Status, &c.ResultJSON, &c.ErrorCode, &c.ChargeID, &created, &completed, &c.AuthorityJSON, &c.ApprovalSourceID, &c.ApprovalID, &started); err != nil {
 			return nil, err
 		}
 		round.ProviderReplay = replay
@@ -217,6 +253,7 @@ func (s *SQLiteStore) ListSpecialistToolRounds(ctx context.Context, ref domain.A
 		c.ModelAttempt = round.ModelAttempt
 		c.CreatedAt = parseTS(created)
 		c.CompletedAt = parseNullableTS(completed)
+		c.StartedAt = parseNullableTS(started)
 		if len(out) == 0 || out[len(out)-1].Round != round.Round {
 			out = append(out, round)
 		}
@@ -286,7 +323,10 @@ func (s *SQLiteStore) CompleteSpecialistToolCall(ctx context.Context, c domain.S
 
 func (s *SQLiteStore) GetSpecialistToolBinding(ctx context.Context, ref domain.AgentAttemptRef) (domain.SpecialistToolBinding, error) {
 	b := domain.SpecialistToolBinding{Ref: ref}
-	err := s.db.QueryRowContext(ctx, `SELECT session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,allowed_read_paths_json FROM specialist_tool_bindings WHERE agent_attempt_id=? AND run_id=? AND agent_id=?`, ref.AttemptID, ref.RunID, ref.AgentID).Scan(&b.SessionID, &b.WorkspaceID, &b.RootFingerprint, &b.BriefFingerprint, &b.Mode, &b.BatchPlanID, &b.BatchOrdinal, &b.BatchGeneration, &b.AllowedReadPathsJSON)
+	err := s.db.QueryRowContext(ctx, `SELECT session_id,workspace_id,root_fingerprint,brief_fingerprint,mode,batch_plan_id,batch_ordinal,batch_generation,allowed_read_paths_json,worker_profile_json FROM specialist_tool_bindings WHERE agent_attempt_id=? AND run_id=? AND agent_id=?`, ref.AttemptID, ref.RunID, ref.AgentID).Scan(&b.SessionID, &b.WorkspaceID, &b.RootFingerprint, &b.BriefFingerprint, &b.Mode, &b.BatchPlanID, &b.BatchOrdinal, &b.BatchGeneration, &b.AllowedReadPathsJSON, &b.WorkerProfileJSON)
+	if b.Mode != "worker" && b.WorkerProfileJSON == "null" {
+		b.WorkerProfileJSON = ""
+	}
 	return b, err
 }
 

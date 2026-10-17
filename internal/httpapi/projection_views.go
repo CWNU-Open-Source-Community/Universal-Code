@@ -80,30 +80,31 @@ type AgentCompletionView struct {
 }
 
 type AgentNodeView struct {
-	ToolCallsUsed    int64                `json:"tool_calls_used,omitempty"`
-	CostUsedMicros   int64                `json:"cost_used_micros,omitempty"`
-	AllowedReadPaths []string             `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit    int64                `json:"tool_call_limit,omitempty"`
-	CostLimitMicros  int64                `json:"cost_limit_micros,omitempty"`
-	ID               string               `json:"id"`
-	ParentID         string               `json:"parent_id,omitempty"`
-	SessionID        string               `json:"session_id"`
-	Role             string               `json:"role"`
-	Profile          string               `json:"profile"`
-	Skills           []string             `json:"skills"`
-	Status           string               `json:"status"`
-	Depth            int                  `json:"depth"`
-	ChildLimit       int                  `json:"child_limit"`
-	TurnLimit        int64                `json:"turn_limit"`
-	TokenLimit       int64                `json:"token_limit"`
-	TurnsUsed        int64                `json:"turns_used"`
-	TokensUsed       int64                `json:"tokens_used"`
-	ActiveAttemptID  string               `json:"active_attempt_id,omitempty"`
-	Version          int64                `json:"version"`
-	CreatedAt        time.Time            `json:"created_at"`
-	UpdatedAt        time.Time            `json:"updated_at"`
-	FinishedAt       *time.Time           `json:"finished_at,omitempty"`
-	Completion       *AgentCompletionView `json:"completion,omitempty"`
+	Worker           *domain.WorkerProfile `json:"worker,omitempty"`
+	ToolCallsUsed    int64                 `json:"tool_calls_used,omitempty"`
+	CostUsedMicros   int64                 `json:"cost_used_micros,omitempty"`
+	AllowedReadPaths []string              `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64                 `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64                 `json:"cost_limit_micros,omitempty"`
+	ID               string                `json:"id"`
+	ParentID         string                `json:"parent_id,omitempty"`
+	SessionID        string                `json:"session_id"`
+	Role             string                `json:"role"`
+	Profile          string                `json:"profile"`
+	Skills           []string              `json:"skills"`
+	Status           string                `json:"status"`
+	Depth            int                   `json:"depth"`
+	ChildLimit       int                   `json:"child_limit"`
+	TurnLimit        int64                 `json:"turn_limit"`
+	TokenLimit       int64                 `json:"token_limit"`
+	TurnsUsed        int64                 `json:"turns_used"`
+	TokensUsed       int64                 `json:"tokens_used"`
+	ActiveAttemptID  string                `json:"active_attempt_id,omitempty"`
+	Version          int64                 `json:"version"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+	FinishedAt       *time.Time            `json:"finished_at,omitempty"`
+	Completion       *AgentCompletionView  `json:"completion,omitempty"`
 }
 
 type AgentGraphView struct {
@@ -114,17 +115,18 @@ type AgentGraphView struct {
 }
 
 type DelegationAssignmentView struct {
-	AllowedReadPaths  []string `json:"allowed_read_paths,omitempty"`
-	ToolCallLimit     int64    `json:"tool_call_limit,omitempty"`
-	CostLimitMicros   int64    `json:"cost_limit_micros,omitempty"`
-	Ordinal           int      `json:"ordinal"`
-	Title             string   `json:"title"`
-	Goal              string   `json:"goal"`
-	Skills            []string `json:"skills"`
-	TurnLimit         int64    `json:"turn_limit"`
-	TokenLimit        int64    `json:"token_limit"`
-	ApplicationStatus string   `json:"application_status,omitempty"`
-	AgentID           string   `json:"agent_id,omitempty"`
+	Worker            *domain.WorkerProfile `json:"worker,omitempty"`
+	AllowedReadPaths  []string              `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit     int64                 `json:"tool_call_limit,omitempty"`
+	CostLimitMicros   int64                 `json:"cost_limit_micros,omitempty"`
+	Ordinal           int                   `json:"ordinal"`
+	Title             string                `json:"title"`
+	Goal              string                `json:"goal"`
+	Skills            []string              `json:"skills"`
+	TurnLimit         int64                 `json:"turn_limit"`
+	TokenLimit        int64                 `json:"token_limit"`
+	ApplicationStatus string                `json:"application_status,omitempty"`
+	AgentID           string                `json:"agent_id,omitempty"`
 }
 
 type DelegationReviewView struct {
@@ -301,7 +303,7 @@ type FindingReportView struct {
 }
 
 func agentNodeView(value domain.AgentNode, completion *domain.AgentCompletion) AgentNodeView {
-	view := AgentNodeView{ID: value.ID, ParentID: value.ParentID, SessionID: value.SessionID,
+	view := AgentNodeView{Worker: value.Worker, ID: value.ID, ParentID: value.ParentID, SessionID: value.SessionID,
 		Role: string(value.Role), Profile: string(value.Profile), Skills: append([]string(nil), value.Skills...),
 		Status: string(value.Status), Depth: value.Depth, ChildLimit: value.ChildLimit,
 		ToolCallsUsed: value.ToolCallsUsed, CostUsedMicros: value.CostUsedMicros, AllowedReadPaths: value.AllowedReadPaths, ToolCallLimit: value.ToolCallLimit, CostLimitMicros: value.CostLimitMicros,

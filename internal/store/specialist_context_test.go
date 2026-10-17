@@ -47,6 +47,10 @@ func TestSpecialistContextCommitsParentInstructionExactlyOnce(t *testing.T) {
 		"specialist-context-usage-0001"); err != nil {
 		t.Fatal(err)
 	}
+	recovered, err := st.PrepareSpecialistContext(ctx, attemptRef(attempt))
+	if err != nil || !recovered.Recovered || recovered.TaskBrief.Fingerprint != batch.TaskBrief.Fingerprint || len(recovered.Messages) != 1 || recovered.Messages[0].ID != message.ID {
+		t.Fatalf("recorded usage prevented exact context recovery: %+v %v", recovered, err)
+	}
 	if _, err := st.db.ExecContext(ctx, `CREATE TRIGGER fail_specialist_context_commit_event
 		BEFORE INSERT ON run_events
 		WHEN NEW.type = 'agent.inbox_context_committed' AND NEW.subject_id = '`+attempt.ID+`'

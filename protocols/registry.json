@@ -274,7 +274,13 @@
         "specialist_delegation_application_request.v1",
         "specialist_delegation_request.v1",
         "specialist_delegation_review.v1",
-        "specialist_operator_step.v1"
+        "specialist_operator_step.v1",
+        "specialist_tool_approval.v1",
+        "workflow-summary.v1",
+        "workflow.v1",
+        "workflow_control.v1",
+        "workflow_start.v1",
+        "workflow_step.v1"
       ],
       "retired_identifiers": []
     },
@@ -1882,7 +1888,8 @@
         "mcp-client.v3",
         "mcp.call.input.v1",
         "mcp.capabilities.v1",
-        "mcp.content.input.v1"
+        "mcp.content.input.v1",
+        "mcp_worker_scope.v1"
       ],
       "retired_identifiers": []
     },

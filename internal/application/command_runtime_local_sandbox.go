@@ -130,6 +130,10 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 		return noProcess, errors.Join(err,
 			runner.ErrCommandRuntimeBoundary)
 	}
+	workspace, resourceSessionID, err := workerCommandSandboxWorkspace(ctx, workspace, scope, spec)
+	if err != nil {
+		return noProcess, err
+	}
 	workspace, err = batchValidationExecutionWorkspace(ctx, workspace, scope, spec)
 	if err != nil {
 		return noProcess, err
@@ -158,7 +162,7 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 	if err != nil {
 		return noProcess, err
 	}
-	bound, bindErr := commandRuntimeDrydockBound(ctx, e.store, workspace, scope.RunID, scope.MissionID, scope.SessionID, scope.WorkspaceID)
+	bound, bindErr := commandRuntimeDrydockBound(ctx, e.store, workspace, scope.RunID, scope.MissionID, resourceSessionID, scope.WorkspaceID)
 	if bindErr != nil {
 		return noProcess, bindErr
 	}
@@ -176,7 +180,9 @@ func (e *LocalSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.C
 		return noProcess, runner.ErrCommandRuntimeBoundary
 	}
 
-	request, err := e.compile(scope, spec, workspace, profile, permission,
+	resourceScope := scope
+	resourceScope.SessionID = resourceSessionID
+	request, err := e.compile(resourceScope, spec, workspace, profile, permission,
 		interaction, lease)
 	if err != nil {
 		return noProcess, err

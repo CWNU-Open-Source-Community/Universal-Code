@@ -851,6 +851,7 @@ func newScopedSubagentFixture(t testing.TB, provider llm.Provider, budget domain
 		RunID: run.ID, ParentAgentID: root.ID, Title: "internal model Specialist",
 		Skills: []string{"model.chat"}, TurnLimit: turnLimit, TokenLimit: tokenLimit,
 		AllowedReadPaths: limits.AllowedReadPaths, ToolCallLimit: limits.ToolCallLimit, CostLimitMicros: limits.CostLimitMicros,
+		Worker: limits.Worker,
 		IdempotencyKey: "specialist-runner-admit-0001",
 	})
 	if err != nil {

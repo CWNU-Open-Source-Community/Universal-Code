@@ -100,6 +100,7 @@ type agentBrowserSlot struct {
 }
 type AgentBrowserService struct {
 	store     AgentBrowserStore
+	drydocks  *RunWorktreeService
 	options   AgentBrowserOptions
 	mu        sync.Mutex
 	boot      string
@@ -181,10 +182,11 @@ func (s *AgentBrowserService) authority(ctx context.Context, runID string) (tool
 }
 func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuthority, rotate bool) (toolgateway.AgentBrowserCallAuthority, error) {
 	runID := a.RunID
+	key := agentBrowserSlotKey(a)
 	if s.closed {
 		return a, agentBrowserUnavailable("Agent browser manager is shut down")
 	}
-	slot := s.slots[runID]
+	slot := s.slots[key]
 	if rotate && agentBrowserUnusedColdSlot(slot) {
 		candidate := agentBrowserAuthorityForSlot(a, slot)
 		if candidate != slot.authority || !s.options.Capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(runID, candidate.RunAuthorizationFence) {
@@ -210,7 +212,7 @@ func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuth
 		a.RunAuthorizationFence = fence
 		a.Generation = a.Fingerprint()
 		slot = &agentBrowserSlot{authority: a, activation: s.sequence, consumed: map[string]bool{}, view: AgentBrowserView{Version: "agent_browser_status.v1", RunID: runID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, State: "idle", Product: s.options.Product, Headless: s.options.Headless, UpdatedAt: time.Now().UTC()}}
-		s.slots[runID] = slot
+		s.slots[key] = slot
 		s.sessions[a.BrowserSessionID] = slot
 	}
 	a = agentBrowserAuthorityForSlot(a, slot)
@@ -229,7 +231,13 @@ func agentBrowserAuthorityForSlot(a toolgateway.AgentBrowserCallAuthority, slot 
 	return a
 }
 func (s *AgentBrowserService) check(ctx context.Context, a toolgateway.AgentBrowserCallAuthority) error {
-	current, e := s.authority(ctx, a.RunID)
+	var current toolgateway.AgentBrowserCallAuthority
+	var e error
+	if a.Role == domain.AgentRoleSpecialist {
+		current, e = s.workerAuthority(ctx, domain.AgentAttemptRef{RunID: a.RunID, AgentID: a.AgentID, AttemptID: a.AgentAttemptID}, false)
+	} else {
+		current, e = s.authority(ctx, a.RunID)
+	}
 	if e != nil {
 		return e
 	}
@@ -442,6 +450,7 @@ func (s *AgentBrowserService) Shutdown(ctx context.Context) error {
 	return e
 }
 func (s *AgentRunner) WithAgentBrowser(service *AgentBrowserService) *AgentRunner {
+	if service != nil { service.WithRunWorktree(s.drydocks) }
 	if s != nil {
 		s.agentBrowser = service
 		if s.tools != nil {

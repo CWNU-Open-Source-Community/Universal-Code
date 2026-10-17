@@ -398,7 +398,12 @@ func (s *StandardCodeDockerService) execute(ctx context.Context,
 		}
 	}
 	if isNativeCommandDockerRequester(request.RequestedBy) {
-		if isGitBisectDockerRequester(request.RequestedBy) {
+		if isWorkerCommandDockerRequester(request.RequestedBy) {
+			proof := workerCommandRuntimeFromContext(ctx)
+			if proof == nil || proof.scope.RunID != scope.RunID || workerCommandDockerRequester(proof) != request.RequestedBy {
+				return result, runner.ErrCommandRuntimeBoundary
+			}
+		} else if isGitBisectDockerRequester(request.RequestedBy) {
 			proof := gitBisectRuntimeFromContext(ctx)
 			if proof == nil || proof.runID != scope.RunID || gitBisectDockerRequester(proof) != request.RequestedBy {
 				return result, runner.ErrCommandRuntimeBoundary

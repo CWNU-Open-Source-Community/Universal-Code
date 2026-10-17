@@ -51,11 +51,6 @@ func (s *SQLiteStore) PrepareExternalSpecialistSkillContext(ctx context.Context,
 	if err != nil {
 		return skills.ExternalSpecialistContextPreparation{}, err
 	}
-	if attempt.UsageRecordedAt != nil {
-		return skills.ExternalSpecialistContextPreparation{}, apperror.New(
-			apperror.CodeFailedPrecondition,
-			"external Specialist Skill context must precede model usage")
-	}
 	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
@@ -97,6 +92,11 @@ func (s *SQLiteStore) PrepareExternalSpecialistSkillContext(ctx context.Context,
 			return skills.ExternalSpecialistContextPreparation{}, err
 		}
 		return existing, nil
+	}
+	if attempt.UsageRecordedAt != nil {
+		return skills.ExternalSpecialistContextPreparation{}, apperror.New(
+			apperror.CodeFailedPrecondition,
+			"external Specialist Skill context must precede model usage")
 	}
 	preparation := skills.ExternalSpecialistContextPreparation{
 		ID: idgen.New("external-specialist-skillctx"),

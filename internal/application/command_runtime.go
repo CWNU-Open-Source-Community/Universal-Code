@@ -74,6 +74,8 @@ type commandRuntimeBindings struct {
 	rootSHA256 string
 	rootFound  bool
 	leaseFound bool
+	actor      domain.AgentNode
+	worker     *domain.SpecialistToolBinding
 }
 
 func NewCommandRuntimeService(store CommandRuntimeStore,
@@ -285,6 +287,9 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 	if err := s.checkPreparedCommandCall(ctx, scope, bindings, input); err != nil {
 		return toolgateway.CommandRuntimeExecutionResult{}, err
 	}
+	if bindings.worker != nil {
+		ctx = s.withWorkerCommandRuntime(ctx, scope, bindings)
+	}
 	adapter := s.adapter
 	result := toolgateway.CommandRuntimeExecutionResult{
 		Backend: adapter.Backend, Adapter: adapter, Action: input.Action,
@@ -298,7 +303,7 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		boundaryRequest := s.commandRuntimeBoundaryRequest(scope,
 			commandRuntimeWorkspaceBoundaryKey("foreground", scope.OperationKey),
 			scope.InvocationID)
-		if s.checkpoints != nil {
+		if s.checkpoints != nil && bindings.worker == nil {
 			if _, err := s.checkpoints.BeginBoundary(ctx, boundaryRequest); err != nil {
 				return result, err
 			}
@@ -327,7 +332,7 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		operationDigest, jobID := runner.CommandRuntimeOperationIdentity(scope.RunID,
 			scope.OperationKey)
 		boundaryRequest := s.commandRuntimeBoundaryRequest(scope, operationDigest, jobID)
-		if s.checkpoints != nil {
+		if s.checkpoints != nil && bindings.worker == nil {
 			if _, err := s.checkpoints.BeginBoundary(ctx, boundaryRequest); err != nil {
 				return result, err
 			}
@@ -356,7 +361,13 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 	case toolgateway.CommandRuntimeActionList:
 		jobs, err := s.manager.List(ctx, runner.CommandRuntimeListFilter{
 			RunID: scope.RunID, Limit: toolgateway.MaxCommandRuntimeResultJobs})
-		result.Jobs = jobs
+		for _, job := range jobs {
+			if _, ownerErr := s.authorizeJob(ctx, job.ID, bindings); ownerErr == nil {
+				result.Jobs = append(result.Jobs, job)
+			} else if apperror.CodeOf(ownerErr) != apperror.CodeNotFound {
+				return result, ownerErr
+			}
+		}
 		return result, commandRuntimeError(err)
 	case toolgateway.CommandRuntimeActionRead, toolgateway.CommandRuntimeActionWait:
 		record, err := s.authorizeReadableJob(ctx, input.JobID, bindings)
@@ -609,7 +620,7 @@ func (s *CommandRuntimeService) commandRuntimeBoundaryRequest(
 func (s *CommandRuntimeService) completeCommandRuntimeBoundary(ctx context.Context,
 	request WorkspaceMutationBoundaryRequest, cause error,
 ) error {
-	if s == nil || s.checkpoints == nil {
+	if s == nil || s.checkpoints == nil || workerCommandRuntimeFromContext(ctx) != nil {
 		return nil
 	}
 	completionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx),
@@ -752,6 +763,7 @@ func (s *CommandRuntimeService) loadCommandRuntimeBindings(ctx context.Context,
 	if value.root, value.rootFound, err = s.store.GetRootAgent(ctx, value.run.ID); err != nil {
 		return value, apperror.Normalize(err)
 	}
+	value.actor = value.root
 	if value.mode, err = s.store.GetRunMode(ctx, value.run.ID); err != nil {
 		return value, apperror.Normalize(err)
 	}
@@ -824,6 +836,14 @@ func (s *CommandRuntimeService) validateAuthorizedBindings(ctx context.Context,
 		value.rootPath); err != nil {
 		return value, commandRuntimeError(err)
 	}
+	actorSessionID := value.run.SessionID
+	if scope.RequestedBy == "specialist_runner" {
+		value, err = s.bindWorkerCommandRuntime(ctx, scope, value)
+		if err != nil {
+			return value, err
+		}
+		actorSessionID = value.actor.SessionID
+	}
 	operatorStopped := false
 	if proof, ok := ctx.Value(operatorCommandApprovalKey{}).(operatorCommandApproval); ok {
 		if proof.host != s || proof.runStatus != value.run.Status {
@@ -836,7 +856,7 @@ func (s *CommandRuntimeService) validateAuthorizedBindings(ctx context.Context,
 	if !value.leaseFound || !value.rootFound || value.run.Terminal() ||
 		(value.run.Status != domain.RunRunning && !operatorStopped) ||
 		value.run.ID != scope.RunID || value.run.MissionID != scope.MissionID ||
-		value.run.SessionID != scope.SessionID ||
+		actorSessionID != scope.SessionID ||
 		value.run.MissionID != value.mission.ID ||
 		value.mission.WorkspaceID != scope.WorkspaceID ||
 		value.workspace.ID != scope.WorkspaceID || value.root.ID != scope.RootAgentID ||
@@ -860,7 +880,7 @@ func (s *CommandRuntimeService) validateAuthorizedBindings(ctx context.Context,
 	}
 	if scope.ModeRevision != 0 && (value.mode.Surface != scope.Surface ||
 		value.mode.Phase != scope.Phase || value.mode.Profile != scope.Profile ||
-		value.mode.Revision != scope.ModeRevision || value.root.Role != scope.Role ||
+		value.mode.Revision != scope.ModeRevision || value.actor.Role != scope.Role ||
 		value.permission.Mode != scope.PermissionMode ||
 		value.permission.Revision != scope.PermissionRevision) {
 		return value, apperror.New(apperror.CodeConflict,
@@ -892,7 +912,7 @@ func (s *CommandRuntimeService) runnerScope(scope toolgateway.CommandRuntimeCont
 		MissionID: bindings.mission.ID, RootAgentID: bindings.root.ID,
 		AgentID: scope.AgentID, AgentAttemptID: scope.AgentAttemptID,
 		AttributionSource: scope.Attribution().Source,
-		SessionID:         bindings.run.SessionID, WorkspaceID: bindings.workspace.ID,
+		SessionID:         scope.SessionID, WorkspaceID: bindings.workspace.ID,
 		WorkspaceRootSHA256: bindings.rootSHA256,
 		ModeSnapshotID:      bindings.mode.ID, ModeRevision: bindings.mode.Revision,
 		ProfileSnapshotID:      bindings.profile.ID,
@@ -915,10 +935,13 @@ func (s *CommandRuntimeService) authorizeJob(ctx context.Context, jobID string,
 		return runner.CommandRuntimeJob{}, commandRuntimeError(err)
 	}
 	if job.RunID != bindings.run.ID || job.MissionID != bindings.mission.ID ||
-		job.SessionID != bindings.run.SessionID ||
+		job.SessionID != bindings.actor.SessionID ||
 		job.WorkspaceID != bindings.workspace.ID || job.RootAgentID != bindings.root.ID {
 		return runner.CommandRuntimeJob{}, apperror.New(apperror.CodeNotFound,
 			"command runtime job was not found in this Run")
+	}
+	if err := s.authorizeCommandJobActor(ctx, job, bindings); err != nil {
+		return runner.CommandRuntimeJob{}, err
 	}
 	return job, nil
 }
@@ -1039,6 +1062,9 @@ func (s *CommandRuntimeService) Reconcile(ctx context.Context) (int, error) {
 func (s *CommandRuntimeService) commandRuntimeJobBindingsCurrent(ctx context.Context,
 	job runner.CommandRuntimeJob,
 ) (bool, error) {
+	if worker, err := s.workerCommandJobBindingsCurrent(ctx, job); worker != nil || err != nil {
+		return worker != nil && *worker, err
+	}
 	expectedProfile := commandRuntimeExecutionProfile(s.adapter)
 	if err := s.capabilities.Validate(); err != nil || !s.commandRuntimeAdapterCurrent() ||
 		!job.Adapter.SameBackend(s.adapter) ||

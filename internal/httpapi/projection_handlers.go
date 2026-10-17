@@ -86,7 +86,7 @@ func (a *API) delegationView(request *http.Request,
 		RequestedBy: proposal.RequestedBy, CreatedAt: proposal.CreatedAt,
 		Assignments: make([]DelegationAssignmentView, len(proposal.Spec.Assignments))}
 	for index, assignment := range proposal.Spec.Assignments {
-		view.Assignments[index] = DelegationAssignmentView{Ordinal: assignment.Ordinal,
+		view.Assignments[index] = DelegationAssignmentView{Worker: assignment.Worker, Ordinal: assignment.Ordinal,
 			Title: assignment.Title, Goal: assignment.Goal,
 			Skills: append([]string(nil), assignment.Skills...), TurnLimit: assignment.TurnLimit,
 			TokenLimit: assignment.TokenLimit, AllowedReadPaths: assignment.AllowedReadPaths, ToolCallLimit: assignment.ToolCallLimit, CostLimitMicros: assignment.CostLimitMicros}

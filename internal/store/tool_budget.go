@@ -222,6 +222,15 @@ func resolveToolBudgetBindingTx(ctx context.Context, tx *sql.Tx, request toolbud
 		if bound != 1 {
 			return runBinding{}, false, errors.New("Specialist tool budget lacks its pending child call")
 		}
+		var mode string
+		if err := tx.QueryRowContext(ctx, `SELECT mode FROM specialist_tool_bindings WHERE agent_attempt_id=?`, attempt.ID).Scan(&mode); err != nil {
+			return runBinding{}, false, err
+		}
+		if mode == "worker" {
+			if _, err := validateSpecialistWorkerBindingTx(ctx, tx, ref, request.ToolName); err != nil {
+				return runBinding{}, false, err
+			}
+		}
 		return runBinding{RunID: run.ID, MissionID: run.MissionID, WorkspaceID: request.WorkspaceID}, true, nil
 	}
 	if request.SessionID != "" {

@@ -39,6 +39,7 @@ type SpecialistContinuationRequestView struct {
 }
 
 type SpecialistContinuationView struct {
+	WaitingApproval  bool     `json:"waiting_approval"`
 	Version          string   `json:"version"`
 	RunID            string   `json:"run_id"`
 	AgentID          string   `json:"agent_id"`
@@ -59,16 +60,17 @@ type SpecialistContinuationView struct {
 	Replayed         bool     `json:"replayed"`
 }
 type SpecialistExecutionView struct {
-	Version       string                   `json:"version"`
-	RunID         string                   `json:"run_id"`
-	AgentID       string                   `json:"agent_id"`
-	AttemptID     string                   `json:"attempt_id"`
-	Status        string                   `json:"status"`
-	Usage         domain.AgentAttemptUsage `json:"usage"`
-	ModelAttempts int                      `json:"model_attempts"`
-	ToolCalls     int                      `json:"tool_calls"`
-	ToolRounds    int                      `json:"tool_rounds"`
-	Replayed      bool                     `json:"replayed"`
+	WaitingApproval bool                     `json:"waiting_approval"`
+	Version         string                   `json:"version"`
+	RunID           string                   `json:"run_id"`
+	AgentID         string                   `json:"agent_id"`
+	AttemptID       string                   `json:"attempt_id"`
+	Status          string                   `json:"status"`
+	Usage           domain.AgentAttemptUsage `json:"usage"`
+	ModelAttempts   int                      `json:"model_attempts"`
+	ToolCalls       int                      `json:"tool_calls"`
+	ToolRounds      int                      `json:"tool_rounds"`
+	Replayed        bool                     `json:"replayed"`
 }
 type SpecialistToolReceiptsView struct {
 	Version string                    `json:"version"`
@@ -81,6 +83,7 @@ type SpecialistToolRoundView struct {
 	Calls        []SpecialistToolCallView `json:"calls"`
 }
 type SpecialistToolCallView struct {
+	ApprovalID string `json:"approval_id,omitempty"`
 	CallID     string `json:"call_id"`
 	Name       string `json:"name"`
 	Status     string `json:"status"`
@@ -145,7 +148,7 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 		for _, round := range rounds {
 			item := SpecialistToolRoundView{Round: round.Round, ModelAttempt: round.ModelAttempt, Calls: []SpecialistToolCallView{}}
 			for _, call := range round.Calls {
-				item.Calls = append(item.Calls, SpecialistToolCallView{CallID: call.CallID, Name: call.Name, Status: string(call.Status), ErrorCode: call.ErrorCode, ResultJSON: call.ResultJSON})
+				item.Calls = append(item.Calls, SpecialistToolCallView{ApprovalID: call.ApprovalID, CallID: call.CallID, Name: call.Name, Status: string(call.Status), ErrorCode: call.ErrorCode, ResultJSON: call.ResultJSON})
 			}
 			view.Rounds = append(view.Rounds, item)
 		}
@@ -216,7 +219,7 @@ func (a *API) serveSpecialistExecution(w http.ResponseWriter, r *http.Request, r
 		a.writeError(w, requestID, err, 0)
 		return
 	}
-	a.writeSuccessStatus(w, requestID, SpecialistExecutionView{Version: domain.SpecialistToolsVersion, RunID: result.RunID, AgentID: result.AgentID, AttemptID: result.AttemptID, Status: string(result.AttemptStatus), Usage: result.Usage, ModelAttempts: result.ModelAttempts, ToolCalls: result.ToolCalls, ToolRounds: result.ToolRounds, Replayed: result.Replayed}, nil, http.StatusOK)
+	a.writeSuccessStatus(w, requestID, SpecialistExecutionView{WaitingApproval: result.WaitingApproval, Version: domain.SpecialistToolsVersion, RunID: result.RunID, AgentID: result.AgentID, AttemptID: result.AttemptID, Status: string(result.AttemptStatus), Usage: result.Usage, ModelAttempts: result.ModelAttempts, ToolCalls: result.ToolCalls, ToolRounds: result.ToolRounds, Replayed: result.Replayed}, nil, http.StatusOK)
 }
 
 func (a *API) serveSpecialistContinuation(w http.ResponseWriter, r *http.Request, requestID, runID, agentID string) {
@@ -261,6 +264,6 @@ func (a *API) serveSpecialistContinuation(w http.ResponseWriter, r *http.Request
 		AttemptIDs:      result.AttemptIDs,
 		RoundsCompleted: result.Schedule.RoundsCompleted, TurnsStarted: result.Schedule.TurnsStarted,
 		TotalTokens: after.SpecialistTokens - before.SpecialistTokens, ExecutionMillis: after.SpecialistExecutionMillis - before.SpecialistExecutionMillis,
-		SummaryStatus: result.SummaryStatus, SummaryErrorCode: result.SummaryErrorCode, WakeID: result.WakeID, Replayed: result.Replayed,
+		WaitingApproval: result.WaitingApproval, SummaryStatus: result.SummaryStatus, SummaryErrorCode: result.SummaryErrorCode, WakeID: result.WakeID, Replayed: result.Replayed,
 	}, nil, http.StatusOK)
 }

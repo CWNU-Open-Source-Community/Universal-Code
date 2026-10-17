@@ -12,6 +12,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/artifact"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/scriptprocess"
@@ -178,13 +179,67 @@ func requireArtifactRunBindingTx(ctx context.Context, tx *sql.Tx, request artifa
 	}
 	binding.RunID = request.RunID
 	binding.WorkspaceID = workspaceID.String
-	if sessionID != request.SessionID || workspaceID.String != request.WorkspaceID {
+	if workspaceID.String != request.WorkspaceID {
 		return runBinding{}, errors.New("artifact scope does not match its Run, Session, and Workspace binding")
+	}
+	if sessionID != request.SessionID || request.SpecialistToolCallID != "" {
+		if err := requireSpecialistArtifactSourceTx(ctx, tx, request); err != nil {
+			return runBinding{}, err
+		}
 	}
 	return binding, nil
 }
 
+func requireSpecialistArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.CaptureRequest) error {
+	ref := domain.AgentAttemptRef{RunID: request.RunID, AgentID: request.AgentID, AttemptID: request.AgentAttemptID}
+	if err := ref.Validate(); err != nil || request.SpecialistToolCallID == "" || request.InvocationID == "" {
+		return errors.New("child artifact capture requires its exact tool invocation")
+	}
+	_, child, _, err := loadActiveAgentAttemptTx(ctx, tx, ref)
+	if err != nil {
+		return err
+	}
+	binding, err := validateSpecialistWorkerBindingTx(ctx, tx, ref, request.ToolName)
+	if err != nil {
+		return err
+	}
+	call, err := getSpecialistToolCallTx(ctx, tx, ref, request.SpecialistToolCallID)
+	if err != nil {
+		return err
+	}
+	if child.SessionID != request.SessionID || binding.SessionID != request.SessionID || binding.WorkspaceID != request.WorkspaceID || call.Name != request.ToolName || call.Status != domain.SupervisorToolPending || call.StartedAt == nil || call.AuthorityJSON == "" || call.ChargeID != request.InvocationID {
+		return errors.New("child artifact scope differs from its started durable tool invocation")
+	}
+	var charged bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM run_tool_calls WHERE id=? AND run_id=? AND session_id=? AND workspace_id=? AND tool_name=?)`, request.InvocationID, request.RunID, request.SessionID, request.WorkspaceID, request.ToolName).Scan(&charged); err != nil {
+		return err
+	}
+	if !charged {
+		return errors.New("child artifact capture lacks its exact tool charge")
+	}
+	if request.SourceID == request.InvocationID {
+		return nil
+	}
+	if request.ToolName != "command_runtime" && request.ToolName != "run_tests" {
+		return errors.New("child artifact source differs from its charged invocation")
+	}
+	actor, found, err := loadCommandRuntimeAgentAttributionTx(ctx, tx, request.SourceID)
+	if err != nil {
+		return err
+	}
+	if !found || actor.Source != domain.AgentAttributionRecorded || actor.AgentID != child.ID {
+		return errors.New("child artifact command Job is owned by another Agent")
+	}
+	return nil
+}
+
 func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.CaptureRequest) error {
+	// requireArtifactRunBindingTx already proved the exact started child
+	// call and native tool charge. All inherited native tools share that
+	// invocation source; command Jobs retain their own content checks below.
+	if request.SpecialistToolCallID != "" && request.SourceID == request.InvocationID {
+		return nil
+	}
 	requested := make(map[artifact.Stream]artifact.Output, len(request.Outputs))
 	for _, output := range request.Outputs {
 		requested[output.Stream] = output
@@ -211,7 +266,9 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 	case "read_file", "list_workspace",
 		"mcp_tool_call",
 		"workspace_list", "workspace_read", "workspace_glob", "workspace_grep",
-		"workspace_change", "workspace_apply", "workspace_delete":
+		"workspace_change", "workspace_apply", "workspace_delete",
+		"browser_status", "browser_navigate", "browser_snapshot", "browser_click",
+		"browser_type", "browser_screenshot", "browser_scroll", "browser_key":
 		var runID, sessionID, workspaceID, toolName string
 		if err := tx.QueryRowContext(ctx, `SELECT run_id, session_id, workspace_id, tool_name
 			FROM run_tool_calls WHERE id = ?`, request.SourceID).
