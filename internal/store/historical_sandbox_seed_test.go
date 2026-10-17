@@ -48,6 +48,7 @@ func (s legacySandboxCandidateSeedStore) CreateSandboxExecutionCandidate(ctx con
 func TestHistoricalSandboxCandidateSeedPreservesV1BindingsAcrossUpgrade(t *testing.T) {
 	ctx := t.Context()
 	donor, run, _ := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, donor)
 	lifecycle := createSandboxLifecycleStoreFixture(t, ctx, donor, run.ID)
 	var key string
 	if err := donor.db.QueryRowContext(ctx, `SELECT operation_key_digest
@@ -95,6 +96,7 @@ func TestHistoricalSandboxCandidateSeedPreservesV1BindingsAcrossUpgrade(t *testi
 	}
 	assertV1(donor)
 	path := filepath.Join(t.TempDir(), "candidate-v50.db")
+	restoreLegacyContext()
 	historical := historicalTestDatabaseFromSeed(t, donor, path, 50)
 	if err := historical.Close(); err != nil {
 		t.Fatal(err)

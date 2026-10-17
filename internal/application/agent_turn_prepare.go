@@ -42,7 +42,6 @@ type agentTurnContext struct {
 	continuitySections         []contextmgr.Section
 	recentOperatorSections     []contextmgr.Section
 	memory                     contextmgr.Selection
-	contextAudit               *llm.ModelContextAudit
 }
 
 type agentTurnInput struct {
@@ -207,7 +206,6 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err := requirePinnedProjectInstructionSelection(turn.Run.Config, memory); err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
-	contextAudit := supervisorModelContextAudit(memory)
 	executionPermission, err := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
@@ -410,7 +408,6 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 			continuitySections:         continuitySections,
 			recentOperatorSections:     recentOperatorSections,
 			memory:                     memory,
-			contextAudit:               contextAudit,
 		},
 		input: agentTurnInput{
 			boundaryReceipt:     boundaryReceipt,

@@ -149,7 +149,9 @@ func TestSchemaV50UpgradeAddsSandboxPreflightWithoutLosingLifecycle(t *testing.T
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "v50.db")
 	st, run, _ := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	lifecycle := createSandboxLifecycleStoreFixture(t, ctx, st, run.ID)
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, path, 50)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

@@ -273,10 +273,12 @@ func TestSchemaV68PreservesV67ReceiptWithoutFabricatingReview(t *testing.T) {
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-production-evidence-v67-review.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	gateReview := prepareDockerProductionEvidenceReviewStoreFixture(
 		t, ctx, st, run.ID, root, "production-evidence-review-upgrade")
 	evidence, _ := completeDockerProductionEvidenceHarnessReviewFixture(
 		t, ctx, st, gateReview, "production-evidence-review-upgrade-capture")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 67)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

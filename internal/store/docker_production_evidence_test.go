@@ -313,6 +313,7 @@ func TestSchemaV67PreservesInFlightV66AttemptWithoutFabricatingHarness(t *testin
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-production-evidence-v66.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	review := prepareDockerProductionEvidenceReviewStoreFixture(
 		t, ctx, st, run.ID, root, "production-evidence-v67-upgrade")
 	attempt := newDockerProductionEvidenceAttemptStoreFixture(t, review,
@@ -327,6 +328,7 @@ func TestSchemaV67PreservesInFlightV66AttemptWithoutFabricatingHarness(t *testin
 		acquired.Record.Lease); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 66)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -386,8 +388,10 @@ func TestSchemaV65PreservesReviewWithoutFabricatingProductionEvidence(t *testing
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-production-evidence-v64.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	review := prepareDockerProductionEvidenceReviewStoreFixture(
 		t, ctx, st, run.ID, root, "production-evidence-upgrade")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 64)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -417,8 +421,10 @@ func TestSchemaV66PreservesLegacyEvidenceWithoutFabricatingAttempt(t *testing.T)
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-production-evidence-v65.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	review := prepareDockerProductionEvidenceReviewStoreFixture(
 		t, ctx, st, run.ID, root, "production-evidence-legacy")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 65)
 	value, operation := newLegacyDockerProductionEvidenceStoreFixture(t, ctx, review,
 		"production-evidence-legacy-capture")

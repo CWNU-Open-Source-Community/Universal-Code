@@ -226,6 +226,7 @@ func TestDockerObservationLimitAndSchemaV52Upgrade(t *testing.T) {
 				seedPath = filepath.Join(t.TempDir(), "seed.db")
 			}
 			st, run, _ := openSandboxManifestStoreAt(t, ctx, seedPath, historicalVersion...)
+			restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 			t.Cleanup(func() { _ = st.Close() })
 			evidence, simulation := createDockerObservationAuthorityFixture(t, ctx, st, run.ID,
 				"observation-limit")
@@ -256,6 +257,7 @@ func TestDockerObservationLimitAndSchemaV52Upgrade(t *testing.T) {
 				return
 			}
 
+			restoreLegacyContext()
 			st = historicalTestDatabaseFromSeed(t, st, path, 52)
 			if err := st.Close(); err != nil {
 				t.Fatal(err)

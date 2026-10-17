@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/contextmgr"
+	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -108,4 +112,73 @@ func fitRecentOperatorContext(sections []contextmgr.Section, tokenBudget int) []
 		}
 	}
 	return sections
+}
+
+// The memory allowance is only one part of the request. Fit optional originals
+// again after tools, current input, output reserve and recovery limits are known.
+// This changes the delivered view, never the durable originals or required pins.
+func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout, memory contextmgr.Selection, inputLimit int) (llm.ChatRequest, modelContextLayout, contextmgr.Selection, error) {
+	if estimateModelRequestTokens(request) <= inputLimit {
+		return request, layout, memory, nil
+	}
+	sectionIndex := slices.IndexFunc(memory.Sections, func(section contextmgr.Section) bool {
+		return section.Kind == "recent_operator_history" && !section.Required
+	})
+	if sectionIndex < 0 {
+		return request, layout, memory, nil
+	}
+	section := memory.Sections[sectionIndex]
+	messageIndex := -1
+	for index, message := range request.Messages {
+		if index >= layout.HistoryStart {
+			break
+		}
+		if message.Role == "user" && message.Content == section.Content && message.Replay == nil &&
+			len(message.Images) == 0 && len(message.ToolCalls) == 0 && len(message.ToolResults) == 0 {
+			messageIndex = index
+			break
+		}
+	}
+	var envelope recentOperatorEnvelope
+	if messageIndex < 0 || !strings.HasPrefix(section.Content, recentOperatorGuidance) ||
+		json.Unmarshal([]byte(strings.TrimPrefix(section.Content, recentOperatorGuidance)), &envelope) != nil ||
+		envelope.Version != "recent_operator_history.v1" || len(envelope.Messages) == 0 {
+		return request, layout, memory, apperror.New(apperror.CodeFailedPrecondition, "recent operator context does not match its selected source")
+	}
+	request.Messages = slices.Clone(request.Messages)
+	sections := slices.Clone(memory.Sections)
+	for estimateModelRequestTokens(request) > inputLimit {
+		envelope.Messages = envelope.Messages[1:]
+		if len(envelope.Messages) == 0 {
+			request.Messages = slices.Delete(request.Messages, messageIndex, messageIndex+1)
+			layout.HistoryStart--
+			sections = slices.Delete(sections, sectionIndex, sectionIndex+1)
+			break
+		}
+		encoded, err := json.Marshal(envelope)
+		if err != nil {
+			return request, layout, memory, err
+		}
+		content := recentOperatorGuidance + string(encoded)
+		request.Messages[messageIndex].Content = content
+		sections[sectionIndex].Content = content
+	}
+	fitted, err := contextmgr.SelectSections(sections, memory.TokenBudget)
+	if err != nil {
+		return request, layout, memory, err
+	}
+	fitted.OmittedSources = append(slices.Clone(memory.OmittedSources), fitted.OmittedSources...)
+	if len(envelope.Messages) == 0 {
+		fitted.OmittedSources = append(fitted.OmittedSources, contextmgr.Source{
+			Kind: section.Kind, SourceID: section.SourceID, Tokens: contextmgr.EstimateTokens(section.Content), OmissionReason: "budget",
+		})
+	}
+	request.Metadata = maps.Clone(request.Metadata)
+	if request.Metadata == nil {
+		request.Metadata = make(map[string]string)
+	}
+	request.Metadata["memory_sections"] = strconv.Itoa(len(fitted.Sections))
+	request.Metadata["memory_omitted"] = strconv.Itoa(len(fitted.OmittedSources))
+	request.Metadata["memory_tokens"] = strconv.Itoa(fitted.EstimatedTokens)
+	return request, layout, fitted, nil
 }

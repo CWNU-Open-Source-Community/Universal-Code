@@ -152,11 +152,13 @@ func TestSchemaV61PreservesV60ProjectionWithoutFabricatingApplication(t *testing
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-runtime-input-application-v60.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	projection, operation := prepareDockerRuntimeInputProjectionStoreFixture(t, ctx, st,
 		run.ID, root, "runtime-input-application-upgrade")
 	if _, _, err := st.CreateDockerRuntimeInputProjectionPlan(ctx, projection, operation); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 60)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

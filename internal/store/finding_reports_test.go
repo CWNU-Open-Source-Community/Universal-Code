@@ -160,9 +160,11 @@ func TestFindingReportProjectionConvergesAcrossStores(t *testing.T) {
 func TestSchemaV34ExecutionSurvivesFindingReportMigration(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "finding-report-v34.db")
 	st, run, _ := createReadOnlyFanoutFixture(t, "seed.db", 1, 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	ctx := context.Background()
 	execution := createFindingReportSourceExecution(t, ctx, st, run.ID,
 		"finding-report-v34-plan", "finding-report-v34-execution")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 34)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

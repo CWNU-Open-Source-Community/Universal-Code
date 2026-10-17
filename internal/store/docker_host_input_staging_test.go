@@ -281,8 +281,10 @@ func TestSchemaV57UpgradePreservesV56AttemptWithoutFabricatingEvidence(t *testin
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "docker-host-input-v56.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	attempt, _, _, _, _ := newStagedDockerHostInputAttempt(t, ctx, st, run.ID, root,
 		"docker-host-input-upgrade")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, path, 56)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

@@ -103,6 +103,7 @@ func checkV182PopulatedUpgrade(t *testing.T, direct bool) {
 	ctx := t.Context()
 	path, root := filepath.Join(t.TempDir(), "v181.db"), t.TempDir()
 	state := openHistoricalTestDatabase(t, path, 181)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, state)
 	run := newV182SandboxRun(t, state, root, domain.Budget{MaxTurns: 4, MaxToolCalls: 8})
 	fixture := newDockerSandboxStoreFixture(t, ctx, state, run, root, "v182-history")
 	insertV180DockerAdmission(t, state, fixture.Admission, 73)
@@ -114,6 +115,7 @@ func checkV182PopulatedUpgrade(t *testing.T, direct bool) {
 	if _, _, err := state.BindDockerSandboxLaunch(ctx, launch); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	tables := []string{"runs", "sessions", "sandbox_execution_candidates", "sandbox_execution_candidate_operations",
 		"sandbox_disabled_executions", "sandbox_disabled_preflights", "sandbox_backend_evidence",
 		"sandbox_output_simulations", "sandbox_docker_observations", "sandbox_docker_container_plans",
@@ -299,6 +301,7 @@ func newSandboxV182SQLFixture(t *testing.T, live, advance, direct bool) sandboxV
 		}
 	}
 	t.Cleanup(func() { _ = state.Close() })
+	defer addEmptyCurrentContextForLegacySeed(t, state)()
 	root := t.TempDir()
 	run := newV182SandboxRun(t, state, root, domain.Budget{MaxTurns: 4, MaxTokens: 10, MaxToolCalls: 4, TimeoutSeconds: 120})
 	f := sandboxV182SQLFixture{state: state, run: run}
@@ -530,7 +533,9 @@ func checkV182SQLTriggerMatrix(t *testing.T, direct bool) {
 				t.Run(table, func(t *testing.T) {
 					overrides := map[string]any{}
 					if table == "sandbox_docker_product_admissions" && !strings.HasPrefix(change, "stale admission") {
+						restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, f.state)
 						current := f.currentAdmission(t)
+						restoreLegacyContext()
 						overrides["wall_clock_seconds"], overrides["tool_calls_remaining"] = current.WallClockSeconds, current.ToolCallsRemaining
 						overrides["admission_fingerprint"] = current.AdmissionFingerprint
 					}

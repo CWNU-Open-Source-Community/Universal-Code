@@ -830,7 +830,6 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		if err != nil {
 			return err
 		}
-		prepared.context.contextAudit = supervisorModelContextAudit(prepared.context.memory)
 		if compacted {
 			result.ContextCompacted, result.ContextSummaryID = true, prepared.context.summary.ID
 		}
@@ -1024,6 +1023,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 				return result, s.recordFailure(ctx, &result, err, 0)
 			}
 		}
+		modelMemory := prepared.context.memory
+		modelRequest, modelContextLayout, modelMemory, err = fitRecentOperatorRequest(modelRequest, modelContextLayout, modelMemory, inputLimit)
+		if err != nil {
+			return result, s.recordFailure(ctx, &result, err, 0)
+		}
 		boundedRequest, contextPlan, err := constrainRequestToModelWindow(modelRequest,
 			modelWindow, modelContextLayout, inputLimit)
 		if err != nil && contextPlan.HistoryOmitted == 0 {
@@ -1060,7 +1064,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
 		modelCall, err := s.callModelWithRetry(ctx, turn, prepared.ref, modelRequest, protocolRepair,
-			len(prepared.toolRounds), prepared.input.steeringSequence, prepared.context.contextAudit)
+			len(prepared.toolRounds), prepared.input.steeringSequence, supervisorModelContextAudit(modelMemory))
 		if modelCall.Checkpoint.RunID != "" {
 			turn.Checkpoint = modelCall.Checkpoint
 			result.Checkpoint = modelCall.Checkpoint

@@ -249,6 +249,7 @@ func TestDockerContainerPlanLimitCancellationAndSchemaV53Upgrade(t *testing.T) {
 				seedPath = filepath.Join(t.TempDir(), "seed.db")
 			}
 			st, run, root := openSandboxManifestStoreAt(t, ctx, seedPath, historicalVersion...)
+			restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 			t.Cleanup(func() { _ = st.Close() })
 			service, manifest, observation := createDockerContainerPlanStoreAuthority(t, ctx, st,
 				run.ID, root, "docker-plan-limit")
@@ -288,6 +289,7 @@ func TestDockerContainerPlanLimitCancellationAndSchemaV53Upgrade(t *testing.T) {
 				return
 			}
 
+			restoreLegacyContext()
 			st = historicalTestDatabaseFromSeed(t, st, path, 53)
 			if err := st.Close(); err != nil {
 				t.Fatal(err)

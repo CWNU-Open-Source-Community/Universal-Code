@@ -248,6 +248,7 @@ func TestFindingArtifactEvidenceAndValidationConvergeAcrossStores(t *testing.T) 
 func TestSchemaV35ReportSurvivesFindingValidationMigration(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "finding-validation-v35.db")
 	st, run, _ := createReadOnlyFanoutFixture(t, "seed.db", 1, 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	ctx := context.Background()
 	execution := createFindingReportSourceExecution(t, ctx, st, run.ID,
 		"finding-validation-v35-plan", "finding-validation-v35-execution")
@@ -255,6 +256,7 @@ func TestSchemaV35ReportSurvivesFindingValidationMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 35)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -319,6 +321,7 @@ func TestFindingCanBeRejectedWithoutArtifactEvidence(t *testing.T) {
 func TestSchemaV36FreezesLegacyArtifactAndRejectsPreMigrationTampering(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "finding-validation-tamper.db")
 	st, run, _ := createReadOnlyFanoutFixture(t, "seed.db", 1, 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	ctx := context.Background()
 	execution := createFindingReportSourceExecution(t, ctx, st, run.ID,
 		"finding-validation-tamper-plan", "finding-validation-tamper-execution")
@@ -328,6 +331,7 @@ func TestSchemaV36FreezesLegacyArtifactAndRejectsPreMigrationTampering(t *testin
 	}
 	blob := captureFindingValidationArtifact(t, ctx, st, run,
 		"echo legacy-tamper-evidence")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 35)
 	if _, err := st.db.ExecContext(ctx, `UPDATE run_artifacts SET content = ? WHERE id = ?`,
 		strings.Repeat("x", int(blob.SizeBytes)), blob.ID); err != nil {

@@ -224,6 +224,7 @@ func TestSchemaV58UpgradePreservesV57AttemptWithoutFabricatingRequirement(t *tes
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "docker-host-input-v57.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	intent, plan, _, _ := newDockerContainerAttemptStoreIntent(t, ctx, st, run.ID, root,
 		"docker-host-input-v58-upgrade")
 	requirement := newDockerContainerAttemptRequirement(t, intent, plan, false)
@@ -231,6 +232,7 @@ func TestSchemaV58UpgradePreservesV57AttemptWithoutFabricatingRequirement(t *tes
 		"docker_host_input_upgrade_owner", time.Minute); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, path, 57)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)

@@ -29,6 +29,7 @@ func TestSchemaV181PreservesDockerAdmissionRowsChildrenAndRecovery(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, state)
 	fixture := newDockerSandboxStoreFixture(t, ctx, state, run, root, "v180-docker", permission)
 	// A non-default rowid catches a rebuild that silently renumbers rows.
 	// Insert the frozen v180 columns under the real old constraints/triggers.
@@ -44,6 +45,7 @@ func TestSchemaV181PreservesDockerAdmissionRowsChildrenAndRecovery(t *testing.T)
 	if _, _, err := state.BindDockerSandboxLaunch(ctx, launch); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyContext()
 	tables := []string{"sandbox_docker_product_admissions", "sandbox_docker_product_start_requests", "sandbox_docker_product_launches", "sandbox_docker_lifecycle_intents", "sandbox_docker_lifecycle_transitions", "run_execution_permission_snapshots"}
 	before := make(map[string][][]any)
 	for _, table := range tables {

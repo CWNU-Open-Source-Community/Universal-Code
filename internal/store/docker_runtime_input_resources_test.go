@@ -265,8 +265,10 @@ func TestSchemaV63PreservesV62CleanupWithoutFabricatingStartGateReview(t *testin
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-start-gate-v62.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	cleanup, application := prepareCompletedDockerRuntimeInputResourceCleanupForReviewTest(
 		t, ctx, st, run.ID, root, "start-gate-upgrade")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 62)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -369,8 +371,10 @@ func TestSchemaV62PreservesV61ApplicationWithoutFabricatingResourceRecords(t *te
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "docker-runtime-input-resources-v61.db")
 	st, run, root := openSandboxManifestStoreAt(t, ctx, filepath.Join(t.TempDir(), "seed.db"), 177)
+	restoreLegacyContext := addEmptyCurrentContextForLegacySeed(t, st)
 	application, _ := prepareCompletedDockerRuntimeInputApplicationForResourceTest(
 		t, ctx, st, run.ID, root, "runtime-resource-upgrade")
+	restoreLegacyContext()
 	st = historicalTestDatabaseFromSeed(t, st, databasePath, 61)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
