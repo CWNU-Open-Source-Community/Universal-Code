@@ -365,6 +365,7 @@ type Config struct {
 	ThreadGitController                   ThreadGitController
 	ThreadApplicationServiceController    ThreadApplicationServiceController
 	ProjectActionsController              ProjectActionsController
+	ProjectHooksController                ProjectHooksController
 	ProjectPreparationController          ProjectPreparationController
 	ThreadPullRequestController           ThreadPullRequestController
 	PRFollowupController                  PRFollowupController
@@ -476,6 +477,7 @@ type API struct {
 	threadGitController                   ThreadGitController
 	threadApplicationServiceController    ThreadApplicationServiceController
 	projectActionsController              ProjectActionsController
+	projectHooksController                ProjectHooksController
 	projectPreparationController          ProjectPreparationController
 	threadPullRequestController           ThreadPullRequestController
 	prFollowupController                  PRFollowupController
@@ -932,6 +934,7 @@ func New(store Store, config Config) (*API, error) {
 		capabilityReadiness:                 capabilityReadiness,
 		commandRuntimeAdapters:              append([]commandruntimeadapter.Identity(nil), config.CommandRuntimeAdapters...),
 		projectActionsController:            config.ProjectActionsController,
+		projectHooksController:              config.ProjectHooksController,
 		projectPreparationController:        config.ProjectPreparationController,
 		commandActivitySource:               commandActivitySource,
 		capabilityReadinessRuntime:          readinessRuntime,
@@ -1148,6 +1151,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, slot, jobID, matched := matchProjectActionsPath(request.URL.Path); matched {
 		a.serveProjectActions(tracked, request, requestID, runID, slot, jobID)
+		return
+	}
+	if threadID, action, matched := matchProjectHooksPath(request.URL.Path); matched {
+		a.serveProjectHooks(tracked, request, requestID, threadID, action)
 		return
 	}
 	if threadID, jobID, stop, matched := matchThreadApplicationServicesPath(request.URL.Path); matched {
