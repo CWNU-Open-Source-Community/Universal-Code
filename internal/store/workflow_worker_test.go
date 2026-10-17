@@ -129,10 +129,22 @@ func TestWorkflowDueRecoversExpiredClaimAndFencesPreviousOwner(t *testing.T) {
 	if _, err := st.db.ExecContext(t.Context(), `UPDATE workflow_executions SET claim_until=? WHERE id=?`, ts(time.Now().Add(-time.Minute)), e.ID); err != nil {
 		t.Fatal(err)
 	}
-	if ran, err := service.RunDue(t.Context(), "new-host", time.Now().UTC()); err != nil || !ran {
-		t.Fatalf("expired claim not recovered: %t %v", ran, err)
+	recovered, claimed, err := st.ClaimWorkflowExecution(t.Context(), e.ID, "new-host")
+	if err != nil || !claimed || recovered.Version != e.Version || recovered.Status != e.Status {
+		t.Fatalf("claim recovery changed checkpoint: %+v claimed=%t err=%v", recovered, claimed, err)
 	}
 	if _, err := st.CheckpointWorkflowExecution(t.Context(), e, "lost-host"); err == nil {
 		t.Fatal("lost host overwrote recovered execution")
+	}
+	// Both writes use the same valid revision and running state; only ownership
+	// differs, so a terminal state or revision change cannot explain rejection.
+	if _, err := st.CheckpointWorkflowExecution(t.Context(), e, "new-host"); err != nil {
+		t.Fatalf("current owner could not checkpoint: %v", err)
+	}
+	if _, err := st.db.ExecContext(t.Context(), `UPDATE workflow_executions SET claim_until=? WHERE id=?`, ts(time.Now().Add(-time.Minute)), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ran, err := service.RunDue(t.Context(), "next-host", time.Now().UTC()); err != nil || !ran {
+		t.Fatalf("expired claim not recovered: %t %v", ran, err)
 	}
 }
