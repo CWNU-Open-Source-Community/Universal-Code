@@ -272,5 +272,7 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v201 | 在既有工具和命令账本中接入有界项目测试，保留历史调用行身份与 Agent 引用，并以精确测试调用授权 Plan 命令 Job | admit bounded project tests in existing tool and command ledgers while preserving historical call row identities and Agent references; authorize Plan command Jobs through exact pending test calls |
 | v202 | 持久化执行型子 Agent 的工具配置、精确调用授权及命令和文件修改归属，保留历史子 Agent 的原有行为 | persist execution-worker tool profiles, exact child-call authority, command-job and file-edit attribution while preserving historical child behavior |
 | v203 | 增加不可变工作流定义、执行状态和步骤结果账本，支持有界 worker、条件分支和循环的恢复与控制 | add immutable workflow definitions, execution state and step-result ledgers for recovery and control of bounded workers, conditional branches and loops |
+| v204 | 为既有 Thread 保存有期限和次数上限的 PR 跟进记录、反馈游标、原轮次输入及执行租约，支持暂停和恢复并防止重复续跑 | persist bounded PR followups, feedback cursors, original turn inputs and execution leases on existing Threads, supporting pause and recovery without duplicate continuation |
+| v205 | 保存项目自动动作的具体配置信任与修订，将编辑后格式化和结束前测试绑定到既有工具调用及原执行来源，支持配置变化后重新审阅和恢复去重 | persist reviewed project hook definitions and revisions, binding after-edit formatting and before-finish tests to existing tool calls and their original triggers for re-review and deduplicated recovery |
 
 </details>

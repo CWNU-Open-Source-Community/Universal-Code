@@ -76,11 +76,14 @@ type ControlPlane struct {
 	terminalDone                   chan struct{}
 	wakeWorker                     *application.RunWakeWorker
 	scheduledJobWorker             *scheduler.Worker
+	prFollowupWorker               *application.PRFollowupService
 	workerMu                       sync.Mutex
 	workerCancel                   context.CancelFunc
 	workerDone                     chan struct{}
 	scheduledWorkerCancel          context.CancelFunc
 	scheduledWorkerDone            chan struct{}
+	prFollowupCancel               context.CancelFunc
+	prFollowupDone                 chan struct{}
 	webFetchReconcileCancel        context.CancelFunc
 	webFetchReconcileDone          chan struct{}
 	closed                         bool
@@ -557,9 +560,11 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		WithLifecycleHooks(hookEngine)
 	webFetchAuthorizationSchedulerEnabled :=
 		webFetchAuthorizationReconcilerEnabled(config)
+	projectHooks := application.NewProjectHooksService(stateStore).WithRunWorktree(commandRuntimeDrydocks)
 	runtimeDependencies := application.RunRuntimeDependencies{
 		ActiveCalls: application.NewActiveCallRegistry(), Drydocks: commandRuntimeDrydocks,
 		MCPClient: mcpClient, WebEvidence: webEvidence, LifecycleHooks: hookEngine,
+		ProjectHooks:                   projectHooks,
 		WebFetchAuthorizationScheduler: webFetchAuthorizationSchedulerEnabled,
 		ExecutionCapabilities:          config.ExecutionPermissionCapabilities,
 		StandardCodeDelivery:           standardCodeDelivery, CodeIntel: codeIntelManager,
@@ -881,6 +886,15 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		threadGit = application.NewThreadGitService(stateStore, localGit, remoteGit,
 			workspaceCheckpoints, commandRuntimeDrydocks, config.ExecutionPermissionCapabilities).WithAdvanced(gitAdvanced)
 	}
+	var prFollowupWorker *application.PRFollowupService
+	var prFollowupController httpapi.PRFollowupController
+	if config.GitHubReviewControlEnabled && config.RunExecutionEnabled && config.ScheduledJobWorkerEnabled {
+		prFollowupWorker, err = application.NewPRFollowupService(stateStore, githubReview, threadGit, threadTurnControl)
+		if err != nil {
+			return nil, err
+		}
+		prFollowupController = prFollowupWorker
+	}
 	sandboxEnvironmentController, err := newDesktopSandboxEnvironmentController(home, config, standardCodeRuntime != nil)
 	if err != nil {
 		return nil, err
@@ -896,6 +910,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
 		ProjectActionsController:              application.NewProjectActionsService(stateStore, commandRuntime, commandRuntimeDrydocks),
+		ProjectHooksController:                projectHooks,
 		ProjectPreparationController:          projectPreparation,
 		RunCreationEnabled:                    config.RunCreationEnabled,
 		StandardCodePresetEnabled:             standardCodePreset != nil,
@@ -972,6 +987,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		GitAdvancedController:               gitAdvanced,
 		ThreadGitController:                 threadGit,
 		ThreadPullRequestController:         application.NewThreadPullRequestService(stateStore, githubReview, threadGit),
+		PRFollowupController:                prFollowupController,
 		GitHubReviewController:              githubReview,
 		BatchDeliveryController: application.NewBatchDeliveryWorkbenchService(batchDelivery).
 			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, stateStore, models.Router(), checker).WithNativeTools()),
@@ -1037,7 +1053,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		webFetchReconcileDone:          webFetchReconcileDone,
 		codeIntelManager:               codeIntelManager,
 		terminalManager:                terminalManager, boundaryMonitor: boundaryMonitor,
-		wakeWorker: wakeWorker, scheduledJobWorker: scheduledJobWorker}, nil
+		wakeWorker: wakeWorker, scheduledJobWorker: scheduledJobWorker, prFollowupWorker: prFollowupWorker}, nil
 }
 
 // CommandRuntimeProcessStatus exposes non-authorizing process facts to the
@@ -1169,10 +1185,10 @@ func (c *ControlPlane) StartWakeWorker(parent context.Context) error {
 	if c.closed {
 		return errors.New("desktop control plane is closed")
 	}
-	if c.wakeWorker == nil && c.scheduledJobWorker == nil {
+	if c.wakeWorker == nil && c.scheduledJobWorker == nil && c.prFollowupWorker == nil {
 		return nil
 	}
-	if c.workerDone != nil || c.scheduledWorkerDone != nil {
+	if c.workerDone != nil || c.scheduledWorkerDone != nil || c.prFollowupDone != nil {
 		return errors.New("desktop background worker is already started")
 	}
 	if c.wakeWorker != nil {
@@ -1192,6 +1208,15 @@ func (c *ControlPlane) StartWakeWorker(parent context.Context) error {
 			defer close(done)
 			_ = c.scheduledJobWorker.Run(ctx)
 		}(c.scheduledWorkerDone)
+	}
+	if c.prFollowupWorker != nil {
+		ctx, cancel := context.WithCancel(parent)
+		c.prFollowupCancel = cancel
+		c.prFollowupDone = make(chan struct{})
+		go func(done chan struct{}) {
+			defer close(done)
+			_ = c.prFollowupWorker.Run(ctx)
+		}(c.prFollowupDone)
 	}
 	return nil
 }
@@ -1287,21 +1312,29 @@ func (c *ControlPlane) Close() error {
 		return nil
 	}
 	c.closeOnce.Do(func() {
-		if c.mcpClient != nil {
-			_ = c.mcpClient.Close()
-		}
 		c.workerMu.Lock()
 		c.closed = true
 		cancel, done := c.workerCancel, c.workerDone
 		scheduledCancel, scheduledDone := c.scheduledWorkerCancel, c.scheduledWorkerDone
+		prFollowupCancel, prFollowupDone := c.prFollowupCancel, c.prFollowupDone
 		webFetchCancel, webFetchDone := c.webFetchReconcileCancel, c.webFetchReconcileDone
 		c.workerCancel = nil
 		c.workerDone = nil
 		c.scheduledWorkerCancel = nil
 		c.scheduledWorkerDone = nil
+		c.prFollowupCancel, c.prFollowupDone = nil, nil
 		c.webFetchReconcileCancel = nil
 		c.webFetchReconcileDone = nil
 		c.workerMu.Unlock()
+		if prFollowupCancel != nil {
+			prFollowupCancel()
+		}
+		if prFollowupDone != nil {
+			<-prFollowupDone
+		}
+		if c.mcpClient != nil {
+			_ = c.mcpClient.Close()
+		}
 		if c.projectPreparation != nil {
 			c.projectPreparation.Close()
 		}

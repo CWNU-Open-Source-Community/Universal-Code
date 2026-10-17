@@ -59,6 +59,9 @@ func (s *AgentRunner) requirePinnedProjectInstructionToolOrigins(ctx context.Con
 		return nil
 	}
 	for _, round := range rounds {
+		if round.ProjectHook() {
+			continue
+		} // Trust is rechecked by Go at hook dispatch.
 		pending := false
 		for _, call := range round.Calls {
 			pending = pending || call.Status == domain.SupervisorToolPending

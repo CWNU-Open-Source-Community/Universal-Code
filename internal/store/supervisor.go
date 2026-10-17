@@ -399,7 +399,7 @@ func (s *SQLiteStore) nextSupervisorModelAttempt(ctx context.Context,
 	if protocolRepair < 0 || protocolRepair > 1 {
 		return 0, 0, apperror.New(apperror.CodeInvalidArgument, "protocol repair number must be zero or one")
 	}
-	if toolRound < 0 || toolRound > domain.MaxSupervisorToolRounds {
+	if toolRound < 0 || toolRound > domain.MaxSupervisorExecutionRounds {
 		return 0, 0, apperror.New(apperror.CodeInvalidArgument, "supervisor tool round is out of range")
 	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
@@ -1518,7 +1518,7 @@ func parseSupervisorModelStartedPayload(payloadJSON string) (supervisorModelStar
 	}
 	if payload.transportAttempt() <= 0 || payload.transportAttempt() > payload.MaxAttempts ||
 		payload.protocolRepair() < 0 || payload.protocolRepair() > 1 ||
-		payload.toolRound() < 0 || payload.toolRound() > domain.MaxSupervisorToolRounds {
+		payload.toolRound() < 0 || payload.toolRound() > domain.MaxSupervisorExecutionRounds {
 		return supervisorModelStartedPayload{}, apperror.New(apperror.CodeFailedPrecondition, "invalid durable model start counters")
 	}
 	if payload.Context != nil {

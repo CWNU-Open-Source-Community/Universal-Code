@@ -23,9 +23,9 @@ func TestSupervisorTextToolRepairRecognizesOnlyRootTailEnvelope(t *testing.T) {
 			t.Fatalf("ordinary discussion or invalid root acquired tool repair: %.100s", text)
 		}
 	}
-	for round := -1; round <= MaxSupervisorToolRounds; round++ {
+	for round := -1; round <= MaxSupervisorExecutionRounds; round++ {
 		reason, err := NewSupervisorTextToolRepairReason(round)
-		if round < 0 || round == MaxSupervisorToolRounds {
+		if round < 0 || round == MaxSupervisorExecutionRounds {
 			if err == nil {
 				t.Fatal("out-of-range correction accepted")
 			}

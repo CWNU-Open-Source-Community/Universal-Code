@@ -33,7 +33,7 @@ func (c ModelPublicCommentary) Validate() error {
 	if strings.TrimSpace(c.RunID) == "" || strings.TrimSpace(c.AttemptID) == "" {
 		return errors.New("model public commentary run and attempt ids are required")
 	}
-	if c.ModelAttempt <= 0 || c.ToolRound <= 0 || c.ToolRound > MaxSupervisorToolRounds {
+	if c.ModelAttempt <= 0 || c.ToolRound <= 0 || c.ToolRound > MaxSupervisorExecutionRounds {
 		return errors.New("model public commentary attempt and tool round are invalid")
 	}
 	if c.Phase != PublicCommentaryBeforeTools {

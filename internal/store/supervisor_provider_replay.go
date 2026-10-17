@@ -130,7 +130,7 @@ func (s *SQLiteStore) SupervisorContextRecoveryInputLimit(ctx context.Context, c
 	if err := checkpoint.Validate(); err != nil {
 		return 0, false, err
 	}
-	if protocolRepair < 0 || protocolRepair > 1 || toolRound < 0 || toolRound > domain.MaxSupervisorToolRounds {
+	if protocolRepair < 0 || protocolRepair > 1 || toolRound < 0 || toolRound > domain.MaxSupervisorExecutionRounds {
 		return 0, false, apperror.New(apperror.CodeInvalidArgument, "invalid context recovery planning phase")
 	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})

@@ -11,3 +11,7 @@ skill_suggestions:
   - code@1.3.0
 test_command_id: test.go
 format_command_id: format.go
+# Optional: review this exact configuration in Checks and delivery to enable.
+hooks:
+  after_edit_format: true
+  before_finish_test: true

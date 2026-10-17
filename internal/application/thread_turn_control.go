@@ -114,7 +114,13 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
 	}
-	intent, err := s.threads.reserveMessage(ctx, normalized)
+	var intent domain.ThreadMessageIntent
+	if request.automatic {
+		intent.MessageID, err = s.automaticMessageID(ctx, normalized)
+	}
+	if err == nil && (!request.automatic || intent.MessageID != "") {
+		intent, err = s.threads.reserveMessage(ctx, normalized)
+	}
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
 	}
@@ -149,6 +155,10 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	s.turnMu.Lock()
 	if active := s.activeTurns[request.ThreadID]; active != nil {
 		defer s.turnMu.Unlock()
+		if request.automatic {
+			canReject = false
+			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation requires an idle task")
+		}
 		if (len(normalized.Files) > 0 || len(normalized.Images) > 0 || len(normalized.Attachments) > 0 || len(normalized.MCPReferences) > 0) &&
 			active.operationKey == normalized.OperationKey && intent.MessageID == "" {
 			canReject = false
@@ -203,6 +213,18 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 			active.queue = append(active.queue, queuedThreadTurn{request: normalized, result: result})
 		}
 		return result, nil
+	}
+	if request.automatic {
+		if err := s.checkAutomaticTurn(ctx, request.ThreadID, intent.MessageID); err != nil {
+			s.turnMu.Unlock()
+			return ExecuteThreadTurnResult{}, err
+		}
+		// Reserve new automatic input only after idle admission. A rejected
+		// background request must not leave an unsettled message intent.
+		if _, err := s.threads.reserveMessage(ctx, normalized); err != nil {
+			s.turnMu.Unlock()
+			return ExecuteThreadTurnResult{}, err
+		}
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
 	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil}

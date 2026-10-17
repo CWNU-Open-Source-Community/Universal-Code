@@ -263,6 +263,13 @@ func (s *SQLiteStore) LoadSupervisorAssistantHistory(ctx context.Context, checkp
 		history := providerhistory.Assistant{Replay: replay, Rounds: rounds, RoundReplay: make(map[int]*llm.ProviderReplay), AttemptID: source.AttemptID}
 		previousAttempt := 0
 		for index, round := range rounds {
+			if round.ProjectHook() {
+				if round.Round != index+1 || !round.Complete() || round.ModelAttempt < previousAttempt || round.ModelAttempt >= number {
+					return nil, apperror.New(apperror.CodeFailedPrecondition, "project hook history ordering is invalid")
+				}
+				previousAttempt = round.ModelAttempt
+				continue
+			}
 			if round.Round != index+1 || !round.Complete() || round.ModelAttempt <= previousAttempt || round.ModelAttempt >= number {
 				return nil, apperror.New(apperror.CodeFailedPrecondition, "private assistant history tool ordering is invalid")
 			}
@@ -332,6 +339,13 @@ func supervisorHistoryToolRoundsTx(ctx context.Context, tx *sql.Tx, checkpoint d
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanSupervisorToolRounds(rows, domain.MaxSupervisorToolRounds)
+	rounds, err := scanSupervisorToolRounds(rows, domain.MaxSupervisorExecutionRounds)
+	_ = rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err := enrichProjectHookRounds(ctx, tx, rounds); err != nil {
+		return nil, err
+	}
+	return rounds, nil
 }

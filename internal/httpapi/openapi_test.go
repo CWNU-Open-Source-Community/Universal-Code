@@ -1131,6 +1131,10 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		RemoteURLs: []application.ThreadGitRemote{{Name: "origin", URL: "https://github.com/example/fixture.git"}}}
 	fixture.api.threadGitController = openAPIThreadGitController{binding: threadGitBinding}
 	fixture.api.threadPullRequestController = openAPIThreadPullRequestController{binding: threadGitBinding}
+	prFollowups := &prFollowupControllerStub{expectedThreadID: openAPIThread.ID}
+	fixture.api.prFollowupController = prFollowups
+	projectHooks := &projectHooksControllerStub{}
+	fixture.api.projectHooksController = projectHooks
 	legacyArchiveSession := session.New(fixture.workspace.ID,
 		"OpenAPI legacy archive fixture", "review")
 	if err := fixture.store.SaveSession(t.Context(), legacyArchiveSession); err != nil {
@@ -1188,6 +1192,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"{proposal_id}":       "controlled-command-proposal-openapi",
 		"{batch_delivery_id}": "batch-openapi-missing-0001",
 		"{connection_id}":     "github-connection-openapi",
+		"{followup_id}":       "followup-one",
 		"{attempt_id}":        uiAttemptID,
 		"{edit_id}":           fileEditRecord.ID,
 		"{source_edit_id}":    revertSource.ID,
@@ -1319,6 +1324,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = mcpCredentialStatusPath(credentialBinding)
 		}
 		t.Run(spec.OperationID, func(t *testing.T) {
+			prFollowupCallsBefore := prFollowups.calls
+			projectHookCallsBefore := projectHooks.calls
 			requestAPI := fixture.api
 			var threadServiceJob threadApplicationServicesLiveJob
 			if spec.Path == StandardCodePresetCreatePath ||
@@ -1464,6 +1471,12 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"thread_pull_request.v1","connection_id":"github-connection-openapi","pull_request":7}`
 				} else if spec.OperationID == "setThreadPullRequestCredential" {
 					body = `{"version":"thread_pull_request.v1","connection_id":"github-connection-openapi","token":"openapi-fixture-token-not-a-real-credential"}`
+				} else if spec.OperationID == "createPRFollowup" {
+					body = prFollowupCreateBody
+				} else if spec.OperationID == "pausePRFollowup" || spec.OperationID == "resumePRFollowup" || spec.OperationID == "cancelPRFollowup" {
+					body = prFollowupTransitionBody
+				} else if spec.OperationID == "trustProjectHooks" || spec.OperationID == "disableProjectHooks" {
+					body = projectHooksHTTPBody
 				} else if spec.OperationID == "uploadWorkspaceFile" {
 					body = `{"version":"workspace_file_upload.v1","mime_type":"text/plain","name":"notes.txt","data_base64":"` + base64.StdEncoding.EncodeToString(fileBytes) + `"}`
 				} else if spec.OperationID == "uploadWorkspaceImage" {
@@ -1970,6 +1983,38 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			} else {
 				response = performRequest(t, requestAPI, http.MethodGet, requestPath, testAccessToken,
 					"127.0.0.1:8765", "127.0.0.1:45000", nil)
+			}
+			switch spec.OperationID {
+			case "getProjectHooks", "trustProjectHooks", "disableProjectHooks":
+				if projectHooks.calls != projectHookCallsBefore+1 || projectHooks.threadID != openAPIThread.ID {
+					t.Fatalf("project hook route did not reach the task controller: calls=%d thread=%s", projectHooks.calls-projectHookCallsBefore, projectHooks.threadID)
+				}
+				if spec.OperationID != "getProjectHooks" {
+					want := application.ProjectHooksReviewRequest{
+						Version: application.ProjectHooksVersion, ExpectedFingerprint: projectHooksHTTPFingerprint,
+					}
+					if projectHooks.action != strings.TrimSuffix(spec.OperationID, "ProjectHooks") || projectHooks.request != want {
+						t.Fatalf("project hook route changed the action or reviewed configuration: %#v", projectHooks)
+					}
+				}
+			case "listPRFollowups", "createPRFollowup", "pausePRFollowup", "resumePRFollowup", "cancelPRFollowup":
+				if prFollowups.calls != prFollowupCallsBefore+1 || prFollowups.threadID != openAPIThread.ID {
+					t.Fatalf("PR followup route did not reach the task controller: calls=%d thread=%s", prFollowups.calls-prFollowupCallsBefore, prFollowups.threadID)
+				}
+				if spec.OperationID == "createPRFollowup" {
+					var expected application.PRFollowupCreateRequest
+					if err := json.Unmarshal([]byte(prFollowupCreateBody), &expected); err != nil {
+						t.Fatal(err)
+					}
+					if prFollowups.key != "openapi-live-operation-012345-createPRFollowup" || !reflect.DeepEqual(prFollowups.create, expected) {
+						t.Fatalf("PR followup creation route changed the original key or settings: %#v", prFollowups)
+					}
+				} else if spec.OperationID != "listPRFollowups" {
+					if prFollowups.id != "followup-one" || prFollowups.action != strings.TrimSuffix(spec.OperationID, "PRFollowup") ||
+						prFollowups.transition.Version != application.PRFollowupVersion || prFollowups.transition.ExpectedRevision != 7 {
+						t.Fatalf("PR followup transition route changed the target or expected revision: %#v", prFollowups)
+					}
+				}
 			}
 			if spec.OperationID == "getBrowserSafeWebReadiness" ||
 				spec.OperationID == "getThreadActivityDetail" ||

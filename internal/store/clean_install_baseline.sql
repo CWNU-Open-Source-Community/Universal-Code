@@ -4326,6 +4326,52 @@ CREATE TABLE plugin_publishers (
 		CHECK(length(reviewed_by) BETWEEN 1 AND 256 AND julianday(reviewed_at) IS NOT NULL)
 	) WITHOUT ROWID;
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE pr_followups (
+		id TEXT PRIMARY KEY,
+		thread_id TEXT NOT NULL,
+		request_fingerprint TEXT NOT NULL,
+		status TEXT NOT NULL CHECK(status IN ('active','paused','blocked','ready','completed','cancelled','exhausted')),
+		revision INTEGER NOT NULL CHECK(revision >= 1),
+		next_check_at INTEGER NOT NULL,
+		deadline_at INTEGER NOT NULL,
+		record_json TEXT NOT NULL CHECK(json_valid(record_json)),
+		state_json TEXT NOT NULL CHECK(json_valid(state_json)),
+		lease_owner TEXT NOT NULL DEFAULT '',
+		lease_token TEXT NOT NULL DEFAULT '',
+		lease_until INTEGER NOT NULL DEFAULT 0,
+		FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
+		CHECK(json_extract(record_json, '$.id') = id),
+		CHECK(json_extract(record_json, '$.thread_id') = thread_id),
+		CHECK(json_extract(record_json, '$.status') = status),
+		CHECK(json_extract(record_json, '$.revision') = revision),
+		CHECK((lease_owner = '' AND lease_token = '' AND lease_until = 0)
+			OR (lease_owner <> '' AND lease_token <> '' AND lease_until > 0))
+	);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE project_hook_calls (
+		run_id TEXT NOT NULL,
+		turn INTEGER NOT NULL,
+		attempt_id TEXT NOT NULL,
+		call_id TEXT NOT NULL,
+		trigger_key TEXT NOT NULL,
+		slot TEXT NOT NULL CHECK(slot IN ('format','test')),
+		target TEXT NOT NULL,
+		config_fingerprint TEXT NOT NULL,
+		workspace_version TEXT NOT NULL,
+		PRIMARY KEY(run_id,turn,attempt_id,call_id),
+		UNIQUE(run_id,trigger_key),
+		FOREIGN KEY(run_id,turn,attempt_id,call_id) REFERENCES run_supervisor_tool_calls(run_id,turn,attempt_id,call_id)
+	);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE project_hook_trust (
+		workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),
+		root_fingerprint TEXT NOT NULL CHECK(length(root_fingerprint)=64),
+		fingerprint TEXT NOT NULL CHECK(length(fingerprint)=64),
+		trusted INTEGER NOT NULL CHECK(trusted IN (0,1)),
+		revision INTEGER NOT NULL CHECK(revision>0),
+		updated_at TEXT NOT NULL
+	);
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE project_preparations (
 		id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
 		run_id TEXT NOT NULL REFERENCES runs(id),
@@ -6037,7 +6083,7 @@ CREATE TABLE run_supervisor_assistant_replay (
 		run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 		turn INTEGER NOT NULL CHECK(turn > 0), attempt_id TEXT NOT NULL CHECK(length(attempt_id) > 0),
 		model_attempt INTEGER NOT NULL CHECK(model_attempt > 0),
-		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 4),
+		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 21),
 		provider TEXT NOT NULL CHECK(length(provider) > 0), model TEXT NOT NULL CHECK(length(model) > 0),
 		replay_blob BLOB NOT NULL CHECK(length(replay_blob) BETWEEN 1 AND 1048576),
 		replay_sha256 TEXT NOT NULL CHECK(length(replay_sha256)=64 AND replay_sha256 NOT GLOB '*[^0-9a-f]*'),
@@ -6072,7 +6118,7 @@ CREATE TABLE run_supervisor_checkpoints (
 CREATE TABLE run_supervisor_context_recoveries (
 		run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 		turn INTEGER NOT NULL CHECK(turn > 0), attempt_id TEXT NOT NULL,
-		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 4),
+		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 21),
 		protocol_repair INTEGER NOT NULL CHECK(protocol_repair BETWEEN 0 AND 1),
 		model_attempt INTEGER NOT NULL CHECK(model_attempt > 0),
 		original_input_tokens INTEGER NOT NULL CHECK(original_input_tokens > 0),
@@ -6083,7 +6129,7 @@ CREATE TABLE run_supervisor_context_recoveries (
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE run_supervisor_provider_replay (
 		run_id TEXT NOT NULL, turn INTEGER NOT NULL CHECK(turn > 0),
-		attempt_id TEXT NOT NULL, round INTEGER NOT NULL CHECK(round BETWEEN 1 AND 4),
+		attempt_id TEXT NOT NULL, round INTEGER NOT NULL CHECK(round BETWEEN 1 AND 21),
 		model_attempt INTEGER NOT NULL CHECK(model_attempt > 0),
 		provider TEXT NOT NULL CHECK(length(provider) > 0),
 		model TEXT NOT NULL CHECK(length(model) > 0),
@@ -6203,13 +6249,13 @@ CREATE TABLE run_supervisor_tool_rounds (
 		attempt_id TEXT NOT NULL,
 		round INTEGER NOT NULL,
 		model_attempt INTEGER NOT NULL,
+		origin TEXT NOT NULL DEFAULT 'model' CHECK(origin IN ('model','project_hook')),
 		created_at TEXT NOT NULL,
 		completed_at TEXT,
 		PRIMARY KEY(run_id, turn, attempt_id, round),
-		UNIQUE(run_id, turn, attempt_id, model_attempt),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
 		CHECK(turn > 0),
-		CHECK(round BETWEEN 1 AND 4),
+		CHECK(round BETWEEN 1 AND 21),
 		CHECK(model_attempt > 0)
 	);
 -- traverse-board-clean-install-object-boundary --
@@ -13905,6 +13951,11 @@ CREATE INDEX idx_plugin_installations_state_updated
 CREATE INDEX idx_plugin_transitions_installation
 		ON plugin_installation_transitions(installation_id, to_generation);
 -- traverse-board-clean-install-object-boundary --
+CREATE INDEX idx_pr_followups_due ON pr_followups(status,next_check_at,lease_until);
+-- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX idx_pr_followups_open_thread ON pr_followups(thread_id)
+		WHERE status IN ('active','paused','blocked','ready');
+-- traverse-board-clean-install-object-boundary --
 CREATE UNIQUE INDEX idx_project_preparation_active ON project_preparations(run_id) WHERE state IN ('pending','downloading','installing');
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_project_preparations_run ON project_preparations(run_id,target,created_at DESC);
@@ -14273,6 +14324,8 @@ CREATE INDEX idx_standard_code_supervisor_ledger_run_event
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_structured_tool_operations_run_created_at
 		ON structured_tool_operations(run_id, created_at, operation_key_digest);
+-- traverse-board-clean-install-object-boundary --
+CREATE UNIQUE INDEX idx_supervisor_native_model_round ON run_supervisor_tool_rounds(run_id,turn,attempt_id,model_attempt) WHERE origin='model';
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_supervisor_tool_call_agents_actor
 		ON run_supervisor_tool_call_agents(run_id, agent_id, created_at, call_id);
@@ -26409,12 +26462,17 @@ CREATE TRIGGER trg_supervisor_context_recovery_source BEFORE INSERT ON run_super
 		AND json_extract(e.payload_json,'$.input_estimate')=NEW.original_input_tokens)
 	BEGIN SELECT RAISE(ABORT, 'context recovery requires a typed context limit failure'); END;
 -- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_supervisor_native_round_limit BEFORE INSERT ON run_supervisor_tool_rounds
+		 WHEN NEW.origin='model' AND (SELECT COUNT(*) FROM run_supervisor_tool_rounds
+		 WHERE run_id=NEW.run_id AND turn=NEW.turn AND attempt_id=NEW.attempt_id AND origin='model')>=4
+		 BEGIN SELECT RAISE(ABORT,'native model tool round limit exceeded'); END;
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_supervisor_provider_replay_immutable BEFORE UPDATE ON run_supervisor_provider_replay
 	BEGIN SELECT RAISE(ABORT, 'provider replay is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_supervisor_provider_replay_source BEFORE INSERT ON run_supervisor_provider_replay
 	WHEN NOT EXISTS (SELECT 1 FROM run_supervisor_tool_rounds r JOIN run_events e ON e.run_id=r.run_id
-		WHERE r.run_id=NEW.run_id AND r.turn=NEW.turn AND r.attempt_id=NEW.attempt_id
+		WHERE r.origin='model' AND r.run_id=NEW.run_id AND r.turn=NEW.turn AND r.attempt_id=NEW.attempt_id
 		AND r.round=NEW.round AND r.model_attempt=NEW.model_attempt
 		AND e.type='model.completed' AND e.source='model_gateway'
 		AND e.subject_id=NEW.attempt_id||'/model/'||NEW.model_attempt

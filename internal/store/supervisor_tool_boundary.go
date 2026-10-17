@@ -46,10 +46,8 @@ func prepareSupervisorToolBoundaryTx(ctx context.Context, tx *sql.Tx, run domain
 	if err != nil {
 		return domain.OperatorSteeringMessage{}, "", err
 	}
-	var rounds int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM run_supervisor_tool_rounds
-		WHERE run_id=? AND attempt_id=? AND turn=? AND completed_at IS NOT NULL`,
-		run.ID, checkpoint.AttemptID, checkpoint.NextTurn).Scan(&rounds); err != nil {
+	rounds, err := supervisorNativeToolRoundCountTx(ctx, tx, checkpoint, true)
+	if err != nil {
 		return domain.OperatorSteeringMessage{}, "", err
 	}
 	if rounds != domain.MaxSupervisorToolRounds {

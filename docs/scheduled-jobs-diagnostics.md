@@ -73,6 +73,37 @@ Closing API/Desktop drains and stops the worker. Capability output always report
 `runtime_enable_supported=false`, `persistent_service=false`, and
 `authority_escalation=false`.
 
+## PR 持续跟进
+
+在任务的 **改动与交付 → PR 状态 → 持续跟进 PR** 中，选择已连接的仓库和当前分支的
+PR，设置检查间隔、截止时间和自动修复次数。默认每 5 分钟检查一次，持续 24 小时，最多
+续跑 3 轮；可选 1–60 分钟、未来 7 天以内及 1–20 轮。默认只处理启用后出现的评论；
+启用时已有的 CI 失败也会处理。“包含已有评论”可将当前评论一并纳入第一轮。
+
+此入口要求 GitHub review、任务执行和 scheduled-job worker 三项启动能力均已启用。
+API 在提供控制凭据后，使用 `--enable-github-review --enable-permission-control
+--enable-scheduled-job-worker`；任务执行由现有控制配置提供。旧定时观察任务继续使用
+原来的只读观察流程。
+
+Worker 读取当前 PR 提交的 CI、审阅、行内及普通评论；资料不完整、任务正在运行或没有
+新反馈时不启动模型。新反馈进入原 Thread，并使用该任务已绑定的工作目录和分支，
+复用 Full / Ask / Auto、工具审批和原任务预算。需要隔离工作区时，应先将任务绑定到
+已有 worktree，再启用跟进；跟进过程中不会自动更换工作区或创建新分支。
+
+续跑正文及操作标识先持久化，再交给现有 Thread 执行器。重启后恢复同一轮次；审批等待
+期间只观察原执行结果。未知工具结果、失效的权限激活、预算不足或工作区与 PR 不一致时
+显示“需要处理”，由用户处理后继续。新建轮次才扣减自动修复次数，轮询和恢复不重复计数。
+
+一轮结束后重新检查 CI，显示待复核结果；点击“继续跟进”后继续等待新的反馈。
+“暂停”或“停止”会取消当前实例正在执行的对应跟进轮次，并阻止之后的调度；其他进程
+在租约续期时发现授权状态改变并停止。应用关闭时停止 worker，下次启动按保存状态继续，
+期限和次数上限仍然有效。PR 关闭或合并后结束跟进。
+
+提交和推送沿用原任务已有授权；合并 PR、向 GitHub 发布评论均需用户另行明确授权。
+PR 的远端文字作为待分析资料传入，不改变任务权限。此功能的持久化记录和 API 使用
+`pr-followup.v1`；读取 `GET /api/v1/threads/{thread_id}/pr-followups`，创建和
+`pause|resume|cancel` 使用控制凭据，创建还需要稳定的 `Idempotency-Key`。
+
 ## Structured diagnostics / 结构化诊断
 
 ```powershell

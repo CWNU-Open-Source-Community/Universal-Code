@@ -15,7 +15,8 @@ import (
 func (a *App) runRuntimeDependencies() application.RunRuntimeDependencies {
 	d := application.RunRuntimeDependencies{
 		ActiveCalls: a.calls, LifecycleHooks: a.newLifecycleHookEngine(),
-		CodeIntel: a.codeIntel, WebEvidence: a.newWebEvidenceService(),
+		ProjectHooks: application.NewProjectHooksService(a.store),
+		CodeIntel:    a.codeIntel, WebEvidence: a.newWebEvidenceService(),
 		WebFetchAuthorizationScheduler: true,
 	}
 	if executor := a.newDockerSandboxProposalExecutor(); executor != nil {
