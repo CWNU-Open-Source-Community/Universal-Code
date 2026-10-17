@@ -1,12 +1,10 @@
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pin, X } from "lucide-react";
+import { MessageCircleQuestion, Pencil, Pin, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { parseThreadCompaction, parseThreadPinResolution, readThreadContextPins,
   type ThreadContextPin, type ThreadContextPinChoice, type ThreadContextPinProposal,
   type ThreadContextPinResolution, type ThreadContextPins } from "../../api/thread-context-controls";
-import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { v2QueryKeys } from "../query-keys";
 import "./thread-context-controls.css";
 
@@ -137,22 +135,23 @@ export function V2ThreadCompactControl({ client, threadID, runID }: { client: AP
   </div>;
 }
 
-export function V2ThreadPinPrompt({ client, threadID, paused, onReply }: {
+export function V2ThreadPinPrompt({ client, threadID, paused, onReply, onClose }: {
   client: APIClient; threadID: string; paused: boolean;
   onReply: (content: string, operationKey: string) => Promise<void>;
+  onClose?: () => void;
 }) {
   const pins = usePins(client, threadID, true);
   const [hidden, setHidden] = useState<string[]>([]);
   const proposal = pins.data?.proposals.find((item) => item.status === "pending" && !hidden.includes(item.id));
-  // Keep an open answer dialog mounted through its own result/refetch and reply.
+  // Keep an answer mounted through its own result/refetch and reply.
   const [opened, setOpened] = useState<ThreadContextPinProposal | null>(null);
   const active = opened ?? (!paused && !pins.isError && !pins.data?.busy ? proposal : undefined);
   if (!active || !pins.data || !client.hasControl) return null;
-  return <PinPromptDialog key={active.id} client={client} threadID={threadID} state={pins.data} proposal={active}
-    onInteraction={() => setOpened(active)} onClose={() => { setOpened(null); setHidden((items) => [...items, active.id]); }} onReply={onReply} />;
+  return <PinPromptCard key={active.id} client={client} threadID={threadID} state={pins.data} proposal={active}
+    onInteraction={() => setOpened(active)} onClose={() => { setOpened(null); setHidden((items) => [...items, active.id]); onClose?.(); }} onReply={onReply} />;
 }
 
-function PinPromptDialog({ client, threadID, state, proposal, onReply, onInteraction, onClose }: {
+function PinPromptCard({ client, threadID, state, proposal, onReply, onInteraction, onClose }: {
   client: APIClient; threadID: string; state: ThreadContextPins; proposal: ThreadContextPinProposal;
   onReply: (content: string, operationKey: string) => Promise<void>; onInteraction: () => void; onClose: () => void;
 }) {
@@ -192,29 +191,34 @@ function PinPromptDialog({ client, threadID, state, proposal, onReply, onInterac
     finally { setPending(false); }
   };
   const close = () => { if (resolved) onClose(); else void resolve("dismiss"); };
-  const dialog = useModalFocusTrap<HTMLElement>(true, close, pending, undefined, { isolateBackground: true });
-  return createPortal(<div className="v2-overlay v2-context-pin-overlay"><section className="v2-dialog v2-context-pin-dialog" role="dialog"
-    aria-modal="true" aria-labelledby="thread-pin-question" ref={dialog} tabIndex={-1}>
-    <header><Pin size={18} aria-hidden="true" /><h2 id="thread-pin-question">保留这项任务要求？</h2>
+  const choose = (answer: ThreadContextPinChoice) => { onInteraction(); setChoice(answer); };
+  return <section className="v2-context-pin-card" aria-labelledby="thread-pin-question">
+    <header><MessageCircleQuestion size={18} aria-hidden="true" /><span>问题</span>
       <button type="button" aria-label="关闭固定要求提问" disabled={pending} onClick={close}><X size={18} /></button></header>
     <div className="v2-context-pin-body">
-    <p>{proposal.question || "是否让这段要求在本次任务压缩后继续保留？"}</p><blockquote>{proposal.text}</blockquote>
-    <fieldset disabled={pending || Boolean(resolved)}><legend>选择处理方式</legend>
-      <label><input type="radio" name="pin-choice" value="pin_task" checked={choice === "pin_task"} onChange={() => setChoice("pin_task")} />
-        <span><strong>1. 本次任务始终保留</strong><small>按上方原文固定，压缩后继续使用。</small></span></label>
-      <label><input type="radio" name="pin-choice" value="discussion_only" checked={choice === "discussion_only"} onChange={() => setChoice("discussion_only")} />
-        <span><strong>2. 仅当前讨论</strong><small>发送普通答复，不加入固定要求。</small></span></label>
-      <label><input type="radio" name="pin-choice" value="custom" checked={choice === "custom"} onChange={() => setChoice("custom")} />
-        <span><strong>3. 自定义回复</strong><small>改写要求或说明你的选择。</small></span></label>
-      {choice === "custom" && <div className="v2-context-pin-custom"><label htmlFor="thread-pin-custom">你的回复</label>
-        <textarea id="thread-pin-custom" rows={4} value={custom} onChange={(event) => setCustom(event.target.value)} />
-        <label><input type="checkbox" checked={pinCustom} onChange={(event) => setPinCustom(event.target.checked)} />将这段回复固定到本次任务</label></div>}
+    <h2 id="thread-pin-question">{proposal.question || "是否让这段要求在本次任务压缩后继续保留？"}</h2><blockquote>{proposal.text}</blockquote>
+    <fieldset disabled={pending || Boolean(resolved)} aria-label="选择处理方式">
+      <label className="v2-context-pin-option"><input type="radio" name="pin-choice" value="pin_task"
+        checked={choice === "pin_task"} onChange={() => choose("pin_task")} />
+        <span className="v2-context-pin-number">1</span><span><strong>本次任务始终保留</strong><small>按上方原文固定，压缩后继续使用。</small></span></label>
+      <label className="v2-context-pin-option"><input type="radio" name="pin-choice" value="discussion_only"
+        checked={choice === "discussion_only"} onChange={() => choose("discussion_only")} />
+        <span className="v2-context-pin-number">2</span><span><strong>仅当前讨论</strong><small>发送普通答复，不加入固定要求。</small></span></label>
     </fieldset>
     {resolved && error && <p>选择已保存，答复尚待核对。重试会沿用同一条答复。</p>}
     {error && <p role="alert">{error}</p>}
     </div>
-    <footer><button type="button" disabled={pending} onClick={close}>暂不处理</button>
+    <footer>
+      <div className={`v2-context-pin-custom${choice === "custom" ? " is-active" : ""}`}>
+        <label className="v2-context-pin-reply"><Pencil size={18} aria-hidden="true" />
+          <textarea aria-label="你的回复" rows={1} placeholder="或自行撰写回复" value={custom} disabled={pending || Boolean(resolved)}
+            onPointerDown={() => { if (!pending && !resolved) choose("custom"); }}
+            onChange={(event) => { choose("custom"); setCustom(event.target.value); }} /></label>
+        {choice === "custom" && <label className="v2-context-pin-custom-toggle"><input type="checkbox" checked={pinCustom}
+          disabled={pending || Boolean(resolved)} onChange={(event) => setPinCustom(event.target.checked)} />将这段回复固定到本次任务</label>}
+      </div>
+      <div className="v2-context-pin-actions"><button type="button" disabled={pending} onClick={close}>跳过</button>
       <button type="button" className="primary" disabled={pending || (!resolved && choice === "custom" && !custom.trim())}
-        onClick={() => void resolve(choice)}>{pending ? "正在提交…" : resolved ? "重试发送答复" : "确认并回复"}</button></footer>
-  </section></div>, document.body);
+        onClick={() => void resolve(choice)}>{pending ? "正在提交…" : resolved ? "重试发送答复" : "发送"}</button></div></footer>
+  </section>;
 }

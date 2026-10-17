@@ -49,25 +49,65 @@ test.each([false, true])("custom answer pins only when explicitly selected (%s)"
   f.postControl.mockImplementation(async () => ({ state: { ...f.state, revision: 1, proposals: [{ ...proposal, status: "resolved" }] },
     reply_text: "请先问我再修改。", reply_operation_key: "confirmed-pin-answer-1", replayed: false }));
   f.mount(<V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />);
-  expect(await screen.findByRole("dialog", { name: "保留这项任务要求？" })).toBeVisible();
+  expect(await screen.findByRole("region", { name: proposal.question })).toBeVisible();
   expect(screen.getByText(proposal.text)).toBeVisible(); expect(f.postControl).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("radio", { name: /3. 自定义回复/u }));
+  await user.click(screen.getByRole("textbox", { name: "你的回复" }));
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   await user.type(screen.getByLabelText("你的回复"), "请先问我再修改。");
   if (pinCustom) await user.click(screen.getByRole("checkbox"));
-  await user.click(screen.getByRole("button", { name: "确认并回复" }));
+  await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(f.reply).toHaveBeenCalledWith("请先问我再修改。", "confirmed-pin-answer-1"));
   expect(f.postControl.mock.calls[0][1]).toMatchObject({ choice: "custom", text: "请先问我再修改。", pin_custom: pinCustom });
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole("region", { name: proposal.question })).not.toBeInTheDocument());
 });
 
 test("closing the question dismisses it without pinning or sending a reply", async () => {
   const f = fixture(true); const user = userEvent.setup();
   f.postControl.mockResolvedValue({ state: { ...f.state, proposals: [{ ...proposal, status: "dismissed" }] }, replayed: false });
   f.mount(<V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />);
-  await screen.findByRole("dialog"); await user.click(screen.getByLabelText("关闭固定要求提问"));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await screen.findByRole("region", { name: proposal.question }); await user.click(screen.getByLabelText("关闭固定要求提问"));
+  await waitFor(() => expect(screen.queryByRole("region", { name: proposal.question })).not.toBeInTheDocument());
   expect(f.postControl.mock.calls[0][1]).toMatchObject({ choice: "dismiss" }); expect(f.reply).not.toHaveBeenCalled();
+});
+
+test("question stays inline, permits normal Tab navigation, and sends the explicitly selected answer", async () => {
+  const f = fixture(true); const user = userEvent.setup(); const closed = vi.fn();
+  f.postControl.mockResolvedValue({ state: { ...f.state, proposals: [{ ...proposal, status: "resolved" }] },
+    reply_text: "仅当前讨论。", reply_operation_key: "confirmed-pin-answer-1", replayed: false });
+  const view = f.mount(<><V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false}
+    onReply={f.reply} onClose={closed} /><textarea aria-label="继续对话" /></>);
+  const card = await screen.findByRole("region", { name: proposal.question });
+  expect(view.container).toContainElement(card);
+  expect(card).not.toHaveAttribute("aria-modal");
+  expect(screen.getByRole("textbox", { name: "继续对话" }).closest("[inert]")).toBeNull();
+  await user.click(screen.getByRole("textbox", { name: "你的回复" }));
+  expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+  await user.type(screen.getByRole("textbox", { name: "你的回复" }), "另一个答复草稿");
+  await user.click(screen.getByRole("radio", { name: /仅当前讨论/u }));
+  await user.tab();
+  expect(screen.getByRole("textbox", { name: "你的回复" })).toHaveFocus();
+  expect(screen.getByRole("radio", { name: /仅当前讨论/u })).toBeChecked();
+  const send = screen.getByRole("button", { name: "发送" });
+  send.focus(); await user.tab();
+  expect(screen.getByRole("textbox", { name: "继续对话" })).toHaveFocus();
+  await user.click(send);
+  await waitFor(() => expect(f.reply).toHaveBeenCalledWith("仅当前讨论。", "confirmed-pin-answer-1"));
+  expect(f.postControl.mock.calls[0][1]).toMatchObject({ choice: "discussion_only" });
+  expect(f.postControl.mock.calls[0][1]).not.toHaveProperty("text");
+  expect(closed).toHaveBeenCalledTimes(1);
+});
+
+test("skip dismisses a custom draft without sending or pinning it", async () => {
+  const f = fixture(true); const user = userEvent.setup();
+  f.postControl.mockResolvedValue({ state: { ...f.state, proposals: [{ ...proposal, status: "dismissed" }] }, replayed: false });
+  f.mount(<V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />);
+  await screen.findByRole("region", { name: proposal.question });
+  await user.type(screen.getByRole("textbox", { name: "你的回复" }), "尚未确认的草稿");
+  await user.click(screen.getByRole("button", { name: "跳过" }));
+  await waitFor(() => expect(screen.queryByRole("region", { name: proposal.question })).not.toBeInTheDocument());
+  expect(f.postControl.mock.calls[0][1]).toMatchObject({ choice: "dismiss" });
+  expect(f.postControl.mock.calls[0][1]).not.toHaveProperty("text");
+  expect(f.reply).not.toHaveBeenCalled();
 });
 
 test("lost resolve response reuses its original revision and operation identity after polling", async () => {
@@ -75,12 +115,12 @@ test("lost resolve response reuses its original revision and operation identity 
   f.postControl.mockRejectedValueOnce(new Error("response lost")).mockResolvedValueOnce({
     state: { ...f.state, revision: 1, proposals: [{ ...proposal, status: "resolved" }] }, reply_text: "已固定。", reply_operation_key: "confirmed-pin-answer-1", replayed: true });
   f.mount(<V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />);
-  await screen.findByRole("dialog"); await user.click(screen.getByRole("button", { name: "确认并回复" }));
+  await screen.findByRole("region", { name: proposal.question }); await user.click(screen.getByRole("button", { name: "发送" }));
   await screen.findByRole("alert");
   await act(async () => { f.queries.setQueryData(["thread-context-pins", f.client.baseURL, "thread-1"], {
     ...f.state, revision: 1, proposals: [{ ...proposal, status: "resolved" }],
   }); });
-  await user.click(screen.getByRole("button", { name: "确认并回复" }));
+  await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(f.reply).toHaveBeenCalledTimes(1));
   expect(f.postControl.mock.calls[1]).toEqual(f.postControl.mock.calls[0]);
 });
@@ -91,8 +131,8 @@ test("reply retry does not resolve the proposal again", async () => {
   f.postControl.mockResolvedValue({ state: { ...f.state, proposals: [{ ...proposal, status: "resolved" }] },
     reply_text: "仅当前讨论。", reply_operation_key: "confirmed-pin-answer-1", replayed: false });
   f.mount(<V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />);
-  await screen.findByRole("dialog"); await user.click(screen.getByRole("radio", { name: /2. 仅当前讨论/u }));
-  await user.click(screen.getByRole("button", { name: "确认并回复" }));
+  await screen.findByRole("region", { name: proposal.question }); await user.click(screen.getByRole("radio", { name: /仅当前讨论/u }));
+  await user.click(screen.getByRole("button", { name: "发送" }));
   await screen.findByRole("alert"); await user.click(screen.getByRole("button", { name: "重试发送答复" }));
   await waitFor(() => expect(f.reply).toHaveBeenCalledTimes(2));
   expect(f.reply.mock.calls[0]).toEqual(f.reply.mock.calls[1]); expect(f.postControl).toHaveBeenCalledTimes(1);
@@ -106,10 +146,10 @@ test("known CAS rejection reloads state and allows a newly confirmed answer", as
   }).mockImplementationOnce(async () => ({ state: { ...f.state, proposals: [{ ...proposal, status: "resolved" }] },
     reply_text: "已固定。", reply_operation_key: "confirmed-pin-answer-1", replayed: false }));
   f.mount(<V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />);
-  await screen.findByRole("dialog"); await user.click(screen.getByRole("button", { name: "确认并回复" }));
+  await screen.findByRole("region", { name: proposal.question }); await user.click(screen.getByRole("button", { name: "发送" }));
   await screen.findByRole("alert");
-  await waitFor(() => expect(screen.getByRole("button", { name: "确认并回复" })).toBeEnabled());
-  await user.click(screen.getByRole("button", { name: "确认并回复" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(f.reply).toHaveBeenCalledTimes(1));
   expect(f.postControl.mock.calls[1][1].expected_revision).toBe(2);
   expect(f.postControl.mock.calls[1][2]).not.toBe(f.postControl.mock.calls[0][2]);
@@ -133,6 +173,6 @@ test("cross-thread state never displays a proposal or enables pin mutation", asy
   const f = fixture(true); f.state.thread_id = "other-thread";
   f.mount(<><V2ThreadPinPrompt client={f.client} threadID="thread-1" paused={false} onReply={f.reply} />
     <V2ThreadPinsPanel client={f.client} threadID="thread-1" /></>);
-  await screen.findByRole("alert"); expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await screen.findByRole("alert"); expect(screen.queryByRole("region", { name: proposal.question })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "固定到本次任务" })).toBeDisabled(); expect(f.postControl).not.toHaveBeenCalled();
 });
