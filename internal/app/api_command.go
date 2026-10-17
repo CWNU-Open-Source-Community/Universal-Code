@@ -610,6 +610,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			workspaceCheckpoints, commandRuntimeDrydocks, permissionCapabilities).WithAdvanced(gitAdvancedService)
 	}
 	var prFollowupWorker *application.PRFollowupService
+	workflowControl := application.NewWorkflowService(a.store, specialistExecution)
 	var prFollowupController httpapi.PRFollowupController
 	if *githubReviewEnabled && controlToken != "" && *scheduledJobWorker {
 		prFollowupWorker, err = application.NewPRFollowupService(a.store, githubReviewService, threadGit, threadTurnControl)
@@ -686,7 +687,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			a.store, a.router, a.checker),
 		ChildTaskControlController:    application.NewChildTaskControlService(a.store),
 		SpecialistExecutionController: specialistExecution,
-		WorkflowController:            application.NewWorkflowService(a.store, specialistExecution),
+		WorkflowController:            workflowControl,
 		ProviderCredentialController:  providerCredentialControl,
 		FileEditReviewController:      fileEditReview,
 		FileEditProposalController:    fileEditProposal,
@@ -825,6 +826,12 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		followupCtx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
 		go func() { defer close(done); _ = prFollowupWorker.Run(followupCtx) }()
+		defer func() { cancel(); <-done }()
+	}
+	if controlToken != "" {
+		workflowCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { defer close(done); _ = workflowControl.Run(workflowCtx) }()
 		defer func() { cancel(); <-done }()
 	}
 	fmt.Fprintf(a.out, "file_edit_proposals_enabled: %t\nprovider_credentials_enabled: %t\nwake_worker_enabled: %t\nwake_worker_concurrency: %d\nwake_worker_max_steps: %d\n",

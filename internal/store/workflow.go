@@ -176,7 +176,7 @@ func (s *SQLiteStore) ControlWorkflowExecution(ctx context.Context, id, action s
 	case "pause":
 		query = `UPDATE workflow_executions SET status='paused',reason='operator pause',version=version+1,updated_at=? WHERE id=? AND version=? AND status IN ('running','waiting','waiting_approval')`
 	case "resume":
-		query = `UPDATE workflow_executions SET status='running',reason='',version=version+1,updated_at=? WHERE id=? AND version=? AND status='paused'`
+		query = `UPDATE workflow_executions SET status='running',reason='',version=version+1,updated_at=? WHERE id=? AND version=? AND status IN ('paused','waiting')`
 	default:
 		return domain.WorkflowExecution{}, apperror.New(apperror.CodeInvalidArgument, "workflow control must be pause or resume")
 	}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { APIClient } from "../api/client";
 import type { WorkflowExecution, WorkflowSpec, WorkflowStep } from "../api/workflows";
@@ -47,28 +47,22 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
   const [source, setSource] = useState(() => pretty(workflowExample()));
   const [selected, setSelected] = useState("");
   const [inputs, setInputs] = useState("{}");
-  const [activeID, setActiveID] = useState<string>();
   const definitions = useQuery({ queryKey: ["workflow-definitions"], queryFn: ({ signal }) => client.workflows.definitions(signal) });
-  const executions = useQuery({ queryKey: ["run", runID, "workflows"], queryFn: ({ signal }) => client.workflows.list(runID, signal) });
+  const executions = useQuery({
+    queryKey: ["run", runID, "workflows"], queryFn: ({ signal }) => client.workflows.list(runID, signal),
+    refetchOnMount: "always", refetchOnWindowFocus: "always", refetchIntervalInBackground: false,
+    refetchInterval: (query) => !query.state.error && query.state.data?.some((item) =>
+      ["running", "waiting", "waiting_approval"].includes(item.status)) ? 2_000 : false,
+  });
   const canControl = client.hasControl && client.hasModelControl;
   const definition = definitions.data?.find((item) => item.id === selected);
 
+  useEffect(() => {
+    if (executions.data) void cache.invalidateQueries({ queryKey: ["run", runID, "agent-graph"] }, { cancelRefetch: false });
+  }, [cache, runID, executions.data]);
+
   function publish(value: WorkflowExecution) {
     cache.setQueryData<WorkflowExecution[]>(["run", runID, "workflows"], (old) => [value, ...(old ?? []).filter((item) => item.id !== value.id)]);
-    void cache.invalidateQueries({ queryKey: ["run", runID, "agent-graph"] });
-  }
-  async function drive(initial: WorkflowExecution) {
-    let current = initial;
-    setActiveID(current.id);
-    publish(current);
-    // The server enforces the saved limits. Each request checkpoints one real worker turn.
-    while (current.status === "running") {
-      const next = await client.workflows.advance(runID, current.id, current.revision, operationKey());
-      publish(next);
-      if (next.revision === current.revision) break;
-      current = next;
-    }
-    return current;
   }
   const save = useMutation({
     mutationFn: () => client.workflows.save(advanced ? JSON.parse(source) as WorkflowSpec : workerWorkflow(name.trim(), goal.trim(), worker, tools), operationKey()),
@@ -78,17 +72,14 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
     },
   });
   const action = useMutation({
-    mutationFn: async ({ kind, item }: { kind: "start" | "advance" | "continue" | "resume" | "rerun"; item?: WorkflowExecution }) => {
-      if (kind === "start") return drive(await client.workflows.start(runID, selected, JSON.parse(inputs), operationKey()));
+    mutationFn: async ({ kind, item }: { kind: "start" | "continue" | "resume" | "rerun"; item?: WorkflowExecution }) => {
+      if (kind === "start") return client.workflows.start(runID, selected, JSON.parse(inputs), operationKey());
       if (!item) throw new Error("Select a saved execution");
-      setActiveID(item.id);
-      if (kind === "rerun") return drive(await client.workflows.rerun(runID, item.id, operationKey()));
-      if (kind === "resume") return drive(await client.workflows.resume(runID, item.id, item.revision, operationKey()));
-      const next = await client.workflows.advance(runID, item.id, item.revision, operationKey());
-      publish(next);
-      return kind === "continue" ? drive(next) : next;
+      if (kind === "rerun") return client.workflows.rerun(runID, item.id, operationKey());
+      return client.workflows.resume(runID, item.id, item.revision, operationKey());
     },
-    onSettled: () => { setActiveID(undefined); void cache.invalidateQueries({ queryKey: ["run", runID] }); },
+    onSuccess: publish,
+    onSettled: () => { void cache.invalidateQueries({ queryKey: ["run", runID, "workflows"] }); },
   });
   const pause = useMutation({
     mutationFn: (item: WorkflowExecution) => client.workflows.pause(runID, item.id, item.revision, operationKey()),
@@ -99,6 +90,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
   return <section className="detail-section workflow-panel" aria-label={t("工作流", "Workflows")}>
     <div className="section-heading"><h2>{t("工作流", "Workflows")}</h2><span>{t("保存、执行与继续", "Save, run and continue")}</span></div>
     <p>{t("每个新步骤创建独立子代理；中间结果会保存，可用于条件分支和有界循环。", "Each new job creates an independent child. Saved results can drive conditions and bounded loops.")}</p>
+    <p>{t("应用运行期间会自动推进已启动的流程；刷新页面不会中断执行。", "The app advances started workflows while it is running; refreshing this page does not interrupt execution.")}</p>
     <details>
       <summary>{t("创建工作流", "Create workflow")}</summary>
       <div className="workflow-form">
@@ -128,13 +120,13 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
       {definition && <details><summary>{t("检查任务、工具和预算", "Review tasks, tools and budgets")}</summary><pre>{pretty(definition.spec)}</pre></details>}
       <label>{t("启动输入 JSON", "Launch inputs JSON")}<textarea rows={3} value={inputs} onChange={(event) => setInputs(event.target.value)} spellCheck={false} /></label>
       <p>{t("启动后，已保存定义中的子代理会在流程预算和主代理权限内自动执行。留空工具名单会继承当前主代理工具。", "Starting authorizes workers in the saved definition to run within its budgets and the parent's permissions. An omitted tool list inherits the current parent tools.")}</p>
-      <button type="button" className="command-button" disabled={!canControl || !selected || action.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "start" })}>{t("启动并运行", "Start and run")}</button>
+      <button type="button" className="command-button" disabled={!canControl || !selected || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "start" })}>{t("启动并运行", "Start and run")}</button>
       {runStatus !== "running" && <p>{t("先恢复当前任务，再启动或继续工作流。", "Resume the current task before starting or continuing a workflow.")}</p>}
       {!canControl && <p>{t("运行工作流需要模型控制权限。", "Model control permission is required to run workflows.")}</p>}
     </div>
     {(definitions.isLoading || executions.isLoading) && <LoadingState />}
     {definitions.error && <ErrorState error={definitions.error} />}
-    {executions.error && <ErrorState error={executions.error} />}
+    {executions.error && <><ErrorState error={executions.error} /><button type="button" disabled={executions.isFetching} onClick={() => void executions.refetch()}>{t("重新读取工作流", "Reload workflows")}</button></>}
     {action.error && <ErrorState error={action.error} />}
     {pause.error && <ErrorState error={pause.error} />}
     <div className="projection-stack">
@@ -142,16 +134,15 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
         <div className="section-heading"><strong>{definitions.data?.find((saved) => saved.id === item.definition_id)?.spec.name ?? item.definition_id}</strong><StatusBadge status={item.status} /></div>
         <p><code>{item.id}</code> · {item.state.jobs} {t("个已完成步骤", "completed jobs")} · {t("检查点", "checkpoint")} {item.revision}</p>
         {item.reason && <p>{item.reason}</p>}
-        {item.status === "waiting_approval" && <p role="status">{t("子代理正在等待工具审批。完成任务中的待审批项后，点击继续。", "The child is waiting for tool approval. Resolve the pending approval in this task, then continue.")}</p>}
-        {activeID === item.id && action.isPending && <p role="status">{t("执行中；每轮自动保存检查点。", "Running; each turn saves a checkpoint.")}</p>}
+        {item.status === "waiting_approval" && <p role="status">{t("子代理正在等待工具审批。完成任务中的待审批项后，应用会自动继续。", "The child is waiting for tool approval. The app continues automatically after the pending approval is resolved.")}</p>}
+        {item.status === "running" && runStatus === "running" && <p role="status">{t("应用正在推进流程；每轮自动保存检查点。", "The app is advancing this workflow; each turn saves a checkpoint.")}</p>}
         <div className="workflow-actions">
           {!["completed", "failed", "paused"].includes(item.status) && <>
-            <button type="button" disabled={!canControl || action.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "advance", item })}>{t("执行一轮", "Advance one turn")}</button>
-            <button type="button" disabled={!canControl || action.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "continue", item })}>{t("继续运行", "Continue running")}</button>
-            <button type="button" disabled={!canControl || pause.isPending} onClick={() => pause.mutate(item)}>{t("暂停流程", "Pause workflow")}</button>
+            {item.status === "waiting" && <button type="button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "continue", item })}>{t("继续运行", "Continue running")}</button>}
+            <button type="button" disabled={!canControl || action.isPending || pause.isPending} onClick={() => pause.mutate(item)}>{t("暂停流程", "Pause workflow")}</button>
           </>}
-          {item.status === "paused" && <button type="button" disabled={!canControl || action.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "resume", item })}>{t("恢复并运行", "Resume and run")}</button>}
-          <button type="button" disabled={!canControl || action.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "rerun", item })}>{t("以原输入重新运行", "Rerun original inputs")}</button>
+          {item.status === "paused" && <button type="button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "resume", item })}>{t("恢复并运行", "Resume and run")}</button>}
+          <button type="button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "rerun", item })}>{t("以原输入重新运行", "Rerun original inputs")}</button>
         </div>
         <details><summary>{t("输入与已保存结果", "Inputs and saved results")}</summary><pre>{pretty({ inputs: item.inputs, outputs: item.state.outputs })}</pre></details>
       </article>)}
