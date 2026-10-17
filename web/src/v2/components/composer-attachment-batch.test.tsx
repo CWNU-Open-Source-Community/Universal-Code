@@ -101,6 +101,27 @@ it("leaves native textarea text insertion enabled when the same paste also conta
   expect(submit).not.toHaveBeenCalled(); queries.clear();
 });
 
+it("keeps both the attachment and formatted text when pasting into the rich editor", async () => {
+  localStorage.removeItem("universal-code.composer-plain-text");
+  // jsdom has no caret geometry for ProseMirror's scroll-to-selection.
+  Object.defineProperties(Range.prototype, {
+    getClientRects: { configurable: true, value: () => [] },
+    getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
+  });
+  const { client, queries, submit } = mount();
+  const file = new File(["requirements"], "需求.txt", { type: "text/plain" });
+  paste(file, "**同时保留的要求**");
+  await screen.findByRole("button", { name: "移除文件 需求.txt" });
+  expect(client.uploadWorkspaceFile).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("textbox").querySelector("strong")).toHaveTextContent("同时保留的要求");
+  fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+  await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+  expect(submit.mock.calls[0]).toEqual(expect.arrayContaining([
+    "**同时保留的要求**", expect.arrayContaining([expect.objectContaining({ name: "需求.txt" })]),
+  ]));
+  queries.clear();
+});
+
 it("reports a second paste while busy and preserves the first batch plus continued typing", async () => {
   const { client, queries, submit } = mount();
   const first = new File(["first file"], "第一批.txt", { type: "text/plain" });
@@ -123,3 +144,6 @@ it("reports a second paste while busy and preserves the first batch plus continu
   expect(client.uploadWorkspaceFile).toHaveBeenCalledTimes(1);
   expect(submit).not.toHaveBeenCalled(); queries.clear();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

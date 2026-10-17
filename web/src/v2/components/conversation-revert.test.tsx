@@ -101,3 +101,6 @@ it.each(["archived", "readonly"] as const)("explains why %s cannot initiate a re
     : "当前连接不能发送对话控制请求，无法发起撤销。")).toBeInTheDocument();
   expect(client.submitThreadTurn).not.toHaveBeenCalled();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

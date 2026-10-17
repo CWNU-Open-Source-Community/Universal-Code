@@ -691,7 +691,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const frame = requestAnimationFrame(() => {
       const container = composerContainerRef.current;
       if (container?.dataset.threadId === composerFocusRequest.threadID && !container.hidden) {
-        container.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+        container.querySelector<HTMLElement>('textarea, [contenteditable="true"][role="textbox"]')?.focus();
       }
       setComposerFocusRequest((current) => current === composerFocusRequest ? null : current);
     });
@@ -1119,7 +1119,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         ? deliveryMode === "steer"
           ? "文字纠正会进入当前任务后续模型请求；已经开始的操作会保留。"
           : "发送后将在下一轮处理，进度会显示在对话中。"
-        : "Enter 发送，Shift + Enter 换行"}</small>
+        : "Ctrl + Enter 发送，Shift + Enter 换行"}</small>
       </div>
       </div>
     </div>

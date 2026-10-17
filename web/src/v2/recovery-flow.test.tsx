@@ -287,3 +287,6 @@ it.each([
   if (kind === "files") expect(screen.getByRole("button", { name: "移除引用 later.md" })).toBeInTheDocument();
   expect(f.submit).not.toHaveBeenCalled();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

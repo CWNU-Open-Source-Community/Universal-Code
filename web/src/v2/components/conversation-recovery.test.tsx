@@ -414,3 +414,6 @@ it("does not clear another task's error or draft when an automatic confirmation 
   expect(submit.mock.calls[0]![0]).toBe("thread-a");
   expect(submit.mock.calls[2]![0]).toBe("thread-b");
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

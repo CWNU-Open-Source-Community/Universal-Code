@@ -31,6 +31,9 @@ async function connect(page: Page) {
   await reconnect(page);
   await page.getByRole("button", { name: "新对话", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "开始新对话" })).toBeVisible();
+  // These command journeys use exact plain-text sentinels for their offline
+  // provider. Exercise the supported source mode; rich editing has its own tests.
+  await page.getByRole("button", { name: "切换为纯文本编辑" }).click();
 }
 
 async function reconnect(page: Page) {

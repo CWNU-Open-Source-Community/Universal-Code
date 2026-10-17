@@ -1280,3 +1280,6 @@ describe("V2Workbench first turn", () => {
       expect(window.location.hash).toBe("#/new");
     });
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

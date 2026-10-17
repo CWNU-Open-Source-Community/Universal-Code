@@ -67,7 +67,7 @@ export function V2QueueMessageDetails({ client, snapshot, current, queueKnown, d
   const modal = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton,
     { isolateBackground: true, returnFocusRef: returnFocus });
   const composerFallback = useRef<HTMLElement | null>(fallbackFocus.current?.closest(".v2-composer-dock")
-    ?.querySelector<HTMLElement>("textarea:not(:disabled), .v2-shared-composer button:not(:disabled)") ?? null);
+    ?.querySelector<HTMLElement>('textarea:not(:disabled), [contenteditable="true"][role="textbox"], .v2-shared-composer button:not(:disabled)') ?? null);
   useEffect(() => () => {
     // The last queued item can leave while its details are open. Closing the
     // now empty panel returns to the still mounted composer instead of body.

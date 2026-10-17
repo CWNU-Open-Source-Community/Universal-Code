@@ -108,3 +108,6 @@ it("preserves a later complete version, including its inherited ZIP and new file
   expect(test.client.submitThreadTurn).toHaveBeenCalledOnce();
   reopened.unmount(); reopened.queries.clear();
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

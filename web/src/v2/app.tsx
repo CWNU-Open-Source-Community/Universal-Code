@@ -447,7 +447,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     updateModelSetupToken("");
     navigate({ ...currentRoute, section: undefined }, true);
     requestAnimationFrame(() => requestAnimationFrame(() =>
-      document.querySelector<HTMLTextAreaElement>(".v2-new-conversation .v2-composer textarea")?.focus()));
+      document.querySelector<HTMLElement>('.v2-new-conversation .v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus()));
   };
   const openInspector = () => changeView("inspector");
   const openTool = (tool: "run" | "session" | "schedule", resourceID?: string, pane?: V2RunPane) => {

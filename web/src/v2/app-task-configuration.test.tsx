@@ -164,3 +164,6 @@ it.each(["close immediately", "edit a valid number", "preview read fails"])("ret
     expect(await screen.findByRole("button", { name: "发送消息" })).toBeEnabled();
   }
 });
+
+// Retain textarea coverage through the supported plain-text editing mode.
+beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
