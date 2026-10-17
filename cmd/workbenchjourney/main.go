@@ -238,11 +238,23 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	rootReply := func(message string) (contentBlock, error) {
 		return text(map[string]string{"version": "root_lifecycle.v1", "action": "finish", "message": message, "summary": message})
 	}
+	if strings.Contains(string(request.System), "Create a compact handoff for continuing the same task.") {
+		return text(map[string]string{"version": "generated_handoff.v1", "summary": "用户正在验证任务级固定要求和上下文压缩。保留已确认要求，继续检查压缩后的对话；尚未进行真实项目修改。"})
+	}
 	if nonce := noncePattern.FindStringSubmatch(history); len(nonce) == 2 {
 		if len(results) == 0 {
 			return tool("prayu_harness_echo", map[string]string{"nonce": nonce[1]})
 		}
 		return text(map[string]string{"version": "model_harness_probe.v1", "status": "ok", "nonce": nonce[1]})
+	}
+	if strings.Contains(history, "JOURNEY_CONTEXT:") {
+		if strings.Contains(history, "JOURNEY_PIN_QUESTION_SHOWN") {
+			return rootReply("已收到答复，继续验证本次任务上下文。")
+		}
+		if len(results) > 0 {
+			return text(map[string]string{"version": "root_lifecycle.v1", "action": "wait", "message": "JOURNEY_PIN_QUESTION_SHOWN：请确认是否保留这项要求。", "reason": "等待用户选择固定要求"})
+		}
+		return tool("context_pin_propose", map[string]any{"version": "context_pin_proposal.v1", "text": "本次任务不得修改 billing.go；所有失败的验证必须如实报告。", "question": "这项限制是否需要在后续上下文压缩后继续保留？"})
 	}
 	read := func(path string) (contentBlock, error) {
 		return tool("workspace_read", map[string]any{"version": "agent-code-tools.v1", "path": path, "start_line": 1, "end_line": 4})
@@ -287,5 +299,5 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 		}
 		return read("README.md")
 	}
-	return contentBlock{}, errors.New("unexpected model request outside the three workbench journeys")
+	return contentBlock{}, errors.New("unexpected model request outside the supported workbench journeys")
 }

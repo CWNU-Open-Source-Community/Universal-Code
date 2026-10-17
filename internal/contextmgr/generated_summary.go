@@ -48,6 +48,9 @@ type SummaryGenerationReceipt struct {
 type SummaryGenerationResponse struct {
 	Text    string
 	Receipt SummaryGenerationReceipt
+	// A Go-owned bounded projection may report its actual input identity.
+	InputFingerprint     string
+	InputMessagesOmitted int
 }
 
 type SummaryGenerator interface {
@@ -65,6 +68,7 @@ type GeneratedSummary struct {
 	TextSHA256            string                   `json:"text_sha256"`
 	TextExcerpted         bool                     `json:"text_excerpted"`
 	InputFingerprint      string                   `json:"input_fingerprint"`
+	InputMessagesOmitted  int                      `json:"input_messages_omitted,omitempty"`
 	SourceRefs            []GeneratedSummarySource `json:"source_refs"`
 	SourceRefsOmitted     int                      `json:"source_refs_omitted"`
 	Receipt               SummaryGenerationReceipt `json:"receipt"`
@@ -128,7 +132,7 @@ func validateGeneratedSummary(value *GeneratedSummary) error {
 	}
 	if value.Version != GeneratedHandoffVersion || value.InstructionAuthorized ||
 		!validGeneratedText(value.Text) || value.TextSHA256 != handoffContentSHA256(value.Text) ||
-		!validHandoffDigest(value.InputFingerprint) || len(value.SourceRefs) < 1 || len(value.SourceRefs) > 2 || value.SourceRefsOmitted < 0 ||
+		!validHandoffDigest(value.InputFingerprint) || value.InputMessagesOmitted < 0 || len(value.SourceRefs) < 1 || len(value.SourceRefs) > 2 || value.SourceRefsOmitted < 0 ||
 		!validMemoryIdentity(value.Receipt.RunID) || !validMemoryIdentity(value.Receipt.AttemptID) ||
 		!validMemoryIdentity(value.Receipt.Provider) || !validMemoryIdentity(value.Receipt.Model) ||
 		value.Receipt.ModelAttempt <= 0 || value.Receipt.CompletionSequence <= 0 || !validHandoffDigest(value.Receipt.SourceSHA256) {
@@ -170,7 +174,7 @@ func (m *Manager) generateHandoff(ctx context.Context, taskID, workspaceID strin
 	}
 	request.InputFingerprint = handoffContentSHA256(string(encoded))
 	// The generator gets a detached full source set. Its model-window budget
-	// must reject excess input rather than silently clipping these originals.
+	// must either reject excess input or explicitly report its bounded projection.
 	detached := request
 	detached.Messages = append([]Message(nil), request.Messages...)
 	response, err := m.generator.Generate(ctx, detached)
@@ -186,10 +190,23 @@ func (m *Manager) generateHandoff(ctx context.Context, taskID, workspaceID strin
 	if err := generatedTextValidationError(response.Text); err != nil {
 		return nil, err
 	}
+	if response.InputMessagesOmitted < 0 || response.InputMessagesOmitted > len(request.Messages) ||
+		(response.InputMessagesOmitted > 0 && response.InputFingerprint == "") {
+		return nil, fmt.Errorf("%w: generated input coverage is invalid", ErrSummaryGenerationAborted)
+	}
+	fingerprint := request.InputFingerprint
+	if response.InputFingerprint != "" {
+		if !validHandoffDigest(response.InputFingerprint) {
+			return nil, fmt.Errorf("%w: generated input fingerprint is invalid", ErrSummaryGenerationAborted)
+		}
+		fingerprint = response.InputFingerprint
+	}
 	text := strings.TrimSpace(redact.String(response.Text))
+	// These references navigate the full compacted source set, including any
+	// explicitly omitted generation input; they are not claims of model review.
 	refs, omitted := generationNavigationSources(request)
 	generated := &GeneratedSummary{Version: GeneratedHandoffVersion, Text: text,
-		TextSHA256: handoffContentSHA256(text), InputFingerprint: request.InputFingerprint,
+		TextSHA256: handoffContentSHA256(text), InputFingerprint: fingerprint, InputMessagesOmitted: response.InputMessagesOmitted,
 		SourceRefs: refs, SourceRefsOmitted: omitted, Receipt: response.Receipt}
 	if err := validateGeneratedSummary(generated); err != nil {
 		return nil, err

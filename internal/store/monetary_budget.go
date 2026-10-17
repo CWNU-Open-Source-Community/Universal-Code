@@ -217,7 +217,11 @@ func (s *SQLiteStore) ReserveModelCost(ctx context.Context,
 	if err != nil {
 		return domain.MonetaryUsage{}, false, err
 	}
-	if status == domain.RunCompleted || status == domain.RunFailed || status == domain.RunCancelled {
+	if normalized.Scope == domain.MonetaryScopeContextCompaction {
+		if err := requireContextCompactionReservationTx(ctx, tx, normalized); err != nil {
+			return domain.MonetaryUsage{}, false, err
+		}
+	} else if status == domain.RunCompleted || status == domain.RunFailed || status == domain.RunCancelled {
 		return domain.MonetaryUsage{}, false, apperror.New(apperror.CodeFailedPrecondition,
 			fmt.Sprintf("run %s is terminal and cannot reserve model cost", normalized.RunID))
 	}
@@ -521,7 +525,7 @@ func (s *SQLiteStore) ReleaseModelCost(ctx context.Context,
 		return domain.MonetaryUsage{}, false, apperror.New(apperror.CodeConflict,
 			"model attempt monetary reservation was already settled")
 	}
-	if normalized.Scope == domain.MonetaryScopeRoot || normalized.Scope == domain.MonetaryScopeSpecialist || normalized.Scope == domain.MonetaryScopeReadOnlyFanout {
+	if normalized.Scope == domain.MonetaryScopeRoot || normalized.Scope == domain.MonetaryScopeSpecialist || normalized.Scope == domain.MonetaryScopeReadOnlyFanout || normalized.Scope == domain.MonetaryScopeContextCompaction {
 		evidence, e := monetaryModelEvidenceTx(ctx, tx, normalized.RunID, reservation.ID, normalized.Scope, normalized.AttemptNumber, reservation.Provider, reservation.Model)
 		if e != nil {
 			return domain.MonetaryUsage{}, false, e
@@ -688,7 +692,7 @@ func (s *SQLiteStore) ReleaseOpenMonetaryReservations(ctx context.Context, runID
 			// Recovery or cancellation cannot make its unknown charge free.
 			continue
 		}
-		if reservation.scope == domain.MonetaryScopeRoot || reservation.scope == domain.MonetaryScopeSpecialist {
+		if reservation.scope == domain.MonetaryScopeRoot || reservation.scope == domain.MonetaryScopeSpecialist || reservation.scope == domain.MonetaryScopeContextCompaction {
 			evidence, err := monetaryModelEvidenceTx(ctx, tx, runID, reservation.id, reservation.scope, reservation.attemptNumber, reservation.provider, reservation.model)
 			if err != nil {
 				return 0, err

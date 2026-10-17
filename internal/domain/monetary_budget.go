@@ -14,6 +14,7 @@ const (
 	MonetaryScopeRoot                = "root"
 	MonetaryScopeSpecialist          = "specialist"
 	MonetaryScopeReadOnlyFanout      = "readonly_fanout"
+	MonetaryScopeContextCompaction   = "context_compaction"
 	MonetaryPricingPriced            = "priced"
 	MonetaryPricingUsageUnknown      = "usage_unknown"
 	MonetaryPricingPriceMissing      = "price_missing"
@@ -92,7 +93,7 @@ func (r MonetaryReserveRequest) Normalize() (MonetaryReserveRequest, error) {
 	r.EstimateSource = strings.TrimSpace(r.EstimateSource)
 	r.PriceFingerprint = strings.TrimSpace(r.PriceFingerprint)
 	switch r.Scope {
-	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout:
+	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout, MonetaryScopeContextCompaction:
 	default:
 		return MonetaryReserveRequest{}, errors.New("monetary reserve scope is invalid")
 	}
@@ -136,7 +137,7 @@ func (r MonetarySettleRequest) Normalize() (MonetarySettleRequest, error) {
 		return MonetarySettleRequest{}, errors.New("monetary pricing status is invalid")
 	}
 	switch r.Scope {
-	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout:
+	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout, MonetaryScopeContextCompaction:
 	default:
 		return MonetarySettleRequest{}, errors.New("monetary settle scope is invalid")
 	}
@@ -158,7 +159,7 @@ func (r MonetaryReleaseRequest) Normalize() (MonetaryReleaseRequest, error) {
 		return MonetaryReleaseRequest{}, errors.New("monetary release request is invalid")
 	}
 	switch r.Scope {
-	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout:
+	case MonetaryScopeRoot, MonetaryScopeSpecialist, MonetaryScopeReadOnlyFanout, MonetaryScopeContextCompaction:
 	default:
 		return MonetaryReleaseRequest{}, errors.New("monetary release scope is invalid")
 	}

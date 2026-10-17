@@ -25,7 +25,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 128 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 131 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -42,7 +42,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 55 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 61 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -953,7 +953,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `http-openapi-contract-reader` (`v0, v1, v2`, active) at `web/src/api`
 
-<details><summary>128 active identifiers</summary>
+<details><summary>131 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -972,6 +972,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `code-intel-lsp.v1`
 - `code_handoff.v1`
 - `command-runtime.v2`
+- `context_pin_proposal.v1`
 - `context_provenance.v0`
 - `context_provenance.v1`
 - `debug-query.v1`
@@ -1064,6 +1065,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_activity_detail.v2`
 - `thread_activity_summary.v1`
 - `thread_application_services.v1`
+- `thread_context_compaction.v1`
+- `thread_context_pins.v1`
 - `thread_creation.v1`
 - `thread_execution.v1`
 - `thread_export.v1`
@@ -1733,7 +1736,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-run-session-ledgers-reader` (`v0, v1, v2, v3, v4`, active) at `internal/store`
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
 
-<details><summary>55 active identifiers</summary>
+<details><summary>61 active identifiers</summary>
 
 - `context_memory.v1`
 - `context_memory_candidate.v1`
@@ -1754,6 +1757,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `queue_edit.v1`
 - `queue_operation.v1`
 - `queue_revision_unchanged.v1`
+- `recent_operator_history.v1`
 - `root_action_compatibility.v1`
 - `root_inbox_context.v1`
 - `root_lifecycle.v1`
@@ -1775,7 +1779,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `session_grant.v1`
 - `session_grant_revoke.v1`
 - `session_tree.v1`
+- `specialist_result_page.v1`
 - `task_goal.v1`
+- `thread_context_operation.v1`
+- `thread_context_pin.v1`
+- `thread_context_request.v1`
+- `thread_context_source.v1`
 - `thread_epoch_transition_operation.v1`
 - `thread_epoch_transition_request.v1`
 - `thread_lifecycle_operation.v1`

@@ -64,6 +64,7 @@ type Gateway struct {
 	skillRead                  SkillReadExecutor
 	delegationProposals        SpecialistDelegationExecutor
 	childTaskProposals         ChildTaskProposalExecutor
+	contextPins                ContextPinExecutor
 	planDeliveryProposals      PlanDeliveryExecutor
 	dockerSandboxProposals     DockerSandboxProposalExecutor
 	skillCandidates            SkillCandidateExecutor
@@ -856,7 +857,7 @@ func validateToolArguments(call ToolCall) error {
 			if call.RequestedBy != "run_supervisor" || call.AgentID == "" || call.LeaseID == "" {
 				return errors.New("specialist delegation proposals require a fenced root Supervisor")
 			}
-		case ChildTaskProposeTool:
+		case ChildTaskProposeTool, ContextPinProposeTool:
 			if call.RequestedBy != "run_supervisor" || call.AgentID == "" || call.LeaseID == "" {
 				return errors.New("child task proposals require a fenced root Supervisor")
 			}

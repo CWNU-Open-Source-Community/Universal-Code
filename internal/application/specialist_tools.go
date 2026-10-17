@@ -31,6 +31,10 @@ type specialistToolStore interface {
 	ListSpecialistToolRounds(context.Context, domain.AgentAttemptRef) ([]domain.SpecialistToolRound, error)
 	ValidateSpecialistToolDispatch(context.Context, toolgateway.ToolCall, string) error
 	CompleteSpecialistToolCall(context.Context, domain.SpecialistToolCall) error
+	ReadSpecialistToolResult(context.Context, domain.AgentAttemptRef, domain.SpecialistResultReadRequest) (domain.SpecialistResultPage, error)
+	GetSpecialistContextState(context.Context, domain.AgentAttemptRef) (domain.SpecialistContextState, error)
+	SaveSpecialistContextProjection(context.Context, domain.AgentAttemptRef, domain.SpecialistContextState, int, string) (domain.SpecialistContextState, error)
+	ClaimSpecialistContextRecovery(context.Context, domain.AgentAttemptRef, llm.ModelAttempt, int) (bool, error)
 }
 
 // WithWorkspaceTools enables only Go-scoped project observations. Models and
@@ -70,6 +74,17 @@ func (e *specialistWorkspaceExecutor) ExecuteSpecialistTool(ctx context.Context,
 	}
 	if current != e.binding {
 		return nil, errors.New("child tool binding changed")
+	}
+	if input.Tool == domain.SpecialistResultReadName {
+		request, _, err := toolgateway.NormalizeSpecialistResultRead(input.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		page, err := e.store.ReadSpecialistToolResult(ctx, e.binding.Ref, request)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(page)
 	}
 	pathPolicy, err := projectconfig.PathPolicy(e.run.Config)
 	if err != nil {
@@ -351,7 +366,7 @@ func specialistToolProviderResult(call domain.SpecialistToolCall) string {
 		Preview      string                          `json:"preview"`
 		Notice       string                          `json:"notice"`
 	}{call.Status, call.ErrorCode, call.CallID, true, artifact.Hash(call.ResultJSON), len(call.ResultJSON), preview,
-		"Tool result exceeds the provider message limit; this is a preview of the durable result."})
+		"Tool result exceeds the provider message limit; use specialist_result_read with this tool_call_id as call_id, part=result, result_sha256 as expected_sha256, offset=0 and limit=1024 for the durable result. Do not repeat the original tool."})
 	return string(raw)
 }
 
@@ -397,7 +412,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			return r.failAttempt(ctx, result, ref, err)
 		}
 		if child.Worker != nil {
-			waiting, err := r.resolveWorkerTools(ctx, result, run, mission, child, attempt, rounds)
+			waiting, err := r.resolveWorkerTools(ctx, result, run, mission, child, attempt, rounds, executor, gateway)
 			if err != nil {
 				return r.failAttempt(ctx, result, ref, err)
 			}
@@ -414,6 +429,8 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 				return r.failAttempt(ctx, result, ref, err)
 			}
 			request.Tools = catalogue.specs()
+			definition := toolgateway.SpecialistResultReadDefinition()
+			request.Tools = append(request.Tools, llm.ToolSpec{Name: string(definition.Name), Description: definition.Description, Parameters: definition.InputSchema})
 		}
 		native, err := specialistRequestWithNativeRounds(request, rounds)
 		if err != nil {
@@ -441,9 +458,20 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			return r.failAttempt(ctx, result, ref, err)
 		}
 		window, _ := prepared.PreparedContextWindow()
-		prepared, _, err = constrainRequestToModelWindow(prepared, window, layout)
+		contextState, err := executor.store.GetSpecialistContextState(ctx, ref)
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
+		}
+		privateHistory := r.router.RequiresPrivateAssistantHistory(modelRef)
+		prepared, through, err := fitSpecialistContext(prepared, window, layout, rounds, contextState, input, privateHistory)
+		if err != nil {
+			return r.failAttempt(ctx, result, ref, err)
+		}
+		if through > contextState.ThroughRound {
+			_, err = executor.store.SaveSpecialistContextProjection(ctx, ref, contextState, through, domain.SpecialistContextSourceSHA256(rounds))
+			if err != nil {
+				return r.failAttempt(ctx, result, ref, err)
+			}
 		}
 		// The current brief must survive any model-window trimming unchanged.
 		briefFound := false
@@ -455,12 +483,21 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if !briefFound {
 			return r.failAttempt(ctx, result, ref, errors.New("child tool request lost its authenticated task brief"))
 		}
-		if err := verifyNativeSpecialistRequest(prepared, input, rounds, len(rounds) == domain.MaxSpecialistToolRounds); err != nil {
+		if err := verifyNativeSpecialistRequest(prepared, input, rounds[through:], len(rounds) == domain.MaxSpecialistToolRounds); err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
 		call, err := r.callModelWithRetry(ctx, run, ref, modelRef, prepared, audit, timeLimit, 0, &state)
 		mergeSpecialistModelCallResult(result, call)
 		if err != nil {
+			if ctx.Err() == nil && !privateHistory && call.FailureRecorded && call.Attempt.FailureReason == llm.ProviderFailureContextLimit {
+				claimed, claimErr := executor.store.ClaimSpecialistContextRecovery(ctx, ref, call.Attempt, estimateModelRequestTokens(prepared))
+				if claimErr != nil {
+					return r.failAttempt(ctx, result, ref, claimErr)
+				}
+				if claimed {
+					continue
+				}
+			}
 			return r.failAttempt(ctx, result, ref, err)
 		}
 		if call.Response == nil {

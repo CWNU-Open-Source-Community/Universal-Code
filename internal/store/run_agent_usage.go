@@ -112,24 +112,30 @@ func getRunAgentUsageTx(ctx context.Context, tx *sql.Tx,
 		Scan(&readOnlyTokens, &readOnlyExecutionMillis); err != nil {
 		return domain.RunAgentUsage{}, err
 	}
+	var contextTokens, contextMillis int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN usage_json<>'null' THEN json_extract(usage_json,'$.total_tokens') WHEN started_at IS NOT NULL THEN reserved_tokens ELSE 0 END),0),COALESCE(SUM(elapsed_millis),0) FROM thread_context_compactions WHERE run_id=?`, runID).Scan(&contextTokens, &contextMillis); err != nil {
+		return domain.RunAgentUsage{}, err
+	}
 	if rootTokens > math.MaxInt64-specialistTokens ||
 		rootTokens+specialistTokens > math.MaxInt64-readOnlyTokens ||
+		rootTokens+specialistTokens+readOnlyTokens > math.MaxInt64-contextTokens ||
 		rootExecutionMillis > math.MaxInt64-specialistExecutionMillis ||
 		rootExecutionMillis+specialistExecutionMillis >
-			math.MaxInt64-readOnlyExecutionMillis {
+			math.MaxInt64-readOnlyExecutionMillis || rootExecutionMillis+specialistExecutionMillis+readOnlyExecutionMillis > math.MaxInt64-contextMillis {
 		return domain.RunAgentUsage{}, apperror.New(apperror.CodeResourceExhausted,
 			"Run Agent usage total exceeds the supported range")
 	}
 	usage := domain.RunAgentUsage{
 		RunID:      runID,
 		RootTokens: rootTokens, SpecialistTokens: specialistTokens,
-		ReadOnlyFanoutTokens:      readOnlyTokens,
-		TotalTokens:               rootTokens + specialistTokens + readOnlyTokens,
+		ReadOnlyFanoutTokens:    readOnlyTokens,
+		TotalTokens:             rootTokens + specialistTokens + readOnlyTokens + contextTokens,
+		ContextCompactionTokens: contextTokens, ContextCompactionMillis: contextMillis,
 		RootExecutionMillis:       rootExecutionMillis,
 		SpecialistExecutionMillis: specialistExecutionMillis,
 		ReadOnlyFanoutMillis:      readOnlyExecutionMillis,
 		TotalExecutionMillis: rootExecutionMillis + specialistExecutionMillis +
-			readOnlyExecutionMillis,
+			readOnlyExecutionMillis + contextMillis,
 	}
 	if err := usage.Validate(); err != nil {
 		return domain.RunAgentUsage{}, apperror.Wrap(apperror.CodeConflict,

@@ -25,6 +25,9 @@ type monetaryModelEvidence struct {
 // identities additionally authenticate their derived key against the start.
 func monetaryModelEvidenceTx(ctx context.Context, tx *sql.Tx, runID, reservationID, scope string, number int64, provider, model string) (monetaryModelEvidence, error) {
 	var result monetaryModelEvidence
+	if scope == domain.MonetaryScopeContextCompaction {
+		return contextCompactionMonetaryEvidenceTx(ctx, tx, runID, number, provider, model)
+	}
 	if scope == domain.MonetaryScopeSpecialist {
 		return specialistMonetaryEvidenceTx(ctx, tx, runID, number, provider, model)
 	}

@@ -31,6 +31,12 @@ func NormalizeSpecialistToolPayload(raw json.RawMessage) (SpecialistToolPayload,
 		return input, nil, errors.New("trailing Specialist tool data")
 	}
 	switch ToolName(input.Tool) {
+	case SpecialistResultReadTool:
+		_, canonical, err := NormalizeSpecialistResultRead(input.Arguments)
+		if err != nil {
+			return input, nil, err
+		}
+		input.Arguments = canonical
 	case WorkspaceListTool, WorkspaceReadTool, WorkspaceGlobTool, WorkspaceGrepTool, WorkspaceChangeTool, WorkspaceApplyTool, GitHubEvidenceListTool, GitHubEvidenceReadTool:
 		canonical, err := NormalizeAgentCodePayload(ToolName(input.Tool), input.Arguments)
 		if err != nil {
@@ -75,7 +81,7 @@ func SpecialistToolDefinition(batch bool) ToolDefinition {
 // SpecialistNativeToolDefinitions reuses the authoritative workspace schemas.
 // The internal specialist_tool envelope is never advertised to a provider.
 func SpecialistNativeToolDefinitions(batch bool) []ToolDefinition {
-	definitions := []ToolDefinition{}
+	definitions := []ToolDefinition{SpecialistResultReadDefinition()}
 	for _, definition := range AgentCodeToolDefinitions() {
 		switch definition.Name {
 		case WorkspaceListTool, WorkspaceReadTool, WorkspaceGlobTool, WorkspaceGrepTool:

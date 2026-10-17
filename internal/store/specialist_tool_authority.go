@@ -71,7 +71,7 @@ func validateSpecialistWorkerBindingTx(ctx context.Context, tx *sql.Tx, ref doma
 	if err = json.Unmarshal([]byte(b.WorkerProfileJSON), &profile); err != nil {
 		return b, err
 	}
-	if !profile.AllowsTool(name) {
+	if profile == nil || (name != domain.SpecialistResultReadName && !profile.AllowsTool(name)) {
 		return b, apperror.New(apperror.CodePolicyDenied, "child worker tool permission was revoked or narrowed")
 	}
 	return b, nil

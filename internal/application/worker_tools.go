@@ -22,7 +22,7 @@ type workerDispatchStore interface {
 	GetApprovalByProposal(context.Context, string) (approval.Record, error)
 }
 
-func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *SpecialistTurnResult, run domain.Run, mission domain.Mission, child domain.AgentNode, attempt domain.AgentAttempt, rounds []domain.SpecialistToolRound) (bool, error) {
+func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *SpecialistTurnResult, run domain.Run, mission domain.Mission, child domain.AgentNode, attempt domain.AgentAttempt, rounds []domain.SpecialistToolRound, executor *specialistWorkspaceExecutor, gateway *toolgateway.Gateway) (bool, error) {
 	st, ok := r.store.(workerDispatchStore)
 	if !ok {
 		return false, errors.New("worker durable tool storage is unavailable")
@@ -31,6 +31,13 @@ func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *Special
 	for _, round := range rounds {
 		for _, c := range round.Calls {
 			if c.Status.Terminal() {
+				result.ToolCalls++
+				continue
+			}
+			if c.Name == domain.SpecialistResultReadName {
+				if err := r.resolveSpecialistReceiptRead(ctx, c, run, mission, child, attempt, executor, gateway); err != nil {
+					return false, err
+				}
 				result.ToolCalls++
 				continue
 			}

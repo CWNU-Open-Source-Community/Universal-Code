@@ -50,7 +50,7 @@ func TestSpecialistNativeToolsPersistOwnReceiptsAndContinueWithResults(t *testin
 	if _, err = os.Stat(filepath.Join(root, "forbidden.txt")); !os.IsNotExist(err) {
 		t.Fatalf("read-only child wrote a file: %v", err)
 	}
-	if len(provider.requests) != 2 || len(provider.requests[0].Tools) != 4 || provider.requests[0].Metadata["harness_workload"] != string(llm.HarnessWorkloadSpecialistTools) {
+	if len(provider.requests) != 2 || len(provider.requests[0].Tools) != 5 || provider.requests[0].Metadata["harness_workload"] != string(llm.HarnessWorkloadSpecialistTools) {
 		t.Fatalf("native harness request: %+v", provider.requests)
 	}
 	next := provider.requests[1].Messages

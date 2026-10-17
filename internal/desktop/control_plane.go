@@ -934,6 +934,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		FullCDPSessionControlEnabled:          fullCDPSessionControlEnabled,
 		RunLifecycleController:                lifecycleControl,
 		ThreadTurnController:                  threadTurnControl,
+		ThreadContextCompactionController:     application.NewThreadContextCompactionService(stateStore, models.Router()).WithExecutionState(threadTurnControl),
 		StandardCodePresetController:          standardCodePreset,
 		StandardCodeDeliveryController:        standardCodeDeliveryController,
 		RunExecutionController:                executionControl,

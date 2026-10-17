@@ -361,6 +361,7 @@ type Config struct {
 	CommandRuntimeAdvertiser              toolgateway.CommandRuntimeAdvertiser
 	RunLifecycleController                RunLifecycleController
 	ThreadTurnController                  ThreadTurnController
+	ThreadContextCompactionController     ThreadContextCompactionController
 	ThreadReviewReader                    ThreadReviewReader
 	ThreadGitController                   ThreadGitController
 	ThreadApplicationServiceController    ThreadApplicationServiceController
@@ -472,6 +473,7 @@ type API struct {
 	capabilityReadinessRuntime            application.CapabilityReadinessRuntime
 	runLifecycleController                RunLifecycleController
 	threadTurnController                  ThreadTurnController
+	threadContextCompactionController     ThreadContextCompactionController
 	threadReview                          ThreadReviewReader
 	threadGitController                   ThreadGitController
 	threadApplicationServiceController    ThreadApplicationServiceController
@@ -937,6 +939,7 @@ func New(store Store, config Config) (*API, error) {
 		capabilityReadinessRuntime:          readinessRuntime,
 		runLifecycleController:              config.RunLifecycleController,
 		threadTurnController:                config.ThreadTurnController,
+		threadContextCompactionController:   config.ThreadContextCompactionController,
 		threadReview:                        config.ThreadReviewReader,
 		threadGitController:                 config.ThreadGitController,
 		threadApplicationServiceController:  threadApplicationServices,
@@ -1250,8 +1253,16 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveThreadModelRoute(tracked, request, requestID, threadID)
 		return
 	}
+	if threadID, proposalID, matched := matchThreadContextPinPath(request.URL.Path); matched {
+		a.serveThreadContextPins(tracked, request, requestID, threadID, proposalID)
+		return
+	}
 	if threadID, matched := matchThreadPlanControlPath(request.URL.Path); matched && request.Method != http.MethodGet {
 		a.serveThreadPlanControl(tracked, request, requestID, threadID)
+		return
+	}
+	if threadID, matched := matchThreadContextCompactionPath(request.URL.Path); matched {
+		a.serveThreadContextCompaction(tracked, request, requestID, threadID)
 		return
 	}
 	if threadID, action, matched := matchThreadMutationPath(request.URL.Path); matched &&

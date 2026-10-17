@@ -4808,6 +4808,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/context/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compact the idle current Thread context
+         * @description Generates a model summary from the current Run Session at an idle boundary. Requires expected_run_id and a durable Idempotency-Key. Busy tasks are never interrupted. Summary and compacted source flags commit together after exact source comparison; original messages and actual auxiliary usage remain readable. Repeated keys do not dispatch another model call.
+         */
+        post: operations["compactThreadContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/context/pin-proposals/{proposal_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm, decline or customize a context pin proposal
+         * @description Only pin_task or explicit pin_custom creates a fixed requirement. Ordinary custom replies are not fixed. A reply is returned for submission through the existing idempotent Thread message flow; this call never runs a model or tool.
+         */
+        post: operations["resolveThreadContextPinProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/context/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read fixed task requirements and pending proposals
+         * @description Thread-scoped exact user-confirmed text, CAS revision and idle boundary. Model proposals do not activate pins; resolved proposals retain the exact reply and stable Thread message operation key.
+         */
+        get: operations["getThreadContextPins"];
+        put?: never;
+        /**
+         * Add, edit or remove a user-confirmed task requirement
+         * @description Requires an idle Thread and exact collection/item revisions. Text remains guidance only; no tool, network or execution permission is granted.
+         */
+        post: operations["controlThreadContextPin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/delete": {
         parameters: {
             query?: never;
@@ -7287,6 +7351,27 @@ export interface components {
             protocol_version: string;
             scope: string;
             scope_id: string;
+        };
+        ContextPinProposal: {
+            choice?: string;
+            content_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            pin_id?: string;
+            question: string;
+            reply_operation_key?: string;
+            reply_text?: string;
+            /** Format: date-time */
+            resolved_at?: string;
+            run_id: string;
+            /** Format: int64 */
+            source_message_id?: number;
+            status: string;
+            text: string;
+            thread_id: string;
+            /** Format: int64 */
+            version: number;
         };
         ContinuityAuthority: {
             approval: boolean;
@@ -11459,6 +11544,16 @@ export interface components {
             /** Format: int32 */
             worktree_count: number;
         };
+        ResolveContextPinProposal: {
+            choice: string;
+            /** Format: int64 */
+            expected_proposal_version: number;
+            /** Format: int64 */
+            expected_revision: number;
+            pin_custom?: boolean;
+            text?: string;
+            version: string;
+        };
         ResourceLimits: {
             /** Format: int32 */
             cpu_quota_millis: number;
@@ -11508,6 +11603,10 @@ export interface components {
             version: "run_activity.v1";
         };
         RunAgentUsage: {
+            /** Format: int64 */
+            context_compaction_millis: number;
+            /** Format: int64 */
+            context_compaction_tokens: number;
             /** Format: int64 */
             read_only_fanout_millis: number;
             /** Format: int64 */
@@ -13801,6 +13900,80 @@ export interface components {
             thread_id: string;
             /** @enum {string} */
             version: "thread_application_services.v1";
+        };
+        ThreadContextCompactionRequestView: {
+            expected_run_id: string;
+            focus?: string;
+            /** @enum {string} */
+            version: "thread_context_compaction.v1";
+        };
+        ThreadContextCompactionResult: {
+            generated: boolean;
+            input_fingerprint?: string;
+            /** Format: int32 */
+            input_messages_omitted: number;
+            /** Format: int32 */
+            preserved_messages: number;
+            /** Format: int32 */
+            removed_messages: number;
+            replayed: boolean;
+            run_id: string;
+            session_id: string;
+            source_sha256: string;
+            /** @enum {string} */
+            status: "completed" | "noop";
+            /** Format: int64 */
+            summary_id: number;
+            thread_id: string;
+            usage?: unknown;
+            /** @enum {string} */
+            version: "thread_context_compaction.v1";
+        };
+        ThreadContextPin: {
+            content_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            id: string;
+            proposal_id?: string;
+            source_kind: string;
+            /** Format: int64 */
+            source_message_id?: number;
+            status: string;
+            text: string;
+            thread_id: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: int64 */
+            version: number;
+        };
+        ThreadContextPinControl: {
+            action: string;
+            /** Format: int64 */
+            expected_pin_version?: number;
+            /** Format: int64 */
+            expected_revision: number;
+            pin_id?: string;
+            /** Format: int64 */
+            source_message_id?: number;
+            text?: string;
+            version: string;
+        };
+        ThreadContextPinResult: {
+            replayed: boolean;
+            reply_operation_key?: string;
+            reply_text?: string;
+            state: components["schemas"]["ThreadContextPins"];
+        };
+        ThreadContextPins: {
+            busy: boolean;
+            effective_from: string;
+            pins: components["schemas"]["ThreadContextPin"][];
+            proposals: components["schemas"]["ContextPinProposal"][];
+            /** Format: int64 */
+            revision: number;
+            thread_id: string;
+            version: string;
         };
         ThreadCreationControlRequestView: {
             allowed_targets?: string[];
@@ -27240,6 +27413,187 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ThreadLifecycleControlView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    compactThreadContext: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadContextCompactionRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadContextCompactionResult"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    resolveThreadContextPinProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveContextPinProposal"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadContextPinResult"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getThreadContextPins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadContextPins"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    controlThreadContextPin: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadContextPinControl"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadContextPinResult"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

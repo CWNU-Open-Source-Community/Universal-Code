@@ -6,6 +6,7 @@ import type { APIClient } from "../../api/client";
 import type { EvidenceInventoryView, ProjectInstructionStateView, ThreadDetailView } from "../../api/types";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { ContextDiagnosticsPanel, validContextDiagnostics, type ContextDiagnostics } from "./context-diagnostics";
+import { V2ThreadCompactControl, V2ThreadPinsPanel } from "./thread-context-controls";
 import "./thread-context.css";
 
 export interface RunStoredContextSummary {
@@ -67,6 +68,7 @@ type ContextProps = {
   returnFocusRef?: RefObject<HTMLElement | null>;
   onOpenRecovery?: (pane: "context" | "checkpoints") => void;
   onOpenSession?: () => void;
+  onReply?: (content: string, operationKey: string) => Promise<void>;
 };
 
 export function V2ThreadContext(props: ContextProps) {
@@ -74,7 +76,7 @@ export function V2ThreadContext(props: ContextProps) {
   return <ThreadContextContent key={props.threadID} {...props} />;
 }
 
-function ThreadContextContent({ client, threadID, detail, onClose, onRequestChange, returnFocusRef, onOpenRecovery, onOpenSession }: ContextProps) {
+function ThreadContextContent({ client, threadID, detail, onClose, onRequestChange, returnFocusRef, onOpenRecovery, onOpenSession, onReply }: ContextProps) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton, { isolateBackground: true, returnFocusRef });
   const [correction, setCorrection] = useState("");
@@ -127,6 +129,7 @@ function ThreadContextContent({ client, threadID, detail, onClose, onRequestChan
       {!bound ? <p role="alert">任务与执行记录尚未对应，暂不显示上下文。</p> : <>
         <div className="v2-context-toolbar"><span>{detail.thread.title}</span><button type="button" disabled={busy} onClick={refresh}><RefreshCw size={15} />{busy ? "正在读取" : "重新读取"}</button></div>
         <details className="v2-context-identities"><summary>查看来源标识</summary><dl><dt>任务</dt><dd>{threadID}</dd><dt>执行</dt><dd>{run.id}</dd><dt>会话</dt><dd>{sessionID}</dd><dt>项目</dt><dd>{workspaceID || "未绑定项目"}</dd></dl></details>
+        <V2ThreadPinsPanel client={client} threadID={threadID} onReply={onReply} />
         <section aria-labelledby="context-instructions"><h3 id="context-instructions">项目指令</h3>
           {!workspaceID ? <p>此执行没有绑定项目。</p> : instructions.isError ? <ContextError label="项目指令" error={instructions.error} /> : !instructions.data ? <p role="status">正在读取项目指令…</p> : <>
             {instructions.data.stale && <p className="v2-context-notice" role="status">项目指令文件已有变化，此执行沿用创建时固定的版本。需要采用新要求时，请在对话中说明。</p>}
@@ -153,8 +156,9 @@ function ThreadContextContent({ client, threadID, detail, onClose, onRequestChan
               <details><summary>继承来源与长期信息引用</summary><dl><dt>来源执行</dt><dd>{inherited.source_run_id}</dd><dt>来源会话</dt><dd>{inherited.source_session_id}</dd><dt>快照指纹</dt><dd>{inherited.fingerprint}</dd><dt>摘要原文 SHA256</dt><dd>{inherited.summary_content_sha256 || "无"}</dd></dl>
                 {inherited.memories.map((memory) => <p key={`${memory.scope}:${memory.scope_id}:${memory.id}`}>{memory.scope === "user" ? "用户" : "项目"}信息：{memory.id} · 版本 {memory.version}<br />SHA256 {memory.content_sha256}</p>)}
               </details></div>}
-            <p className="v2-context-help">摘要可能省略细节，消息计数记录压缩当时的范围。需要保留的目标与限制可在下方补充；执行操作仍按当前任务权限审批。</p>
+            <p className="v2-context-help">摘要可能省略细节，消息计数记录压缩当时的范围。持续要求可在上方固定；执行操作仍按当前任务权限审批。</p>
           </>}
+          <V2ThreadCompactControl key={run.id} client={client} threadID={threadID} runID={run.id} />
         </section>
         <section className="v2-context-correction" aria-labelledby="context-correction"><h3 id="context-correction">补充与纠正</h3>
           <label htmlFor="thread-context-correction">需要继续保留的目标、限制或纠正</label><textarea id="thread-context-correction" value={correction} onChange={(event) => setCorrection(event.target.value)} rows={4} placeholder="例如：继续原目标，但不要改动已有接口；刚才关于输出格式的判断应改为…" />

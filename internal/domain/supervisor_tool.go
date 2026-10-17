@@ -113,6 +113,7 @@ func (c SupervisorToolCall) Validate() error {
 		c.ToolName != "history_search" && c.ToolName != "history_read" && c.ToolName != "skill_read" &&
 		c.ToolName != "specialist_delegation_propose" &&
 		c.ToolName != "child_task_propose" &&
+		c.ToolName != "context_pin_propose" &&
 		c.ToolName != "plan_delivery_propose" &&
 		c.ToolName != "controlled_command_propose" &&
 		c.ToolName != "one_shot_command_propose" &&
