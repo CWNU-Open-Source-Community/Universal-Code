@@ -215,13 +215,17 @@ func (s *ThreadTurnService) checkAutomaticTurn(ctx context.Context, threadID, ow
 // AutomaticThreadTurnObservation is a read-only result for one durable input.
 // A committed message alone is insufficient: failed turns also consume messages.
 type AutomaticThreadTurnObservation struct {
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+	State           string `json:"state"`
+	Reason          string `json:"reason,omitempty"`
+	TerminalFailure bool   `json:"terminal_failure,omitempty"`
 }
 
 func (s *ThreadTurnService) ObserveAutomaticTurn(ctx context.Context, threadID, runID, messageID string) (AutomaticThreadTurnObservation, error) {
 	observation := func(state, reason string) (AutomaticThreadTurnObservation, error) {
 		return AutomaticThreadTurnObservation{State: state, Reason: reason}, nil
+	}
+	failedObservation := func(reason string) (AutomaticThreadTurnObservation, error) {
+		return AutomaticThreadTurnObservation{State: "blocked", Reason: reason, TerminalFailure: true}, nil
 	}
 	if s == nil || s.threads == nil || s.execution == nil || s.execution.supervisor == nil {
 		return AutomaticThreadTurnObservation{}, apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation observation is unavailable")
@@ -262,14 +266,37 @@ func (s *ThreadTurnService) ObserveAutomaticTurn(ctx context.Context, threadID, 
 	if _, failed, err := failureStore.GetThreadTurnFailure(ctx, runID, messageID); err != nil {
 		return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
 	} else if failed {
-		return observation("blocked", "The original task turn failed or was stopped")
+		return failedObservation("The original task turn failed or was stopped")
 	}
 	run, err := s.threads.store.GetRun(ctx, runID)
 	if err != nil {
 		return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
 	}
-	if thread.Status != domain.ThreadActive || message.Status == domain.OperatorSteeringCancelled || run.Status == domain.RunFailed || run.Status == domain.RunCancelled {
-		return observation("blocked", "The task or its original input was paused, stopped, or failed")
+	if message.Status == domain.OperatorSteeringCancelled || run.Status == domain.RunFailed || run.Status == domain.RunCancelled {
+		return failedObservation("The original task Run or input was stopped or failed")
+	}
+	if thread.Status != domain.ThreadActive {
+		return observation("blocked", "The task is inactive")
+	}
+	runner := s.execution.supervisor
+	cp, found, err := runner.store.GetSupervisorCheckpoint(ctx, runID)
+	if err != nil {
+		return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
+	}
+	// Approval continuations have their own durable handoff outcome. Inspect it
+	// before the paused projection. Only a quiescent, closed checkpoint confirms
+	// that failure sealing settled tool effects; unfinished attempts stay unknown.
+	if s.recovery != nil {
+		recovery, failed, err := s.recovery.store.GetThreadRunRecovery(ctx, threadID)
+		if err != nil {
+			return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
+		}
+		if failed && recovery.RunID == runID {
+			if recovery.Quiescent && found && cp.Phase == domain.SupervisorIdle && cp.AttemptID == "" && !cp.HasPendingInput() {
+				return failedObservation("The task execution failed and requires recovery")
+			}
+			return observation("blocked", "The failed task execution still requires recovery")
+		}
 	}
 	approvals, err := st.ListApprovals(ctx, approval.ListFilter{RunID: runID, Status: approval.StatusPending, Limit: 1})
 	if err != nil {
@@ -280,11 +307,6 @@ func (s *ThreadTurnService) ObserveAutomaticTurn(ctx context.Context, threadID, 
 	}
 	if run.Status == domain.RunPaused {
 		return observation("blocked", "The original task execution is paused")
-	}
-	runner := s.execution.supervisor
-	cp, found, err := runner.store.GetSupervisorCheckpoint(ctx, runID)
-	if err != nil {
-		return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
 	}
 	if found && (cp.Phase == domain.SupervisorTurnFailed || cp.Phase == domain.SupervisorRunFailed) {
 		return observation("blocked", "The original execution requires recovery")
@@ -317,15 +339,6 @@ func (s *ThreadTurnService) ObserveAutomaticTurn(ctx context.Context, threadID, 
 	}
 	if message.Status == domain.OperatorSteeringPending || found && (cp.AttemptID != "" || cp.HasPendingInput() || cp.Phase == domain.SupervisorTurnStarted) {
 		return observation("running", "The original input has not reached a completed turn")
-	}
-	if s.recovery != nil {
-		recovery, failed, err := s.recovery.store.GetThreadRunRecovery(ctx, threadID)
-		if err != nil {
-			return AutomaticThreadTurnObservation{}, apperror.Normalize(err)
-		}
-		if failed && recovery.RunID == runID {
-			return observation("blocked", "The task execution requires recovery")
-		}
 	}
 	facts, err := st.GetThreadExecutionFacts(ctx, []string{threadID})
 	if err != nil {

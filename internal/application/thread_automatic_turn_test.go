@@ -69,41 +69,58 @@ func TestAutomaticThreadTurnExhaustionDoesNotRefillAndCompletedReplaySurvives(t 
 }
 
 func TestAutomaticThreadTurnObservesExistingApprovalContinuation(t *testing.T) {
-	st, run, _, request := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
-	p := &boundaryJourneyProvider{}
-	p.respond = func(_ context.Context, _ llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		switch index {
-		case 1:
-			return boundaryPropose("automatic-approval-proposal"), nil
-		case 2:
-			return textResponse(rootActionResponse(domain.RootActionWait, "Await review", "", "operator review required")), nil
-		default:
-			return textResponse(rootActionResponse(domain.RootActionFinish, "Denial observed", "done", "")), nil
-		}
-	}
-	turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true})
-	result, err := turns.ExecuteAutomatic(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	observed, err := turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, result.Submission.Message.ID)
-	if err != nil || observed.State != "waiting_approval" {
-		t.Fatalf("waiting observation=%+v err=%v", observed, err)
-	}
-	edits, err := st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: run.SessionID})
-	if err != nil || len(edits) != 1 {
-		t.Fatalf("proposals=%+v err=%v", edits, err)
-	}
-	if _, err := application.NewFileEditReviewService(st).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: edits[0].ID, Action: application.FileEditDeny}); err != nil {
-		t.Fatal(err)
-	}
-	resumed := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: edits[0].ID})
-	if resumed.State != "completed" || !resumed.ModelCalled {
-		t.Fatalf("resume=%+v", resumed)
-	}
-	observed, err = turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, result.Submission.Message.ID)
-	if err != nil || observed.State != "completed" || len(p.Requests()) != 3 {
-		t.Fatalf("completed observation=%+v err=%v model_calls=%d", observed, err, len(p.Requests()))
+	for _, failContinuation := range []bool{false, true} {
+		t.Run(map[bool]string{false: "completed", true: "failed"}[failContinuation], func(t *testing.T) {
+			st, run, _, request := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+			p := &boundaryJourneyProvider{}
+			p.respond = func(_ context.Context, _ llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+				switch index {
+				case 1:
+					return boundaryPropose("automatic-approval-proposal"), nil
+				case 2:
+					return textResponse(rootActionResponse(domain.RootActionWait, "Await review", "", "operator review required")), nil
+				default:
+					if failContinuation {
+						return nil, apperror.New(apperror.CodeFailedPrecondition, "approval continuation provider failed")
+					}
+					return textResponse(rootActionResponse(domain.RootActionFinish, "Denial observed", "done", "")), nil
+				}
+			}
+			turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true})
+			result, err := turns.ExecuteAutomatic(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed, err := turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, result.Submission.Message.ID)
+			if err != nil || observed.State != "waiting_approval" {
+				t.Fatalf("waiting observation=%+v err=%v", observed, err)
+			}
+			edits, err := st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: run.SessionID})
+			if err != nil || len(edits) != 1 {
+				t.Fatalf("proposals=%+v err=%v", edits, err)
+			}
+			if _, err := application.NewFileEditReviewService(st).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: edits[0].ID, Action: application.FileEditDeny}); err != nil {
+				t.Fatal(err)
+			}
+			resumed := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: edits[0].ID})
+			if failContinuation {
+				if resumed.State != "failed" {
+					t.Fatalf("expected failed approval continuation: %+v", resumed)
+				}
+				observed, err = turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, result.Submission.Message.ID)
+				if err != nil || observed.State != "blocked" || !observed.TerminalFailure || len(p.Requests()) != 3 {
+					t.Fatalf("failed approval observation=%+v err=%v model_calls=%d", observed, err, len(p.Requests()))
+				}
+				return
+			}
+			if resumed.State != "completed" || !resumed.ModelCalled {
+				t.Fatalf("resume=%+v", resumed)
+			}
+			observed, err = turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, result.Submission.Message.ID)
+			if err != nil || observed.State != "completed" || len(p.Requests()) != 3 {
+				t.Fatalf("completed observation=%+v err=%v model_calls=%d", observed, err, len(p.Requests()))
+			}
+		})
 	}
 }
 
@@ -129,7 +146,7 @@ func TestAutomaticThreadTurnRespectsStoppedFailedAndWaitingRuns(t *testing.T) {
 				waiting, err = turns.Execute(t.Context(), request)
 				if err == nil {
 					observed, observeErr := turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, waiting.Submission.Message.ID)
-					if observeErr != nil || observed.State != "blocked" {
+					if observeErr != nil || observed.State != "blocked" || observed.TerminalFailure {
 						t.Fatalf("root wait observation=%+v err=%v", observed, observeErr)
 					}
 				}
@@ -250,7 +267,7 @@ func TestAutomaticThreadTurnDoesNotContinueSealedFailedTurn(t *testing.T) {
 		t.Fatalf("failed turn=%+v found=%v err=%v", failure, found, err)
 	}
 	observed, observeErr := turns.ObserveAutomaticTurn(t.Context(), request.ThreadID, run.ID, failure.MessageID)
-	if observeErr != nil || observed.State != "blocked" {
+	if observeErr != nil || observed.State != "blocked" || !observed.TerminalFailure {
 		t.Fatalf("failed observation=%+v err=%v", observed, observeErr)
 	}
 	calls := provider.calls
