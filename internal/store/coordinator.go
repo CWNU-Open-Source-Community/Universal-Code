@@ -24,7 +24,8 @@ const agentNodeColumns = `SELECT id, run_id, parent_id, session_id, role, profil
 
 // Identity/lifecycle consumers and immutable graph snapshots do not consume child authority
 // or cumulative usage. Keep their projection independent of the child ledgers.
-const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0, worker_profile_json FROM agent_nodes`
+// Read child execution authority through agentNodeSelect instead.
+const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0, '' FROM agent_nodes`
 
 const agentNodeSelect = agentNodeColumns + `, allowed_read_paths_json, tool_call_limit, cost_limit_micros,
  (SELECT COUNT(*) FROM specialist_tool_calls c JOIN agent_attempts a ON a.id=c.agent_attempt_id WHERE a.agent_id=agent_nodes.id AND c.charge_id<>''),

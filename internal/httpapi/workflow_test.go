@@ -10,6 +10,39 @@ import (
 	"cyberagent-workbench/internal/domain"
 )
 
+func prepareOpenAPIWorkflowTarget(t *testing.T, f *apiFixture) (*application.WorkflowService, domain.Run, domain.WorkflowDefinition, domain.WorkflowExecution) {
+	t.Helper()
+	service := application.NewWorkflowService(f.store, application.NewSpecialistExecutionService(f.store, nil, nil))
+	f.api.workflowController = service
+	_, created, err := application.NewRunService(f.store).Create(t.Context(), application.CreateRunRequest{
+		Goal: "OpenAPI workflow target", Profile: "code", Budget: domain.Budget{MaxTurns: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := application.NewRunService(f.store).Start(t.Context(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := service.Save(t.Context(), domain.WorkflowSpec{
+		Version: domain.WorkflowVersion, Name: "OpenAPI workflow",
+		Limits: domain.WorkflowLimits{MaxSteps: 8, MaxJobs: 2, MaxTokens: 1000, MaxTurns: 4, TimeoutMillis: 60000},
+		Steps: []domain.WorkflowStep{{ID: "inspect", Kind: "worker", Task: &domain.ChildTask{
+			Title: "inspect", Goal: "inspect a file", Skills: []string{"model.chat"}, TurnLimit: 1, TokenLimit: 100, TimeoutMillis: 10000,
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, err := service.Start(t.Context(), application.StartWorkflowRequest{
+		RunID: run.ID, DefinitionID: definition.ID, OperationKey: "openapi-workflow-initial-target",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service, run, definition, execution
+}
+
 func TestWorkflowHTTPPersistsScopesAndControlsExecution(t *testing.T) {
 	f := newAPIFixture(t)
 	f.api.modelControlEnabled = true
