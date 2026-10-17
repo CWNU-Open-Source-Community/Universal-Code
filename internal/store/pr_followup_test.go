@@ -269,7 +269,7 @@ func TestPRFollowupMigrationFromV203PreservesMainHistory(t *testing.T) {
 	}
 	var version int
 	if err := st.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != LatestSchemaVersion {
-		t.Fatalf("migration version=%d want=%d err=%v", version, LatestSchemaVersion, err)
+		t.Fatalf("migration version=%d err=%v", version, err)
 	}
 	after, err := st.loadAppliedMigrations(t.Context())
 	if err != nil {
