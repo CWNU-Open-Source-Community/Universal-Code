@@ -464,7 +464,8 @@ func migrationPlan() []migration {
 		migration{Version: 201, Name: "Bounded project test calls in Plan and Deliver", Statements: projectTestToolStatements(), DisableForeignKeys: true},
 		migration{Version: 202, Name: "Admitted execution workers and durable child tool authority", Statements: specialistWorkerStatements(), DisableForeignKeys: true},
 		migration{Version: 203, Name: "Bounded reusable worker workflows", Statements: workflowStatements},
-		migration{Version: 204, Name: "Bounded PR followup subscriptions on existing Threads", Statements: prFollowupStatements})
+		migration{Version: 204, Name: "Bounded PR followup subscriptions on existing Threads", Statements: prFollowupStatements},
+		migration{Version: 205, Name: "Reviewed project command hooks", Statements: projectHookStatements, DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

@@ -17,7 +17,7 @@ func IsSupervisorToolRequestRepair(reason string) bool {
 }
 
 func NewSupervisorToolRequestRepairReason(toolRound int, reason string) (string, error) {
-	if toolRound < 0 || toolRound >= MaxSupervisorToolRounds || strings.TrimSpace(reason) == "" {
+	if toolRound < 0 || toolRound >= MaxSupervisorExecutionRounds || strings.TrimSpace(reason) == "" {
 		return "", errors.New("tool request repair requires an available tool round and a rejection reason")
 	}
 	return SupervisorToolRequestRepairReasonPrefix + "round=" + strconv.Itoa(toolRound) + "; " + reason, nil
@@ -32,5 +32,5 @@ func SupervisorToolRequestRepairRound(reason string) (int, bool) {
 		return 0, false
 	}
 	round, err := strconv.Atoi(raw)
-	return round, err == nil && round >= 0 && round < MaxSupervisorToolRounds && strconv.Itoa(round) == raw
+	return round, err == nil && round >= 0 && round < MaxSupervisorExecutionRounds && strconv.Itoa(round) == raw
 }

@@ -54,16 +54,29 @@ func (s *AgentRunner) attachSupervisorProviderReplay(ctx context.Context, checkp
 func attachRecordedSupervisorProviderReplay(request llm.ChatRequest, rounds []domain.SupervisorToolRound,
 	states map[int]*llm.ProviderReplay,
 ) (llm.ChatRequest, error) {
-	start := len(request.Messages) - 2*len(rounds)
+	count := 0
+	for _, round := range rounds {
+		if round.ProjectHook() {
+			count += len(round.Calls)
+		} else {
+			count += 2
+		}
+	}
+	start := len(request.Messages) - count
 	if start < 0 {
 		return llm.ChatRequest{}, errors.New("provider replay has no native tool segment")
 	}
-	for i, round := range rounds {
+	for _, round := range rounds {
+		if round.ProjectHook() {
+			start += len(round.Calls)
+			continue
+		}
+		message := &request.Messages[start]
+		start += 2
 		replay := states[round.Round]
 		if replay == nil {
 			continue
 		}
-		message := &request.Messages[start+2*i]
 		if message.Role != "assistant" {
 			return llm.ChatRequest{}, errors.New("provider replay has no assistant tool batch")
 		}

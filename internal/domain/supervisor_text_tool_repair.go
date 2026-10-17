@@ -15,7 +15,7 @@ const SupervisorTextToolRepairReasonPrefix = "text_tool_call_not_executed: compl
 const supervisorTextToolRepairSuffix = "; trailing tool-call text is not execution; use native function calls or explicitly finish or wait"
 
 func NewSupervisorTextToolRepairReason(round int) (string, error) {
-	if round < 0 || round >= MaxSupervisorToolRounds {
+	if round < 0 || round >= MaxSupervisorExecutionRounds {
 		return "", errors.New("text tool-call correction requires an available tool round")
 	}
 	return SupervisorTextToolRepairReasonPrefix + strconv.Itoa(round) + supervisorTextToolRepairSuffix, nil
@@ -27,7 +27,7 @@ func SupervisorTextToolRepairRound(reason string) (int, bool) {
 	}
 	raw := strings.TrimSuffix(strings.TrimPrefix(reason, SupervisorTextToolRepairReasonPrefix), supervisorTextToolRepairSuffix)
 	round, err := strconv.Atoi(raw)
-	return round, err == nil && round >= 0 && round < MaxSupervisorToolRounds && strconv.Itoa(round) == raw
+	return round, err == nil && round >= 0 && round < MaxSupervisorExecutionRounds && strconv.Itoa(round) == raw
 }
 
 // RootActionHasTrailingToolCalls recognizes only a complete known provider

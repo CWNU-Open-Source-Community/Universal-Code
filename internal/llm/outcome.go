@@ -389,7 +389,9 @@ func (a ModelAttempt) ValidateStarted() error {
 	if a.ProtocolRepair < 0 || a.ProtocolRepair > 1 {
 		return errors.New("model protocol repair number must be zero or one")
 	}
-	maxToolRounds := 4
+	// Root physical execution sequence includes Go-owned hooks; the Store
+	// separately enforces four native model tool batches.
+	maxToolRounds := 21
 	if a.SpecialistAttemptID != "" {
 		maxToolRounds = 16
 	}

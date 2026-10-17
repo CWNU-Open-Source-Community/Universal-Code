@@ -1133,6 +1133,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	fixture.api.threadPullRequestController = openAPIThreadPullRequestController{binding: threadGitBinding}
 	prFollowups := &prFollowupControllerStub{expectedThreadID: openAPIThread.ID}
 	fixture.api.prFollowupController = prFollowups
+	projectHooks := &projectHooksControllerStub{}
+	fixture.api.projectHooksController = projectHooks
 	legacyArchiveSession := session.New(fixture.workspace.ID,
 		"OpenAPI legacy archive fixture", "review")
 	if err := fixture.store.SaveSession(t.Context(), legacyArchiveSession); err != nil {
@@ -1323,6 +1325,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		}
 		t.Run(spec.OperationID, func(t *testing.T) {
 			prFollowupCallsBefore := prFollowups.calls
+			projectHookCallsBefore := projectHooks.calls
 			requestAPI := fixture.api
 			var threadServiceJob threadApplicationServicesLiveJob
 			if spec.Path == StandardCodePresetCreatePath ||
@@ -1472,6 +1475,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = prFollowupCreateBody
 				} else if spec.OperationID == "pausePRFollowup" || spec.OperationID == "resumePRFollowup" || spec.OperationID == "cancelPRFollowup" {
 					body = prFollowupTransitionBody
+				} else if spec.OperationID == "trustProjectHooks" || spec.OperationID == "disableProjectHooks" {
+					body = projectHooksHTTPBody
 				} else if spec.OperationID == "uploadWorkspaceFile" {
 					body = `{"version":"workspace_file_upload.v1","mime_type":"text/plain","name":"notes.txt","data_base64":"` + base64.StdEncoding.EncodeToString(fileBytes) + `"}`
 				} else if spec.OperationID == "uploadWorkspaceImage" {
@@ -1980,6 +1985,18 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					"127.0.0.1:8765", "127.0.0.1:45000", nil)
 			}
 			switch spec.OperationID {
+			case "getProjectHooks", "trustProjectHooks", "disableProjectHooks":
+				if projectHooks.calls != projectHookCallsBefore+1 || projectHooks.threadID != openAPIThread.ID {
+					t.Fatalf("project hook route did not reach the task controller: calls=%d thread=%s", projectHooks.calls-projectHookCallsBefore, projectHooks.threadID)
+				}
+				if spec.OperationID != "getProjectHooks" {
+					want := application.ProjectHooksReviewRequest{
+						Version: application.ProjectHooksVersion, ExpectedFingerprint: projectHooksHTTPFingerprint,
+					}
+					if projectHooks.action != strings.TrimSuffix(spec.OperationID, "ProjectHooks") || projectHooks.request != want {
+						t.Fatalf("project hook route changed the action or reviewed configuration: %#v", projectHooks)
+					}
+				}
 			case "listPRFollowups", "createPRFollowup", "pausePRFollowup", "resumePRFollowup", "cancelPRFollowup":
 				if prFollowups.calls != prFollowupCallsBefore+1 || prFollowups.threadID != openAPIThread.ID {
 					t.Fatalf("PR followup route did not reach the task controller: calls=%d thread=%s", prFollowups.calls-prFollowupCallsBefore, prFollowups.threadID)

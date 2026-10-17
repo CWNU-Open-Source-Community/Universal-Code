@@ -125,7 +125,7 @@ func (i ActiveCallInfo) Validate() error {
 	if i.ProtocolRepair < 0 || i.ProtocolRepair > 1 {
 		return errors.New("active call protocol repair number must be zero or one")
 	}
-	if i.ToolRound < 0 || i.ToolRound > domain.MaxSupervisorToolRounds {
+	if i.ToolRound < 0 || i.ToolRound > domain.MaxSupervisorExecutionRounds {
 		return errors.New("active call tool round is out of range")
 	}
 	if strings.TrimSpace(i.Provider) == "" || strings.TrimSpace(i.Model) == "" {

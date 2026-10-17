@@ -32,18 +32,19 @@ const (
 	MaxPathBytes        = 1024
 )
 
-// Config is the v1 project file. Every field is narrowing-only: it can only
-// reduce what the operator/process/policy already allows. There is no field
-// for credentials, executables, endpoints, prompts, or permission tiers.
+// Config is the v1 project file. Restrictions narrow existing authority;
+// command and hook declarations are inert until explicitly authorized.
+// It cannot supply credentials, executables, endpoints, or permission tiers.
 type Config struct {
-	Protocol         string   `yaml:"protocol"`
-	ReadOnly         *bool    `yaml:"read_only,omitempty"`
-	AllowedProfiles  []string `yaml:"allowed_profiles,omitempty"`
-	Budget           *Budget  `yaml:"budget,omitempty"`
-	ExcludePaths     []string `yaml:"exclude_paths,omitempty"`
-	SkillSuggestions []string `yaml:"skill_suggestions,omitempty"`
-	TestCommandID    string   `yaml:"test_command_id,omitempty"`
-	FormatCommandID  string   `yaml:"format_command_id,omitempty"`
+	Protocol         string        `yaml:"protocol"`
+	ReadOnly         *bool         `yaml:"read_only,omitempty"`
+	AllowedProfiles  []string      `yaml:"allowed_profiles,omitempty"`
+	Budget           *Budget       `yaml:"budget,omitempty"`
+	ExcludePaths     []string      `yaml:"exclude_paths,omitempty"`
+	SkillSuggestions []string      `yaml:"skill_suggestions,omitempty"`
+	TestCommandID    string        `yaml:"test_command_id,omitempty"`
+	FormatCommandID  string        `yaml:"format_command_id,omitempty"`
+	Hooks            *CommandHooks `yaml:"hooks,omitempty"`
 }
 
 type Budget struct {
@@ -53,15 +54,16 @@ type Budget struct {
 
 // Effective is the post-narrowing result with per-field provenance.
 type Effective struct {
-	Protocol         string   `json:"protocol"`
-	ReadOnly         bool     `json:"read_only"`
-	AllowedProfiles  []string `json:"allowed_profiles,omitempty"`
-	MaxTurns         int      `json:"max_turns,omitempty"`
-	MaxToolCalls     int      `json:"max_tool_calls,omitempty"`
-	ExcludePaths     []string `json:"exclude_paths,omitempty"`
-	SkillSuggestions []string `json:"skill_suggestions,omitempty"`
-	TestCommandID    string   `json:"test_command_id,omitempty"`
-	FormatCommandID  string   `json:"format_command_id,omitempty"`
+	Protocol         string        `json:"protocol"`
+	ReadOnly         bool          `json:"read_only"`
+	AllowedProfiles  []string      `json:"allowed_profiles,omitempty"`
+	MaxTurns         int           `json:"max_turns,omitempty"`
+	MaxToolCalls     int           `json:"max_tool_calls,omitempty"`
+	ExcludePaths     []string      `json:"exclude_paths,omitempty"`
+	SkillSuggestions []string      `json:"skill_suggestions,omitempty"`
+	TestCommandID    string        `json:"test_command_id,omitempty"`
+	FormatCommandID  string        `json:"format_command_id,omitempty"`
+	Hooks            *CommandHooks `json:"hooks,omitempty"`
 }
 
 // Rejection names one fail-closed field with its reason.
@@ -253,6 +255,9 @@ func (c Config) validate() error {
 	if strings.ContainsAny(c.FormatCommandID, "\r\n\t \"'") || len(c.FormatCommandID) > 128 {
 		return errors.New("format_command_id must be a bounded single token")
 	}
+	if err := validateCommandHooks(c.Hooks, c.TestCommandID, c.FormatCommandID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -361,6 +366,10 @@ func (c Config) Narrow(ceiling Ceiling) (Effective, []Rejection, error) {
 		} else {
 			effective.FormatCommandID = c.FormatCommandID
 		}
+	}
+	if c.Hooks != nil && (c.Hooks.AfterEditFormat || c.Hooks.BeforeFinishTest) {
+		value := *c.Hooks
+		effective.Hooks = &value
 	}
 	return effective, rejections, nil
 }

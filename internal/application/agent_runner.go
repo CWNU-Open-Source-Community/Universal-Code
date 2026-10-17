@@ -236,6 +236,7 @@ type AgentRunner struct {
 	agentBrowser                          *AgentBrowserService
 	standardCodeDelivery                  *StandardCodeDeliveryService
 	drydocks                              *RunWorktreeService
+	projectHooks                          ProjectHookAuthorizer
 }
 
 func NewAgentRunner(store AgentRunnerStore, router *llm.Router, checker policy.Checker) *AgentRunner {
@@ -525,8 +526,11 @@ func (s *AgentRunner) WithRunWorktree(drydocks *RunWorktreeService) *AgentRunner
 		return s
 	}
 	s.drydocks = drydocks
+	s.WithProjectHooks(s.projectHooks)
 	s.installMCPExecutor()
-	if s.agentBrowser != nil { s.agentBrowser.WithRunWorktree(drydocks) }
+	if s.agentBrowser != nil {
+		s.agentBrowser.WithRunWorktree(drydocks)
+	}
 	if store, ok := s.store.(AgentCodeToolStore); ok && s.tools != nil {
 		s.tools.WithAgentCodeWorkspaceResolver(NewAgentCodeWorkspaceResolver(store, drydocks)).
 			WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).
@@ -938,11 +942,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		}
 		modelRequest := request
 		modelContextLayout := prepared.layout
-		if len(prepared.toolRounds) == domain.MaxSupervisorToolRounds {
+		if supervisorNativeToolRounds(prepared.toolRounds) == domain.MaxSupervisorToolRounds {
 			modelRequest = supervisorToolBoundaryRequest(modelRequest)
 		}
 		if protocolRepair == 1 {
-			modelRequest = supervisorProtocolRepairRequest(modelRequest, repairReason, supervisorRepairContext{ThreadEndTurn: prepared.context.threadEndTurn, ToolRounds: len(prepared.toolRounds)})
+			modelRequest = supervisorProtocolRepairRequest(modelRequest, repairReason, supervisorRepairContext{ThreadEndTurn: prepared.context.threadEndTurn, ToolRounds: len(prepared.toolRounds), HostToolRounds: len(prepared.toolRounds) - supervisorNativeToolRounds(prepared.toolRounds)})
 			modelContextLayout = modelContextLayout.shifted(1)
 		}
 		modelRequest, err = s.requestWithBuiltinSkillReads(ctx, turn, modelRequest)
@@ -1161,7 +1165,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			switch {
 			case protocolRepair != 0 && !domain.IsSupervisorToolRequestRepair(repairReason) && !continuationRepair && !textToolRepair:
 				parseErr = errors.New("protocol repair response cannot request tools")
-			case len(prepared.toolRounds) >= domain.MaxSupervisorToolRounds:
+			case supervisorNativeToolRounds(prepared.toolRounds) >= domain.MaxSupervisorToolRounds:
 				parseErr = fmt.Errorf("supervisor tool round limit of %d was exhausted",
 					domain.MaxSupervisorToolRounds)
 			default:
@@ -1322,9 +1326,14 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			return result, failure
 		}
 		completed, retry, err := s.commitAgentRootAction(ctx, &turn, result, modelCall,
-			action, rootActionRecovery, len(prepared.toolRounds))
+			action, rootActionRecovery, prepared)
 		if retry {
 			result = completed
+			request, err = rebuildToolRequest()
+			if err != nil {
+				return result, s.recordFailure(ctx, &result, err, 0)
+			}
+			result.ToolRounds, result.ToolCalls = supervisorToolStats(prepared.toolRounds)
 			continue
 		}
 		return completed, err

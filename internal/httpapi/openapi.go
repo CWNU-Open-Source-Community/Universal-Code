@@ -1140,6 +1140,14 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			Parameters: []openAPIParameter{threadID}},
 		{Path: "/api/v1/threads/{thread_id}/git", OperationID: "getThreadGit", Summary: "Inspect current task Git target", Tag: "Git",
 			DataType: reflect.TypeOf(application.ThreadGitState{}), NotFound: true, Parameters: []openAPIParameter{threadID}},
+		{Path: ProjectHooksPathTemplate, OperationID: "getProjectHooks", Summary: "Review the current project's fixed automatic actions", Tag: "Threads",
+			Description: "Reports the exact configuration fingerprint, trust revision and whether this task uses that configuration. Reads do not grant execution authority.",
+			DataType:    reflect.TypeOf(application.ProjectHooksView{}), NotFound: true, Parameters: []openAPIParameter{threadID}},
+		{Path: ProjectHooksPathTemplate + "/trust", Method: http.MethodPost, OperationID: "trustProjectHooks", Summary: "Trust the reviewed project action configuration", Tag: "Control", Control: true, SuccessStatus: http.StatusOK,
+			Description: "Requires run control and the exact displayed fingerprint and trust revision. Later tasks reuse the trust until the configuration changes. Task execution permissions and budgets still apply.",
+			DataType:    reflect.TypeOf(application.ProjectHooksView{}), RequestType: reflect.TypeOf(application.ProjectHooksReviewRequest{}), NotFound: true, Parameters: []openAPIParameter{threadID}},
+		{Path: ProjectHooksPathTemplate + "/disable", Method: http.MethodPost, OperationID: "disableProjectHooks", Summary: "Disable the reviewed project automatic actions", Tag: "Control", Control: true, SuccessStatus: http.StatusOK,
+			DataType: reflect.TypeOf(application.ProjectHooksView{}), RequestType: reflect.TypeOf(application.ProjectHooksReviewRequest{}), NotFound: true, Parameters: []openAPIParameter{threadID}},
 		{Path: "/api/v1/threads/{thread_id}/git/preview", Method: http.MethodPost, OperationID: "previewThreadGit", Summary: "Preview an exact selected-file Git operation", Tag: "Git", Control: true, SuccessStatus: http.StatusOK,
 			DataType: reflect.TypeOf(application.ThreadGitPreview{}), RequestType: reflect.TypeOf(application.ThreadGitPreviewRequest{}), NotFound: true, Parameters: []openAPIParameter{threadID}},
 		{Path: "/api/v1/threads/{thread_id}/git/execute", Method: http.MethodPost, OperationID: "executeThreadGit", Summary: "Execute the explicitly confirmed Git preview once", Tag: "Git", Control: true, SuccessStatus: http.StatusOK,
@@ -2809,6 +2817,19 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 	if typeName == "TaskConfigurationView" && (fieldName == "fingerprint" || fieldName == "project_fingerprint") {
 		schema["pattern"] = "^[0-9a-f]{64}$"
 	}
+	if typeName == "ProjectHooksReviewRequest" && fieldName == "expected_fingerprint" {
+		schema["pattern"] = "^[0-9a-f]{64}$"
+		schema["minLength"], schema["maxLength"] = 64, 64
+	}
+	if typeName == "ProjectHooksView" && fieldName == "fingerprint" {
+		schema["pattern"] = "^([0-9a-f]{64})?$"
+	}
+	if (typeName == "ProjectHooksView" && fieldName == "revision") || (typeName == "ProjectHooksReviewRequest" && fieldName == "expected_revision") {
+		schema["minimum"] = 0
+	}
+	if typeName == "ProjectHooksView" && fieldName == "hooks" {
+		schema["maxItems"] = 2
+	}
 	if typeName == "TaskSkillCandidatesView" && fieldName == "items" {
 		schema["maxItems"] = application.MaxTaskSkillCandidates
 	}
@@ -3420,6 +3441,11 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadActivityCommandDetailView.status":                   {string(domain.SupervisorToolPending), string(domain.SupervisorToolCompleted), string(domain.SupervisorToolDenied), string(domain.SupervisorToolFailed), string(runner.CommandRuntimeJobPrepared), string(runner.CommandRuntimeJobRunning), string(runner.CommandRuntimeJobStopping), string(runner.CommandRuntimeJobCompleted), string(runner.CommandRuntimeJobFailed), string(runner.CommandRuntimeJobTimedOut), string(runner.CommandRuntimeJobCancelled), string(runner.CommandRuntimeJobKilled), string(runner.CommandRuntimeJobInterrupted)},
 	"IndexView.api_version":                                    {Version},
 	"ProjectActionsView.protocol_version":                      {application.ProjectActionsProtocolVersion},
+	"ProjectHooksView.version":                                 {application.ProjectHooksVersion},
+	"ProjectHooksView.state":                                   {"not_configured", "needs_review", "trusted", "changed", "disabled"},
+	"ProjectHooksReviewRequest.version":                        {application.ProjectHooksVersion},
+	"ProjectHookView.event":                                    {"after_edit", "before_finish"},
+	"ProjectHookView.command_id":                               {"format.go", "test.go", "test.npm", "test.node"},
 	"ProjectPreparationView.protocol_version":                  {application.ProjectPreparationProtocolVersion},
 	"ProjectPreparationOperationView.protocol_version":         {application.ProjectPreparationProtocolVersion},
 	"ProjectPreparationRequestView.version":                    {application.ProjectPreparationProtocolVersion},

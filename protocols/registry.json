@@ -2266,6 +2266,11 @@
       },
       "active_identifiers": [
         "prayu.locale.v1",
+        "project-hook-file-version.v1",
+        "project-hook-format.v1",
+        "project-hook-test.v1",
+        "project-hook-workspace.v1",
+        "project-hooks.v1",
         "project-rule.v1",
         "project_config.v1",
         "project_instruction_delivery.v1",
