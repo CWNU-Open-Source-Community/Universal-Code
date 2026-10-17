@@ -19,6 +19,7 @@ import (
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/pricing"
 	"cyberagent-workbench/internal/store"
 )
 
@@ -61,71 +62,80 @@ func newHTTPMoneySpecialist(t *testing.T, provider llm.Provider, capUSD float64)
 }
 
 func TestSpecialistHTTPTimeoutRetainsUnknownCostBeforeRetry(t *testing.T) {
-	for _, capUSD := range []float64{1, 0.003} {
-		t.Run(map[bool]string{true: "ample", false: "one_reservation"}[capUSD == 1], func(t *testing.T) {
-			var calls atomic.Int64
-			var st *store.SQLiteStore
-			var run domain.Run
-			firstMoney := make(chan domain.MonetaryUsage, 1)
-			release := make(chan struct{})
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				if calls.Add(1) == 1 {
-					money, err := st.GetMonetaryUsage(t.Context(), run.ID)
-					if err != nil {
-						t.Error(err)
-					}
-					firstMoney <- money
-					select {
-					case <-r.Context().Done():
-					case <-release:
-					}
-					return
+	runCase := func(t *testing.T, capUSD float64) int64 {
+		t.Helper()
+		var calls atomic.Int64
+		var st *store.SQLiteStore
+		var run domain.Run
+		firstMoney := make(chan domain.MonetaryUsage, 1)
+		release := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			if calls.Add(1) == 1 {
+				money, err := st.GetMonetaryUsage(t.Context(), run.ID)
+				if err != nil {
+					t.Error(err)
 				}
-				action, _ := json.Marshal(domain.SpecialistAction{Version: domain.SpecialistLifecycleVersion,
-					Kind: domain.SpecialistActionContinue, Message: "bounded Specialist recovered"})
-				w.Header().Set("Content-Type", "text/event-stream")
-				boundaryAnthropicText(w, string(action))
-				boundaryAnthropicEvent(w, map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": "end_turn"},
-					"usage": map[string]any{"output_tokens": 3}})
-				boundaryAnthropicEvent(w, map[string]any{"type": "message_stop"})
-				w.(http.Flusher).Flush()
-			}))
-			t.Cleanup(server.Close)
-			t.Cleanup(func() { close(release) })
-			provider := boundaryHTTPAnthropic(t, server.URL, 400*time.Millisecond)
-			var path string
-			var child domain.AgentNode
-			var runner *application.SubagentRunner
-			path, st, run, child, runner, _ = newHTTPMoneySpecialist(t, provider, capUSD)
-			result, err := runner.Step(t.Context(), run.ID, child.ID)
-			if calls.Load() == 0 {
-				t.Fatalf("fixture cap did not allow its first request: %+v err=%v", result, err)
-			}
-			initial := <-firstMoney
-			t.Logf("first_reservation=%d cap=%d actual_http_calls=%d", initial.ReservedMicros, initial.CapMicros, calls.Load())
-			money := readOrdinaryMoneyUsage(t, st, run.ID)
-			if capUSD == 1 {
-				if err != nil || calls.Load() != 2 || money.SettledMicros != initial.ReservedMicros+8 {
-					t.Fatalf("unknown sent Specialist request was released to finance retry: initial=%+v final=%+v calls=%d err=%v", initial, money, calls.Load(), err)
+				firstMoney <- money
+				select {
+				case <-r.Context().Done():
+				case <-release:
 				}
-			} else if apperror.CodeOf(err) != apperror.CodeResourceExhausted || calls.Load() != 1 ||
-				money.SettledMicros != initial.ReservedMicros || money.ReleasedMicros != 0 {
-				t.Fatalf("one-reservation cap permitted another sent request: initial=%+v final=%+v calls=%d err=%v", initial, money, calls.Load(), err)
+				return
 			}
-			if err := st.Close(); err != nil {
-				t.Fatal(err)
+			action, _ := json.Marshal(domain.SpecialistAction{Version: domain.SpecialistLifecycleVersion,
+				Kind: domain.SpecialistActionContinue, Message: "bounded Specialist recovered"})
+			w.Header().Set("Content-Type", "text/event-stream")
+			boundaryAnthropicText(w, string(action))
+			boundaryAnthropicEvent(w, map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": "end_turn"},
+				"usage": map[string]any{"output_tokens": 3}})
+			boundaryAnthropicEvent(w, map[string]any{"type": "message_stop"})
+			w.(http.Flusher).Flush()
+		}))
+		t.Cleanup(server.Close)
+		t.Cleanup(func() { close(release) })
+		provider := boundaryHTTPAnthropic(t, server.URL, 400*time.Millisecond)
+		var path string
+		var child domain.AgentNode
+		var runner *application.SubagentRunner
+		path, st, run, child, runner, _ = newHTTPMoneySpecialist(t, provider, capUSD)
+		result, err := runner.Step(t.Context(), run.ID, child.ID)
+		if calls.Load() == 0 {
+			t.Fatalf("fixture cap did not allow its first request: %+v err=%v", result, err)
+		}
+		initial := <-firstMoney
+		t.Logf("first_reservation=%d cap=%d actual_http_calls=%d", initial.ReservedMicros, initial.CapMicros, calls.Load())
+		money := readOrdinaryMoneyUsage(t, st, run.ID)
+		if capUSD == 1 {
+			if err != nil || calls.Load() != 2 || money.SettledMicros != initial.ReservedMicros+8 {
+				t.Fatalf("unknown sent Specialist request was released to finance retry: initial=%+v final=%+v calls=%d err=%v", initial, money, calls.Load(), err)
 			}
-			reopened, err := store.Open(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
-			if recovered := readOrdinaryMoneyUsage(t, reopened, run.ID); !reflect.DeepEqual(recovered, money) {
-				t.Fatalf("Specialist accounting changed on reopen: initial=%+v recovered=%+v", money, recovered)
-			}
-		})
+		} else if apperror.CodeOf(err) != apperror.CodeResourceExhausted || calls.Load() != 1 ||
+			money.SettledMicros != initial.ReservedMicros || money.ReleasedMicros != 0 {
+			t.Fatalf("one-reservation cap permitted another sent request: initial=%+v final=%+v calls=%d err=%v", initial, money, calls.Load(), err)
+		}
+		if err := st.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := store.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reopened.Close()
+		if recovered := readOrdinaryMoneyUsage(t, reopened, run.ID); !reflect.DeepEqual(recovered, money) {
+			t.Fatalf("Specialist accounting changed on reopen: initial=%+v recovered=%+v", money, recovered)
+		}
+		return initial.ReservedMicros
 	}
+	// Measure the actual first reservation through the ample-budget HTTP case.
+	// Run it outside the subtest so filtering to one_reservation still calibrates
+	// against the current prompt and price snapshot instead of a fixed dollar cap.
+	firstReservation := runCase(t, 1)
+	t.Run("one_reservation", func(t *testing.T) {
+		if reserved := runCase(t, float64(firstReservation)/float64(pricing.MicrosPerUSD)); reserved != firstReservation {
+			t.Fatalf("restricted request reservation changed after calibration: actual=%d calibrated=%d", reserved, firstReservation)
+		}
+	})
 }
 
 func specialistHTTPResponse(t *testing.T, w http.ResponseWriter, text string) {

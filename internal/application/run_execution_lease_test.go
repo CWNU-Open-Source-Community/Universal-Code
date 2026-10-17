@@ -42,7 +42,9 @@ func TestAgentRunnerHeartbeatKeepsLongModelCallExclusive(t *testing.T) {
 		t.Fatal(err)
 	}
 	leasePolicy := application.RunExecutionLeasePolicy{
-		TTL: 750 * time.Millisecond, RenewInterval: 150 * time.Millisecond,
+		// Keep the production 2s renewal deadline while still waiting past the
+		// original expiry and observing real SQLite renewals below.
+		TTL: 3 * time.Second, RenewInterval: 150 * time.Millisecond,
 	}
 	first := application.NewAgentRunner(st, router, policy.NewDefaultChecker()).
 		WithRunExecutionLeaseOwner("heartbeat-worker-a").
@@ -87,7 +89,8 @@ func TestAgentRunnerHeartbeatKeepsLongModelCallExclusive(t *testing.T) {
 		t.Fatalf("exclusive execution made %d model calls", provider.calls.Load())
 	}
 	lease, found, err := st.GetRunExecutionLease(ctx, run.ID)
-	if err != nil || !found || lease.Status != domain.RunExecutionLeaseReleased {
+	if err != nil || !found || lease.Status != domain.RunExecutionLeaseReleased ||
+		lease.LeaseID != initial.LeaseID || lease.Generation != initial.Generation {
 		t.Fatalf("completed supervisor did not release its lease: %#v found=%v err=%v", lease, found, err)
 	}
 	timeline, err := st.ListRunEvents(ctx, run.ID)
