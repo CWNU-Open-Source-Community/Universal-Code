@@ -440,7 +440,7 @@ func TestSpecialistAdmissionIsAtomicPrivateAndReducesSupervisorBudget(t *testing
 
 func TestSQLiteUpgradesV20ToSpecialistAdmissionLedger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v20.db")
-	st := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	st := openCurrentTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"))
 
 	ctx := context.Background()
 	_, run, err := newMigrationFixtureRunService(t, st).Create(ctx, application.CreateRunRequest{
