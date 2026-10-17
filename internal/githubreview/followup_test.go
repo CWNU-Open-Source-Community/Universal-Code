@@ -104,6 +104,51 @@ func TestReadFollowupSnapshotPaginatesOrdinaryComments(t *testing.T) {
 	}
 }
 
+func TestReadFollowupSnapshotPinsEveryCombinedStatusPage(t *testing.T) {
+	for _, scenario := range []string{"matching_pages", "missing_head", "wrong_head", "later_missing_head", "later_wrong_head"} {
+		t.Run(scenario, func(t *testing.T) {
+			client, request := newFollowupFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path != "/repos/acme/widget/commits/"+followupHead+"/status" {
+					return false
+				}
+				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+				if page == 1 {
+					w.Header().Set("Link", `</next?page=2>; rel="next"`)
+				}
+				value := map[string]any{"sha": followupHead, "total_count": 2, "statuses": []any{map[string]any{
+					"id": page, "node_id": "status_" + strconv.Itoa(page), "context": "legacy-" + strconv.Itoa(page), "state": "success"}}}
+				if (scenario == "missing_head" && page == 1) || (scenario == "later_missing_head" && page == 2) {
+					delete(value, "sha")
+				}
+				if (scenario == "wrong_head" && page == 1) || (scenario == "later_wrong_head" && page == 2) {
+					value["sha"] = strings.Repeat("9", 40)
+				}
+				writeFixtureJSON(t, w, value)
+				return true
+			})
+			snapshot, err := client.ReadFollowupSnapshot(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			page := snapshot.Pagination[5]
+			if scenario == "matching_pages" {
+				if snapshot.State != EvidenceVerified || !page.Complete || page.PagesRead != 2 || len(snapshot.CommitStatuses) != 2 {
+					t.Fatalf("matching status pages were not collected: %#v", snapshot)
+				}
+				return
+			}
+			wantValid := 0
+			if strings.HasPrefix(scenario, "later_") {
+				wantValid = 1
+			}
+			if snapshot.State != EvidencePartial || page.Complete || page.Resource != "commit_statuses" ||
+				page.PagesRead != wantValid+1 || len(snapshot.CommitStatuses) != wantValid || len(snapshot.Omissions) == 0 {
+				t.Fatalf("unverified status head was relabeled as the PR head: %#v", snapshot)
+			}
+		})
+	}
+}
+
 func TestReadFollowupSnapshotKeepsFailuresAndMissingPagesIncomplete(t *testing.T) {
 	for _, scenario := range []string{"forbidden", "missing_items", "null_items", "missing_link", "failed_next_page", "item_bound", "wrong_ci_head"} {
 		t.Run(scenario, func(t *testing.T) {

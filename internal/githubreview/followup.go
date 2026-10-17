@@ -137,7 +137,7 @@ func (c *Client) ReadFollowupSnapshot(ctx context.Context, request FollowupSnaps
 	prPath := repoPath + "/pulls/" + strconv.FormatInt(request.Number, 10)
 	commitPath := repoPath + "/commits/" + url.PathEscape(pull.HeadSHA)
 
-	reviews, page, rate, readErr := fetchFollowupPages[reviewResponse](c, ctx, prPath+"/reviews", "", nil, request.Credential, MaxReviews, "reviews")
+	reviews, page, rate, readErr := fetchFollowupPages[reviewResponse](c, ctx, prPath+"/reviews", "", nil, request.Credential, MaxReviews, "reviews", "")
 	for _, review := range reviews {
 		if review.ID <= 0 || !validIdentity(review.NodeID) {
 			readErr = malformedFollowup("review identity")
@@ -153,7 +153,7 @@ func (c *Client) ReadFollowupSnapshot(ctx context.Context, request FollowupSnaps
 		target         *[]Comment
 	}{{prPath + "/comments", "inline_comments", &s.InlineComments},
 		{repoPath + "/issues/" + strconv.FormatInt(request.Number, 10) + "/comments", "issue_comments", &s.IssueComments}} {
-		comments, page, rate, readErr := fetchFollowupPages[commentResponse](c, ctx, section.path, "", nil, request.Credential, MaxComments, section.resource)
+		comments, page, rate, readErr := fetchFollowupPages[commentResponse](c, ctx, section.path, "", nil, request.Credential, MaxComments, section.resource, "")
 		for _, comment := range comments {
 			if comment.ID <= 0 || !validIdentity(comment.NodeID) {
 				readErr = malformedFollowup("comment identity")
@@ -164,7 +164,7 @@ func (c *Client) ReadFollowupSnapshot(ctx context.Context, request FollowupSnaps
 		s.recordPage(page, rate, readErr)
 	}
 
-	checks, page, rate, readErr := fetchFollowupPages[checkRunResponse](c, ctx, commitPath+"/check-runs", "check_runs", url.Values{"filter": {"latest"}}, request.Credential, MaxCheckRuns, "check_runs")
+	checks, page, rate, readErr := fetchFollowupPages[checkRunResponse](c, ctx, commitPath+"/check-runs", "check_runs", url.Values{"filter": {"latest"}}, request.Credential, MaxCheckRuns, "check_runs", "")
 	for _, check := range checks {
 		if check.ID <= 0 || !strings.EqualFold(check.HeadSHA, pull.HeadSHA) {
 			readErr = malformedFollowup("check run identity or head")
@@ -179,7 +179,7 @@ func (c *Client) ReadFollowupSnapshot(ctx context.Context, request FollowupSnaps
 	s.recordPage(page, rate, readErr)
 
 	runs, page, rate, readErr := fetchFollowupPages[followupWorkflowResponse](c, ctx, repoPath+"/actions/runs", "workflow_runs",
-		url.Values{"head_sha": {pull.HeadSHA}}, request.Credential, MaxCheckRuns, "workflow_runs")
+		url.Values{"head_sha": {pull.HeadSHA}}, request.Credential, MaxCheckRuns, "workflow_runs", "")
 	for _, run := range runs {
 		if run.ID <= 0 || run.WorkflowID <= 0 || run.RunNumber <= 0 || run.RunAttempt < 1 || !strings.EqualFold(run.HeadSHA, pull.HeadSHA) {
 			readErr = malformedFollowup("workflow run identity or head")
@@ -191,7 +191,7 @@ func (c *Client) ReadFollowupSnapshot(ctx context.Context, request FollowupSnaps
 	}
 	s.recordPage(page, rate, readErr)
 
-	statuses, page, rate, readErr := fetchFollowupPages[followupStatusResponse](c, ctx, commitPath+"/status", "statuses", nil, request.Credential, MaxCheckRuns, "commit_statuses")
+	statuses, page, rate, readErr := fetchFollowupPages[followupStatusResponse](c, ctx, commitPath+"/status", "statuses", nil, request.Credential, MaxCheckRuns, "commit_statuses", pull.HeadSHA)
 	for _, status := range statuses {
 		if status.ID <= 0 || !validIdentity(status.NodeID) ||
 			(status.State != "error" && status.State != "failure" && status.State != "pending" && status.State != "success") {
@@ -284,7 +284,7 @@ func malformedFollowup(section string) error {
 // Wrapped endpoints include total_count, so a missing continuation link or a
 // moving count cannot turn a partial collection into an empty/passing result.
 func fetchFollowupPages[T any](c *Client, ctx context.Context, path, field string, extra url.Values,
-	ref CredentialReference, maxItems int, resource string,
+	ref CredentialReference, maxItems int, resource, expectedHead string,
 ) ([]T, PageEvidence, RateLimit, error) {
 	page := PageEvidence{Resource: resource, Complete: true}
 	result := make([]T, 0)
@@ -305,6 +305,15 @@ func fetchFollowupPages[T any](c *Client, ctx context.Context, path, field strin
 			var envelope map[string]jsonRaw
 			if raw.decode(&envelope) != nil || len(envelope["total_count"]) == 0 || len(envelope[field]) == 0 {
 				return result, page, rate, malformedFollowup(resource + " pagination")
+			}
+			if expectedHead != "" {
+				var head string
+				if envelope["sha"].decode(&head) != nil || !validObjectID(head) {
+					return result, page, rate, malformedFollowup(resource + " commit SHA")
+				}
+				if !strings.EqualFold(head, expectedHead) {
+					return result, page, rate, &Error{Code: FailureDrift, Message: "GitHub combined status belongs to a different commit"}
+				}
 			}
 			var total int
 			if string(envelope["total_count"]) == "null" || envelope["total_count"].decode(&total) != nil || total < 0 {
