@@ -26,6 +26,8 @@ type WorkflowStore interface {
 	StartWorkflowExecution(context.Context, domain.WorkflowExecution) (domain.WorkflowExecution, error)
 	GetWorkflowExecution(context.Context, string) (domain.WorkflowExecution, error)
 	ListWorkflowExecutions(context.Context, string) ([]domain.WorkflowExecution, error)
+	ListWorkflowCandidates(context.Context, time.Time, string, time.Time, int) ([]domain.WorkflowExecution, error)
+	WorkflowWakeFingerprint(context.Context, string, time.Time) (string, error)
 	ClaimWorkflowExecution(context.Context, string, string) (domain.WorkflowExecution, bool, error)
 	ReleaseWorkflowExecution(context.Context, string, string) error
 	CheckpointWorkflowExecution(context.Context, domain.WorkflowExecution, string) (domain.WorkflowExecution, error)
@@ -156,14 +158,26 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 		}
 		return e, err
 	}
+	return s.runClaimed(ctx, e, owner, revision)
+}
+
+func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecution, owner string, revision int64) (domain.WorkflowExecution, error) {
 	defer func() {
 		release, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_ = s.store.ReleaseWorkflowExecution(release, id, owner)
+		_ = s.store.ReleaseWorkflowExecution(release, e.ID, owner)
 	}()
 	if revision > 0 && e.Version != revision {
 		return e, nil
 	}
+	wake, err := s.store.WorkflowWakeFingerprint(ctx, e.RunID, time.Now().UTC())
+	if err != nil {
+		return e, err
+	}
+	return s.advanceClaimed(ctx, e, owner, wake)
+}
+
+func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowExecution, owner, wake string) (domain.WorkflowExecution, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	d, err := s.store.GetWorkflowDefinition(ctx, e.DefinitionID)
@@ -171,6 +185,10 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 		return e, err
 	}
 	checkpoint := func() (domain.WorkflowExecution, error) {
+		e.State.WaitFingerprint = ""
+		if e.Status == "waiting" || e.Status == "waiting_approval" {
+			e.State.WaitFingerprint = wake
+		}
 		updated, err := s.store.CheckpointWorkflowExecution(ctx, e, owner)
 		if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
 			current, readErr := s.store.GetWorkflowExecution(ctx, e.ID)
@@ -184,6 +202,9 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 		e.Status = "failed"
 		e.Reason = reason
 		return checkpoint()
+	}
+	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
+		return fail("workflow deadline exceeded")
 	}
 	run, err := s.store.GetRun(ctx, e.RunID)
 	if err != nil {
@@ -283,6 +304,10 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 				job, err = s.executeWorker(ctx, e, step, job, d.Spec.Limits, usage, usedTurns)
 				if err != nil {
 					if code := apperror.CodeOf(apperror.Normalize(err)); code == apperror.CodeConflict {
+						// A competing lease can be acquired and released between
+						// observations. Retry when that lease is free even if the
+						// surrounding dependency snapshot happens to be identical.
+						wake = ""
 						e.Status = "waiting"
 						e.Reason = err.Error()
 						return checkpoint()
@@ -394,6 +419,16 @@ func (s *WorkflowService) executeWorker(ctx context.Context, e domain.WorkflowEx
 	}
 	if _, _, err = s.store.SendAgentMessage(ctx, domain.AgentMessage{ID: "agentmsg-" + runmutation.Fingerprint(job.ID, "instruction"), RunID: e.RunID, SenderAgentID: root.ID, RecipientAgentID: existing.ID, Kind: domain.AgentMessageInstruction, Semantic: domain.AgentMessageSemanticMessage, PayloadJSON: string(payload)}, "workflow-instruction-"+job.ID); err != nil {
 		return job, err
+	}
+	if existing.Status == domain.AgentWaiting {
+		if _, err := s.store.ReconcileDependencyEdges(ctx, e.RunID); err != nil {
+			return job, err
+		}
+		child, err := s.store.GetAgentNode(ctx, existing.ID)
+		if err != nil {
+			return job, err
+		}
+		existing = &child
 	}
 	if existing.Status == domain.AgentWaiting {
 		job.Reason = "worker is waiting for a dependency or authorized wake"

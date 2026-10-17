@@ -66,6 +66,9 @@ type WorkflowState struct {
 	Iterations map[string]int             `json:"iterations"`
 	Steps      int                        `json:"steps"`
 	Jobs       int                        `json:"jobs"`
+	// WaitFingerprint records the dependencies observed before yielding. A
+	// waiting execution wakes when those durable dependencies change.
+	WaitFingerprint string `json:"wait_fingerprint,omitempty"`
 }
 type WorkflowExecution struct {
 	ID           string          `json:"id"`
