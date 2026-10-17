@@ -270,5 +270,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v199 | 复用既有审批与撤销账本，为 Computer Use 应用授权保存不可变的应用身份、来源审批及范围指纹 | persist immutable application identity, source approval and scope fingerprints for Computer Use app grants using the existing approval and revocation ledger |
 | v200 | 保存逐子任务的读取路径、累计工具与费用额度，并为既有费用预留回填 Agent 归属；旧任务默认无读取授权 | persist per-child read paths, cumulative tool and cost limits, and backfill Agent ownership on monetary reservations; historical children retain no read authority |
 | v201 | 在既有工具和命令账本中接入有界项目测试，保留历史调用行身份与 Agent 引用，并以精确测试调用授权 Plan 命令 Job | admit bounded project tests in existing tool and command ledgers while preserving historical call row identities and Agent references; authorize Plan command Jobs through exact pending test calls |
+| v202 | 为既有 Thread 保存有期限和次数上限的 PR 跟进记录、反馈游标、原轮次输入及执行租约，支持暂停和恢复并防止重复续跑 | persist bounded PR followups, feedback cursors, original turn inputs and execution leases on existing Threads, supporting pause and recovery without duplicate continuation |
 
 </details>
