@@ -560,9 +560,11 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		WithLifecycleHooks(hookEngine)
 	webFetchAuthorizationSchedulerEnabled :=
 		webFetchAuthorizationReconcilerEnabled(config)
+	projectHooks := application.NewProjectHooksService(stateStore).WithRunWorktree(commandRuntimeDrydocks)
 	runtimeDependencies := application.RunRuntimeDependencies{
 		ActiveCalls: application.NewActiveCallRegistry(), Drydocks: commandRuntimeDrydocks,
 		MCPClient: mcpClient, WebEvidence: webEvidence, LifecycleHooks: hookEngine,
+		ProjectHooks:                   projectHooks,
 		WebFetchAuthorizationScheduler: webFetchAuthorizationSchedulerEnabled,
 		ExecutionCapabilities:          config.ExecutionPermissionCapabilities,
 		StandardCodeDelivery:           standardCodeDelivery, CodeIntel: codeIntelManager,
@@ -905,6 +907,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
 		ProjectActionsController:              application.NewProjectActionsService(stateStore, commandRuntime, commandRuntimeDrydocks),
+		ProjectHooksController:                projectHooks,
 		ProjectPreparationController:          projectPreparation,
 		RunCreationEnabled:                    config.RunCreationEnabled,
 		StandardCodePresetEnabled:             standardCodePreset != nil,

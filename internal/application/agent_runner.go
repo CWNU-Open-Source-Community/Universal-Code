@@ -525,6 +525,7 @@ func (s *AgentRunner) WithRunWorktree(drydocks *RunWorktreeService) *AgentRunner
 		return s
 	}
 	s.drydocks = drydocks
+	s.WithProjectHooks(s.projectHooks)
 	if store, ok := s.store.(AgentCodeToolStore); ok && s.tools != nil {
 		s.tools.WithAgentCodeWorkspaceResolver(NewAgentCodeWorkspaceResolver(store, drydocks)).
 			WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).

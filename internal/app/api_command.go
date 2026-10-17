@@ -372,10 +372,12 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		WithLifecycleHooks(hookEngine)
 	webFetchAuthorizationSchedulerEnabled := controlToken != "" &&
 		*permissionControl && permissionCapabilities.OperatorApprovalEnabled
+	projectHooks := application.NewProjectHooksService(a.store).WithRunWorktree(commandRuntimeDrydocks)
 	runtimeDependencies := application.RunRuntimeDependencies{
 		ActiveCalls: a.calls, Drydocks: commandRuntimeDrydocks, MCPClient: mcpClient,
 		ExecutionCapabilities: permissionCapabilities, LifecycleHooks: hookEngine,
-		WebEvidence: webEvidence, WebFetchAuthorizationScheduler: webFetchAuthorizationSchedulerEnabled,
+		ProjectHooks: projectHooks,
+		WebEvidence:  webEvidence, WebFetchAuthorizationScheduler: webFetchAuthorizationSchedulerEnabled,
 		StandardCodeDelivery: standardCodeDelivery, CodeIntel: a.codeIntel,
 	}
 	if standardCodeDelivery != nil {
@@ -646,6 +648,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		CommandRuntimeAdapters:                installedCommandRuntimeAdapters,
 		CommandRuntimeAdvertiser:              commandRuntime,
 		ProjectActionsController:              application.NewProjectActionsService(a.store, commandRuntime, commandRuntimeDrydocks),
+		ProjectHooksController:                projectHooks,
 		ProjectPreparationController:          projectPreparation,
 		SkillInstallationEnabled:              controlToken != "",
 		SkillCatalogControlEnabled:            controlToken != "",

@@ -15,6 +15,11 @@ type ProjectHookAuthorizer interface {
 }
 
 func (s *AgentRunner) WithProjectHooks(authorizer ProjectHookAuthorizer) *AgentRunner {
+	if service, ok := authorizer.(*ProjectHooksService); ok && service != nil {
+		bound := *service
+		bound.drydocks = s.drydocks
+		authorizer = &bound
+	}
 	s.projectHooks = authorizer
 	return s
 }

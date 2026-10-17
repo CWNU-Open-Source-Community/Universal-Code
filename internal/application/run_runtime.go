@@ -23,6 +23,7 @@ type RunRuntimeDependencies struct {
 	DockerSandbox                  toolgateway.DockerSandboxProposalExecutor
 	MCPClient                      AgentRunnerMCPClient
 	LifecycleHooks                 *hooks.Engine
+	ProjectHooks                   ProjectHookAuthorizer
 	CodeIntel                      *codeintel.Manager
 	WebEvidence                    *webevidence.Service
 	WebFetchAuthorizationScheduler bool
@@ -45,6 +46,7 @@ func NewAgentRunnerWithRuntime(store AgentRunnerStore, router *llm.Router,
 		WithDockerSandboxProposalExecutor(dependencies.DockerSandbox).
 		WithMCPClient(dependencies.MCPClient).
 		WithLifecycleHooks(dependencies.LifecycleHooks).
+		WithProjectHooks(dependencies.ProjectHooks).
 		WithCodeIntel(dependencies.CodeIntel).
 		WithBrowserActions(dependencies.BrowserActions).
 		WithDebugTerminalAgentInput(dependencies.DebugTerminal)
