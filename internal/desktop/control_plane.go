@@ -77,6 +77,7 @@ type ControlPlane struct {
 	wakeWorker                     *application.RunWakeWorker
 	scheduledJobWorker             *scheduler.Worker
 	prFollowupWorker               *application.PRFollowupService
+	workflowWorker                 *application.WorkflowService
 	workerMu                       sync.Mutex
 	workerCancel                   context.CancelFunc
 	workerDone                     chan struct{}
@@ -84,6 +85,8 @@ type ControlPlane struct {
 	scheduledWorkerDone            chan struct{}
 	prFollowupCancel               context.CancelFunc
 	prFollowupDone                 chan struct{}
+	workflowCancel                 context.CancelFunc
+	workflowDone                   chan struct{}
 	webFetchReconcileCancel        context.CancelFunc
 	webFetchReconcileDone          chan struct{}
 	closed                         bool
@@ -887,6 +890,11 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			workspaceCheckpoints, commandRuntimeDrydocks, config.ExecutionPermissionCapabilities).WithAdvanced(gitAdvanced)
 	}
 	var prFollowupWorker *application.PRFollowupService
+	workflowControl := application.NewWorkflowService(stateStore, specialistExecution)
+	var workflowWorker *application.WorkflowService
+	if config.ModelControlEnabled && config.ControlToken != "" {
+		workflowWorker = workflowControl
+	}
 	var prFollowupController httpapi.PRFollowupController
 	if config.GitHubReviewControlEnabled && config.RunExecutionEnabled && config.ScheduledJobWorkerEnabled {
 		prFollowupWorker, err = application.NewPRFollowupService(stateStore, githubReview, threadGit, threadTurnControl)
@@ -967,7 +975,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			stateStore, models.Router(), checker),
 		ChildTaskControlController:    application.NewChildTaskControlService(stateStore),
 		SpecialistExecutionController: specialistExecution,
-		WorkflowController:            application.NewWorkflowService(stateStore, specialistExecution),
+		WorkflowController:            workflowControl,
 		ProviderCredentialController:  providerCredentialControl,
 		ChatGPTAuthController:         chatGPTAuth,
 		FileEditReviewController:      fileEditReview,
@@ -1054,7 +1062,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		webFetchReconcileDone:          webFetchReconcileDone,
 		codeIntelManager:               codeIntelManager,
 		terminalManager:                terminalManager, boundaryMonitor: boundaryMonitor,
-		wakeWorker: wakeWorker, scheduledJobWorker: scheduledJobWorker, prFollowupWorker: prFollowupWorker}, nil
+		wakeWorker: wakeWorker, scheduledJobWorker: scheduledJobWorker, prFollowupWorker: prFollowupWorker,
+		workflowWorker: workflowWorker}, nil
 }
 
 // CommandRuntimeProcessStatus exposes non-authorizing process facts to the
@@ -1186,10 +1195,10 @@ func (c *ControlPlane) StartWakeWorker(parent context.Context) error {
 	if c.closed {
 		return errors.New("desktop control plane is closed")
 	}
-	if c.wakeWorker == nil && c.scheduledJobWorker == nil && c.prFollowupWorker == nil {
+	if c.wakeWorker == nil && c.scheduledJobWorker == nil && c.prFollowupWorker == nil && c.workflowWorker == nil {
 		return nil
 	}
-	if c.workerDone != nil || c.scheduledWorkerDone != nil || c.prFollowupDone != nil {
+	if c.workerDone != nil || c.scheduledWorkerDone != nil || c.prFollowupDone != nil || c.workflowDone != nil {
 		return errors.New("desktop background worker is already started")
 	}
 	if c.wakeWorker != nil {
@@ -1218,6 +1227,15 @@ func (c *ControlPlane) StartWakeWorker(parent context.Context) error {
 			defer close(done)
 			_ = c.prFollowupWorker.Run(ctx)
 		}(c.prFollowupDone)
+	}
+	if c.workflowWorker != nil {
+		ctx, cancel := context.WithCancel(parent)
+		c.workflowCancel = cancel
+		c.workflowDone = make(chan struct{})
+		go func(done chan struct{}) {
+			defer close(done)
+			_ = c.workflowWorker.Run(ctx)
+		}(c.workflowDone)
 	}
 	return nil
 }
@@ -1318,20 +1336,28 @@ func (c *ControlPlane) Close() error {
 		cancel, done := c.workerCancel, c.workerDone
 		scheduledCancel, scheduledDone := c.scheduledWorkerCancel, c.scheduledWorkerDone
 		prFollowupCancel, prFollowupDone := c.prFollowupCancel, c.prFollowupDone
+		workflowCancel, workflowDone := c.workflowCancel, c.workflowDone
 		webFetchCancel, webFetchDone := c.webFetchReconcileCancel, c.webFetchReconcileDone
 		c.workerCancel = nil
 		c.workerDone = nil
 		c.scheduledWorkerCancel = nil
 		c.scheduledWorkerDone = nil
 		c.prFollowupCancel, c.prFollowupDone = nil, nil
+		c.workflowCancel, c.workflowDone = nil, nil
 		c.webFetchReconcileCancel = nil
 		c.webFetchReconcileDone = nil
 		c.workerMu.Unlock()
+		if workflowCancel != nil {
+			workflowCancel()
+		}
 		if prFollowupCancel != nil {
 			prFollowupCancel()
 		}
 		if prFollowupDone != nil {
 			<-prFollowupDone
+		}
+		if workflowDone != nil {
+			<-workflowDone
 		}
 		if c.mcpClient != nil {
 			_ = c.mcpClient.Close()

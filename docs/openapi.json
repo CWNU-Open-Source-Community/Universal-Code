@@ -22487,7 +22487,7 @@
       "post": {
         "operationId": "advanceRunWorkflow",
         "summary": "advance a saved workflow execution",
-        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -22621,7 +22621,7 @@
       "post": {
         "operationId": "pauseRunWorkflow",
         "summary": "pause a saved workflow execution",
-        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -22755,7 +22755,7 @@
       "post": {
         "operationId": "rerunRunWorkflow",
         "summary": "rerun a saved workflow execution",
-        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -22889,7 +22889,7 @@
       "post": {
         "operationId": "resumeRunWorkflow",
         "summary": "resume a saved workflow execution",
-        "description": "Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -74594,6 +74594,9 @@
           "steps": {
             "format": "int32",
             "type": "integer"
+          },
+          "wait_fingerprint": {
+            "type": "string"
           }
         },
         "required": [

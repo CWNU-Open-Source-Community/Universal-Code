@@ -3859,7 +3859,7 @@ export interface paths {
         put?: never;
         /**
          * advance a saved workflow execution
-         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["advanceRunWorkflow"];
         delete?: never;
@@ -3879,7 +3879,7 @@ export interface paths {
         put?: never;
         /**
          * pause a saved workflow execution
-         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["pauseRunWorkflow"];
         delete?: never;
@@ -3899,7 +3899,7 @@ export interface paths {
         put?: never;
         /**
          * rerun a saved workflow execution
-         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["rerunRunWorkflow"];
         delete?: never;
@@ -3919,7 +3919,7 @@ export interface paths {
         put?: never;
         /**
          * resume a saved workflow execution
-         * @description Advance executes at most one real worker turn. Its observed revision fences replay. Pause takes effect before the next turn; resume preserves committed work; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["resumeRunWorkflow"];
         delete?: never;
@@ -15927,6 +15927,7 @@ export interface components {
             stack: components["schemas"]["WorkflowFrame"][];
             /** Format: int32 */
             steps: number;
+            wait_fingerprint?: string;
         };
         WorkflowStep: {
             body?: components["schemas"]["WorkflowStep"][];
