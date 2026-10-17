@@ -36,6 +36,16 @@ func (s *SpecialistExecutionService) WithRunWorktree(drydocks *RunWorktreeServic
 	return s
 }
 
+func (s *SpecialistExecutionService) RevokeSpecialistReadTools(ctx context.Context, runID, agentID string) (domain.AgentNode, error) {
+	st, ok := s.store.(interface {
+		RevokeSpecialistReadTools(context.Context, string, string) (domain.AgentNode, error)
+	})
+	if !ok {
+		return domain.AgentNode{}, apperror.New(apperror.CodeFailedPrecondition, "child read revocation is unavailable")
+	}
+	return st.RevokeSpecialistReadTools(ctx, runID, agentID)
+}
+
 type ExecuteSpecialistRequest struct {
 	RunID, AgentID, OperationKey string
 	WorkspaceTools               bool

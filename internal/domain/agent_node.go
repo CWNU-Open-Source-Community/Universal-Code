@@ -95,26 +95,31 @@ type AgentDependencyPayload struct {
 }
 
 type AgentNode struct {
-	ID              string
-	RunID           string
-	ParentID        string
-	SessionID       string
-	Role            AgentRole
-	Profile         Profile
-	Skills          []string
-	Status          AgentStatus
-	Depth           int
-	ChildLimit      int
-	TurnLimit       int64
-	TokenLimit      int64
-	TurnsUsed       int64
-	TokensUsed      int64
-	ActiveAttemptID string
-	StatusReason    string
-	Version         int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	FinishedAt      *time.Time
+	ToolCallsUsed    int64    `json:"tool_calls_used"`
+	CostUsedMicros   int64    `json:"cost_used_micros"`
+	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	ID               string
+	RunID            string
+	ParentID         string
+	SessionID        string
+	Role             AgentRole
+	Profile          Profile
+	Skills           []string
+	Status           AgentStatus
+	Depth            int
+	ChildLimit       int
+	TurnLimit        int64
+	TokenLimit       int64
+	TurnsUsed        int64
+	TokensUsed       int64
+	ActiveAttemptID  string
+	StatusReason     string
+	Version          int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	FinishedAt       *time.Time
 }
 
 type AgentMessage struct {
@@ -221,6 +226,12 @@ func (a AgentNode) CanTransition(to AgentStatus) bool {
 }
 
 func (a AgentNode) Validate() error {
+	if err := ValidateSpecialistReadLimits(a.AllowedReadPaths, a.ToolCallLimit, a.CostLimitMicros); err != nil {
+		return err
+	}
+	if a.ToolCallsUsed < 0 || a.CostUsedMicros < 0 {
+		return errors.New("negative child budget usage")
+	}
 	if !validAgentIdentity(a.ID, false) || !validAgentIdentity(a.RunID, false) {
 		return errors.New("agent id and run id are required")
 	}

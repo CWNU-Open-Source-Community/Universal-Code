@@ -399,6 +399,7 @@ func (s *SQLiteStore) AdmitChildTaskProposal(ctx context.Context, proposalID,
 				RunID: proposal.RunID, ParentAgentID: proposal.RootAgentID,
 				Title: task.Title, Skills: task.Skills,
 				TurnLimit: task.TurnLimit, TokenLimit: task.TokenLimit,
+				AllowedReadPaths: task.AllowedReadPaths, ToolCallLimit: task.ToolCallLimit, CostLimitMicros: task.CostLimitMicros,
 				MaxChildren: domain.MaxAgentChildren, CreatedAt: time.Now().UTC(),
 			}, admissionKey, &childTaskAdmissionBinding{proposalID: proposal.ID, task: task})
 			if err != nil {

@@ -278,6 +278,7 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 		return tool("child_task_propose", map[string]any{"version": "child_task_proposal.v1", "tasks": []map[string]any{{
 			"title": "Journey child", "goal": childGoal, "skills": []string{"model.chat"},
 			"surface_hint": "core", "turn_limit": 4, "token_limit": 4096, "timeout_millis": 60000,
+			"allowed_read_paths": []string{"notes.txt"}, "tool_call_limit": 1,
 		}}})
 	}
 	if strings.Contains(history, "JOURNEY_READ:") {

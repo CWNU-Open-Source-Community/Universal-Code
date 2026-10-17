@@ -144,7 +144,7 @@ func (s *SQLiteStore) FinishSpecialist(ctx context.Context, completion domain.Ag
 	}
 	child = attemptChild
 	run = attemptRun
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		completion.ParentAgentID))
 	if err != nil {
 		return domain.AgentCompletion{}, false, err

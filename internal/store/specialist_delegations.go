@@ -278,7 +278,7 @@ func requireSpecialistDelegationBindingTx(ctx context.Context, tx *sql.Tx,
 			apperror.CodeFailedPrecondition,
 			"specialist delegation scope does not match its running Run")
 	}
-	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		operation.RootAgentID))
 	if err != nil {
 		return domain.Run{}, domain.Mission{}, domain.AgentNode{}, err

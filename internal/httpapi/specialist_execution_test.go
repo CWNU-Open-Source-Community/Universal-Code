@@ -161,3 +161,30 @@ func TestSpecialistExecutionHTTPRequiresControlConfirmationAndStableIntent(t *te
 		t.Fatalf("foreign attempt receipts leaked: %d %s", response.Code, response.Body.String())
 	}
 }
+
+func (c *specialistExecutionCapture) RevokeSpecialistReadTools(_ context.Context, runID, agentID string) (domain.AgentNode, error) {
+	return domain.AgentNode{ID: agentID, RunID: runID, Role: domain.AgentRoleSpecialist, ToolCallLimit: 5, ToolCallsUsed: 2}, nil
+}
+
+func TestSpecialistReadRevocationHTTPUsesControlAndKeepsUsage(t *testing.T) {
+	f := newAPIFixture(t)
+	f.api.specialistExecutionController = &specialistExecutionCapture{}
+	f.api.modelControlEnabled = true
+	path := "/api/v1/runs/" + f.run.ID + "/agents/admitted-child/revoke-read-tools"
+	body := `{"version":"specialist_tools.v1"}`
+	response := performControlPathRequest(t, f.api, path, "revoke-read-http-0001", strings.NewReader(body))
+	var node AgentNodeView
+	decodeDataStatus(t, response, http.StatusOK, &node)
+	if node.ID != "admitted-child" || len(node.AllowedReadPaths) != 0 || node.ToolCallsUsed != 2 {
+		t.Fatalf("revoke projection: %+v", node)
+	}
+	response = performControlPathRequest(t, f.api, path, "revoke-read-http-0002", strings.NewReader(`{"version":"specialist_tools.v1","allowed_read_paths":["."]}`))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("revocation widened scope: %d %s", response.Code, response.Body.String())
+	}
+	f.api.modelControlEnabled = false
+	response = performControlPathRequest(t, f.api, path, "revoke-read-http-0003", strings.NewReader(body))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("disabled control accepted revocation: %d", response.Code)
+	}
+}

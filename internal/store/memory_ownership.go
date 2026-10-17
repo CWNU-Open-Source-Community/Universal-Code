@@ -17,7 +17,7 @@ func requireAssignableAgentOwnerTx(ctx context.Context, tx *sql.Tx, runID string
 	if agentID == "" {
 		return nil
 	}
-	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, agentID))
+	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, agentID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return apperror.New(apperror.CodeInvalidArgument,
 			"memory owner Agent does not exist")
@@ -39,7 +39,7 @@ func requireAssignableAgentOwnerTx(ctx context.Context, tx *sql.Tx, runID string
 func (s *SQLiteStore) noteViewerAgent(ctx context.Context, runID string,
 	agentID string,
 ) (domain.AgentNode, error) {
-	node, err := s.GetAgentNode(ctx, strings.TrimSpace(agentID))
+	node, err := scanAgentNode(s.db.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, strings.TrimSpace(agentID)))
 	if err != nil {
 		return domain.AgentNode{}, err
 	}

@@ -1212,7 +1212,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		if spec.Path == SessionSteeringRevisionPathTemplate || spec.Path == SessionSteeringRevisionObservationPathTemplate {
 			requestPath = strings.ReplaceAll(requestPath, steering.Message.ID, revisionSteering.Message.ID)
 		}
-		if spec.Path == SpecialistModelCancellationPathTemplate || spec.Path == SpecialistExecutionPathTemplate || spec.Path == SpecialistContinuationPathTemplate {
+		if spec.Path == SpecialistModelCancellationPathTemplate || spec.Path == SpecialistExecutionPathTemplate || spec.Path == SpecialistContinuationPathTemplate || spec.Path == SpecialistReadRevokePathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", childRun.ID)
 			requestPath = strings.ReplaceAll(requestPath, "{agent_id}", child.ID)
 		} else if spec.Path == ProjectSkillSelectionPathTemplate {
@@ -1405,6 +1405,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"refs":["` + projectSkillRef + `"],"confirm_untrusted_context":false}`
 				} else if spec.OperationID == "executeRunSpecialist" {
 					body = `{"version":"specialist_tools.v1","operation_key":"openapi-child-execute-0001","workspace_tools":true,"confirm_execute":true}`
+				} else if spec.OperationID == "revokeSpecialistReadTools" {
+					body = `{"version":"specialist_tools.v1"}`
 				} else if spec.OperationID == "continueRunSpecialist" {
 					body = `{"version":"specialist_continuation.v1","operation_key":"openapi-child-continue-0001","confirm_execute":true}`
 				} else if spec.Path == SandboxEnvironmentPath {

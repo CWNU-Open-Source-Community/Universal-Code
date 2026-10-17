@@ -217,7 +217,7 @@ func normalizeAgentCodeScopes(scopes []AgentCodeScopePath) ([]AgentCodeScopePath
 	}
 	normalized := make([]AgentCodeScopePath, 0, len(scopes))
 	for _, scope := range scopes {
-		path, err := normalizeAgentPath(scope.Path, false)
+		path, err := normalizeAgentPath(scope.Path, true)
 		if err != nil {
 			return nil, err
 		}
@@ -250,7 +250,7 @@ func (w agentWorkspace) scanScopedFiles(scopes []AgentCodeScopePath) ([]string, 
 		if w.policy.Excludes(scope.Path) {
 			continue
 		}
-		if w.blocked(scope.Path, scope.Directory, false) {
+		if scope.Path != "." && w.blocked(scope.Path, scope.Directory, false) {
 			return nil, false, apperror.New(apperror.CodePolicyDenied,
 				"workspace search scope is hidden or ignored")
 		}
@@ -297,6 +297,9 @@ func (w agentWorkspace) scanScopedFiles(scopes []AgentCodeScopePath) ([]string, 
 				}
 				entriesSeen++
 				candidate := relative + "/" + entry.Name()
+				if relative == "." {
+					candidate = entry.Name()
+				}
 				if w.blocked(candidate, entry.IsDir(), false) {
 					continue
 				}

@@ -18,9 +18,17 @@ import (
 	"cyberagent-workbench/internal/runmutation"
 )
 
-const agentNodeSelect = `SELECT id, run_id, parent_id, session_id, role, profile, skills_json, status,
+const agentNodeColumns = `SELECT id, run_id, parent_id, session_id, role, profile, skills_json, status,
 	depth, child_limit, turn_limit, token_limit, turns_used, tokens_used, active_attempt_id,
-	status_reason, version, created_at, updated_at, finished_at FROM agent_nodes`
+	status_reason, version, created_at, updated_at, finished_at`
+
+// Identity/lifecycle consumers and immutable graph snapshots do not consume child authority
+// or cumulative usage. Keep their projection independent of the child ledgers.
+const agentLifecycleSelect = agentNodeColumns + `, '[]', 0, 0, 0, 0 FROM agent_nodes`
+
+const agentNodeSelect = agentNodeColumns + `, allowed_read_paths_json, tool_call_limit, cost_limit_micros,
+ (SELECT COUNT(*) FROM specialist_tool_calls c JOIN agent_attempts a ON a.id=c.agent_attempt_id WHERE a.agent_id=agent_nodes.id AND c.charge_id<>''),
+ (SELECT COALESCE(SUM(reserved_micros-released_micros),0) FROM run_monetary_reservations WHERE agent_id=agent_nodes.id AND run_id=agent_nodes.run_id) FROM agent_nodes`
 
 const agentMessageSelect = `SELECT id, run_id, sender_agent_id, recipient_agent_id, sequence, kind,
 	semantic, payload_json, status, created_at, consumed_at FROM agent_messages`
@@ -93,7 +101,7 @@ func (s *SQLiteStore) GetAgentNode(ctx context.Context, id string) (domain.Agent
 }
 
 func (s *SQLiteStore) GetRootAgent(ctx context.Context, runID string) (domain.AgentNode, bool, error) {
-	node, err := scanAgentNode(s.db.QueryRowContext(ctx, agentNodeSelect+` WHERE run_id = ? AND parent_id IS NULL`,
+	node, err := scanAgentNode(s.db.QueryRowContext(ctx, agentLifecycleSelect+` WHERE run_id = ? AND parent_id IS NULL`,
 		strings.TrimSpace(runID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentNode{}, false, nil
@@ -206,7 +214,7 @@ func (s *SQLiteStore) SendAgentMessage(ctx context.Context, message domain.Agent
 		keyDigest, message.RecipientAgentID); err != nil {
 		return domain.AgentMessage{}, false, err
 	}
-	recipient, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, message.RecipientAgentID))
+	recipient, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, message.RecipientAgentID))
 	if err != nil {
 		return domain.AgentMessage{}, false, err
 	}
@@ -219,7 +227,7 @@ func (s *SQLiteStore) SendAgentMessage(ctx context.Context, message domain.Agent
 			"terminal agent cannot receive inbox messages")
 	}
 	if message.SenderAgentID != "" {
-		sender, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, message.SenderAgentID))
+		sender, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, message.SenderAgentID))
 		if err != nil {
 			return domain.AgentMessage{}, false, err
 		}
@@ -390,7 +398,7 @@ func (s *SQLiteStore) ConsumeAgentMessages(ctx context.Context, agentID string, 
 	if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET updated_at = updated_at WHERE id = ?`, agentID); err != nil {
 		return nil, err
 	}
-	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, agentID))
+	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, agentID))
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +713,7 @@ func insertRootAgentTx(ctx context.Context, tx *sql.Tx, run domain.Run, mission 
 }
 
 func getRootAgentTx(ctx context.Context, tx *sql.Tx, runID string) (domain.AgentNode, bool, error) {
-	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE run_id = ? AND parent_id IS NULL`, runID))
+	node, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE run_id = ? AND parent_id IS NULL`, runID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentNode{}, false, nil
 	}
@@ -717,12 +725,16 @@ func getRootAgentTx(ctx context.Context, tx *sql.Tx, runID string) (domain.Agent
 
 func scanAgentNode(row scanner) (domain.AgentNode, error) {
 	var node domain.AgentNode
+	var pathsJSON string
 	var parentID, finished sql.NullString
 	var role, profile, status, skillsJSON, createdAt, updatedAt string
 	if err := row.Scan(&node.ID, &node.RunID, &parentID, &node.SessionID, &role, &profile, &skillsJSON,
 		&status, &node.Depth, &node.ChildLimit, &node.TurnLimit, &node.TokenLimit, &node.TurnsUsed,
 		&node.TokensUsed, &node.ActiveAttemptID, &node.StatusReason, &node.Version, &createdAt,
-		&updatedAt, &finished); err != nil {
+		&updatedAt, &finished, &pathsJSON, &node.ToolCallLimit, &node.CostLimitMicros, &node.ToolCallsUsed, &node.CostUsedMicros); err != nil {
+		return domain.AgentNode{}, err
+	}
+	if err := json.Unmarshal([]byte(pathsJSON), &node.AllowedReadPaths); err != nil {
 		return domain.AgentNode{}, err
 	}
 	node.ParentID = parentID.String
@@ -741,7 +753,13 @@ func scanAgentNode(row scanner) (domain.AgentNode, error) {
 func listAgentNodes(ctx context.Context, queryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, runID string) ([]domain.AgentNode, error) {
-	rows, err := queryer.QueryContext(ctx, agentNodeSelect+` WHERE run_id = ? ORDER BY depth, created_at, id`, runID)
+	return listAgentNodesWithSelect(ctx, queryer, runID, agentNodeSelect)
+}
+
+func listAgentNodesWithSelect(ctx context.Context, queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, runID, selectSQL string) ([]domain.AgentNode, error) {
+	rows, err := queryer.QueryContext(ctx, selectSQL+` WHERE run_id = ? ORDER BY depth, created_at, id`, runID)
 	if err != nil {
 		return nil, err
 	}

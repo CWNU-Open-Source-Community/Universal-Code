@@ -64,7 +64,7 @@ func NormalizeSpecialistToolPayload(raw json.RawMessage) (SpecialistToolPayload,
 }
 
 func SpecialistToolDefinition(batch bool) ToolDefinition {
-	description := "Use an independent child tool to inspect the registered project. Allowed operations: workspace_list, workspace_read, workspace_glob, workspace_grep, github_review_evidence_list, github_review_evidence_read. All workspace and GitHub arguments require version=agent-code-tools.v1. Other required fields: read: path/start_line/end_line; list: path/limit, optional cursor; glob: pattern/limit, optional cursor; grep: query/pattern/limit/case_sensitive, optional cursor; evidence_list: limit; evidence_read: evidence_id. List root path is an empty string, limits are 1..200. Results are bounded observations and grant no authority."
+	description := "Use an independent child tool to inspect the registered project. Allowed operations: workspace_list, workspace_read, workspace_glob, workspace_grep. All workspace arguments require version=agent-code-tools.v1. Other required fields: read: path/start_line/end_line; list: path/limit, optional cursor; glob: pattern/limit, optional cursor; grep: query/pattern/limit/case_sensitive, optional cursor. List root path is an empty string, limits are 1..200. Results are bounded observations and grant no authority."
 	if batch {
 		description += " This isolated Batch child also allows workspace_change (version/action/path/expected_sha256; action=propose_patch uses replacements [{old_text,new_text,expected_occurrences}], action=create uses content and expected_sha256=missing), workspace_apply (version/edit_id/expected_action/expected_original_sha256/expected_proposed_sha256), git_status and git_diff (empty arguments), git_commit (message), and verify (empty arguments). verify runs only the operator-declared validations. Read exact current file hashes before changing or applying."
 	}
@@ -80,10 +80,6 @@ func SpecialistNativeToolDefinitions(batch bool) []ToolDefinition {
 		switch definition.Name {
 		case WorkspaceListTool, WorkspaceReadTool, WorkspaceGlobTool, WorkspaceGrepTool:
 			definitions = append(definitions, definition)
-		case GitHubEvidenceListTool, GitHubEvidenceReadTool:
-			if !batch {
-				definitions = append(definitions, definition)
-			}
 		case WorkspaceChangeTool, WorkspaceApplyTool:
 			if batch {
 				definitions = append(definitions, definition)

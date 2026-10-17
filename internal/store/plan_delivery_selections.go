@@ -359,7 +359,7 @@ func requirePlanDeliverySelectionBindingTx(ctx context.Context, tx *sql.Tx,
 			apperror.New(apperror.CodeFailedPrecondition,
 				"Plan/Delivery direction cannot be selected while an execution lease is active")
 	}
-	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	root, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		selection.RootAgentID))
 	if err != nil {
 		return domain.Run{}, domain.Mission{}, domain.PlanDeliveryDirection{}, err

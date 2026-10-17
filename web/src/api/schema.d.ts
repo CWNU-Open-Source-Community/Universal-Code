@@ -1514,6 +1514,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/agents/{agent_id}/revoke-read-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a child read scope
+         * @description Clears the child read authority without resetting its budgets or receipts. Existing attempts and future continuations cannot regain read access.
+         */
+        post: operations["revokeSpecialistReadTools"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/analyzer-executions": {
         parameters: {
             query?: never;
@@ -5800,9 +5820,14 @@ export interface components {
         };
         AgentNodeView: {
             active_attempt_id?: string;
+            allowed_read_paths?: string[];
             /** Format: int32 */
             child_limit: number;
             completion?: components["schemas"]["AgentCompletionView"];
+            /** Format: int64 */
+            cost_limit_micros?: number;
+            /** Format: int64 */
+            cost_used_micros?: number;
             /** Format: date-time */
             created_at: string;
             /** Format: int32 */
@@ -5822,6 +5847,10 @@ export interface components {
             token_limit: number;
             /** Format: int64 */
             tokens_used: number;
+            /** Format: int64 */
+            tool_call_limit?: number;
+            /** Format: int64 */
+            tool_calls_used?: number;
             /** Format: int64 */
             turn_limit: number;
             /** Format: int64 */
@@ -6547,6 +6576,9 @@ export interface components {
             version: string;
         };
         ChildTaskTaskView: {
+            allowed_read_paths?: string[];
+            /** Format: int64 */
+            cost_limit_micros?: number;
             dependency_ordinals: number[];
             goal: string;
             input_refs: string[];
@@ -6559,6 +6591,8 @@ export interface components {
             title: string;
             /** Format: int64 */
             token_limit: number;
+            /** Format: int64 */
+            tool_call_limit?: number;
             /** Format: int64 */
             turn_limit: number;
         };
@@ -7298,7 +7332,10 @@ export interface components {
         };
         DelegationAssignmentView: {
             agent_id?: string;
+            allowed_read_paths?: string[];
             application_status?: string;
+            /** Format: int64 */
+            cost_limit_micros?: number;
             goal: string;
             /** Format: int32 */
             ordinal: number;
@@ -7306,6 +7343,8 @@ export interface components {
             title: string;
             /** Format: int64 */
             token_limit: number;
+            /** Format: int64 */
+            tool_call_limit?: number;
             /** Format: int64 */
             turn_limit: number;
         };
@@ -12798,6 +12837,9 @@ export interface components {
             run_id: string;
             /** @enum {string} */
             status: "pending" | "observed" | "resolved";
+        };
+        SpecialistReadRevokeRequestView: {
+            version: string;
         };
         SpecialistToolCallView: {
             call_id: string;
@@ -19057,6 +19099,53 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["SpecialistExecutionView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    revokeSpecialistReadTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                /** @description Specialist Agent identity */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialistReadRevokeRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AgentNodeView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

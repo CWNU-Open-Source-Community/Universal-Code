@@ -61,6 +61,15 @@ func (s *SQLiteStore) ChargeToolCall(ctx context.Context, request toolbudget.Cha
 			return usageFromValues(binding.RunID, sequence, budget.MaxToolCalls, existing, parseTS(chargedAt), nil), nil
 		}
 	}
+	if normalized.RequestedBy == "specialist_runner" {
+		var limit, used int64
+		if err := tx.QueryRowContext(ctx, `SELECT n.tool_call_limit,(SELECT COUNT(*) FROM specialist_tool_calls c JOIN agent_attempts a ON a.id=c.agent_attempt_id WHERE a.agent_id=n.id AND c.charge_id<>'') FROM agent_nodes n WHERE n.id=? AND n.run_id=?`, normalized.AgentID, binding.RunID).Scan(&limit, &used); err != nil {
+			return toolbudget.Usage{}, err
+		}
+		if limit > 0 && used >= limit {
+			return toolbudget.Usage{}, apperror.New(apperror.CodeResourceExhausted, "child tool-call budget exhausted")
+		}
+	}
 	if !tracked {
 		if err := tx.Commit(); err != nil {
 			return toolbudget.Usage{}, err

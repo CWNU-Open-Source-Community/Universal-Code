@@ -31,13 +31,16 @@ func (p SpecialistAdmissionPolicy) Validate() error {
 }
 
 type AdmitSpecialistRequest struct {
-	RunID          string
-	ParentAgentID  string
-	Title          string
-	Skills         []string
-	TurnLimit      int64
-	TokenLimit     int64
-	IdempotencyKey string
+	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	RunID            string
+	ParentAgentID    string
+	Title            string
+	Skills           []string
+	TurnLimit        int64
+	TokenLimit       int64
+	IdempotencyKey   string
 }
 
 type AdmitSpecialistResult struct {
@@ -93,6 +96,7 @@ func (c *Coordinator) AdmitSpecialist(ctx context.Context,
 		AgentID: idgen.New("agent"), SessionID: idgen.New("sess"),
 		RunID: strings.TrimSpace(req.RunID), ParentAgentID: strings.TrimSpace(req.ParentAgentID),
 		Title: strings.TrimSpace(req.Title), Skills: skills, TurnLimit: req.TurnLimit,
+		AllowedReadPaths: req.AllowedReadPaths, ToolCallLimit: req.ToolCallLimit, CostLimitMicros: req.CostLimitMicros,
 		TokenLimit: req.TokenLimit, MaxChildren: c.specialistPolicy.MaxChildren,
 		CreatedAt: time.Now().UTC(),
 	}

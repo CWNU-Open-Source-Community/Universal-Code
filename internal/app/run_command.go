@@ -1343,12 +1343,16 @@ func (a *App) runUsage(ctx context.Context, service *application.RunService, arg
 		return err
 	}
 	if monetary.Tracked {
+		capText, remainingText := pricing.MicrosToUSD(monetary.CapMicros), pricing.MicrosToUSD(monetary.RemainingMicros)
+		if monetary.CapMicros == 0 {
+			capText, remainingText = "unlimited", "unlimited"
+		}
 		fmt.Fprintf(a.out, "monetary_cap_usd: %s\nmonetary_reserved_usd: %s\nmonetary_settled_usd: %s\nmonetary_released_usd: %s\nmonetary_remaining_usd: %s\nmonetary_estimate_source: %s\n",
-			pricing.MicrosToUSD(monetary.CapMicros),
+			capText,
 			pricing.MicrosToUSD(monetary.ReservedMicros),
 			pricing.MicrosToUSD(monetary.SettledMicros),
 			pricing.MicrosToUSD(monetary.ReleasedMicros),
-			pricing.MicrosToUSD(monetary.RemainingMicros),
+			remainingText,
 			monetary.EstimateSource)
 		if monetary.ExhaustedAt != nil {
 			fmt.Fprintf(a.out, "monetary_budget_exhausted_at: %s\n",

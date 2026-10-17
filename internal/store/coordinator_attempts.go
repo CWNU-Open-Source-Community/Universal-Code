@@ -93,7 +93,7 @@ func (s *SQLiteStore) BeginSpecialistAttempt(ctx context.Context, start domain.A
 	if err := requireNoApplyingSpecialistDelegationApplicationTx(ctx, tx, run.ID); err != nil {
 		return domain.AgentAttempt{}, false, err
 	}
-	child, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, start.AgentID))
+	child, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, start.AgentID))
 	if err != nil {
 		return domain.AgentAttempt{}, false, err
 	}
@@ -110,7 +110,7 @@ func (s *SQLiteStore) BeginSpecialistAttempt(ctx context.Context, start domain.A
 		return domain.AgentAttempt{}, false, apperror.New(apperror.CodeFailedPrecondition,
 			"Specialist scheduling requires satisfied dependencies")
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		start.ParentAgentID))
 	if err != nil {
 		return domain.AgentAttempt{}, false, err
@@ -258,7 +258,7 @@ func (s *SQLiteStore) ContinueSpecialistAttempt(ctx context.Context, ref domain.
 		return domain.AgentAttempt{}, false,
 			apperror.New(apperror.CodeResourceExhausted, "Specialist has no budget for another turn")
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
 		return domain.AgentAttempt{}, false, err
@@ -378,7 +378,7 @@ func (s *SQLiteStore) CrashSpecialistAttempt(ctx context.Context,
 	if err != nil {
 		return domain.AgentAttempt{}, false, err
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`, child.ParentID))
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`, child.ParentID))
 	if err != nil {
 		return domain.AgentAttempt{}, false, err
 	}
@@ -456,7 +456,7 @@ func (s *SQLiteStore) RecoverSpecialistAttempts(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+		parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 			attempt.ParentAgentID))
 		if err != nil {
 			return nil, err

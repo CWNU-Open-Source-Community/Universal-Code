@@ -780,6 +780,19 @@ func (r *SubagentRunner) callModelWithRetry(ctx context.Context, run domain.Run,
 			return result, apperror.New(apperror.CodeConflict,
 				"Specialist model attempt is already active")
 		}
+		if r.monetary == nil {
+			if st, ok := r.store.(interface {
+				SpecialistCostLimit(context.Context, string, string) (int64, error)
+			}); ok {
+				limit, e := st.SpecialistCostLimit(ctx, run.ID, ref.AttemptID)
+				if e != nil {
+					return result, e
+				}
+				if limit > 0 {
+					return result, apperror.New(apperror.CodeFailedPrecondition, "child monetary budget service is required")
+				}
+			}
+		}
 		if r.monetary != nil {
 			if _, reserveErr := r.monetary.ReserveModelCall(ctx, run,
 				domain.MonetaryScopeSpecialist, attempt, request); reserveErr != nil {

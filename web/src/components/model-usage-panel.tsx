@@ -27,7 +27,7 @@ export function ModelUsagePanel({ detail }: { detail: RunDetailView }) {
     {money && (money.tracked ? <><dl className="detail-grid compact">
       <KeyValue label={t("本地费用估算", "Local cost estimate")} value={usd(money.settled_micros)} />
       <KeyValue label={t("待结算预留", "Open reservation")} value={usd(money.reserved_micros - money.settled_micros - money.released_micros)} />
-      <KeyValue label={t("剩余费用预算", "Remaining cost budget")} value={usd(money.remaining_micros)} />
+      <KeyValue label={t("剩余费用预算", "Remaining cost budget")} value={money.cap_micros > 0 ? usd(money.remaining_micros) : t("未设置总上限", "No total cap")} />
     </dl>{money.unpriced_calls > 0 && <p className="inline-warning" role="status">{t(
       `${money.unpriced_calls} 次调用尚未精确定价，已保留预留金额作为估算。请核对缓存价格与用量记录。`,
       `${money.unpriced_calls} calls are not fully priced; their reserved estimates are retained. Check cache prices and usage receipts.`)}</p>}

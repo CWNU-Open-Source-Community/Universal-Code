@@ -244,7 +244,7 @@ func (s *SQLiteStore) RestoreAgentGraph(ctx context.Context, runID string) (doma
 func createAgentGraphSnapshotTx(ctx context.Context, tx *sql.Tx,
 	run domain.Run,
 ) (domain.AgentGraphSnapshot, error) {
-	nodes, err := listAgentNodes(ctx, tx, run.ID)
+	nodes, err := listAgentNodesWithSelect(ctx, tx, run.ID, agentLifecycleSelect)
 	if err != nil {
 		return domain.AgentGraphSnapshot{}, err
 	}

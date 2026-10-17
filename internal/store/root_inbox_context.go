@@ -206,7 +206,7 @@ func validateEligibleRootInboxMessageTx(ctx context.Context, tx *sql.Tx, runID s
 		return apperror.New(apperror.CodeFailedPrecondition,
 			"root inbox context message is no longer eligible")
 	}
-	sender, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	sender, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		message.SenderAgentID))
 	if err != nil {
 		return err

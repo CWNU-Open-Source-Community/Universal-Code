@@ -41,7 +41,7 @@ func TestChildTaskProposalReplaysDeduplicatesReviewsAndAdmits(t *testing.T) {
 		Tasks: []domain.ChildTask{
 			{Title: "first", Goal: "Read notes.txt and report its exact proof after a second review turn.",
 				Skills: []string{"model.chat"}, SurfaceHint: domain.ChildTaskSurfaceHintCore,
-				TurnLimit: 2, TokenLimit: 256, TimeoutMillis: 60000},
+				TurnLimit: 2, TokenLimit: 256, TimeoutMillis: 60000, AllowedReadPaths: []string{"notes.txt"}, ToolCallLimit: 3, CostLimitMicros: 1000},
 			{Title: "second", Goal: "review the first finding", Skills: []string{"model.chat"},
 				SurfaceHint:        domain.ChildTaskSurfaceHintCore,
 				DependencyOrdinals: []int{1}, TurnLimit: 2, TokenLimit: 256, TimeoutMillis: 60000},
@@ -150,6 +150,10 @@ func TestChildTaskProposalReplaysDeduplicatesReviewsAndAdmits(t *testing.T) {
 		if assignment.Status != domain.ChildTaskAssignmentAdmitted || assignment.AdmittedAgentID == "" {
 			t.Fatalf("assignment was not admitted: %#v", assignment)
 		}
+	}
+	firstChild, e := st.GetAgentNode(ctx, assignments[0].AdmittedAgentID)
+	if e != nil || strings.Join(firstChild.AllowedReadPaths, ",") != "notes.txt" || firstChild.ToolCallLimit != 3 || firstChild.CostLimitMicros != 1000 {
+		t.Fatalf("child task admission lost read limits: %+v %v", firstChild, e)
 	}
 	if assignments[0].AdmittedAgentID != recoveredAgentID {
 		t.Fatal("admission did not recover the existing child")

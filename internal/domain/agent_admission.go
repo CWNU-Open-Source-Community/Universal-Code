@@ -15,19 +15,25 @@ const (
 )
 
 type SpecialistAdmission struct {
-	AgentID       string
-	SessionID     string
-	RunID         string
-	ParentAgentID string
-	Title         string
-	Skills        []string
-	TurnLimit     int64
-	TokenLimit    int64
-	MaxChildren   int
-	CreatedAt     time.Time
+	AllowedReadPaths []string `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit    int64    `json:"tool_call_limit,omitempty"`
+	CostLimitMicros  int64    `json:"cost_limit_micros,omitempty"`
+	AgentID          string
+	SessionID        string
+	RunID            string
+	ParentAgentID    string
+	Title            string
+	Skills           []string
+	TurnLimit        int64
+	TokenLimit       int64
+	MaxChildren      int
+	CreatedAt        time.Time
 }
 
 func (a SpecialistAdmission) Validate() error {
+	if err := ValidateSpecialistReadLimits(a.AllowedReadPaths, a.ToolCallLimit, a.CostLimitMicros); err != nil {
+		return err
+	}
 	for _, value := range []string{a.AgentID, a.SessionID, a.RunID, a.ParentAgentID} {
 		if !validAgentIdentity(value, false) {
 			return errors.New("specialist admission identities are required and must be normalized")

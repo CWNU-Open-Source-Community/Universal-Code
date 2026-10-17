@@ -221,6 +221,9 @@ export function DelegationsPanel({ client, runID }: ProjectionProps) {
               <section key={assignment.ordinal}>
                 <header><span>#{assignment.ordinal}</span><strong>{assignment.title}</strong>{assignment.application_status && <StatusBadge status={assignment.application_status} />}</header>
                 <p>{assignment.goal}</p>
+                <p>{t("允许读取：", "Read scope: ")}{assignment.allowed_read_paths?.length ? assignment.allowed_read_paths.join(", ") : t("无工具", "No tools")}</p>
+                {(assignment.tool_call_limit ?? 0) > 0 && <p>{t("累计工具次数上限：", "Cumulative tool-call limit: ")}{assignment.tool_call_limit}</p>}
+                {(assignment.cost_limit_micros ?? 0) > 0 && <p>{t("累计费用上限：", "Cumulative cost limit: ")}{((assignment.cost_limit_micros ?? 0) / 1_000_000).toFixed(6)} USD</p>}
                 <footer><span>{assignment.skills.join(" · ")}</span><span>{t(`${formatNumber(assignment.turn_limit)} 回合 / ${formatNumber(assignment.token_limit)} Tokens`, `${formatNumber(assignment.turn_limit)} turns / ${formatNumber(assignment.token_limit)} tokens`)}</span>{assignment.agent_id && <code>{shortID(assignment.agent_id)}</code>}</footer>
               </section>
             ))}
@@ -369,6 +372,9 @@ export function ChildTasksPanel({ client, runID }: ProjectionProps) {
               <section key={task.ordinal}>
                 <header><span>#{task.ordinal}</span><strong>{task.title}</strong></header>
                 <p>{task.goal}</p>
+                <p>{t("允许读取：", "Read scope: ")}{task.allowed_read_paths?.length ? task.allowed_read_paths.join(", ") : t("无工具", "No tools")}</p>
+                {(task.tool_call_limit ?? 0) > 0 && <p>{t("累计工具次数上限：", "Cumulative tool-call limit: ")}{task.tool_call_limit}</p>}
+                {(task.cost_limit_micros ?? 0) > 0 && <p>{t("累计费用上限：", "Cumulative cost limit: ")}{((task.cost_limit_micros ?? 0) / 1_000_000).toFixed(6)} USD</p>}
                 <footer><span>{task.skills.join(" · ")}</span><span>{t(`${formatNumber(task.turn_limit)} 回合 / ${formatNumber(task.token_limit)} Tokens / ${formatNumber(task.timeout_millis)} ms`, `${formatNumber(task.turn_limit)} turns / ${formatNumber(task.token_limit)} tokens / ${formatNumber(task.timeout_millis)} ms`)}</span>{task.dependency_ordinals.length > 0 && <code>{`依赖 #${task.dependency_ordinals.join(", #")}`}</code>}</footer>
               </section>
             ))}
@@ -381,23 +387,27 @@ export function ChildTasksPanel({ client, runID }: ProjectionProps) {
             </dl>
           )}
           {client.hasControl && item.status === "proposed" && (
-            <div className="run-execution-control">
-              <label htmlFor={`child-task-tier-${item.id}`}>{t("fan-out 档位上限", "Fan-out tier ceiling")}</label>
-              <select id={`child-task-tier-${item.id}`} onChange={(event) => setTier(event.target.value)} value={tier}>
-                {["1", "2", "4", "6"].map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-              <button className="command-button" disabled={review.isPending || admit.isPending}
-                onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "approve" }); }} type="button">
-                {t("批准", "Approve")}
-              </button>
-              <button className="command-button danger" disabled={review.isPending || admit.isPending}
-                onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "deny" }); }} type="button">
-                {t("拒绝", "Deny")}
-              </button>
+            <div className="run-execution-control child-task-controls">
+              <div className="child-task-tier-control">
+                <label htmlFor={`child-task-tier-${item.id}`}>{t("fan-out 档位上限", "Fan-out tier ceiling")}</label>
+                <select id={`child-task-tier-${item.id}`} onChange={(event) => setTier(event.target.value)} value={tier}>
+                  {["1", "2", "4", "6"].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </div>
+              <div className="child-task-review-actions">
+                <button className="command-button" disabled={review.isPending || admit.isPending}
+                  onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "approve" }); }} type="button">
+                  {t("批准", "Approve")}
+                </button>
+                <button className="command-button danger" disabled={review.isPending || admit.isPending}
+                  onClick={() => { setBusy(item.id); review.mutate({ proposalID: item.id, action: "deny" }); }} type="button">
+                  {t("拒绝", "Deny")}
+                </button>
+              </div>
             </div>
           )}
           {client.hasControl && item.status === "approved" && (
-            <div className="run-execution-control">
+            <div className="run-execution-control child-task-controls">
               <button className="command-button" disabled={admit.isPending}
                 onClick={() => admit.mutate(item.id)} type="button">
                 {admit.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={15} /> : <Network aria-hidden="true" size={15} />}

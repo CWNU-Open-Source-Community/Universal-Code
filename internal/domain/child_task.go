@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	ChildTaskProposalVersion = "child_task_proposal.v1"
+	ChildTaskProposalVersion      = "child_task_proposal.v1"
 	MaxChildTaskProposalJSONBytes = 32 * 1024
-	MaxChildTaskTasks = 6
-	MaxChildTaskInputRefs = 16
+	MaxChildTaskTasks             = 6
+	MaxChildTaskInputRefs         = 16
 	MaxChildTaskExpectedArtifacts = 8
-	MaxChildTaskGoalRunes = MaxSpecialistInstructionRunes
-	MaxChildTaskTimeoutMillis = 30 * 60 * 1000
+	MaxChildTaskGoalRunes         = MaxSpecialistInstructionRunes
+	MaxChildTaskTimeoutMillis     = 30 * 60 * 1000
 )
 
 // ChildTaskSurface is the Go-resolved execution surface for one proposed
@@ -64,17 +64,20 @@ type ChildTaskExpectedArtifact struct {
 // ChildTask is one bounded child proposal. All limits are upper bounds the
 // Go control plane validates against the Run aggregate before admission.
 type ChildTask struct {
-	Ordinal           int                        `json:"-"`
-	Title             string                     `json:"title"`
-	Goal              string                     `json:"goal"`
-	Skills            []string                   `json:"skills"`
-	InputRefs         []string                   `json:"input_refs"`
-	DependencyOrdinals []int                      `json:"dependency_ordinals"`
-	SurfaceHint       ChildTaskSurfaceHint       `json:"surface_hint"`
-	TurnLimit         int64                      `json:"turn_limit"`
-	TokenLimit        int64                      `json:"token_limit"`
-	TimeoutMillis     int64                      `json:"timeout_millis"`
-	ExpectedArtifacts []ChildTaskExpectedArtifact `json:"expected_artifacts"`
+	AllowedReadPaths   []string                    `json:"allowed_read_paths,omitempty"`
+	ToolCallLimit      int64                       `json:"tool_call_limit,omitempty"`
+	CostLimitMicros    int64                       `json:"cost_limit_micros,omitempty"`
+	Ordinal            int                         `json:"-"`
+	Title              string                      `json:"title"`
+	Goal               string                      `json:"goal"`
+	Skills             []string                    `json:"skills"`
+	InputRefs          []string                    `json:"input_refs"`
+	DependencyOrdinals []int                       `json:"dependency_ordinals"`
+	SurfaceHint        ChildTaskSurfaceHint        `json:"surface_hint"`
+	TurnLimit          int64                       `json:"turn_limit"`
+	TokenLimit         int64                       `json:"token_limit"`
+	TimeoutMillis      int64                       `json:"timeout_millis"`
+	ExpectedArtifacts  []ChildTaskExpectedArtifact `json:"expected_artifacts"`
 }
 
 // ChildTaskProposalSpec is the strict, versioned wire shape the model may
@@ -104,19 +107,19 @@ type ChildTaskProposal struct {
 // control plane fills Surface, FanoutTier, DependencyEdgeID, and the
 // admitted identities; the model's proposal never sets them.
 type ChildTaskAssignment struct {
-	ProposalID      string
-	Ordinal         int
-	Surface         ChildTaskSurface
-	FanoutTier      ReadOnlyFanoutTier
-	Status          string
+	ProposalID       string
+	Ordinal          int
+	Surface          ChildTaskSurface
+	FanoutTier       ReadOnlyFanoutTier
+	Status           string
 	DependencyEdgeID string
-	TurnLimit       int64
-	TokenLimit      int64
-	TimeoutMillis   int64
-	AdmittedAgentID string
-	FanoutPlanID    string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	TurnLimit        int64
+	TokenLimit       int64
+	TimeoutMillis    int64
+	AdmittedAgentID  string
+	FanoutPlanID     string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func DecodeChildTaskProposalSpec(raw []byte) (ChildTaskProposalSpec, error) {
@@ -189,7 +192,7 @@ func NormalizeChildTaskProposalSpec(spec ChildTaskProposalSpec) (ChildTaskPropos
 		if !ValidChildTaskSurfaceHint(task.SurfaceHint) {
 			return ChildTaskProposalSpec{}, fmt.Errorf("child task %d surface hint is invalid", index+1)
 		}
-		if task.TurnLimit <= 0 || task.TokenLimit <= 0 || task.TokenLimit > MaxAgentTokenReservation ||
+		if ValidateSpecialistReadLimits(task.AllowedReadPaths, task.ToolCallLimit, task.CostLimitMicros) != nil || task.TurnLimit <= 0 || task.TokenLimit <= 0 || task.TokenLimit > MaxAgentTokenReservation ||
 			task.TimeoutMillis <= 0 || task.TimeoutMillis > MaxChildTaskTimeoutMillis {
 			return ChildTaskProposalSpec{}, fmt.Errorf("child task %d budget must be positive and bounded",
 				index+1)
@@ -293,6 +296,12 @@ func ResolveChildTaskSurface(spec ChildTaskProposalSpec) (ChildTaskSurface, Read
 	requiresCore := false
 	readonlyEligible := true
 	for _, task := range normalized.Tasks {
+		if len(task.AllowedReadPaths) > 0 || task.ToolCallLimit > 0 || task.CostLimitMicros > 0 {
+			if task.SurfaceHint == ChildTaskSurfaceHintReadOnlyFanout {
+				return "", "", errors.New("independent read and cost limits require the core child surface")
+			}
+			requiresCore = true
+		}
 		switch task.SurfaceHint {
 		case ChildTaskSurfaceHintCore:
 			coreHint = true
@@ -369,9 +378,9 @@ func taskSkillSetExceedsReadOnly(skills []string) bool {
 }
 
 const (
-	ChildTaskProposalProposed = "proposed"
-	ChildTaskProposalApproved = "approved"
-	ChildTaskProposalDenied   = "denied"
+	ChildTaskProposalProposed   = "proposed"
+	ChildTaskProposalApproved   = "approved"
+	ChildTaskProposalDenied     = "denied"
 	ChildTaskAssignmentProposed = "proposed"
 	ChildTaskAssignmentAdmitted = "admitted"
 )
@@ -418,11 +427,11 @@ func (o ChildTaskOperation) Validate() error {
 
 // ChildTaskReview is the operator decision over one proposal.
 type ChildTaskReview struct {
-	ProposalID   string
-	Action       string
-	Reviewer     string
-	FanoutTier   ReadOnlyFanoutTier
-	ReviewedAt   time.Time
+	ProposalID string
+	Action     string
+	Reviewer   string
+	FanoutTier ReadOnlyFanoutTier
+	ReviewedAt time.Time
 }
 
 func (r ChildTaskReview) Normalize() (ChildTaskReview, error) {

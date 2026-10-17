@@ -753,8 +753,14 @@ func newSubagentRunnerFixture(t testing.TB, provider llm.Provider, budget domain
 func newSubagentRunnerFixtureWithExternal(t testing.TB, provider llm.Provider,
 	budget domain.Budget, turnLimit int64, tokenLimit int64, withExternal bool, workspaceRoots ...string,
 ) (*store.SQLiteStore, domain.Run, domain.AgentNode, *application.SubagentRunner) {
+	return newScopedSubagentFixture(t, provider, budget, turnLimit, tokenLimit, withExternal, domain.SpecialistAdmission{AllowedReadPaths: []string{"."}, ToolCallLimit: 64}, "", workspaceRoots...)
+}
+
+func newScopedSubagentFixture(t testing.TB, provider llm.Provider, budget domain.Budget, turnLimit, tokenLimit int64, withExternal bool, limits domain.SpecialistAdmission, home string, workspaceRoots ...string) (*store.SQLiteStore, domain.Run, domain.AgentNode, *application.SubagentRunner) {
 	t.Helper()
-	home := t.TempDir()
+	if home == "" {
+		home = t.TempDir()
+	}
 	st, err := store.Open(filepath.Join(home, "cyberagent.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -836,7 +842,7 @@ func newSubagentRunnerFixtureWithExternal(t testing.TB, provider llm.Provider,
 	}
 	coord, err := coordinator.NewWithSpecialistAdmission(st,
 		coordinator.SpecialistAdmissionPolicy{
-			MaxChildren: 1, MaxTurnsPerChild: turnLimit, MaxTokensPerChild: tokenLimit,
+			MaxChildren: max(1, limits.MaxChildren), MaxTurnsPerChild: turnLimit, MaxTokensPerChild: tokenLimit,
 		})
 	if err != nil {
 		t.Fatal(err)
@@ -844,6 +850,7 @@ func newSubagentRunnerFixtureWithExternal(t testing.TB, provider llm.Provider,
 	admitted, err := coord.AdmitSpecialist(ctx, coordinator.AdmitSpecialistRequest{
 		RunID: run.ID, ParentAgentID: root.ID, Title: "internal model Specialist",
 		Skills: []string{"model.chat"}, TurnLimit: turnLimit, TokenLimit: tokenLimit,
+		AllowedReadPaths: limits.AllowedReadPaths, ToolCallLimit: limits.ToolCallLimit, CostLimitMicros: limits.CostLimitMicros,
 		IdempotencyKey: "specialist-runner-admit-0001",
 	})
 	if err != nil {
@@ -900,6 +907,7 @@ func buildSpecialistExternalPackage(t testing.TB) []byte {
 }
 
 type specialistTestProvider struct {
+	respond   func(int, llm.ChatRequest) (llm.ChatResponse, error)
 	mu        sync.Mutex
 	responses []llm.ChatResponse
 	failures  []error
@@ -936,6 +944,12 @@ func (p *specialistTestProvider) Chat(ctx context.Context,
 	}
 	if index < len(p.failures) && p.failures[index] != nil {
 		return nil, p.failures[index]
+	}
+	if p.respond != nil {
+		response, err := p.respond(index, request)
+		response.Provider = p.Name()
+		response.Model = "model"
+		return &response, err
 	}
 	if index >= len(p.responses) {
 		return nil, errors.New("Specialist test response exhausted")

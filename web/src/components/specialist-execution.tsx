@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Play } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { AgentNodeView } from "../api/types";
-import { continueSpecialist, getSpecialistToolReceipts } from "../api/specialist-execution";
+import { continueSpecialist, getSpecialistToolReceipts, revokeSpecialistReadTools } from "../api/specialist-execution";
 import { v2QueryKeys } from "../v2/query-keys";
 import { useLocale } from "../lib/locale";
 import { formatNumber } from "../lib/format";
@@ -53,6 +53,11 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
       void cache.invalidateQueries({ queryKey: ["run", runID] });
     },
   });
+  const revoke = useMutation({
+    mutationFn: () => revokeSpecialistReadTools(client, runID, agent.id),
+    onSuccess: () => { void cache.invalidateQueries({ queryKey: ["run", runID] }); },
+  });
+  const readPaths = revoke.data?.allowed_read_paths ?? (revoke.isSuccess ? [] : agent.allowed_read_paths ?? []);
   const attemptID = selectedAttempt ?? execute.data?.attempt_id ?? agent.active_attempt_id ?? agent.completion?.attempt_id;
   const receipts = useQuery({
     queryKey: ["run", runID, "specialist-receipts", agent.id, attemptID],
@@ -63,8 +68,16 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
   const canExecute = client.hasControl && client.hasModelControl && (agent.status === "ready" || Boolean(pendingKey));
   const runBlocked = !pendingKey && runStatus !== "running";
   return <div className="agent-execution-control">
+    <p>{readPaths.length > 0 ? t("只读工具子代理", "Read-only tool child") : t("无工具子代理", "No-tool child")}</p>
+    {readPaths.length > 0 && <>
+      <p>{t("允许读取：", "Read scope: ")}{readPaths.join(", ")}</p>
+      <p>{t("工具次数：", "Tool calls: ")}{agent.tool_calls_used ?? 0} / {agent.tool_call_limit}</p>
+      {client.hasControl && client.hasModelControl && <button type="button" disabled={revoke.isPending} onClick={() => revoke.mutate()}>{t("撤回读取权限", "Revoke read access")}</button>}
+    </>}
+    {(agent.cost_limit_micros ?? 0) > 0 && <p>{t("费用（含预留）：", "Cost including reservations: ")}{((agent.cost_used_micros ?? 0) / 1_000_000).toFixed(6)} / {((agent.cost_limit_micros ?? 0) / 1_000_000).toFixed(6)} USD</p>}
+    {revoke.error && <ErrorState error={revoke.error} />}
     {canExecute && <>
-      <p className="projection-placeholder">{t("子代理将在已授权预算内连续读取、搜索任务文件，完成后由主会话自动汇总。修改与验证请使用批量交付。",
+      <p className="projection-placeholder">{readPaths.length === 0 ? t("子代理将根据已委托材料继续分析，完成后由主会话汇总。", "The child continues analyzing its delegated material; the main conversation summarizes completion.") : t("子代理将在已授权预算内连续读取、搜索任务文件，完成后由主会话自动汇总。修改与验证请使用批量交付。",
         "The child continues reading and searching task files within its approved budget. On completion, the main conversation summarizes its findings automatically. Use batch delivery for edits and validation.")}</p>
       {runBlocked && <p>{runStatus === "paused" ? t("任务已暂停。请先在任务控制中恢复，再运行子代理。", "The task is paused. Resume it in task controls before running the child.")
         : t("等待任务处于运行状态后执行。", "The task must be running before child execution.")}</p>}

@@ -55,7 +55,7 @@ func (s *SQLiteStore) PrepareSpecialistSkillContext(ctx context.Context,
 			apperror.CodeFailedPrecondition,
 			"Specialist Skill context must be prepared before model usage is recorded")
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
 		return skills.SpecialistContextPreparation{}, err
@@ -155,7 +155,7 @@ func commitSpecialistSkillContextTx(ctx context.Context, tx *sql.Tx, run domain.
 		return apperror.New(apperror.CodeFailedPrecondition,
 			"persisted parent Skill selection was not prepared for the active Specialist attempt")
 	}
-	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id = ?`,
+	parent, err := scanAgentNode(tx.QueryRowContext(ctx, agentLifecycleSelect+` WHERE id = ?`,
 		attempt.ParentAgentID))
 	if err != nil {
 		return err
