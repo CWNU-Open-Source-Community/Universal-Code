@@ -1,6 +1,7 @@
 package application_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
@@ -291,5 +293,78 @@ func TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen(t *testin
 	attempt, found, err := st.GetAgentAttempt(t.Context(), attemptID)
 	if err != nil || !found || e.Status != "failed" || attempt.Failure.Code != "worker_lost" || p.calls != 0 {
 		t.Fatalf("unfinished work was replayed: %+v attempt=%+v calls=%d err=%v", e, attempt, p.calls, err)
+	}
+}
+
+type workflowHostFaultStore struct {
+	*store.SQLiteStore
+	leaseConflicts int
+	usageFailure   bool
+}
+
+func (s *workflowHostFaultStore) AcquireRunExecutionLease(ctx context.Context, request domain.AcquireRunExecutionLeaseRequest) (domain.RunExecutionLeaseAcquisition, error) {
+	if s.leaseConflicts > 0 {
+		s.leaseConflicts--
+		// Another host can acquire and release between two observations, leaving
+		// the same idle state after this acquisition reported a conflict.
+		return domain.RunExecutionLeaseAcquisition{}, apperror.New(apperror.CodeConflict, "competing host acquired the Run lease")
+	}
+	return s.SQLiteStore.AcquireRunExecutionLease(ctx, request)
+}
+
+func (s *workflowHostFaultStore) GetRunAgentUsage(ctx context.Context, runID string) (domain.RunAgentUsage, error) {
+	if s.usageFailure {
+		s.usageFailure = false
+		return domain.RunAgentUsage{}, errors.New("temporary usage read failure")
+	}
+	return s.SQLiteStore.GetRunAgentUsage(ctx, runID)
+}
+
+func TestWorkflowHostRetriesTransientLeaseConflictWithoutDependencyChanges(t *testing.T) {
+	p := &specialistTestProvider{responses: []llm.ChatResponse{workflowResponse(t, domain.CompletionSucceeded)}}
+	st, run, _, _ := newWorkflowFixture(t, p)
+	faults := &workflowHostFaultStore{SQLiteStore: st, leaseConflicts: 2}
+	router := llm.NewRouter(llm.ModelRef{Provider: p.Name(), Model: "model"})
+	router.RegisterProvider(p)
+	service := application.NewWorkflowService(faults, application.NewSpecialistExecutionService(faults, router, policy.NewDefaultChecker()))
+	e := startHostWorkflow(t, service, run.ID, "transient-conflict", workflowSpec(workflowWorker("one")))
+	for i := 0; i < 2; i++ {
+		workflowTick(t, service)
+	}
+	e, _ = service.Get(t.Context(), e.ID)
+	if e.Status != "waiting" || e.State.WaitFingerprint != "" || p.calls != 0 {
+		t.Fatalf("transient conflict became dormant: %+v calls=%d", e, p.calls)
+	}
+	workflowTick(t, service)
+	workflowTick(t, service)
+	e, _ = service.Get(t.Context(), e.ID)
+	if e.Status != "completed" || p.calls != 1 {
+		t.Fatalf("transient lease conflict did not recover: %+v calls=%d", e, p.calls)
+	}
+}
+
+func TestWorkflowHostTransientReadFailureDoesNotHideLaterWork(t *testing.T) {
+	p := &specialistTestProvider{responses: []llm.ChatResponse{workflowResponse(t, domain.CompletionSucceeded), workflowResponse(t, domain.CompletionSucceeded)}}
+	st, run, _, _ := newWorkflowFixture(t, p)
+	faults := &workflowHostFaultStore{SQLiteStore: st}
+	router := llm.NewRouter(llm.ModelRef{Provider: p.Name(), Model: "model"})
+	router.RegisterProvider(p)
+	service := application.NewWorkflowService(faults, application.NewSpecialistExecutionService(faults, router, policy.NewDefaultChecker()))
+	first := startHostWorkflow(t, service, run.ID, "transient-read-first", workflowSpec(workflowWorker("one")))
+	second := startHostWorkflow(t, service, run.ID, "transient-read-second", workflowSpec(workflowWorker("two")))
+	faults.usageFailure = true
+	ran, err := service.RunDue(t.Context(), "fault-test-host", time.Now().UTC())
+	if !ran || err == nil || !strings.Contains(err.Error(), "temporary usage read failure") {
+		t.Fatalf("missing observable first failure: ran=%t err=%v", ran, err)
+	}
+	first, _ = service.Get(t.Context(), first.ID)
+	second, _ = service.Get(t.Context(), second.ID)
+	if first.Status != "running" || first.State.Jobs != 0 || second.State.Jobs != 1 || p.calls != 1 {
+		t.Fatalf("temporary read failure hid runnable work: first=%+v second=%+v calls=%d", first, second, p.calls)
+	}
+	workflowTick(t, service)
+	first, _ = service.Get(t.Context(), first.ID)
+	if first.State.Jobs != 1 || p.calls != 2 {
+		t.Fatalf("temporary read failure became a persistent wait: %+v calls=%d", first, p.calls)
 	}
 }
