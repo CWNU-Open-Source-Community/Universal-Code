@@ -1,0 +1,35 @@
+{
+  "protocol": "github-followup-live-attempts.v1",
+  "unchanged_remote_head_before_success": "690ba4094f03e3501eae208e19ca082b2b2fa6db",
+  "failed_attempts": [
+    {
+      "started_at": "2026-10-18T03:01:59.1594315Z",
+      "finished_at": "2026-10-18T03:02:01.6142389Z",
+      "success": false,
+      "source_report": "repair-previous-20261018030231.json",
+      "observed_failure": "agent operation key must be normalized UTF-8 between 16 and 256 bytes",
+      "cause": "Harness operation key was shorter than the application's 16-byte minimum.",
+      "correction": "Use a normalized operation key that satisfies the existing contract."
+    },
+    {
+      "started_at": "2026-10-18T03:03:18.1178161Z",
+      "finished_at": "2026-10-18T03:03:37.1970501Z",
+      "success": false,
+      "source_report": "repair-previous-20261018030406.json",
+      "observed_failure": "Full Access is not active in this process; explicitly reactivate Full Access before automatic continuation",
+      "cause": "Harness did not share the process-local Full Access authority with the Thread executor.",
+      "correction": "Pass the same runtime capabilities and authority to all participating production services."
+    },
+    {
+      "started_at": "2026-10-18T03:29:10.7487463Z",
+      "finished_at": "2026-10-18T03:29:56.8160339Z",
+      "success": false,
+      "source_report": "repair-previous-20261018033212.json",
+      "observed_failure": "The task context exceeds this model's input window. History and completed work are preserved; shorten the current input, shorten or remove a fixed requirement, or select a model with a larger context window",
+      "cause": "The 100,000-token cumulative harness budget left insufficient input capacity after repeated tool requests and a format hook. The user-facing failure was context_window_exceeded.",
+      "correction": "Increase only the acceptance Run budget to 300,000 tokens; retain production budget enforcement."
+    }
+  ],
+  "final_report": "repair.json",
+  "raw_reports_retained_locally": true
+}

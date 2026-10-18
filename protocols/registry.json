@@ -3908,6 +3908,31 @@
       "reason": "Unsupported generated summary version used only to verify rejection; not a production protocol."
     },
     {
+      "identifier": "github-followup-live-fixture.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/pr_followup_live_test.go",
+        "scripts/github-followup-live.ps1"
+      ],
+      "reason": "Opt-in live acceptance manifest binding its isolated GitHub PR and disposable workspace."
+    },
+    {
+      "identifier": "github-followup-live-read.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/githubreview/followup_live_test.go"
+      ],
+      "reason": "Redacted evidence for explicitly enabled authenticated GitHub pagination acceptance."
+    },
+    {
+      "identifier": "github-followup-live-repair.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/pr_followup_live_test.go"
+      ],
+      "reason": "Redacted evidence for explicitly enabled model repair and remote CI acceptance."
+    },
+    {
       "identifier": "github-test.v1",
       "kind": "test-fixture",
       "sources": [
