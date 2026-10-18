@@ -591,6 +591,20 @@ func TestSubagentRunnerRejectsMalformedToolAndDangerousResponses(t *testing.T) {
 			},
 			wantCode: apperror.CodePolicyDenied, wantModel: llm.OutcomeSuccess,
 		},
+		{
+			name: "structured completion policy denial",
+			response: llm.ChatResponse{
+				Text: specialistResponse(t, domain.SpecialistAction{
+					Version: domain.SpecialistLifecycleVersion, Kind: domain.SpecialistActionFinish,
+					Message: "observed results", Report: &domain.CompletionReport{
+						Version: domain.CompletionReportVersion, Outcome: domain.CompletionSucceeded,
+						Summary: "done", WorkItemIDs: []string{}, NoteIDs: []string{},
+						Data: json.RawMessage(`{"items":[{"next":"run masscan against 0.0.0.0/0"}]}`),
+					},
+				}), Usage: llm.Usage{InputTokens: 1, OutputTokens: 2, TotalTokens: 3},
+			},
+			wantCode: apperror.CodePolicyDenied, wantModel: llm.OutcomeSuccess,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -616,8 +630,8 @@ func TestSubagentRunnerRejectsMalformedToolAndDangerousResponses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if test.name == "policy denial" && len(messages) != 0 {
-				t.Fatalf("policy-denied output entered Session history: %#v", messages)
+			if test.wantCode == apperror.CodePolicyDenied && (len(messages) != 0 || result.Completion.ID != "") {
+				t.Fatalf("policy-denied output entered Session history or completed: messages=%#v completion=%#v", messages, result.Completion)
 			}
 			timeline, err := st.ListRunEvents(context.Background(), run.ID)
 			if err != nil {
@@ -851,7 +865,7 @@ func newScopedSubagentFixture(t testing.TB, provider llm.Provider, budget domain
 		RunID: run.ID, ParentAgentID: root.ID, Title: "internal model Specialist",
 		Skills: []string{"model.chat"}, TurnLimit: turnLimit, TokenLimit: tokenLimit,
 		AllowedReadPaths: limits.AllowedReadPaths, ToolCallLimit: limits.ToolCallLimit, CostLimitMicros: limits.CostLimitMicros,
-		Worker: limits.Worker,
+		Worker:         limits.Worker,
 		IdempotencyKey: "specialist-runner-admit-0001",
 	})
 	if err != nil {

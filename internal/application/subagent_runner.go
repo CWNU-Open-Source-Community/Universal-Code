@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -1236,6 +1237,18 @@ func specialistActionPolicyText(action domain.SpecialistAction) string {
 	parts := []string{action.Message}
 	if action.Report != nil {
 		parts = append(parts, action.Report.Summary)
+		// Data has already been normalized. Check decoded strings so JSON
+		// escapes cannot conceal text from the same policy used for the summary.
+		decoder := json.NewDecoder(bytes.NewReader(action.Report.Data))
+		for {
+			token, err := decoder.Token()
+			if err != nil {
+				break
+			}
+			if value, ok := token.(string); ok {
+				parts = append(parts, value)
+			}
+		}
 	}
 	return strings.Join(parts, "\n")
 }
