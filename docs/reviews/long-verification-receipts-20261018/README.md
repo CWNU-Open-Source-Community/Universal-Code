@@ -13,3 +13,5 @@
 另行补齐真实两个 worker 的越权读取断言，单独运行通过，耗时 `2.588s`。所有最终测试结束后生成本次文件清单与覆盖记录；未运行全量套件。
 
 普通 `ReadProjectVerificationReceipt` / `LatestProjectVerificationReceipt` 只接受当前原生 actor authority。工作流主控验收委派任务使用的窄宿主入口由另一工作流任务负责，不能把普通 actor 的读取范围当作工作流主控验收范围。
+
+后续复审发现协议注册遗漏；单独补齐 5 个新标识和旧 Hook v1 的退休记录，并重新生成协议索引。该增量按相同 delegate 规则审阅，详见 [protocol-registration.json](protocol-registration.json)。协议发现、索引同步和读者历史定向检查通过；没有重新编译 application。

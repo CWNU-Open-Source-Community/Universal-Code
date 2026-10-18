@@ -1,0 +1,63 @@
+{
+  "schema_version": "host-delegate-review.v1",
+  "date": "2026-10-18",
+  "mode": "workspace",
+  "base_commit": "aa24d5e2cc4f3a91366ad7660205d39863180c3a",
+  "total_files": 5,
+  "reviewable_files": 1,
+  "reviewed_files": 1,
+  "skipped_files": 0,
+  "coverage_rate": 1.0,
+  "coverage_scope": "Changed protocol-registry entries and generated Markdown hunks, not full registry source or repository coverage.",
+  "preview": "D:/CodexProjects/long-verification-receipts-20261018/protocol-registration/ocr-preview.json",
+  "rules": "D:/CodexProjects/long-verification-receipts-20261018/protocol-registration/ocr-rules.json",
+  "entries": [
+    {
+      "path": "protocols/registry.json",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Existing JSON keys follow resolved OCR JSON-key spelling rule. Additionally reviewed all five new identifiers, correct lifecycle family ownership, retained opaque v1 Hook read contract and rollback evidence against actual source."
+    }
+  ],
+  "selector_exclusions": [
+    {
+      "path": "docs/convergence/protocol-registry.md",
+      "status": "modified",
+      "disposition": "supplemental_reviewed",
+      "scope": "Generator output changed hunks compared with registry; full generated document not read"
+    },
+    {
+      "path": "docs/acceptance/2026-10-18-long-project-verification.md",
+      "status": "modified",
+      "disposition": "supplemental_reviewed",
+      "scope": "Follow-up registration and actual targeted test result paragraph"
+    },
+    {
+      "path": "docs/reviews/long-verification-receipts-20261018/README.md",
+      "status": "modified",
+      "disposition": "excluded_review_artifact",
+      "scope": "Follow-up coverage reference checked; excluded from recursive selection"
+    },
+    {
+      "path": "docs/reviews/long-verification-receipts-20261018/protocol-registration.json",
+      "status": "added",
+      "disposition": "excluded_review_artifact",
+      "scope": "This coverage output is excluded from recursive selection"
+    }
+  ],
+  "verification": [
+    "go run -p 1 ./cmd/protocolregistry -write",
+    "go test -p 1 ./internal/protocolregistry -run ^(TestRepositoryRegistryIsValidSynchronizedAndNonAuthorizing|TestEvolutionRetainsDurableReaderHistory)$ -count=1 -timeout 90s -v: passed, 1.928s",
+    "go run -p 1 ./cmd/protocolregistry -check -baseline aa24d5e2cc4f3a91366ad7660205d39863180c3a: passed"
+  ],
+  "unresolved_findings": [],
+  "corrected_findings": [
+    {
+      "category": "bug",
+      "severity": "medium",
+      "path": "protocols/registry.json",
+      "content": "Register five newly discovered protocol identifiers and retain an explicit retirement record for the replaced v1 Hook trigger key.",
+      "resolution": "Registry and generated governance index synchronized. Repository discovery and baseline evolution checks pass."
+    }
+  ]
+}
