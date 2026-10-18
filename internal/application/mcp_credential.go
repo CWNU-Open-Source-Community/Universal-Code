@@ -64,8 +64,8 @@ type MCPCredentialRegistry interface {
 	ListMCPClientServersByCredentialRef(context.Context, string) ([]mcp.ServerRecord, error)
 }
 
-// The OS store remains the sole secret owner. Presence is local metadata, not
-// proof of remote authentication. No secret or backend error enters a reply.
+// The host owns secrets; OAuth files are protected by OS-stored keys. Presence
+// is local metadata, not remote authentication. No secret/backend error enters a reply.
 type MCPCredentialService struct {
 	mu        sync.Mutex
 	registry  MCPCredentialRegistry

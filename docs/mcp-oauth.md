@@ -34,8 +34,8 @@ The settings state comes from Go. Pending login expires after five minutes;
 **Cancel authorization** targets that exact login. Refreshing or reopening the
 page retains the pending status, but its one-time handoff link is available only
 in the initiating control response; cancel and restart if that link was lost.
-After the callback, `authorized` means the token was saved and read back from the
-system credential store. Approve discovery, rediscover capabilities, and review
+After the callback, `authorized` means the token was saved and read back from
+OS-protected local storage. Approve discovery, rediscover capabilities, and review
 them before using the MCP server in a task.
 
 The CLI uses the same service:
@@ -50,24 +50,38 @@ cyberagent mcp credential oauth-status <server-id>
 ```
 
 `oauth-login` prints the browser handoff and waits for completion; Ctrl+C cancels
-its callback. Tokens stay in the system store. The entry's encoded token bundle
-must fit the store's 2560-byte limit, including the confidential client secret;
-larger bundles report failure and leave the previous credential intact. Refresh-token
+its callback. OAuth tokens and client secrets are stored in AES-256-GCM encrypted
+files under the application home's `credentials/mcp` directory. The dedicated OS
+credential entry contains only a fresh encryption key and an opaque file reference.
+The encoded OAuth bundle is limited to 64 KiB, each access/refresh token to 16 KiB,
+and a confidential client secret to 1024 bytes. Static bearer credentials retain
+the system store's 2560-byte limit. No plaintext fallback exists.
+
+Existing OAuth bundles stored directly in the OS store remain readable; a successful
+login or refresh migrates them on its next write. The host writes and verifies new
+ciphertext before replacing the OS entry, then reads back both the entry and bundle.
+Precommit failures leave the previous credential intact. An unverified OS write is
+reported as failure without rollback or automatic retry; refresh status before recovery.
+Superseded ciphertext is removed after verified replacement. Interrupted writes can
+leave orphan ciphertext; it is never used without its matching OS entry and key.
+
+Refresh-token
 rotation happens under a credential lock when an authorized MCP request needs a
 fresh access token. Failed refresh or server rejection requires operator recovery;
 the client does not automatically replay an MCP operation.
 If the issuer omits token expiry, status omits the expiry timestamp; no lifetime
 is invented and the token is used until the server rejects it or it is removed.
 
-**Remove local token** also removes an OAuth entry. It does not claim remote
+**Remove local token** removes the OS entry and its referenced encrypted file. It does not claim remote
 revocation; use the service's account settings to revoke remote access. Changing
 the descriptor invalidates the saved OAuth binding. Pending login is transient
 and must restart after the Go process exits.
 
-Local validation uses synthetic accounts, a TLS issuer, an isolated SQLite
-database and an in-memory credential-store adapter. Browser acceptance exercises
-the actual React controls and Go HTTP handlers. No external account was used.
-See [ADR 0179](adr/0179-mcp-oauth-onboarding.md).
+Local validation uses synthetic accounts, a TLS issuer, an isolated SQLite database,
+encrypted files, and either an in-memory or explicitly enabled OS credential store.
+Browser acceptance exercises the actual React controls and Go HTTP handlers.
+No external account was used. See [ADR 0179](adr/0179-mcp-oauth-onboarding.md) and
+the [bundle-size acceptance record](acceptance/2026-10-18-mcp-oauth-bundles.md).
 
 The registration choices and fixed-port setup follow the concepts documented by
 [Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) and

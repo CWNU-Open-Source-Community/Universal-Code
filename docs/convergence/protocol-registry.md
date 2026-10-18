@@ -31,6 +31,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
 | [mcp-live-input](#mcp-live-input) | `ephemeral` | MCP client maintainers | 1 | false |
+| [mcp-oauth-credentials](#mcp-oauth-credentials) | `internal-durable` | MCP OAuth and credential maintainers | 1 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 65 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 10 | true |
@@ -1219,6 +1220,25 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 <details><summary>1 active identifiers</summary>
 
 - `mcp-input.v1`
+
+</details>
+
+### mcp-oauth-credentials
+
+- Class: `internal-durable`
+- Owner: MCP OAuth and credential maintainers
+- Source of truth: `internal/credential`, `internal/mcpoauth/oauth.go`, `internal/mcpoauth/store.go`
+- Persistence/export boundary: Versioned AES-GCM files under credentials/mcp preserve descriptor-bound OAuth token bundles across restart. The matching key and opaque file reference remain in the OS credential entry; tokens and client secrets never enter public status or SQLite.
+- Compatibility rule: Retain legacy inline-bundle reads and the v1 encrypted reader. Migrate only on a verified successful write; preserve descriptor/client/session bindings and compare-and-swap. Reject unknown versions, missing keys and authentication failures without plaintext fallback or automatic replay of an MCP operation.
+- Retirement gate (`migration-or-retention`): An explicit migration or retention decision covers each ciphertext file and matching OS key/reference; Legacy migration, restart, tampering, failed-write/readback and stale compare-and-swap tests remain until supported credentials and backups are migrated or retained; Rollback retains readers for matching encrypted files and OS entries; unverified commits never remove possibly active ciphertext or replay an MCP operation
+- Writers:
+  - `mcp-oauth-encrypted-bundle-writer` (`v1`, write-current) at `internal/mcpoauth/store.go`
+- Readers:
+  - `mcp-oauth-encrypted-bundle-reader` (`v1`, active) at `internal/mcpoauth/store.go`
+
+<details><summary>1 active identifiers</summary>
+
+- `universal-code.mcp-oauth.v1`
 
 </details>
 

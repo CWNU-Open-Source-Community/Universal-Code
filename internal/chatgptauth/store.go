@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/credential"
+	"cyberagent-workbench/internal/privatefile"
 	"github.com/google/uuid"
 )
 
@@ -159,25 +160,7 @@ func (s Store) write(name string, v any) error {
 	} else {
 		b = append(b, '\n')
 	}
-	f, err := os.CreateTemp(s.Dir, ".write-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	if err := f.Chmod(0600); err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return renameFile(f.Name(), filepath.Join(s.Dir, name))
+	return privatefile.Write(filepath.Join(s.Dir, name), b, renameFile)
 }
 func (s Store) save(d *Database) error { return s.write("accounts.enc", d) }
 func (s Store) withLock(ctx context.Context, fn func() error) error {
@@ -187,34 +170,7 @@ func (s Store) withLock(ctx context.Context, fn func() error) error {
 	if err := s.secure(); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(s.Dir, "session.lock"), os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if err := f.Chmod(0600); err != nil {
-		return err
-	}
-	for {
-		acquired, err := tryLock(f)
-		if err != nil {
-			return err
-		}
-		if acquired {
-			defer unlock(f)
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			return fn()
-		}
-		timer := time.NewTimer(25 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
+	return privatefile.WithLock(ctx, filepath.Join(s.Dir, "session.lock"), fn)
 }
 func (s Store) Host(ctx context.Context) (string, error) {
 	var id string
