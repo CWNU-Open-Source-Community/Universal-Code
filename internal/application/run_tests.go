@@ -32,17 +32,30 @@ func (s *CommandRuntimeService) prepareProjectTest(ctx context.Context, a comman
 	if err != nil {
 		return toolgateway.CommandRuntimeInput{}, err
 	}
+	if i.EffectiveAction() == toolgateway.CommandRuntimeActionWait {
+		job, err := s.authorizeReadableJob(ctx, i.JobID, b)
+		if err != nil {
+			return toolgateway.CommandRuntimeInput{}, err
+		}
+		if _, err = s.projectTestJobSource(ctx, job, b.actor.ID); err != nil {
+			return toolgateway.CommandRuntimeInput{}, err
+		}
+		return i.WaitInput(), nil
+	}
 	spec, err := PrepareProjectCommandForAdapter(b.run, "test", i.Target, s.adapter, b.rootPath)
 	if err != nil {
 		return toolgateway.CommandRuntimeInput{}, err
 	}
-	// The preset determines all effects. Model input only narrows its timeout.
+	// The preset determines all effects; input selects only a bounded lifetime.
 	spec.TimeoutMilliseconds = i.TimeoutMilliseconds
 	spec.Output.InlineBytes = runner.MinCommandRuntimeInlineBytes
 	maxBytes := toolgateway.MaxCommandRuntimePageBytes
-	return toolgateway.CommandRuntimeInput{Version: toolgateway.CommandRuntimeToolProtocolVersion,
-		Action: toolgateway.CommandRuntimeActionRun, Commands: []runner.CommandRuntimeSpec{spec},
-		FailurePolicy: toolgateway.CommandRuntimeFailFast, MaxBytes: &maxBytes}, nil
+	input := toolgateway.CommandRuntimeInput{Version: toolgateway.CommandRuntimeToolProtocolVersion,
+		Action: i.EffectiveAction(), Commands: []runner.CommandRuntimeSpec{spec}}
+	if input.Action == toolgateway.CommandRuntimeActionRun {
+		input.FailurePolicy, input.MaxBytes = toolgateway.CommandRuntimeFailFast, &maxBytes
+	}
+	return input, nil
 }
 
 func mustProjectTestJSON(i toolgateway.RunTestsInput) json.RawMessage {

@@ -30,6 +30,31 @@ func TestRunTestsRejectsExecutionFieldsAndUnboundedTargets(t *testing.T) {
 	}
 }
 
+func TestRunTestsBackgroundPayloadRetainsLegacyRunAndBoundsWait(t *testing.T) {
+	legacy := json.RawMessage(`{"version":"run-tests.v1","target":".","timeout_milliseconds":25000}`)
+	if _, canonical, err := NormalizeRunTestsPayload(legacy); err != nil || string(canonical) != string(legacy) {
+		t.Fatalf("legacy durable encoding changed: %s %v", canonical, err)
+	}
+	for _, raw := range []string{
+		`{"version":"run-tests.v1","action":"start","target":".","timeout_milliseconds":1800000}`,
+		`{"version":"run-tests.v1","action":"wait","job_id":"original-job","cursor":0,"max_bytes":4096,"wait_milliseconds":5000}`,
+	} {
+		if _, _, err := NormalizeRunTestsPayload(json.RawMessage(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, raw := range []string{
+		`{"version":"run-tests.v1","action":"start","target":".","timeout_milliseconds":1800001}`,
+		`{"version":"run-tests.v1","action":"wait","job_id":"original-job","cursor":0,"max_bytes":4096,"wait_milliseconds":5001}`,
+		`{"version":"run-tests.v1","action":"wait","target":".","job_id":"original-job","cursor":0,"max_bytes":4096,"wait_milliseconds":1}`,
+		`{"version":"run-tests.v1","action":"wait","job_id":"original-job","max_bytes":4096,"wait_milliseconds":1}`,
+	} {
+		if _, _, err := NormalizeRunTestsPayload(json.RawMessage(raw)); err == nil {
+			t.Fatalf("invalid background test admitted: %s", raw)
+		}
+	}
+}
+
 type projectTestBudgetStore struct {
 	*memoryStore
 	request toolbudget.ChargeRequest

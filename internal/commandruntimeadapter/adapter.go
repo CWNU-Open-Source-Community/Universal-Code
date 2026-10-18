@@ -187,10 +187,26 @@ type Authority struct {
 	CommandFingerprints []string `json:"command_fingerprints,omitempty"`
 	JobFingerprint      string   `json:"job_fingerprint,omitempty"`
 	// Host-compiled run_tests command. Recompiled and compared before dispatch.
-	ProjectTestCommand json.RawMessage `json:"project_test_command,omitempty"`
+	ProjectTestCommand json.RawMessage    `json:"project_test_command,omitempty"`
+	ProjectTestSource  *ProjectTestSource `json:"project_test_source,omitempty"`
 	// Worker pins the real child actor. The Run root remains the authority
 	// anchor; child execution never adopts its Session or model attempt.
 	Worker *WorkerAuthority `json:"worker,omitempty"`
+}
+
+// ProjectTestSource is host-observed content identity, retained in the existing
+// immutable tool authority JSON. It grants no process or file access.
+type ProjectTestSource struct {
+	WorkspaceVersion string `json:"workspace_version"`
+	TestFingerprint  string `json:"test_fingerprint"`
+	Target           string `json:"target"`
+}
+
+func (p ProjectTestSource) Validate() error {
+	if !validDigest(p.WorkspaceVersion) || !validDigest(p.TestFingerprint) || p.Target == "" || strings.TrimSpace(p.Target) != p.Target {
+		return errors.New("project test source identity is invalid")
+	}
+	return nil
 }
 
 type WorkerAuthority struct {
@@ -218,6 +234,9 @@ func (a Authority) Validate() error {
 		return errors.New("command runtime adapter authority is invalid")
 	}
 	if a.ProtocolVersion == OperationAuthorityVersion {
+		if a.ProjectTestSource != nil && (a.ProjectTestSource.Validate() != nil || len(a.ProjectTestCommand) == 0) {
+			return errors.New("project test source requires a prepared test")
+		}
 		if a.Worker != nil && a.Worker.Validate() != nil {
 			return errors.New("command runtime worker authority is invalid")
 		}
@@ -236,7 +255,7 @@ func (a Authority) Validate() error {
 		return nil
 	}
 	if a.PermissionMode != "" || a.PermissionRevision != 0 || a.RunAuthorizationFence != 0 ||
-		a.ScopeFingerprint != "" || len(a.CommandFingerprints) != 0 || a.JobFingerprint != "" || len(a.ProjectTestCommand) != 0 || a.Worker != nil {
+		a.ScopeFingerprint != "" || len(a.CommandFingerprints) != 0 || a.JobFingerprint != "" || len(a.ProjectTestCommand) != 0 || a.ProjectTestSource != nil || a.Worker != nil {
 		return errors.New("legacy command runtime authority contains operation fields")
 	}
 	if a.PermissionSnapshotID != "" || a.PermissionGeneration != 0 ||

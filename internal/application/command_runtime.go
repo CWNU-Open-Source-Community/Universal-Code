@@ -315,7 +315,10 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		}
 		boundaryErr := s.completeCommandRuntimeBoundary(ctx, boundaryRequest,
 			boundaryCause)
-		return value, errors.Join(runErr, boundaryErr)
+		if runErr != nil || boundaryErr != nil {
+			return value, errors.Join(runErr, boundaryErr)
+		}
+		return s.attachProjectVerificationResult(ctx, scope, bindings, value)
 	case toolgateway.CommandRuntimeActionStart:
 		if err := s.completeTerminalCommandRuntimeBoundaries(ctx, scope.RunID); err != nil {
 			return result, err
@@ -341,6 +344,9 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		if err != nil {
 			return result, errors.Join(err, s.completeCommandRuntimeBoundary(ctx, boundaryRequest, err))
 		}
+		if scope.ProjectTest {
+			s.projectTestJobs.Store(jobID, runner.CommandRuntimeSpecFingerprint(resolved))
+		}
 		job, replayed, err := s.manager.Start(ctx, start)
 		if err != nil {
 			operationErr := commandRuntimeError(err)
@@ -357,7 +363,7 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 				return result, boundaryErr
 			}
 		}
-		return result, nil
+		return s.attachProjectVerificationResult(ctx, scope, bindings, result)
 	case toolgateway.CommandRuntimeActionList:
 		jobs, err := s.manager.List(ctx, runner.CommandRuntimeListFilter{
 			RunID: scope.RunID, Limit: toolgateway.MaxCommandRuntimeResultJobs})
@@ -374,11 +380,23 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		if err != nil {
 			return result, err
 		}
+		cursor, pageBytes := *input.Cursor, *input.MaxBytes
+		if scope.ProjectTest && input.Action == toolgateway.CommandRuntimeActionWait {
+			// Tests wait for completion within this observation's existing time
+			// bound. Fetch the caller's bounded output page immediately after it.
+			cursor, pageBytes = math.MaxUint64, runner.MinCommandRuntimeOutputRead
+		}
 		job, page, err := s.manager.Wait(ctx, input.JobID,
 			time.Duration(*input.WaitMilliseconds)*time.Millisecond,
-			*input.Cursor, *input.MaxBytes)
+			cursor, pageBytes)
 		if err != nil {
 			return result, commandRuntimeError(err)
+		}
+		if scope.ProjectTest && input.Action == toolgateway.CommandRuntimeActionWait {
+			job, page, err = s.manager.Wait(ctx, input.JobID, 0, *input.Cursor, *input.MaxBytes)
+			if err != nil {
+				return result, commandRuntimeError(err)
+			}
 		}
 		result.Jobs = append(result.Jobs, job)
 		result.Pages = append(result.Pages, page)
@@ -392,7 +410,7 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 				return result, err
 			}
 		}
-		return result, nil
+		return s.attachProjectVerificationResult(ctx, scope, bindings, result)
 	case toolgateway.CommandRuntimeActionWriteStdin:
 		if _, err := s.authorizeActiveJob(ctx, input.JobID, bindings); err != nil {
 			return result, err
@@ -1147,7 +1165,7 @@ func (s *CommandRuntimeService) commandRuntimeJobBindingsCurrent(ctx context.Con
 		rootSHA256 == job.WorkspaceRootSHA256 &&
 		mode.ID == job.ModeSnapshotID && mode.Revision == job.ModeRevision &&
 		mode.Surface == domain.ExecutionSurfaceCode &&
-		(mode.Phase == domain.ExecutionPhaseDeliver || mode.Phase == domain.ExecutionPhasePlan && s.projectTestJobCurrent(job)) &&
+		(mode.Phase == domain.ExecutionPhaseDeliver || mode.Phase == domain.ExecutionPhasePlan && s.projectTestJobCurrent(ctx, job)) &&
 		profile.ID == job.ProfileSnapshotID && profile.Revision == job.ProfileRevision &&
 		profile.Profile == expectedProfile &&
 		profile.NetworkScope == domain.ExecutionNetworkDisabled &&
@@ -1334,7 +1352,19 @@ func commandRuntimeError(err error) error {
 var _ toolgateway.CommandRuntimeExecutor = (*CommandRuntimeService)(nil)
 var _ toolgateway.CommandRuntimeAdvertiser = (*CommandRuntimeService)(nil)
 
-func (s *CommandRuntimeService) projectTestJobCurrent(job runner.CommandRuntimeJob) bool {
+func (s *CommandRuntimeService) projectTestJobCurrent(ctx context.Context, job runner.CommandRuntimeJob) bool {
 	fingerprint, ok := s.projectTestJobs.Load(job.ID)
-	return ok && fingerprint == job.SpecFingerprint
+	if ok && fingerprint == job.SpecFingerprint {
+		return true
+	}
+	st, ok := s.store.(commandJobActorStore)
+	if !ok {
+		return false
+	}
+	actor, err := st.GetCommandRuntimeJobAttribution(ctx, job.ID)
+	if err != nil {
+		return false
+	}
+	_, err = s.projectTestJobSource(ctx, job, actor.AgentID)
+	return err == nil
 }

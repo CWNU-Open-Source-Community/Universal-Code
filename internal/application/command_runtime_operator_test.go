@@ -700,12 +700,23 @@ func TestOperatorFixedCommandUsesSharedJobLedger(t *testing.T) {
 			t.Fatal("fixed handoff lost client cancellation", err)
 		}
 		jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.run.ID, Limit: 10})
-		if err != nil || len(jobs) != 1 || jobs[0].State != runner.CommandRuntimeJobCancelled || !jobs[0].TreeReaped {
+		if err != nil || len(jobs) != 1 || !jobs[0].TreeReaped {
 			t.Fatal("fixed handoff did not reap exactly one Job", jobs, err)
 		}
+		// go version can finish before foreground cancellation reaches Stop.
+		// Preserve that successful receipt; cancellation must still reap a live Job.
+		switch job := jobs[0]; job.State {
+		case runner.CommandRuntimeJobCancelled:
+		case runner.CommandRuntimeJobCompleted:
+			if job.ExitCode == nil || *job.ExitCode != 0 || !strings.HasPrefix(job.Stdout, "go version ") {
+				t.Fatal("fixed handoff lost successful completion", job)
+			}
+		default:
+			t.Fatal("fixed handoff ended in an unexpected state", job)
+		}
 		replay, found, err := ReadOperatorCommand(t.Context(), f.st, request)
-		if err != nil || !found || !replay.Replayed || replay.Job.ID != jobs[0].ID {
-			t.Fatal("cancelled fixed command resent", replay, found, err)
+		if err != nil || !found || !replay.Replayed || replay.Job.ID != jobs[0].ID || replay.Job.State != jobs[0].State {
+			t.Fatal("fixed command handoff replay changed", replay, found, err)
 		}
 	})
 

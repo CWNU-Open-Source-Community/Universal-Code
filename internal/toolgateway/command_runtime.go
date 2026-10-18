@@ -277,14 +277,15 @@ type CommandRuntimeArtifactOutput struct {
 }
 
 type CommandRuntimeExecutionResult struct {
-	Backend           string
-	Adapter           commandruntimeadapter.Identity
-	Action            string
-	Jobs              []runner.CommandRuntimeJobSnapshot
-	Pages             []runner.CommandRuntimeOutputPage
-	Artifacts         []CommandRuntimeArtifactOutput
-	Replayed          bool
-	IncompleteReasons []string
+	VerificationReceipt *ProjectVerificationReceipt `json:"verification_receipt,omitempty"`
+	Backend             string
+	Adapter             commandruntimeadapter.Identity
+	Action              string
+	Jobs                []runner.CommandRuntimeJobSnapshot
+	Pages               []runner.CommandRuntimeOutputPage
+	Artifacts           []CommandRuntimeArtifactOutput
+	Replayed            bool
+	IncompleteReasons   []string
 }
 
 func (r CommandRuntimeExecutionResult) Validate() error {
@@ -663,14 +664,15 @@ func (g *Gateway) invokePreparedCommandRuntime(ctx context.Context, call ToolCal
 	}
 	completed := time.Now().UTC()
 	projection := struct {
-		Version           string                             `json:"version"`
-		Action            string                             `json:"action"`
-		Adapter           commandruntimeadapter.Identity     `json:"adapter"`
-		Jobs              []runner.CommandRuntimeJobSnapshot `json:"jobs"`
-		Pages             []runner.CommandRuntimeOutputPage  `json:"pages,omitempty"`
-		CandidateURLs     []commandRuntimeURLCandidate       `json:"candidate_urls,omitempty"`
-		IncompleteReasons []string                           `json:"incomplete_reasons,omitempty"`
-	}{Version: runner.CommandRuntimeResultVersion, Action: result.Action,
+		VerificationReceipt *ProjectVerificationReceipt        `json:"verification_receipt,omitempty"`
+		Version             string                             `json:"version"`
+		Action              string                             `json:"action"`
+		Adapter             commandruntimeadapter.Identity     `json:"adapter"`
+		Jobs                []runner.CommandRuntimeJobSnapshot `json:"jobs"`
+		Pages               []runner.CommandRuntimeOutputPage  `json:"pages,omitempty"`
+		CandidateURLs       []commandRuntimeURLCandidate       `json:"candidate_urls,omitempty"`
+		IncompleteReasons   []string                           `json:"incomplete_reasons,omitempty"`
+	}{VerificationReceipt: result.VerificationReceipt, Version: runner.CommandRuntimeResultVersion, Action: result.Action,
 		Adapter: result.Adapter, Jobs: result.Jobs, Pages: result.Pages,
 		CandidateURLs:     commandRuntimeCandidateURLs(result),
 		IncompleteReasons: result.IncompleteReasons}
