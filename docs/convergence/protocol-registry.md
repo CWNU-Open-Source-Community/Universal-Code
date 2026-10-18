@@ -17,7 +17,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
 | [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
-| [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 115 | true |
+| [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 117 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
@@ -550,7 +550,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `provider-private-replay-envelope-reader` (`v1, v2, v3, v4`, active) at `internal/llm/provider_replay.go`
   - `provider-private-replay-kimi-v4-history-reader` (`v4`, active) at `internal/store/supervisor_assistant_replay.go`
 
-<details><summary>115 active identifiers</summary>
+<details><summary>117 active identifiers</summary>
 
 - `byte_identical.v1`
 - `data_store_scope.v1`
@@ -588,6 +588,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `rss-atom-public.v1`
 - `sanitized_host_environment.v1`
 - `scheduled-job-worker.v1`
+- `scheduled_execution_result.v1`
+- `scheduled_execution_workspace.v1`
 - `scheduled_job_create_observation_consent.v1`
 - `scheduled_job_create_request.v1`
 - `scheduled_job_observation.v1`
