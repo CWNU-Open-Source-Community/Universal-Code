@@ -132,6 +132,9 @@ func (e *builtinSkillReader) contextItems(ctx context.Context, runID string, mod
 		}
 		pin := pins[name]
 		item, err := e.registry.ReadForModel(pin.Name, pin.Version, pin.ContentSHA256, skillExecution(mode))
+		if err == nil && skillReadExecution(e.store, mode).Role == domain.AgentRoleSpecialist {
+			item, err = e.registry.ReadForModel(pin.Name, pin.Version, pin.ContentSHA256, skillReadExecution(e.store, mode))
+		}
 		if err != nil {
 			if candidate != nil && candidate.Name == name {
 				return nil, nil, apperror.Wrap(apperror.CodeFailedPrecondition, "embedded Skill cannot be read", err)
@@ -150,6 +153,9 @@ func (e *builtinSkillReader) contextItems(ctx context.Context, runID string, mod
 }
 
 func (e *builtinSkillReader) validateScope(ctx context.Context, call toolgateway.ToolCall) (domain.RunModeSnapshot, error) {
+	if source, worker := e.store.(*workerSkillReadSource); worker {
+		return source.validateScope(ctx, call)
+	}
 	if err := ctx.Err(); err != nil {
 		return domain.RunModeSnapshot{}, err
 	}
@@ -171,6 +177,17 @@ func (e *builtinSkillReader) validateScope(ctx context.Context, call toolgateway
 }
 
 func (e *builtinSkillReader) ReadBuiltinSkill(ctx context.Context, call toolgateway.ToolCall) (json.RawMessage, error) {
+	if call.RequestedBy == "specialist_runner" {
+		source, err := newWorkerSkillReadSource(e.store, domain.AgentAttemptRef{RunID: call.RunID, AgentID: call.AgentID, AttemptID: call.AgentAttemptID})
+		if err != nil {
+			return nil, err
+		}
+		return (&builtinSkillReader{source, e.registry}).readBuiltinSkill(ctx, call)
+	}
+	return e.readBuiltinSkill(ctx, call)
+}
+
+func (e *builtinSkillReader) readBuiltinSkill(ctx context.Context, call toolgateway.ToolCall) (json.RawMessage, error) {
 	pin, _, err := toolgateway.NormalizeSkillReadPayload(call.Payload)
 	if err != nil {
 		return nil, err

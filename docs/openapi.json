@@ -74292,6 +74292,14 @@
       "WorkerProfile": {
         "additionalProperties": false,
         "properties": {
+          "history_scope": {
+            "enum": [
+              "",
+              "delegated",
+              "parent_snapshot"
+            ],
+            "type": "string"
+          },
           "tools": {
             "anyOf": [
               {

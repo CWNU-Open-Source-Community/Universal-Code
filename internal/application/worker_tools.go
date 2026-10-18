@@ -185,7 +185,7 @@ func workerGatewayCall(c domain.SpecialistToolCall, run domain.Run, mission doma
 	}
 	raw := json.RawMessage(c.AuthorityJSON)
 	switch {
-	case toolgateway.IsAgentCodeTool(call.Name):
+	case toolgateway.IsAgentCodeTool(call.Name) || toolgateway.IsCodeIntelTool(call.Name):
 		a, err := toolgateway.DecodeAgentCodeCallAuthority(raw)
 		if err != nil {
 			return call, err
@@ -216,6 +216,17 @@ func workerGatewayCall(c domain.SpecialistToolCall, run domain.Run, mission doma
 		call.AgentBrowserAuthority, call.CapabilityGeneration = raw, a.Generation
 		call.PermissionMode, call.PermissionRevision = a.PermissionMode, a.PermissionRevision
 		call.PermissionSnapshotID, call.PermissionGeneration, call.RunAuthorizationFence = a.PermissionSnapshotID, a.PermissionActivation, a.RunAuthorizationFence
+	case call.Name == toolgateway.SkillReadTool:
+		if err := validateWorkerSkillAuthority(call, raw); err != nil {
+			return call, err
+		}
+	case toolgateway.IsHistoryRecallTool(call.Name):
+		a, err := toolgateway.DecodeWorkerHistoryAuthority(raw)
+		if err != nil {
+			return call, err
+		}
+		call.PermissionMode, call.PermissionRevision = a.PermissionMode, a.PermissionRevision
+		call.PermissionSnapshotID, call.PermissionGeneration, call.PermissionRuntimeEpoch, call.RunAuthorizationFence = a.PermissionSnapshotID, a.PermissionGeneration, a.PermissionRuntimeEpoch, a.RunAuthorizationFence
 	default:
 		return call, errors.New("worker tool runtime is unavailable")
 	}

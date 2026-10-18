@@ -51,6 +51,22 @@ it("defaults to inherited worker tools and preserves a read-only choice", async 
   expect(workflowExample().steps[1].then?.[0]).toMatchObject({ kind: "repeat", max_iterations: 3 });
 });
 
+it("requires an explicit choice to include parent history", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ items: [] })));
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <WorkflowPanel client={new APIClient("read", "/api/v1", "control")} runID="run-1" runStatus="running" />
+  </QueryClientProvider>);
+  await user.click(screen.getByText("Create workflow"));
+  expect(screen.getByLabelText("Include current parent history")).not.toBeChecked();
+  expect(workerWorkflow("Read", "Inspect", true, "").steps[0].task?.worker?.history_scope).toBeUndefined();
+  await user.click(screen.getByLabelText("Include current parent history"));
+  await user.click(screen.getByRole("button", { name: "Edit task and budgets in JSON" }));
+  const spec = JSON.parse((screen.getByLabelText("Workflow JSON (copyable)") as HTMLTextAreaElement).value);
+  expect(spec.steps[0].task.worker.history_scope).toBe("parent_snapshot");
+  expect(workerWorkflow("Read", "Inspect", false, "", true).steps[0].task?.worker).toBeUndefined();
+});
+
 it("starts once with explicit consent and observes backend progress without advancing turns", async () => {
   let current: ReturnType<typeof execution> | undefined;
   const spec = workerWorkflow("Review", "Inspect the change", true, "");

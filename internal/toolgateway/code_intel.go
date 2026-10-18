@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/tools"
@@ -326,10 +327,14 @@ func (g *Gateway) invokeCodeIntel(ctx context.Context, call ToolCall) (Outcome, 
 	if !validAgentCodeDigest(call.RootFingerprint, false) {
 		return Outcome{}, errors.New("code-intel tool is missing its Go-issued root fingerprint")
 	}
+	rootAgentID, catalogueRole := call.AgentID, call.Role
+	if call.RequestedBy == "specialist_runner" {
+		rootAgentID, catalogueRole = call.RootAgentID, domain.AgentRoleRoot
+	}
 	if available, reason := CodeIntelScopeEligibility(AgentCodeCapabilityContext{
-		RunID: call.RunID, MissionID: call.MissionID, RootAgentID: call.AgentID,
+		RunID: call.RunID, MissionID: call.MissionID, RootAgentID: rootAgentID,
 		WorkspaceID: call.WorkspaceID, RootFingerprint: call.RootFingerprint,
-		Surface: call.Surface, Phase: call.Phase, Role: call.Role, Profile: call.Profile,
+		Surface: call.Surface, Phase: call.Phase, Role: catalogueRole, Profile: call.Profile,
 		PermissionMode: call.PermissionMode, ModeRevision: call.ModeRevision,
 		PermissionSnapshotID: call.PermissionSnapshotID, PermissionGeneration: call.PermissionGeneration,
 		PermissionRuntimeEpoch: call.PermissionRuntimeEpoch, RunAuthorizationFence: call.RunAuthorizationFence,
@@ -352,17 +357,26 @@ func (g *Gateway) invokeCodeIntel(ctx context.Context, call ToolCall) (Outcome, 
 	if err != nil {
 		return Outcome{}, err
 	}
-	scope := AgentCodeExecutionScope{InvocationID: call.InvocationID,
+	scope := AgentCodeExecutionScope{InvocationID: call.InvocationID, SupervisorToolCallID: call.SupervisorToolCallID,
 		OperationKey: call.OperationKey, RunID: call.RunID, MissionID: call.MissionID,
-		RootAgentID: call.AgentID, SessionID: call.SessionID, WorkspaceID: workspaceID,
+		RootAgentID: rootAgentID, SessionID: call.SessionID, WorkspaceID: workspaceID,
 		SourceWorkspaceID: call.WorkspaceID,
 		WorkspaceRoot:     root, RootFingerprint: call.RootFingerprint,
 		Surface: call.Surface, Phase: call.Phase, Role: call.Role, Profile: call.Profile,
 		PermissionMode: call.PermissionMode, ModeRevision: call.ModeRevision,
-		PermissionRevision:   call.PermissionRevision,
-		CapabilityGeneration: call.CapabilityGeneration, LeaseID: call.LeaseID,
+		PermissionSnapshotID:   call.PermissionSnapshotID,
+		PermissionGeneration:   call.PermissionGeneration,
+		PermissionRuntimeEpoch: call.PermissionRuntimeEpoch,
+		RunAuthorizationFence:  call.RunAuthorizationFence,
+		PermissionRevision:     call.PermissionRevision,
+		CapabilityGeneration:   call.CapabilityGeneration, LeaseID: call.LeaseID,
 		LeaseGeneration: call.LeaseGeneration, RequestedBy: call.RequestedBy,
 		PolicyDecision: decision}
+	if call.RequestedBy == "specialist_runner" {
+		scope.AgentID = call.AgentID
+		scope.AgentAttemptID = call.AgentAttemptID
+		scope.SpecialistToolCallID = call.SpecialistToolCallID
+	}
 	if err := scope.Validate(); err != nil {
 		return Outcome{}, err
 	}

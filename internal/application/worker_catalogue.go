@@ -72,6 +72,31 @@ func (s *AgentRunner) workerToolCatalogue(ctx context.Context, ref domain.AgentA
 	for _, d := range code.VisibleDefinitions() {
 		add(d, authority)
 	}
+	semantic, err := s.workerCodeIntelCapabilities(ctx, ref, turn)
+	if err != nil {
+		return c, err
+	}
+	for _, d := range semantic.VisibleDefinitions() {
+		add(d, authority)
+	}
+	if w.Child.Worker.AllowsTool(string(toolgateway.SkillReadTool)) {
+		entry, available, err := s.workerSkillToolEntry(ctx, ref, turn)
+		if err != nil {
+			return c, err
+		}
+		if available {
+			add(entry.definition, entry.authority)
+		}
+	}
+	if w.Child.Worker.AllowsTool(string(toolgateway.HistorySearchTool)) || w.Child.Worker.AllowsTool(string(toolgateway.HistoryReadTool)) {
+		historyAuthority, err := s.workerHistoryToolAuthority(ctx, ref)
+		if err != nil {
+			return c, err
+		}
+		for _, definition := range toolgateway.WorkerHistoryRecallToolDefinitions() {
+			add(definition, historyAuthority)
+		}
+	}
 	command, err := s.supervisorCommandRuntimeTools(ctx, ref.RunID, permission.Mode)
 	if err != nil {
 		return c, err
@@ -116,7 +141,7 @@ func (s *AgentRunner) bindWorkerToolAuthority(ctx context.Context, call domain.S
 		return nil, errors.New("worker tool is outside the currently available delegated catalogue")
 	}
 	name, payload := toolgateway.ToolName(call.Name), json.RawMessage(call.PayloadJSON)
-	if toolgateway.IsAgentCodeTool(name) {
+	if toolgateway.IsAgentCodeTool(name) || toolgateway.IsCodeIntelTool(name) {
 		e, err := s.workerCodeExecutor()
 		if err != nil {
 			return nil, err

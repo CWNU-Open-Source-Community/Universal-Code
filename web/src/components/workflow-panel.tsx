@@ -9,14 +9,15 @@ import "./workflow-panel.css";
 const operationKey = () => `workflow-${crypto.randomUUID()}`;
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
 
-export function workerWorkflow(name: string, goal: string, worker: boolean, tools: string): WorkflowSpec {
+export function workerWorkflow(name: string, goal: string, worker: boolean, tools: string, parentHistory = false): WorkflowSpec {
   return {
     version: "workflow.v1", name,
     limits: { max_steps: 32, max_jobs: 8, max_tokens: 32000, max_turns: 16, timeout_millis: 1800000 },
     steps: [{ id: "work", kind: "worker", inputs: { request: { step: "$input" } }, task: {
       title: name, goal, skills: ["model.chat"], input_refs: [], dependency_ordinals: [], surface_hint: "core",
       turn_limit: 4, token_limit: 8000, timeout_millis: 600000, expected_artifacts: [], tool_call_limit: 16,
-      ...(worker ? { worker: { tools: tools.trim() ? tools.split(",").map((item) => item.trim()).filter(Boolean) : null } }
+      ...(worker ? { worker: { tools: tools.trim() ? tools.split(",").map((item) => item.trim()).filter(Boolean) : null,
+        ...(parentHistory ? { history_scope: "parent_snapshot" } : {}) } }
         : { allowed_read_paths: ["."] }),
     } }],
   };
@@ -43,6 +44,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
   const [goal, setGoal] = useState("");
   const [worker, setWorker] = useState(true);
   const [tools, setTools] = useState("");
+  const [parentHistory, setParentHistory] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [source, setSource] = useState(() => pretty(workflowExample()));
   const [selected, setSelected] = useState("");
@@ -65,7 +67,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
     cache.setQueryData<WorkflowExecution[]>(["run", runID, "workflows"], (old) => [value, ...(old ?? []).filter((item) => item.id !== value.id)]);
   }
   const save = useMutation({
-    mutationFn: () => client.workflows.save(advanced ? JSON.parse(source) as WorkflowSpec : workerWorkflow(name.trim(), goal.trim(), worker, tools), operationKey()),
+    mutationFn: () => client.workflows.save(advanced ? JSON.parse(source) as WorkflowSpec : workerWorkflow(name.trim(), goal.trim(), worker, tools, parentHistory), operationKey()),
     onSuccess: (saved) => {
       setSelected(saved.id);
       cache.setQueryData(["workflow-definitions"], (old: typeof definitions.data) => [saved, ...(old ?? []).filter((item) => item.id !== saved.id)]);
@@ -103,10 +105,14 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
           <label>{t("名称", "Name")}<input value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label>{t("任务", "Task")}<textarea rows={4} value={goal} onChange={(event) => setGoal(event.target.value)} /></label>
           <label className="workflow-checkbox"><input type="checkbox" checked={worker} onChange={(event) => setWorker(event.target.checked)} />{t("执行型子代理", "Execution worker")}</label>
-          {worker ? <label>{t("委派工具（逗号分隔，可留空）", "Delegated tools (comma-separated, optional)")}<input value={tools} onChange={(event) => setTools(event.target.value)} placeholder={t("留空继承主代理工具", "Leave blank to inherit parent tools")} /></label>
+          {worker ? <>
+            <label>{t("委派工具（逗号分隔，可留空）", "Delegated tools (comma-separated, optional)")}<input value={tools} onChange={(event) => setTools(event.target.value)} placeholder={t("留空继承当前可委派工具", "Leave blank to inherit available worker tools")} /></label>
+            <label className="workflow-checkbox"><input type="checkbox" checked={parentHistory} onChange={(event) => setParentHistory(event.target.checked)} />{t("同时交付当前父会话历史", "Include current parent history")}</label>
+            <p>{parentHistory ? t("创建子代理时固定当时父会话可见的历史范围；后续新增消息不会自动加入。", "Capture the parent's visible history when the child is created; later messages are not added automatically.") : t("默认仅能回读自己的记录和明确交付的任务材料。", "Recall is limited to the child's records and explicitly delivered task material.")}</p>
+          </>
             : <p>{t("只读模式：允许读取当前工作区。", "Read-only mode: allow reading the current workspace.")}</p>}
           <p>{t("单步骤：最多 4 轮、8,000 tokens、10 分钟；完整流程：最多 16 轮、32,000 tokens、30 分钟。JSON 编辑器可调整。", "Per job: 4 turns, 8,000 tokens, 10 minutes. Whole workflow: 16 turns, 32,000 tokens, 30 minutes. Adjust in the JSON editor.")}</p>
-          <button type="button" onClick={() => { setSource(pretty(workerWorkflow(name.trim() || "Workflow", goal.trim() || "Describe the task", worker, tools))); setAdvanced(true); }}>{t("在 JSON 中编辑任务与预算", "Edit task and budgets in JSON")}</button>
+          <button type="button" onClick={() => { setSource(pretty(workerWorkflow(name.trim() || "Workflow", goal.trim() || "Describe the task", worker, tools, parentHistory))); setAdvanced(true); }}>{t("在 JSON 中编辑任务与预算", "Edit task and budgets in JSON")}</button>
         </>}
         <button type="button" className="command-button" disabled={!canControl || save.isPending || (!advanced && (!name.trim() || !goal.trim()))} onClick={() => save.mutate()}>{save.isPending ? t("保存中…", "Saving…") : t("保存定义", "Save definition")}</button>
         {save.error && <ErrorState error={save.error} />}

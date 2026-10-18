@@ -9,7 +9,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 5 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
-| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 86 | true |
+| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 89 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 55 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
@@ -118,7 +118,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `agent-scheduling-delivery-ledgers-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>86 active identifiers</summary>
+<details><summary>89 active identifiers</summary>
 
 - `agent-code-edit.v1`
 - `agent_admission_operation.v1`
@@ -201,6 +201,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `specialist_delegation_review.v1`
 - `specialist_operator_step.v1`
 - `specialist_tool_approval.v1`
+- `worker-batch-authority.v1`
+- `worker-history.v1`
+- `worker_skill_read.v1`
 - `workflow-summary.v1`
 - `workflow.v1`
 - `workflow_control.v1`
