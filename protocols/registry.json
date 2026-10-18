@@ -1791,6 +1791,8 @@
         "thread_activity_summary.v1",
         "thread_application_services.v1",
         "thread_context_compaction.v1",
+        "thread_context_compaction_operations.v1",
+        "thread_context_compaction_recovery.v1",
         "thread_context_pins.v1",
         "thread_creation.v1",
         "thread_execution.v1",
@@ -4383,6 +4385,14 @@
         "internal/store/batch_delivery_test.go"
       ],
       "reason": "Test-only or golden/negative-vector identifier; exact source binding prevents production classification."
+    },
+    {
+      "identifier": "thread-compaction-live.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/thread_context_compaction_live_test.go"
+      ],
+      "reason": "Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance."
     },
     {
       "identifier": "thread_summary_window.v99",

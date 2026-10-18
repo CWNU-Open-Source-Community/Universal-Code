@@ -32,4 +32,15 @@ func TestThreadCompactCLINoopUsesCurrentThreadAndDurableKey(t *testing.T) {
 	if code != 0 || stderr != "" || strings.Contains(history, "/compact") {
 		t.Fatalf("command manufactured a user message: %s %s %d", history, stderr, code)
 	}
+	listed, stderr, code := executeTestCommand(t, "thread", "compactions", id, "--json")
+	var operations domain.ThreadContextCompactionOperations
+	if code != 0 || stderr != "" || json.Unmarshal([]byte(listed), &operations) != nil || len(operations.Operations) != 1 {
+		t.Fatalf("operations=%s %s %d", listed, stderr, code)
+	}
+	op := operations.Operations[0]
+	recovered, stderr, code := executeTestCommand(t, "thread", "compactions", id, "--operation", op.OperationID, "--action", "resume", "--expected-run", op.RunID, "--json")
+	var view domain.ThreadContextCompactionOperationView
+	if code != 0 || stderr != "" || json.Unmarshal([]byte(recovered), &view) != nil || view.Result == nil || !view.Result.Replayed {
+		t.Fatalf("recovery=%s %s %d", recovered, stderr, code)
+	}
 }

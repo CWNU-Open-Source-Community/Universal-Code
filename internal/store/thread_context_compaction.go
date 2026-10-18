@@ -17,13 +17,13 @@ import (
 	"cyberagent-workbench/internal/runmutation"
 )
 
-const threadContextOperationSelect = "SELECT id,operation_id,thread_id,run_id,session_id,source_sha256,input_fingerprint,input_messages_omitted,status,provider,model,response_text,completion_sequence,usage_json,result_json,error_code,error_message,created_at,started_at FROM thread_context_compactions"
+const threadContextOperationSelect = "SELECT id,operation_id,thread_id,run_id,session_id,source_sha256,input_fingerprint,input_messages_omitted,status,provider,model,response_text,completion_sequence,usage_json,result_json,error_code,error_message,created_at,started_at,terminal_at FROM thread_context_compactions"
 
 func scanThreadContextOperation(row scanner) (domain.ThreadContextCompactionOperation, error) {
 	var o domain.ThreadContextCompactionOperation
 	var usage, result, created string
-	var started sql.NullString
-	err := row.Scan(&o.ID, &o.OperationID, &o.ThreadID, &o.RunID, &o.SessionID, &o.SourceSHA256, &o.InputFingerprint, &o.InputMessagesOmitted, &o.Status, &o.Provider, &o.Model, &o.ResponseText, &o.CompletionSequence, &usage, &result, &o.ErrorCode, &o.ErrorMessage, &created, &started)
+	var started, terminal sql.NullString
+	err := row.Scan(&o.ID, &o.OperationID, &o.ThreadID, &o.RunID, &o.SessionID, &o.SourceSHA256, &o.InputFingerprint, &o.InputMessagesOmitted, &o.Status, &o.Provider, &o.Model, &o.ResponseText, &o.CompletionSequence, &usage, &result, &o.ErrorCode, &o.ErrorMessage, &created, &started, &terminal)
 	if err != nil {
 		return o, err
 	}
@@ -35,6 +35,10 @@ func scanThreadContextOperation(row scanner) (domain.ThreadContextCompactionOper
 	if started.Valid {
 		value := parseTS(started.String)
 		o.StartedAt = &value
+	}
+	if terminal.Valid {
+		value := parseTS(terminal.String)
+		o.TerminalAt = &value
 	}
 	return o, nil
 }
@@ -277,7 +281,10 @@ func (s *SQLiteStore) CompleteThreadContextCompactionCall(ctx context.Context, i
 	if err != nil {
 		return o, err
 	}
-	if o.Status != "started" {
+	// Discard fences application of the result, not accounting. A process that
+	// was still awaiting the provider must retain its eventual usage exactly once.
+	discarded := o.Status == "failed" && o.ErrorMessage == domain.ThreadContextCompactionDiscarded && o.StartedAt != nil && o.CompletionSequence == 0
+	if o.Status != "started" && !discarded {
 		return o, apperror.New(apperror.CodeConflict, "context summary call is not exclusively started")
 	}
 	if usage != nil {
@@ -293,6 +300,9 @@ func (s *SQLiteStore) CompleteThreadContextCompactionCall(ctx context.Context, i
 		}
 		normalized := apperror.Normalize(callErr)
 		errorCode, errorMessage = apperror.CodeOf(normalized), redact.String(normalized.Error())
+	}
+	if discarded {
+		state, errorCode, errorMessage, text = "failed", apperror.CodeCancelled, domain.ThreadContextCompactionDiscarded, ""
 	}
 	raw, _ := json.Marshal(usage)
 	run, err := getRunControlRunTx(ctx, tx, o.RunID)
@@ -311,7 +321,7 @@ func (s *SQLiteStore) CompleteThreadContextCompactionCall(ctx context.Context, i
 	if err != nil {
 		return o, err
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE thread_context_compactions SET status=?,response_text=?,usage_json=?,elapsed_millis=?,completion_sequence=?,terminal_at=?,error_code=?,error_message=?,reserved_tokens=CASE WHEN ? THEN 0 ELSE reserved_tokens END WHERE id=? AND status='started'", state, redact.String(text), string(raw), max(0, elapsed.Milliseconds()), recorded.Sequence, ts(time.Now().UTC()), errorCode, errorMessage, errors.Is(callErr, llm.ErrPreparedRequestChanged), id)
+	_, err = tx.ExecContext(ctx, "UPDATE thread_context_compactions SET status=?,response_text=?,usage_json=?,elapsed_millis=?,completion_sequence=?,terminal_at=?,error_code=?,error_message=?,reserved_tokens=CASE WHEN ? THEN 0 ELSE reserved_tokens END WHERE id=?", state, redact.String(text), string(raw), max(0, elapsed.Milliseconds()), recorded.Sequence, ts(time.Now().UTC()), errorCode, errorMessage, errors.Is(callErr, llm.ErrPreparedRequestChanged), id)
 	if err != nil {
 		return o, err
 	}
@@ -324,7 +334,7 @@ func (s *SQLiteStore) CompleteThreadContextCompactionCall(ctx context.Context, i
 
 func (s *SQLiteStore) FailThreadContextCompaction(ctx context.Context, id int64, cause error) error {
 	normalized := apperror.Normalize(cause)
-	_, err := s.db.ExecContext(ctx, "UPDATE thread_context_compactions SET status='failed',error_code=?,error_message=? WHERE id=? AND status IN ('prepared','generated')", apperror.CodeOf(normalized), redact.String(normalized.Error()), id)
+	_, err := s.db.ExecContext(ctx, "UPDATE thread_context_compactions SET status='failed',error_code=?,error_message=?,terminal_at=COALESCE(terminal_at,?) WHERE id=? AND status IN ('prepared','generated')", apperror.CodeOf(normalized), redact.String(normalized.Error()), ts(time.Now().UTC()), id)
 	return err
 }
 
@@ -338,6 +348,10 @@ func (s *SQLiteStore) CommitThreadContextCompaction(ctx context.Context, id int6
 	o, err := scanThreadContextOperation(tx.QueryRowContext(ctx, threadContextOperationSelect+" WHERE id=?", id))
 	if err != nil {
 		return view, err
+	}
+	if o.Status == "completed" || o.Status == "noop" {
+		o.Result.Replayed = true
+		return o.Result, tx.Commit()
 	}
 	snap, err := readThreadContextSnapshot(ctx, tx, o.ThreadID, o.RunID)
 	if err != nil {
@@ -386,7 +400,7 @@ func (s *SQLiteStore) CommitThreadContextCompaction(ctx context.Context, id int6
 	if err != nil {
 		return view, err
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE thread_context_compactions SET status=?,result_json=? WHERE id=?", state, string(encoded), id); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE thread_context_compactions SET status=?,result_json=?,terminal_at=COALESCE(terminal_at,?) WHERE id=?", state, string(encoded), ts(time.Now().UTC()), id); err != nil {
 		return view, err
 	}
 	if err = appendSupervisorEventTx(ctx, tx, snap.Run, "session.context_compacted", "thread_context_compaction", o.OperationID, view); err != nil {
@@ -405,6 +419,11 @@ func contextCompactionMonetaryEvidenceTx(ctx context.Context, tx *sql.Tx, runID 
 		return evidence, apperror.New(apperror.CodeConflict, "context compaction monetary model identity changed")
 	}
 	evidence.Sent = o.StartedAt != nil
+	if o.Status == "failed" && o.StartedAt == nil {
+		evidence.NotSent = true
+		evidence.EventType = events.ModelFailedEvent
+		evidence.PayloadJSON = `{"usage_unknown":false}`
+	}
 	if o.CompletionSequence > 0 {
 		var dispatch string
 		if err = tx.QueryRowContext(ctx, "SELECT COALESCE(json_extract(payload_json,'$.dispatch'),'sent') FROM run_events WHERE run_id=? AND sequence=? AND source='thread_context_compaction' AND subject_id=?", o.RunID, o.CompletionSequence, o.OperationID).Scan(&dispatch); err != nil {

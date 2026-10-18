@@ -28160,6 +28160,213 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/threads/{thread_id}/context/compactions": {
+      "get": {
+        "operationId": "listThreadContextCompactions",
+        "summary": "Inspect recent and pending context compactions",
+        "description": "Returns up to 20 durable operations with pending operations first. Excludes source history, generated text and retry keys. A started operation may still be running; missing usage is not evidence of a free request.",
+        "tags": [
+          "Threads"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadContextCompactionOperations"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
+    "/api/v1/threads/{thread_id}/context/compactions/{operation_id}/recover": {
+      "post": {
+        "operationId": "recoverThreadContextCompaction",
+        "summary": "Resume a saved summary or discard a pending compaction",
+        "description": "Uses the exact operation_id and expected_run_id as durable retry identity. Resume only installs a saved generated candidate after source and idle checks; it never dispatches a model request. Discard fences adoption of the candidate without cancelling the provider request. Unknown sent charges remain reserved, and late responses can only record accounting. Completed operations replay their existing result.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "path",
+            "description": "Durable context compaction identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadContextCompactionOperationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadContextCompactionRecoveryRequest"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/threads/{thread_id}/context/pin-proposals/{proposal_id}/resolve": {
       "post": {
         "operationId": "resolveThreadContextPinProposal",
@@ -67344,6 +67551,134 @@
           "thread_id",
           "services",
           "has_more"
+        ],
+        "type": "object"
+      },
+      "ThreadContextCompactionOperationView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "operation_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ThreadContextCompactionResult"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "session_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_sha256": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "prepared",
+              "started",
+              "generated",
+              "completed",
+              "noop",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "terminal_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "usage_known": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "operation_id",
+          "run_id",
+          "session_id",
+          "status",
+          "source_sha256",
+          "created_at",
+          "usage_known"
+        ],
+        "type": "object"
+      },
+      "ThreadContextCompactionOperations": {
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadContextCompactionOperationView"
+            },
+            "type": "array"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_context_compaction_operations.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "thread_id",
+          "operations"
+        ],
+        "type": "object"
+      },
+      "ThreadContextCompactionRecoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "resume",
+              "discard"
+            ],
+            "type": "string"
+          },
+          "expected_run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_context_compaction_recovery.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "expected_run_id",
+          "action"
         ],
         "type": "object"
       },

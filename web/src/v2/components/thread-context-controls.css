@@ -7,6 +7,18 @@
 .v2-context-pins textarea, .v2-context-compact-control input { box-sizing:border-box; width:100%; padding:10px 12px; border:1px solid var(--v2-border); border-radius:8px; background:var(--prayu-panel-strong); color:inherit; font:inherit; }
 .v2-context-pins textarea { resize:vertical; }
 .v2-context-compact-control { margin-top:20px; padding-top:16px; border-top:1px solid var(--v2-border); }
+.v2-context-compactions { padding-top:8px; }
+.v2-context-compactions-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:12px 0 8px; color:var(--v2-muted); font-size:13px; }
+.v2-context-compaction-list { list-style:none; margin:0; padding:0; }
+.v2-context-compaction-record { min-width:0; padding:12px 0; border-top:1px solid var(--v2-border); overflow-wrap:anywhere; }
+.v2-context-compaction-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; }
+.v2-context-compaction-heading time { color:var(--v2-muted); font-size:12px; }
+.v2-context-compaction-record p { margin:6px 0; }
+.v2-context-compaction-meta { display:flex; flex-wrap:wrap; gap:4px 12px; color:var(--v2-muted); font-size:12px; }
+.v2-context-compaction-meta span { min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.v2-context-compaction-record .v2-context-control-actions { margin-top:10px; }
+.v2-context-compaction-error { white-space:pre-wrap; }
+.v2-context-compact-control :is(input, button, summary):focus-visible { outline:2px solid var(--v2-accent); outline-offset:3px; }
 .v2-context-resolved-reply { padding:10px 0; border-bottom:1px solid var(--v2-border); white-space:pre-wrap; }
 .v2-composer-dock:has(.v2-context-pin-card) { display:flex; flex-direction:column; box-sizing:border-box; max-height:calc(100% - 24px); overflow-y:auto; overscroll-behavior-y:contain; }
 .v2-composer-dock:has(.v2-context-pin-card) > :not(.v2-context-pin-card) { flex-shrink:0; }
