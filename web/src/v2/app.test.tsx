@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,10 +8,19 @@ import { APIRequestError, type APIClient } from "../api/client";
 import type { ThreadView, WorkspaceView } from "../api/types";
 import { useConnectionStore } from "../state/connection";
 import { mcpServer } from "../test/extension-onboarding-fixtures";
-import { LocaleProvider } from "../lib/locale";
+import { LocaleProvider, useLocale } from "../lib/locale";
 import { V2Workbench } from "./app";
 import * as desktopBridge from "../lib/desktop-bridge";
 import { v2FileReferenceKey } from "./components/file-context";
+
+function render(ui: ReactElement) {
+  return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
+}
+
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")} type="button">Switch test language</button>;
+}
 
 vi.mock("./components/conversation", () => ({
   V2Conversation: ({ threadID, view = "conversation", draft, onDraftChange, reviewEntry }: {
@@ -286,7 +296,7 @@ describe("V2Workbench inspector navigation", () => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const files = [{ id: "extension-return-file", path: "README.md", digest: "c".repeat(64), partial: false, redacted: false }];
       queryClient.setQueryData(v2FileReferenceKey(workspace.id, threadID), files);
-      render(<QueryClientProvider client={queryClient}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
+      render(<QueryClientProvider client={queryClient}><V2Workbench client={client} /></QueryClientProvider>);
       const user = userEvent.setup();
       const inputName = threadID ? "任务草稿 fixture" : "开始新对话";
       await user.type(await screen.findByRole("textbox", { name: inputName }), "接入扩展前未发送的需求");
@@ -1207,7 +1217,9 @@ describe("V2Workbench first turn", () => {
       render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <V2Workbench client={client} />
       </QueryClientProvider>);
-      const savedValues = () => Object.values(window.localStorage).map((value: string) => JSON.parse(value).value);
+      const savedValues = () => Object.entries(window.localStorage)
+        .filter(([key]) => key.startsWith("v2_recovery.v1:"))
+        .map(([, value]: [string, string]) => JSON.parse(value).value);
       const user = userEvent.setup();
       await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "持久保存的 A 请求");
       await user.click(screen.getByRole("button", { name: "发送消息" }));
@@ -1281,5 +1293,51 @@ describe("V2Workbench first turn", () => {
     });
 });
 
+it("switches the new conversation and shell language without changing user project names or thread titles", async () => {
+  window.history.replaceState({}, "", "#/new");
+  const project = { ...workspace, name: "我的新对话项目" };
+  const thread = { ...createdThread, title: "新对话：排查连接" };
+  const client = Object.assign(navigationClient(), {
+    getPage: vi.fn(async (path: string) => ({ items: path === "/workspaces" ? [project] : [thread],
+      page: { limit: 100 }, requestID: path })),
+  });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <LocaleSwitch /><V2Workbench client={client} /></QueryClientProvider>);
+  const user = userEvent.setup();
+  await screen.findByRole("region", { name: "项目 我的新对话项目" });
+  const input = screen.getByRole("textbox", { name: "开始新对话" });
+  await user.type(input, "保持这段新对话需求");
+  expect(screen.getByRole("heading", { name: "接下来要做什么？" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "隐藏侧栏" })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Switch test language" }));
+  expect(screen.getByRole("heading", { name: "What would you like to do next?" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "接下来要做什么？" })).not.toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Conversation navigation" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Task budget and project configuration" })).toHaveTextContent("Task configuration");
+  expect(screen.getByRole("button", { name: "Connect project" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Plan mode" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Rule-based search" })).toBeInTheDocument();
+  expect(input).toHaveAttribute("placeholder", "Enter a task or question…");
+  expect(input).toHaveValue("保持这段新对话需求");
+  const group = screen.getByRole("region", { name: "Project 我的新对话项目" });
+  expect(within(group).getByText("我的新对话项目")).toBeInTheDocument();
+  expect(within(group).getByRole("button", { name: "新对话：排查连接" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Archive 新对话：排查连接" })).toBeInTheDocument();
+  expect(window.localStorage.getItem("prayu.locale.v1")).toBe("en-US");
+
+  await user.click(screen.getByRole("button", { name: "Switch test language" }));
+  expect(screen.getByRole("heading", { name: "接下来要做什么？" })).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
+  expect(input).toHaveAttribute("placeholder", "输入任务或问题…");
+  expect(input).toHaveValue("保持这段新对话需求");
+  expect(screen.getByRole("button", { name: "新对话：排查连接" })).toBeInTheDocument();
+  expectNoNavigationWrites(client);
+});
+
 // Retain textarea coverage through the supported plain-text editing mode.
-beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+beforeEach(() => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+});

@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import { useConnectionStore } from "../state/connection";
+import { LocaleProvider } from "../lib/locale";
 import { V2Workbench } from "./app";
 
 const modules = vi.hoisted(() => {
@@ -55,7 +56,7 @@ it("loads each advanced surface on first use while keeping drafts, focus, and la
     createThread: vi.fn(), submitThreadTurn: vi.fn(), executeRun: vi.fn(), transitionThread: vi.fn(),
   } as unknown as APIClient;
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <V2Workbench client={client} />
+    <LocaleProvider><V2Workbench client={client} /></LocaleProvider>
   </QueryClientProvider>);
   const user = userEvent.setup();
   const composer = await screen.findByRole("textbox", { name: "开始新对话" });
@@ -103,4 +104,7 @@ it("loads each advanced surface on first use while keeping drafts, focus, and la
 });
 
 // Retain textarea coverage through the supported plain-text editing mode.
-beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+beforeEach(() => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+});

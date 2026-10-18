@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { useRef, useState } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { MarkdownInput, type MarkdownInputHandle } from "./markdown-input";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../../api/client";
@@ -160,3 +163,8 @@ it("does not let a late submission clear a newer rich-text draft", async () => {
   await act(async () => finish());
   expect(screen.getByRole("textbox").querySelector("strong")).toHaveTextContent("新的草稿");
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}

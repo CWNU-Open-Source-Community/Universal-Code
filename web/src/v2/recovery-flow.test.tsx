@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { APIClient } from "../api/client";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../api/types";
 import { useConnectionStore } from "../state/connection";
+import { LocaleProvider } from "../lib/locale";
 import { V2Workbench } from "./app";
 import type { V2FileReference } from "./components/file-context";
 import type { ThreadRequestObservation } from "./recovery-api";
@@ -66,7 +67,7 @@ function mount(client: APIClient, scope = scopeA, parent?: QueryClient) {
   const queries = parent ?? new QueryClient({ defaultOptions: {
     queries: { retry: false, staleTime: Infinity }, mutations: { retry: false },
   } });
-  const view = render(<QueryClientProvider client={queries}><V2Workbench client={client} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={queries}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
   return { ...view, queries };
 }
 
@@ -289,4 +290,7 @@ it.each([
 });
 
 // Retain textarea coverage through the supported plain-text editing mode.
-beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+beforeEach(() => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+});

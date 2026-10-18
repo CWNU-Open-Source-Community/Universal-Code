@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { ThreadDetailView, ThreadMessageControlView, WorkspaceView } from "../../api/types";
@@ -116,3 +119,8 @@ it("keeps an unknown submission unconfirmed with its original key and draft", as
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}

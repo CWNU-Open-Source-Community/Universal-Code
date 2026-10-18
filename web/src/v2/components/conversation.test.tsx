@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider, useLocale } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { APIRequestError, type APIClient } from "../../api/client";
@@ -750,7 +753,7 @@ describe("V2Conversation", () => {
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     expect(await screen.findByText("正在发送消息")).toBeInTheDocument();
     expect(screen.queryByText("正在工作")).not.toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Conversation statistics" })).toHaveTextContent("2 turns 56 steps");
+    expect(screen.getByRole("group", { name: "对话统计" })).toHaveTextContent("2 轮 56 步");
     expect(screen.queryByText(/停止会取消/u)).not.toBeInTheDocument();
 
     const completed = detail("thread-a").thread;
@@ -1267,3 +1270,44 @@ describe("V2Conversation", () => {
     expect(panel).toHaveAttribute("data-session-id", "sess-created");
   });
 });
+
+it("switches the mounted task navigation and open conversation menu while preserving transcript text", async () => {
+  function LanguageControl() {
+    const { locale, setLocale } = useLocale();
+    return <select aria-label="Test language" value={locale}
+      onChange={(event) => setLocale(event.target.value as "zh-CN" | "en-US")}>
+      <option value="zh-CN">中文</option><option value="en-US">English</option>
+    </select>;
+  }
+  const client = baseClient({ getPage: vi.fn(() => Promise.resolve(page([
+    transcriptItem("user-content", "用户消息和工具输出保持原文", 1),
+  ]))) } as Partial<APIClient>);
+  const ui = renderConversation(client, "thread-a", <LanguageControl />);
+  await screen.findByText("用户消息和工具输出保持原文");
+  const navigation = screen.getByRole("navigation", { name: "任务工作区" });
+  await userEvent.setup().click(screen.getByRole("button", { name: "对话操作" }));
+  expect(screen.getByRole("menuitem", { name: "归档对话" })).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "en-US" } });
+  expect(screen.getByRole("navigation", { name: "Task workspace" })).toBe(navigation);
+  expect(within(navigation).getByRole("button", { name: "Conversation" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: "Workspace files" })).toHaveTextContent("Files");
+  expect(within(navigation).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: "App preview" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: "Review changes" })).toHaveTextContent("Changes and delivery");
+  expect(within(navigation).getByRole("button", { name: "View context" })).toHaveTextContent("Context and recovery");
+  expect(screen.getByRole("menuitem", { name: "Archive conversation" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Open Inspector" })).toBeInTheDocument();
+  expect(screen.getByText("用户消息和工具输出保持原文")).toBeInTheDocument();
+  expect(screen.getByText("Title thread-a")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "zh-CN" } });
+  expect(screen.getByRole("navigation", { name: "任务工作区" })).toBe(navigation);
+  expect(screen.getByRole("menuitem", { name: "归档对话" })).toBeInTheDocument();
+  ui.queryClient.clear();
+});
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}

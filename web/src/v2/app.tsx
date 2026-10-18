@@ -19,6 +19,7 @@ import { registerV2RecoveredTurn, useV2RestoreTurns, useV2ThreadTurn, v2TurnFail
 import { V2WorkspaceStart } from "./components/workspace-start";
 import { useV2Navigation, type V2RunPane } from "./navigation";
 import { readDensity } from "../lib/ui-density";
+import { useLocale } from "../lib/locale";
 import { V2RecoveryProvider, useV2PersistentState, useV2PersistenceWarning, useV2RecoveryStore } from "./recovery-storage";
 import { useV2Drafts } from "./recovery-session";
 import { readV2Route } from "./navigation";
@@ -80,6 +81,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   onOptionsChange: (options: NewThreadOptions) => void;
   moreProjects?: React.ReactNode;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const turn = useV2ThreadTurn(client);
   const recovery = useV2RecoveryStore();
@@ -104,11 +106,11 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
   const { networkMode, allowedTargets, modelRoute } = options;
   const [modelCatalogError, setModelCatalogError] = useState("");
   const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = [], mcpReferences: MCPDraftReference[] = []) => {
-    if (!webAccessValid) throw new Error("请重新选择网页访问方式，草稿已保留。");
-    if (!configurationValid) throw new Error("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。");
-    if (projectSkills?.refs.length && !projectSkills.confirmUntrustedContext) throw new Error("请在任务配置中确认所选技能上下文。草稿已保留。");
+    if (!webAccessValid) throw new Error(t("请重新选择网页访问方式，草稿已保留。", "Choose web access again. Your draft has been kept."));
+    if (!configurationValid) throw new Error(t("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。", "Task configuration needs review. Open task configuration to fix the budget or reload project settings. Your draft has been kept."));
+    if (projectSkills?.refs.length && !projectSkills.confirmUntrustedContext) throw new Error(t("请在任务配置中确认所选技能上下文。草稿已保留。", "Confirm the selected skill context in task configuration. Your draft has been kept."));
     normalizedTaskBudget(budget);
-    if (phase === "plan" && !client.hasPlanDelivery) throw new Error("当前连接未启用计划确认。请检查连接，或选择直接执行。");
+    if (phase === "plan" && !client.hasPlanDelivery) throw new Error(t("当前连接未启用计划确认。请检查连接，或选择直接执行。", "This connection does not support plan confirmation. Check the connection or choose direct execution."));
     const submittedDraft = draft;
     setModelCatalogError("");
     const creationWorkspaceID = workspaceID;
@@ -129,8 +131,8 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
       }
     } catch (error) {
       if (!requestIsCurrent()) return v2ComposerNotSubmitted;
-      setModelCatalogError(`无法检查可用模型，草稿已保留。${error instanceof Error && error.message
-        ? ` ${error.message}` : " 请检查连接后重试。"}`);
+      setModelCatalogError(`${t("无法检查可用模型，草稿已保留。", "Could not check available models. Your draft has been kept.")}${error instanceof Error && error.message
+        ? ` ${error.message}` : t(" 请检查连接后重试。", " Check the connection and try again.")}`);
       return v2ComposerNotSubmitted;
     }
     let goal = content || "文件对话";
@@ -173,7 +175,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
           try { await submitSkillChoice(client, result.thread.last_run_id, projectSkills, operationID); }
           catch (error) {
             void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
-            throw new Error(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。${error instanceof Error ? error.message : "请重试。"}`);
+            throw new Error(`${t(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。`, `Conversation ${result.thread.id} was saved, but skill selection failed and the first message has not been sent.`)}${error instanceof Error ? error.message : t("请重试。", "Please try again.")}`);
           }
         }
         const submission = turn.mutateAsync({ threadID: result.thread.id, workspaceID, content,
@@ -198,18 +200,18 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
     if (!requestIsCurrent()) return v2ComposerNotSubmitted;
   };
   return <section className="v2-new-conversation">
-    <header><Folder aria-hidden="true" size={17} /><strong>新对话</strong>
+    <header><Folder aria-hidden="true" size={17} /><strong>{t("新对话", "New conversation")}</strong>
       <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}</header>
     <div className="v2-new-conversation-body"><div className="v2-new-copy">
       <span className="v2-orb" aria-hidden="true"><i /><i /></span>
-      <h1>接下来要做什么？</h1><p>{workspaceID ? "描述目标，随时查看进展、补充消息或停止。"
-        : "先接入项目。你也可以先写下需求，选择项目后继续。"}</p>
+      <h1>{t("接下来要做什么？", "What would you like to do next?")}</h1><p>{workspaceID ? t("描述目标，随时查看进展、补充消息或停止。", "Describe your goal. Check progress, add messages, or stop at any time.")
+        : t("先接入项目。你也可以先写下需求，选择项目后继续。", "Connect a project to get started. You can write your request first and continue after selecting a project.")}</p>
     </div></div>
     {creationRecovery.notice}
     {modelCatalogError && <div className="v2-notice" role="alert">{modelCatalogError}</div>}
-    {!webAccessValid && <div className="v2-notice" role="alert">保存的网页访问设置需要更新，请在输入框下方重新选择。</div>}
-    {!configurationValid && <div className="v2-notice" role="alert">任务配置需要修正或重新核对，草稿已保留。
-      <button onClick={onOpenTaskConfiguration} type="button">修正任务配置</button></div>}
+    {!webAccessValid && <div className="v2-notice" role="alert">{t("保存的网页访问设置需要更新，请在输入框下方重新选择。", "Saved web access settings need updating. Choose again below the input.")}</div>}
+    {!configurationValid && <div className="v2-notice" role="alert">{t("任务配置需要修正或重新核对，草稿已保留。", "Task configuration needs correction or review. Your draft has been kept.")}
+      <button onClick={onOpenTaskConfiguration} type="button">{t("修正任务配置", "Fix task configuration")}</button></div>}
     <div className="v2-composer-dock">
       {managedDraft && <V2DraftConflict key={workspaceID} client={client} workspaceID={workspaceID} state={managedDraft.state}
         onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
@@ -219,15 +221,15 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
       onManageModels={onManageModels} onPendingModelRouteChange={(route) =>
         onOptionsChange({ ...options, modelRoute: route })}
       pendingModelRoute={modelRoute}
-      newThreadControls={<><button aria-label="任务预算与项目配置" className="v2-composer-chip"
-        onClick={onOpenTaskConfiguration} type="button">任务配置{budget ? " · 自定义" : ""}</button>
+      newThreadControls={<><button aria-label={t("任务预算与项目配置", "Task budget and project configuration")} className="v2-composer-chip"
+        onClick={onOpenTaskConfiguration} type="button">{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</button>
       <V2PhasePicker phase={phase} onChange={onPhaseChange}
         disabled={!client.hasThreadControl} planAvailable={client.hasPlanDelivery} />
       <V2NetworkScopeControl disabled={!client.hasThreadControl}
         mode={networkMode} onChange={(nextMode, nextTargets) => {
           onOptionsChange({ ...options, networkMode: nextMode, allowedTargets: nextTargets });
         }} targets={allowedTargets} /></>}
-      onWorkspaceChange={onWorkspaceChange} placeholder="输入任务或问题…" threadID=""
+      onWorkspaceChange={onWorkspaceChange} placeholder={t("输入任务或问题…", "Enter a task or question…")} threadID=""
       workspaceID={workspaceID} workspaces={workspaces} />
       </div>
   </section>;
@@ -244,6 +246,7 @@ export function V2Workbench({ client }: { client: APIClient }) {
 }
 
 function V2WorkbenchContent({ client }: { client: APIClient }) {
+  const { t } = useLocale();
   useV2RestoreTurns();
   const recovery = useV2RecoveryStore();
   const persistenceWarning = useV2PersistenceWarning();
@@ -473,7 +476,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   return <div className={`v2-shell${sidebarVisible ? " has-sidebar" : " no-sidebar"}`}>
     <V2Titlebar canGoBack={navigation.canGoBack} onBack={surface === "settings" ? returnFromSettings : goBack}
       onToggleSidebar={() => setSidebarVisible((visible) => !visible)} sidebarVisible={sidebarVisible} />
-    {sidebarVisible && <button aria-label="关闭侧栏" className="v2-sidebar-backdrop"
+    {sidebarVisible && <button aria-label={t("关闭侧栏", "Close sidebar")} className="v2-sidebar-backdrop"
       onClick={() => setSidebarVisible(false)} type="button" />}
     <div className="v2-shell-body">
       {sidebarVisible && (surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
@@ -500,9 +503,9 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           onLoadMore={() => void threadsQuery.fetchNextPage()} onRefresh={() => void threadsQuery.refetch()}
           selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />)}
       <div className="v2-product-surface">
-        {route.kind === "invalid" ? <div className="v2-notice" role="alert">任务地址无法识别。
-          <button onClick={startNew} type="button">打开新对话</button></div>
-          : surface === "settings" ? <V2LazySurface resetKey="settings" loadingText="正在加载设置…" errorLabel="设置">
+        {route.kind === "invalid" ? <div className="v2-notice" role="alert">{t("任务地址无法识别。", "The task address is not recognized.")}
+          <button onClick={startNew} type="button">{t("打开新对话", "Open new conversation")}</button></div>
+          : surface === "settings" ? <V2LazySurface resetKey="settings" loadingText={t("正在加载设置…", "Loading settings…")} errorLabel={t("设置", "Settings")}>
           <V2Settings client={client} onOpenInspector={openInspector}
           onSelectSection={setSettingsSection} onOpenThread={openConversation} onOpenTask={(workspaceID) => {
             if (!selectedThreadID && workspaceID) selectWorkspace(workspaceID);
@@ -521,12 +524,12 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           prepareModelForDraft={Boolean(modelSetupToken)} modelSetupToken={modelSetupToken}
           onModelReady={completeModelSetup} /></V2LazySurface> : route.tool
           ? <V2LazySurface resetKey="inspector-tools"
-            loadingText="正在加载检查工具…" errorLabel="检查工具">
+            loadingText={t("正在加载检查工具…", "Loading inspection tools…")} errorLabel={t("检查工具", "Inspection tools")}>
             <V2InspectorTools client={client} tool={route.tool} resourceID={route.resourceID}
             threadID={selectedThreadID} pane={route.pane} onBack={openInspector} onOpenSettings={setSettingsSection}
             onOpenRun={openCreatedRun} /></V2LazySurface>
           : view === "inspector" && !selectedThreadID
-          ? <V2LazySurface resetKey="inspector-home" loadingText="正在加载 Inspector…" errorLabel="Inspector">
+          ? <V2LazySurface resetKey="inspector-home" loadingText={t("正在加载 Inspector…", "Loading Inspector…")} errorLabel="Inspector">
             <V2InspectorHome client={client} onOpenTool={openTool} onOpenSettings={setSettingsSection} /></V2LazySurface>
           : newConversation || !selectedThreadID
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
@@ -586,7 +589,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             }}
             moreProjects={workspacesQuery.hasNextPage && <button className="v2-composer-chip"
               disabled={workspacesQuery.isFetchingNextPage} onClick={() => void workspacesQuery.fetchNextPage()}
-              type="button">加载更多项目</button>}
+              type="button">{t("加载更多项目", "Load more projects")}</button>}
             workspaceID={workspaceID} workspaces={workspaces} />
           : <V2Conversation client={client} onArchive={setArchiveCandidate}
             onOpenWorktree={(workspace) => {
@@ -608,22 +611,22 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     </div>
     {backgroundCreations.length > 0 && <div className="v2-toast" role="status">
       {backgroundCreations.map((thread) => <div key={thread.id}>
-        对话已创建：{thread.title}
-        <button onClick={() => openConversation(thread.id)} type="button">打开已创建的对话</button>
-        <button aria-label={`关闭对话创建提示：${thread.title}`} onClick={() =>
-          setBackgroundCreations((current) => current.filter((item) => item.id !== thread.id))} type="button">关闭</button>
+        {t("对话已创建：", "Conversation created: ")}{thread.title}
+        <button onClick={() => openConversation(thread.id)} type="button">{t("打开已创建的对话", "Open created conversation")}</button>
+        <button aria-label={t(`关闭对话创建提示：${thread.title}`, `Dismiss conversation creation notice: ${thread.title}`)} onClick={() =>
+          setBackgroundCreations((current) => current.filter((item) => item.id !== thread.id))} type="button">{t("关闭", "Close")}</button>
       </div>)}
     </div>}
     {(workspacesQuery.isError || threadsQuery.isError) && <div className="v2-toast" role="alert">
-      项目或对话列表加载失败，已有内容会保留。
-      <button onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">重试加载</button>
+      {t("项目或对话列表加载失败，已有内容会保留。", "Projects or conversations could not be loaded. Existing content has been kept.")}
+      <button onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">{t("重试加载", "Retry loading")}</button>
     </div>}
     {persistenceWarning && <div className="v2-toast" role={recovery ? "alert" : "status"}>{persistenceWarning}</div>}
-    <V2ConfirmDialog busy={archiveMutation.isPending} confirmLabel="归档" description="此对话会从侧栏隐藏，但消息、执行记录和审计证据都会保留。你可以随时从设置中恢复。"
+    <V2ConfirmDialog busy={archiveMutation.isPending} confirmLabel={t("归档", "Archive")} description={t("此对话会从侧栏隐藏，但消息、执行记录和审计证据都会保留。你可以随时从设置中恢复。", "This conversation will be hidden from the sidebar. Messages, execution records, and audit evidence will be kept. You can restore it in Settings at any time.")}
       onCancel={() => setArchiveCandidate(null)} onConfirm={() => archiveCandidate && archiveMutation.mutate(archiveCandidate)}
-      open={Boolean(archiveCandidate)} title="归档这个对话？" />
+      open={Boolean(archiveCandidate)} title={t("归档这个对话？", "Archive this conversation?")} />
     {archiveMutation.isError && <div className="v2-toast" role="alert">{archiveMutation.error instanceof Error
-      ? archiveMutation.error.message : "归档失败"}</div>}
+      ? archiveMutation.error.message : t("归档失败", "Archive failed")}</div>}
   </div>;
 }
 
