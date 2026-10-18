@@ -1,4 +1,4 @@
-name: Fixed PowerShell diagnosis
+name: Fixed PowerShell verification
 
 on:
   workflow_dispatch:
@@ -7,22 +7,21 @@ permissions:
   contents: read
 
 jobs:
-  windows-fixed-powershell-diagnostic:
-    name: Windows fixed PowerShell diagnosis
+  windows-fixed-powershell-verification:
+    name: Windows fixed PowerShell verification
     runs-on: windows-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        id: windows-go
         with:
           go-version-file: go.mod
           check-latest: true
           cache: true
-      - name: Build read-only managed stack sampler
+      - name: Prepare fixed Go executable
         shell: pwsh
-        run: dotnet publish scripts/fixed-stack/FixedStack.csproj -c Release -o "$env:RUNNER_TEMP\fixed-stack"
-      - name: Diagnose original fixed command and script phases
+        run: ./scripts/prepare-windows-fixed-go.ps1 -ExpectedGoVersion '${{ steps.windows-go.outputs.go-version }}'
+      - name: Verify original native isolation, output and argv boundaries
         shell: pwsh
-        run: |
-          $env:TRAVERSE_FIXED_STACK_HELPER = Join-Path $env:RUNNER_TEMP 'fixed-stack\FixedStack.exe'
-          python scripts/diagnose-fixed-powershell.py
+        run: go test -v -count=1 -timeout 3m ./internal/runner -run '^Test(WindowsFixedCommandRuntimeUsesRestrictedNativeProcess|Controlled(Command|PowerShell|GitDiff|StartSpec).*)$'
