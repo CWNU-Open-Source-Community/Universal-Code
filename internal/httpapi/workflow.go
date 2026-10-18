@@ -22,6 +22,7 @@ type WorkflowController interface {
 	AdvanceAtRevision(context.Context, string, int64) (domain.WorkflowExecution, error)
 	Pause(context.Context, string, int64) (domain.WorkflowExecution, error)
 	Resume(context.Context, string, int64) (domain.WorkflowExecution, error)
+	RetryFailed(context.Context, string, int64, string) (domain.WorkflowExecution, error)
 	Rerun(context.Context, string, string, string) (domain.WorkflowExecution, error)
 }
 type WorkflowDefinitionsView struct {
@@ -68,7 +69,7 @@ func matchWorkflowPath(path string) (runID, id, action string, matched bool) {
 		return runID, id, "execution", true
 	}
 	switch parts[4] {
-	case "advance", "pause", "resume", "rerun":
+	case "advance", "pause", "resume", "rerun", "retry_failed":
 		return runID, id, parts[4], true
 	}
 	return "", "", "", false
@@ -148,7 +149,7 @@ func (a *API) serveWorkflow(w http.ResponseWriter, r *http.Request, requestID, r
 					value, err = a.workflowController.Start(r.Context(), application.StartWorkflowRequest{RunID: runID, DefinitionID: body.DefinitionID, Inputs: body.Inputs, OperationKey: key})
 				}
 			}
-		case "advance", "pause", "resume", "rerun":
+		case "advance", "pause", "resume", "rerun", "retry_failed":
 			var body WorkflowControlView
 			if err = decodeStrictRunOperation(raw, &body, "workflow control"); err == nil {
 				if body.Version != "workflow_control.v1" {
@@ -161,6 +162,12 @@ func (a *API) serveWorkflow(w http.ResponseWriter, r *http.Request, requestID, r
 						value, err = a.workflowController.Pause(r.Context(), id, body.Revision)
 					case "resume":
 						value, err = a.workflowController.Resume(r.Context(), id, body.Revision)
+					case "retry_failed":
+						if !body.ConfirmStart {
+							err = apperror.New(apperror.CodeInvalidArgument, "retrying failed workflow items requires confirmation")
+						} else {
+							value, err = a.workflowController.RetryFailed(r.Context(), id, body.Revision, key)
+						}
 					case "rerun":
 						if !body.ConfirmStart {
 							err = apperror.New(apperror.CodeInvalidArgument, "workflow rerun requires confirmation")
@@ -198,5 +205,6 @@ func workflowOperationSpecs() []openAPIOperationSpec {
 	for _, action := range []string{"advance", "pause", "resume", "rerun"} {
 		specs = append(specs, openAPIOperationSpec{Path: "/api/v1/runs/{run_id}/workflows/{execution_id}/" + action, Method: http.MethodPost, OperationID: action + "RunWorkflow", Summary: action + " a saved workflow execution", Description: "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.", Tag: "Control", DataType: reflect.TypeOf(domain.WorkflowExecution{}), RequestType: reflect.TypeOf(WorkflowControlView{}), Control: true, NotFound: true, Parameters: []openAPIParameter{runID, executionID, key}, SuccessStatus: 200})
 	}
+	specs = append(specs, openAPIOperationSpec{Path: "/api/v1/runs/{run_id}/workflows/{execution_id}/retry_failed", Method: http.MethodPost, OperationID: "retryFailedRunWorkflow", Summary: "Retry only failed workflow items", Description: "Explicitly confirmed retry keeps successful items and original inputs, deadlines and cumulative budgets. The observed revision and idempotency key fence the retry. Only the current blocked group's durable failed items receive new attempts; pending approval keeps its original identity.", Tag: "Control", DataType: reflect.TypeOf(domain.WorkflowExecution{}), RequestType: reflect.TypeOf(WorkflowControlView{}), Control: true, NotFound: true, Parameters: []openAPIParameter{runID, executionID, key}, SuccessStatus: 200})
 	return specs
 }

@@ -47,6 +47,22 @@ export function isolatedWorkflow(name: string): WorkflowSpec {
   };
 }
 
+export function dynamicWorkflowExample(): WorkflowSpec {
+  const spec = workerWorkflow("Parallel review", "Inspect the request and identify up to three independent review items. Finish with a data object containing an items array; each item describes the file and question to review. Return an empty array when there is nothing to review.", false, "");
+  spec.steps[0].id = "plan";
+  spec.limits = { max_steps: 32, max_jobs: 8, max_tokens: 48000, max_turns: 24, timeout_millis: 1800000 };
+  spec.steps.push({
+    ...workerWorkflow("Review item", "Review the supplied item within the authorized reading scope. Return findings and evidence in the completion report and data object.", false, "").steps[0],
+    id: "reviews", kind: "map", items: { step: "plan", path: "/data/items" },
+    max_items: 3, parallelism: 2, max_attempts: 2,
+    inputs: { request: { step: "$input" } },
+  }, {
+    ...workerWorkflow("Summarize", "Combine the saved review results. Report findings with their evidence, and explain any incomplete outcomes.", false, "").steps[0],
+    id: "summary", inputs: { reviews: { step: "reviews", path: "/items" }, request: { step: "$input" } },
+  });
+  return spec;
+}
+
 export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient; runID: string; runStatus?: string }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -89,10 +105,11 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
     },
   });
   const action = useMutation({
-    mutationFn: async ({ kind, item }: { kind: "start" | "continue" | "resume" | "rerun"; item?: WorkflowExecution }) => {
+    mutationFn: async ({ kind, item }: { kind: "start" | "continue" | "resume" | "rerun" | "retry"; item?: WorkflowExecution }) => {
       if (kind === "start") return client.workflows.start(runID, selected, JSON.parse(inputs), operationKey());
       if (!item) throw new Error("Select a saved execution");
       if (kind === "rerun") return client.workflows.rerun(runID, item.id, operationKey());
+      if (kind === "retry") return client.workflows.retryFailed(runID, item.id, item.revision, operationKey());
       return client.workflows.resume(runID, item.id, item.revision, operationKey());
     },
     onSuccess: publish,
@@ -106,7 +123,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
 
   return <section className="detail-section workflow-panel" aria-label={t("工作流", "Workflows")}>
     <div className="section-heading"><h2>{t("工作流", "Workflows")}</h2><span>{t("保存、执行与继续", "Save, run and continue")}</span></div>
-    <p>{t("共享工作区子代理与隔离交付可以组合；已保存结果可用于条件分支和有界循环。", "Combine shared workspace workers and isolated deliveries. Saved results can drive conditions and bounded loops.")}</p>
+    <p>{t("共享工作区子代理与隔离交付可以组合；已保存结果可用于分支、循环和并行子任务。", "Combine shared workspace workers and isolated deliveries. Saved results can drive branches, loops and parallel tasks.")}</p>
     <p>{t("应用运行期间会自动推进已启动的流程；刷新页面不会中断执行。", "The app advances started workflows while it is running; refreshing this page does not interrupt execution.")}</p>
     <details>
       <summary>{t("创建工作流", "Create workflow")}</summary>
@@ -115,7 +132,9 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
         {advanced ? <>
           <p>{t("先检查模板的任务与预算，再保存。if 比较已完成步骤的结构化字段；repeat 每次完成后检查条件，最多执行 max_iterations 次。$input 引用启动输入。", "Review the template tasks and budgets before saving. if compares committed result fields; repeat checks its condition after each iteration, up to max_iterations. $input references launch inputs.")}</p>
           <button type="button" className="command-button" onClick={() => setSource(pretty(workflowExample()))}>{t("载入分支与循环模板", "Load branch and loop template")}</button>
+          <button type="button" className="command-button" onClick={() => setSource(pretty(dynamicWorkflowExample()))}>{t("载入动态并行审阅模板", "Load dynamic parallel review template")}</button>
           <button type="button" className="command-button" onClick={() => setSource(pretty(isolatedWorkflow(name.trim() || "Isolated delivery")))}>{t("载入隔离交付模板", "Load isolated delivery template")}</button>
+          <p>{t("并行审阅模板根据读取结果展开最多 3 项任务，同时执行最多 2 项，全部完成后汇总。任务与读取范围在保存时固定，结果只提供输入；总预算跨重试累计。", "The parallel review template expands up to 3 items from read results, runs up to 2 at once, then joins their results. Tasks and reading scope are fixed when saved; results supply inputs. Total budgets accumulate across retries.")}</p>
           <label>{t("工作流 JSON（可复制）", "Workflow JSON (copyable)")}<textarea className="workflow-json" rows={20} value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
         </> : <>
           <label>{t("名称", "Name")}<input value={name} onChange={(event) => setName(event.target.value)} /></label>
@@ -170,6 +189,19 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
         <div className="section-heading"><strong>{definitions.data?.find((saved) => saved.id === item.definition_id)?.spec.name ?? item.definition_id}</strong><StatusBadge status={item.status} /></div>
         <p><code>{item.id}</code> · {item.state.jobs} {t("个已完成步骤", "completed jobs")} · {t("检查点", "checkpoint")} {item.revision}</p>
         {item.reason && <p>{item.reason}</p>}
+        {Object.entries(item.state.maps ?? {}).map(([key, group]) => <details className="workflow-task-group" key={key}>
+          <summary><code>{group.step_id}</code> · {group.items.filter((task) => task.status === "completed").length}/{group.items.length} {t("项完成", "completed")}
+            {group.items.some((task) => task.status === "failed") && <> · {group.items.filter((task) => task.status === "failed").length} {t("项失败", "failed")}</>}</summary>
+          <ol className="workflow-task-list">
+            {group.items.map((task) => <li key={task.index}>
+              <div className="section-heading"><span>{t(`第 ${task.generation} 次尝试`, `Attempt ${task.generation}`)}</span><StatusBadge status={task.status} /></div>
+              {task.reason && <p>{task.reason === "waiting_approval" ? t("等待工具审批", "Waiting for tool approval") : task.reason}</p>}
+              <details><summary>{t("任务输入与记录", "Task input and record")}</summary><code>{task.step_execution_id}</code>
+                {task.value !== undefined && <pre>{pretty(task.value)}</pre>}
+              </details>
+            </li>)}
+          </ol>
+        </details>)}
         {Object.keys(item.state.verifications ?? {}).length > 0 && <section className="workflow-verifications" aria-label={t("上次验证核对", "Last verification checks")}>
           {Object.entries(item.state.verifications ?? {}).map(([target, check]) => <article className="workflow-verification" key={target}>
             <div className="section-heading"><strong>{target === "." ? t("项目根目录", "Project root") : <code>{target}</code>}</strong>
@@ -187,12 +219,14 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
         </section>}
         {item.status === "waiting_approval" && <p role="status">{t("子代理正在等待工具审批。完成任务中的待审批项后，应用会自动继续。", "The child is waiting for tool approval. The app continues automatically after the pending approval is resolved.")}</p>}
         {item.status === "running" && runStatus === "running" && <p role="status">{t("应用正在推进流程；每轮自动保存检查点。", "The app is advancing this workflow; each turn saves a checkpoint.")}</p>}
+        {item.status === "failed" && item.state.blocked?.retryable && <p>{t("可以仅重试失败项，保留成功项和原输入；总预算与截止时间不会重置。", "Retry failed items while preserving successful items and original inputs. Total budgets and the deadline are not reset.")}</p>}
         <div className="workflow-actions">
           {!["completed", "failed", "paused"].includes(item.status) && <>
             {item.status === "waiting" && <button type="button" className="command-button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "continue", item })}>{t("继续运行", "Continue running")}</button>}
             <button type="button" className="command-button" disabled={!canControl || action.isPending || pause.isPending} onClick={() => pause.mutate(item)}>{t("暂停流程", "Pause workflow")}</button>
           </>}
           {item.status === "paused" && <button type="button" className="command-button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "resume", item })}>{t("恢复并运行", "Resume and run")}</button>}
+          {item.status === "failed" && item.state.blocked?.retryable && <button type="button" className="command-button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "retry", item })}>{t("仅重试失败项", "Retry failed items only")}</button>}
           <button type="button" className="command-button" disabled={!canControl || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "rerun", item })}>{t("以原输入重新运行", "Rerun original inputs")}</button>
         </div>
         <details><summary>{t("输入与已保存结果", "Inputs and saved results")}</summary><pre>{pretty({ inputs: item.inputs, outputs: item.state.outputs })}</pre></details>

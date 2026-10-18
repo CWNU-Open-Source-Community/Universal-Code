@@ -65,9 +65,10 @@ inspection without a code-delivery test requirement. A code-delivery step needs
 project directory; leaving it empty uses the project root. **Include current parent history**
 is off by default; enable it only when that task needs the parent's current
 history. Save the definition, then start
-it. The JSON editor exposes the task and workflow budgets and includes a branch
-and loop template. The execution list shows persisted outputs and offers continue,
-pause, resume and rerun. Start, continue and resume submit control requests; the
+it. The JSON editor exposes the task and workflow budgets and includes branch,
+loop and dynamic parallel review templates. The execution list shows persisted
+outputs and per-item outcomes, with controls for continue, pause, resume, failed-item
+retry and rerun. These actions submit control requests; the
 running Desktop or API host advances the saved workflow independently of the page.
 The page observes its persisted state, so refreshing or closing it does not stop
 the next worker turn. The host needs model control enabled; a read-only host does
@@ -92,12 +93,52 @@ conversation, with output treated as untrusted report data.
 ## Workflow contract
 
 `workflow.v1` is an immutable JSON definition stored by content digest. Its step
-kinds are `worker`, `batch`, `if`, and `repeat`. Worker steps contain a `child_task` contract;
+kinds are `worker`, `map`, `batch`, `if`, and `repeat`. Worker steps contain a `child_task` contract;
 their committed output is the `CompletionReport` (`outcome`, `summary`, work-item
 IDs and note IDs). Inputs can refer to `$input` or a completed step using a JSON
 pointer. Conditions compare the referenced JSON value with `equals`. Repeat checks
 its condition after each iteration and fails explicitly if `max_iterations` is
 exhausted without success.
+
+### Result-driven parallel tasks
+
+A completion report may include a `data` JSON object (at most 4 KiB and eight
+levels deep). The existing redaction rules apply before persistence. This is
+report data for subsequent inputs and conditions; it cannot supply tool grants
+or replace native verification evidence.
+
+A `map` step uses an `items` reference to a saved JSON array, for example
+`{"step":"plan","path":"/data/items"}`. Its fixed `task`, `completion` and
+reading scope apply to every item. The host adds `item` and zero-based `index`
+to each child's inputs. `max_items` is required (1–64); `parallelism` defaults
+to one and can be two. The source array and attempt identities are saved before
+any child starts. An empty array completes without a child; a non-array or an
+array over the limit fails without silently dropping entries.
+
+Up to two children run under one existing Run execution lease. A sibling's failure
+does not cancel a valid in-flight completion. Once all items finish, the map
+publishes an ordered `items` array containing each item's index, attempt identity,
+outcome, summary and optional data. A downstream step can read this array to join
+the results. A partial report remains a result for conditions and loops; a failed
+execution is handled through the retry control below. Per-item code delivery uses
+the same native verification requirements as an ordinary worker.
+
+### Retry failed items
+
+After every item in the current group has a durable completion or failure, a
+retryable failure offers **Retry failed items only**. The confirmed request carries
+the observed revision and a stable operation key. Successful items keep their
+original result and child; only failed items get a new attempt. Replaying the same
+request does not create another attempt. Workers awaiting approval keep their
+existing identity and resume through the approval flow.
+
+`max_attempts` on worker and map steps defaults to three and accepts 1–3, including
+the initial attempt. Retries keep the original deadline, inputs and cumulative
+job, token and turn usage. They require current task authority and remaining
+budget. **Rerun original inputs** creates a separate execution from the beginning.
+`state.maps` records each group's frozen inputs and latest item outcomes;
+`state.allocated_jobs` also counts failed attempts, while `state.jobs` counts
+completed jobs.
 
 ### Code-delivery completion
 
@@ -139,12 +180,12 @@ for accepting changes.
 Each definition bounds steps, jobs, tokens, turns and elapsed time. A workflow can
 start at most 64 jobs. The core keeps at most two active direct children and a
 bounded history of 256 children per Run. Finished children retain actual usage
-without reserving their unused allocation forever. A workflow advances one worker
-turn at a time; independent workflows remain subject to the same shared admission
+without reserving their unused allocation forever. A workflow advances one round
+at a time, with up to two map workers; independent workflows remain subject to the same shared admission
 and Run limits. State, revision, outputs and worker identity survive database reopen.
 
-The host uses the existing scheduler and advances one worker turn per tick. Each
-turn holds the existing database claim, preventing another host or a manual API
+The host uses the existing scheduler and advances one worker round per tick. Each
+round holds the existing database claim, preventing another host or a manual API
 request from executing the same workflow concurrently. Paused executions stay
 paused; waiting executions are revisited when their dependencies change. A
 deadline can still expire while paused or waiting, and resume never resets the
@@ -164,8 +205,10 @@ API entry points:
 - `GET /api/v1/workflows/{definition_id}`: inspect a definition.
 - `GET/POST /api/v1/runs/{run_id}/workflows`: list or start executions.
 - `GET /api/v1/runs/{run_id}/workflows/{execution_id}`: read current state.
-- `POST .../{advance|pause|resume|rerun}`: control an execution. Advance, pause
+- `POST .../{advance|pause|resume|retry_failed|rerun}`: control an execution. Advance, pause
   and resume include the observed revision; start and rerun use stable request keys.
+  Failed-item retry includes the observed revision, `confirm_start: true` and an
+  idempotency key, retaining the same execution and cumulative limits.
   Resume also retries an execution waiting for a dependency. The single-turn
   `advance` endpoint remains available for API clients; normal UI execution does
   not use a browser loop to call it.
