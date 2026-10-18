@@ -29,6 +29,8 @@ func CommandRuntimeIdentity(job CommandRuntimeJob) CommandRuntimeJobIdentity {
 
 type CommandRuntimeServiceMetadata struct {
 	Identity               CommandRuntimeJobIdentity
+	WorkspaceMode          CommandRuntimeWorkspaceMode
+	TreeReaped             bool
 	State                  CommandRuntimeJobState
 	ExitCode               *int
 	CreatedAt              time.Time

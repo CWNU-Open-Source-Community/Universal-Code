@@ -47,6 +47,14 @@ type drydockFileBoundaryStore struct {
 	gitMutation bool
 }
 
+func (s *drydockFileBoundaryStore) ListCommandRuntimeJobs(ctx context.Context, filter runner.CommandRuntimeListFilter) ([]runner.CommandRuntimeJob, error) {
+	reader, ok := s.WorkspaceCheckpointStore.(commandRuntimeJobLister)
+	if !ok {
+		return nil, nil
+	}
+	return reader.ListCommandRuntimeJobs(ctx, filter)
+}
+
 func (s *drydockFileBoundaryStore) GetCommandRuntimeJob(ctx context.Context, id string) (runner.CommandRuntimeJob, error) {
 	reader, ok := s.WorkspaceCheckpointStore.(interface {
 		GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error)

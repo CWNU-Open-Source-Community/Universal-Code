@@ -25,6 +25,12 @@ it("reads bounded service metadata with read-only credentials and retains exact 
     expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer read-token" }) }));
 });
 
+it("retains explicit shared-service mode and unconfirmed terminal cleanup", async () => {
+  const row = { ...service, workspace_mode: "shared_service", state: "cancelled", can_stop: false, tree_reaped: false };
+  respond({ version, thread_id: "thread-1", services: [row], has_more: false });
+  expect((await client().listThreadApplicationServices("thread-1")).services[0]).toEqual(row);
+});
+
 it("returns separately bounded original output and multiple unverified addresses", async () => {
   const response = detail();
   response.candidate_urls.push({ ...candidate, url: "http://[::1]:3001/alternate" });
@@ -41,6 +47,9 @@ it.each([
   { ...service, state: "failed", can_stop: true },
   { ...service, source_call_id: undefined },
   { ...service, pid: 123 },
+  { ...service, workspace_mode: "service" },
+  { ...service, workspace_mode: true },
+  { ...service, tree_reaped: "false" },
 ])("rejects unbound or authority-bearing service metadata: %j", async (row) => {
   respond({ version, thread_id: "thread-1", services: [row], has_more: false });
   await expect(client().listThreadApplicationServices("thread-1")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });

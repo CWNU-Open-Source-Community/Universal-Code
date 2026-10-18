@@ -201,7 +201,11 @@ func (s *StandardCodeDockerService) Cancel(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if isNativeCommandDockerRequester(owned.Admission.RequestedBy) {
+	service, err := commandRuntimeDockerServiceForAdmission(ctx, s.store, owned.Admission)
+	if err != nil {
+		return nil, err
+	}
+	if service != nil || isNativeCommandDockerRequester(owned.Admission.RequestedBy) {
 		return nil, apperror.New(apperror.CodePolicyDenied, "cancel native commands through their Command Runtime Job")
 	}
 	cancelled, err := s.docker.Cancel(ctx, DockerSandboxCancelRequest(request))
@@ -363,6 +367,10 @@ func (s *StandardCodeDockerService) execute(ctx context.Context,
 		return result, nil
 	}
 	result.AdmissionID = admission.Admission.ID
+	sharedService, err := commandRuntimeDockerServiceForAdmission(ctx, s.store, *admission.Admission)
+	if err != nil {
+		return result, err
+	}
 	if output := dockerCommandRuntimeOutputFromContext(ctx); output != nil {
 		if runLease == nil {
 			return result, errors.New("Docker Command Runtime output requires its bound execution lease")
@@ -382,7 +390,7 @@ func (s *StandardCodeDockerService) execute(ctx context.Context,
 	}
 	executionContext, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	go s.monitorCurrentAuthority(executionContext, done, scope, cancel)
+	go s.monitorCurrentAuthority(executionContext, done, scope, sharedService, cancel)
 	started, startErr := s.docker.Start(executionContext, DockerSandboxStartRequest{
 		AdmissionID:  admission.Admission.ID,
 		OperationKey: standardCodeStageKey(request.OperationKey, "start"),
@@ -396,6 +404,12 @@ func (s *StandardCodeDockerService) execute(ctx context.Context,
 		if err := output.confirmCleanup(started.Record); err != nil {
 			return result, errors.Join(startErr, err)
 		}
+	}
+	if sharedService != nil {
+		// Its short launch boundary belongs to Command Runtime. Finishing a
+		// service must not checkpoint over edits made during its lifetime.
+		result.batchRecord, result.Executed = &started.Record, true
+		return result, startErr
 	}
 	if isNativeCommandDockerRequester(request.RequestedBy) {
 		if isWorkerCommandDockerRequester(request.RequestedBy) {
@@ -445,6 +459,13 @@ func (s *StandardCodeDockerService) RecoverStartup(ctx context.Context) (
 	for _, record := range append(records, completed...) {
 		if isNativeCommandDockerRequester(record.Admission.RequestedBy) {
 			continue
+		}
+		service, err := commandRuntimeDockerServiceForAdmission(ctx, s.store, record.Admission)
+		if err != nil {
+			return nil, err
+		}
+		if service != nil {
+			continue // Docker recovery above already owns cleanup and exit evidence.
 		}
 		if _, duplicate := seen[record.Admission.ID]; duplicate {
 			continue
@@ -570,7 +591,11 @@ func (s *StandardCodeDockerService) loadTerminalReplay(ctx context.Context,
 			return StandardCodeDockerExecuteResult{}, true, err
 		}
 	}
-	if isNativeCommandDockerRequester(admission.RequestedBy) {
+	sharedService, err := commandRuntimeDockerServiceForAdmission(ctx, s.store, admission)
+	if err != nil {
+		return StandardCodeDockerExecuteResult{}, true, err
+	}
+	if sharedService != nil || isNativeCommandDockerRequester(admission.RequestedBy) {
 		record.Replayed = true
 		return StandardCodeDockerExecuteResult{AdmissionID: admission.ID, batchRecord: &record, Executed: true}, true, nil
 	}
@@ -712,6 +737,7 @@ func (s *StandardCodeDockerService) compileCurrent(ctx context.Context, runID st
 
 func (s *StandardCodeDockerService) monitorCurrentAuthority(ctx context.Context,
 	done <-chan struct{}, scope standardcode.ExecutionContext,
+	service *commandRuntimeDockerServiceBinding,
 	cancel context.CancelFunc,
 ) {
 	ticker := time.NewTicker(s.authorityPoll)
@@ -723,7 +749,7 @@ func (s *StandardCodeDockerService) monitorCurrentAuthority(ctx context.Context,
 		case <-done:
 			return
 		case <-ticker.C:
-			if !s.currentAuthorityMetadata(ctx, scope) {
+			if !s.currentAuthorityMetadata(ctx, scope, service) {
 				cancel()
 				return
 			}
@@ -733,6 +759,7 @@ func (s *StandardCodeDockerService) monitorCurrentAuthority(ctx context.Context,
 
 func (s *StandardCodeDockerService) currentAuthorityMetadata(ctx context.Context,
 	scope standardcode.ExecutionContext,
+	service *commandRuntimeDockerServiceBinding,
 ) bool {
 	run, err := s.store.GetRun(ctx, scope.RunID)
 	if err != nil || run.Terminal() || run.MissionID != scope.MissionID ||
@@ -756,6 +783,11 @@ func (s *StandardCodeDockerService) currentAuthorityMetadata(ctx context.Context
 	// lifetime of an already running container. Command Runtime retains its
 	// exact process owner across turns; its cancellation still reaches Start.
 	workspace, found, err := readRunFileDrydock(ctx, s.store, scope.RunID)
+	if service != nil {
+		return err == nil && found && requireCurrentRunFileDrydock(ctx, s.store, scope.RunID, workspace) == nil &&
+			service.matchesWorkspace(workspace) && workspace.ID == scope.DrydockID &&
+			(workspace.State == runworktree.StateReady || workspace.State == runworktree.StateDelivered)
+	}
 	return err == nil && found && requireCurrentRunFileDrydock(ctx, s.store, scope.RunID, workspace) == nil && workspace.ID == scope.DrydockID &&
 		workspace.Generation == scope.DrydockGeneration &&
 		workspace.LastCheckpointID == scope.CheckpointID &&
@@ -776,6 +808,13 @@ func (s *StandardCodeDockerService) finalize(ctx context.Context,
 	record domain.DockerSandboxRecord, scope standardcode.ExecutionContext,
 	requestedBy string,
 ) (standardcode.Result, error) {
+	service, err := commandRuntimeDockerServiceForAdmission(ctx, s.store, record.Admission)
+	if err != nil {
+		return standardcode.Result{}, err
+	}
+	if service != nil {
+		return standardcode.Result{}, apperror.New(apperror.CodePolicyDenied, "shared services cannot checkpoint their completed lifetime")
+	}
 	if isNativeCommandDockerRequester(record.Admission.RequestedBy) || isNativeCommandDockerRequester(requestedBy) {
 		return standardcode.Result{}, apperror.New(apperror.CodePolicyDenied, "native commands cannot checkpoint the Run Drydock")
 	}

@@ -196,6 +196,12 @@ func (f *threadApplicationServicesLiveFixture) start(t *testing.T, mode string) 
 			Output:  runner.CommandRuntimeOutputPolicy{InlineBytes: 8192, ArtifactBytes: 8192},
 			Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
 			Purpose: "start a test-only owned loopback HTTP service"}}}
+	if mode == "shared" || mode == "shared-ui" {
+		input.Commands[0].WorkspaceMode = runner.CommandRuntimeWorkspaceSharedService
+	}
+	if mode == "shared-ui" {
+		input.Commands[0].TimeoutMilliseconds = 30 * 60 * 1000
+	}
 	raw, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)

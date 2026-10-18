@@ -479,6 +479,7 @@ type API struct {
 	threadReview                          ThreadReviewReader
 	threadGitController                   ThreadGitController
 	threadApplicationServiceController    ThreadApplicationServiceController
+	threadCommandServicePolicy            *application.ThreadCommandServicePolicyService
 	projectActionsController              ProjectActionsController
 	projectHooksController                ProjectHooksController
 	projectPreparationController          ProjectPreparationController
@@ -854,6 +855,10 @@ func New(store Store, config Config) (*API, error) {
 		commandActivitySource = source
 	}
 	threadApplicationServices := config.ThreadApplicationServiceController
+	var threadServicePolicy *application.ThreadCommandServicePolicyService
+	if state, ok := store.(application.ThreadCommandServicePolicyStore); ok {
+		threadServicePolicy = application.NewThreadCommandServicePolicyService(state)
+	}
 	if threadApplicationServices == nil {
 		if state, ok := store.(application.ThreadApplicationServiceStore); ok {
 			service := application.NewThreadApplicationService(state)
@@ -948,6 +953,7 @@ func New(store Store, config Config) (*API, error) {
 		threadReview:                        config.ThreadReviewReader,
 		threadGitController:                 config.ThreadGitController,
 		threadApplicationServiceController:  threadApplicationServices,
+		threadCommandServicePolicy:          threadServicePolicy,
 		threadPullRequestController:         config.ThreadPullRequestController,
 		prFollowupController:                config.PRFollowupController,
 		standardCodePresetController:        config.StandardCodePresetController,
@@ -1161,6 +1167,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if threadID, action, matched := matchProjectHooksPath(request.URL.Path); matched {
 		a.serveProjectHooks(tracked, request, requestID, threadID, action)
+		return
+	}
+	if threadID, matched := matchThreadCommandServicePolicyPath(request.URL.Path); matched {
+		a.serveThreadCommandServicePolicy(tracked, request, requestID, threadID)
 		return
 	}
 	if threadID, jobID, stop, matched := matchThreadApplicationServicesPath(request.URL.Path); matched {

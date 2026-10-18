@@ -87,10 +87,19 @@ export type FullCDPSessionCloseRequestView =
 export type FullCDPSessionControlView =
   components["schemas"]["FullCDPSessionControlView"];
 export type FullCDPSessionView = components["schemas"]["FullCDPSessionView"];
-export type ThreadApplicationServicesView = components["schemas"]["ThreadApplicationServicesView"];
-export type ThreadApplicationServiceView = components["schemas"]["ThreadApplicationServiceView"];
-export type ThreadApplicationServiceDetailView = components["schemas"]["ThreadApplicationServiceDetailView"];
-export type ThreadApplicationServiceStopView = components["schemas"]["ThreadApplicationServiceStopView"];
+export type ThreadApplicationServiceView = components["schemas"]["ThreadApplicationServiceView"] & {
+  workspace_mode?: "exclusive" | "shared_service";
+  tree_reaped?: boolean;
+};
+export type ThreadApplicationServicesView = Omit<components["schemas"]["ThreadApplicationServicesView"], "services"> & {
+  services: ThreadApplicationServiceView[];
+};
+export type ThreadApplicationServiceDetailView = Omit<components["schemas"]["ThreadApplicationServiceDetailView"], "service"> & {
+  service: ThreadApplicationServiceView;
+};
+export type ThreadApplicationServiceStopView = Omit<components["schemas"]["ThreadApplicationServiceStopView"], "service"> & {
+  service: ThreadApplicationServiceView;
+};
 export type ThreadView = components["schemas"]["ThreadView"];
 export type ThreadRunRecoveryView = components["schemas"]["ThreadRunRecoveryView"];
 export type ThreadRunRecoveryControlRequestView =

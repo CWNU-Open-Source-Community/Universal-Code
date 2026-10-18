@@ -409,9 +409,11 @@ func (j CommandRuntimeJob) Validate() error {
 }
 
 type CommandRuntimeListFilter struct {
-	RunID      string
-	Limit      int
-	ActiveOnly bool
+	WorkspaceRootSHA256 string
+	UnreapedOnly        bool
+	RunID               string
+	Limit               int
+	ActiveOnly          bool
 }
 
 type CommandRuntimeStore interface {
@@ -463,6 +465,7 @@ func CommandRuntimeOperationIdentity(runID, operationKey string) (string, string
 
 type CommandRuntimeJobSnapshot struct {
 	ID                     string                         `json:"id"`
+	WorkspaceMode          CommandRuntimeWorkspaceMode    `json:"workspace_mode,omitempty"`
 	Adapter                commandruntimeadapter.Identity `json:"adapter"`
 	State                  CommandRuntimeJobState         `json:"state"`
 	Profile                CommandRuntimeProfile          `json:"profile"`
@@ -496,6 +499,7 @@ type CommandRuntimeJobSnapshot struct {
 func ProjectCommandRuntimeJob(job CommandRuntimeJob) CommandRuntimeJobSnapshot {
 	return CommandRuntimeJobSnapshot{
 		ID: job.ID, Adapter: job.Adapter, State: job.State, Profile: job.Profile,
+		WorkspaceMode:  CommandRuntimeJobWorkspaceMode(job),
 		ExecutablePath: job.ExecutablePath, ExecutableSHA256: job.ExecutableSHA256,
 		ExecutableIdentityKind: CommandRuntimeExecutableIdentityKind(job.Adapter),
 		WorkingDirectory:       job.WorkingDirectory,
@@ -512,6 +516,18 @@ func ProjectCommandRuntimeJob(job CommandRuntimeJob) CommandRuntimeJobSnapshot {
 		Version: job.Version, CreatedAt: job.CreatedAt,
 		StartedAt: cloneTime(job.StartedAt), CompletedAt: cloneTime(job.CompletedAt),
 	}
+}
+
+// CommandRuntimeJobWorkspaceMode reads the immutable launch intent. Historical
+// or unrecognized records never acquire shared-service behavior.
+func CommandRuntimeJobWorkspaceMode(job CommandRuntimeJob) CommandRuntimeWorkspaceMode {
+	var intent struct {
+		WorkspaceMode CommandRuntimeWorkspaceMode `json:"workspace_mode"`
+	}
+	if json.Unmarshal([]byte(job.IntentJSON), &intent) != nil || !intent.WorkspaceMode.Valid() {
+		return ""
+	}
+	return intent.WorkspaceMode
 }
 
 type CommandRuntimeProcessOwnership struct {

@@ -1,0 +1,658 @@
+{
+  "schema_version": "1",
+  "base": "4abf35c6ec9e0700bdae76582a1d7baac191971d",
+  "head_before_final_commit": "cce7f258ddbb3f7a89883747cbc64a46e4b3f5b0",
+  "scope": "Service range plus working-tree changes over long-verification receipts; dependency changes excluded.",
+  "total_files": 62,
+  "reviewed_files": 57,
+  "skipped_files": 5,
+  "coverage_rate": 0.9194,
+  "unique_files": 59,
+  "depth_note": "Review of changed implementation and necessary calling context; no claim that every large existing file was read in full. Five generated outputs received focused consistency checks.",
+  "capability_followup_files": 8,
+  "resolved_findings": [
+    {
+      "id": "R1",
+      "status": "resolved",
+      "path": "internal/application/command_runtime.go",
+      "category": "bug",
+      "severity": "high",
+      "content": "Expected per-Thread service revocation propagated as a global reconciler error and could stop unrelated Jobs. Expected policy denial now selects only the revoked Job.",
+      "verification": "Real two-Thread native HTTP regression passed."
+    },
+    {
+      "id": "R2",
+      "status": "resolved",
+      "path": "web/src/v2/components/command-service-settings.tsx",
+      "category": "bug",
+      "severity": "medium",
+      "content": "General Run control was incorrectly used for policy and service controls. Policy now uses execution-permission control; stop uses execution control; the policy HTTP write also enforces its capability.",
+      "verification": "79 frontend tests, final HTTP regression and real Edge policy revocation passed."
+    }
+  ],
+  "open_findings": [],
+  "entries": [
+    {
+      "mode": "range",
+      "path": "internal/application/command_runtime_docker_sandbox.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对非 worker 的 native shared 分支、私有证明传递和 Job 标识。",
+      "source_sha256": "92761f46dc207a8512c43a4875eb21f3d792c7c0d00147d87f641e2e613d9a51",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/application/command_runtime_docker_service.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对精确 Job 查找、durable intent/actor/adapter/root/manifest 对应，当前权限和生命周期 generation 区别。",
+      "source_sha256": "1d9654c740fd767fc6dc51d9ec2261fe51bd56a12a32792398a2927a3e529375",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/application/docker_sandbox.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对私有 native service proof 字段和调用边界。",
+      "source_sha256": "808c979e55ea06e7d3baf9897222c152cda022c5295ef1d1677b23401afb63c2",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/application/docker_sandbox_execution.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对启动证明/authority 绑定；未扩展到不相关执行路径。",
+      "source_sha256": "dfe5cd20558b82552ce0458caea33b94b89378a38bd6030a8cde0f71a02c8f46",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/application/standard_code_docker.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对普通/worker 保留原 fence，shared 生命周期允许后续 generation；清理、退出证据和恢复仍执行。",
+      "source_sha256": "8758c1c9645ce536c20193b256f02991295113c09a1ccc2b32800ab460106c3a",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/runner/command_runtime.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对空 mode 保持旧 fingerprint，两个显式枚举及校验。",
+      "source_sha256": "36f3e1abcd62721b41cfa683c74543a93a68ad21106dd107484256b8ea93718d",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/runner/command_runtime_job.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 durable intent 中的 mode 读取、Job 投影和未回收查询契约；追踪 shutdown 与 owner heartbeat。",
+      "source_sha256": "5428038bd014e0df455ff8fd7c8c5060d112e00a0c8e0cbcd27338b934575b90",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/store/command_runtime_jobs.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 root SHA/unreaped 过滤和参数验证，不把终态误当回收。",
+      "source_sha256": "21c39f5b646a1d44122d3154dce70683a8e16a17dc891f6c1f8411dd008abf1a",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/toolgateway/command_runtime.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对显式 mode 入参、start 限制和工具描述；range 已排除 Hooks 依赖。",
+      "source_sha256": "54a2a009cc34055506791c8dd34cc78125325115a95e391e27b36e8e43fcab6a",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/application/command_runtime_docker_service_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取新增身份/权限/generation/普通命令和超过 500 条历史 Job 用例；复核修正后的 prepared→running→completed 合同。",
+      "source_sha256": "9c23fe5d8dc747b2c362347e6dc51e28014aac895255e3e30fda2a1faaec8f45",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/runner/command_runtime_workspace_mode_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取 mode 校验、默认旧 fingerprint 和持久化投影断言。",
+      "source_sha256": "736917147f706295a8c263d9ffeb237a8dedc875d193ffcfae2647b9ed61a8e4",
+      "capability_followup": false
+    },
+    {
+      "mode": "range",
+      "path": "internal/toolgateway/command_runtime_workspace_mode_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取 start-only shared 与前台拒绝的断言。",
+      "source_sha256": "ab29f2045815d33ff812d1edbbc558bbde40a7f57358009288faf31a40a4852f",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "docs/openapi.json",
+      "git_status": "modified",
+      "status": "skipped",
+      "depth": "generated, focused consistency check only",
+      "reason": "生成排除；抽查 GET/PUT 路径、请求响应字段、策略枚举、workspace_mode 和 tree_reaped。",
+      "source_sha256": "e1d74ccecd58839b8f98a6e57eea449731b65e242a2495a0e0b78943d13ab5ae",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/command_operation_authority.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对新启动、owner heartbeat 的策略检查，以及既有权限/actor 绑定；Hooks 依赖实现不在范围。",
+      "source_sha256": "5f756b052edeaf96604e75d15ba8d45177ceb2401801f22cbdba3a2558ca38bd",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/command_runtime.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 shared launch 短边界、重放、终态 cursor、Reconcile 撤销；发现 R1，已复核根任务修复。",
+      "source_sha256": "034dd52acab3ed41c5f2d7889a15384d42a961ebdbe8767bd64fd3434ef0bd42",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/command_runtime_docker_service.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对精确 Job 查找、durable intent/actor/adapter/root/manifest 对应，当前权限和生命周期 generation 区别。",
+      "source_sha256": "1d9654c740fd767fc6dc51d9ec2261fe51bd56a12a32792398a2927a3e529375",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/drydock_file_boundaries.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对短命令边界与文件 cursor 绑定，以及并发快照归属标记。",
+      "source_sha256": "ba84440c1775d1de719344d7382701484df585ba30cb0f33ea101226dfafa2f3",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/run_worktree_service.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对实际 Drydock 路径快照；追踪 WithCheckpointService resolver，确认 rewind/fork 共享服务阻断检查实际目录。",
+      "source_sha256": "3416a70c85517a413953c42cc7d735cf90cbc78ea34a1c646a59693f53117e76",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/thread_application_services.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 mode/tree_reaped 投影、实际 owner 状态、停止入口，以及只读展示与控制凭证分离。",
+      "source_sha256": "0452dbff4867ecb874198121eb82a8103372ab6a2760e12556f6b5e5cd79395a",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/workspace_checkpoints.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 ordinary/shared capture、物理目录恢复阻断、终态但未回收情况和线性 cursor。",
+      "source_sha256": "6e54b0a48ad720760460f4c50c07d92ea1b8149a4249d2d2fed75dbf85dcde19",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/httpapi/openapi.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对策略 GET/PUT 描述与 DTO；新增策略和 mode 枚举对应严格解析。",
+      "source_sha256": "1b562cef039c1cade36aa1dbbc14a19ffc20218dbe505edb938769748ce00856",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/httpapi/server.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 endpoint 接入、读取权限及写控制 token 路由。",
+      "source_sha256": "ee74e0bfb5df0cb15ee90c4e4dcc34a8c70ef59a0ec28d328629075b102a841a",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/runner/command_runtime_service.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 metadata 的 mode/tree_reaped 和现有 owner 身份校验。",
+      "source_sha256": "24ca73d125bb8e4e5819a010b88bafd4d8138759acfa35a7837dccf2a77c0043",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/clean_install_baseline.sql",
+      "git_status": "modified",
+      "status": "skipped",
+      "depth": "generated, focused consistency check only",
+      "reason": "生成排除；抽查策略表和 trigger 存在，不逐行审阅整个历史基线。",
+      "source_sha256": "d623cff1aa7fa6c377b98d17f4f34e80c3a9ae2dc387d18221207580e678ca7e",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/clean_install_baseline_generated.go",
+      "git_status": "modified",
+      "status": "skipped",
+      "depth": "generated, focused consistency check only",
+      "reason": "生成排除；抽查 schema version 212 及生成摘要，不独立重新生成。",
+      "source_sha256": "9a638de2dfcdf4fe808166f0c419049b25d90e9a1eaf2103c997ab4d88e7c265",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/migrations.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对最新版本 212 与注册/生成版本一致。",
+      "source_sha256": "813ede8dfd1960e1ae24946ff728802c2cd515fe0c909e4b769eade1ec74ba2e",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/sqlite.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 v211 依赖后的 v212 注册；既有单连接事务串行上下文已追踪。",
+      "source_sha256": "d4852401d69e7390b46c550830e7daadf9ec1b67c370f7bc9507dca59c89dd83",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/thread_application_services.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 active/unreaped shared 优先排序、limit+1 的 has_more、元数据最小投影。",
+      "source_sha256": "f1feb7e9e13b054d1fd1424963fd86f373c966d0682c1e0b7e81e3680f2bfbb3",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/toolgateway/command_runtime.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对显式 mode 入参、start 限制和工具描述；range 已排除 Hooks 依赖。",
+      "source_sha256": "54a2a009cc34055506791c8dd34cc78125325115a95e391e27b36e8e43fcab6a",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "protocols/registry.json",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对新增 Docker 内部协议与 Thread policy 标识及索引生成对应。",
+      "source_sha256": "98f6516e6345737ef6696fe6b2709236f1bbcea37fbcc22e13621ef6e4e838aa",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/application-services.ts",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对可选 mode/tree_reaped 严格解析、未知 enum/类型拒绝及旧响应兼容。",
+      "source_sha256": "d77cb051617b51707a01a3c7d93b3d4bf229a8973b8727fed09a6362792a0a6c",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/client.ts",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对正确 Thread 路径、read/control token、PUT 版本/预期 revision 和响应 Thread 校验。",
+      "source_sha256": "7351801100afb818e2625e12e2b82c3a4a3f2616ac5203c18fe15b742a27577a",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/schema.d.ts",
+      "git_status": "modified",
+      "status": "skipped",
+      "depth": "generated, focused consistency check only",
+      "reason": "生成排除；抽查两个策略 DTO、GET/PUT operation 及 mode/tree_reaped 类型。",
+      "source_sha256": "3d3b42e42e14a4af6a75469b8012ed3b7c4e368ae3bd3ed3d2e6c02d04ac50b9",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/types.ts",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 application service optional 字段与生成契约。",
+      "source_sha256": "85cad8cdebbd2a961850a67a00f147c8997da86320e9911161e96c3faa9d6e00",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/application-preview.tsx",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对终态但未回收/回收未知时保留清理提示。",
+      "source_sha256": "1d14530f419fd5aaf8fe2f69f4e9dcbc517f4f9fbe47791d44bcc5bbdac1a5d0",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/settings.css",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对新增服务行采用现有主题、尺寸和窄屏规则；实际截图验收由根任务执行。",
+      "source_sha256": "ed0628421de06c2f3445e5ae2892ed38fd3425738b8358bb79eaece205c57ad2",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/settings.tsx",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对任务权限之后、当前任务执行环境之前的接入位置。",
+      "source_sha256": "7ef6274f571a8309c8074269654a2714f971d0d18bea87e7d7add5c73b441ebd",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/command_runtime_shared_service.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对物理 root SHA、active/unreaped 条件、500 行上限失败行为和 sealed launch 复用。",
+      "source_sha256": "4c1ad688548303967d27484c510a442d237d187aab69ad1ca4be8a0916e13f6b",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/thread_command_service_policy.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对策略服务、预期拒绝类型及 read failure 传播。",
+      "source_sha256": "de96d997d82a70d5b2a317a90e98c06e47d7d0fc79fe8ed78c4ac4ce1da078f2",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/domain/thread_command_service_policy.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对版本、策略枚举、Thread 与 revision 契约。",
+      "source_sha256": "05ebf1c62112a2ac22fcd45fe25b48776b5f80f0f5ad61d40eb54817d316edf4",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/httpapi/thread_command_service_policy.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 HTTP 方法、控制 token、大小、未知/重复字段、版本和 expected_revision 校验。",
+      "source_sha256": "f58acb54214eaea62d284ab4810c951b4d648ead2014477793355dadcccd47a3",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/migration_v212.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 Thread policy 表、revision 约束及 INSERT trigger 防止独占策略下新共享 Job。",
+      "source_sha256": "627fd08cb121d7e42c088d76017a90622647064a57859f067607030210988297",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/thread_command_service_policy.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对默认 auto/rev1、持久化、同值/replay 和冲突返回、Thread 后续 Run 关联。",
+      "source_sha256": "d8cf2d17488eab82cc2f2268cfbefa0b2c37ff8e41e67ea69881109430b56002",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/command-service-policy.ts",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对严格版本、策略、Thread、revision 解析。",
+      "source_sha256": "098ccee87a6d214b20bac8cb94886ac07340af192e7fdb20cffed431ee7d690f",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/command-service-settings.tsx",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对策略与实际状态分离、409 刷新不盲目重放、只读按钮、no Thread、has_more、停止返回与轮询。",
+      "source_sha256": "0d28f42895b445cad3a6f4f0c444760d9527ddae7412792762b5498a0ee6ad20",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "docs/architecture/command-runtime-adapter-split.md",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "已核对服务权限、启动边界、并发归属、回滚阻断和策略撤销描述。",
+      "source_sha256": "27ec0d3022d103a634213742a78835bd016549a49c884df9ad5d4a6a1c287c09",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "docs/convergence/protocol-registry.md",
+      "git_status": "modified",
+      "status": "skipped",
+      "depth": "generated, focused consistency check only",
+      "reason": "生成排除；抽查两个新增协议标识与 registry.json 对应，不逐行审阅全文。",
+      "source_sha256": "d26bf71f6645a403215a91599957cc0d510465ed363ed4d342fa1e11e4deff8d",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "docs/development-history.md",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "核对 v212 历史条目与迁移职责。",
+      "source_sha256": "80ccea8f4d4f7439f47a1ea34dbd275fcf85170e84ea66ab33760792508fabf7",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/command_runtime_docker_service_test.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取新增身份/权限/generation/普通命令和超过 500 条历史 Job 用例；复核修正后的 prepared→running→completed 合同。",
+      "source_sha256": "9c23fe5d8dc747b2c362347e6dc51e28014aac895255e3e30fda2a1faaec8f45",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/httpapi/thread_application_services_live_runtime_test.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取 shared/ordinary 真进程 fixture 的新增 mode 选择与投影断言。",
+      "source_sha256": "99b55a5dc33139cfa64a564a82d9e4558fd3f16452ba377ac4a12e29360f70fe",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/command_runtime_jobs_test.go",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取 physical root/unreaped 过滤和 policy trigger 断言；核对 wrapped conflict 的真实错误合同。",
+      "source_sha256": "5fa019e754167cffea4b42e7e3beac2a5f628a9bd088e98cb5bd43134619282b",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/application-services.test.ts",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取 mode/tree_reaped 严格解析及兼容断言。",
+      "source_sha256": "145ff57c5025e8822f795e92ea067c4fce8be73bedc9cea707cb678113d8952c",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/application-preview.test.tsx",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取终态未回收/回收未知的显示断言。",
+      "source_sha256": "b965e1bb5f15bab7017b2bbd6ae69b00106d115e1831b86155597c9a138ac321",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/settings.test.tsx",
+      "git_status": "modified",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取开发服务设置块接入断言。",
+      "source_sha256": "7e3357948642310a038e67a548293d9cf54850e850b4b48fed5d5720dcf542a9",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/application/command_runtime_shared_service_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取 Node 服务+编辑+哈希冲突+回滚阻断+重放/cursor 用例；复核 pending launch acknowledge 和 cancel 后等待同一 Job terminal/tree_reaped 的修正。",
+      "source_sha256": "9c87cc29f2e53e9103b4de1e05ae939e8413c02b55b624ec29603edab7af0146",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/httpapi/thread_command_service_policy_live_ui_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取真实 HTTP/SQLite/进程 browser fixture 生命周期与显式清理；本审阅未驱动浏览器。",
+      "source_sha256": "c71e0dd80bfd31c880ada67f110c8e2bae536a9b8f285a929dda4c0e34aa81da",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/httpapi/thread_command_service_policy_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取控制 token/严格请求、policy PUT+主动 Reconcile、目标树回收和另一普通进程继续响应的断言。根任务报告该测试通过。",
+      "source_sha256": "1f64eadb00716022acf007063993534fa76e1be17bc15503ff6eacdcb6dec37f",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "internal/store/thread_command_service_policy_test.go",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取默认/持久化/revision replay、冲突和后续 Run 策略断言。",
+      "source_sha256": "746a77340cd2b13fad4cdb953af66af88d12279b2d20e85e02b8ee2f97e42127",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/api/command-service-policy.test.ts",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取严格 DTO 和控制凭证/Thread 绑定断言。",
+      "source_sha256": "38a5012378820d4c7b28167c028b1bd7f50a98b59aee89e1f98c82e961cdd74c",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "web/src/v2/components/command-service-settings.test.tsx",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "changed code and necessary context",
+      "reason": "部分：读取策略/实际状态、revision 冲突、停止、has_more、只读与无 Thread 断言。",
+      "source_sha256": "e41da87594bf39a40bfbc731dad8546a59b93168a87e6a05088a634389b7ce7f",
+      "capability_followup": true
+    },
+    {
+      "mode": "workspace",
+      "path": "docs/acceptance/2026-10-18-shared-development-services.md",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "full acceptance document",
+      "reason": "Checked claims against actual command exits, browser state and explicit user layout approval; distinguishes controlled Docker transport and real native processes.",
+      "source_sha256": "798f34d65e4a8df1357e4c1f43886ace7b21df8be1048279d8fe9a976de1f12a",
+      "capability_followup": false
+    },
+    {
+      "mode": "workspace",
+      "path": "docs/reviews/shared-development-services-20261018.json",
+      "git_status": "added",
+      "status": "reviewed",
+      "depth": "review bookkeeping",
+      "reason": "Checked JSON keys, counters, final file selection and explicit generated exclusions. Its own recursive source hash is omitted.",
+      "source_sha256": null,
+      "capability_followup": false
+    }
+  ],
+  "acceptance": "docs/acceptance/2026-10-18-shared-development-services.md",
+  "local_artifacts": "D:/CodexProjects/service-settings-20261018/ocr-review"
+}

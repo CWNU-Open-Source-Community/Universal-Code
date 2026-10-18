@@ -18,6 +18,7 @@ import { V2PermissionControl } from "./permission-control";
 import { V2ProviderSettings } from "./provider-settings";
 import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { V2ExecutionSettings } from "./execution-settings";
+import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2WebAccessSettings } from "./web-access-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
@@ -366,6 +367,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
           <V2PermissionControl client={client} threadID={threadID} variant="settings"
             onOpenModelSettings={() => onSelectSection("models")} />
         </section>
+        <V2CommandServiceSettings client={client} threadID={threadID} />
         <V2ExecutionSettings client={client} threadID={threadID} workspaces={workspaces} />
         <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
       {section === "appearance" && <AppearanceSettings />}
