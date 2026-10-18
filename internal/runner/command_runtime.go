@@ -98,8 +98,23 @@ type CommandRuntimeOutputPolicy struct {
 	ArtifactBytes int `json:"artifact_bytes"`
 }
 
+// WorkspaceMode controls checkpoint lifetime, not process permissions. A shared
+// service can keep running while other authorized operations edit the workspace.
+// It is not a read-only process and retains the selected adapter's write access.
+type CommandRuntimeWorkspaceMode string
+
+const (
+	CommandRuntimeWorkspaceExclusive     CommandRuntimeWorkspaceMode = "exclusive"
+	CommandRuntimeWorkspaceSharedService CommandRuntimeWorkspaceMode = "shared_service"
+)
+
+func (m CommandRuntimeWorkspaceMode) Valid() bool {
+	return m == "" || m == CommandRuntimeWorkspaceExclusive || m == CommandRuntimeWorkspaceSharedService
+}
+
 type CommandRuntimeSpec struct {
 	Version             string                         `json:"version"`
+	WorkspaceMode       CommandRuntimeWorkspaceMode    `json:"workspace_mode,omitempty"`
 	Profile             CommandRuntimeProfile          `json:"profile"`
 	Executable          string                         `json:"executable,omitempty"`
 	Arguments           []string                       `json:"arguments,omitempty"`
@@ -152,7 +167,7 @@ func NormalizeCommandRuntimeIntent(spec CommandRuntimeSpec) (CommandRuntimeSpec,
 			"%w: purpose contains secret-like material", ErrCommandRuntimeBoundary)
 	}
 	spec.Purpose = purpose
-	if spec.Version != CommandRuntimeProtocolVersion || !spec.Profile.Valid() {
+	if spec.Version != CommandRuntimeProtocolVersion || !spec.Profile.Valid() || !spec.WorkspaceMode.Valid() {
 		return CommandRuntimeSpec{}, ErrCommandRuntimeBoundary
 	}
 	if spec.WorkingDirectory == "" ||
@@ -353,6 +368,7 @@ func commandRuntimeExecutableOutsideWorkspace(executablePath, workspaceRoot stri
 func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 	value := struct {
 		Version                  string                         `json:"version"`
+		WorkspaceMode            CommandRuntimeWorkspaceMode    `json:"workspace_mode,omitempty"`
 		Profile                  CommandRuntimeProfile          `json:"profile"`
 		ExecutablePath           string                         `json:"executable_path"`
 		ExecutableSHA256         string                         `json:"executable_sha256"`
@@ -372,7 +388,7 @@ func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 		WorkspaceRootSHA256      string                         `json:"workspace_root_sha256"`
 		AttachmentManifestSHA256 string                         `json:"attachment_manifest_sha256,omitempty"`
 	}{
-		Version: spec.Spec.Version, Profile: spec.Spec.Profile,
+		Version: spec.Spec.Version, WorkspaceMode: spec.Spec.WorkspaceMode, Profile: spec.Spec.Profile,
 		ExecutablePath: spec.ExecutablePath, ExecutableSHA256: spec.ExecutableSHA256,
 		ExecutableIdentityKind: spec.ExecutableIdentityKind,
 		Argv:                   cloneCommandRuntimeStrings(spec.CanonicalArgv),
@@ -776,6 +792,7 @@ func commandRuntimeOfflineEnvironmentName(name string) bool {
 func commandRuntimeIntentJSON(spec CommandRuntimeResolvedSpec) string {
 	value := struct {
 		Version                  string                         `json:"version"`
+		WorkspaceMode            CommandRuntimeWorkspaceMode    `json:"workspace_mode,omitempty"`
 		PolicyVersion            string                         `json:"policy_version"`
 		Profile                  CommandRuntimeProfile          `json:"profile"`
 		ExecutablePath           string                         `json:"executable_path"`
@@ -796,7 +813,7 @@ func commandRuntimeIntentJSON(spec CommandRuntimeResolvedSpec) string {
 		Purpose                  string                         `json:"purpose"`
 		AttachmentManifestSHA256 string                         `json:"attachment_manifest_sha256,omitempty"`
 	}{
-		Version: spec.Spec.Version, PolicyVersion: CommandRuntimePolicyVersion,
+		Version: spec.Spec.Version, WorkspaceMode: spec.Spec.WorkspaceMode, PolicyVersion: CommandRuntimePolicyVersion,
 		Profile: spec.Spec.Profile, ExecutablePath: spec.ExecutablePath,
 		ExecutableSHA256:       spec.ExecutableSHA256,
 		ExecutableIdentityKind: spec.ExecutableIdentityKind,

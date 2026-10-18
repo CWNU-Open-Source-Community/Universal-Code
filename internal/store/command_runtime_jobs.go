@@ -312,6 +312,7 @@ func (s *SQLiteStore) ListCommandRuntimeJobs(ctx context.Context,
 	filter runner.CommandRuntimeListFilter,
 ) ([]runner.CommandRuntimeJob, error) {
 	if s == nil || s.db == nil || filter.Limit < 0 || filter.Limit > 500 ||
+		(filter.WorkspaceRootSHA256 != "" && !validStoreDigest(filter.WorkspaceRootSHA256)) ||
 		(filter.RunID != "" && (!domain.ValidAgentID(filter.RunID) ||
 			strings.TrimSpace(filter.RunID) != filter.RunID)) {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
@@ -328,6 +329,13 @@ func (s *SQLiteStore) ListCommandRuntimeJobs(ctx context.Context,
 	}
 	if filter.ActiveOnly {
 		query += ` AND state IN ('prepared', 'running', 'stopping')`
+	}
+	if filter.WorkspaceRootSHA256 != "" {
+		query += ` AND workspace_root_sha256 = ?`
+		arguments = append(arguments, filter.WorkspaceRootSHA256)
+	}
+	if filter.UnreapedOnly {
+		query += ` AND (state IN ('prepared', 'running', 'stopping') OR tree_reaped = 0)`
 	}
 	query += ` ORDER BY created_at DESC, id LIMIT ?`
 	arguments = append(arguments, filter.Limit)
