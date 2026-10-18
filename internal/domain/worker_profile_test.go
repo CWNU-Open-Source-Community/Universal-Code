@@ -60,3 +60,20 @@ func TestSpecialistApprovalIdentityIncludesChildAndAttempt(t *testing.T) {
 		t.Fatal("changed authority retained approval fingerprint")
 	}
 }
+
+func TestWorkerProfileHistoryScopeIsExplicitAndImmutable(t *testing.T) {
+	legacy := &WorkerProfile{}
+	raw, err := WorkerProfileJSON(legacy)
+	if err != nil || raw != `{"tools":null}` || legacy.EffectiveHistoryScope() != WorkerHistoryDelegated {
+		t.Fatalf("legacy worker profile changed: %s %v", raw, err)
+	}
+	for _, scope := range []string{WorkerHistoryDelegated, WorkerHistoryParentSnapshot} {
+		profile, err := NormalizeWorkerProfile(&WorkerProfile{HistoryScope: scope})
+		if err != nil || profile.EffectiveHistoryScope() != scope || EqualWorkerProfiles(profile, legacy) {
+			t.Fatalf("scope was lost from delegation identity: %+v %v", profile, err)
+		}
+	}
+	if _, err := NormalizeWorkerProfile(&WorkerProfile{HistoryScope: "all_agents"}); err == nil {
+		t.Fatal("unknown history scope accepted")
+	}
+}

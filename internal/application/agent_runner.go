@@ -466,11 +466,20 @@ func (s *AgentRunner) WithExecutionPermissionCapabilities(
 		s.executionCapabilities = capabilities
 	}
 	s.installMCPExecutor()
+	if store, ok := s.store.(HistoryRecallToolStore); ok && s.tools != nil {
+		s.tools.WithHistoryRecallExecutor(NewHistoryRecallToolExecutor(store).
+			WithExecutionPermissionCapabilities(s.executionCapabilities))
+	}
 	if store, ok := s.store.(AgentCodeToolStore); ok && s.tools != nil {
 		s.tools.WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).
 			WithRunWorktree(s.drydocks).
 			WithCodeIntel(s.codeIntel).
 			WithExecutionPermissionCapabilities(s.executionCapabilities))
+		if s.codeIntel != nil {
+			s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, s.codeIntel).
+				WithRunWorktree(s.drydocks).
+				WithExecutionPermissionCapabilities(s.executionCapabilities))
+		}
 	}
 	return s
 }
@@ -520,7 +529,9 @@ func (s *AgentRunner) WithCodeIntel(manager *codeintel.Manager) *AgentRunner {
 	s.tools.WithAgentCodeExecutor(NewAgentCodeToolExecutor(store, s.checker).
 		WithRunWorktree(s.drydocks).WithCodeIntel(manager).
 		WithExecutionPermissionCapabilities(s.executionCapabilities))
-	s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, manager).WithRunWorktree(s.drydocks))
+	s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, manager).
+		WithRunWorktree(s.drydocks).
+		WithExecutionPermissionCapabilities(s.executionCapabilities))
 	return s
 }
 
@@ -541,7 +552,9 @@ func (s *AgentRunner) WithRunWorktree(drydocks *RunWorktreeService) *AgentRunner
 				WithCodeIntel(s.codeIntel).
 				WithExecutionPermissionCapabilities(s.executionCapabilities))
 		if s.codeIntel != nil {
-			s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, s.codeIntel).WithRunWorktree(drydocks))
+			s.tools.WithCodeIntelExecutor(NewCodeIntelToolExecutor(store, s.checker, s.codeIntel).
+				WithRunWorktree(drydocks).
+				WithExecutionPermissionCapabilities(s.executionCapabilities))
 		}
 	}
 	return s

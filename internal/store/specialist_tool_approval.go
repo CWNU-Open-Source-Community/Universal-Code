@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/mcp"
@@ -83,7 +84,7 @@ func validateSpecialistApprovalPermissionTx(ctx context.Context, tx *sql.Tx, run
 		return err
 	}
 	if permission.Validate() != nil || permission.ID != pin.ID || permission.Revision != pin.Revision || permission.Mode != pin.Mode {
-		return errors.New("child approval permission changed")
+		return apperror.New(apperror.CodePolicyDenied, "child approval permission changed")
 	}
 	return nil
 }

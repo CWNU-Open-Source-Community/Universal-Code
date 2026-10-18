@@ -452,6 +452,14 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
+		nativeLayout := layout
+		var skillGuidance workerSkillReadGuidance
+		if child.Worker != nil {
+			native, nativeLayout, skillGuidance, err = r.workerRuntime.requestWithWorkerSkillReads(ctx, ref, native, layout)
+			if err != nil {
+				return r.failAttempt(ctx, result, ref, err)
+			}
+		}
 		if len(rounds) == domain.MaxSpecialistToolRounds {
 			native.Tools = nil
 			native.Messages = append(native.Messages, llm.Message{Role: "system", Content: "The child tool-round limit is reached. Return the final specialist_lifecycle.v1 result using observed evidence."})
@@ -478,7 +486,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
-		prepared, modelLayout, err := trimSpecialistOptionalProjectInstructions(run.Config, prepared, window, layout, contextState.RecoveryInputLimit)
+		prepared, modelLayout, err := trimSpecialistOptionalProjectInstructions(run.Config, prepared, window, nativeLayout, contextState.RecoveryInputLimit)
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
@@ -487,6 +495,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
+		prepared, skillGuidance = skillGuidance.retainPresent(prepared)
 		if through > contextState.ThroughRound {
 			_, err = executor.store.SaveSpecialistContextProjection(ctx, ref, contextState, through, domain.SpecialistContextSourceSHA256(rounds))
 			if err != nil {
@@ -506,7 +515,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err := verifyNativeSpecialistRequest(prepared, input, rounds[through:], len(rounds) == domain.MaxSpecialistToolRounds); err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
-		call, err := r.callModelWithRetry(ctx, run, ref, modelRef, prepared, audit, timeLimit, 0, &state)
+		call, err := r.callModelWithRetry(ctx, run, ref, modelRef, prepared, audit, timeLimit, 0, &state, skillGuidance)
 		mergeSpecialistModelCallResult(result, call)
 		if err != nil {
 			if ctx.Err() == nil && !privateHistory && call.FailureRecorded && call.Attempt.FailureReason == llm.ProviderFailureContextLimit {

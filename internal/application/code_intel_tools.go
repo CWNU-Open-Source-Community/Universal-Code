@@ -42,6 +42,9 @@ func (e *CodeIntelToolExecutor) ExecuteCodeIntel(ctx context.Context,
 	if err := e.authority.validateScope(ctx, scope, name); err != nil {
 		return toolgateway.CodeIntelExecutionResult{}, err
 	}
+	if err := e.validateWorkerPayload(ctx, scope, name, payload); err != nil {
+		return toolgateway.CodeIntelExecutionResult{}, err
+	}
 	input, _, err := toolgateway.NormalizeCodeIntelPayload(name, payload)
 	if err != nil {
 		return toolgateway.CodeIntelExecutionResult{}, err
@@ -66,6 +69,11 @@ func (e *CodeIntelToolExecutor) ExecuteCodeIntel(ctx context.Context,
 		Limit: input.Limit, Cursor: input.Cursor,
 	})
 	if err != nil {
+		return toolgateway.CodeIntelExecutionResult{}, err
+	}
+	// A language server can take long enough for its caller's authority to be
+	// revoked. Recheck before delivering the semantic result to that caller.
+	if err := e.authority.validateScope(ctx, scope, name); err != nil {
 		return toolgateway.CodeIntelExecutionResult{}, err
 	}
 	encoded, err := json.Marshal(result)

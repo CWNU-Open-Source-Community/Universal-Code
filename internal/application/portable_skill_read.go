@@ -69,6 +69,9 @@ func currentPortableSkill(ctx context.Context, store portableSkillReadStore, pin
 	if !slices.ContainsFunc(value.Snapshot.Skills, func(s plugins.SnapshotSkill) bool { return s.Instructions.Component.ComponentID == pin.ComponentID }) {
 		return plugins.Installation{}, apperror.New(apperror.CodeNotFound, "installed Skill component is absent")
 	}
+	if err := requireWorkerSkillCompatibility(ctx, store, value, pin, mode); err != nil {
+		return plugins.Installation{}, err
+	}
 	return value, nil
 }
 
@@ -275,7 +278,9 @@ func (g portableSkillReadGuidance) retainPresent(request llm.ChatRequest) (llm.C
 
 // Transport retries reuse the prepared request. Recheck its Go-owned bindings
 // before every dispatch without modifying that request or restoring old text.
-func (g portableSkillReadGuidance) requireCurrent(ctx context.Context, source AgentRunnerStore,
+func (g portableSkillReadGuidance) requireCurrent(ctx context.Context, source interface {
+	GetRunMode(context.Context, string) (domain.RunModeSnapshot, error)
+},
 	mode domain.RunModeSnapshot, request llm.ChatRequest,
 ) error {
 	if len(g.reads) == 0 {

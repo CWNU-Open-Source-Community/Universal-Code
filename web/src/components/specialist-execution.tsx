@@ -70,6 +70,7 @@ export function SpecialistExecutionControl({ client, runID, agent, runStatus }: 
   return <div className="agent-execution-control">
     <p>{agent.worker ? t("执行型子代理", "Execution worker") : readPaths.length > 0 ? t("只读工具子代理", "Read-only tool child") : t("无工具子代理", "No-tool child")}</p>
     {agent.worker && <p>{t("委派工具：", "Delegated tools: ")}{agent.worker.tools == null ? t("继承主代理", "Inherit parent tools") : agent.worker.tools.length ? agent.worker.tools.join(", ") : t("无工具", "No tools")}</p>}
+    {agent.worker && <p>{agent.worker.history_scope === "parent_snapshot" ? t("历史范围：自身记录、交付材料与创建时的父会话历史", "History: own records, delivered material and parent history captured at creation") : t("历史范围：自身记录与明确交付的材料", "History: own records and explicitly delivered material")}</p>}
     {!agent.worker && readPaths.length > 0 && <>
       <p>{t("允许读取：", "Read scope: ")}{readPaths.join(", ")}</p>
       <p>{t("工具次数：", "Tool calls: ")}{agent.tool_calls_used ?? 0} / {agent.tool_call_limit}</p>

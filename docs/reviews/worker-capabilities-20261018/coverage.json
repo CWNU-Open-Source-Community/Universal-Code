@@ -1,0 +1,337 @@
+{
+  "mode": "OCR delegate",
+  "date": "2026-10-18",
+  "base": "de318deb8f52ebcf33d29f414d0f3e39ee94bd76",
+  "reviewed_tree": "b6f3ade888276865ceddbde2fd16b40fa7479045",
+  "total_files": 46,
+  "reviewable_files": 36,
+  "reviewed_files": 32,
+  "skipped_files": 4,
+  "selector_excluded_files": 10,
+  "coverage_rate": 88.89,
+  "outstanding_findings": [],
+  "files": [
+    {
+      "path": "docs/openapi.json",
+      "status": "modified",
+      "review": "skipped",
+      "scope": "generated",
+      "reason": "Generated from reviewed schema/source; regeneration and changed output checked, not a full manual source review."
+    },
+    {
+      "path": "internal/application/agent_code_worker.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/agent_runner.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/builtin_skill_read.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/code_intel_tools.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/history_recall_tool.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/portable_skill_catalog.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/portable_skill_read.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/specialist_tools.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/subagent_runner.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/supervisor_tools.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/worker_catalogue.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/worker_code_intel.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/worker_history_tools.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/worker_skill_tools.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "internal/application/worker_tools.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/domain/worker_profile.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/httpapi/openapi.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/clean_install_baseline.sql",
+      "status": "modified",
+      "review": "skipped",
+      "scope": "generated",
+      "reason": "Generated from reviewed schema/source; regeneration and changed output checked, not a full manual source review."
+    },
+    {
+      "path": "internal/store/clean_install_baseline_generated.go",
+      "status": "modified",
+      "review": "skipped",
+      "scope": "generated",
+      "reason": "Generated from reviewed schema/source; regeneration and changed output checked, not a full manual source review."
+    },
+    {
+      "path": "internal/store/coordinator_admission.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/history_recall.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/migrations.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/specialist_tool_approval.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/sqlite.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/worker_history_recall.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/worker_history_snapshot.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "internal/store/worker_skill_reads.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "internal/toolgateway/code_intel.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/toolgateway/gateway.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/toolgateway/skill_read.go",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "internal/toolgateway/worker_history.go",
+      "status": "added",
+      "review": "reviewed",
+      "scope": "full",
+      "reason": ""
+    },
+    {
+      "path": "protocols/registry.json",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "web/src/api/schema.d.ts",
+      "status": "modified",
+      "review": "skipped",
+      "scope": "generated",
+      "reason": "Generated from reviewed schema/source; regeneration and changed output checked, not a full manual source review."
+    },
+    {
+      "path": "web/src/components/specialist-execution.tsx",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "web/src/components/workflow-panel.tsx",
+      "status": "modified",
+      "review": "reviewed",
+      "scope": "changed_lines_and_call_context",
+      "reason": ""
+    },
+    {
+      "path": "docs/convergence/protocol-registry.md",
+      "status": "modified",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/execution-workers.md",
+      "status": "modified",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "unsupported_ext"
+    },
+    {
+      "path": "internal/application/worker_code_intel_real_test.go",
+      "status": "added",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_code_intel_test.go",
+      "status": "added",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_history_tools_test.go",
+      "status": "added",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_skill_tools_internal_test.go",
+      "status": "added",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_skill_tools_test.go",
+      "status": "added",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "internal/domain/worker_profile_test.go",
+      "status": "modified",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "internal/store/worker_history_recall_test.go",
+      "status": "added",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    },
+    {
+      "path": "web/src/components/workflow-panel.test.tsx",
+      "status": "modified",
+      "review": "selector_excluded",
+      "scope": "",
+      "reason": "default_path"
+    }
+  ]
+}

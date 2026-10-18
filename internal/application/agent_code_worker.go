@@ -50,7 +50,11 @@ func (e *AgentCodeToolExecutor) BindSpecialistAgentCodeAuthority(ctx context.Con
 	if _, err = e.validateWorkerAgentCodeAuthority(ctx, ref, a, name); err != nil {
 		return nil, err
 	}
-	_, err = toolgateway.NormalizeAgentCodePayload(name, payload)
+	if toolgateway.IsCodeIntelTool(name) {
+		_, _, err = toolgateway.NormalizeCodeIntelPayload(name, payload)
+	} else {
+		_, err = toolgateway.NormalizeAgentCodePayload(name, payload)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +176,14 @@ func (e *AgentCodeToolExecutor) validateWorkerAgentCodeAuthority(ctx context.Con
 	if catalogue.Generation != a.CapabilityGeneration {
 		return files, apperror.New(apperror.CodeConflict, "worker parent file catalogue changed")
 	}
+	// Semantic reads inherit the parent's workspace-read authority. The LSP
+	// manager separately checks the reviewed server and capability snapshot.
+	parentTool := name
+	if toolgateway.IsCodeIntelTool(name) {
+		parentTool = toolgateway.WorkspaceListTool
+	}
 	for _, tool := range catalogue.Tools {
-		if tool.Name == name && tool.Available {
+		if tool.Name == parentTool && tool.Available {
 			return files, nil
 		}
 	}

@@ -816,9 +816,9 @@ func validateToolArguments(call ToolCall) error {
 	if IsCodeIntelTool(call.Name) {
 		if len(call.Arguments) != 0 || call.RunID == "" || call.MissionID == "" ||
 			call.AgentID == "" || call.SessionID == "" || call.WorkspaceID == "" ||
-			call.RequestedBy != "run_supervisor" || call.OperationKey == "" ||
+			!recordedExecutionActor(call) || call.OperationKey == "" ||
 			call.LeaseID == "" {
-			return errors.New("code-intel tools require a structured fenced root Supervisor scope")
+			return errors.New("code-intel tools require a structured fenced agent scope")
 		}
 		_, err := NormalizeSupervisorToolPayload(call.Name, call.Payload)
 		return err

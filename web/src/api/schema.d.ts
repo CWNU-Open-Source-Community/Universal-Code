@@ -15841,6 +15841,8 @@ export interface components {
             version: number;
         };
         WorkerProfile: {
+            /** @enum {string} */
+            history_scope?: "" | "delegated" | "parent_snapshot";
             tools?: string[] | null;
         };
         WorkflowCondition: {

@@ -1,8 +1,8 @@
 # Execution workers and saved workflows
 
 An admitted Specialist with `worker: {}` uses the execution worker profile.
-The host intersects the parent's currently available workspace, command, browser
-and MCP capabilities with the delegation's optional `worker.tools` list. Omitting
+The host intersects the parent's currently available workspace, command, browser,
+MCP, Skill, history and language-server tools with the delegation's optional `worker.tools` list. Omitting
 `worker` retains the existing analysis/scoped-read behavior. An omitted or null
 `tools` list inherits; `tools: []` grants no native tools. A list such as
 `["workspace_read", "workspace_grep", "command_runtime"]` narrows the profile.
@@ -11,6 +11,24 @@ Tools keep the Run's Ask / Auto / Full mode, policy checks, permission activatio
 workspace and budgets. The command adapter must already be enabled for the Run's
 execution profile. Browser tools retain their platform and Full-mode requirements.
 Delegation does not activate a runtime or authorize a new MCP server.
+
+`skill_read` discovers and reads currently available native Skills and exact
+installed package versions during execution. A successful main-file read can
+activate that guide for this worker; bundled resources stay reference data.
+Removing, disabling or changing the selected installation invalidates it before
+the next model request, including retries. This is independent of preloaded task
+guidance. Read-only children keep their existing tool profile.
+
+Workers receive the configured language server's supported read tools, including
+definitions, references, symbols, diagnostics and call hierarchy. Queries use the
+worker's physical workspace and retain the current permission and path checks.
+
+`history_search` and `history_read` default to the child's own records and task
+material explicitly delivered by its parent. Set `worker.history_scope` to
+`parent_snapshot` to additionally capture the parent's visible history during
+admission. This choice is immutable for that child. Later parent messages and
+other children’s private records are excluded. Each source and page is rechecked;
+a changed or no-longer-visible source cannot be read using an old result.
 
 Every native call records its real child Agent, attempt and Session. A required
 approval suspends the attempt and releases the foreground Run lease. Repeating
@@ -33,7 +51,9 @@ worktrees, owned edit paths, declared verification, review and integration.
 
 Open the Run's **Agents** page, expand **Create workflow**, enter a name and task,
 and keep **Execution worker** selected. Leave delegated tools empty to inherit,
-or enter a comma-separated list to narrow them. Save the definition, then start
+or enter a comma-separated list to narrow them. **Include current parent history**
+is off by default; enable it only when that task needs the parent's current
+history. Save the definition, then start
 it. The JSON editor exposes the task and workflow budgets and includes a branch
 and loop template. The execution list shows persisted outputs and offers continue,
 pause, resume and rerun. Start, continue and resume submit control requests; the
