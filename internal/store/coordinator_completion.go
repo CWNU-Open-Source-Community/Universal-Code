@@ -12,14 +12,17 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
-	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/session"
 )
 
-const agentCompletionSelect = `SELECT id, run_id, agent_id, parent_agent_id, attempt_id,
-	protocol_version, outcome, summary, work_item_ids_json, note_ids_json, message_id, created_at
-	FROM agent_completion_reports`
+const agentCompletionSelect = `SELECT completion.id, completion.run_id, completion.agent_id,
+	completion.parent_agent_id, completion.attempt_id, completion.protocol_version,
+	completion.outcome, completion.summary, completion.work_item_ids_json, completion.note_ids_json,
+	completion.message_id, completion.created_at, message.run_id, message.sender_agent_id,
+	message.recipient_agent_id, message.kind, message.semantic, message.payload_json
+	FROM agent_completion_reports completion
+	LEFT JOIN agent_messages message ON message.id = completion.message_id`
 
 func (s *SQLiteStore) FinishSpecialist(ctx context.Context, completion domain.AgentCompletion,
 	operationKey string,
@@ -30,16 +33,10 @@ func (s *SQLiteStore) FinishSpecialist(ctx context.Context, completion domain.Ag
 	completion.ParentAgentID = strings.TrimSpace(completion.ParentAgentID)
 	completion.AttemptID = strings.TrimSpace(completion.AttemptID)
 	completion.MessageID = strings.TrimSpace(completion.MessageID)
-	report, err := domain.NormalizeCompletionReport(completion.Report)
+	report, err := domain.RedactCompletionReport(completion.Report)
 	if err != nil {
 		return domain.AgentCompletion{}, false,
 			apperror.Wrap(apperror.CodeInvalidArgument, "completion report is invalid", err)
-	}
-	report.Summary = redact.String(report.Summary)
-	report, err = domain.NormalizeCompletionReport(report)
-	if err != nil {
-		return domain.AgentCompletion{}, false,
-			apperror.Wrap(apperror.CodeInvalidArgument, "redacted completion report is invalid", err)
 	}
 	completion.Report = report
 	if completion.CreatedAt.IsZero() {
@@ -92,7 +89,7 @@ func (s *SQLiteStore) FinishSpecialist(ctx context.Context, completion domain.Ag
 				"Agent completion idempotency key was already used for different intent")
 		}
 		existing, err := scanAgentCompletion(tx.QueryRowContext(ctx,
-			agentCompletionSelect+` WHERE id = ?`, storedReportID))
+			agentCompletionSelect+` WHERE completion.id = ?`, storedReportID))
 		if err != nil {
 			return domain.AgentCompletion{}, false, err
 		}
@@ -306,7 +303,7 @@ func (s *SQLiteStore) GetAgentCompletion(ctx context.Context,
 	agentID string,
 ) (domain.AgentCompletion, bool, error) {
 	completion, err := scanAgentCompletion(s.db.QueryRowContext(ctx,
-		agentCompletionSelect+` WHERE agent_id = ?`, strings.TrimSpace(agentID)))
+		agentCompletionSelect+` WHERE completion.agent_id = ?`, strings.TrimSpace(agentID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentCompletion{}, false, nil
 	}
@@ -335,9 +332,11 @@ func getAgentCompletionOperationTx(ctx context.Context, tx *sql.Tx,
 func scanAgentCompletion(row scanner) (domain.AgentCompletion, error) {
 	var completion domain.AgentCompletion
 	var protocolVersion, outcome, summary, workItemIDsJSON, noteIDsJSON, createdAt string
+	var messageRunID, senderID, recipientID, kind, semantic, payloadJSON sql.NullString
 	if err := row.Scan(&completion.ID, &completion.RunID, &completion.AgentID,
 		&completion.ParentAgentID, &completion.AttemptID, &protocolVersion, &outcome, &summary,
-		&workItemIDsJSON, &noteIDsJSON, &completion.MessageID, &createdAt); err != nil {
+		&workItemIDsJSON, &noteIDsJSON, &completion.MessageID, &createdAt,
+		&messageRunID, &senderID, &recipientID, &kind, &semantic, &payloadJSON); err != nil {
 		return domain.AgentCompletion{}, err
 	}
 	completion.Report = domain.CompletionReport{
@@ -350,6 +349,29 @@ func scanAgentCompletion(row scanner) (domain.AgentCompletion, error) {
 		return domain.AgentCompletion{}, err
 	}
 	completion.CreatedAt = parseTS(createdAt)
+	if err := completion.Validate(); err != nil {
+		return domain.AgentCompletion{}, err
+	}
+	if !payloadJSON.Valid || messageRunID.String != completion.RunID ||
+		senderID.String != completion.AgentID || recipientID.String != completion.ParentAgentID ||
+		kind.String != string(domain.AgentMessageResult) ||
+		semantic.String != string(domain.AgentMessageSemanticMessage) {
+		return domain.AgentCompletion{}, apperror.New(apperror.CodeFailedPrecondition,
+			"completion result message does not match its durable report")
+	}
+	payload, err := domain.DecodeAgentCompletionInboxPayload(payloadJSON.String)
+	if err != nil {
+		return domain.AgentCompletion{}, apperror.Wrap(apperror.CodeFailedPrecondition,
+			"completion result message is invalid", err)
+	}
+	projection := payload.Report
+	projection.Data = nil
+	if payload.CompletionReportID != completion.ID || payload.AgentID != completion.AgentID ||
+		!sameCompletionReport(completion.Report, projection) {
+		return domain.AgentCompletion{}, apperror.New(apperror.CodeFailedPrecondition,
+			"completion result message payload does not match its durable report")
+	}
+	completion.Report = payload.Report
 	return completion, completion.Validate()
 }
 
@@ -434,7 +456,7 @@ func validateAgentCompletionProjectionTx(ctx context.Context, tx *sql.Tx,
 			continue
 		}
 		completion, err := scanAgentCompletion(tx.QueryRowContext(ctx,
-			agentCompletionSelect+` WHERE agent_id = ?`, node.ID))
+			agentCompletionSelect+` WHERE completion.agent_id = ?`, node.ID))
 		found := err == nil
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err

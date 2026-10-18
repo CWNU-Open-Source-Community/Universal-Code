@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -1048,8 +1047,11 @@ func normalizeSpecialistPolicyDecision(decision policy.Decision) (policy.Decisio
 func redactSpecialistAction(action domain.SpecialistAction) (domain.SpecialistAction, error) {
 	action.Message = redact.String(action.Message)
 	if action.Report != nil {
-		report := *action.Report
-		report.Summary = redact.String(report.Summary)
+		report, err := domain.RedactCompletionReport(*action.Report)
+		if err != nil {
+			return domain.SpecialistAction{}, apperror.Wrap(apperror.CodeFailedPrecondition,
+				"redacted Specialist report is invalid", err)
+		}
 		action.Report = &report
 	}
 	action, err := domain.NormalizeSpecialistAction(action)
@@ -1067,10 +1069,7 @@ func sameSpecialistAction(left domain.SpecialistAction, right domain.SpecialistA
 	if left.Report == nil || right.Report == nil {
 		return left.Report == nil && right.Report == nil
 	}
-	return left.Report.Version == right.Report.Version && left.Report.Outcome == right.Report.Outcome &&
-		left.Report.Summary == right.Report.Summary &&
-		slices.Equal(left.Report.WorkItemIDs, right.Report.WorkItemIDs) &&
-		slices.Equal(left.Report.NoteIDs, right.Report.NoteIDs)
+	return sameCompletionReport(*left.Report, *right.Report)
 }
 
 func specialistModelSubject(attemptID string, modelAttempt int) string {

@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -8,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"cyberagent-workbench/internal/redact"
 )
 
 const (
@@ -17,6 +21,8 @@ const (
 	MaxCompletionWorkItemReferences = 16
 	MaxCompletionNoteReferences     = 16
 	MaxCompletionReferenceBytes     = 256
+	MaxCompletionDataBytes          = 4 * 1024
+	MaxCompletionDataDepth          = 8
 )
 
 type CompletionOutcome string
@@ -33,6 +39,8 @@ type CompletionReport struct {
 	Summary     string            `json:"summary"`
 	WorkItemIDs []string          `json:"work_item_ids"`
 	NoteIDs     []string          `json:"note_ids"`
+	// Data is bounded, untrusted result data; it grants no execution authority.
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 type AgentCompletion struct {
@@ -64,6 +72,10 @@ func NormalizeCompletionReport(report CompletionReport) (CompletionReport, error
 	if err != nil {
 		return CompletionReport{}, fmt.Errorf("completion note references are invalid: %w", err)
 	}
+	report.Data, err = normalizeCompletionData(report.Data)
+	if err != nil {
+		return CompletionReport{}, err
+	}
 	if err := report.Validate(); err != nil {
 		return CompletionReport{}, err
 	}
@@ -93,6 +105,83 @@ func (r CompletionReport) Validate() error {
 	notes, err := normalizeCompletionReferences(r.NoteIDs, MaxCompletionNoteReferences)
 	if err != nil || !slices.Equal(notes, r.NoteIDs) {
 		return errors.New("completion note references must be normalized, unique, and sorted")
+	}
+	if _, err := normalizeCompletionData(r.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RedactCompletionReport applies the shared JSON credential and value redactor
+// after checking the original bounds, then checks the redacted report's bounds.
+func RedactCompletionReport(report CompletionReport) (CompletionReport, error) {
+	report, err := NormalizeCompletionReport(report)
+	if err != nil {
+		return CompletionReport{}, err
+	}
+	report.Summary = redact.String(report.Summary)
+	if len(report.Data) > 0 {
+		report.Data, err = redact.SanitizeSensitiveJSON(report.Data)
+		if err != nil {
+			return CompletionReport{}, err
+		}
+	}
+	return NormalizeCompletionReport(report)
+}
+
+func normalizeCompletionData(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if len(raw) > MaxCompletionDataBytes || !utf8.Valid(raw) || !json.Valid(raw) {
+		return nil, fmt.Errorf("completion data must be valid UTF-8 JSON within %d bytes", MaxCompletionDataBytes)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, nil
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return nil, errors.New("completion data must be a JSON object or null")
+	}
+	if err := validateCompletionDataDepth(value, 1); err != nil {
+		return nil, err
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if len(canonical) > MaxCompletionDataBytes {
+		return nil, fmt.Errorf("completion data exceeds %d bytes", MaxCompletionDataBytes)
+	}
+	return canonical, nil
+}
+
+// The root object has depth one; nested objects and arrays each add one.
+func validateCompletionDataDepth(value any, depth int) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		if depth > MaxCompletionDataDepth {
+			return fmt.Errorf("completion data exceeds JSON depth %d", MaxCompletionDataDepth)
+		}
+		for _, child := range typed {
+			if err := validateCompletionDataDepth(child, depth+1); err != nil {
+				return err
+			}
+		}
+	case []any:
+		if depth > MaxCompletionDataDepth {
+			return fmt.Errorf("completion data exceeds JSON depth %d", MaxCompletionDataDepth)
+		}
+		for _, child := range typed {
+			if err := validateCompletionDataDepth(child, depth+1); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

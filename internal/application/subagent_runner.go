@@ -1223,8 +1223,10 @@ func specialistOutputLimit(child domain.AgentNode, aggregateLimit int64) (int, e
 func safeSpecialistAction(action domain.SpecialistAction) (domain.SpecialistAction, error) {
 	action.Message = redact.String(action.Message)
 	if action.Report != nil {
-		report := *action.Report
-		report.Summary = redact.String(report.Summary)
+		report, err := domain.RedactCompletionReport(*action.Report)
+		if err != nil {
+			return domain.SpecialistAction{}, err
+		}
 		action.Report = &report
 	}
 	return domain.NormalizeSpecialistAction(action)
