@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Archive, ArchiveRestore, ArrowLeft, Box, Cpu, Folder, MessagesSquare, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
 import type { ThreadView, WorkspaceView } from "../../api/types";
+import { useLocale } from "../../lib/locale";
 
 export type V2SettingsSection = "general" | "permissions" | "appearance" | "voice" |
   "models" | "plugins" | "browser" | "hooks" | "git" | "environment" |
@@ -9,17 +10,19 @@ export type V2SettingsSection = "general" | "permissions" | "appearance" | "voic
   "advanced-models" | "about" | "shortcuts" | "connections" | "task-configuration" | "configuration";
 
 const executionLabels = {
-  idle: "空闲", running: "执行中", stopping: "正在停止", stop_failed: "停止失败",
-  waiting_approval: "等待审批", paused: "已暂停", completed: "已完成", failed: "执行失败",
-  cancelled: "已取消", unknown: "状态未知",
+  idle: ["空闲", "Idle"], running: ["执行中", "Running"], stopping: ["正在停止", "Stopping"], stop_failed: ["停止失败", "Stop failed"],
+  waiting_approval: ["等待审批", "Awaiting approval"], paused: ["已暂停", "Paused"], completed: ["已完成", "Completed"], failed: ["执行失败", "Failed"],
+  cancelled: ["已取消", "Cancelled"], unknown: ["状态未知", "Unknown"],
 } as const;
 
-function executionStatus(thread: ThreadView, readFailed: boolean) {
+function executionStatus(thread: ThreadView, readFailed: boolean, t: (chinese: string, english: string) => string) {
   const value = thread.execution_state;
   const state = !readFailed && typeof value === "string" && Object.hasOwn(executionLabels, value) ? value : "unknown";
-  return { state, label: executionLabels[state],
-    description: readFailed ? "本次列表读取失败，执行状态未知" : value && state !== "unknown"
-      ? executionLabels[state] : "执行状态未知，请刷新列表重试" };
+  const [chinese, english] = executionLabels[state];
+  const label = t(chinese, english);
+  return { state, label,
+    description: readFailed ? t("本次列表读取失败，执行状态未知", "The list could not be read; execution status is unknown") : value && state !== "unknown"
+      ? label : t("执行状态未知，请刷新列表重试", "Execution status is unknown; refresh the list to try again") };
 }
 
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
@@ -48,6 +51,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   loadMoreFailed?: boolean; refreshing?: boolean;
   onLoadMore?: () => void; onRefresh?: () => void; onRetry?: () => void;
 }) {
+  const { t } = useLocale();
   const searching = Boolean(appliedSearch);
   const workspaceNames = useMemo(() => new Map(workspaces.map((workspace) =>
     [workspace.id, workspace.name])), [workspaces]);
@@ -69,50 +73,50 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
 
   return <aside className="v2-sidebar">
     <div className="v2-sidebar-brand"><strong>Universal-Code</strong>
-      {onRefresh && <button aria-label="刷新对话列表" disabled={searchPending || loading || refreshing || loadingMore}
+      {onRefresh && <button aria-label={t("刷新对话列表", "Refresh conversations")} disabled={searchPending || loading || refreshing || loadingMore}
         onClick={onRefresh} type="button"><RefreshCw aria-hidden="true" size={15} /></button>}
-      <button aria-label="搜索" aria-expanded={searchOpen} onClick={() => onSearchOpen(!searchOpen)} type="button">
+      <button aria-label={t("搜索", "Search")} aria-expanded={searchOpen} onClick={() => onSearchOpen(!searchOpen)} type="button">
         {searchOpen ? <X aria-hidden="true" size={16} /> : <Search aria-hidden="true" size={16} />}
       </button></div>
-    <nav aria-label="对话导航" className="v2-sidebar-actions">
+    <nav aria-label={t("对话导航", "Conversation navigation")} className="v2-sidebar-actions">
       <button onClick={onNewConversation} type="button"><SquarePen aria-hidden="true" size={16} />
-        <span>新对话</span></button>
+        <span>{t("新对话", "New conversation")}</span></button>
       <button onClick={onOpenModels} type="button"><Cpu aria-hidden="true" size={16} />
-        <span>接入模型</span></button>
+        <span>{t("接入模型", "Connect models")}</span></button>
     </nav>
     {searchOpen && <div className="v2-sidebar-search"><Search aria-hidden="true" size={15} />
-      <input aria-label="搜索对话" aria-invalid={searchTooLong || undefined}
+      <input aria-label={t("搜索对话", "Search conversations")} aria-invalid={searchTooLong || undefined}
         aria-describedby={`v2-thread-search-scope${searchTooLong ? " v2-thread-search-error" : ""}`} autoFocus
         onChange={(event) => onSearchChange?.(event.target.value)}
         onCompositionStart={() => onSearchCompositionChange?.(true)}
         onCompositionEnd={(event) => {
           onSearchChange?.(event.currentTarget.value);
           onSearchCompositionChange?.(false);
-        }} placeholder="搜索全部未归档对话标题…" type="search" value={search} />
-      {search && <button aria-label="清除对话搜索" onClick={() => onSearchChange?.("")} type="button">
+        }} placeholder={t("搜索全部未归档对话标题…", "Search all unarchived conversation titles…")} type="search" value={search} />
+      {search && <button aria-label={t("清除对话搜索", "Clear conversation search")} onClick={() => onSearchChange?.("")} type="button">
         <X aria-hidden="true" size={14} /></button>}</div>}
-    {searchOpen && <p className="v2-history-scope" id="v2-thread-search-scope">搜索全部未归档对话标题，不含消息正文。
-      英文字母忽略大小写，其他文字按原文匹配。归档对话在设置中查看。</p>}
-    {searchTooLong && <p className="v2-history-scope" id="v2-thread-search-error" role="alert">标题搜索最多支持 256 个字符，请缩短搜索词。</p>}
+    {searchOpen && <p className="v2-history-scope" id="v2-thread-search-scope">{t("搜索全部未归档对话标题，不含消息正文。英文字母忽略大小写，其他文字按原文匹配。归档对话在设置中查看。",
+      "Search all unarchived conversation titles, excluding message content. English letters are case-insensitive; other text matches exactly. View archived conversations in Settings.")}</p>}
+    {searchTooLong && <p className="v2-history-scope" id="v2-thread-search-error" role="alert">{t("标题搜索最多支持 256 个字符，请缩短搜索词。", "Title searches support up to 256 characters. Shorten your search.")}</p>}
     <div aria-busy={!searchTooLong && (searchPending || loading || refreshing || loadingMore)} className="v2-thread-scroll">
-      <p className="v2-history-scope" role="status" aria-label="对话列表状态" aria-live="polite" aria-atomic="true">
-        {searchTooLong ? "请缩短搜索词后继续。" : searchPending ? "正在准备标题搜索…" : loading ? (searching ? "正在搜索对话…" : "正在加载对话…")
-          : loadFailed ? (loadMoreFailed ? "更多记录读取失败，当前列表尚未加载完毕。" : "对话列表读取失败，当前执行状态未知。")
-          : refreshing ? "正在刷新对话列表…"
-          : `${searching ? "搜索结果：" : ""}已加载 ${threads.length} 条${searching ? "匹配对话" : "对话"}；${truncated
-            ? searching ? "结果达到读取上限，请缩小标题搜索范围。" : "结果达到读取上限，请用标题搜索查找更早记录。"
-            : hasMore ? searching ? "还有更多匹配结果。" : "还有更早记录。" : searching ? "全部匹配结果已加载。" : "当前列表已加载完毕。"}`}</p>
+      <p className="v2-history-scope" role="status" aria-label={t("对话列表状态", "Conversation list status")} aria-live="polite" aria-atomic="true">
+        {searchTooLong ? t("请缩短搜索词后继续。", "Shorten your search to continue.") : searchPending ? t("正在准备标题搜索…", "Preparing title search…") : loading ? (searching ? t("正在搜索对话…", "Searching conversations…") : t("正在加载对话…", "Loading conversations…"))
+          : loadFailed ? (loadMoreFailed ? t("更多记录读取失败，当前列表尚未加载完毕。", "More records could not be loaded. The list is incomplete.") : t("对话列表读取失败，当前执行状态未知。", "The conversation list could not be read. Execution status is unknown."))
+          : refreshing ? t("正在刷新对话列表…", "Refreshing conversations…")
+          : `${searching ? t("搜索结果：", "Search results: ") : ""}${t(`已加载 ${threads.length} 条${searching ? "匹配对话" : "对话"}；`, `Loaded ${threads.length} ${searching ? "matching " : ""}${threads.length === 1 ? "conversation" : "conversations"}; `)}${truncated
+            ? searching ? t("结果达到读取上限，请缩小标题搜索范围。", "The result limit was reached. Narrow your title search.") : t("结果达到读取上限，请用标题搜索查找更早记录。", "The result limit was reached. Use title search to find earlier records.")
+            : hasMore ? searching ? t("还有更多匹配结果。", "More matches are available.") : t("还有更早记录。", "Earlier records are available.") : searching ? t("全部匹配结果已加载。", "All matches are loaded.") : t("当前列表已加载完毕。", "The current list is fully loaded.")}`}</p>
       {!searchPending && !loading && !loadFailed && !truncated && grouped.length === 0 && <div className="v2-sidebar-empty"><MessagesSquare aria-hidden="true" size={16} />
-        {searching ? "没有匹配的未归档对话标题" : "暂无对话"}</div>}
+        {searching ? t("没有匹配的未归档对话标题", "No matching unarchived conversation titles") : t("暂无对话", "No conversations yet")}</div>}
       {!searchPending && grouped.map(([workspaceID, workspaceThreads]) => {
-        const name = workspaceID ? workspaceNames.get(workspaceID) ?? "工作区" : "本地任务";
+        const name = workspaceID ? workspaceNames.get(workspaceID) ?? t("工作区", "Workspace") : t("本地任务", "Local tasks");
         const shortID = workspaceID.length > 16 ? `…${workspaceID.slice(-6)}` : workspaceID;
         const label = workspaceID && (duplicateNames.has(name) || !workspaceNames.has(workspaceID))
           ? `${name} · ${shortID}` : name;
-        return <section aria-label={`项目 ${label}`} className="v2-thread-group" key={workspaceID}>
+        return <section aria-label={t(`项目 ${label}`, `Project ${label}`)} className="v2-thread-group" key={workspaceID}>
         <header title={workspaceID || name}><Folder aria-hidden="true" size={15} /><span>{label}</span></header>
         {workspaceThreads.map((thread) => {
-          const execution = executionStatus(thread, loadFailed);
+          const execution = executionStatus(thread, loadFailed, t);
           const statusID = `v2-thread-state-${thread.id}`;
           return <div className={`v2-thread-row-shell${selectedThreadID === thread.id
           ? " is-selected" : ""}`} key={thread.id}>
@@ -123,49 +127,49 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
               <i />{execution.label}</span>
           </button>
           <span className="v2-thread-state-description" id={statusID}>{execution.description}</span>
-          <button aria-label={`归档 ${thread.title}`} className="v2-thread-more"
-            onClick={() => onArchive(thread)} title="归档此对话" type="button">
+          <button aria-label={t(`归档 ${thread.title}`, `Archive ${thread.title}`)} className="v2-thread-more"
+            onClick={() => onArchive(thread)} title={t("归档此对话", "Archive this conversation")} type="button">
             <Archive aria-hidden="true" size={15} />
           </button>
         </div>; })}
       </section>; })}
-      {!searchPending && loadFailed && <p className="v2-history-scope" role="alert">对话列表加载失败{threads.length ? "，已有记录仍可打开。" : "，请重试读取。"}
-        <button disabled={refreshing || loadingMore} onClick={onRetry ?? (loadMoreFailed ? onLoadMore : onRefresh)} type="button">重试加载对话</button></p>}
+      {!searchPending && loadFailed && <p className="v2-history-scope" role="alert">{threads.length ? t("对话列表加载失败，已有记录仍可打开。", "The conversation list could not be loaded. Existing records can still be opened.") : t("对话列表加载失败，请重试读取。", "The conversation list could not be loaded. Please try again.")}
+        <button disabled={refreshing || loadingMore} onClick={onRetry ?? (loadMoreFailed ? onLoadMore : onRefresh)} type="button">{t("重试加载对话", "Retry loading conversations")}</button></p>}
       {!searchPending && hasMore && <button className="v2-load-history" disabled={loadingMore || refreshing || loading}
-        onClick={onLoadMore} type="button">{loadingMore ? searching ? "正在加载更多匹配对话…" : "正在加载更早对话…"
-          : searching ? "加载更多匹配对话" : "加载更早对话"}</button>}
+        onClick={onLoadMore} type="button">{loadingMore ? searching ? t("正在加载更多匹配对话…", "Loading more matching conversations…") : t("正在加载更早对话…", "Loading earlier conversations…")
+          : searching ? t("加载更多匹配对话", "Load more matching conversations") : t("加载更早对话", "Load earlier conversations")}</button>}
     </div>
     <div className="v2-sidebar-footer">
       {onOpenInspector && <button aria-pressed={inspectorActive} onClick={onOpenInspector} type="button">
-        <Box aria-hidden="true" size={16} />观察与记录</button>}
+        <Box aria-hidden="true" size={16} />{t("观察与记录", "Observation and records")}</button>}
       {onOpenConnections && <button onClick={onOpenConnections} type="button">
-        <PlugZap aria-hidden="true" size={16} />连接与环境</button>}
-      <button onClick={onOpenSettings} type="button"><Settings aria-hidden="true" size={16} />设置</button>
+        <PlugZap aria-hidden="true" size={16} />{t("连接与环境", "Connections and environment")}</button>}
+      <button onClick={onOpenSettings} type="button"><Settings aria-hidden="true" size={16} />{t("设置", "Settings")}</button>
     </div>
   </aside>;
 }
 
-const settingsGroups: Array<{ label: string; items: Array<{
-  id: V2SettingsSection; label: string; icon: typeof Settings;
+const settingsGroups: Array<{ label: [string, string]; items: Array<{
+  id: V2SettingsSection; label: [string, string]; icon: typeof Settings;
 }> }> = [
-  { label: "应用", items: [
-    { id: "general", label: "常规", icon: Settings },
-    { id: "configuration", label: "配置", icon: Settings },
-    { id: "appearance", label: "外观", icon: Palette },
-    { id: "shortcuts", label: "快捷键", icon: Keyboard },
-    { id: "about", label: "关于", icon: Info },
+  { label: ["应用", "Application"], items: [
+    { id: "general", label: ["常规", "General"], icon: Settings },
+    { id: "configuration", label: ["配置", "Configuration"], icon: Settings },
+    { id: "appearance", label: ["外观", "Appearance"], icon: Palette },
+    { id: "shortcuts", label: ["快捷键", "Shortcuts"], icon: Keyboard },
+    { id: "about", label: ["关于", "About"], icon: Info },
   ] },
-  { label: "连接与环境", items: [
-    { id: "connections", label: "连接与环境", icon: PlugZap },
-    { id: "models", label: "模型", icon: Cpu },
-    { id: "extensions", label: "扩展与代码智能", icon: PlugZap },
-    { id: "skills", label: "Skill 包", icon: PackageSearch },
-    { id: "environment", label: "执行环境", icon: Box },
+  { label: ["连接与环境", "Connections and environment"], items: [
+    { id: "connections", label: ["连接与环境", "Connections and environment"], icon: PlugZap },
+    { id: "models", label: ["模型", "Models"], icon: Cpu },
+    { id: "extensions", label: ["扩展与代码智能", "Extensions and code intelligence"], icon: PlugZap },
+    { id: "skills", label: ["Skill 包", "Skill packages"], icon: PackageSearch },
+    { id: "environment", label: ["执行环境", "Execution environment"], icon: Box },
   ] },
-  { label: "任务与观察", items: [
-    { id: "task-configuration", label: "任务预算与项目配置", icon: Settings },
-    { id: "permissions", label: "当前任务权限", icon: ShieldCheck },
-    { id: "inspector", label: "观察视图偏好", icon: Box },
+  { label: ["任务与观察", "Tasks and observation"], items: [
+    { id: "task-configuration", label: ["任务预算与项目配置", "Task budget and project configuration"], icon: Settings },
+    { id: "permissions", label: ["当前任务权限", "Current task permissions"], icon: ShieldCheck },
+    { id: "inspector", label: ["观察视图偏好", "Inspector preferences"], icon: Box },
   ] },
 ];
 
@@ -174,31 +178,32 @@ export function V2SettingsSidebar({ section, onBack, onSelect }: {
   onBack: () => void;
   onSelect: (section: V2SettingsSection) => void;
 }) {
+  const { t } = useLocale();
   const [search, setSearch] = useState("");
   const normalized = search.trim().toLocaleLowerCase();
   return <aside className="v2-sidebar v2-settings-sidebar">
     <button className="v2-settings-back" onClick={onBack} type="button">
-      <ArrowLeft aria-hidden="true" size={16} />返回应用</button>
+      <ArrowLeft aria-hidden="true" size={16} />{t("返回应用", "Back to app")}</button>
     <label className="v2-settings-search"><Search aria-hidden="true" size={15} />
-      <input aria-label="搜索设置" onChange={(event) => setSearch(event.target.value)}
-        placeholder="搜索设置…" type="search" value={search} /></label>
-    <nav aria-label="设置分类" className="v2-settings-nav">
+      <input aria-label={t("搜索设置", "Search settings")} onChange={(event) => setSearch(event.target.value)}
+        placeholder={t("搜索设置…", "Search settings…")} type="search" value={search} /></label>
+    <nav aria-label={t("设置分类", "Settings categories")} className="v2-settings-nav">
       {settingsGroups.map((group) => {
-        const items = group.items.filter((item) => !normalized || item.label.toLocaleLowerCase().includes(normalized));
+        const items = group.items.filter((item) => !normalized || t(...item.label).toLocaleLowerCase().includes(normalized));
         if (!items.length) return null;
-        return <section key={group.label}><h2>{group.label}</h2>{items.map(({ id, label, icon: Icon }) => {
+        return <section key={group.label[0]}><h2>{t(...group.label)}</h2>{items.map(({ id, label, icon: Icon }) => {
           const active = section === id || section === "advanced-models" && id === "models" ||
             section === "plugins" && id === "extensions" || section === "keyboard" && id === "shortcuts";
           return <button aria-current={active ? "page" : undefined}
             className={active ? "is-active" : ""} key={id} onClick={() => onSelect(id)}
-            type="button"><Icon aria-hidden="true" size={16} />{label}</button>;
+            type="button"><Icon aria-hidden="true" size={16} />{t(...label)}</button>;
         })}</section>;
       })}
     </nav>
-    <div className="v2-settings-archive"><span>已归档</span>
+    <div className="v2-settings-archive"><span>{t("已归档", "Archived")}</span>
       <button aria-current={section === "archived" ? "page" : undefined}
         className={section === "archived" ? "is-active" : ""}
         onClick={() => onSelect("archived")} type="button">
-        <ArchiveRestore aria-hidden="true" size={16} />已归档的聊天</button></div>
+        <ArchiveRestore aria-hidden="true" size={16} />{t("已归档的聊天", "Archived chats")}</button></div>
   </aside>;
 }

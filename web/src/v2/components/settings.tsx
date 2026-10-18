@@ -52,45 +52,47 @@ function ConnectionsSettings({ client, threadID, sourceRunID, onSelect, onOpenGi
   client: APIClient; threadID: string; sourceRunID?: string; onSelect: (section: V2SettingsSection) => void;
   onOpenGithubReview?: (runID: string) => void; onOpenTask?: (workspaceID?: string) => void;
 }) {
+  const { t } = useLocale();
   const thread = useQuery({ queryKey: v2QueryKeys.thread(threadID), enabled: Boolean(threadID),
     queryFn: ({ signal }) => client.get<ThreadDetailView>(`/threads/${encodeURIComponent(threadID)}`, {}, signal) });
   const detail = !thread.isError && thread.data?.thread.id === threadID ? thread.data : undefined;
   const run = sourceRunID ? detail?.runs.find((item) => item.run.id === sourceRunID)?.run
     ?? (detail?.active_run?.id === sourceRunID ? detail.active_run : detail?.last_run?.id === sourceRunID ? detail.last_run : undefined)
     : detail?.active_run ?? detail?.last_run;
-  return <><h1>连接与环境</h1><p className="v2-settings-lead">连接模型，准备项目需要的工具，然后回到任务开始工作。</p>
-    <section className="v2-connection-task" aria-label="当前任务">
-      <div><strong>{threadID ? detail?.thread.title || "当前任务" : "从一个任务开始"}</strong>
-        <p>{threadID ? "在下面调整连接与选项，完成后继续对话。" : "打开项目，选好模型，在对话中描述你想完成的工作。"}</p></div>
+  return <><h1>{t("连接与环境", "Connections & environment")}</h1><p className="v2-settings-lead">{t("连接模型，准备项目需要的工具，然后回到任务开始工作。", "Connect a model, prepare your project tools, then return to your task.")}</p>
+    <section className="v2-connection-task" aria-label={t("当前任务", "Current task")}>
+      <div><strong>{threadID ? detail?.thread.title || t("当前任务", "Current task") : t("从一个任务开始", "Start with a task")}</strong>
+        <p>{threadID ? t("在下面调整连接与选项，完成后继续对话。", "Adjust connections and options below, then continue the conversation.") : t("打开项目，选好模型，在对话中描述你想完成的工作。", "Open a project, choose a model, and describe what you want to do.")}</p></div>
       {onOpenTask && <button onClick={() => onOpenTask()} type="button">
-        {threadID ? "返回任务" : "开始任务"}<ArrowRight aria-hidden="true" size={15} /></button>}
+        {threadID ? t("返回任务", "Return to task") : t("开始任务", "Start a task")}<ArrowRight aria-hidden="true" size={15} /></button>}
     </section>
-    <nav className="v2-connection-navigation" aria-label="连接与环境设置">
-      <section aria-labelledby="connection-task-preparation"><h2 id="connection-task-preparation">任务准备</h2>
-        <button onClick={() => onSelect("models")} type="button"><span><strong>模型连接</strong><small>选择供应商、保存凭据并验证模型。</small></span><ArrowRight aria-hidden="true" size={16} /></button>
-        <button onClick={() => onSelect("task-configuration")} type="button"><span><strong>任务预算与项目配置</strong><small>{threadID ? "查看本次执行保存的上限和项目设置。" : "设置新任务的用量上限，预览项目规则。"}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+    <nav className="v2-connection-navigation" aria-label={t("连接与环境设置", "Connection and environment settings")}>
+      <section aria-labelledby="connection-task-preparation"><h2 id="connection-task-preparation">{t("任务准备", "Task preparation")}</h2>
+        <button onClick={() => onSelect("models")} type="button"><span><strong>{t("模型连接", "Model connections")}</strong><small>{t("选择供应商、保存凭据并验证模型。", "Choose a provider, save credentials, and verify the model.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+        <button onClick={() => onSelect("task-configuration")} type="button"><span><strong>{t("任务预算与项目配置", "Task budget & project configuration")}</strong><small>{threadID ? t("查看本次执行保存的上限和项目设置。", "View limits and project settings saved for this run.") : t("设置新任务的用量上限，预览项目规则。", "Set usage limits for new tasks and preview project rules.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
       </section>
-      <section aria-labelledby="connection-task-tools"><h2 id="connection-task-tools">工具与协作</h2>
-        <button onClick={() => onSelect("extensions")} type="button"><span><strong>扩展与代码智能</strong><small>添加 MCP、Plugin 和语言服务，按步骤完成接入。</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+      <section aria-labelledby="connection-task-tools"><h2 id="connection-task-tools">{t("工具与协作", "Tools & collaboration")}</h2>
+        <button onClick={() => onSelect("extensions")} type="button"><span><strong>{t("扩展与代码智能", "Extensions & code intelligence")}</strong><small>{t("添加 MCP、Plugin 和语言服务，按步骤完成接入。", "Set up MCP servers, plugins, and language services.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
         <button disabled={!run?.id || !onOpenGithubReview} onClick={() => { if (run?.id) onOpenGithubReview?.(run.id); }} type="button">
-          <span><strong>GitHub 连接与审阅</strong><small>{run?.id ? "管理此任务的 GitHub 连接，查看和处理 PR。"
-            : !threadID ? "从侧栏打开一个任务，即可管理它的 GitHub 连接。"
-              : thread.isPending ? "正在读取任务记录…" : thread.isError ? "任务记录读取失败，请点击下方“重新读取任务”。"
-                : "请返回任务，选择一条执行记录后进入 GitHub 审阅。"}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+          <span><strong>{t("GitHub 连接与审阅", "GitHub connections & review")}</strong><small>{run?.id ? t("管理此任务的 GitHub 连接，查看和处理 PR。", "Manage GitHub connections and pull requests for this task.")
+            : !threadID ? t("从侧栏打开一个任务，即可管理它的 GitHub 连接。", "Open a task from the sidebar to manage its GitHub connection.")
+              : thread.isPending ? t("正在读取任务记录…", "Loading task records…") : thread.isError ? t("任务记录读取失败，请点击下方“重新读取任务”。", "Task records could not be loaded. Select Reload task below.")
+                : t("请返回任务，选择一条执行记录后进入 GitHub 审阅。", "Return to the task and select a run to open GitHub review.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
       </section>
-      <section aria-labelledby="connection-task-environment"><h2 id="connection-task-environment">运行设置</h2>
-        <button onClick={() => onSelect("environment")} type="button"><span><strong>执行环境设置</strong><small>检测 Local、Docker Engine 与官方 sbx，保存启用选项和固定镜像。</small></span><ArrowRight aria-hidden="true" size={16} /></button>
-        <button onClick={() => onSelect("permissions")} type="button"><span><strong>任务权限与执行环境</strong><small>{threadID ? "选择操作确认方式，查看项目访问范围与执行环境。" : "查看当前环境；打开任务后可调整它的操作权限。"}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
-        <button onClick={() => onSelect("about")} type="button"><span><strong>应用连接与诊断</strong><small>查看版本和连接状态，处理连接问题。</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+      <section aria-labelledby="connection-task-environment"><h2 id="connection-task-environment">{t("运行设置", "Runtime settings")}</h2>
+        <button onClick={() => onSelect("environment")} type="button"><span><strong>{t("执行环境设置", "Execution environment settings")}</strong><small>{t("检测 Local、Docker Engine 与官方 sbx，保存启用选项和固定镜像。", "Detect Local, Docker Engine, and official sbx; save enabled options and pinned images.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+        <button onClick={() => onSelect("permissions")} type="button"><span><strong>{t("任务权限与执行环境", "Task permissions & environment")}</strong><small>{threadID ? t("选择操作确认方式，查看项目访问范围与执行环境。", "Choose approval behavior and view project access and the execution environment.") : t("查看当前环境；打开任务后可调整它的操作权限。", "View the current environment. Open a task to adjust its permissions.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+        <button onClick={() => onSelect("about")} type="button"><span><strong>{t("应用连接与诊断", "App connection & diagnostics")}</strong><small>{t("查看版本和连接状态，处理连接问题。", "View version and connection status and troubleshoot connection issues.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
       </section>
     </nav>
-    {threadID && thread.isError && <button className="v2-setting-link" onClick={() => void thread.refetch()} type="button">重新读取任务</button>}
-    {run && <details className="v2-connection-record"><summary>查看任务记录</summary>
-      <dl><div><dt>任务 ID</dt><dd>{threadID}</dd></div><div><dt>执行 ID</dt><dd>{run.id}</dd></div></dl></details>}
+    {threadID && thread.isError && <button className="v2-setting-link" onClick={() => void thread.refetch()} type="button">{t("重新读取任务", "Reload task")}</button>}
+    {run && <details className="v2-connection-record"><summary>{t("查看任务记录", "View task records")}</summary>
+      <dl><div><dt>{t("任务 ID", "Task ID")}</dt><dd>{threadID}</dd></div><div><dt>{t("执行 ID", "Run ID")}</dt><dd>{run.id}</dd></div></dl></details>}
   </>;
 }
 
 function FontLicenseControl() {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [license, setLicense] = useState("");
   const [error, setError] = useState("");
@@ -110,35 +112,35 @@ function FontLicenseControl() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const content = await response.text();
         if (!content.includes("HarmonyOS Sans Fonts License Agreement")) {
-          throw new Error("许可文本格式无效");
+          throw new Error("Invalid license text");
         }
         setLicense(content);
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "无法读取许可文本");
+        setError(reason instanceof Error ? reason.message : "Unable to read license text");
       });
     return () => controller.abort();
   }, [license, open]);
 
   return <>
     <button className="v2-setting-link" onClick={() => setOpen(true)} ref={triggerRef}
-      type="button">查看许可</button>
+      type="button">{t("查看许可", "View license")}</button>
     {open && createPortal(<div className="v2-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) close();
     }} role="presentation">
       <section aria-labelledby="v2-font-license-title" aria-modal="true"
         className="v2-dialog v2-license-dialog" ref={dialogRef} role="dialog" tabIndex={-1}>
         <header><span><BookOpen aria-hidden="true" size={17} /></span>
-          <h2 id="v2-font-license-title">HarmonyOS Sans Fonts 许可</h2>
-          <button aria-label="关闭许可" onClick={close} type="button"><X aria-hidden="true" size={16} /></button>
+          <h2 id="v2-font-license-title">{t("HarmonyOS Sans Fonts 许可", "HarmonyOS Sans Fonts license")}</h2>
+          <button aria-label={t("关闭许可", "Close license")} onClick={close} type="button"><X aria-hidden="true" size={16} /></button>
         </header>
         <div aria-live="polite" className="v2-license-content">
-          {!license && !error && <p>正在读取随软件发布的许可文本…</p>}
-          {error && <p role="alert">无法读取许可文本：{error}</p>}
+          {!license && !error && <p>{t("正在读取随软件发布的许可文本…", "Loading the license bundled with the app…")}</p>}
+          {error && <p role="alert">{t("无法读取许可文本：", "Unable to read license text: ")}{error}</p>}
           {license && <pre>{license}</pre>}
         </div>
-        <footer><button onClick={close} type="button">关闭</button></footer>
+        <footer><button onClick={close} type="button">{t("关闭", "Close")}</button></footer>
       </section>
     </div>, document.body)}
   </>;
@@ -149,26 +151,26 @@ function GeneralSettings({ threadID, workspaces, onPermissions }: {
   workspaces: WorkspaceView[];
   onPermissions: () => void;
 }) {
-  const { locale, setLocale } = useLocale();
+  const { locale, setLocale, t } = useLocale();
   return <>
-    <h1>常规</h1>
-    <p className="v2-settings-lead">调整应用偏好。项目访问范围和执行环境可在「当前任务权限」中设置。</p>
-    <section className="v2-settings-section"><h2>常规</h2>
+    <h1>{t("常规", "General")}</h1>
+    <p className="v2-settings-lead">{t("调整应用偏好。项目访问范围和执行环境可在「当前任务权限」中设置。", "Adjust app preferences. Manage project access and execution environments in Current task permissions.")}</p>
+    <section className="v2-settings-section"><h2>{t("常规", "General")}</h2>
       <div className="v2-settings-card">
-        <SettingRow detail="新对话中选择项目；桌面应用可直接打开本机文件夹" title="项目">
-          <span>{workspaces.length} 个已加载项目</span>
+        <SettingRow detail={t("新对话中选择项目；桌面应用可直接打开本机文件夹", "Choose a project in a new conversation. The desktop app can open local folders directly.")} title={t("项目", "Projects")}>
+          <span>{t(`${workspaces.length} 个已加载项目`, `Loaded projects: ${workspaces.length}`)}</span>
         </SettingRow>
-        <SettingRow detail="主界面使用简体中文。下方语言选项用于已提供双语内容的高级面板。" title="语言">
-          <div className="v2-setting-segmented" role="group" aria-label="高级面板语言">
+        <SettingRow detail={t("选择界面语言，立即生效并保存在本机。", "Choose the interface language. Changes apply immediately and are saved on this device.")} title={t("语言", "Language")}>
+          <div className="v2-setting-segmented" role="group" aria-label={t("界面语言", "Interface language")}>
             <button aria-pressed={locale === "zh-CN"} onClick={() => setLocale("zh-CN")} type="button">中文</button>
-            <button aria-pressed={locale === "en-US"} onClick={() => setLocale("en-US")} type="button">English（部分）</button>
+            <button aria-pressed={locale === "en-US"} onClick={() => setLocale("en-US")} type="button">English</button>
           </div>
         </SettingRow>
-        <SettingRow detail={threadID ? "为当前打开的任务选择操作确认方式和访问范围。" : "先打开一个对话，再查看它的任务权限。"} title="当前任务权限">
-          <button className="v2-setting-link" aria-label="管理当前任务权限" disabled={!threadID}
-            onClick={onPermissions} type="button">管理</button>
+        <SettingRow detail={threadID ? t("为当前打开的任务选择操作确认方式和访问范围。", "Choose approval behavior and access scope for the current task.") : t("先打开一个对话，再查看它的任务权限。", "Open a conversation to view its task permissions.")} title={t("当前任务权限", "Current task permissions")}>
+          <button className="v2-setting-link" aria-label={t("管理当前任务权限", "Manage current task permissions")} disabled={!threadID}
+            onClick={onPermissions} type="button">{t("管理", "Manage")}</button>
         </SettingRow>
-        <SettingRow detail="中文界面使用 HarmonyOS Sans Fonts；完整许可文本随软件发布。" title="第三方字体">
+        <SettingRow detail={t("中文界面使用 HarmonyOS Sans Fonts；完整许可文本随软件发布。", "Chinese text uses HarmonyOS Sans Fonts. The full license is bundled with the app.")} title={t("第三方字体", "Third-party fonts")}>
           <FontLicenseControl />
         </SettingRow>
       </div>
@@ -177,6 +179,7 @@ function GeneralSettings({ threadID, workspaces, onPermissions }: {
 }
 
 function AppearanceSettings() {
+  const { t } = useLocale();
   const [theme, setTheme] = useState<PrayuTheme>(() => readPrayuTheme());
   const [glass, setGlass] = useState<PrayuGlassSettings>(() => readPrayuGlassSettings());
   const select = (next: PrayuTheme) => {
@@ -205,62 +208,62 @@ function AppearanceSettings() {
     glass.frost === defaultPrayuGlassSettings.frost &&
     glass.brightness === defaultPrayuGlassSettings.brightness &&
     glass.glow === defaultPrayuGlassSettings.glow;
-  return <><h1>外观</h1><section className="v2-settings-section"><h2>主题与材质</h2>
+  return <><h1>{t("外观", "Appearance")}</h1><section className="v2-settings-section"><h2>{t("主题与材质", "Theme & materials")}</h2>
     <div className="v2-settings-card v2-appearance-card">
-      <div className="v2-theme-options" role="group" aria-label="应用主题">
+      <div className="v2-theme-options" role="group" aria-label={t("应用主题", "App theme")}>
         {(["light", "dark", "glass"] as const).map((option) => <button aria-pressed={theme === option}
           key={option} onClick={() => select(option)} type="button">
           <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
-          <strong>{option === "light" ? "浅色" : option === "dark" ? "深色" : "雾透"}</strong>
+          <strong>{option === "light" ? t("浅色", "Light") : option === "dark" ? t("深色", "Dark") : t("雾透", "Mist")}</strong>
         </button>)}</div>
-      <p>雾透采用 Catppuccin Latte 雾面玻璃材质与柔光底色；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
+      <p>{t("雾透采用 Catppuccin Latte 雾面玻璃材质与柔光底色；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "Mist uses Catppuccin Latte frosted glass and soft ambient light; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
     </div></section>
-    {theme === "glass" && <section className="v2-settings-section" aria-label="雾透玻璃参数">
-      <h2>雾透玻璃材质（Catppuccin Latte）</h2>
+    {theme === "glass" && <section className="v2-settings-section" aria-label={t("雾透玻璃参数", "Mist glass tuning")}>
+      <h2>{t("雾透玻璃材质（Catppuccin Latte）", "Mist Glass (Catppuccin Latte)")}</h2>
       <div className="v2-settings-card v2-glass-settings-card">
-        <SettingRow detail="云母效果将侧栏与顶栏悬浮为圆角毛玻璃卡片；兼容模式保留原始边框布局。" title="玻璃模式">
-          <div className="v2-setting-segmented" role="group" aria-label="玻璃模式">
-            <button aria-pressed={glass.mode === "mica"} onClick={() => updateGlass({ mode: "mica" })} type="button">云母效果</button>
-            <button aria-pressed={glass.mode === "compat"} onClick={() => updateGlass({ mode: "compat" })} type="button">兼容模式</button>
+        <SettingRow detail={t("云母效果将侧栏与顶栏悬浮为圆角毛玻璃卡片；兼容模式保留原始边框布局。", "Mica floats sidebar and titlebar as rounded frosted cards; Compat keeps the stock framed layout.")} title={t("玻璃模式", "Glass mode")}>
+          <div className="v2-setting-segmented" role="group" aria-label={t("玻璃模式", "Glass mode")}>
+            <button aria-pressed={glass.mode === "mica"} onClick={() => updateGlass({ mode: "mica" })} type="button">{t("云母效果", "Mica")}</button>
+            <button aria-pressed={glass.mode === "compat"} onClick={() => updateGlass({ mode: "compat" })} type="button">{t("兼容模式", "Compat")}</button>
           </div>
         </SettingRow>
-        <SettingRow detail="一键切换清透、标准或高磨砂雾面玻璃质感。" title="材质预设">
-          <div className="v2-setting-segmented" role="group" aria-label="材质预设">
-            <button aria-pressed={activePreset === "clear"} onClick={() => applyPreset("clear")} type="button">清透</button>
-            <button aria-pressed={activePreset === "standard"} onClick={() => applyPreset("standard")} type="button">标准</button>
-            <button aria-pressed={activePreset === "frosted"} onClick={() => applyPreset("frosted")} type="button">磨砂</button>
+        <SettingRow detail={t("一键切换清透、标准或高磨砂雾面玻璃质感。", "Quickly toggle between clear, standard, and frosted textures.")} title={t("材质预设", "Material presets")}>
+          <div className="v2-setting-segmented" role="group" aria-label={t("材质预设", "Material presets")}>
+            <button aria-pressed={activePreset === "clear"} onClick={() => applyPreset("clear")} type="button">{t("清透", "Clear")}</button>
+            <button aria-pressed={activePreset === "standard"} onClick={() => applyPreset("standard")} type="button">{t("标准", "Standard")}</button>
+            <button aria-pressed={activePreset === "frosted"} onClick={() => applyPreset("frosted")} type="button">{t("磨砂", "Frosted")}</button>
           </div>
         </SettingRow>
-        <SettingRow detail="调节毛玻璃背景高斯模糊半径（0–40 px）。" title="玻璃模糊度">
+        <SettingRow detail={t("调节毛玻璃背景高斯模糊半径（0–40 px）。", "Adjust Gaussian blur radius for frosted glass (0–40 px).")} title={t("玻璃模糊度", "Glass blur")}>
           <div className="v2-glass-slider-control">
-            <input aria-label="玻璃模糊度" max={40} min={0}
+            <input aria-label={t("玻璃模糊度", "Glass blur")} max={40} min={0}
               onChange={(event) => updateGlass({ blur: Number(event.currentTarget.value) })}
               step={0.5} type="range" value={glass.blur} />
             <output aria-live="off">{glass.blur} px</output>
           </div>
         </SettingRow>
-        <SettingRow detail="调节悬浮卡片与侧栏的雾化不透明度（0–100%）。" title="磨砂度">
+        <SettingRow detail={t("调节悬浮卡片与侧栏的雾化不透明度（0–100%）。", "Adjust frosted white tint opacity for floating surfaces (0–100%).")} title={t("磨砂度", "Frost opacity")}>
           <div className="v2-glass-slider-control">
-            <input aria-label="磨砂度" max={100} min={0}
+            <input aria-label={t("磨砂度", "Frost opacity")} max={100} min={0}
               onChange={(event) => updateGlass({ frost: Number(event.currentTarget.value) })}
               step={1} type="range" value={glass.frost} />
             <output aria-live="off">{glass.frost}%</output>
           </div>
         </SettingRow>
-        <SettingRow detail="调节底层画布明度（50% 为标准 Latte 柔光底色，100% 为纯白）。" title="背景亮度">
+        <SettingRow detail={t("调节底层画布明度（50% 为标准 Latte 柔光底色，100% 为纯白）。", "Adjust base canvas brightness (50% is standard Latte soft ambient wash, 100% is white).")} title={t("背景亮度", "Canvas brightness")}>
           <div className="v2-glass-slider-control">
-            <input aria-label="背景亮度" max={100} min={50}
+            <input aria-label={t("背景亮度", "Canvas brightness")} max={100} min={50}
               onChange={(event) => updateGlass({ brightness: Number(event.currentTarget.value) })}
               step={1} type="range" value={glass.brightness} />
             <output aria-live="off">{glass.brightness}%</output>
           </div>
         </SettingRow>
-        <SettingRow detail="在底层画布左上角与右上角叠加柔和的品牌蓝与翠绿环境光晕。" title="氛围光斑">
-          <button aria-checked={glass.glow} aria-label="氛围光斑" className="v2-cdp-switch"
+        <SettingRow detail={t("在底层画布左上角与右上角叠加柔和的品牌蓝与翠绿环境光晕。", "Overlay soft brand blue and green ambient glows on the top corners of the base canvas.")} title={t("氛围光斑", "Ambient glows")}>
+          <button aria-checked={glass.glow} aria-label={t("氛围光斑", "Ambient glows")} className="v2-cdp-switch"
             onClick={() => updateGlass({ glow: !glass.glow })} role="switch" type="button"><i /></button>
         </SettingRow>
-        <SettingRow detail="恢复标准云母效果（模糊度 5 px、磨砂度 20%、亮度 50%、关闭光斑）。" title="默认参数">
-          <button className="v2-setting-link" disabled={isDefaultGlass} onClick={resetGlass} type="button">还原默认值</button>
+        <SettingRow detail={t("恢复标准云母效果（模糊度 5 px、磨砂度 20%、亮度 50%、关闭光斑）。", "Reset to standard Mica settings (blur 5 px, frost 20%, brightness 50%, no glows).")} title={t("默认参数", "Default settings")}>
+          <button className="v2-setting-link" disabled={isDefaultGlass} onClick={resetGlass} type="button">{t("还原默认值", "Reset to defaults")}</button>
         </SettingRow>
       </div>
     </section>}</>;
@@ -272,6 +275,7 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   setupToken?: string;
   onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
 }) {
+  const { t } = useLocale();
   const [selected, setSelected] = useState<V2ConfiguredModelProviderPreset | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(initialAdvancedOpen);
   useEffect(() => { if (initialAdvancedOpen) setAdvancedOpen(true); }, [initialAdvancedOpen]);
@@ -307,10 +311,9 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   const advancedPanel = <section className="v2-model-advanced">
       <button aria-expanded={advancedOpen} className="v2-model-advanced-toggle"
         onClick={() => setAdvancedOpen((open) => !open)} type="button">
-        高级模型设置：默认模型、能力诊断与费用预算
+        {t("高级模型设置：默认模型、能力诊断与费用预算", "Advanced model settings: defaults, capabilities & cost budgets")}
       </button>
-      {advancedOpen && <><p>新对话可在输入区直接选模型；这里管理未单独选择时的默认值。
-        价格表只用于启用金额上限的任务。</p>
+      {advancedOpen && <><p>{t("新对话可在输入区直接选模型；这里管理未单独选择时的默认值。价格表只用于启用金额上限的任务。", "Choose a model directly in a new conversation. Set defaults here for tasks without a specific selection. Pricing is only used for tasks with a cost limit.")}</p>
         <ModelAvailabilitySettings client={client} /></>}
     </section>;
 
@@ -329,6 +332,7 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
 }
 
 function ArchivedSettings({ client, onOpenThread }: { client: APIClient; onOpenThread?: (id: string) => void }) {
+  const { locale, t } = useLocale();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState<ThreadView | null>(null);
@@ -354,40 +358,40 @@ function ArchivedSettings({ client, onOpenThread }: { client: APIClient; onOpenT
     .map((thread) => [thread.id, thread])).values()], [query.data]);
   const threads = useMemo(() => loaded.filter((thread) => !normalized ||
     thread.title.toLocaleLowerCase().includes(normalized)), [normalized, loaded]);
-  return <><h1>已归档的聊天</h1><p className="v2-settings-lead">在这里查看归档对话及其记录。选择「取消归档」可将对话放回侧栏。</p>
+  return <><h1>{t("已归档的聊天", "Archived chats")}</h1><p className="v2-settings-lead">{t("在这里查看归档对话及其记录。选择「取消归档」可将对话放回侧栏。", "View archived conversations and their records. Unarchive a conversation to return it to the sidebar.")}</p>
     <label className="v2-archive-search"><Search aria-hidden="true" size={15} />
-      <input aria-label="搜索已归档的聊天" onChange={(event) => setSearch(event.target.value)}
-        placeholder="搜索已归档的聊天" type="search" value={search} /></label>
-    <p className="v2-history-scope">按标题搜索当前已加载的 {loaded.length} 条归档对话。
-      {query.isLoading ? "正在读取列表。" : query.isError ? "本次加载未完成，请重试。"
-        : query.hasNextPage ? "可以继续加载更早记录。" : "当前列表已加载完毕。"}</p>
+      <input aria-label={t("搜索已归档的聊天", "Search archived chats")} onChange={(event) => setSearch(event.target.value)}
+        placeholder={t("搜索已归档的聊天", "Search archived chats")} type="search" value={search} /></label>
+    <p className="v2-history-scope">{t(`按标题搜索当前已加载的 ${loaded.length} 条归档对话。`, `Search the ${loaded.length} loaded archived conversations by title. `)}
+      {query.isLoading ? t("正在读取列表。", "Loading the list.") : query.isError ? t("本次加载未完成，请重试。", "Loading did not complete. Please retry.")
+        : query.hasNextPage ? t("可以继续加载更早记录。", "More records are available.") : t("当前列表已加载完毕。", "All records have been loaded.")}</p>
     <div className="v2-archive-list">
-      {query.isLoading && <p>正在加载…</p>}
-      {query.isError && <p role="alert">无法读取归档列表。<button onClick={() => void (query.isFetchNextPageError
-        ? query.fetchNextPage() : query.refetch())} type="button">重试归档列表</button></p>}
+      {query.isLoading && <p>{t("正在加载…", "Loading…")}</p>}
+      {query.isError && <p role="alert">{t("无法读取归档列表。", "Unable to load archived chats.")}<button onClick={() => void (query.isFetchNextPageError
+        ? query.fetchNextPage() : query.refetch())} type="button">{t("重试归档列表", "Retry archived chats")}</button></p>}
       {!query.isLoading && !query.isError && threads.length === 0 && <div className="v2-archive-empty">
-        {normalized ? "已加载的标题中没有匹配项" : "暂无已归档的聊天"}</div>}
+        {normalized ? t("已加载的标题中没有匹配项", "No matching titles in the loaded chats") : t("暂无已归档的聊天", "No archived chats yet")}</div>}
       {threads.map((thread) => <article key={thread.id}><div><strong>{onOpenThread
-        ? <button className="link-button" aria-label={`打开 ${thread.title}`} onClick={() => onOpenThread(thread.id)}
+        ? <button className="link-button" aria-label={t(`打开 ${thread.title}`, `Open ${thread.title}`)} onClick={() => onOpenThread(thread.id)}
           type="button">{thread.title}</button> : thread.title}</strong>
-        <span>{thread.archived_at ? new Date(thread.archived_at).toLocaleString() : "已归档"}</span></div>
+        <span>{thread.archived_at ? new Date(thread.archived_at).toLocaleString(locale) : t("已归档", "Archived")}</span></div>
         <button disabled={!client.hasThreadControl || transition.isPending}
           onClick={() => transition.mutate({ thread, action: "restore" })} type="button">
-          <ArchiveRestore aria-hidden="true" size={15} />取消归档</button>
-        <button aria-label={`删除 ${thread.title}`} className="danger"
+          <ArchiveRestore aria-hidden="true" size={15} />{t("取消归档", "Unarchive")}</button>
+        <button aria-label={t(`删除 ${thread.title}`, `Delete ${thread.title}`)} className="danger"
           disabled={!client.hasThreadControl || transition.isPending}
-          onClick={() => setDeleteCandidate(thread)} type="button"><Trash2 aria-hidden="true" size={15} />删除</button>
+          onClick={() => setDeleteCandidate(thread)} type="button"><Trash2 aria-hidden="true" size={15} />{t("删除", "Delete")}</button>
       </article>)}</div>
     {query.hasNextPage && <button className="v2-load-history" disabled={query.isFetchingNextPage}
       onClick={() => void query.fetchNextPage()} type="button">
-      {query.isFetchingNextPage ? "正在加载…" : "加载更早归档"}</button>}
+      {query.isFetchingNextPage ? t("正在加载…", "Loading…") : t("加载更早归档", "Load older archives")}</button>}
     {transition.isError && <p className="v2-inline-error" role="alert">{transition.error instanceof Error
-      ? transition.error.message : "更新归档状态失败"}</p>}
-    <V2ConfirmDialog busy={transition.isPending} confirmLabel="删除" danger
-      description="此对话会从产品列表中删除；底层审计记录仍按项目保留策略保存。"
+      ? transition.error.message : t("更新归档状态失败", "Unable to update archive status")}</p>}
+    <V2ConfirmDialog busy={transition.isPending} confirmLabel={t("删除", "Delete")} danger
+      description={t("此对话会从产品列表中删除；底层审计记录仍按项目保留策略保存。", "This conversation will be removed from the app list. Audit records are retained under the project's retention policy.")}
       onCancel={() => setDeleteCandidate(null)} onConfirm={() => deleteCandidate &&
         transition.mutate({ thread: deleteCandidate, action: "delete" })}
-      open={Boolean(deleteCandidate)} title="删除已归档的聊天" />
+      open={Boolean(deleteCandidate)} title={t("删除已归档的聊天", "Delete archived chat")} />
   </>;
 }
 
@@ -395,16 +399,17 @@ function PlaceholderSettings({ section, onOpenLegacy }: {
   section: V2SettingsSection;
   onOpenLegacy: (returnFocus: HTMLElement) => void;
 }) {
+  const { t } = useLocale();
   const titles: Partial<Record<V2SettingsSection, string>> = {
-    voice: "语音", keyboard: "键盘快捷键", plugins: "插件",
-    browser: "浏览器", hooks: "钩子", git: "Git", environment: "环境", worktrees: "Worktrees",
+    voice: t("语音", "Voice"), keyboard: t("键盘快捷键", "Keyboard shortcuts"), plugins: t("插件", "Plugins"),
+    browser: t("浏览器", "Browser"), hooks: t("钩子", "Hooks"), git: "Git", environment: t("环境", "Environment"), worktrees: "Worktrees",
   };
-  return <><h1>{titles[section] ?? "设置"}</h1><section className="v2-settings-section">
+  return <><h1>{titles[section] ?? t("设置", "Settings")}</h1><section className="v2-settings-section">
     <div className="v2-settings-card v2-settings-placeholder"><Monitor aria-hidden="true" size={22} />
-      <strong>打开{titles[section] ?? "高级"}工具</strong>
-      <p>进入 Inspector，查看详细设置和运行记录。</p>
+      <strong>{t(`打开${titles[section] ?? "高级"}工具`, `Open ${titles[section] ?? "advanced"} tools`)}</strong>
+      <p>{t("进入 Inspector，查看详细设置和运行记录。", "Open Inspector to view detailed settings and run records.")}</p>
       <button onClick={(event) => onOpenLegacy(event.currentTarget)}
-        type="button">在 Inspector 中打开</button></div>
+        type="button">{t("在 Inspector 中打开", "Open in Inspector")}</button></div>
   </section></>;
 }
 
@@ -439,6 +444,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
   desktop?: boolean;
 }) {
+  const { t } = useLocale();
   return <main className="v2-settings-main"><div className="v2-settings-toolbar" />
     <div className="v2-settings-scroll"><div className="v2-settings-content">
       {section === "general" && <GeneralSettings onPermissions={() => onSelectSection("permissions")}
@@ -446,10 +452,10 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}
         onChange={onDefaultWebAccessChange} hasThread={Boolean(threadID)}
         onOpenPermissions={() => onSelectSection("permissions")} onOpenEnvironment={() => onSelectSection("environment")} />}
-      {section === "permissions" && <><h1>权限</h1><p className="v2-settings-lead">
-        为当前任务选择操作确认方式。运行中提高权限会从下一次执行生效；降低权限会收紧相应操作范围。
+      {section === "permissions" && <><h1>{t("权限", "Permissions")}</h1><p className="v2-settings-lead">
+        {t("为当前任务选择操作确认方式。运行中提高权限会从下一次执行生效；降低权限会收紧相应操作范围。", "Choose approval behavior for the current task. Permission increases during a run apply to the next run; reductions restrict the corresponding actions.")}
       </p>
-        <section className="v2-settings-section"><h2>任务权限</h2>
+        <section className="v2-settings-section"><h2>{t("任务权限", "Task permissions")}</h2>
           <V2PermissionControl client={client} threadID={threadID} variant="settings"
             onOpenModelSettings={() => onSelectSection("models")} />
         </section>
@@ -457,12 +463,12 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         <V2ExecutionSettings client={client} threadID={threadID} workspaces={workspaces} />
         <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
       {section === "appearance" && <AppearanceSettings />}
-      {section === "environment" && <><h1>执行环境设置</h1><p className="v2-settings-lead">检测用户安装，保存下次启动配置，再回到任务选择编码环境。</p>
-        <Suspense fallback={<p role="status">正在加载执行环境设置…</p>}><SandboxEnvironmentPanel client={client} />
+      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("检测用户安装，保存下次启动配置，再回到任务选择编码环境。", "Detect installed environments, save settings for the next startup, then return to your task to choose a coding environment.")}</p>
+        <Suspense fallback={<p role="status">{t("正在加载执行环境设置…", "Loading execution environment settings…")}</p>}><SandboxEnvironmentPanel client={client} />
           <VerificationSettingsPanel client={client} /></Suspense></>}
       {section === "connections" && <ConnectionsSettings client={client} threadID={threadID} sourceRunID={sourceRunID}
         onOpenGithubReview={onOpenGithubReview} onOpenTask={onOpenTask} onSelect={onSelectSection} />}
-      {section === "task-configuration" && <Suspense fallback={<p role="status">正在加载任务配置…</p>}>
+      {section === "task-configuration" && <Suspense fallback={<p role="status">{t("正在加载任务配置…", "Loading task configuration…")}</p>}>
         <TaskConfigurationSettings client={client} threadID={threadID} sourceRunID={sourceRunID} draftWorkspaceID={draftWorkspaceID} draftPhase={draftPhase}
           draftBudget={draftBudget} onDraftBudgetChange={onDraftBudgetChange} onDraftValidityChange={onDraftValidityChange}
           draftProjectSkills={draftProjectSkills} onDraftProjectSkillsChange={onDraftProjectSkillsChange} />
@@ -477,7 +483,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "skills" && <V2SkillSettings client={client} desktop={desktop} />}
       {section === "about" && <V2AboutSettings client={client} desktop={desktop} />}
       {(section === "shortcuts" || section === "keyboard") && <div className="v2-shared-settings">
-        <ShortcutSettings /><p>使用方向键与 Enter 操作当前菜单或对话框；输入普通段落时按 Enter 发送，列表和代码块中按 Enter 续行。Ctrl+Enter 发送，Shift+Enter 换行。</p>
+        <ShortcutSettings /><p>{t("使用方向键与 Enter 操作当前菜单或对话框；输入普通段落时按 Enter 发送，列表和代码块中按 Enter 续行。Ctrl+Enter 发送，Shift+Enter 换行。", "Use arrow keys and Enter in menus and dialogs. Enter sends regular paragraphs and adds a line in lists and code blocks. Ctrl+Enter sends; Shift+Enter adds a line.")}</p>
       </div>}
       {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
       {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",

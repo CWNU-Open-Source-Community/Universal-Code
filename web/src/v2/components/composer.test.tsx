@@ -1,4 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider, useLocale } from "../../lib/locale";
+import { act, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { WorkspaceView } from "../../api/types";
@@ -160,3 +163,49 @@ describe("V2Composer", () => {
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+it("switches composer controls and the open add menu without changing the draft or workspace name", async () => {
+  function LanguageControl() {
+    const { locale, setLocale } = useLocale();
+    return <select aria-label="Test language" value={locale}
+      onChange={(event) => setLocale(event.target.value as "zh-CN" | "en-US")}>
+      <option value="zh-CN">中文</option><option value="en-US">English</option>
+    </select>;
+  }
+  const onSubmit = vi.fn(async () => undefined);
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={queries}><LanguageControl />
+    <V2Composer client={{ hasThreadControl: true } as APIClient} onSubmit={onSubmit}
+      onWorkspaceChange={vi.fn()} threadID="" workspaceID="workspace-1"
+      workspaces={[{ ...workspaces[0], name: "用户项目名称" }]} />
+  </QueryClientProvider>);
+  const user = userEvent.setup();
+  const input = screen.getByRole("textbox", { name: "开始新对话" });
+  expect(input).toHaveAttribute("placeholder", "输入消息…");
+  await user.type(input, "保留中文草稿和代码 const value = 1;");
+  await user.click(screen.getByRole("button", { name: "添加附件" }));
+  expect(screen.getByRole("menuitem", { name: "添加图片或文件" })).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "en-US" } });
+  expect(screen.getByRole("textbox", { name: "Start a new conversation" })).toBe(input);
+  expect(input).toHaveAttribute("placeholder", "Type a message…");
+  expect(input).toHaveValue("保留中文草稿和代码 const value = 1;");
+  expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+  expect(screen.getByRole("combobox", { name: "Select workspace" })).toHaveDisplayValue("用户项目名称");
+  expect(screen.getByRole("button", { name: "Switch to Markdown editing" })).toBeInTheDocument();
+  expect(screen.getByRole("menu", { name: "Add content" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Add images or files" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add attachments" })).toHaveAttribute("aria-expanded", "true");
+  expect(onSubmit).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "zh-CN" } });
+  expect(screen.getByRole("textbox", { name: "开始新对话" })).toBe(input);
+  expect(screen.getByRole("menuitem", { name: "添加图片或文件" })).toBeInTheDocument();
+  expect(input).toHaveValue("保留中文草稿和代码 const value = 1;");
+  queries.clear();
+});
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}

@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { APIClient } from "../api/client";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../api/types";
 import { useConnectionStore } from "../state/connection";
+import { LocaleProvider } from "../lib/locale";
 import { V2Workbench } from "./app";
 import { v2FileReferenceKey, type V2FileReference } from "./components/file-context";
 
@@ -44,7 +45,7 @@ it("preserves an unknown submission across Inspector/settings and confirms only 
   const key = v2FileReferenceKey(workspace.id, thread.id);
   queryClient.setQueryData(key, [original]);
   window.history.replaceState({}, "", `#/threads/${thread.id}`);
-  render(<QueryClientProvider client={queryClient}><V2Workbench client={client} /></QueryClientProvider>);
+  render(<QueryClientProvider client={queryClient}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
   const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "继续对话" }), "Original request");
   await user.click(screen.getByRole("button", { name: "发送消息" }));
@@ -84,4 +85,7 @@ it("preserves an unknown submission across Inspector/settings and confirms only 
 });
 
 // Retain textarea coverage through the supported plain-text editing mode.
-beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+beforeEach(() => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+});

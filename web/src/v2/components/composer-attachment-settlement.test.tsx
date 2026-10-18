@@ -1,7 +1,10 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { File as NodeFile } from "node:buffer";
 import { webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import { fileAttachmentIdentities, type WorkspaceFileAttachment } from "../../api/file-attachments";
@@ -111,3 +114,8 @@ it("preserves a later complete version, including its inherited ZIP and new file
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}

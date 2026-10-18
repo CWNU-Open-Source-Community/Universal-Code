@@ -3,21 +3,24 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { WebAccessMode } from "../../api/types";
+import { LocaleProvider } from "../../lib/locale";
 import { V2Settings } from "./settings";
 
 function setup(threadID = "", initialMode: WebAccessMode = "rules", initialTargets: string[] = []) {
   const onChange = vi.fn(); const onSelect = vi.fn(); const get = vi.fn(); const setRunWebAccess = vi.fn();
   const client = { get, setRunWebAccess } as unknown as APIClient;
   const queries = new QueryClient();
-  const tree = (mode: WebAccessMode, targets: string[]) => <QueryClientProvider client={queries}>
+  const tree = (mode: WebAccessMode, targets: string[]) => <LocaleProvider><QueryClientProvider client={queries}>
     <V2Settings client={client} section="configuration" threadID={threadID} workspaces={[]}
       defaultWebAccessMode={mode} defaultWebAccessTargets={targets} onDefaultWebAccessChange={onChange}
       onSelectSection={onSelect} onOpenInspector={vi.fn()} />
-  </QueryClientProvider>;
+  </QueryClientProvider></LocaleProvider>;
   const view = render(tree(initialMode, initialTargets));
   return { ...view, onChange, onSelect, get, setRunWebAccess,
     redraw: (mode: WebAccessMode, targets: string[] = []) => view.rerender(tree(mode, targets)) };
 }
+
+beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
 
 it("configures new conversations without requiring an open task and exposes all five modes", async () => {
   const fixture = setup(); const user = userEvent.setup();

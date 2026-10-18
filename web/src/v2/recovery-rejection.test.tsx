@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { APIClient } from "../api/client";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../api/types";
 import { useConnectionStore } from "../state/connection";
+import { LocaleProvider } from "../lib/locale";
 import { V2Workbench } from "./app";
 import type { ThreadRequestObservation } from "./recovery-api";
 
@@ -40,7 +41,7 @@ function mount(client: APIClient) {
   act(() => useConnectionStore.getState().setHealth({ status: "ok", api_version: "api.v1",
     app_version: "fixture", schema_version: 157, data_store_id: scope }));
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  const view = render(<QueryClientProvider client={queries}><V2Workbench client={client} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={queries}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
   return { ...view, queries };
 }
 
@@ -153,4 +154,7 @@ it.each([false, true])("retains a whitespace-only newer draft after old confirma
 });
 
 // Retain textarea coverage through the supported plain-text editing mode.
-beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+beforeEach(() => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+});

@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { parseThreadPlanObservation, type ThreadPlanAttempt, type ThreadPlanRequest } from "../../api/thread-plan";
+import { LocaleProvider } from "../../lib/locale";
 import { V2RecoveryProvider, useV2RecoveryStore, type V2RecoveryStore } from "../recovery-storage";
 import { V2ThreadPlanControl } from "./thread-plan";
 
@@ -39,16 +40,17 @@ function mount(f: ReturnType<typeof fixture>, threadID = "task-a", draft = false
   function Probe() { store = useV2RecoveryStore()!; return null; }
   const onRequestChange = vi.fn();
   const onSubmit = vi.fn();
-  const wrap = (id: string, hasUnsentDraft: boolean) => <QueryClientProvider client={queries}><V2RecoveryProvider client={f.client} scopeID="plan-fixture">
+  const wrap = (id: string, hasUnsentDraft: boolean) => <LocaleProvider><QueryClientProvider client={queries}><V2RecoveryProvider client={f.client} scopeID="plan-fixture">
     <Probe /><form onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <textarea aria-label="未发送草稿" defaultValue={draft ? "保留这份未发送的修改要求" : ""} />
       <V2ThreadPlanControl client={f.client} threadID={id} runID={`${id}-run`} active working={false} hasUnsentDraft={hasUnsentDraft} onRequestChange={onRequestChange} />
     </form>
-  </V2RecoveryProvider></QueryClientProvider>;
+  </V2RecoveryProvider></QueryClientProvider></LocaleProvider>;
   const view = render(wrap(threadID, draft));
   return { ...view, queries, getStore: () => store!, onSubmit, onRequestChange, change: (id: string, hasDraft = false) => view.rerender(wrap(id, hasDraft)) };
 }
 afterEach(() => { cleanup(); localStorage.clear(); });
+beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
 
 test("confirmation stays in the same task and blocks unsent corrections until the refreshed plan is reviewed", async () => {
   const f = fixture(); const view = mount(f, "task-a", true); const user = userEvent.setup();

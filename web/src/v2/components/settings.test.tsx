@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { ThreadView } from "../../api/types";
 import { V2Settings } from "./settings";
 import { LocaleProvider } from "../../lib/locale";
 import { sandboxEnvironmentFixture } from "../../test/sandbox-environment";
+
+const render = (ui: ReactNode) => renderComponent(ui, { wrapper: LocaleProvider });
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -20,7 +23,7 @@ it("mounts real environment settings from the production settings section and re
   } as unknown as APIClient} section="environment" threadID="" workspaces={[]} onSelectSection={vi.fn()}
     onOpenInspector={vi.fn()} /></QueryClientProvider>);
   const panel = await screen.findByRole("region", { name: "执行环境设置" });
-  const picker = await within(panel).findByRole("group", { name: "Coding backend" });
+  const picker = await within(panel).findByRole("group", { name: "编码环境后端" });
   expect(within(picker).getAllByRole("button")).toHaveLength(3);
   expect(getSandboxEnvironment).toHaveBeenCalledOnce();
   expect(saveSandboxEnvironment).not.toHaveBeenCalled();
@@ -200,6 +203,35 @@ describe("V2 archived settings", () => {
 });
 
 describe("V2 general permission summary", () => {
+  it("switches the settings language immediately, across sections, and after remounting", async () => {
+    const user = userEvent.setup();
+    const draw = (section: "general" | "appearance") => <V2Settings client={{} as APIClient}
+      onOpenInspector={vi.fn()} onSelectSection={vi.fn()} section={section} threadID=""
+      workspaces={[]} />;
+    const view = render(draw("general"));
+    expect(screen.getByRole("heading", { name: "常规", level: 1 })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^English/ }));
+    expect(screen.getByRole("heading", { name: "General", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "English" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Manage current task permissions" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "View license" })).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("en-US");
+    expect(window.localStorage.getItem("prayu.locale.v1")).toBe("en-US");
+
+    view.rerender(draw("appearance"));
+    expect(screen.getByRole("heading", { name: "Appearance", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dark" })).toBeInTheDocument();
+    view.unmount();
+
+    render(draw("general"));
+    expect(screen.getByRole("heading", { name: "General", level: 1 })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "中文" }));
+    expect(screen.getByRole("heading", { name: "常规", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看许可" })).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(window.localStorage.getItem("prayu.locale.v1")).toBe("zh-CN");
+  });
+
   it("uses neutral management actions instead of hard-coded enabled switches", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockResolvedValue(new Response(
@@ -218,7 +250,7 @@ describe("V2 general permission summary", () => {
     const defaultPermissions = screen.getByRole("button", { name: "管理当前任务权限" });
     expect(defaultPermissions).not.toHaveAttribute("aria-pressed");
     expect(screen.queryByRole("button", { name: "管理完整访问权限" })).not.toBeInTheDocument();
-    expect(screen.getByText(/语言选项用于已提供双语内容的高级面板/)).toBeInTheDocument();
+    expect(screen.getByText("选择界面语言，立即生效并保存在本机。")).toBeInTheDocument();
     const licenseButton = screen.getByRole("button", { name: "查看许可" });
     await user.click(licenseButton);
     const dialog = screen.getByRole("dialog", { name: "HarmonyOS Sans Fonts 许可" });

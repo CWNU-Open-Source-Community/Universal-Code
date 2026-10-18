@@ -3,14 +3,16 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { APIRequestError, type APIClient } from "../../api/client";
+import { LocaleProvider } from "../../lib/locale";
 import { V2WorkspaceStart } from "./workspace-start";
 
 afterEach(cleanup);
+beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
 
 function show(client: Partial<APIClient>) {
   const onSelect = vi.fn();
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <V2WorkspaceStart client={client as APIClient} onSelect={onSelect} />
+    <LocaleProvider><V2WorkspaceStart client={client as APIClient} onSelect={onSelect} /></LocaleProvider>
   </QueryClientProvider>);
   return onSelect;
 }
@@ -28,6 +30,22 @@ it("explains the unavailable import capability and returns keyboard focus withou
   await user.keyboard("{Escape}");
   expect(trigger).toHaveFocus();
   expect(importer).not.toHaveBeenCalled();
+});
+
+it("connects the exact project path in English while preserving the project name", async () => {
+  localStorage.setItem("prayu.locale.v1", "en-US");
+  const workspace = { id: "workspace-import", name: "我的项目", created_at: "2026-09-08T00:00:00Z" };
+  const importer = vi.fn().mockResolvedValue({ protocol_version: "workspace_import.v1", workspace,
+    directory_content_modified: false, agent_authority_granted: false });
+  const onSelect = show({ hasWorkspaceImport: true, importWorkspace: importer });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Connect project" }));
+  const dialog = screen.getByRole("dialog", { name: "Connect an existing project" });
+  await user.type(within(dialog).getByRole("textbox", { name: "Project folder path" }), "D:\\我的项目");
+  await user.click(within(dialog).getByRole("button", { name: "Connect this directory" }));
+  await waitFor(() => expect(onSelect).toHaveBeenCalledExactlyOnceWith(workspace));
+  expect(importer).toHaveBeenCalledExactlyOnceWith("D:\\我的项目");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 it("preserves an invalid directory for correction and only selects after successful registration", async () => {
