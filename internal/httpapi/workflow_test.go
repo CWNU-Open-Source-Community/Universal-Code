@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -116,13 +117,13 @@ func TestWorkflowOpenAPIIncludesBoundedProgramAndControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths := doc["paths"].(map[string]any)
-	for _, path := range []string{"/api/v1/workflows", "/api/v1/runs/{run_id}/workflows", "/api/v1/runs/{run_id}/workflows/{execution_id}/advance", "/api/v1/runs/{run_id}/workflows/{execution_id}/rerun"} {
+	for _, path := range []string{"/api/v1/workflows", "/api/v1/runs/{run_id}/workflows", "/api/v1/runs/{run_id}/workflows/{execution_id}/advance", "/api/v1/runs/{run_id}/workflows/{execution_id}/rerun", "/api/v1/runs/{run_id}/workflows/{execution_id}/retry_failed"} {
 		if paths[path] == nil {
 			t.Fatalf("missing workflow path %s", path)
 		}
 	}
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	for _, name := range []string{"WorkflowSpec", "WorkflowStep", "WorkflowCompletion", "WorkflowVerification", "WorkflowExecution", "WorkflowControlView"} {
+	for _, name := range []string{"WorkflowSpec", "WorkflowStep", "WorkflowCompletion", "WorkflowVerification", "WorkflowExecution", "WorkflowControlView", "WorkflowMapState", "WorkflowMapItem", "WorkflowBlocked"} {
 		if schemas[name] == nil {
 			t.Fatalf("missing workflow schema %s", name)
 		}
@@ -135,5 +136,82 @@ func TestWorkflowOpenAPIIncludesBoundedProgramAndControls(t *testing.T) {
 	state := schemas["WorkflowState"].(map[string]any)["properties"].(map[string]any)
 	if state["verifications"] == nil {
 		t.Fatal("workflow state omits dated verification results")
+	}
+	if state["maps"] == nil || state["blocked"] == nil || state["allocated_jobs"] == nil {
+		t.Fatal("workflow state omits durable item outcomes and retry bounds")
+	}
+}
+
+// Persist the same claim-owned failed records that the runner leaves behind.
+// HTTP tests then exercise the real retry transaction without invoking a model.
+func prepareWorkflowRetryTarget(t *testing.T, f *apiFixture, execution domain.WorkflowExecution) domain.WorkflowExecution {
+	t.Helper()
+	ctx := t.Context()
+	owner := "http-retry-fixture"
+	e, claimed, err := f.store.ClaimWorkflowExecution(ctx, execution.ID, owner)
+	if err != nil || !claimed {
+		t.Fatalf("claim retry fixture: %t %v", claimed, err)
+	}
+	key := "retry-" + e.ID
+	id := domain.WorkflowItemStepID(key, "worker", 0, 1)
+	step, err := f.store.PrepareWorkflowStep(ctx, domain.WorkflowStepExecution{
+		ID: id, ExecutionID: e.ID, StepID: "inspect", AgentID: "agent-" + key,
+		SessionID: "session-" + key, Inputs: json.RawMessage(`{}`),
+	}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step.Status, step.Reason, step.Output = "failed", "provider unavailable", json.RawMessage(`{}`)
+	if err = f.store.CompleteWorkflowStep(ctx, step, owner); err != nil {
+		t.Fatal(err)
+	}
+	e.Status, e.Reason = "failed", step.Reason
+	e.State.AllocatedJobs = 1
+	e.State.Maps = map[string]domain.WorkflowMapState{key: {
+		StepID: step.StepID, Kind: "worker", Inputs: step.Inputs,
+		Items: []domain.WorkflowMapItem{{Index: 0, Generation: 1, StepExecutionID: id, Status: "failed", Reason: step.Reason}},
+	}}
+	e.State.Blocked = &domain.WorkflowBlocked{Key: key, StepID: step.StepID, Retryable: true}
+	e, err = f.store.CheckpointWorkflowExecution(ctx, e, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.store.ReleaseWorkflowExecution(ctx, e.ID, owner); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestWorkflowHTTPRetriesFailedItemsWithAuthorityRevisionAndIdempotency(t *testing.T) {
+	f := newAPIFixture(t)
+	f.api.modelControlEnabled = true
+	_, run, _, execution := prepareOpenAPIWorkflowTarget(t, f)
+	execution = prepareWorkflowRetryTarget(t, f, execution)
+	path := "/api/v1/runs/" + run.ID + "/workflows/" + execution.ID + "/retry_failed"
+	body := fmt.Sprintf(`{"version":"workflow_control.v1","revision":%d,"confirm_start":true}`, execution.Version)
+	key := "workflow-http-retry-failed"
+	if got := performControlPathRequest(t, f.api, path, key, strings.NewReader(strings.Replace(body, `"confirm_start":true`, `"confirm_start":false`, 1))); got.Code != 400 {
+		t.Fatalf("retry without consent: %d %s", got.Code, got.Body.String())
+	}
+	if got := f.request(t, http.MethodPost, path, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", strings.NewReader(body)); got.Code != http.StatusUnauthorized {
+		t.Fatalf("read token retry: %d %s", got.Code, got.Body.String())
+	}
+	foreign := "/api/v1/runs/" + f.run.ID + "/workflows/" + execution.ID + "/retry_failed"
+	if got := performControlPathRequest(t, f.api, foreign, key, strings.NewReader(body)); got.Code != http.StatusNotFound {
+		t.Fatalf("foreign Run retry: %d %s", got.Code, got.Body.String())
+	}
+	var retried, replay domain.WorkflowExecution
+	decodeDataStatus(t, performControlPathRequest(t, f.api, path, key, strings.NewReader(body)), 200, &retried)
+	decodeDataStatus(t, performControlPathRequest(t, f.api, path, key, strings.NewReader(body)), 200, &replay)
+	if retried.ID != execution.ID || retried.Status != "running" || retried.State.AllocatedJobs != 2 ||
+		replay.Version != retried.Version || !retried.CreatedAt.Equal(execution.CreatedAt) || string(retried.Inputs) != string(execution.Inputs) {
+		t.Fatalf("retry reset state or replayed twice: retried=%+v replay=%+v", retried, replay)
+	}
+	group := retried.State.Maps[execution.State.Blocked.Key]
+	if len(group.Items) != 1 || group.Items[0].Status != "pending" || group.Items[0].Generation != 2 || group.Items[0].StepExecutionID == execution.State.Maps[execution.State.Blocked.Key].Items[0].StepExecutionID {
+		t.Fatalf("failed item did not receive a new attempt: %+v", group)
+	}
+	if got := performControlPathRequest(t, f.api, path, "workflow-http-retry-stale", strings.NewReader(body)); got.Code != http.StatusConflict {
+		t.Fatalf("new key with stale revision: %d %s", got.Code, got.Body.String())
 	}
 }

@@ -1450,6 +1450,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
+					if spec.OperationID == "retryFailedRunWorkflow" {
+						execution = prepareWorkflowRetryTarget(t, fixture, execution)
+					}
 					requestPath = strings.ReplaceAll(requestPath, workflowExecution.ID, execution.ID)
 					body = fmt.Sprintf(`{"version":"workflow_control.v1","revision":%d,"confirm_start":true}`, execution.Version)
 				} else if spec.OperationID == "selectProjectSkills" || spec.OperationID == "selectInstalledSkills" {

@@ -86,3 +86,36 @@ func TestWorkflowCodeCompletionRequiresDelegatedTests(t *testing.T) {
 		t.Fatalf("analysis report requires no tests: %v", err)
 	}
 }
+
+func TestWorkflowMapBoundsAndLegacyDefaults(t *testing.T) {
+	legacy, _ := NormalizeWorkflowSpec(validWorkflowForTest())
+	before, _ := json.Marshal(legacy)
+	normalized, err := NormalizeWorkflowSpec(legacy)
+	after, _ := json.Marshal(normalized)
+	if err != nil || string(before) != string(after) || normalized.Steps[0].AttemptLimit() != 3 {
+		t.Fatalf("legacy normalization changed: %s %s %v", before, after, err)
+	}
+	for _, change := range []func(*WorkflowStep){
+		func(s *WorkflowStep) { s.MaxItems = 0 }, func(s *WorkflowStep) { s.MaxItems = 65 }, func(s *WorkflowStep) { s.Items = nil }, func(s *WorkflowStep) { s.Parallelism = 3 }, func(s *WorkflowStep) { s.MaxAttempts = 4 }, func(s *WorkflowStep) { s.Inputs = map[string]WorkflowValueRef{"item": {Step: "$input"}} },
+	} {
+		spec := validWorkflowForTest()
+		spec.Steps[0].Kind = "map"
+		spec.Steps[0].Items = &WorkflowValueRef{Step: "$input", Path: "/items"}
+		spec.Steps[0].MaxItems = 8
+		change(&spec.Steps[0])
+		if _, err := NormalizeWorkflowSpec(spec); err == nil {
+			t.Fatalf("accepted invalid map: %+v", spec.Steps[0])
+		}
+	}
+	spec := validWorkflowForTest()
+	spec.Steps[0].Kind = "map"
+	spec.Steps[0].Items = &WorkflowValueRef{Step: "$input", Path: "/items"}
+	spec.Steps[0].MaxItems = 8
+	spec.Steps[0].Parallelism = 2
+	if _, err := NormalizeWorkflowSpec(spec); err != nil {
+		t.Fatal(err)
+	}
+	if WorkflowItemStepID("occurrence", "worker", 0, 1) != "workflowstep-occurrence" || WorkflowItemStepID("occurrence", "map", 0, 1) == WorkflowItemStepID("occurrence", "map", 0, 2) {
+		t.Fatal("workflow generation identity changed or collided")
+	}
+}

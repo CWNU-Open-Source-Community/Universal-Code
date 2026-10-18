@@ -41,20 +41,6 @@ func (s *WorkflowService) WithProjectVerification(runtime CommandRuntimeRuntime)
 	return s
 }
 
-func workflowStepByID(steps []domain.WorkflowStep, id string) (domain.WorkflowStep, bool) {
-	for _, step := range steps {
-		if step.ID == id {
-			return step, true
-		}
-		for _, block := range [][]domain.WorkflowStep{step.Then, step.Else, step.Body} {
-			if found, ok := workflowStepByID(block, id); ok {
-				return found, true
-			}
-		}
-	}
-	return domain.WorkflowStep{}, false
-}
-
 type workflowVerificationEvidence struct {
 	store      workflowVerificationStore
 	e          domain.WorkflowExecution
@@ -82,7 +68,7 @@ func (s *CommandRuntimeService) workflowVerificationEvidence(ctx context.Context
 	if err != nil {
 		return out, err
 	}
-	out.spec, ok = workflowStepByID(d.Spec.Steps, out.step.StepID)
+	out.spec, ok = d.Spec.Step(out.step.StepID)
 	if !ok || !out.spec.RequiresCodeVerification() || out.spec.Task == nil || !out.spec.Task.Worker.AllowsTool("run_tests") {
 		return out, errors.New("workflow step has no verified_code completion authority")
 	}
@@ -98,7 +84,7 @@ func (s *CommandRuntimeService) workflowVerificationEvidence(ctx context.Context
 	// Final acceptance includes report workers: their later failed tests must
 	// not be hidden by an earlier code worker's passing receipt.
 	for _, candidate := range candidates {
-		sourceSpec, ok := workflowStepByID(d.Spec.Steps, candidate.StepID)
+		sourceSpec, ok := d.Spec.Step(candidate.StepID)
 		if !ok || sourceSpec.Task == nil || !sourceSpec.Task.Worker.AllowsTool("run_tests") {
 			continue
 		}
@@ -315,7 +301,7 @@ func (s *WorkflowService) checkWorkerVerification(ctx context.Context, e *domain
 
 func (s *WorkflowService) recheckWorkflowVerification(ctx context.Context, e *domain.WorkflowExecution, spec domain.WorkflowSpec, owner string) error {
 	for target, proof := range e.State.Verifications {
-		step, found := workflowStepByID(spec.Steps, proof.StepID)
+		step, found := spec.Step(proof.StepID)
 		if !found || !step.RequiresCodeVerification() || step.VerificationTarget() != target {
 			return apperror.New(apperror.CodeFailedPrecondition, "workflow verification checkpoint does not match its definition")
 		}

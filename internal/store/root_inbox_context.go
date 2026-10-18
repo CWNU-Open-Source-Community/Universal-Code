@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"slices"
@@ -227,7 +228,7 @@ func validateEligibleRootInboxMessageTx(ctx context.Context, tx *sql.Tx, runID s
 				"root inbox completion payload does not match its sender", err)
 		}
 		completion, err := scanAgentCompletion(tx.QueryRowContext(ctx,
-			agentCompletionSelect+` WHERE message_id = ?`, message.ID))
+			agentCompletionSelect+` WHERE completion.message_id = ?`, message.ID))
 		if err != nil {
 			return err
 		}
@@ -264,7 +265,7 @@ func validateEligibleRootInboxMessageTx(ctx context.Context, tx *sql.Tx, runID s
 func sameCompletionReport(left domain.CompletionReport, right domain.CompletionReport) bool {
 	return left.Version == right.Version && left.Outcome == right.Outcome &&
 		left.Summary == right.Summary && slices.Equal(left.WorkItemIDs, right.WorkItemIDs) &&
-		slices.Equal(left.NoteIDs, right.NoteIDs)
+		slices.Equal(left.NoteIDs, right.NoteIDs) && bytes.Equal(left.Data, right.Data)
 }
 
 func commitRootInboxContextTx(ctx context.Context, tx *sql.Tx, run domain.Run,

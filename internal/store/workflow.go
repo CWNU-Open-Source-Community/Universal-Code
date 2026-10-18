@@ -288,6 +288,19 @@ func (s *SQLiteStore) PrepareWorkflowStep(ctx context.Context, step domain.Workf
 	return stored, nil
 }
 func (s *SQLiteStore) CompleteWorkflowStep(ctx context.Context, step domain.WorkflowStepExecution, owner string) error {
+	return s.completeWorkflowStep(ctx, step, owner, 0, nil, nil)
+}
+
+// Only the host holding the current Run lease may retire a suspended attempt.
+// Its captured previous lease can belong to an earlier approval-wait round.
+func (s *SQLiteStore) FailWorkflowStepWithLease(ctx context.Context, step domain.WorkflowStepExecution, owner string, revision int64, lease domain.RunExecutionLease, expected domain.AgentAttempt) error {
+	if step.Status != "failed" || revision < 1 {
+		return apperror.New(apperror.CodeInvalidArgument, "workflow lease cleanup requires a failed step")
+	}
+	return s.completeWorkflowStep(ctx, step, owner, revision, &lease, &expected)
+}
+
+func (s *SQLiteStore) completeWorkflowStep(ctx context.Context, step domain.WorkflowStepExecution, owner string, revision int64, lease *domain.RunExecutionLease, expected *domain.AgentAttempt) error {
 	if (step.Status != "completed" && step.Status != "failed") || !json.Valid(step.Output) || len(step.Output) > 32*1024 {
 		return apperror.New(apperror.CodeInvalidArgument, "workflow result must be bounded JSON")
 	}
@@ -296,7 +309,7 @@ func (s *SQLiteStore) CompleteWorkflowStep(ctx context.Context, step domain.Work
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE workflow_steps SET status=?,output_json=?,reason=? WHERE id=? AND execution_id=? AND agent_id=? AND session_id=? AND status='pending' AND EXISTS(SELECT 1 FROM workflow_executions WHERE id=? AND claim_owner=? AND claim_until>? AND (status IN ('running','waiting','waiting_approval') OR (?='completed' AND status='paused')))`, step.Status, string(step.Output), step.Reason, step.ID, step.ExecutionID, step.AgentID, step.SessionID, step.ExecutionID, owner, ts(time.Now().UTC()), step.Status)
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_steps SET status=?,output_json=?,reason=? WHERE id=? AND execution_id=? AND agent_id=? AND session_id=? AND status='pending' AND EXISTS(SELECT 1 FROM workflow_executions WHERE id=? AND claim_owner=? AND claim_until>? AND (?=0 OR version=?) AND (status IN ('running','waiting','waiting_approval') OR (?='completed' AND status='paused')))`, step.Status, string(step.Output), step.Reason, step.ID, step.ExecutionID, step.AgentID, step.SessionID, step.ExecutionID, owner, ts(time.Now().UTC()), revision, revision, step.Status)
 	if err != nil {
 		return err
 	}
@@ -309,7 +322,53 @@ func (s *SQLiteStore) CompleteWorkflowStep(ctx context.Context, step domain.Work
 	}
 	if step.Status == "failed" {
 		// A failed workflow relinquishes idle children instead of retaining their
-		// reservations forever. In-flight attempts remain owned by their runner.
+		// reservations forever. Only the current Run lease holder can also end
+		// the exact suspended attempt captured before resource cleanup.
+		if lease != nil {
+			var runID string
+			if err = tx.QueryRowContext(ctx, `SELECT run_id FROM workflow_executions WHERE id=?`, step.ExecutionID).Scan(&runID); err != nil {
+				return err
+			}
+			if lease.RunID != runID {
+				return apperror.New(apperror.CodeConflict, "workflow cleanup lease belongs to another Run")
+			}
+			if err = requireRunExecutionLeaseTx(ctx, tx, runID, lease.LeaseID, lease.Generation); err != nil {
+				return err
+			}
+			var active string
+			if err = tx.QueryRowContext(ctx, `SELECT active_attempt_id FROM agent_nodes WHERE id=? AND session_id=? AND run_id=?`, step.AgentID, step.SessionID, runID).Scan(&active); err != nil {
+				return err
+			}
+			if expected == nil || active != expected.ID {
+				return apperror.New(apperror.CodeConflict, "workflow active attempt changed before cleanup")
+			}
+		}
+		var suspended string
+		if expected != nil && expected.ID != "" {
+			err = tx.QueryRowContext(ctx, `SELECT n.id FROM agent_nodes n JOIN agent_nodes p ON p.id=n.parent_id AND p.role='root' AND p.run_id=n.run_id JOIN agent_attempts a ON a.id=n.active_attempt_id AND a.status='running' WHERE n.id=? AND n.session_id=? AND n.run_id=(SELECT run_id FROM workflow_executions WHERE id=?) AND n.role='specialist' AND n.status='running' AND a.id=? AND a.lease_id=? AND a.lease_generation=? AND EXISTS(SELECT 1 FROM specialist_tool_calls c WHERE c.agent_attempt_id=a.id AND c.status='pending' AND c.started_at IS NULL AND c.approval_id<>'')`, step.AgentID, step.SessionID, step.ExecutionID, expected.ID, expected.LeaseID, expected.LeaseGeneration).Scan(&suspended)
+			if errors.Is(err, sql.ErrNoRows) {
+				return apperror.New(apperror.CodeConflict, "workflow approval attempt ownership changed before cleanup")
+			}
+			if err != nil {
+				return err
+			}
+		}
+		if suspended != "" {
+			child, err := scanAgentNode(tx.QueryRowContext(ctx, agentNodeSelect+` WHERE id=?`, suspended))
+			if err != nil {
+				return err
+			}
+			run, _, err := getCoordinatorRunTx(ctx, tx, child.RunID)
+			if err != nil {
+				return err
+			}
+			if _, err = interruptAgentAttemptTx(ctx, tx, run, child, "workflow_failed", step.Reason, time.Now().UTC()); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, `UPDATE agent_nodes SET status='waiting',active_attempt_id='' WHERE id=?`, child.ID); err != nil {
+				return err
+			}
+		}
 		now := ts(time.Now().UTC())
 		cancelled, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET status='cancelled',status_reason='workflow step failed',finished_at=?,updated_at=?,version=version+1 WHERE id=(SELECT agent_id FROM workflow_steps WHERE id=?) AND status IN ('ready','waiting') AND active_attempt_id=''`, now, now, step.ID)
 		if err != nil {

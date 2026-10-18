@@ -26,7 +26,7 @@ func workflowSpec(steps ...domain.WorkflowStep) domain.WorkflowSpec {
 func workflowResponse(t *testing.T, outcome domain.CompletionOutcome) llm.ChatResponse {
 	return llm.ChatResponse{Text: specialistResponse(t, domain.SpecialistAction{Version: domain.SpecialistLifecycleVersion, Kind: domain.SpecialistActionFinish, Message: "worker completed", Report: &domain.CompletionReport{Version: domain.CompletionReportVersion, Outcome: outcome, Summary: "committed proof " + string(outcome), WorkItemIDs: []string{}, NoteIDs: []string{}}}), Usage: llm.Usage{InputTokens: 3, OutputTokens: 2, TotalTokens: 5}}
 }
-func newWorkflowFixture(t *testing.T, p *specialistTestProvider) (*store.SQLiteStore, domain.Run, *application.WorkflowService, string) {
+func newWorkflowFixture(t *testing.T, p *specialistTestProvider, budgets ...domain.Budget) (*store.SQLiteStore, domain.Run, *application.WorkflowService, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "workflow.db")
 	st, err := store.Open(path)
@@ -35,7 +35,11 @@ func newWorkflowFixture(t *testing.T, p *specialistTestProvider) (*store.SQLiteS
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	runs := application.NewRunService(st)
-	_, run, err := runs.Create(t.Context(), application.CreateRunRequest{Goal: "run saved workflow", Profile: "code", ModelRoute: p.Name() + "/model", Budget: domain.Budget{MaxTurns: 64, MaxTokens: 100000}})
+	budget := domain.Budget{MaxTurns: 64, MaxTokens: 100000}
+	if len(budgets) > 0 {
+		budget = budgets[0]
+	}
+	_, run, err := runs.Create(t.Context(), application.CreateRunRequest{Goal: "run saved workflow", Profile: "code", ModelRoute: p.Name() + "/model", Budget: budget})
 	if err != nil {
 		t.Fatal(err)
 	}

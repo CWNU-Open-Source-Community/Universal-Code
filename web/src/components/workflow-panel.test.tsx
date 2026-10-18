@@ -2,7 +2,7 @@ import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIClient } from "../api/client";
-import { WorkflowPanel, workerWorkflow, workflowExample, isolatedWorkflow } from "./workflow-panel";
+import { WorkflowPanel, workerWorkflow, workflowExample, isolatedWorkflow, dynamicWorkflowExample } from "./workflow-panel";
 
 function response(data: unknown) {
   return new Response(JSON.stringify({ version: "api.v1", data, request_id: "workflow-test" }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -277,4 +277,83 @@ it("pauses an executing workflow with its observed revision", async () => {
   expect(controls).toHaveLength(1);
   expect(controls[0][0]).toBe("/api/v1/runs/run-1/workflows/flow-1/pause");
   expect(JSON.parse(controls[0][1].body)).toMatchObject({ revision: 7 });
+});
+
+it("loads and saves a bounded parallel review definition only after an explicit save", async () => {
+  const spec = dynamicWorkflowExample();
+  const fetch = vi.fn().mockImplementation(async (_path: string, init?: RequestInit) =>
+    response(init?.method === "POST" ? { id: "saved-dynamic", digest: "digest", spec } : { items: [] }));
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  mount();
+  await user.click(screen.getByText("Create workflow"));
+  await user.click(screen.getByLabelText("Edit JSON program"));
+  await user.click(screen.getByRole("button", { name: "Load dynamic parallel review template" }));
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await user.click(screen.getByRole("button", { name: "Save definition" }));
+  await waitFor(() => expect(screen.getByLabelText("Saved workflow")).toHaveValue("saved-dynamic"));
+  const controls = fetch.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(controls).toHaveLength(1);
+  const saved = JSON.parse(controls[0][1].body);
+  expect(saved.steps[1]).toMatchObject({ kind: "map", items: { step: "plan", path: "/data/items" }, max_items: 3, parallelism: 2 });
+  expect(saved.steps[2].inputs.reviews).toEqual({ step: "reviews", path: "/items" });
+  expect(saved.steps.every((step: { task: { worker?: unknown; allowed_read_paths: string[] } }) =>
+    !step.task.worker && step.task.allowed_read_paths.join() === ".")).toBe(true);
+});
+
+function failedItems() {
+  return { ...execution("failed", 9), state: { ...execution("failed").state, jobs: 1,
+    blocked: { key: "reviews", step_id: "reviews", retryable: true },
+    maps: { reviews: { step_id: "reviews", kind: "map", inputs: {}, items: [
+      { index: 0, value: { path: "parser.ts" }, generation: 1, step_execution_id: "review-pass", status: "completed" },
+      { index: 1, value: { path: "lexer.ts" }, generation: 1, step_execution_id: "review-failed", status: "failed", reason: "provider unavailable" },
+    ] } },
+  } };
+}
+
+it("shows saved item outcomes and retries failed items once at the observed revision", async () => {
+  let current = failedItems();
+  const fetch = vi.fn().mockImplementation(async (path: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      current = { ...current, status: "running", revision: 10, state: { ...current.state,
+        maps: { reviews: { ...current.state.maps.reviews, items: [current.state.maps.reviews.items[0],
+          { ...current.state.maps.reviews.items[1], generation: 2, step_execution_id: "review-retry", status: "pending", reason: "" }] } },
+      } };
+      return response(current);
+    }
+    return response({ items: path.endsWith("/runs/run-1/workflows") ? [current] : [] });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  mount();
+  await screen.findByRole("button", { name: "Retry failed items only" });
+  await user.click(screen.getByText(/1\/2 completed/));
+  expect(screen.getByText("provider unavailable")).toBeVisible();
+  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await user.click(screen.getByRole("button", { name: "Retry failed items only" }));
+  await waitFor(() => expect(screen.getByText("Attempt 2")).toBeVisible());
+  expect(screen.getByText("Attempt 1")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Retry failed items only" })).not.toBeInTheDocument();
+  const controls = fetch.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(controls).toHaveLength(1);
+  expect(controls[0][0]).toBe("/api/v1/runs/run-1/workflows/flow-1/retry_failed");
+  expect(JSON.parse(controls[0][1].body)).toEqual({ version: "workflow_control.v1", revision: 9, confirm_start: true });
+  expect(controls[0][1].headers["Idempotency-Key"]).toMatch(/^workflow-/);
+});
+
+it.each([[false, "running"], [true, "paused"]])("prevents failed-item retry without authority or an active task (%s, %s)", async (control, runStatus) => {
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (path: string) =>
+    response({ items: path.endsWith("/runs/run-1/workflows") ? [failedItems()] : [] })));
+  mount(new APIClient("read", "/api/v1", control ? "control" : ""), undefined, runStatus as string);
+  expect(await screen.findByRole("button", { name: "Retry failed items only" })).toBeDisabled();
+});
+
+it("does not offer retry when the persisted failure cannot be retried", async () => {
+  const item = failedItems();
+  item.state.blocked.retryable = false;
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (path: string) =>
+    response({ items: path.endsWith("/runs/run-1/workflows") ? [item] : [] })));
+  mount();
+  await screen.findByText(/checkpoint 9/);
+  expect(screen.queryByRole("button", { name: "Retry failed items only" })).not.toBeInTheDocument();
 });

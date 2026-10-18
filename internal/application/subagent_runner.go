@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -1223,8 +1224,10 @@ func specialistOutputLimit(child domain.AgentNode, aggregateLimit int64) (int, e
 func safeSpecialistAction(action domain.SpecialistAction) (domain.SpecialistAction, error) {
 	action.Message = redact.String(action.Message)
 	if action.Report != nil {
-		report := *action.Report
-		report.Summary = redact.String(report.Summary)
+		report, err := domain.RedactCompletionReport(*action.Report)
+		if err != nil {
+			return domain.SpecialistAction{}, err
+		}
 		action.Report = &report
 	}
 	return domain.NormalizeSpecialistAction(action)
@@ -1234,6 +1237,19 @@ func specialistActionPolicyText(action domain.SpecialistAction) string {
 	parts := []string{action.Message}
 	if action.Report != nil {
 		parts = append(parts, action.Report.Summary)
+		// Data has already been normalized. Check decoded strings so JSON
+		// escapes cannot conceal text from the same policy used for the summary.
+		decoder := json.NewDecoder(bytes.NewReader(action.Report.Data))
+		decoder.UseNumber()
+		for {
+			token, err := decoder.Token()
+			if err != nil {
+				break
+			}
+			if value, ok := token.(string); ok {
+				parts = append(parts, value)
+			}
+		}
 	}
 	return strings.Join(parts, "\n")
 }

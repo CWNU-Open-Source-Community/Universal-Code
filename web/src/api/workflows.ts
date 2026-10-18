@@ -74,6 +74,12 @@ export class WorkflowClient {
   async resume(runID: string, id: string, revision: number, key: string, signal?: AbortSignal): Promise<WorkflowExecution> {
     return this.control("resume", runID, id, revision, key, signal);
   }
+  async retryFailed(runID: string, id: string, revision: number, key: string, signal?: AbortSignal): Promise<WorkflowExecution> {
+    if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("The observed workflow revision is required");
+    return execution(await this.transport.post(`${this.path(runID, id)}/retry_failed`, {
+      version: "workflow_control.v1", revision, confirm_start: true,
+    }, key, signal), runID, id);
+  }
   async rerun(runID: string, id: string, key: string, signal?: AbortSignal): Promise<WorkflowExecution> {
     return execution(await this.transport.post(`${this.path(runID, id)}/rerun`, {
       version: "workflow_control.v1", revision: 0, confirm_start: true,

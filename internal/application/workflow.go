@@ -33,16 +33,23 @@ type WorkflowStore interface {
 	CheckpointWorkflowExecution(context.Context, domain.WorkflowExecution, string) (domain.WorkflowExecution, error)
 	ControlWorkflowExecution(context.Context, string, string, int64) (domain.WorkflowExecution, error)
 	GetWorkflowStep(context.Context, string) (domain.WorkflowStepExecution, bool, error)
+	ListWorkflowVerificationSteps(context.Context, string, string, int64) ([]domain.WorkflowStepExecution, error)
 	PrepareWorkflowStep(context.Context, domain.WorkflowStepExecution, string) (domain.WorkflowStepExecution, error)
 	CompleteWorkflowStep(context.Context, domain.WorkflowStepExecution, string) error
+	FailWorkflowStepWithLease(context.Context, domain.WorkflowStepExecution, string, int64, domain.RunExecutionLease, domain.AgentAttempt) error
+	GetAgentAttempt(context.Context, string) (domain.AgentAttempt, bool, error)
+	ValidateWorkflowDispatch(context.Context, string, string, int64, []string) error
+	ValidateWorkflowSettlement(context.Context, string, string, int64, []string) error
+	RetryFailedWorkflowExecution(context.Context, string, int64, string) (domain.WorkflowExecution, error)
 	AdmitSpecialist(context.Context, domain.SpecialistAdmission, string) (domain.AgentNode, bool, error)
 	SendAgentMessage(context.Context, domain.AgentMessage, string) (domain.AgentMessage, bool, error)
 	GetAgentCompletion(context.Context, string) (domain.AgentCompletion, bool, error)
+	SpecialistToolApprovalState(context.Context, domain.AgentAttemptRef) (bool, bool, error)
 	RegisterRootAgent(context.Context, string) (domain.AgentNode, bool, error)
 }
 
 // WorkflowService advances a saved program through the existing real child
-// execution service. Each call runs at most one worker turn and checkpoints it.
+// execution service. Each call runs one bounded worker round and checkpoints it.
 type WorkflowService struct {
 	store        WorkflowStore
 	workers      *SpecialistExecutionService
@@ -205,8 +212,19 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 		e.Reason = reason
 		return checkpoint()
 	}
-	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
+	expire := func() (domain.WorkflowExecution, error) {
+		if err := s.expireWorkflowPending(ctx, &e, owner); err != nil {
+			if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+				wake = ""
+				e.Status, e.Reason = "waiting", err.Error()
+				return checkpoint()
+			}
+			return e, err
+		}
 		return fail("workflow deadline exceeded")
+	}
+	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
+		return expire()
 	}
 	run, err := s.store.GetRun(ctx, e.RunID)
 	if err != nil {
@@ -230,7 +248,7 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 	e.Reason = ""
 	for len(e.State.Stack) > 0 {
 		if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
-			return fail("workflow deadline exceeded")
+			return expire()
 		}
 		frame := &e.State.Stack[len(e.State.Stack)-1]
 		block, err := workflowBlock(d.Spec, frame.Block)
@@ -282,83 +300,26 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 			e.State.Iterations[stepKey] = iteration + 1
 			e.State.Steps++
 			e.State.Stack = append(e.State.Stack, domain.WorkflowFrame{Block: stepPath + "/body", Iteration: iteration + 1})
-		case "worker":
-			if e.State.Jobs >= d.Spec.Limits.MaxJobs {
-				return fail("workflow job bound exhausted")
-			}
-			inputs := map[string]json.RawMessage{}
-			for name, ref := range step.Inputs {
-				value, err := workflowValue(e, ref)
-				if err != nil {
-					return fail(err.Error())
-				}
-				inputs[name] = value
-			}
-			inputJSON, err := json.Marshal(inputs)
+		case "worker", "map":
+			output, done, err := s.advanceWorkflowTasks(ctx, &e, step, stepKey, owner, d.Spec.Limits)
 			if err != nil {
-				return fail(err.Error())
-			}
-			job, err := s.store.PrepareWorkflowStep(ctx, domain.WorkflowStepExecution{ID: "workflowstep-" + stepKey, ExecutionID: e.ID, StepID: step.ID, AgentID: "agent-" + stepKey, SessionID: "sess-" + stepKey, Inputs: inputJSON}, owner)
-			if err != nil {
-				return e, err
-			}
-			if job.Status == "pending" {
-				job, err = s.executeWorker(ctx, e, step, job, d.Spec.Limits, usage, usedTurns)
-				if err != nil {
-					if code := apperror.CodeOf(apperror.Normalize(err)); code == apperror.CodeConflict {
-						// A competing lease can be acquired and released between
-						// observations. Retry when that lease is free even if the
-						// surrounding dependency snapshot happens to be identical.
-						wake = ""
-						e.Status = "waiting"
-						e.Reason = err.Error()
-						return checkpoint()
-					}
-					job.Status = "failed"
-					job.Reason = err.Error()
-					job.Output = json.RawMessage(`null`)
-				}
-				if job.Status == "pending" {
-					e.Status = "waiting"
-					if job.Reason == "waiting_approval" {
-						e.Status = "waiting_approval"
-					}
-					e.Reason = job.Reason
-					if e.Reason == "" {
-						e.Status = "running"
-					}
+				if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+					wake = ""
+					e.Status, e.Reason = "waiting", err.Error()
 					return checkpoint()
 				}
-				if job.Status == "completed" {
-					if err := s.checkWorkerVerification(ctx, &e, job, step, owner, false); err != nil {
-						if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
-							return checkpoint()
-						}
-						job.Status, job.Reason = "failed", err.Error()
-					}
-				}
-				if err := s.store.CompleteWorkflowStep(ctx, job, owner); err != nil {
-					return e, err
-				}
-			} else if job.Status == "completed" {
-				// A crash may leave the completed step ahead of its interpreter
-				// checkpoint. Replay must recheck native evidence before advancing.
-				if err := s.checkWorkerVerification(ctx, &e, job, step, owner, false); err != nil {
-					if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
-						return checkpoint()
-					}
-					e.State.Outputs[step.ID] = job.Output
+				code := apperror.CodeOf(apperror.Normalize(err))
+				if code == apperror.CodeInvalidArgument || code == apperror.CodeFailedPrecondition || code == apperror.CodeResourceExhausted {
 					return fail(err.Error())
 				}
+				return e, err
 			}
-			if job.Status == "failed" {
-				e.State.Outputs[step.ID] = job.Output
-				return fail(job.Reason)
+			if !done {
+				return checkpoint()
 			}
-			e.State.Outputs[step.ID] = job.Output
-			e.State.Jobs++
+			e.State.Outputs[step.ID] = output
 			e.State.Steps++
-			frame.Index++
+			e.State.Stack[len(e.State.Stack)-1].Index++
 			return checkpoint()
 		case "batch":
 			output, jobs, waiting, err := s.advanceWorkflowBatch(ctx, e, step, d.Spec.Limits, usage, usedTurns)
@@ -373,6 +334,7 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 				return checkpoint()
 			}
 			e.State.Outputs[step.ID] = output
+			e.State.AllocatedJobs = max(e.State.AllocatedJobs, e.State.Jobs) + jobs
 			e.State.Jobs += jobs
 			e.State.Steps++
 			frame.Index++
@@ -395,7 +357,7 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 	return e, err
 }
 
-func (s *WorkflowService) executeWorker(ctx context.Context, e domain.WorkflowExecution, step domain.WorkflowStep, job domain.WorkflowStepExecution, limits domain.WorkflowLimits, usage domain.RunAgentUsage, usedTurns int64) (domain.WorkflowStepExecution, error) {
+func (s *WorkflowService) executeWorkerTurn(ctx context.Context, e domain.WorkflowExecution, step domain.WorkflowStep, job domain.WorkflowStepExecution, limits domain.WorkflowLimits, usage domain.RunAgentUsage, usedTurns int64, execute func(context.Context, ExecuteSpecialistRequest) (SpecialistTurnResult, error)) (domain.WorkflowStepExecution, error) {
 	nodes, err := s.store.ListAgentNodes(ctx, e.RunID)
 	if err != nil {
 		return job, err
@@ -425,9 +387,6 @@ func (s *WorkflowService) executeWorker(ctx context.Context, e domain.WorkflowEx
 			job.Reason = "waiting for worker capacity and idle root"
 			return job, nil
 		}
-		if task.TokenLimit > limits.MaxTokens-(usage.TotalTokens-e.UsageBefore.TotalTokens) || task.TurnLimit > limits.MaxTurns-usedTurns {
-			return job, errors.New("workflow remaining budget cannot reserve this worker")
-		}
 		child, _, err := s.store.AdmitSpecialist(ctx, domain.SpecialistAdmission{AgentID: job.AgentID, SessionID: job.SessionID, RunID: e.RunID, ParentAgentID: root.ID, Title: task.Title, Skills: task.Skills, Worker: task.Worker, TurnLimit: task.TurnLimit, TokenLimit: task.TokenLimit, AllowedReadPaths: task.AllowedReadPaths, ToolCallLimit: task.ToolCallLimit, CostLimitMicros: task.CostLimitMicros, MaxChildren: domain.MaxAgentChildren, CreatedAt: time.Now().UTC()}, "workflow-admit-"+job.ID)
 		if err != nil {
 			return job, err
@@ -440,15 +399,6 @@ func (s *WorkflowService) executeWorker(ctx context.Context, e domain.WorkflowEx
 		job.Status = "completed"
 		job.Output, err = json.Marshal(completion.Report)
 		return job, err
-	}
-	if time.Since(e.CreatedAt) > time.Duration(limits.TimeoutMillis)*time.Millisecond {
-		return job, errors.New("workflow deadline exceeded")
-	}
-	if usage.TotalTokens-e.UsageBefore.TotalTokens >= limits.MaxTokens {
-		return job, errors.New("workflow token budget exhausted")
-	}
-	if usedTurns >= limits.MaxTurns {
-		return job, errors.New("workflow turn budget exhausted")
 	}
 	if existing.Terminal() {
 		return job, fmt.Errorf("worker ended %s: %s", existing.Status, existing.StatusReason)
@@ -491,7 +441,7 @@ func (s *WorkflowService) executeWorker(ctx context.Context, e domain.WorkflowEx
 	if existing.ActiveAttemptID != "" {
 		turnNumber = existing.TurnsUsed
 	}
-	turn, err := s.workers.ExecuteSpecialist(turnCtx, ExecuteSpecialistRequest{RunID: e.RunID, AgentID: existing.ID, OperationKey: "workflow-turn-" + runmutation.Fingerprint(job.ID, strconv.FormatInt(turnNumber, 10)), WorkspaceTools: task.Worker != nil || len(task.AllowedReadPaths) > 0})
+	turn, err := execute(turnCtx, ExecuteSpecialistRequest{RunID: e.RunID, AgentID: existing.ID, OperationKey: "workflow-turn-" + runmutation.Fingerprint(job.ID, strconv.FormatInt(turnNumber, 10)), WorkspaceTools: task.Worker != nil || len(task.AllowedReadPaths) > 0})
 	if err != nil {
 		return job, err
 	}

@@ -101,7 +101,7 @@ func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *Special
 					} else {
 						call.Surface, call.Phase, call.Profile, call.ModeRevision = mode.Surface, mode.Phase, mode.Profile, mode.Revision
 						toolCtx, cancel := context.WithTimeout(ctx, supervisorToolExecutionTimeout(call.Name))
-						outcome, callErr = r.workerRuntime.tools.Invoke(toolCtx, call)
+						outcome, callErr = invokeWorkflowWorkerTool(toolCtx, r.workerRuntime.tools, call)
 						cancel()
 					}
 				}

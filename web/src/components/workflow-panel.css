@@ -17,3 +17,8 @@
 .workflow-verification .section-heading { flex-wrap: wrap; gap: 8px; }
 .workflow-verification dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; }
 .workflow-verification dd { margin: 0; overflow-wrap: anywhere; }
+.workflow-task-group { border-block-start: 1px solid var(--border-strong); padding-block: 10px; overflow-wrap: anywhere; }
+.workflow-task-list { display: grid; gap: 10px; padding-inline-start: 24px; }
+.workflow-task-list li { min-width: 0; padding-inline-start: 4px; }
+.workflow-task-list .section-heading { flex-wrap: wrap; gap: 8px; }
+.workflow-task-list p { margin-block: 6px; }
