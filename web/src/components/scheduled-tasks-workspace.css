@@ -1,0 +1,46 @@
+.scheduled-tasks-workspace { min-width: 0; }
+.scheduled-tasks-workspace > p { max-width: 85ch; line-height: 1.7; }
+.automation-mode-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 14px; }
+.automation-mode-picker button { border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; color: var(--muted); background: var(--surface-subtle); font: inherit; font-size: 12px; cursor: pointer; }
+.automation-mode-picker button[aria-pressed="true"] { color: var(--ink); border-color: var(--border-strong); background: var(--accent-soft); }
+.automation-target { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 15px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-subtle); }
+.automation-target label, .automation-pr-fields label { display: grid; min-width: 0; gap: 7px; font-size: 12px; color: var(--muted); }
+.automation-target select, .automation-pr-fields select { min-width: 0; width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; }
+.automation-target-facts { display: flex; flex-wrap: wrap; gap: 8px 20px; grid-column: 1 / -1; min-width: 0; font-size: 11px; }
+.automation-target-facts > span { display: flex; flex-wrap: wrap; gap: 7px; color: var(--muted); min-width: 0; }
+.automation-target-facts strong { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.automation-target > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.automation-target a, .automation-executions a, .automation-result-link { color: var(--ink); text-underline-offset: 3px; font-size: 11px; }
+.scheduled-tasks-workspace .scheduled-create-form { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; padding: 16px; }
+.scheduled-tasks-workspace .scheduled-create-form label { font-size: 11px; text-transform: none; gap: 7px; }
+.scheduled-tasks-workspace .scheduled-create-form textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; padding: 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; line-height: 1.6; }
+.scheduled-tasks-workspace .automation-wide-field { grid-column: 1 / -1; }
+.scheduled-tasks-workspace p.automation-wide-field { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.automation-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 24px 0 10px; font-size: 12px; }
+.automation-list-heading > span { color: var(--muted); font-size: 11px; }
+.scheduled-tasks-workspace .scheduled-task-layout { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); margin-top: 0; }
+.automation-result-link { display: inline-block; margin-top: 14px; }
+.automation-executions { display: grid; gap: 10px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; font-size: 11px; }
+.automation-executions article { display: grid; gap: 8px; padding: 11px; border-radius: 6px; background: var(--surface); }
+.automation-executions article > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.automation-executions p { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.automation-executions small { color: var(--muted); overflow-wrap: anywhere; }
+.automation-pr-target { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-subtle); font-size: 12px; }
+.automation-pr-target > header { display: flex; gap: 8px; align-items: center; }
+.automation-pr-target p { line-height: 1.7; }
+.automation-pr-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.automation-pr-target .v2-pr-followup button { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--ink); padding: 7px 10px; font: inherit; font-size: 11px; }
+.automation-pr-target .v2-pr-followup input { min-width: 0; padding: 7px; border: 1px solid var(--border-strong); border-radius: 5px; color: var(--ink); background: var(--surface); font: inherit; }
+.automation-pr-target .v2-pr-followup-fields label { min-width: 0; display: grid; gap: 7px; }
+@media (max-width: 900px) {
+  .scheduled-tasks-workspace .scheduled-task-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .automation-target { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .scheduled-tasks-workspace .scheduled-create-form { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .scheduled-tasks-workspace .scheduled-task-detail dl { grid-template-columns: minmax(0, 1fr); }
+  .automation-mode-picker button { flex: 1 1 calc(50% - 6px); font-size: 11px; padding-inline: 7px; }
+  .scheduled-tasks-workspace > header { flex-wrap: wrap; }
+  .scheduled-tasks-workspace > header > div { flex: 1; }
+  .automation-pr-target { padding: 12px; }
+}

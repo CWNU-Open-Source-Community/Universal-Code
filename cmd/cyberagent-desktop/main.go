@@ -42,56 +42,56 @@ const (
 )
 
 type desktopOptions struct {
-	operatorPreview             bool
-	safeView                    bool
-	profileControl              bool
-	permissionControl           bool
-	workspaceSandbox            bool
-	dangerFullAccess            bool
-	browserCDPControl           bool
-	fullCDPDebug                bool
-	runCreation                 bool
-	sessionMessages             bool
-	sessionSteeringControl      bool
-	runLifecycle                bool
-	runExecution                bool
-	planDeliveryControl         bool
-	approvalControl             bool
-	modelControl                bool
-	providerCredentials         bool
-	fileEditReview              bool
-	fileEditProposals           bool
-	runWakeControl              bool
-	fileEditApply               bool
-	runWakeExecution            bool
-	runWakeWorker               bool
-	scheduledJobControl         bool
-	scheduledJobWorker          bool
-	scheduledJobObservationOnly bool
-	skillInstallation           bool
-	evidenceAttachment          bool
-	verificationEvidence        bool
-	embeddedAnalyzer            bool
-	batchDeliveryControl        bool
-	batchValidation             bool
-	uiEvidence                  bool
-	userTerminal                bool
-	dockerExecution             bool
-	codeIntelConfig             string
-	gitAdvanced                 bool
-	githubReview                bool
-	gitWorktreeRoot             string
-	securityMatrix              bool
-	securityMatrixRoot          string
-	securityCandidate           string
-	securityRecoveryWorker      bool
-	securityRecoveryRoot        string
-	securityRecoveryCase        string
-	securityRecoveryBackend     string
-	securityRecoveryPhase       string
-	riskProfileRestart          bool
-	sandboxSettings             bool
-	version                     bool
+	operatorPreview           bool
+	safeView                  bool
+	profileControl            bool
+	permissionControl         bool
+	workspaceSandbox          bool
+	dangerFullAccess          bool
+	browserCDPControl         bool
+	fullCDPDebug              bool
+	runCreation               bool
+	sessionMessages           bool
+	sessionSteeringControl    bool
+	runLifecycle              bool
+	runExecution              bool
+	planDeliveryControl       bool
+	approvalControl           bool
+	modelControl              bool
+	providerCredentials       bool
+	fileEditReview            bool
+	fileEditProposals         bool
+	runWakeControl            bool
+	fileEditApply             bool
+	runWakeExecution          bool
+	runWakeWorker             bool
+	scheduledJobControl       bool
+	scheduledJobWorker        bool
+	scheduledJobConfirmedOnly bool
+	skillInstallation         bool
+	evidenceAttachment        bool
+	verificationEvidence      bool
+	embeddedAnalyzer          bool
+	batchDeliveryControl      bool
+	batchValidation           bool
+	uiEvidence                bool
+	userTerminal              bool
+	dockerExecution           bool
+	codeIntelConfig           string
+	gitAdvanced               bool
+	githubReview              bool
+	gitWorktreeRoot           string
+	securityMatrix            bool
+	securityMatrixRoot        string
+	securityCandidate         string
+	securityRecoveryWorker    bool
+	securityRecoveryRoot      string
+	securityRecoveryCase      string
+	securityRecoveryBackend   string
+	securityRecoveryPhase     string
+	riskProfileRestart        bool
+	sandboxSettings           bool
+	version                   bool
 }
 
 type nativeSkillPackagePicker struct{}
@@ -504,7 +504,7 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 	if config.operatorPreview {
 		// Preserve the preview launcher's explicitly requested whole-job worker.
 		config.scheduledJobWorker = true
-		config.scheduledJobObservationOnly = false
+		config.scheduledJobConfirmedOnly = false
 	}
 	capabilities := domain.ExecutionPermissionRuntimeCapabilities{
 		OperatorApprovalEnabled: config.permissionControl,
@@ -579,7 +579,7 @@ func enableSafeDesktopProductBundle(config *desktopOptions) {
 	config.runWakeExecution = true
 	config.scheduledJobControl = true
 	config.scheduledJobWorker = true
-	config.scheduledJobObservationOnly = true
+	config.scheduledJobConfirmedOnly = true
 	config.skillInstallation = true
 	config.evidenceAttachment = true
 	config.verificationEvidence = true
@@ -758,7 +758,7 @@ func runDesktop(config desktopOptions) error {
 		RunWakeWorkerEnabled:               config.runWakeWorker,
 		ScheduledJobControlEnabled:         config.scheduledJobControl,
 		ScheduledJobWorkerEnabled:          config.scheduledJobWorker,
-		ScheduledJobObservationOnly:        config.scheduledJobObservationOnly,
+		ScheduledJobConfirmedOnly:          config.scheduledJobConfirmedOnly,
 		SkillInstallationEnabled:           config.skillInstallation,
 		EvidenceAttachmentEnabled:          config.evidenceAttachment,
 		VerificationEvidenceEnabled:        config.verificationEvidence,

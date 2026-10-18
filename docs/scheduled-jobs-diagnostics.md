@@ -13,14 +13,16 @@ Schema v167 adds immutable per-job consent for ordinary desktop observation. It 
 backfill existing jobs or change their original specification hashes.
 
 - The owner and target are an exact existing Run and its root Agent.
-- `read_only` is the default; model-call budget zero disables model calls.
+- `read_only` is the default; its zero model-call budget disables model calls.
+  Explicit `automatic` targets instead use the selected task's existing model/tool budget.
 - Deadline, maximum rounds, maximum elapsed time, retry attempts, and backoff are mandatory.
 - The target reaching a terminal state stops the monitor by default.
 - Concurrency is fixed at one. Unchanged metadata records an `unchanged` round without a
   model or tool call.
 - The worker is process-local and startup-only. HTTP/Desktop cannot enable it at runtime.
-- Raw event payloads, prompts, terminal input, command input, secrets, lease owners, and
-  fence tokens are never returned by the monitoring/diagnostic routes.
+- The schedule projection includes the operator-configured execution target. Raw observed
+  events, terminal input, lease owners and fence tokens remain withheld; diagnostic exports
+  retain their existing metadata-only contract.
 
 ## CLI
 
@@ -63,10 +65,11 @@ $env:CYBERAGENT_API_CONTROL_TOKEN = "<control-token>"
 cyberagent api serve --enable-scheduled-job-worker
 ```
 
-Ordinary Desktop startup installs a restricted observer. It selects only jobs with persisted
-observation consent version 1, `read_only` execution and a zero model-call budget, before
-both reconciliation and claiming. Existing jobs require one exact-job confirmation; restarting
-does not ask again. The explicit `--enable-scheduled-jobs --enable-scheduled-job-worker`
+Ordinary Desktop startup selects confirmed jobs before reconciliation and claiming:
+`read_only` with observation consent version 1 and zero model-call budget, or `automatic`
+with separate execution consent version 1. Existing unconfirmed observations require an
+exact-job confirmation. Restarting preserves that confirmation but still rechecks current
+execution permissions. The explicit `--enable-scheduled-jobs --enable-scheduled-job-worker`
 launch and operator preview retain their existing whole-job worker behavior.
 
 Closing API/Desktop drains and stops the worker. Capability output always reports
@@ -153,17 +156,58 @@ control never returns a fence token or starts execution inside the HTTP request.
 
 ## Desktop
 
-Open **定时观察 / Scheduled observations** from the current conversation's Inspector tools.
-The current Run is filled in. Set a time window and choose **创建并观察 / Create and observe**.
-The app records status changes without model calls; it observes while open and continues
-confirmed schedules on later launches. Previously created plans show a separate confirmation
-button. A paused plan remains paused after confirmation or restart.
+Open **自动化 / Automations** from the current conversation's Inspector tools. Select an
+existing task and choose a timed task instruction, a saved workflow, PR/CI follow-up, or
+read-only observation. The selected task supplies its workspace and current permissions.
+The host must remain running; closing the renderer does not stop the worker.
+
+Read-only schedules still require their own observation confirmation and never invoke a
+model or tool. The ordinary desktop worker selects only explicitly confirmed observations
+or automatic executions (`confirmed_jobs`). Legacy schedules are not silently enabled.
+A paused schedule remains paused after restart.
 
 The page reads actual worker health instead of presenting a startup capability as running.
 Select a job to inspect next wake, deadline, round
 budget, latest result, and notifications; active jobs can be paused/cancelled and paused
 jobs resumed with exact revision CAS. **Export diagnostics** downloads the same redacted
 `diagnostic-bundle.v1` JSON after the renderer validates its redaction contract.
+
+## Automatic task and workflow execution / 自动执行
+
+The existing create endpoint accepts `execution_mode: "automatic"`,
+`execution_consent_version: 1`, and one `execution_target`:
+
+```json
+{"kind":"thread","thread_id":"thread-…","prompt":"Run the project tests and investigate failures."}
+```
+
+```json
+{"kind":"workflow","workflow_definition_id":"workflow-…","inputs":{}}
+```
+
+The target Run belongs to the selected task. A workflow requires a running Run; each
+occurrence starts the selected immutable definition through `WorkflowService.Start`, then
+the existing host worker advances it. Thread instructions use `ExecuteAutomatic` and the
+ordinary Full/Ask/Auto permission, workspace, approval, and remaining Run budget checks.
+Restarting the host does not reactivate process-local Full Access. Pending approvals remain
+attached to the original attempt and must be resolved through the existing task controls.
+
+For automatic jobs, `stop_on_target_terminal` is false and `max_model_calls` is zero:
+`max_rounds` limits scheduled executions, while actual model/tool/cost limits remain the
+Run's budget. The legacy model-call counter is not a count of a multi-turn task's requests.
+Execution consent is separate from observation consent and binds the selected workspace
+and Git branch, when present. A changed binding requires a new schedule.
+
+Each occurrence keeps its submission key and execution receipt across retries/restarts.
+The detail response includes `snapshot.executions`, with the original Run/message or
+workflow execution identity and its latest result. Waiting or running occurrences are
+observed without submitting a second task. Pause/cancel stop future dispatches; an already
+started workflow is controlled through the existing workflow/task controls. Notifications
+are saved in the same in-product schedule history.
+
+PR/CI event triggers reuse the existing PR follow-up service and its exact remote-head,
+workspace, feedback cursor, and execution checks. They retain their existing repair-turn
+budget and result review; the general entry does not create a second GitHub polling engine.
 
 ## Repair mode / 修复模式
 

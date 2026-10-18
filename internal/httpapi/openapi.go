@@ -2118,7 +2118,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			NotFound: true, Parameters: []openAPIParameter{runID}},
 		{Path: ScheduledJobsPath, OperationID: "listScheduledJobs",
 			Summary: "List durable scheduled jobs", Tag: "Automation",
-			Description: "Returns a bounded metadata-only projection. Lease fence tokens, operation keys, event payloads, prompts, terminal input, and command arguments are never returned.",
+			Description: "Returns a bounded projection of schedules and their configured execution targets. Lease fence tokens, operation keys and raw observation payloads are withheld.",
 			DataType:    reflect.TypeOf(ScheduledJobListView{}), Parameters: []openAPIParameter{
 				identityQueryParameter("run_id", "Optional exact owner Run filter"),
 				{Name: "limit", In: "query", Description: "Maximum scheduled jobs",
@@ -2135,7 +2135,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			}},
 		{Path: ScheduledJobPathTemplate, OperationID: "getScheduledJob",
 			Summary: "Inspect a scheduled job", Tag: "Automation",
-			Description: "Returns one job with bounded recent rounds, notifications, and an optional immutable authorization snapshot. Raw observation content is withheld.",
+			Description: "Returns one job with bounded recent rounds, execution receipts, notifications, and an optional immutable authorization snapshot. Raw observation content is withheld.",
 			DataType:    reflect.TypeOf(ScheduledJobDetailView{}), NotFound: true,
 			Parameters: []openAPIParameter{jobID,
 				{Name: "round_limit", In: "query", Description: "Maximum recent rounds",
@@ -2148,7 +2148,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 		{Path: RunScheduledJobsPathTemplate, Method: http.MethodPost,
 			OperationID: "createRunScheduledJob", Summary: "Create a bounded scheduled job",
 			Tag:         "Automation",
-			Description: "Creates one exact Run-bound once or periodic job. Time arrival grants only a fenced recheck; read-only jobs require Code/Plan and repair jobs require a current Code/Deliver permission snapshot plus exact operator confirmation. Creation starts no process or model call.",
+			Description: "Creates one Run-bound once or periodic schedule. Automatic targets require explicit execution consent and use the ordinary Thread or workflow executor with current permissions and Run budgets. Legacy observation consent never authorizes execution. Creation starts no process or model call.",
 			DataType:    reflect.TypeOf(ScheduledJobControlView{}),
 			RequestType: reflect.TypeOf(ScheduledJobCreateRequestView{}), Control: true,
 			NotFound: true, Parameters: []openAPIParameter{runID, dockerSandboxIdempotencyKey}},
@@ -3322,7 +3322,7 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 		schema["description"] = "Only present as true when a pending Standard Code preset's immutable Thread preference binding is obsolete and the original operation key cannot apply. Explicitly review a new configuration attempt with a new key and fresh workspace trust preflight. Omission does not establish whether the operation succeeded."
 	}
 	if typeName == "ScheduledJobSnapshot" &&
-		(fieldName == "rounds" || fieldName == "notifications") {
+		(fieldName == "rounds" || fieldName == "notifications" || fieldName == "executions") {
 		schema["maxItems"] = 100
 	}
 	if typeName == "DebugQueryResult" && fieldName == "items" {
@@ -3500,10 +3500,10 @@ var openAPIFieldEnums = map[string][]string{
 	"ScheduledJobScheduleRequestView.misfire_policy":           {string(domain.ScheduledJobMisfireRunOnce), string(domain.ScheduledJobMisfireSkip)},
 	"ScheduledJobCreateRequestView.version":                    {domain.ScheduledJobProtocolVersion},
 	"ScheduledJobCreateRequestView.notification":               {string(domain.ScheduledJobNotifySilent), string(domain.ScheduledJobNotifyChange), string(domain.ScheduledJobNotifyFailure), string(domain.ScheduledJobNotifyAll)},
-	"ScheduledJobCreateRequestView.execution_mode":             {string(domain.ScheduledJobReadOnly), string(domain.ScheduledJobApprovedRepair)},
+	"ScheduledJobCreateRequestView.execution_mode":             {string(domain.ScheduledJobReadOnly), string(domain.ScheduledJobApprovedRepair), string(domain.ScheduledJobAutomatic)},
 	"ScheduledJobTransitionRequestView.version":                {domain.ScheduledJobControlProtocolVersion},
 	"ScheduledJobObservationRequestView.version":               {domain.ScheduledJobControlProtocolVersion},
-	"ScheduledJobWorkerHealthView.selection_scope":             {"confirmed_read_only", "all_jobs"},
+	"ScheduledJobWorkerHealthView.selection_scope":             {"confirmed_read_only", "confirmed_jobs", "all_jobs"},
 	"ScheduledJobControlView.protocol_version":                 {domain.ScheduledJobControlProtocolVersion},
 	"ScheduledJobControlView.action":                           {string(domain.ScheduledJobCreate), string(domain.ScheduledJobPause), string(domain.ScheduledJobResume), string(domain.ScheduledJobCancel)},
 	"ScheduledJobListView.protocol_version":                    {domain.ScheduledJobProtocolVersion},
@@ -3511,8 +3511,10 @@ var openAPIFieldEnums = map[string][]string{
 	"ScheduledJobSchedule.kind":                                {string(domain.ScheduledJobOnce), string(domain.ScheduledJobPeriodic)},
 	"ScheduledJobSchedule.misfire_policy":                      {string(domain.ScheduledJobMisfireRunOnce), string(domain.ScheduledJobMisfireSkip)},
 	"ScheduledJobSpec.version":                                 {domain.ScheduledJobProtocolVersion},
+	"ScheduledJobExecutionTarget.kind":                         {"thread", "workflow"},
+	"ScheduledJobExecution.state":                              {"queued", "running", "waiting_approval", "completed", "failed", "blocked"},
 	"ScheduledJobSpec.notification":                            {string(domain.ScheduledJobNotifySilent), string(domain.ScheduledJobNotifyChange), string(domain.ScheduledJobNotifyFailure), string(domain.ScheduledJobNotifyAll)},
-	"ScheduledJobSpec.execution_mode":                          {string(domain.ScheduledJobReadOnly), string(domain.ScheduledJobApprovedRepair)},
+	"ScheduledJobSpec.execution_mode":                          {string(domain.ScheduledJobReadOnly), string(domain.ScheduledJobApprovedRepair), string(domain.ScheduledJobAutomatic)},
 	"ScheduledJob.status":                                      {string(domain.ScheduledJobActive), string(domain.ScheduledJobPaused), string(domain.ScheduledJobCompleted), string(domain.ScheduledJobFailed), string(domain.ScheduledJobCancelled), string(domain.ScheduledJobExhausted)},
 	"ScheduledJob.stop_reason":                                 {string(domain.ScheduledJobStopNone), string(domain.ScheduledJobStopOnceCompleted), string(domain.ScheduledJobStopTargetTerminal), string(domain.ScheduledJobStopDeadline), string(domain.ScheduledJobStopRoundBudget), string(domain.ScheduledJobStopModelBudget), string(domain.ScheduledJobStopElapsedBudget), string(domain.ScheduledJobStopRetryExhausted), string(domain.ScheduledJobStopAuthorization), string(domain.ScheduledJobStopCancelled)},
 	"ScheduledJobAuthorization.protocol_version":               {domain.ScheduledJobAuthProtocolVersion},
@@ -4028,6 +4030,8 @@ var openAPIFieldMinimums = map[string]float64{
 	"ScheduledJobObservationRequestView.expected_revision":                   1,
 	"ScheduledJobObservationRequestView.observation_consent_version":         1,
 	"ScheduledJobCreateRequestView.observation_consent_version":              0,
+	"ScheduledJobCreateRequestView.execution_consent_version":                0,
+	"ScheduledJob.execution_consent_version":                                 0,
 	"ScheduledJob.observation_consent_version":                               0,
 	"ScheduledJob.revision":                                                  1,
 	"ScheduledJob.rounds_completed":                                          0,
@@ -4252,6 +4256,8 @@ var openAPIFieldMaximums = map[string]float64{
 	"ScheduledJobScheduleRequestView.interval_seconds":                  domain.MaxScheduledJobIntervalSeconds,
 	"ScheduledJobCreateRequestView.max_rounds":                          domain.MaxScheduledJobRounds,
 	"ScheduledJobCreateRequestView.observation_consent_version":         1,
+	"ScheduledJobCreateRequestView.execution_consent_version":           1,
+	"ScheduledJob.execution_consent_version":                            1,
 	"ScheduledJobObservationRequestView.observation_consent_version":    1,
 	"ScheduledJob.observation_consent_version":                          1,
 	"ScheduledJobCreateRequestView.max_model_calls":                     domain.MaxScheduledJobModelCalls,

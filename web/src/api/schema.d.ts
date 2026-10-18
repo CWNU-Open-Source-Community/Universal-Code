@@ -3336,7 +3336,7 @@ export interface paths {
         put?: never;
         /**
          * Create a bounded scheduled job
-         * @description Creates one exact Run-bound once or periodic job. Time arrival grants only a fenced recheck; read-only jobs require Code/Plan and repair jobs require a current Code/Deliver permission snapshot plus exact operator confirmation. Creation starts no process or model call.
+         * @description Creates one Run-bound once or periodic schedule. Automatic targets require explicit execution consent and use the ordinary Thread or workflow executor with current permissions and Run budgets. Legacy observation consent never authorizes execution. Creation starts no process or model call.
          */
         post: operations["createRunScheduledJob"];
         delete?: never;
@@ -4205,7 +4205,7 @@ export interface paths {
         };
         /**
          * List durable scheduled jobs
-         * @description Returns a bounded metadata-only projection. Lease fence tokens, operation keys, event payloads, prompts, terminal input, and command arguments are never returned.
+         * @description Returns a bounded projection of schedules and their configured execution targets. Lease fence tokens, operation keys and raw observation payloads are withheld.
          */
         get: operations["listScheduledJobs"];
         put?: never;
@@ -4225,7 +4225,7 @@ export interface paths {
         };
         /**
          * Inspect a scheduled job
-         * @description Returns one job with bounded recent rounds, notifications, and an optional immutable authorization snapshot. Raw observation content is withheld.
+         * @description Returns one job with bounded recent rounds, execution receipts, notifications, and an optional immutable authorization snapshot. Raw observation content is withheld.
          */
         get: operations["getScheduledJob"];
         put?: never;
@@ -12557,6 +12557,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            /** Format: int32 */
+            execution_consent_version: number;
             id: string;
             last_error_code?: string;
             /** Format: int64 */
@@ -12619,8 +12621,11 @@ export interface components {
             confirm_repair: boolean;
             /** Format: date-time */
             deadline_at: string;
+            /** Format: int32 */
+            execution_consent_version?: number;
             /** @enum {string} */
-            execution_mode: "read_only" | "approved_repair";
+            execution_mode: "read_only" | "approved_repair" | "automatic";
+            execution_target?: components["schemas"]["ScheduledJobExecutionTarget"];
             /** Format: int64 */
             max_elapsed_seconds: number;
             /** Format: int32 */
@@ -12641,6 +12646,30 @@ export interface components {
             /** @enum {string} */
             protocol_version: "scheduled-job.v1";
             snapshot: components["schemas"]["ScheduledJobSnapshot"];
+        };
+        ScheduledJobExecution: {
+            /** Format: date-time */
+            created_at: string;
+            error_code?: string;
+            job_id: string;
+            message_id?: string;
+            /** Format: date-time */
+            occurrence_at: string;
+            result?: string;
+            run_id?: string;
+            /** @enum {string} */
+            state: "queued" | "running" | "waiting_approval" | "completed" | "failed" | "blocked";
+            /** Format: date-time */
+            updated_at: string;
+            workflow_execution_id?: string;
+        };
+        ScheduledJobExecutionTarget: {
+            inputs?: unknown;
+            /** @enum {string} */
+            kind: "thread" | "workflow";
+            prompt?: string;
+            thread_id?: string;
+            workflow_definition_id?: string;
         };
         ScheduledJobListView: {
             items: components["schemas"]["ScheduledJob"][];
@@ -12723,6 +12752,7 @@ export interface components {
         };
         ScheduledJobSnapshot: {
             authorization?: components["schemas"]["ScheduledJobAuthorization"];
+            executions: components["schemas"]["ScheduledJobExecution"][];
             job: components["schemas"]["ScheduledJob"];
             notifications: components["schemas"]["ScheduledJobNotification"][];
             rounds: components["schemas"]["ScheduledJobRound"][];
@@ -12731,7 +12761,8 @@ export interface components {
             /** Format: date-time */
             deadline_at: string;
             /** @enum {string} */
-            execution_mode: "read_only" | "approved_repair";
+            execution_mode: "read_only" | "approved_repair" | "automatic";
+            execution_target?: components["schemas"]["ScheduledJobExecutionTarget"];
             /** Format: int64 */
             max_elapsed_seconds: number;
             /** Format: int32 */
@@ -12766,7 +12797,7 @@ export interface components {
             protocol_version: "scheduled-job-worker-health.v1";
             runtime_enable_supported: boolean;
             /** @enum {string} */
-            selection_scope?: "confirmed_read_only" | "all_jobs";
+            selection_scope?: "confirmed_read_only" | "confirmed_jobs" | "all_jobs";
             /** @enum {string} */
             state: "disabled" | "ready" | "running" | "draining" | "stopped";
         };

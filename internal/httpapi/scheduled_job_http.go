@@ -54,6 +54,8 @@ type ScheduledJobCreateRequestView struct {
 	ExecutionMode             domain.ScheduledJobExecutionMode    `json:"execution_mode"`
 	ConfirmRepair             bool                                `json:"confirm_repair"`
 	ObservationConsentVersion int                                 `json:"observation_consent_version,omitempty"`
+	ExecutionTarget           *domain.ScheduledJobExecutionTarget `json:"execution_target,omitempty"`
+	ExecutionConsentVersion   int                                 `json:"execution_consent_version,omitempty"`
 }
 
 type ScheduledJobObservationController interface {
@@ -168,6 +170,8 @@ func (a *API) serveScheduledJobControl(writer http.ResponseWriter,
 				Notification: view.Notification, ExecutionMode: view.ExecutionMode,
 				ConfirmRepair: view.ConfirmRepair, OperationKey: operationKey,
 				ObservationConsentVersion: view.ObservationConsentVersion,
+				ExecutionTarget:           view.ExecutionTarget,
+				ExecutionConsentVersion:   view.ExecutionConsentVersion,
 				RequestedBy:               "http_control",
 			})
 	} else if action == scheduledJobObservationAction {
