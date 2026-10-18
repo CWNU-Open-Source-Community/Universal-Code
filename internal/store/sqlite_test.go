@@ -49,6 +49,31 @@ func TestOpenCreatesPrivateSQLitePathOnUnix(t *testing.T) {
 	}
 }
 
+func TestOpenConfiguresWALJournalMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wal-test.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	var mode string
+	if err := st.db.QueryRowContext(t.Context(), `PRAGMA journal_mode;`).Scan(&mode); err != nil {
+		t.Fatalf("query journal_mode pragma: %v", err)
+	}
+	if strings.ToLower(mode) != "wal" {
+		t.Fatalf("expected journal_mode wal, got %q", mode)
+	}
+
+	var syncMode int
+	if err := st.db.QueryRowContext(t.Context(), `PRAGMA synchronous;`).Scan(&syncMode); err != nil {
+		t.Fatalf("query synchronous pragma: %v", err)
+	}
+	if syncMode != 1 {
+		t.Fatalf("expected synchronous 1 (NORMAL), got %d", syncMode)
+	}
+}
+
 func TestConcurrentOpenRechecksMigrationLedgerAfterWriteLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "concurrent-open.db")
 	const callers = 6

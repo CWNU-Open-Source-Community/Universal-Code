@@ -71,6 +71,14 @@ func Open(path string) (*SQLiteStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`PRAGMA synchronous = NORMAL;`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		_ = db.Close()

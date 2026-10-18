@@ -5,6 +5,7 @@ import { Check, FileDiff, LoaderCircle, Pencil, RefreshCw, X } from "lucide-reac
 import type { APIClient } from "../api/client";
 import type { FileEditProposalSourceView } from "../api/types";
 import { useLocale } from "../lib/locale";
+import { readPrayuTheme } from "../lib/appearance";
 import { ErrorState, StatusBadge } from "./common";
 import { useFileEditDraft, useFileEditLeave, useFileEditLeaveEntry } from "./file-edit-drafts";
 
@@ -77,6 +78,7 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
   const invalid = editorState !== "ready" || bytes > 256 * 1024 ||
     draft === activeSource.content || expired || recovery.changedBase || recovery.conflict;
   const language = languageForPath(activeSource.path);
+  const monacoTheme = readPrayuTheme() === "light" ? "vs" : "vs-dark";
   useFileEditLeaveEntry({ path: activeSource.path, dirty: Boolean(recovery.draft),
     busy: mutation.isPending, canSave: !invalid,
     save: () => mutation.mutateAsync(recovery.captureSubmission(draft)), keep: recovery.keep,
@@ -111,14 +113,14 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
         <Editor height="100%" language={language} onChange={(value) => {
           recovery.change(value ?? ""); mutation.reset(); setVersionError("");
         }}
-        options={{ automaticLayout: true, fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
+        options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)', fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
           readOnly: mutation.isPending, renderWhitespace: "selection", scrollBeyondLastLine: false, tabSize: 2, wordWrap: "off" }}
         path={`proposal://${runID}/${activeSource.content_sha256}/${activeSource.path}`}
-        theme="vs" value={draft} /> :
+        theme={monacoTheme} value={draft} /> :
         <DiffEditor height="100%" language={language} modified={draft} original={activeSource.content}
-          options={{ automaticLayout: true, fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
+          options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)', fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
             readOnly: true, renderSideBySide: true, scrollBeyondLastLine: false }}
-          theme="vs" />)}
+          theme={monacoTheme} />)}
     </div>
     <footer>
       <span>{bytes.toLocaleString()} / {(256 * 1024).toLocaleString()} {t("字节", "bytes")}</span>

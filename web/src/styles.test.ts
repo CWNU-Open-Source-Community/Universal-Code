@@ -91,4 +91,10 @@ describe("product typography roles", () => {
     expect(declarationsFor(".user-terminal-host", "font-family").at(-1)).toBe("var(--prayu-font-mono)");
     expect(styles.match(/"Cascadia Code"/gu)).toHaveLength(1);
   });
+
+  it("prevents table and modal header horizontal overflow", () => {
+    expect(declarationsFor(".safe-markdown table", "overflow-x")).toEqual(["auto"]);
+    expect(declarationsFor(".safe-markdown table", "display")).toEqual(["block"]);
+    expect(declarationsFor(".desktop-dialog h2", "text-overflow")).toEqual(["ellipsis"]);
+  });
 });
