@@ -51,7 +51,7 @@ def main():
         raise RuntimeError("Windows-only diagnostic")
     repo = Path(__file__).resolve().parents[1]
     results = []
-    for mode in ["original", "qualified", "discovery"]:
+    for mode in ["original", "discovery"]:
         with tempfile.TemporaryDirectory(prefix="fixed-powershell-") as temporary:
             path = overlay(repo, Path(temporary), mode)
             print(json.dumps({"diagnostic_only": True, "mode": mode, "budget_ms": 60000}), flush=True)

@@ -18,6 +18,11 @@ jobs:
           go-version-file: go.mod
           check-latest: true
           cache: true
+      - name: Build read-only managed stack sampler
+        shell: pwsh
+        run: dotnet publish scripts/fixed-stack/FixedStack.csproj -c Release -o "$env:RUNNER_TEMP\fixed-stack"
       - name: Diagnose original fixed command and script phases
         shell: pwsh
-        run: python scripts/diagnose-fixed-powershell.py
+        run: |
+          $env:TRAVERSE_FIXED_STACK_HELPER = Join-Path $env:RUNNER_TEMP 'fixed-stack\FixedStack.exe'
+          python scripts/diagnose-fixed-powershell.py

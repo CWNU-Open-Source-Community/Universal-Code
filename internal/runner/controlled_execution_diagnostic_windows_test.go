@@ -3,6 +3,10 @@
 package runner
 
 import (
+	"context"
+	"os"
+	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 	"unsafe"
@@ -34,12 +38,22 @@ func startFixedPowerShellDiagnostic(t *testing.T, process *windowsCommandRuntime
 		defer close(stopped)
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+		stackSamples := 0
 		for {
 			select {
 			case <-stop:
 				return
 			case <-ticker.C:
 				sample()
+				if helper := os.Getenv("TRAVERSE_FIXED_STACK_HELPER"); helper != "" && stackSamples < 2 {
+					stackSamples++
+					if status, err := windows.WaitForSingleObject(process.process, 0); err == nil && status == uint32(windows.WAIT_TIMEOUT) {
+						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						value, err := exec.CommandContext(ctx, helper, strconv.Itoa(process.pid)).CombinedOutput()
+						cancel()
+						t.Logf("same-process managed sample error=%v\n%s", err, value)
+					}
+				}
 			}
 		}
 	}()
