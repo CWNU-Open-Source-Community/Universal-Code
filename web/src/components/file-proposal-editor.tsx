@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Editor, { DiffEditor } from "@monaco-editor/react";
-import { Check, FileDiff, LoaderCircle, Pencil, RefreshCw, X } from "lucide-react";
+import { Check, FileDiff, FileText, LoaderCircle, Pencil, RefreshCw, X } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { FileEditProposalSourceView } from "../api/types";
 import { useLocale } from "../lib/locale";
 import { readPrayuTheme } from "../lib/appearance";
-import { ErrorState, StatusBadge } from "./common";
+import { ErrorState } from "./common";
 import { useFileEditDraft, useFileEditLeave, useFileEditLeaveEntry } from "./file-edit-drafts";
 
 export function FileProposalEditor({ client, runID, source, onClose }: {
@@ -86,10 +86,13 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
   });
 
   return <section className="file-proposal-editor" aria-label={t(`编辑 ${activeSource.path} 的提案`, `Edit proposal for ${activeSource.path}`)}>
-    <header>
-      <div><Pencil aria-hidden="true" size={16} /><strong title={activeSource.path}>{activeSource.path}</strong>
-        <StatusBadge status="proposal only" /></div>
-      <div className="segmented-control" aria-label={t("编辑器模式", "Editor mode")}>
+    <header className="file-proposal-header">
+      <div><FileText aria-hidden="true" size={16} /><strong title={activeSource.path}>{activeSource.path}</strong></div>
+      <button aria-label={t("关闭文件提案编辑器", "Close file proposal editor")} className="icon-button"
+        onClick={() => leave(onClose)} title={t("关闭编辑器", "Close editor")} type="button">
+        <X aria-hidden="true" size={16} />
+      </button>
+      <div className="file-proposal-modes" role="group" aria-label={t("编辑器模式", "Editor mode")}>
         <button aria-pressed={mode === "edit"} onClick={() => setMode("edit")} type="button">
           <Pencil aria-hidden="true" size={14} />{t("编辑", "Edit")}
         </button>
@@ -97,10 +100,6 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
           <FileDiff aria-hidden="true" size={14} />{t("差异", "Diff")}
         </button>
       </div>
-      <button aria-label={t("关闭文件提案编辑器", "Close file proposal editor")} className="icon-button"
-        onClick={() => leave(onClose)} title={t("关闭编辑器", "Close editor")} type="button">
-        <X aria-hidden="true" size={15} />
-      </button>
     </header>
     <div className="monaco-proposal-surface">
       {editorState === "loading" && <div className="monaco-local-state" role="status">
@@ -113,33 +112,38 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
         <Editor height="100%" language={language} onChange={(value) => {
           recovery.change(value ?? ""); mutation.reset(); setVersionError("");
         }}
-        options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)', fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
+        options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)', fontSize: 14, lineHeight: 22, padding: { top: 8, bottom: 8 }, letterSpacing: 0, minimap: { enabled: false },
           readOnly: mutation.isPending, renderWhitespace: "selection", scrollBeyondLastLine: false, tabSize: 2, wordWrap: "off" }}
         path={`proposal://${runID}/${activeSource.content_sha256}/${activeSource.path}`}
         theme={monacoTheme} value={draft} /> :
         <DiffEditor height="100%" language={language} modified={draft} original={activeSource.content}
-          options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)', fontSize: 13, letterSpacing: 0, minimap: { enabled: false },
+          options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)', fontSize: 14, lineHeight: 22, padding: { top: 8, bottom: 8 }, letterSpacing: 0, minimap: { enabled: false },
             readOnly: true, renderSideBySide: true, scrollBeyondLastLine: false }}
           theme={monacoTheme} />)}
     </div>
-    <footer>
-      <span>{bytes.toLocaleString()} / {(256 * 1024).toLocaleString()} {t("字节", "bytes")}</span>
-      <span>{t("来源", "Source")} {activeSource.content_sha256.slice(0, 12)}</span>
-      {!proposalCreated && (expired || mutation.isError) &&
-        <button className="compact-command" disabled={refresh.isPending}
-          onClick={() => refresh.mutate()} type="button">
-          {refresh.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
-            : <RefreshCw aria-hidden="true" size={14} />}
-          {t("刷新来源", "Refresh source")}
+    <footer className="file-proposal-footer">
+      <div className="file-proposal-meta">
+        <span>{bytes.toLocaleString()} B / 256 KiB</span>
+        <span title={`SHA-256: ${activeSource.content_sha256}`}>{t("来源", "Source")} {activeSource.content_sha256.slice(0, 12)}</span>
+      </div>
+      <div className="file-proposal-actions">
+        <p>{t("审阅后才会修改文件", "File changes require review")}</p>
+        {!proposalCreated && (expired || mutation.isError) &&
+          <button className="compact-command" disabled={refresh.isPending}
+            onClick={() => refresh.mutate()} type="button">
+            {refresh.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
+              : <RefreshCw aria-hidden="true" size={14} />}
+            {t("刷新来源", "Refresh source")}
+          </button>}
+        {proposalCreated ? <span className="proposal-created-status" role="status" title={mutation.data.edit.id}>
+          <Check aria-hidden="true" size={14} />{t("等待审阅", "Pending review")}
+        </span> : <button className="compact-command file-proposal-submit" disabled={invalid || mutation.isPending}
+          onClick={() => mutation.mutate(recovery.captureSubmission(draft))} type="button">
+          {mutation.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
+            : <FileDiff aria-hidden="true" size={14} />}
+          {t("创建提案", "Create proposal")}
         </button>}
-      {proposalCreated ? <span className="proposal-created-status" role="status">
-        <Check aria-hidden="true" size={14} />{t("等待审阅", "Pending review")} {mutation.data.edit.id.slice(0, 12)}
-      </span> : <button className="compact-command" disabled={invalid || mutation.isPending}
-        onClick={() => mutation.mutate(recovery.captureSubmission(draft))} type="button">
-        {mutation.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
-          : <FileDiff aria-hidden="true" size={14} />}
-        {t("创建提案", "Create proposal")}
-      </button>}
+      </div>
     </footer>
     {(recovery.draft || recovery.error) && <div role={recovery.persisted ? "status" : "alert"}>
       {recovery.persisted ? t("草稿已保存在本机", "Draft saved locally")
