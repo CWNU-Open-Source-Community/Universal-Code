@@ -900,6 +900,7 @@ func (s *responsesStreamState) consume(payload []byte) (*ChatChunk, bool, error)
 			return nil, false, openAIProtocolError(s.provider, "returned invalid private reasoning summary")
 		}
 		item.privateBytes += len(event.Delta)
+		s.events.markGeneration()
 		return nil, false, nil
 	case "response.output_item.added":
 		return s.startItem(event.Item)

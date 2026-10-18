@@ -937,6 +937,9 @@ func (s *anthropicStreamState) consume(payload []byte, provider string) (*ChatCh
 		}
 		s.ensureBlockMaps()
 		s.privateBlocks[event.Index] = true
+		if block.Type == "thinking" && block.Thinking != nil && *block.Thinking != "" {
+			s.events.markGeneration()
+		}
 	case "content_block_delta":
 		if !s.messageStarted || s.messageStopped || event.Index < 0 ||
 			event.Index >= MaxProviderOutputItems {
@@ -989,6 +992,9 @@ func (s *anthropicStreamState) consume(payload []byte, provider string) (*ChatCh
 		if !s.privateBlocks[event.Index] {
 			return nil, false, NewProviderError(OutcomeInvalidResponse, provider,
 				"returned an unsupported content block delta", nil)
+		}
+		if delta.Type == "thinking_delta" && delta.Thinking != nil && *delta.Thinking != "" {
+			s.events.markGeneration()
 		}
 	case "content_block_stop":
 		if !s.messageStarted || s.messageStopped || event.Index < 0 ||

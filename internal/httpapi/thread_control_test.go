@@ -113,6 +113,9 @@ func TestThreadHTTPContractContinuesTerminalRunAndPreservesLifecycleHistory(t *t
 		detail.Runs[1].PredecessorRunID != terminal.ID {
 		t.Fatalf("invalid Thread detail after continuation: %#v", detail)
 	}
+	if detail.Statistics == nil || detail.Statistics.Turns != 1 || detail.Statistics.Steps != 0 || detail.Statistics.Context != nil {
+		t.Fatalf("invalid root statistics on the existing read endpoint: %#v", detail.Statistics)
+	}
 	response = performSessionMessageRequest(t, api, http.MethodGet,
 		ThreadCollectionPath+"/"+created.Thread.ID+"/messages?limit=100&include_compacted=true",
 		testAccessToken, "", "", nil)

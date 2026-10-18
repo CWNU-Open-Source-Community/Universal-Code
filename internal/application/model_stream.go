@@ -25,6 +25,7 @@ type modelStreamResult struct {
 	Bytes         int
 	Usage         *llm.Usage
 	ToolCallCount int
+	DecodeMillis  *int64
 }
 
 type modelStreamAggregator struct {
@@ -47,6 +48,7 @@ type modelStreamAggregator struct {
 	pendingBoundaries []llm.StreamBoundary
 	observedUsage     *llm.Usage
 	observedToolCalls int
+	decodeMillis      *int64
 }
 
 func (s *AgentRunner) streamModel(ctx context.Context, checkpoint domain.SupervisorCheckpoint, attempt llm.ModelAttempt, ref llm.ModelRef, request llm.ChatRequest, live *activeCallLease) (modelStreamResult, error) {
@@ -83,19 +85,23 @@ func (a *modelStreamAggregator) consume(ctx context.Context, chunks <-chan llm.C
 			case chunk, open := <-chunks:
 				if !open {
 					result.Usage, result.ToolCallCount = a.observedUsage, a.observedToolCalls
+					result.DecodeMillis = a.decodeMillis
 					return
 				}
 				a.observeUsage(chunk)
 				if chunk.Done || chunk.Err != nil {
 					result.Usage, result.ToolCallCount = a.observedUsage, a.observedToolCalls
+					result.DecodeMillis = a.decodeMillis
 					return
 				}
 			default:
 				result.Usage, result.ToolCallCount = a.observedUsage, a.observedToolCalls
+				result.DecodeMillis = a.decodeMillis
 				return
 			}
 		}
 		result.Usage, result.ToolCallCount = a.observedUsage, a.observedToolCalls
+		result.DecodeMillis = a.decodeMillis
 	}()
 	if chunks == nil {
 		return a.result(nil), llm.NewProviderError(llm.OutcomeInvalidResponse, a.ref.Provider, "returned a nil stream", nil)
@@ -328,6 +334,12 @@ func (a *modelStreamAggregator) flush(done bool) error {
 }
 
 func (a *modelStreamAggregator) observeUsage(chunk llm.ChatChunk) {
+	for _, event := range chunk.Events {
+		if event.Type == llm.StreamResponseCompleted && event.DecodeMillis != nil && *event.DecodeMillis >= 0 {
+			millis := *event.DecodeMillis
+			a.decodeMillis = &millis
+		}
+	}
 	terminal := chunk.Done || (chunk.Err != nil && llm.CompletionError(a.ref.Provider, chunk.FinishReason) != nil)
 	if terminal && chunk.Usage != nil && chunk.Usage.Validate() == nil {
 		usage := *chunk.Usage
@@ -338,7 +350,7 @@ func (a *modelStreamAggregator) observeUsage(chunk llm.ChatChunk) {
 
 func (a *modelStreamAggregator) result(response *llm.ChatResponse) modelStreamResult {
 	return modelStreamResult{Response: response, Events: a.events, Bytes: a.durableBytes,
-		Usage: a.observedUsage, ToolCallCount: a.observedToolCalls}
+		Usage: a.observedUsage, ToolCallCount: a.observedToolCalls, DecodeMillis: a.decodeMillis}
 }
 
 // Call only after ItemStreamAccumulator.Consume has validated the terminal.

@@ -14361,6 +14361,14 @@ export interface components {
             thread_id: string;
             version: string;
         };
+        ThreadContextUsage: {
+            estimated: boolean;
+            /** Format: int64 */
+            input_tokens: number;
+            window_source: string;
+            /** Format: int64 */
+            window_tokens: number;
+        };
         ThreadCreationControlRequestView: {
             allowed_targets?: string[];
             budget?: components["schemas"]["TaskBudgetSettings"];
@@ -14396,6 +14404,7 @@ export interface components {
             mission: components["schemas"]["MissionView"];
             recovery?: components["schemas"]["ThreadRunRecoveryView"];
             runs: components["schemas"]["ThreadRunView"][];
+            statistics?: components["schemas"]["ThreadStatistics"];
             thread: components["schemas"]["ThreadView"];
         };
         ThreadEventView: {
@@ -14989,6 +14998,29 @@ export interface components {
             ordinal: number;
             predecessor_run_id?: string;
             run: components["schemas"]["RunView"];
+        };
+        ThreadStatistics: {
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_reported_calls: number;
+            context?: components["schemas"]["ThreadContextUsage"];
+            /** Format: int64 */
+            decode_millis: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            steps: number;
+            /** Format: int64 */
+            timed_output_tokens: number;
+            /** Format: int64 */
+            total_tokens: number;
+            /** Format: int64 */
+            turns: number;
+            /** Format: int64 */
+            usage_calls: number;
         };
         ThreadTranscriptItemView: {
             activity_detail_ref?: string;

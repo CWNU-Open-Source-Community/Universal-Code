@@ -237,11 +237,14 @@ type ModelAttempt struct {
 	ErrorText              string
 	RetryAfter             time.Duration
 	Elapsed                time.Duration
+	DecodeMillis           *int64
 	RetryPlanned           bool
 	StreamEvents           int
 	StreamBytes            int
 	InputEstimate          int
 	Context                *ModelContextAudit
+	ContextWindowTokens    int
+	ContextWindowSource    string
 }
 
 const ModelPurposeContextCompaction = "context_compaction"
@@ -406,6 +409,12 @@ func (a ModelAttempt) ValidateStarted() error {
 	}
 	if a.RetryAfter < 0 || a.Elapsed < 0 {
 		return errors.New("model attempt durations cannot be negative")
+	}
+	if a.DecodeMillis != nil && *a.DecodeMillis < 0 {
+		return errors.New("model generation duration cannot be negative")
+	}
+	if a.ContextWindowTokens < 0 {
+		return errors.New("model context window cannot be negative")
 	}
 	if a.StreamEvents < 0 || a.StreamBytes < 0 {
 		return errors.New("model stream counters cannot be negative")

@@ -1162,12 +1162,13 @@ type ThreadRunView struct {
 }
 
 type ThreadDetailView struct {
-	Thread    ThreadView             `json:"thread"`
-	Mission   MissionView            `json:"mission"`
-	ActiveRun *RunView               `json:"active_run,omitempty"`
-	LastRun   RunView                `json:"last_run"`
-	Runs      []ThreadRunView        `json:"runs"`
-	Recovery  *ThreadRunRecoveryView `json:"recovery,omitempty"`
+	Thread     ThreadView               `json:"thread"`
+	Mission    MissionView              `json:"mission"`
+	ActiveRun  *RunView                 `json:"active_run,omitempty"`
+	LastRun    RunView                  `json:"last_run"`
+	Runs       []ThreadRunView          `json:"runs"`
+	Recovery   *ThreadRunRecoveryView   `json:"recovery,omitempty"`
+	Statistics *domain.ThreadStatistics `json:"statistics,omitempty"`
 }
 
 type ThreadRunRecoveryView struct {

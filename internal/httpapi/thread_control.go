@@ -434,8 +434,18 @@ func (a *API) thread(request *http.Request, threadID string) (any, *Page, error)
 		projected := threadRunRecoveryView(recovery)
 		recoveryView = &projected
 	}
-	return ThreadDetailView{Thread: view, Mission: missionView(mission),
-		ActiveRun: active, LastRun: last, Runs: runs, Recovery: recoveryView}, nil, nil
+	detail := ThreadDetailView{Thread: view, Mission: missionView(mission),
+		ActiveRun: active, LastRun: last, Runs: runs, Recovery: recoveryView}
+	if reader, ok := a.store.(interface {
+		GetThreadStatistics(context.Context, string) (domain.ThreadStatistics, error)
+	}); ok {
+		statistics, err := reader.GetThreadStatistics(request.Context(), threadRecord.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		detail.Statistics = &statistics
+	}
+	return detail, nil, nil
 }
 
 func (a *API) threadRuns(request *http.Request, threadID string) (any, *Page, error) {

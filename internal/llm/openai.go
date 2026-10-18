@@ -983,6 +983,10 @@ func (s *openAIStreamState) consume(payload []byte) (*ChatChunk, error) {
 		return nil, openAIProtocolError(s.provider, "returned an invalid stream choice")
 	}
 	choice := event.Choices[0]
+	var reasoningDelta string
+	if json.Unmarshal(choice.Delta.ReasoningContent, &reasoningDelta) == nil && reasoningDelta != "" {
+		s.events.markGeneration()
+	}
 	if choice.Delta.Role != "" && choice.Delta.Role != "assistant" {
 		return nil, openAIProtocolError(s.provider, "returned an invalid stream role")
 	}

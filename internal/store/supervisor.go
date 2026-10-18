@@ -551,6 +551,10 @@ func (s *SQLiteStore) RecordSupervisorModelStarted(ctx context.Context, checkpoi
 	if attempt.InputEstimate > 0 {
 		payload["input_estimate"] = attempt.InputEstimate
 	}
+	if attempt.ContextWindowTokens > 0 {
+		payload["context_window_tokens"] = attempt.ContextWindowTokens
+		payload["context_window_source"] = attempt.ContextWindowSource
+	}
 	addSupervisorCompactionIdentity(payload, attempt)
 	addSupervisorMonetaryIdentity(payload, attempt)
 	if attempt.Purpose == llm.ModelPurposeContextCompaction || attempt.SupervisorAttemptID != "" {
@@ -1103,6 +1107,12 @@ type supervisorModelTerminalOptions struct {
 }
 
 func (s *SQLiteStore) recordSupervisorModelTerminal(ctx context.Context, checkpoint domain.SupervisorCheckpoint, attempt llm.ModelAttempt, eventType string, payload map[string]any, options supervisorModelTerminalOptions) (domain.SupervisorCheckpoint, error) {
+	if attempt.DecodeMillis != nil {
+		payload["decode_millis"] = *attempt.DecodeMillis
+	}
+	if attempt.SteeringSequence > 0 {
+		payload["steering_sequence"] = attempt.SteeringSequence
+	}
 	if eventType == events.ModelFailedEvent && attempt.FailureReason != "" && attempt.FailureReason != llm.ProviderFailureNone {
 		if !attempt.FailureReason.Valid() {
 			return domain.SupervisorCheckpoint{}, apperror.New(apperror.CodeInvalidArgument, "invalid model failure reason")
@@ -1677,6 +1687,7 @@ func sanitizeModelAttempt(attempt llm.ModelAttempt) llm.ModelAttempt {
 	attempt.Provider = redact.String(strings.TrimSpace(attempt.Provider))
 	attempt.Model = redact.String(strings.TrimSpace(attempt.Model))
 	attempt.ErrorText = sanitizeSupervisorText(attempt.ErrorText)
+	attempt.ContextWindowSource = redact.String(strings.TrimSpace(attempt.ContextWindowSource))
 	return attempt
 }
 
