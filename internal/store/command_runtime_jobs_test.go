@@ -165,14 +165,23 @@ func TestCommandRuntimeJobLedgerFencesScopeAndPreservesTerminalAudit(t *testing.
 	}
 	rootAttribution := domain.AgentAttribution{AgentID: root.ID,
 		AgentAttemptID: root.ActiveAttemptID, Source: domain.AgentAttributionRecorded}
+	threadRecord, err := st.GetThreadByRun(ctx, job.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SaveThreadCommandServicePolicy(ctx, threadRecord.ID, 1, domain.CommandServicePolicyExclusive); err != nil {
+		t.Fatal(err)
+	}
+	shared := job
+	shared.IntentJSON = `{"workspace_mode":"shared_service"}`
+	if _, _, err := st.PrepareCommandRuntimeJobForAgent(ctx, shared, rootAttribution); apperror.CodeOf(err) != apperror.CodeConflict || errors.Unwrap(err) == nil || !strings.Contains(errors.Unwrap(err).Error(), "Thread requires exclusive") {
+		t.Fatalf("durable admission bypassed exclusive preference: %v", err)
+	}
+	// Ordinary commands remain available under the same saved preference.
 	prepared, replayed, err := st.PrepareCommandRuntimeJobForAgent(ctx, job,
 		rootAttribution)
 	if err != nil || replayed || prepared.ID != job.ID {
 		t.Fatalf("prepare=%#v replayed=%t err=%v", prepared, replayed, err)
-	}
-	threadRecord, err := st.GetThreadByRun(ctx, job.RunID)
-	if err != nil {
-		t.Fatal(err)
 	}
 	storedAttribution, err := st.GetThreadCommandRuntimeJobAgentAttribution(ctx,
 		threadRecord.ID, job.ID)
@@ -284,6 +293,21 @@ func TestCommandRuntimeJobLedgerFencesScopeAndPreservesTerminalAudit(t *testing.
 	if active, err := st.CommandRuntimeJobOwnershipActive(ctx, running); err != nil || !active {
 		t.Fatalf("active command runtime ownership=%t err=%v", active, err)
 	}
+	if jobs, err := st.ListCommandRuntimeJobs(ctx, runner.CommandRuntimeListFilter{
+		WorkspaceRootSHA256: running.WorkspaceRootSHA256, UnreapedOnly: true,
+	}); err != nil || len(jobs) != 1 || jobs[0].ID != running.ID {
+		t.Fatalf("physical workspace active jobs: %+v %v", jobs, err)
+	}
+	if jobs, err := st.ListCommandRuntimeJobs(ctx, runner.CommandRuntimeListFilter{
+		WorkspaceRootSHA256: strings.Repeat("0", 64), UnreapedOnly: true,
+	}); err != nil || len(jobs) != 0 {
+		t.Fatalf("unrelated workspace jobs: %+v %v", jobs, err)
+	}
+	if _, err := st.ListCommandRuntimeJobs(ctx, runner.CommandRuntimeListFilter{
+		WorkspaceRootSHA256: "invalid-digest",
+	}); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("invalid physical workspace digest: %v", err)
+	}
 	expireTestRunExecutionLease(t, ctx, st, lease)
 	if active, err := st.CommandRuntimeJobOwnershipActive(ctx, running); err != nil || !active {
 		t.Fatalf("owner heartbeat did not survive turn lease release: active=%t err=%v",
@@ -319,6 +343,11 @@ func TestCommandRuntimeJobLedgerFencesScopeAndPreservesTerminalAudit(t *testing.
 		runner.CommandRuntimeListFilter{RunID: startedRun.ID, Limit: 10})
 	if err != nil || len(jobs) != 1 || jobs[0].Stdout != "ok\n" || !jobs[0].TreeReaped {
 		t.Fatalf("jobs=%#v err=%v", jobs, err)
+	}
+	if jobs, err := st.ListCommandRuntimeJobs(ctx, runner.CommandRuntimeListFilter{
+		WorkspaceRootSHA256: terminal.WorkspaceRootSHA256, UnreapedOnly: true,
+	}); err != nil || len(jobs) != 0 {
+		t.Fatalf("reaped job remained in active workspace query: %+v %v", jobs, err)
 	}
 	operatorJob := job
 	operatorJob.ID = "command-job-ledger-operator"

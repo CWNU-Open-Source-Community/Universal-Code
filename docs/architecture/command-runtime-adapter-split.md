@@ -24,6 +24,37 @@ must remain on the verified origin. The returned `service` observation and
 `navigated` flag distinguish a responding service from an unready or unsupported
 backend. This probe grants no permissions and does not verify page behavior.
 
+### Services that coexist with edits
+
+For a persistent development server, `action=start` accepts the optional command
+field `workspace_mode: shared_service`. Omission or `exclusive` keeps the ordinary
+command behavior: its mutation boundary lasts until exit. `shared_service` is
+rejected for foreground `run` batches. The mode is bound into the reviewed command
+fingerprint and durable launch intent, and appears in its Job projection.
+
+A shared service retains its existing process, filesystem and network permissions.
+It can write files. Its launch checkpoint closes after dispatch; later edits keep
+their own checkpoints and the existing file-hash conflict checks. Captures made
+while a service can still write are marked as partially attributable, including
+services from other Runs using the same physical workspace. Ignored caches retain
+the existing capture policy; concurrent changes to tracked or non-ignored files
+can still produce a conflict.
+
+Reading, cancelling or recovering an exited service does not replay its launch
+checkpoint over later edits. Before restoring or forking a checkpoint, services
+using that physical workspace must be terminal with their process trees confirmed
+reaped. Readiness remains a separate observation of a live, owned listener: the
+mode itself does not prove that the server is ready or that a page works.
+
+Settings > Permissions exposes the current Thread's service preference and live
+service state separately. `auto` lets the agent select shared mode for a specific
+development or preview server. `exclusive` rejects new shared-service Jobs and
+revokes existing ones at their next ownership check. Saving a preference does
+not change execution permission or the selected sandbox. The UI reports actual
+process cleanup; it does not mark a service stopped merely because the preference
+was saved. Preferences survive restart, while process execution authority follows
+its existing lifetime. Stale settings writes require reloading the current revision.
+
 ## Adapter identities and permissions
 
 Every advertisement, durable Supervisor call, Job, output page, Artifact, and

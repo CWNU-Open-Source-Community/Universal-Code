@@ -2021,6 +2021,11 @@ func (s *WorkspaceCheckpointService) capture(ctx context.Context,
 	binding workspaceCheckpointBinding, request workspacecheckpoint.CaptureRequest,
 ) (workspacecheckpoint.Snapshot, bool, error) {
 	request = s.workspaceCaptureRequest(binding, request)
+	reasons, err := sharedCommandServiceCheckpointReasons(ctx, s.store, binding.workspace.RootPath)
+	if err != nil {
+		return workspacecheckpoint.Snapshot{}, false, err
+	}
+	request.IncompleteReasons = append(request.IncompleteReasons, reasons...)
 	snapshot, err := workspacecheckpoint.Capture(ctx, request)
 	if err != nil {
 		return workspacecheckpoint.Snapshot{}, false, apperror.Normalize(err)
@@ -2253,6 +2258,9 @@ func (s *WorkspaceCheckpointService) requireRestoreAuthority(ctx context.Context
 	if normalizeWorkspaceCheckpointOperator(requestedBy) == "" {
 		return apperror.New(apperror.CodePolicyDenied,
 			"workspace restore requires an explicit operator")
+	}
+	if err := requireSharedCommandServicesStopped(ctx, s.store, binding.workspace.RootPath); err != nil {
+		return err
 	}
 	if binding.run.Status != domain.RunPaused || binding.session.Status != session.StatusActive {
 		return apperror.New(apperror.CodeFailedPrecondition,

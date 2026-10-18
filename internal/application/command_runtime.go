@@ -335,13 +335,27 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		operationDigest, jobID := runner.CommandRuntimeOperationIdentity(scope.RunID,
 			scope.OperationKey)
 		boundaryRequest := s.commandRuntimeBoundaryRequest(scope, operationDigest, jobID)
-		if s.checkpoints != nil && bindings.worker == nil {
+		sharedService := resolved.Spec.WorkspaceMode == runner.CommandRuntimeWorkspaceSharedService
+		if sharedService {
+			if err := requireSharedCommandServicePolicy(ctx, s.store, scope.RunID); err != nil {
+				return result, err
+			}
+			boundaryRequest.IncompleteReasons = append(boundaryRequest.IncompleteReasons, sharedCommandServiceCheckpointReason)
+		}
+		sealedServiceBoundary, err := s.sealedSharedServiceBoundary(ctx, jobID, operationDigest, resolved)
+		if err != nil {
+			return result, err
+		}
+		if s.checkpoints != nil && bindings.worker == nil && !sealedServiceBoundary {
 			if _, err := s.checkpoints.BeginBoundary(ctx, boundaryRequest); err != nil {
 				return result, err
 			}
 		}
 		start, err := s.authorizedCommandStart(scope, bindings, scope.OperationKey, resolved)
 		if err != nil {
+			if sealedServiceBoundary {
+				return result, err
+			}
 			return result, errors.Join(err, s.completeCommandRuntimeBoundary(ctx, boundaryRequest, err))
 		}
 		if scope.ProjectTest {
@@ -350,16 +364,23 @@ func (s *CommandRuntimeService) ExecuteCommandRuntime(ctx context.Context,
 		job, replayed, err := s.manager.Start(ctx, start)
 		if err != nil {
 			operationErr := commandRuntimeError(err)
+			if sealedServiceBoundary {
+				return result, operationErr
+			}
 			return result, errors.Join(operationErr,
 				s.completeCommandRuntimeBoundary(ctx, boundaryRequest, operationErr))
 		}
 		result.Jobs = append(result.Jobs, job)
 		result.Replayed = replayed
-		// Foreground operators finish Go-owned preparation hooks before sealing
-		// the after checkpoint, even when the native Job exits during Start.
-		if job.State.Terminal() && !s.operatorCompletesCommandBoundary(ctx, scope) {
+		// A service owns only its launch boundary. Other background commands
+		// retain it until exit; foreground operators also finish preparation hooks.
+		if !sealedServiceBoundary && (sharedService || job.State.Terminal() && !s.operatorCompletesCommandBoundary(ctx, scope)) {
+			var cause error
+			if job.State.Terminal() {
+				cause = commandRuntimeJobStateError(job.State)
+			}
 			if boundaryErr := s.completeCommandRuntimeBoundary(ctx, boundaryRequest,
-				commandRuntimeJobStateError(job.State)); boundaryErr != nil {
+				cause); boundaryErr != nil {
 				return result, boundaryErr
 			}
 		}
@@ -656,12 +677,16 @@ func (s *CommandRuntimeService) completeCommandRuntimeJobBoundary(ctx context.Co
 	}
 	operationDigest := workspaceBoundaryOperationDigest(job.RunID,
 		workspacecheckpoint.TransactionCommandBatch, job.OperationDigest)
-	if _, found, err := s.checkpoints.store.GetWorkspaceCheckpointTransactionByOperation(ctx,
+	if transaction, found, err := s.checkpoints.store.GetWorkspaceCheckpointTransactionByOperation(ctx,
 		operationDigest); err != nil {
 		return apperror.Normalize(err)
 	} else if !found {
 		// Foreground batch Jobs are covered by one batch-level boundary. Only
 		// background Jobs have a per-Job boundary keyed by OperationDigest.
+		return nil
+	} else if runner.CommandRuntimeJobWorkspaceMode(job) == runner.CommandRuntimeWorkspaceSharedService && transaction.Status.Terminal() {
+		// Service checkpoints describe launch only. Its eventual exit must not
+		// advance or replay a cursor that subsequent edits have already moved.
 		return nil
 	}
 	return s.completeCommandRuntimeBoundary(ctx, WorkspaceMutationBoundaryRequest{
@@ -1080,6 +1105,16 @@ func (s *CommandRuntimeService) Reconcile(ctx context.Context) (int, error) {
 func (s *CommandRuntimeService) commandRuntimeJobBindingsCurrent(ctx context.Context,
 	job runner.CommandRuntimeJob,
 ) (bool, error) {
+	if runner.CommandRuntimeJobWorkspaceMode(job) == runner.CommandRuntimeWorkspaceSharedService {
+		if err := requireSharedCommandServicePolicy(ctx, s.store, job.RunID); err != nil {
+			if apperror.CodeOf(err) == apperror.CodePolicyDenied {
+				// A saved preference revokes this Job, not the adapter that also
+				// owns unrelated tasks. Reconcile stops only this exact owner.
+				return false, nil
+			}
+			return false, err
+		}
+	}
 	if worker, err := s.workerCommandJobBindingsCurrent(ctx, job); worker != nil || err != nil {
 		return worker != nil && *worker, err
 	}

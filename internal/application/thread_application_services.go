@@ -42,18 +42,20 @@ type ThreadApplicationServiceCommandRuntime interface {
 }
 
 type ThreadApplicationServiceView struct {
-	ThreadID        string     `json:"thread_id"`
-	RunID           string     `json:"run_id"`
-	JobID           string     `json:"job_id"`
-	State           string     `json:"state"`
-	ExitCode        *int       `json:"exit_code,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	SourceCallID    string     `json:"source_call_id,omitempty"`
-	SourceMessageID string     `json:"source_message_id,omitempty"`
-	SourceTurn      int        `json:"source_turn,omitempty"`
-	CanStop         bool       `json:"can_stop"`
+	WorkspaceMode   runner.CommandRuntimeWorkspaceMode `json:"workspace_mode,omitempty"`
+	TreeReaped      *bool                              `json:"tree_reaped,omitempty"`
+	ThreadID        string                             `json:"thread_id"`
+	RunID           string                             `json:"run_id"`
+	JobID           string                             `json:"job_id"`
+	State           string                             `json:"state"`
+	ExitCode        *int                               `json:"exit_code,omitempty"`
+	CreatedAt       time.Time                          `json:"created_at"`
+	StartedAt       *time.Time                         `json:"started_at,omitempty"`
+	CompletedAt     *time.Time                         `json:"completed_at,omitempty"`
+	SourceCallID    string                             `json:"source_call_id,omitempty"`
+	SourceMessageID string                             `json:"source_message_id,omitempty"`
+	SourceTurn      int                                `json:"source_turn,omitempty"`
+	CanStop         bool                               `json:"can_stop"`
 }
 
 type ThreadApplicationServicesView struct {
@@ -156,6 +158,7 @@ func (s *ThreadApplicationService) List(ctx context.Context, threadID string, li
 func (s *ThreadApplicationService) project(ctx context.Context, threadID string, job runner.CommandRuntimeServiceMetadata) (ThreadApplicationServiceView, error) {
 	id := job.Identity
 	view := ThreadApplicationServiceView{ThreadID: threadID, RunID: id.RunID, JobID: id.ID, State: string(job.State),
+		WorkspaceMode: job.WorkspaceMode, TreeReaped: &job.TreeReaped,
 		ExitCode: cloneActivityInt(job.ExitCode), CreatedAt: job.CreatedAt, StartedAt: cloneActivityTime(job.StartedAt), CompletedAt: cloneActivityTime(job.CompletedAt)}
 	if s.commands != nil {
 		snapshot, owned, err := s.commands.ReadOwnedCommandRuntimeServiceState(ctx, id)
@@ -163,6 +166,7 @@ func (s *ThreadApplicationService) project(ctx context.Context, threadID string,
 			return view, apperror.Wrap(apperror.CodeFailedPrecondition, "Thread service owner could not be observed", err)
 		}
 		if owned {
+			view.WorkspaceMode, view.TreeReaped = snapshot.WorkspaceMode, &snapshot.TreeReaped
 			view.State, view.ExitCode, view.StartedAt, view.CompletedAt = string(snapshot.State), cloneActivityInt(snapshot.ExitCode), cloneActivityTime(snapshot.StartedAt), cloneActivityTime(snapshot.CompletedAt)
 			view.CanStop = !snapshot.State.Terminal() && snapshot.State != runner.CommandRuntimeJobStopping
 		}
@@ -182,7 +186,7 @@ func (s *ThreadApplicationService) project(ctx context.Context, threadID string,
 }
 
 func serviceMetadata(job runner.CommandRuntimeJob) runner.CommandRuntimeServiceMetadata {
-	return runner.CommandRuntimeServiceMetadata{Identity: runner.CommandRuntimeIdentity(job), State: job.State, ExitCode: job.ExitCode, CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt}
+	return runner.CommandRuntimeServiceMetadata{Identity: runner.CommandRuntimeIdentity(job), WorkspaceMode: runner.CommandRuntimeJobWorkspaceMode(job), TreeReaped: job.TreeReaped, State: job.State, ExitCode: job.ExitCode, CreatedAt: job.CreatedAt, StartedAt: job.StartedAt, CompletedAt: job.CompletedAt}
 }
 
 func (s *ThreadApplicationService) Get(ctx context.Context, threadID, jobID string) (ThreadApplicationServiceDetailView, error) {
@@ -232,6 +236,7 @@ func (s *ThreadApplicationService) Get(ctx context.Context, threadID, jobID stri
 		return value, apperror.New(apperror.CodeFailedPrecondition, "Thread service output binding is invalid")
 	}
 	value.Service.State, value.Service.ExitCode = string(snapshot.State), cloneActivityInt(snapshot.ExitCode)
+	value.Service.WorkspaceMode, value.Service.TreeReaped = snapshot.WorkspaceMode, &snapshot.TreeReaped
 	if snapshot.State.Terminal() || snapshot.State == runner.CommandRuntimeJobStopping {
 		value.Service.CanStop = false
 	}

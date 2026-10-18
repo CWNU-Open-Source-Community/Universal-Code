@@ -47,7 +47,7 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
     }, onSettled: () => { stopping.current = false; },
   });
   const stopSelected = () => {
-    if (!source || !serviceReadable || !source.can_stop || stopping.current) return;
+    if (!source || !serviceReadable || !source.can_stop || !client.hasRunExecution || stopping.current) return;
     stopping.current = true;
     stop.mutate({ sourceRunID: source.run_id, jobID: source.job_id });
   };
@@ -73,7 +73,7 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
           {records.map((service) => <li key={service.job_id}><button type="button"
             aria-pressed={source?.job_id === service.job_id} onClick={() => setSelectedJobID(service.job_id)}>
             <span>{service.source_call_id ? "任务命令" : "历史命令"} · Run <code>{service.run_id}</code> · Job <code>{service.job_id}</code></span>
-            <span>{serviceStateCopy(service.state, service.can_stop)}{related.some((item) => item.job_id === service.job_id) ? " · 本次启动要求" : ""}</span>
+            <span>{serviceStateCopy(service)}{related.some((item) => item.job_id === service.job_id) ? " · 本次启动要求" : ""}</span>
           </button></li>)}</ul>}
         {services.data?.has_more && <p role="status">当前只展示最近一批后台任务，列表尚未完整。</p>}
         {records.length > 1 && !selected && <p role="status">请选择要查看的后台任务，预览与停止操作都以所选服务为范围。</p>}
@@ -84,10 +84,10 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
             <p>来源执行 <code>{source.run_id}</code> · 服务 <code>{source.job_id}</code></p>
             {source.source_message_id && <p>来源消息 <code>{source.source_message_id}</code></p>}
           </details>
-          <p role="status">{serviceDetail.isError || services.isError ? "当前服务状态未确认" : serviceStateCopy(source.state, source.can_stop)}
+          <p role="status">{serviceDetail.isError || services.isError ? "当前服务状态未确认" : serviceStateCopy(source)}
             {source.exit_code !== undefined && ` · 退出码 ${source.exit_code}`}</p>
           {!source.source_message_id && <p className="v2-preview-help">该服务的来源消息待确认，请结合启动输出核对它是否属于本次要求。</p>}
-          {source.can_stop && <button disabled={!serviceReadable || stop.isPending || client.hasControl === false}
+          {source.can_stop && <button disabled={!serviceReadable || stop.isPending || !client.hasRunExecution}
             onClick={stopSelected} type="button">{stop.isPending && stop.variables?.jobID === source.job_id ? "正在请求停止命令…" : "停止此命令"}</button>}
           <p className="v2-preview-help">服务会在收起面板或关闭浏览器后继续运行。需要结束时，点击“停止此命令”，清理范围为所选服务。</p>
           {stop.isError && stop.variables?.jobID === source.job_id && <p role="alert">停止服务未确认完成，请核对状态后重试。
@@ -110,7 +110,12 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
 export const applicationServiceQueryKey = (threadID: string, jobID: string) =>
   [...applicationServicesQueryKey(threadID), jobID] as const;
 
-function serviceStateCopy(state: ThreadApplicationServiceView["state"], canStop: boolean): string {
+function serviceStateCopy(service: ThreadApplicationServiceView): string {
+  const { state, can_stop: canStop } = service;
+  if (!["prepared", "running", "stopping"].includes(state) &&
+    (service.tree_reaped === false || (service.workspace_mode === "shared_service" && service.tree_reaped !== true))) {
+    return "任务命令已退出，清理待确认";
+  }
   if (state === "running" && !canStop) return "保存的运行记录，当前服务状态未确认";
   switch (state) {
     case "prepared": return "任务命令已登记，等待启动";

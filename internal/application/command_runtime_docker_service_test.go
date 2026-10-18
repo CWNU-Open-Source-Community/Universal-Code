@@ -253,11 +253,17 @@ func TestDockerServiceLookupAndOrdinaryCleanupIgnoreHistoricalJobWindow(t *testi
 		if err != nil || replayed {
 			t.Fatalf("prepare historical Job %d: replayed=%t %v", i, replayed, err)
 		}
+		historical.State, historical.Version = runner.CommandRuntimeJobRunning, 2
+		historical.StartedAt, historical.JobAssignedAtCreation = &now, true
+		historical, err = f.st.UpdateCommandRuntimeJob(ctx, historical, 1)
+		if err != nil {
+			t.Fatalf("start historical Job %d: %v", i, err)
+		}
 		exit := 0
-		historical.State, historical.Version = runner.CommandRuntimeJobCompleted, 2
+		historical.State, historical.Version = runner.CommandRuntimeJobCompleted, 3
 		historical.StartedAt, historical.CompletedAt, historical.ExitCode = &now, &now, &exit
 		historical.TreeReaped, historical.JobAssignedAtCreation = true, true
-		if _, err := f.st.UpdateCommandRuntimeJob(ctx, historical, 1); err != nil {
+		if _, err := f.st.UpdateCommandRuntimeJob(ctx, historical, 2); err != nil {
 			t.Fatalf("complete historical Job %d: %v", i, err)
 		}
 	}

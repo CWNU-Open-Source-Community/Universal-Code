@@ -28038,6 +28038,199 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/threads/{thread_id}/command-service-policy": {
+      "get": {
+        "operationId": "getThreadCommandServicePolicy",
+        "summary": "Read the task shared-service preference",
+        "description": "",
+        "tags": [
+          "Threads"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadCommandServicePolicy"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "put": {
+        "operationId": "setThreadCommandServicePolicy",
+        "summary": "Set automatic or exclusive task service behavior",
+        "description": "Persists a Thread preference with revision comparison. Auto grants no execution authority. Exclusive rejects new shared services and revokes existing shared-service ownership on the next runtime check; actual cleanup remains visible in Job state.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadCommandServicePolicy"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadCommandServicePolicyRequest"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/threads/{thread_id}/context/compact": {
       "post": {
         "operationId": "compactThreadContext",
@@ -40757,6 +40950,9 @@
             "type": "string"
           },
           "working_directory": {
+            "type": "string"
+          },
+          "workspace_mode": {
             "type": "string"
           }
         },
@@ -67303,6 +67499,16 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "tree_reaped": {
+            "type": "boolean"
+          },
+          "workspace_mode": {
+            "enum": [
+              "exclusive",
+              "shared_service"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -67344,6 +67550,68 @@
           "thread_id",
           "services",
           "has_more"
+        ],
+        "type": "object"
+      },
+      "ThreadCommandServicePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "enum": [
+              "auto",
+              "exclusive"
+            ],
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_command_service_policy.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "thread_id",
+          "policy",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "ThreadCommandServicePolicyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "policy": {
+            "enum": [
+              "auto",
+              "exclusive"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_command_service_policy.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "policy",
+          "expected_revision"
         ],
         "type": "object"
       },

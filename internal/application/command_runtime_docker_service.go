@@ -216,11 +216,17 @@ func (s *DockerSandboxService) sharedServiceCleanupWorkspace(ctx context.Context
 	if s.standardCodeDrydock == nil {
 		return sandbox.WorkspaceBinding{}, true, runner.ErrCommandRuntimeBoundary
 	}
+	binding, err := s.standardCodeDrydock.loadRunBinding(ctx, admission.RunID, true)
+	if err != nil {
+		return sandbox.WorkspaceBinding{}, true, err
+	}
 	workspace, found, err := readRunFileDrydock(ctx, s.standardCodeDrydock.store, admission.RunID)
 	if err != nil || !found || !service.matchesWorkspace(workspace) {
 		return sandbox.WorkspaceBinding{}, true, errors.Join(err, runner.ErrCommandRuntimeBoundary)
 	}
-	verified, _, _, err := s.standardCodeDrydock.loadExactDrydock(ctx, admission.RunID, workspace.Generation, false)
+	// Cleanup checks the immutable physical ownership, without rereading an
+	// editing generation that can advance while this container is stopping.
+	verified, _, _, err := s.standardCodeDrydock.inspectDrydockBinding(ctx, binding, workspace)
 	if err != nil || !service.matchesWorkspace(verified) {
 		return sandbox.WorkspaceBinding{}, true, errors.Join(err, runner.ErrCommandRuntimeBoundary)
 	}
