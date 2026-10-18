@@ -3859,7 +3859,7 @@ export interface paths {
         put?: never;
         /**
          * advance a saved workflow execution
-         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["advanceRunWorkflow"];
         delete?: never;
@@ -3879,7 +3879,7 @@ export interface paths {
         put?: never;
         /**
          * pause a saved workflow execution
-         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["pauseRunWorkflow"];
         delete?: never;
@@ -3899,7 +3899,7 @@ export interface paths {
         put?: never;
         /**
          * rerun a saved workflow execution
-         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["rerunRunWorkflow"];
         delete?: never;
@@ -3919,9 +3919,29 @@ export interface paths {
         put?: never;
         /**
          * resume a saved workflow execution
-         * @description The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
+         * @description The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.
          */
         post: operations["resumeRunWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/retry_failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry only failed workflow items
+         * @description Explicitly confirmed retry keeps successful items and original inputs, deadlines and cumulative budgets. The observed revision and idempotency key fence the retry. Only the current blocked group's durable failed items receive new attempts; pending approval keeps its original identity.
+         */
+        post: operations["retryFailedRunWorkflow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15881,6 +15901,11 @@ export interface components {
             history_scope?: "" | "delegated" | "parent_snapshot";
             tools?: string[] | null;
         };
+        WorkflowBlocked: {
+            key: string;
+            retryable: boolean;
+            step_id: string;
+        };
         WorkflowCompletion: {
             /** @enum {string} */
             mode: "report" | "verified_code";
@@ -15946,6 +15971,27 @@ export interface components {
             /** Format: int64 */
             timeout_millis: number;
         };
+        WorkflowMapItem: {
+            /** Format: int32 */
+            generation: number;
+            /** Format: int32 */
+            index: number;
+            reason?: string;
+            status: string;
+            step_execution_id: string;
+            value?: unknown;
+        };
+        WorkflowMapState: {
+            inputs: unknown;
+            items: components["schemas"]["WorkflowMapItem"][];
+            kind: string;
+            step_id: string;
+        };
+        WorkflowRetryOperation: {
+            key: string;
+            /** Format: int64 */
+            revision: number;
+        };
         WorkflowSpec: {
             limits: components["schemas"]["WorkflowLimits"];
             name: string;
@@ -15959,13 +16005,22 @@ export interface components {
             version: string;
         };
         WorkflowState: {
+            /** Format: int32 */
+            allocated_jobs?: number;
+            blocked?: components["schemas"]["WorkflowBlocked"];
             iterations: {
                 [key: string]: number;
             };
             /** Format: int32 */
             jobs: number;
+            maps?: {
+                [key: string]: components["schemas"]["WorkflowMapState"];
+            };
             outputs: {
                 [key: string]: unknown;
+            };
+            retry_operations?: {
+                [key: string]: components["schemas"]["WorkflowRetryOperation"];
             };
             stack: components["schemas"]["WorkflowFrame"][];
             /** Format: int32 */
@@ -15985,9 +16040,16 @@ export interface components {
             inputs?: {
                 [key: string]: components["schemas"]["WorkflowValueRef"];
             };
+            items?: components["schemas"]["WorkflowValueRef"];
             kind: string;
             /** Format: int32 */
+            max_attempts?: number;
+            /** Format: int32 */
+            max_items?: number;
+            /** Format: int32 */
             max_iterations?: number;
+            /** Format: int32 */
+            parallelism?: number;
             task?: components["schemas"]["ChildTask"];
             then?: components["schemas"]["WorkflowStep"][];
         };
@@ -25662,6 +25724,55 @@ export interface operations {
         };
     };
     resumeRunWorkflow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run owning the execution */
+                run_id: string;
+                /** @description Workflow execution */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowControlView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkflowExecution"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    retryFailedRunWorkflow: {
         parameters: {
             query?: never;
             header: {

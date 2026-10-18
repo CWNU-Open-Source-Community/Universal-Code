@@ -115,8 +115,10 @@ to one and can be two. The source array and attempt identities are saved before
 any child starts. An empty array completes without a child; a non-array or an
 array over the limit fails without silently dropping entries.
 
-Up to two children run under one existing Run execution lease. A sibling's failure
-does not cancel a valid in-flight completion. Once all items finish, the map
+Up to two children run under one existing Run execution lease. File apply/delete
+calls queue within that round so they commit the shared workspace checkpoint in
+order; model calls and reads remain parallel, and approvals do not hold the queue.
+A sibling's failure does not cancel a valid in-flight completion. Once all items finish, the map
 publishes an ordered `items` array containing each item's index, attempt identity,
 outcome, summary and optional data. A downstream step can read this array to join
 the results. A partial report remains a result for conditions and loops; a failed
@@ -209,7 +211,7 @@ API entry points:
   and resume include the observed revision; start and rerun use stable request keys.
   Failed-item retry includes the observed revision, `confirm_start: true` and an
   idempotency key, retaining the same execution and cumulative limits.
-  Resume also retries an execution waiting for a dependency. The single-turn
+  Resume also retries an execution waiting for a dependency. The single-round
   `advance` endpoint remains available for API clients; normal UI execution does
   not use a browser loop to call it.
 

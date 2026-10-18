@@ -22501,7 +22501,7 @@
       "post": {
         "operationId": "advanceRunWorkflow",
         "summary": "advance a saved workflow execution",
-        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -22635,7 +22635,7 @@
       "post": {
         "operationId": "pauseRunWorkflow",
         "summary": "pause a saved workflow execution",
-        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -22769,7 +22769,7 @@
       "post": {
         "operationId": "rerunRunWorkflow",
         "summary": "rerun a saved workflow execution",
-        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
         "tags": [
           "Control"
         ],
@@ -22903,7 +22903,141 @@
       "post": {
         "operationId": "resumeRunWorkflow",
         "summary": "resume a saved workflow execution",
-        "description": "The authorized host advances started workflows independently of the page. Advance remains a single-turn API operation fenced by its observed revision. Pause takes effect before the next turn; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
+        "description": "The authorized host advances started workflows independently of the page. Advance executes one bounded round, including at most two map workers, fenced by its observed revision and shared Run lease. Pause takes effect before the next round; resume continues paused or waiting work without resetting budgets; confirmed rerun starts fresh.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run owning the execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "description": "Workflow execution",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowExecution"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowControlView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/runs/{run_id}/workflows/{execution_id}/retry_failed": {
+      "post": {
+        "operationId": "retryFailedRunWorkflow",
+        "summary": "Retry only failed workflow items",
+        "description": "Explicitly confirmed retry keeps successful items and original inputs, deadlines and cumulative budgets. The observed revision and idempotency key fence the retry. Only the current blocked group's durable failed items receive new attempts; pending approval keeps its original identity.",
         "tags": [
           "Control"
         ],
@@ -74472,6 +74606,28 @@
         },
         "type": "object"
       },
+      "WorkflowBlocked": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "step_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "step_id",
+          "retryable"
+        ],
+        "type": "object"
+      },
       "WorkflowCompletion": {
         "additionalProperties": false,
         "properties": {
@@ -74699,6 +74855,82 @@
         ],
         "type": "object"
       },
+      "WorkflowMapItem": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "index": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "step_execution_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "index",
+          "generation",
+          "step_execution_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "WorkflowMapState": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {},
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowMapItem"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "kind",
+          "inputs",
+          "items"
+        ],
+        "type": "object"
+      },
+      "WorkflowRetryOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "key"
+        ],
+        "type": "object"
+      },
       "WorkflowSpec": {
         "additionalProperties": false,
         "properties": {
@@ -74753,6 +74985,13 @@
       "WorkflowState": {
         "additionalProperties": false,
         "properties": {
+          "allocated_jobs": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "blocked": {
+            "$ref": "#/components/schemas/WorkflowBlocked"
+          },
           "iterations": {
             "additionalProperties": {
               "format": "int32",
@@ -74764,8 +75003,20 @@
             "format": "int32",
             "type": "integer"
           },
+          "maps": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkflowMapState"
+            },
+            "type": "object"
+          },
           "outputs": {
             "additionalProperties": {},
+            "type": "object"
+          },
+          "retry_operations": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkflowRetryOperation"
+            },
             "type": "object"
           },
           "stack": {
@@ -74832,10 +75083,25 @@
             },
             "type": "object"
           },
+          "items": {
+            "$ref": "#/components/schemas/WorkflowValueRef"
+          },
           "kind": {
             "type": "string"
           },
+          "max_attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "max_items": {
+            "format": "int32",
+            "type": "integer"
+          },
           "max_iterations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "parallelism": {
             "format": "int32",
             "type": "integer"
           },

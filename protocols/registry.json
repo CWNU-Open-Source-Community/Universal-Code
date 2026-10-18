@@ -184,8 +184,8 @@
         }
       ],
       "persisted_or_exported": true,
-      "persistence_boundary": "SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions.",
-      "compatibility_rule": "Add versions without reinterpreting generations or exactly-once keys; retain old readers until migration or indefinite support is proven.",
+      "persistence_boundary": "SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.",
+      "compatibility_rule": "Add versions without reinterpreting generations or exactly-once keys; retain old readers until migration or indefinite support is proven. Original first-attempt worker identities and reports without data remain readable. Dynamic map/retry states and structured completion data require the upgraded readers; rollback must retain these readers or preserve those records without replaying them through older decoders.",
       "retirement_gate": {
         "mode": "migration-or-retention",
         "requirements": [
@@ -283,6 +283,8 @@
         "workflow-summary.v1",
         "workflow.v1",
         "workflow_control.v1",
+        "workflow_item.v1",
+        "workflow_retry.v1",
         "workflow_start.v1",
         "workflow_step.v1"
       ],
