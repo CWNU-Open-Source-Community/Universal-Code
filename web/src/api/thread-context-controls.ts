@@ -24,6 +24,16 @@ export type ThreadCompactionResult = {
   source_sha256: string; generated: boolean; replayed: boolean;
   input_messages_omitted?: number; input_fingerprint?: string;
 };
+export type ThreadCompactionOperation = {
+  operation_id: string; run_id: string; session_id: string;
+  status: "prepared" | "started" | "generated" | "completed" | "noop" | "failed";
+  source_sha256: string; provider?: string; model?: string; created_at: string;
+  started_at?: string; terminal_at?: string; usage_known: boolean; error_message?: string;
+  result?: ThreadCompactionResult;
+};
+export type ThreadCompactionOperations = {
+  version: "thread_context_compaction_operations.v1"; thread_id: string; operations: ThreadCompactionOperation[];
+};
 const record = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === "string";
 const identity = (v: unknown): v is string => text(v) && v.trim().length > 0;
@@ -71,4 +81,40 @@ export function parseThreadCompaction(value: unknown, threadID: string, runID: s
     (value.input_messages_omitted !== undefined && !integer(value.input_messages_omitted)) ||
     (value.input_fingerprint !== undefined && value.input_fingerprint !== "" && !digest(value.input_fingerprint))) throw invalid();
   return value as unknown as ThreadCompactionResult;
+}
+
+export function parseThreadCompactionOperation(value: unknown, threadID: string, operationID?: string): ThreadCompactionOperation {
+  if (!record(value) || !identity(value.operation_id) || (operationID !== undefined && value.operation_id !== operationID) ||
+    !identity(value.run_id) || !identity(value.session_id) ||
+    !["prepared", "started", "generated", "completed", "noop", "failed"].includes(String(value.status)) ||
+    !digest(value.source_sha256) || !date(value.created_at) || typeof value.usage_known !== "boolean" ||
+    (value.started_at !== undefined && !date(value.started_at)) || (value.terminal_at !== undefined && !date(value.terminal_at)) ||
+    (value.provider !== undefined && !text(value.provider)) || (value.model !== undefined && !text(value.model)) ||
+    (value.error_message !== undefined && !text(value.error_message))) throw invalid();
+  if (value.result !== undefined) {
+    const result = parseThreadCompaction(value.result, threadID, value.run_id);
+    if (result.session_id !== value.session_id || result.source_sha256 !== value.source_sha256 || result.status !== value.status) throw invalid();
+  }
+  return value as unknown as ThreadCompactionOperation;
+}
+
+export function parseThreadCompactionOperations(value: unknown, threadID: string): ThreadCompactionOperations {
+  if (!record(value) || value.version !== "thread_context_compaction_operations.v1" || value.thread_id !== threadID ||
+    !Array.isArray(value.operations)) throw invalid();
+  const operations = value.operations.map((operation) => parseThreadCompactionOperation(operation, threadID));
+  if (new Set(operations.map((operation) => operation.operation_id)).size !== operations.length) throw invalid();
+  return { version: "thread_context_compaction_operations.v1", thread_id: threadID, operations };
+}
+
+export async function readThreadCompactionOperations(client: APIClient, threadID: string, signal?: AbortSignal) {
+  return parseThreadCompactionOperations(await client.get<unknown>(`/threads/${encodeURIComponent(threadID)}/context/compactions`, {}, signal), threadID);
+}
+
+export async function recoverThreadCompaction(client: APIClient, threadID: string, operation: ThreadCompactionOperation, action: "resume" | "discard") {
+  const result = parseThreadCompactionOperation(await client.postControl<unknown>(
+    `/threads/${encodeURIComponent(threadID)}/context/compactions/${encodeURIComponent(operation.operation_id)}/recover`,
+    { version: "thread_context_compaction_recovery.v1", expected_run_id: operation.run_id, action },
+    `thread-context-recover-${operation.operation_id}-${action}`), threadID, operation.operation_id);
+  if (result.run_id !== operation.run_id || result.session_id !== operation.session_id || result.source_sha256 !== operation.source_sha256) throw invalid();
+  return result;
 }
