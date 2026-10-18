@@ -177,6 +177,29 @@ describe("ScheduledTasksWorkspace", () => {
     }), expect.any(String)));
   });
 
+  it("lets the user clear the initial task and observe a different run", async () => {
+    const user = userEvent.setup();
+    const createScheduledJob = vi.fn().mockResolvedValue({ job: scheduledJob() });
+    renderWorkspace({ getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }), createScheduledJob });
+    await waitFor(() => expect(screen.getByLabelText("Existing task")).toHaveValue("thread-1"));
+    await user.click(screen.getByRole("button", { name: "Read-only observation" }));
+    await user.selectOptions(screen.getByLabelText("Existing task"), "");
+    const target = screen.getByLabelText("Target Run ID (or select a task above)");
+    await user.clear(target);
+    await user.type(target, "run-other");
+    await user.click(screen.getByRole("button", { name: "Create and observe" }));
+    await waitFor(() => expect(createScheduledJob).toHaveBeenCalledWith("run-other", expect.any(Object), expect.any(String)));
+    expect(screen.getByLabelText("Existing task")).toHaveValue("");
+  });
+
+  it.each(["inactive", "unavailable"])("shows a stored Full preference as %s when it is not activated", async (activation) => {
+    renderWorkspace({ getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }),
+      getThreadExecutionPermission: vi.fn().mockResolvedValue({ execution_permission: { approval_mode: "full", full_activation: activation } }) });
+    expect(await screen.findByText(`FULL · ${activation}`)).toBeVisible();
+    expect(screen.getByText("Full is not active. Reactivate it in the source task before execution.")).toBeVisible();
+    expect(screen.queryByText("FULL", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("keeps execution unavailable on an observation-only host", async () => {
     const user = userEvent.setup();
     const createScheduledJob = vi.fn();

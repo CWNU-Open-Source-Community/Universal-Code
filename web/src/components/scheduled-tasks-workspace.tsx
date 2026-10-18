@@ -40,6 +40,7 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<AutomationMode>("thread");
   const [threadID, setThreadID] = useState(initialThreadID);
+  const initialTargetResolved = useRef(Boolean(initialThreadID));
   const [observationRunID, setObservationRunID] = useState(initialRunID);
   const [selectedJobID, setSelectedJobID] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -54,7 +55,11 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
   const pendingCreate = useRef<{ client: APIClient; intent: string; runID: string; body: ScheduledJobCreateRequestView; key: string } | null>(null);
   const pendingObservation = useRef<{ client: APIClient; runID: string; jobID: string; body: ScheduledJobObservationRequestView; key: string } | null>(null);
 
-  useEffect(() => { setThreadID(initialThreadID); setObservationRunID(initialRunID); }, [initialRunID, initialThreadID]);
+  useEffect(() => {
+    initialTargetResolved.current = Boolean(initialThreadID);
+    setThreadID(initialThreadID);
+    setObservationRunID(initialRunID);
+  }, [initialRunID, initialThreadID]);
   const threads = useInfiniteQuery({
     queryKey: ["automation-threads"], initialPageParam: "",
     queryFn: ({ signal, pageParam }) => client.getPage<ThreadView>("/threads", { limit: 100, status: "active" }, pageParam, signal),
@@ -62,9 +67,12 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
   });
   const threadItems = useMemo(() => threads.data?.pages.flatMap((page) => page.items) ?? [], [threads.data]);
   useEffect(() => {
-    if (!threadID && initialRunID) {
+    if (!initialTargetResolved.current && !threadID && initialRunID) {
       const source = threadItems.find((item) => item.active_run_id === initialRunID || item.last_run_id === initialRunID);
-      if (source) setThreadID(source.id);
+      if (source) {
+        initialTargetResolved.current = true;
+        setThreadID(source.id);
+      }
     }
   }, [threadID, initialRunID, threadItems]);
   const thread = useQuery({ queryKey: ["v2", "thread", threadID],
@@ -158,6 +166,11 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
     : worker?.selection_scope === "confirmed_read_only" ? t("观察范围：已确认的只读计划", "Observation scope: confirmed read-only schedules")
       : worker?.selection_scope === "confirmed_jobs" ? t("调度范围：已确认的观察与执行计划", "Scheduling scope: confirmed observation and execution schedules") : "";
   const canExecute = client.hasRunExecution && client.hasModelControl;
+  const currentPermission = permission.data?.execution_permission;
+  const fullInactive = currentPermission?.approval_mode === "full" && currentPermission.full_activation !== "active";
+  const permissionLabel = fullInactive
+    ? currentPermission.full_activation === "unavailable" ? t("FULL · 不可用", "FULL · unavailable") : t("FULL · 未激活", "FULL · inactive")
+    : currentPermission?.approval_mode.toUpperCase() || "—";
   const createDisabled = !client.hasScheduledJobControl || create.isPending || !runID ||
     (mode !== "observation" && !canExecute) ||
     (mode === "thread" && (!threadID || !prompt.trim())) || (mode === "workflow" && (!workflowID || ownerRun?.status !== "running"));
@@ -184,14 +197,15 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
         <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); create.reset(); }}>{label}</button>)}
     </div>
     <section className="automation-target" aria-label={t("目标任务与权限", "Target task and permissions")}>
-      <label>{t("已有任务", "Existing task")}<select value={threadID} onChange={(event) => setThreadID(event.target.value)}>
+      <label>{t("已有任务", "Existing task")}<select value={threadID} onChange={(event) => { initialTargetResolved.current = true; setThreadID(event.target.value); }}>
         <option value="">{threads.isLoading ? t("正在读取任务…", "Loading tasks…") : t("选择一个任务", "Select a task")}</option>
         {initialThreadID && !threadItems.some((item) => item.id === initialThreadID) && <option value={initialThreadID}>{targetThread?.title || initialThreadID}</option>}
         {threadItems.map((item) => <option key={item.id} value={item.id}>{item.title || item.id}</option>)}</select></label>
       {threads.hasNextPage && <button type="button" className="compact-command" disabled={threads.isFetchingNextPage} onClick={() => void threads.fetchNextPage()}>{t("加载更多任务", "Load more tasks")}</button>}
       {threadID && <div className="automation-target-facts"><span>{t("绑定目录", "Directory")} <strong>{directory.data?.target.root_path || (directory.isLoading ? t("正在读取…", "Loading…") : t("尚未读取目录", "Directory unavailable"))}</strong></span>
-        <span>{t("当前权限", "Current permission")} <strong>{permission.data?.execution_permission.approval_mode.toUpperCase() || "—"}</strong></span>
+        <span>{t("当前权限", "Current permission")} <strong>{permissionLabel}</strong></span>
         <a href={"#/threads/" + encodeURIComponent(threadID)}>{t("打开任务与审批", "Open task and approvals")}</a></div>}
+      {threadID && fullInactive && <p role="status">{t("Full 尚未生效。请在原任务中重新激活后再执行。", "Full is not active. Reactivate it in the source task before execution.")}</p>}
       {threadID && mode !== "observation" && <p>{t("使用本任务当前的 Full / Ask / Auto 权限和运行预算。暂停或取消自动化会停止后续触发；已开始的执行可在原任务中停止。", "Uses this task’s current Full / Ask / Auto permissions and run budget. Pausing or cancelling stops future triggers; stop an execution already in progress in its source task.")}</p>}
     </section>
     {mode === "pr" ? threadID ? <AutomationPRFollowup key={threadID} client={client} threadID={threadID} />
