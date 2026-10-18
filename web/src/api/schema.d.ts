@@ -12656,6 +12656,7 @@ export interface components {
             /** Format: date-time */
             occurrence_at: string;
             result?: string;
+            resume_submission?: boolean;
             run_id?: string;
             /** @enum {string} */
             state: "queued" | "running" | "waiting_approval" | "completed" | "failed" | "blocked";

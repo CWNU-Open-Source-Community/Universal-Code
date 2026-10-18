@@ -61193,6 +61193,9 @@
           "result": {
             "type": "string"
           },
+          "resume_submission": {
+            "type": "boolean"
+          },
           "run_id": {
             "maxLength": 256,
             "minLength": 1,
