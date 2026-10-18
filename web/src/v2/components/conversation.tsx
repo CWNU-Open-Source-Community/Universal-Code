@@ -950,7 +950,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {onOpenTool && <>
         <button onClick={() => onOpenTool("run", currentRun.id)} type="button">运行与工具</button>
         <button onClick={() => onOpenTool("run", currentRun.id, "ui-evidence")} type="button">界面观察证据</button>
-        <button onClick={() => onOpenTool("schedule", currentRun.id)} type="button">定时观察</button>
+        <button onClick={() => onOpenTool("schedule", currentRun.id)} type="button">自动化</button>
       </>}
     </nav>}
     {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}

@@ -3063,7 +3063,8 @@ function parseRuntimeCapabilities(value: unknown): RuntimeCapabilitiesView {
       "runtime_enable_supported", "state",
       ...(isRecord(scheduledWorker) && "selection_scope" in scheduledWorker ? ["selection_scope"] : [])]) ||
     (scheduledWorker.selection_scope !== undefined &&
-      scheduledWorker.selection_scope !== "confirmed_read_only" && scheduledWorker.selection_scope !== "all_jobs") ||
+      scheduledWorker.selection_scope !== "confirmed_read_only" && scheduledWorker.selection_scope !== "confirmed_jobs" &&
+      scheduledWorker.selection_scope !== "all_jobs") ||
     scheduledWorker.protocol_version !== "scheduled-job-worker-health.v1" ||
     typeof scheduledWorker.enabled !== "boolean" || typeof scheduledWorker.active !== "boolean" ||
     scheduledWorker.concurrency !== 1 || scheduledWorker.runtime_enable_supported !== false ||
@@ -6031,13 +6032,24 @@ function safeBoundedCount(value: unknown, maximum: number): value is number {
 const scheduledJobStatuses = ["active", "paused", "completed", "failed", "cancelled",
   "exhausted"];
 
+function validScheduledExecutionTarget(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.kind === "thread") {
+    return hasExactKeys(value, ["kind", "thread_id", "prompt"]) &&
+      Boolean(boundedIdentity(value.thread_id)) && typeof value.prompt === "string" &&
+      value.prompt.trim().length > 0 && value.prompt.length <= 65_536;
+  }
+  return value.kind === "workflow" && hasOnlyKeys(value, ["kind", "workflow_definition_id", "inputs"]) &&
+    Boolean(boundedIdentity(value.workflow_definition_id));
+}
+
 function parseScheduledJob(value: unknown): ScheduledJobView {
   const required = ["active_lease_generation", "consecutive_unchanged", "created_at",
     "created_by", "id", "last_event_sequence", "model_calls", "owner_root_agent_id",
     "owner_run_id", "revision", "rounds_completed", "spec", "status", "updated_at"];
   const allowed = [...required, "active_lease_expires_at", "completed_at", "last_error_code",
     "last_observation_sha256", "last_result", "next_wake_at", "pending_occurrence_at",
-    "stop_reason", "observation_consent_version"];
+    "stop_reason", "observation_consent_version", "execution_consent_version"];
   if (!isRecord(value) || !hasOnlyKeys(value, allowed) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
     !boundedIdentity(value.id) || !boundedIdentity(value.owner_run_id) ||
@@ -6050,7 +6062,9 @@ function parseScheduledJob(value: unknown): ScheduledJobView {
     !safeBoundedCount(value.model_calls, 10_000) ||
     !safeBoundedCount(value.last_event_sequence, Number.MAX_SAFE_INTEGER) ||
     (value.observation_consent_version !== undefined &&
-      value.observation_consent_version !== 0 && value.observation_consent_version !== 1)) {
+      value.observation_consent_version !== 0 && value.observation_consent_version !== 1) ||
+    (value.execution_consent_version !== undefined &&
+      value.execution_consent_version !== 0 && value.execution_consent_version !== 1)) {
     throw new APIRequestError("Scheduled job response is invalid", "INVALID_RESPONSE", 502);
   }
   for (const field of ["active_lease_expires_at", "completed_at", "next_wake_at",
@@ -6069,9 +6083,10 @@ function parseScheduledJob(value: unknown): ScheduledJobView {
   const spec = value.spec;
   if (!hasExactKeys(spec, ["deadline_at", "execution_mode", "max_elapsed_seconds",
     "max_model_calls", "max_rounds", "notification", "retry", "schedule",
-    "stop_on_target_terminal", "target_run_id", "version"]) ||
+    "stop_on_target_terminal", "target_run_id", "version",
+    ...(isRecord(spec) && "execution_target" in spec ? ["execution_target"] : [])]) ||
     spec.version !== "scheduled-job.v1" || !validDate(spec.deadline_at) ||
-    !["read_only", "approved_repair"].includes(String(spec.execution_mode)) ||
+    !["read_only", "approved_repair", "automatic"].includes(String(spec.execution_mode)) ||
     !["silent", "on_change", "on_failure", "all"].includes(String(spec.notification)) ||
     typeof spec.stop_on_target_terminal !== "boolean" ||
     boundedIdentity(spec.target_run_id) !== value.owner_run_id ||
@@ -6082,6 +6097,12 @@ function parseScheduledJob(value: unknown): ScheduledJobView {
   if (value.observation_consent_version === 1 &&
     (spec.execution_mode !== "read_only" || spec.max_model_calls !== 0)) {
     throw new APIRequestError("Scheduled observation widened authority", "INVALID_RESPONSE", 502);
+  }
+  if ((spec.execution_mode === "automatic" &&
+      (!validScheduledExecutionTarget(spec.execution_target) || value.execution_consent_version !== 1 ||
+        spec.max_model_calls !== 0 || spec.stop_on_target_terminal !== false)) ||
+    (spec.execution_mode !== "automatic" && (spec.execution_target !== undefined || value.execution_consent_version === 1))) {
+    throw new APIRequestError("Scheduled execution target or consent is invalid", "INVALID_RESPONSE", 502);
   }
   const retry = spec.retry;
   if (!hasExactKeys(retry, ["initial_backoff_seconds", "max_attempts",
@@ -6101,7 +6122,8 @@ function parseScheduledJob(value: unknown): ScheduledJobView {
     (schedule.kind === "periodic" && !safePositiveInteger(schedule.interval_seconds))) {
     throw new APIRequestError("Scheduled job schedule is invalid", "INVALID_RESPONSE", 502);
   }
-  return { ...value, observation_consent_version: value.observation_consent_version ?? 0 } as unknown as ScheduledJobView;
+  return { ...value, observation_consent_version: value.observation_consent_version ?? 0,
+    execution_consent_version: value.execution_consent_version ?? 0 } as unknown as ScheduledJobView;
 }
 
 function parseScheduledJobList(value: unknown): ScheduledJobListView {
@@ -6134,7 +6156,7 @@ function parseScheduledJobControl(value: unknown, runID: string, jobID: string,
 function parseScheduledJobDetail(value: unknown, jobID: string): ScheduledJobDetailView {
   if (!hasExactKeys(value, ["protocol_version", "snapshot"]) ||
     value.protocol_version !== "scheduled-job.v1" || !isRecord(value.snapshot) ||
-    !hasOnlyKeys(value.snapshot, ["authorization", "job", "notifications", "rounds"]) ||
+    !hasOnlyKeys(value.snapshot, ["authorization", "job", "notifications", "rounds", "executions"]) ||
     !Array.isArray(value.snapshot.notifications) || !Array.isArray(value.snapshot.rounds) ||
     value.snapshot.notifications.length > 100 || value.snapshot.rounds.length > 100) {
     throw new APIRequestError("Scheduled job detail is invalid", "INVALID_RESPONSE", 502);
@@ -6174,11 +6196,20 @@ function parseScheduledJobDetail(value: unknown, jobID: string): ScheduledJobDet
     notice.job_id !== jobID || !boundedIdentity(notice.id) || !validDate(notice.created_at) ||
     !["change", "failure", "recovery", "completed"].includes(String(notice.kind)) ||
     !boundedText(notice.summary, 1024));
-  if (job.id !== jobID || invalidRound || invalidNotice) {
+  const executions = value.snapshot.executions ?? [];
+  const invalidExecution = !Array.isArray(executions) || executions.length > 100 || executions.some((item) =>
+    !isRecord(item) || !hasOnlyKeys(item, ["job_id", "occurrence_at", "run_id", "message_id",
+      "workflow_execution_id", "state", "result", "error_code", "created_at", "updated_at"]) ||
+    item.job_id !== jobID || !validDate(item.occurrence_at) || !validDate(item.created_at) ||
+    !validDate(item.updated_at) || !["queued", "running", "waiting_approval", "completed", "failed", "blocked"].includes(String(item.state)) ||
+    ["run_id", "message_id", "workflow_execution_id"].some((key) => item[key] !== undefined && !boundedIdentity(item[key])) ||
+    (item.result !== undefined && typeof item.result !== "string") ||
+    (item.error_code !== undefined && !boundedText(item.error_code, 128)));
+  if (job.id !== jobID || invalidRound || invalidNotice || invalidExecution) {
     throw new APIRequestError("Scheduled job detail changed identity or exposed payload",
       "INVALID_RESPONSE", 502);
   }
-  return { ...value, snapshot: { ...value.snapshot, job } } as ScheduledJobDetailView;
+  return { ...value, snapshot: { ...value.snapshot, job, executions } } as ScheduledJobDetailView;
 }
 
 function validDiagnosticRedaction(value: unknown): boolean {
@@ -8507,14 +8538,15 @@ export class APIClient {
   }
 
   async listScheduledJobs(runID = "", limit = 50,
-    signal?: AbortSignal): Promise<ScheduledJobListView> {
+    signal?: AbortSignal, cursor = ""): Promise<ScheduledJobListView & { page: Page }> {
     if ((runID !== "" && boundedIdentity(runID) !== runID) ||
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("A normalized Run identity and a schedule limit between 1 and 100 are required");
     }
-    return parseScheduledJobList(await this.get<unknown>("/scheduled-jobs", {
-      run_id: runID || undefined, limit,
-    }, signal));
+    const envelope = await this.request<unknown>("/scheduled-jobs", {
+      run_id: runID || undefined, limit, cursor: cursor || undefined,
+    }, signal);
+    return { ...parseScheduledJobList(envelope.data), page: parseResponsePage(envelope.page, limit) };
   }
 
   async getScheduledJob(jobID: string, signal?: AbortSignal): Promise<ScheduledJobDetailView> {

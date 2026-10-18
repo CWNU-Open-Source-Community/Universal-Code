@@ -190,7 +190,7 @@ func TestDesktopRiskProfilesPreserveSafeProductAndAddOnlyTheirCeiling(t *testing
 	}
 	if !debug.riskProfileRestart || !debug.permissionControl || !debug.dangerFullAccess ||
 		!debug.userTerminal || !debug.runExecution ||
-		!debug.scheduledJobWorker || !debug.scheduledJobObservationOnly {
+		!debug.scheduledJobWorker || !debug.scheduledJobConfirmedOnly {
 		t.Fatalf("debug product bundle is incomplete: %+v", debug)
 	}
 	if !debug.fullCDPDebug || debug.dockerExecution || debug.batchValidation ||

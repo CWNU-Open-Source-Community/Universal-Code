@@ -613,6 +613,9 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}
 	var prFollowupWorker *application.PRFollowupService
 	workflowControl := application.NewWorkflowService(a.store, specialistExecution).WithBatchDelivery(batchWorkbench)
+	if controlToken != "" && *scheduledJobWorker {
+		scheduledJobs.WithExecution(threadTurnControl, workflowControl)
+	}
 	var prFollowupController httpapi.PRFollowupController
 	if *githubReviewEnabled && controlToken != "" && *scheduledJobWorker {
 		prFollowupWorker, err = application.NewPRFollowupService(a.store, githubReviewService, threadGit, threadTurnControl)

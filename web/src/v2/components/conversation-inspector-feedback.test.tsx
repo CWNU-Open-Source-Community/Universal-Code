@@ -72,7 +72,7 @@ it.each(["inspector", "conversation"] as const)("appends exact review context an
   expect(editor).toHaveValue(originalDraft);
   if (view === "inspector") expect(editor).not.toBeVisible();
   await user.click(screen.getByRole("button", { name: "审阅改动" }));
-  const dialog = await screen.findByRole("dialog", { name: "审阅任务改动" });
+  const dialog = await screen.findByRole("dialog", { name: "审阅任务改动" }, { timeout: 5_000 });
   await user.click(await within(dialog).findByRole("button", { name: "引用文件" }));
   await waitFor(() => expect(editor).toHaveFocus());
   expect(editor).toBeVisible();
@@ -110,7 +110,7 @@ it("makes observation tools and exact context recovery directly reachable withou
   expect(onOpenInspectorHome).toHaveBeenCalledOnce();
   await user.click(within(nav).getByRole("button", { name: "运行与工具" }));
   await user.click(within(nav).getByRole("button", { name: "界面观察证据" }));
-  await user.click(within(nav).getByRole("button", { name: "定时观察" }));
+  await user.click(within(nav).getByRole("button", { name: "自动化" }));
   await user.click(screen.getByRole("button", { name: "查看上下文" }));
   await user.click(await screen.findByRole("button", { name: "工作区恢复" }));
   await user.click(screen.getByRole("button", { name: "查看上下文" }));

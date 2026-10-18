@@ -19,7 +19,7 @@ func TestControlPlaneObservationSelectionScopeIsProjectedFromComposition(t *test
 		DatabasePath: filepath.Join(t.TempDir(), "observation-scope.db"),
 		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
 		ScheduledJobControlEnabled: true, ScheduledJobWorkerEnabled: true,
-		ScheduledJobObservationOnly: true,
+		ScheduledJobConfirmedOnly: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestControlPlaneObservationSelectionScopeIsProjectedFromComposition(t *test
 		t.Fatal(err)
 	}
 	worker := envelope.Data.ScheduledJobWorker
-	if worker.SelectionScope != "confirmed_read_only" || worker.State != "ready" || !worker.Enabled {
+	if worker.SelectionScope != "confirmed_jobs" || worker.State != "ready" || !worker.Enabled {
 		t.Fatalf("ordinary observer was misrepresented: %+v", worker)
 	}
 }
@@ -48,7 +48,7 @@ func TestControlPlaneObservationSurvivesReopenWithoutReconfirmingLegacyJobs(t *t
 		DatabasePath: filepath.Join(t.TempDir(), "observation.db"),
 		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
 		ScheduledJobControlEnabled: true, ScheduledJobWorkerEnabled: true,
-		ScheduledJobObservationOnly: true, AppVersion: "desktop-observation-test",
+		ScheduledJobConfirmedOnly: true, AppVersion: "desktop-observation-test",
 	}
 	open := func() *ControlPlane {
 		t.Helper()

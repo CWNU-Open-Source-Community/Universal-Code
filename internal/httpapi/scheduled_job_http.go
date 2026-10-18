@@ -31,6 +31,7 @@ type ScheduledJobController interface {
 		application.ScheduledJobControlResult, error)
 	Get(context.Context, string, int, int) (application.ScheduledJobSnapshot, error)
 	List(context.Context, string, int) ([]domain.ScheduledJob, error)
+	ListPage(context.Context, string, time.Time, string, int) ([]domain.ScheduledJob, error)
 }
 
 type ScheduledJobScheduleRequestView struct {
@@ -54,6 +55,8 @@ type ScheduledJobCreateRequestView struct {
 	ExecutionMode             domain.ScheduledJobExecutionMode    `json:"execution_mode"`
 	ConfirmRepair             bool                                `json:"confirm_repair"`
 	ObservationConsentVersion int                                 `json:"observation_consent_version,omitempty"`
+	ExecutionTarget           *domain.ScheduledJobExecutionTarget `json:"execution_target,omitempty"`
+	ExecutionConsentVersion   int                                 `json:"execution_consent_version,omitempty"`
 }
 
 type ScheduledJobObservationController interface {
@@ -168,6 +171,8 @@ func (a *API) serveScheduledJobControl(writer http.ResponseWriter,
 				Notification: view.Notification, ExecutionMode: view.ExecutionMode,
 				ConfirmRepair: view.ConfirmRepair, OperationKey: operationKey,
 				ObservationConsentVersion: view.ObservationConsentVersion,
+				ExecutionTarget:           view.ExecutionTarget,
+				ExecutionConsentVersion:   view.ExecutionConsentVersion,
 				RequestedBy:               "http_control",
 			})
 	} else if action == scheduledJobObservationAction {
@@ -225,7 +230,7 @@ func (a *API) scheduledJobs(request *http.Request,
 			"scheduled job projection is unavailable")
 	}
 	values := request.URL.Query()
-	allowed := []string{"limit"}
+	allowed := []string{"limit", "cursor"}
 	if runIDOverride == "" {
 		allowed = append(allowed, "run_id")
 	}
@@ -236,21 +241,20 @@ func (a *API) scheduledJobs(request *http.Request,
 	if runID == "" {
 		runID, _ = singleQueryValue(values, "run_id")
 	}
-	limit := 50
-	if raw, ok := singleQueryValue(values, "limit"); ok {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100 {
-			return nil, nil, apperror.New(apperror.CodeInvalidArgument,
-				"scheduled job limit must be between 1 and 100")
-		}
-		limit = parsed
-	}
-	items, err := a.scheduledJobController.List(request.Context(), runID, limit)
+	pageRequest, err := parseStableListPage(values, request.URL.Path)
 	if err != nil {
 		return nil, nil, err
 	}
+	items, err := a.scheduledJobController.ListPage(request.Context(), runID,
+		pageRequest.Anchor.BeforeCreatedAt, pageRequest.Anchor.BeforeID, stableListStoreLimit(pageRequest))
+	if err != nil {
+		return nil, nil, err
+	}
+	items, page := trimStableListPage(items, pageRequest, func(job domain.ScheduledJob) (time.Time, string) {
+		return job.CreatedAt, job.ID
+	})
 	return ScheduledJobListView{ProtocolVersion: domain.ScheduledJobProtocolVersion,
-		Items: items}, nil, nil
+		Items: items}, page, nil
 }
 
 func (a *API) scheduledJob(request *http.Request,

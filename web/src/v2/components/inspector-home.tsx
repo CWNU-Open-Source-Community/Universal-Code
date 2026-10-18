@@ -15,7 +15,7 @@ export function V2InspectorHome({ client, onOpenTool, onOpenSettings }: {
     <p>返回对话后可以继续编辑已保留的草稿。</p>
     <InspectorRecordBrowser client={client} onOpen={onOpenTool} />
     <nav className="v2-inspector-home-utilities" aria-label="观察与连接"><button onClick={() => onOpenTool("schedule")} type="button">
-      <CalendarClock aria-hidden="true" size={16} />定时观察</button>
+      <CalendarClock aria-hidden="true" size={16} />自动化</button>
       <button onClick={() => onOpenSettings("connections")} type="button">
         <Settings aria-hidden="true" size={16} />连接与环境</button></nav>
   </main>;

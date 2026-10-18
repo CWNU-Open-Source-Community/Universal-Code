@@ -80,10 +80,10 @@ it("keeps saved records, scheduled observation and connections directly availabl
     onOpenTool={onOpenTool} onOpenSettings={onOpenSettings} /></QueryClientProvider>);
   expect(screen.getByRole("button", { name: "运行记录" })).toBeVisible();
   expect(screen.getByRole("button", { name: "会话记录" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "定时观察" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "自动化" })).toBeVisible();
   expect(screen.getByRole("button", { name: "连接与环境" })).toBeVisible();
   expect(getPage).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "定时观察" }));
+  fireEvent.click(screen.getByRole("button", { name: "自动化" }));
   expect(onOpenTool).toHaveBeenCalledExactlyOnceWith("schedule");
   fireEvent.click(screen.getByRole("button", { name: "连接与环境" }));
   expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("connections");

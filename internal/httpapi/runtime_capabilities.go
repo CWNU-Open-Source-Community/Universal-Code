@@ -160,7 +160,7 @@ func (a *API) runtimeCapabilities(request *http.Request) (any, *Page, error) {
 		if source, ok := a.scheduledJobWorkerHealthSource.(ScheduledJobWorkerSelectionSource); ok {
 			scheduledWorker.SelectionScope = source.SelectionScope()
 		}
-		if scheduledWorker.SelectionScope != "all_jobs" && scheduledWorker.SelectionScope != "confirmed_read_only" {
+		if scheduledWorker.SelectionScope != "all_jobs" && scheduledWorker.SelectionScope != "confirmed_read_only" && scheduledWorker.SelectionScope != "confirmed_jobs" {
 			return nil, nil, apperror.New(apperror.CodeInternal,
 				"scheduled job worker selection scope is invalid")
 		}

@@ -1033,7 +1033,7 @@ describe("APIClient", () => {
       "Idempotency-Key": "scheduled-observation-client-0001" });
   });
 
-  it.each([undefined, "confirmed_read_only", "all_jobs", ["all_jobs"], "unknown"])("validates worker selection scope without coercion: %j", async (scope) => {
+  it.each([undefined, "confirmed_read_only", "confirmed_jobs", "all_jobs", ["all_jobs"], "unknown"])("validates worker selection scope without coercion: %j", async (scope) => {
     const data = runtimeCapabilitiesData();
     const scoped = { ...data, scheduled_job_worker: { ...data.scheduled_job_worker,
       ...(scope === undefined ? {} : { selection_scope: scope }) } };
@@ -1041,10 +1041,31 @@ describe("APIClient", () => {
       version: "api.v1", request_id: "req-scope", data: scoped,
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
     const result = new APIClient("read-secret").runtimeCapabilities();
-    if (scope === undefined || scope === "confirmed_read_only" || scope === "all_jobs") {
+    if (scope === undefined || scope === "confirmed_read_only" || scope === "confirmed_jobs" || scope === "all_jobs") {
       await expect(result).resolves.toMatchObject({ scheduled_job_worker: scoped.scheduled_job_worker });
     } else await expect(result).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   });
+
+  it.each(["valid", "no-consent", "observation-consent", "cross-target", "private-receipt", "wrong-job"])(
+    "validates automatic execution consent, targets, and outcome identity: %s", async (scenario) => {
+      const original = scheduledJobData();
+      const job = { ...original, observation_consent_version: scenario === "observation-consent" ? 1 : 0,
+        execution_consent_version: scenario === "no-consent" ? 0 : 1,
+        spec: { ...original.spec, execution_mode: "automatic", stop_on_target_terminal: false,
+          execution_target: { kind: "thread", thread_id: "thread-1", prompt: "Check the changes",
+            ...(scenario === "cross-target" ? { workflow_definition_id: "workflow-1" } : {}) } } };
+      const execution = { job_id: scenario === "wrong-job" ? "different-job" : job.id, occurrence_at: "2026-10-18T10:00:00Z",
+        run_id: "run-1", message_id: "message-1", state: "waiting_approval",
+        result: "Waiting for a tool approval", created_at: "2026-10-18T10:00:00Z", updated_at: "2026-10-18T10:01:00Z",
+        ...(scenario === "private-receipt" ? { fence_token: "private" } : {}) };
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        version: "api.v1", request_id: "req-automatic", data: { protocol_version: "scheduled-job.v1",
+          snapshot: { job, rounds: [], notifications: [], executions: [execution] } },
+      }), { status: 200, headers: { "Content-Type": "application/json" } })));
+      const result = new APIClient("read-secret").getScheduledJob(job.id);
+      if (scenario === "valid") await expect(result).resolves.toMatchObject({ snapshot: { job, executions: [execution] } });
+      else await expect(result).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+    });
 
   it("rejects private fencing fields and unredacted diagnostic timeline data", async () => {
     const job = scheduledJobData();

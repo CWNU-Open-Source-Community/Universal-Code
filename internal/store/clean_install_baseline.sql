@@ -10807,6 +10807,21 @@ CREATE TABLE scheduled_job_authorizations (
 			AND julianday(expires_at) > julianday(authorized_at))
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE scheduled_job_execution_consents (
+   job_id TEXT PRIMARY KEY REFERENCES scheduled_jobs(id) ON DELETE RESTRICT,
+   version INTEGER NOT NULL CHECK(version=1),
+   consent_json TEXT NOT NULL CHECK(json_valid(consent_json))
+  );
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE scheduled_job_executions (
+   job_id TEXT NOT NULL REFERENCES scheduled_job_execution_consents(job_id) ON DELETE RESTRICT,
+   occurrence_at TEXT NOT NULL,
+   operation_key TEXT NOT NULL,
+   receipt_json TEXT NOT NULL CHECK(json_valid(receipt_json)),
+   PRIMARY KEY(job_id,occurrence_at),
+   FOREIGN KEY(job_id,occurrence_at) REFERENCES scheduled_job_rounds(job_id,occurrence_at) ON DELETE RESTRICT
+  ) WITHOUT ROWID;
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE scheduled_job_notifications (
 		id TEXT PRIMARY KEY,
 		job_id TEXT NOT NULL,
@@ -10901,7 +10916,7 @@ CREATE TABLE scheduled_job_rounds (
 				AND julianday(completed_at) IS NOT NULL))
 	) WITHOUT ROWID;
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE scheduled_jobs (
+CREATE TABLE "scheduled_jobs" (
 		id TEXT PRIMARY KEY,
 		protocol_version TEXT NOT NULL,
 		spec_json TEXT NOT NULL,
@@ -10935,7 +10950,7 @@ CREATE TABLE scheduled_jobs (
 		CHECK(protocol_version = 'scheduled-job.v1'),
 		CHECK(json_valid(spec_json) AND length(spec_json) BETWEEN 2 AND 32768),
 		CHECK(target_run_id = owner_run_id),
-		CHECK(execution_mode IN ('read_only', 'approved_repair')),
+		CHECK(execution_mode IN ('read_only', 'approved_repair', 'automatic')),
 		CHECK(status IN ('active', 'paused', 'completed', 'failed', 'cancelled', 'exhausted')),
 		CHECK(revision > 0 AND rounds_completed BETWEEN 0 AND 10000
 			AND model_calls BETWEEN 0 AND 10000 AND consecutive_unchanged >= 0
@@ -24613,6 +24628,17 @@ CREATE TRIGGER trg_scheduled_job_authorization_update_immutable
 		BEFORE UPDATE ON scheduled_job_authorizations BEGIN
 			SELECT RAISE(ABORT, 'scheduled job authorization cannot be updated');
 		END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_scheduled_job_execution_consent_delete_immutable BEFORE DELETE ON scheduled_job_execution_consents
+   BEGIN SELECT RAISE(ABORT,'automatic execution consent cannot be deleted'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_scheduled_job_execution_consent_insert BEFORE INSERT ON scheduled_job_execution_consents
+   WHEN NOT EXISTS (SELECT 1 FROM scheduled_jobs WHERE id=NEW.job_id AND execution_mode='automatic'
+    AND json_type(spec_json,'$.execution_target')='object')
+   BEGIN SELECT RAISE(ABORT,'automatic execution requires an explicit target'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_scheduled_job_execution_consent_update_immutable BEFORE UPDATE ON scheduled_job_execution_consents
+   BEGIN SELECT RAISE(ABORT,'automatic execution consent is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_scheduled_job_notification_delete_immutable
 		BEFORE DELETE ON scheduled_job_notifications BEGIN

@@ -30,7 +30,8 @@ func (t durableOperationPilotTimer) Stop() bool                     { return t.t
 func TestDurableOperationPilotsPreserveLegacyIdentityAcrossMigrationAndRestart(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "durable-operation-pilots-v122.db")
-	state := openHistoricalTestDatabase(t, filepath.Join(t.TempDir(), "seed.db"), 177)
+	seedPath := filepath.Join(t.TempDir(), "seed.db")
+	state := openHistoricalTestDatabase(t, seedPath, 177)
 
 	workspace := WorkspaceRecord{
 		ID: "workspace-controlled-create", Name: "controlled-create",
@@ -64,6 +65,18 @@ func TestDurableOperationPilotsPreserveLegacyIdentityAcrossMigrationAndRestart(t
 		t.Fatalf("legacy Run creation operation=%#v found=%t err=%v",
 			runOperationBefore, found, err)
 	}
+	// The legacy Run writer requires v177, but the current scheduling service
+	// reads the latest schema. Upgrade only the donor; the migration under test
+	// still starts from the real v122 database imported below.
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err = Open(seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentSeed := state
+	t.Cleanup(func() { _ = currentSeed.Close() })
 
 	anchor := time.Now().UTC().Add(time.Second).Truncate(time.Millisecond)
 	clock := durableOperationPilotClock{now: anchor}

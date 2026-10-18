@@ -24,6 +24,24 @@ function renderComposer(onSubmit: ComposerSubmit = vi.fn(async () => undefined),
 }
 
 describe("V2Composer", () => {
+  it.each([false, true])("respects a newer focus choice after switching editor mode (moved=%s)", (moved) => {
+    localStorage.setItem("universal-code.composer-plain-text", "false");
+    renderComposer();
+    const frames: FrameRequestCallback[] = [];
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback); return frames.length;
+    });
+    try {
+      const toggle = screen.getByRole("button", { name: "切换为纯文本编辑" });
+      act(() => toggle.focus());
+      fireEvent.click(toggle);
+      const workspace = screen.getByRole("combobox", { name: "选择工作区" });
+      if (moved) act(() => workspace.focus());
+      act(() => { for (const frame of frames.splice(0)) frame(performance.now()); });
+      expect(moved ? workspace : screen.getByRole("textbox", { name: "开始新对话" })).toHaveFocus();
+    } finally { raf.mockRestore(); }
+  });
+
   it("accepts a different follow-up while pending and never clears a newer draft on completion", async () => {
     let finishFirst!: () => void;
     let finishSecond!: () => void;

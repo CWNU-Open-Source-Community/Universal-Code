@@ -23,7 +23,7 @@ export function V2InspectorTools({ client, tool, resourceID = "", pane, threadID
   onOpenSettings: (section: V2SettingsSection) => void;
   onOpenRun?: (runID: string) => void;
 }) {
-  const title = tool === "schedule" ? "定时观察" : tool === "session" ? "会话上下文"
+  const title = tool === "schedule" ? "自动化" : tool === "session" ? "会话上下文"
     : pane === "context" ? "续接与记忆" : pane === "checkpoints" ? "工作区恢复"
       : pane === "ui-evidence" ? "界面观察证据" : "运行与工具";
   return <section className="v2-inspector-resource">
@@ -39,7 +39,7 @@ export function V2InspectorTools({ client, tool, resourceID = "", pane, threadID
       </details>
     </div>
     <div className="v2-inspector-tool-body">
-      {tool === "schedule" ? <ScheduledTasksWorkspace client={client} initialRunID={resourceID} />
+      {tool === "schedule" ? <ScheduledTasksWorkspace client={client} initialRunID={resourceID} initialThreadID={threadID} />
         : !resourceID ? <p role="alert">地址缺少记录标识，请返回任务观察重新选择。</p>
           : <WorkbenchFrame client={client} desktop={desktopBridgeAvailable()} title={title}
             resourceKind={tool} runID={tool === "run" ? resourceID : ""}

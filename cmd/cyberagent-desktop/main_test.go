@@ -92,7 +92,7 @@ func TestDesktopOptionsDefaultToSafeProductAndKeepGranularCapabilitiesExplicit(t
 		!defaults.runCreation || !defaults.runExecution || !defaults.modelControl ||
 		!defaults.providerCredentials || !defaults.gitAdvanced || !defaults.riskProfileRestart ||
 		!defaults.githubReview || !defaults.scheduledJobControl ||
-		!defaults.scheduledJobWorker || !defaults.scheduledJobObservationOnly {
+		!defaults.scheduledJobWorker || !defaults.scheduledJobConfirmedOnly {
 		t.Fatalf("default safe product capability bundle is incomplete: %#v", defaults)
 	}
 	if defaults.operatorPreview || defaults.safeView ||
@@ -222,7 +222,7 @@ func TestDesktopOptionsDefaultToSafeProductAndKeepGranularCapabilitiesExplicit(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !scheduled.scheduledJobControl || !scheduled.scheduledJobWorker || scheduled.scheduledJobObservationOnly {
+	if !scheduled.scheduledJobControl || !scheduled.scheduledJobWorker || scheduled.scheduledJobConfirmedOnly {
 		t.Fatalf("scheduled job capability set is incomplete: %+v", scheduled)
 	}
 	batchValidation, err := parseDesktopOptions([]string{
@@ -274,7 +274,7 @@ func TestDesktopOperatorPreviewEnablesTheSafeProductBundleOnly(t *testing.T) {
 		!preview.githubReview {
 		t.Fatalf("operator preview capability bundle is incomplete: %+v", preview)
 	}
-	if preview.scheduledJobObservationOnly ||
+	if preview.scheduledJobConfirmedOnly ||
 		preview.runWakeWorker || preview.userTerminal || preview.dockerExecution ||
 		preview.riskProfileRestart ||
 		preview.batchValidation {

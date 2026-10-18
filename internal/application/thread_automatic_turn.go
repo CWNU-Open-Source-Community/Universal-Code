@@ -44,6 +44,12 @@ func (s *ThreadTurnService) automaticMessageID(ctx context.Context, request Subm
 // CheckAutomaticTurn reports why a new background turn cannot start. ExecuteAutomatic
 // repeats admission under the live-owner lock; this observation grants no authority.
 func (s *ThreadTurnService) CheckAutomaticTurn(ctx context.Context, threadID string) error {
+	return s.CheckAutomaticRun(ctx, threadID, "")
+}
+
+// CheckAutomaticRun binds admission to the Run that will own a scheduled
+// workflow, so its permissions and budget cannot come from a newer task Run.
+func (s *ThreadTurnService) CheckAutomaticRun(ctx context.Context, threadID, expectedRunID string) error {
 	if s == nil {
 		return apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation is unavailable")
 	}
@@ -52,7 +58,7 @@ func (s *ThreadTurnService) CheckAutomaticTurn(ctx context.Context, threadID str
 	if s.activeTurns[threadID] != nil {
 		return apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation requires an idle task")
 	}
-	return s.checkAutomaticTurn(ctx, threadID, "")
+	return s.checkAutomaticTurnForRun(ctx, threadID, "", expectedRunID)
 }
 
 type automaticThreadStore interface {
@@ -69,6 +75,10 @@ type automaticThreadStore interface {
 }
 
 func (s *ThreadTurnService) checkAutomaticTurn(ctx context.Context, threadID, ownMessageID string) error {
+	return s.checkAutomaticTurnForRun(ctx, threadID, ownMessageID, "")
+}
+
+func (s *ThreadTurnService) checkAutomaticTurnForRun(ctx context.Context, threadID, ownMessageID, expectedRunID string) error {
 	if s == nil || s.threads == nil || s.threads.store == nil || s.execution == nil || s.execution.supervisor == nil {
 		return apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation dependencies are unavailable")
 	}
@@ -89,6 +99,9 @@ func (s *ThreadTurnService) checkAutomaticTurn(ctx context.Context, threadID, ow
 	runID := thread.ActiveRunID
 	if runID == "" {
 		runID = thread.LastRunID
+	}
+	if expectedRunID != "" && runID != expectedRunID {
+		return apperror.New(apperror.CodeFailedPrecondition, "Automatic execution requires its selected Run to remain the task's current Run")
 	}
 	run, err := s.threads.store.GetRun(ctx, runID)
 	if err != nil {

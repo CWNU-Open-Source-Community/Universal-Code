@@ -18738,7 +18738,7 @@
       "get": {
         "operationId": "listRunScheduledJobs",
         "summary": "List one Run's scheduled jobs",
-        "description": "Returns the bounded scheduled-job projection for one exact owner and target Run.",
+        "description": "Returns a bounded creation-ordered scheduled-job page for one exact owner and target Run. Its opaque continuation cursor is scoped to this Run route.",
         "tags": [
           "Automation"
         ],
@@ -18758,12 +18758,22 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "Maximum scheduled jobs",
+            "description": "Page size from 1 to 100; defaults to 50",
             "schema": {
               "default": 50,
               "maximum": 100,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor bound to this route and exact filter set",
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
             }
           }
         ],
@@ -18778,6 +18788,9 @@
                     "data": {
                       "$ref": "#/components/schemas/ScheduledJobListView"
                     },
+                    "page": {
+                      "$ref": "#/components/schemas/Page"
+                    },
                     "request_id": {
                       "maxLength": 256,
                       "minLength": 1,
@@ -18791,7 +18804,8 @@
                   "required": [
                     "version",
                     "request_id",
-                    "data"
+                    "data",
+                    "page"
                   ],
                   "type": "object"
                 }
@@ -18828,7 +18842,7 @@
       "post": {
         "operationId": "createRunScheduledJob",
         "summary": "Create a bounded scheduled job",
-        "description": "Creates one exact Run-bound once or periodic job. Time arrival grants only a fenced recheck; read-only jobs require Code/Plan and repair jobs require a current Code/Deliver permission snapshot plus exact operator confirmation. Creation starts no process or model call.",
+        "description": "Creates one Run-bound once or periodic schedule. Automatic targets require explicit execution consent and use the ordinary Thread or workflow executor with current permissions and Run budgets. Legacy observation consent never authorizes execution. Creation starts no process or model call.",
         "tags": [
           "Automation"
         ],
@@ -24511,11 +24525,32 @@
       "get": {
         "operationId": "listScheduledJobs",
         "summary": "List durable scheduled jobs",
-        "description": "Returns a bounded metadata-only projection. Lease fence tokens, operation keys, event payloads, prompts, terminal input, and command arguments are never returned.",
+        "description": "Returns a bounded creation-ordered page of schedules and their configured execution targets. The opaque keyset cursor is bound to this route and exact owner Run filter; status updates and later inserts do not shift older pages. Lease fence tokens, operation keys and raw observation payloads are withheld.",
         "tags": [
           "Automation"
         ],
         "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size from 1 to 100; defaults to 50",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor bound to this route and exact filter set",
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "name": "run_id",
             "in": "query",
@@ -24525,17 +24560,6 @@
               "minLength": 1,
               "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
               "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum scheduled jobs",
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "type": "integer"
             }
           }
         ],
@@ -24550,6 +24574,9 @@
                     "data": {
                       "$ref": "#/components/schemas/ScheduledJobListView"
                     },
+                    "page": {
+                      "$ref": "#/components/schemas/Page"
+                    },
                     "request_id": {
                       "maxLength": 256,
                       "minLength": 1,
@@ -24563,7 +24590,8 @@
                   "required": [
                     "version",
                     "request_id",
-                    "data"
+                    "data",
+                    "page"
                   ],
                   "type": "object"
                 }
@@ -24602,7 +24630,7 @@
       "get": {
         "operationId": "getScheduledJob",
         "summary": "Inspect a scheduled job",
-        "description": "Returns one job with bounded recent rounds, notifications, and an optional immutable authorization snapshot. Raw observation content is withheld.",
+        "description": "Returns one job with bounded recent rounds, execution receipts, notifications, and an optional immutable authorization snapshot. Raw observation content is withheld.",
         "tags": [
           "Automation"
         ],
@@ -60795,6 +60823,12 @@
           "created_by": {
             "type": "string"
           },
+          "execution_consent_version": {
+            "format": "int32",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
           "id": {
             "maxLength": 256,
             "minLength": 1,
@@ -60904,7 +60938,8 @@
           "created_by",
           "created_at",
           "updated_at",
-          "observation_consent_version"
+          "observation_consent_version",
+          "execution_consent_version"
         ],
         "type": "object"
       },
@@ -61034,12 +61069,22 @@
             "format": "date-time",
             "type": "string"
           },
+          "execution_consent_version": {
+            "format": "int32",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
           "execution_mode": {
             "enum": [
               "read_only",
-              "approved_repair"
+              "approved_repair",
+              "automatic"
             ],
             "type": "string"
+          },
+          "execution_target": {
+            "$ref": "#/components/schemas/ScheduledJobExecutionTarget"
           },
           "max_elapsed_seconds": {
             "format": "int64",
@@ -61121,6 +61166,101 @@
         "required": [
           "protocol_version",
           "snapshot"
+        ],
+        "type": "object"
+      },
+      "ScheduledJobExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "job_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "message_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "occurrence_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "resume_submission": {
+            "type": "boolean"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "waiting_approval",
+              "completed",
+              "failed",
+              "blocked"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_execution_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "occurrence_at",
+          "state",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ScheduledJobExecutionTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {},
+          "kind": {
+            "enum": [
+              "thread",
+              "workflow"
+            ],
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflow_definition_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
         ],
         "type": "object"
       },
@@ -61419,6 +61559,13 @@
           "authorization": {
             "$ref": "#/components/schemas/ScheduledJobAuthorization"
           },
+          "executions": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledJobExecution"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
           "job": {
             "$ref": "#/components/schemas/ScheduledJob"
           },
@@ -61440,7 +61587,8 @@
         "required": [
           "job",
           "rounds",
-          "notifications"
+          "notifications",
+          "executions"
         ],
         "type": "object"
       },
@@ -61454,9 +61602,13 @@
           "execution_mode": {
             "enum": [
               "read_only",
-              "approved_repair"
+              "approved_repair",
+              "automatic"
             ],
             "type": "string"
+          },
+          "execution_target": {
+            "$ref": "#/components/schemas/ScheduledJobExecutionTarget"
           },
           "max_elapsed_seconds": {
             "format": "int64",
@@ -61573,6 +61725,7 @@
           "selection_scope": {
             "enum": [
               "confirmed_read_only",
+              "confirmed_jobs",
               "all_jobs"
             ],
             "type": "string"

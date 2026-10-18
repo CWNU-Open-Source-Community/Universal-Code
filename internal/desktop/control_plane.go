@@ -160,7 +160,7 @@ type ControlPlaneConfig struct {
 	RunWakeWorkerEnabled               bool
 	ScheduledJobControlEnabled         bool
 	ScheduledJobWorkerEnabled          bool
-	ScheduledJobObservationOnly        bool
+	ScheduledJobConfirmedOnly          bool
 	SkillInstallationEnabled           bool
 	EvidenceAttachmentEnabled          bool
 	VerificationEvidenceEnabled        bool
@@ -759,8 +759,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	var scheduledJobWorker *scheduler.Worker
 	if config.ScheduledJobWorkerEnabled {
 		var dueRunner scheduler.DueRunner = scheduledJobs
-		if config.ScheduledJobObservationOnly {
-			dueRunner = scheduledObservationRunner{service: scheduledJobs}
+		if config.ScheduledJobConfirmedOnly {
+			dueRunner = scheduledConfirmedRunner{service: scheduledJobs}
 		}
 		scheduledJobWorker, err = scheduler.NewWorker(dueRunner, scheduler.WorkerConfig{
 			OnError: config.OnScheduledJobWorkerError,
@@ -772,7 +772,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	var scheduledWorkerHealth httpapi.ScheduledJobWorkerHealthSource
 	if scheduledJobWorker != nil {
 		scheduledWorkerHealth = scheduledDesktopWorkerHealth{Worker: scheduledJobWorker,
-			observationOnly: config.ScheduledJobObservationOnly}
+			confirmedOnly: config.ScheduledJobConfirmedOnly}
 	}
 	var skillInstaller *application.SkillPackageRegistryService
 	if config.SkillInstallationEnabled {
@@ -893,6 +893,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	}
 	var prFollowupWorker *application.PRFollowupService
 	workflowControl := application.NewWorkflowService(stateStore, specialistExecution).WithBatchDelivery(batchWorkbench)
+	if config.RunExecutionEnabled && config.ModelControlEnabled && config.ControlToken != "" {
+		scheduledJobs.WithExecution(threadTurnControl, workflowControl)
+	}
 	var workflowWorker *application.WorkflowService
 	if config.ModelControlEnabled && config.ControlToken != "" {
 		workflowWorker = workflowControl

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
-import type { ScheduledJobCreateRequestView, ScheduledJobView } from "../api/types";
+import type { ScheduledJobCreateRequestView, ScheduledJobView, ThreadView } from "../api/types";
 import { ScheduledTasksWorkspace } from "./scheduled-tasks-workspace";
 
 describe("ScheduledTasksWorkspace", () => {
@@ -15,11 +15,12 @@ describe("ScheduledTasksWorkspace", () => {
     renderWorkspace({
       hasScheduledJobControl: true, hasScheduledJobWorker: true,
       listScheduledJobs: vi.fn().mockResolvedValue({ protocol_version: "scheduled-job.v1", items: [] }),
-      createScheduledJob, getScheduledJob: vi.fn(), transitionScheduledJob: vi.fn(),
+      createScheduledJob, transitionScheduledJob: vi.fn(),
       diagnosticBundle: vi.fn(),
     });
 
-    await screen.findByText("No observation schedules yet. Set a time and target above to begin.");
+    await screen.findByText("No time schedules yet. Choose a task and trigger time to begin.");
+    await user.click(screen.getByRole("button", { name: "Read-only observation" }));
     await user.click(screen.getByRole("button", { name: "Create and observe" }));
     await waitFor(() => expect(createScheduledJob).toHaveBeenCalledTimes(1));
     expect(createScheduledJob.mock.calls[0]?.[0]).toBe("run-1");
@@ -74,6 +75,7 @@ describe("ScheduledTasksWorkspace", () => {
       listScheduledJobs: vi.fn().mockResolvedValue({ protocol_version: "scheduled-job.v1", items: [] }),
       createScheduledJob,
     });
+    await user.click(screen.getByRole("button", { name: "Read-only observation" }));
     const submit = screen.getByRole("button", { name: "Create and observe" });
     await user.click(submit);
     await screen.findByText("Connection lost; outcome unknown");
@@ -131,6 +133,111 @@ describe("ScheduledTasksWorkspace", () => {
     await screen.findByText(/Explicit scheduling of all jobs, including legacy jobs/);
     expect(screen.queryByText("Desktop observation needs confirmation")).not.toBeInTheDocument();
   });
+
+  it("selects an existing task, shows its directory and permission, and creates bounded execution", async () => {
+    const user = userEvent.setup();
+    const createScheduledJob = vi.fn().mockResolvedValue({ job: scheduledJob() });
+    renderWorkspace({ getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }), createScheduledJob });
+    await screen.findByRole("option", { name: "Review the automation change" });
+    await user.selectOptions(screen.getByLabelText("Existing task"), "thread-1");
+    await screen.findByText("D:/projects/example");
+    expect(await screen.findByText("ASK")).toBeVisible();
+    await user.type(screen.getByLabelText("Instructions"), "Check review feedback and run relevant tests");
+    await user.click(screen.getByRole("button", { name: "Create automation" }));
+    await waitFor(() => expect(createScheduledJob).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      execution_mode: "automatic", execution_consent_version: 1, observation_consent_version: 0,
+      execution_target: { kind: "thread", thread_id: "thread-1", prompt: "Check review feedback and run relevant tests" },
+      stop_on_target_terminal: false, max_model_calls: 0,
+    }), expect.stringMatching(/^web-scheduled-job-create-/)));
+  });
+
+  it("selects a saved workflow and rejects non-object inputs before creating it", async () => {
+    const user = userEvent.setup();
+    const createScheduledJob = vi.fn().mockResolvedValue({ job: scheduledJob() });
+    const definitions = vi.fn().mockResolvedValue([{ id: "workflow-1", spec: { name: "Inspect and repair" } }]);
+    renderWorkspace({ getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }),
+      workflows: { definitions } as unknown as APIClient["workflows"], createScheduledJob });
+    await screen.findByRole("option", { name: "Review the automation change" });
+    await user.selectOptions(screen.getByLabelText("Existing task"), "thread-1");
+    await user.click(screen.getByRole("button", { name: "Scheduled workflow" }));
+    await screen.findByRole("option", { name: "Inspect and repair" });
+    await user.selectOptions(screen.getByLabelText("Saved workflow"), "workflow-1");
+    const inputs = screen.getByLabelText("Workflow inputs (JSON object)");
+    await user.clear(inputs);
+    await user.type(inputs, "[[]");
+    await user.click(screen.getByRole("button", { name: "Create automation" }));
+    await screen.findByText("Workflow inputs must be a JSON object");
+    expect(createScheduledJob).not.toHaveBeenCalled();
+    await user.clear(inputs);
+    await user.type(inputs, '{{"request":"Review the changes"}');
+    await user.click(screen.getByRole("button", { name: "Create automation" }));
+    await waitFor(() => expect(createScheduledJob).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      execution_mode: "automatic", execution_target: { kind: "workflow", workflow_definition_id: "workflow-1", inputs: { request: "Review the changes" } },
+      execution_consent_version: 1, stop_on_target_terminal: false,
+    }), expect.any(String)));
+  });
+
+  it("lets the user clear the initial task and observe a different run", async () => {
+    const user = userEvent.setup();
+    const createScheduledJob = vi.fn().mockResolvedValue({ job: scheduledJob() });
+    renderWorkspace({ getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }), createScheduledJob });
+    await waitFor(() => expect(screen.getByLabelText("Existing task")).toHaveValue("thread-1"));
+    await user.click(screen.getByRole("button", { name: "Read-only observation" }));
+    await user.selectOptions(screen.getByLabelText("Existing task"), "");
+    const target = screen.getByLabelText("Target Run ID (or select a task above)");
+    await user.clear(target);
+    await user.type(target, "run-other");
+    await user.click(screen.getByRole("button", { name: "Create and observe" }));
+    await waitFor(() => expect(createScheduledJob).toHaveBeenCalledWith("run-other", expect.any(Object), expect.any(String)));
+    expect(screen.getByLabelText("Existing task")).toHaveValue("");
+  });
+
+  it.each(["inactive", "unavailable"])("shows a stored Full preference as %s when it is not activated", async (activation) => {
+    renderWorkspace({ getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }),
+      getThreadExecutionPermission: vi.fn().mockResolvedValue({ execution_permission: { approval_mode: "full", full_activation: activation } }) });
+    expect(await screen.findByText(`FULL · ${activation}`)).toBeVisible();
+    expect(screen.getByText("Full is not active. Reactivate it in the source task before execution.")).toBeVisible();
+    expect(screen.queryByText("FULL", { exact: true })).not.toBeInTheDocument();
+  });
+
+  it("keeps execution unavailable on an observation-only host", async () => {
+    const user = userEvent.setup();
+    const createScheduledJob = vi.fn();
+    renderWorkspace({ hasRunExecution: false, hasModelControl: false,
+      getPage: vi.fn().mockResolvedValue({ items: [threadData()], page: {} }), createScheduledJob });
+    await screen.findByRole("option", { name: "Review the automation change" });
+    await user.selectOptions(screen.getByLabelText("Existing task"), "thread-1");
+    await user.type(screen.getByLabelText("Instructions"), "Check the task");
+    expect(screen.getByRole("button", { name: "Create automation" })).toBeDisabled();
+    expect(screen.getByText(/Model execution control is unavailable/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Read-only observation" }));
+    expect(screen.getByRole("button", { name: "Create and observe" })).toBeEnabled();
+    expect(createScheduledJob).not.toHaveBeenCalled();
+  });
+
+  it("shows execution outcomes and applies pause, resume, and cancellation by current revision", async () => {
+    const user = userEvent.setup();
+    let job: ScheduledJobView = { ...scheduledJob(), observation_consent_version: 0, execution_consent_version: 1,
+      spec: { ...scheduledJob().spec, execution_mode: "automatic", stop_on_target_terminal: false,
+        execution_target: { kind: "thread", thread_id: "thread-1", prompt: "Check changes" } } };
+    const transitionScheduledJob = vi.fn().mockImplementation(async (_run, _id, action: string) => {
+      job = { ...job, revision: job.revision + 1, status: action === "pause" ? "paused" : action === "resume" ? "active" : "cancelled" };
+      return { job };
+    });
+    renderWorkspace({ listScheduledJobs: vi.fn().mockImplementation(async () => ({ items: [job] })),
+      getScheduledJob: vi.fn().mockImplementation(async () => ({ snapshot: { job, rounds: [], notifications: [{
+        id: "notice-1", kind: "change", summary: "Execution is waiting for tool approval",
+      }], executions: [{ job_id: job.id, occurrence_at: "2026-10-18T10:00:00Z", state: "waiting_approval",
+        run_id: "run-1", result: "Approve the pending tool request in the task" }] } })), transitionScheduledJob });
+    await user.click(await screen.findByRole("button", { name: /scheduled-job-1/ }));
+    expect(await screen.findByText("Waiting for approval")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open execution task" })).toHaveAttribute("href", "#/threads/thread-1");
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await user.click(await screen.findByRole("button", { name: "Resume" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(transitionScheduledJob).toHaveBeenCalledTimes(3));
+    expect(transitionScheduledJob.mock.calls.map((call) => [call[2], call[3].expected_revision])).toEqual([["pause", 4], ["resume", 5], ["cancel", 6]]);
+  });
 });
 
 function renderWorkspace(client: Partial<APIClient>) {
@@ -139,6 +246,15 @@ function renderWorkspace(client: Partial<APIClient>) {
   } });
   return render(<QueryClientProvider client={queryClient}>
     <ScheduledTasksWorkspace client={{
+      hasScheduledJobControl: true, hasRunExecution: true, hasModelControl: true,
+      getPage: vi.fn().mockResolvedValue({ items: [], page: {} }),
+      get: vi.fn().mockImplementation(async (path: string) => path.endsWith("/review")
+        ? { thread_id: "thread-1", target: { state: "available", root_path: "D:/projects/example" },
+          revision: { state: "available", repository_kind: "none" }, applied_changes: [], unapplied_changes: [], checks: [], reasons: [], observed_at: "2026-10-18T09:00:00Z" }
+        : { thread: threadData(), last_run: { id: "run-1", status: "running" } }),
+      getThreadExecutionPermission: vi.fn().mockResolvedValue({ execution_permission: { approval_mode: "ask" } }),
+      listScheduledJobs: vi.fn().mockResolvedValue({ protocol_version: "scheduled-job.v1", items: [] }),
+      getScheduledJob: vi.fn().mockResolvedValue({ snapshot: { job: scheduledJob(), notifications: [], rounds: [], executions: [] } }),
       runtimeCapabilities: vi.fn().mockResolvedValue({ scheduled_job_worker: {
         enabled: Boolean(client.hasScheduledJobWorker), state: client.hasScheduledJobWorker ? "running" : "disabled",
         selection_scope: "confirmed_read_only",
@@ -147,12 +263,18 @@ function renderWorkspace(client: Partial<APIClient>) {
   </QueryClientProvider>);
 }
 
+function threadData(): ThreadView {
+  return { id: "thread-1", title: "Review the automation change", last_run_id: "run-1", mission_id: "mission-1",
+    protocol_version: "thread.v1", status: "active", composer_state: "ready", version: 1,
+    created_at: "2026-10-18T09:00:00Z", updated_at: "2026-10-18T09:00:00Z" };
+}
+
 function scheduledJob(): ScheduledJobView {
   return {
     id: "scheduled-job-1", owner_run_id: "run-1", owner_root_agent_id: "agent-root",
     status: "active", revision: 4, active_lease_generation: 0, rounds_completed: 0,
     consecutive_unchanged: 0, model_calls: 0, last_event_sequence: 0,
-    observation_consent_version: 1,
+    observation_consent_version: 1, execution_consent_version: 0,
     next_wake_at: "2026-08-20T11:00:00Z", created_by: "test",
     created_at: "2026-08-20T10:00:00Z", updated_at: "2026-08-20T10:00:00Z",
     spec: { version: "scheduled-job.v1", target_run_id: "run-1", execution_mode: "read_only",
