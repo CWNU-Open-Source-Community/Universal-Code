@@ -30,10 +30,16 @@ type issuerFixture struct {
 }
 
 func newIssuer(t *testing.T) *issuerFixture { return newConfiguredIssuer(t, "none", "", false) }
-func newConfiguredIssuer(t *testing.T, method, secret string, dynamic bool, accessTokens ...string) *issuerFixture {
-	access := "access-original"
-	if len(accessTokens) != 0 {
-		access = accessTokens[0]
+func newConfiguredIssuer(t *testing.T, method, secret string, dynamic bool, tokens ...string) *issuerFixture {
+	access, refresh, rotated := "access-original", "refresh-original", "access-refreshed"
+	if len(tokens) > 0 {
+		access = tokens[0]
+	}
+	if len(tokens) > 1 {
+		refresh = tokens[1]
+	}
+	if len(tokens) > 2 {
+		rotated = tokens[2]
 	}
 	t.Helper()
 	f := &issuerFixture{}
@@ -80,7 +86,7 @@ func newConfiguredIssuer(t *testing.T, method, secret string, dynamic bool, acce
 			}
 			if r.Form.Get("grant_type") == "refresh_token" {
 				f.refresh.Add(1)
-				if r.Form.Get("refresh_token") != "refresh-original" {
+				if r.Form.Get("refresh_token") != refresh {
 					t.Error("wrong refresh token")
 				}
 				if f.rejectRefresh.Load() {
@@ -88,7 +94,7 @@ func newConfiguredIssuer(t *testing.T, method, secret string, dynamic bool, acce
 					io.WriteString(w, `{"error":"invalid_grant","error_description":"never disclose refresh-original"}`)
 					return
 				}
-				io.WriteString(w, `{"access_token":"access-refreshed","refresh_token":"refresh-rotated","token_type":"Bearer","expires_in":3600}`)
+				json.NewEncoder(w).Encode(map[string]any{"access_token": rotated, "refresh_token": "refresh-rotated", "token_type": "Bearer", "expires_in": 3600})
 				return
 			}
 			f.code.Add(1)
@@ -101,9 +107,9 @@ func newConfiguredIssuer(t *testing.T, method, secret string, dynamic bool, acce
 				http.Error(w, "invalid", 400)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"access_token": access, "refresh_token": "refresh-original", "token_type": "Bearer", "expires_in": 3600})
+			json.NewEncoder(w).Encode(map[string]any{"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 3600})
 		case "/mcp":
-			if r.Header.Get("Authorization") != "Bearer access-refreshed" {
+			if r.Header.Get("Authorization") != "Bearer "+rotated {
 				http.Error(w, "unauthorized", 401)
 				return
 			}
@@ -115,9 +121,12 @@ func newConfiguredIssuer(t *testing.T, method, secret string, dynamic bool, acce
 	t.Cleanup(f.server.Close)
 	return f
 }
-func (f *issuerFixture) start(t *testing.T, store *credential.MemoryStore) (*Flow, Binding) {
+func (f *issuerFixture) start(t *testing.T, store credential.Store) (*Flow, Binding) {
+	return f.startFor(t, store, "oauth-test")
+}
+func (f *issuerFixture) startFor(t *testing.T, store credential.Store, ref string) (*Flow, Binding) {
 	t.Helper()
-	b := Binding{Ref: "oauth-test", Fingerprint: strings.Repeat("a", 64), Target: f.server.URL + "/mcp"}
+	b := Binding{Ref: ref, Fingerprint: strings.Repeat("a", 64), Target: f.server.URL + "/mcp"}
 	flow, err := Start(t.Context(), b, f.server.URL, "public-client", "", f.server.Client(), func(ctx context.Context, raw string) error { return store.Put(ctx, b.Ref, raw) })
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +252,7 @@ func TestOAuthCancellationAndUntrustedIssuer(t *testing.T) {
 }
 func TestOAuthRejectedRefreshRequiresReauthorizationWithoutExposingSecret(t *testing.T) {
 	f := newIssuer(t)
-	store := credential.NewMemoryStore()
+	store := Store{Dir: t.TempDir(), KeyStore: credential.NewMemoryStore()}
 	flow, b := f.start(t, store)
 	f.callback(t, nil)
 	awaitFlow(t, flow)
@@ -266,11 +275,28 @@ func TestOAuthRejectedRefreshRequiresReauthorizationWithoutExposingSecret(t *tes
 	if err != nil || status.State != "reauthorization_required" {
 		t.Fatal("rejected grant status missing")
 	}
-	_, _ = Resolve(t.Context(), store, b, f.server.Client())
+	restarted := Store{Dir: store.Dir, KeyStore: store.KeyStore}
+	_, _ = Resolve(t.Context(), restarted, b, f.server.Client())
 	if f.refresh.Load() != 1 {
 		t.Fatal("rejected grant was retried")
 	}
 
+}
+
+func TestOAuthUnverifiedEncryptedCommitDoesNotReportAuthorization(t *testing.T) {
+	f := newIssuer(t)
+	keys := &failingBundleKeys{Store: credential.NewMemoryStore(), drift: true}
+	store := Store{Dir: t.TempDir(), KeyStore: keys}
+	flow, b := f.start(t, store)
+	f.callback(t, nil)
+	awaitFlow(t, flow)
+	if flow.Status().State != "failed" || f.code.Load() != 1 || keys.writes != 1 {
+		t.Fatal("unverified login was reported as authorized or retried")
+	}
+	keys.drift = false
+	if _, found, err := store.Get(t.Context(), b.Ref); err != nil || !found {
+		t.Fatal("unverified login lost recoverable ciphertext")
+	}
 }
 
 func TestOAuthRegistrationAndConfidentialRefresh(t *testing.T) {
@@ -346,8 +372,8 @@ func TestOAuthInvalidOptionsAndBusyPort(t *testing.T) {
 
 func TestOAuthOversizedEnvelopeKeepsPriorCredential(t *testing.T) {
 	secret := strings.Repeat("s", 1024)
-	f := newConfiguredIssuer(t, "client_secret_post", secret, false, strings.Repeat("jwt", 300))
-	store := credential.NewMemoryStore()
+	f := newConfiguredIssuer(t, "client_secret_post", secret, false, strings.Repeat("a", MaxTokenBytes+1))
+	store := Store{Dir: t.TempDir(), KeyStore: credential.NewMemoryStore()}
 	b := Binding{Ref: "oauth-test", Fingerprint: strings.Repeat("a", 64), Target: f.server.URL + "/mcp"}
 	store.Put(t.Context(), b.Ref, "existing-private-token")
 	flow, err := StartWithOptions(t.Context(), b, f.server.URL, "public-client", Options{ClientSecret: secret}, f.server.Client(), func(ctx context.Context, raw string) error { return store.Put(ctx, b.Ref, raw) })
@@ -369,5 +395,79 @@ func TestOAuthOversizedEnvelopeKeepsPriorCredential(t *testing.T) {
 	raw, _, _ := store.Get(t.Context(), b.Ref)
 	if raw != "existing-private-token" {
 		t.Fatal("failed login replaced prior credential")
+	}
+}
+
+func TestOAuthLargeEncryptedBundleLifecycle(t *testing.T) {
+	testLargeOAuthLifecycle(t, Store{Dir: t.TempDir(), KeyStore: credential.NewMemoryStore()}, "oauth-test")
+}
+
+func testLargeOAuthLifecycle(t *testing.T, store Store, ref string) {
+	t.Helper()
+	access := strings.Repeat("large-access-", 600)
+	refresh := strings.Repeat("large-refresh-", 600)
+	rotated := strings.Repeat("rotated-access-", 600)
+	f := newConfiguredIssuer(t, "none", "", false, access, refresh, rotated)
+	flow, b := f.startFor(t, store, ref)
+	if f.callback(t, nil) != http.StatusOK {
+		t.Fatal("large-bundle callback failed")
+	}
+	awaitFlow(t, flow)
+	if flow.Status().State != "authorized" || f.code.Load() != 1 {
+		t.Fatal("large bundle was not saved after one exchange")
+	}
+	raw, found, err := store.Get(t.Context(), ref)
+	if err != nil || !found || len(raw) <= credential.MaxSecretBytes {
+		t.Fatal("large bundle was not read back")
+	}
+	e, err := decode(raw)
+	if err != nil || e.Token.AccessToken != access || e.Token.RefreshToken != refresh {
+		t.Fatal("large tokens changed while persisting")
+	}
+	revision := RevisionIdentity(raw)
+	e.Token.Expiry = time.Now().Add(-time.Hour)
+	expired, err := encode(e)
+	if err != nil || store.Put(t.Context(), ref, expired) != nil {
+		t.Fatal("could not prepare expiry")
+	}
+	// Reconstruct the store before refresh, as a restarted host would.
+	restarted := Store{Dir: store.Dir, KeyStore: store.KeyStore}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if token, err := ResolveRevision(t.Context(), restarted, b, f.server.Client(), revision); err != nil || token != rotated {
+				t.Error("large-token refresh failed")
+			}
+		})
+	}
+	wg.Wait()
+	raw, _, err = restarted.Get(t.Context(), ref)
+	e, decodeErr := decode(raw)
+	if err != nil || decodeErr != nil || e.Token.RefreshToken != "refresh-rotated" || RevisionIdentity(raw) != revision || f.refresh.Load() != 1 {
+		t.Fatal("rotation was not committed exactly once under the same login")
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, b.Target, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+rotated)
+	response, err := f.server.Client().Do(req)
+	if err != nil {
+		t.Fatal("MCP request with large bearer failed")
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatal("MCP peer rejected large bearer")
+	}
+	changed := b
+	changed.Fingerprint = strings.Repeat("b", 64)
+	if _, err := Resolve(t.Context(), restarted, changed, f.server.Client()); err == nil {
+		t.Fatal("descriptor change retained authority")
+	}
+	if err := restarted.Delete(t.Context(), ref); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resolve(t.Context(), restarted, b, f.server.Client()); err == nil {
+		t.Fatal("deleted large bundle was used")
 	}
 }

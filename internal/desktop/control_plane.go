@@ -23,6 +23,7 @@ import (
 	"cyberagent-workbench/internal/httpapi"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/mcp"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/modelregistry"
 	"cyberagent-workbench/internal/plugins"
 	"cyberagent-workbench/internal/policy"
@@ -422,7 +423,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		return nil, err
 	}
 	var commandRuntimeDrydocks *application.RunWorktreeService
-	mcpClient, err := mcp.NewClientManager(stateStore, credentialStore, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(), ComputerUseExecutable: config.ComputerUseExecutable,
+	mcpCredentials := mcpoauth.Store{Dir: filepath.Join(home, "credentials", "mcp"), KeyStore: credentialStore}
+	mcpClient, err := mcp.NewClientManager(stateStore, mcpCredentials, mcp.ManagerOptions{InputBroker: mcp.NewInputBroker(), ComputerUseExecutable: config.ComputerUseExecutable,
 		WorkspaceRoot: application.NewMCPWorkspaceRootProvider(stateStore, func(context.Context, string) (*application.RunWorktreeService, error) {
 			return commandRuntimeDrydocks, nil
 		})})
@@ -447,7 +449,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		_ = stateStore.Close()
 		return nil, err
 	}
-	extensionControl.WithCredentials(credentialStore)
+	extensionControl.WithCredentials(mcpCredentials)
 	checker := policy.NewDefaultChecker()
 	webEvidence := webevidence.NewService(stateStore, webSearchProvider,
 		webevidence.NewFetcher(webClient)).

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -188,6 +189,14 @@ func (a *App) mcpClientReviewCommand(ctx context.Context, manager *mcp.Manager,
 	return writeExtensionJSON(a.out, value)
 }
 
+func (a *App) mcpCredentials() credential.Store {
+	dir := ""
+	if a.home != "" {
+		dir = filepath.Join(a.home, "credentials", "mcp")
+	}
+	return mcpoauth.Store{Dir: dir, KeyStore: a.credentials}
+}
+
 func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
 	if len(args) > 0 && strings.HasPrefix(args[0], "oauth-") {
 		return a.mcpOAuthCommand(ctx, args)
@@ -195,17 +204,18 @@ func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 || a.credentials == nil {
 		return errors.New("usage: cyberagent mcp credential status|set|delete <name>")
 	}
+	owned := a.mcpCredentials()
 	switch args[0] {
 	case "status":
 		if len(args) != 2 || !credential.ValidName(args[1]) {
 			return errors.New("usage: cyberagent mcp credential status <name>")
 		}
-		configured, err := a.credentials.Configured(ctx, args[1])
+		configured, err := owned.Configured(ctx, args[1])
 		if err != nil {
 			return err
 		}
 		return writeExtensionJSON(a.out, map[string]any{"name": args[1],
-			"configured": configured, "store_kind": a.credentials.Kind(), "plaintext_returned": false})
+			"configured": configured, "store_kind": owned.Kind(), "plaintext_returned": false})
 	case "set":
 		fs := newFlagSet("mcp credential set", a.errOut)
 		fromEnvironment := fs.String("from-env", "", "environment variable containing the secret")
@@ -214,7 +224,7 @@ func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
 			return err
 		}
 		if fs.NArg() != 1 || !credential.ValidName(fs.Arg(0)) || !*confirm ||
-			strings.TrimSpace(*fromEnvironment) == "" || !a.credentials.Available() {
+			strings.TrimSpace(*fromEnvironment) == "" || !owned.Available() {
 			return errors.New("usage: cyberagent mcp credential set <name> --from-env <variable> --confirm")
 		}
 		secret := os.Getenv(*fromEnvironment)
@@ -223,28 +233,28 @@ func (a *App) mcpCredentialCommand(ctx context.Context, args []string) error {
 		}
 		unlock := mcpoauth.CredentialLock(fs.Arg(0))
 		defer unlock()
-		if err := a.credentials.Put(ctx, fs.Arg(0), secret); err != nil {
+		if err := owned.Put(ctx, fs.Arg(0), secret); err != nil {
 			return err
 		}
 		secret = ""
 		return writeExtensionJSON(a.out, map[string]any{"name": fs.Arg(0),
-			"configured": true, "store_kind": a.credentials.Kind(), "plaintext_returned": false})
+			"configured": true, "store_kind": owned.Kind(), "plaintext_returned": false})
 	case "delete":
 		fs := newFlagSet("mcp credential delete", a.errOut)
 		confirm := fs.Bool("confirm", false, "confirm OS credential-store mutation")
 		if err := fs.Parse(reorderFlags(args[1:], map[string]bool{"confirm": false})); err != nil {
 			return err
 		}
-		if fs.NArg() != 1 || !credential.ValidName(fs.Arg(0)) || !*confirm || !a.credentials.Available() {
+		if fs.NArg() != 1 || !credential.ValidName(fs.Arg(0)) || !*confirm || !owned.Available() {
 			return errors.New("usage: cyberagent mcp credential delete <name> --confirm")
 		}
 		unlock := mcpoauth.CredentialLock(fs.Arg(0))
 		defer unlock()
-		if err := a.credentials.Delete(ctx, fs.Arg(0)); err != nil {
+		if err := owned.Delete(ctx, fs.Arg(0)); err != nil {
 			return err
 		}
 		return writeExtensionJSON(a.out, map[string]any{"name": fs.Arg(0),
-			"configured": false, "store_kind": a.credentials.Kind(), "plaintext_returned": false})
+			"configured": false, "store_kind": owned.Kind(), "plaintext_returned": false})
 	default:
 		return fmt.Errorf("unknown mcp credential subcommand %q", args[0])
 	}
@@ -302,7 +312,7 @@ func (a *App) mcpOAuthCommand(ctx context.Context, args []string) error {
 	}
 	d := record.Descriptor
 	binding := application.MCPCredentialBinding{ServerID: d.ID, WorkspaceID: d.WorkspaceID, RunID: d.RunID, ExpectedDescriptorFingerprint: record.DescriptorFingerprint, Target: d.Target, CredentialRef: d.CredentialRef}
-	service := application.NewMCPCredentialService(a.store, a.credentials)
+	service := application.NewMCPCredentialService(a.store, a.mcpCredentials())
 	status, err := service.Status(ctx, binding)
 	if err != nil {
 		return err

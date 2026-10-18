@@ -41,11 +41,11 @@ export function MCPOAuthControls({ client, binding, queryKey }: { client: APICli
   const pending = oauth?.state === "authorizing" || action.isPending;
   const enabled = client.hasExtensionControl && status.data?.store_available && !status.data.endpoint_conflict && status.data.registration_count === 1;
   return <details className="extension-onboarding"><summary>{t("OAuth 浏览器授权", "OAuth browser authorization")}</summary>
-    <p>{t("支持动态注册、预注册客户端和已托管元数据 URL。浏览器须运行在 Go 服务所在电脑；密钥随令牌保存到系统凭据存储。", "Use dynamic registration, a pre-registered client, or a hosted metadata URL. Use a browser on the Go service computer. Client secrets are saved with tokens in the system credential store.")}</p>
+    <p>{t("支持动态注册、预注册客户端和已托管元数据 URL。浏览器须运行在 Go 服务所在电脑；令牌和客户端密钥保存在本机加密文件中，加密密钥由系统凭据库保护。", "Use dynamic registration, a pre-registered client, or a hosted metadata URL. Use a browser on the Go service computer. Tokens and client secrets are stored in local encrypted files, with encryption keys protected by the system credential store.")}</p>
     <p role="status">{t("授权状态", "Authorization state")}: {oauth?.state ?? (status.isPending ? t("读取中", "Loading") : t("尚未授权", "Not authorized"))}</p>
     {oauth?.expires_at && <p>{t("过期时间", "Expires")}: {oauth.expires_at}</p>}
     <div className="extension-form"><fieldset disabled={!enabled || action.isPending}>
-      <div className="extension-checks"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />{t("我确认连接此服务器发现发行者，并将授权令牌保存在此专用系统凭据名称下。", "I confirm contacting this server to discover issuers and storing authorization tokens under this dedicated system credential name.")}</label></div>
+      <div className="extension-checks"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />{t("我确认连接此服务器发现发行者，并以此专用凭据名称加密保存本地授权令牌。", "I confirm contacting this server to discover issuers and saving encrypted local authorization tokens under this dedicated credential name.")}</label></div>
       <button type="button" className="settings-action" disabled={!confirmed || pending} onClick={() => action.mutate("oauth-discover")}>{t("发现 OAuth 发行者", "Discover OAuth issuers")}</button>
       <label>{t("确认信任的发行者", "Confirm trusted issuer")}
         <input value={issuer} onChange={(event) => setIssuer(event.target.value)} type="url" placeholder="https://issuer.example" disabled={pending} />
