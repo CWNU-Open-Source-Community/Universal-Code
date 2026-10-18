@@ -4,6 +4,7 @@ import { DiffEditor } from "@monaco-editor/react";
 import { AlertTriangle, History, X } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { useLocale } from "../lib/locale";
+import { readPrayuTheme } from "../lib/appearance";
 import { ErrorState, LoadingState, StatusBadge } from "./common";
 
 export function FileProposalRecovery({ client, runID, editID, onClose }: {
@@ -38,7 +39,7 @@ export function FileProposalRecovery({ client, runID, editID, onClose }: {
   return <div className="file-proposal-editor file-proposal-recovery"
     aria-label={t(`已恢复 ${recovery.path} 的提案`, `Recovered proposal for ${recovery.path}`)}>
     <header>
-      <div><History aria-hidden="true" size={16} /><strong>{recovery.path}</strong>
+      <div><History aria-hidden="true" size={16} /><strong title={recovery.path}>{recovery.path}</strong>
         <StatusBadge status={recovery.stale ? "stale" : "pending review"} /></div>
       <button aria-label={t("关闭已恢复提案", "Close recovered proposal")} className="icon-button"
         onClick={onClose} title={t("关闭恢复视图", "Close recovery")} type="button">
@@ -48,9 +49,9 @@ export function FileProposalRecovery({ client, runID, editID, onClose }: {
     <div className="monaco-proposal-surface">
       {editorState === "ready" ? <DiffEditor height="100%" language={languageForPath(recovery.path)}
         modified={recovery.proposed_content} original={recovery.original_content}
-        options={{ automaticLayout: true, fontSize: 13, letterSpacing: 0,
-          minimap: { enabled: false }, readOnly: true, renderSideBySide: true,
-          scrollBeyondLastLine: false }} theme="vs" /> :
+        options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)',
+          fontSize: 13, letterSpacing: 0, minimap: { enabled: false }, readOnly: true, renderSideBySide: true,
+          scrollBeyondLastLine: false }} theme={readPrayuTheme() === "light" ? "vs" : "vs-dark"} /> :
         <div className={`monaco-local-state${editorState === "failed" ? " inline-warning" : ""}`}
           role={editorState === "failed" ? "alert" : "status"}>
           {editorState === "failed" ? t("无法加载本地编辑器资源", "Local editor assets could not be loaded") : t("正在加载本地编辑器", "Loading local editor")}

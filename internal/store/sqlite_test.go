@@ -22,6 +22,8 @@ import (
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolrun"
+
+	"github.com/mattn/go-sqlite3"
 )
 
 func TestOpenCreatesPrivateSQLitePathOnUnix(t *testing.T) {
@@ -46,6 +48,90 @@ func TestOpenCreatesPrivateSQLitePathOnUnix(t *testing.T) {
 	if directoryInfo.Mode().Perm() != 0o700 || databaseInfo.Mode().Perm() != 0o600 {
 		t.Fatalf("runtime path permissions are not private: dir=%o db=%o",
 			directoryInfo.Mode().Perm(), databaseInfo.Mode().Perm())
+	}
+}
+
+func TestOpenConfiguresWALJournalMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wal-test.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	var mode string
+	if err := st.db.QueryRowContext(t.Context(), `PRAGMA journal_mode;`).Scan(&mode); err != nil {
+		t.Fatalf("query journal_mode pragma: %v", err)
+	}
+	if strings.ToLower(mode) != "wal" {
+		t.Fatalf("expected journal_mode wal, got %q", mode)
+	}
+
+	var syncMode int
+	if err := st.db.QueryRowContext(t.Context(), `PRAGMA synchronous;`).Scan(&syncMode); err != nil {
+		t.Fatalf("query synchronous pragma: %v", err)
+	}
+	if syncMode != 1 {
+		t.Fatalf("expected synchronous 1 (NORMAL), got %d", syncMode)
+	}
+	var busyTimeout int
+	if err := st.db.QueryRowContext(t.Context(), `PRAGMA busy_timeout;`).Scan(&busyTimeout); err != nil {
+		t.Fatalf("query busy_timeout pragma: %v", err)
+	}
+	if busyTimeout != 5000 {
+		t.Fatalf("expected busy_timeout 5000, got %d", busyTimeout)
+	}
+}
+
+func TestConfigureSQLiteWALStopsOnTimeoutAndOtherErrors(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		name := "busy timeout"
+		if readOnly {
+			name = "read-only error"
+		}
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "wal-errors.db")
+			writer, err := sql.Open("sqlite3", sqliteDSN(path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+			if _, err := writer.Exec(`CREATE TABLE wal_fixture (id INTEGER);`); err != nil {
+				t.Fatal(err)
+			}
+			dsn := path
+			if readOnly {
+				dsn = "file:" + filepath.ToSlash(path) + "?mode=ro"
+			} else {
+				tx, err := writer.BeginTx(t.Context(), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback()
+			}
+			db, err := sql.Open("sqlite3", dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			db.SetMaxOpenConns(1)
+			started := time.Now()
+			err = configureSQLiteWAL(db)
+			elapsed := time.Since(started)
+			wantCode := sqlite3.ErrBusy
+			if readOnly {
+				wantCode = sqlite3.ErrReadonly
+				if elapsed >= 2*time.Second {
+					t.Fatalf("non-BUSY error took %v", elapsed)
+				}
+			} else if elapsed < 5*time.Second || elapsed > 7*time.Second {
+				t.Fatalf("WAL busy timeout took %v, expected five seconds", elapsed)
+			}
+			var sqliteErr sqlite3.Error
+			if !errors.As(err, &sqliteErr) || sqliteErr.Code != wantCode {
+				t.Fatalf("expected SQLite error %v, got %v", wantCode, err)
+			}
+		})
 	}
 }
 
