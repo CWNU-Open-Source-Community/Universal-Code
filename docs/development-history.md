@@ -279,5 +279,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v208 | 保存空闲 Thread 的压缩操作、模型用量和结果，以现有费用预留账本约束压缩调用 | persist idle Thread compaction operations, model usage and results, bounding compaction calls through the existing monetary reservation ledger |
 | v209 | 保存子 Agent 委派时明确选入的父历史范围及来源摘要，回读时重新核对来源可见性，默认保持自身历史范围 | persist explicitly selected parent history scope and source digests at child admission, rechecking source visibility on recall while defaulting to the child's own history |
 | v210 | 为定时任务加入自动执行模式、不可变执行同意和按轮次绑定的执行回执，保留既有计划与观察同意 | add automatic execution mode, immutable execution consent and occurrence-bound execution receipts for scheduled jobs while preserving existing schedules and observation consent |
+| v211 | 仅为 Plan 中宿主准备的注册测试放行长后台 Job，保留 root/worker、精确命令、离线及当前权限条件 | admit long background Jobs only for host-prepared registered tests in Plan while retaining root/worker ownership, exact command, offline and current-permission conditions |
 
 </details>

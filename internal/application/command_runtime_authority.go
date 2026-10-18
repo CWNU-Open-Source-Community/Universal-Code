@@ -106,6 +106,38 @@ func (s *CommandRuntimeService) BindCommandToolAuthority(ctx context.Context, na
 		if len(original.ProjectTestCommand) != 0 && !bytes.Equal(original.ProjectTestCommand, a.ProjectTestCommand) {
 			return nil, errors.New("project test preset changed")
 		}
+		_, bindings, err := s.commandRuntimeAuthorityBindingsForTest(ctx, a, true)
+		if err != nil {
+			return nil, err
+		}
+		var source commandruntimeadapter.ProjectTestSource
+		if i.EffectiveAction() == toolgateway.CommandRuntimeActionWait {
+			job, err := s.authorizeReadableJob(ctx, i.JobID, bindings)
+			if err != nil {
+				return nil, err
+			}
+			origin, err := s.projectTestJobSource(ctx, job, bindings.actor.ID)
+			if err != nil {
+				return nil, err
+			}
+			if origin.authority.ProjectTestSource == nil {
+				return nil, errors.New("project test Job has no content identity")
+			}
+			source = *origin.authority.ProjectTestSource
+		} else {
+			source, err = s.projectTestSource(ctx, bindings, i.Target)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if original.ProjectTestSource != nil && *original.ProjectTestSource != source {
+			return nil, errors.New("project test source content changed")
+		}
+		// Released calls without this field remain readable. New calls pin the
+		// source before review; dispatch may never refresh that identity.
+		if original.ScopeFingerprint == "" || original.ProjectTestSource != nil {
+			a.ProjectTestSource = &source
+		}
 	}
 	input, canonical, err := toolgateway.CommandToolInput(name, payload, a)
 	if err != nil || !bytes.Equal(canonical, payload) {

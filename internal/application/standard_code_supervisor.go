@@ -83,11 +83,40 @@ type standardCodeCallDescriptor struct {
 }
 
 type standardCodeCommandProjection struct {
-	Version           string                             `json:"version"`
-	Action            string                             `json:"action"`
-	Jobs              []runner.CommandRuntimeJobSnapshot `json:"jobs"`
-	Pages             []runner.CommandRuntimeOutputPage  `json:"pages"`
-	IncompleteReasons []string                           `json:"incomplete_reasons"`
+	VerificationReceipt *toolgateway.ProjectVerificationReceipt `json:"verification_receipt,omitempty"`
+	Version             string                                  `json:"version"`
+	Action              string                                  `json:"action"`
+	Jobs                []runner.CommandRuntimeJobSnapshot      `json:"jobs"`
+	Pages               []runner.CommandRuntimeOutputPage       `json:"pages"`
+	IncompleteReasons   []string                                `json:"incomplete_reasons"`
+}
+
+// Called only after the command service has rechecked a durable receipt against
+// current source content and authority. Reuse advances evidence for this epoch
+// without manufacturing another command or adopting a background Job.
+func (m *standardCodeSupervisorTurn) reuseProjectVerificationReceipt(ctx context.Context, r toolgateway.ProjectVerificationReceipt) error {
+	if m == nil || m.turn.Mode.Phase != domain.ExecutionPhaseDeliver || m.snapshot.MutationEpoch <= 0 || m.snapshot.State == domain.StandardCodeSupervisorStopped || !m.snapshot.InspectionComplete || m.snapshot.PlanSelectionID == "" {
+		return nil
+	}
+	if !r.Reusable || r.State != "passed" || r.Version != toolgateway.ProjectVerificationReceiptVersion || r.RunID != m.snapshot.RunID || r.AgentID != m.snapshot.RootAgentID ||
+		r.WorkspaceID != m.snapshot.WorkspaceID || r.SourceVersion == "" || r.SourceVersion != r.CompletedSourceVersion || r.ExitCode == nil || *r.ExitCode != 0 || !r.TreeReaped || !domain.ValidAgentID(r.JobID) {
+		return apperror.New(apperror.CodeFailedPrecondition, "current project verification receipt is invalid")
+	}
+	if m.snapshot.CanDeliver() && slices.Contains(m.snapshot.VerificationJobIDs, r.JobID) {
+		return nil
+	}
+	previous := m.snapshot.State
+	m.snapshot.VerifiedMutationEpoch = m.snapshot.MutationEpoch
+	m.snapshot.VerificationJobIDs = []string{r.JobID}
+	m.snapshot.State = domain.StandardCodeSupervisorDeliver
+	m.snapshot.LastFailureFingerprint = ""
+	m.snapshot.RepeatedFailureCount, m.snapshot.NoProgressCount = 0, 0
+	m.snapshot.DeliveryID, m.snapshot.DeliveryReceiptSHA256, m.snapshot.DeliveryCheckpointID, m.snapshot.DeliveryRevisionSHA256 = "", "", "", ""
+	raw, _ := json.Marshal(r)
+	return m.appendFrom(ctx, previous, domain.StandardCodeSupervisorPhaseAdvanced, domain.StandardCodeSupervisorObserved, "", "",
+		"reuse_verification:"+strconv.Itoa(m.snapshot.MutationEpoch)+":"+r.JobID, domain.StandardCodeToolCommandRead,
+		runmutation.Fingerprint("project-verification-reuse.v1", r.JobID, r.SourceVersion, strconv.Itoa(m.snapshot.MutationEpoch)),
+		runmutation.Fingerprint("project-verification-receipt.v1", string(raw)), "", "", "current_source_verification_receipt_reused")
 }
 
 func (s *AgentRunner) prepareStandardCodeSupervisor(ctx context.Context,
@@ -706,6 +735,9 @@ func (m *standardCodeSupervisorTurn) authorizeDescriptor(
 		}
 		return true, "", ""
 	case domain.StandardCodeToolCommandRun, domain.StandardCodeToolCommandStart:
+		if d.Kind == domain.StandardCodeToolCommandStart && s.JobsStarted >= s.Limits.MaximumJobs {
+			return false, "background_job_budget_exhausted", "background_job_budget_exhausted"
+		}
 		if d.ProjectTest {
 			if d.CommandCount != 1 || s.CommandsUsed+1 > s.Limits.MaximumCommands {
 				return false, "command_budget_exhausted", "command_budget_exhausted"
@@ -721,10 +753,6 @@ func (m *standardCodeSupervisorTurn) authorizeDescriptor(
 		}
 		if d.CommandCount <= 0 || s.CommandsUsed+d.CommandCount > s.Limits.MaximumCommands {
 			return false, "command_budget_exhausted", "command_budget_exhausted"
-		}
-		if d.Kind == domain.StandardCodeToolCommandStart &&
-			s.JobsStarted >= s.Limits.MaximumJobs {
-			return false, "background_job_budget_exhausted", "background_job_budget_exhausted"
 		}
 		return true, "", ""
 	case domain.StandardCodeToolCommandList:
@@ -951,6 +979,9 @@ func (m *standardCodeSupervisorTurn) observeWorkspaceMutation(ctx context.Contex
 func (m *standardCodeSupervisorTurn) observeCommand(ctx context.Context, call domain.SupervisorToolCall,
 	d standardCodeCallDescriptor, envelope supervisorToolResultEnvelope,
 ) (string, string, error) {
+	if owned, found := m.ownedJob(d.JobID); found && owned.ProjectTest {
+		d.ProjectTest = true
+	}
 	if d.ProjectTest && (m.turn.Mode.Phase == domain.ExecutionPhasePlan || m.snapshot.MutationEpoch == 0) {
 		state := m.snapshot.State
 		defer func() {
@@ -996,6 +1027,7 @@ func (m *standardCodeSupervisorTurn) observeCommand(ctx context.Context, call do
 		}
 		job := projection.Jobs[0]
 		m.replaceOwnedJob(domain.StandardCodeSupervisorJob{JobID: job.ID,
+			ProjectTest:        d.ProjectTest,
 			PermissionRevision: m.snapshot.PermissionRevision,
 			MutationEpoch:      m.snapshot.MutationEpoch,
 			LastCursor:         job.OutputBaseCursor, State: string(job.State)})
@@ -1059,6 +1091,9 @@ func (m *standardCodeSupervisorTurn) observeCommand(ctx context.Context, call do
 		truncated[job.ID] = m.projectedCommandOutputTruncated(ctx, job)
 	}
 	success := len(projection.Jobs) > 0 && len(projection.IncompleteReasons) == 0
+	if projection.VerificationReceipt != nil && (!projection.VerificationReceipt.Reusable || projection.VerificationReceipt.State != "passed") {
+		success = false
+	}
 	for _, job := range projection.Jobs {
 		if job.State != runner.CommandRuntimeJobCompleted || job.ExitCode == nil ||
 			*job.ExitCode != 0 || !job.TreeReaped || truncated[job.ID] {

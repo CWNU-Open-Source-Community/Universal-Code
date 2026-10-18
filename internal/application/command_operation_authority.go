@@ -66,6 +66,9 @@ func (s *CommandRuntimeService) authorizedCommandStart(scope toolgateway.Command
 	}
 	return runner.CommandRuntimeStartRequest{Scope: runnerScope, Spec: spec,
 		DispatchCheck: func(ctx context.Context, actual runner.CommandRuntimeResolvedSpec) error {
+			if err := s.checkProjectTestDispatchSource(ctx, scope, bindings); err != nil {
+				return err
+			}
 			prepared, err := prepare(actual)
 			if err != nil {
 				return err
