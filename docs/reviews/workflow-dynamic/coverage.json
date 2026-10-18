@@ -22,7 +22,10 @@
     "visual_inspected": 3,
     "generated_excluded": 3,
     "unread_non_generated": 0,
-    "ocr_selected_files": 20
+    "ocr_selected_files": 20,
+    "reviewed_files": 38,
+    "skipped_files": 3,
+    "coverage_rate": 0.926829268292683
   },
   "review_method": "OCR 只用于范围选择和规则解析。默认排除的测试、说明文档和截图人工纳入；部分审阅覆盖全部改动及相关调用上下文，不表示全文读完。最终增量与先前审阅一起构成以下范围。",
   "findings": [
@@ -267,5 +270,31 @@
       "review_status": "generated_excluded",
       "note": "未全文逐行阅读；生成、契约或构建检查见验收记录。"
     }
-  ]
+  ],
+  "integration_review": {
+    "base": "506e279f2c005765beaa82ca08cfbeac62192809",
+    "head": "c1caf99b3fe4169d4d195f9587ff56b5957b759d",
+    "previous_head": "b5c3c81e4de986a50cb96b2ff2d700ef0760bc4c",
+    "mode": "ocr_delegate_incremental",
+    "selected_production_files": 20,
+    "previous_coverage_retained": true,
+    "root_partial_reads": [
+      "internal/httpapi/openapi_test.go",
+      "protocols/registry.json"
+    ],
+    "engine_partial_context": [
+      "workflow file-write queue through tool gateway and checkpoint boundaries",
+      "sharedCommandServiceCheckpointReasons and same-root live-service lookup",
+      "shared-service lifecycle and workspace restore authority",
+      "native run_tests child/attempt/Job binding and current project verification receipt checks"
+    ],
+    "findings": [],
+    "generation": "npm --prefix web run generate:api matched the automatic merge",
+    "typecheck": "passed",
+    "local_go": "not run",
+    "remote_ci": {
+      "previous_head": "22 checks passed",
+      "integrated_head": "submitted for remote CI after this report"
+    }
+  }
 }

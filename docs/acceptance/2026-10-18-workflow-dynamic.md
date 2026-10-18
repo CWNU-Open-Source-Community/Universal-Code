@@ -56,3 +56,9 @@ go test -p 1 ./internal/store ./internal/application -run 'TestWorkflow(MapAppro
 这些用例覆盖两项审批占满预算后的原任务继续执行、未运行项回收、暂停或有其他 Run 租约时到期、没有 map 状态的旧版普通 worker，以及非法展开与轮次预算。回收只在持有当前 Run 租约时修改原生子任务，租约竞争不会把仍在运行的任务提前判为失败。
 
 最终后端提交 `7db98743` 已无冲突整合为 `381afd3a`；整合后没有重新跑 Go。OCR delegate 的阅读范围、问题修复和生成文件排除见[复审记录](../reviews/workflow-dynamic/README.md)。
+
+## 主线组合
+
+#381、#383、#385、#386、#387 合并后，本分支以 `c1caf99b3fe4169d4d195f9587ff56b5957b759d` 同步 main `506e279f2c005765beaa82ca08cfbeac62192809`。自动合并无冲突，相对主线仍为原动态工作流范围；没有新增业务实现或迁移。
+
+`npm --prefix web run generate:api` 重新生成的类型与自动合并结果一致；`npm --prefix web run typecheck` 和 `git diff --check` 通过。原分支 `b5c3c81e` 的 22 项远端 CI 已全部通过；主线组合另交由 #388 更新后的远端 CI 验证，本次没有运行本地 Go。
