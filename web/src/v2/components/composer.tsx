@@ -323,11 +323,14 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
           <button className="v2-composer-mode-toggle" type="button" disabled={disabled}
             aria-label={plainText ? "切换为 Markdown 编辑" : "切换为纯文本编辑"}
             title={plainText ? "显示格式；Ctrl+Enter 发送" : "编辑 Markdown 原文"}
-            onClick={() => {
+            onClick={(event) => {
+              const toggle = event.currentTarget;
               const next = !plainText; setPlainText(next);
               try { localStorage.setItem(composerPlainTextKey, String(next)); setModeSaveError(false); }
               catch { setModeSaveError(true); }
-              requestAnimationFrame(() => inputRef.current?.focus());
+              requestAnimationFrame(() => {
+                if (document.activeElement === toggle && !toggle.closest("[inert]")) inputRef.current?.focus();
+              });
             }}>{plainText ? "纯文本" : "Markdown"}</button>
           {client.hasThreadControl &&
             <input ref={attachmentPicker} type="file" multiple hidden aria-label="选择图片或文件"
