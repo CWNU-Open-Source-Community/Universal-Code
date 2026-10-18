@@ -19,6 +19,8 @@
 .automation-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 24px 0 10px; font-size: 12px; }
 .automation-list-heading > span { color: var(--muted); font-size: 11px; }
 .scheduled-tasks-workspace .scheduled-task-layout { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); margin-top: 0; }
+.scheduled-tasks-workspace .scheduled-task-list .status-badge,
+.scheduled-tasks-workspace .scheduled-task-detail > header > .status-badge { flex-shrink: 0; }
 .automation-result-link { display: inline-block; margin-top: 14px; }
 .automation-executions { display: grid; gap: 10px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; font-size: 11px; }
 .automation-executions article { display: grid; gap: 8px; padding: 11px; border-radius: 6px; background: var(--surface); }
