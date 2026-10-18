@@ -26,7 +26,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 134 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 136 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -984,7 +984,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>134 active identifiers</summary>
+<details><summary>136 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
