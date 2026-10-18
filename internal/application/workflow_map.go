@@ -148,6 +148,41 @@ func (s *WorkflowService) advanceWorkflowTasks(ctx context.Context, e *domain.Wo
 			pending = append(pending, i)
 		}
 	}
+	cleanupJobs := func() []domain.WorkflowStepExecution {
+		out := []domain.WorkflowStepExecution{}
+		for i, item := range group.Items {
+			if item.Status == "pending" {
+				out = append(out, jobs[i])
+			}
+		}
+		return out
+	}
+	refreshFailures := func() error {
+		for i, item := range group.Items {
+			if item.Status != "pending" {
+				continue
+			}
+			durable, found, err := s.store.GetWorkflowStep(ctx, item.StepExecutionID)
+			if err != nil {
+				return err
+			}
+			if found && durable.Status == "failed" {
+				jobs[i] = durable
+				group.Items[i].Status, group.Items[i].Reason = durable.Status, durable.Reason
+			}
+		}
+		e.State.Maps[key] = group
+		return nil
+	}
+	rejectBudget := func(cause error) error {
+		if err := s.rejectWorkflowBudget(ctx, *e, owner, cleanupJobs(), cause); err != nil {
+			return err
+		}
+		if err := refreshFailures(); err != nil {
+			return err
+		}
+		return cause
+	}
 	selected := pending
 	if len(selected) > step.WorkerParallelism() {
 		selected = selected[:step.WorkerParallelism()]
@@ -163,7 +198,7 @@ func (s *WorkflowService) advanceWorkflowTasks(ctx context.Context, e *domain.Wo
 			}
 		}
 		if int64(newReservations)*step.Task.TokenLimit > limits.MaxTokens-(usage.TotalTokens-e.UsageBefore.TotalTokens) || int64(newReservations)*step.Task.TurnLimit > limits.MaxTurns-usedTurns {
-			return nil, false, apperror.New(apperror.CodeResourceExhausted, "workflow remaining budget cannot reserve this worker round")
+			return nil, false, rejectBudget(apperror.New(apperror.CodeResourceExhausted, "workflow remaining budget cannot reserve this worker round"))
 		}
 		if err = s.store.ValidateWorkflowDispatch(ctx, e.ID, owner, e.Version, ids); err != nil {
 			return nil, false, err
@@ -172,6 +207,7 @@ func (s *WorkflowService) advanceWorkflowTasks(ctx context.Context, e *domain.Wo
 		turnResults := map[string]SpecialistTurnResult{}
 		turnErrors := map[string]error{}
 		var controlErr, roundFailure error
+		var prepareBudgetErr error
 		for _, i := range selected {
 			job := jobs[i]
 			prepared, prepareErr := s.executeWorkerTurn(ctx, *e, step, job, limits, usage, usedTurns, func(turnCtx context.Context, request ExecuteSpecialistRequest) (SpecialistTurnResult, error) {
@@ -181,14 +217,20 @@ func (s *WorkflowService) advanceWorkflowTasks(ctx context.Context, e *domain.Wo
 			})
 			jobs[i] = prepared
 			if prepareErr != nil {
+				if apperror.CodeOf(apperror.Normalize(prepareErr)) == apperror.CodeResourceExhausted {
+					prepareBudgetErr = prepareErr
+				}
 				if apperror.CodeOf(apperror.Normalize(prepareErr)) == apperror.CodeInternal {
 					roundFailure = prepareErr
 				}
 				turnErrors[job.AgentID] = prepareErr
 			}
 		}
+		if prepareBudgetErr != nil {
+			return nil, false, rejectBudget(prepareBudgetErr)
+		}
 		if len(round) > 0 {
-			outcomes, roundErr := s.executeWorkflowRound(ctx, *e, owner, limits, round)
+			outcomes, roundErr := s.executeWorkflowRound(ctx, *e, owner, limits, round, cleanupJobs())
 			if roundErr != nil {
 				if apperror.CodeOf(apperror.Normalize(roundErr)) == apperror.CodeConflict {
 					controlErr = roundErr
@@ -200,10 +242,16 @@ func (s *WorkflowService) advanceWorkflowTasks(ctx context.Context, e *domain.Wo
 				turnResults[outcome.agentID] = outcome.result
 				turnErrors[outcome.agentID] = outcome.err
 			}
+			if err := refreshFailures(); err != nil {
+				return nil, false, err
+			}
 		}
 		// Harvest all children even when one fails. A child error never discards a
 		// sibling's native completion or changes its attempt into a retry.
 		for _, i := range selected {
+			if group.Items[i].Status == "failed" {
+				continue
+			}
 			job := jobs[i]
 			if turnErrors[job.AgentID] != nil && apperror.CodeOf(apperror.Normalize(turnErrors[job.AgentID])) == apperror.CodeInternal {
 				// A recorded terminal child is a real item failure; a failed
@@ -310,7 +358,7 @@ func (s *WorkflowService) advanceWorkflowTasks(ctx context.Context, e *domain.Wo
 		if readErr != nil {
 			return nil, false, readErr
 		}
-		retryable = retryable && currentRun.Status == domain.RunRunning && time.Now().Before(e.CreatedAt.Add(time.Duration(limits.TimeoutMillis)*time.Millisecond)) && int64(failed)*step.Task.TokenLimit <= limits.MaxTokens-(currentUsage.TotalTokens-e.UsageBefore.TotalTokens) && int64(failed)*step.Task.TurnLimit <= limits.MaxTurns-(workflowTurns(currentNodes)-e.TurnsBefore)
+		retryable = retryable && currentRun.Status == domain.RunRunning && specialistAggregateBudgetStop(currentRun.Budget, currentUsage) == "" && time.Now().Before(e.CreatedAt.Add(time.Duration(limits.TimeoutMillis)*time.Millisecond)) && int64(failed)*step.Task.TokenLimit <= limits.MaxTokens-(currentUsage.TotalTokens-e.UsageBefore.TotalTokens) && int64(failed)*step.Task.TurnLimit <= limits.MaxTurns-(workflowTurns(currentNodes)-e.TurnsBefore)
 		e.Status = "failed"
 		e.Reason = fmt.Sprintf("workflow step %s has %d failed item(s)", step.ID, failed)
 		for _, item := range group.Items {

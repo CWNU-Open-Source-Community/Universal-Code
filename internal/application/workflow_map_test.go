@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/skills"
 	"cyberagent-workbench/internal/store"
 )
 
@@ -362,12 +363,30 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 	for _, scenario := range []struct {
 		approvals int
 		stagger   bool
-	}{{1, false}, {2, true}, {2, false}} {
+		count     int
+		maxTurns  int64
+		spent     bool
+		expired   bool
+		legacy    bool
+	}{
+		{approvals: 1, count: 3, maxTurns: 16},
+		{approvals: 2, stagger: true, count: 3, maxTurns: 16},
+		{approvals: 2, count: 3, maxTurns: 16},
+		{approvals: 2, count: 2, maxTurns: 2},
+		{approvals: 2, count: 2, maxTurns: 16, spent: true},
+		{approvals: 2, count: 3, maxTurns: 2},
+		{approvals: 2, count: 3, maxTurns: 16, expired: true},
+		{approvals: 1, count: 1, maxTurns: 16, expired: true, legacy: true},
+	} {
 		approvals := scenario.approvals
-		t.Run(fmt.Sprintf("%d_pending_approvals_stagger_%t", approvals, scenario.stagger), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d_pending_approvals_stagger_%t_turns_%d_spent_%t_expired_%t_legacy_%t", approvals, scenario.stagger, scenario.maxTurns, scenario.spent, scenario.expired, scenario.legacy), func(t *testing.T) {
 			root, home := t.TempDir(), t.TempDir()
 			p := &specialistTestProvider{responses: []llm.ChatResponse{workflowResponse(t, domain.CompletionSucceeded)}}
-			st, run, unused, runner := newScopedSubagentFixture(t, p, domain.Budget{MaxTurns: 20, MaxTokens: 10000, MaxToolCalls: 20}, 2, 128, false, domain.SpecialistAdmission{MaxChildren: domain.MaxAgentChildren}, home, root)
+			budget := domain.Budget{MaxTurns: 20, MaxTokens: 10000, MaxToolCalls: 20}
+			if scenario.spent {
+				budget.TimeoutSeconds = 1
+			}
+			st, run, unused, runner := newScopedSubagentFixture(t, p, budget, 2, 128, false, domain.SpecialistAdmission{MaxChildren: domain.MaxAgentChildren}, home, root)
 			if _, err := runner.Step(t.Context(), run.ID, unused.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -377,17 +396,33 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 			caps := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
 			makeService := func(st *store.SQLiteStore) *application.WorkflowService {
 				host := application.NewAgentRunner(st, router, checker).WithExecutionPermissionCapabilities(caps)
-				return application.NewWorkflowService(st, application.NewSpecialistExecutionService(st, router, checker).WithWorkerRuntime(host))
+				workers := application.NewSpecialistExecutionService(st, router, checker).WithWorkerRuntime(host)
+				if scenario.spent {
+					return application.NewWorkflowService(&dynamicCleanupFenceStore{SQLiteStore: st, t: t, workers: workers}, workers)
+				}
+				return application.NewWorkflowService(st, workers)
 			}
 			service := makeService(st)
 			step := dynamicMapStep("each", "$input", "/items")
 			step.Task.Worker = &domain.WorkerProfile{}
 			step.Task.ToolCallLimit = 4
-			def, err := service.Save(t.Context(), workflowSpec(step))
+			if scenario.legacy {
+				step.Kind, step.Items, step.MaxItems, step.Parallelism = "worker", nil, 0, 0
+			}
+			spec := workflowSpec(step)
+			spec.Limits.MaxTurns = scenario.maxTurns
+			if scenario.expired {
+				spec.Limits.TimeoutMillis = 10000
+			}
+			def, err := service.Save(t.Context(), spec)
 			if err != nil {
 				t.Fatal(err)
 			}
-			e, err := service.Start(t.Context(), application.StartWorkflowRequest{RunID: run.ID, DefinitionID: def.ID, OperationKey: "map-approval-capacity-0001", Inputs: json.RawMessage(`{"items":[0,1,2]}`)})
+			input := json.RawMessage(`{"items":[0,1,2]}`)
+			if scenario.count == 2 {
+				input = json.RawMessage(`{"items":[0,1]}`)
+			}
+			e, err := service.Start(t.Context(), application.StartWorkflowRequest{RunID: run.ID, DefinitionID: def.ID, OperationKey: "map-approval-capacity-0001", Inputs: input})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -434,6 +469,37 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 				return llm.ChatResponse{ToolCalls: []llm.ToolCall{call}, Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}, nil
 			}
 			e = dynamicAdvance(t, service, e)
+			if scenario.count == 3 && scenario.maxTurns == 2 {
+				var frozen domain.WorkflowMapState
+				for _, g := range e.State.Maps {
+					frozen = g
+				}
+				ids := []string{}
+				for i := range 2 {
+					node, err := st.GetAgentNode(t.Context(), "agent-"+strings.TrimPrefix(frozen.Items[i].StepExecutionID, "workflowstep-"))
+					if err != nil || node.ActiveAttemptID == "" {
+						t.Fatalf("missing live approval before outer budget check: %+v %v", node, err)
+					}
+					ids = append(ids, node.ActiveAttemptID)
+				}
+				e = dynamicAdvance(t, service, e)
+				if e.Status != "failed" || p.calls != 5 {
+					t.Fatalf("outer budget rejection did not stop cleanly: %+v calls=%d", e, p.calls)
+				}
+				for i, id := range ids {
+					a, found, err := st.GetAgentAttempt(t.Context(), id)
+					if err != nil || !found || a.Status != domain.AgentAttemptInterrupted {
+						t.Fatalf("outer budget rejection left approval active: %+v %v", a, err)
+					}
+					assertWorkflowChildRetired(t, st, frozen.Items[i].StepExecutionID)
+				}
+				for _, g := range e.State.Maps {
+					if g.Items[0].Status != "failed" || g.Items[1].Status != "failed" {
+						t.Fatal("cleared approvals were not reflected in map state")
+					}
+				}
+				return
+			}
 			e = dynamicAdvance(t, service, e)
 			if e.Status != "waiting_approval" {
 				t.Fatalf("approval/capacity wait did not become dormant: %+v", e)
@@ -442,10 +508,10 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 			for _, g := range e.State.Maps {
 				group = g
 			}
-			if approvals == 1 && group.Items[2].Status != "completed" {
+			if approvals == 1 && scenario.count == 3 && group.Items[2].Status != "completed" {
 				t.Fatal("one pending approval blocked a ready sibling")
 			}
-			if approvals == 2 {
+			if approvals == 2 && scenario.count == 3 {
 				if _, err := st.GetAgentNode(t.Context(), "agent-"+strings.TrimPrefix(group.Items[2].StepExecutionID, "workflowstep-")); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeNotFound {
 					t.Fatalf("third item bypassed capacity: %v", err)
 				}
@@ -477,7 +543,85 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 			if workflowTick(t, service) {
 				t.Fatal("restart dispatched unresolved approvals")
 			}
+			if scenario.legacy {
+				claimed, acquired, err := st.ClaimWorkflowExecution(t.Context(), e.ID, "legacy-checkpoint-host")
+				if err != nil || !acquired {
+					t.Fatalf("claim legacy checkpoint: %t %v", acquired, err)
+				}
+				for key, g := range claimed.State.Maps {
+					if g.Items[0].StepExecutionID != "workflowstep-"+key {
+						t.Fatal("ordinary worker no longer uses its legacy step identity")
+					}
+				}
+				claimed.State.Maps = nil
+				e, err = st.CheckpointWorkflowExecution(t.Context(), claimed, "legacy-checkpoint-host")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = st.ReleaseWorkflowExecution(t.Context(), e.ID, "legacy-checkpoint-host"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario.expired {
+				// Expiry wakes dormant waits, but cannot close another Run owner's
+				// resources. The same original attempts remain live until the lease
+				// is available for the fenced cleanup tick.
+				held, err := st.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: run.ID, OwnerID: "deadline-competing-host", TTL: time.Minute})
+				if err != nil || held.Lease.LeaseID == "" {
+					t.Fatalf("hold deadline lease: %+v %v", held, err)
+				}
+				time.Sleep(time.Until(e.CreatedAt.Add(10*time.Second)) + 5*time.Millisecond)
+				if !workflowTick(t, service) {
+					t.Fatal("expired dormant workflow did not wake")
+				}
+				current, err := service.Get(t.Context(), e.ID)
+				if err != nil || current.Status == "failed" {
+					t.Fatalf("deadline hid incomplete cleanup: %+v %v", current, err)
+				}
+				for _, attemptID := range attempts {
+					a, found, err := st.GetAgentAttempt(t.Context(), attemptID)
+					if err != nil || !found || a.Status != domain.AgentAttemptRunning {
+						t.Fatalf("busy deadline tick changed live approval: %+v %v", a, err)
+					}
+				}
+				if _, _, err = st.ReleaseRunExecutionLease(t.Context(), held.Lease); err != nil {
+					t.Fatal(err)
+				}
+				if !workflowTick(t, service) {
+					t.Fatal("deadline cleanup did not resume after lease release")
+				}
+				current, err = service.Get(t.Context(), e.ID)
+				if err != nil || current.Status != "failed" || current.Reason != "workflow deadline exceeded" || p.calls != before {
+					t.Fatalf("deadline cleanup did not settle: %+v %v calls=%d", current, err, p.calls)
+				}
+				for i, attemptID := range attempts {
+					a, found, err := st.GetAgentAttempt(t.Context(), attemptID)
+					if err != nil || !found || a.Status != domain.AgentAttemptInterrupted {
+						t.Fatalf("deadline left approval active: %+v %v", a, err)
+					}
+					assertWorkflowChildRetired(t, st, group.Items[i].StepExecutionID)
+				}
+				if scenario.legacy && len(current.State.Maps) != 0 {
+					t.Fatal("deadline recreated legacy worker instead of retiring its original attempt")
+				}
+				for _, g := range current.State.Maps {
+					for i := range approvals {
+						if g.Items[i].Status != "failed" {
+							t.Fatal("deadline cleanup left approval slots pending")
+						}
+					}
+					if scenario.count == 3 {
+						if _, err := st.GetAgentNode(t.Context(), "agent-"+strings.TrimPrefix(g.Items[2].StepExecutionID, "workflowstep-")); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeNotFound {
+							t.Fatalf("deadline admitted queued third item: %v", err)
+						}
+					}
+				}
+				return
+			}
 			for i := range approvals {
+				if scenario.spent && i > 0 {
+					continue
+				}
 				if _, err := application.NewFileEditReviewService(st).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: edits[i], Action: application.FileEditApproveIntent}); err != nil {
 					t.Fatal(err)
 				}
@@ -495,13 +639,42 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 					}
 				}
 			}
+			if scenario.spent {
+				spendWorkflowRunExecutionTime(t, st, run.ID)
+				for i, attemptID := range attempts {
+					a, found, err := st.GetAgentAttempt(t.Context(), attemptID)
+					if err != nil || !found || a.Status != domain.AgentAttemptRunning {
+						s := a
+						t.Fatalf("accounting fixture ended approval attempt: %+v %v", s, err)
+					}
+					node, err := st.GetAgentNode(t.Context(), "agent-"+strings.TrimPrefix(group.Items[i].StepExecutionID, "workflowstep-"))
+					if err != nil || node.ActiveAttemptID != attemptID {
+						t.Fatalf("accounting fixture changed pending child: %+v %v", node, err)
+					}
+				}
+				e = dynamicAdvance(t, service, e)
+				if e.Status != "failed" || p.calls != 1+2*approvals || e.State.Blocked != nil && e.State.Blocked.Retryable {
+					t.Fatalf("spent Run attempted approval/model recovery: %+v calls=%d", e, p.calls)
+				}
+				for i, attemptID := range attempts {
+					attempt, found, err := st.GetAgentAttempt(t.Context(), attemptID)
+					if err != nil || !found || attempt.Status != domain.AgentAttemptInterrupted {
+						t.Fatalf("approval attempt left active: %+v %v", attempt, err)
+					}
+					assertWorkflowChildRetired(t, st, group.Items[i].StepExecutionID)
+					if _, err = os.Stat(filepath.Join(root, fmt.Sprintf("item-%d.txt", i))); !os.IsNotExist(err) {
+						t.Fatal("spent approval applied a file")
+					}
+				}
+				return
+			}
 			for range 4 {
 				e = dynamicAdvance(t, service, e)
 				if e.Status == "completed" {
 					break
 				}
 			}
-			if e.Status != "completed" || p.calls != 4+2*approvals {
+			if e.Status != "completed" || p.calls != 1+scenario.count+2*approvals {
 				t.Fatalf("approval recovery repeated a model turn: %+v calls=%d", e, p.calls)
 			}
 			for i, attemptID := range attempts {
@@ -515,6 +688,48 @@ func TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(t *testing.
 			}
 		})
 	}
+}
+
+type dynamicCleanupFenceStore struct {
+	*store.SQLiteStore
+	t       *testing.T
+	workers *application.SpecialistExecutionService
+}
+
+func (s *dynamicCleanupFenceStore) GetAgentAttempt(ctx context.Context, id string) (domain.AgentAttempt, bool, error) {
+	a, found, err := s.SQLiteStore.GetAgentAttempt(ctx, id)
+	if err != nil || !found {
+		return a, found, err
+	}
+	// The cleanup host still holds its shared Run lease before closing any
+	// resources. The real manual execution entry cannot resume this old wait.
+	if _, err = s.workers.ExecuteSpecialist(ctx, application.ExecuteSpecialistRequest{RunID: a.RunID, AgentID: a.AgentID, OperationKey: "competing-cleanup-" + a.ID, WorkspaceTools: true}); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
+		s.t.Fatalf("manual runner entered approval cleanup: %v", err)
+	}
+	return a, true, nil
+}
+func (s *dynamicCleanupFenceStore) FailWorkflowStepWithLease(ctx context.Context, job domain.WorkflowStepExecution, owner string, revision int64, lease domain.RunExecutionLease, expected domain.AgentAttempt) error {
+	if expected.ID == "" || expected.LeaseID == "" || expected.LeaseGeneration < 1 {
+		s.t.Fatalf("cleanup fixture has no real suspended owner: %+v", expected)
+	}
+	wrongLease := lease
+	wrongLease.Generation++
+	if err := s.SQLiteStore.FailWorkflowStepWithLease(ctx, job, owner, revision, wrongLease, expected); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
+		s.t.Fatalf("cleanup accepted stale Run lease: %v", err)
+	}
+	wrongAttempt := expected
+	wrongAttempt.LeaseGeneration++
+	if err := s.SQLiteStore.FailWorkflowStepWithLease(ctx, job, owner, revision, lease, wrongAttempt); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
+		s.t.Fatalf("cleanup accepted another attempt owner: %v", err)
+	}
+	if err := s.SQLiteStore.FailWorkflowStepWithLease(ctx, job, owner, revision+1, lease, expected); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
+		s.t.Fatalf("cleanup accepted another workflow revision: %v", err)
+	}
+	stored, found, err := s.SQLiteStore.GetWorkflowStep(ctx, job.ID)
+	if err != nil || !found || stored.Status != "pending" {
+		s.t.Fatalf("rejected cleanup changed durable step: %+v %v", stored, err)
+	}
+	return s.SQLiteStore.FailWorkflowStepWithLease(ctx, job, owner, revision, lease, expected)
 }
 
 type dynamicControlStore struct {
@@ -659,5 +874,141 @@ func TestWorkflowRetryFencesRevisionLeaseAndAttemptBound(t *testing.T) {
 	}
 	if _, err = service.RetryFailed(t.Context(), e.ID, e.Version, "retry-forbidden-third-0001"); err == nil {
 		t.Fatal("retry crossed max_attempts")
+	}
+}
+
+func spendWorkflowRunExecutionTime(t *testing.T, st *store.SQLiteStore, runID string) {
+	t.Helper()
+	held, err := st.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: runID, OwnerID: "budget-accounting-host", TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := st.BeginSupervisorTurn(t.Context(), held.Lease, "Account for execution time while leaving child approvals pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, found, err := st.GetSkillSelectionByRun(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		registry, err := skills.BuiltinRegistry()
+		if err != nil {
+			t.Fatal(err)
+		}
+		assembly, err := registry.AssembleContextFor(selection, skills.ExecutionContext{Surface: turn.Mode.Surface, Phase: turn.Mode.Phase, Profile: turn.Mode.Profile, Role: domain.AgentRoleRoot})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := assembly.PreparationForMode(turn.Mode, turn.Agent.ID, turn.Checkpoint.AttemptID, turn.Checkpoint.NextTurn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = st.PrepareRootSkillContext(t.Context(), turn.Checkpoint, request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attempt := llm.ModelAttempt{Number: 1, TransportAttempt: 1, MaxAttempts: 1, Provider: "budget-accounting-fixture", Model: "model"}
+	if _, err = st.RecordSupervisorModelStarted(t.Context(), turn.Checkpoint, attempt); err != nil {
+		t.Fatal(err)
+	}
+	action := domain.RootAction{Version: domain.RootLifecycleVersion, Kind: domain.RootActionContinue, Message: "Accounted execution time; preserve child approval ownership"}
+	raw, _ := json.Marshal(action)
+	response := llm.ChatResponse{Provider: attempt.Provider, Model: attempt.Model, Text: string(raw)}
+	attempt.Outcome = llm.OutcomeSuccess
+	checkpoint, err := st.RecordSupervisorModelCompleted(t.Context(), turn.Checkpoint, attempt, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err = st.CompleteSupervisorTurn(t.Context(), checkpoint, response, action, policy.Decision{Allowed: true}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = st.ReleaseRunExecutionLease(t.Context(), held.Lease); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertWorkflowChildRetired(t *testing.T, st *store.SQLiteStore, stepID string) {
+	t.Helper()
+	job, found, err := st.GetWorkflowStep(t.Context(), stepID)
+	if err != nil || !found || job.Status != "failed" {
+		t.Fatalf("missing durable item failure: %+v %v", job, err)
+	}
+	child, err := st.GetAgentNode(t.Context(), job.AgentID)
+	if err != nil || !child.Terminal() || child.ActiveAttemptID != "" {
+		t.Fatalf("failed child kept its reservation: %+v %v", child, err)
+	}
+	linked, err := st.GetSession(t.Context(), child.SessionID)
+	if err != nil || linked.Status != "archived" {
+		t.Fatalf("failed child session remains active: %+v %v", linked, err)
+	}
+}
+
+func TestWorkflowGlobalExecutionBudgetRetiresAdmittedChildren(t *testing.T) {
+	for _, kind := range []string{"worker", "map"} {
+		t.Run(kind, func(t *testing.T) {
+			p := &specialistTestProvider{}
+			st, run, service, _ := newWorkflowFixture(t, p, domain.Budget{MaxTurns: 20, MaxTokens: 10000, TimeoutSeconds: 1})
+			spendWorkflowRunExecutionTime(t, st, run.ID)
+			step := workflowWorker("each")
+			if kind == "map" {
+				step = dynamicMapStep("each", "$input", "/items")
+			}
+			def, err := service.Save(t.Context(), workflowSpec(step))
+			if err != nil {
+				t.Fatal(err)
+			}
+			e, err := service.Start(t.Context(), application.StartWorkflowRequest{RunID: run.ID, DefinitionID: def.ID, OperationKey: "global-execution-bound-0001", Inputs: json.RawMessage(`{"items":[0,1]}`)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			e = dynamicAdvance(t, service, e)
+			if e.Status != "failed" || !strings.Contains(e.Reason, "execution_budget") || p.calls != 0 || e.State.Blocked != nil && e.State.Blocked.Retryable {
+				t.Fatalf("spent Run did not stop dispatch: %+v calls=%d", e, p.calls)
+			}
+			for _, group := range e.State.Maps {
+				for _, item := range group.Items {
+					if item.Status != "failed" {
+						t.Fatalf("global stop left pending slot: %+v", item)
+					}
+					assertWorkflowChildRetired(t, st, item.StepExecutionID)
+				}
+			}
+			allocated := e.State.AllocatedJobs
+			if _, err = service.RetryFailed(t.Context(), e.ID, e.Version, "retry-spent-execution-0001"); err == nil {
+				t.Fatal("permanent global stop was retryable")
+			}
+			after, err := service.Get(t.Context(), e.ID)
+			if err != nil || after.State.AllocatedJobs != allocated || after.Version != e.Version {
+				t.Fatalf("rejected retry allocated jobs: %+v %v", after, err)
+			}
+		})
+	}
+}
+
+func TestWorkflowRetryRechecksSpentRunExecutionBudget(t *testing.T) {
+	p := &specialistTestProvider{respond: func(_ int, _ llm.ChatRequest) (llm.ChatResponse, error) {
+		return llm.ChatResponse{Text: specialistResponse(t, domain.SpecialistAction{Version: domain.SpecialistLifecycleVersion, Kind: domain.SpecialistActionContinue, Message: "unfinished"}), Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}, nil
+	}}
+	st, run, service, _ := newWorkflowFixture(t, p, domain.Budget{MaxTurns: 20, MaxTokens: 10000, TimeoutSeconds: 1})
+	step := workflowWorker("one")
+	step.Task.TurnLimit = 1
+	e := startHostWorkflow(t, service, run.ID, "retry-execution-bound", workflowSpec(step))
+	e = dynamicAdvance(t, service, e)
+	if e.Status != "failed" || e.State.Blocked == nil || !e.State.Blocked.Retryable {
+		t.Fatalf("expected normal retryable failed item: %+v", e)
+	}
+	spendWorkflowRunExecutionTime(t, st, run.ID)
+	if _, err := service.RetryFailed(t.Context(), e.ID, e.Version, "retry-newly-spent-time-0001"); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeResourceExhausted {
+		t.Fatalf("retry ignored current Run execution usage: %v", err)
+	}
+	after, err := service.Get(t.Context(), e.ID)
+	if err != nil || after.Version != e.Version || after.State.AllocatedJobs != e.State.AllocatedJobs || len(after.State.RetryOperations) != 0 {
+		t.Fatalf("rejected retry allocated another generation: %+v %v", after, err)
+	}
+	for _, group := range after.State.Maps {
+		if group.Items[0].Generation != 1 {
+			t.Fatal("rejected retry advanced generation")
+		}
 	}
 }

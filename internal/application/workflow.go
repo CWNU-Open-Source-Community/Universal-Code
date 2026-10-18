@@ -33,8 +33,11 @@ type WorkflowStore interface {
 	CheckpointWorkflowExecution(context.Context, domain.WorkflowExecution, string) (domain.WorkflowExecution, error)
 	ControlWorkflowExecution(context.Context, string, string, int64) (domain.WorkflowExecution, error)
 	GetWorkflowStep(context.Context, string) (domain.WorkflowStepExecution, bool, error)
+	ListWorkflowVerificationSteps(context.Context, string, string, int64) ([]domain.WorkflowStepExecution, error)
 	PrepareWorkflowStep(context.Context, domain.WorkflowStepExecution, string) (domain.WorkflowStepExecution, error)
 	CompleteWorkflowStep(context.Context, domain.WorkflowStepExecution, string) error
+	FailWorkflowStepWithLease(context.Context, domain.WorkflowStepExecution, string, int64, domain.RunExecutionLease, domain.AgentAttempt) error
+	GetAgentAttempt(context.Context, string) (domain.AgentAttempt, bool, error)
 	ValidateWorkflowDispatch(context.Context, string, string, int64, []string) error
 	ValidateWorkflowSettlement(context.Context, string, string, int64, []string) error
 	RetryFailedWorkflowExecution(context.Context, string, int64, string) (domain.WorkflowExecution, error)
@@ -209,8 +212,19 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 		e.Reason = reason
 		return checkpoint()
 	}
-	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
+	expire := func() (domain.WorkflowExecution, error) {
+		if err := s.expireWorkflowPending(ctx, &e, owner); err != nil {
+			if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+				wake = ""
+				e.Status, e.Reason = "waiting", err.Error()
+				return checkpoint()
+			}
+			return e, err
+		}
 		return fail("workflow deadline exceeded")
+	}
+	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
+		return expire()
 	}
 	run, err := s.store.GetRun(ctx, e.RunID)
 	if err != nil {
@@ -234,7 +248,7 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 	e.Reason = ""
 	for len(e.State.Stack) > 0 {
 		if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
-			return fail("workflow deadline exceeded")
+			return expire()
 		}
 		frame := &e.State.Stack[len(e.State.Stack)-1]
 		block, err := workflowBlock(d.Spec, frame.Block)
@@ -373,9 +387,6 @@ func (s *WorkflowService) executeWorkerTurn(ctx context.Context, e domain.Workfl
 			job.Reason = "waiting for worker capacity and idle root"
 			return job, nil
 		}
-		if task.TokenLimit > limits.MaxTokens-(usage.TotalTokens-e.UsageBefore.TotalTokens) || task.TurnLimit > limits.MaxTurns-usedTurns {
-			return job, errors.New("workflow remaining budget cannot reserve this worker")
-		}
 		child, _, err := s.store.AdmitSpecialist(ctx, domain.SpecialistAdmission{AgentID: job.AgentID, SessionID: job.SessionID, RunID: e.RunID, ParentAgentID: root.ID, Title: task.Title, Skills: task.Skills, Worker: task.Worker, TurnLimit: task.TurnLimit, TokenLimit: task.TokenLimit, AllowedReadPaths: task.AllowedReadPaths, ToolCallLimit: task.ToolCallLimit, CostLimitMicros: task.CostLimitMicros, MaxChildren: domain.MaxAgentChildren, CreatedAt: time.Now().UTC()}, "workflow-admit-"+job.ID)
 		if err != nil {
 			return job, err
@@ -388,15 +399,6 @@ func (s *WorkflowService) executeWorkerTurn(ctx context.Context, e domain.Workfl
 		job.Status = "completed"
 		job.Output, err = json.Marshal(completion.Report)
 		return job, err
-	}
-	if time.Since(e.CreatedAt) > time.Duration(limits.TimeoutMillis)*time.Millisecond {
-		return job, errors.New("workflow deadline exceeded")
-	}
-	if usage.TotalTokens-e.UsageBefore.TotalTokens >= limits.MaxTokens {
-		return job, errors.New("workflow token budget exhausted")
-	}
-	if usedTurns >= limits.MaxTurns {
-		return job, errors.New("workflow turn budget exhausted")
 	}
 	if existing.Terminal() {
 		return job, fmt.Errorf("worker ended %s: %s", existing.Status, existing.StatusReason)

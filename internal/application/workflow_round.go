@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -36,10 +37,21 @@ type workflowRoundItem struct {
 
 // One workflow wave borrows the existing child runner and one Run lease. Each
 // child has its own runner/operation identity; child errors do not cancel peers.
-func (s *WorkflowService) executeWorkflowRound(ctx context.Context, e domain.WorkflowExecution, owner string, bounds domain.WorkflowLimits, items []workflowRoundItem) ([]specialistRoundOutcome, error) {
+func (s *WorkflowService) executeWorkflowRound(ctx context.Context, e domain.WorkflowExecution, owner string, bounds domain.WorkflowLimits, items []workflowRoundItem, cleanupJobs []domain.WorkflowStepExecution) ([]specialistRoundOutcome, error) {
 	base := NewSubagentRunner(s.workers.store, s.workers.router, s.workers.checker)
 	outcomes := []specialistRoundOutcome{}
-	err := withRunExecutionLease(ctx, s.store, e.RunID, base.leaseOwner, base.leasePolicy, func(leaseCtx context.Context, lease domain.RunExecutionLease) error {
+	err := withRunExecutionLease(ctx, s.store, e.RunID, base.leaseOwner, base.leasePolicy, func(leaseCtx context.Context, lease domain.RunExecutionLease) (roundErr error) {
+		defer func() {
+			if apperror.CodeOf(apperror.Normalize(roundErr)) == apperror.CodeResourceExhausted {
+				if err := s.failWorkflowRoundBudget(leaseCtx, e, owner, lease, cleanupJobs, roundErr); err != nil {
+					if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+						roundErr = err
+					} else {
+						roundErr = apperror.Wrap(apperror.CodeInternal, "workflow budget cleanup is incomplete", err)
+					}
+				}
+			}
+		}()
 		leaseCtx = context.WithValue(leaseCtx, workflowFileWriteQueueKey{}, make(chan struct{}, 1))
 		if _, err := s.store.RecoverSpecialistAttempts(leaseCtx, lease); err != nil {
 			return err
@@ -50,6 +62,9 @@ func (s *WorkflowService) executeWorkflowRound(ctx context.Context, e domain.Wor
 		}
 		if err := s.store.ValidateWorkflowDispatch(leaseCtx, e.ID, owner, e.Version, ids); err != nil {
 			return err
+		}
+		if !time.Now().Before(e.CreatedAt.Add(time.Duration(bounds.TimeoutMillis) * time.Millisecond)) {
+			return apperror.New(apperror.CodeResourceExhausted, "workflow deadline exceeded")
 		}
 		run, err := s.store.GetRun(leaseCtx, e.RunID)
 		if err != nil {
@@ -140,4 +155,102 @@ func (s *WorkflowService) executeWorkflowRound(ctx context.Context, e domain.Wor
 		return nil
 	})
 	return outcomes, err
+}
+
+func (s *WorkflowService) failWorkflowRoundBudget(ctx context.Context, e domain.WorkflowExecution, owner string, lease domain.RunExecutionLease, jobs []domain.WorkflowStepExecution, cause error) error {
+	for _, job := range jobs {
+		if err := s.store.ValidateWorkflowDispatch(ctx, e.ID, owner, e.Version, []string{job.ID}); err != nil {
+			return err
+		}
+		child, err := s.store.GetAgentNode(ctx, job.AgentID)
+		if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeNotFound {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if child.Terminal() {
+			continue
+		}
+		var expected domain.AgentAttempt
+		if child.ActiveAttemptID != "" {
+			waiting, _, err := s.store.SpecialistToolApprovalState(ctx, domain.AgentAttemptRef{RunID: e.RunID, AgentID: child.ID, AttemptID: child.ActiveAttemptID})
+			if err != nil {
+				return err
+			}
+			if !waiting {
+				return apperror.New(apperror.CodeConflict, "workflow budget cleanup requires an undispatched approval wait")
+			}
+			var found bool
+			expected, found, err = s.store.GetAgentAttempt(ctx, child.ActiveAttemptID)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return apperror.New(apperror.CodeConflict, "workflow approval attempt disappeared")
+			}
+			if s.workers.workerRuntime == nil {
+				return apperror.New(apperror.CodeUnavailable, "workflow approval cleanup runtime is unavailable")
+			}
+			if err = s.workers.workerRuntime.closeWorkerResources(domain.AgentAttemptRef{RunID: e.RunID, AgentID: child.ID, AttemptID: expected.ID}); err != nil {
+				return err
+			}
+		}
+		job.Status, job.Reason, job.Output = "failed", cause.Error(), json.RawMessage(`null`)
+		if err = s.store.FailWorkflowStepWithLease(ctx, job, owner, e.Version, lease, expected); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *WorkflowService) rejectWorkflowBudget(ctx context.Context, e domain.WorkflowExecution, owner string, jobs []domain.WorkflowStepExecution, cause error) error {
+	base := NewSubagentRunner(s.workers.store, s.workers.router, s.workers.checker)
+	err := withRunExecutionLease(ctx, s.store, e.RunID, base.leaseOwner, base.leasePolicy, func(leaseCtx context.Context, lease domain.RunExecutionLease) error {
+		if _, err := s.store.RecoverSpecialistAttempts(leaseCtx, lease); err != nil {
+			return err
+		}
+		return s.failWorkflowRoundBudget(leaseCtx, e, owner, lease, jobs, cause)
+	})
+	if err != nil && apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
+		return apperror.Wrap(apperror.CodeInternal, "workflow budget cleanup is incomplete", err)
+	}
+	return err
+}
+
+// A dormant approval wait can reach the workflow deadline without entering a
+// worker round. Read this execution's durable pending rows so legacy checkpoints
+// without Maps retain the same fenced cleanup before terminal failure.
+func (s *WorkflowService) expireWorkflowPending(ctx context.Context, e *domain.WorkflowExecution, owner string) error {
+	steps, err := s.store.ListWorkflowVerificationSteps(ctx, e.ID, owner, e.Version)
+	if err != nil {
+		return err
+	}
+	jobs := []domain.WorkflowStepExecution{}
+	for _, job := range steps {
+		if job.Status == "pending" {
+			jobs = append(jobs, job)
+		}
+	}
+	if len(jobs) > 0 {
+		if err := s.rejectWorkflowBudget(ctx, *e, owner, jobs, apperror.New(apperror.CodeResourceExhausted, "workflow deadline exceeded")); err != nil {
+			return err
+		}
+	}
+	for key, group := range e.State.Maps {
+		for i, item := range group.Items {
+			if item.Status != "pending" {
+				continue
+			}
+			job, found, err := s.store.GetWorkflowStep(ctx, item.StepExecutionID)
+			if err != nil {
+				return err
+			}
+			if found && job.Status == "failed" {
+				group.Items[i].Status, group.Items[i].Reason = job.Status, job.Reason
+			}
+		}
+		e.State.Maps[key] = group
+	}
+	return nil
 }

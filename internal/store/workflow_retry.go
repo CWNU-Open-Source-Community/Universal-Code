@@ -152,6 +152,9 @@ func (s *SQLiteStore) RetryFailedWorkflowExecution(ctx context.Context, id strin
 	if run.Budget.MaxTokens > 0 && usage.TotalTokens+int64(failed)*step.Task.TokenLimit >= run.Budget.MaxTokens || turns+int64(failed)*step.Task.TurnLimit >= int64(run.Budget.MaxTurns) {
 		return e, apperror.New(apperror.CodeResourceExhausted, "workflow retry exceeds its remaining Run budget")
 	}
+	if run.Budget.TimeoutSeconds > 0 && usage.TotalExecutionMillis >= run.Budget.TimeoutSeconds*1000 {
+		return e, apperror.New(apperror.CodeResourceExhausted, "workflow retry exceeds its remaining Run execution time")
+	}
 	if len(e.State.RetryOperations) >= domain.MaxWorkflowJobs {
 		return e, apperror.New(apperror.CodeResourceExhausted, "workflow retry operation bound exhausted")
 	}
