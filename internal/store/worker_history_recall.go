@@ -74,6 +74,56 @@ func workerHistorySourceID(scope workerHistoryScope, kind, id string, parts map[
 		Kind: kind, ID: id, SHA: workerHistoryPartsSHA(parts)})
 }
 
+func validateWorkerHistoryToolAuthorityTx(ctx context.Context, tx *sql.Tx, scope workerHistoryScope, call domain.SpecialistToolCall) error {
+	var authority struct {
+		Version      string                       `json:"version"`
+		Ref          domain.AgentAttemptRef       `json:"ref"`
+		ParentID     string                       `json:"parent_id"`
+		ModeID       string                       `json:"mode_id"`
+		ModeRevision int64                        `json:"mode_revision"`
+		Binding      domain.SpecialistToolBinding `json:"binding"`
+	}
+	if err := json.Unmarshal([]byte(call.AuthorityJSON), &authority); err != nil {
+		return err
+	}
+	if authority.Version != "worker_skill_read.v1" && authority.Version != "worker-batch-authority.v1" {
+		return validateSpecialistApprovalPermissionTx(ctx, tx, scope.ref.RunID, call.AuthorityJSON)
+	}
+	// These two host authorities bind guidance or an isolated checkout, not an
+	// execution-permission snapshot. Match their original child binding before
+	// returning historical evidence; this does not reactivate either authority.
+	binding, err := validateSpecialistWorkerBindingTx(ctx, tx, call.Ref, call.Name)
+	if err != nil {
+		return err
+	}
+	if binding.SessionID != scope.child.SessionID {
+		return apperror.New(apperror.CodePolicyDenied, "worker receipt belongs to another child Session")
+	}
+	if authority.Version == "worker_skill_read.v1" {
+		if call.Name != "skill_read" || authority.Ref != call.Ref || authority.ParentID != scope.child.ParentID ||
+			authority.ModeID == "" || authority.ModeRevision < 1 {
+			return apperror.New(apperror.CodePolicyDenied, "worker Skill receipt authority differs from its recorded child")
+		}
+		mode, err := getRunModeSnapshot(ctx, tx, authority.ModeID)
+		if err != nil {
+			return err
+		}
+		if mode.RunID != call.Ref.RunID || mode.Revision != authority.ModeRevision {
+			return apperror.New(apperror.CodePolicyDenied, "worker Skill receipt mode belongs to another scope")
+		}
+		return nil
+	}
+	switch call.Name {
+	case "workspace_list", "workspace_read", "workspace_glob", "workspace_grep", "workspace_change", "workspace_apply", "git_status", "git_diff", "git_commit", "verify":
+	default:
+		return apperror.New(apperror.CodePolicyDenied, "worker Batch receipt authority does not match its tool")
+	}
+	if authority.Binding != binding || binding.BatchPlanID == "" || binding.BatchOrdinal < 1 || binding.BatchGeneration < 1 {
+		return apperror.New(apperror.CodePolicyDenied, "worker Batch receipt authority differs from its recorded checkout")
+	}
+	return nil
+}
+
 func (s *SQLiteStore) readWorkerHistorySource(ctx context.Context, tx *sql.Tx, scope workerHistoryScope, kind, id string) (domain.HistoryRecord, map[string]string, error) {
 	var record domain.HistoryRecord
 	var parts map[string]string
@@ -109,7 +159,7 @@ func (s *SQLiteStore) readWorkerHistorySource(ctx context.Context, tx *sql.Tx, s
 			return record, nil, historyNotFound()
 		}
 		if call.AuthorityJSON != "" {
-			if err := validateSpecialistApprovalPermissionTx(ctx, tx, scope.ref.RunID, call.AuthorityJSON); err != nil {
+			if err := validateWorkerHistoryToolAuthorityTx(ctx, tx, scope, call); err != nil {
 				return record, nil, err
 			}
 		}

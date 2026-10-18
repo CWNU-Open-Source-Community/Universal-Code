@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/toolbudget"
 )
 
 func admitHistoryWorker(t *testing.T, st *SQLiteStore, run domain.Run, profile *domain.WorkerProfile) (domain.AgentNode, domain.SpecialistAdmission, string) {
@@ -36,7 +37,7 @@ func admitHistoryWorker(t *testing.T, st *SQLiteStore, run domain.Run, profile *
 	return child, request, key
 }
 
-func startHistoryWorker(t *testing.T, st *SQLiteStore, run domain.Run, child domain.AgentNode, lease domain.RunExecutionLease) domain.AgentAttemptRef {
+func startHistoryWorker(t *testing.T, st *SQLiteStore, run domain.Run, child domain.AgentNode, lease domain.RunExecutionLease, batch ...domain.BatchDeliveryWorkspace) domain.AgentAttemptRef {
 	t.Helper()
 	a, _, err := st.BeginSpecialistAttempt(t.Context(), domain.AgentAttemptStart{AttemptID: idgen.New("attempt"), RunID: run.ID,
 		AgentID: child.ID, ParentAgentID: child.ParentID, Lease: lease, StartedAt: time.Now().UTC()}, idgen.New("history-start"))
@@ -56,9 +57,13 @@ func startHistoryWorker(t *testing.T, st *SQLiteStore, run domain.Run, child dom
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindSpecialistTools(t.Context(), domain.SpecialistToolBinding{Ref: ref, SessionID: child.SessionID,
+	binding := domain.SpecialistToolBinding{Ref: ref, SessionID: child.SessionID,
 		WorkspaceID: mission.WorkspaceID, RootFingerprint: strings.Repeat("a", 64), BriefFingerprint: brief.TaskBrief.Fingerprint,
-		Mode: "worker", WorkerProfileJSON: profile}); err != nil {
+		Mode: "worker", WorkerProfileJSON: profile}
+	if len(batch) != 0 {
+		binding.BatchPlanID, binding.BatchOrdinal, binding.BatchGeneration = batch[0].PlanID, batch[0].Ordinal, batch[0].Generation
+	}
+	if err := st.BindSpecialistTools(t.Context(), binding); err != nil {
 		t.Fatal(err)
 	}
 	return ref
@@ -280,6 +285,124 @@ func TestWorkerHistorySkipsReceiptsWithExpiredPermission(t *testing.T) {
 	source := workerHistorySourceID(workerHistoryScope{ref: ref}, "tool", strconv.FormatInt(rowID, 10), map[string]string{"arguments": receipt.PayloadJSON, "result": receipt.ResultJSON})
 	if _, err := st.ReadWorkerHistory(t.Context(), ref, domain.HistoryReadRequest{SourceID: source}); apperror.CodeOf(err) != apperror.CodePolicyDenied {
 		t.Fatalf("expired receipt read did not deny: %v", err)
+	}
+}
+
+func TestWorkerHistorySkillAndBatchReceiptAuthorities(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		authority string
+		tool      string
+		change    func(map[string]any)
+		valid     bool
+		unknown   bool
+	}{
+		{name: "skill", authority: "skill", tool: "skill_read", valid: true},
+		{name: "batch", authority: "batch", tool: "workspace_read", valid: true},
+		{name: "skill foreign attempt", authority: "skill", tool: "skill_read", change: func(a map[string]any) {
+			ref := a["ref"].(domain.AgentAttemptRef)
+			ref.AttemptID = "another-attempt"
+			a["ref"] = ref
+		}},
+		{name: "skill wrong tool", authority: "skill", tool: "workspace_read"},
+		{name: "batch foreign generation", authority: "batch", tool: "workspace_read", change: func(a map[string]any) {
+			binding := a["binding"].(domain.SpecialistToolBinding)
+			binding.BatchGeneration++
+			a["binding"] = binding
+		}},
+		{name: "batch wrong tool", authority: "batch", tool: "skill_read"},
+		{name: "unknown version still requires permission", authority: "skill", tool: "skill_read", unknown: true, change: func(a map[string]any) {
+			a["version"] = "unknown-authority"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st, plan, workspaces := newBatchDeliveryStoreFixture(t, &domain.WorkerProfile{})
+			if _, _, _, err := st.CreateBatchDeliveryPlan(t.Context(), plan, workspaces); err != nil {
+				t.Fatal(err)
+			}
+			run, err := st.GetRun(t.Context(), plan.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			child, err := st.GetAgentNode(t.Context(), workspaces[0].AgentID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease := acquireTestRunExecutionLease(t, t.Context(), st, run.ID)
+			ref := startHistoryWorker(t, st, run, child, lease, workspaces[0])
+			binding, err := st.GetSpecialistToolBinding(t.Context(), ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mode, err := st.GetRunMode(t.Context(), run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			authority := map[string]any{"version": "worker_skill_read.v1", "ref": ref, "parent_id": child.ParentID,
+				"mode_id": mode.ID, "mode_revision": mode.Revision}
+			if test.authority == "batch" {
+				authority = map[string]any{"version": "worker-batch-authority.v1", "binding": binding}
+			}
+			if test.change != nil {
+				test.change(authority)
+			}
+			payload := json.RawMessage(`{"catalog":true}`)
+			if test.tool == "workspace_read" {
+				payload = json.RawMessage(`{"version":"agent-code-tools.v1","path":"internal/one/proof.txt","start_line":1,"end_line":2}`)
+			}
+			model := llm.ModelAttempt{Number: 1, TransportAttempt: 1, MaxAttempts: 1, Provider: "history-authority", Model: "fixture"}
+			if _, err := st.RecordSpecialistModelStarted(t.Context(), ref, model); err != nil {
+				t.Fatal(err)
+			}
+			response := llm.ChatResponse{ToolCalls: []llm.ToolCall{{ID: "own-receipt", Name: test.tool, Arguments: payload}}}
+			if _, err := st.RecordSpecialistToolModelCompleted(t.Context(), ref, model, response, "read owned evidence", policy.Decision{Allowed: true, Risk: "low", Reason: "fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(authority)
+			if err != nil {
+				t.Fatal(err)
+			}
+			receipt, err := st.BindSpecialistToolAuthority(t.Context(), ref, "own-receipt", string(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.ChargeToolCall(t.Context(), toolbudget.ChargeRequest{RunID: run.ID, AgentID: child.ID,
+				AgentAttemptID: ref.AttemptID, ToolCallID: receipt.CallID, SessionID: child.SessionID, WorkspaceID: binding.WorkspaceID,
+				ToolName: test.tool, ActionClass: "run_memory", LeaseID: lease.LeaseID, LeaseGeneration: lease.Generation, RequestedBy: "specialist_runner"}); err != nil {
+				t.Fatal(err)
+			}
+			receipt, err = st.MarkSpecialistToolStarted(t.Context(), ref, receipt.CallID, receipt.AuthorityJSON)
+			if err != nil {
+				t.Fatal(err)
+			}
+			receipt.Status, receipt.ResultJSON = domain.SupervisorToolCompleted, `{"output":"自身完整回执标记 中文🙂"}`
+			if err := st.CompleteSpecialistToolCall(t.Context(), receipt); err != nil {
+				t.Fatal(err)
+			}
+			page, err := st.SearchWorkerHistory(t.Context(), ref, domain.HistorySearchRequest{Query: "自身完整回执标记"})
+			if test.valid {
+				if err != nil || len(page.Records) != 1 || page.Records[0].CallID != receipt.CallID {
+					t.Fatalf("owned receipt missing: %+v %v", page, err)
+				}
+				for part, want := range map[string]string{"arguments": receipt.PayloadJSON, "result": receipt.ResultJSON} {
+					if got := workerHistoryReadAll(t, st, ref, page.Records[0].SourceID, part, 17); got != want {
+						t.Fatalf("%s changed: %q", part, got)
+					}
+				}
+				return
+			}
+			if test.unknown && err == nil || !test.unknown && (err != nil || len(page.Records) != 0) {
+				t.Fatalf("invalid authority search: %+v %v", page, err)
+			}
+			var rowID int64
+			if err := st.db.QueryRow(`SELECT rowid FROM specialist_tool_calls WHERE agent_attempt_id=? AND call_id=?`, ref.AttemptID, receipt.CallID).Scan(&rowID); err != nil {
+				t.Fatal(err)
+			}
+			source := workerHistorySourceID(workerHistoryScope{ref: ref}, "tool", strconv.FormatInt(rowID, 10), map[string]string{"arguments": receipt.PayloadJSON, "result": receipt.ResultJSON})
+			if _, err := st.ReadWorkerHistory(t.Context(), ref, domain.HistoryReadRequest{SourceID: source}); err == nil || !test.unknown && apperror.CodeOf(err) != apperror.CodePolicyDenied {
+				t.Fatalf("invalid authority read was not rejected: %v", err)
+			}
+		})
 	}
 }
 

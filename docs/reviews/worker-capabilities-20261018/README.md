@@ -49,3 +49,20 @@ WorkflowPanel component was viewed in Edge at 700 px and 390 px widths, with
 static API responses: the parent-history option was readable and the 390 px
 document had no horizontal overflow. This was a component-layout check, not a
 full backend task journey or an autonomous real-model acceptance run.
+
+## Integration follow-up
+
+Reviewing the Batch integration found that history recall treated every tool
+authority as an execution-permission snapshot. Skill and Batch receipts use
+different host-issued authority formats, so a completed receipt could fail an
+otherwise valid history search. The reader now verifies those exact formats,
+tool kinds and recorded child bindings; permission-bearing receipts retain their
+existing current-permission checks. This permits reading historical evidence,
+not reactivating a Skill or an old Batch owner.
+
+OCR delegate selected two production paths for this correction (the history
+reader and protocol registry); both changed regions and their callers were
+reviewed. The test changes and schema-history documentation were additionally
+read. Focused history tests and `TestSchemaHistoryListsEveryVersionInOrder`
+passed. The latter caught the missing v209 documentation row in CI; the row was
+added without changing the test or migration.
