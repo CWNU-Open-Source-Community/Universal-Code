@@ -33176,7 +33176,7 @@
       "post": {
         "operationId": "saveWorkflowDefinition",
         "summary": "Save an immutable bounded workflow",
-        "description": "",
+        "description": "A worker completion mode of verified_code requires a current passed native project-test receipt for its relative target directory (default project root). Report mode and omitted completion retain report-based completion. The host rechecks verification before accepting code steps and completing the workflow.",
         "tags": [
           "Control"
         ],
@@ -74472,6 +74472,25 @@
         },
         "type": "object"
       },
+      "WorkflowCompletion": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "report",
+              "verified_code"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "WorkflowCondition": {
         "additionalProperties": false,
         "properties": {
@@ -74759,6 +74778,12 @@
             "format": "int32",
             "type": "integer"
           },
+          "verifications": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkflowVerification"
+            },
+            "type": "object"
+          },
           "wait_fingerprint": {
             "type": "string"
           }
@@ -74783,6 +74808,9 @@
               "$ref": "#/components/schemas/WorkflowStep"
             },
             "type": "array"
+          },
+          "completion": {
+            "$ref": "#/components/schemas/WorkflowCompletion"
           },
           "condition": {
             "$ref": "#/components/schemas/WorkflowCondition"
@@ -74839,6 +74867,71 @@
         },
         "required": [
           "step"
+        ],
+        "type": "object"
+      },
+      "WorkflowVerification": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "exit_code": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "job_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reusable": {
+            "type": "boolean"
+          },
+          "source_version": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "step_execution_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "test_fingerprint": {
+            "type": "string"
+          },
+          "tree_reaped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "step_execution_id",
+          "step_id",
+          "agent_id",
+          "target",
+          "state",
+          "reusable",
+          "tree_reaped",
+          "checked_at"
         ],
         "type": "object"
       },

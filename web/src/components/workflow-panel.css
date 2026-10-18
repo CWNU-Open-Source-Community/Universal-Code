@@ -1,4 +1,6 @@
 .workflow-panel { min-width: 0; }
+.workflow-panel .delegation-item { padding: 14px; min-width: 0; }
+.workflow-panel .delegation-item > .section-heading { flex-wrap: wrap; gap: 8px; }
 .workflow-form { display: grid; gap: 10px; margin-block: 14px; max-width: 780px; }
 .workflow-form label { display: grid; gap: 5px; }
 .workflow-form input:not([type="checkbox"]), .workflow-form select, .workflow-form textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
@@ -9,3 +11,9 @@
 .workflow-panel pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workflow-panel code { overflow-wrap: anywhere; }
 .workflow-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 10px; }
+.workflow-verifications { display: grid; gap: 10px; margin-block: 12px; min-width: 0; }
+.workflow-verification { border: 1px solid var(--border-strong); border-radius: 8px; padding: 12px; min-width: 0; }
+.workflow-verification p { margin-block: 6px; }
+.workflow-verification .section-heading { flex-wrap: wrap; gap: 8px; }
+.workflow-verification dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; }
+.workflow-verification dd { margin: 0; overflow-wrap: anywhere; }

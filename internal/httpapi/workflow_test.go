@@ -122,9 +122,18 @@ func TestWorkflowOpenAPIIncludesBoundedProgramAndControls(t *testing.T) {
 		}
 	}
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	for _, name := range []string{"WorkflowSpec", "WorkflowStep", "WorkflowExecution", "WorkflowControlView"} {
+	for _, name := range []string{"WorkflowSpec", "WorkflowStep", "WorkflowCompletion", "WorkflowVerification", "WorkflowExecution", "WorkflowControlView"} {
 		if schemas[name] == nil {
 			t.Fatalf("missing workflow schema %s", name)
 		}
+	}
+	completion := schemas["WorkflowCompletion"].(map[string]any)["properties"].(map[string]any)
+	mode := completion["mode"].(map[string]any)
+	if values, ok := mode["enum"].([]any); !ok || len(values) != 2 || values[0] != "report" || values[1] != "verified_code" {
+		t.Fatalf("completion modes missing from schema: %#v", mode)
+	}
+	state := schemas["WorkflowState"].(map[string]any)["properties"].(map[string]any)
+	if state["verifications"] == nil {
+		t.Fatal("workflow state omits dated verification results")
 	}
 }

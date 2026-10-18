@@ -66,12 +66,44 @@ it("defaults to inherited worker tools and preserves a read-only choice", async 
   await waitFor(() => expect(screen.getByLabelText("Saved workflow")).toHaveValue("saved-1"));
   const call = fetch.mock.calls.find(([, init]) => init?.method === "POST");
   expect(JSON.parse(call![1].body).steps[0].task.worker).toEqual({ tools: null });
+  expect(JSON.parse(call![1].body).steps[0].completion).toEqual({ mode: "verified_code" });
   await user.click(screen.getByLabelText("Execution worker"));
   expect(screen.getByText("Read-only mode: allow reading the current workspace.")).toBeInTheDocument();
   expect(workerWorkflow("Read", "Inspect", false, "").steps[0].task?.worker).toBeUndefined();
+  expect(screen.queryByLabelText("Task type")).not.toBeInTheDocument();
+  expect(workerWorkflow("Read", "Inspect", false, "", false, { mode: "verified_code", target: "unit" }).steps[0].completion).toEqual({ mode: "report" });
   expect(workerWorkflow("Narrow", "Inspect", true, "workspace_read, workspace_search").steps[0].task?.worker?.tools)
     .toEqual(["workspace_read", "workspace_search"]);
   expect(workflowExample().steps[1].then?.[0]).toMatchObject({ kind: "repeat", max_iterations: 3 });
+  expect(workflowExample().steps[0].completion).toEqual({ mode: "report" });
+  expect(workflowExample().steps[1].then?.[0].body?.[0].completion).toEqual({ mode: "verified_code" });
+});
+
+it.each(["verified_code", "report"] as const)("saves the selected %s completion requirement without hidden test targets", async (mode) => {
+  const fetch = vi.fn().mockResolvedValue(response({ items: [] }));
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  mount();
+  await user.click(screen.getByText("Create workflow"));
+  await user.type(screen.getByLabelText("Name"), "Check parser");
+  await user.type(screen.getByLabelText("Task"), "Check the requested parser behavior");
+  await user.type(screen.getByLabelText("Test directory (optional)"), " unit ");
+  await user.selectOptions(screen.getByLabelText("Task type"), mode);
+  if (mode === "report") {
+    expect(screen.queryByLabelText("Test directory (optional)")).not.toBeInTheDocument();
+    expect(screen.getByText("Finish with an analysis report; project test results are not required.")).toBeInTheDocument();
+  }
+  const completion = mode === "report" ? { mode } : { mode, target: "unit" };
+  const spec = workerWorkflow("Check parser", "Check the requested parser behavior", true, "", false, completion);
+  fetch.mockResolvedValueOnce(response({ id: "saved-1", digest: "digest", spec }));
+  await user.click(screen.getByRole("button", { name: "Save definition" }));
+  await waitFor(() => expect(screen.getByLabelText("Saved workflow")).toHaveValue("saved-1"));
+  const posted = fetch.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(posted).toHaveLength(1);
+  expect(JSON.parse(posted[0][1].body).steps[0].completion).toEqual(completion);
+  await user.click(screen.getByRole("button", { name: "Edit task and budgets in JSON" }));
+  const source = JSON.parse((screen.getByLabelText("Workflow JSON (copyable)") as HTMLTextAreaElement).value);
+  expect(source.steps[0].completion).toEqual(completion);
 });
 
 it("requires an explicit choice to include parent history", async () => {
@@ -88,6 +120,26 @@ it("requires an explicit choice to include parent history", async () => {
   const spec = JSON.parse((screen.getByLabelText("Workflow JSON (copyable)") as HTMLTextAreaElement).value);
   expect(spec.steps[0].task.worker.history_scope).toBe("parent_snapshot");
   expect(workerWorkflow("Read", "Inspect", false, "", true).steps[0].task?.worker).toBeUndefined();
+});
+
+it("labels persisted verification as a dated check and displays its original test job", async () => {
+  const item = { ...execution("completed"), state: { ...execution("completed").state, verifications: {
+    ".": { step_execution_id: "workflowstep-1", step_id: "repair", agent_id: "worker-1", job_id: "test-job-1",
+      state: "passed", reusable: true, source_version: "source-version-1", test_fingerprint: "test-fingerprint-1",
+      exit_code: 0, tree_reaped: true, checked_at: "2026-10-18T08:00:00Z", reason: "" },
+  } } };
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (path: string) =>
+    response({ items: path.endsWith("/runs/run-1/workflows") ? [item] : [] })));
+  mount();
+  expect(await screen.findByText("Passed at last check")).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Last verification checks" })).toBeInTheDocument();
+  expect(screen.getByText("Project root")).toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Test and source record"));
+  expect(screen.getByText("test-job-1")).toBeVisible();
+  expect(screen.getByText("worker-1")).toBeVisible();
+  expect(screen.getByText("source-version-1")).toBeVisible();
+  expect(screen.getByText("Checked at").querySelector("time")).toHaveAttribute("datetime", "2026-10-18T08:00:00Z");
 });
 
 it("starts once with explicit consent and observes backend progress without advancing turns", async () => {

@@ -3365,6 +3365,7 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 }
 
 var openAPIFieldEnums = map[string][]string{
+	"WorkflowCompletion.mode":                                   {"report", "verified_code"},
 	"MemoryCandidate.protocol_version":                          {contextmgr.MemoryCandidateProtocolVersion},
 	"MemoryCandidate.status":                                    {"pending", "confirmed", "rejected", "stale"},
 	"MemoryCandidate.confidence":                                {"operator_review_required"},
