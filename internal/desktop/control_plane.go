@@ -892,7 +892,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			workspaceCheckpoints, commandRuntimeDrydocks, config.ExecutionPermissionCapabilities).WithAdvanced(gitAdvanced)
 	}
 	var prFollowupWorker *application.PRFollowupService
-	workflowControl := application.NewWorkflowService(stateStore, specialistExecution).WithBatchDelivery(batchWorkbench)
+	workflowControl := application.NewWorkflowService(stateStore, specialistExecution).WithBatchDelivery(batchWorkbench).WithProjectVerification(commandRuntime)
 	if config.RunExecutionEnabled && config.ModelControlEnabled && config.ControlToken != "" {
 		scheduledJobs.WithExecution(threadTurnControl, workflowControl)
 	}

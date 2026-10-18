@@ -53,3 +53,36 @@ func TestWorkflowIsolatedDeliveryRequiresAnExplicitPlanReference(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowCodeCompletionRequiresDelegatedTests(t *testing.T) {
+	for _, profile := range []*WorkerProfile{nil, {Tools: []string{}}, {Tools: []string{"workspace_read"}}} {
+		spec := validWorkflowForTest()
+		spec.Steps[0].Task.Worker = profile
+		spec.Steps[0].Completion = &WorkflowCompletion{Mode: "verified_code"}
+		if _, err := NormalizeWorkflowSpec(spec); err == nil {
+			t.Fatalf("accepted code completion without tests: %+v", profile)
+		}
+	}
+	for _, profile := range []*WorkerProfile{{}, {Tools: []string{"run_tests"}}} {
+		spec := validWorkflowForTest()
+		spec.Steps[0].Task.Worker = profile
+		spec.Steps[0].Completion = &WorkflowCompletion{Mode: "verified_code"}
+		got, err := NormalizeWorkflowSpec(spec)
+		if err != nil || !got.Steps[0].RequiresCodeVerification() || got.Steps[0].VerificationTarget() != "." {
+			t.Fatalf("valid code completion: %+v %v", got, err)
+		}
+	}
+	for _, completion := range []WorkflowCompletion{{Mode: "succeeded"}, {Mode: "report", Target: "."}, {Mode: "verified_code", Target: "../other"}, {Mode: "verified_code", Target: " /tmp"}} {
+		spec := validWorkflowForTest()
+		spec.Steps[0].Task.Worker = &WorkerProfile{}
+		spec.Steps[0].Completion = &completion
+		if _, err := NormalizeWorkflowSpec(spec); err == nil {
+			t.Fatalf("accepted invalid completion: %+v", completion)
+		}
+	}
+	spec := validWorkflowForTest()
+	spec.Steps[0].Completion = &WorkflowCompletion{Mode: "report"}
+	if _, err := NormalizeWorkflowSpec(spec); err != nil {
+		t.Fatalf("analysis report requires no tests: %v", err)
+	}
+}

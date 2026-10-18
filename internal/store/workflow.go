@@ -213,6 +213,59 @@ func (s *SQLiteStore) GetWorkflowStep(ctx context.Context, id string) (domain.Wo
 	}
 	return step, err == nil, err
 }
+
+// ReadWorkflowVerificationClaim is a host-only read bound to the interpreter's
+// live claim. It grants no ordinary Agent access to another child's history.
+func (s *SQLiteStore) ReadWorkflowVerificationClaim(ctx context.Context, executionID, stepID, owner string, revision int64) (domain.WorkflowExecution, domain.WorkflowStepExecution, error) {
+	var e domain.WorkflowExecution
+	var step domain.WorkflowStepExecution
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return e, step, err
+	}
+	defer tx.Rollback()
+	var valid int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM workflow_executions e
+	 JOIN workflow_steps w ON w.execution_id=e.id
+	 JOIN agent_nodes a ON a.id=w.agent_id AND a.run_id=e.run_id AND a.session_id=w.session_id AND a.role='specialist'
+	 JOIN agent_nodes p ON p.id=a.parent_id AND p.run_id=e.run_id AND p.role='root'
+	 JOIN runs r ON r.id=e.run_id
+	 JOIN missions m ON m.id=r.mission_id
+	 JOIN sessions s ON s.id=w.session_id AND s.workspace_id=m.workspace_id
+	 WHERE e.id=? AND w.id=? AND e.version=? AND e.claim_owner=? AND e.claim_until>?
+	 AND e.status IN ('running','waiting','waiting_approval')`, executionID, stepID, revision, owner, ts(time.Now().UTC())).Scan(&valid)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = apperror.New(apperror.CodeConflict, "workflow verification lost its claim, revision or child ownership")
+	}
+	if err != nil {
+		return e, step, err
+	}
+	e, err = scanWorkflowExecution(tx.QueryRowContext(ctx, workflowExecutionSelect+` WHERE id=?`, executionID))
+	if err != nil {
+		return e, step, err
+	}
+	step, err = scanWorkflowStep(tx.QueryRowContext(ctx, workflowStepSelect+` WHERE id=?`, stepID))
+	return e, step, err
+}
+
+func (s *SQLiteStore) ListWorkflowVerificationSteps(ctx context.Context, executionID, owner string, revision int64) ([]domain.WorkflowStepExecution, error) {
+	rows, err := s.db.QueryContext(ctx, workflowStepSelect+` WHERE execution_id=? AND EXISTS(
+	 SELECT 1 FROM workflow_executions e WHERE e.id=? AND e.version=? AND e.claim_owner=? AND e.claim_until>?
+	 AND e.status IN ('running','waiting','waiting_approval')) ORDER BY rowid`, executionID, executionID, revision, owner, ts(time.Now().UTC()))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var steps []domain.WorkflowStepExecution
+	for rows.Next() {
+		step, err := scanWorkflowStep(rows)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+	return steps, rows.Err()
+}
 func (s *SQLiteStore) PrepareWorkflowStep(ctx context.Context, step domain.WorkflowStepExecution, owner string) (domain.WorkflowStepExecution, error) {
 	if !json.Valid(step.Inputs) || len(step.Inputs) > 32*1024 {
 		return step, apperror.New(apperror.CodeInvalidArgument, "workflow step inputs exceed their bound")
@@ -229,7 +282,7 @@ func (s *SQLiteStore) PrepareWorkflowStep(ctx context.Context, step domain.Workf
 	if !found {
 		return step, apperror.New(apperror.CodeConflict, "workflow was paused before dispatch")
 	}
-	if stored.ExecutionID != step.ExecutionID || stored.StepID != step.StepID || string(stored.Inputs) != string(step.Inputs) {
+	if stored.ExecutionID != step.ExecutionID || stored.StepID != step.StepID || stored.AgentID != step.AgentID || stored.SessionID != step.SessionID || string(stored.Inputs) != string(step.Inputs) {
 		return step, apperror.New(apperror.CodeConflict, "workflow step identity was reused")
 	}
 	return stored, nil
@@ -243,7 +296,7 @@ func (s *SQLiteStore) CompleteWorkflowStep(ctx context.Context, step domain.Work
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE workflow_steps SET status=?,output_json=?,reason=? WHERE id=? AND execution_id=? AND status='pending' AND EXISTS(SELECT 1 FROM workflow_executions WHERE id=? AND claim_owner=? AND claim_until>?)`, step.Status, string(step.Output), step.Reason, step.ID, step.ExecutionID, step.ExecutionID, owner, ts(time.Now().UTC()))
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_steps SET status=?,output_json=?,reason=? WHERE id=? AND execution_id=? AND agent_id=? AND session_id=? AND status='pending' AND EXISTS(SELECT 1 FROM workflow_executions WHERE id=? AND claim_owner=? AND claim_until>? AND (status IN ('running','waiting','waiting_approval') OR (?='completed' AND status='paused')))`, step.Status, string(step.Output), step.Reason, step.ID, step.ExecutionID, step.AgentID, step.SessionID, step.ExecutionID, owner, ts(time.Now().UTC()), step.Status)
 	if err != nil {
 		return err
 	}
