@@ -201,7 +201,7 @@ func (s *CommandRuntimeService) workerCommandJobBindingsCurrent(ctx context.Cont
 		worker.Mission.ID == job.MissionID && worker.Run.MissionID == job.MissionID &&
 		rootSHA == job.WorkspaceRootSHA256 && b.mode.ID == job.ModeSnapshotID && b.mode.Revision == job.ModeRevision &&
 		b.mode.Surface == domain.ExecutionSurfaceCode && (b.mode.Phase == domain.ExecutionPhaseDeliver ||
-		b.mode.Phase == domain.ExecutionPhasePlan && s.projectTestJobCurrent(job)) &&
+		b.mode.Phase == domain.ExecutionPhasePlan && s.projectTestJobCurrent(ctx, job)) &&
 		b.profile.ID == job.ProfileSnapshotID && b.profile.Revision == job.ProfileRevision &&
 		b.profile.Profile == commandRuntimeExecutionProfile(s.adapter) && b.profile.NetworkScope == domain.ExecutionNetworkDisabled &&
 		b.permission.ID == job.PermissionSnapshotID && b.permission.Revision == job.PermissionRevision && b.permission.Mode == job.PermissionMode &&

@@ -470,7 +470,8 @@ func migrationPlan() []migration {
 		migration{Version: 207, Name: "User-confirmed Thread context requirements", Statements: threadContextPinStatements, DisableForeignKeys: true},
 		migration{Version: 208, Name: "Fenced idle Thread context compaction", Statements: threadContextCompactionStatements()},
 		migration{Version: 209, Name: "Admission-bound delegated worker history snapshots", Statements: workerHistorySnapshotStatements},
-		migration{Version: 210, Name: "Explicit consented scheduled execution", Statements: scheduledJobExecutionStatements(), DisableForeignKeys: true})
+		migration{Version: 210, Name: "Explicit consented scheduled execution", Statements: scheduledJobExecutionStatements(), DisableForeignKeys: true},
+		migration{Version: 211, Name: "Long host-prepared project test Jobs in Plan", Statements: longProjectTestJobStatements()})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

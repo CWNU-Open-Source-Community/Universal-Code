@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/llm"
@@ -154,6 +153,7 @@ func (s *AgentRunner) prepareProjectFormat(ctx context.Context, turn domain.Supe
 
 func (s *AgentRunner) recordProjectHook(ctx context.Context, turn domain.SupervisorTurn,
 	rounds []domain.SupervisorToolRound, origin domain.ProjectHookCallOrigin,
+	wait ...toolgateway.RunTestsInput,
 ) error {
 	if len(rounds) >= domain.MaxSupervisorExecutionRounds {
 		return apperror.New(apperror.CodeResourceExhausted, "project hook requires a remaining tool round before completion")
@@ -176,7 +176,12 @@ func (s *AgentRunner) recordProjectHook(ctx context.Context, turn domain.Supervi
 	name := toolgateway.RunTestsTool
 	var raw []byte
 	if origin.Slot == "test" {
-		raw, err = json.Marshal(toolgateway.RunTestsInput{Version: toolgateway.RunTestsVersion, Target: ".", TimeoutMilliseconds: toolgateway.MaxCommandRuntimeForegroundMillis})
+		input := toolgateway.RunTestsInput{Version: toolgateway.RunTestsVersion, Action: toolgateway.CommandRuntimeActionStart,
+			Target: ".", TimeoutMilliseconds: runner.MaxCommandRuntimeTimeout.Milliseconds()}
+		if len(wait) > 0 {
+			input = wait[0]
+		}
+		raw, err = json.Marshal(input)
 	} else {
 		files, e := ResolveRunFileWorkspace(ctx, store, turn.Run, turn.Mission, s.drydocks)
 		if e != nil {
@@ -215,7 +220,9 @@ func (s *AgentRunner) recordProjectHook(ctx context.Context, turn domain.Supervi
 // rebuilds its request and lets the model inspect that evidence before replying.
 func (s *AgentRunner) beforeProjectHookFinish(ctx context.Context, turn domain.SupervisorTurn,
 	rounds []domain.SupervisorToolRound, standardCode *standardCodeSupervisorTurn,
+	waitAfterStart ...bool,
 ) ([]domain.SupervisorToolRound, bool, bool, error) {
+	startedVerification := false
 	added, err := s.prepareProjectFormat(ctx, turn, rounds, true)
 	if err != nil {
 		return rounds, false, false, err
@@ -229,22 +236,54 @@ func (s *AgentRunner) beforeProjectHookFinish(ctx context.Context, turn domain.S
 		if err != nil {
 			return rounds, false, false, err
 		}
-		key := runmutation.Fingerprint("project-hook-test.v1", selection.Fingerprint, version)
 		store, ok := s.store.(projectHookCallStore)
 		if !ok {
 			return rounds, false, false, apperror.New(apperror.CodeFailedPrecondition, "project hook execution store is unavailable")
 		}
-		previous, found, err := store.GetProjectHookCall(ctx, turn.Run.ID, key)
+		permission, err := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
 		if err != nil {
 			return rounds, false, false, err
 		}
-		if found {
-			if projectHookCommandPassed(previous) {
-				return rounds, false, false, nil
-			}
-			return rounds, false, false, apperror.New(apperror.CodeFailedPrecondition, "project verification has not passed for this file version; repair it before finishing")
+		runtime, err := s.supervisorCommandRuntimeTools(ctx, turn.Run.ID, permission.Mode)
+		if err != nil {
+			return rounds, false, false, err
 		}
-		err = s.recordProjectHook(ctx, turn, rounds, domain.ProjectHookCallOrigin{TriggerKey: key, Slot: "test", Target: ".", ConfigFingerprint: selection.Fingerprint, WorkspaceVersion: version})
+		a, err := commandruntimeadapter.DecodeAuthority(runtime.Authority)
+		if err != nil {
+			return rounds, false, false, err
+		}
+		key := runmutation.Fingerprint("project-hook-test.v2", selection.Fingerprint, version, string(runtime.Authority))
+		reader, ok := s.commandRuntime.(interface {
+			LatestProjectVerificationReceipt(context.Context, commandruntimeadapter.Authority, string) (toolgateway.ProjectVerificationReceipt, bool, error)
+		})
+		if !ok {
+			return rounds, false, false, apperror.New(apperror.CodeFailedPrecondition, "project verification receipt reader is unavailable")
+		}
+		receipt, found, err := reader.LatestProjectVerificationReceipt(ctx, a, ".")
+		if err != nil {
+			return rounds, false, false, err
+		}
+		origin := domain.ProjectHookCallOrigin{TriggerKey: key, Slot: "test", Target: ".", ConfigFingerprint: selection.Fingerprint, WorkspaceVersion: version}
+		var observation []toolgateway.RunTestsInput
+		if found {
+			if receipt.Reusable && receipt.State == "passed" {
+				return rounds, false, false, standardCode.reuseProjectVerificationReceipt(ctx, receipt)
+			}
+			terminalNeedsObservation := receipt.State == "failed" && receipt.JobRecordVersion > 0 && receipt.CompletedSourceVersion == ""
+			if receipt.State != "pending" && !terminalNeedsObservation {
+				return rounds, false, false, apperror.New(apperror.CodeFailedPrecondition, "project verification has not passed for this source version; repair it before finishing")
+			}
+			cursor, maxBytes, waitMillis := receipt.Cursor, toolgateway.MaxCommandRuntimePageBytes, int(runner.MaxCommandRuntimeWait.Milliseconds())
+			origin.TriggerKey = runmutation.Fingerprint("project-hook-test-wait.v1", key, receipt.JobID, turn.Checkpoint.AttemptID, fmt.Sprint(turn.Checkpoint.NextTurn), fmt.Sprint(len(rounds)))
+			observation = []toolgateway.RunTestsInput{{Version: toolgateway.RunTestsVersion, Action: toolgateway.CommandRuntimeActionWait, JobID: receipt.JobID, Cursor: &cursor, MaxBytes: &maxBytes, WaitMilliseconds: &waitMillis}}
+		} else if _, found, err := store.GetProjectHookCall(ctx, turn.Run.ID, key); err != nil || found {
+			if err != nil {
+				return rounds, false, false, err
+			}
+			return rounds, false, false, apperror.New(apperror.CodeFailedPrecondition, "project verification has an unresolved dispatch; inspect the original command Job before continuing")
+		}
+		startedVerification = len(observation) == 0
+		err = s.recordProjectHook(ctx, turn, rounds, origin, observation...)
 		if err != nil {
 			return rounds, false, false, err
 		}
@@ -254,6 +293,12 @@ func (s *AgentRunner) beforeProjectHookFinish(ctx context.Context, turn domain.S
 		return rounds, false, false, err
 	}
 	rounds, waiting, err := s.resumeSupervisorTools(ctx, turn, rounds, standardCode)
+	// A short first observation avoids another model request for ordinary fast
+	// tests. Longer tests retain their original Job and continue through wait.
+	if err == nil && !waiting && startedVerification && (len(waitAfterStart) == 0 || waitAfterStart[0]) {
+		observed, _, waiting, err := s.beforeProjectHookFinish(ctx, turn, rounds, standardCode, false)
+		return observed, true, waiting, err
+	}
 	return rounds, true, waiting, err
 }
 
@@ -264,6 +309,9 @@ func projectHookCommandPassed(call domain.SupervisorToolCall) bool {
 	var envelope supervisorToolResultEnvelope
 	var projection standardCodeCommandProjection
 	if json.Unmarshal([]byte(call.ResultJSON), &envelope) != nil || json.Unmarshal([]byte(envelope.Stdout), &projection) != nil || len(projection.Jobs) != 1 {
+		return false
+	}
+	if projection.VerificationReceipt != nil && (!projection.VerificationReceipt.Reusable || projection.VerificationReceipt.State != "passed") {
 		return false
 	}
 	// Host isolation limitations are retained as evidence; they do not change
@@ -286,11 +334,7 @@ func (s *AgentRunner) projectHookWorkspaceVersion(ctx context.Context, turn doma
 	if err != nil {
 		return "", err
 	}
-	snapshot, err := workspacecheckpoint.Capture(ctx, workspacecheckpoint.CaptureRequest{ID: "project-hook-version", RunID: turn.Run.ID, MissionID: turn.Mission.ID, SessionID: turn.Run.SessionID, WorkspaceID: files.Workspace.ID, WorkspaceRoot: files.Workspace.RootPath, AttemptID: turn.Checkpoint.AttemptID, CapabilityGeneration: strings.Repeat("0", 64), Trigger: workspacecheckpoint.TriggerFileTool, Phase: workspacecheckpoint.PhaseBefore, TriggerReceiptID: "project-hook-version", CreatedAt: time.Now().UTC()})
-	if err != nil {
-		return "", err
-	}
-	return projectHookSnapshotVersion(snapshot)
+	return projectVerificationWorkspaceVersion(ctx, turn.Run, turn.Mission, files.Workspace.ID, files.Workspace.RootPath)
 }
 
 func projectHookSnapshotVersion(snapshot workspacecheckpoint.Snapshot) (string, error) {

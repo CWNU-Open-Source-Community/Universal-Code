@@ -183,6 +183,7 @@ func (l StandardCodeSupervisorLimits) Validate() error {
 }
 
 type StandardCodeSupervisorJob struct {
+	ProjectTest        bool   `json:"project_test,omitempty"`
 	JobID              string `json:"job_id"`
 	PermissionRevision int64  `json:"permission_revision"`
 	MutationEpoch      int    `json:"mutation_epoch"`
@@ -191,7 +192,7 @@ type StandardCodeSupervisorJob struct {
 }
 
 func (j StandardCodeSupervisorJob) Validate() error {
-	if !ValidAgentID(j.JobID) || j.PermissionRevision <= 0 || j.MutationEpoch <= 0 ||
+	if !ValidAgentID(j.JobID) || j.PermissionRevision <= 0 || j.MutationEpoch < 0 || (j.MutationEpoch == 0 && !j.ProjectTest) ||
 		!validStandardCodeSupervisorJobState(j.State) {
 		return errors.New("Standard Code Supervisor Job ownership is invalid")
 	}

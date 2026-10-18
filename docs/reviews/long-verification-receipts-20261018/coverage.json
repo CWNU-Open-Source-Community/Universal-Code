@@ -1,0 +1,211 @@
+{
+  "schema_version": "host-delegate-review.v1",
+  "date": "2026-10-18",
+  "mode": "workspace",
+  "base_commit": "24162e3da1ae43f10f1dc632402a473374e90779",
+  "total_files": 28,
+  "reviewable_files": 20,
+  "reviewed_files": 20,
+  "skipped_files": 0,
+  "coverage_rate": 1.0,
+  "coverage_scope": "OCR-selected changed files and reachable context, not full-repository or full-source coverage. New production files were read in full; generated SQL baseline reviewed only in changed trigger hunks.",
+  "preview": "D:/CodexProjects/long-verification-receipts-20261018/ocr-preview.json",
+  "rules": "D:/CodexProjects/long-verification-receipts-20261018/ocr-rules.json",
+  "entries": [
+    {
+      "path": "internal/application/command_operation_authority.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Changed dispatch guard and existing native operation authority checks"
+    },
+    {
+      "path": "internal/application/command_runtime.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Run/start/wait result attachment, bounded original-Job observation, durable Plan Job recovery and existing authority boundary"
+    },
+    {
+      "path": "internal/application/command_runtime_authority.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Source binding, immutable rebinding comparison and original source propagation on wait"
+    },
+    {
+      "path": "internal/application/command_runtime_worker.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Plan Job currentness call and worker authority caller"
+    },
+    {
+      "path": "internal/application/project_hooks_runtime.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Changed Hook deduplication, permission review/resume, source key, wait and finish paths with existing model boundary context"
+    },
+    {
+      "path": "internal/application/run_tests.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Registered-test compilation, exact wait authorization and original command preparation"
+    },
+    {
+      "path": "internal/application/standard_code_supervisor.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Changed background budget/ownership, Plan state preservation, terminal evidence and current-epoch receipt reuse"
+    },
+    {
+      "path": "internal/commandruntimeadapter/adapter.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Changed host-only source identity validation and legacy operation authority compatibility"
+    },
+    {
+      "path": "internal/domain/standard_code_supervisor.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Changed project-test background ownership validation, including mutation epoch zero"
+    },
+    {
+      "path": "internal/store/clean_install_baseline.sql",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Generated trigger diff only, compared with v211 source and representative legacy-upgrade equivalence test; full generated SQL not manually read"
+    },
+    {
+      "path": "internal/store/clean_install_baseline_generated.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "All generated metadata changes; generator and baseline equivalence test checked"
+    },
+    {
+      "path": "internal/store/migrations.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Latest schema version change and migration history contract"
+    },
+    {
+      "path": "internal/store/sqlite.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "v211 migration registration and previous v210 preservation"
+    },
+    {
+      "path": "internal/toolgateway/command_runtime.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "Optional receipt projection on native result, preserving existing public Job output filtering"
+    },
+    {
+      "path": "internal/toolgateway/run_tests.go",
+      "status": "modified",
+      "disposition": "reviewed",
+      "scope": "All changed payload normalization, legacy canonical bytes, run/start/wait bounds, exact prepared command and tool schema"
+    },
+    {
+      "path": "internal/application/project_verification.go",
+      "status": "added",
+      "disposition": "reviewed",
+      "scope": "Entire new source plus actor, backend, snapshot and native Job callers; terminal evidence fix re-read after change"
+    },
+    {
+      "path": "internal/domain/project_verification.go",
+      "status": "added",
+      "disposition": "reviewed",
+      "scope": "Entire new native-ledger read projection"
+    },
+    {
+      "path": "internal/store/migration_v211.go",
+      "status": "added",
+      "disposition": "reviewed",
+      "scope": "Entire new migration and original v202 trigger branches; generic Plan admission predicates retained"
+    },
+    {
+      "path": "internal/store/project_verification.go",
+      "status": "added",
+      "disposition": "reviewed",
+      "scope": "Entire new actor-scoped SQL read projection, row closure, errors and chronological ordering"
+    },
+    {
+      "path": "internal/toolgateway/project_verification.go",
+      "status": "added",
+      "disposition": "reviewed",
+      "scope": "Entire new public receipt structure and consumer paths"
+    }
+  ],
+  "selector_exclusions": [
+    {
+      "path": "docs/development-history.md",
+      "status": "modified",
+      "selector_reason": "unsupported_ext",
+      "disposition": "supplemental_reviewed",
+      "scope": "Changed history row or full new acceptance record"
+    },
+    {
+      "path": "internal/application/project_hooks_runtime_test.go",
+      "status": "modified",
+      "selector_reason": "default_path",
+      "disposition": "supplemental_reviewed",
+      "scope": "Changed tests and fixtures; new tests read in full"
+    },
+    {
+      "path": "internal/toolgateway/run_tests_test.go",
+      "status": "modified",
+      "selector_reason": "default_path",
+      "disposition": "supplemental_reviewed",
+      "scope": "Changed tests and fixtures; new tests read in full"
+    },
+    {
+      "path": "docs/acceptance/2026-10-18-long-project-verification.md",
+      "status": "added",
+      "selector_reason": "unsupported_ext",
+      "disposition": "supplemental_reviewed",
+      "scope": "Changed history row or full new acceptance record"
+    },
+    {
+      "path": "docs/reviews/long-verification-receipts-20261018/README.md",
+      "status": "added",
+      "selector_reason": "user_exclude",
+      "disposition": "excluded_review_artifact",
+      "scope": "Review output excluded to avoid recursive self-review"
+    },
+    {
+      "path": "docs/reviews/long-verification-receipts-20261018/coverage.json",
+      "status": "added",
+      "selector_reason": "user_exclude",
+      "disposition": "excluded_review_artifact",
+      "scope": "Review output excluded to avoid recursive self-review"
+    },
+    {
+      "path": "internal/application/project_verification_test.go",
+      "status": "added",
+      "selector_reason": "default_path",
+      "disposition": "supplemental_reviewed",
+      "scope": "Changed tests and fixtures; new tests read in full"
+    },
+    {
+      "path": "internal/store/migration_v211_test.go",
+      "status": "added",
+      "selector_reason": "default_path",
+      "disposition": "supplemental_reviewed",
+      "scope": "Changed tests and fixtures; new tests read in full"
+    }
+  ],
+  "unresolved_findings": [],
+  "corrected_findings": [
+    {
+      "category": "bug",
+      "severity": "high",
+      "path": "internal/application/project_verification.go",
+      "content": "Compare the second terminal source capture before accepting an exit-zero receipt.",
+      "resolution": "Terminal capture compares source and test definition and marks mismatches stale."
+    },
+    {
+      "category": "bug",
+      "severity": "high",
+      "path": "internal/application/project_verification.go",
+      "content": "A later wait could replace a previously mismatching terminal source version after the old bytes were restored.",
+      "resolution": "First observed CompletedSourceVersion and stale state are retained; an actual source-writing Node test restores bytes then observes the same Job and remains stale."
+    }
+  ]
+}
