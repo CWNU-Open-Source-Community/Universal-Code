@@ -171,6 +171,14 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 	baseKey := "command-runtime-docker-" + runmutation.Fingerprint(
 		"command_runtime_docker_adapter_operation.v1", scope.RunID,
 		scope.OperationKey)[:24]
+	if spec.Spec.WorkspaceMode == runner.CommandRuntimeWorkspaceSharedService &&
+		workerCommandRuntimeFromContext(ctx) == nil && batchValidationRuntimeFromContext(ctx) == nil && gitBisectRuntimeFromContext(ctx) == nil {
+		job, err := e.sharedServiceJob(ctx, scope, spec)
+		if err != nil {
+			return noProcess, err
+		}
+		baseKey = commandRuntimeDockerServiceKey(job)
+	}
 	stdinPolicy := sandbox.DockerStandardCodeStdinClosed
 	if spec.Spec.StdinPolicy == runner.CommandRuntimeStdinPipe {
 		stdinPolicy = sandbox.DockerStandardCodeStdinPipe

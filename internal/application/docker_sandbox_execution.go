@@ -781,8 +781,11 @@ func (s *DockerSandboxService) reconstructDockerSandboxWriteRequest(ctx context.
 		workspaceCtx = context.WithValue(workspaceCtx, gitBisectRuntimeKey{}, (*gitBisectRuntimeProof)(nil))
 		workspaceCtx = context.WithValue(workspaceCtx, gitBisectCleanupRootKey{}, source)
 	}
-	workspace, err := s.resolveDockerSandboxWorkspace(workspaceCtx, admission.RunID,
-		admission.WorkspaceID, manifest, false)
+	workspace, sharedService, err := s.sharedServiceCleanupWorkspace(workspaceCtx, admission)
+	if err == nil && !sharedService {
+		workspace, err = s.resolveDockerSandboxWorkspace(workspaceCtx, admission.RunID,
+			admission.WorkspaceID, manifest, false)
+	}
 	if err != nil {
 		return sandbox.DockerContainerPlan{}, sandbox.DockerContainerWriteRequest{}, err
 	}
