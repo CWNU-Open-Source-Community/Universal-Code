@@ -2164,7 +2164,12 @@
         "operator_command_request.v1",
         "permission_runtime_epoch.v1",
         "project-actions.v1",
+        "project-hook-test-wait.v1",
+        "project-hook-test.v2",
         "project-preparation.v1",
+        "project-test-definition.v1",
+        "project-verification-receipt.v1",
+        "project-verification-reuse.v1",
         "project_preparation_key.v1",
         "project_preparation_request.v1",
         "risk_escalation.v1",
@@ -2284,7 +2289,6 @@
         "prayu.locale.v1",
         "project-hook-file-version.v1",
         "project-hook-format.v1",
-        "project-hook-test.v1",
         "project-hook-workspace.v1",
         "project-hooks.v1",
         "project-rule.v1",
@@ -2293,7 +2297,14 @@
         "project_instruction_guidance.v1",
         "project_instruction_snapshot.v1"
       ],
-      "retired_identifiers": []
+      "retired_identifiers": [
+        {
+          "identifier": "project-hook-test.v1",
+          "decision": "Source- and authority-bound project-hook-test.v2 replaces the foreground-only test trigger key; current test Job keys belong to process-runtime-lifecycle.",
+          "migration_evidence": "Existing project_hook_calls trigger keys and native Supervisor tool authority/results are retained without rewriting. internal/store/project_hook_calls.go GetProjectHookCall and enrichProjectHookRounds continue reading opaque historical keys. Old calls without a source pin remain readable and cannot supply a reusable verification receipt; no historical key is converted into new execution authority.",
+          "rollback": "Retain historical Hook and native tool readers. Restoring the v1 producer requires a separate execution review; do not rewrite persisted keys or infer new receipts from historical success."
+        }
+      ]
     },
     {
       "id": "provider-stream-presentation",

@@ -33,3 +33,5 @@ OCR 审阅修复了终态记录可被后续 wait 覆盖的问题。修复后以�
 `go test -p 1 ./internal/toolgateway ./internal/store ./internal/domain ./internal/commandruntimeadapter -run '^(TestRunTests|TestSchemaV211|TestSchemaHistoryListsEveryVersionInOrder|TestCleanInstallBaselineMatchesRepresentativeLegacyUpgrades|TestStandardCodeSupervisor|Test.*Adapter|Test.*Authority)' -count=1 -timeout 180s` 通过。包含 v210 升级后的原生调用保留、v211 准入约束、生成基线与代表性历史升级一致性、旧版 run-tests 编码及后台参数边界。各包耗时为 `1.160s / 142.282s / 0.518s / 0.496s`；同样使用 `GOMAXPROCS=2 GOGC=50`。日志为 `D:/CodexProjects/long-verification-receipts-20261018/contracts-tests.log`。
 
 `go generate ./internal/store` 与 `git diff --check` 已执行。未运行 application 或仓库全量套件。
+
+后续协议登记检查发现 5 个新协议标识尚未登记，以及旧 `project-hook-test.v1` 已停止写入。补齐 `process-runtime-lifecycle` 的新标识并记录旧 Hook key 的退休与历史读取证据后，按仓库命令 `go run -p 1 ./cmd/protocolregistry -write` 更新生成索引。`GOMAXPROCS=2 GOGC=50 go test -p 1 ./internal/protocolregistry -run '^(TestRepositoryRegistryIsValidSynchronizedAndNonAuthorizing|TestEvolutionRetainsDurableReaderHistory)$' -count=1 -timeout 90s -v` 通过，耗时 `1.928s`；本次没有编译 application。日志为 `D:/CodexProjects/long-verification-receipts-20261018/protocol-registration-tests.log`。

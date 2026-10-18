@@ -32,8 +32,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
 | [mcp-live-input](#mcp-live-input) | `ephemeral` | MCP client maintainers | 1 | false |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
-| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 60 | true |
-| [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 11 | true |
+| [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 65 | true |
+| [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 10 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
 | [release-and-packaging-contracts](#release-and-packaging-contracts) | `external-durable` | Desktop release and packaging maintainers | 4 | true |
@@ -1255,7 +1255,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `process-runtime-lifecycle-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>60 active identifiers</summary>
+<details><summary>65 active identifiers</summary>
 
 - `application_docker_container_lifecycle_post_exit.v1`
 - `application_docker_container_lifecycle_running.v1`
@@ -1307,7 +1307,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `operator_command_request.v1`
 - `permission_runtime_epoch.v1`
 - `project-actions.v1`
+- `project-hook-test-wait.v1`
+- `project-hook-test.v2`
 - `project-preparation.v1`
+- `project-test-definition.v1`
+- `project-verification-receipt.v1`
+- `project-verification-reuse.v1`
 - `project_preparation_key.v1`
 - `project_preparation_request.v1`
 - `risk_escalation.v1`
@@ -1347,12 +1352,11 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `project-instruction-dispatch-reader` (`v1`, active) at `internal/application/project_instruction_delivery.go`
   - `project-instruction-history-reader` (`v1`, active) at `internal/store/run_instruction_snapshots.go`
 
-<details><summary>11 active identifiers</summary>
+<details><summary>10 active identifiers</summary>
 
 - `prayu.locale.v1`
 - `project-hook-file-version.v1`
 - `project-hook-format.v1`
-- `project-hook-test.v1`
 - `project-hook-workspace.v1`
 - `project-hooks.v1`
 - `project-rule.v1`
@@ -1360,6 +1364,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `project_instruction_delivery.v1`
 - `project_instruction_guidance.v1`
 - `project_instruction_snapshot.v1`
+
+</details>
+
+<details><summary>1 retained retirement records</summary>
+
+- `project-hook-test.v1`: Source- and authority-bound project-hook-test.v2 replaces the foreground-only test trigger key; current test Job keys belong to process-runtime-lifecycle.
 
 </details>
 
