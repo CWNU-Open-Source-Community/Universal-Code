@@ -127,3 +127,35 @@ it("groups long histories by month without losing sparse daily usage", async () 
   expect(screen.getByRole("row", { name: "2026-04 30" })).toBeVisible();
   expect(screen.getByRole("row", { name: "2026-10 5" })).toBeVisible();
 });
+
+it("highlights a heatmap date and shows its tokens on hover, click, and keyboard focus", async () => {
+  const user = userEvent.setup();
+  render(<LocaleProvider><UsageActivity days={[
+    { date: "2026-08-28", calls: 3, total_tokens: 1_400_000_000 },
+    { date: "2026-08-29", calls: 1, total_tokens: 80 },
+  ]} /><button type="button">Outside heatmap</button></LocaleProvider>);
+  const cells = within(screen.getByRole("group", { name: /Daily activity/ })).getAllByRole("button");
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  await user.hover(cells[0]);
+  expect(cells[0]).toHaveAttribute("data-active", "true");
+  expect(cells[0]).toHaveAttribute("aria-describedby", screen.getByRole("tooltip").id);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("1.4B tokens");
+  expect(within(screen.getByRole("tooltip")).getByText("2026-08-28")).toHaveAttribute("dateTime", "2026-08-28");
+  await user.unhover(cells[0]);
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(cells[0]).not.toHaveAttribute("data-active");
+  await user.click(cells[0]);
+  await user.unhover(cells[0]);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("1.4B tokens");
+  await user.keyboard("{ArrowDown}");
+  expect(cells[1]).toHaveFocus();
+  expect(cells[1]).toHaveAttribute("data-active", "true");
+  expect(screen.getByRole("tooltip")).toHaveTextContent("80 tokens2026-08-29");
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(cells[1]).toHaveFocus();
+  await user.click(cells[0]);
+  await user.tab();
+  expect(screen.getByRole("button", { name: "Outside heatmap" })).toHaveFocus();
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+});

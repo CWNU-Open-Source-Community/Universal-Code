@@ -44,8 +44,9 @@ false until that matrix is signed.
 
 在「设置 → 用量统计」查看 Universal-Code 自身的模型调用。今日、近 30 天和全部
 历史可切换 Token 总量、输入/输出/缓存明细、趋势、模型占比和最近八个会话；点击
-会话标题可回到对话。活动热图固定展示最近 26 周，支持方向键查看日期。页面沿用
-当前主题和 Mono 字体，中文与 English 即时切换。
+会话标题可回到对话。活动热图固定展示最近 26 周；悬停、点击或方向键选中格子时，
+白色边框标出当前日期，浮层显示日期和 Token 数，按 Esc 可关闭。页面沿用当前主题
+和 Mono 字体，中文与 English 即时切换。
 
 [深色页面](evidence/usage-statistics/usage-dark.png)和
 [窄屏页面](evidence/usage-statistics/usage-mobile.png)来自实际浏览器；截图中的用量为

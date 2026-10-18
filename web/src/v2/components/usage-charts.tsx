@@ -66,6 +66,8 @@ export function UsageActivity({ days }: { days: UsageDay[] }) {
   const { locale, t } = useLocale();
   const titleID = useId();
   const [selectedDate, setSelectedDate] = useState("");
+  const tooltipID = useId();
+  const [tooltipDate, setTooltipDate] = useState("");
   const cells = useRef<Array<HTMLButtonElement | null>>([]);
   const selected = Math.max(0, selectedDate ? days.findIndex((day) => day.date === selectedDate) : days.length - 1);
   const current = days[selected];
@@ -73,6 +75,10 @@ export function UsageActivity({ days }: { days: UsageDay[] }) {
   const peak = Math.max(1, ...days.map((day) => day.total_tokens));
   const leading = days.length ? (new Date(`${days[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
   const columns = Math.ceil((leading + days.length) / 7);
+  const tooltipIndex = days.findIndex((day) => day.date === tooltipDate);
+  const tooltipDay = days[tooltipIndex];
+  const tooltipCell = leading + tooltipIndex;
+  const showDate = (date: string) => { setSelectedDate(date); setTooltipDate(date); };
   const months: Array<{ column: number; label: string }> = [];
   days.forEach((day, index) => {
     const column = Math.floor((leading + index) / 7);
@@ -92,10 +98,15 @@ export function UsageActivity({ days }: { days: UsageDay[] }) {
         const level = day.total_tokens > 0 ? Math.max(1, Math.ceil(day.total_tokens / peak * 4)) : day.calls > 0 ? 1 : 0;
         const label = t(`${day.date}：${day.total_tokens.toLocaleString(locale)} Token，${day.calls} 次调用`,
           `${day.date}: ${day.total_tokens.toLocaleString(locale)} tokens, ${day.calls} calls`);
-        return <button type="button" key={day.date} data-level={level} aria-label={label} title={label}
+        return <button type="button" key={day.date} data-level={level} aria-label={label}
+          data-active={day.date === tooltipDate || undefined} aria-describedby={day.date === tooltipDate ? tooltipID : undefined}
           tabIndex={index === selected ? 0 : -1} ref={(node) => { cells.current[index] = node; }}
-          onFocus={() => setSelectedDate(day.date)} onMouseEnter={() => setSelectedDate(day.date)} onClick={() => setSelectedDate(day.date)}
+          onFocus={() => showDate(day.date)} onMouseEnter={() => showDate(day.date)} onClick={() => showDate(day.date)}
+          onBlur={() => setTooltipDate("")} onMouseLeave={(event) => {
+            if (document.activeElement !== event.currentTarget) setTooltipDate("");
+          }}
           onKeyDown={(event) => {
+            if (event.key === "Escape") { event.preventDefault(); setTooltipDate(""); return; }
             const offsets: Record<string, number> = { ArrowLeft: -7, ArrowRight: 7, ArrowUp: -1, ArrowDown: 1, Home: -index, End: days.length - 1 - index };
             if (!(event.key in offsets)) return;
             event.preventDefault();
@@ -103,6 +114,11 @@ export function UsageActivity({ days }: { days: UsageDay[] }) {
             cells.current[next]?.focus();
           }} />;
       })}
+      {tooltipDay && <div id={tooltipID} role="tooltip" className="v2-usage-tooltip" style={{
+        left: `clamp(70px, calc((100% + var(--usage-heatmap-gap)) * ${(Math.floor(tooltipCell / 7) + .5) / columns} - var(--usage-heatmap-gap) / 2), calc(100% - 70px))`,
+        top: `calc((100% + var(--usage-heatmap-gap)) * ${(tooltipCell % 7) / 7})`,
+      }}><div><strong>{new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(tooltipDay.total_tokens)}</strong> tokens</div>
+        <time dateTime={tooltipDay.date}>{tooltipDay.date}</time></div>}
     </div>
     <footer className="v2-usage-activity-caption"><span>{current ? `${current.date} / ${current.total_tokens.toLocaleString(locale)} Token` : ""}</span>
       <span className="v2-usage-legend" aria-label={t("色深表示 Token 用量", "Darker cells indicate more tokens")}>{t("少", "Less")}

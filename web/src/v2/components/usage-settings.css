@@ -67,8 +67,12 @@
 .v2-usage-activity { border-top: 1px solid var(--v2-border); padding-top: 24px; }
 .v2-usage-heatmap-months { position: relative; color: var(--v2-muted); height: 24px; font-size: 11px; }
 .v2-usage-heatmap-months > span { position: absolute; }
-.v2-usage-heatmap { display: grid; grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: 4px; }
+.v2-usage-heatmap { --usage-heatmap-gap: 4px; position: relative; display: grid; grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: var(--usage-heatmap-gap); }
 .v2-usage-heatmap button { display: block; width: 100%; aspect-ratio: 1; border-radius: 3px; border: 0; padding: 0; cursor: pointer; }
+.v2-usage .v2-usage-heatmap button[data-active="true"] { outline: 2px solid #fff; outline-offset: -1px; box-shadow: 0 0 0 1px rgb(0 0 0 / 30%); }
+.v2-usage-tooltip { position: absolute; z-index: 2; width: 140px; box-sizing: border-box; padding: 9px 12px; transform: translate(-50%, calc(-100% - 8px)); pointer-events: none; border: 1px solid rgb(255 255 255 / 12%); border-radius: 8px; background: rgb(27 34 44 / 96%); color: #c6d1df; box-shadow: 0 4px 12px rgb(0 0 0 / 20%); text-align: center; font-size: 12px; line-height: 1.5; }
+.v2-usage-tooltip strong { color: #f4f7fa; font-size: 14px; font-weight: 600; }
+.v2-usage-tooltip time { display: block; font-size: 11px; margin-top: 2px; }
 .v2-usage [data-level="0"] { background: color-mix(in srgb, var(--v2-muted) 10%, transparent); }
 .v2-usage [data-level="1"] { background: color-mix(in srgb, var(--usage-chart) 26%, transparent); }
 .v2-usage [data-level="2"] { background: color-mix(in srgb, var(--usage-chart) 48%, transparent); }
@@ -93,7 +97,7 @@
   .v2-usage-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
   .v2-usage-breakdown dd { font-size: 17px; }
   .v2-usage-plot { height: 140px; }
-  .v2-usage-heatmap { gap: 2px; }
+  .v2-usage-heatmap { --usage-heatmap-gap: 2px; }
   .v2-usage-heatmap button { border-radius: 2px; }
 }
 @media (forced-colors: active) {
