@@ -1111,6 +1111,9 @@
   position: relative;
   z-index: 30;
 }
+.v2-composer-dock:has(.v2-composer-card) { display: flex; flex-direction: column; box-sizing: border-box; max-height: calc(100% - 24px); }
+.v2-composer-dock:has(.v2-composer-card) > :not(.v2-composer-card) { flex-shrink: 0; }
+.v2-composer-card { display: flex; flex-direction: column; flex-shrink: 1; box-sizing: border-box; margin: 0 auto 8px; width: 100%; max-width: var(--v2-composer-width); min-height: 0; max-height: min(320px, 42dvh); overflow: hidden; overflow-wrap: anywhere; border: 1px solid var(--v2-border); border-radius: 20px; background: var(--prayu-surface-solid); color: var(--v2-ink); font-size: 14px; line-height: 1.5; }
 .v2-run-recovery {
   align-items: center;
   backdrop-filter: blur(30px) saturate(100%);

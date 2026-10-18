@@ -714,7 +714,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const frame = requestAnimationFrame(() => {
       const container = composerContainerRef.current;
       if (container?.dataset.threadId === composerFocusRequest.threadID && !container.hidden) {
-        container.querySelector<HTMLElement>('textarea, [contenteditable="true"][role="textbox"]')?.focus();
+        const compact = container.querySelector<HTMLElement>(".v2-composer-compact-trigger");
+        const target = compact?.getClientRects().length ? compact
+          : container.querySelector<HTMLElement>('textarea, [contenteditable="true"][role="textbox"]');
+        target?.focus();
       }
       setComposerFocusRequest((current) => current === composerFocusRequest ? null : current);
     });
@@ -1042,7 +1045,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
         {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile} />}
-        {view === "conversation" && <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
@@ -1120,6 +1122,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         <button className="v2-composer-chip" onClick={() => setDeliveryMode("next_turn")} type="button">{t("切换为下一轮处理", "Switch to next turn")}</button>
       </p>}
       </div>
+      {view === "conversation" && <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive}
+        onDismiss={() => setComposerFocusRequest({ threadID })} />}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
         paused={working || activePane !== null || menuOpen || view !== "conversation"} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
