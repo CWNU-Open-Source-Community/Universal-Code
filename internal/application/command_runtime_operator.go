@@ -174,6 +174,9 @@ func (s *CommandRuntimeService) runPreparedOperatorCommand(ctx context.Context, 
 			}
 			if err == nil {
 				err = s.waitForOperatorCommand(leaseCtx, value.Jobs[0].ID)
+			} else {
+				// Receipt assembly can fail after Start has committed an owned Job.
+				err = errors.Join(err, s.cancelForegroundJob(value.Jobs[0].ID))
 			}
 			job, readErr := s.store.GetCommandRuntimeJob(context.WithoutCancel(leaseCtx), value.Jobs[0].ID)
 			result = OperatorCommandResult{Job: job, Replayed: value.Replayed}
