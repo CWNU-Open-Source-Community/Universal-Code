@@ -4,7 +4,18 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { ArchiveRestore, ArrowRight, BookOpen, Monitor, Search, Trash2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WebAccessMode, WorkspaceView } from "../../api/types";
-import { applyPrayuTheme, readPrayuTheme, type PrayuTheme } from "../../lib/appearance";
+import {
+  applyPrayuGlassSettings,
+  applyPrayuTheme,
+  defaultPrayuGlassSettings,
+  prayuGlassPresets,
+  readPrayuGlassSettings,
+  readPrayuTheme,
+  resetPrayuGlassSettings,
+  type PrayuGlassPreset,
+  type PrayuGlassSettings,
+  type PrayuTheme,
+} from "../../lib/appearance";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { v2QueryKeys } from "../query-keys";
 import type { V2SettingsSection } from "./sidebar";
@@ -170,7 +181,33 @@ function GeneralSettings({ threadID, workspaces, onPermissions }: {
 function AppearanceSettings() {
   const { t } = useLocale();
   const [theme, setTheme] = useState<PrayuTheme>(() => readPrayuTheme());
-  const select = (next: PrayuTheme) => { setTheme(next); applyPrayuTheme(next); };
+  const [glass, setGlass] = useState<PrayuGlassSettings>(() => readPrayuGlassSettings());
+  const select = (next: PrayuTheme) => {
+    setTheme(next);
+    applyPrayuTheme(next);
+  };
+  const updateGlass = (patch: Partial<PrayuGlassSettings>) => {
+    setGlass(applyPrayuGlassSettings(patch));
+  };
+  const applyPreset = (preset: PrayuGlassPreset) => {
+    updateGlass(prayuGlassPresets[preset]);
+  };
+  const resetGlass = () => {
+    setGlass(resetPrayuGlassSettings());
+  };
+  const activePreset: PrayuGlassPreset | null =
+    (["clear", "standard", "frosted"] as const).find(
+      (key) =>
+        glass.blur === prayuGlassPresets[key].blur &&
+        glass.frost === prayuGlassPresets[key].frost &&
+        glass.brightness === prayuGlassPresets[key].brightness,
+    ) ?? null;
+  const isDefaultGlass =
+    glass.mode === defaultPrayuGlassSettings.mode &&
+    glass.blur === defaultPrayuGlassSettings.blur &&
+    glass.frost === defaultPrayuGlassSettings.frost &&
+    glass.brightness === defaultPrayuGlassSettings.brightness &&
+    glass.glow === defaultPrayuGlassSettings.glow;
   return <><h1>{t("外观", "Appearance")}</h1><section className="v2-settings-section"><h2>{t("主题与材质", "Theme & materials")}</h2>
     <div className="v2-settings-card v2-appearance-card">
       <div className="v2-theme-options" role="group" aria-label={t("应用主题", "App theme")}>
@@ -179,8 +216,57 @@ function AppearanceSettings() {
           <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
           <strong>{option === "light" ? t("浅色", "Light") : option === "dark" ? t("深色", "Dark") : t("雾透", "Mist")}</strong>
         </button>)}</div>
-      <p>{t("雾透让窗口背景透出柔和的灰蓝层次；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "Mist adds soft blue-gray translucency; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
-    </div></section></>;
+      <p>{t("雾透采用灰蓝透色与轻盈的磨砂质感；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "Mist combines a muted blue-gray tint with light frosted glass; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
+    </div></section>
+    {theme === "glass" && <section className="v2-settings-section" aria-label={t("雾透玻璃参数", "Mist glass tuning")}>
+      <h2>{t("雾透材质", "Mist material")}</h2>
+      <div className="v2-settings-card v2-glass-settings-card">
+        <SettingRow detail={t("云母效果将侧栏与顶栏悬浮为圆角毛玻璃卡片；兼容模式保留原始边框布局。", "Mica floats sidebar and titlebar as rounded frosted cards; Compat keeps the stock framed layout.")} title={t("玻璃模式", "Glass mode")}>
+          <div className="v2-setting-segmented" role="group" aria-label={t("玻璃模式", "Glass mode")}>
+            <button aria-pressed={glass.mode === "mica"} onClick={() => updateGlass({ mode: "mica" })} type="button">{t("云母效果", "Mica")}</button>
+            <button aria-pressed={glass.mode === "compat"} onClick={() => updateGlass({ mode: "compat" })} type="button">{t("兼容模式", "Compat")}</button>
+          </div>
+        </SettingRow>
+        <SettingRow detail={t("一键切换清透、标准或高磨砂雾面玻璃质感。", "Quickly toggle between clear, standard, and frosted textures.")} title={t("材质预设", "Material presets")}>
+          <div className="v2-setting-segmented" role="group" aria-label={t("材质预设", "Material presets")}>
+            <button aria-pressed={activePreset === "clear"} onClick={() => applyPreset("clear")} type="button">{t("清透", "Clear")}</button>
+            <button aria-pressed={activePreset === "standard"} onClick={() => applyPreset("standard")} type="button">{t("标准", "Standard")}</button>
+            <button aria-pressed={activePreset === "frosted"} onClick={() => applyPreset("frosted")} type="button">{t("磨砂", "Frosted")}</button>
+          </div>
+        </SettingRow>
+        <SettingRow detail={t("调节毛玻璃背景高斯模糊半径（0–40 px）。", "Adjust Gaussian blur radius for frosted glass (0–40 px).")} title={t("玻璃模糊度", "Glass blur")}>
+          <div className="v2-glass-slider-control">
+            <input aria-label={t("玻璃模糊度", "Glass blur")} max={40} min={0}
+              onChange={(event) => updateGlass({ blur: Number(event.currentTarget.value) })}
+              step={0.5} type="range" value={glass.blur} />
+            <output aria-live="off">{glass.blur} px</output>
+          </div>
+        </SettingRow>
+        <SettingRow detail={t("调节悬浮卡片与侧栏的雾化不透明度（0–100%）。", "Adjust frosted white tint opacity for floating surfaces (0–100%).")} title={t("磨砂度", "Frost opacity")}>
+          <div className="v2-glass-slider-control">
+            <input aria-label={t("磨砂度", "Frost opacity")} max={100} min={0}
+              onChange={(event) => updateGlass({ frost: Number(event.currentTarget.value) })}
+              step={1} type="range" value={glass.frost} />
+            <output aria-live="off">{glass.frost}%</output>
+          </div>
+        </SettingRow>
+        <SettingRow detail={t("调节背景明度（50% 为灰蓝底色，100% 为纯白）。", "Adjust canvas brightness (50% is blue-gray, 100% is white).")} title={t("背景亮度", "Canvas brightness")}>
+          <div className="v2-glass-slider-control">
+            <input aria-label={t("背景亮度", "Canvas brightness")} max={100} min={50}
+              onChange={(event) => updateGlass({ brightness: Number(event.currentTarget.value) })}
+              step={1} type="range" value={glass.brightness} />
+            <output aria-live="off">{glass.brightness}%</output>
+          </div>
+        </SettingRow>
+        <SettingRow detail={t("在背景顶部加入轻微的灰蓝柔光。", "Add a subtle blue-gray wash to the top of the canvas.")} title={t("氛围光斑", "Ambient glows")}>
+          <button aria-checked={glass.glow} aria-label={t("氛围光斑", "Ambient glows")} className="v2-cdp-switch"
+            onClick={() => updateGlass({ glow: !glass.glow })} role="switch" type="button"><i /></button>
+        </SettingRow>
+        <SettingRow detail={t("恢复标准云母效果（模糊度 5 px、磨砂度 20%、亮度 50%、关闭光斑）。", "Reset to standard Mica settings (blur 5 px, frost 20%, brightness 50%, no glows).")} title={t("默认参数", "Default settings")}>
+          <button className="v2-setting-link" disabled={isDefaultGlass} onClick={resetGlass} type="button">{t("还原默认值", "Reset to defaults")}</button>
+        </SettingRow>
+      </div>
+    </section>}</>;
 }
 
 function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraft = false,

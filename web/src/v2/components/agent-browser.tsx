@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser, type AgentBrowserStatus } from "../../api/agent-browser";
 import "./agent-browser.css";
 
-export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean }) {
+export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
   return <AgentBrowserCard key={JSON.stringify([props.client.baseURL, props.runID])} {...props} />;
 }
 
@@ -49,7 +49,7 @@ function screenshotPath(runID: string, status: AgentBrowserStatus): string {
   })}`;
 }
 
-function AgentBrowserCard({ client, runID, running }: { client: APIClient; runID: string; running: boolean }) {
+function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
   const queries = useQueryClient();
   const key = agentBrowserQueryKey(client.baseURL, runID);
   const [message, setMessage] = useState("");
@@ -57,6 +57,10 @@ function AgentBrowserCard({ client, runID, running }: { client: APIClient; runID
   const status = useQuery({ queryKey: key, queryFn: ({ signal }) => readAgentBrowser(client, runID, signal), retry: false,
     refetchOnMount: "always", refetchInterval: (query) => running && !query.state.error ? 3000 : false });
   const current = status.data;
+  const noticeState = current && ["starting", "ready", "loading", "busy"].includes(current.state) ? "active" : current?.state;
+  const noticeKey = JSON.stringify([status.isError, current?.session_id, noticeState, current?.unavailable_code, current?.failure_code]);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => { setDismissed(false); }, [noticeKey]);
   const close = useMutation({ retry: false, mutationFn: (sessionID: string) => closeAgentBrowser(client, runID, sessionID),
     onSuccess: (next, sessionID) => {
       queries.setQueryData<AgentBrowserStatus>(key, (observed) =>
@@ -80,15 +84,19 @@ function AgentBrowserCard({ client, runID, running }: { client: APIClient; runID
 
   if (status.isError && agentBrowserAPIAbsent(status.error)) return null;
   if (status.isPending) return null;
-  if (status.isError) return <section className="v2-agent-browser" aria-label="Agent 浏览器"><header><strong>Agent 浏览器</strong>
-    <button type="button" onClick={() => status.refetch()}><RefreshCw size={15} />重新读取</button></header>
-    <p role="alert">无法读取浏览器状态。自动读取已暂停。</p></section>;
+  if (dismissed) return null;
+  const dismissButton = <button className="v2-agent-browser-dismiss" type="button" aria-label="关闭浏览器提示" title="关闭浏览器提示"
+    onClick={() => { setDismissed(true); onDismiss?.(); }}><X size={18} aria-hidden="true" /></button>;
+  if (status.isError) return <section className="v2-composer-card v2-agent-browser" aria-label="Agent 浏览器"><header><strong>Agent 浏览器</strong>
+    <div className="v2-agent-browser-actions"><button type="button" onClick={() => status.refetch()}><RefreshCw size={15} />重新读取</button>{dismissButton}</div></header>
+    <div className="v2-agent-browser-body"><p role="alert">无法读取浏览器状态。自动读取已暂停。</p></div></section>;
   if (!current) return null;
   const canClose = Boolean(current.session_id) && ["starting", "ready", "loading", "busy", "waiting_user", "failed"].includes(current.state);
   const active = canClose || current.state === "closing" || current.state === "cleanup_pending";
-  return <section className="v2-agent-browser" aria-label="Agent 浏览器">
-    <header><div><strong>Agent 浏览器</strong><span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current)}</span></div>
-      {canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>停止浏览器</button>}</header>
+  return <section className="v2-composer-card v2-agent-browser" aria-label="Agent 浏览器">
+    <header><div className="v2-agent-browser-heading"><strong>Agent 浏览器</strong><span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current)}</span></div>
+      <div className="v2-agent-browser-actions">{canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>停止浏览器</button>}{dismissButton}</div></header>
+    <div className="v2-agent-browser-body">
     {!current.available && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code)}</p>}
     {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? "页面将在独立的后台浏览器中打开，通过截图查看。" : "页面将在独立浏览器窗口中打开。"}</p>}
     {current.headless && active && <p className="v2-agent-browser-note">浏览器在后台运行，当前页面以已验证的截图展示。需要结束网页操作时可停止浏览器；整个任务可在对话中停止。</p>}
@@ -105,5 +113,6 @@ function AgentBrowserCard({ client, runID, running }: { client: APIClient; runID
       {current.cleanup_pending && <p>浏览器进程或临时资料仍在清理。</p>}
     </details>}
     {message && <p role="alert">{message}</p>}
+    </div>
   </section>;
 }

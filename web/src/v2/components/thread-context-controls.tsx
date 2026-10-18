@@ -268,7 +268,7 @@ function PinPromptCard({ client, threadID, state, proposal, onReply, onInteracti
   };
   const close = () => { if (resolved) onClose(); else void resolve("dismiss"); };
   const choose = (answer: ThreadContextPinChoice) => { onInteraction(); setChoice(answer); };
-  return <section className="v2-context-pin-card" aria-labelledby="thread-pin-question">
+  return <section className="v2-composer-card v2-context-pin-card" aria-labelledby="thread-pin-question">
     <header><MessageCircleQuestion size={18} aria-hidden="true" /><span>问题</span>
       <button type="button" aria-label="关闭固定要求提问" disabled={pending} onClick={close}><X size={18} /></button></header>
     <div className="v2-context-pin-body">

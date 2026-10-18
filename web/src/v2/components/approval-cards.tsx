@@ -51,7 +51,6 @@ export function V2ApprovalCards({ client, runID, threadID, onReviewFile }: {
       无法读取待审批操作，请重试后再作决定。
       <button onClick={() => void query.refetch()} type="button">重试审批队列</button>
     </div>}
-    {query.isSuccess && query.data.items.length === 0 && <p className="v2-notice" role="status">需要你确认的操作会显示在这里。</p>}
     {Boolean(query.data?.items.length) && <section aria-label="待处理审批" className="v2-approval-stack">
       {!client.hasApprovalControl && <p className="v2-notice" role="status">
         当前连接可以查看审批。需要批准、拒绝或恢复时，请使用具有审批控制权限的连接。

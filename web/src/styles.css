@@ -2614,32 +2614,55 @@ body { background: transparent; }
 }
 
 [data-prayu-theme="glass"] {
-  --prayu-window: rgb(8 12 18 / 14%);
-  --prayu-titlebar: rgb(20 25 33 / 24%);
-  --prayu-sidebar: color-mix(in srgb, rgb(18 24 32 / 22%) 82%, #dff3f4 18%);
-  --prayu-panel: rgb(18 24 32 / 30%);
+  --dsh-glass-ground: color-mix(in srgb, #eff1f5, #ffffff calc(var(--prayu-glass-brightness-white, 0) * 100%));
+  --dsh-glass-ambience: calc(1 - var(--prayu-glass-brightness-white, 0));
+  --dsh-glass-card: color-mix(in srgb, #eff1f5 calc(52% * var(--prayu-glass-frost, 0.4)), transparent);
+  --dsh-glass-card-raised: color-mix(in srgb, #eff1f5 calc(64% * var(--prayu-glass-frost, 0.4)), transparent);
+  --dsh-glass-card-hover: color-mix(in srgb, #eff1f5 calc(76% * var(--prayu-glass-frost, 0.4)), transparent);
+  --dsh-glass-bubble: color-mix(in srgb, #eff1f5 calc(46% * var(--prayu-glass-frost, 0.4)), transparent);
+  --dsh-glass-popover: color-mix(in srgb, #eff1f5 calc(72% * var(--prayu-glass-frost, 0.4)), rgb(239 241 245 / 82%));
+  --dsh-glass-rim: color-mix(in srgb, #4c4f69 18%, transparent);
+  --dsh-glass-rim-soft: color-mix(in srgb, #4c4f69 12%, transparent);
+  --dsh-glass-rim-strong: color-mix(in srgb, #4c4f69 30%, transparent);
+  --dsh-glass-edge: inset 0 1px 0 rgb(255 255 255 / 42%);
+  --dsh-glass-drop: 0 10px 32px color-mix(in srgb, rgb(0 0 0 / 12%) 38%, transparent);
+  --dsh-glass-input-shadow: 0 1px 2px rgb(76 79 105 / 4%), 0 4px 14px rgb(76 79 105 / 6%);
+  --prayu-window: var(--dsh-glass-ground);
+  --prayu-titlebar: color-mix(in srgb, #e6e9ef calc(52% * var(--prayu-glass-frost, 0.4)), transparent);
+  --prayu-sidebar: var(--dsh-glass-card);
+  --prayu-panel: var(--dsh-glass-card);
   /* Floating menus need their own readable surface above the translucent workspace. */
-  --prayu-panel-strong: rgb(18 24 32 / 90%);
-  --prayu-control: rgb(255 255 255 / 10%);
-  --prayu-control-hover: rgb(255 255 255 / 18%);
+  --prayu-panel-strong: var(--dsh-glass-popover);
+  --prayu-control: rgb(38 49 72 / 6%);
+  --prayu-control-hover: rgb(38 49 72 / 10%);
+  --prayu-primary-bg: #566570;
+  --prayu-primary-fg: #ffffff;
+  --prayu-primary-hover: #45535e;
+  --prayu-primary-border: color-mix(in srgb, #566570 42%, #4c4f69 18%);
+  --prayu-primary-shadow: rgb(76 79 105 / 12%);
   --prayu-selected: var(--prayu-primary-bg);
   --prayu-selected-ink: var(--prayu-primary-fg);
-  --prayu-surface-solid: #202832;
-  --prayu-text: #f8f9fb;
-  --prayu-muted: #d5dae2;
-  --prayu-border: rgb(255 255 255 / 17%);
-  --prayu-border-strong: rgb(255 255 255 / 30%);
-  --prayu-shadow: rgb(0 0 0 / 28%);
-  --prayu-focus: #f4f4f4;
-  --prayu-accent: #f4f4f4;
-  --prayu-danger: #ff9189;
-  --prayu-success: var(--prayu-text);
-  --prayu-warning: var(--prayu-text);
-  --prayu-diff-add: #9cd4ae;
-  --prayu-glass-fill: rgb(20 27 36 / 24%);
-  --prayu-glass-fill-strong: rgb(20 27 36 / 44%);
-  --prayu-glass-highlight: rgb(255 255 255 / 30%);
-  --prayu-glass-shadow: rgb(0 0 0 / 30%);
+  --prayu-surface-solid: #eff1f5;
+  --prayu-text: #4c4f69;
+  --prayu-muted: #5c5f77;
+  --prayu-border: var(--dsh-glass-rim-soft);
+  --prayu-border-strong: var(--dsh-glass-rim);
+  --prayu-shadow: rgb(0 0 0 / 12%);
+  --prayu-focus: #657682;
+  --prayu-accent: #566570;
+  --prayu-danger: #d20f39;
+  --prayu-danger-fill: #d20f39;
+  --prayu-on-danger: #ffffff;
+  --prayu-danger-on-dark: #f38ba8;
+  --prayu-success: #40a02b;
+  --prayu-warning: #fe640b;
+  --prayu-diff-add: #40a02b;
+  --prayu-glass-fill: var(--dsh-glass-card);
+  --prayu-glass-fill-strong: var(--dsh-glass-popover);
+  --prayu-glass-highlight: rgb(255 255 255 / 42%);
+  --prayu-glass-shadow: rgb(0 0 0 / 12%);
+  --prayu-elevation-panel: var(--dsh-glass-edge), var(--dsh-glass-drop);
+  --prayu-elevation-floating: var(--dsh-glass-edge), var(--dsh-glass-input-shadow);
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
   --prayu-diff-delete: var(--prayu-danger);
   --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
@@ -2656,6 +2679,11 @@ body { background: transparent; }
     --prayu-panel-strong: var(--prayu-surface-solid);
     --prayu-glass-fill: var(--prayu-surface-solid);
     --prayu-glass-fill-strong: var(--prayu-surface-solid);
+    --dsh-glass-card: var(--prayu-surface-solid);
+    --dsh-glass-card-raised: var(--prayu-surface-solid);
+    --dsh-glass-card-hover: var(--prayu-control-hover);
+    --dsh-glass-bubble: var(--prayu-control-hover);
+    --dsh-glass-popover: var(--prayu-surface-solid);
   }
 }
 
@@ -2665,6 +2693,9 @@ body { background: transparent; }
     --prayu-border: var(--prayu-text);
     --prayu-border-strong: var(--prayu-text);
     --prayu-primary-border: var(--prayu-primary-fg);
+    --dsh-glass-rim: var(--prayu-text);
+    --dsh-glass-rim-soft: var(--prayu-text);
+    --dsh-glass-rim-strong: var(--prayu-text);
   }
 }
 
@@ -2708,6 +2739,17 @@ body { background: transparent; }
     --prayu-glass-highlight: transparent;
     --prayu-shadow: transparent;
     --prayu-glass-shadow: transparent;
+    --dsh-glass-card: Canvas;
+    --dsh-glass-card-raised: Canvas;
+    --dsh-glass-card-hover: Canvas;
+    --dsh-glass-bubble: Canvas;
+    --dsh-glass-popover: Canvas;
+    --dsh-glass-rim: CanvasText;
+    --dsh-glass-rim-soft: CanvasText;
+    --dsh-glass-rim-strong: CanvasText;
+    --dsh-glass-edge: none;
+    --dsh-glass-drop: none;
+    --dsh-glass-input-shadow: none;
     --prayu-terminal-bg: Canvas;
     --prayu-terminal-control: Canvas;
     --prayu-terminal-control-hover: Canvas;
@@ -2774,10 +2816,13 @@ summary:focus-visible {
 }
 
 [data-prayu-theme="dark"] .prayu-shell .main-workspace,
-[data-prayu-theme="dark"] .prayu-shell .main-workspace.prayu-conversation-panel,
+[data-prayu-theme="dark"] .prayu-shell .main-workspace.prayu-conversation-panel {
+  backdrop-filter: blur(46px);
+}
+
 [data-prayu-theme="glass"] .prayu-shell .main-workspace,
 [data-prayu-theme="glass"] .prayu-shell .main-workspace.prayu-conversation-panel {
-  backdrop-filter: blur(46px);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 
 .prayu-shell .main-workspace,

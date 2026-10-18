@@ -20,9 +20,8 @@
 .v2-context-compaction-error { white-space:pre-wrap; }
 .v2-context-compact-control :is(input, button, summary):focus-visible { outline:2px solid var(--v2-accent); outline-offset:3px; }
 .v2-context-resolved-reply { padding:10px 0; border-bottom:1px solid var(--v2-border); white-space:pre-wrap; }
-.v2-composer-dock:has(.v2-context-pin-card) { display:flex; flex-direction:column; box-sizing:border-box; max-height:calc(100% - 24px); overflow-y:auto; overscroll-behavior-y:contain; }
-.v2-composer-dock:has(.v2-context-pin-card) > :not(.v2-context-pin-card) { flex-shrink:0; }
 .v2-composer-dock:has(.v2-context-pin-card) .v2-composer-surface { min-height:0; }
+.v2-composer-dock:has(.v2-context-pin-card):has(.v2-agent-browser) .v2-markdown-input { max-height:176px; }
 .v2-composer-dock:has(.v2-context-pin-card) .v2-markdown-input:has(> p:only-child > br:only-child) { min-height:0; padding-block:8px 2px; }
 .v2-composer-dock:has(.v2-context-pin-card) .v2-composer textarea:placeholder-shown { min-height:32px; padding-block:8px 2px; }
 .v2-composer-dock:has(.v2-context-pin-card) .v2-composer-footer { min-height:40px; padding-block:4px 8px; }
@@ -36,7 +35,6 @@
   .v2-composer-add { order:1; }
   .v2-composer-actions { order:3; flex-shrink:0; max-width:60%; }
 }
-.v2-context-pin-card { display:flex; flex-direction:column; flex-shrink:1; box-sizing:border-box; margin:0 auto 8px; width:100%; max-width:var(--v2-composer-width); min-height:0; max-height:min(320px, 42dvh); overflow:hidden; overflow-wrap:anywhere; border:1px solid var(--v2-border); border-radius:20px; background:var(--prayu-surface-solid); color:var(--v2-ink); font-size:14px; line-height:1.5; }
 .v2-context-pin-card > header { display:flex; align-items:center; gap:9px; flex-shrink:0; padding:8px 16px 2px; color:var(--v2-muted); }
 .v2-context-pin-card button { font:inherit; color:inherit; cursor:pointer; }
 .v2-context-pin-card > header button { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; width:30px; height:30px; padding:0; border:0; border-radius:50%; background:transparent; }

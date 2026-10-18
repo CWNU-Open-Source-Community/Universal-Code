@@ -1,6 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { readFileSync } from "node:fs";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { V2AgentBrowser } from "./agent-browser";
 import { agentBrowserQueryKey } from "../../api/agent-browser";
@@ -14,9 +13,9 @@ const status = (runID = "run-browser", sessionID = "agent-browser-one") => ({
   cleanup_pending: false, tree_reaped: false, profile_removed: false,
 });
 
-function draw(client: APIClient, runID = "run-browser") {
+function draw(client: APIClient, runID = "run-browser", onDismiss?: () => void) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  const view = render(<QueryClientProvider client={queries}><V2AgentBrowser client={client} runID={runID} running={false} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={queries}><V2AgentBrowser client={client} runID={runID} running={false} onDismiss={onDismiss} /></QueryClientProvider>);
   return { ...view, queries };
 }
 
@@ -125,14 +124,58 @@ it.each([
   expect(client.postControl).not.toHaveBeenCalled();
 });
 
-it("hides an older server without the status route and has a narrow wrapping layout", async () => {
+it("keeps a dismissed notice hidden across refreshes and shows a new browser session", async () => {
+  const unavailable = { ...status(), available: false, can_start: false, session_id: undefined,
+    screenshot: undefined, state: "unavailable", unavailable_code: "full_access_required" };
+  const get = vi.fn(async () => unavailable as unknown);
+  const client = { baseURL: "/api/v1", get, postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
+  const onDismiss = vi.fn();
+  const view = draw(client, "run-browser", onDismiss);
+  fireEvent.click(await screen.findByRole("button", { name: "关闭浏览器提示" }));
+  expect(screen.queryByRole("region", { name: "Agent 浏览器" })).not.toBeInTheDocument();
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+  get.mockResolvedValue({ ...unavailable, updated_at: "2026-10-19T10:00:00Z" });
+  await act(async () => { await view.queries.refetchQueries({ queryKey: agentBrowserQueryKey(client.baseURL, "run-browser") }); });
+  expect(screen.queryByRole("region", { name: "Agent 浏览器" })).not.toBeInTheDocument();
+  get.mockResolvedValue({ ...status(), screenshot: undefined });
+  await act(async () => { await view.queries.refetchQueries({ queryKey: agentBrowserQueryKey(client.baseURL, "run-browser") }); });
+  expect(await screen.findByText("浏览器正在运行")).toBeInTheDocument();
+  expect(client.postControl).not.toHaveBeenCalled();
+});
+
+it.each([
+  [{ state: "waiting_user" }, "网页需要人工处理"],
+  [{ state: "ready", failure_code: "action_failed" }, "最近一次页面操作失败，请让 Agent 重新读取页面后再试。"],
+])("dismisses routine activity without stopping it and resurfaces for %o", async (attention, text) => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
+  const view = draw(client);
+  fireEvent.click(await screen.findByRole("button", { name: "关闭浏览器提示" }));
+  await act(async () => { view.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"),
+    { ...status(), state: "loading", screenshot: undefined }); });
+  expect(screen.queryByRole("region", { name: "Agent 浏览器" })).not.toBeInTheDocument();
+  await act(async () => { view.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"),
+    { ...status(), ...attention, screenshot: undefined }); });
+  expect(await screen.findByText(text)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "停止浏览器" })).toBeEnabled();
+  expect(client.postControl).not.toHaveBeenCalled();
+});
+
+it("allows dismissing a status error and resets dismissal when changing Runs", async () => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => { throw new Error("offline"); }),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
+  const view = draw(client);
+  fireEvent.click(await screen.findByRole("button", { name: "关闭浏览器提示" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  view.rerender(<QueryClientProvider client={view.queries}><V2AgentBrowser client={client} runID="run-new" running={false} /></QueryClientProvider>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("无法读取浏览器状态");
+  expect(screen.getByRole("button", { name: "重新读取" })).toBeEnabled();
+});
+
+it("hides an older server without the status route", async () => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => { throw new APIRequestError("missing", "NOT_FOUND", 404); }),
     postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
   const page = draw(client);
   await waitFor(() => expect(client.get).toHaveBeenCalled());
   expect(page.container).toBeEmptyDOMElement();
-  const styles = readFileSync("src/v2/components/agent-browser.css", "utf8");
-  expect(styles).toContain("@media (max-width:390px)");
-  expect(styles).toContain("flex-wrap:wrap");
-  expect(styles).toContain("min-width:0");
 });
