@@ -1036,6 +1036,14 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.api.threadContextCompactionController = application.NewThreadContextCompactionService(fixture.store, llm.NewDefaultRouter())
+	_, contextRecoveryRun, err := application.NewRunService(fixture.store).Create(t.Context(), application.CreateRunRequest{Goal: "OpenAPI pending compaction", Profile: "review", WorkspaceID: fixture.workspace.ID, Budget: domain.Budget{MaxTurns: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextRecoveryOperation, _, err := fixture.store.BeginThreadContextCompaction(t.Context(), domain.ThreadContextCompactionRequest{Version: domain.ThreadContextCompactionVersion, ThreadID: domain.InitialThreadID(contextRecoveryRun.ID), ExpectedRunID: contextRecoveryRun.ID, OperationKey: "openapi-context-recovery", RequestedBy: "openapi_test"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	openAPIThread, err := fixture.store.GetThreadByRun(t.Context(), openAPIThreadRun.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1239,6 +1247,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", openAPIThread.ID)
 		} else if spec.Path == ThreadRunRecoveryControlPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", recoveryThread.ID)
+		} else if spec.Path == ThreadContextCompactionRecoveryPathTemplate {
+			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(contextRecoveryRun.ID))
+			requestPath = strings.ReplaceAll(requestPath, "{operation_id}", contextRecoveryOperation.OperationID)
 		} else if spec.Path == SessionArchiveControlPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{session_id}", legacyArchiveSession.ID)
 		} else if spec.Path == RunBrowserCDPPermissionControlPathTemplate {
@@ -1635,6 +1646,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 						`"requested_by":"openapi_test"}`
 				} else if spec.OperationID == "compactThreadContext" {
 					body = `{"version":"thread_context_compaction.v1","expected_run_id":"` + openAPIThreadRun.ID + `"}`
+				} else if spec.OperationID == "recoverThreadContextCompaction" {
+					body = `{"version":"thread_context_compaction_recovery.v1","expected_run_id":"` + contextRecoveryRun.ID + `","action":"discard"}`
 				} else if spec.OperationID == "createThread" {
 					body = `{"version":"thread_creation.v1","goal":"OpenAPI live Thread",` +
 						`"workspace_id":"` + fixture.workspace.ID + `"}`
@@ -1935,6 +1948,13 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"search_diagnostics.v1","confirm":true}`
 				} else if spec.Path == ThreadExecutionPermissionControlPathTemplate {
 					body = `{"mode":"ask"}`
+				} else if spec.Path == ThreadCommandServicePolicyPathTemplate {
+					current, getErr := fixture.store.GetThreadCommandServicePolicy(t.Context(), openAPIThread.ID)
+					if getErr != nil {
+						t.Fatal(getErr)
+					}
+					body = `{"version":"thread_command_service_policy.v1","policy":"auto","expected_revision":` +
+						fmt.Sprint(current.Revision) + `}`
 				} else if spec.Path == RunBrowserCDPPermissionControlPathTemplate {
 					body = `{"mode":"restricted"}`
 				} else if spec.Path == RunNetworkAuthorityControlPathTemplate {

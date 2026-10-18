@@ -124,7 +124,7 @@ function servicesFixture(initial: ThreadApplicationServiceView[], options?: {
     run_id: runID, state: "starting", session_id: "source-browser", target_origin: "http://127.0.0.1:3001",
   } }));
   const result = fixture(false, {
-    hasControl: true, listThreadApplicationServices, getThreadApplicationService, stopThreadApplicationService,
+    hasControl: true, hasRunExecution: true, listThreadApplicationServices, getThreadApplicationService, stopThreadApplicationService,
     get: vi.fn(async (path: string) => ({ run: { id: path.split("/").at(-1), status: options?.runStatus ?? "running" },
       execution_permission: { mode: "full", runtime_gate_available: true, revision: 4 },
       browser_cdp_permission: { mode: "full_debug", runtime_gate_available: true, revision: 7 } })) as APIClient["get"],
@@ -221,6 +221,34 @@ it("does not automatically repeat an unconfirmed stop request", async () => {
   rejectStop(new Error("响应中断"));
   await screen.findByText(/停止服务未确认完成/);
   expect(stop).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("任务命令已停止")).not.toBeInTheDocument();
+});
+
+it.each([
+  { hasControl: false, hasRunExecution: true },
+  { hasControl: true, hasRunExecution: false },
+])("uses execution capability for service cleanup: %j", async (capabilities) => {
+  const { stopThreadApplicationService } = servicesFixture([service("job-a")], { overrides: capabilities });
+  fireEvent.click(await screen.findByRole("button", { name: /Job job-a/ }));
+  await screen.findByRole("button", { name: "选择地址 http://127.0.0.1:3001/" });
+  const button = screen.getByRole("button", { name: "停止此命令" });
+  if (capabilities.hasRunExecution) {
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(stopThreadApplicationService).toHaveBeenCalledExactlyOnceWith("thread-preview", "run-service", "job-a"));
+  } else {
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(stopThreadApplicationService).not.toHaveBeenCalled();
+  }
+});
+
+it("keeps an exited shared service pending cleanup until the process tree is reaped", async () => {
+  servicesFixture([service("job-cleanup", { workspace_mode: "shared_service", state: "cancelled", can_stop: false, tree_reaped: false })]);
+  const entry = await screen.findByRole("button", { name: /Job job-cleanup/ });
+  expect(entry).toHaveTextContent("任务命令已退出，清理待确认");
+  fireEvent.click(entry);
+  expect(await screen.findByText("任务命令已退出，清理待确认", { selector: "p[role='status']" })).toBeVisible();
   expect(screen.queryByText("任务命令已停止")).not.toBeInTheDocument();
 });
 

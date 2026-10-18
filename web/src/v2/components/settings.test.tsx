@@ -284,6 +284,9 @@ describe("V2 permission settings hierarchy", () => {
 
     expect(screen.getByRole("heading", { name: "调试运行时" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务权限" })).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+    expect(headings.indexOf("开发服务")).toBe(headings.indexOf("任务权限") + 1);
+    expect(headings.indexOf("当前任务执行环境")).toBe(headings.indexOf("开发服务") + 1);
     expect(screen.getByText("先从侧栏打开一个对话。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /启用完全访问/u })).not.toBeInTheDocument();
     const debugGroup = screen.getByRole("group", { name: "调试运行时能力" });

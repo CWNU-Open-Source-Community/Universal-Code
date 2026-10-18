@@ -18,6 +18,8 @@ import { validMCPContents } from "./mcp-content";
 import type { MCPCredentialBindingView, MCPCredentialRequestView, MCPCredentialStatusView } from "./types";
 import { applicationServiceIdentity, parseThreadApplicationServices, parseThreadApplicationService,
   parseThreadApplicationServiceStop } from "./application-services";
+import { parseThreadCommandServicePolicy, validCommandServicePolicyRequest,
+  type ThreadCommandServicePolicyRequest } from "./command-service-policy";
 import type { ProviderModelDiscoveryRequestView, ProviderModelDiscoveryView } from "./types";
 import { acceptedImageTypes, maximumImageBytes, validImageAttachment, validImageAttachments, type WorkspaceImageAttachment } from "./image-attachments";
 import { maximumFileBytes, validFileAttachment, validFileAttachments, type WorkspaceFileAttachment } from "./file-attachments";
@@ -6952,6 +6954,24 @@ export class APIClient {
     }
     return parseRunCapabilityReadiness(await this.get<unknown>(
       `/runs/${encodeURIComponent(runID)}/capability-readiness`, {}, signal), runID);
+  }
+
+  async getThreadCommandServicePolicy(threadID: string, signal?: AbortSignal) {
+    if (!applicationServiceIdentity(threadID)) throw new Error("An exact Thread is required for development service settings");
+    return parseThreadCommandServicePolicy(await this.get<unknown>(
+      `/threads/${encodeURIComponent(threadID)}/command-service-policy`, {}, signal), threadID);
+  }
+
+  async setThreadCommandServicePolicy(threadID: string, body: ThreadCommandServicePolicyRequest, signal?: AbortSignal) {
+    if (!this.hasExecutionPermissionControl || !applicationServiceIdentity(threadID) || !validCommandServicePolicyRequest(body)) {
+      throw new Error("Development service settings require execution permission control access, an exact Thread and its current revision");
+    }
+    const result = parseThreadCommandServicePolicy(await this.sendControlRequest<unknown>(
+      `/threads/${encodeURIComponent(threadID)}/command-service-policy`, body, signal, "", "PUT"), threadID);
+    if (result.policy !== body.policy || result.revision < body.expected_revision) {
+      throw new APIRequestError("开发服务设置返回的策略或版本与本次保存不符，请重新读取。", "INVALID_RESPONSE", 502);
+    }
+    return result;
   }
 
   async listThreadApplicationServices(threadID: string, signal?: AbortSignal, limit = 20) {

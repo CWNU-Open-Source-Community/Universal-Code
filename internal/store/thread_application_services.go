@@ -13,8 +13,9 @@ import (
 	"cyberagent-workbench/internal/toolgateway"
 )
 
-// ListThreadCommandRuntimeServiceMetadata does not read command intent, output,
-// environment values, paths, or process IDs. The extra row proves truncation.
+// ListThreadCommandRuntimeServiceMetadata reads only the mode from command
+// intent, never output, environment values, paths or PIDs. The extra row proves
+// truncation; live shared services precede historical command records.
 func (s *SQLiteStore) ListThreadCommandRuntimeServiceMetadata(ctx context.Context,
 	threadID string, limit int,
 ) ([]runner.CommandRuntimeServiceMetadata, error) {
@@ -27,9 +28,13 @@ func (s *SQLiteStore) ListThreadCommandRuntimeServiceMetadata(ctx context.Contex
 		job.spec_fingerprint,job.owner_id,job.owner_generation,
 		job.adapter_kind,job.adapter_backend,job.adapter_backend_identity,job.adapter_generation,
 		job.adapter_isolation_grade,job.adapter_network_policy,job.adapter_credential_policy,
-		job.state,job.exit_code,job.created_at,job.started_at,job.completed_at
+		job.state,job.exit_code,job.created_at,job.started_at,job.completed_at,
+		COALESCE(json_extract(job.intent_json,'$.workspace_mode'),''),job.tree_reaped
 		FROM command_runtime_jobs job JOIN thread_runs binding ON binding.run_id=job.run_id
-		WHERE binding.thread_id=? ORDER BY job.created_at DESC,job.id LIMIT ?`, threadID, limit)
+		WHERE binding.thread_id=? ORDER BY
+		CASE WHEN json_extract(job.intent_json,'$.workspace_mode')='shared_service'
+		AND (job.state IN ('prepared','running','stopping') OR job.tree_reaped=0) THEN 0 ELSE 1 END,
+		job.created_at DESC,job.id LIMIT ?`, threadID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +51,7 @@ func (s *SQLiteStore) ListThreadCommandRuntimeServiceMetadata(ctx context.Contex
 			&id.WorkspaceRootSHA256, &id.SpecFingerprint, &id.OwnerID, &id.OwnerGeneration,
 			&id.Adapter.Kind, &id.Adapter.Backend, &id.Adapter.BackendIdentity, &id.Adapter.Generation,
 			&id.Adapter.IsolationGrade, &id.Adapter.NetworkPolicy, &id.Adapter.CredentialPolicy,
-			&value.State, &exitCode, &created, &started, &completed)
+			&value.State, &exitCode, &created, &started, &completed, &value.WorkspaceMode, &value.TreeReaped)
 		if err != nil {
 			return nil, err
 		}

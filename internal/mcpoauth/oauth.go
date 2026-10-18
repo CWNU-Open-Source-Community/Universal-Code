@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"cyberagent-workbench/internal/credential"
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -26,6 +28,14 @@ import (
 )
 
 const prefix = "uc-mcp-oauth-v1:"
+
+// OAuth bounds are independent of the small OS keyring entry. MaxBundleBytes
+// includes the version prefix and base64 encoding; each access/refresh token is
+// separately bounded. Client secrets retain their existing 1024-byte limit.
+const (
+	MaxBundleBytes = 64 * 1024
+	MaxTokenBytes  = 16 * 1024
+)
 
 const (
 	ClientIDPreRegistered = "pre_registered"
@@ -46,7 +56,9 @@ func CredentialLock(ref string) func() {
 	m.Lock()
 	return m.Unlock
 }
-func IsEnvelope(value string) bool { return strings.HasPrefix(value, prefix) }
+func IsEnvelope(value string) bool {
+	return strings.HasPrefix(value, prefix) || strings.HasPrefix(value, storedPrefix)
+}
 
 type Binding struct{ Ref, Fingerprint, Target string }
 type OAuthStatus struct {
@@ -72,7 +84,7 @@ type envelope struct {
 }
 
 func decode(raw string) (*envelope, error) {
-	if !IsEnvelope(raw) {
+	if !strings.HasPrefix(raw, prefix) || len(raw) > MaxBundleBytes {
 		return nil, ErrOAuth
 	}
 	data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(raw, prefix))
@@ -80,21 +92,43 @@ func decode(raw string) (*envelope, error) {
 		return nil, ErrOAuth
 	}
 	var e envelope
-	if json.Unmarshal(data, &e) != nil || e.Session == "" || e.Token == nil || !credential.ValidSecret(e.Token.AccessToken) || !strings.EqualFold(e.Token.TokenType, "Bearer") || !validHTTPS(e.Target) || !validHTTPS(e.Issuer) || !validHTTPS(e.TokenEndpoint) || !validHTTPS(e.Resource) || !sameOrigin(e.Target, e.Resource) {
+	if json.Unmarshal(data, &e) != nil || !validEnvelope(&e) {
 		return nil, ErrOAuth
 	}
 	return &e, nil
 }
 func encode(e *envelope) (string, error) {
+	if !validEnvelope(e) {
+		return "", ErrOAuth
+	}
 	b, err := json.Marshal(e)
 	if err != nil {
 		return "", ErrOAuth
 	}
 	raw := prefix + base64.RawURLEncoding.EncodeToString(b)
-	if !credential.ValidSecret(raw) {
+	if len(raw) > MaxBundleBytes {
 		return "", ErrOAuth
 	}
 	return raw, nil
+}
+
+func validToken(value string) bool {
+	if value == "" || len(value) > MaxTokenBytes || !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func validEnvelope(e *envelope) bool {
+	return e != nil && e.Session != "" && e.Token != nil && validToken(e.Token.AccessToken) &&
+		(e.Token.RefreshToken == "" || validToken(e.Token.RefreshToken)) && strings.EqualFold(e.Token.TokenType, "Bearer") &&
+		(e.ClientSecret == "" || (credential.ValidSecret(e.ClientSecret) && len(e.ClientSecret) <= 1024)) &&
+		validHTTPS(e.Target) && validHTTPS(e.Issuer) && validHTTPS(e.TokenEndpoint) && validHTTPS(e.Resource) && sameOrigin(e.Target, e.Resource)
 }
 
 // RevisionIdentity is stable across refresh, but a new login has a new identity.
@@ -499,7 +533,7 @@ func StartWithOptions(ctx context.Context, b Binding, issuer, clientID string, o
 				return nil, ErrOAuth
 			}
 		}, NewTokenSource: func(_ context.Context, cfg *oauth2.Config, token *oauth2.Token) (oauth2.TokenSource, error) {
-			if !credential.ValidSecret(token.AccessToken) || !token.Valid() || !strings.EqualFold(token.TokenType, "Bearer") {
+			if token == nil || !validToken(token.AccessToken) || (token.RefreshToken != "" && !validToken(token.RefreshToken)) || !token.Valid() || !strings.EqualFold(token.TokenType, "Bearer") {
 				return nil, ErrOAuth
 			}
 			f.result = &envelope{Session: rand.Text(), Fingerprint: b.Fingerprint, Target: b.Target, Resource: d.resource.Resource, Issuer: issuer, ClientID: clientID, ClientSecret: clientSecret, AuthStyle: authStyle, TokenEndpoint: cfg.Endpoint.TokenURL, Token: token}
@@ -604,9 +638,9 @@ func ResolveRevision(ctx context.Context, store credential.Store, b Binding, bas
 	c := tokenHTTPClient(base, e.TokenEndpoint, e.ClientID, e.ClientSecret, e.AuthStyle)
 	underlying := c.Transport
 	c.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
+		body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024+1))
 		r.Body.Close()
-		if err != nil {
+		if err != nil || len(body) > 64*1024 {
 			return nil, ErrOAuth
 		}
 		values, err := url.ParseQuery(string(body))
@@ -632,16 +666,11 @@ func ResolveRevision(ctx context.Context, store credential.Store, b Binding, bas
 		// subsequent calls must not keep retrying the rejected refresh token.
 		e.ReauthorizationRequired = true
 		if marked, encodeErr := encode(e); encodeErr == nil {
-			current, found, readErr := store.Get(ctx, b.Ref)
-			if readErr == nil && found && current == raw {
-				if putErr := store.Put(ctx, b.Ref, marked); putErr != nil {
-					return "", ErrOAuth
-				}
-			}
+			_ = Replace(ctx, store, b.Ref, raw, true, marked)
 		}
 		return "", ErrOAuth
 	}
-	if err != nil || token == nil || !credential.ValidSecret(token.AccessToken) || !token.Valid() || !strings.EqualFold(token.TokenType, "Bearer") {
+	if err != nil || token == nil || !validToken(token.AccessToken) || (token.RefreshToken != "" && !validToken(token.RefreshToken)) || !token.Valid() || !strings.EqualFold(token.TokenType, "Bearer") {
 		return "", ErrOAuth
 	}
 	e.Token = token
@@ -649,15 +678,7 @@ func ResolveRevision(ctx context.Context, store credential.Store, b Binding, bas
 	if err != nil {
 		return "", ErrOAuth
 	}
-	current, found, err := store.Get(ctx, b.Ref)
-	if err != nil || !found || current != raw {
-		return "", ErrOAuth
-	}
-	if err = store.Put(ctx, b.Ref, updated); err != nil {
-		return "", ErrOAuth
-	}
-	current, found, err = store.Get(ctx, b.Ref)
-	if err != nil || !found || current != updated {
+	if err = Replace(ctx, store, b.Ref, raw, true, updated); err != nil {
 		return "", ErrOAuth
 	}
 	return token.AccessToken, nil

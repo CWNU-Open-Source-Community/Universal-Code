@@ -1698,6 +1698,7 @@
         "code-intel-lsp.v1",
         "code_handoff.v1",
         "command-runtime.v2",
+        "command_runtime_docker_service.v1",
         "context_pin_proposal.v1",
         "context_provenance.v0",
         "context_provenance.v1",
@@ -1792,7 +1793,10 @@
         "thread_activity_detail.v2",
         "thread_activity_summary.v1",
         "thread_application_services.v1",
+        "thread_command_service_policy.v1",
         "thread_context_compaction.v1",
+        "thread_context_compaction_operations.v1",
+        "thread_context_compaction_recovery.v1",
         "thread_context_pins.v1",
         "thread_creation.v1",
         "thread_execution.v1",
@@ -2017,6 +2021,45 @@
       },
       "restart_persistence_proof": "NewInputBroker constructs an empty process-local map; it has no database or restore reader. client_input_test.go verifies single consumption, cancellation and revocation; durable invocation recovery never adopts broker answers.",
       "active_identifiers": ["mcp-input.v1"],
+      "retired_identifiers": []
+    },
+    {
+      "id": "mcp-oauth-credentials",
+      "class": "internal-durable",
+      "owner": "MCP OAuth and credential maintainers",
+      "source_of_truth": [
+        "internal/credential",
+        "internal/mcpoauth/oauth.go",
+        "internal/mcpoauth/store.go"
+      ],
+      "writers": [
+        {
+          "id": "mcp-oauth-encrypted-bundle-writer",
+          "source": "internal/mcpoauth/store.go",
+          "versions": [1],
+          "mode": "write-current"
+        }
+      ],
+      "readers": [
+        {
+          "id": "mcp-oauth-encrypted-bundle-reader",
+          "source": "internal/mcpoauth/store.go",
+          "versions": [1],
+          "status": "active"
+        }
+      ],
+      "persisted_or_exported": true,
+      "persistence_boundary": "Versioned AES-GCM files under credentials/mcp preserve descriptor-bound OAuth token bundles across restart. The matching key and opaque file reference remain in the OS credential entry; tokens and client secrets never enter public status or SQLite.",
+      "compatibility_rule": "Retain legacy inline-bundle reads and the v1 encrypted reader. Migrate only on a verified successful write; preserve descriptor/client/session bindings and compare-and-swap. Reject unknown versions, missing keys and authentication failures without plaintext fallback or automatic replay of an MCP operation.",
+      "retirement_gate": {
+        "mode": "migration-or-retention",
+        "requirements": [
+          "An explicit migration or retention decision covers each ciphertext file and matching OS key/reference",
+          "Legacy migration, restart, tampering, failed-write/readback and stale compare-and-swap tests remain until supported credentials and backups are migrated or retained",
+          "Rollback retains readers for matching encrypted files and OS entries; unverified commits never remove possibly active ciphertext or replay an MCP operation"
+        ]
+      },
+      "active_identifiers": ["universal-code.mcp-oauth.v1"],
       "retired_identifiers": []
     },
     {
@@ -4346,6 +4389,14 @@
         "internal/store/batch_delivery_test.go"
       ],
       "reason": "Test-only or golden/negative-vector identifier; exact source binding prevents production classification."
+    },
+    {
+      "identifier": "thread-compaction-live.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/thread_context_compaction_live_test.go"
+      ],
+      "reason": "Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance."
     },
     {
       "identifier": "thread_summary_window.v99",

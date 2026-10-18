@@ -33,6 +33,8 @@ func (a *App) threadCommand(ctx context.Context, args []string) error {
 		return a.threadSend(ctx, service, args[1:])
 	case "compact":
 		return a.threadCompact(ctx, args[1:])
+	case "compactions":
+		return a.threadCompactions(ctx, args[1:])
 	case "history":
 		return a.threadHistory(ctx, service, args[1:])
 	case "archive", "restore", "delete":

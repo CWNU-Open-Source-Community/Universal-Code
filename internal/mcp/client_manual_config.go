@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"cyberagent-workbench/internal/credential"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/toolcontract"
 )
@@ -101,7 +102,7 @@ func validManualEnvironmentName(name string) bool {
 
 func validManualLiteral(value string) bool {
 	if !validClientText(value, 4096, true) || redact.String(value) != value ||
-		strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "bearer ") || strings.HasPrefix(value, oauthCredentialEnvelopePrefix) {
+		strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "bearer ") || mcpoauth.IsEnvelope(value) {
 		return false
 	}
 	for _, current := range value {
@@ -192,7 +193,7 @@ func resolveManualLaunch(d ServerDescriptor, versions []string, secretEnvironmen
 	}
 	for name := range d.EnvCredentialRefs {
 		value, found := secretEnvironment[name]
-		if !found || !credential.ValidSecret(value) || strings.HasPrefix(value, oauthCredentialEnvelopePrefix) {
+		if !found || !credential.ValidSecret(value) || mcpoauth.IsEnvelope(value) {
 			return launch, errors.New("MCP environment credential is unavailable or incompatible")
 		}
 		env[manualEnvironmentKey(name)] = value
@@ -216,7 +217,7 @@ func (m *Manager) readManualEnvironment(ctx context.Context, d ServerDescriptor)
 			return nil, errors.New("MCP environment credential reader is unavailable")
 		}
 		value, found, err := m.credentials.Get(ctx, reference)
-		if err != nil || !found || !credential.ValidSecret(value) || strings.HasPrefix(value, oauthCredentialEnvelopePrefix) {
+		if err != nil || !found || !credential.ValidSecret(value) || mcpoauth.IsEnvelope(value) {
 			return nil, errors.New("MCP environment credential is unavailable or incompatible")
 		}
 		values[name] = value

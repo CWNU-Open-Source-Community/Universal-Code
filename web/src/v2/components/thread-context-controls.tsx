@@ -3,12 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircleQuestion, Pencil, Pin, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { parseThreadCompaction, parseThreadPinResolution, readThreadContextPins,
+  readThreadCompactionOperations, recoverThreadCompaction,
+  type ThreadCompactionOperation, type ThreadCompactionResult,
   type ThreadContextPin, type ThreadContextPinChoice, type ThreadContextPinProposal,
   type ThreadContextPinResolution, type ThreadContextPins } from "../../api/thread-context-controls";
 import { v2QueryKeys } from "../query-keys";
 import "./thread-context-controls.css";
 
 const pinsKey = (client: APIClient, threadID: string) => ["thread-context-pins", client.baseURL, threadID];
+const compactionsKey = (client: APIClient, threadID: string) => ["thread-context-compactions", client.baseURL, threadID];
+const unfinishedCompaction = (operation: ThreadCompactionOperation) => ["prepared", "started", "generated"].includes(operation.status);
+const compactionNotice = (result: ThreadCompactionResult) => result.status === "noop" ? "当前没有需要压缩的较早消息。"
+  : `已压缩 ${result.removed_messages} 条较早消息，保留 ${result.preserved_messages} 条近期消息。` +
+    (result.input_messages_omitted ? ` 为适配模型窗口，生成摘要时省略了最早的 ${result.input_messages_omitted} 条记录；这些原文仍可回读。` : "");
 function usePins(client: APIClient, threadID: string, poll = false) {
   return useQuery({ queryKey: pinsKey(client, threadID), retry: false, refetchOnMount: "always",
     refetchInterval: poll ? 3000 : false,
@@ -101,38 +108,107 @@ function ResolvedPinReply({ proposal, disabled, onReply }: { proposal: ThreadCon
 export function V2ThreadCompactControl({ client, threadID, runID }: { client: APIClient; threadID: string; runID: string }) {
   const queryClient = useQueryClient(); const pins = usePins(client, threadID);
   const [focus, setFocus] = useState(""); const [pending, setPending] = useState(false);
+  const compactAttempt = useRef(0);
+  const operations = useQuery({ queryKey: compactionsKey(client, threadID), retry: false, refetchOnMount: "always",
+    queryFn: ({ signal }) => readThreadCompactionOperations(client, threadID, signal),
+    refetchInterval: (query) => pending || query.state.data?.operations.some(unfinishedCompaction) ? 3000 : false });
+  const [recovering, setRecovering] = useState<string | null>(null);
   const [notice, setNotice] = useState(""); const [error, setError] = useState("");
   const intent = useControlIntent("thread-context-compact");
+  const records = operations.isError ? undefined : operations.data?.operations;
+  const hasUnfinished = Boolean(records?.some(unfinishedCompaction));
+  const controlsPending = Boolean(recovering) || !client.hasControl;
+  const blocked = pending || controlsPending || pins.isError || !pins.data || pins.data.busy;
+  const refreshContext = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["thread-context", client.baseURL, threadID] }),
+    queryClient.invalidateQueries({ queryKey: pinsKey(client, threadID) }),
+    queryClient.invalidateQueries({ queryKey: v2QueryKeys.thread(threadID) }),
+    queryClient.invalidateQueries({ queryKey: compactionsKey(client, threadID) }),
+  ]);
   const compact = async () => {
+    if (blocked || hasUnfinished || !records) return;
     const body = { version: "thread_context_compaction.v1", expected_run_id: runID, focus: focus.trim() };
+    const attempt = ++compactAttempt.current;
     setPending(true); setNotice(""); setError("");
     try {
       const request = intent.prepare(body);
       const result = parseThreadCompaction(await client.postControl<unknown>(`/threads/${encodeURIComponent(threadID)}/context/compact`, request.body, request.key), threadID, runID);
+      if (attempt !== compactAttempt.current) return;
       intent.clear();
-      setNotice(result.status === "noop" ? "当前没有需要压缩的较早消息。" : `已压缩 ${result.removed_messages} 条较早消息，保留 ${result.preserved_messages} 条近期消息。` +
-        (result.input_messages_omitted ? ` 为适配模型窗口，生成摘要时省略了最早的 ${result.input_messages_omitted} 条记录；这些原文仍可回读。` : ""));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["thread-context", client.baseURL, threadID] }),
-        queryClient.invalidateQueries({ queryKey: pinsKey(client, threadID) }),
-        queryClient.invalidateQueries({ queryKey: v2QueryKeys.thread(threadID) }),
-      ]);
+      setNotice(compactionNotice(result));
+      await refreshContext();
+    } catch (failure) {
+      if (attempt !== compactAttempt.current) return;
+      setError(message(failure));
+      // Source changes end this intent; pending/busy conflicts and unknown responses retain it.
+      if (failure instanceof APIRequestError && failure.status === 409 && failure.message.startsWith("thread_context_source_changed:")) intent.clear();
+      await Promise.all([pins.refetch(), operations.refetch()]);
+    }
+    finally { if (attempt === compactAttempt.current) setPending(false); }
+  };
+  const recover = async (operation: ThreadCompactionOperation, action: "resume" | "discard") => {
+    if (controlsPending || (action === "resume" && blocked)) return;
+    setRecovering(operation.operation_id); setNotice(""); setError("");
+    try {
+      const result = await recoverThreadCompaction(client, threadID, operation, action);
+      if (action === "discard" && !unfinishedCompaction(result)) { compactAttempt.current++; setPending(false); }
+      intent.clear();
+      setNotice(result.result ? compactionNotice(result.result) : action === "discard" && result.status === "failed" ? "已停止采用本次结果。" : "压缩记录已核对。");
+      await refreshContext();
     } catch (failure) {
       setError(message(failure));
-      if (failure instanceof APIRequestError && failure.status === 409) { intent.clear(); await pins.refetch(); }
-    }
-    finally { setPending(false); }
+      await Promise.all([pins.refetch(), operations.refetch()]);
+    } finally { setRecovering(null); }
   };
   return <div className="v2-context-compact-control">
     <label htmlFor="thread-context-compact-focus">压缩重点（可选）</label>
     <input id="thread-context-compact-focus" value={focus} disabled={pending} onChange={(event) => setFocus(event.target.value)}
       placeholder="例如：保留失败原因与尚未完成的工作" />
     <p className="v2-context-help">空闲时压缩当前对话。固定要求与近期用户原文单独保留，历史原文仍可读取。</p>
-    <button type="button" disabled={pending || !client.hasControl || pins.isError || !pins.data || pins.data.busy}
+    <button type="button" disabled={blocked || hasUnfinished || !records}
       onClick={() => void compact()}>{pending ? "正在压缩…" : "压缩当前对话"}</button>
     {pins.data?.busy && <p role="status">任务正在执行，结束后可以压缩。</p>}
     {notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
+    <details className="v2-context-compactions" open={hasUnfinished || operations.isError || undefined}>
+      <summary>压缩记录{hasUnfinished ? " · 有未完成操作" : records?.length ? `（${records.length}）` : ""}</summary>
+      <div className="v2-context-compactions-toolbar"><span>最近的压缩操作</span>
+        <button type="button" disabled={operations.isFetching || Boolean(recovering)}
+          onClick={() => void operations.refetch()}>{operations.isFetching ? "正在核对…" : "刷新核对记录"}</button></div>
+      {operations.isError ? <p role="alert">{message(operations.error)} 请刷新核对记录后再压缩。</p>
+        : !records ? <p role="status">正在读取压缩记录…</p>
+        : !records.length ? <p className="v2-context-help">还没有压缩记录。</p>
+        : <ul className="v2-context-compaction-list">{records.map((operation) => <CompactionOperationRow key={operation.operation_id}
+          operation={operation} disabled={controlsPending} resumeDisabled={blocked} recovering={recovering === operation.operation_id}
+          onRecover={(action) => void recover(operation, action)} />)}</ul>}
+    </details>
   </div>;
+}
+
+const compactionStatus = { prepared: "准备压缩", started: "正在生成摘要", generated: "摘要已生成，待采用",
+  completed: "已完成", noop: "无需压缩", failed: "已结束，未采用摘要" };
+function CompactionOperationRow({ operation, disabled, resumeDisabled, recovering, onRecover }: {
+  operation: ThreadCompactionOperation; disabled: boolean; resumeDisabled: boolean; recovering: boolean; onRecover: (action: "resume" | "discard") => void;
+}) {
+  const unfinished = unfinishedCompaction(operation);
+  return <li className="v2-context-compaction-record">
+    <div className="v2-context-compaction-heading"><strong>{compactionStatus[operation.status]}</strong>
+      <time dateTime={operation.created_at}>{new Date(operation.created_at).toLocaleString("zh-CN", { hour12: false })}</time></div>
+    <p className="v2-context-compaction-meta">{operation.model ? `${operation.provider ? `${operation.provider} / ` : ""}${operation.model}` : "压缩操作"}
+      <span title={operation.operation_id}>操作 {operation.operation_id}</span></p>
+    {operation.status === "prepared" && <p>请求已准备，可刷新记录核对进度。</p>}
+    {operation.status === "started" && <p>模型请求已发出，可能仍在运行。可刷新记录核对进度。</p>}
+    {operation.status === "generated" && <p>恢复会校验对话版本并采用已保存的摘要，无需再次请求模型。</p>}
+    {operation.result && <p>{compactionNotice(operation.result)}</p>}
+    {operation.error_message && <p className="v2-context-compaction-error">{operation.error_message}</p>}
+    {!operation.usage_known && <p className="v2-context-help">本次用量尚未确认。</p>}
+    {unfinished && <>
+      {operation.status === "started" && <p className="v2-context-help">放弃将停止采用本次结果；已发出的模型请求仍可能计费。</p>}
+      <div className="v2-context-control-actions">
+        {operation.status === "generated" && <button type="button" disabled={resumeDisabled} onClick={() => onRecover("resume")}>{recovering ? "正在核对…" : "恢复已生成摘要"}</button>}
+        <button type="button" disabled={disabled} onClick={() => onRecover("discard")}>{recovering ? "正在处理…" : "放弃本次压缩"}</button>
+      </div>
+    </>}
+  </li>;
 }
 
 export function V2ThreadPinPrompt({ client, threadID, paused, onReply, onClose }: {

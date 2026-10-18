@@ -308,6 +308,15 @@
 .v2-permission-settings-card .v2-permission-options > button { border: 1px solid transparent; min-height: 58px; }
 .v2-permission-settings-card .v2-permission-options > button[aria-pressed="true"] { background: color-mix(in srgb, var(--v2-accent) 8%, var(--v2-control)); border-color: color-mix(in srgb, var(--v2-accent) 24%, var(--v2-border)); }
 .v2-settings-empty { color: var(--v2-muted); padding: 20px; }
+.v2-command-service-settings .v2-setting-row { align-items: flex-start; }
+.v2-command-service-settings .v2-setting-value { flex-shrink: 0; padding-block: 3px; }
+.v2-command-service-settings .v2-setting-segmented { flex-wrap: nowrap; }
+.v2-command-service-status { color: var(--v2-ink); font-size: 13px; white-space: nowrap; }
+.v2-command-service-list { border-top: 1px solid var(--v2-border); list-style: none; margin: 0; padding: 0; }
+.v2-command-service-list strong { font-size: 13px; overflow-wrap: anywhere; }
+.v2-command-service-note { border-top: 1px solid var(--v2-border); color: var(--v2-muted); font-size: 12px; line-height: 1.6; padding: 10px 15px; }
+.v2-command-service-note p { margin: 0; }
+.v2-command-service-note p + p { margin-top: 4px; }
 
 .v2-theme-options { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 15px; }
 .v2-theme-options > button { background: transparent; border: 1px solid transparent; border-radius: 12px; display: grid; gap: 8px; padding: 8px; text-align: left; }

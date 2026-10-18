@@ -1800,6 +1800,12 @@ func (s *RunWorktreeService) loadExactDrydock(ctx context.Context, runID string,
 			repository.DrydockObservation{}, apperror.New(apperror.CodeFailedPrecondition,
 				"Drydock requires operator recovery")
 	}
+	return s.inspectDrydockBinding(ctx, binding, workspace)
+}
+
+func (s *RunWorktreeService) inspectDrydockBinding(ctx context.Context, binding drydockRunBinding,
+	workspace runworktree.Workspace,
+) (runworktree.Workspace, repository.DrydockSourceObservation, repository.DrydockObservation, error) {
 	// These are independent read-only observations of the source and its owned
 	// worktree. The stored common-directory digest is only a lookup coordinate,
 	// not an authority result: both repositories are inspected afresh below and
@@ -1956,6 +1962,10 @@ func (s *RunWorktreeService) captureCheckpointForRun(ctx context.Context, runID 
 	}
 	digest := runmutation.Fingerprint("drydock-checkpoint.v1", workspace.ID,
 		triggerReceiptID, phase, parentID)
+	reasons, err := sharedCommandServiceCheckpointReasons(ctx, s.store, workspace.Path)
+	if err != nil {
+		return workspacecheckpoint.Checkpoint{}, err
+	}
 	snapshot, err := workspacecheckpoint.Capture(ctx, workspacecheckpoint.CaptureRequest{
 		ID: "drydock-checkpoint-" + digest[:32], RunID: run.ID,
 		MissionID: workspace.MissionID, SessionID: run.SessionID,
@@ -1964,7 +1974,7 @@ func (s *RunWorktreeService) captureCheckpointForRun(ctx context.Context, runID 
 			strconv.FormatInt(workspace.Generation, 10)),
 		Trigger: workspacecheckpoint.TriggerManual, Phase: workspacecheckpoint.PhaseStandalone,
 		TriggerReceiptID: triggerReceiptID, RequestedBy: requestedBy, Title: title,
-		ParentCheckpointID: parentID, CreatedAt: s.now().UTC(),
+		ParentCheckpointID: parentID, CreatedAt: s.now().UTC(), IncompleteReasons: reasons,
 	})
 	if err != nil {
 		return workspacecheckpoint.Checkpoint{}, err

@@ -19,11 +19,13 @@ function invalid(): never { throw new APIRequestError("应用服务结果无法�
 
 function service(value: unknown, threadID: string, jobID?: string, runID?: string): ThreadApplicationServiceView {
   if (!keys(value, ["thread_id", "run_id", "job_id", "state", "created_at", "can_stop"],
-    ["exit_code", "started_at", "completed_at", "source_call_id", "source_message_id", "source_turn"]) ||
+    ["exit_code", "started_at", "completed_at", "source_call_id", "source_message_id", "source_turn", "workspace_mode", "tree_reaped"]) ||
     value.thread_id !== threadID || !applicationServiceIdentity(value.run_id) || !applicationServiceIdentity(value.job_id) ||
     (jobID !== undefined && value.job_id !== jobID) || (runID !== undefined && value.run_id !== runID) ||
     typeof value.state !== "string" || !states.has(value.state) || !date(value.created_at) ||
     typeof value.can_stop !== "boolean" || (value.can_stop && !activeStates.has(value.state)) ||
+    (value.workspace_mode !== undefined && value.workspace_mode !== "exclusive" && value.workspace_mode !== "shared_service") ||
+    (value.tree_reaped !== undefined && typeof value.tree_reaped !== "boolean") ||
     (value.exit_code !== undefined && !integer(value.exit_code)) ||
     (value.started_at !== undefined && !date(value.started_at)) ||
     (value.completed_at !== undefined && !date(value.completed_at)) ||

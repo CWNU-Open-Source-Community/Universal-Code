@@ -26,11 +26,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 132 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 136 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
 | [mcp-live-input](#mcp-live-input) | `ephemeral` | MCP client maintainers | 1 | false |
+| [mcp-oauth-credentials](#mcp-oauth-credentials) | `internal-durable` | MCP OAuth and credential maintainers | 1 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 65 | true |
 | [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 10 | true |
@@ -985,7 +986,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>132 active identifiers</summary>
+<details><summary>136 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -1004,6 +1005,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `code-intel-lsp.v1`
 - `code_handoff.v1`
 - `command-runtime.v2`
+- `command_runtime_docker_service.v1`
 - `context_pin_proposal.v1`
 - `context_provenance.v0`
 - `context_provenance.v1`
@@ -1098,7 +1100,10 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_activity_detail.v2`
 - `thread_activity_summary.v1`
 - `thread_application_services.v1`
+- `thread_command_service_policy.v1`
 - `thread_context_compaction.v1`
+- `thread_context_compaction_operations.v1`
+- `thread_context_compaction_recovery.v1`
 - `thread_context_pins.v1`
 - `thread_creation.v1`
 - `thread_execution.v1`
@@ -1219,6 +1224,25 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 <details><summary>1 active identifiers</summary>
 
 - `mcp-input.v1`
+
+</details>
+
+### mcp-oauth-credentials
+
+- Class: `internal-durable`
+- Owner: MCP OAuth and credential maintainers
+- Source of truth: `internal/credential`, `internal/mcpoauth/oauth.go`, `internal/mcpoauth/store.go`
+- Persistence/export boundary: Versioned AES-GCM files under credentials/mcp preserve descriptor-bound OAuth token bundles across restart. The matching key and opaque file reference remain in the OS credential entry; tokens and client secrets never enter public status or SQLite.
+- Compatibility rule: Retain legacy inline-bundle reads and the v1 encrypted reader. Migrate only on a verified successful write; preserve descriptor/client/session bindings and compare-and-swap. Reject unknown versions, missing keys and authentication failures without plaintext fallback or automatic replay of an MCP operation.
+- Retirement gate (`migration-or-retention`): An explicit migration or retention decision covers each ciphertext file and matching OS key/reference; Legacy migration, restart, tampering, failed-write/readback and stale compare-and-swap tests remain until supported credentials and backups are migrated or retained; Rollback retains readers for matching encrypted files and OS entries; unverified commits never remove possibly active ciphertext or replay an MCP operation
+- Writers:
+  - `mcp-oauth-encrypted-bundle-writer` (`v1`, write-current) at `internal/mcpoauth/store.go`
+- Readers:
+  - `mcp-oauth-encrypted-bundle-reader` (`v1`, active) at `internal/mcpoauth/store.go`
+
+<details><summary>1 active identifiers</summary>
+
+- `universal-code.mcp-oauth.v1`
 
 </details>
 
@@ -2121,6 +2145,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `standard_code_security_recovery.v1` | `conformance-test` | `internal/desktop/standard_code_security_recovery_windows.go` | Fixed packaged-only Standard Code crash/restart evidence; contains hashes and bounded lifecycle facts but grants no runtime or release authority. |
 | `standard_code_test_root.v1` | `test-fixture` | `internal/application/standard_code_supervisor_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `test-output.v1` | `test-fixture` | `internal/store/batch_delivery_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
+| `thread-compaction-live.v1` | `test-fixture` | `internal/application/thread_context_compaction_live_test.go` | Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance. |
 | `thread_summary_window.v99` | `test-fixture` | `internal/contextmgr/continuity_summary_window_test.go` | Negative fixture verifies unknown rolling window versions fail closed. |
 | `ui-evidence-ci-launch.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `ui-evidence-ci-smoke.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

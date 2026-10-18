@@ -507,6 +507,10 @@ func (s *DockerSandboxService) loadCurrentDockerSandboxAuthority(ctx context.Con
 		return dockerSandboxAuthority{}, apperror.New(apperror.CodeConflict,
 			"Docker Sandbox requester does not own the exact compiled plan")
 	}
+	if err := requireCommandRuntimeDockerServiceProof(ctx, plan, manifest); err != nil {
+		return dockerSandboxAuthority{}, apperror.Wrap(apperror.CodePolicyDenied,
+			"shared service Docker execution requires its live Job authority", err)
+	}
 	if isWorkerCommandDockerRequester(plan.RequestedBy) {
 		proof := workerCommandRuntimeFromContext(ctx)
 		if proof == nil || proof.scope.RunID != plan.RunID || workerCommandDockerRequester(proof) != plan.RequestedBy || proof.check(ctx, proof.nativeScope, proof.binding.rootPath) != nil {

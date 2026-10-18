@@ -69,12 +69,22 @@ func (s *CommandRuntimeService) authorizedCommandStart(scope toolgateway.Command
 			if err := s.checkProjectTestDispatchSource(ctx, scope, bindings); err != nil {
 				return err
 			}
+			if actual.Spec.WorkspaceMode == runner.CommandRuntimeWorkspaceSharedService {
+				if err := requireSharedCommandServicePolicy(ctx, s.store, scope.RunID); err != nil {
+					return err
+				}
+			}
 			prepared, err := prepare(actual)
 			if err != nil {
 				return err
 			}
 			return check(ctx, prepared, false)
 		}, OwnershipCheck: func(ctx context.Context) error {
+			if spec.Spec.WorkspaceMode == runner.CommandRuntimeWorkspaceSharedService {
+				if err := requireSharedCommandServicePolicy(ctx, s.store, scope.RunID); err != nil {
+					return err
+				}
+			}
 			return check(ctx, operation, true)
 		}}, nil
 }

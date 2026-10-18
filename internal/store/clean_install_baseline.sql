@@ -12503,6 +12503,13 @@ CREATE TABLE terminal_sessions (
 		CHECK(julianday(created_at) IS NOT NULL AND julianday(last_activity_at) IS NOT NULL)
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_command_service_policies (
+      thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE RESTRICT,
+      policy TEXT NOT NULL CHECK(policy IN ('auto','exclusive')),
+      revision INTEGER NOT NULL CHECK(revision >= 2),
+      updated_at TEXT NOT NULL
+    );
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE thread_context_compactions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			operation_id TEXT NOT NULL UNIQUE,
@@ -15715,6 +15722,14 @@ CREATE TRIGGER trg_command_runtime_operator_invocation_immutable
 		 BEFORE UPDATE OF operator_invocation ON command_runtime_jobs
 		 WHEN NEW.operator_invocation != OLD.operator_invocation
 		 BEGIN SELECT RAISE(ABORT, 'Command Runtime invocation source is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_command_runtime_shared_service_policy
+      BEFORE INSERT ON command_runtime_jobs
+      WHEN json_extract(NEW.intent_json,'$.workspace_mode')='shared_service'
+       AND EXISTS (SELECT 1 FROM thread_runs binding
+         JOIN thread_command_service_policies preference ON preference.thread_id=binding.thread_id
+         WHERE binding.run_id=NEW.run_id AND preference.policy='exclusive')
+      BEGIN SELECT RAISE(ABORT,'Thread requires exclusive command execution'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_completion_requires_agent_attempt
 		BEFORE INSERT ON agent_completion_reports

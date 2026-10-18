@@ -15,18 +15,21 @@ import (
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/executionauth"
+	"cyberagent-workbench/internal/mcpoauth"
 	"cyberagent-workbench/internal/toolcontract"
 )
 
 func TestOAuthRuntimeRefreshFollowsCurrentAuthorityAndRedactsRotatedToken(t *testing.T) {
-	for _, denied := range []bool{false, true} {
-		t.Run(map[bool]string{false: "refresh", true: "revoked_before_refresh"}[denied], func(t *testing.T) {
+	for _, scenario := range []string{"refresh", "revoked_before_refresh", "server_rejected"} {
+		t.Run(scenario, func(t *testing.T) {
+			denied := scenario == "revoked_before_refresh"
+			initial, rotated := strings.Repeat("oauth-initial-", 300), strings.Repeat("oauth-rotated-", 300)
 			var refreshes, calls, checks atomic.Int32
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/token" {
 					refreshes.Add(1)
 					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"access_token":"oauth-rotated-value","refresh_token":"oauth-rotated-refresh","token_type":"Bearer","expires_in":3600}`))
+					json.NewEncoder(w).Encode(map[string]any{"access_token": rotated, "refresh_token": "oauth-rotated-refresh", "token_type": "Bearer", "expires_in": 3600})
 					return
 				}
 				if r.Header.Get("X-Project") != "manual-config" {
@@ -51,10 +54,14 @@ func TestOAuthRuntimeRefreshFollowsCurrentAuthorityAndRedactsRotatedToken(t *tes
 					raw = `{"resourceTemplates":[]}`
 				case "resources/read":
 					calls.Add(1)
-					if r.Header.Get("Authorization") != "Bearer oauth-rotated-value" {
+					if r.Header.Get("Authorization") != "Bearer "+rotated {
 						t.Error("call used the expired token")
 					}
-					raw = `{"contents":[{"uri":"fixture://readme","text":"oauth-rotated-value"}]}`
+					if scenario == "server_rejected" {
+						w.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+					raw = `{"contents":[{"uri":"fixture://readme","text":"` + rotated + `"}]}`
 				default:
 					t.Error("unexpected MCP method", req.Method)
 					w.WriteHeader(http.StatusBadRequest)
@@ -63,7 +70,7 @@ func TestOAuthRuntimeRefreshFollowsCurrentAuthorityAndRedactsRotatedToken(t *tes
 				sdkWriteResponse(w, req.ID, raw)
 			}))
 			defer server.Close()
-			owned := credential.NewMemoryStore()
+			owned := mcpoauth.Store{Dir: t.TempDir(), KeyStore: credential.NewMemoryStore()}
 			st := &clientStoreFake{}
 			manager, err := NewClientManager(st, owned, ManagerOptions{HTTPClient: server.Client()})
 			if err != nil {
@@ -76,7 +83,7 @@ func TestOAuthRuntimeRefreshFollowsCurrentAuthorityAndRedactsRotatedToken(t *tes
 			storeToken := func(expiry time.Time) {
 				raw, marshalErr := json.Marshal(map[string]any{"session": "fixture-login", "fingerprint": d.Fingerprint(), "target": d.Target, "resource": d.Target,
 					"issuer": server.URL, "client_id": "public-client", "token_endpoint": server.URL + "/token",
-					"token": map[string]any{"access_token": "oauth-initial-value", "refresh_token": "oauth-initial-refresh", "token_type": "Bearer", "expiry": expiry}})
+					"token": map[string]any{"access_token": initial, "refresh_token": "oauth-initial-refresh", "token_type": "Bearer", "expiry": expiry}})
 				if marshalErr != nil {
 					t.Fatal(marshalErr)
 				}
@@ -118,7 +125,11 @@ func TestOAuthRuntimeRefreshFollowsCurrentAuthorityAndRedactsRotatedToken(t *tes
 				if err == nil || !found || receipt.State != toolcontract.ReceiptNotDispatched || calls.Load() != 0 || refreshes.Load() != 0 {
 					t.Fatalf("revoked operation contacted peer/issuer: calls=%d refreshes=%d receipt=%+v err=%v", calls.Load(), refreshes.Load(), receipt, err)
 				}
-			} else if err != nil || calls.Load() != 1 || refreshes.Load() != 1 || strings.Contains(result.Content, "oauth-rotated-value") || !strings.Contains(result.Content, "REDACTED") {
+			} else if scenario == "server_rejected" {
+				if err == nil || calls.Load() != 1 || refreshes.Load() != 1 {
+					t.Fatal("server rejection retried OAuth or replayed the MCP operation")
+				}
+			} else if err != nil || calls.Load() != 1 || refreshes.Load() != 1 || strings.Contains(result.Content, rotated) || !strings.Contains(result.Content, "REDACTED") {
 				t.Fatalf("refresh or redaction failed: calls=%d refreshes=%d err=%v", calls.Load(), refreshes.Load(), err)
 			}
 		})
