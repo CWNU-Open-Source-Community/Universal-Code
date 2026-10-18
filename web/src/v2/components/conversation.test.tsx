@@ -738,7 +738,10 @@ describe("V2Conversation", () => {
     const submission = deferred<Awaited<ReturnType<APIClient["submitThreadTurn"]>>>();
     const client = baseClient({
       get: vi.fn(() => Promise.resolve({ ...detail("thread-a"),
-        active_run: { id: "run-thread-a", status: "running" } })),
+        active_run: { id: "run-thread-a", status: "running" },
+        statistics: { turns: 2, steps: 56, input_tokens: 1000, output_tokens: 100, total_tokens: 1100,
+          cache_read_tokens: 0, cache_reported_calls: 0, usage_calls: 56,
+          timed_output_tokens: 0, decode_millis: 0 } })),
       submitThreadTurn: vi.fn(() => submission.promise),
     } as Partial<APIClient>);
     const user = userEvent.setup();
@@ -750,7 +753,7 @@ describe("V2Conversation", () => {
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     expect(await screen.findByText("正在发送消息")).toBeInTheDocument();
     expect(screen.queryByText("正在工作")).not.toBeInTheDocument();
-    expect(screen.getByText(/发送后将在下一轮处理，进度会显示在对话中。/)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "对话统计" })).toHaveTextContent("2 轮 56 步");
     expect(screen.queryByText(/停止会取消/u)).not.toBeInTheDocument();
 
     const completed = detail("thread-a").thread;

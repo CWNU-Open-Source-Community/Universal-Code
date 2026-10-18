@@ -100,6 +100,10 @@ func (s *AgentRunner) callModelWithRetry(ctx context.Context, turn domain.Superv
 			ProtocolRepair:      protocolRepair, ToolRound: toolRound,
 			Provider: ref.Provider, Model: ref.Model, Context: contextAudit,
 		}
+		if window, prepared := request.PreparedContextWindow(); prepared {
+			attempt.ContextWindowTokens = window.WindowTokens
+			attempt.ContextWindowSource = window.Source
+		}
 		// Reopening a claimed recovery cannot spend a new reservation or send
 		// the old input. The store repeats this check atomically at model start.
 		if gate, ok := s.store.(supervisorContextRecoveryInputStore); ok {
@@ -175,6 +179,7 @@ func (s *AgentRunner) callModelWithRetry(ctx context.Context, turn domain.Superv
 			callErr = callCtx.Err()
 		}
 		attempt.Elapsed = time.Since(startedAt)
+		attempt.DecodeMillis = streamed.DecodeMillis
 		attempt.StreamEvents = streamed.Events
 		attempt.StreamBytes = streamed.Bytes
 		result.Attempt = attempt

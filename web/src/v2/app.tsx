@@ -231,9 +231,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         }} targets={allowedTargets} /></>}
       onWorkspaceChange={onWorkspaceChange} placeholder={t("输入任务或问题…", "Enter a task or question…")} threadID=""
       workspaceID={workspaceID} workspaces={workspaces} />
-      <small className="v2-composer-caption">{phase === "plan"
-        ? t("先分析并准备计划，确认后开始执行。可随时补充要求。", "Analyze and prepare a plan, then execute after confirmation. Add requirements at any time.")
-        : t("直接处理需求，操作仍遵循任务权限。可随时补充要求。", "Work on your request directly within task permissions. Add requirements at any time.")}</small></div>
+      </div>
   </section>;
 }
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
@@ -118,6 +119,9 @@ type StreamEvent struct {
 	ArgumentDelta string    `json:"-"`
 	CompletedCall *ToolCall `json:"-"`
 	Usage         *Usage    `json:"-"`
+	// DecodeMillis is measured within the provider adapter, before application
+	// persistence or tool execution. Private generation contributes only time.
+	DecodeMillis *int64 `json:"-"`
 }
 
 // OutputItem is the content-free item projection shared by completed model
@@ -1157,13 +1161,14 @@ func validateToolName(name string) error {
 // mappings. Provider IDs are connection-local; the application accumulator
 // replaces them with stable attempt-owned IDs.
 type providerStreamEvents struct {
-	provider    string
-	model       string
-	responseID  string
-	granularity StreamGranularity
-	sequence    int
-	started     bool
-	terminal    bool
+	provider        string
+	model           string
+	responseID      string
+	granularity     StreamGranularity
+	sequence        int
+	started         bool
+	terminal        bool
+	firstGeneration time.Time
 }
 
 func newProviderStreamEvents(provider string, model string, responseID string,
@@ -1179,6 +1184,10 @@ func (s *providerStreamEvents) start() StreamEvent {
 }
 
 func (s *providerStreamEvents) emit(template StreamEvent) StreamEvent {
+	if template.Type == StreamToolCallStarted || (template.Type == StreamTextDelta && template.TextDelta != "") ||
+		(template.Type == StreamToolArgumentDelta && template.ArgumentDelta != "") {
+		s.markGeneration()
+	}
 	s.sequence++
 	template.Version = ItemStreamProtocolVersion
 	template.Sequence = s.sequence
@@ -1187,6 +1196,12 @@ func (s *providerStreamEvents) emit(template StreamEvent) StreamEvent {
 	template.Model = s.model
 	template.Provisional = true
 	return template
+}
+
+func (s *providerStreamEvents) markGeneration() {
+	if s.granularity == StreamGranularityDelta && s.firstGeneration.IsZero() {
+		s.firstGeneration = time.Now()
+	}
 }
 
 func (s *providerStreamEvents) terminalEvent(outcome Outcome, usage *Usage) StreamEvent {
@@ -1203,7 +1218,12 @@ func (s *providerStreamEvents) terminalEvent(outcome Outcome, usage *Usage) Stre
 		usage = nil
 	}
 	s.terminal = true
-	return s.emit(StreamEvent{Type: typeName, Outcome: outcome, Usage: usage})
+	event := s.emit(StreamEvent{Type: typeName, Outcome: outcome, Usage: usage})
+	if outcome == OutcomeSuccess && !s.firstGeneration.IsZero() {
+		millis := time.Since(s.firstGeneration).Milliseconds()
+		event.DecodeMillis = &millis
+	}
+	return event
 }
 
 func (s *providerStreamEvents) failureChunk(err error) ChatChunk {

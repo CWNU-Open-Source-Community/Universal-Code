@@ -8,6 +8,17 @@ import (
 	"cyberagent-workbench/internal/llm"
 )
 
+func TestModelStreamPreservesAdapterGenerationDuration(t *testing.T) {
+	decode := int64(123)
+	aggregator := &modelStreamAggregator{}
+	aggregator.observeUsage(llm.ChatChunk{Done: true, Usage: &llm.Usage{OutputTokens: 10, TotalTokens: 10},
+		Events: []llm.StreamEvent{{Type: llm.StreamResponseCompleted, DecodeMillis: &decode}}})
+	result := aggregator.result(nil)
+	if result.DecodeMillis == nil || *result.DecodeMillis != 123 || result.Usage == nil || result.Usage.OutputTokens != 10 {
+		t.Fatalf("adapter generation timing was lost: %+v", result)
+	}
+}
+
 func TestModelStreamPublicPreviewForcesFinalScanBelowCadence(t *testing.T) {
 	registry := newActiveCallRegistry(1)
 	key := activeCallKey{runID: "run-preview", attemptID: "attempt-preview", modelAttempt: 1}
