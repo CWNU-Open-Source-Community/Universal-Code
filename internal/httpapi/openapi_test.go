@@ -1932,6 +1932,13 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"search_diagnostics.v1","confirm":true}`
 				} else if spec.Path == ThreadExecutionPermissionControlPathTemplate {
 					body = `{"mode":"ask"}`
+				} else if spec.Path == ThreadCommandServicePolicyPathTemplate {
+					current, getErr := fixture.store.GetThreadCommandServicePolicy(t.Context(), openAPIThread.ID)
+					if getErr != nil {
+						t.Fatal(getErr)
+					}
+					body = `{"version":"thread_command_service_policy.v1","policy":"auto","expected_revision":` +
+						fmt.Sprint(current.Revision) + `}`
 				} else if spec.Path == RunBrowserCDPPermissionControlPathTemplate {
 					body = `{"mode":"restricted"}`
 				} else if spec.Path == RunNetworkAuthorityControlPathTemplate {
