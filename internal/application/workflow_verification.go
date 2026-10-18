@@ -159,6 +159,9 @@ func (s *CommandRuntimeService) checkWorkflowVerificationReceipt(ctx context.Con
 	if err != nil {
 		return receipt, true, err
 	}
+	if err := workflowVerificationRunStatus(b.run); err != nil {
+		return receipt, true, err
+	}
 	child, err := ev.store.GetAgentNode(ctx, ev.step.AgentID)
 	if err != nil {
 		return receipt, true, err
@@ -214,7 +217,7 @@ func (s *CommandRuntimeService) checkWorkflowVerificationReceipt(ctx context.Con
 	if err != nil {
 		return receipt, true, err
 	}
-	if !b.rootFound || b.run.Status != domain.RunRunning || b.mode.Surface != domain.ExecutionSurfaceCode || !projectTestPhaseAllowed(b.mode.Phase) ||
+	if !b.rootFound || b.mode.Surface != domain.ExecutionSurfaceCode || !projectTestPhaseAllowed(b.mode.Phase) ||
 		b.profile.Profile != commandRuntimeExecutionProfile(s.adapter) || b.profile.NetworkScope != domain.ExecutionNetworkDisabled ||
 		!s.adapter.AllowsPermission(b.permission.Mode) || !s.capabilities.AllowsSnapshot(b.permission) || !commandRuntimeAuthorityCurrent(s.capabilities, a, b.permission) {
 		return fail("workflow verification current Run permission, mode or backend changed")
@@ -249,7 +252,25 @@ func (s *CommandRuntimeService) checkWorkflowVerificationReceipt(ctx context.Con
 	if _, _, err = ev.store.ReadWorkflowVerificationClaim(ctx, scope.executionID, ev.step.ID, scope.owner, scope.revision); err != nil {
 		return receipt, true, err
 	}
+	currentRun, err := ev.store.GetRun(ctx, ev.e.RunID)
+	if err != nil {
+		return receipt, true, err
+	}
+	if err := workflowVerificationRunStatus(currentRun); err != nil {
+		receipt.Reusable = false
+		return receipt, true, err
+	}
 	return receipt, true, nil
+}
+
+func workflowVerificationRunStatus(run domain.Run) error {
+	if run.Status == domain.RunPaused {
+		return apperror.New(apperror.CodeConflict, "workflow verification yields while its Run is paused")
+	}
+	if run.Status != domain.RunRunning {
+		return apperror.New(apperror.CodeFailedPrecondition, "workflow verification requires a running Run; current status="+string(run.Status))
+	}
+	return nil
 }
 
 func (s *WorkflowService) checkWorkerVerification(ctx context.Context, e *domain.WorkflowExecution, job domain.WorkflowStepExecution, step domain.WorkflowStep, owner string, final bool) error {

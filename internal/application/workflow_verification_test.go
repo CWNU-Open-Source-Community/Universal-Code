@@ -460,3 +460,86 @@ func TestWorkflowVerificationControlConflictPreservesPendingAcceptance(t *testin
 		})
 	}
 }
+
+type workflowVerificationRunControlStore struct {
+	*store.SQLiteStore
+	readCount int
+	controlAt int
+	control   func(context.Context, string) error
+}
+
+func (s *workflowVerificationRunControlStore) ReadWorkflowVerificationClaim(ctx context.Context, executionID, stepID, owner string, revision int64) (domain.WorkflowExecution, domain.WorkflowStepExecution, error) {
+	e, step, err := s.SQLiteStore.ReadWorkflowVerificationClaim(ctx, executionID, stepID, owner, revision)
+	if err != nil {
+		return e, step, err
+	}
+	s.readCount++
+	if s.readCount == s.controlAt {
+		err = s.control(ctx, e.RunID)
+	}
+	return e, step, err
+}
+
+func TestWorkflowRunPauseDuringVerificationPreservesNativeCompletion(t *testing.T) {
+	for _, stage := range []string{"step_first_read", "step_final_read", "workflow_first_read", "workflow_final_read"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newProjectVerificationFixture(t, domain.ExecutionPhaseDeliver)
+			p := nativeWorkflowTestsProvider()
+			service, _, e := startNativeVerificationWorkflow(t, f, p, workflowVerificationSpec(true, 1))
+			if strings.HasPrefix(stage, "workflow_") {
+				e = advanceVerificationWorkflow(t, service, e)
+			}
+			controlAt := 1
+			if strings.HasSuffix(stage, "final_read") {
+				controlAt = 2
+			}
+			runs := NewRunService(f.st)
+			f.service.store = &workflowVerificationRunControlStore{SQLiteStore: f.st, controlAt: controlAt, control: func(ctx context.Context, runID string) error {
+				_, err := runs.Pause(ctx, runID)
+				return err
+			}}
+			e = advanceVerificationWorkflow(t, service, e)
+			if e.Status == "failed" || e.Status == "completed" {
+				t.Fatalf("Run pause should yield acceptance: %+v", e)
+			}
+			proof := e.State.Verifications["."]
+			completion, found, err := f.st.GetAgentCompletion(t.Context(), proof.AgentID)
+			if err != nil || !found || completion.Report.Summary != "worker claims success" {
+				t.Fatalf("pause lost native completion: %+v found=%v err=%v", completion, found, err)
+			}
+			step, found, err := f.st.GetWorkflowStep(t.Context(), proof.StepExecutionID)
+			if err != nil || !found || step.Status == "failed" {
+				t.Fatalf("pause poisoned workflow candidate: %+v found=%v err=%v", step, found, err)
+			}
+			if _, err = runs.Resume(t.Context(), e.RunID); err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2 && e.Status != "completed"; i++ {
+				e = advanceVerificationWorkflow(t, service, e)
+			}
+			jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: e.RunID, Limit: 10})
+			if err != nil || e.Status != "completed" || p.calls != 2 || len(jobs) != 1 || !e.State.Verifications["."].Reusable {
+				t.Fatalf("Resume reran or lost native evidence: execution=%+v model_calls=%d jobs=%d err=%v", e, p.calls, len(jobs), err)
+			}
+		})
+	}
+}
+
+func TestWorkflowTerminalRunDuringVerificationCannotComplete(t *testing.T) {
+	for _, controlAt := range []int{1, 2} {
+		t.Run(fmt.Sprint(controlAt), func(t *testing.T) {
+			f := newProjectVerificationFixture(t, domain.ExecutionPhaseDeliver)
+			p := nativeWorkflowTestsProvider()
+			service, _, e := startNativeVerificationWorkflow(t, f, p, workflowVerificationSpec(true, 1))
+			runs := NewRunService(f.st)
+			f.service.store = &workflowVerificationRunControlStore{SQLiteStore: f.st, controlAt: controlAt, control: func(ctx context.Context, runID string) error {
+				_, err := runs.Cancel(ctx, runID)
+				return err
+			}}
+			e = advanceVerificationWorkflow(t, service, e)
+			if e.Status != "failed" || e.State.Verifications["."].Reusable || p.calls != 2 {
+				t.Fatalf("terminal Run accepted native evidence: %+v calls=%d", e, p.calls)
+			}
+		})
+	}
+}
