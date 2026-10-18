@@ -2047,6 +2047,9 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `full_cdp_session.v0` | `negative-version-fixture` | `internal/httpapi/full_cdp_session_control_test.go` | Unknown-version HTTP fixture retained to prove fail-closed Full CDP session decoding. |
 | `full_cdp_session_close.v0` | `negative-version-fixture` | `internal/httpapi/full_cdp_session_control_test.go` | Unknown-version HTTP fixture retained to prove fail-closed Full CDP close decoding. |
 | `generated_handoff.v2` | `negative-version-fixture` | `internal/application/thread_generated_compaction_integration_test.go`, `internal/contextmgr/generated_summary_test.go` | Unsupported generated summary version used only to verify rejection; not a production protocol. |
+| `github-followup-live-fixture.v1` | `test-fixture` | `internal/application/pr_followup_live_test.go`, `scripts/github-followup-live.ps1` | Opt-in live acceptance manifest binding its isolated GitHub PR and disposable workspace. |
+| `github-followup-live-read.v1` | `test-fixture` | `internal/githubreview/followup_live_test.go` | Redacted evidence for explicitly enabled authenticated GitHub pagination acceptance. |
+| `github-followup-live-repair.v1` | `test-fixture` | `internal/application/pr_followup_live_test.go` | Redacted evidence for explicitly enabled model repair and remote CI acceptance. |
 | `github-test.v1` | `test-fixture` | `internal/webevidence/service_source_connector_test.go` | Test connector identity used to verify bounded source search and snapshot replay; not a production connector. |
 | `handoff_memory.v999` | `test-fixture` | `internal/contextmgr/continuity_summary_window_test.go` | Negative fixture verifies unknown summary versions fail closed. |
 | `hn-test.v1` | `test-fixture` | `internal/webevidence/service_source_connector_test.go` | Test connector identity used to verify bounded source search and snapshot replay; not a production connector. |
