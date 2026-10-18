@@ -63,28 +63,7 @@ func (s *SQLiteStore) ListScheduledJobs(ctx context.Context, runID string,
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"scheduled job list limit must be between 1 and 100")
 	}
-	query := scheduledJobSelect
-	args := []any{}
-	if runID != "" {
-		query += `WHERE owner_run_id = ? `
-		args = append(args, runID)
-	}
-	query += `ORDER BY created_at DESC, id DESC LIMIT ?`
-	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]domain.ScheduledJob, 0, limit)
-	for rows.Next() {
-		record, err := scanScheduledJob(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, record.Job)
-	}
-	return result, rows.Err()
+	return s.ListScheduledJobsByCreationPage(ctx, runID, time.Time{}, "", limit)
 }
 
 func (s *SQLiteStore) GetScheduledJobOperation(ctx context.Context,

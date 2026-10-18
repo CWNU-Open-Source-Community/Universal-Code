@@ -3330,7 +3330,7 @@ export interface paths {
         };
         /**
          * List one Run's scheduled jobs
-         * @description Returns the bounded scheduled-job projection for one exact owner and target Run.
+         * @description Returns a bounded creation-ordered scheduled-job page for one exact owner and target Run. Its opaque continuation cursor is scoped to this Run route.
          */
         get: operations["listRunScheduledJobs"];
         put?: never;
@@ -4205,7 +4205,7 @@ export interface paths {
         };
         /**
          * List durable scheduled jobs
-         * @description Returns a bounded projection of schedules and their configured execution targets. Lease fence tokens, operation keys and raw observation payloads are withheld.
+         * @description Returns a bounded creation-ordered page of schedules and their configured execution targets. The opaque keyset cursor is bound to this route and exact owner Run filter; status updates and later inserts do not shift older pages. Lease fence tokens, operation keys and raw observation payloads are withheld.
          */
         get: operations["listScheduledJobs"];
         put?: never;
@@ -23992,8 +23992,10 @@ export interface operations {
     listRunScheduledJobs: {
         parameters: {
             query?: {
-                /** @description Maximum scheduled jobs */
+                /** @description Page size from 1 to 100; defaults to 50 */
                 limit?: number;
+                /** @description Opaque cursor bound to this route and exact filter set */
+                cursor?: string;
             };
             header?: never;
             path: {
@@ -24012,6 +24014,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ScheduledJobListView"];
+                        page: components["schemas"]["Page"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
@@ -26304,10 +26307,12 @@ export interface operations {
     listScheduledJobs: {
         parameters: {
             query?: {
+                /** @description Page size from 1 to 100; defaults to 50 */
+                limit?: number;
+                /** @description Opaque cursor bound to this route and exact filter set */
+                cursor?: string;
                 /** @description Optional exact owner Run filter */
                 run_id?: string;
-                /** @description Maximum scheduled jobs */
-                limit?: number;
             };
             header?: never;
             path?: never;
@@ -26323,6 +26328,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ScheduledJobListView"];
+                        page: components["schemas"]["Page"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

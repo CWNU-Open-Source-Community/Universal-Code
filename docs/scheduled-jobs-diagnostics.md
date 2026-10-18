@@ -133,11 +133,24 @@ has `evidence=persisted_event` and `payload_state=withheld`; the classification 
 
 Read bearer routes:
 
-- `GET /api/v1/scheduled-jobs?run_id=<run>&limit=<1..100>`
+- `GET /api/v1/scheduled-jobs?run_id=<run>&limit=<1..100>&cursor=<opaque>`
+- `GET /api/v1/runs/{run_id}/scheduled-jobs?limit=<1..100>&cursor=<opaque>`
 - `GET /api/v1/scheduled-jobs/{job_id}?round_limit=<1..100>&notification_limit=<1..100>`
 - `GET /api/v1/doctor?run_id=<run>`
 - `GET /api/v1/debug?run_id=<run>&after_sequence=<n>&limit=<1..100>...`
 - `GET /api/v1/diagnostic-bundle?run_id=<run>&after_sequence=<n>&limit=<1..100>...`
+
+Schedule lists return `data.items` and a top-level `page` containing `limit` and,
+when older records remain, `next_cursor`. Omit `cursor` for the first page; pass
+the returned cursor unchanged with the same route and Run filter for the next.
+Creation time and ID define stable descending order, so status changes and newer
+inserts do not shift continuation pages. Each read returns at most 100 jobs; the
+shared browsing bound is 100,000, after which `page.truncated` is explicit.
+The Automations workspace offers **Load more schedules** and retries the same
+continuation after a read failure, keeping older active plans available for pause
+and cancellation. The TypeScript client's existing three-argument
+`listScheduledJobs(runID, limit, signal)` call remains valid; an optional fourth
+`cursor` argument reads the next page and the returned value includes `page`.
 
 Control bearer plus `Idempotency-Key` routes:
 

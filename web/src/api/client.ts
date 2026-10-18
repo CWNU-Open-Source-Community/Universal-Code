@@ -8538,14 +8538,15 @@ export class APIClient {
   }
 
   async listScheduledJobs(runID = "", limit = 50,
-    signal?: AbortSignal): Promise<ScheduledJobListView> {
+    signal?: AbortSignal, cursor = ""): Promise<ScheduledJobListView & { page: Page }> {
     if ((runID !== "" && boundedIdentity(runID) !== runID) ||
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("A normalized Run identity and a schedule limit between 1 and 100 are required");
     }
-    return parseScheduledJobList(await this.get<unknown>("/scheduled-jobs", {
-      run_id: runID || undefined, limit,
-    }, signal));
+    const envelope = await this.request<unknown>("/scheduled-jobs", {
+      run_id: runID || undefined, limit, cursor: cursor || undefined,
+    }, signal);
+    return { ...parseScheduledJobList(envelope.data), page: parseResponsePage(envelope.page, limit) };
   }
 
   async getScheduledJob(jobID: string, signal?: AbortSignal): Promise<ScheduledJobDetailView> {

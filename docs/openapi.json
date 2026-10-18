@@ -18738,7 +18738,7 @@
       "get": {
         "operationId": "listRunScheduledJobs",
         "summary": "List one Run's scheduled jobs",
-        "description": "Returns the bounded scheduled-job projection for one exact owner and target Run.",
+        "description": "Returns a bounded creation-ordered scheduled-job page for one exact owner and target Run. Its opaque continuation cursor is scoped to this Run route.",
         "tags": [
           "Automation"
         ],
@@ -18758,12 +18758,22 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "Maximum scheduled jobs",
+            "description": "Page size from 1 to 100; defaults to 50",
             "schema": {
               "default": 50,
               "maximum": 100,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor bound to this route and exact filter set",
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
             }
           }
         ],
@@ -18778,6 +18788,9 @@
                     "data": {
                       "$ref": "#/components/schemas/ScheduledJobListView"
                     },
+                    "page": {
+                      "$ref": "#/components/schemas/Page"
+                    },
                     "request_id": {
                       "maxLength": 256,
                       "minLength": 1,
@@ -18791,7 +18804,8 @@
                   "required": [
                     "version",
                     "request_id",
-                    "data"
+                    "data",
+                    "page"
                   ],
                   "type": "object"
                 }
@@ -24511,11 +24525,32 @@
       "get": {
         "operationId": "listScheduledJobs",
         "summary": "List durable scheduled jobs",
-        "description": "Returns a bounded projection of schedules and their configured execution targets. Lease fence tokens, operation keys and raw observation payloads are withheld.",
+        "description": "Returns a bounded creation-ordered page of schedules and their configured execution targets. The opaque keyset cursor is bound to this route and exact owner Run filter; status updates and later inserts do not shift older pages. Lease fence tokens, operation keys and raw observation payloads are withheld.",
         "tags": [
           "Automation"
         ],
         "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size from 1 to 100; defaults to 50",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor bound to this route and exact filter set",
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "name": "run_id",
             "in": "query",
@@ -24525,17 +24560,6 @@
               "minLength": 1,
               "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
               "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum scheduled jobs",
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "type": "integer"
             }
           }
         ],
@@ -24550,6 +24574,9 @@
                     "data": {
                       "$ref": "#/components/schemas/ScheduledJobListView"
                     },
+                    "page": {
+                      "$ref": "#/components/schemas/Page"
+                    },
                     "request_id": {
                       "maxLength": 256,
                       "minLength": 1,
@@ -24563,7 +24590,8 @@
                   "required": [
                     "version",
                     "request_id",
-                    "data"
+                    "data",
+                    "page"
                   ],
                   "type": "object"
                 }

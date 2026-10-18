@@ -87,16 +87,21 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
     queryFn: ({ signal }) => readThreadReview(client, threadID, signal), enabled: Boolean(threadID) });
   const definitions = useQuery({ queryKey: ["workflow-definitions"],
     queryFn: ({ signal }) => client.workflows.definitions(signal), enabled: mode === "workflow" });
-  const list = useQuery({ queryKey: scheduleListKey, queryFn: ({ signal }) => client.listScheduledJobs("", 100, signal),
+  const list = useInfiniteQuery({ queryKey: scheduleListKey, initialPageParam: "",
+    queryFn: ({ signal, pageParam }) => client.listScheduledJobs("", 100, signal, pageParam),
+    getNextPageParam: (last) => last.page?.next_cursor || undefined,
     refetchInterval: client.hasScheduledJobWorker ? 5_000 : false });
+  const jobs = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data]);
   const detail = useQuery({ queryKey: ["scheduled-job", selectedJobID],
     queryFn: ({ signal }) => client.getScheduledJob(selectedJobID, signal), enabled: Boolean(selectedJobID),
     refetchInterval: client.hasScheduledJobWorker ? 5_000 : false });
   const health = useQuery({ queryKey: ["scheduled-jobs-worker-health"], queryFn: ({ signal }) => client.runtimeCapabilities(signal), refetchInterval: 5_000 });
-  const selected = detail.data?.snapshot.job ?? list.data?.items.find((job) => job.id === selectedJobID);
+  const selected = detail.data?.snapshot.job ?? jobs.find((job) => job.id === selectedJobID);
   const refresh = async (job?: ScheduledJobView) => {
     if (job) {
-      queryClient.setQueryData(scheduleListKey, (previous: typeof list.data) => previous ? { ...previous, items: [job, ...previous.items.filter((item) => item.id !== job.id)] } : previous);
+      queryClient.setQueryData(scheduleListKey, (previous: typeof list.data) => previous ? { ...previous,
+        pages: previous.pages.map((page, index) => ({ ...page,
+          items: index === 0 ? [job, ...page.items.filter((item) => item.id !== job.id)] : page.items.filter((item) => item.id !== job.id) })) } : previous);
       setSelectedJobID(job.id);
     }
     await Promise.all([queryClient.invalidateQueries({ queryKey: scheduleListKey }),
@@ -157,7 +162,7 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
   }, onSuccess: (result) => refresh(result.job) });
 
   const error = create.error ?? transition.error ?? enableObservation.error ?? bundle.error ?? list.error ?? detail.error ?? health.error ?? threads.error ?? thread.error ?? permission.error ?? directory.error ?? definitions.error;
-  const jobs = list.data?.items ?? [], worker = health.data?.scheduled_job_worker;
+  const worker = health.data?.scheduled_job_worker;
   const workerLabel = health.isError ? t("调度状态暂时无法确认", "Scheduler status could not be confirmed")
     : !worker ? t("正在检查调度状态…", "Checking scheduler status…") : !worker.enabled ? t("调度器待启用", "Scheduler awaits enablement")
       : worker.state === "running" ? worker.selection_scope === "confirmed_read_only" ? t("观察器运行中", "Observer is running") : t("调度器运行中", "Scheduler is running")
@@ -237,6 +242,11 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
         {jobs.map((job) => <button className={job.id === selectedJobID ? "selected" : ""} key={job.id} onClick={() => setSelectedJobID(job.id)} type="button"><span><strong>{jobTitle(job)}</strong><span className="status-badge">{statusLabel(job.status)}</span></span><small>{modeLabel(job)} · {job.spec.schedule.kind === "once" ? t("单次", "Once") : t("周期", "Periodic")} · {formatTime(job.next_wake_at, locale)}</small><small>{job.id}</small>
           {["confirmed_read_only", "confirmed_jobs"].includes(worker?.selection_scope ?? "") && job.status === "active" && job.spec.execution_mode === "read_only" && job.observation_consent_version !== 1 && <small>{t("普通桌面观察尚未确认", "Desktop observation needs confirmation")}</small>}</button>)}
         {!list.isLoading && jobs.length === 0 && <div className="utility-empty-state"><CalendarClock aria-hidden="true" size={25} /><strong>{t("还没有时间计划，选择任务与触发时间开始。", "No time schedules yet. Choose a task and trigger time to begin.")}</strong></div>}
+        {list.hasNextPage && <button className="compact-command" disabled={list.isFetchingNextPage}
+          onClick={() => void list.fetchNextPage()} type="button">{list.isFetchingNextPage
+            ? t("正在加载计划…", "Loading schedules…") : list.isFetchNextPageError
+              ? t("重试加载更多计划", "Retry loading more schedules") : t("加载更多计划", "Load more schedules")}</button>}
+        {list.data?.pages.at(-1)?.page?.truncated && <p role="status">{t("已达到计划浏览上限。", "Schedule browsing limit reached.")}</p>}
       </div>
       <div className="scheduled-task-detail">{selected ? <>
         <header><div><strong>{jobTitle(selected)}</strong><small>{selected.id}</small></div><span className="status-badge">{statusLabel(selected.status)}</span></header>
