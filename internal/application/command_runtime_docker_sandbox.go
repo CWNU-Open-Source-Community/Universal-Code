@@ -178,6 +178,19 @@ func (e *DockerSandboxCommandRuntimeExecutor) ExecuteSandboxCommand(ctx context.
 			return noProcess, err
 		}
 		baseKey = commandRuntimeDockerServiceKey(job)
+		requestedBy = commandRuntimeDockerServiceRequester(job)
+		commandSHA256, err := command.Fingerprint()
+		if err != nil {
+			return noProcess, err
+		}
+		ctx = context.WithValue(ctx, commandRuntimeDockerServiceProofKey{}, &commandRuntimeDockerServiceProof{
+			job: job, commandSHA256: commandSHA256, check: func(current context.Context) error {
+				if _, err := e.sharedServiceJob(current, scope, spec); err != nil {
+					return err
+				}
+				return runner.CheckCommandRuntimeDispatch(current, spec)
+			},
+		})
 	}
 	stdinPolicy := sandbox.DockerStandardCodeStdinClosed
 	if spec.Spec.StdinPolicy == runner.CommandRuntimeStdinPipe {

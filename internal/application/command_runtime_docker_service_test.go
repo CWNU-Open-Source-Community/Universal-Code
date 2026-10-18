@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,9 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/sandbox"
 	"cyberagent-workbench/internal/toolgateway"
 )
 
@@ -23,8 +26,8 @@ type dockerSharedServiceJobStore struct {
 	job runner.CommandRuntimeJob
 }
 
-func (s dockerSharedServiceJobStore) ListCommandRuntimeJobs(context.Context, runner.CommandRuntimeListFilter) ([]runner.CommandRuntimeJob, error) {
-	return []runner.CommandRuntimeJob{s.job}, nil
+func (s dockerSharedServiceJobStore) GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error) {
+	return s.job, nil
 }
 
 func TestDockerSharedServiceSurvivesFileEditAndPreservesItsCheckpoint(t *testing.T) {
@@ -196,5 +199,100 @@ func TestDockerSharedServiceSurvivesFileEditAndPreservesItsCheckpoint(t *testing
 	}
 	if !strings.Contains(job.IntentJSON, `"workspace_mode":"shared_service"`) {
 		t.Fatal("service semantics were not retained in the durable intent")
+	}
+}
+
+func TestDockerServiceLookupAndOrdinaryCleanupIgnoreHistoricalJobWindow(t *testing.T) {
+	ctx := t.Context()
+	f := newCommandApprovalSandboxFixture(t, domain.RunExecutionPermissionAuto, domain.RunExecutionProfileDocker, true)
+	native := f.service.sandbox.(*DockerSandboxCommandRuntimeExecutor)
+	input := commandApprovalSandboxInput(t)
+	input.Action, input.FailurePolicy, input.MaxBytes = toolgateway.CommandRuntimeActionStart, "", nil
+	input.Commands[0].WorkspaceMode = runner.CommandRuntimeWorkspaceSharedService
+	input.Commands[0].TimeoutMilliseconds = 120000
+	started, err := f.execute(t, ctx, input, 1)
+	if err != nil || len(started.Jobs) != 1 {
+		t.Fatalf("start original service: %+v %v", started, err)
+	}
+	live := started.Jobs[0]
+	for deadline := time.Now().Add(15 * time.Second); !live.State.Terminal() && time.Now().Before(deadline); {
+		live, _, err = f.manager.Wait(ctx, live.ID, time.Second, math.MaxUint64, 4096)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if live.State != runner.CommandRuntimeJobCompleted || !live.TreeReaped {
+		t.Fatalf("original service cleanup: %+v", live)
+	}
+	job, err := f.st.GetCommandRuntimeJob(ctx, live.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor, err := f.st.GetCommandRuntimeJobAttribution(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, found, err := f.st.GetDockerSandboxAdmissionByOperation(ctx, commandRuntimeDockerServiceAdmissionDigest(job))
+	if err != nil || !found {
+		t.Fatalf("original service admission: %t %v", found, err)
+	}
+	// Put the original service beyond the former newest-500 lookup window using
+	// real terminal Job records. These rows own no native process or container.
+	for i := 0; i < 500; i++ {
+		historical := job
+		historical.OperationDigest, historical.ID = runner.CommandRuntimeOperationIdentity(job.RunID, fmt.Sprintf("later-history-%d", i))
+		historical.InvocationID = fmt.Sprintf("later-history-%d", i)
+		historical.RequestFingerprint = runmutation.Fingerprint("docker-service-test-history", historical.ID)
+		now := job.CreatedAt.Add(time.Duration(i+1) * time.Millisecond)
+		historical.CreatedAt, historical.UpdatedAt, historical.OwnerRenewedAt = now, now, now
+		historical.OwnerExpiresAt = now.Add(time.Minute)
+		historical.State, historical.Version = runner.CommandRuntimeJobPrepared, 1
+		historical.StartedAt, historical.CompletedAt, historical.ExitCode = nil, nil, nil
+		historical.TreeReaped, historical.JobAssignedAtCreation = false, false
+		historical, replayed, err := f.st.PrepareCommandRuntimeJobForAgent(ctx, historical, actor)
+		if err != nil || replayed {
+			t.Fatalf("prepare historical Job %d: replayed=%t %v", i, replayed, err)
+		}
+		exit := 0
+		historical.State, historical.Version = runner.CommandRuntimeJobCompleted, 2
+		historical.StartedAt, historical.CompletedAt, historical.ExitCode = &now, &now, &exit
+		historical.TreeReaped, historical.JobAssignedAtCreation = true, true
+		if _, err := f.st.UpdateCommandRuntimeJob(ctx, historical, 1); err != nil {
+			t.Fatalf("complete historical Job %d: %v", i, err)
+		}
+	}
+	recent, err := f.st.ListCommandRuntimeJobs(ctx, runner.CommandRuntimeListFilter{RunID: job.RunID, Limit: 500})
+	if err != nil || len(recent) != 500 {
+		t.Fatalf("historical lookup window: %d %v", len(recent), err)
+	}
+	for _, newer := range recent {
+		if newer.ID == job.ID {
+			t.Fatal("test did not place the original service outside the historical window")
+		}
+	}
+	bound, err := commandRuntimeDockerServiceForAdmission(ctx, f.st, admission)
+	if err != nil || bound == nil || bound.job.ID != job.ID || bound.actor != actor {
+		t.Fatalf("old service lost its exact durable binding: %+v %v", bound, err)
+	}
+	manifest, err := sandbox.DecodeManifest([]byte(admission.ManifestJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := native.service.docker.loadCurrentDockerSandboxAuthority(ctx, admission.PlanID, manifest, admission.RequestedBy); apperror.CodeOf(err) != apperror.CodePolicyDenied {
+		t.Fatalf("durable service marker authorized a fresh start without its private proof: %v", err)
+	}
+	forged := admission
+	forged.RequestedBy = commandRuntimeDockerServiceRequester(recent[0])
+	forged.AdmissionFingerprint = domain.DockerSandboxAdmissionFingerprint(forged)
+	if bound, err := commandRuntimeDockerServiceForAdmission(ctx, f.st, forged); err == nil || bound != nil {
+		t.Fatalf("another Job's marker replaced the exact admission binding: %+v %v", bound, err)
+	}
+	ordinary, err := f.execute(t, ctx, commandApprovalSandboxInput(t), 2)
+	if err != nil || len(ordinary.Jobs) != 1 || ordinary.Jobs[0].State != runner.CommandRuntimeJobCompleted || !ordinary.Jobs[0].TreeReaped {
+		t.Fatalf("historical Jobs blocked ordinary execution or container cleanup: %+v %v", ordinary, err)
+	}
+	workspace, shared, err := native.service.docker.sharedServiceCleanupWorkspace(ctx, admission)
+	if err != nil || !shared || workspace.RootPath != f.owned.Path {
+		t.Fatalf("old service cleanup lost its original physical root: %+v %t %v", workspace, shared, err)
 	}
 }

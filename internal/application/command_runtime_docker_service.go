@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
@@ -16,7 +17,44 @@ import (
 type commandRuntimeDockerServiceStore interface {
 	GetCommandRuntimeJob(context.Context, string) (runner.CommandRuntimeJob, error)
 	GetCommandRuntimeJobAttribution(context.Context, string) (domain.AgentAttribution, error)
-	ListCommandRuntimeJobs(context.Context, runner.CommandRuntimeListFilter) ([]runner.CommandRuntimeJob, error)
+}
+
+const commandRuntimeDockerServiceRequesterPrefix = "native-shared-service/v1/"
+
+type commandRuntimeDockerServiceProofKey struct{}
+
+type commandRuntimeDockerServiceProof struct {
+	job           runner.CommandRuntimeJob
+	commandSHA256 string
+	check         func(context.Context) error
+}
+
+func commandRuntimeDockerServiceRequester(job runner.CommandRuntimeJob) string {
+	return commandRuntimeDockerServiceRequesterPrefix + job.ID
+}
+
+func isCommandRuntimeDockerServiceRequester(value string) bool {
+	return value == "native-shared-service" || strings.HasPrefix(value, "native-shared-service/")
+}
+
+// The requester is only a durable lookup coordinate. A new admission or start
+// also requires the private proof supplied by this process's Command Runtime.
+func requireCommandRuntimeDockerServiceProof(ctx context.Context,
+	plan sandbox.DockerContainerPlan, manifest sandbox.Manifest,
+) error {
+	if !isCommandRuntimeDockerServiceRequester(plan.RequestedBy) {
+		return nil
+	}
+	proof, _ := ctx.Value(commandRuntimeDockerServiceProofKey{}).(*commandRuntimeDockerServiceProof)
+	binding, exact := sandbox.ParseDockerStandardCodeManifest(manifest)
+	if proof == nil || proof.check == nil || !exact ||
+		commandRuntimeDockerServiceRequester(proof.job) != plan.RequestedBy ||
+		proof.job.RunID != plan.RunID || proof.job.MissionID != plan.MissionID || proof.job.WorkspaceID != plan.WorkspaceID ||
+		proof.job.RunID != binding.RunID || proof.job.SessionID != binding.SessionID ||
+		proof.commandSHA256 != binding.CommandSHA256 {
+		return runner.ErrCommandRuntimeBoundary
+	}
+	return proof.check(ctx)
 }
 
 type commandRuntimeDockerServiceBinding struct {
@@ -80,79 +118,80 @@ func (e *DockerSandboxCommandRuntimeExecutor) sharedServiceJob(ctx context.Conte
 func commandRuntimeDockerServiceForAdmission(ctx context.Context, value any,
 	admission domain.DockerSandboxAdmission,
 ) (*commandRuntimeDockerServiceBinding, error) {
-	store, ok := value.(commandRuntimeDockerServiceStore)
-	if !ok {
+	if !isCommandRuntimeDockerServiceRequester(admission.RequestedBy) {
 		return nil, nil
 	}
-	jobs, err := store.ListCommandRuntimeJobs(ctx, runner.CommandRuntimeListFilter{RunID: admission.RunID, Limit: 500})
+	jobID, exact := strings.CutPrefix(admission.RequestedBy, commandRuntimeDockerServiceRequesterPrefix)
+	if !exact || !domain.ValidAgentID(jobID) || strings.ContainsAny(jobID, "/\\") {
+		return nil, runner.ErrCommandRuntimeBoundary
+	}
+	store, ok := value.(commandRuntimeDockerServiceStore)
+	if !ok {
+		return nil, errors.New("Docker shared service Job reader is unavailable")
+	}
+	job, err := store.GetCommandRuntimeJob(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}
-	for _, job := range jobs {
-		if commandRuntimeDockerServiceAdmissionDigest(job) != admission.OperationKeyDigest {
-			continue
-		}
-		if admission.Validate() != nil || job.Validate() != nil ||
-			runner.CommandRuntimeJobWorkspaceMode(job) != runner.CommandRuntimeWorkspaceSharedService ||
-			job.Adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace ||
-			job.Adapter.Backend != CommandRuntimeDockerSandboxBackend {
-			return nil, runner.ErrCommandRuntimeBoundary
-		}
-		actor, err := store.GetCommandRuntimeJobAttribution(ctx, job.ID)
-		if err != nil {
-			return nil, err
-		}
-		manifest, err := sandbox.DecodeManifest([]byte(admission.ManifestJSON))
-		if err != nil {
-			return nil, err
-		}
-		binding, exact := sandbox.ParseDockerStandardCodeManifest(manifest)
-		if !exact || actor.Validate() != nil ||
-			(actor.Source != domain.AgentAttributionRecorded && actor.Source != domain.AgentAttributionOperatorRoot) ||
-			actor.AgentID != job.RootAgentID || actor.AgentID != admission.RequestedBy ||
-			job.RunID != admission.RunID || job.MissionID != admission.MissionID || job.WorkspaceID != admission.WorkspaceID ||
-			job.RunID != binding.RunID || job.MissionID != binding.MissionID || job.SessionID != binding.SessionID ||
-			job.WorkspaceID != binding.WorkspaceID || job.Adapter.Generation != binding.CapabilityGeneration ||
-			job.ProfileSnapshotID != binding.ProfileSnapshotID || job.ProfileRevision != binding.ProfileRevision ||
-			job.ProfileSnapshotID != admission.ProfileSnapshotID || job.ProfileRevision != admission.ProfileRevision ||
-			job.PermissionSnapshotID != binding.PermissionSnapshotID || job.PermissionRevision != binding.PermissionRevision ||
-			job.PermissionSnapshotID != admission.PermissionSnapshotID || job.PermissionRevision != admission.PermissionRevision ||
-			job.PermissionMode != admission.PermissionMode {
-			return nil, runner.ErrCommandRuntimeBoundary
-		}
-		var intent struct {
-			Version          string                             `json:"version"`
-			WorkspaceMode    runner.CommandRuntimeWorkspaceMode `json:"workspace_mode"`
-			Profile          runner.CommandRuntimeProfile       `json:"profile"`
-			ExecutablePath   string                             `json:"executable_path"`
-			ExecutableSHA256 string                             `json:"executable_sha256"`
-			Arguments        []string                           `json:"argv"`
-			WorkingDirectory string                             `json:"working_directory"`
-			StdinPolicy      runner.CommandRuntimeStdinPolicy   `json:"stdin_policy"`
-			Timeout          int64                              `json:"timeout_milliseconds"`
-			Purpose          string                             `json:"purpose"`
-		}
-		if json.Unmarshal([]byte(job.IntentJSON), &intent) != nil ||
-			intent.Version != runner.CommandRuntimeProtocolVersion || intent.WorkspaceMode != runner.CommandRuntimeWorkspaceSharedService ||
-			intent.Profile != runner.CommandRuntimeProcess || intent.Profile != job.Profile ||
-			intent.ExecutablePath != job.ExecutablePath || intent.ExecutableSHA256 != job.ExecutableSHA256 ||
-			intent.WorkingDirectory != job.WorkingDirectory || intent.StdinPolicy != job.StdinPolicy || intent.Timeout != job.TimeoutMilliseconds {
-			return nil, runner.ErrCommandRuntimeBoundary
-		}
-		command, err := commandRuntimeDockerCommand(runner.CommandRuntimeResolvedSpec{
-			ExecutablePath: intent.ExecutablePath, CanonicalArgv: intent.Arguments,
-			Spec: runner.CommandRuntimeSpec{WorkingDirectory: intent.WorkingDirectory,
-				TimeoutMilliseconds: intent.Timeout, Purpose: intent.Purpose},
-		})
-		if err != nil || !standardCodeCommandMatchesBinding(command, binding) || string(intent.StdinPolicy) != binding.StdinPolicy {
-			return nil, runner.ErrCommandRuntimeBoundary
-		}
-		return &commandRuntimeDockerServiceBinding{job: job, actor: actor, binding: binding}, nil
+	if job.ID != jobID || commandRuntimeDockerServiceAdmissionDigest(job) != admission.OperationKeyDigest {
+		return nil, runner.ErrCommandRuntimeBoundary
 	}
-	if len(jobs) == 500 {
-		return nil, errors.New("Docker shared service Job scan reached its safe limit")
+	if admission.Validate() != nil || job.Validate() != nil ||
+		runner.CommandRuntimeJobWorkspaceMode(job) != runner.CommandRuntimeWorkspaceSharedService ||
+		job.Adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace ||
+		job.Adapter.Backend != CommandRuntimeDockerSandboxBackend {
+		return nil, runner.ErrCommandRuntimeBoundary
 	}
-	return nil, nil
+	actor, err := store.GetCommandRuntimeJobAttribution(ctx, job.ID)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := sandbox.DecodeManifest([]byte(admission.ManifestJSON))
+	if err != nil {
+		return nil, err
+	}
+	binding, exact := sandbox.ParseDockerStandardCodeManifest(manifest)
+	if !exact || actor.Validate() != nil ||
+		(actor.Source != domain.AgentAttributionRecorded && actor.Source != domain.AgentAttributionOperatorRoot) ||
+		actor.AgentID != job.RootAgentID || commandRuntimeDockerServiceRequester(job) != admission.RequestedBy ||
+		job.RunID != admission.RunID || job.MissionID != admission.MissionID || job.WorkspaceID != admission.WorkspaceID ||
+		job.RunID != binding.RunID || job.MissionID != binding.MissionID || job.SessionID != binding.SessionID ||
+		job.WorkspaceID != binding.WorkspaceID || job.Adapter.Generation != binding.CapabilityGeneration ||
+		job.ProfileSnapshotID != binding.ProfileSnapshotID || job.ProfileRevision != binding.ProfileRevision ||
+		job.ProfileSnapshotID != admission.ProfileSnapshotID || job.ProfileRevision != admission.ProfileRevision ||
+		job.PermissionSnapshotID != binding.PermissionSnapshotID || job.PermissionRevision != binding.PermissionRevision ||
+		job.PermissionSnapshotID != admission.PermissionSnapshotID || job.PermissionRevision != admission.PermissionRevision ||
+		job.PermissionMode != admission.PermissionMode {
+		return nil, runner.ErrCommandRuntimeBoundary
+	}
+	var intent struct {
+		Version          string                             `json:"version"`
+		WorkspaceMode    runner.CommandRuntimeWorkspaceMode `json:"workspace_mode"`
+		Profile          runner.CommandRuntimeProfile       `json:"profile"`
+		ExecutablePath   string                             `json:"executable_path"`
+		ExecutableSHA256 string                             `json:"executable_sha256"`
+		Arguments        []string                           `json:"argv"`
+		WorkingDirectory string                             `json:"working_directory"`
+		StdinPolicy      runner.CommandRuntimeStdinPolicy   `json:"stdin_policy"`
+		Timeout          int64                              `json:"timeout_milliseconds"`
+		Purpose          string                             `json:"purpose"`
+	}
+	if json.Unmarshal([]byte(job.IntentJSON), &intent) != nil ||
+		intent.Version != runner.CommandRuntimeProtocolVersion || intent.WorkspaceMode != runner.CommandRuntimeWorkspaceSharedService ||
+		intent.Profile != runner.CommandRuntimeProcess || intent.Profile != job.Profile ||
+		intent.ExecutablePath != job.ExecutablePath || intent.ExecutableSHA256 != job.ExecutableSHA256 ||
+		intent.WorkingDirectory != job.WorkingDirectory || intent.StdinPolicy != job.StdinPolicy || intent.Timeout != job.TimeoutMilliseconds {
+		return nil, runner.ErrCommandRuntimeBoundary
+	}
+	command, err := commandRuntimeDockerCommand(runner.CommandRuntimeResolvedSpec{
+		ExecutablePath: intent.ExecutablePath, CanonicalArgv: intent.Arguments,
+		Spec: runner.CommandRuntimeSpec{WorkingDirectory: intent.WorkingDirectory,
+			TimeoutMilliseconds: intent.Timeout, Purpose: intent.Purpose},
+	})
+	if err != nil || !standardCodeCommandMatchesBinding(command, binding) || string(intent.StdinPolicy) != binding.StdinPolicy {
+		return nil, runner.ErrCommandRuntimeBoundary
+	}
+	return &commandRuntimeDockerServiceBinding{job: job, actor: actor, binding: binding}, nil
 }
 
 func (b *commandRuntimeDockerServiceBinding) matchesWorkspace(workspace runworktree.Workspace) bool {
