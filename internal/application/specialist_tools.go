@@ -106,6 +106,11 @@ func (e *specialistWorkspaceExecutor) ExecuteSpecialistTool(ctx context.Context,
 		if binding.workspace.AgentID != call.AgentID || binding.plan.ID != e.binding.BatchPlanID || binding.workspace.Generation != e.binding.BatchGeneration {
 			return nil, errors.New("child Batch authority changed")
 		}
+		if e.binding.Mode == "worker" {
+			if err := e.markBatchWorkerToolStarted(ctx, call); err != nil {
+				return nil, err
+			}
+		}
 		switch toolgateway.ToolName(input.Tool) {
 		case toolgateway.WorkspaceListTool:
 			var p toolgateway.WorkspaceListPayload
@@ -398,7 +403,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			return r.failAttempt(ctx, result, ref, errors.New("execution worker runtime is unavailable"))
 		}
 		defer func() {
-			if !result.WaitingApproval {
+			if !result.WaitingApproval && result.AttemptStatus != domain.AgentAttemptContinued {
 				r.workerRuntime.closeWorkerResources(ref)
 			}
 		}()
@@ -444,7 +449,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			if err != nil {
 				return r.failAttempt(ctx, result, ref, err)
 			}
-			request.Tools = catalogue.specs()
+			request.Tools = r.batchWorkerCatalogue(catalogue, child).specs()
 			definition := toolgateway.SpecialistResultReadDefinition()
 			request.Tools = append(request.Tools, llm.ToolSpec{Name: string(definition.Name), Description: definition.Description, Parameters: definition.InputSchema})
 		}

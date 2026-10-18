@@ -41,6 +41,13 @@ func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *Special
 				result.ToolCalls++
 				continue
 			}
+			if executor.batch != nil && isBatchWorkerTool(c.Name) {
+				if err := r.resolveBatchWorkerTool(ctx, c, run, mission, child, attempt, executor, gateway); err != nil {
+					return false, err
+				}
+				result.ToolCalls++
+				continue
+			}
 			var callErr error
 			var terminal *domain.SupervisorToolResult
 			if c.StartedAt != nil {
@@ -51,7 +58,7 @@ func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *Special
 				if err != nil {
 					callErr = err
 				} else {
-					authority, err := r.workerRuntime.bindWorkerToolAuthority(ctx, c, catalogue)
+					authority, err := r.workerRuntime.bindWorkerToolAuthority(ctx, c, r.batchWorkerCatalogue(catalogue, child))
 					if err != nil {
 						callErr = err
 					} else {

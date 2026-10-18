@@ -438,7 +438,8 @@ func (m *Manager) invokeResolved(ctx context.Context, request InvokeRequest, rec
 		entry.checkMu.RLock()
 		persistent := entry.check != nil
 		entry.checkMu.RUnlock()
-		if !persistent || (err != nil && apperror.CodeOf(err) != apperror.CodeConflict) {
+		deferredWorkerCatalog := err != nil && request.catalogCheck != nil && request.catalogCheck(ctx) != nil && entry.retainIdleWorker(ctx)
+		if !persistent || (err != nil && apperror.CodeOf(err) != apperror.CodeConflict && !deferredWorkerCatalog) {
 			_ = client.Close()
 			entry.client = nil
 		}

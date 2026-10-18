@@ -123,6 +123,10 @@ type workerCodeIntelCapture struct {
 	calls    int
 }
 
+func (e *workerCodeIntelCapture) ResolveWorkerCodeIntelWorkspace(ctx context.Context, call toolgateway.ToolCall) (string, string, error) {
+	return e.executor.ResolveWorkerCodeIntelWorkspace(ctx, call)
+}
+
 func (e *workerCodeIntelCapture) ExecuteCodeIntel(ctx context.Context, scope toolgateway.AgentCodeExecutionScope,
 	name toolgateway.ToolName, payload json.RawMessage,
 ) (toolgateway.CodeIntelExecutionResult, error) {

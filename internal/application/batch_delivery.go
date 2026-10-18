@@ -88,6 +88,7 @@ type BatchDeliveryStore interface {
 	AbortBatchDeliveryMergeQueue(context.Context, string,
 		domain.BatchDeliveryMergeQueueStatus, string, string, time.Time) error
 	ListRecoverableBatchDeliveryPlans(context.Context, int) ([]domain.BatchDeliveryPlan, error)
+	CloseTerminalBatchWorkers(context.Context, string) ([]domain.AgentNode, error)
 }
 
 type BatchDeliveryService struct {
@@ -97,6 +98,7 @@ type BatchDeliveryService struct {
 	executionPermissionCapabilities domain.ExecutionPermissionRuntimeCapabilities
 	validationRuntime               ProjectActionRuntime
 	validationMu                    sync.Mutex
+	workerResources                 batchWorkerResourceCloser
 }
 
 func NewBatchDeliveryService(store BatchDeliveryStore) *BatchDeliveryService {

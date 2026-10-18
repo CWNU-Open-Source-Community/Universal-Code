@@ -84,11 +84,11 @@ func TestBatchWorkbenchRealScopedToolsReviewReworkAndReplay(t *testing.T) {
 	ownerRequest := BatchDeliveryWorkbenchOwnerRequest{PlanID: planID, Ordinal: 1, ExpectedGeneration: 1, Retry: true, Confirm: true,
 		OperationKey: "workbench-retry-0001", RequestedBy: fixture.root.ID}
 	retried, err := s.RenewWorkbenchOwner(t.Context(), ownerRequest)
-	if err != nil || retried.Children[0].Generation != 2 {
+	if err != nil || retried.Children[0].Generation != 2 || retried.Snapshot.Workspaces[0].Status != domain.BatchWorkspaceWorking {
 		t.Fatalf("retry=%#v err=%v", retried, err)
 	}
 	retried, err = s.RenewWorkbenchOwner(t.Context(), ownerRequest)
-	if err != nil || !retried.Replayed || retried.Children[0].Generation != 2 {
+	if err != nil || !retried.Replayed || retried.Children[0].Generation != 2 || retried.Snapshot.Workspaces[0].Status != domain.BatchWorkspaceWorking {
 		t.Fatalf("retry replay=%#v err=%v", retried, err)
 	}
 	request.ExpectedGeneration, request.OperationKey = 2, "workbench-execute-0002"
@@ -138,7 +138,7 @@ func TestBatchWorkbenchRestartAndUnknownOutcomeRequireExplicitRecovery(t *testin
 	}
 	recovered, err := restarted.RenewWorkbenchOwner(t.Context(), BatchDeliveryWorkbenchOwnerRequest{PlanID: request.PlanID,
 		Ordinal: 1, ExpectedGeneration: 1, Confirm: true, OperationKey: "workbench-recover-0001", RequestedBy: fixture.root.ID})
-	if err != nil || recovered.Children[0].Generation != 2 || !recovered.Children[0].OwnerAvailable {
+	if err != nil || recovered.Children[0].Generation != 2 || !recovered.Children[0].OwnerAvailable || recovered.Snapshot.Workspaces[0].Status != domain.BatchWorkspaceAcknowledged {
 		t.Fatalf("recover=%#v err=%v", recovered, err)
 	}
 	if _, err := restarted.ExecuteWorkbench(t.Context(), request); apperror.CodeOf(err) != apperror.CodeConflict {
@@ -182,6 +182,54 @@ func TestBatchWorkbenchExecutionFencesDependenciesConfirmationAndLongRecoveryKey
 	state, err = s.WorkbenchSnapshot(t.Context(), request.PlanID)
 	if err != nil || state.Children[0].Generation != 1 {
 		t.Fatalf("invalid key rotated owner: %#v %v", state.Children, err)
+	}
+	ownerRequest := BatchDeliveryWorkbenchOwnerRequest{PlanID: request.PlanID, Ordinal: 2,
+		ExpectedGeneration: 1, Confirm: true, OperationKey: "workbench-dependent-owner", RequestedBy: fixture.root.ID}
+	state, err = s.RenewWorkbenchOwner(t.Context(), ownerRequest)
+	if err != nil || state.Children[1].Generation != 2 || !state.Children[1].OwnerAvailable ||
+		state.Snapshot.Workspaces[1].Status != domain.BatchWorkspaceAcknowledged {
+		t.Fatalf("dependent owner recovery: %#v %v", state, err)
+	}
+	state, err = s.RenewWorkbenchOwner(t.Context(), ownerRequest)
+	if err != nil || !state.Replayed || state.Children[1].Generation != 2 {
+		t.Fatalf("dependent recovery replay: %#v %v", state, err)
+	}
+	request.ExpectedGeneration = 2
+	if _, err := s.ExecuteWorkbench(t.Context(), request); apperror.CodeOf(err) != apperror.CodeFailedPrecondition || calls != 0 {
+		t.Fatalf("recovered child bypassed dependency: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestBatchWorkbenchReplaysHistoricalQuestionOwnerMarker(t *testing.T) {
+	fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
+	s, prepared := prepareBatchWorkbenchFixture(t, fixture)
+	request := BatchDeliveryWorkbenchOwnerRequest{PlanID: prepared.Snapshot.Plan.ID, Ordinal: 1,
+		ExpectedGeneration: 1, Confirm: true, OperationKey: "workbench-legacy-owner-001", RequestedBy: fixture.root.ID}
+	child, owner, err := s.RenewOwner(t.Context(), RenewBatchDeliveryOwnerRequest{PlanID: request.PlanID,
+		Ordinal: request.Ordinal, ExpectedGeneration: request.ExpectedGeneration, RequestedBy: request.RequestedBy, Confirm: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Persist the marker emitted by earlier versions, including its old kind.
+	for _, message := range []struct {
+		kind    domain.BatchDeliveryMailboxKind
+		summary string
+		suffix  string
+	}{
+		{domain.BatchMailboxAck, "child owner recovered", "-ack"},
+		{domain.BatchMailboxQuestion, "owner recovery from generation 1; retry=false", "-owner"},
+	} {
+		_, _, _, err = s.SendMessage(t.Context(), SendBatchDeliveryMessageRequest{PlanID: request.PlanID,
+			Ordinal: child.Ordinal, Generation: child.Generation, OwnerToken: owner.OwnerToken, Kind: message.kind,
+			Summary: message.summary, OperationKey: request.OperationKey + message.suffix})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	replayed, err := s.RenewWorkbenchOwner(t.Context(), request)
+	if err != nil || !replayed.Replayed || replayed.Children[0].Generation != 2 || replayed.Children[0].OwnerAvailable ||
+		replayed.Snapshot.Workspaces[0].Status != domain.BatchWorkspaceQuestion {
+		t.Fatalf("historical recovery replay=%+v err=%v", replayed, err)
 	}
 }
 

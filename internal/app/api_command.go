@@ -471,6 +471,8 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	specialistExecution := application.NewSpecialistExecutionService(a.store, a.router, a.checker).
 		WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl).
 		WithExecutionRuntime(executionControl)
+	batchWorkbench := application.NewBatchDeliveryWorkbenchService(batchDelivery).
+		WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, a.store, a.router, a.checker).WithNativeTools().WithExecutionRuntime(executionControl))
 	planDeliveryControl := application.NewPlanDeliveryControlService(a.store)
 	approvalControl := application.NewApprovalControlService(a.store,
 		a.newToolGateway().WithAgentCodeWorkspaceResolver(
@@ -610,7 +612,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			workspaceCheckpoints, commandRuntimeDrydocks, permissionCapabilities).WithAdvanced(gitAdvancedService)
 	}
 	var prFollowupWorker *application.PRFollowupService
-	workflowControl := application.NewWorkflowService(a.store, specialistExecution)
+	workflowControl := application.NewWorkflowService(a.store, specialistExecution).WithBatchDelivery(batchWorkbench)
 	var prFollowupController httpapi.PRFollowupController
 	if *githubReviewEnabled && controlToken != "" && *scheduledJobWorker {
 		prFollowupWorker, err = application.NewPRFollowupService(a.store, githubReviewService, threadGit, threadTurnControl)
@@ -709,12 +711,11 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		ThreadPullRequestController:         application.NewThreadPullRequestService(a.store, githubReviewService, threadGit),
 		PRFollowupController:                prFollowupController,
 		GitHubReviewController:              githubReviewService,
-		BatchDeliveryController: application.NewBatchDeliveryWorkbenchService(batchDelivery).
-			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, a.store, a.router, a.checker).WithNativeTools()),
-		ExtensionController:     extensionControl,
-		CodeIntelSource:         a.codeIntel,
-		CodeIntelController:     codeIntelControl,
-		DockerSandboxController: dockerSandbox,
+		BatchDeliveryController:             batchWorkbench,
+		ExtensionController:                 extensionControl,
+		CodeIntelSource:                     a.codeIntel,
+		CodeIntelController:                 codeIntelControl,
+		DockerSandboxController:             dockerSandbox,
 		DockerEnvironmentController: httpapi.NewDockerEnvironmentController(application.NewDockerEnvironmentService(
 			*dockerExecution, os.Getenv(standardCodeDockerImageEnvironment), commandOptions.StandardCodeDockerRuntime != nil)),
 		ModelRegistry: a.models,

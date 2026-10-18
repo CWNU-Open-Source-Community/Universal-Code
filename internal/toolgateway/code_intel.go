@@ -306,6 +306,12 @@ type CodeIntelExecutor interface {
 		json.RawMessage) (CodeIntelExecutionResult, error)
 }
 
+// Worker execution roots are resolved from their durable attempt binding,
+// since an isolated Batch worker does not execute in the parent Run's root.
+type CodeIntelWorkerWorkspaceResolver interface {
+	ResolveWorkerCodeIntelWorkspace(context.Context, ToolCall) (workspaceID, root string, err error)
+}
+
 func (g *Gateway) WithCodeIntelExecutor(executor CodeIntelExecutor) *Gateway {
 	if g != nil {
 		g.codeIntel = executor
@@ -319,7 +325,16 @@ func (g *Gateway) invokeCodeIntel(ctx context.Context, call ToolCall) (Outcome, 
 		return Outcome{}, err
 	}
 	call.Payload = canonical
-	workspaceID, root, err := g.bindAgentCodeWorkspace(ctx, call)
+	var workspaceID, root string
+	if call.RequestedBy == "specialist_runner" {
+		resolver, ok := g.codeIntel.(CodeIntelWorkerWorkspaceResolver)
+		if !ok {
+			return Outcome{}, errors.New("worker code-intel workspace resolver is unavailable")
+		}
+		workspaceID, root, err = resolver.ResolveWorkerCodeIntelWorkspace(ctx, call)
+	} else {
+		workspaceID, root, err = g.bindAgentCodeWorkspace(ctx, call)
+	}
 	if err != nil {
 		return Outcome{}, err
 	}

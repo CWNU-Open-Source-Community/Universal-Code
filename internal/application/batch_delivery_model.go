@@ -46,11 +46,24 @@ type BatchDeliveryModelStore interface {
 }
 
 type BatchDeliveryModelWorker struct {
-	kernel      *BatchDeliveryService
-	store       BatchDeliveryModelStore
-	router      *llm.Router
-	checker     policy.Checker
-	nativeTools bool
+	kernel        *BatchDeliveryService
+	store         BatchDeliveryModelStore
+	router        *llm.Router
+	checker       policy.Checker
+	nativeTools   bool
+	workerRuntime *AgentRunner
+}
+
+func (w *BatchDeliveryModelWorker) WithExecutionRuntime(runtime *RunExecutionHandoffService) *BatchDeliveryModelWorker {
+	if runtime != nil {
+		w.workerRuntime = runtime.supervisor
+	}
+	return w
+}
+
+func (w *BatchDeliveryModelWorker) WithWorkerRuntime(runtime *AgentRunner) *BatchDeliveryModelWorker {
+	w.workerRuntime = runtime
+	return w
 }
 
 // WithNativeTools uses the same child lease and accounting with isolated Batch
@@ -108,7 +121,11 @@ func (w *BatchDeliveryModelWorker) ExecuteBatchChild(ctx context.Context,
 	if err != nil {
 		return result, err
 	}
-	if child.RunID != binding.plan.RunID || child.ParentID != binding.plan.RootAgentID || child.Status != domain.AgentReady {
+	canResume, _, err := batchWorkerApprovalWait(ctx, w.store, child)
+	if err != nil {
+		return result, err
+	}
+	if child.RunID != binding.plan.RunID || child.ParentID != binding.plan.RootAgentID || (child.Status != domain.AgentReady && !canResume) {
 		return result, apperror.New(apperror.CodeFailedPrecondition, "prepare a ready admitted child before executing its Batch work")
 	}
 	authority := request.Authority
@@ -194,13 +211,17 @@ func (w *BatchDeliveryModelWorker) executeNativeBatchChild(ctx context.Context, 
 		return result, err
 	}
 	runner := NewSubagentRunner(w.store, w.router, w.checker).
-		WithMonetaryBudget(NewMonetaryBudgetService(w.store)).WithBatchTools(w.kernel, request.Authority)
+		WithMonetaryBudget(NewMonetaryBudgetService(w.store)).WithBatchTools(w.kernel, request.Authority).WithWorkerRuntime(w.workerRuntime)
 	runner.validatePreparedContext = batchEditContextGuard{messages: messages}.validate
 	turn, err := runner.Step(ctx, child.RunID, child.ID)
 	if err != nil {
 		return result, err
 	}
 	result.EvidenceRefs = []string{"agent_attempt:" + turn.AttemptID}
+	if turn.WaitingApproval {
+		result.WaitingApproval = true
+		return result, nil
+	}
 	if turn.Action.Kind != domain.SpecialistActionContinue {
 		return result, apperror.New(apperror.CodeFailedPrecondition, "keep the Batch child available for review feedback with a continue result")
 	}
@@ -430,6 +451,18 @@ func (w *BatchDeliveryModelWorker) sendInstructions(ctx context.Context, child d
 		} else {
 			payload.Operation = "withdraw"
 		}
+		messageID := fmt.Sprintf("%s%d-%d", prefix, request.Authority.Generation, index)
+		// Approval resumption reuses the current generation's authenticated
+		// brief. Replacing that message with itself would change its payload
+		// and conflict with the recorded delivery operation.
+		if exists && previous.ID == messageID {
+			priorPayload, err := domain.DecodeAgentInstructionPayload(previous.PayloadJSON)
+			if err != nil || index >= partCount || priorPayload.Instruction != payload.Instruction {
+				return nil, apperror.New(apperror.CodeConflict, "the current Batch brief changed within its execution generation")
+			}
+			messages = append(messages, previous)
+			continue
+		}
 		if exists {
 			if index < partCount {
 				payload.Operation = "replace"
@@ -442,7 +475,7 @@ func (w *BatchDeliveryModelWorker) sendInstructions(ctx context.Context, child d
 			return nil, err
 		}
 		message, _, err := w.store.SendAgentMessage(ctx, domain.AgentMessage{
-			ID: fmt.Sprintf("%s%d-%d", prefix, request.Authority.Generation, index), RunID: child.RunID,
+			ID: messageID, RunID: child.RunID,
 			SenderAgentID: child.ParentID, RecipientAgentID: child.ID,
 			Kind: domain.AgentMessageInstruction, Semantic: domain.AgentMessageSemanticMessage,
 			PayloadJSON: string(encoded), CreatedAt: time.Now().UTC(),

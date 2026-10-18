@@ -6679,6 +6679,7 @@ export interface components {
             ordinal: number;
             outcome_unresolved: boolean;
             owner_available: boolean;
+            waiting_approval?: boolean;
         };
         BatchWorkbenchExecuteRequestView: {
             confirm: boolean;
@@ -15932,6 +15933,7 @@ export interface components {
             wait_fingerprint?: string;
         };
         WorkflowStep: {
+            batch_plan?: components["schemas"]["WorkflowValueRef"];
             body?: components["schemas"]["WorkflowStep"][];
             condition?: components["schemas"]["WorkflowCondition"];
             else?: components["schemas"]["WorkflowStep"][];

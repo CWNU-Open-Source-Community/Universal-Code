@@ -26,6 +26,9 @@ type WorkspaceRootProvider func(context.Context, string, string) (WorkspaceRoot,
 type InvocationWorkspace struct {
 	ScopeID string
 	Resolve func(context.Context) (WorkspaceRoot, error)
+	// CheckLifetime only decides whether an idle connection may be retained
+	// between worker attempts. It never authorizes discovery, roots, or calls.
+	CheckLifetime func(context.Context) error
 }
 
 type clientWorkspaceRoots struct {

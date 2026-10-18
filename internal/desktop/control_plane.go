@@ -707,6 +707,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	specialistExecution := application.NewSpecialistExecutionService(stateStore, models.Router(), checker).
 		WithRunWorktree(commandRuntimeDrydocks).WithCompletionSummary(executionControl).
 		WithExecutionRuntime(executionControl)
+	batchWorkbench := application.NewBatchDeliveryWorkbenchService(batchDelivery).
+		WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, stateStore, models.Router(), checker).WithNativeTools().WithExecutionRuntime(executionControl))
 	planDeliveryControl := application.NewPlanDeliveryControlService(stateStore)
 	approvalGateway := toolgateway.New(stateStore, checker).
 		WithDockerSandboxProposalExecutor(dockerProposalExecutor).
@@ -890,7 +892,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			workspaceCheckpoints, commandRuntimeDrydocks, config.ExecutionPermissionCapabilities).WithAdvanced(gitAdvanced)
 	}
 	var prFollowupWorker *application.PRFollowupService
-	workflowControl := application.NewWorkflowService(stateStore, specialistExecution)
+	workflowControl := application.NewWorkflowService(stateStore, specialistExecution).WithBatchDelivery(batchWorkbench)
 	var workflowWorker *application.WorkflowService
 	if config.ModelControlEnabled && config.ControlToken != "" {
 		workflowWorker = workflowControl
@@ -998,17 +1000,16 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		ThreadPullRequestController:         application.NewThreadPullRequestService(stateStore, githubReview, threadGit),
 		PRFollowupController:                prFollowupController,
 		GitHubReviewController:              githubReview,
-		BatchDeliveryController: application.NewBatchDeliveryWorkbenchService(batchDelivery).
-			WithWorker(application.NewBatchDeliveryModelWorker(batchDelivery, stateStore, models.Router(), checker).WithNativeTools()),
-		ExtensionController:              extensionControl,
-		CodeIntelSource:                  codeIntelManager,
-		CodeIntelController:              codeIntelControl,
-		UIEvidenceController:             uiEvidence,
-		FullCDPSessionController:         fullCDPSessions,
-		AgentBrowserController:           agentBrowserController,
-		DockerSandboxController:          dockerSandbox,
-		SandboxEnvironmentController:     sandboxEnvironmentController,
-		SandboxEnvironmentControlEnabled: config.SandboxEnvironmentControlEnabled,
+		BatchDeliveryController:             batchWorkbench,
+		ExtensionController:                 extensionControl,
+		CodeIntelSource:                     codeIntelManager,
+		CodeIntelController:                 codeIntelControl,
+		UIEvidenceController:                uiEvidence,
+		FullCDPSessionController:            fullCDPSessions,
+		AgentBrowserController:              agentBrowserController,
+		DockerSandboxController:             dockerSandbox,
+		SandboxEnvironmentController:        sandboxEnvironmentController,
+		SandboxEnvironmentControlEnabled:    config.SandboxEnvironmentControlEnabled,
 		DockerEnvironmentController: httpapi.NewDockerEnvironmentController(application.NewDockerEnvironmentService(
 			config.DockerExecutionEnabled, config.StandardCodeDockerImageDigest, standardCodeRuntime != nil)),
 		ModelRegistry: models,
