@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 const WorkflowVersion = "workflow.v1"
@@ -42,6 +44,7 @@ type WorkflowStep struct {
 	ID            string                      `json:"id"`
 	Kind          string                      `json:"kind"`
 	Task          *ChildTask                  `json:"task,omitempty"`
+	Completion    *WorkflowCompletion         `json:"completion,omitempty"`
 	BatchPlan     *WorkflowValueRef           `json:"batch_plan,omitempty"`
 	Inputs        map[string]WorkflowValueRef `json:"inputs,omitempty"`
 	Condition     *WorkflowCondition          `json:"condition,omitempty"`
@@ -49,6 +52,41 @@ type WorkflowStep struct {
 	Else          []WorkflowStep              `json:"else,omitempty"`
 	Body          []WorkflowStep              `json:"body,omitempty"`
 	MaxIterations int                         `json:"max_iterations,omitempty"`
+}
+
+// Omitted completion retains the existing report-driven workflow semantics.
+type WorkflowCompletion struct {
+	Mode   string `json:"mode"`
+	Target string `json:"target,omitempty"`
+}
+
+func (s WorkflowStep) RequiresCodeVerification() bool {
+	return s.Completion != nil && s.Completion.Mode == "verified_code"
+}
+
+func (s WorkflowStep) VerificationTarget() string {
+	if s.Completion == nil || s.Completion.Target == "" {
+		return "."
+	}
+	return s.Completion.Target
+}
+
+// WorkflowVerification records the last host check, not a permanent grant.
+// Completion rechecks the original native evidence against current source.
+type WorkflowVerification struct {
+	StepExecutionID string    `json:"step_execution_id"`
+	StepID          string    `json:"step_id"`
+	AgentID         string    `json:"agent_id"`
+	JobID           string    `json:"job_id,omitempty"`
+	Target          string    `json:"target"`
+	State           string    `json:"state"`
+	Reusable        bool      `json:"reusable"`
+	SourceVersion   string    `json:"source_version,omitempty"`
+	TestFingerprint string    `json:"test_fingerprint,omitempty"`
+	ExitCode        *int      `json:"exit_code,omitempty"`
+	TreeReaped      bool      `json:"tree_reaped"`
+	CheckedAt       time.Time `json:"checked_at"`
+	Reason          string    `json:"reason,omitempty"`
 }
 type WorkflowDefinition struct {
 	ID        string       `json:"id"`
@@ -62,11 +100,12 @@ type WorkflowFrame struct {
 	Iteration int    `json:"iteration,omitempty"`
 }
 type WorkflowState struct {
-	Stack      []WorkflowFrame            `json:"stack"`
-	Outputs    map[string]json.RawMessage `json:"outputs"`
-	Iterations map[string]int             `json:"iterations"`
-	Steps      int                        `json:"steps"`
-	Jobs       int                        `json:"jobs"`
+	Stack         []WorkflowFrame                 `json:"stack"`
+	Outputs       map[string]json.RawMessage      `json:"outputs"`
+	Iterations    map[string]int                  `json:"iterations"`
+	Steps         int                             `json:"steps"`
+	Jobs          int                             `json:"jobs"`
+	Verifications map[string]WorkflowVerification `json:"verifications,omitempty"`
 	// WaitFingerprint records the dependencies observed before yielding. A
 	// waiting execution wakes when those durable dependencies change.
 	WaitFingerprint string `json:"wait_fingerprint,omitempty"`
@@ -142,6 +181,17 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 			if s.Condition != nil && (!validWorkflowRef(s.Condition.Ref) || !json.Valid(s.Condition.Equals) || len(s.Condition.Equals) > 4096) {
 				return errors.New("workflow condition is invalid")
 			}
+			if c := s.Completion; c != nil {
+				if s.Kind != "worker" || (c.Mode != "report" && c.Mode != "verified_code") ||
+					(c.Mode == "report" && c.Target != "") || strings.TrimSpace(c.Target) != c.Target || len(c.Target) > 1024 {
+					return errors.New("workflow completion requires a worker and mode report or verified_code; only verified_code accepts a target")
+				}
+				if c.Target != "" {
+					if err := (workspaceidentity.PathPolicy{}).Check(c.Target); err != nil {
+						return fmt.Errorf("step %s verification target: %w", s.ID, err)
+					}
+				}
+			}
 			switch s.Kind {
 			case "worker":
 				if s.Task == nil || s.BatchPlan != nil || s.Condition != nil || len(s.Then)+len(s.Else)+len(s.Body) != 0 || s.MaxIterations != 0 || len(s.Task.DependencyOrdinals) != 0 {
@@ -153,6 +203,9 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 				}
 				task := normalized.Tasks[0]
 				s.Task = &task
+				if s.RequiresCodeVerification() && !task.Worker.AllowsTool("run_tests") {
+					return errors.New("verified_code completion requires an execution worker with run_tests")
+				}
 			case "batch":
 				if s.BatchPlan == nil || !validWorkflowRef(*s.BatchPlan) || s.Task != nil || s.Condition != nil || len(s.Then)+len(s.Else)+len(s.Body)+len(s.Inputs) != 0 || s.MaxIterations != 0 {
 					return errors.New("batch step requires a reference to an approved isolated delivery plan")

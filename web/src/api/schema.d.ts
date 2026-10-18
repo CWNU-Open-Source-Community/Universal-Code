@@ -5677,7 +5677,10 @@ export interface paths {
         /** List saved workflow definitions */
         get: operations["listWorkflowDefinitions"];
         put?: never;
-        /** Save an immutable bounded workflow */
+        /**
+         * Save an immutable bounded workflow
+         * @description A worker completion mode of verified_code requires a current passed native project-test receipt for its relative target directory (default project root). Report mode and omitted completion retain report-based completion. The host rechecks verification before accepting code steps and completing the workflow.
+         */
         post: operations["saveWorkflowDefinition"];
         delete?: never;
         options?: never;
@@ -15950,6 +15953,11 @@ export interface components {
             history_scope?: "" | "delegated" | "parent_snapshot";
             tools?: string[] | null;
         };
+        WorkflowCompletion: {
+            /** @enum {string} */
+            mode: "report" | "verified_code";
+            target?: string;
+        };
         WorkflowCondition: {
             equals: unknown;
             ref: components["schemas"]["WorkflowValueRef"];
@@ -16034,11 +16042,15 @@ export interface components {
             stack: components["schemas"]["WorkflowFrame"][];
             /** Format: int32 */
             steps: number;
+            verifications?: {
+                [key: string]: components["schemas"]["WorkflowVerification"];
+            };
             wait_fingerprint?: string;
         };
         WorkflowStep: {
             batch_plan?: components["schemas"]["WorkflowValueRef"];
             body?: components["schemas"]["WorkflowStep"][];
+            completion?: components["schemas"]["WorkflowCompletion"];
             condition?: components["schemas"]["WorkflowCondition"];
             else?: components["schemas"]["WorkflowStep"][];
             id: string;
@@ -16054,6 +16066,23 @@ export interface components {
         WorkflowValueRef: {
             path?: string;
             step: string;
+        };
+        WorkflowVerification: {
+            agent_id: string;
+            /** Format: date-time */
+            checked_at: string;
+            /** Format: int32 */
+            exit_code?: number;
+            job_id?: string;
+            reason?: string;
+            reusable: boolean;
+            source_version?: string;
+            state: string;
+            step_execution_id: string;
+            step_id: string;
+            target: string;
+            test_fingerprint?: string;
+            tree_reaped: boolean;
         };
         WorkspaceCheckpointTimeline: {
             checkpoints: components["schemas"]["Checkpoint"][];

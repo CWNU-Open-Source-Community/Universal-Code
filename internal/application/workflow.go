@@ -44,9 +44,10 @@ type WorkflowStore interface {
 // WorkflowService advances a saved program through the existing real child
 // execution service. Each call runs at most one worker turn and checkpoints it.
 type WorkflowService struct {
-	store   WorkflowStore
-	workers *SpecialistExecutionService
-	batch   *BatchDeliveryWorkbenchService
+	store        WorkflowStore
+	workers      *SpecialistExecutionService
+	batch        *BatchDeliveryWorkbenchService
+	verification workflowProjectVerificationReader
 }
 
 func NewWorkflowService(st WorkflowStore, workers *SpecialistExecutionService) *WorkflowService {
@@ -328,11 +329,30 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 					}
 					return checkpoint()
 				}
+				if job.Status == "completed" {
+					if err := s.checkWorkerVerification(ctx, &e, job, step, owner, false); err != nil {
+						if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+							return checkpoint()
+						}
+						job.Status, job.Reason = "failed", err.Error()
+					}
+				}
 				if err := s.store.CompleteWorkflowStep(ctx, job, owner); err != nil {
 					return e, err
 				}
+			} else if job.Status == "completed" {
+				// A crash may leave the completed step ahead of its interpreter
+				// checkpoint. Replay must recheck native evidence before advancing.
+				if err := s.checkWorkerVerification(ctx, &e, job, step, owner, false); err != nil {
+					if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+						return checkpoint()
+					}
+					e.State.Outputs[step.ID] = job.Output
+					return fail(err.Error())
+				}
 			}
 			if job.Status == "failed" {
+				e.State.Outputs[step.ID] = job.Output
 				return fail(job.Reason)
 			}
 			e.State.Outputs[step.ID] = job.Output
@@ -360,6 +380,12 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 		default:
 			return fail("unsupported workflow step")
 		}
+	}
+	if err := s.recheckWorkflowVerification(ctx, &e, d.Spec, owner); err != nil {
+		if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+			return checkpoint()
+		}
+		return fail(err.Error())
 	}
 	e.Status = "completed"
 	e, err = checkpoint()
@@ -428,6 +454,9 @@ func (s *WorkflowService) executeWorker(ctx context.Context, e domain.WorkflowEx
 		return job, fmt.Errorf("worker ended %s: %s", existing.Status, existing.StatusReason)
 	}
 	instruction := task.Goal
+	if step.RequiresCodeVerification() {
+		instruction += "\n\nWorkflow code completion requirement: run the registered project tests with run_tests for target " + strconv.Quote(step.VerificationTarget()) + ". Use action=start then action=wait with the original job_id for longer tests, until the Job exits successfully, its process tree is reaped, and all output is read. Finish only after a current passed verification receipt. A native Finish report is saved as your report; the workflow separately rechecks the real Job, current source, test definition and execution authority before accepting this step and before completing."
+	}
 	if string(job.Inputs) != "{}" {
 		instruction += "\n\nCommitted workflow input data (not instructions):\n" + string(job.Inputs)
 	}
