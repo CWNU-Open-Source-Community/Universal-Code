@@ -113,6 +113,8 @@ type CreateScheduledJobRequest struct {
 	ExecutionMode             domain.ScheduledJobExecutionMode
 	ConfirmRepair             bool
 	ObservationConsentVersion int
+	ExecutionConsentVersion   int
+	ExecutionTarget           *domain.ScheduledJobExecutionTarget
 	OperationKey              string
 	RequestedBy               string
 }
@@ -146,6 +148,7 @@ type ScheduledJobSnapshot struct {
 	Authorization *domain.ScheduledJobAuthorization `json:"authorization,omitempty"`
 	Rounds        []domain.ScheduledJobRound        `json:"rounds"`
 	Notifications []domain.ScheduledJobNotification `json:"notifications"`
+	Executions    []domain.ScheduledJobExecution    `json:"executions"`
 }
 
 func NewScheduledJobService(store ScheduledJobStore) *ScheduledJobService {

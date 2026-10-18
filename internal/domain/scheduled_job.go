@@ -28,6 +28,7 @@ const (
 	MaxScheduledJobSummaryRunes           = 512
 	MaxScheduledJobTimezoneBytes          = 128
 	ScheduledJobObservationConsentVersion = 1
+	ScheduledJobExecutionConsentVersion   = 1
 )
 
 type ScheduledJobKind string
@@ -80,10 +81,11 @@ type ScheduledJobExecutionMode string
 const (
 	ScheduledJobReadOnly       ScheduledJobExecutionMode = "read_only"
 	ScheduledJobApprovedRepair ScheduledJobExecutionMode = "approved_repair"
+	ScheduledJobAutomatic      ScheduledJobExecutionMode = "automatic"
 )
 
 func (m ScheduledJobExecutionMode) Valid() bool {
-	return m == ScheduledJobReadOnly || m == ScheduledJobApprovedRepair
+	return m == ScheduledJobReadOnly || m == ScheduledJobApprovedRepair || m == ScheduledJobAutomatic
 }
 
 type ScheduledJobStatus string
@@ -203,6 +205,7 @@ type ScheduledJobSpec struct {
 	Retry                ScheduledJobRetryPolicy      `json:"retry"`
 	Notification         ScheduledJobNotificationMode `json:"notification"`
 	ExecutionMode        ScheduledJobExecutionMode    `json:"execution_mode"`
+	ExecutionTarget      *ScheduledJobExecutionTarget `json:"execution_target,omitempty"`
 }
 
 func (s ScheduledJobSpec) Validate() error {
@@ -234,6 +237,15 @@ func (s ScheduledJobSpec) Validate() error {
 	if s.ExecutionMode == ScheduledJobApprovedRepair && s.MaxModelCalls == 0 {
 		return errors.New("approved repair scheduled jobs require a positive model-call budget")
 	}
+	if s.ExecutionMode == ScheduledJobAutomatic {
+		if s.ExecutionTarget == nil || s.MaxModelCalls != 0 || s.StopOnTargetTerminal {
+			return errors.New("automatic scheduled jobs require an execution target, Run-owned model budget, and no owner-terminal stop")
+		}
+		return s.ExecutionTarget.Validate()
+	}
+	if s.ExecutionTarget != nil {
+		return errors.New("execution targets require automatic execution mode")
+	}
 	return nil
 }
 
@@ -261,6 +273,7 @@ type ScheduledJob struct {
 	UpdatedAt                 time.Time              `json:"updated_at"`
 	CompletedAt               *time.Time             `json:"completed_at,omitempty"`
 	ObservationConsentVersion int                    `json:"observation_consent_version"`
+	ExecutionConsentVersion   int                    `json:"execution_consent_version"`
 }
 
 func (j ScheduledJob) Validate() error {
@@ -284,7 +297,8 @@ func (j ScheduledJob) Validate() error {
 		j.LastEventSequence < 0 || j.ActiveLeaseGeneration < 0 ||
 		j.CreatedAt.IsZero() || j.UpdatedAt.Before(j.CreatedAt) ||
 		(j.ObservationConsentVersion != 0 &&
-			j.ObservationConsentVersion != ScheduledJobObservationConsentVersion) {
+			j.ObservationConsentVersion != ScheduledJobObservationConsentVersion) ||
+		(j.ExecutionConsentVersion != 0 && j.ExecutionConsentVersion != ScheduledJobExecutionConsentVersion) {
 		return errors.New("scheduled job mutable state is invalid")
 	}
 	if j.LastObservationSHA256 != "" && !validLowerHexDigest(j.LastObservationSHA256) {
