@@ -66,3 +66,9 @@ reviewed. The test changes and schema-history documentation were additionally
 read. Focused history tests and `TestSchemaHistoryListsEveryVersionInOrder`
 passed. The latter caught the missing v209 documentation row in CI; the row was
 added without changing the test or migration.
+
+## CI 跟进：Skill CLI 版本断言
+
+完整 CI 的 application 包已通过（1768.278 秒），唯一实际测试失败是 `TestSkillCLIListsShowsAndValidatesBuiltinsWithoutRuntimeState`。当前内置 `plan-delivery/manifest.json` 为 1.3.0，而主线遗留的 CLI 列表及过滤列表断言仍为 1.2.0。
+
+将两处预期值更新到已发布的内置版本，保留精确版本检查。`go test -p 1 ./internal/app -run '^TestSkillCLI' -count=1 -timeout 120s` 通过。重新执行 OCR delegate preview/rule，并人工阅读这两处差异、完整受影响测试函数和实际 manifest；测试文件按部分审阅记录，未宣称通读全部不变测试。

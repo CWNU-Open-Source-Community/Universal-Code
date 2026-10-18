@@ -30,7 +30,7 @@ func TestSkillCLIListsShowsAndValidatesBuiltinsWithoutRuntimeState(t *testing.T)
 	listed, stderr, code := executeTestCommand(t, "skill", "list")
 	if code != 0 || stderr != "" || !strings.Contains(listed, "code@1.3.0") ||
 		!strings.Contains(listed, "learn@1.2.0") || !strings.Contains(listed, "review@1.5.0") ||
-		!strings.Contains(listed, "plan-delivery@1.2.0") ||
+		!strings.Contains(listed, "plan-delivery@1.3.0") ||
 		!strings.Contains(listed, "script@1.2.0") ||
 		!strings.Contains(listed, "doctor@1.1.0") ||
 		!strings.Contains(listed, "debug@1.1.0") ||
@@ -57,7 +57,7 @@ func TestSkillCLIListsShowsAndValidatesBuiltinsWithoutRuntimeState(t *testing.T)
 
 	filtered, stderr, code := executeTestCommand(t, "skill", "list", "--profile", "review")
 	if code != 0 || stderr != "" || !strings.Contains(filtered, "review@1.5.0") ||
-		!strings.Contains(filtered, "plan-delivery@1.2.0") ||
+		!strings.Contains(filtered, "plan-delivery@1.3.0") ||
 		strings.Contains(filtered, "code@1.3.0") || strings.Contains(filtered, "script@1.2.0") ||
 		strings.Contains(filtered, "frontend-design@1.0.0") {
 		t.Fatalf("unexpected profile filter: code=%d stderr=%q output=%q", code, stderr, filtered)
