@@ -120,15 +120,7 @@ func (s *MCPCredentialService) changeOAuth(ctx context.Context, r ChangeMCPCrede
 		}
 		unlock := mcpoauth.CredentialLock(r.Binding.CredentialRef)
 		defer unlock()
-		value, found, err := s.store.Get(ctx, r.Binding.CredentialRef)
-		if err != nil || found != priorFound || value != prior || ctx.Err() != nil {
-			return mcpoauth.ErrOAuth
-		}
-		if err = s.store.Put(ctx, r.Binding.CredentialRef, raw); err != nil {
-			return mcpoauth.ErrOAuth
-		}
-		value, found, err = s.store.Get(ctx, r.Binding.CredentialRef)
-		if err != nil || !found || value != raw {
+		if err = mcpoauth.Replace(ctx, s.store, r.Binding.CredentialRef, prior, priorFound, raw); err != nil {
 			return mcpoauth.ErrOAuth
 		}
 		verified, verifyErr := s.status(ctx, r.Binding)

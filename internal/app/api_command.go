@@ -247,7 +247,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	if err != nil {
 		return err
 	}
-	extensionControl.WithCredentials(a.credentials)
+	extensionControl.WithCredentials(a.mcpCredentials())
 	var codeIntelControl httpapi.CodeIntelController
 	if strings.TrimSpace(a.codeIntelConfigPath) == "" {
 		service, err := application.OpenCodeIntelControlService(a.store, a.codeIntel,

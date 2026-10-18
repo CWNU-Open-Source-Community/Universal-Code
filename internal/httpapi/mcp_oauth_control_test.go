@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/json"
 	"html"
 	"io"
@@ -16,16 +18,19 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/mcp"
+	"cyberagent-workbench/internal/mcpoauth"
 )
 
 // Optional browser fixture uses the production API and application service with
-// an isolated SQLite database, synthetic issuer and in-memory credential store.
+// an isolated SQLite database, synthetic issuer and encrypted credential files.
 func TestMCPOAuthHTTPAndBrowserFixture(t *testing.T) {
 	for _, mode := range []string{"metadata_url", "auto", "confidential"} {
 		t.Run(mode, func(t *testing.T) { testMCPOAuthHTTPAndBrowserFixture(t, mode) })
 	}
 }
 func testMCPOAuthHTTPAndBrowserFixture(t *testing.T, mode string) {
+	access := strings.Repeat("http-fixture-private-access-", 128)
+	refresh := strings.Repeat("http-fixture-private-refresh-", 128)
 	var mcpRequests atomic.Int32
 	var issuer *httptest.Server
 	issuer = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +55,7 @@ func testMCPOAuthHTTPAndBrowserFixture(t *testing.T, mode string) {
 			io.WriteString(w, `<!doctype html><title>Local OAuth issuer</title><h1>Local TLS OAuth issuer</h1><p>Synthetic account: fixture only</p><a href="`+html.EscapeString(callback)+`">Approve fixture access</a>`)
 		case "/mcp":
 			mcpRequests.Add(1)
-			if r.Header.Get("Authorization") != "Bearer http-fixture-private-access" {
+			if r.Header.Get("Authorization") != "Bearer "+access {
 				http.Error(w, "unauthorized", 401)
 				return
 			}
@@ -68,7 +73,7 @@ func testMCPOAuthHTTPAndBrowserFixture(t *testing.T, mode string) {
 			case "initialize":
 				result = map[string]any{"protocolVersion": mcp.ProtocolVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "oauth-fixture", "version": "1"}}
 			case "tools/list":
-				result = map[string]any{"tools": []map[string]any{{"name": "echo", "description": "http-fixture-private-access", "inputSchema": map[string]any{"type": "object"}}}}
+				result = map[string]any{"tools": []map[string]any{{"name": "echo", "description": access, "inputSchema": map[string]any{"type": "object"}}}}
 			default:
 				http.Error(w, "unexpected MCP method", 400)
 				return
@@ -79,7 +84,7 @@ func testMCPOAuthHTTPAndBrowserFixture(t *testing.T, mode string) {
 			if mode == "confidential" && r.Form.Get("client_secret") != "http-fixture-private-client-secret" {
 				t.Error("missing confidential client secret")
 			}
-			io.WriteString(w, `{"access_token":"http-fixture-private-access","refresh_token":"http-fixture-private-refresh","token_type":"Bearer","expires_in":3600}`)
+			json.NewEncoder(w).Encode(map[string]any{"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 3600})
 		default:
 			http.NotFound(w, r)
 		}
@@ -90,11 +95,23 @@ func testMCPOAuthHTTPAndBrowserFixture(t *testing.T, mode string) {
 	http.DefaultTransport = issuer.Client().Transport
 	defer func() { http.DefaultTransport = prior }()
 	f, controller, _, _ := newExtensionOnboardingFixture(t)
-	owned := credential.NewMemoryStore()
+	var keys credential.Store = credential.NewMemoryStore()
+	if os.Getenv("CYBERAGENT_OAUTH_BROWSER_SYSTEM_STORE") == "1" {
+		keys = credential.NewSystemStore()
+		if !keys.Available() {
+			t.Fatal("system credential store unavailable")
+		}
+	}
+	owned := mcpoauth.Store{Dir: t.TempDir(), KeyStore: keys}
 	controller.WithCredentials(owned)
 	registration := extensionRegistrationRequest(f)
 	registration.Descriptor.Target = issuer.URL + "/mcp"
-	registration.Descriptor.CredentialRef = "oauth-http-fixture"
+	registration.Descriptor.CredentialRef = "oauth-http-fixture-" + strings.ToLower(rand.Text())
+	t.Cleanup(func() {
+		if err := owned.Delete(context.Background(), registration.Descriptor.CredentialRef); err != nil {
+			t.Error("could not remove fixture credential")
+		}
+	})
 	var registered ExtensionMCPRegistrationView
 	decodeDataStatus(t, extensionOnboardingRequest(t, f.api, ExtensionMCPRegistrationPath, registration), http.StatusAccepted, &registered)
 	d := registered.Server

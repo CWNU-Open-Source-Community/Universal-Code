@@ -27,6 +27,7 @@ func (o oauthCLIOutput) Write(p []byte) (int, error) { o <- bytes.Clone(p); retu
 
 func TestMCPOAuthCLIConfidentialClientAndFixedPort(t *testing.T) {
 	const secret = "cli-private-client-secret"
+	access := strings.Repeat("cli-private-access-", 200)
 	t.Setenv("MCP_TEST_CLIENT_SECRET", secret)
 	var issuer *httptest.Server
 	issuer = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,7 @@ func TestMCPOAuthCLIConfidentialClientAndFixedPort(t *testing.T) {
 			if r.Form.Get("client_secret") != secret {
 				t.Error("CLI did not supply secret from environment")
 			}
-			io.WriteString(w, `{"access_token":"cli-private-access-token","token_type":"Bearer","expires_in":3600}`)
+			json.NewEncoder(w).Encode(map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": 3600})
 		default:
 			http.NotFound(w, r)
 		}
@@ -74,7 +75,7 @@ func TestMCPOAuthCLIConfidentialClientAndFixedPort(t *testing.T) {
 	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 	listener.Close()
 	output := make(oauthCLIOutput, 4)
-	app := &App{store: state, credentials: owned, out: output, errOut: io.Discard}
+	app := &App{home: t.TempDir(), store: state, credentials: owned, out: output, errOut: io.Discard}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
@@ -120,7 +121,31 @@ func TestMCPOAuthCLIConfidentialClientAndFixedPort(t *testing.T) {
 	if json.Unmarshal(final, &status) != nil || status.OAuth == nil || status.OAuth.State != "authorized" || strings.Contains(string(final), secret) {
 		t.Fatal("invalid final CLI status")
 	}
-	if raw, found, err := owned.Get(t.Context(), d.CredentialRef); err != nil || !found || !strings.HasPrefix(raw, "uc-mcp-oauth-v1:") {
+	if raw, found, err := owned.Get(t.Context(), d.CredentialRef); err != nil || !found || !strings.HasPrefix(raw, "uc-mcp-oauth-file-v1:") || strings.Contains(raw, access) {
 		t.Fatal("CLI did not persist OAuth credential")
+	}
+	var statusOutput bytes.Buffer
+	restarted := &App{home: app.home, store: state, credentials: owned, out: &statusOutput, errOut: io.Discard}
+	if err := restarted.mcpOAuthCommand(t.Context(), []string{"oauth-status", d.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(statusOutput.String(), `"authorized"`) || strings.Contains(statusOutput.String(), access) || strings.Contains(statusOutput.String(), secret) {
+		t.Fatal("restarted CLI did not return secret-free OAuth status")
+	}
+	t.Setenv("MCP_TEST_REPLACEMENT", "cli-static-replacement")
+	if err := restarted.mcpCredentialCommand(t.Context(), []string{"set", d.CredentialRef, "--from-env", "MCP_TEST_REPLACEMENT", "--confirm"}); err != nil {
+		t.Fatal(err)
+	}
+	if raw, found, err := owned.Get(t.Context(), d.CredentialRef); err != nil || !found || raw != "cli-static-replacement" {
+		t.Fatal("CLI static replacement failed")
+	}
+	if files, err := filepath.Glob(filepath.Join(app.home, "credentials", "mcp", "*.enc")); err != nil || len(files) != 0 {
+		t.Fatal("CLI replacement retained ciphertext")
+	}
+	if err := restarted.mcpCredentialCommand(t.Context(), []string{"delete", d.CredentialRef, "--confirm"}); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := owned.Configured(t.Context(), d.CredentialRef); err != nil || found {
+		t.Fatal("CLI deletion failed")
 	}
 }

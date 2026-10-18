@@ -28,7 +28,7 @@ func manualConfigDescriptor(t *testing.T) ServerDescriptor {
 }
 
 func TestManualConfigValidationRejectsMixedFieldsAndPlaintext(t *testing.T) {
-	for _, kind := range []string{"legacy-fields", "native-fields", "relative-cwd", "literal-secret-name", "literal-token", "literal-bearer", "literal-envelope", "duplicate-env", "invalid-env-name", "invalid-ref", "stdio-headers", "http-env", "remote-http", "query", "empty-query", "userinfo", "fragment", "auth-header", "cookie-header", "protocol-header", "case-header", "newline-header"} {
+	for _, kind := range []string{"legacy-fields", "native-fields", "relative-cwd", "literal-secret-name", "literal-token", "literal-bearer", "literal-envelope", "literal-encrypted-envelope", "duplicate-env", "invalid-env-name", "invalid-ref", "stdio-headers", "http-env", "remote-http", "query", "empty-query", "userinfo", "fragment", "auth-header", "cookie-header", "protocol-header", "case-header", "newline-header"} {
 		t.Run(kind, func(t *testing.T) {
 			d := manualConfigDescriptor(t)
 			d.Env, d.EnvCredentialRefs = maps.Clone(d.Env), maps.Clone(d.EnvCredentialRefs)
@@ -47,6 +47,8 @@ func TestManualConfigValidationRejectsMixedFieldsAndPlaintext(t *testing.T) {
 				d.Env["MCP_MODE"] = "Bearer synthetic"
 			case "literal-envelope":
 				d.Env["MCP_MODE"] = oauthCredentialEnvelopePrefix + "synthetic-envelope"
+			case "literal-encrypted-envelope":
+				d.Env["MCP_MODE"] = "uc-mcp-oauth-file-v1:synthetic-reference"
 			case "duplicate-env":
 				d.Env["MCP_API_KEY"] = "override"
 			case "invalid-env-name":
@@ -154,6 +156,12 @@ func TestManualConfigRuntimeUsesExplicitEnvironmentAndCredentialRevision(t *test
 	}
 	if _, err := manager.readManualEnvironment(t.Context(), d); err == nil {
 		t.Fatal("OAuth envelope became a stdio secret")
+	}
+	if err := owned.Put(t.Context(), "fixture-secret", "uc-mcp-oauth-file-v1:synthetic-reference"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.readManualEnvironment(t.Context(), d); err == nil {
+		t.Fatal("OAuth encryption key/reference became a stdio secret")
 	}
 	if err := owned.Delete(t.Context(), "fixture-secret"); err != nil {
 		t.Fatal(err)
