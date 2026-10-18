@@ -28,12 +28,10 @@
 }
 
 :root {
-  --prayu-font-ui: "HarmonyOS Sans SC", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC",
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    "JetBrains Mono Variable", "JetBrains Mono", monospace;
-  --prayu-font-display: "HarmonyOS Sans SC", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC",
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    "JetBrains Mono Variable", "JetBrains Mono", monospace;
+  --prayu-font-ui: "JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC",
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", monospace;
+  --prayu-font-display: "JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC",
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", monospace;
   --prayu-font-mono: "JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC",
     "Cascadia Code", Consolas, monospace;
   --prayu-prose-size: 15px;
