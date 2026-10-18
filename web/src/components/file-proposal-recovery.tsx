@@ -39,7 +39,7 @@ export function FileProposalRecovery({ client, runID, editID, onClose }: {
   return <div className="file-proposal-editor file-proposal-recovery"
     aria-label={t(`已恢复 ${recovery.path} 的提案`, `Recovered proposal for ${recovery.path}`)}>
     <header>
-      <div><History aria-hidden="true" size={16} /><strong>{recovery.path}</strong>
+      <div><History aria-hidden="true" size={16} /><strong title={recovery.path}>{recovery.path}</strong>
         <StatusBadge status={recovery.stale ? "stale" : "pending review"} /></div>
       <button aria-label={t("关闭已恢复提案", "Close recovered proposal")} className="icon-button"
         onClick={onClose} title={t("关闭恢复视图", "Close recovery")} type="button">

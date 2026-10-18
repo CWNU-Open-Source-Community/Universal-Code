@@ -19,7 +19,7 @@ import (
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolrun"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 type SQLiteStore struct {
@@ -67,11 +67,7 @@ func Open(path string) (*SQLiteStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	if _, err := db.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	if _, err := db.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
+	if err := configureSQLiteWAL(db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -94,6 +90,29 @@ func Open(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func configureSQLiteWAL(db *sql.DB) error {
+	// A competing journal-mode change can return SQLITE_BUSY without invoking
+	// SQLite's busy handler. Own this statement's five-second wait so a retry
+	// cannot add another full busy_timeout after the budget has nearly expired.
+	if _, err := db.Exec(`PRAGMA busy_timeout = 0;`); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := db.Exec(`PRAGMA journal_mode = WAL;`)
+		if err == nil {
+			_, err = db.Exec(`PRAGMA busy_timeout = 5000;`)
+			return err
+		}
+		var sqliteErr sqlite3.Error
+		remaining := time.Until(deadline)
+		if !errors.As(err, &sqliteErr) || sqliteErr.Code != sqlite3.ErrBusy || remaining <= 0 {
+			return err
+		}
+		time.Sleep(min(10*time.Millisecond, remaining))
+	}
 }
 
 func restrictSQLiteFilePermissions(path string) error {

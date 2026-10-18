@@ -87,7 +87,7 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
 
   return <section className="file-proposal-editor" aria-label={t(`编辑 ${activeSource.path} 的提案`, `Edit proposal for ${activeSource.path}`)}>
     <header>
-      <div><Pencil aria-hidden="true" size={16} /><strong>{activeSource.path}</strong>
+      <div><Pencil aria-hidden="true" size={16} /><strong title={activeSource.path}>{activeSource.path}</strong>
         <StatusBadge status="proposal only" /></div>
       <div className="segmented-control" aria-label={t("编辑器模式", "Editor mode")}>
         <button aria-pressed={mode === "edit"} onClick={() => setMode("edit")} type="button">
