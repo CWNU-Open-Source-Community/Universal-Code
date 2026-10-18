@@ -1052,12 +1052,14 @@ func claimScheduledJobTx(ctx context.Context, tx *sql.Tx,
 		attempt = existingAttempt + 1
 		// Once an execution intent exists, recovery observes or replays that
 		// exact input. Approval polling must not consume retry attempts.
+		// Lease reconciliation leaves the error code empty even when a crash
+		// prevented the original submission IDs from reaching the receipt.
 		if job.Spec.ExecutionMode == domain.ScheduledJobAutomatic {
 			receipt, found, err := getScheduledExecution(ctx, tx, job.ID, occurrence)
 			if err != nil {
 				return domain.ScheduledJobLease{}, domain.ScheduledJob{}, err
 			}
-			if found && (status == string(domain.ScheduledJobRoundClaimed) || errorCode == "lease_revoked" || receipt.MessageID != "" || receipt.WorkflowExecutionID != "") {
+			if found && (status == string(domain.ScheduledJobRoundClaimed) || errorCode == "" || errorCode == "lease_revoked" || receipt.MessageID != "" || receipt.WorkflowExecutionID != "") {
 				attempt = existingAttempt
 			}
 		}

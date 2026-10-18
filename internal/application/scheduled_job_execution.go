@@ -308,13 +308,34 @@ func (s *ScheduledJobService) runExecution(ctx context.Context, job domain.Sched
 			return lookupErr
 		}
 	}
-	if receipt.MessageID == "" && receipt.WorkflowExecutionID == "" {
+	if receipt.ResumeSubmission && s.turns != nil {
+		observed, err := s.turns.ObserveAutomaticTurn(runCtx, target.ThreadID, receipt.RunID, receipt.MessageID)
+		if err != nil {
+			return err
+		}
+		if observed.TerminalFailure {
+			return fail(apperror.New(apperror.CodeFailedPrecondition, "original scheduled task execution failed"))
+		}
+		if observed.State == "waiting_approval" {
+			receipt.ResumeSubmission = false
+			receipt.ErrorCode = ""
+			return wait("waiting_approval", scheduledExecutionSummary("waiting_approval"))
+		}
+		if observed.State == "completed" {
+			receipt.ResumeSubmission = false
+			receipt.ErrorCode = ""
+		}
+	}
+	if receipt.MessageID == "" && receipt.WorkflowExecutionID == "" || receipt.ResumeSubmission {
 		binding, err := s.validateExecutionTarget(runCtx, job.Spec)
 		if err != nil {
 			return wait("blocked", "Automatic execution requires the selected task and workspace to be available")
 		}
 		if binding.WorkspaceID != consent.WorkspaceID || binding.RootPathSHA256 != consent.RootPathSHA256 || binding.Branch != consent.Branch {
 			return wait("blocked", "Task workspace or branch changed; restore the selected workspace before continuing")
+		}
+		if receipt.ResumeSubmission && binding.RunID != receipt.RunID {
+			return wait("blocked", "The original pending input requires its task Run to remain current")
 		}
 		if target.Kind == "workflow" {
 			if err := s.turns.CheckAutomaticRun(runCtx, binding.ThreadID, job.Spec.TargetRunID); err != nil {
@@ -331,10 +352,19 @@ func (s *ScheduledJobService) runExecution(ctx context.Context, job domain.Sched
 		}
 		if target.Kind == "thread" {
 			result, execErr := s.turns.ExecuteAutomatic(runCtx, ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: target.ThreadID, Content: target.Prompt, OperationKey: receipt.OperationKey, RequestedBy: "scheduled_job"})
-			receipt.RunID = result.Submission.Run.ID
-			receipt.MessageID = result.Submission.Message.ID
+			if result.Submission.Message.ID != "" {
+				receipt.RunID = result.Submission.Run.ID
+				receipt.MessageID = result.Submission.Message.ID
+				receipt.ResumeSubmission = execErr != nil && result.Execution == nil && result.Submission.Message.Status == domain.OperatorSteeringPending
+			}
 			if receipt.MessageID != "" {
 				receipt.State = "running"
+				receipt.ErrorCode = ""
+				if execErr != nil {
+					receipt.State = "blocked"
+					receipt.ErrorCode = scheduledJobFailureCode(execErr)
+					receipt.Result = scheduledBlockedSummary(execErr)
+				}
 				if err := save(); err != nil {
 					return err
 				}
@@ -375,7 +405,13 @@ func (s *ScheduledJobService) runExecution(ctx context.Context, job domain.Sched
 			return fail(apperror.New(apperror.CodeFailedPrecondition, "original scheduled task execution failed"))
 		}
 		if observed.State != "completed" {
+			if receipt.State == "blocked" && receipt.ErrorCode != "" && observed.State != "waiting_approval" {
+				return wait("blocked", receipt.Result)
+			}
 			state := observed.State
+			if state == "waiting_approval" {
+				receipt.ErrorCode = ""
+			}
 			if state != "waiting_approval" && state != "blocked" {
 				state = "running"
 			}
@@ -402,6 +438,8 @@ func (s *ScheduledJobService) runExecution(ctx context.Context, job domain.Sched
 		}
 	}
 	receipt.State = "completed"
+	receipt.ResumeSubmission = false
+	receipt.ErrorCode = ""
 	receipt.Result = "Scheduled execution completed"
 	if err := save(); err != nil {
 		return err
@@ -427,6 +465,8 @@ func scheduledExecutionSummary(state string) string {
 func scheduledBlockedSummary(err error) string {
 	text := strings.ToLower(err.Error())
 	switch {
+	case strings.Contains(text, "lifecycle hook"):
+		return "A lifecycle hook blocked task startup; review the hook before continuing"
 	case strings.Contains(text, "full access"):
 		return "Reactivate Full Access explicitly before automatic execution can continue"
 	case strings.Contains(text, "approval"):

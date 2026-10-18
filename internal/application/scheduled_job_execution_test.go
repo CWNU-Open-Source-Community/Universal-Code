@@ -11,6 +11,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/store"
@@ -340,6 +341,202 @@ func TestScheduledAutomaticLostResponseReplaysOriginalThreadInput(t *testing.T) 
 	users := 0
 	for _, m := range messages {
 		if m.Role == "user" {
+			users++
+		}
+	}
+	if users != 1 {
+		t.Fatalf("user messages=%d", users)
+	}
+}
+
+type interruptedScheduledReceiptStore struct {
+	*store.SQLiteStore
+	interrupted bool
+}
+
+func (s *interruptedScheduledReceiptStore) SaveScheduledJobExecution(ctx context.Context, lease domain.ScheduledJobLease, receipt domain.ScheduledJobExecution, now time.Time) (domain.ScheduledJobExecution, error) {
+	if !s.interrupted && (receipt.MessageID != "" || receipt.WorkflowExecutionID != "") {
+		s.interrupted = true
+		return domain.ScheduledJobExecution{}, apperror.New(apperror.CodeUnavailable, "simulate process exit before saving submission identity")
+	}
+	return s.SQLiteStore.SaveScheduledJobExecution(ctx, lease, receipt, now)
+}
+
+func TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt(t *testing.T) {
+	for _, kind := range []string{"thread", "workflow"} {
+		t.Run(kind, func(t *testing.T) {
+			st, run, path := scheduledAutomationFixture(t)
+			now := time.Now().UTC().Add(time.Second)
+			clock := &scheduledStaticClock{now: now}
+			p := &lifecycleProvider{responses: []string{rootActionResponse(domain.RootActionFinish, "finished scheduled task", "done", "")}}
+			if kind == "workflow" {
+				p.responses = []string{workflowResponse(t, domain.CompletionSucceeded).Text}
+			}
+			turnService, workflowService := scheduledWorkflowServices(st, p)
+			turns := &droppedScheduledTurn{ThreadTurnService: turnService}
+			workflows := &droppedScheduledWorkflow{WorkflowService: workflowService}
+			request := scheduledAutomationRequest(run, now)
+			request.Schedule.Kind = domain.ScheduledJobOnce
+			request.Schedule.IntervalSeconds = 0
+			request.MaxRounds = 1
+			if kind == "workflow" {
+				definition, err := workflows.Save(t.Context(), workflowSpec(workflowWorker("report")))
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.ExecutionTarget = &domain.ScheduledJobExecutionTarget{Kind: "workflow", WorkflowDefinitionID: definition.ID}
+			}
+			interrupted := &interruptedScheduledReceiptStore{SQLiteStore: st}
+			svc := application.NewScheduledJobService(interrupted).WithClock(clock).WithExecution(turns, workflows)
+			created, err := svc.Create(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.RunDueConfirmed(t.Context(), "interrupted-worker", now); apperror.CodeOf(err) != apperror.CodeUnavailable || !interrupted.interrupted {
+				t.Fatalf("submission interruption=%v interrupted=%v", err, interrupted.interrupted)
+			}
+			queued, found, err := st.GetScheduledJobExecution(t.Context(), created.Job.ID, request.Schedule.AnchorAt)
+			if err != nil || !found || queued.State != "queued" || queued.MessageID != "" || queued.WorkflowExecutionID != "" {
+				t.Fatalf("queued receipt=%+v found=%v err=%v", queued, found, err)
+			}
+			job, err := st.GetScheduledJob(t.Context(), created.Job.ID)
+			if err != nil || job.ActiveLeaseExpiresAt == nil {
+				t.Fatalf("interrupted job=%+v err=%v", job, err)
+			}
+			var workflowID string
+			if kind == "workflow" {
+				executions, err := workflows.List(t.Context(), run.ID)
+				if err != nil || len(executions) != 1 || workflows.calls != 1 {
+					t.Fatalf("initial workflows=%+v starts=%d err=%v", executions, workflows.calls, err)
+				}
+				workflowID = executions[0].ID
+			} else if turns.calls != 1 || p.calls != 1 {
+				t.Fatalf("initial Thread submissions=%d model calls=%d", turns.calls, p.calls)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := store.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			turnService, workflowService = scheduledWorkflowServices(reopened, p)
+			turns = &droppedScheduledTurn{ThreadTurnService: turnService}
+			workflows = &droppedScheduledWorkflow{WorkflowService: workflowService}
+			svc = application.NewScheduledJobService(reopened).WithClock(clock).WithExecution(turns, workflows)
+			clock.Set(job.ActiveLeaseExpiresAt.Add(time.Second))
+			if _, err := svc.RunDueConfirmed(t.Context(), "restarted-worker", clock.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "workflow" {
+				for i := 0; i < 4; i++ {
+					execution, err := workflows.Advance(t.Context(), workflowID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if execution.Status == "completed" {
+						break
+					}
+				}
+				clock.Set(clock.Now().Add(6 * time.Second))
+				if _, err := svc.RunDueConfirmed(t.Context(), "restarted-worker", clock.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			snapshot, err := svc.Get(t.Context(), created.Job.ID, 10, 10)
+			if err != nil || snapshot.Job.Status != domain.ScheduledJobCompleted || snapshot.Job.RoundsCompleted != 1 || snapshot.Job.ModelCalls != 0 || len(snapshot.Executions) != 1 || snapshot.Executions[0].State != "completed" || snapshot.Executions[0].OperationKey != queued.OperationKey || len(snapshot.Rounds) != 1 || snapshot.Rounds[0].Attempt != 1 || snapshot.Rounds[0].ClaimGeneration < 2 {
+				t.Fatalf("recovered snapshot=%+v err=%v", snapshot, err)
+			}
+			if turns.calls != 0 || workflows.calls != 0 || p.calls != 1 {
+				t.Fatalf("repeated dispatch: Thread=%d workflow=%d model=%d", turns.calls, workflows.calls, p.calls)
+			}
+			bindings, err := reopened.ListThreadRuns(t.Context(), domain.InitialThreadID(run.ID))
+			if err != nil || len(bindings) != 1 || bindings[0].RunID != run.ID {
+				t.Fatalf("Run budget replaced: bindings=%+v err=%v", bindings, err)
+			}
+		})
+	}
+}
+
+func TestScheduledAutomaticStartupHookBlockPersistsAndResumesOriginalInput(t *testing.T) {
+	st, run, path := scheduledAutomationFixture(t)
+	if _, err := application.NewRunService(st).Complete(t.Context(), run.ID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Second)
+	clock := &scheduledStaticClock{now: now}
+	p := &lifecycleProvider{responses: []string{rootActionResponse(domain.RootActionFinish, "startup unblocked", "done", "")}}
+	newTurns := func(state *store.SQLiteStore, engine *hooks.Engine) *droppedScheduledTurn {
+		router := llm.NewRouter(llm.ModelRef{Provider: p.Name(), Model: "model"})
+		router.RegisterProvider(p)
+		return &droppedScheduledTurn{ThreadTurnService: application.NewThreadTurnService(state, application.NewRunLifecycleControlService(state).WithLifecycleHooks(engine), application.NewRunExecutionHandoffService(state, router, policy.NewDefaultChecker())).WithLifecycleHooks(engine)}
+	}
+	engine := hooks.NewEngine(st)
+	setDenyHook(t, engine, hooks.RunStarted, "scheduled-startup-denied")
+	turns := newTurns(st, engine)
+	svc := application.NewScheduledJobService(st).WithClock(clock).WithExecution(turns, nil)
+	request := scheduledAutomationRequest(run, now)
+	request.Schedule.Kind = domain.ScheduledJobOnce
+	request.Schedule.IntervalSeconds = 0
+	request.MaxRounds = 1
+	created, err := svc.Create(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RunDueConfirmed(t.Context(), "denied-worker", now); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := svc.Get(t.Context(), created.Job.ID, 10, 10)
+	if err != nil || len(blocked.Executions) != 1 || blocked.Executions[0].State != "blocked" || blocked.Executions[0].ErrorCode != "policy_denied" || !blocked.Executions[0].ResumeSubmission || !strings.Contains(blocked.Executions[0].Result, "lifecycle hook") || p.calls != 0 {
+		t.Fatalf("blocked=%+v model calls=%d err=%v", blocked, p.calls, err)
+	}
+	original := blocked.Executions[0]
+	if original.MessageID == "" || original.RunID == run.ID {
+		t.Fatalf("successor input was not persisted: %+v", original)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	engine = hooks.NewEngine(reopened)
+	setDenyHook(t, engine, hooks.RunStarted, "scheduled-startup-denied")
+	turns = newTurns(reopened, engine)
+	svc = application.NewScheduledJobService(reopened).WithClock(clock).WithExecution(turns, nil)
+	clock.Set(clock.Now().Add(6 * time.Second))
+	if _, err := svc.RunDueConfirmed(t.Context(), "restarted-denied-worker", clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err = svc.Get(t.Context(), created.Job.ID, 10, 10)
+	if err != nil || blocked.Executions[0].State != "blocked" || blocked.Executions[0].Result != original.Result || blocked.Executions[0].ErrorCode != original.ErrorCode || blocked.Executions[0].MessageID != original.MessageID || blocked.Executions[0].OperationKey != original.OperationKey || p.calls != 0 {
+		t.Fatalf("persisted block=%+v model calls=%d err=%v", blocked, p.calls, err)
+	}
+	if err := engine.Replace(nil); err != nil {
+		t.Fatal(err)
+	}
+	clock.Set(clock.Now().Add(6 * time.Second))
+	if _, err := svc.RunDueConfirmed(t.Context(), "unblocked-worker", clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := svc.Get(t.Context(), created.Job.ID, 10, 10)
+	if err != nil || snapshot.Job.Status != domain.ScheduledJobCompleted || snapshot.Job.RoundsCompleted != 1 || snapshot.Job.ModelCalls != 0 || snapshot.Rounds[0].Attempt != 1 || snapshot.Executions[0].MessageID != original.MessageID || snapshot.Executions[0].RunID != original.RunID || snapshot.Executions[0].OperationKey != original.OperationKey || snapshot.Executions[0].ResumeSubmission || snapshot.Executions[0].ErrorCode != "" || p.calls != 1 {
+		t.Fatalf("resumed=%+v model calls=%d err=%v", snapshot, p.calls, err)
+	}
+	bindings, err := reopened.ListThreadRuns(t.Context(), request.ExecutionTarget.ThreadID)
+	if err != nil || len(bindings) != 2 {
+		t.Fatalf("repeated successor: bindings=%+v err=%v", bindings, err)
+	}
+	messages, err := reopened.ListThreadMessagesPage(t.Context(), request.ExecutionTarget.ThreadID, false, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := 0
+	for _, message := range messages {
+		if message.Role == "user" {
 			users++
 		}
 	}

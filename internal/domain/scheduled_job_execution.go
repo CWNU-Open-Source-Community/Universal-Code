@@ -73,11 +73,17 @@ type ScheduledJobExecution struct {
 	ErrorCode           string    `json:"error_code,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+	// ResumeSubmission retries lifecycle admission for the same pending input,
+	// before a Supervisor handoff has started.
+	ResumeSubmission bool `json:"resume_submission,omitempty"`
 }
 
 func (e ScheduledJobExecution) Validate() error {
 	if !ValidAgentID(e.JobID) || !ValidAgentID(e.OperationKey) || e.OccurrenceAt.IsZero() || e.CreatedAt.IsZero() || e.UpdatedAt.Before(e.CreatedAt) {
 		return errors.New("automatic execution receipt identity or time is invalid")
+	}
+	if e.ResumeSubmission && (e.RunID == "" || e.MessageID == "" || e.WorkflowExecutionID != "") {
+		return errors.New("submission recovery requires its original Thread input")
 	}
 	switch e.State {
 	case "queued", "running", "waiting_approval", "completed", "failed", "blocked":
