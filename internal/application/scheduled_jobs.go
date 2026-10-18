@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -93,9 +94,14 @@ type ScheduledJobExecutionResult struct {
 }
 
 type ScheduledJobService struct {
-	store    ScheduledJobStore
-	executor ScheduledJobRoundExecutor
-	clock    scheduler.Clock
+	store            ScheduledJobStore
+	executor         ScheduledJobRoundExecutor
+	clock            scheduler.Clock
+	turns            scheduledJobThreadExecutor
+	workflows        scheduledJobWorkflowExecutor
+	drydocks         *RunWorktreeService
+	executionMu      sync.Mutex
+	activeExecutions map[string]context.CancelFunc
 }
 
 type CreateScheduledJobRequest struct {
@@ -203,7 +209,7 @@ func (s *ScheduledJobService) Create(ctx context.Context,
 	if err != nil {
 		return ScheduledJobControlResult{}, apperror.Normalize(err)
 	}
-	if run.Terminal() || run.ID != spec.TargetRunID {
+	if (run.Terminal() && spec.ExecutionMode != domain.ScheduledJobAutomatic) || run.ID != spec.TargetRunID {
 		return ScheduledJobControlResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"scheduled jobs require one explicit non-terminal owner Run target")
 	}
@@ -236,6 +242,14 @@ func (s *ScheduledJobService) Create(ctx context.Context,
 		CreatedBy: normalized.RequestedBy, CreatedAt: now, UpdatedAt: now,
 	}
 	var authorization *domain.ScheduledJobAuthorization
+	var executionConsent *domain.ScheduledJobExecutionConsent
+	if spec.ExecutionMode == domain.ScheduledJobAutomatic {
+		binding, bindErr := s.validateExecutionTarget(ctx, spec)
+		if bindErr != nil {
+			return ScheduledJobControlResult{}, bindErr
+		}
+		executionConsent = &domain.ScheduledJobExecutionConsent{JobID: job.ID, RunID: run.ID, Version: domain.ScheduledJobExecutionConsentVersion, ConfirmedBy: normalized.RequestedBy, ConfirmedAt: now, WorkspaceID: binding.WorkspaceID, RootPathSHA256: binding.RootPathSHA256, Branch: binding.Branch}
+	}
 	if spec.ExecutionMode == domain.ScheduledJobApprovedRepair {
 		if !normalized.ConfirmRepair || mode.Surface != domain.ExecutionSurfaceCode ||
 			mode.Phase != domain.ExecutionPhaseDeliver ||
@@ -268,7 +282,13 @@ func (s *ScheduledJobService) Create(ctx context.Context,
 	}
 	var stored domain.ScheduledJob
 	var replayed bool
-	if normalized.ObservationConsentVersion == 0 {
+	if executionConsent != nil {
+		executionStore, ok := s.store.(scheduledJobExecutionStore)
+		if !ok {
+			return ScheduledJobControlResult{}, apperror.New(apperror.CodeFailedPrecondition, "scheduled execution store is required")
+		}
+		stored, replayed, err = executionStore.CreateScheduledJobWithExecutionConsent(ctx, job, *executionConsent, operation)
+	} else if normalized.ObservationConsentVersion == 0 {
 		stored, replayed, err = s.store.CreateScheduledJob(ctx, job, authorization, operation)
 	} else {
 		observationStore, ok := s.store.(scheduledJobObservationStore)
@@ -368,6 +388,13 @@ func (s *ScheduledJobService) Transition(ctx context.Context,
 	}
 	stored, replayed, err := s.store.TransitionScheduledJob(ctx, job.ID,
 		normalized.Action, normalized.ExpectedRevision, now, operation)
+	if err == nil && normalized.Action != domain.ScheduledJobResume {
+		s.executionMu.Lock()
+		if cancel := s.activeExecutions[job.ID]; cancel != nil {
+			cancel()
+		}
+		s.executionMu.Unlock()
+	}
 	return ScheduledJobControlResult{Job: stored, Replayed: replayed},
 		apperror.Normalize(err)
 }
@@ -403,8 +430,15 @@ func (s *ScheduledJobService) Get(ctx context.Context, jobID string,
 	} else if found {
 		authorization = &value
 	}
+	executions := []domain.ScheduledJobExecution{}
+	if executionStore, ok := s.store.(scheduledJobExecutionStore); ok {
+		executions, err = executionStore.ListScheduledJobExecutions(ctx, job.ID, roundLimit)
+		if err != nil {
+			return ScheduledJobSnapshot{}, apperror.Normalize(err)
+		}
+	}
 	return ScheduledJobSnapshot{Job: job, Authorization: authorization,
-		Rounds: rounds, Notifications: notifications}, nil
+		Rounds: rounds, Notifications: notifications, Executions: executions}, nil
 }
 
 func (s *ScheduledJobService) List(ctx context.Context, runID string,
@@ -424,7 +458,7 @@ func (s *ScheduledJobService) List(ctx context.Context, runID string,
 func (s *ScheduledJobService) RunDue(ctx context.Context, ownerID string,
 	now time.Time,
 ) (bool, error) {
-	return s.runDue(ctx, ownerID, now, false)
+	return s.runDue(ctx, ownerID, now, 0)
 }
 
 // RunDueObservation is the ordinary desktop runner. Both reconciliation and
@@ -432,11 +466,11 @@ func (s *ScheduledJobService) RunDue(ctx context.Context, ownerID string,
 func (s *ScheduledJobService) RunDueObservation(ctx context.Context,
 	ownerID string, now time.Time,
 ) (bool, error) {
-	return s.runDue(ctx, ownerID, now, true)
+	return s.runDue(ctx, ownerID, now, 1)
 }
 
 func (s *ScheduledJobService) runDue(ctx context.Context, ownerID string,
-	now time.Time, observationOnly bool,
+	now time.Time, scope int,
 ) (bool, error) {
 	if s == nil || s.store == nil || s.clock == nil || ctx == nil {
 		return false, apperror.New(apperror.CodeFailedPrecondition,
@@ -451,7 +485,15 @@ func (s *ScheduledJobService) runDue(ctx context.Context, ownerID string,
 	var lease domain.ScheduledJobLease
 	var claimed bool
 	var err error
-	if observationOnly {
+	if scope == 2 {
+		executionStore, ok := s.store.(scheduledJobExecutionStore)
+		if !ok {
+			return false, apperror.New(apperror.CodeFailedPrecondition, "scheduled execution store is required")
+		}
+		if _, err = executionStore.ReconcileConfirmedScheduledJobs(ctx, now, 64); err == nil {
+			job, lease, claimed, err = executionStore.ClaimDueConfirmedScheduledJob(ctx, ownerID, now)
+		}
+	} else if scope == 1 {
 		observationStore, ok := s.store.(scheduledJobObservationStore)
 		if !ok {
 			return false, apperror.New(apperror.CodeFailedPrecondition,
@@ -471,6 +513,9 @@ func (s *ScheduledJobService) runDue(ctx context.Context, ownerID string,
 	}
 	if !claimed {
 		return job.ID != "", nil
+	}
+	if job.Spec.ExecutionMode == domain.ScheduledJobAutomatic {
+		return true, s.runExecution(ctx, job, lease)
 	}
 	observation, err := s.observe(ctx, job)
 	if err != nil {
@@ -727,6 +772,14 @@ func normalizeCreateScheduledJobRequest(request CreateScheduledJobRequest) (
 		MaxRounds:            request.MaxRounds, MaxModelCalls: request.MaxModelCalls,
 		MaxElapsedSeconds: request.MaxElapsedSeconds, Retry: request.Retry,
 		Notification: request.Notification, ExecutionMode: request.ExecutionMode,
+		ExecutionTarget: request.ExecutionTarget,
+	}
+	if spec.ExecutionMode == domain.ScheduledJobAutomatic {
+		if request.ExecutionConsentVersion != domain.ScheduledJobExecutionConsentVersion || request.ObservationConsentVersion != 0 || request.ConfirmRepair {
+			return CreateScheduledJobRequest{}, domain.ScheduledJobSpec{}, apperror.New(apperror.CodeInvalidArgument, "automatic execution requires separate explicit execution consent")
+		}
+	} else if request.ExecutionConsentVersion != 0 {
+		return CreateScheduledJobRequest{}, domain.ScheduledJobSpec{}, apperror.New(apperror.CodeInvalidArgument, "execution consent requires automatic mode")
 	}
 	if err := spec.Validate(); err != nil {
 		return CreateScheduledJobRequest{}, domain.ScheduledJobSpec{},
