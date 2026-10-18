@@ -1,0 +1,47 @@
+{
+  "protocol": "github-followup-live-read.v1",
+  "url": "https://github.com/golang/go/pull/51679",
+  "head": "93dc64ad98e5583372e41f65ee4b7ab78b5aff51",
+  "fingerprint": "66846a358064fd22a4968c459f4436cf123be87e97424bf0f44f3c52b47d70a4",
+  "pagination": [
+    {
+      "resource": "reviews",
+      "pages_read": 1,
+      "items_read": 0,
+      "complete": true
+    },
+    {
+      "resource": "inline_comments",
+      "pages_read": 1,
+      "items_read": 0,
+      "complete": true
+    },
+    {
+      "resource": "issue_comments",
+      "pages_read": 4,
+      "items_read": 384,
+      "complete": true,
+      "next_cursor_hash": "98c5df903783207032b7ed19b7caba2697c3f1a6b5e838e6d3cc2f54580110d1"
+    },
+    {
+      "resource": "check_runs",
+      "pages_read": 1,
+      "items_read": 0,
+      "complete": true
+    },
+    {
+      "resource": "workflow_runs",
+      "pages_read": 1,
+      "items_read": 0,
+      "complete": true
+    },
+    {
+      "resource": "commit_statuses",
+      "pages_read": 1,
+      "items_read": 0,
+      "complete": true
+    }
+  ],
+  "authenticated": true,
+  "unchanged_fingerprint": true
+}

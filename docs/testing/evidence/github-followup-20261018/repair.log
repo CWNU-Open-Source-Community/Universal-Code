@@ -1,0 +1,5 @@
+=== RUN   TestLivePRFollowupRepairsRealGitHubCI
+    pr_followup_live_test.go:429: live_api=true model_calls=8 file_edits=1 real_command_jobs=3 remote_ci=success unchanged_poll_model_calls=0
+--- PASS: TestLivePRFollowupRepairsRealGitHubCI (109.90s)
+PASS
+ok  	cyberagent-workbench/internal/application	110.759s

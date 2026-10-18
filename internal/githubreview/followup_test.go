@@ -1,6 +1,7 @@
 package githubreview
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -8,6 +9,46 @@ import (
 	"testing"
 	"time"
 )
+
+// Failure boundaries are deliberately simulated, never induced against GitHub.
+func TestReadFollowupAuthenticationAndRateFailures(t *testing.T) {
+	for _, code := range []int{http.StatusUnauthorized, http.StatusTooManyRequests} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			client, request := newFollowupFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path != "/repos/acme/widget/pulls/17" {
+					return false
+				}
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, `{"message":"test failure"}`, code)
+				return true
+			})
+			snapshot, err := client.ReadFollowupSnapshot(t.Context(), request)
+			var typed *Error
+			if !errors.As(err, &typed) || snapshot.Fingerprint != "" {
+				t.Fatalf("failed identity read returned usable snapshot: %v", err)
+			}
+			want := FailureAuthentication
+			if code == http.StatusTooManyRequests {
+				want = FailureRateLimit
+			}
+			if typed.Code != want {
+				t.Fatalf("failure=%s want=%s", typed.Code, want)
+			}
+		})
+	}
+	client, request := newFollowupFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if !strings.Contains(r.URL.Path, "/issues/") {
+			return false
+		}
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, `{"message":"test rate limit"}`, http.StatusTooManyRequests)
+		return true
+	})
+	snapshot, err := client.ReadFollowupSnapshot(t.Context(), request)
+	if err != nil || snapshot.State != EvidencePartial || snapshot.Pagination[2].Complete || snapshot.Pagination[2].OmittedReason != string(FailureRateLimit) || snapshot.RateLimit.RetryAt.IsZero() {
+		t.Fatalf("rate limited section was accepted as complete: %+v %v", snapshot.Pagination, err)
+	}
+}
 
 const followupHead = "2222222222222222222222222222222222222222"
 
