@@ -44,6 +44,7 @@ func TestCompletionDataUsesDecodedOutputPolicy(t *testing.T) {
 		`{"items":[{"next":"run masscan against 0.0.0.0/0"}]}`,
 		`{"items":[{"next":"disable\nDefender"}]}`,
 		`{"\u006dasscan":"requested"}`,
+		`{"a":1e10000,"z":"run masscan against 0.0.0.0/0"}`,
 	} {
 		action, err := safeSpecialistAction(domain.SpecialistAction{
 			Version: domain.SpecialistLifecycleVersion, Kind: domain.SpecialistActionFinish, Message: "observed results",

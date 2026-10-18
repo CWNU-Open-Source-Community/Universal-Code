@@ -1240,6 +1240,7 @@ func specialistActionPolicyText(action domain.SpecialistAction) string {
 		// Data has already been normalized. Check decoded strings so JSON
 		// escapes cannot conceal text from the same policy used for the summary.
 		decoder := json.NewDecoder(bytes.NewReader(action.Report.Data))
+		decoder.UseNumber()
 		for {
 			token, err := decoder.Token()
 			if err != nil {
