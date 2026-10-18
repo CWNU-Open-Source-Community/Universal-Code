@@ -64,6 +64,12 @@ func portableSkillCatalog(ctx context.Context, source any, mode domain.RunModeSn
 					continue
 				}
 			}
+			if err := requireWorkerSkillCompatibility(ctx, source, value, portableSkillPin(value, skill), mode); err != nil {
+				if apperror.CodeOf(err) != apperror.CodePolicyDenied {
+					return page, err
+				}
+				continue
+			}
 			bindings = append(bindings, plugins.InstallationFingerprint(value), skill.Instructions.Component.ComponentID)
 			position := page.Total
 			page.Total++

@@ -43,6 +43,12 @@ func (e *AgentCodeToolExecutor) BindSpecialistAgentCodeAuthority(ctx context.Con
 		if a.SessionID != run.SessionID || a.RootAgentID != child.ParentID || a.Role != domain.AgentRoleRoot {
 			return nil, errors.New("worker file authority does not descend from its parent")
 		}
+		if toolgateway.IsCodeIntelTool(name) {
+			a, err = e.bindWorkerCodeIntelWorkspace(ctx, ref, a)
+			if err != nil {
+				return nil, err
+			}
+		}
 		a.Worker = &toolgateway.AgentCodeWorkerAuthority{AgentID: ref.AgentID, AttemptID: ref.AttemptID, SessionID: child.SessionID}
 		a.Role = domain.AgentRoleSpecialist
 		a.SessionID = child.SessionID
@@ -50,7 +56,11 @@ func (e *AgentCodeToolExecutor) BindSpecialistAgentCodeAuthority(ctx context.Con
 	if _, err = e.validateWorkerAgentCodeAuthority(ctx, ref, a, name); err != nil {
 		return nil, err
 	}
-	_, err = toolgateway.NormalizeAgentCodePayload(name, payload)
+	if toolgateway.IsCodeIntelTool(name) {
+		_, _, err = toolgateway.NormalizeCodeIntelPayload(name, payload)
+	} else {
+		_, err = toolgateway.NormalizeAgentCodePayload(name, payload)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +156,19 @@ func (e *AgentCodeToolExecutor) validateWorkerAgentCodeAuthority(ctx context.Con
 	if err != nil {
 		return files, err
 	}
-	if a.Worker == nil || a.Worker.AgentID != ref.AgentID || a.Worker.AttemptID != ref.AttemptID || a.Worker.SessionID != child.SessionID || a.SessionID != child.SessionID || a.RunID != run.ID || a.MissionID != mission.ID || a.WorkspaceID != mission.WorkspaceID || child.RunID != run.ID || child.ParentID != root.ID || child.Role != domain.AgentRoleSpecialist || child.Status != domain.AgentRunning || child.ActiveAttemptID != ref.AttemptID || root.RunID != run.ID || root.Role != domain.AgentRoleRoot || root.ParentID != "" || root.Terminal() || run.Status != domain.RunRunning || linked.Status != session.StatusActive || linked.WorkspaceID != mission.WorkspaceID || b.Mode != "worker" || b.BatchPlanID != "" || b.SessionID != child.SessionID || b.WorkspaceID != mission.WorkspaceID || b.WorkerProfileJSON != profile || !child.Worker.AllowsTool(string(name)) {
+	if a.Worker == nil || a.Worker.AgentID != ref.AgentID || a.Worker.AttemptID != ref.AttemptID || a.Worker.SessionID != child.SessionID || a.SessionID != child.SessionID || a.RunID != run.ID || a.MissionID != mission.ID || a.WorkspaceID != mission.WorkspaceID || child.RunID != run.ID || child.ParentID != root.ID || child.Role != domain.AgentRoleSpecialist || child.Status != domain.AgentRunning || child.ActiveAttemptID != ref.AttemptID || root.RunID != run.ID || root.Role != domain.AgentRoleRoot || root.ParentID != "" || root.Terminal() || run.Status != domain.RunRunning || linked.Status != session.StatusActive || linked.WorkspaceID != mission.WorkspaceID || b.Mode != "worker" || (b.BatchPlanID != "" && !toolgateway.IsCodeIntelTool(name)) || b.SessionID != child.SessionID || b.WorkspaceID != mission.WorkspaceID || b.WorkerProfileJSON != profile || !child.Worker.AllowsTool(string(name)) {
 		return files, apperror.New(apperror.CodePolicyDenied, "worker file actor or delegated authority changed")
 	}
 	files, err = ResolveRunFileWorkspace(ctx, e.store, run, mission, e.drydocks)
 	if err != nil {
 		return files, err
+	}
+	if b.BatchPlanID != "" {
+		worker, err := readWorkerExecutionContext(ctx, e.store, ref, e.drydocks)
+		if err != nil {
+			return files, err
+		}
+		files = worker.Files
 	}
 	fingerprint, err := workspace.AgentCodeRootFingerprint(files.Workspace.RootPath)
 	if err != nil {
@@ -172,8 +189,14 @@ func (e *AgentCodeToolExecutor) validateWorkerAgentCodeAuthority(ctx context.Con
 	if catalogue.Generation != a.CapabilityGeneration {
 		return files, apperror.New(apperror.CodeConflict, "worker parent file catalogue changed")
 	}
+	// Semantic reads inherit the parent's workspace-read authority. The LSP
+	// manager separately checks the reviewed server and capability snapshot.
+	parentTool := name
+	if toolgateway.IsCodeIntelTool(name) {
+		parentTool = toolgateway.WorkspaceListTool
+	}
 	for _, tool := range catalogue.Tools {
-		if tool.Name == name && tool.Available {
+		if tool.Name == parentTool && tool.Available {
 			return files, nil
 		}
 	}

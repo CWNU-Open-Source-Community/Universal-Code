@@ -39,6 +39,12 @@ type workerCommandTestActor struct {
 func newWorkerCommandTestActor(t *testing.T, st *store.SQLiteStore, service *CommandRuntimeService,
 	run domain.Run, root domain.AgentNode, lease domain.RunExecutionLease, profile *domain.WorkerProfile,
 ) *workerCommandTestActor {
+	return newWorkerCommandTestActorTurns(t, st, service, run, root, lease, profile, 1)
+}
+
+func newWorkerCommandTestActorTurns(t *testing.T, st *store.SQLiteStore, service *CommandRuntimeService,
+	run domain.Run, root domain.AgentNode, lease domain.RunExecutionLease, profile *domain.WorkerProfile, turns int64,
+) *workerCommandTestActor {
 	t.Helper()
 	skill := ""
 	for _, candidate := range root.Skills {
@@ -53,7 +59,7 @@ func newWorkerCommandTestActor(t *testing.T, st *store.SQLiteStore, service *Com
 	child, _, err := st.AdmitSpecialist(t.Context(), domain.SpecialistAdmission{
 		Worker: profile, AgentID: idgen.New("worker"), SessionID: idgen.New("worker-session"),
 		RunID: run.ID, ParentAgentID: root.ID, Title: "independent command worker", Skills: []string{skill},
-		TurnLimit: 1, TokenLimit: 100, MaxChildren: 2, CreatedAt: time.Now().UTC(),
+		TurnLimit: turns, TokenLimit: 100, MaxChildren: 2, CreatedAt: time.Now().UTC(),
 	}, idgen.New("admit-command-worker"))
 	if err != nil {
 		t.Fatal(err)

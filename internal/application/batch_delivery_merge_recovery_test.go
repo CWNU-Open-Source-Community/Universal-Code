@@ -83,6 +83,12 @@ func TestBatchMergeRecoversCommitBeforeReceipt(t *testing.T) {
 				steps[0].PostMergeHead != mergedHead || steps[0].InputHead != receipts[0].HeadCommit {
 				t.Fatalf("recovered queue=%+v steps=%+v", stored, steps)
 			}
+			for _, workspace := range prepared.Workspaces {
+				node, err := reopened.GetAgentNode(t.Context(), workspace.AgentID)
+				if err != nil || !node.Terminal() || node.ActiveAttemptID != "" {
+					t.Fatalf("%s recovery retained an integrated worker: %+v %v", recovery, node, err)
+				}
+			}
 			var validation struct {
 				Recovered bool `json:"recovered"`
 			}

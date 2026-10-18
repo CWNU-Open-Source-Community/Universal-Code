@@ -296,9 +296,11 @@ func (s *SQLiteStore) ListRecoverableBatchDeliveryPlans(ctx context.Context,
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"batch delivery recovery limit is invalid")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM batch_delivery_plans
-		WHERE status NOT IN ('completed', 'aborted')
-		ORDER BY updated_at, id LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id FROM batch_delivery_plans p
+		WHERE p.status NOT IN ('completed', 'aborted') OR EXISTS (
+			SELECT 1 FROM batch_delivery_workspaces w JOIN agent_nodes n ON n.id=w.agent_id
+			WHERE w.plan_id=p.id AND n.status NOT IN ('completed','failed','cancelled'))
+		ORDER BY p.updated_at, p.id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

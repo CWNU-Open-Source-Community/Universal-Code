@@ -277,5 +277,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v206 | 持久化按尝试绑定的子 Agent 上下文覆盖轮次、来源摘要和过长输入恢复状态，约束投影单调推进 | persist attempt-bound child Agent context coverage, source digests and oversized-input recovery state, enforcing monotonic projection progress |
 | v207 | 保存用户确认的 Thread 固定要求、修订、提议和操作记录，并将提议接入既有工具账本 | persist user-confirmed Thread requirements, revisions, proposals and operations, admitting proposals to the existing tool ledger |
 | v208 | 保存空闲 Thread 的压缩操作、模型用量和结果，以现有费用预留账本约束压缩调用 | persist idle Thread compaction operations, model usage and results, bounding compaction calls through the existing monetary reservation ledger |
+| v209 | 保存子 Agent 委派时明确选入的父历史范围及来源摘要，回读时重新核对来源可见性，默认保持自身历史范围 | persist explicitly selected parent history scope and source digests at child admission, rechecking source visibility on recall while defaulting to the child's own history |
 
 </details>

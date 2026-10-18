@@ -30,8 +30,9 @@ type BatchDeliveryWorkRequest struct {
 }
 
 type BatchDeliveryWorkResult struct {
-	EvidenceRefs []string
-	Limitations  []string
+	EvidenceRefs    []string
+	Limitations     []string
+	WaitingApproval bool
 }
 
 type BatchDeliveryWorkbenchTask struct {
@@ -51,6 +52,7 @@ type BatchDeliveryWorkbenchChild struct {
 	OwnerAvailable      bool
 	Executing           bool
 	OutcomeUnresolved   bool
+	WaitingApproval     bool
 }
 
 type BatchDeliveryWorkbenchSnapshot struct {
@@ -94,6 +96,9 @@ func (s *BatchDeliveryWorkbenchService) WithWorker(worker BatchDeliveryWorker) *
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.worker = worker
+	s.BatchDeliveryService.validationMu.Lock()
+	s.BatchDeliveryService.workerResources, _ = worker.(batchWorkerResourceCloser)
+	s.BatchDeliveryService.validationMu.Unlock()
 	return s
 }
 
@@ -152,6 +157,19 @@ func (s *BatchDeliveryWorkbenchService) WorkbenchSnapshot(ctx context.Context, p
 		result.Children[index] = BatchDeliveryWorkbenchChild{Ordinal: int64(child.Ordinal), Generation: child.Generation,
 			OwnerAvailable: ok && owner.Generation == child.Generation && digest == child.OwnerTokenDigest &&
 				s.now().UTC().Before(child.LeaseExpiresAt), Executing: s.busy[key]}
+		if reader, ok := s.store.(interface {
+			GetAgentNode(context.Context, string) (domain.AgentNode, error)
+		}); ok {
+			node, err := reader.GetAgentNode(ctx, child.AgentID)
+			if err != nil {
+				return BatchDeliveryWorkbenchSnapshot{}, err
+			}
+			waiting, _, err := batchWorkerApprovalWait(ctx, s.store, node)
+			if err != nil {
+				return BatchDeliveryWorkbenchSnapshot{}, err
+			}
+			result.Children[index].WaitingApproval = waiting
+		}
 		hasReceipt := false
 		for _, receipt := range snapshot.Receipts {
 			if receipt.Ordinal == child.Ordinal && receipt.Generation == child.Generation {
@@ -160,7 +178,7 @@ func (s *BatchDeliveryWorkbenchService) WorkbenchSnapshot(ctx context.Context, p
 		}
 		for _, message := range snapshot.Mailbox[child.Ordinal] {
 			if message.Generation == child.Generation && message.Summary == "explicit child execution started" &&
-				message.Kind == domain.BatchMailboxProgress && !hasReceipt && !s.busy[key] {
+				message.Kind == domain.BatchMailboxProgress && !hasReceipt && !s.busy[key] && !result.Children[index].WaitingApproval {
 				result.Children[index].OutcomeUnresolved = true
 			}
 		}
@@ -258,16 +276,12 @@ func (s *BatchDeliveryWorkbenchService) RenewWorkbenchOwner(ctx context.Context,
 		return BatchDeliveryWorkbenchSnapshot{}, err
 	}
 	s.owners[key] = owner
+	markerKind := domain.BatchMailboxProgress
 	if updated.Status == domain.BatchWorkspaceDispatched {
-		_, _, _, err = s.SendMessage(ctx, SendBatchDeliveryMessageRequest{PlanID: plan.ID, Ordinal: updated.Ordinal,
-			Generation: updated.Generation, OwnerToken: owner.OwnerToken, Kind: domain.BatchMailboxAck,
-			Summary: "child owner recovered", OperationKey: operationKey + "-ack"})
-		if err != nil {
-			return BatchDeliveryWorkbenchSnapshot{}, err
-		}
+		markerKind = domain.BatchMailboxAck
 	}
 	_, _, _, err = s.SendMessage(ctx, SendBatchDeliveryMessageRequest{PlanID: plan.ID, Ordinal: updated.Ordinal,
-		Generation: updated.Generation, OwnerToken: owner.OwnerToken, Kind: domain.BatchMailboxQuestion,
+		Generation: updated.Generation, OwnerToken: owner.OwnerToken, Kind: markerKind,
 		Summary: expectedSummary, OperationKey: markerKey})
 	if err != nil {
 		return BatchDeliveryWorkbenchSnapshot{}, err
@@ -313,25 +327,51 @@ func (s *BatchDeliveryWorkbenchService) ExecuteWorkbench(ctx context.Context, re
 	if err != nil {
 		return BatchDeliveryWorkbenchSnapshot{}, apperror.Normalize(err)
 	}
+	resuming := false
 	if exists {
 		if intent.Ordinal != request.Ordinal || intent.Generation != request.ExpectedGeneration {
 			return BatchDeliveryWorkbenchSnapshot{}, apperror.New(apperror.CodeConflict, "child execution operation key was reused")
 		}
-		// The model's dispatch outcome may be unknown. An operation replay is a
-		// read of its receipt/state, never another model call or side effect.
-		s.mu.Lock()
-		delete(s.busy, key)
-		s.mu.Unlock()
-		result, err := s.WorkbenchSnapshot(ctx, plan.ID)
-		result.Replayed = true
-		return result, err
+		if reader, ok := s.store.(interface {
+			GetAgentNode(context.Context, string) (domain.AgentNode, error)
+		}); ok {
+			node, err := reader.GetAgentNode(ctx, child.AgentID)
+			if err != nil {
+				return BatchDeliveryWorkbenchSnapshot{}, err
+			}
+			waiting, pending, err := batchWorkerApprovalWait(ctx, s.store, node)
+			if err != nil {
+				return BatchDeliveryWorkbenchSnapshot{}, err
+			}
+			resuming = waiting && !pending
+		}
+		// An exact approval wait can resume the existing attempt. All other
+		// model dispatch outcomes may be unknown. Replay reads receipt/state
+		// and may retry submitted-resource cleanup, without repeating work.
+		if !resuming {
+			if _, submitted, err := s.store.GetBatchDeliveryReceipt(ctx, plan.ID, child.Ordinal, child.Generation); err != nil {
+				return BatchDeliveryWorkbenchSnapshot{}, err
+			} else if submitted {
+				if closer, ok := worker.(batchWorkerResourceCloser); ok {
+					if err := closer.CloseBatchWorkerResources(domain.AgentAttemptRef{RunID: plan.RunID, AgentID: child.AgentID}); err != nil {
+						return BatchDeliveryWorkbenchSnapshot{}, err
+					}
+				}
+			}
+			s.mu.Lock()
+			delete(s.busy, key)
+			s.mu.Unlock()
+			result, err := s.WorkbenchSnapshot(ctx, plan.ID)
+			result.Replayed = true
+			return result, err
+		}
 	}
 	messages, err := s.store.ListBatchDeliveryMailbox(ctx, plan.ID, child.Ordinal, 512)
 	if err != nil {
 		return BatchDeliveryWorkbenchSnapshot{}, apperror.Normalize(err)
 	}
 	for _, message := range messages {
-		if message.Generation == child.Generation && message.Summary == "explicit child execution started" && message.Kind == domain.BatchMailboxProgress {
+		if !resuming && message.Generation == child.Generation && message.Summary == "explicit child execution started" && message.Kind == domain.BatchMailboxProgress {
 			return BatchDeliveryWorkbenchSnapshot{}, apperror.New(apperror.CodeFailedPrecondition, "this generation already has an execution intent; inspect its result and recover a new generation before retrying")
 		}
 	}
@@ -392,12 +432,23 @@ func (s *BatchDeliveryWorkbenchService) ExecuteWorkbench(ctx context.Context, re
 		s.recordWorkbenchFailure(ctx, authority, operationKey, err)
 		return BatchDeliveryWorkbenchSnapshot{}, apperror.Normalize(err)
 	}
+	if work.WaitingApproval {
+		s.mu.Lock()
+		delete(s.busy, key)
+		s.mu.Unlock()
+		return s.WorkbenchSnapshot(ctx, plan.ID)
+	}
 	_, _, err = s.Submit(ctx, SubmitBatchDeliveryRequest{PlanID: plan.ID, Ordinal: child.Ordinal,
 		Generation: child.Generation, OwnerToken: owner.OwnerToken, EvidenceRefs: work.EvidenceRefs,
 		Limitations: work.Limitations, OperationKey: operationKey + "-submit"})
 	if err != nil {
 		s.recordWorkbenchFailure(ctx, authority, operationKey, err)
 		return BatchDeliveryWorkbenchSnapshot{}, err
+	}
+	if closer, ok := worker.(batchWorkerResourceCloser); ok {
+		if err := closer.CloseBatchWorkerResources(domain.AgentAttemptRef{RunID: plan.RunID, AgentID: child.AgentID}); err != nil {
+			return BatchDeliveryWorkbenchSnapshot{}, err
+		}
 	}
 	s.mu.Lock()
 	delete(s.busy, key)

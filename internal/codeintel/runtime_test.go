@@ -366,11 +366,9 @@ func TestManagerCloseReapsOwnedProcessAndChangesBootGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := manager.Capabilities(context.Background(), helperWorkspaceID, root)[0]
-	manager.mu.Lock()
-	current := manager.clients[serverKey(helperWorkspaceID, descriptor.ID)]
-	manager.mu.Unlock()
-	if current == nil {
-		t.Fatal("owned process was not tracked")
+	current, err := manager.ensureClient(context.Background(), serverKey(helperWorkspaceID, descriptor.ID), root)
+	if err != nil {
+		t.Fatal(err)
 	}
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = manager.Close(closeCtx)

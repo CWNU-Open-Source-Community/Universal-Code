@@ -11,19 +11,28 @@ import (
 
 const MaxWorkerTools = 128
 
+const (
+	WorkerHistoryDelegated      = "delegated"
+	WorkerHistoryParentSnapshot = "parent_snapshot"
+)
+
 // WorkerProfile opts an admitted child into execution tools. A nil profile keeps
 // legacy behavior. Nil Tools inherits the parent's current advertised tools;
 // an explicit empty slice permits no tools. Dispatch still checks live authority.
 type WorkerProfile struct {
-	Tools []string `json:"tools"`
+	Tools        []string `json:"tools"`
+	HistoryScope string   `json:"history_scope,omitempty"`
 }
 
 func NormalizeWorkerProfile(profile *WorkerProfile) (*WorkerProfile, error) {
 	if profile == nil {
 		return nil, nil
 	}
+	if profile.HistoryScope != "" && profile.HistoryScope != WorkerHistoryDelegated && profile.HistoryScope != WorkerHistoryParentSnapshot {
+		return nil, errors.New("worker history_scope must be delegated or parent_snapshot")
+	}
 	if profile.Tools == nil {
-		return &WorkerProfile{}, nil
+		return &WorkerProfile{HistoryScope: profile.HistoryScope}, nil
 	}
 	if len(profile.Tools) > MaxWorkerTools {
 		return nil, fmt.Errorf("worker tools exceed %d entries", MaxWorkerTools)
@@ -46,7 +55,7 @@ func NormalizeWorkerProfile(profile *WorkerProfile) (*WorkerProfile, error) {
 		}
 	}
 	sort.Strings(tools)
-	return &WorkerProfile{Tools: tools}, nil
+	return &WorkerProfile{Tools: tools, HistoryScope: profile.HistoryScope}, nil
 }
 
 func (p *WorkerProfile) Validate() error {
@@ -64,7 +73,14 @@ func EqualWorkerProfiles(left, right *WorkerProfile) bool {
 	if left == nil || right == nil {
 		return left == right
 	}
-	return (left.Tools == nil) == (right.Tools == nil) && slices.Equal(left.Tools, right.Tools)
+	return left.HistoryScope == right.HistoryScope && (left.Tools == nil) == (right.Tools == nil) && slices.Equal(left.Tools, right.Tools)
+}
+
+func (p *WorkerProfile) EffectiveHistoryScope() string {
+	if p == nil || p.HistoryScope == "" {
+		return WorkerHistoryDelegated
+	}
+	return p.HistoryScope
 }
 
 // AllowsTool applies delegated narrowing; the host separately intersects the

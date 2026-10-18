@@ -46,6 +46,7 @@ type WorkflowStore interface {
 type WorkflowService struct {
 	store   WorkflowStore
 	workers *SpecialistExecutionService
+	batch   *BatchDeliveryWorkbenchService
 }
 
 func NewWorkflowService(st WorkflowStore, workers *SpecialistExecutionService) *WorkflowService {
@@ -336,6 +337,23 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 			}
 			e.State.Outputs[step.ID] = job.Output
 			e.State.Jobs++
+			e.State.Steps++
+			frame.Index++
+			return checkpoint()
+		case "batch":
+			output, jobs, waiting, err := s.advanceWorkflowBatch(ctx, e, step, d.Spec.Limits, usage, usedTurns)
+			if err != nil {
+				return fail(err.Error())
+			}
+			if waiting != "" {
+				e.Status, e.Reason = "waiting", waiting
+				return checkpoint()
+			}
+			if output == nil {
+				return checkpoint()
+			}
+			e.State.Outputs[step.ID] = output
+			e.State.Jobs += jobs
 			e.State.Steps++
 			frame.Index++
 			return checkpoint()

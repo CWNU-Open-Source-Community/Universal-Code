@@ -13154,6 +13154,15 @@ CREATE TABLE work_items (
 		CHECK((status = 'completed' AND completed_at IS NOT NULL) OR (status <> 'completed' AND completed_at IS NULL))
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE worker_parent_history_snapshots (
+ agent_id TEXT PRIMARY KEY REFERENCES agent_nodes(id),
+ run_id TEXT NOT NULL REFERENCES runs(id),
+ parent_agent_id TEXT NOT NULL REFERENCES agent_nodes(id),
+ sources_json TEXT NOT NULL CHECK(json_valid(sources_json)),
+ content_sha256 TEXT NOT NULL CHECK(length(content_sha256)=64),
+ created_at TEXT NOT NULL
+);
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE workflow_definitions (id TEXT PRIMARY KEY, digest TEXT NOT NULL UNIQUE, spec_json TEXT NOT NULL CHECK(json_valid(spec_json)), created_at TEXT NOT NULL);
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE workflow_executions (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL REFERENCES workflow_definitions(id), run_id TEXT NOT NULL REFERENCES runs(id), inputs_json TEXT NOT NULL CHECK(json_valid(inputs_json)), status TEXT NOT NULL CHECK(status IN ('running','waiting','waiting_approval','paused','completed','failed')), reason TEXT NOT NULL DEFAULT '', state_json TEXT NOT NULL CHECK(json_valid(state_json)), usage_before_json TEXT NOT NULL CHECK(json_valid(usage_before_json)), version INTEGER NOT NULL DEFAULT 1, claim_owner TEXT NOT NULL DEFAULT '', claim_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, turns_before INTEGER NOT NULL DEFAULT 0);
@@ -27285,6 +27294,9 @@ CREATE TRIGGER trg_work_item_owner_agent_update
 		BEGIN
 			SELECT RAISE(ABORT, 'work item owner Agent does not belong to Run');
 		END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_worker_parent_history_snapshot_immutable BEFORE UPDATE ON worker_parent_history_snapshots
+ BEGIN SELECT RAISE(ABORT,'Worker parent history snapshot is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_workspace_checkpoint_blob_content_immutable
 		BEFORE UPDATE OF sha256, size_bytes, content, created_at ON workspace_checkpoint_blobs

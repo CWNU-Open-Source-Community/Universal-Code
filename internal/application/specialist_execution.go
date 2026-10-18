@@ -66,7 +66,7 @@ func (s *SpecialistExecutionService) RevokeSpecialistReadTools(ctx context.Conte
 		return domain.AgentNode{}, err
 	}
 	node, err := st.RevokeSpecialistReadTools(ctx, runID, agentID)
-	if err == nil && before.Worker != nil && before.ActiveAttemptID != "" && s.workerRuntime != nil {
+	if err == nil && before.Worker != nil && s.workerRuntime != nil {
 		// Approval waits deliberately retain owned resources after yielding. There
 		// is no remaining runner to close them once their authority is revoked.
 		s.workerRuntime.closeWorkerResources(domain.AgentAttemptRef{RunID: runID, AgentID: agentID, AttemptID: before.ActiveAttemptID})

@@ -42,6 +42,7 @@ type BatchWorkbenchChildView struct {
 	OwnerAvailable    bool  `json:"owner_available"`
 	Executing         bool  `json:"executing"`
 	OutcomeUnresolved bool  `json:"outcome_unresolved"`
+	WaitingApproval   bool  `json:"waiting_approval,omitempty"`
 }
 
 type BatchWorkbenchView struct {
@@ -71,7 +72,7 @@ func batchWorkbenchView(result application.BatchDeliveryWorkbenchSnapshot) Batch
 		Children: make([]BatchWorkbenchChildView, len(result.Children)), Replayed: result.Replayed}
 	for index, child := range result.Children {
 		view.Children[index] = BatchWorkbenchChildView{Ordinal: child.Ordinal, Generation: child.Generation,
-			OwnerAvailable: child.OwnerAvailable, Executing: child.Executing, OutcomeUnresolved: child.OutcomeUnresolved}
+			OwnerAvailable: child.OwnerAvailable, Executing: child.Executing, OutcomeUnresolved: child.OutcomeUnresolved, WaitingApproval: child.WaitingApproval}
 	}
 	return view
 }

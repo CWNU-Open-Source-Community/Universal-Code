@@ -189,7 +189,7 @@ func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuth
 	slot := s.slots[key]
 	if rotate && agentBrowserUnusedColdSlot(slot) {
 		candidate := agentBrowserAuthorityForSlot(a, slot)
-		if candidate != slot.authority || !s.options.Capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(runID, candidate.RunAuthorizationFence) {
+		if !agentBrowserSameResource(candidate, slot.authority) || !s.options.Capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(runID, candidate.RunAuthorizationFence) {
 			// A read-only status query may have allocated this session before a
 			// quiescent mode/permission change. No launch ever began, so there
 			// are no owned resources to reap. Retain the old immutable session;
@@ -216,7 +216,7 @@ func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuth
 		s.sessions[a.BrowserSessionID] = slot
 	}
 	a = agentBrowserAuthorityForSlot(a, slot)
-	if slot.closed || agentBrowserRuntimeEnded(slot.runtime) || a != slot.authority || !s.options.Capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(runID, a.RunAuthorizationFence) {
+	if slot.closed || agentBrowserRuntimeEnded(slot.runtime) || !agentBrowserSameResource(a, slot.authority) || !s.options.Capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(runID, a.RunAuthorizationFence) {
 		return a, agentBrowserUnavailable("Agent browser session authority has expired")
 	}
 	return a, a.Validate()
@@ -450,7 +450,9 @@ func (s *AgentBrowserService) Shutdown(ctx context.Context) error {
 	return e
 }
 func (s *AgentRunner) WithAgentBrowser(service *AgentBrowserService) *AgentRunner {
-	if service != nil { service.WithRunWorktree(s.drydocks) }
+	if service != nil {
+		service.WithRunWorktree(s.drydocks)
+	}
 	if s != nil {
 		s.agentBrowser = service
 		if s.tools != nil {

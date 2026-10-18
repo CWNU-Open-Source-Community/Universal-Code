@@ -42,6 +42,7 @@ type WorkflowStep struct {
 	ID            string                      `json:"id"`
 	Kind          string                      `json:"kind"`
 	Task          *ChildTask                  `json:"task,omitempty"`
+	BatchPlan     *WorkflowValueRef           `json:"batch_plan,omitempty"`
 	Inputs        map[string]WorkflowValueRef `json:"inputs,omitempty"`
 	Condition     *WorkflowCondition          `json:"condition,omitempty"`
 	Then          []WorkflowStep              `json:"then,omitempty"`
@@ -143,7 +144,7 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 			}
 			switch s.Kind {
 			case "worker":
-				if s.Task == nil || s.Condition != nil || len(s.Then)+len(s.Else)+len(s.Body) != 0 || s.MaxIterations != 0 || len(s.Task.DependencyOrdinals) != 0 {
+				if s.Task == nil || s.BatchPlan != nil || s.Condition != nil || len(s.Then)+len(s.Else)+len(s.Body) != 0 || s.MaxIterations != 0 || len(s.Task.DependencyOrdinals) != 0 {
 					return errors.New("worker step requires one task without control blocks or task dependencies")
 				}
 				normalized, err := NormalizeChildTaskProposalSpec(ChildTaskProposalSpec{Version: ChildTaskProposalVersion, Tasks: []ChildTask{*s.Task}})
@@ -152,8 +153,12 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 				}
 				task := normalized.Tasks[0]
 				s.Task = &task
+			case "batch":
+				if s.BatchPlan == nil || !validWorkflowRef(*s.BatchPlan) || s.Task != nil || s.Condition != nil || len(s.Then)+len(s.Else)+len(s.Body)+len(s.Inputs) != 0 || s.MaxIterations != 0 {
+					return errors.New("batch step requires a reference to an approved isolated delivery plan")
+				}
 			case "if":
-				if s.Task != nil || s.Condition == nil || len(s.Body) != 0 || s.MaxIterations != 0 || len(s.Inputs) != 0 {
+				if s.Task != nil || s.BatchPlan != nil || s.Condition == nil || len(s.Body) != 0 || s.MaxIterations != 0 || len(s.Inputs) != 0 {
 					return errors.New("if step requires a condition and branches")
 				}
 				if err := visit(s.Then, depth+1); err != nil {
@@ -165,7 +170,7 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 					}
 				}
 			case "repeat":
-				if s.Task != nil || s.Condition == nil || len(s.Then)+len(s.Else) != 0 || s.MaxIterations < 1 || s.MaxIterations > 32 || len(s.Inputs) != 0 {
+				if s.Task != nil || s.BatchPlan != nil || s.Condition == nil || len(s.Then)+len(s.Else) != 0 || s.MaxIterations < 1 || s.MaxIterations > 32 || len(s.Inputs) != 0 {
 					return errors.New("repeat requires an until condition and 1..32 iterations")
 				}
 				if err := visit(s.Body, depth+1); err != nil {

@@ -14,8 +14,11 @@ func TestReplaceConfigurationPreservesLiveRuntimeOnPublicationFailureAndReapsBef
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := serverKey(helperWorkspaceID, snapshot.ServerID)
-	oldClient := manager.clients[key]
+	oldClient, err := manager.ensureClient(context.Background(), serverKey(helperWorkspaceID, snapshot.ServerID), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := oldClient.key
 	descriptors := manager.Descriptors()
 	descriptors[0].Name = "Revised fixture"
 	publicationFailure := errors.New("fixture publication failure")
