@@ -152,7 +152,7 @@ export function ConnectionGate() {
             type="password"
             value={token}
           />
-          <button aria-label="连接" disabled={!token.trim() || connecting} title="连接" type="submit">
+          <button aria-label={t("连接", "Connect")} disabled={!token.trim() || connecting} title={t("连接", "Connect")} type="submit">
             {connecting ? <LoaderCircle aria-hidden="true" className="spin" size={18} /> : <ArrowRight aria-hidden="true" size={18} />}
           </button>
         </div>

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, BookOpen, ChevronDown, CircleEllipsis, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
+import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
 import { readThreadReview } from "../../api/task-delivery";
 import { usePublicModelStream } from "../../hooks/use-public-model-stream";
@@ -106,6 +107,7 @@ export function V2FileDrawer({
   returnFocusRef: RefObject<HTMLElement | null>;
   docked?: boolean;
 }) {
+  const { t } = useLocale();
   const closeButton = useRef<HTMLButtonElement>(null);
   const leaveFileEdit = useFileEditLeave();
   const onClose = () => leaveFileEdit(close);
@@ -156,7 +158,7 @@ export function V2FileDrawer({
 
   const content = (
       <section
-        aria-label="工作区文件"
+        aria-label={t("工作区文件", "Workspace files")}
         aria-modal={docked ? undefined : "true"}
         className={`v2-inspector-drawer v2-file-drawer${docked ? " is-docked" : ""}`}
         ref={dialog}
@@ -166,27 +168,27 @@ export function V2FileDrawer({
         <header>
           <div className="v2-file-drawer-title">
             <FolderTree aria-hidden="true" size={17} />
-            <strong>工作区文件</strong>
+            <strong>{t("工作区文件", "Workspace files")}</strong>
           </div>
-          <button aria-label="关闭文件面板" onClick={onClose} ref={closeButton} type="button">
+          <button aria-label={t("关闭文件面板", "Close file panel")} onClick={onClose} ref={closeButton} type="button">
             <X aria-hidden="true" size={18} />
           </button>
         </header>
         {runID && <div className="v2-file-drawer-context">
-          <p>查看此执行绑定目录中的文件。</p>
-          <V2IdentityDisclosure identity={runID} identityLabel="执行 ID" summary="执行信息" />
+          <p>{t("查看此执行绑定目录中的文件。", "View files in the directory bound to this run.")}</p>
+          <V2IdentityDisclosure identity={runID} identityLabel={t("执行 ID", "Run ID")} summary={t("执行信息", "Run details")} />
         </div>}
         <div className="v2-file-drawer-body">
           {workspaceQuery.isLoading ? (
             <div className="v2-file-drawer-loading" role="status">
               <LoaderCircle className="spin" size={20} />
-              <span>正在确认工作区…</span>
+              <span>{t("正在确认工作区…", "Confirming workspace…")}</span>
             </div>
           ) : workspaceQuery.isError ? (
             <div className="v2-notice" role="alert">
-              <p>无法确认此执行的工作区，文件目录可能已清理或暂时无法读取。请重试确认后查看文件。</p>
+              <p>{t("无法确认此执行的工作区，文件目录可能已清理或暂时无法读取。请重试确认后查看文件。", "The workspace for this run could not be confirmed. Its directory may have been cleaned up or may be temporarily unavailable. Retry before viewing files.")}</p>
               <button className="compact-command" disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()} type="button">
-                重试工作区确认
+                {t("重试工作区确认", "Retry workspace check")}
               </button>
             </div>
           ) : (
@@ -227,6 +229,7 @@ export function V2TerminalDrawer({
   returnFocusRef: RefObject<HTMLElement | null>;
   docked?: boolean;
 }) {
+  const { t } = useLocale();
   const closeButton = useRef<HTMLButtonElement>(null);
   const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton, {
     isolateBackground: !docked,
@@ -256,7 +259,7 @@ export function V2TerminalDrawer({
 
   const content = (
       <section
-        aria-label="任务终端"
+        aria-label={t("任务终端", "Task terminal")}
         aria-modal={docked ? undefined : "true"}
         className={`v2-inspector-drawer v2-terminal-drawer${docked ? " is-docked" : ""}`}
         ref={dialog}
@@ -266,42 +269,42 @@ export function V2TerminalDrawer({
         <header>
           <div className="v2-terminal-drawer-title">
             <SquareTerminal aria-hidden="true" size={17} />
-            <strong>任务终端 · {threadTitle}</strong>
-            <small title="工作区目录">{workspaceName}</small>
+            <strong>{t("任务终端 · ", "Task terminal · ")}{threadTitle}</strong>
+            <small title={t("工作区目录", "Workspace directory")}>{workspaceName}</small>
           </div>
           <div className="v2-terminal-header-actions">
             <button
-              aria-label="收起终端"
+              aria-label={t("收起终端", "Collapse terminal")}
               className="v2-terminal-action-btn"
               onClick={onClose}
-              title="收起终端（后台进程保持运行）"
+              title={t("收起终端（后台进程保持运行）", "Collapse terminal (background processes keep running)")}
               type="button"
             >
               <ChevronDown aria-hidden="true" size={14} />
-              <span>收起</span>
+              <span>{t("收起", "Collapse")}</span>
             </button>
             {sessionID && (
               <button
-                aria-label="终止终端进程"
+                aria-label={t("终止终端进程", "Terminate terminal process")}
                 className="v2-terminal-action-btn danger"
                 disabled={terminating}
                 onClick={() => void handleTerminate()}
-                title="结束终端（终止当前进程）"
+                title={t("结束终端（终止当前进程）", "End terminal (terminate the current process)")}
                 type="button"
               >
                 <Square aria-hidden="true" size={12} />
-                <span>{terminating ? "正在终止…" : "终止"}</span>
+                <span>{terminating ? t("正在终止…", "Terminating…") : t("终止", "Terminate")}</span>
               </button>
             )}
-            <button aria-label="关闭终端面板" onClick={onClose} ref={closeButton} type="button">
+            <button aria-label={t("关闭终端面板", "Close terminal panel")} onClick={onClose} ref={closeButton} type="button">
               <X aria-hidden="true" size={18} />
             </button>
           </div>
         </header>
         {terminationError && (
           <div className="v2-terminal-error-notice" role="alert">
-            <span>终止终端失败：{terminationError}</span>
-            <button onClick={() => setTerminationError(null)} type="button">关闭提示</button>
+            <span>{t("终止终端失败：", "Failed to terminate terminal: ")}{terminationError}</span>
+            <button onClick={() => setTerminationError(null)} type="button">{t("关闭提示", "Dismiss")}</button>
           </div>
         )}
         <div className="v2-terminal-drawer-body">
@@ -310,7 +313,7 @@ export function V2TerminalDrawer({
           ) : (
             <div className="v2-terminal-disabled-notice" role="status">
               <SquareTerminal aria-hidden="true" size={24} />
-              <p>当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。</p>
+              <p>{t("当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。", "The desktop terminal is unavailable in this environment. Local debug terminals require the Universal-Code desktop app.")}</p>
             </div>
           )}
         </div>
@@ -342,6 +345,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   onReviewEntryHandled?: (requestID: string) => void;
   reviewMemoryRef?: RefObject<TaskReviewToolMemory>;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const previewRequest = useQuery<ApplicationPreviewRequest | null>({
     queryKey: applicationPreviewRequestKey(threadID), queryFn: () => null,
@@ -753,12 +757,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [detailQuery.isSuccess]);
 
   if (detailQuery.isLoading) return <div className="v2-main-loading"><LoaderCircle className="spin" size={20} />
-    <span>正在打开对话…</span></div>;
+    <span>{t("正在打开对话…", "Opening conversation…")}</span></div>;
   if (detailQuery.isError || !detailQuery.data) return <div className="v2-main-error" role="alert">
-    <strong>无法打开对话</strong><span>请检查服务连接，然后重试。已有输入会保留。</span>
-    <button onClick={() => void detailQuery.refetch()} type="button">重新打开</button>
-    <details><summary>查看原因</summary>{detailQuery.error instanceof Error
-      ? detailQuery.error.message : "请求未返回对话数据"}</details></div>;
+    <strong>{t("无法打开对话", "Unable to open conversation")}</strong><span>{t("请检查服务连接，然后重试。已有输入会保留。", "Check the service connection and retry. Your input is kept.")}</span>
+    <button onClick={() => void detailQuery.refetch()} type="button">{t("重新打开", "Reopen")}</button>
+    <details><summary>{t("查看原因", "Show reason")}</summary>{detailQuery.error instanceof Error
+      ? detailQuery.error.message : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
   const detail = detailQuery.data;
   const currentRun = detail.active_run ?? detail.last_run;
   const workspace = workspaces.find(({ id }) => id === detail.thread.workspace_id);
@@ -778,17 +782,17 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     (!executionQuery.data && detail.active_run?.status === "running");
   // A paused run is not gone: steer stays unavailable, but the explanation
   // names the pause so the operator does not think the task ended.
-  const steerUnavailable = currentRun.status === "paused" ? "当前任务已暂停"
-    : "当前任务已停止或不再运行";
+  const steerUnavailable = currentRun.status === "paused" ? t("当前任务已暂停", "The current task is paused")
+    : t("当前任务已停止或不再运行", "The current task has stopped or is no longer running");
   const activityLabel = threadActivityLabel({ threadID, execution: executionQuery.data,
     readable: client.hasThreadExecutionRead === true, error: executionQuery.isError });
   const fileReferenceUnavailableReason = currentRun.status === "waiting_approval"
-      ? "当前任务正在等待批准，暂时不能新增文件引用。请先处理待批准的操作。"
+      ? t("当前任务正在等待批准，暂时不能新增文件引用。请先处理待批准的操作。", "This task is awaiting approval. Resolve pending approvals before adding file references.")
       : working || runActive ? modelActive || activityLabel === "正在工作" || activityLabel === "正在停止"
-        ? "项目内文件引用需等执行结束后发送；补充文字和上传附件可以排队。"
-        : turnSubmitting ? "消息正在提交，暂时不能新增文件引用。已有输入会保留。"
-          : activityLabel === "停止未完成" ? "停止尚未完成，暂时不能新增文件引用。请先重试停止。"
-            : "活动状态尚未确认，暂时不能新增文件引用。已有输入会保留。"
+        ? t("项目内文件引用需等执行结束后发送；补充文字和上传附件可以排队。", "Send project file references after execution finishes. Text and uploaded attachments can be queued.")
+        : turnSubmitting ? t("消息正在提交，暂时不能新增文件引用。已有输入会保留。", "A message is being submitted. Existing input is kept; file references cannot be added yet.")
+          : activityLabel === "停止未完成" ? t("停止尚未完成，暂时不能新增文件引用。请先重试停止。", "Stopping has not finished. Retry stopping before adding file references.")
+            : t("活动状态尚未确认，暂时不能新增文件引用。已有输入会保留。", "The activity status is not yet confirmed. Existing input is kept; file references cannot be added yet.")
         : undefined;
 
   const send = async (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => {
@@ -884,7 +888,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         else fileTrigger.current?.focus();
       }} returnFocusRef={fileReturnFocus} />}
     {terminalDrawerOpen && <V2TerminalDrawer runID={currentRun.id} sessionID={currentTerminalSessionID}
-      threadTitle={detail.thread.title} workspaceName={workspace?.name ?? "本地工作区"}
+      threadTitle={detail.thread.title} workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
       onSession={handleTerminalSessionChange} docked={docked}
       onClose={() => {
         setTerminalDrawerOpen(false);
@@ -898,7 +902,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       <div className="v2-header-actions">
         <V2ThreadExecutionControl client={client} execution={executionQuery.data}
           threadID={threadID} />
-        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label="对话操作"
+        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
           onClick={() => setMenuOpen((value) => !value)} ref={menuTriggerRef} type="button">
           <CircleEllipsis aria-hidden="true" size={18} />
         </button>
@@ -908,49 +912,49 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             menuTriggerRef.current?.focus();
             onArchive(detail.thread);
           }} ref={firstMenuItemRef} role="menuitem" type="button">
-            <Archive aria-hidden="true" size={15} />归档对话</button>
+            <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
           {view !== "inspector" && <button onClick={() => { setMenuOpen(false); onOpenInspector(menuTriggerRef.current); }}
             role="menuitem" type="button">
-            <Microscope aria-hidden="true" size={15} />打开 Inspector</button>}
+            <Microscope aria-hidden="true" size={15} />{t("打开 Inspector", "Open Inspector")}</button>}
           {view === "inspector" && onExitInspector && <button onClick={() => {
             setMenuOpen(false); menuTriggerRef.current?.focus(); onExitInspector(); }}
             role="menuitem" type="button">
-            <MessagesSquare aria-hidden="true" size={15} />返回对话视图</button>}
+            <MessagesSquare aria-hidden="true" size={15} />{t("返回对话视图", "Return to conversation")}</button>}
         </div>}
       </div>
     </header>
-    <nav className="v2-task-navigation" aria-label="任务工作区">
-      <div className="v2-task-workbench" role="group" aria-label="对话与工作台">
+    <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
+      <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={view === "conversation" && activePane === null} disabled={view === "inspector" && !onExitInspector}
-          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} type="button"><MessagesSquare size={16} aria-hidden="true" />对话</button>
-        <button aria-label="工作区文件" aria-pressed={filesOpen} onClick={() => {
+          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} type="button"><MessagesSquare size={16} aria-hidden="true" />{t("对话", "Conversation")}</button>
+        <button aria-label={t("工作区文件", "Workspace files")} aria-pressed={filesOpen} onClick={() => {
           if (filesOpen) { leaveFileEdit(() => setActivePane(null)); return; }
           fileReturnFocus.current = fileTrigger.current;
           setFileDrawerState({ path: ".", line: undefined, runID: currentRun.id }); setActivePane("files");
-        }} ref={fileTrigger} type="button"><FolderTree aria-hidden="true" size={16} />文件</button>
-        <button aria-label="终端" aria-pressed={terminalDrawerOpen} title={terminalAvailable ? "打开任务终端" : "桌面终端仅在桌面端可用"} onClick={() => {
+        }} ref={fileTrigger} type="button"><FolderTree aria-hidden="true" size={16} />{t("文件", "Files")}</button>
+        <button aria-label={t("终端", "Terminal")} aria-pressed={terminalDrawerOpen} title={terminalAvailable ? t("打开任务终端", "Open task terminal") : t("桌面终端仅在桌面端可用", "The terminal is available in the desktop app")} onClick={() => {
           terminalReturnFocus.current = terminalTrigger.current; setTerminalDrawerOpen(!terminalDrawerOpen);
-        }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} />终端</button>
-        <button aria-label="应用预览" aria-pressed={previewOpen} onClick={() => setPreviewOpen(true)}
-          ref={previewTrigger} type="button"><PanelTop aria-hidden="true" size={16} />应用预览</button>
+        }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} />{t("终端", "Terminal")}</button>
+        <button aria-label={t("应用预览", "App preview")} aria-pressed={previewOpen} onClick={() => setPreviewOpen(true)}
+          ref={previewTrigger} type="button"><PanelTop aria-hidden="true" size={16} />{t("应用预览", "App preview")}</button>
       </div>
-      <div className="v2-task-workflows" role="group" aria-label="任务流程">
-        <button aria-label="审阅改动" aria-pressed={reviewOpen} onClick={() => {
+      <div className="v2-task-workflows" role="group" aria-label={t("任务流程", "Task workflow")}>
+        <button aria-label={t("审阅改动", "Review changes")} aria-pressed={reviewOpen} onClick={() => {
           setReviewFileTarget(undefined); setReviewToolTarget(undefined); reviewReturnFocus.current = reviewTrigger.current; setReviewOpen(true);
-        }} ref={reviewTrigger} type="button"><FileDiff aria-hidden="true" size={16} />改动与交付</button>
-        <button aria-label="查看上下文" aria-pressed={contextOpen} onClick={() => setContextOpen(true)}
-          ref={contextTrigger} type="button"><BookOpen aria-hidden="true" size={16} />上下文与恢复</button>
+        }} ref={reviewTrigger} type="button"><FileDiff aria-hidden="true" size={16} />{t("改动与交付", "Changes and delivery")}</button>
+        <button aria-label={t("查看上下文", "View context")} aria-pressed={contextOpen} onClick={() => setContextOpen(true)}
+          ref={contextTrigger} type="button"><BookOpen aria-hidden="true" size={16} />{t("上下文与恢复", "Context and recovery")}</button>
         <button aria-pressed={view === "inspector" && activePane === null}
           onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} type="button">
-          <Microscope aria-hidden="true" size={16} />观察执行</button>
+          <Microscope aria-hidden="true" size={16} />{t("观察执行", "Observe execution")}</button>
       </div>
     </nav>
-    {view === "inspector" && (onOpenTool || onOpenInspectorHome) && <nav className="v2-inspector-advanced" aria-label="执行观察工具">
-      {onOpenInspectorHome && <button onClick={onOpenInspectorHome} type="button">全部运行与会话</button>}
+    {view === "inspector" && (onOpenTool || onOpenInspectorHome) && <nav className="v2-inspector-advanced" aria-label={t("执行观察工具", "Execution tools")}>
+      {onOpenInspectorHome && <button onClick={onOpenInspectorHome} type="button">{t("全部运行与会话", "All runs and sessions")}</button>}
       {onOpenTool && <>
-        <button onClick={() => onOpenTool("run", currentRun.id)} type="button">运行与工具</button>
-        <button onClick={() => onOpenTool("run", currentRun.id, "ui-evidence")} type="button">界面观察证据</button>
-        <button onClick={() => onOpenTool("schedule", currentRun.id)} type="button">自动化</button>
+        <button onClick={() => onOpenTool("run", currentRun.id)} type="button">{t("运行与工具", "Runs and tools")}</button>
+        <button onClick={() => onOpenTool("run", currentRun.id, "ui-evidence")} type="button">{t("界面观察证据", "UI evidence")}</button>
+        <button onClick={() => onOpenTool("schedule", currentRun.id)} type="button">{t("自动化", "Automations")}</button>
       </>}
     </nav>}
     {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}
@@ -959,7 +963,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
       onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextTrigger} />}
     {!docked && companion}
-    {previewOpen && <V2LazySurface loadingText="正在加载应用预览…" errorLabel="应用预览" resetKey={threadID}
+    {previewOpen && <V2LazySurface loadingText={t("正在加载应用预览…", "Loading app preview…")} errorLabel={t("应用预览", "App preview")} resetKey={threadID}
       onDismiss={() => { setPreviewOpen(false); previewTrigger.current?.focus(); }}>
       <V2ApplicationPreview key={threadID} client={client} runID={currentRun.id} threadID={threadID}
       startRequest={previewRequest.data} canRequestStart={Boolean(onDraftChange)}
@@ -973,7 +977,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         });
       }} />
     </V2LazySurface>}
-    {reviewOpen && <V2LazySurface loadingText="正在加载改动审阅…" errorLabel="改动审阅" resetKey={threadID}
+    {reviewOpen && <V2LazySurface loadingText={t("正在加载改动审阅…", "Loading change review…")} errorLabel={t("改动审阅", "Change review")} resetKey={threadID}
       onDismiss={() => { setReviewOpen(false); (reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current)?.focus(); }}>
       <V2TaskReview client={client} detail={detail} working={working}
       onOpenWorktree={onOpenWorktree}
@@ -985,7 +989,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       }} returnFocusRef={reviewReturnFocus} onRequestChange={appendDraftAndReveal} /></V2LazySurface>}
     <div className="v2-conversation-stage">
     <div className="v2-conversation-main-column">
-    {view === "inspector" && !transcriptQuery.isLoading && <V2LazySurface loadingText="正在加载 Inspector…"
+    {view === "inspector" && !transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载 Inspector…", "Loading Inspector…")}
       errorLabel="Inspector" resetKey={threadID} onDismiss={onExitInspector}><V2Inspector client={client} key={threadID}
       detail={detail} threadID={threadID} durableItems={transcriptItems}
       liveSnapshot={liveSnapshot} liveStatus={publicStream.status}
@@ -1008,59 +1012,59 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     }}>
       <div className="v2-conversation-content">
         {detail.thread.status === "archived" && <p className="v2-notice" role="status">
-          此对话已归档，仍可查看记录。请在设置的「已归档的聊天」中取消归档后继续发送。
+          {t("此对话已归档，仍可查看记录。请在设置的「已归档的聊天」中取消归档后继续发送。", "This conversation is archived. You can still view its history. Unarchive it in Settings → Archived chats to continue sending messages.")}
         </p>}
         {transcriptQuery.isLoading && <div className="v2-transcript-loading"><LoaderCircle className="spin" size={16} />
-          正在整理工作记录…</div>}
+          {t("正在整理工作记录…", "Preparing work history…")}</div>}
         {view === "conversation" && transcriptQuery.hasNextPage && <div className="v2-transcript-loading">
           <button className="v2-composer-chip" disabled={transcriptQuery.isFetchingNextPage}
             onClick={() => void loadOlderTranscript()} type="button">
             {transcriptQuery.isFetchingNextPage
-              ? <><LoaderCircle aria-hidden="true" className="spin" size={16} />正在加载更早记录…</>
-              : "加载更早记录"}
+              ? <><LoaderCircle aria-hidden="true" className="spin" size={16} />{t("正在加载更早记录…", "Loading earlier history…")}</>
+              : t("加载更早记录", "Load earlier history")}
           </button>
         </div>}
         {transcriptQuery.isFetchNextPageError && <div className="v2-notice tone-warning" role="alert">
-          更早的工作记录加载失败，请重试。
+          {t("更早的工作记录加载失败，请重试。", "Earlier work history failed to load. Please retry.")}
         </div>}
         {transcriptQuery.isError && !transcriptQuery.isFetchNextPageError && <div className="v2-notice tone-warning" role="alert">
-          工作记录加载失败，任务结果尚待核对。请重新读取记录。
-          <button onClick={() => void transcriptQuery.refetch()} type="button">重试工作记录</button>
+          {t("工作记录加载失败，任务结果尚待核对。请重新读取记录。", "Work history failed to load. Reload it to confirm the task result.")}
+          <button onClick={() => void transcriptQuery.refetch()} type="button">{t("重试工作记录", "Retry work history")}</button>
         </div>}
         {!client.hasThreadExecutionRead && <div className="v2-notice" role="status">
-          当前连接不提供 Agent 活动状态。对话与工作记录仍可查看。
+          {t("当前连接不提供 Agent 活动状态。对话与工作记录仍可查看。", "Agent activity is unavailable for this connection. Conversation and work history remain available.")}
         </div>}
         {executionQuery.isError && <div className="v2-notice tone-warning" role="alert">
-          Agent 的当前活动尚待确认。请刷新执行状态；已有对话内容仍可查看。
-          <button onClick={() => void executionQuery.refetch()} type="button">刷新执行状态</button>
+          {t("Agent 的当前活动尚待确认。请刷新执行状态；已有对话内容仍可查看。", "Agent activity is not yet confirmed. Refresh execution status; existing conversation content remains available.")}
+          <button onClick={() => void executionQuery.refetch()} type="button">{t("刷新执行状态", "Refresh execution status")}</button>
         </div>}
         {view === "conversation" && !transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
-            ? "此归档对话没有公开进展记录。" : "任务已经创建。Agent 的公开进展会出现在这里。"}</p></div>}
+            ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
         {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile} />}
         {view === "conversation" && <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
-            <p>{v2TurnWasNotQueued(error) ? "这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。"
-              : v2TurnFailed(error) ? "本轮执行未完成，失败记录与已完成的修改会保留。可以直接发送“继续”或补充要求。"
-              : observations[input.operationKey] ?? "暂时无法确认这条消息的结果。草稿与引用已保留；发送新要求时会先核对原提交，也可以重试核对。"}</p>
-            <details><summary>查看原因</summary>{error instanceof Error ? error.message : "请求失败"}</details>
+            <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
+              : v2TurnFailed(error) ? t("本轮执行未完成，失败记录与已完成的修改会保留。可以直接发送“继续”或补充要求。", "This turn did not finish. The failure history and completed changes are kept. Send “continue” or add instructions.")
+              : observations[input.operationKey] ?? t("暂时无法确认这条消息的结果。草稿与引用已保留；发送新要求时会先核对原提交，也可以重试核对。", "The result of this message is not yet confirmed. Your draft and references are kept. Sending new instructions will first check the original submission; you can also retry the check.")}</p>
+            <details><summary>{t("查看原因", "Show reason")}</summary>{error instanceof Error ? error.message : t("请求失败", "Request failed")}</details>
             {!v2TurnOutcomeKnown(error) &&
               <button disabled={turnSubmitting || checking.includes(input.operationKey)} onClick={() => {
                 void confirmSubmission(input).catch(() => undefined);
-              }} type="button">{checking.includes(input.operationKey) ? "正在核对…" : "重试核对"}</button>}
+              }} type="button">{checking.includes(input.operationKey) ? t("正在核对…", "Checking…") : t("重试核对", "Retry check")}</button>}
             {recovery && observations[input.operationKey] && !v2TurnOutcomeKnown(error) &&
               <button disabled={turnSubmitting || checking.includes(input.operationKey)} onClick={() => {
                 void submitTrackedTurn(input).then(() => {
                   if (!managedDraft && !input.draftVersion && draft === (input.draft ?? input.content)) onDraftChange?.("", draft);
                 }).catch(() => undefined);
-              }} type="button">继续提交原消息</button>}
+              }} type="button">{t("继续提交原消息", "Continue original submission")}</button>}
             {onDraftChange && <button disabled={draft?.trim() === input.content.trim()}
               onClick={() => onDraftChange(draft?.trim() ? `${draft}\n\n${input.content}` : input.content)}
-              type="button">{draft?.trim() ? "添加到草稿" : "放回输入框"}</button>}
+              type="button">{draft?.trim() ? t("添加到草稿", "Add to draft") : t("放回输入框", "Restore to editor")}</button>}
           </div>)}
         {(eventStream.error || publicStream.error) && working && <div className="v2-notice tone-warning"
-          role="status">实时进度暂不可用；持久工作记录仍会继续同步。</div>}
+          role="status">{t("实时进度暂不可用；持久工作记录仍会继续同步。", "Live progress is temporarily unavailable. Saved work history will continue to sync.")}</div>}
         {detail.active_run && <MCPInputCards client={client} runID={currentRun.id} />}
         {detail.active_run && <V2ApprovalCards client={client}
           runID={currentRun.id} threadID={threadID} onReviewFile={(target, trigger) => {
@@ -1076,7 +1080,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       followLatestRef.current = true;
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       setHasNewContent(false);
-    }} type="button">有新内容 · 回到最新</button>}
+    }} type="button">{t("有新内容 · 回到最新", "New content · Jump to latest")}</button>}
     <div className="v2-composer-dock">
       {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />
@@ -1086,34 +1090,34 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {applicationPreviewRequestCopy(previewRequest.data, !previewServices.isError && Boolean(previewRequest.data.runID &&
           previewRequest.data.messageID && previewServices.data?.services.some((service) =>
             service.run_id === previewRequest.data?.runID && service.source_message_id === previewRequest.data?.messageID)))}
-        <button onClick={() => setPreviewOpen(true)} type="button">查看应用服务</button>
+        <button onClick={() => setPreviewOpen(true)} type="button">{t("查看应用服务", "View app services")}</button>
       </p>}
       {managedDraft && <V2DraftConflict key={threadID} client={client} workspaceID={detail.thread.workspace_id ?? ""}
         state={managedDraft.state} onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
       {executionQuery.data?.state === "stop_failed" && <p className="v2-composer-caption" role="alert">
-        停止尚未完成。请重试停止，确认后再发送；已受理的要求会保留。
+        {t("停止尚未完成。请重试停止，确认后再发送；已受理的要求会保留。", "Stopping has not finished. Retry stopping and confirm before sending. Accepted instructions are kept.")}
       </p>}
-      {reconciling ? <p className="v2-composer-caption" role="status">正在核对上次提交，避免重复执行。可以继续编辑，核对完成后再发送。</p>
-        : executionQuery.data?.state === "stopping" && <p className="v2-composer-caption" role="status">正在停止执行。可以继续编辑，停止完成后再发送。</p>}
+      {reconciling ? <p className="v2-composer-caption" role="status">{t("正在核对上次提交，避免重复执行。可以继续编辑，核对完成后再发送。", "Checking the previous submission to avoid duplicate execution. You can keep editing and send when the check finishes.")}</p>
+        : executionQuery.data?.state === "stopping" && <p className="v2-composer-caption" role="status">{t("正在停止执行。可以继续编辑，停止完成后再发送。", "Stopping execution. You can keep editing and send when stopping finishes.")}</p>}
       {working && draft && onDraftChange && submittedContents.has(draft.trim()) &&
-        <button className="v2-composer-chip" onClick={() => onDraftChange("")} type="button">编写下一条</button>}
+        <button className="v2-composer-chip" onClick={() => onDraftChange("")} type="button">{t("编写下一条", "Write next message")}</button>}
       {detail.recovery && <V2ThreadRunRecovery recovery={detail.recovery}
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
-        <p className="v2-composer-caption" role="status">上次执行已中断。可以发送新消息继续，已完成的修改会保留。</p>}
+        <p className="v2-composer-caption" role="status">{t("上次执行已中断。可以发送新消息继续，已完成的修改会保留。", "The previous execution was interrupted. Send a new message to continue; completed changes are kept.")}</p>}
       {view === "inspector" && <button className="v2-inspector-composer-toggle"
         aria-expanded={inspectorComposerOpen} onClick={() => setInspectorComposerOpen((open) => !open)} type="button">
-        {inspectorComposerOpen ? "收起消息编辑器" : draft ? "继续编辑草稿" : "补充消息"}</button>}
+        {inspectorComposerOpen ? t("收起消息编辑器", "Collapse message editor") : draft ? t("继续编辑草稿", "Continue editing draft") : t("补充消息", "Add a message")}</button>}
       <div className="v2-composer-options" hidden={view === "inspector" && !inspectorComposerOpen}>
-      {(canSteer || deliveryMode === "steer") && <label className="v2-composer-caption">发送方式
-        <select aria-label="发送方式" value={deliveryMode} onChange={(event) => setDeliveryMode(event.target.value as "next_turn" | "steer")}>
-          <option value="next_turn">下一轮处理</option>
-          <option value="steer">更新当前任务（仅文字）</option>
+      {(canSteer || deliveryMode === "steer") && <label className="v2-composer-caption">{t("发送方式", "Delivery mode")}
+        <select aria-label={t("发送方式", "Delivery mode")} value={deliveryMode} onChange={(event) => setDeliveryMode(event.target.value as "next_turn" | "steer")}>
+          <option value="next_turn">{t("下一轮处理", "Handle in next turn")}</option>
+          <option value="steer">{t("更新当前任务（仅文字）", "Update current task (text only)")}</option>
         </select>
       </label>}
       {deliveryMode === "steer" && !canSteer && <p className="v2-composer-caption" role="alert">
-        {steerUnavailable}，不能更新当前任务；纠正草稿会保留。
-        <button className="v2-composer-chip" onClick={() => setDeliveryMode("next_turn")} type="button">切换为下一轮处理</button>
+        {steerUnavailable}{t("，不能更新当前任务；纠正草稿会保留。", ". The current task cannot be updated; your correction draft is kept.")}
+        <button className="v2-composer-chip" onClick={() => setDeliveryMode("next_turn")} type="button">{t("切换为下一轮处理", "Switch to next turn")}</button>
       </p>}
       </div>
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
@@ -1141,14 +1145,14 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         fileReferenceUnavailableReason={fileReferenceUnavailableReason}
         key={threadID}
         onManageModels={onManageModels} onSubmit={send} onWorkspaceChange={() => undefined}
-        placeholder="输入消息…" runActive={runActive}
+        placeholder={t("输入消息…", "Type a message…")} runActive={runActive}
         runID={currentRun.id} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""}
         workspaces={workspaces} />
-      <small className="v2-composer-caption">{workspace?.name ?? "本地工作区"} · {working
+      <small className="v2-composer-caption">{workspace?.name ?? t("本地工作区", "Local workspace")} · {working
         ? deliveryMode === "steer"
-          ? "文字纠正会进入当前任务后续模型请求；已经开始的操作会保留。"
-          : "发送后将在下一轮处理，进度会显示在对话中。"
-        : "Ctrl + Enter 发送，Shift + Enter 换行"}</small>
+          ? t("文字纠正会进入当前任务后续模型请求；已经开始的操作会保留。", "Text corrections will be included in later model requests for this task. Operations already started are kept.")
+          : t("发送后将在下一轮处理，进度会显示在对话中。", "Your message will be handled in the next turn. Progress will appear in the conversation.")
+        : t("Ctrl + Enter 发送，Shift + Enter 换行", "Ctrl + Enter to send, Shift + Enter for a new line")}</small>
       </div>
       </div>
     </div>

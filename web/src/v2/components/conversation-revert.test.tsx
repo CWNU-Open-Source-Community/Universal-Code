@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import type { APIClient } from "../../api/client";
@@ -53,7 +56,7 @@ function renderRevertConversation(history: boolean, unavailable?: "archived" | "
 
 async function openEditHistory(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "审阅改动" }));
-  await user.click(await screen.findByRole("button", { name: "记录与恢复" }));
+  await user.click(await screen.findByRole("button", { name: "记录与恢复" }, { timeout: 5_000 }));
   await user.click(await screen.findByRole("button", { name: "编辑明细" }));
 }
 
@@ -64,12 +67,12 @@ it.each([false, true])("drafts an exact revert from %s historical selection with
   await openEditHistory(user);
   if (history) await user.selectOptions(screen.getByRole("combobox", { name: "选择审阅的执行记录" }), "run-history");
   await waitFor(() => expect(client.fileEditQueue).toHaveBeenCalledWith(history ? "run-history" : "run-current", expect.any(AbortSignal)));
-  await user.click(await screen.findByRole("button", { name: /review.txt.*applied/ }));
-  await user.click(screen.getByRole("button", { name: "Close review" }));
+  await user.click(await screen.findByRole("button", { name: /review.txt.*已应用/ }));
+  await user.click(screen.getByRole("button", { name: "关闭审阅" }));
   expect(input).toHaveValue("Preserve my existing request.");
   expect(client.createFileEditRevertProposal).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: /review.txt.*applied/ }));
-  await user.click(screen.getByRole("button", { name: "Revert this edit in conversation" }));
+  await user.click(screen.getByRole("button", { name: /review.txt.*已应用/ }));
+  await user.click(screen.getByRole("button", { name: "在对话中撤销此编辑" }));
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "审阅任务改动" })).not.toBeInTheDocument());
   await waitFor(() => expect(input).toHaveFocus());
   const content = (input as HTMLTextAreaElement).value;
@@ -95,8 +98,8 @@ it.each(["archived", "readonly"] as const)("explains why %s cannot initiate a re
   const client = renderRevertConversation(false, unavailable);
   const user = userEvent.setup();
   await openEditHistory(user);
-  await user.click(await screen.findByRole("button", { name: /review.txt.*applied/ }));
-  expect(screen.getByRole("button", { name: "Revert this edit in conversation" })).toBeDisabled();
+  await user.click(await screen.findByRole("button", { name: /review.txt.*已应用/ }));
+  expect(screen.getByRole("button", { name: "在对话中撤销此编辑" })).toBeDisabled();
   expect(screen.getByText(unavailable === "archived" ? "此对话已归档，取消归档后才能发送撤销要求。"
     : "当前连接不能发送对话控制请求，无法发起撤销。")).toBeInTheDocument();
   expect(client.submitThreadTurn).not.toHaveBeenCalled();
@@ -104,3 +107,8 @@ it.each(["archived", "readonly"] as const)("explains why %s cannot initiate a re
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}

@@ -1,4 +1,5 @@
 import type { WebAccessMode } from "../../api/types";
+import { useLocale } from "../../lib/locale";
 import "./web-access.css";
 
 export const webAccessModeLabels: Record<WebAccessMode, string> = {
@@ -14,23 +15,24 @@ export const webAccessModeDetails: Record<WebAccessMode, string> = {
 };
 
 export function V2WebAccessModeSelect({ mode, onChange, disabled = false,
-  label = "网页搜索模式", describedBy }: {
+  label, describedBy }: {
   mode: WebAccessMode;
   onChange: (mode: WebAccessMode) => void;
   disabled?: boolean;
   label?: string;
   describedBy?: string;
 }) {
-  return <select aria-label={label} aria-describedby={describedBy}
+  const { t } = useLocale();
+  return <select aria-label={label ?? t("网页搜索模式", "Web search mode")} aria-describedby={describedBy}
     className="v2-web-access-select" disabled={disabled} value={mode}
     onChange={(event) => {
       const next = event.target.value;
       if (next === "disabled" || next === "rules" || next === "full") onChange(next);
     }}>
-    <option value="disabled">禁止搜索</option>
-    <option value="rules">规则搜索</option>
-    <option disabled value="cached">缓存搜索（待支持）</option>
-    <option disabled value="indexed">索引搜索（待支持）</option>
-    <option value="full">完全访问</option>
+    <option value="disabled">{t("禁止搜索", "Search disabled")}</option>
+    <option value="rules">{t("规则搜索", "Rule-based search")}</option>
+    <option disabled value="cached">{t("缓存搜索（待支持）", "Cached search (coming soon)")}</option>
+    <option disabled value="indexed">{t("索引搜索（待支持）", "Indexed search (coming soon)")}</option>
+    <option value="full">{t("完全访问", "Full access")}</option>
   </select>;
 }

@@ -1,10 +1,34 @@
-import { render, screen, within } from "@testing-library/react";
+import { render as renderComponent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
+import { LocaleProvider } from "../../lib/locale";
 import { V2NetworkScopeControl } from "./network-scope-control";
 import type { WebAccessMode } from "../../api/types";
 
+function render(ui: ReactElement) {
+  return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
+}
+
+beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
+
 describe("V2NetworkScopeControl", () => {
+  it("keeps web access approval explicit in English and preserves exact domains", async () => {
+    localStorage.setItem("prayu.locale.v1", "en-US");
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<V2NetworkScopeControl mode="rules" onChange={onChange} targets={[]} />);
+    await user.click(screen.getByRole("button", { name: "Rule-based search" }));
+    const panel = screen.getByRole("dialog", { name: "New conversation web access" });
+    expect(within(panel).getByRole("combobox", { name: "Web search mode" })).toHaveValue("rules");
+    expect(within(panel).getByRole("option", { name: "Cached search (coming soon)" })).toBeDisabled();
+    await user.type(within(panel).getByRole("textbox", { name: "Allowed HTTPS targets" }), "https://Docs.Example.COM:443/");
+    await user.click(within(panel).getByRole("button", { name: "Save domains" }));
+    expect(onChange).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Save web rules for new conversations?" });
+    expect(dialog).toHaveTextContent("Other web requests require approval.");
+    await user.click(within(dialog).getByRole("button", { name: "Save domains" }));
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("rules", ["docs.example.com"]);
+  });
   it("requires an explicit confirmation before granting a bounded HTTPS allowlist", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
