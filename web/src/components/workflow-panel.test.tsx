@@ -2,7 +2,7 @@ import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIClient } from "../api/client";
-import { WorkflowPanel, workerWorkflow, workflowExample } from "./workflow-panel";
+import { WorkflowPanel, workerWorkflow, workflowExample, isolatedWorkflow } from "./workflow-panel";
 
 function response(data: unknown) {
   return new Response(JSON.stringify({ version: "api.v1", data, request_id: "workflow-test" }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -25,6 +25,29 @@ function mount(client = new APIClient("read", "/api/v1", "control"),
     <WorkflowPanel client={client} runID="run-1" runStatus={runStatus} />
   </QueryClientProvider>);
 }
+
+it("saves an isolated delivery without inventing a task or an approval", async () => {
+  const fetch = vi.fn().mockResolvedValue(response({ items: [] }));
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <WorkflowPanel client={new APIClient("read", "/api/v1", "control")} runID="run-1" runStatus="running" />
+  </QueryClientProvider>);
+  await user.click(screen.getByText("Create workflow"));
+  await user.type(screen.getByLabelText("Name"), "Deliver in isolation");
+  await user.selectOptions(screen.getByLabelText("Workspace mode"), "batch");
+  expect(screen.queryByLabelText("Task")).not.toBeInTheDocument();
+  expect(screen.getByText(/Use a delivery plan already approved/)).toBeInTheDocument();
+  const spec = isolatedWorkflow("Deliver in isolation");
+  fetch.mockResolvedValueOnce(response({ id: "saved-isolated", spec, digest: "digest" }));
+  await user.click(screen.getByRole("button", { name: "Save definition" }));
+  await waitFor(() => expect(screen.getByLabelText("Saved workflow")).toHaveValue("saved-isolated"));
+  const posted = fetch.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(posted).toHaveLength(1);
+  expect(JSON.parse(posted[0][1].body).steps).toEqual([
+    { id: "delivery", kind: "batch", batch_plan: { step: "$input", path: "/plan_id" } },
+  ]);
+});
 
 it("defaults to inherited worker tools and preserves a read-only choice", async () => {
   const fetch = vi.fn().mockResolvedValue(response({ items: [] }));

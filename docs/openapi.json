@@ -37636,6 +37636,9 @@
           },
           "owner_available": {
             "type": "boolean"
+          },
+          "waiting_approval": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -74619,6 +74622,9 @@
       "WorkflowStep": {
         "additionalProperties": false,
         "properties": {
+          "batch_plan": {
+            "$ref": "#/components/schemas/WorkflowValueRef"
+          },
           "body": {
             "items": {
               "$ref": "#/components/schemas/WorkflowStep"

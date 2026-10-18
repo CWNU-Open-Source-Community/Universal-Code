@@ -31,3 +31,25 @@ func TestWorkflowRejectsUnboundedOrAmbiguousPrograms(t *testing.T) {
 		t.Fatal("accepted trailing JSON")
 	}
 }
+
+func TestWorkflowIsolatedDeliveryRequiresAnExplicitPlanReference(t *testing.T) {
+	valid := validWorkflowForTest()
+	valid.Steps = []WorkflowStep{{ID: "deliver", Kind: "batch", BatchPlan: &WorkflowValueRef{Step: "$input", Path: "/plan_id"}}}
+	if _, err := NormalizeWorkflowSpec(valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(*WorkflowStep){
+		func(s *WorkflowStep) { s.BatchPlan = nil },
+		func(s *WorkflowStep) { s.BatchPlan = &WorkflowValueRef{Step: "$input", Path: "plan_id"} },
+		func(s *WorkflowStep) { s.Task = validWorkflowForTest().Steps[0].Task },
+		func(s *WorkflowStep) { s.Inputs = map[string]WorkflowValueRef{"extra": {Step: "$input"}} },
+		func(s *WorkflowStep) { s.Kind = "worker"; s.Task = validWorkflowForTest().Steps[0].Task },
+	} {
+		spec := valid
+		spec.Steps = append([]WorkflowStep(nil), valid.Steps...)
+		change(&spec.Steps[0])
+		if _, err := NormalizeWorkflowSpec(spec); err == nil {
+			t.Fatalf("accepted mixed or missing isolation contract: %+v", spec.Steps[0])
+		}
+	}
+}

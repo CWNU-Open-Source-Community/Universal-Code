@@ -23,14 +23,26 @@ import (
 type workerMCPObservedClient struct {
 	manager *mcp.Manager
 	observe func(context.Context, mcp.InvokeRequest)
+	closed  []string
 }
 
 func (c *workerMCPObservedClient) Capabilities(ctx context.Context, run, workspace string) (mcp.ScopedCapabilities, error) {
 	return c.manager.Capabilities(ctx, run, workspace)
 }
+func (c *workerMCPObservedClient) RefreshCapabilities(ctx context.Context, run, workspace string, check func(context.Context) error, revoked <-chan struct{}) (mcp.ScopedCapabilities, error) {
+	return c.manager.RefreshCapabilities(ctx, run, workspace, check, revoked)
+}
+func (c *workerMCPObservedClient) RefreshWorkerCapabilities(ctx context.Context, run, workspace string, check func(context.Context) error, revoked <-chan struct{}, owned *mcp.InvocationWorkspace) (mcp.ScopedCapabilities, error) {
+	return c.manager.RefreshWorkerCapabilities(ctx, run, workspace, check, revoked, owned)
+}
 func (c *workerMCPObservedClient) Invoke(ctx context.Context, r mcp.InvokeRequest) (mcp.ClientCallResult, error) {
 	c.observe(ctx, r)
 	return c.manager.Invoke(ctx, r)
+}
+
+func (c *workerMCPObservedClient) CloseWorkspaceScope(runID, scopeID string) {
+	c.closed = append(c.closed, scopeID)
+	c.manager.CloseWorkspaceScope(runID, scopeID)
 }
 
 func workerIsolationFullMode(t *testing.T, st *store.SQLiteStore, runID string) domain.ExecutionPermissionRuntimeCapabilities {
@@ -73,7 +85,12 @@ func TestExecutionWorkersMCPRemoteErrorReachesModel(t *testing.T) {
 	testExecutionWorkersMCPTransport(t, true)
 }
 
-func testExecutionWorkersMCPTransport(t *testing.T, remoteError bool) {
+func TestExecutionWorkerMCPRealTransportSurvivesContinueAndClosesOnFinish(t *testing.T) {
+	testExecutionWorkersMCPTransport(t, false, true)
+}
+
+func testExecutionWorkersMCPTransport(t *testing.T, remoteError bool, resume ...bool) {
+	continued := len(resume) > 0 && resume[0]
 	rootPath := t.TempDir()
 	provider := &specialistTestProvider{}
 	st, run, first, _ := newScopedSubagentFixture(t, provider, domain.Budget{MaxTurns: 20, MaxTokens: 10000, MaxToolCalls: 30}, 4, 1000, false, domain.SpecialistAdmission{Worker: &domain.WorkerProfile{}, ToolCallLimit: 12, MaxChildren: 2}, "", rootPath)
@@ -154,15 +171,15 @@ func testExecutionWorkersMCPTransport(t *testing.T, remoteError bool) {
 		t.Fatal(err)
 	}
 	current := first
-	scopes := map[string]bool{}
+	scopes := map[string]string{}
 	client := &workerMCPObservedClient{manager: manager, observe: func(ctx context.Context, r mcp.InvokeRequest) {
 		if r.Subject.ActorID != current.ID || r.Subject.RunID != run.ID || r.Workspace == nil || r.Workspace.ScopeID == "" {
 			t.Fatalf("MCP borrowed parent actor or workspace: %+v", r)
 		}
-		if scopes[r.Workspace.ScopeID] {
+		if owner := scopes[r.Workspace.ScopeID]; owner != "" && owner != current.ID {
 			t.Fatal("siblings shared MCP connection scope")
 		}
-		scopes[r.Workspace.ScopeID] = true
+		scopes[r.Workspace.ScopeID] = current.ID
 		owned, err := r.Workspace.Resolve(ctx)
 		if err != nil || filepath.Clean(owned.Path) != filepath.Clean(rootPath) || owned.Fingerprint == "" {
 			t.Fatalf("worker root binding: %+v %v", owned, err)
@@ -205,17 +222,33 @@ func testExecutionWorkersMCPTransport(t *testing.T, remoteError bool) {
 		if received := messages[len(messages)-1].ToolResults[0]; received.IsError != remoteError {
 			t.Fatalf("remote error state changed before the model: %+v", received)
 		}
+		if continued && index == 1 {
+			return llm.ChatResponse{Text: specialistResponse(t, domain.SpecialistAction{Version: domain.SpecialistLifecycleVersion, Kind: domain.SpecialistActionContinue, Message: "Continue using this MCP session."}), Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}, nil
+		}
 		return workerIsolationFinish(t), nil
 	}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 	router.RegisterProvider(provider)
 	runtime := application.NewAgentRunner(st, router, policy.NewDefaultChecker()).WithExecutionPermissionCapabilities(caps).WithMCPClient(client)
 	service := application.NewSpecialistExecutionService(st, router, policy.NewDefaultChecker()).WithWorkerRuntime(runtime)
-	for _, child := range []domain.AgentNode{first, sibling} {
+	children := []domain.AgentNode{first, sibling}
+	if continued {
+		children = []domain.AgentNode{first, first, sibling}
+	}
+	for index, child := range children {
 		current = child
-		result, err := service.ExecuteSpecialist(t.Context(), application.ExecuteSpecialistRequest{RunID: run.ID, AgentID: child.ID, OperationKey: "worker-mcp-" + child.ID})
+		result, err := service.ExecuteSpecialist(t.Context(), application.ExecuteSpecialistRequest{RunID: run.ID, AgentID: child.ID, OperationKey: fmt.Sprintf("worker-mcp-%s-%d", child.ID, index)})
 		if err != nil || result.WaitingApproval || result.ToolCalls != 1 {
 			t.Fatalf("MCP worker execution: %+v %v", result, err)
+		}
+		if continued {
+			wantStatus, wantClosed := domain.AgentAttemptFinished, index
+			if index == 0 {
+				wantStatus = domain.AgentAttemptContinued
+			}
+			if result.AttemptStatus != wantStatus || len(client.closed) != wantClosed {
+				t.Fatalf("MCP lifetime after turn %d: status=%s closed=%v", index, result.AttemptStatus, client.closed)
+			}
 		}
 		if remoteError {
 			rounds, err := st.ListSpecialistToolRounds(t.Context(), domain.AgentAttemptRef{RunID: run.ID, AgentID: child.ID, AttemptID: result.AttemptID})
@@ -226,6 +259,12 @@ func testExecutionWorkersMCPTransport(t *testing.T, remoteError bool) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	if continued {
+		if len(peerSessions) != 3 || peerSessions[0] == "" || peerSessions[0] != peerSessions[1] || peerSessions[1] == peerSessions[2] {
+			t.Fatalf("continuation did not preserve only its owned MCP connection: %v", peerSessions)
+		}
+		return
+	}
 	if len(peerSessions) != 2 || peerSessions[0] == "" || peerSessions[0] == peerSessions[1] {
 		t.Fatalf("siblings reused transport connection: %v", peerSessions)
 	}

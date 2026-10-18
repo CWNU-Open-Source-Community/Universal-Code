@@ -97,7 +97,7 @@ func (e *AgentCodeToolExecutor) documentDiagnostics(ctx context.Context,
 	// ordinary semantic capability path may contribute automatic feedback.
 	var selected codeintel.CapabilitySnapshot
 	descriptors := e.codeIntel.Descriptors()
-	for _, snapshot := range e.codeIntel.Inventory() {
+	for _, snapshot := range e.codeIntel.InitializedRootCapabilities(scope.WorkspaceID, scope.RootFingerprint) {
 		if snapshot.WorkspaceID != scope.WorkspaceID || snapshot.Health != codeintel.HealthHealthy || !snapshot.Capabilities.Diagnostics {
 			continue
 		}

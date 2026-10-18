@@ -34,7 +34,15 @@ func (s *CommandRuntimeService) CheckAgentBrowserService(ctx context.Context, a 
 				return runner.ErrCommandRuntimeBoundary
 			}
 			owner, err := owners.GetCommandRuntimeJobAttribution(c, jobID)
-			if err != nil || owner.Source != domain.AgentAttributionRecorded || owner.AgentID != a.AgentID || owner.AgentAttemptID != a.AgentAttemptID {
+			if err != nil || owner.Source != domain.AgentAttributionRecorded || owner.AgentID != a.AgentID {
+				return runner.ErrCommandRuntimeBoundary
+			}
+			current, err := readWorkerExecutionContext(c, s.store, domain.AgentAttemptRef{RunID: a.RunID, AgentID: a.AgentID, AttemptID: a.AgentAttemptID}, s.drydocks)
+			if err != nil || workerResourceFingerprint(current.Binding) != a.WorkspaceFingerprint {
+				return runner.ErrCommandRuntimeBoundary
+			}
+			origin, err := readWorkerResourceContext(c, s.store, domain.AgentAttemptRef{RunID: a.RunID, AgentID: owner.AgentID, AttemptID: owner.AgentAttemptID}, s.drydocks)
+			if err != nil || workerResourceFingerprint(origin.Binding) != workerResourceFingerprint(current.Binding) {
 				return runner.ErrCommandRuntimeBoundary
 			}
 		}

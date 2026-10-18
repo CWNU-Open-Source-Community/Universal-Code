@@ -35,19 +35,23 @@ type Request struct {
 	// bytes. It is an internal constraint, never a model-provided authority.
 	ExpectedDocumentSHA256 string                       `json:"-"`
 	PathPolicy             workspaceidentity.PathPolicy `json:"-"`
-	Tool                   string                       `json:"tool"`
-	WorkspaceID            string                       `json:"workspace_id"`
-	WorkspaceRoot          string                       `json:"-"`
-	ServerID               string                       `json:"server_id"`
-	ServerGeneration       string                       `json:"server_generation"`
-	CapabilityFingerprint  string                       `json:"capability_fingerprint"`
-	Path                   string                       `json:"path,omitempty"`
-	Query                  string                       `json:"query,omitempty"`
-	Position               Position                     `json:"position,omitempty"`
-	Direction              string                       `json:"direction,omitempty"`
-	IncludeDeclaration     bool                         `json:"include_declaration,omitempty"`
-	Limit                  int                          `json:"limit"`
-	Cursor                 string                       `json:"cursor,omitempty"`
+	// An optional host-owned read scope narrows inputs and returned locations.
+	// Its digest binds pagination to the same immutable delegation.
+	ReadScopeFingerprint  string            `json:"-"`
+	ReadPathAllowed       func(string) bool `json:"-"`
+	Tool                  string            `json:"tool"`
+	WorkspaceID           string            `json:"workspace_id"`
+	WorkspaceRoot         string            `json:"-"`
+	ServerID              string            `json:"server_id"`
+	ServerGeneration      string            `json:"server_generation"`
+	CapabilityFingerprint string            `json:"capability_fingerprint"`
+	Path                  string            `json:"path,omitempty"`
+	Query                 string            `json:"query,omitempty"`
+	Position              Position          `json:"position,omitempty"`
+	Direction             string            `json:"direction,omitempty"`
+	IncludeDeclaration    bool              `json:"include_declaration,omitempty"`
+	Limit                 int               `json:"limit"`
+	Cursor                string            `json:"cursor,omitempty"`
 }
 
 func (r Request) Validate() error {
@@ -57,9 +61,15 @@ func (r Request) Validate() error {
 	if err := r.PathPolicy.Validate(); err != nil {
 		return err
 	}
+	if (r.ReadPathAllowed == nil) != (r.ReadScopeFingerprint == "") || (r.ReadScopeFingerprint != "" && !validDigest(r.ReadScopeFingerprint)) {
+		return apperror.New(apperror.CodeInvalidArgument, "code-intel read scope requires its host-bound digest")
+	}
 	if r.Path != "" {
 		if err := r.PathPolicy.Check(r.Path); err != nil {
 			return err
+		}
+		if r.ReadPathAllowed != nil && !r.ReadPathAllowed(r.Path) {
+			return apperror.New(apperror.CodePolicyDenied, "code-intel path is outside the worker's admitted read scope")
 		}
 	}
 	if !validTool(r.Tool) || !validIdentity(r.WorkspaceID) ||
@@ -181,7 +191,7 @@ func (m *Manager) Execute(ctx context.Context, request Request) (Result, error) 
 	cancel()
 	if queryErr != nil {
 		if contextErr != nil || transportFailure(current.transport, queryErr) {
-			m.invalidate(key, current, queryErr)
+			m.invalidate(current, queryErr)
 		}
 		if errors.Is(contextErr, context.DeadlineExceeded) {
 			return Result{}, apperror.New(apperror.CodeDeadlineExceeded,
@@ -211,7 +221,7 @@ func (m *Manager) Execute(ctx context.Context, request Request) (Result, error) 
 		}
 	}
 	m.mu.Lock()
-	stillCurrent := m.clients[key] == current && !m.closing && !m.quarantined
+	stillCurrent := m.clients[current.key] == current && !m.closing && !m.quarantined
 	m.mu.Unlock()
 	if !stillCurrent {
 		return Result{}, apperror.New(apperror.CodeConflict,
@@ -219,7 +229,7 @@ func (m *Manager) Execute(ctx context.Context, request Request) (Result, error) 
 	}
 
 	sortEvidence(items, edges)
-	items, edges = filterProjectEvidence(items, edges, request.PathPolicy)
+	items, edges = filterProjectEvidence(items, edges, request.PathPolicy, request.ReadPathAllowed)
 	paged, pagedEdges, page, err := paginateEvidence(items, edges, request.Cursor,
 		request.Limit, queryFingerprint)
 	if err != nil {
@@ -470,6 +480,9 @@ func requestFingerprint(request Request, workspace workspaceBinding,
 		sort.Strings(patterns)
 		parts = append(parts, "project-exclusions", strings.Join(patterns, "\n"))
 	}
+	if request.ReadScopeFingerprint != "" {
+		parts = append(parts, "read-scope", request.ReadScopeFingerprint)
+	}
 	return digestStrings(parts...)
 }
 
@@ -612,13 +625,16 @@ func boundedWarnings(values []string) []string {
 	return result
 }
 
-func filterProjectEvidence(items []EvidenceItem, edges []GraphEdge, policy workspaceidentity.PathPolicy) ([]EvidenceItem, []GraphEdge) {
-	if len(policy.ExcludePaths) == 0 {
+func filterProjectEvidence(items []EvidenceItem, edges []GraphEdge, policy workspaceidentity.PathPolicy, readPathAllowed func(string) bool) ([]EvidenceItem, []GraphEdge) {
+	if len(policy.ExcludePaths) == 0 && readPathAllowed == nil {
 		return items, edges
 	}
 	visible := make(map[string]bool, len(items))
 	filtered := make([]EvidenceItem, 0, len(items))
 	for _, item := range items {
+		if readPathAllowed != nil && !readPathAllowed(item.Path) {
+			continue
+		}
 		if item.Path != "" && policy.Excludes(item.Path) {
 			continue
 		}

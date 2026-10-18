@@ -1,0 +1,632 @@
+{
+  "mode": "ocr_delegate",
+  "date": "2026-10-18",
+  "base": "7fb0b0c0a88f6ded3bca49a64fda38bd74233f8a",
+  "scope": "Staged implementation, before adding review artifacts",
+  "selected_files": 77,
+  "total_files": 49,
+  "reviewed_files": 47,
+  "skipped_files": 2,
+  "coverage_rate": 0.9591836734693877,
+  "ocr_excluded_files": 28,
+  "additional_reviewed_files": 19,
+  "open_findings": [],
+  "files": [
+    {
+      "path": "docs/openapi.json",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "skipped",
+      "coverage": "generated",
+      "reason": "生成文件不计人工全文审阅；通过生成器、类型检查或协议校验核对。"
+    },
+    {
+      "path": "internal/app/api_command.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_browser_actions.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_browser_readiness.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_browser_service.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_browser_worker.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_browser_worker_approval.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_code_diagnostics.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/agent_code_worker.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/batch_delivery.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/batch_delivery_merge.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/batch_delivery_model.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/batch_delivery_recovery.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/batch_delivery_workbench.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/batch_worker_close.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/application/batch_worker_wait.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/application/code_intel_tools.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/command_runtime_worker.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/mcp_worker.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/specialist_execution.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/specialist_tools.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/worker_authority.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/worker_batch_tools.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/application/worker_catalogue.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/worker_code_intel.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/worker_resource_scope.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/application/worker_tools.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/workflow.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/application/workflow_batch.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/codeintel/evidence.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/codeintel/manager.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/codeintel/provenance.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/codeintel/query.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/desktop/control_plane.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/domain/workflow.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/httpapi/batch_delivery_workbench.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/mcp/client_catalog.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/mcp/client_manager_runtime.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/mcp/client_roots.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/repository/linked_worktree_binding.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/store/batch_delivery.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/store/batch_worker_close.go",
+      "status": "added",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "新增文件已阅读全文。"
+    },
+    {
+      "path": "internal/store/specialist_tools.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/store/workflow_worker.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "internal/toolgateway/code_intel.go",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "protocols/registry.json",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "web/src/api/schema.d.ts",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "skipped",
+      "coverage": "generated",
+      "reason": "生成文件不计人工全文审阅；通过生成器、类型检查或协议校验核对。"
+    },
+    {
+      "path": "web/src/components/batch-workbench.tsx",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "web/src/components/workflow-panel.tsx",
+      "status": "modified",
+      "ocr_reviewable": true,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "已阅读本次全部差异及相关调用链；未声称通读不变代码。"
+    },
+    {
+      "path": "docs/adr/0192-worker-resource-continuation.md",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "docs/convergence/protocol-registry.md",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "generated",
+      "reason": "生成文件不计人工全文审阅；通过生成器、类型检查或协议校验核对。"
+    },
+    {
+      "path": "docs/execution-workers.md",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/batch_delivery_merge_recovery_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/batch_delivery_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/batch_delivery_workbench_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/batch_worker_close_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/command_runtime_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/command_runtime_worker_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/worker_batch_authority_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/worker_batch_tools_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/worker_browser_continuation_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/worker_code_intel_batch_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/worker_code_intel_real_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/worker_code_intel_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/application/worker_command_continuation_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/worker_mcp_isolation_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/worker_resource_scope_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "skipped",
+      "coverage": "not_manually_reviewed",
+      "reason": "OCR默认排除的测试；执行了相关行为验证，但本轮不计独立人工审阅覆盖。"
+    },
+    {
+      "path": "internal/application/workflow_batch_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/codeintel/configuration_runtime_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/codeintel/project_policy_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/codeintel/runtime_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/codeintel/workspace_clients_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/domain/workflow_test.go",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/mcp/worker_resource_lifetime_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "internal/repository/linked_worktree_binding_test.go",
+      "status": "added",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "full",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "web/src/components/batch-workbench.test.tsx",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    },
+    {
+      "path": "web/src/components/workflow-panel.test.tsx",
+      "status": "modified",
+      "ocr_reviewable": false,
+      "review_status": "reviewed",
+      "coverage": "diff_and_call_chain",
+      "reason": "OCR默认排除项已补充阅读本次改动；见Batch、LSP独立报告或主Agent整合审阅。"
+    }
+  ]
+}

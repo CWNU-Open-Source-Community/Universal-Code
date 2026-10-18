@@ -19,13 +19,22 @@ func workerMCPWorkspace(ctx context.Context, st any, ref domain.AgentAttemptRef,
 	if err != nil {
 		return nil, err
 	}
-	fingerprint := worker.Binding.RootFingerprint
-	return &mcp.InvocationWorkspace{ScopeID: workerMCPScopeID(ref), Resolve: func(ctx context.Context) (mcp.WorkspaceRoot, error) {
+	fingerprint := workerResourceFingerprint(worker.Binding)
+	return &mcp.InvocationWorkspace{ScopeID: workerMCPScopeID(ref), CheckLifetime: func(ctx context.Context) error {
+		current, err := readWorkerResourceContext(ctx, st, ref, drydocks)
+		if err != nil {
+			return err
+		}
+		if workerResourceFingerprint(current.Binding) != fingerprint {
+			return mcpApprovalUnavailable("MCP worker resource generation changed")
+		}
+		return nil
+	}, Resolve: func(ctx context.Context) (mcp.WorkspaceRoot, error) {
 		current, err := readWorkerExecutionContext(ctx, st, ref, drydocks)
 		if err != nil {
 			return mcp.WorkspaceRoot{}, err
 		}
-		if current.Binding.RootFingerprint != fingerprint {
+		if workerResourceFingerprint(current.Binding) != fingerprint {
 			return mcp.WorkspaceRoot{}, mcpApprovalUnavailable("MCP worker workspace generation changed")
 		}
 		return mcp.WorkspaceRoot{Path: current.Files.Workspace.RootPath, Fingerprint: fingerprint}, nil
@@ -33,7 +42,7 @@ func workerMCPWorkspace(ctx context.Context, st any, ref domain.AgentAttemptRef,
 }
 
 func workerMCPScopeID(ref domain.AgentAttemptRef) string {
-	return "worker-" + runmutation.Fingerprint("mcp_worker_scope.v1", ref.RunID, ref.AgentID, ref.AttemptID)
+	return "worker-" + runmutation.Fingerprint("mcp_worker_scope.v2", ref.RunID, ref.AgentID)
 }
 
 // Shared approval code consumes an intent projection, while the child source

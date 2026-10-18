@@ -27,16 +27,21 @@ type workerToolSourceStore interface {
 }
 
 type workerExecutionContext struct {
-	Run     domain.Run
-	Mission domain.Mission
-	Child   domain.AgentNode
-	Binding domain.SpecialistToolBinding
-	Files   RunFileWorkspace
+	Run            domain.Run
+	Mission        domain.Mission
+	Child          domain.AgentNode
+	Binding        domain.SpecialistToolBinding
+	Files          RunFileWorkspace
+	BatchReadHints []domain.BatchDeliveryOwnershipHint
 }
 
 // Resolve the host-issued binding on each operation. Workspace paths never
 // come from a model payload, and a Batch generation cannot fall back to its source.
 func readWorkerExecutionContext(ctx context.Context, base any, ref domain.AgentAttemptRef, drydocks *RunWorktreeService) (workerExecutionContext, error) {
+	return readWorkerContext(ctx, base, ref, drydocks, false)
+}
+
+func readWorkerContext(ctx context.Context, base any, ref domain.AgentAttemptRef, drydocks *RunWorktreeService, resourceLifetime bool) (workerExecutionContext, error) {
 	var value workerExecutionContext
 	st, ok := base.(workerExecutionStore)
 	if !ok || ref.Validate() != nil {
@@ -48,7 +53,14 @@ func readWorkerExecutionContext(ctx context.Context, base any, ref domain.AgentA
 		return value, err
 	}
 	child := value.Child
-	if child.RunID != ref.RunID || child.Role != domain.AgentRoleSpecialist || child.Status != domain.AgentRunning || child.ActiveAttemptID != ref.AttemptID || child.Worker == nil {
+	if child.RunID != ref.RunID || child.Role != domain.AgentRoleSpecialist || child.Worker == nil || child.Terminal() {
+		return value, apperror.New(apperror.CodePolicyDenied, "worker actor or active attempt changed")
+	}
+	if resourceLifetime {
+		if err := validateWorkerResourceAttempt(ctx, base, ref, child); err != nil {
+			return value, err
+		}
+	} else if child.Status != domain.AgentRunning || child.ActiveAttemptID != ref.AttemptID {
 		return value, apperror.New(apperror.CodePolicyDenied, "worker actor or active attempt changed")
 	}
 	parent, err := st.GetAgentNode(ctx, child.ParentID)
@@ -118,6 +130,7 @@ func readWorkerExecutionContext(ctx context.Context, base any, ref domain.AgentA
 				return value, apperror.New(apperror.CodeFailedPrecondition, "worker Batch dependency is not accepted")
 			}
 		}
+		value.BatchReadHints = append([]domain.BatchDeliveryOwnershipHint{}, plan.Spec.Tasks[b.BatchOrdinal-1].OwnershipHints...)
 		value.Files.Source, err = st.GetWorkspaceInfo(ctx, b.WorkspaceID)
 		if err != nil {
 			return value, err

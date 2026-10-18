@@ -111,7 +111,7 @@ func (s *AgentBrowserService) checkWorkerDurableBrowserDispatch(ctx context.Cont
 	if err != nil {
 		return err
 	}
-	if !worker.Child.Worker.AllowsTool(c.Name) || worker.Binding.RootFingerprint != a.WorkspaceFingerprint {
+	if !worker.Child.Worker.AllowsTool(c.Name) || workerResourceFingerprint(worker.Binding) != a.WorkspaceFingerprint {
 		return agentBrowserUnavailable("worker browser capability changed")
 	}
 	var p toolgateway.AgentBrowserPayload

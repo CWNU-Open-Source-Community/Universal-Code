@@ -37,20 +37,27 @@ another model call. After review, execution resumes the same attempt and exact
 stored intent. A dispatched call whose outcome was lost is not automatically
 sent again. Terminal tool results remain available to subsequent model rounds.
 
-Command jobs belong to their creating child attempt. Another child cannot read,
-write to, or cancel them. Browser sessions and MCP connections have separate
-worker identities; MCP roots resolve through the host's pinned execution
-workspace. Completing an attempt closes its resources. Waiting for approval keeps
-the attempt's live jobs until completion, cancellation or authority revocation.
+Commands, browser sessions and MCP connections belong to their child worker.
+They remain available when that same worker continues into another attempt;
+each new call still records and checks the current attempt. Another child cannot
+read, write to, or cancel those resources. MCP roots resolve through the host's
+pinned execution workspace. Finishing or closing the worker releases its
+resources. An approval wait retains the same attempt and does not repeat a model
+request until the decision is available. A host restart can recover durable
+records, but does not restore live browser or MCP sessions.
 
 Ordinary workers use the Run's workspace, including its owned Drydock when one
-exists. The existing Batch delivery path continues to provide isolated branches,
-worktrees, owned edit paths, declared verification, review and integration.
+exists. Batch workers use isolated branches and worktrees, with owned file paths,
+declared verification, independent review and integration. They can also use
+their delegated command, browser, MCP, Skill, history and language tools. Batch
+file edits and Git operations keep the existing owned-path executor; a general
+command remains governed by the selected runtime and current task permissions.
 
 ## Using the interface
 
-Open the Run's **Agents** page, expand **Create workflow**, enter a name and task,
-and keep **Execution worker** selected. Leave delegated tools empty to inherit,
+Open the Run's **Agents** page, expand **Create workflow**, enter a name, select
+**Share current workspace**, enter the task, and keep **Execution worker**
+selected. Leave delegated tools empty to inherit,
 or enter a comma-separated list to narrow them. **Include current parent history**
 is off by default; enable it only when that task needs the parent's current
 history. Save the definition, then start
@@ -61,6 +68,14 @@ running Desktop or API host advances the saved workflow independently of the pag
 The page observes its persisted state, so refreshing or closing it does not stop
 the next worker turn. The host needs model control enabled; a read-only host does
 not execute saved workflows.
+
+Choose **Isolated delivery (Batch)** to use a delivery plan already approved and
+prepared in Batch, and provide its `plan_id` in launch inputs. The workflow runs
+the children, waits for independent review and produces an integration branch.
+Tool approval resumes the existing attempt. Unknown execution outcomes require
+inspection and owner recovery. Completion or cancellation closes the Batch
+workers, releasing their unused budget and child slots. Unconfirmed resource
+cleanup preserves the worktrees and can be retried.
 
 Rerun creates a new execution with the same saved definition and inputs. It checks
 current Run authority; it does not restore previous execution permission. Pause
@@ -73,12 +88,19 @@ conversation, with output treated as untrusted report data.
 ## Workflow contract
 
 `workflow.v1` is an immutable JSON definition stored by content digest. Its step
-kinds are `worker`, `if`, and `repeat`. Worker steps contain a `child_task` contract;
+kinds are `worker`, `batch`, `if`, and `repeat`. Worker steps contain a `child_task` contract;
 their committed output is the `CompletionReport` (`outcome`, `summary`, work-item
 IDs and note IDs). Inputs can refer to `$input` or a completed step using a JSON
 pointer. Conditions compare the referenced JSON value with `equals`. Repeat checks
 its condition after each iteration and fails explicitly if `max_iterations` is
 exhausted without success.
+
+A Batch step uses `batch_plan: {"step":"$input","path":"/plan_id"}`. Its output
+contains accepted receipt and review IDs, the integration branch and commit, and
+`source_updated: false`. A later shared step can consume this output but still
+uses the Run's original workspace; integration does not silently switch or edit
+that workspace. The existing Batch review and merge controls remain responsible
+for accepting changes.
 
 Each definition bounds steps, jobs, tokens, turns and elapsed time. A workflow can
 start at most 64 jobs. The core keeps at most two active direct children and a

@@ -238,7 +238,14 @@ export function BatchWorkbenchControls({ client, runID, planID, ordinal }: {
   const action = useMutation({ mutationFn: ({ request, client: source }: { request: ChildIntent; client: APIClient; journal: typeof journal }) => request.kind === "owner"
     ? source.recoverBatchWorkbenchOwner(request.runID, request.planID, request.ordinal, { version, confirm: true, retry: request.retry, expected_generation: request.generation }, request.key)
     : source.executeBatchWorkbenchChild(request.runID, request.planID, request.ordinal, { version, confirm: true, expected_generation: request.generation }, request.key),
-    onSuccess: (result, submission) => { try { settleLegacy(submission.request, submission.journal, `${submission.request.planID}/${submission.request.ordinal}`); submission.journal.remove(); } catch (failure) { setLocalError(String(failure)); } invalidate(result, submission.request.runID, submission.request.planID); },
+    onSuccess: (result, submission) => {
+      const suspended = submission.request.kind === "execute" && result.children.some((child) => child.ordinal === submission.request.ordinal && child.waiting_approval);
+      if (!suspended) {
+        try { settleLegacy(submission.request, submission.journal, `${submission.request.planID}/${submission.request.ordinal}`); submission.journal.remove(); }
+        catch (failure) { setLocalError(String(failure)); }
+      }
+      invalidate(result, submission.request.runID, submission.request.planID);
+    },
     onError: () => { void query.refetch(); },
   });
   if (query.isLoading) return <p role="status">{t("读取任务准备状态…", "Reading task readiness…")}</p>;
@@ -262,11 +269,12 @@ export function BatchWorkbenchControls({ client, runID, planID, ordinal }: {
   return <div className="batch-workbench-controls">
     {!query.data.worker_available && <p>{t("任务已准备。连接当前运行时的批量执行能力后，可在这里启动子任务。", "Tasks are prepared. Connect the current runtime’s batch execution capability to start a child here.")}</p>}
     {child.executing && <p role="status">{t("子任务正在独立工作区执行。完成后检查交付结果。", "The child is working in its isolated workspace. Inspect the delivery when it completes.")}</p>}
-    {active && !child.executing && <p>{t("每次启动使用一次已计费的 Agent 回合，按负责路径中的最多 4 个小型文本文件生成修改并提交。", "Each start uses one accounted Agent turn to revise and commit up to 4 small text files in the owned paths.")}</p>}
+    {active && !child.executing && <p>{t("子任务在独立工作区内使用已委派工具，修改负责路径、提交并执行交付验证。需要批准的操作会暂停等待。", "The child uses its delegated tools in an isolated workspace, edits owned paths, commits and verifies the delivery. Operations needing approval wait for a decision.")}</p>}
+    {child.waiting_approval && <p role="status">{t("先处理任务中的工具审批，再继续原子任务；等待期间不会重复调用模型。", "Resolve the task's tool approval, then continue the same child operation. Waiting does not call the model again.")}</p>}
     {child.outcome_unresolved && <p>{t("上次执行结果需要核对。刷新交付记录，或恢复新的代次后继续。", "The previous execution needs confirmation. Refresh its delivery record, or recover a new generation to continue.")}</p>}
     {waiting && <p>{t("先验收依赖任务，再启动这个任务。", "Accept the dependency task before starting this task.")}</p>}
     {intent ? <div role="status"><p>{t("原操作已保存。核对结果会沿用这次请求。", "The original operation is saved. Checking the result keeps this request’s identity.")}</p>
-      <button type="button" className="command-button" disabled={action.isPending} onClick={() => dispatch(intent)}>{t("核对任务操作结果", "Check child operation result")}</button>
+      <button type="button" className="command-button" disabled={action.isPending} onClick={() => dispatch(intent)}>{child.waiting_approval ? t("审批后继续子任务", "Continue child after approval") : t("核对任务操作结果", "Check child operation result")}</button>
       {action.error instanceof APIRequestError && action.error.status >= 400 && action.error.status < 500 &&
         <button type="button" className="compact-command" onClick={() => { try { settleLegacy(intent, journal, `${planID}/${ordinal}`); journal.remove(); action.reset(); setLocalError(""); } catch (failure) { setLocalError(String(failure)); } }}>{t("查看当前任务并继续", "Continue from the current task")}</button>}
     </div> : legacy.blocked ? <div role="status"><p>{legacy.error || t("旧窗口原操作待保存；核对当前任务身份后才能继续。", "The old window's operation needs saving. Confirm the current task identity before continuing.")}</p>

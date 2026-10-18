@@ -22,6 +22,8 @@ type Manager struct {
 	descriptors map[string]ServerDescriptor
 	records     map[string]CapabilitySnapshot
 	clients     map[string]*client
+	// retiring retains root cleanup ownership until process exit is confirmed.
+	retiring    map[string]*client
 	starts      map[string]int64
 	bootID      string
 	runtimeHome string
@@ -73,7 +75,7 @@ func newManager(descriptors []ServerDescriptor) (*Manager, error) {
 	}
 	manager := &Manager{descriptors: make(map[string]ServerDescriptor, len(descriptors)),
 		records: make(map[string]CapabilitySnapshot, len(descriptors)),
-		clients: make(map[string]*client), starts: make(map[string]int64),
+		clients: make(map[string]*client), retiring: make(map[string]*client), starts: make(map[string]int64),
 		bootID: hex.EncodeToString(bootRaw), runtimeHome: runtimeHome}
 	for _, descriptor := range descriptors {
 		if err := descriptor.Validate(); err != nil {
@@ -148,7 +150,14 @@ func (m *Manager) ReplaceConfiguration(ctx context.Context, descriptors []Server
 	if err := persist(); err != nil {
 		return err
 	}
-	for key, current := range m.clients {
+	clients := make([]*client, 0, len(m.clients)+len(m.retiring))
+	for _, current := range m.clients {
+		clients = append(clients, current)
+	}
+	for _, current := range m.retiring {
+		clients = append(clients, current)
+	}
+	for _, current := range clients {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), MaximumShutdownGracePeriod)
 		_ = current.close(cleanupCtx)
 		cancel()
@@ -165,10 +174,12 @@ func (m *Manager) ReplaceConfiguration(ctx context.Context, descriptors []Server
 			}
 			return apperror.New(apperror.CodeUnavailable, "previous language server cleanup is incomplete")
 		}
-		delete(m.clients, key)
-		record := m.records[key]
+		delete(m.clients, current.key)
+		delete(m.retiring, current.key)
+		descriptorKey := serverKey(current.descriptor.WorkspaceID, current.descriptor.ID)
+		record := m.records[descriptorKey]
 		record.Health = HealthStopped
-		m.records[key] = record
+		m.records[descriptorKey] = record
 	}
 	m.descriptors = make(map[string]ServerDescriptor, len(descriptors))
 	m.records = make(map[string]CapabilitySnapshot, len(descriptors))
@@ -228,6 +239,12 @@ func configuredSnapshot(descriptor ServerDescriptor) CapabilitySnapshot {
 }
 
 func serverKey(workspaceID, serverID string) string { return workspaceID + "\x00" + serverID }
+
+// Reviewed configuration belongs to the logical Workspace. Each physical
+// worktree needs its own process so siblings cannot retire each other's tools.
+func workspaceClientKey(descriptorKey, rootFingerprint string) string {
+	return descriptorKey + "\x00" + rootFingerprint
+}
 
 func (m *Manager) Qualify(ctx context.Context, workspaceID, root string) []Qualification {
 	if m == nil {
@@ -300,6 +317,12 @@ func (m *Manager) Capabilities(ctx context.Context, workspaceID, root string) []
 			m.mu.Lock()
 			record := m.records[key]
 			m.mu.Unlock()
+			// The descriptor's latest observation may belong to a sibling root.
+			// Initialization failure must never advertise that sibling as ready.
+			if record.Health == HealthHealthy {
+				record.Health = healthForError(err)
+				record.LastError, _ = sanitizeText(err.Error(), 2048, false)
+			}
 			result = append(result, record)
 			continue
 		}
@@ -324,6 +347,28 @@ func (m *Manager) Inventory() []CapabilitySnapshot {
 		}
 		return result[i].WorkspaceID < result[j].WorkspaceID
 	})
+	return result
+}
+
+// InitializedRootCapabilities observes only clients already running in the
+// exact physical root. Automatic diagnostics must not select a sibling's
+// generation or cold-start a reviewed server that has not been offered there.
+func (m *Manager) InitializedRootCapabilities(workspaceID, rootFingerprint string) []CapabilitySnapshot {
+	result := []CapabilitySnapshot{}
+	if m == nil {
+		return result
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closing || m.quarantined {
+		return result
+	}
+	for _, current := range m.clients {
+		if current.workspace.WorkspaceID == workspaceID && current.workspace.RootFingerprint == rootFingerprint {
+			result = append(result, cloneSnapshot(current.snapshot))
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ServerID < result[j].ServerID })
 	return result
 }
 
@@ -360,9 +405,6 @@ func (m *Manager) ensureClientGeneration(ctx context.Context, key, root, expecte
 		return nil, apperror.New(apperror.CodeFailedPrecondition,
 			"code-intel manager is shutting down")
 	}
-	if expectedGeneration != "" && (m.clients[key] == nil || m.clients[key].snapshot.Generation != expectedGeneration) {
-		return nil, apperror.New(apperror.CodeConflict, "initialized language server generation changed")
-	}
 	descriptor, exists := m.descriptors[key]
 	if !exists {
 		return nil, apperror.New(apperror.CodeNotFound,
@@ -373,15 +415,22 @@ func (m *Manager) ensureClientGeneration(ctx context.Context, key, root, expecte
 		m.recordFailureLocked(key, HealthUnavailable, err)
 		return nil, err
 	}
-	if existing := m.clients[key]; existing != nil {
+	clientKey := workspaceClientKey(key, workspace.RootFingerprint)
+	if m.retiring[clientKey] != nil {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "previous language server cleanup for this Workspace root is incomplete")
+	}
+	if expectedGeneration != "" && (m.clients[clientKey] == nil || m.clients[clientKey].snapshot.Generation != expectedGeneration) {
+		return nil, apperror.New(apperror.CodeConflict, "initialized language server generation changed")
+	}
+	if existing := m.clients[clientKey]; existing != nil {
 		select {
 		case <-existing.transport.done:
-			delete(m.clients, key)
+			delete(m.clients, clientKey)
 		default:
 			if sameWorkspaceBinding(existing.workspace, workspace) {
 				return existing, nil
 			}
-			delete(m.clients, key)
+			delete(m.clients, clientKey)
 			go func(current *client) {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(),
 					MaximumShutdownGracePeriod)
@@ -407,7 +456,7 @@ func (m *Manager) ensureClientGeneration(ctx context.Context, key, root, expecte
 	starting.Generation = generation
 	m.records[key] = starting
 
-	current := &client{key: key, descriptor: descriptor, workspace: workspace,
+	current := &client{key: clientKey, descriptor: descriptor, workspace: workspace,
 		documents: make(map[string]documentBinding), diagnostics: make(map[string]json.RawMessage),
 		serverLog: newBoundedBuffer(MaxLogBytes)}
 	transport, err := newTransport(descriptor, workspace.Root, m.runtimeHome,
@@ -433,9 +482,9 @@ func (m *Manager) ensureClientGeneration(ctx context.Context, key, root, expecte
 			"language server initialization failed", err)
 	}
 	current.snapshot = initialize
-	m.clients[key] = current
+	m.clients[clientKey] = current
 	m.records[key] = cloneSnapshot(initialize)
-	go m.watchClient(key, current)
+	go m.watchClient(clientKey, current)
 	return current, nil
 }
 
@@ -597,6 +646,10 @@ func (m *Manager) watchClient(key string, current *client) {
 	if m.quarantined {
 		return
 	}
+	descriptorKey := serverKey(current.descriptor.WorkspaceID, current.descriptor.ID)
+	if m.records[descriptorKey].Generation != current.snapshot.Generation {
+		return
+	}
 	current.mu.Lock()
 	stopping := current.stopping
 	current.mu.Unlock()
@@ -604,10 +657,10 @@ func (m *Manager) watchClient(key string, current *client) {
 		record := current.snapshot
 		record.Health = HealthStopped
 		record.LastError = ""
-		m.records[key] = record
+		m.records[descriptorKey] = record
 		return
 	}
-	m.recordFailureLocked(key, HealthCrashed, current.transport.failure())
+	m.recordFailureLocked(descriptorKey, HealthCrashed, current.transport.failure())
 }
 
 func (m *Manager) recordFailureLocked(key string, health HealthStatus, err error) {
@@ -668,20 +721,70 @@ func (c *client) close(ctx context.Context) error {
 	return c.transport.closeGracefully(ctx)
 }
 
-func (m *Manager) invalidate(key string, current *client, err error) {
+func (m *Manager) invalidate(current *client, err error) {
 	if m == nil || current == nil {
 		return
 	}
 	m.mu.Lock()
-	if m.clients[key] == current {
-		delete(m.clients, key)
-		m.recordFailureLocked(key, healthForError(err), err)
+	if m.clients[current.key] == current {
+		delete(m.clients, current.key)
+		descriptorKey := serverKey(current.descriptor.WorkspaceID, current.descriptor.ID)
+		if m.records[descriptorKey].Generation == current.snapshot.Generation {
+			m.recordFailureLocked(descriptorKey, healthForError(err), err)
+		}
 	}
 	m.mu.Unlock()
 	_ = current.transport.process.Kill()
 	waitCtx, cancel := context.WithTimeout(context.Background(), MaximumShutdownGracePeriod)
 	_ = current.transport.process.Wait(waitCtx)
 	cancel()
+}
+
+// CloseWorkspaceRoot releases an isolated worker's processes using its durable
+// root fingerprint, including after the worktree itself has been removed.
+func (m *Manager) CloseWorkspaceRoot(ctx context.Context, workspaceID, rootFingerprint string) error {
+	if m == nil {
+		return nil
+	}
+	if !validIdentity(workspaceID) || !validDigest(rootFingerprint) || ctx == nil {
+		return apperror.New(apperror.CodeInvalidArgument, "code-intel cleanup requires its bound Workspace root")
+	}
+	m.mu.Lock()
+	clients := make([]*client, 0)
+	for key, current := range m.clients {
+		if current.workspace.WorkspaceID != workspaceID || current.workspace.RootFingerprint != rootFingerprint {
+			continue
+		}
+		m.retiring[key] = current
+		delete(m.clients, key)
+		descriptorKey := serverKey(workspaceID, current.descriptor.ID)
+		if record := m.records[descriptorKey]; record.Generation == current.snapshot.Generation {
+			record.Health = HealthStopped
+			m.records[descriptorKey] = record
+		}
+	}
+	for _, current := range m.retiring {
+		if current.workspace.WorkspaceID == workspaceID && current.workspace.RootFingerprint == rootFingerprint {
+			clients = append(clients, current)
+		}
+	}
+	m.mu.Unlock()
+	var result error
+	for _, current := range clients {
+		closeErr := current.close(ctx)
+		// A closed transport can still own an unreaped process. Replays must
+		// observe process exit even when transport failure already ran once.
+		if err := current.transport.process.Wait(ctx); err != nil {
+			result = errors.Join(result, closeErr, err)
+			continue
+		}
+		m.mu.Lock()
+		if m.retiring[current.key] == current {
+			delete(m.retiring, current.key)
+		}
+		m.mu.Unlock()
+	}
+	return result
 }
 
 func (m *Manager) Close(ctx context.Context) error {
@@ -697,8 +800,11 @@ func (m *Manager) Close(ctx context.Context) error {
 		return nil
 	}
 	m.closing = true
-	clients := make([]*client, 0, len(m.clients))
+	clients := make([]*client, 0, len(m.clients)+len(m.retiring))
 	for _, current := range m.clients {
+		clients = append(clients, current)
+	}
+	for _, current := range m.retiring {
 		clients = append(clients, current)
 	}
 	m.clients = make(map[string]*client)

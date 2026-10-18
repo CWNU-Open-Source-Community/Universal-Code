@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/codeintel"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/policy"
@@ -40,22 +41,7 @@ func TestWorkerCodeIntelRealGopls(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	binary, err := os.ReadFile(executable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(binary)
-	manager, err := codeintel.NewManager([]codeintel.ServerDescriptor{{
-		ProtocolVersion: codeintel.ProtocolVersion, ID: "worker-gopls", Name: "worker gopls", WorkspaceID: workspace.ID,
-		Languages:  []codeintel.Language{{ID: "go", Extensions: []string{".go"}}},
-		Executable: executable, ExecutableSHA256: hex.EncodeToString(digest[:]), Arguments: []string{"serve"},
-		RequestTimeoutMillis: 30000, ReviewedBy: "worker-lsp-test", ReviewedAt: time.Now().UTC(),
-		Source: codeintel.Source{Kind: "operator_config", Label: "worker-lsp-smoke.json", SHA256: strings.Repeat("c", 64)},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = manager.Close(context.Background()) })
+	manager := newWorkerGoplsTestManager(t, executable, workspace.ID)
 	f.runtime.WithCodeIntel(manager)
 	f.executor = NewCodeIntelToolExecutor(a.store, policy.NewDefaultChecker(), manager).WithExecutionPermissionCapabilities(f.caps)
 	f.runtime.tools.WithCodeIntelExecutor(f.executor)
@@ -101,5 +87,74 @@ func TestWorkerCodeIntelRealGopls(t *testing.T) {
 		}
 		t.Logf("worker=%s tool=%s server=%s items=%d document=%s", a.child.ID, name,
 			result.Provenance.ServerID, len(result.Items), result.Provenance.DocumentPath)
+	}
+	if err := f.runtime.closeWorkerCodeIntelResources(t.Context(), a.ref); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RefreshInitializedServer(t.Context(), workspace.ID, workspace.RootPath,
+		server.ServerID, server.Generation); err != nil {
+		t.Fatalf("shared worker cleanup retired the parent semantic runtime: %v", err)
+	}
+}
+
+func newWorkerGoplsTestManager(t *testing.T, executable, workspaceID string) *codeintel.Manager {
+	t.Helper()
+	binary, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(binary)
+	manager, err := codeintel.NewManager([]codeintel.ServerDescriptor{{
+		ProtocolVersion: codeintel.ProtocolVersion, ID: "worker-gopls", Name: "worker gopls", WorkspaceID: workspaceID,
+		Languages:  []codeintel.Language{{ID: "go", Extensions: []string{".go"}}},
+		Executable: executable, ExecutableSHA256: hex.EncodeToString(digest[:]), Arguments: []string{"serve"},
+		RequestTimeoutMillis: 30000, ReviewedBy: "worker-lsp-test", ReviewedAt: time.Now().UTC(),
+		Source: codeintel.Source{Kind: "operator_config", Label: "worker-lsp-smoke.json", SHA256: strings.Repeat("c", 64)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close(context.Background()) })
+	return manager
+}
+
+func TestWorkerCodeIntelLegacyBatchCleanupPreservesParent(t *testing.T) {
+	executable := strings.TrimSpace(os.Getenv("CYBERAGENT_GOPLS_SMOKE_BINARY"))
+	if executable == "" {
+		t.Skip("CYBERAGENT_GOPLS_SMOKE_BINARY is not set")
+	}
+	fixture := newBatchDeliveryApplicationFixture(t, false, domain.RunExecutionPermissionAsk)
+	prepared, err := fixture.service.Prepare(t.Context(), PrepareBatchDeliveryRequest{
+		RunID: fixture.run.ID, ProposalID: fixture.proposal.ID, Spec: fixture.spec,
+		OperationKey: "batch-legacy-lsp-cleanup-0001", RequestedBy: fixture.root.ID,
+		WorktreeParent: t.TempDir(), Confirm: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := newWorkerGoplsTestManager(t, executable, fixture.proposal.WorkspaceID)
+	parent, err := manager.InitializeServer(t.Context(), fixture.proposal.WorkspaceID, fixture.repository, "worker-gopls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewAgentRunner(fixture.store, nil, policy.NewDefaultChecker()).WithCodeIntel(manager)
+	for _, work := range prepared.Workspaces {
+		child, err := fixture.store.GetAgentNode(t.Context(), work.AgentID)
+		if err != nil || child.Worker != nil {
+			t.Fatalf("expected legacy Batch child: %+v %v", child, err)
+		}
+		ref := domain.AgentAttemptRef{RunID: fixture.run.ID, AgentID: child.ID}
+		foreign := ref
+		foreign.RunID = "foreign-run"
+		if err := runner.closeWorkerCodeIntelResources(t.Context(), foreign); apperror.CodeOf(err) != apperror.CodePolicyDenied {
+			t.Fatalf("legacy cleanup accepted a different run: %v", err)
+		}
+		if err := runner.closeWorkerResources(ref); err != nil {
+			t.Fatalf("legacy Batch child blocked cleanup: %v", err)
+		}
+	}
+	if _, err := manager.RefreshInitializedServer(t.Context(), fixture.proposal.WorkspaceID,
+		fixture.repository, parent.ServerID, parent.Generation); err != nil {
+		t.Fatalf("legacy Batch cleanup retired the parent semantic runtime: %v", err)
 	}
 }

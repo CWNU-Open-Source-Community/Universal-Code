@@ -193,18 +193,22 @@ func (s *AgentRunner) workerCodeExecutor() (*AgentCodeToolExecutor, error) {
 	return NewAgentCodeToolExecutor(st, s.checker).WithRunWorktree(s.drydocks).WithExecutionPermissionCapabilities(s.executionCapabilities), nil
 }
 
-func (s *AgentRunner) closeWorkerResources(ref domain.AgentAttemptRef) {
+func (s *AgentRunner) closeWorkerResources(ref domain.AgentAttemptRef) error {
 	ctx, cancel := specialistEventContext(context.Background())
 	defer cancel()
+	var closeErr error
 	if closer, ok := s.commandRuntime.(interface {
 		CloseSpecialistCommands(context.Context, domain.AgentAttemptRef) (int, error)
 	}); ok {
-		_, _ = closer.CloseSpecialistCommands(ctx, ref)
+		_, err := closer.CloseSpecialistCommands(ctx, ref)
+		closeErr = errors.Join(closeErr, err)
 	}
 	if s.agentBrowser != nil {
-		_ = s.agentBrowser.CloseWorker(ctx, ref)
+		closeErr = errors.Join(closeErr, s.agentBrowser.CloseWorker(ctx, ref))
 	}
 	if closer, ok := s.mcpClient.(interface{ CloseWorkspaceScope(string, string) }); ok {
 		closer.CloseWorkspaceScope(ref.RunID, workerMCPScopeID(ref))
 	}
+	closeErr = errors.Join(closeErr, s.closeWorkerCodeIntelResources(ctx, ref))
+	return closeErr
 }

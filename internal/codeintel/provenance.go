@@ -60,6 +60,22 @@ func captureWorkspaceBinding(ctx context.Context, root, workspaceID string) (wor
 	canonical = filepath.Clean(canonical)
 	binding := workspaceBinding{WorkspaceID: workspaceID, Root: canonical,
 		RootFingerprint: rootFingerprint}
+	if metadata, err := os.Lstat(filepath.Join(canonical, ".git")); err == nil && metadata.Mode().IsRegular() {
+		linked, err := repository.CaptureLinkedWorktreeBinding(ctx, canonical)
+		if err != nil {
+			return workspaceBinding{}, err
+		}
+		binding.RepositoryAvailable = true
+		binding.Commit, binding.Branch = linked.Head, linked.Branch
+		if binding.Commit == "unborn" {
+			binding.Commit = ""
+		}
+		emptyStatus := sha256.Sum256(nil)
+		binding.Dirty = linked.StatusSHA256 != hex.EncodeToString(emptyStatus[:])
+		binding.DirtyDigest = digestStrings(ProtocolVersion, workspaceID, rootFingerprint,
+			linked.CommonDirSHA256, linked.IndexSHA256, linked.WorktreeSHA256, linked.StatusSHA256)
+		return binding, nil
+	}
 	state, inspectErr := repository.Inspect(ctx, canonical, workspaceID)
 	if inspectErr != nil {
 		return workspaceBinding{}, inspectErr

@@ -115,6 +115,13 @@ func (s *catalogSession) boundTaskCheck() func(context.Context) error {
 	}
 }
 
+func (s *catalogSession) retainIdleWorker(ctx context.Context) bool {
+	s.checkMu.RLock()
+	owned := s.workspace
+	s.checkMu.RUnlock()
+	return owned != nil && owned.CheckLifetime != nil && owned.CheckLifetime(ctx) == nil
+}
+
 // RefreshCapabilities is the host's once-per-model-turn catalog entry point.
 // check must re-read current task authority, and must not capture a one-shot tool
 // approval. Searches can use Capabilities without reconnecting every page.
@@ -216,7 +223,12 @@ func (m *Manager) refreshCapabilities(ctx context.Context, runID, workspaceID st
 func (m *Manager) refreshTaskCatalog(ctx context.Context, key catalogSessionKey, s *catalogSession) error {
 	check := s.boundTaskCheck()
 	if err := check(ctx); err != nil {
-		s.stop()
+		// A list-change notification may arrive between continued attempts.
+		// Defer discovery until the next current task check, without losing the
+		// peer's session. No stale operation or roots authority is restored.
+		if !s.retainIdleWorker(ctx) {
+			s.stop()
+		}
 		return err
 	}
 	record, err := m.store.GetMCPClientServer(ctx, key.server)
@@ -234,7 +246,9 @@ func (m *Manager) refreshTaskCatalog(ctx context.Context, key catalogSessionKey,
 		CapabilityFingerprint: record.Capabilities.Fingerprint, OperationID: idgen.New("mcp-catalog"), catalogCheck: check}, record)
 	if err != nil {
 		if checkErr := check(ctx); checkErr != nil {
-			s.stop()
+			if !s.retainIdleWorker(ctx) {
+				s.stop()
+			}
 			return checkErr
 		}
 		var storeFailure *catalogStoreFailure

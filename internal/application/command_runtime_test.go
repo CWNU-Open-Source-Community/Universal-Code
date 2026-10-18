@@ -858,7 +858,7 @@ func ensureCommandRuntimeTestAgent(t *testing.T, ctx context.Context,
 	return turn.Agent
 }
 
-func newCommandRuntimeTestRuntime(t *testing.T, ctx context.Context) (
+func newCommandRuntimeTestRuntime(t *testing.T, ctx context.Context, turnBudget ...int) (
 	*store.SQLiteStore, domain.Run, domain.AgentNode, domain.RunExecutionLease,
 	domain.ExecutionPermissionRuntimeCapabilities,
 ) {
@@ -879,9 +879,13 @@ func newCommandRuntimeTestRuntime(t *testing.T, ctx context.Context) (
 		t.Fatal(err)
 	}
 	runs := NewRunService(state)
+	maxTurns := 4
+	if len(turnBudget) > 0 {
+		maxTurns = turnBudget[0]
+	}
 	_, runRecord, err := runs.Create(ctx, CreateRunRequest{
 		Goal: "execute an owned command", Profile: "code", WorkspaceID: workspace.ID,
-		Budget: domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 8},
+		Budget: domain.Budget{MaxTurns: maxTurns, MaxTokens: 1000, MaxToolCalls: 8},
 	})
 	if err != nil {
 		t.Fatal(err)
