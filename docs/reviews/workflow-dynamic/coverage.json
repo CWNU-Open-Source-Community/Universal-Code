@@ -1,0 +1,271 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "83745f8496d7b262c11e0d585cdb43a63436a827",
+  "implementation_head": "381afd3ac4092b64dc3eff5b2641c55f07c85c80",
+  "additional_scope": [
+    "docs/acceptance/2026-10-18-workflow-dynamic.md"
+  ],
+  "review_metadata_excluded": [
+    "docs/reviews/workflow-dynamic/README.md",
+    "docs/reviews/workflow-dynamic/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：整合、定向验证、实际页面、文档",
+    "workflow_engine_review：引擎与最终预算修复",
+    "workflow_interface_review：Data、持久化、HTTP 与 UI"
+  ],
+  "summary": {
+    "total_files": 41,
+    "full_text_read": 25,
+    "partial_text_read": 10,
+    "visual_inspected": 3,
+    "generated_excluded": 3,
+    "unread_non_generated": 0,
+    "ocr_selected_files": 20
+  },
+  "review_method": "OCR 只用于范围选择和规则解析。默认排除的测试、说明文档和截图人工纳入；部分审阅覆盖全部改动及相关调用上下文，不表示全文读完。最终增量与先前审阅一起构成以下范围。",
+  "findings": [
+    {
+      "id": "interface-001",
+      "severity": "medium",
+      "status": "fixed",
+      "title": "结构化 Data 未进入既有输出策略检查",
+      "resolution": "对解码后的嵌套字段和值应用策略；UseNumber 保证大数字不使检查提前结束，保留脱敏与格式限制。"
+    },
+    {
+      "id": "ENGINE-1",
+      "severity": "medium",
+      "status": "fixed",
+      "title": "永久预算拒绝后仍遗留已分配子任务",
+      "resolution": "在当前 Run 租约和工作流 claim/revision 下回收持久化待处理子任务，包含未选中审批项、截止时间及没有 Maps 的旧版 worker；竞争时保持可继续处理的状态。"
+    },
+    {
+      "id": "ENGINE-2",
+      "severity": "medium",
+      "status": "fixed",
+      "title": "恰好用满轮次后无法恢复既有获批操作",
+      "resolution": "只为没有活动 attempt 的子任务计算新轮次；原审批沿用原 attempt。"
+    }
+  ],
+  "files": [
+    {
+      "path": "docs/execution-workers.md",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/specialist_prompt_contract.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/completion_data_internal_test.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow_batch.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow_map.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow_map_test.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow_round.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow_round_test.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/workflow_verification.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/domain/agent_completion.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/domain/agent_completion_test.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/domain/workflow.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/httpapi/workflow.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/httpapi/workflow_test.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/store/completion_data_test.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/store/coordinator_completion.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/store/root_inbox_context.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/store/workflow_retry.go",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "web/src/api/workflows.ts",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "web/src/api/workflows.test.ts",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "web/src/components/workflow-panel.css",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "web/src/components/workflow-panel.tsx",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "web/src/components/workflow-panel.test.tsx",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "docs/acceptance/2026-10-18-workflow-dynamic.md",
+      "review_status": "full_text_read",
+      "diff_coverage": "all_changed_hunks"
+    },
+    {
+      "path": "internal/application/subagent_runner.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/application/subagent_runner_test.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/application/worker_tools.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/application/workflow_verification_test.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/application/workflow_test.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/domain/workflow_test.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/httpapi/openapi_test.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/store/specialist_models.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "internal/store/workflow.go",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "protocols/registry.json",
+      "review_status": "partial_text_read",
+      "diff_coverage": "all_changed_hunks_and_relevant_context",
+      "whole_file_read": false
+    },
+    {
+      "path": "docs/evidence/workflow-dynamic/light.png",
+      "review_status": "visual_inspected",
+      "reviewer": "主 agent",
+      "note": "独立 Edge 原始像素截图，正式组件与本地 HTTP 夹具。"
+    },
+    {
+      "path": "docs/evidence/workflow-dynamic/dark.png",
+      "review_status": "visual_inspected",
+      "reviewer": "主 agent",
+      "note": "独立 Edge 原始像素截图，正式组件与本地 HTTP 夹具。"
+    },
+    {
+      "path": "docs/evidence/workflow-dynamic/mobile.png",
+      "review_status": "visual_inspected",
+      "reviewer": "主 agent",
+      "note": "独立 Edge 原始像素截图，正式组件与本地 HTTP 夹具。"
+    },
+    {
+      "path": "docs/openapi.json",
+      "review_status": "generated_excluded",
+      "note": "未全文逐行阅读；生成、契约或构建检查见验收记录。"
+    },
+    {
+      "path": "web/src/api/schema.d.ts",
+      "review_status": "generated_excluded",
+      "note": "未全文逐行阅读；生成、契约或构建检查见验收记录。"
+    },
+    {
+      "path": "docs/convergence/protocol-registry.md",
+      "review_status": "generated_excluded",
+      "note": "未全文逐行阅读；生成、契约或构建检查见验收记录。"
+    }
+  ]
+}
