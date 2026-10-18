@@ -368,6 +368,7 @@ func (s *WorkflowService) observeWorkflowWorker(ctx context.Context, job domain.
 	}
 	if found {
 		job.Status = "completed"
+		job.Reason = ""
 		job.Output, err = json.Marshal(completion.Report)
 		return job, err
 	}

@@ -6,8 +6,27 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/waitgraph"
 )
+
+type workflowFileWriteQueueKey struct{}
+
+// A shared Run lease still owns one workspace checkpoint cursor. Serialize the
+// actual file mutation through its existing gateway and checkpoint boundary;
+// model calls, reads and approval decisions do not hold this round-local queue.
+func invokeWorkflowWorkerTool(ctx context.Context, gateway *toolgateway.Gateway, call toolgateway.ToolCall) (toolgateway.Outcome, error) {
+	queue, _ := ctx.Value(workflowFileWriteQueueKey{}).(chan struct{})
+	if queue != nil && (call.Name == toolgateway.WorkspaceApplyTool || call.Name == toolgateway.WorkspaceDeleteTool) {
+		select {
+		case queue <- struct{}{}:
+			defer func() { <-queue }()
+		case <-ctx.Done():
+			return toolgateway.Outcome{}, apperror.Normalize(ctx.Err())
+		}
+	}
+	return gateway.Invoke(ctx, call)
+}
 
 type workflowRoundItem struct {
 	job      domain.WorkflowStepExecution
@@ -21,6 +40,7 @@ func (s *WorkflowService) executeWorkflowRound(ctx context.Context, e domain.Wor
 	base := NewSubagentRunner(s.workers.store, s.workers.router, s.workers.checker)
 	outcomes := []specialistRoundOutcome{}
 	err := withRunExecutionLease(ctx, s.store, e.RunID, base.leaseOwner, base.leasePolicy, func(leaseCtx context.Context, lease domain.RunExecutionLease) error {
+		leaseCtx = context.WithValue(leaseCtx, workflowFileWriteQueueKey{}, make(chan struct{}, 1))
 		if _, err := s.store.RecoverSpecialistAttempts(leaseCtx, lease); err != nil {
 			return err
 		}
