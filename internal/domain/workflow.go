@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
@@ -52,6 +54,76 @@ type WorkflowStep struct {
 	Else          []WorkflowStep              `json:"else,omitempty"`
 	Body          []WorkflowStep              `json:"body,omitempty"`
 	MaxIterations int                         `json:"max_iterations,omitempty"`
+	Items         *WorkflowValueRef           `json:"items,omitempty"`
+	MaxItems      int                         `json:"max_items,omitempty"`
+	Parallelism   int                         `json:"parallelism,omitempty"`
+	MaxAttempts   int                         `json:"max_attempts,omitempty"`
+}
+
+func (s WorkflowStep) AttemptLimit() int {
+	if s.MaxAttempts == 0 {
+		return 3
+	}
+	return s.MaxAttempts
+}
+func (s WorkflowStep) WorkerParallelism() int {
+	if s.Parallelism == 0 {
+		return 1
+	}
+	return s.Parallelism
+}
+
+type WorkflowMapItem struct {
+	Index           int             `json:"index"`
+	Value           json.RawMessage `json:"value,omitempty"`
+	Generation      int             `json:"generation"`
+	StepExecutionID string          `json:"step_execution_id"`
+	Status          string          `json:"status"`
+	Reason          string          `json:"reason,omitempty"`
+}
+
+type WorkflowMapState struct {
+	StepID string            `json:"step_id"`
+	Kind   string            `json:"kind"`
+	Inputs json.RawMessage   `json:"inputs"`
+	Items  []WorkflowMapItem `json:"items"`
+}
+
+type WorkflowBlocked struct {
+	Key       string `json:"key"`
+	StepID    string `json:"step_id"`
+	Retryable bool   `json:"retryable"`
+}
+
+type WorkflowRetryOperation struct {
+	Revision int64  `json:"revision"`
+	Key      string `json:"key"`
+}
+
+// The first ordinary worker identity remains compatible with existing steps.
+func WorkflowItemStepID(key, kind string, index, generation int) string {
+	if kind == "worker" && index == 0 && generation == 1 {
+		return "workflowstep-" + key
+	}
+	return "workflowstep-" + runmutation.Fingerprint("workflow_item.v1", key, strconv.Itoa(index), strconv.Itoa(generation))
+}
+
+func (s WorkflowSpec) Step(id string) (WorkflowStep, bool) {
+	var find func([]WorkflowStep) (WorkflowStep, bool)
+	find = func(steps []WorkflowStep) (WorkflowStep, bool) {
+		for _, step := range steps {
+			if step.ID == id {
+				return step, true
+			}
+			for _, block := range [][]WorkflowStep{step.Then, step.Else, step.Body} {
+				if found, ok := find(block); ok {
+					return found, true
+				}
+			}
+		}
+		return WorkflowStep{}, false
+	}
+	return find(s.Steps)
 }
 
 // Omitted completion retains the existing report-driven workflow semantics.
@@ -100,12 +172,16 @@ type WorkflowFrame struct {
 	Iteration int    `json:"iteration,omitempty"`
 }
 type WorkflowState struct {
-	Stack         []WorkflowFrame                 `json:"stack"`
-	Outputs       map[string]json.RawMessage      `json:"outputs"`
-	Iterations    map[string]int                  `json:"iterations"`
-	Steps         int                             `json:"steps"`
-	Jobs          int                             `json:"jobs"`
-	Verifications map[string]WorkflowVerification `json:"verifications,omitempty"`
+	Stack           []WorkflowFrame                   `json:"stack"`
+	Outputs         map[string]json.RawMessage        `json:"outputs"`
+	Iterations      map[string]int                    `json:"iterations"`
+	Steps           int                               `json:"steps"`
+	Jobs            int                               `json:"jobs"`
+	Verifications   map[string]WorkflowVerification   `json:"verifications,omitempty"`
+	Maps            map[string]WorkflowMapState       `json:"maps,omitempty"`
+	AllocatedJobs   int                               `json:"allocated_jobs,omitempty"`
+	Blocked         *WorkflowBlocked                  `json:"blocked,omitempty"`
+	RetryOperations map[string]WorkflowRetryOperation `json:"retry_operations,omitempty"`
 	// WaitFingerprint records the dependencies observed before yielding. A
 	// waiting execution wakes when those durable dependencies change.
 	WaitFingerprint string `json:"wait_fingerprint,omitempty"`
@@ -182,7 +258,7 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 				return errors.New("workflow condition is invalid")
 			}
 			if c := s.Completion; c != nil {
-				if s.Kind != "worker" || (c.Mode != "report" && c.Mode != "verified_code") ||
+				if (s.Kind != "worker" && s.Kind != "map") || (c.Mode != "report" && c.Mode != "verified_code") ||
 					(c.Mode == "report" && c.Target != "") || strings.TrimSpace(c.Target) != c.Target || len(c.Target) > 1024 {
 					return errors.New("workflow completion requires a worker and mode report or verified_code; only verified_code accepts a target")
 				}
@@ -192,8 +268,28 @@ func NormalizeWorkflowSpec(spec WorkflowSpec) (WorkflowSpec, error) {
 					}
 				}
 			}
+			if s.Kind != "worker" && s.Kind != "map" && (s.Items != nil || s.MaxItems != 0 || s.Parallelism != 0 || s.MaxAttempts != 0) {
+				return errors.New("workflow expansion and retry fields require a worker or map")
+			}
 			switch s.Kind {
-			case "worker":
+			case "worker", "map":
+				if s.Kind == "map" {
+					if _, ok := s.Inputs["item"]; ok {
+						return errors.New("map input name item is reserved")
+					}
+					if _, ok := s.Inputs["index"]; ok {
+						return errors.New("map input name index is reserved")
+					}
+				}
+				if s.MaxAttempts < 0 || s.MaxAttempts > 3 {
+					return errors.New("workflow max_attempts must be 1..3 when provided")
+				}
+				if s.Kind == "worker" && (s.Items != nil || s.MaxItems != 0 || s.Parallelism != 0) {
+					return errors.New("worker cannot declare map expansion fields")
+				}
+				if s.Kind == "map" && (s.Items == nil || !validWorkflowRef(*s.Items) || s.MaxItems < 1 || s.MaxItems > 64 || s.Parallelism < 0 || s.Parallelism > 2) {
+					return errors.New("map requires items, max_items 1..64 and parallelism 1..2 when provided")
+				}
 				if s.Task == nil || s.BatchPlan != nil || s.Condition != nil || len(s.Then)+len(s.Else)+len(s.Body) != 0 || s.MaxIterations != 0 || len(s.Task.DependencyOrdinals) != 0 {
 					return errors.New("worker step requires one task without control blocks or task dependencies")
 				}

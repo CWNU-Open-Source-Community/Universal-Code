@@ -56,7 +56,7 @@ func (s *WorkflowService) advanceWorkflowBatch(ctx context.Context, e domain.Wor
 		return nil, 0, "", errors.New("isolated delivery belongs to another Run")
 	}
 	jobs := len(plan.Spec.Tasks)
-	if jobs == 0 || e.State.Jobs+jobs > limits.MaxJobs {
+	if jobs == 0 || max(e.State.AllocatedJobs, e.State.Jobs)+jobs > limits.MaxJobs {
 		return nil, 0, "", errors.New("workflow job bound cannot include this isolated delivery")
 	}
 	if plan.Status == domain.BatchDeliveryAborted {
