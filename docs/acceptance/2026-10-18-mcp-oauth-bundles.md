@@ -131,7 +131,7 @@ Real external account login, externally issued long-token persistence and
 external refresh/revocation remain unverified. The local TLS issuer demonstrates
 the implemented protocol lifecycle using synthetic accounts.
 
-## Review coverage
+## Initial implementation review
 
 OCR delegate 1.12.9 ran `preview --format json` and `rule --format json` in
 workspace mode against base `24162e3d`. Its Go and TypeScript rule groups were
@@ -177,3 +177,29 @@ about supported registration methods and clarified same-home file-lock scope.
 The encrypted view retains no open file handle or background worker; each file
 operation closes its own handle. Raw preview/rules and the per-file coverage
 manifest were retained locally in `.tmp/mcp-oauth-review/`.
+
+## Protocol registry follow-up
+
+A subsequent `go test -p 1 ./internal/protocolregistry` found one missing
+registration: `universal-code.mcp-oauth.v1` from `internal/mcpoauth/store.go`.
+The initial run failed (41.015s). A dedicated `mcp-oauth-credentials`
+internal-durable family now records its writer/reader, ciphertext and OS-key
+boundary, retained legacy reader, verified migration, CAS and retirement rules.
+The registry document was regenerated with `go run -p 1
+./cmd/protocolregistry -write`; runtime code was unchanged.
+
+After correction, `go test -p 1 ./internal/protocolregistry` passed (3.255s).
+`go run -p 1 ./cmd/protocolregistry -check -baseline
+e3f77c8393c0010603ee2de8247a8e73170d7cff` also passed: 42 families, 1221
+identifiers and 128 explicit test/golden entries, with append-only history and
+the generated document synchronized. This follow-up is a separate commit.
+
+OCR selected one file for this follow-up; it was reviewed with no skip (100%).
+Both Markdown exclusions were also accounted for. The follow-up review covers
+`protocols/registry.json` partially (the complete
+new family and adjacent classification/schema context) and this acceptance
+record in full. `docs/convergence/protocol-registry.md` is generated: its changed
+section was inspected and its exact output verified by the registry check,
+without a full-file manual review of unrelated generated families. OCR preview
+and rule output for this follow-up are retained in
+`.tmp/mcp-oauth-review/protocol-followup/`.
