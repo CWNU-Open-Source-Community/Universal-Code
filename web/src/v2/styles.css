@@ -1997,14 +1997,14 @@
 :where([data-prayu-theme="dark"]) .v2-sidebar,
 :where([data-prayu-theme="dark"]) .v2-product-surface { backdrop-filter: blur(46px) saturate(100%); }
 
-/* Catppuccin Latte Glass (Mica & Compat) material system inspired by dsh-catppuccin-theme. */
+/* Mist glass: floating and framed layouts share the same material controls. */
 :where([data-prayu-theme="glass"]) .v2-shell {
   background:
     radial-gradient(58% 46% at 18% 6%,
-      color-mix(in srgb, #1e66f5 calc(12% * var(--dsh-glass-ambience, 1) * var(--prayu-glass-glow, 0)), transparent),
+      color-mix(in srgb, #657d8d calc(10% * var(--dsh-glass-ambience, 1) * var(--prayu-glass-glow, 0)), transparent),
       transparent 68%),
     radial-gradient(48% 42% at 86% 14%,
-      color-mix(in srgb, color-mix(in srgb, #40a02b 18%, #eff1f5) calc(10% * var(--dsh-glass-ambience, 1) * var(--prayu-glass-glow, 0)), transparent),
+      color-mix(in srgb, #8b999f calc(8% * var(--dsh-glass-ambience, 1) * var(--prayu-glass-glow, 0)), transparent),
       transparent 62%),
     linear-gradient(165deg,
       color-mix(in srgb, var(--dsh-glass-ground), #ffffff calc(22% * var(--dsh-glass-ambience, 1))) 0%,
@@ -2014,11 +2014,16 @@
 
 :where([data-prayu-theme="glass"]) .v2-sidebar::before { content: none; }
 
+:where([data-prayu-theme="glass"]) .v2-sidebar {
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+}
+
 :where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-titlebar {
   background: transparent;
   border-bottom-color: transparent;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 :where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-product-surface {
@@ -2026,8 +2031,8 @@
   border-left: 0;
   border-radius: 0;
   box-shadow: none;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 @media (min-width: 761px) {
@@ -2037,8 +2042,6 @@
     border: 1px solid var(--dsh-glass-rim);
     background: var(--dsh-glass-card);
     box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
-    backdrop-filter: blur(var(--prayu-glass-blur, 5px));
-    -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
     overflow: hidden;
   }
 }
@@ -2059,8 +2062,8 @@
   border: 1px solid var(--dsh-glass-rim);
   background: var(--dsh-glass-card);
   box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   position: relative;
   z-index: 8;
 }
@@ -2071,8 +2074,8 @@
   border: 1px solid var(--dsh-glass-rim-soft);
   background: var(--dsh-glass-card);
   box-shadow: var(--dsh-glass-edge);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 
 :where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-settings-toolbar {
@@ -2083,15 +2086,13 @@
 :where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-titlebar {
   background: var(--prayu-titlebar);
   border-bottom-color: var(--dsh-glass-rim-soft);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 
 :where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-sidebar {
   background: var(--dsh-glass-card);
   border-right: 1px solid var(--dsh-glass-rim-soft);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
-  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 
 :where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-product-surface {
@@ -2099,23 +2100,23 @@
   border-left: 0;
   border-radius: 0;
   box-shadow: none;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 :where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) :is(.v2-conversation-header, .v2-new-conversation > header, .v2-settings-toolbar) {
   background: var(--dsh-glass-card);
   border-bottom: 1px solid var(--dsh-glass-rim-soft);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 
 :where([data-prayu-theme="glass"]) .v2-sidebar-actions > button:first-child {
   background: var(--dsh-glass-card-raised);
   border: 1px solid var(--dsh-glass-rim);
   box-shadow: var(--dsh-glass-edge);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   font-weight: 500;
 }
 
@@ -2136,11 +2137,14 @@
   border: 1px solid var(--dsh-glass-rim-strong);
   border-radius: 24px;
   box-shadow: var(--dsh-glass-edge), var(--dsh-glass-input-shadow);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 :where([data-prayu-theme="glass"]) .v2-composer-surface:focus-within {
-  border-color: color-mix(in srgb, var(--v2-accent) 52%, var(--dsh-glass-rim-strong));
+  border-color: var(--prayu-focus);
+}
+:where([data-prayu-theme="glass"]) .v2-composer-surface:has(textarea:focus-visible) {
+  outline-offset: -2px;
 }
 :where([data-prayu-theme="glass"]) .v2-composer-surface::after { content: none; }
 
@@ -2171,7 +2175,7 @@
 }
 
 :where([data-prayu-theme="glass"]) .v2-orb i {
-  background: radial-gradient(circle at 28% 27%, #ffffff 0 22%, #dce6fb 56%, #7287fd 100%);
+  background: radial-gradient(circle at 28% 27%, #ffffff 0 22%, #e0e7eb 56%, #82949f 100%);
   border-color: rgb(255 255 255 / 68%);
 }
 
@@ -2191,16 +2195,16 @@
   background: var(--dsh-glass-popover);
   border-color: var(--dsh-glass-rim);
   box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
-  backdrop-filter: blur(max(var(--prayu-glass-blur, 5px), 16px)) saturate(120%);
   -webkit-backdrop-filter: blur(max(var(--prayu-glass-blur, 5px), 16px)) saturate(120%);
+  backdrop-filter: blur(max(var(--prayu-glass-blur, 5px), 16px)) saturate(120%);
 }
 
 :where([data-prayu-theme="glass"]) .v2-inspector-drawer.is-docked {
   background: var(--dsh-glass-card);
   border-left: 1px solid var(--dsh-glass-rim);
   box-shadow: var(--dsh-glass-edge);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 
 .v2-sidebar-backdrop { display: none; }
@@ -2278,7 +2282,7 @@
 .v2-run-network-popover,
 .v2-dialog,
 .v2-inspector-drawer,
-.v2-high-risk-dialog { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--prayu-surface-solid); }
+.v2-high-risk-dialog { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--prayu-surface-solid); }
   .v2-high-risk-overlay { backdrop-filter: none; background: rgb(24 24 24 / 42%); }
   .v2-sidebar { background: var(--prayu-surface-solid); }
 }

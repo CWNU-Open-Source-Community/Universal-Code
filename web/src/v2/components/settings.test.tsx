@@ -339,13 +339,13 @@ describe("V2 permission settings hierarchy", () => {
   });
 });
 
-describe("V2 appearance and Catppuccin Latte glass controls", () => {
+describe("V2 appearance and mist glass controls", () => {
   afterEach(() => {
     window.localStorage.removeItem("prayu.theme");
     window.localStorage.removeItem("prayu.glass");
   });
 
-  it("reveals Catppuccin Latte glass tuning controls when glass theme is selected and syncs CSS variables", async () => {
+  it("reveals glass tuning controls when glass theme is selected and syncs CSS variables", async () => {
     window.localStorage.setItem("prayu.theme", "dark");
     const user = userEvent.setup();
     render(<QueryClientProvider client={new QueryClient()}>

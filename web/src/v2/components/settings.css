@@ -327,8 +327,8 @@
 .v2-theme-preview i:last-child { background: var(--prayu-panel); box-shadow: inset 0 1px 0 var(--prayu-glass-highlight); }
 .v2-theme-preview.theme-glass {
   background:
-    radial-gradient(65% 55% at 18% 12%, rgb(30 102 245 / 16%), transparent 70%),
-    radial-gradient(55% 50% at 85% 18%, rgb(64 160 43 / 12%), transparent 65%),
+    radial-gradient(65% 55% at 18% 12%, rgb(101 125 141 / 10%), transparent 70%),
+    radial-gradient(55% 50% at 85% 18%, rgb(139 153 159 / 8%), transparent 65%),
     linear-gradient(165deg, #f6f8fb 0%, #eff1f5 55%, #e3e6ec 100%);
   border-color: rgb(76 79 105 / 22%);
   gap: 5px;
@@ -348,8 +348,8 @@
   background: var(--dsh-glass-card);
   border-color: var(--dsh-glass-rim);
   box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
-  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
 .v2-glass-slider-control {
   align-items: center;
@@ -439,7 +439,7 @@
   .v2-settings-card,
 .v2-archive-list,
 .v2-provider-list,
-.v2-provider-fields { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--prayu-panel-strong); }
+.v2-provider-fields { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--prayu-panel-strong); }
   .v2-provider-harness-result { background: var(--v2-control); }
 }
 

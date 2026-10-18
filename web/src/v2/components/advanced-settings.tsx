@@ -67,15 +67,16 @@ export function V2SkillSettings({ client, desktop }: { client: APIClient; deskto
       <p>{t("先预览 ZIP 包的结构、来源与文件，再确认安装到 Code 或 Cyber 工作面。", "Preview the ZIP package's structure, source, and files before confirming installation to Code or Cyber.")}</p>
       <button className="settings-action" onClick={() => setPreviewOpen(true)} type="button">{t("预览 Skill 包", "Preview skill package")}</button>
       {!client.hasSkillInstallation && <p>{t("当前连接可预览包结构。具备安装权限的连接可继续确认安装。", "This connection can preview package structure. Installation requires a connection with installation permission.")}</p>}
-      <DesktopSkillPreviewDialog installationEnabled={client.hasSkillInstallation}
-        onClose={() => setPreviewOpen(false)} open={previewOpen} />
     </> : client.hasSkillInstallation ? <>
       <p>{t("网页端可上传 ZIP 包或原生 SKILL.md 目录并登记到 Code。结构校验和内容解析由服务端执行。", "Upload a ZIP package or a SKILL.md directory to register it with Code. The server validates the structure and parses the content.")}</p>
       <WebSkillInstall client={client} />
     </> : <p role="status">{t("连接具备 Skill 安装权限的服务后，可选择 ZIP 包加入技能库。", "Connect with skill installation permission to add a ZIP package to the library.")}</p>}
     <SkillPackageRegistry enabled={client.hasSkillInstallation} source={registry} />
     <SkillCatalogTrust client={client} />
-  </div></section></>;
+  </div></section>
+    {desktop && <DesktopSkillPreviewDialog installationEnabled={client.hasSkillInstallation}
+      onClose={() => setPreviewOpen(false)} open={previewOpen} />}
+  </>;
 }
 
 export function V2InspectorPreferences({ onOpenInspector }: {

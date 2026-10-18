@@ -216,10 +216,10 @@ function AppearanceSettings() {
           <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
           <strong>{option === "light" ? t("浅色", "Light") : option === "dark" ? t("深色", "Dark") : t("雾透", "Mist")}</strong>
         </button>)}</div>
-      <p>{t("雾透采用 Catppuccin Latte 雾面玻璃材质与柔光底色；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "Mist uses Catppuccin Latte frosted glass and soft ambient light; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
+      <p>{t("雾透采用灰蓝透色与轻盈的磨砂质感；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "Mist combines a muted blue-gray tint with light frosted glass; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
     </div></section>
     {theme === "glass" && <section className="v2-settings-section" aria-label={t("雾透玻璃参数", "Mist glass tuning")}>
-      <h2>{t("雾透玻璃材质（Catppuccin Latte）", "Mist Glass (Catppuccin Latte)")}</h2>
+      <h2>{t("雾透材质", "Mist material")}</h2>
       <div className="v2-settings-card v2-glass-settings-card">
         <SettingRow detail={t("云母效果将侧栏与顶栏悬浮为圆角毛玻璃卡片；兼容模式保留原始边框布局。", "Mica floats sidebar and titlebar as rounded frosted cards; Compat keeps the stock framed layout.")} title={t("玻璃模式", "Glass mode")}>
           <div className="v2-setting-segmented" role="group" aria-label={t("玻璃模式", "Glass mode")}>
@@ -250,7 +250,7 @@ function AppearanceSettings() {
             <output aria-live="off">{glass.frost}%</output>
           </div>
         </SettingRow>
-        <SettingRow detail={t("调节底层画布明度（50% 为标准 Latte 柔光底色，100% 为纯白）。", "Adjust base canvas brightness (50% is standard Latte soft ambient wash, 100% is white).")} title={t("背景亮度", "Canvas brightness")}>
+        <SettingRow detail={t("调节背景明度（50% 为灰蓝底色，100% 为纯白）。", "Adjust canvas brightness (50% is blue-gray, 100% is white).")} title={t("背景亮度", "Canvas brightness")}>
           <div className="v2-glass-slider-control">
             <input aria-label={t("背景亮度", "Canvas brightness")} max={100} min={50}
               onChange={(event) => updateGlass({ brightness: Number(event.currentTarget.value) })}
@@ -258,7 +258,7 @@ function AppearanceSettings() {
             <output aria-live="off">{glass.brightness}%</output>
           </div>
         </SettingRow>
-        <SettingRow detail={t("在底层画布左上角与右上角叠加柔和的品牌蓝与翠绿环境光晕。", "Overlay soft brand blue and green ambient glows on the top corners of the base canvas.")} title={t("氛围光斑", "Ambient glows")}>
+        <SettingRow detail={t("在背景顶部加入轻微的灰蓝柔光。", "Add a subtle blue-gray wash to the top of the canvas.")} title={t("氛围光斑", "Ambient glows")}>
           <button aria-checked={glass.glow} aria-label={t("氛围光斑", "Ambient glows")} className="v2-cdp-switch"
             onClick={() => updateGlass({ glow: !glass.glow })} role="switch" type="button"><i /></button>
         </SettingRow>

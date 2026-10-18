@@ -2626,8 +2626,7 @@ body { background: transparent; }
   --dsh-glass-rim-strong: color-mix(in srgb, #4c4f69 30%, transparent);
   --dsh-glass-edge: inset 0 1px 0 rgb(255 255 255 / 42%);
   --dsh-glass-drop: 0 10px 32px color-mix(in srgb, rgb(0 0 0 / 12%) 38%, transparent);
-  --dsh-glass-input-shadow: 0 1px 2px color-mix(in srgb, rgb(0 0 0 / 12%) 65%, transparent),
-    0 8px 24px color-mix(in srgb, rgb(0 0 0 / 12%) 80%, transparent);
+  --dsh-glass-input-shadow: 0 1px 2px rgb(76 79 105 / 4%), 0 4px 14px rgb(76 79 105 / 6%);
   --prayu-window: var(--dsh-glass-ground);
   --prayu-titlebar: color-mix(in srgb, #e6e9ef calc(52% * var(--prayu-glass-frost, 0.4)), transparent);
   --prayu-sidebar: var(--dsh-glass-card);
@@ -2636,11 +2635,11 @@ body { background: transparent; }
   --prayu-panel-strong: var(--dsh-glass-popover);
   --prayu-control: rgb(38 49 72 / 6%);
   --prayu-control-hover: rgb(38 49 72 / 10%);
-  --prayu-primary-bg: #1e66f5;
+  --prayu-primary-bg: #566570;
   --prayu-primary-fg: #ffffff;
-  --prayu-primary-hover: #1752c7;
-  --prayu-primary-border: color-mix(in srgb, #1e66f5 42%, #4c4f69 18%);
-  --prayu-primary-shadow: rgb(30 102 245 / 24%);
+  --prayu-primary-hover: #45535e;
+  --prayu-primary-border: color-mix(in srgb, #566570 42%, #4c4f69 18%);
+  --prayu-primary-shadow: rgb(76 79 105 / 12%);
   --prayu-selected: var(--prayu-primary-bg);
   --prayu-selected-ink: var(--prayu-primary-fg);
   --prayu-surface-solid: #eff1f5;
@@ -2649,8 +2648,8 @@ body { background: transparent; }
   --prayu-border: var(--dsh-glass-rim-soft);
   --prayu-border-strong: var(--dsh-glass-rim);
   --prayu-shadow: rgb(0 0 0 / 12%);
-  --prayu-focus: #1e66f5;
-  --prayu-accent: #1e66f5;
+  --prayu-focus: #657682;
+  --prayu-accent: #566570;
   --prayu-danger: #d20f39;
   --prayu-danger-fill: #d20f39;
   --prayu-on-danger: #ffffff;
@@ -2659,7 +2658,7 @@ body { background: transparent; }
   --prayu-warning: #fe640b;
   --prayu-diff-add: #40a02b;
   --prayu-glass-fill: var(--dsh-glass-card);
-  --prayu-glass-fill-strong: var(--dsh-glass-card-raised);
+  --prayu-glass-fill-strong: var(--dsh-glass-popover);
   --prayu-glass-highlight: rgb(255 255 255 / 42%);
   --prayu-glass-shadow: rgb(0 0 0 / 12%);
   --prayu-elevation-panel: var(--dsh-glass-edge), var(--dsh-glass-drop);
