@@ -1,4 +1,7 @@
-import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { act, fireEvent, render as renderComponent, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
@@ -36,7 +39,7 @@ it("selects files before a Thread exists and keeps each project's references sep
   await user.click(screen.getByRole("button", { name: "添加附件" }));
   await user.click(screen.getByRole("menuitem", { name: "引用项目文件" }));
   await user.click(await screen.findByRole("button", { name: /README.md/ }));
-  await user.click(await screen.findByRole("button", { name: "Reference this file" }));
+  await user.click(await screen.findByRole("button", { name: "引用此文件" }));
   expect(client.workspaceExplore).toHaveBeenCalledWith("workspace-1", "README.md", expect.any(AbortSignal));
   view.rerender(composer("workspace-2"));
   expect(screen.queryByLabelText("待发送的文件引用")).not.toBeInTheDocument();
@@ -58,7 +61,7 @@ it("selects a file with its digest, restores the selection across views and keep
     await user.click(screen.getByRole("button", { name: "添加附件" }));
     await user.click(screen.getByRole("menuitem", { name: "引用项目文件" }));
     await user.click(await screen.findByRole("button", { name: new RegExp(name) }));
-    await user.click(await screen.findByRole("button", { name: "Reference this file" }));
+    await user.click(await screen.findByRole("button", { name: "引用此文件" }));
   };
   await choose("README.md");
   expect(screen.getByRole("button", { name: "移除引用 README.md" })).toBeEnabled();
@@ -105,7 +108,7 @@ it("keeps a selected file and draft recoverable when the old execution can no lo
   await user.click(screen.getByRole("button", { name: "添加附件" }));
   await user.click(screen.getByRole("menuitem", { name: "引用项目文件" }));
   await user.click(await screen.findByRole("button", { name: /README.md/ }));
-  await user.click(await screen.findByRole("button", { name: "Reference this file" }));
+  await user.click(await screen.findByRole("button", { name: "引用此文件" }));
   fireEvent.change(screen.getByRole("textbox", { name: "继续对话" }), { target: { value: "继续修改这个项目" } });
   // A lifecycle update can arrive while the picker is open or with files already selected.
   await user.click(screen.getByRole("button", { name: "添加附件" }));
@@ -185,3 +188,11 @@ it("retains an unknown first-turn identity beyond the default cache lifetime and
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, { ...options, wrapper: ({ children }) => <LocaleProvider>
+    {Wrapper ? <Wrapper>{children}</Wrapper> : children}
+  </LocaleProvider> });
+}

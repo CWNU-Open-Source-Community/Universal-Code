@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Plus } from "lucide-react";
+import { useLocale } from "../../lib/locale";
 
 export interface ComposerAddAction {
   id: string;
@@ -15,6 +16,7 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
   disabled: boolean;
   triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -41,15 +43,15 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
   }, [open]);
   if (actions.length === 0) return null;
   return <div className="v2-composer-add" ref={shellRef}>
-    <button aria-label="添加附件" aria-expanded={open} aria-haspopup="menu" aria-controls={open ? id : undefined}
+    <button aria-label={t("添加附件", "Add attachments")} aria-expanded={open} aria-haspopup="menu" aria-controls={open ? id : undefined}
       className="v2-composer-icon v2-composer-add-trigger" disabled={disabled} ref={triggerRef}
-      title="添加图片、文件、项目引用或 MCP 内容" type="button" onClick={() => { focusLastRef.current = false; setOpen((value) => !value); }}
+      title={t("添加图片、文件、项目引用或 MCP 内容", "Add images, files, project references, or MCP content")} type="button" onClick={() => { focusLastRef.current = false; setOpen((value) => !value); }}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault(); focusLastRef.current = event.key === "ArrowUp"; setOpen(true);
         }
       }}><Plus aria-hidden="true" size={20} /></button>
-    {open && <div aria-label="添加内容" className="v2-composer-add-menu" id={id} ref={menuRef} role="menu" tabIndex={-1}
+    {open && <div aria-label={t("添加内容", "Add content")} className="v2-composer-add-menu" id={id} ref={menuRef} role="menu" tabIndex={-1}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null) &&
           (event.relatedTarget !== triggerRef.current || tabbingRef.current)) setOpen(false);
@@ -65,7 +67,7 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
           : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
         items[next]?.focus();
       }}>
-      <div className="v2-composer-add-heading" role="presentation">添加到对话</div>
+      <div className="v2-composer-add-heading" role="presentation">{t("添加到对话", "Add to conversation")}</div>
       {actions.map((action) => <button aria-label={action.label} aria-describedby={`${id}-${action.id}`}
         disabled={action.disabled} key={action.id} role="menuitem" tabIndex={-1} type="button"
         onClick={() => { close(true); action.onSelect(); }}>

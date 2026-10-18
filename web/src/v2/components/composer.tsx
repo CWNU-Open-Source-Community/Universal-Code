@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
+import { useLocale } from "../../lib/locale";
 import type { WorkspaceView } from "../../api/types";
 import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-control";
 import { V2PermissionControl } from "./permission-control";
@@ -28,7 +29,7 @@ export const v2ComposerNotSubmitted = "not_submitted" as const;
 export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 
 export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
-  placeholder = "输入消息…", newThreadControls, threadControls, runActive = false, onManageModels,
+  placeholder, newThreadControls, threadControls, runActive = false, onManageModels,
   pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, draft, onDraftChange,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
   client: APIClient;
@@ -53,6 +54,8 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   confirmedSubmission?: V2TurnInput | null;
   presentedSubmissionErrors?: ReadonlyArray<Pick<V2TurnInput, "threadID" | "workspaceID" | "operationKey">>;
 }) {
+  const { t } = useLocale();
+  const inputPlaceholder = placeholder ?? t("输入消息…", "Type a message…");
   const [localContent, setLocalContent] = useState("");
   const [plainText, setPlainText] = useState(readComposerPlainText);
   const [modeSaveError, setModeSaveError] = useState(false);
@@ -248,26 +251,26 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   };
 
   const addActions: ComposerAddAction[] = [];
-  if (client.hasThreadControl) addActions.push({ id: "upload", label: "添加图片或文件",
-    detail: !workspaceID ? "先选择项目，再添加附件" : "从电脑选择，也可直接粘贴或拖入",
+  if (client.hasThreadControl) addActions.push({ id: "upload", label: t("添加图片或文件", "Add images or files"),
+    detail: !workspaceID ? t("先选择项目，再添加附件", "Select a project before adding attachments") : t("从电脑选择，也可直接粘贴或拖入", "Choose from your computer, paste, or drag files here"),
     icon: <Paperclip aria-hidden="true" size={18} />,
     disabled: disabled || !workspaceID || importStatus.busy || images.uploading || attachments.uploading,
     onSelect: () => attachmentPicker.current?.click() });
-  if (workspaceID && client.hasEvidenceAttachment) addActions.push({ id: "reference", label: "引用项目文件",
-    detail: fileReferenceUnavailableReason || "选择项目中已有的文件作为参考",
+  if (workspaceID && client.hasEvidenceAttachment) addActions.push({ id: "reference", label: t("引用项目文件", "Reference project files"),
+    detail: fileReferenceUnavailableReason || t("选择项目中已有的文件作为参考", "Choose existing project files as references"),
     icon: <FolderOpen aria-hidden="true" size={18} />, disabled: disabled || Boolean(fileReferenceUnavailableReason),
     onSelect: () => setReferencePickerOpen(true) });
   if (workspaceID && client.hasExtensionControl && client.hasThreadControl) {
     let unavailable = "";
-    if (fileReferenceUnavailableReason) unavailable = "当前任务结束并处理待批准操作后可引用 MCP 内容";
-    else if (mcp.references.length >= maximumMCPReferences) unavailable = "每条消息最多 4 个 MCP 引用";
-    addActions.push({ id: "mcp-resource", label: "引用 MCP 资源", detail: unavailable || "选择服务器资源或填写资源模板",
+    if (fileReferenceUnavailableReason) unavailable = t("当前任务结束并处理待批准操作后可引用 MCP 内容", "MCP references are available after the task and pending approvals are complete");
+    else if (mcp.references.length >= maximumMCPReferences) unavailable = t("每条消息最多 4 个 MCP 引用", "Up to 4 MCP references per message");
+    addActions.push({ id: "mcp-resource", label: t("引用 MCP 资源", "Reference MCP resources"), detail: unavailable || t("选择服务器资源或填写资源模板", "Choose server resources or fill in a resource template"),
       icon: <Database aria-hidden="true" size={18} />, disabled: disabled || Boolean(unavailable), onSelect: () => setMCPPicker("resource") },
-    { id: "mcp-prompt", label: "使用 MCP Prompt", detail: unavailable || "选择 Prompt 并填写参数",
+    { id: "mcp-prompt", label: t("使用 MCP Prompt", "Use MCP prompt"), detail: unavailable || t("选择 Prompt 并填写参数", "Choose a prompt and fill in its arguments"),
       icon: <Command aria-hidden="true" size={18} />, disabled: disabled || Boolean(unavailable), onSelect: () => setMCPPicker("prompt") });
   }
-  if (client.hasThreadControl && desktopClipboardFilesAvailable()) addActions.push({ id: "paste", label: "粘贴文件",
-    detail: "添加从资源管理器复制的文件 · Ctrl+V",
+  if (client.hasThreadControl && desktopClipboardFilesAvailable()) addActions.push({ id: "paste", label: t("粘贴文件", "Paste files"),
+    detail: t("添加从资源管理器复制的文件 · Ctrl+V", "Add files copied from File Explorer · Ctrl+V"),
     icon: <ClipboardPaste aria-hidden="true" size={18} />,
     disabled: disabled || !workspaceID || nativeClipboard.busy || nativeClipboard.pending,
     onSelect: () => void nativeClipboard.onPasteFallback() });
@@ -290,8 +293,8 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     if (files.length) { event.preventDefault(); event.stopPropagation(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
     <div className="v2-composer-surface">
-      <button className="v2-composer-compact-trigger" type="button" aria-label="展开消息编辑器" disabled={disabled}
-        onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{placeholder}</button>
+      <button className="v2-composer-compact-trigger" type="button" aria-label={t("展开消息编辑器", "Expand message editor")} disabled={disabled}
+        onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{inputPlaceholder}</button>
       <V2MCPReferenceChips references={mcp.references} disabled={disabled} pendingIDs={[
         ...[...pendingMCP.current.values()].flat(), ...submissions.filter(({ pending, error }) => pending || Boolean(error) && !v2TurnOutcomeKnown(error))
           .flatMap(({ input }) => input.mcpReferences?.map(({ id }) => id) ?? []),
@@ -314,15 +317,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         ]} unavailableReason={fileReferenceUnavailableReason} open={referencePickerOpen}
         onOpenChange={setReferencePickerOpen} returnFocusRef={addTriggerRef}
         onChange={references.update} workspaceID={workspaceID} />}
-      <MarkdownInput label={threadID ? "继续对话" : "开始新对话"} disabled={disabled}
+      <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
         onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
-        placeholder={placeholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
+        placeholder={inputPlaceholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
       <div className="v2-composer-footer">
         <div className="v2-composer-tools">
           <V2ComposerAddMenu actions={addActions} disabled={disabled} key={scope} triggerRef={addTriggerRef} />
           <button className="v2-composer-mode-toggle" type="button" disabled={disabled}
-            aria-label={plainText ? "切换为 Markdown 编辑" : "切换为纯文本编辑"}
-            title={plainText ? "显示格式；Ctrl+Enter 发送" : "编辑 Markdown 原文"}
+            aria-label={plainText ? t("切换为 Markdown 编辑", "Switch to Markdown editing") : t("切换为纯文本编辑", "Switch to plain text editing")}
+            title={plainText ? t("显示格式；Ctrl+Enter 发送", "Show formatting; Ctrl+Enter to send") : t("编辑 Markdown 原文", "Edit Markdown source")}
             onClick={(event) => {
               const toggle = event.currentTarget;
               const next = !plainText; setPlainText(next);
@@ -331,15 +334,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
               requestAnimationFrame(() => {
                 if (document.activeElement === toggle && !toggle.closest("[inert]")) inputRef.current?.focus();
               });
-            }}>{plainText ? "纯文本" : "Markdown"}</button>
+            }}>{plainText ? t("纯文本", "Plain text") : "Markdown"}</button>
           {client.hasThreadControl &&
-            <input ref={attachmentPicker} type="file" multiple hidden aria-label="选择图片或文件"
+            <input ref={attachmentPicker} type="file" multiple hidden aria-label={t("选择图片或文件", "Choose images or files")}
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
           {threadID && threadControls?.(hasUnsentDraft)}
           {!threadID ? <label className="v2-workspace-picker">
-            <span className="sr-only">工作区</span>
-            <select aria-label="选择工作区" disabled={submitting || workspaces.length === 0}
+            <span className="sr-only">{t("工作区", "Workspace")}</span>
+            <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || workspaces.length === 0}
               onChange={(event) => onWorkspaceChange(event.target.value)} value={workspaceID}>
               {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>
                 {workspace.name}
@@ -353,7 +356,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
             <V2ModelRouteControl client={client} onManageModels={onManageModels}
               onPendingRouteChange={onPendingModelRouteChange} pendingRoute={pendingModelRoute}
               runActive={runActive} threadID={threadID} />}
-          <button aria-label="发送消息" className="v2-send-button" disabled={!ready} type="submit">
+          <button aria-label={t("发送消息", "Send message")} className="v2-send-button" disabled={!ready} type="submit">
             {sameMessagePending ? <LoaderCircle aria-hidden="true" className="spin" size={18} />
               : <ArrowUp aria-hidden="true" size={19} />}
           </button>
@@ -362,18 +365,18 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     </div>
     {workspaceID && references.files.length > 0 && fileReferenceUnavailableReason &&
       <p className="v2-composer-caption" role="status">{fileReferenceUnavailableReason}
-        {" 已选引用与草稿会保留；先移除项目文件引用，即可发送补充文字和上传附件。"}</p>}
+        {t(" 已选引用与草稿会保留；先移除项目文件引用，即可发送补充文字和上传附件。", " Your references and draft are kept. Remove project file references to send text and uploaded attachments.")}</p>}
     {mcp.references.length > 0 && fileReferenceUnavailableReason && <p className="v2-composer-caption" role="status">
-      MCP 引用需在当前任务结束并处理待批准操作后发送。草稿和已选内容会保留。</p>}
-    {byteLength > maximumContentBytes && <p className="v2-composer-error">消息不能超过 16 KiB</p>}
-    {modeSaveError && <p className="v2-composer-caption" role="status">编辑模式已切换，但偏好未能保存；下次打开时会使用默认模式。</p>}
-    {images.uploading && <p className="v2-composer-caption" role="status">正在保存图片，完成后可发送…</p>}
+      {t("MCP 引用需在当前任务结束并处理待批准操作后发送。草稿和已选内容会保留。", "Send MCP references after the task and pending approvals are complete. Your draft and selected content are kept.")}</p>}
+    {byteLength > maximumContentBytes && <p className="v2-composer-error">{t("消息不能超过 16 KiB", "Messages cannot exceed 16 KiB")}</p>}
+    {modeSaveError && <p className="v2-composer-caption" role="status">{t("编辑模式已切换，但偏好未能保存；下次打开时会使用默认模式。", "Editor mode changed, but the preference could not be saved. The default mode will be used next time.")}</p>}
+    {images.uploading && <p className="v2-composer-caption" role="status">{t("正在保存图片，完成后可发送…", "Saving images. You can send them when saving finishes…")}</p>}
     {(showImageCapability || draftSavedLocally) && <p className="v2-composer-caption" role="status">
       {showImageCapability && <>{imageCapability.hint}
         {!imageCapability.allowed && onManageModels && <button className="v2-composer-chip" type="button"
-          onClick={() => onManageModels(false)}>模型设置</button>}</>}
+          onClick={() => onManageModels(false)}>{t("模型设置", "Model settings")}</button>}</>}
       {showImageCapability && draftSavedLocally && " · "}
-      {draftSavedLocally && "草稿与附件保存在此设备"}
+      {draftSavedLocally && t("草稿与附件保存在此设备", "Draft and attachments saved on this device")}
     </p>}
     {images.error && <p className="v2-composer-error" role="alert">{images.error}</p>}
     {attachments.notice}

@@ -1,7 +1,20 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { fireEvent, render as renderComponent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ThreadView, WorkspaceView } from "../../api/types";
+import { LocaleProvider, useLocale } from "../../lib/locale";
 import { V2SettingsSidebar, V2Sidebar } from "./sidebar";
+
+function render(ui: ReactElement) {
+  return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
+}
+
+beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
+
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")} type="button">Switch test language</button>;
+}
 
 const workspace: WorkspaceView = {
   id: "workspace-1", name: "Traverse Board", created_at: "2026-08-29T00:00:00Z",
@@ -143,4 +156,40 @@ it("opens the dedicated configuration section from Settings", async () => {
   expect(entry).toHaveAttribute("aria-current", "page");
   await userEvent.click(entry);
   expect(onSelect).toHaveBeenCalledExactlyOnceWith("configuration");
+});
+
+it("updates both navigation sidebars at runtime and searches the translated settings labels", async () => {
+  const user = userEvent.setup();
+  const onSelect = vi.fn();
+  render(<><LocaleSwitch /><V2Sidebar onArchive={vi.fn()} onNewConversation={vi.fn()}
+    onOpenModels={vi.fn()} onOpenSettings={vi.fn()} onSearchOpen={vi.fn()} onSelectThread={vi.fn()}
+    searchOpen selectedThreadID={thread.id} threads={[{ ...thread, title: "新对话检查", execution_state: "running" }]}
+    workspaces={[{ ...workspace, name: "我的新对话项目" }]} />
+    <V2SettingsSidebar section="models" onBack={vi.fn()} onSelect={onSelect} /></>);
+
+  expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "新对话检查" })).toHaveAccessibleDescription("执行中");
+  await user.click(screen.getByRole("button", { name: "Switch test language" }));
+
+  const navigation = screen.getByRole("navigation", { name: "Conversation navigation" });
+  expect(within(navigation).getByRole("button", { name: "New conversation" })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "对话导航" })).not.toBeInTheDocument();
+  const project = screen.getByRole("region", { name: "Project 我的新对话项目" });
+  expect(within(project).getByText("我的新对话项目")).toBeInTheDocument();
+  expect(within(project).getByRole("button", { name: "新对话检查" })).toHaveAccessibleDescription("Running");
+  expect(screen.getByRole("status", { name: "Conversation list status" })).toHaveTextContent("Loaded 1 conversation; The current list is fully loaded.");
+  expect(screen.getByRole("searchbox", { name: "Search conversations" })).toHaveAttribute("placeholder", "Search all unarchived conversation titles…");
+
+  const settings = screen.getByRole("navigation", { name: "Settings categories" });
+  expect(within(settings).getByRole("button", { name: "Models" })).toHaveAttribute("aria-current", "page");
+  await user.type(screen.getByRole("searchbox", { name: "Search settings" }), "MODELS");
+  expect(within(settings).getAllByRole("button")).toHaveLength(1);
+  await user.click(within(settings).getByRole("button", { name: "Models" }));
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith("models");
+
+  await user.clear(screen.getByRole("searchbox", { name: "Search settings" }));
+  await user.click(screen.getByRole("button", { name: "Switch test language" }));
+  expect(screen.getByRole("navigation", { name: "设置分类" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "项目 我的新对话项目" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "新对话检查" })).toHaveAccessibleDescription("执行中");
 });

@@ -1,7 +1,10 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { File as NodeFile } from "node:buffer";
 import { webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { useState, type PropsWithChildren } from "react";
 import type { APIClient } from "../../api/client";
 import type { WorkspaceFileAttachment } from "../../api/file-attachments";
@@ -257,3 +260,11 @@ it("queues uploaded attachments while project file references are unavailable, t
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, { ...options, wrapper: ({ children }) => <LocaleProvider>
+    {Wrapper ? <Wrapper>{children}</Wrapper> : children}
+  </LocaleProvider> });
+}

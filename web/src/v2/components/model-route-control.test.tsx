@@ -1,5 +1,7 @@
+import type { ReactElement } from "react";
+import { LocaleProvider, useLocale } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import { V2ModelRouteControl, type V2ModelRouteCatalog, type V2ThreadModelRoute } from "./model-route-control";
@@ -391,3 +393,59 @@ describe("V2ModelRouteControl", () => {
 /// <reference types="node" />
 
 import { readFileSync } from "node:fs";
+
+it("switches the open model menus while retaining route identities and requiring an explicit selection", async () => {
+  const client = routeClient();
+  const onManageModels = vi.fn();
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  function LanguageControl() {
+    const { locale, setLocale } = useLocale();
+    return <select aria-label="Test language" value={locale}
+      onChange={(event) => setLocale(event.target.value as "zh-CN" | "en-US")}>
+      <option value="zh-CN">中文</option><option value="en-US">English</option>
+    </select>;
+  }
+  render(<QueryClientProvider client={queries}><LanguageControl />
+    <V2ModelRouteControl client={client} onManageModels={onManageModels} threadID="thread-1" />
+  </QueryClientProvider>);
+  const user = userEvent.setup();
+  const trigger = await screen.findByRole("button", { name: /模型路由.*deepseek-v4-flash/u });
+  await user.click(trigger);
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "en-US" } });
+  expect(screen.getByRole("button", { name: /Model route, current.*deepseek-v4-flash/u })).toBe(trigger);
+  expect(trigger).toHaveTextContent(/^DeepSeek V4 Flash$/u);
+  expect(screen.getByRole("menu", { name: "Model and response settings" })).toBeInTheDocument();
+  const identity = screen.getByLabelText("Full current model route");
+  expect(within(identity).getByText("Model ID")).toBeInTheDocument();
+  expect(within(identity).getByText("deepseek-v4-flash")).toBeInTheDocument();
+  expect(within(identity).getByText("official-deepseek", { exact: false })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Reset to defaults" })).toBeInTheDocument();
+  await user.click(screen.getByRole("menuitem", { name: "ModelDeepSeek V4 Flash" }));
+  const models = screen.getByRole("menu", { name: "Select model route" });
+  const selected = await within(models).findByRole("menuitemradio", { name: "deepseek-v4-flash" });
+  expect(selected).toHaveAttribute("aria-checked", "true");
+  const unavailable = within(models).getByRole("menuitemradio", { name: /^gpt-5\.6-terra/u });
+  expect(unavailable).toBeDisabled();
+  expect(within(unavailable).getByText("API key not configured")).toBeInTheDocument();
+  expect(models.textContent).not.toMatch(/[\u3400-\u9fff]/u);
+  expect(client.selectThreadModelRoute).not.toHaveBeenCalled();
+  expect(onManageModels).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "zh-CN" } });
+  expect(screen.getByRole("menu", { name: "选择模型路由" })).toBe(models);
+  expect(unavailable).toBeDisabled();
+  expect(within(unavailable).getByText("API Key 尚未配置")).toBeInTheDocument();
+  expect(selected).toHaveAttribute("aria-checked", "true");
+  expect(client.selectThreadModelRoute).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Test language" }), { target: { value: "en-US" } });
+  await user.click(screen.getByRole("menuitemradio", { name: "deepseek-v4-pro" }));
+  await waitFor(() => expect(client.selectThreadModelRoute).toHaveBeenCalledWith("thread-1",
+    expect.objectContaining({ action: "select", provider: "official-deepseek", model: "deepseek-v4-pro" })));
+  queries.clear();
+});
+
+function render(ui: ReactElement) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider });
+}

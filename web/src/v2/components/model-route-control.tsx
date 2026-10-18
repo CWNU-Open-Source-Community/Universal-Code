@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
   LoaderCircle, RotateCcw, Settings } from "lucide-react";
 import type { APIClient } from "../../api/client";
+import { useLocale } from "../../lib/locale";
 import type { AvailableModelRouteCollectionView, AvailableModelRouteView,
   ThreadModelRouteView } from "../../api/types";
 
@@ -56,31 +57,31 @@ function modelDisplayName(model: string): string {
   return basename;
 }
 
-function unavailableReason(route: V2AvailableModelRoute): string {
+function unavailableReason(route: V2AvailableModelRoute, t: ReturnType<typeof useLocale>["t"]): string {
   const reason = route.unavailable_reason.trim();
   const reasons: Record<string, string> = {
-    provider_disabled: "供应商已停用",
-    credential_not_configured: "API Key 尚未配置",
-    invalid_configuration: "供应商配置无效，请检查端点和高级 JSON",
-    provider_unavailable: "供应商当前不可用",
-    harness_qualification_required: "Harness 尚未通过能力验证",
-    not_configured: "尚未完成 Harness 能力验证",
-    protocol_mismatch: "API 协议与 Harness 不兼容",
-    auth_failed: "API Key 验证失败",
-    network_failed: "无法连接模型供应商",
-    rate_limit: "供应商正在限流，请稍后重试",
-    capacity: "供应商额度或容量不足，请检查账单或服务状态",
-    model_unsupported: "供应商不支持该模型",
-    unavailable: "Harness 可用性尚未确认",
+    provider_disabled: t("供应商已停用", "Provider disabled"),
+    credential_not_configured: t("API Key 尚未配置", "API key not configured"),
+    invalid_configuration: t("供应商配置无效，请检查端点和高级 JSON", "Invalid provider configuration. Check the endpoint and advanced JSON."),
+    provider_unavailable: t("供应商当前不可用", "Provider currently unavailable"),
+    harness_qualification_required: t("Harness 尚未通过能力验证", "Harness capability verification pending"),
+    not_configured: t("尚未完成 Harness 能力验证", "Harness capability verification incomplete"),
+    protocol_mismatch: t("API 协议与 Harness 不兼容", "API protocol is incompatible with the harness"),
+    auth_failed: t("API Key 验证失败", "API key verification failed"),
+    network_failed: t("无法连接模型供应商", "Unable to connect to model provider"),
+    rate_limit: t("供应商正在限流，请稍后重试", "Provider rate limit reached. Try again later."),
+    capacity: t("供应商额度或容量不足，请检查账单或服务状态", "Provider quota or capacity is insufficient. Check billing or service status."),
+    model_unsupported: t("供应商不支持该模型", "Provider does not support this model"),
+    unavailable: t("Harness 可用性尚未确认", "Harness availability is unconfirmed"),
   };
-  if (reason) return reasons[reason] ?? "当前路由不可用，请检查供应商配置";
-  if (!route.enabled) return "供应商已停用";
-  if (!["configured", "not_required"].includes(route.credential_status)) return "API Key 尚未配置";
-  if (!route.harness_ready) return "Harness 尚未通过能力验证";
+  if (reason) return reasons[reason] ?? t("当前路由不可用，请检查供应商配置", "Current route unavailable. Check provider configuration.");
+  if (!route.enabled) return t("供应商已停用", "Provider disabled");
+  if (!["configured", "not_required"].includes(route.credential_status)) return t("API Key 尚未配置", "API key not configured");
+  if (!route.harness_ready) return t("Harness 尚未通过能力验证", "Harness capability verification pending");
   if (!["available", "trusted_builtin", "verified"].includes(route.qualification_status)) {
-    return reasons[route.qualification_status] ?? "当前模型尚未完成能力验证";
+    return reasons[route.qualification_status] ?? t("当前模型尚未完成能力验证", "Model capability verification incomplete");
   }
-  return "当前路由不可用";
+  return t("当前路由不可用", "Current route unavailable");
 }
 
 function focusMenuItem(root: HTMLElement | null, position: "first" | "last") {
@@ -114,6 +115,7 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
   onManageModels: (prepareForDraft?: boolean) => void;
   onPendingRouteChange?: (route: V2PendingModelRoute | null) => void;
 }) {
+  const { t } = useLocale();
   const catalogAvailable = Boolean(client.hasModelControl);
   const routeControlAvailable = catalogAvailable && (threadID
     ? true
@@ -228,12 +230,13 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
     source: "composer_override",
     applies_to: "next_run" as const,
   } : undefined;
-  const label = current?.model || (routeQuery.isLoading ? "正在读取模型" : "模型");
+  const label = current?.model || (routeQuery.isLoading ? t("正在读取模型", "Loading model") : t("模型", "Model"));
   const providerLabel = current ? catalogQuery.data?.routes.find((route) =>
     route.provider_id === current.provider)?.provider_name ||
     knownProviderNames[current.provider] || current.provider : "";
   const triggerLabel = modelDisplayName(label);
-  const routeDescription = `${providerLabel || "默认"} · ${label}；推理强度：随模型`;
+  const routeDescription = t(`${providerLabel || "默认"} · ${label}；推理强度：随模型`,
+    `${providerLabel || "Default"} · ${label}; Reasoning effort: model default`);
   const selectRoute = (route: V2AvailableModelRoute) => {
     if (!threadID) {
       onPendingRouteChange?.({ provider: route.provider_id, model: route.model });
@@ -262,46 +265,46 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
 
   return <div className="v2-model-route-control" ref={rootRef}>
     <button aria-expanded={level !== "closed"} aria-haspopup="menu"
-      aria-label={`模型路由，当前 ${routeDescription}`} className="v2-model-route-trigger"
+      aria-label={t(`模型路由，当前 ${routeDescription}`, `Model route, current ${routeDescription}`)} className="v2-model-route-trigger"
       disabled={!routeControlAvailable} onClick={() => setLevel((currentLevel) =>
         currentLevel === "closed" ? "settings" : "closed")} ref={triggerRef}
-      title={routeControlAvailable ? routeDescription : "当前启动未开放模型路由控制"}
+      title={routeControlAvailable ? routeDescription : t("当前启动未开放模型路由控制", "Model route control is unavailable in this launch")}
       type="button">
       {(routeQuery.isFetching || mutation.isPending) && <LoaderCircle aria-hidden="true" className="spin" size={14} />}
-      <span>{triggerLabel}</span>{nextRunNotice && <em>下一轮</em>}
+      <span>{triggerLabel}</span>{nextRunNotice && <em>{t("下一轮", "Next turn")}</em>}
       <ChevronDown aria-hidden="true" size={14} />
     </button>
 
-    {level === "settings" && <div aria-label="模型与响应设置"
+    {level === "settings" && <div aria-label={t("模型与响应设置", "Model and response settings")}
       className="v2-model-route-popover v2-model-route-settings" onKeyDown={moveMenuFocus}
       ref={settingsMenuRef} role="menu">
-      {current && <dl className="v2-model-route-current" aria-label="当前模型完整路由">
-        <div><dt>供应商</dt><dd>{providerLabel}{providerLabel !== current.provider ? `（${current.provider}）` : ""}</dd></div>
-        <div><dt>模型 ID</dt><dd><code>{current.model}</code></dd></div>
+      {current && <dl className="v2-model-route-current" aria-label={t("当前模型完整路由", "Full current model route")}>
+        <div><dt>{t("供应商", "Provider")}</dt><dd>{providerLabel}{providerLabel !== current.provider ? `（${current.provider}）` : ""}</dd></div>
+        <div><dt>{t("模型 ID", "Model ID")}</dt><dd><code>{current.model}</code></dd></div>
       </dl>}
       <button onClick={() => setLevel("models")} onKeyDown={(event) => {
         if (event.key === "ArrowRight") { event.preventDefault(); setLevel("models"); }
       }} role="menuitem" type="button">
-        <span>模型</span><strong title={routeDescription}>{triggerLabel}</strong><ChevronRight aria-hidden="true" size={15} />
+        <span>{t("模型", "Model")}</span><strong title={routeDescription}>{triggerLabel}</strong><ChevronRight aria-hidden="true" size={15} />
       </button>
-      <button disabled role="menuitem" title="当前供应商尚未声明 reasoning_effort" type="button">
-        <span>推理强度</span><strong>随模型</strong><ChevronRight aria-hidden="true" size={15} />
+      <button disabled role="menuitem" title={t("当前供应商尚未声明 reasoning_effort", "The current provider has not declared reasoning_effort")} type="button">
+        <span>{t("推理强度", "Reasoning effort")}</span><strong>{t("随模型", "Model default")}</strong><ChevronRight aria-hidden="true" size={15} />
       </button>
-      <button disabled role="menuitem" title="速度由当前模型路由决定" type="button">
-        <span>速度</span><strong>自动</strong><ChevronRight aria-hidden="true" size={15} />
+      <button disabled role="menuitem" title={t("速度由当前模型路由决定", "Speed is determined by the current model route")} type="button">
+        <span>{t("速度", "Speed")}</span><strong>{t("自动", "Automatic")}</strong><ChevronRight aria-hidden="true" size={15} />
       </button>
       <i aria-hidden="true" />
       <button disabled={mutation.isPending || !current || current.source === "default"}
         onClick={resetRoute} role="menuitem" type="button">
-        <RotateCcw aria-hidden="true" size={15} /><span>重置为默认设置</span>
+        <RotateCcw aria-hidden="true" size={15} /><span>{t("重置为默认设置", "Reset to defaults")}</span>
       </button>
-      {nextRunNotice && <p className="v2-model-route-notice">当前执行继续使用原模型，下一轮使用所选模型。</p>}
+      {nextRunNotice && <p className="v2-model-route-notice">{t("当前执行继续使用原模型，下一轮使用所选模型。", "The current execution keeps its model. The selected model will be used in the next turn.")}</p>}
       {mutation.isError && <p className="v2-model-route-error" role="alert">
         <CircleAlert aria-hidden="true" size={14} />{mutation.error instanceof Error
-          ? mutation.error.message : "模型路由更新失败"}</p>}
+          ? mutation.error.message : t("模型路由更新失败", "Failed to update model route")}</p>}
     </div>}
 
-    {level === "models" && <div aria-label="选择模型路由"
+    {level === "models" && <div aria-label={t("选择模型路由", "Select model route")}
       className="v2-model-route-popover v2-model-route-list" onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();
@@ -310,21 +313,21 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
         }
         moveMenuFocus(event);
       }} ref={modelsMenuRef} role="menu">
-      <header><button aria-label="返回模型设置" onClick={() => setLevel("settings")}
+      <header><button aria-label={t("返回模型设置", "Back to model settings")} onClick={() => setLevel("settings")}
         role="menuitem" type="button"><ChevronLeft aria-hidden="true" size={16} /></button>
-        <strong>模型</strong></header>
+        <strong>{t("模型", "Model")}</strong></header>
       <div className="v2-model-route-scroll">
         {catalogQuery.isLoading && <p className="v2-model-route-empty">
-          <LoaderCircle aria-hidden="true" className="spin" size={15} />正在读取可用模型…</p>}
+          <LoaderCircle aria-hidden="true" className="spin" size={15} />{t("正在读取可用模型…", "Loading available models…")}</p>}
         {catalogQuery.isError && <p className="v2-model-route-error" role="alert">
-          <CircleAlert aria-hidden="true" size={14} />模型列表暂时不可用</p>}
+          <CircleAlert aria-hidden="true" size={14} />{t("模型列表暂时不可用", "Model list temporarily unavailable")}</p>}
         {!catalogQuery.isLoading && !catalogQuery.isError && groups.length === 0 &&
-          <p className="v2-model-route-empty">还没有可用模型。请先配置供应商和 API Key。</p>}
+          <p className="v2-model-route-empty">{t("还没有可用模型。请先配置供应商和 API Key。", "No models available yet. Configure a provider and API key first.")}</p>}
         {groups.map((group) => <section aria-label={group.name} key={group.id}>
           <h3>{group.name}</h3>
           {group.routes.map((route) => {
             const selected = current?.provider === route.provider_id && current.model === route.model;
-            const reason = route.selectable ? "" : unavailableReason(route);
+            const reason = route.selectable ? "" : unavailableReason(route, t);
             return <button aria-checked={selected} disabled={!route.selectable || mutation.isPending}
               key={`${route.provider_id}\u0000${route.model}`}
               onClick={() => selectRoute(route)}
@@ -337,9 +340,9 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
       </div>
       <footer>{mutation.isError && <span className="v2-model-route-error" role="alert">
           <CircleAlert aria-hidden="true" size={14} />{mutation.error instanceof Error
-            ? mutation.error.message : "模型路由更新失败"}</span>}
+            ? mutation.error.message : t("模型路由更新失败", "Failed to update model route")}</span>}
         <button onClick={closeForNavigation} role="menuitem" type="button">
-        <Settings aria-hidden="true" size={15} /><span>{hasSelectableRoutes ? "管理模型供应商…" : "添加模型供应商"}</span>
+        <Settings aria-hidden="true" size={15} /><span>{hasSelectableRoutes ? t("管理模型供应商…", "Manage model providers…") : t("添加模型供应商", "Add model provider")}</span>
       </button></footer>
     </div>}
   </div>;

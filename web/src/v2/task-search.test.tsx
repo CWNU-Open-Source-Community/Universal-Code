@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../api/client";
 import type { ThreadView, WorkspaceView } from "../api/types";
 import { useConnectionStore } from "../state/connection";
+import { LocaleProvider } from "../lib/locale";
 import { V2Workbench } from "./app";
 import { v2QueryKeys } from "./query-keys";
 
@@ -39,7 +40,7 @@ function start(getThreads: (query: { q?: string }, cursor: string, signal: Abort
     submitThreadTurn: vi.fn(), executeRun: vi.fn(), transitionThread: vi.fn() } as unknown as APIClient;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(queryClient);
-  render(<QueryClientProvider client={queryClient}><V2Workbench client={client} /></QueryClientProvider>);
+  render(<QueryClientProvider client={queryClient}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
   const listCalls = () => getPage.mock.calls.filter(([path]) => path === "/threads");
   return { client, queryClient, listCalls };
 }
@@ -48,6 +49,8 @@ async function openSearch() {
   await userEvent.setup().click(screen.getByRole("button", { name: "搜索" }));
   return screen.getByRole("searchbox", { name: "搜索对话" });
 }
+
+beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
 afterEach(() => {
   cleanup();
   clients.splice(0).forEach((client) => client.clear());

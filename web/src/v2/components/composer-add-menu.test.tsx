@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { useRef } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as renderComponent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
 
@@ -94,3 +97,8 @@ it("closes with a second trigger click and with Shift+Tab without reopening on b
   await user.click(trigger); await user.tab({ shift: true });
   expect(screen.queryByRole("menu")).not.toBeInTheDocument(); expect(trigger).toHaveFocus();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  return renderComponent(ui, { wrapper: LocaleProvider, ...options });
+}
