@@ -1,0 +1,13 @@
+name: PR follow-up live acceptance
+on:
+  push:
+    branches: ['Qiyuanqiii/pr-followup-live-head-*']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: go test ./...
