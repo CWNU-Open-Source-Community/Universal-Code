@@ -58,7 +58,11 @@ command remains governed by the selected runtime and current task permissions.
 Open the Run's **Agents** page, expand **Create workflow**, enter a name, select
 **Share current workspace**, enter the task, and keep **Execution worker**
 selected. Leave delegated tools empty to inherit,
-or enter a comma-separated list to narrow them. **Include current parent history**
+or enter a comma-separated list to narrow them. New execution workers default to
+**Code delivery: verified completion**. Choose **Analysis report** for research or
+inspection without a code-delivery test requirement. A code-delivery step needs
+`run_tests` in its delegated tools. Its optional **Test directory** is a relative
+project directory; leaving it empty uses the project root. **Include current parent history**
 is off by default; enable it only when that task needs the parent's current
 history. Save the definition, then start
 it. The JSON editor exposes the task and workflow budgets and includes a branch
@@ -94,6 +98,36 @@ IDs and note IDs). Inputs can refer to `$input` or a completed step using a JSON
 pointer. Conditions compare the referenced JSON value with `equals`. Repeat checks
 its condition after each iteration and fails explicitly if `max_iterations` is
 exhausted without success.
+
+### Code-delivery completion
+
+A worker step can declare `completion: {"mode":"verified_code","target":"."}`.
+The target is a relative directory passed to the existing `run_tests` tool, not a
+shell command. Omitted `completion`, or `completion: {"mode":"report"}`, retains
+report-based completion for existing definitions and analysis steps. Read-only
+workers cannot declare `verified_code`.
+
+For code delivery, the host checks the native project-test Job before accepting
+the child's successful report. It uses the persisted workflow step and child
+identity to read the Job, including a test started in an earlier continued
+attempt of that same child. A prose claim or Job ID in the model's report is not
+verification evidence. The receipt must be passed and reusable for the current
+source, test configuration, permissions, workspace and runtime; the actual Job
+must have exited successfully and finished process-tree cleanup.
+
+Before completing the entire workflow, the host checks the required test
+directories again. Later source changes invalidate earlier results. A more
+recent test failure or unfinished invocation in this execution takes precedence
+over an earlier pass for that directory. A later successful verification step
+can provide the current result after subsequent edits.
+
+`state.verifications` records the last host check for each required directory,
+including its time, Job, source version and rejection reason. The interface calls
+this **Last verification checks**: viewing a completed execution does not run
+tests or certify later edits. A failed check prevents workflow completion and is
+shown with its reason. Rerunning remains an explicit action using current
+permissions. Receipt inspection is internal to the host's claimed workflow;
+ordinary worker tool access keeps its existing resource ownership rules.
 
 A Batch step uses `batch_plan: {"step":"$input","path":"/plan_id"}`. Its output
 contains accepted receipt and review IDs, the integration branch and commit, and

@@ -21,6 +21,8 @@ type ThreadContextCompactionStore interface {
 	CompleteThreadContextCompactionCall(context.Context, int64, string, *llm.Usage, time.Duration, error) (domain.ThreadContextCompactionOperation, error)
 	CommitThreadContextCompaction(context.Context, int64, contextmgr.Result) (domain.ThreadContextCompactionResult, error)
 	FailThreadContextCompaction(context.Context, int64, error) error
+	ListThreadContextCompactions(context.Context, string) (domain.ThreadContextCompactionOperations, error)
+	RecoverThreadContextCompaction(context.Context, domain.ThreadContextCompactionRecoveryRequest) (domain.ThreadContextCompactionOperation, domain.ThreadContextCompactionSnapshot, error)
 }
 
 type ThreadContextCompactionService struct {
@@ -84,9 +86,54 @@ func (s *ThreadContextCompactionService) Compact(ctx context.Context, request do
 	if s.router.RequiresPrivateAssistantHistory(ref) {
 		return view, apperror.New(apperror.CodeFailedPrecondition, "thread_context_unsupported: native private assistant history cannot be replaced by a context summary; select a compatible model for the next Thread Run")
 	}
-	generator := &threadContextSummaryGenerator{service: s, operation: operation, snapshot: snapshot, focus: request.Focus}
+	return s.commitCandidate(ctx, operation, snapshot, request.Focus)
+}
+
+func (s *ThreadContextCompactionService) ListOperations(ctx context.Context, threadID string) (domain.ThreadContextCompactionOperations, error) {
+	if s == nil || s.store == nil {
+		return domain.ThreadContextCompactionOperations{}, apperror.New(apperror.CodeFailedPrecondition, "Thread context compaction store is unavailable")
+	}
+	if !domain.ValidAgentID(threadID) {
+		return domain.ThreadContextCompactionOperations{}, apperror.New(apperror.CodeInvalidArgument, "Thread identity is invalid")
+	}
+	return s.store.ListThreadContextCompactions(ctx, threadID)
+}
+
+func (s *ThreadContextCompactionService) Recover(ctx context.Context, request domain.ThreadContextCompactionRecoveryRequest) (domain.ThreadContextCompactionOperationView, error) {
+	if s == nil || s.store == nil {
+		return domain.ThreadContextCompactionOperationView{}, apperror.New(apperror.CodeFailedPrecondition, "Thread context compaction store is unavailable")
+	}
+	if request.Action == "resume" && s.execution != nil {
+		state, err := s.execution.ExecutionState(ctx, request.ThreadID)
+		if err != nil {
+			return domain.ThreadContextCompactionOperationView{}, err
+		}
+		if state.State != "idle" {
+			return domain.ThreadContextCompactionOperationView{}, apperror.New(apperror.CodeConflict, "thread_context_busy: wait for the current task to finish")
+		}
+	}
+	operation, snapshot, err := s.store.RecoverThreadContextCompaction(ctx, request)
+	if err != nil {
+		return domain.ThreadContextCompactionOperationView{}, apperror.Normalize(err)
+	}
+	if request.Action != "resume" || operation.Status != "generated" {
+		return operation.View(), nil
+	}
+	result, err := s.commitCandidate(ctx, operation, snapshot, "")
+	if err != nil {
+		// Retain a generated candidate on a transient recovery failure. The
+		// operator can retry after inspecting it or explicitly discard it.
+		return operation.View(), err
+	}
+	operation.Status, operation.Result = result.Status, result
+	return operation.View(), nil
+}
+
+func (s *ThreadContextCompactionService) commitCandidate(ctx context.Context, operation domain.ThreadContextCompactionOperation, snapshot domain.ThreadContextCompactionSnapshot, focus string) (domain.ThreadContextCompactionResult, error) {
+	var view domain.ThreadContextCompactionResult
+	generator := &threadContextSummaryGenerator{service: s, operation: operation, snapshot: snapshot, focus: focus}
 	config := contextmgr.DefaultConfig()
-	config.PreserveRecentMessages = preserveRecent
+	config.PreserveRecentMessages = 4
 	result, err := contextmgr.NewManager(nil, config).WithSummaryGenerator(generator, operation.SourceSHA256).PrepareCandidate(ctx, snapshot.Run.SessionID, snapshot.Mission.WorkspaceID, snapshot.Messages, snapshot.Summary, snapshot.HasSummary)
 	if err != nil {
 		return view, apperror.Normalize(err)
@@ -210,6 +257,9 @@ func (g *threadContextSummaryGenerator) generate(ctx context.Context, input cont
 	}
 	if err = errors.Join(callErr, persistErr, accountingErr, cancelled, ctx.Err()); err != nil {
 		return result, err
+	}
+	if completed.Status == "failed" {
+		return result, apperror.New(completed.ErrorCode, completed.ErrorMessage)
 	}
 	return threadContextSummaryResponse(completed), nil
 }

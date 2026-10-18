@@ -612,7 +612,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			workspaceCheckpoints, commandRuntimeDrydocks, permissionCapabilities).WithAdvanced(gitAdvancedService)
 	}
 	var prFollowupWorker *application.PRFollowupService
-	workflowControl := application.NewWorkflowService(a.store, specialistExecution).WithBatchDelivery(batchWorkbench)
+	workflowControl := application.NewWorkflowService(a.store, specialistExecution).WithBatchDelivery(batchWorkbench).WithProjectVerification(commandRuntime)
 	if controlToken != "" && *scheduledJobWorker {
 		scheduledJobs.WithExecution(threadTurnControl, workflowControl)
 	}

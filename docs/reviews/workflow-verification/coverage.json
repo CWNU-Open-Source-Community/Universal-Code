@@ -1,0 +1,130 @@
+{
+  "mode": "ocr_delegate",
+  "base": "08b9f146edc4083bd1655620efddcd51d0b7fd18",
+  "reviewed_head": "7c3dd2b8",
+  "total_files": 21,
+  "ocr_selected_production": 10,
+  "manually_added_text": 6,
+  "visually_checked": 3,
+  "generated_excluded": 2,
+  "unread_in_scope": 0,
+  "coverage_note": "File inclusion is not full-file line coverage; existing large files are recorded as diff and reachable context.",
+  "open_findings": [],
+  "resolved_findings": [
+    {
+      "id": "workflow-run-pause",
+      "priority": 2,
+      "trigger": "The owning Run pauses during native receipt verification after the initial workflow status read.",
+      "effect": "A valid completed child could be persisted as a failed workflow.",
+      "fix": "6114bfa6",
+      "validation": "Four Run Pause/Resume timing cases and two Run Cancel cases; TestWorkflow* passed."
+    }
+  ],
+  "files": [
+    {
+      "path": "internal/app/api_command.go",
+      "coverage": "diff_and_wiring",
+      "reviewer": "delegate"
+    },
+    {
+      "path": "internal/application/workflow.go",
+      "coverage": "diff_and_call_chain",
+      "reviewer": "delegate"
+    },
+    {
+      "path": "internal/application/workflow_verification.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/desktop/control_plane.go",
+      "coverage": "diff_and_wiring",
+      "reviewer": "delegate"
+    },
+    {
+      "path": "internal/domain/workflow.go",
+      "coverage": "diff_and_call_chain",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/store/workflow.go",
+      "coverage": "diff_and_call_chain",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/httpapi/openapi.go",
+      "coverage": "diff_and_schema_registration",
+      "reviewer": "primary"
+    },
+    {
+      "path": "internal/httpapi/workflow.go",
+      "coverage": "diff_and_request_contract",
+      "reviewer": "primary"
+    },
+    {
+      "path": "web/src/components/workflow-panel.css",
+      "coverage": "full",
+      "reviewer": "primary"
+    },
+    {
+      "path": "web/src/components/workflow-panel.tsx",
+      "coverage": "diff_and_component_flow",
+      "reviewer": "primary"
+    },
+    {
+      "path": "internal/application/workflow_verification_test.go",
+      "coverage": "full",
+      "reviewer": "delegate"
+    },
+    {
+      "path": "internal/domain/workflow_test.go",
+      "coverage": "full",
+      "reviewer": "delegate"
+    },
+    {
+      "path": "internal/httpapi/workflow_test.go",
+      "coverage": "full",
+      "reviewer": "primary"
+    },
+    {
+      "path": "web/src/components/workflow-panel.test.tsx",
+      "coverage": "full",
+      "reviewer": "primary"
+    },
+    {
+      "path": "docs/acceptance/2026-10-18-workflow-verification.md",
+      "coverage": "full",
+      "reviewer": "primary"
+    },
+    {
+      "path": "docs/execution-workers.md",
+      "coverage": "diff_and_related_section",
+      "reviewer": "primary"
+    },
+    {
+      "path": "docs/evidence/workflow-verification/desktop-proof.png",
+      "coverage": "visual",
+      "reviewer": "primary"
+    },
+    {
+      "path": "docs/evidence/workflow-verification/desktop-proof-dark.png",
+      "coverage": "visual",
+      "reviewer": "primary"
+    },
+    {
+      "path": "docs/evidence/workflow-verification/mobile-proof.png",
+      "coverage": "visual",
+      "reviewer": "primary"
+    },
+    {
+      "path": "docs/openapi.json",
+      "coverage": "generated_exclusion",
+      "reviewer": "generator_and_golden_test"
+    },
+    {
+      "path": "web/src/api/schema.d.ts",
+      "coverage": "generated_exclusion",
+      "reviewer": "generator_and_typecheck"
+    }
+  ]
+}

@@ -1289,6 +1289,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveThreadContextCompaction(tracked, request, requestID, threadID)
 		return
 	}
+	if threadID, operationID, matched := matchThreadContextCompactionRecoveryPath(request.URL.Path); matched {
+		a.serveThreadContextCompactionRecovery(tracked, request, requestID, threadID, operationID)
+		return
+	}
 	if threadID, action, matched := matchThreadMutationPath(request.URL.Path); matched &&
 		request.Method != http.MethodGet {
 		a.serveThreadMutationControl(tracked, request, requestID, threadID, action)
