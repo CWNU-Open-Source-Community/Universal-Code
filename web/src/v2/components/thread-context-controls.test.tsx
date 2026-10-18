@@ -244,9 +244,13 @@ test("compact conflict reloads a pending operation and exposes recovery instead 
   expect(f.postControl).toHaveBeenCalledTimes(1);
 });
 
-test("compact retry after a conflict retains its request identity when no pending record exists", async () => {
+test.each([
+  new APIRequestError("thread_context_operation_pending: request is unresolved", "CONFLICT", 409),
+  new APIRequestError("thread_context_busy: another operation is pending", "CONFLICT", 409),
+  new Error("response lost"),
+])("compact retry retains its request identity for an uncertain outcome: %s", async (failure) => {
   const f = fixture(); const user = userEvent.setup();
-  f.postControl.mockRejectedValueOnce(new APIRequestError("try again", "CONFLICT", 409))
+  f.postControl.mockRejectedValueOnce(failure)
     .mockResolvedValueOnce({ ...compactionResult, run_id: "current-run", replayed: true });
   f.mount(<V2ThreadCompactControl client={f.client} threadID="thread-1" runID="current-run" />);
   const compact = screen.getByRole("button", { name: "压缩当前对话" });
@@ -255,6 +259,24 @@ test("compact retry after a conflict retains its request identity when no pendin
   await waitFor(() => expect(compact).toBeEnabled()); await user.click(compact);
   expect(await screen.findByText("已压缩 20 条较早消息，保留 4 条近期消息。")).toBeVisible();
   expect(f.postControl.mock.calls[1]).toEqual(f.postControl.mock.calls[0]);
+});
+
+test("source-changed terminal failure permits a fresh compaction identity", async () => {
+  const f = fixture(); const user = userEvent.setup();
+  f.postControl.mockImplementationOnce(async () => {
+    f.operations.operations = [{ ...compactionOperation("failed"), run_id: "current-run", terminal_at: when,
+      error_message: "thread_context_source_changed: history changed while summarizing" }];
+    throw new APIRequestError("thread_context_source_changed: history changed while summarizing", "CONFLICT", 409);
+  }).mockResolvedValueOnce({ ...compactionResult, run_id: "current-run" });
+  f.mount(<V2ThreadCompactControl client={f.client} threadID="thread-1" runID="current-run" />);
+  const compact = screen.getByRole("button", { name: "压缩当前对话" });
+  await waitFor(() => expect(compact).toBeEnabled()); await user.click(compact);
+  await screen.findByRole("alert");
+  await waitFor(() => expect(compact).toBeEnabled()); await user.click(compact);
+  expect(await screen.findByText("已压缩 20 条较早消息，保留 4 条近期消息。")).toBeVisible();
+  expect(f.postControl.mock.calls[1][0]).toBe(f.postControl.mock.calls[0][0]);
+  expect(f.postControl.mock.calls[1][1]).toEqual(f.postControl.mock.calls[0][1]);
+  expect(f.postControl.mock.calls[1][2]).not.toBe(f.postControl.mock.calls[0][2]);
 });
 
 test("failed operation read blocks new compaction until an explicit successful refresh", async () => {
@@ -291,5 +313,29 @@ test("in-flight compact can be checked and discarded without a late response rep
   await act(async () => { rejectCompact(new APIRequestError("late discarded response", "CONFLICT", 409)); });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByText("已停止采用本次结果。")).toBeVisible();
+  expect(f.postControl).toHaveBeenCalledTimes(2);
+});
+
+test.each(["completed", "noop"] as const)("discard racing an already %s compaction reports its saved result", async (status) => {
+  const f = fixture(); const user = userEvent.setup();
+  let rejectCompact!: (error: Error) => void;
+  f.postControl.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectCompact = reject; }))
+    .mockImplementationOnce(async () => {
+      const committed = { ...compactionOperation(status), terminal_at: when, result: { ...compactionResult, status } };
+      f.operations.operations = [committed]; return committed;
+    });
+  f.mount(<V2ThreadCompactControl client={f.client} threadID="thread-1" runID="current-run" />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "压缩当前对话" })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: "压缩当前对话" }));
+  await user.click(screen.getByText("压缩记录"));
+  f.operations.operations = [compactionOperation("started")];
+  await user.click(screen.getByRole("button", { name: "刷新核对记录" }));
+  await user.click(await screen.findByRole("button", { name: "放弃本次压缩" }));
+  const notice = status === "completed" ? "已压缩 20 条较早消息，保留 4 条近期消息。" : "当前没有需要压缩的较早消息。";
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(notice));
+  expect(screen.queryByText("已停止采用本次结果。")).not.toBeInTheDocument();
+  await act(async () => { rejectCompact(new APIRequestError("late original response", "CONFLICT", 409)); });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(notice);
   expect(f.postControl).toHaveBeenCalledTimes(2);
 });

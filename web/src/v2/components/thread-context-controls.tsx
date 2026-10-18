@@ -140,7 +140,8 @@ export function V2ThreadCompactControl({ client, threadID, runID }: { client: AP
     } catch (failure) {
       if (attempt !== compactAttempt.current) return;
       setError(message(failure));
-      // A conflict can describe an operation that is still running. Keep its request identity.
+      // Source changes end this intent; pending/busy conflicts and unknown responses retain it.
+      if (failure instanceof APIRequestError && failure.status === 409 && failure.message.startsWith("thread_context_source_changed:")) intent.clear();
       await Promise.all([pins.refetch(), operations.refetch()]);
     }
     finally { if (attempt === compactAttempt.current) setPending(false); }
@@ -150,9 +151,9 @@ export function V2ThreadCompactControl({ client, threadID, runID }: { client: AP
     setRecovering(operation.operation_id); setNotice(""); setError("");
     try {
       const result = await recoverThreadCompaction(client, threadID, operation, action);
-      if (action === "discard") { compactAttempt.current++; setPending(false); }
+      if (action === "discard" && !unfinishedCompaction(result)) { compactAttempt.current++; setPending(false); }
       intent.clear();
-      setNotice(action === "discard" ? "已停止采用本次结果。" : result.result ? compactionNotice(result.result) : "压缩记录已核对。");
+      setNotice(result.result ? compactionNotice(result.result) : action === "discard" && result.status === "failed" ? "已停止采用本次结果。" : "压缩记录已核对。");
       await refreshContext();
     } catch (failure) {
       setError(message(failure));
