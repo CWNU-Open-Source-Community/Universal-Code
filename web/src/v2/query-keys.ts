@@ -10,4 +10,5 @@ export const v2QueryKeys = {
   approvals: (runID: string) => ["v2", "run", runID, "approvals"] as const,
   workspaces: ["v2", "workspaces"] as const,
   inspectorRecords: ["v2", "inspector", "records"] as const,
+  usage: (period: string, utcOffsetMinutes: number) => ["v2", "usage", period, utcOffsetMinutes] as const,
 };

@@ -57,7 +57,7 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 		if err := rejectQuery(request.URL.Query()); err != nil {
 			return nil, nil, err
 		}
-		resources := []string{"threads", "runs", "sessions", "work-items", "notes", "artifacts",
+		resources := []string{"usage", "threads", "runs", "sessions", "work-items", "notes", "artifacts",
 			"agent-graph", "delegations", "readonly-fanout", "finding-reports",
 			"external-skills", "workspaces", "workspace-explorer", "workspace-search", "models",
 			"project-instructions", "long-term-memories", "session-tree",
@@ -182,6 +182,8 @@ func (a *API) route(request *http.Request) (any, *Page, error) {
 			return nil, nil, err
 		}
 		return a.health(request)
+	case "/api/v1/usage":
+		return a.usageStatistics(request)
 	case "/api/v1/capabilities":
 		return a.runtimeCapabilities(request)
 	case ExtensionInventoryPath:

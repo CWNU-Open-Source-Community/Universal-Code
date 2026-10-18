@@ -40,6 +40,33 @@ false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
 
+### 用量统计 / Usage
+
+在「设置 → 用量统计」查看 Universal-Code 自身的模型调用。今日、近 30 天和全部
+历史可切换 Token 总量、输入/输出/缓存明细、趋势、模型占比和最近八个会话；点击
+会话标题可回到对话。活动热图固定展示最近 26 周，支持方向键查看日期。页面沿用
+当前主题和 Mono 字体，中文与 English 即时切换。
+
+[深色页面](evidence/usage-statistics/usage-dark.png)和
+[窄屏页面](evidence/usage-statistics/usage-mobile.png)来自实际浏览器；截图中的用量为
+演示数据，用于检查图表与排版。
+
+Token 按持久化调用完成时间统计，包含主代理、子代理、并行调用、上下文压缩及
+已经产生用量的失败调用。缓存是输入 Token 的一部分；没有返回的用量和缓存明细
+会明确标注。日期按页面显示的当前 UTC 偏移划分，页面打开时每分钟更新。
+
+费用按实际结算时间统计，只展示已有完整价格记录的本地 USD 估算，并分别注明
+已定价、缺少完整计价和未记录费用的调用。未启用费用记录的历史调用不能据此推算
+真实账单。跨日结算与 Token 的日期可能不同，实际收费以供应商账单为准。
+
+`GET /api/v1/usage?period=30d&utc_offset_minutes=480` uses existing read access.
+`period` accepts `today`, `30d`, or `all`; the fixed UTC offset is in minutes.
+Only this application's durable local records are aggregated. The endpoint does
+not contact providers or inspect other applications' logs. Model token totals
+include all agent roles; cache tokens are already included in input. Costs use
+priced settlements, independently dated from call receipts. Missing usage and
+pricing remain visible through coverage counts.
+
 ### Markdown 输入与复制
 
 Web/Desktop 的输入框默认显示 Markdown 格式，支持标题、粗体、引用、列表、任务列表、

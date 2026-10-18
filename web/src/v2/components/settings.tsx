@@ -31,6 +31,7 @@ import "./settings.css";
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
 const SandboxEnvironmentPanel = lazy(() => import("../../components/sandbox-environment-panel").then((module) => ({ default: module.SandboxEnvironmentPanel })));
 const VerificationSettingsPanel = lazy(() => import("../../components/verification-settings-panel").then((module) => ({ default: module.VerificationSettingsPanel })));
+const UsageSettings = lazy(() => import("./usage-settings").then((module) => ({ default: module.UsageSettings })));
 
 function SettingRow({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return <div className="v2-setting-row"><div><strong>{title}</strong><span>{detail}</span></div>
@@ -360,7 +361,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
 }) {
   const { t } = useLocale();
   return <main className="v2-settings-main"><div className="v2-settings-toolbar" />
-    <div className="v2-settings-scroll"><div className="v2-settings-content">
+    <div className="v2-settings-scroll"><div className={`v2-settings-content${section === "usage" ? " v2-usage-content" : ""}`}>
       {section === "general" && <GeneralSettings onPermissions={() => onSelectSection("permissions")}
         threadID={threadID} workspaces={workspaces} />}
       {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}
@@ -377,6 +378,9 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         <V2ExecutionSettings client={client} threadID={threadID} workspaces={workspaces} />
         <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
       {section === "appearance" && <AppearanceSettings />}
+      {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
+        <UsageSettings client={client} onOpenThread={onOpenThread} />
+      </Suspense>}
       {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("检测用户安装，保存下次启动配置，再回到任务选择编码环境。", "Detect installed environments, save settings for the next startup, then return to your task to choose a coding environment.")}</p>
         <Suspense fallback={<p role="status">{t("正在加载执行环境设置…", "Loading execution environment settings…")}</p>}><SandboxEnvironmentPanel client={client} />
           <VerificationSettingsPanel client={client} /></Suspense></>}
@@ -401,7 +405,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       </div>}
       {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
       {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",
-        "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration"] as V2SettingsSection[])
+        "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration", "usage"] as V2SettingsSection[])
         .includes(section) && <PlaceholderSettings onOpenLegacy={onOpenInspector} section={section} />}
     </div></div>
   </main>;

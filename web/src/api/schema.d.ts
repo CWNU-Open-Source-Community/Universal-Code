@@ -5688,6 +5688,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect local application usage
+         * @description Aggregates this application's durable model terminal receipts across root agents, specialists, context compaction, and read-only fan-out; failed sent calls count and not-sent receipts are excluded. Tokens, model groups, recent Threads, sparse days, and untracked_calls use terminal receipt time. Cache tokens are input subsets; usage_reported_calls and cache_usage_reported_calls identify missing coverage. Missing provider/model identities remain empty strings. Costs use reservation settled_at independently of receipt time: known_cost_micros sums only actual priced USD settlements, unpriced_calls counts unknown-cost settlements, and untracked_calls counts receipts without a matched settlement. Reservation estimates never become known cost. Calendar dates use a fixed UTC offset; 30d includes today and the preceding 29 dates, all starts at the earliest receipt or settlement, and empty history starts today. The sparse activity_days always cover the last 182 calendar dates including today, independently of period. Collections are sorted deterministically; recent_sessions includes at most eight Threads with selected-period receipts and uses their latest receipt as last_activity_at. Unbound historical Runs contribute to totals and unassigned_calls.
+         */
+        get: operations["getUsageStatistics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/work-items/{work_item_id}": {
         parameters: {
             query?: never;
@@ -15417,6 +15437,77 @@ export interface components {
         UploadedDirectoryFile: {
             content_base64: string;
             path: string;
+        };
+        UsageActivityDay: {
+            /** Format: int64 */
+            calls: number;
+            date: string;
+            /** Format: int64 */
+            total_tokens: number;
+        };
+        UsageCost: {
+            currency: string;
+            /** Format: int64 */
+            known_cost_micros: number;
+            /** Format: int64 */
+            priced_calls: number;
+            /** Format: int64 */
+            unpriced_calls: number;
+            /** Format: int64 */
+            untracked_calls: number;
+        };
+        UsageDay: {
+            date: string;
+            usage: components["schemas"]["UsageTotals"];
+        };
+        UsageModel: {
+            model: string;
+            provider: string;
+            usage: components["schemas"]["UsageTotals"];
+        };
+        UsageSession: {
+            /** Format: date-time */
+            last_activity_at: string;
+            thread_id: string;
+            title: string;
+            usage: components["schemas"]["UsageTotals"];
+        };
+        UsageStatistics: {
+            activity_days: components["schemas"]["UsageActivityDay"][];
+            activity_end_date: string;
+            activity_start_date: string;
+            cost: components["schemas"]["UsageCost"];
+            days: components["schemas"]["UsageDay"][];
+            end_date: string;
+            /** Format: date-time */
+            generated_at: string;
+            models: components["schemas"]["UsageModel"][];
+            period: string;
+            recent_sessions: components["schemas"]["UsageSession"][];
+            start_date: string;
+            totals: components["schemas"]["UsageTotals"];
+            /** Format: int64 */
+            unassigned_calls: number;
+            /** Format: int32 */
+            utc_offset_minutes: number;
+        };
+        UsageTotals: {
+            /** Format: int64 */
+            cache_creation_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_usage_reported_calls: number;
+            /** Format: int64 */
+            calls: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            total_tokens: number;
+            /** Format: int64 */
+            usage_reported_calls: number;
         };
         VerificationAssociationControlView: {
             approval: boolean;
@@ -30125,6 +30216,44 @@ export interface operations {
             413: components["responses"]["RequestEntityTooLarge"];
             414: components["responses"]["RequestTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getUsageStatistics: {
+        parameters: {
+            query?: {
+                /** @description Calendar reporting period */
+                period?: "today" | "30d" | "all";
+                /** @description Fixed UTC offset in minutes, without daylight-saving transitions */
+                utc_offset_minutes?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["UsageStatistics"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];
