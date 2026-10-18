@@ -229,9 +229,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
         }} targets={allowedTargets} /></>}
       onWorkspaceChange={onWorkspaceChange} placeholder="输入任务或问题…" threadID=""
       workspaceID={workspaceID} workspaces={workspaces} />
-      <small className="v2-composer-caption">{phase === "plan"
-        ? "先分析并准备计划，确认后开始执行。可随时补充要求。"
-        : "直接处理需求，操作仍遵循任务权限。可随时补充要求。"}</small></div>
+      </div>
   </section>;
 }
 

@@ -33,6 +33,7 @@ import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import type { V2RunPane } from "../navigation";
 import type { TaskReviewToolMemory } from "./task-review-tools";
 import { V2ThreadContext } from "./thread-context";
+import { V2ComposerStats } from "./composer-stats";
 import { V2ThreadPinPrompt } from "./thread-context-controls";
 import { V2ThreadPlanControl } from "./thread-plan";
 import { useV2ThreadSubmissions, useV2ThreadTurn, V2SubmissionError, V2RecoveredSubmissionError, removeV2Submission, v2TurnFailed, v2TurnOutcomeKnown, v2TurnWasNotQueued, type V2TurnInput } from "../use-thread-turn";
@@ -1144,11 +1145,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         placeholder="输入消息…" runActive={runActive}
         runID={currentRun.id} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""}
         workspaces={workspaces} />
-      <small className="v2-composer-caption">{workspace?.name ?? "本地工作区"} · {working
-        ? deliveryMode === "steer"
-          ? "文字纠正会进入当前任务后续模型请求；已经开始的操作会保留。"
-          : "发送后将在下一轮处理，进度会显示在对话中。"
-        : "Ctrl + Enter 发送，Shift + Enter 换行"}</small>
+      <V2ComposerStats key={threadID} statistics={detail.statistics} />
       </div>
       </div>
     </div>
