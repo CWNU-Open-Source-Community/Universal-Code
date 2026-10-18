@@ -4,7 +4,18 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { ArchiveRestore, ArrowRight, BookOpen, Monitor, Search, Trash2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WebAccessMode, WorkspaceView } from "../../api/types";
-import { applyPrayuTheme, readPrayuTheme, type PrayuTheme } from "../../lib/appearance";
+import {
+  applyPrayuGlassSettings,
+  applyPrayuTheme,
+  defaultPrayuGlassSettings,
+  prayuGlassPresets,
+  readPrayuGlassSettings,
+  readPrayuTheme,
+  resetPrayuGlassSettings,
+  type PrayuGlassPreset,
+  type PrayuGlassSettings,
+  type PrayuTheme,
+} from "../../lib/appearance";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { v2QueryKeys } from "../query-keys";
 import type { V2SettingsSection } from "./sidebar";
@@ -167,7 +178,33 @@ function GeneralSettings({ threadID, workspaces, onPermissions }: {
 
 function AppearanceSettings() {
   const [theme, setTheme] = useState<PrayuTheme>(() => readPrayuTheme());
-  const select = (next: PrayuTheme) => { setTheme(next); applyPrayuTheme(next); };
+  const [glass, setGlass] = useState<PrayuGlassSettings>(() => readPrayuGlassSettings());
+  const select = (next: PrayuTheme) => {
+    setTheme(next);
+    applyPrayuTheme(next);
+  };
+  const updateGlass = (patch: Partial<PrayuGlassSettings>) => {
+    setGlass(applyPrayuGlassSettings(patch));
+  };
+  const applyPreset = (preset: PrayuGlassPreset) => {
+    updateGlass(prayuGlassPresets[preset]);
+  };
+  const resetGlass = () => {
+    setGlass(resetPrayuGlassSettings());
+  };
+  const activePreset: PrayuGlassPreset | null =
+    (["clear", "standard", "frosted"] as const).find(
+      (key) =>
+        glass.blur === prayuGlassPresets[key].blur &&
+        glass.frost === prayuGlassPresets[key].frost &&
+        glass.brightness === prayuGlassPresets[key].brightness,
+    ) ?? null;
+  const isDefaultGlass =
+    glass.mode === defaultPrayuGlassSettings.mode &&
+    glass.blur === defaultPrayuGlassSettings.blur &&
+    glass.frost === defaultPrayuGlassSettings.frost &&
+    glass.brightness === defaultPrayuGlassSettings.brightness &&
+    glass.glow === defaultPrayuGlassSettings.glow;
   return <><h1>外观</h1><section className="v2-settings-section"><h2>主题与材质</h2>
     <div className="v2-settings-card v2-appearance-card">
       <div className="v2-theme-options" role="group" aria-label="应用主题">
@@ -176,8 +213,57 @@ function AppearanceSettings() {
           <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
           <strong>{option === "light" ? "浅色" : option === "dark" ? "深色" : "雾透"}</strong>
         </button>)}</div>
-      <p>雾透让窗口背景透出柔和的灰蓝层次；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
-    </div></section></>;
+      <p>雾透采用 Catppuccin Latte 雾面玻璃材质与柔光底色；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。</p>
+    </div></section>
+    {theme === "glass" && <section className="v2-settings-section" aria-label="雾透玻璃参数">
+      <h2>雾透玻璃材质（Catppuccin Latte）</h2>
+      <div className="v2-settings-card v2-glass-settings-card">
+        <SettingRow detail="云母效果将侧栏与顶栏悬浮为圆角毛玻璃卡片；兼容模式保留原始边框布局。" title="玻璃模式">
+          <div className="v2-setting-segmented" role="group" aria-label="玻璃模式">
+            <button aria-pressed={glass.mode === "mica"} onClick={() => updateGlass({ mode: "mica" })} type="button">云母效果</button>
+            <button aria-pressed={glass.mode === "compat"} onClick={() => updateGlass({ mode: "compat" })} type="button">兼容模式</button>
+          </div>
+        </SettingRow>
+        <SettingRow detail="一键切换清透、标准或高磨砂雾面玻璃质感。" title="材质预设">
+          <div className="v2-setting-segmented" role="group" aria-label="材质预设">
+            <button aria-pressed={activePreset === "clear"} onClick={() => applyPreset("clear")} type="button">清透</button>
+            <button aria-pressed={activePreset === "standard"} onClick={() => applyPreset("standard")} type="button">标准</button>
+            <button aria-pressed={activePreset === "frosted"} onClick={() => applyPreset("frosted")} type="button">磨砂</button>
+          </div>
+        </SettingRow>
+        <SettingRow detail="调节毛玻璃背景高斯模糊半径（0–40 px）。" title="玻璃模糊度">
+          <div className="v2-glass-slider-control">
+            <input aria-label="玻璃模糊度" max={40} min={0}
+              onChange={(event) => updateGlass({ blur: Number(event.currentTarget.value) })}
+              step={0.5} type="range" value={glass.blur} />
+            <output aria-live="off">{glass.blur} px</output>
+          </div>
+        </SettingRow>
+        <SettingRow detail="调节悬浮卡片与侧栏的雾化不透明度（0–100%）。" title="磨砂度">
+          <div className="v2-glass-slider-control">
+            <input aria-label="磨砂度" max={100} min={0}
+              onChange={(event) => updateGlass({ frost: Number(event.currentTarget.value) })}
+              step={1} type="range" value={glass.frost} />
+            <output aria-live="off">{glass.frost}%</output>
+          </div>
+        </SettingRow>
+        <SettingRow detail="调节底层画布明度（50% 为标准 Latte 柔光底色，100% 为纯白）。" title="背景亮度">
+          <div className="v2-glass-slider-control">
+            <input aria-label="背景亮度" max={100} min={50}
+              onChange={(event) => updateGlass({ brightness: Number(event.currentTarget.value) })}
+              step={1} type="range" value={glass.brightness} />
+            <output aria-live="off">{glass.brightness}%</output>
+          </div>
+        </SettingRow>
+        <SettingRow detail="在底层画布左上角与右上角叠加柔和的品牌蓝与翠绿环境光晕。" title="氛围光斑">
+          <button aria-checked={glass.glow} aria-label="氛围光斑" className="v2-cdp-switch"
+            onClick={() => updateGlass({ glow: !glass.glow })} role="switch" type="button"><i /></button>
+        </SettingRow>
+        <SettingRow detail="恢复标准云母效果（模糊度 5 px、磨砂度 20%、亮度 50%、关闭光斑）。" title="默认参数">
+          <button className="v2-setting-link" disabled={isDefaultGlass} onClick={resetGlass} type="button">还原默认值</button>
+        </SettingRow>
+      </div>
+    </section>}</>;
 }
 
 function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraft = false,

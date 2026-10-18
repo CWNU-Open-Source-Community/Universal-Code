@@ -25,8 +25,8 @@ describe("desktop window controls", () => {
 
     expect(runtime.WindowMinimise).toHaveBeenCalledTimes(1);
     expect(runtime.WindowToggleMaximise).toHaveBeenCalledTimes(1);
-    expect(runtime.WindowSetLightTheme).toHaveBeenCalledTimes(1);
-    expect(runtime.WindowSetDarkTheme).toHaveBeenCalledTimes(2);
+    expect(runtime.WindowSetLightTheme).toHaveBeenCalledTimes(2);
+    expect(runtime.WindowSetDarkTheme).toHaveBeenCalledTimes(1);
     expect(runtime.Quit).toHaveBeenCalledTimes(1);
   });
 

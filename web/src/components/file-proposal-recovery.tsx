@@ -51,7 +51,7 @@ export function FileProposalRecovery({ client, runID, editID, onClose }: {
         modified={recovery.proposed_content} original={recovery.original_content}
         options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)',
           fontSize: 13, letterSpacing: 0, minimap: { enabled: false }, readOnly: true, renderSideBySide: true,
-          scrollBeyondLastLine: false }} theme={readPrayuTheme() === "light" ? "vs" : "vs-dark"} /> :
+          scrollBeyondLastLine: false }} theme={readPrayuTheme() === "dark" ? "vs-dark" : "vs"} /> :
         <div className={`monaco-local-state${editorState === "failed" ? " inline-warning" : ""}`}
           role={editorState === "failed" ? "alert" : "status"}>
           {editorState === "failed" ? t("无法加载本地编辑器资源", "Local editor assets could not be loaded") : t("正在加载本地编辑器", "Loading local editor")}

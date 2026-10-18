@@ -1994,19 +1994,214 @@
 .v2-approval-card { corner-shape: superellipse(1.5); }
 }
 
-:where([data-prayu-theme="dark"], [data-prayu-theme="glass"]) .v2-sidebar,
-:where([data-prayu-theme="dark"], [data-prayu-theme="glass"]) .v2-product-surface { backdrop-filter: blur(46px) saturate(100%); }
+:where([data-prayu-theme="dark"]) .v2-sidebar,
+:where([data-prayu-theme="dark"]) .v2-product-surface { backdrop-filter: blur(46px) saturate(100%); }
 
-/* Mist keeps the workspace backdrop visible without the composer's beveled sheen. */
+/* Catppuccin Latte Glass (Mica & Compat) material system inspired by dsh-catppuccin-theme. */
+:where([data-prayu-theme="glass"]) .v2-shell {
+  background:
+    radial-gradient(58% 46% at 18% 6%,
+      color-mix(in srgb, #1e66f5 calc(12% * var(--dsh-glass-ambience, 1) * var(--prayu-glass-glow, 0)), transparent),
+      transparent 68%),
+    radial-gradient(48% 42% at 86% 14%,
+      color-mix(in srgb, color-mix(in srgb, #40a02b 18%, #eff1f5) calc(10% * var(--dsh-glass-ambience, 1) * var(--prayu-glass-glow, 0)), transparent),
+      transparent 62%),
+    linear-gradient(165deg,
+      color-mix(in srgb, var(--dsh-glass-ground), #ffffff calc(22% * var(--dsh-glass-ambience, 1))) 0%,
+      var(--dsh-glass-ground) 55%,
+      color-mix(in srgb, var(--dsh-glass-ground), #000000 calc(5% * var(--dsh-glass-ambience, 1))) 100%);
+}
+
+:where([data-prayu-theme="glass"]) .v2-sidebar::before { content: none; }
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-titlebar {
+  background: transparent;
+  border-bottom-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-product-surface {
+  background: transparent;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (min-width: 761px) {
+  :where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-sidebar {
+    margin: 6px 8px 12px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--dsh-glass-rim);
+    background: var(--dsh-glass-card);
+    box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
+    backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+    -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+    overflow: hidden;
+  }
+}
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-new-conversation {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-conversation {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) :is(.v2-conversation-header, .v2-new-conversation > header) {
+  margin: 6px 16px 0;
+  min-height: 44px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--dsh-glass-rim);
+  background: var(--dsh-glass-card);
+  box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  position: relative;
+  z-index: 8;
+}
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-task-navigation {
+  margin: 8px 16px 0;
+  border-radius: 14px;
+  border: 1px solid var(--dsh-glass-rim-soft);
+  background: var(--dsh-glass-card);
+  box-shadow: var(--dsh-glass-edge);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+}
+
+:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-settings-toolbar {
+  background: transparent;
+  border-bottom-color: transparent;
+}
+
+:where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-titlebar {
+  background: var(--prayu-titlebar);
+  border-bottom-color: var(--dsh-glass-rim-soft);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+}
+
+:where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-sidebar {
+  background: var(--dsh-glass-card);
+  border-right: 1px solid var(--dsh-glass-rim-soft);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+}
+
+:where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-product-surface {
+  background: transparent;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) :is(.v2-conversation-header, .v2-new-conversation > header, .v2-settings-toolbar) {
+  background: var(--dsh-glass-card);
+  border-bottom: 1px solid var(--dsh-glass-rim-soft);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+}
+
+:where([data-prayu-theme="glass"]) .v2-sidebar-actions > button:first-child {
+  background: var(--dsh-glass-card-raised);
+  border: 1px solid var(--dsh-glass-rim);
+  box-shadow: var(--dsh-glass-edge);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  font-weight: 500;
+}
+
+:where([data-prayu-theme="glass"]) .v2-sidebar-actions > button:first-child:hover {
+  background: var(--dsh-glass-card-hover);
+  border-color: var(--dsh-glass-rim-strong);
+}
+
+:where([data-prayu-theme="glass"]) :is(.v2-sidebar-search, .v2-settings-search) {
+  background: var(--dsh-glass-card-raised);
+  border-color: var(--dsh-glass-rim-soft);
+  box-shadow: var(--dsh-glass-edge);
+}
+
 :where([data-prayu-theme="glass"]) .v2-composer-dock { background: transparent; }
 :where([data-prayu-theme="glass"]) .v2-composer-surface {
-  background: var(--prayu-glass-fill);
-  border-color: var(--v2-border);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--prayu-shadow) 35%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--prayu-glass-highlight) 50%, transparent);
+  background: var(--dsh-glass-card);
+  border: 1px solid var(--dsh-glass-rim-strong);
+  border-radius: 24px;
+  box-shadow: var(--dsh-glass-edge), var(--dsh-glass-input-shadow);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
 }
-:where([data-prayu-theme="glass"]) .v2-composer-surface:focus-within { border-color: var(--v2-border-strong); }
+:where([data-prayu-theme="glass"]) .v2-composer-surface:focus-within {
+  border-color: color-mix(in srgb, var(--v2-accent) 52%, var(--dsh-glass-rim-strong));
+}
 :where([data-prayu-theme="glass"]) .v2-composer-surface::after { content: none; }
+
+:where([data-prayu-theme="glass"]) .v2-composer-add-trigger {
+  background: var(--dsh-glass-card-raised);
+  border: 1px solid var(--dsh-glass-rim);
+  box-shadow: var(--dsh-glass-edge);
+  color: var(--v2-ink);
+}
+
+:where([data-prayu-theme="glass"]) .v2-composer-add-trigger:hover:not(:disabled),
+:where([data-prayu-theme="glass"]) .v2-composer-add-trigger[aria-expanded="true"] {
+  background: var(--dsh-glass-card-hover);
+  border-color: var(--dsh-glass-rim-strong);
+}
+
+:where([data-prayu-theme="glass"]) .v2-user-turn > div {
+  border-radius: 14px;
+  border: 1px solid var(--dsh-glass-rim-soft);
+  background: var(--dsh-glass-bubble);
+  box-shadow: var(--dsh-glass-edge);
+}
+
+:where([data-prayu-theme="glass"]) :is(.v2-markdown-code-block, .v2-unified-diff, .v2-command-detail) {
+  background: var(--dsh-glass-card-raised);
+  border: 1px solid var(--dsh-glass-rim-soft);
+  box-shadow: var(--dsh-glass-edge);
+}
+
+:where([data-prayu-theme="glass"]) .v2-orb i {
+  background: radial-gradient(circle at 28% 27%, #ffffff 0 22%, #dce6fb 56%, #7287fd 100%);
+  border-color: rgb(255 255 255 / 68%);
+}
+
+:where([data-prayu-theme="glass"]) :is(
+  .v2-thread-menu,
+  .v2-composer-add-menu,
+  .v2-permission-popover,
+  .v2-network-popover,
+  .v2-run-network-popover,
+  .v2-model-route-popover,
+  .v2-dialog,
+  .v2-high-risk-dialog,
+  .v2-inspector-drawer,
+  .v2-file-drawer,
+  .v2-terminal-drawer
+) {
+  background: var(--dsh-glass-popover);
+  border-color: var(--dsh-glass-rim);
+  box-shadow: var(--dsh-glass-edge), var(--dsh-glass-drop);
+  backdrop-filter: blur(max(var(--prayu-glass-blur, 5px), 16px)) saturate(120%);
+  -webkit-backdrop-filter: blur(max(var(--prayu-glass-blur, 5px), 16px)) saturate(120%);
+}
+
+:where([data-prayu-theme="glass"]) .v2-inspector-drawer.is-docked {
+  background: var(--dsh-glass-card);
+  border-left: 1px solid var(--dsh-glass-rim);
+  box-shadow: var(--dsh-glass-edge);
+  backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+  -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+}
 
 .v2-sidebar-backdrop { display: none; }
 .v2-workspace-start { margin-left: auto; position: relative; }
@@ -2071,7 +2266,11 @@
 @media (prefers-reduced-transparency: reduce) {
   .v2-titlebar,
 .v2-sidebar,
+.v2-sidebar-actions > button:first-child,
 .v2-product-surface,
+.v2-conversation-header,
+.v2-new-conversation > header,
+.v2-task-navigation,
 .v2-composer-surface,
 .v2-run-recovery,
 .v2-permission-popover,
@@ -2079,7 +2278,7 @@
 .v2-run-network-popover,
 .v2-dialog,
 .v2-inspector-drawer,
-.v2-high-risk-dialog { backdrop-filter: none; background: var(--prayu-surface-solid); }
+.v2-high-risk-dialog { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--prayu-surface-solid); }
   .v2-high-risk-overlay { backdrop-filter: none; background: rgb(24 24 24 / 42%); }
   .v2-sidebar { background: var(--prayu-surface-solid); }
 }

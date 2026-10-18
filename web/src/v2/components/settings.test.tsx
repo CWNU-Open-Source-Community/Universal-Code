@@ -306,3 +306,59 @@ describe("V2 permission settings hierarchy", () => {
     expect(postControl).not.toHaveBeenCalled();
   });
 });
+
+describe("V2 appearance and Catppuccin Latte glass controls", () => {
+  afterEach(() => {
+    window.localStorage.removeItem("prayu.theme");
+    window.localStorage.removeItem("prayu.glass");
+  });
+
+  it("reveals Catppuccin Latte glass tuning controls when glass theme is selected and syncs CSS variables", async () => {
+    window.localStorage.setItem("prayu.theme", "dark");
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={new QueryClient()}>
+      <V2Settings client={{} as APIClient} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+        section="appearance" threadID="" workspaces={[]} />
+    </QueryClientProvider>);
+
+    expect(screen.queryByRole("region", { name: "雾透玻璃参数" })).not.toBeInTheDocument();
+
+    const themeGroup = screen.getByRole("group", { name: "应用主题" });
+    await user.click(within(themeGroup).getByRole("button", { name: "雾透" }));
+
+    const glassRegion = screen.getByRole("region", { name: "雾透玻璃参数" });
+    expect(glassRegion).toBeVisible();
+    expect(document.documentElement.dataset.prayuTheme).toBe("glass");
+    expect(document.documentElement.dataset.prayuGlassMode).toBe("mica");
+
+    const resetButton = within(glassRegion).getByRole("button", { name: "还原默认值" });
+    expect(resetButton).toBeDisabled();
+
+    await user.click(within(glassRegion).getByRole("button", { name: "兼容模式" }));
+    expect(document.documentElement.dataset.prayuGlassMode).toBe("compat");
+    expect(resetButton).toBeEnabled();
+
+    await user.click(within(glassRegion).getByRole("button", { name: "磨砂" }));
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-blur")).toBe("12px");
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-frost")).toBe("0.9");
+
+    fireEvent.change(within(glassRegion).getByRole("slider", { name: "背景亮度" }), {
+      target: { value: "80" },
+    });
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-brightness-white")).toBe("0.6");
+
+    const glowSwitch = within(glassRegion).getByRole("switch", { name: "氛围光斑" });
+    await user.click(glowSwitch);
+    expect(glowSwitch).toHaveAttribute("aria-checked", "true");
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-glow")).toBe("1");
+
+    await user.click(resetButton);
+    expect(document.documentElement.dataset.prayuGlassMode).toBe("mica");
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-blur")).toBe("5px");
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-frost")).toBe("0.4");
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-brightness-white")).toBe("0");
+    expect(document.documentElement.style.getPropertyValue("--prayu-glass-glow")).toBe("0");
+    expect(resetButton).toBeDisabled();
+  });
+});
+

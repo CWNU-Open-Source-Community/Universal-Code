@@ -25,9 +25,10 @@ export function closeDesktopWindow(): void {
 }
 
 export function setDesktopWindowTheme(theme: "light" | "dark" | "glass"): void {
-  if (theme === "light") {
-    window.runtime?.WindowSetLightTheme?.();
-  } else {
+  if (theme === "dark") {
     window.runtime?.WindowSetDarkTheme?.();
+  } else {
+    window.runtime?.WindowSetLightTheme?.();
   }
 }
+

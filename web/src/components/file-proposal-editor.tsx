@@ -78,7 +78,7 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
   const invalid = editorState !== "ready" || bytes > 256 * 1024 ||
     draft === activeSource.content || expired || recovery.changedBase || recovery.conflict;
   const language = languageForPath(activeSource.path);
-  const monacoTheme = readPrayuTheme() === "light" ? "vs" : "vs-dark";
+  const monacoTheme = readPrayuTheme() === "dark" ? "vs-dark" : "vs";
   useFileEditLeaveEntry({ path: activeSource.path, dirty: Boolean(recovery.draft),
     busy: mutation.isPending, canSave: !invalid,
     save: () => mutation.mutateAsync(recovery.captureSubmission(draft)), keep: recovery.keep,
