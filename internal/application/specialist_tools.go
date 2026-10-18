@@ -106,6 +106,11 @@ func (e *specialistWorkspaceExecutor) ExecuteSpecialistTool(ctx context.Context,
 		if binding.workspace.AgentID != call.AgentID || binding.plan.ID != e.binding.BatchPlanID || binding.workspace.Generation != e.binding.BatchGeneration {
 			return nil, errors.New("child Batch authority changed")
 		}
+		if e.binding.Mode == "worker" {
+			if err := e.markBatchWorkerToolStarted(ctx, call); err != nil {
+				return nil, err
+			}
+		}
 		switch toolgateway.ToolName(input.Tool) {
 		case toolgateway.WorkspaceListTool:
 			var p toolgateway.WorkspaceListPayload
@@ -398,7 +403,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			return r.failAttempt(ctx, result, ref, errors.New("execution worker runtime is unavailable"))
 		}
 		defer func() {
-			if !result.WaitingApproval {
+			if !result.WaitingApproval && result.AttemptStatus != domain.AgentAttemptContinued {
 				r.workerRuntime.closeWorkerResources(ref)
 			}
 		}()
@@ -444,13 +449,21 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			if err != nil {
 				return r.failAttempt(ctx, result, ref, err)
 			}
-			request.Tools = catalogue.specs()
+			request.Tools = r.batchWorkerCatalogue(catalogue, child).specs()
 			definition := toolgateway.SpecialistResultReadDefinition()
 			request.Tools = append(request.Tools, llm.ToolSpec{Name: string(definition.Name), Description: definition.Description, Parameters: definition.InputSchema})
 		}
 		native, err := specialistRequestWithNativeRounds(request, rounds)
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
+		}
+		nativeLayout := layout
+		var skillGuidance workerSkillReadGuidance
+		if child.Worker != nil {
+			native, nativeLayout, skillGuidance, err = r.workerRuntime.requestWithWorkerSkillReads(ctx, ref, native, layout)
+			if err != nil {
+				return r.failAttempt(ctx, result, ref, err)
+			}
 		}
 		if len(rounds) == domain.MaxSpecialistToolRounds {
 			native.Tools = nil
@@ -478,7 +491,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
-		prepared, modelLayout, err := trimSpecialistOptionalProjectInstructions(run.Config, prepared, window, layout, contextState.RecoveryInputLimit)
+		prepared, modelLayout, err := trimSpecialistOptionalProjectInstructions(run.Config, prepared, window, nativeLayout, contextState.RecoveryInputLimit)
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
@@ -487,6 +500,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
+		prepared, skillGuidance = skillGuidance.retainPresent(prepared)
 		if through > contextState.ThroughRound {
 			_, err = executor.store.SaveSpecialistContextProjection(ctx, ref, contextState, through, domain.SpecialistContextSourceSHA256(rounds))
 			if err != nil {
@@ -506,7 +520,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err := verifyNativeSpecialistRequest(prepared, input, rounds[through:], len(rounds) == domain.MaxSpecialistToolRounds); err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
-		call, err := r.callModelWithRetry(ctx, run, ref, modelRef, prepared, audit, timeLimit, 0, &state)
+		call, err := r.callModelWithRetry(ctx, run, ref, modelRef, prepared, audit, timeLimit, 0, &state, skillGuidance)
 		mergeSpecialistModelCallResult(result, call)
 		if err != nil {
 			if ctx.Err() == nil && !privateHistory && call.FailureRecorded && call.Attempt.FailureReason == llm.ProviderFailureContextLimit {

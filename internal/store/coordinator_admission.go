@@ -264,6 +264,9 @@ func (s *SQLiteStore) admitSpecialist(ctx context.Context, admission domain.Spec
 		if _, err := tx.ExecContext(ctx, `UPDATE agent_nodes SET worker_profile_json=? WHERE id=?`, string(workerJSON), child.ID); err != nil {
 			return domain.AgentNode{}, false, err
 		}
+		if err := s.captureWorkerParentHistoryTx(ctx, tx, child); err != nil {
+			return domain.AgentNode{}, false, err
+		}
 	}
 	// The inserted node already has the no-tool defaults. Only an explicit child
 	// grant needs an authority update, in the same admission transaction.

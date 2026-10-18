@@ -9,14 +9,15 @@ import "./workflow-panel.css";
 const operationKey = () => `workflow-${crypto.randomUUID()}`;
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
 
-export function workerWorkflow(name: string, goal: string, worker: boolean, tools: string): WorkflowSpec {
+export function workerWorkflow(name: string, goal: string, worker: boolean, tools: string, parentHistory = false): WorkflowSpec {
   return {
     version: "workflow.v1", name,
     limits: { max_steps: 32, max_jobs: 8, max_tokens: 32000, max_turns: 16, timeout_millis: 1800000 },
     steps: [{ id: "work", kind: "worker", inputs: { request: { step: "$input" } }, task: {
       title: name, goal, skills: ["model.chat"], input_refs: [], dependency_ordinals: [], surface_hint: "core",
       turn_limit: 4, token_limit: 8000, timeout_millis: 600000, expected_artifacts: [], tool_call_limit: 16,
-      ...(worker ? { worker: { tools: tools.trim() ? tools.split(",").map((item) => item.trim()).filter(Boolean) : null } }
+      ...(worker ? { worker: { tools: tools.trim() ? tools.split(",").map((item) => item.trim()).filter(Boolean) : null,
+        ...(parentHistory ? { history_scope: "parent_snapshot" } : {}) } }
         : { allowed_read_paths: ["."] }),
     } }],
   };
@@ -36,6 +37,14 @@ export function workflowExample(): WorkflowSpec {
   return spec;
 }
 
+export function isolatedWorkflow(name: string): WorkflowSpec {
+  return {
+    version: "workflow.v1", name,
+    limits: { max_steps: 32, max_jobs: 8, max_tokens: 32000, max_turns: 16, timeout_millis: 1800000 },
+    steps: [{ id: "delivery", kind: "batch", batch_plan: { step: "$input", path: "/plan_id" } }],
+  };
+}
+
 export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient; runID: string; runStatus?: string }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -43,6 +52,8 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
   const [goal, setGoal] = useState("");
   const [worker, setWorker] = useState(true);
   const [tools, setTools] = useState("");
+  const [parentHistory, setParentHistory] = useState(false);
+  const [isolated, setIsolated] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [source, setSource] = useState(() => pretty(workflowExample()));
   const [selected, setSelected] = useState("");
@@ -65,7 +76,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
     cache.setQueryData<WorkflowExecution[]>(["run", runID, "workflows"], (old) => [value, ...(old ?? []).filter((item) => item.id !== value.id)]);
   }
   const save = useMutation({
-    mutationFn: () => client.workflows.save(advanced ? JSON.parse(source) as WorkflowSpec : workerWorkflow(name.trim(), goal.trim(), worker, tools), operationKey()),
+    mutationFn: () => client.workflows.save(advanced ? JSON.parse(source) as WorkflowSpec : isolated ? isolatedWorkflow(name.trim()) : workerWorkflow(name.trim(), goal.trim(), worker, tools, parentHistory), operationKey()),
     onSuccess: (saved) => {
       setSelected(saved.id);
       cache.setQueryData(["workflow-definitions"], (old: typeof definitions.data) => [saved, ...(old ?? []).filter((item) => item.id !== saved.id)]);
@@ -89,7 +100,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
 
   return <section className="detail-section workflow-panel" aria-label={t("工作流", "Workflows")}>
     <div className="section-heading"><h2>{t("工作流", "Workflows")}</h2><span>{t("保存、执行与继续", "Save, run and continue")}</span></div>
-    <p>{t("每个新步骤创建独立子代理；中间结果会保存，可用于条件分支和有界循环。", "Each new job creates an independent child. Saved results can drive conditions and bounded loops.")}</p>
+    <p>{t("共享工作区子代理与隔离交付可以组合；已保存结果可用于条件分支和有界循环。", "Combine shared workspace workers and isolated deliveries. Saved results can drive conditions and bounded loops.")}</p>
     <p>{t("应用运行期间会自动推进已启动的流程；刷新页面不会中断执行。", "The app advances started workflows while it is running; refreshing this page does not interrupt execution.")}</p>
     <details>
       <summary>{t("创建工作流", "Create workflow")}</summary>
@@ -98,17 +109,28 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
         {advanced ? <>
           <p>{t("先检查模板的任务与预算，再保存。if 比较已完成步骤的结构化字段；repeat 每次完成后检查条件，最多执行 max_iterations 次。$input 引用启动输入。", "Review the template tasks and budgets before saving. if compares committed result fields; repeat checks its condition after each iteration, up to max_iterations. $input references launch inputs.")}</p>
           <button type="button" onClick={() => setSource(pretty(workflowExample()))}>{t("载入分支与循环模板", "Load branch and loop template")}</button>
+          <button type="button" onClick={() => setSource(pretty(isolatedWorkflow(name.trim() || "Isolated delivery")))}>{t("载入隔离交付模板", "Load isolated delivery template")}</button>
           <label>{t("工作流 JSON（可复制）", "Workflow JSON (copyable)")}<textarea className="workflow-json" rows={20} value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
         </> : <>
           <label>{t("名称", "Name")}<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label>{t("工作区方式", "Workspace mode")}<select value={isolated ? "batch" : "shared"} onChange={(event) => setIsolated(event.target.value === "batch")}>
+            <option value="shared">{t("共享当前工作区", "Share current workspace")}</option>
+            <option value="batch">{t("隔离交付（Batch）", "Isolated delivery (Batch)")}</option>
+          </select></label>
+          {isolated ? <p>{t("使用已在 Batch 中批准并准备的交付计划。启动输入填写 plan_id；流程执行子任务、等待独立复核，再生成集成分支。", "Use a delivery plan already approved and prepared in Batch. Set plan_id in launch inputs; the workflow runs its children, waits for independent review, then creates an integration branch.")}</p> : <>
           <label>{t("任务", "Task")}<textarea rows={4} value={goal} onChange={(event) => setGoal(event.target.value)} /></label>
           <label className="workflow-checkbox"><input type="checkbox" checked={worker} onChange={(event) => setWorker(event.target.checked)} />{t("执行型子代理", "Execution worker")}</label>
-          {worker ? <label>{t("委派工具（逗号分隔，可留空）", "Delegated tools (comma-separated, optional)")}<input value={tools} onChange={(event) => setTools(event.target.value)} placeholder={t("留空继承主代理工具", "Leave blank to inherit parent tools")} /></label>
+          {worker ? <>
+            <label>{t("委派工具（逗号分隔，可留空）", "Delegated tools (comma-separated, optional)")}<input value={tools} onChange={(event) => setTools(event.target.value)} placeholder={t("留空继承当前可委派工具", "Leave blank to inherit available worker tools")} /></label>
+            <label className="workflow-checkbox"><input type="checkbox" checked={parentHistory} onChange={(event) => setParentHistory(event.target.checked)} />{t("同时交付当前父会话历史", "Include current parent history")}</label>
+            <p>{parentHistory ? t("创建子代理时固定当时父会话可见的历史范围；后续新增消息不会自动加入。", "Capture the parent's visible history when the child is created; later messages are not added automatically.") : t("默认仅能回读自己的记录和明确交付的任务材料。", "Recall is limited to the child's records and explicitly delivered task material.")}</p>
+          </>
             : <p>{t("只读模式：允许读取当前工作区。", "Read-only mode: allow reading the current workspace.")}</p>}
           <p>{t("单步骤：最多 4 轮、8,000 tokens、10 分钟；完整流程：最多 16 轮、32,000 tokens、30 分钟。JSON 编辑器可调整。", "Per job: 4 turns, 8,000 tokens, 10 minutes. Whole workflow: 16 turns, 32,000 tokens, 30 minutes. Adjust in the JSON editor.")}</p>
-          <button type="button" onClick={() => { setSource(pretty(workerWorkflow(name.trim() || "Workflow", goal.trim() || "Describe the task", worker, tools))); setAdvanced(true); }}>{t("在 JSON 中编辑任务与预算", "Edit task and budgets in JSON")}</button>
+          </>}
+          <button type="button" onClick={() => { setSource(pretty(isolated ? isolatedWorkflow(name.trim() || "Isolated delivery") : workerWorkflow(name.trim() || "Workflow", goal.trim() || "Describe the task", worker, tools, parentHistory))); setAdvanced(true); }}>{t("在 JSON 中编辑任务与预算", "Edit task and budgets in JSON")}</button>
         </>}
-        <button type="button" className="command-button" disabled={!canControl || save.isPending || (!advanced && (!name.trim() || !goal.trim()))} onClick={() => save.mutate()}>{save.isPending ? t("保存中…", "Saving…") : t("保存定义", "Save definition")}</button>
+        <button type="button" className="command-button" disabled={!canControl || save.isPending || (!advanced && (!name.trim() || (!isolated && !goal.trim())))} onClick={() => save.mutate()}>{save.isPending ? t("保存中…", "Saving…") : t("保存定义", "Save definition")}</button>
         {save.error && <ErrorState error={save.error} />}
       </div>
     </details>
@@ -119,7 +141,7 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
       </select></label>
       {definition && <details><summary>{t("检查任务、工具和预算", "Review tasks, tools and budgets")}</summary><pre>{pretty(definition.spec)}</pre></details>}
       <label>{t("启动输入 JSON", "Launch inputs JSON")}<textarea rows={3} value={inputs} onChange={(event) => setInputs(event.target.value)} spellCheck={false} /></label>
-      <p>{t("启动后，已保存定义中的子代理会在流程预算和主代理权限内自动执行。留空工具名单会继承当前主代理工具。", "Starting authorizes workers in the saved definition to run within its budgets and the parent's permissions. An omitted tool list inherits the current parent tools.")}</p>
+      <p>{t("启动后，子代理在流程预算和主代理权限内执行。工具名单留空会继承当前可委派工具。隔离交付完成时产物位于集成分支，后续共享步骤仍使用当前工作区。", "Workers execute within the workflow budgets and parent permissions. An omitted tool list inherits available worker tools. Isolated results live on an integration branch; later shared steps still use the current workspace.")}</p>
       <button type="button" className="command-button" disabled={!canControl || !selected || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "start" })}>{t("启动并运行", "Start and run")}</button>
       {runStatus !== "running" && <p>{t("先恢复当前任务，再启动或继续工作流。", "Resume the current task before starting or continuing a workflow.")}</p>}
       {!canControl && <p>{t("运行工作流需要模型控制权限。", "Model control permission is required to run workflows.")}</p>}

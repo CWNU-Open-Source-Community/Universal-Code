@@ -10,18 +10,31 @@ import (
 	"cyberagent-workbench/internal/runmutation"
 )
 
-func TestSchemaV209PreservesObservationConsentRoundsAndForeignKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "scheduled-v208.db")
-	st := openHistoricalTestDatabase(t, path, 208)
+func TestSchemaV210PreservesObservationConsentRoundsAndForeignKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scheduled-v209.db")
+	st := openHistoricalTestDatabase(t, path, 209)
 	run := createV167ScheduledRun(t, st)
+	historyMessage(t, st, run, "v209 parent history retained across scheduled execution migration")
+	child, _, _ := admitHistoryWorker(t, st, run, &domain.WorkerProfile{HistoryScope: domain.WorkerHistoryParentSnapshot})
+	var parentSources, parentDigest string
+	if err := st.db.QueryRowContext(t.Context(), `SELECT sources_json,content_sha256 FROM worker_parent_history_snapshots WHERE agent_id=?`, child.ID).Scan(&parentSources, &parentDigest); err != nil {
+		t.Fatal(err)
+	}
+	if parentSources == "[]" {
+		t.Fatal("parent history fixture has no captured sources")
+	}
+	priorMigrations, err := st.loadAppliedMigrations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC().Add(time.Second).Truncate(time.Millisecond)
-	req := v167CreateRequest(run.ID, "v209-old-observation", now)
+	req := v167CreateRequest(run.ID, "v210-old-observation", now)
 	req.ObservationConsentVersion = 1
 	created, err := application.NewScheduledJobService(st).WithClock(&v167Clock{now: now}).Create(t.Context(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := runmutation.Fingerprint("v209-round")
+	digest := runmutation.Fingerprint("v210-round")
 	_, err = st.db.ExecContext(t.Context(), `INSERT INTO scheduled_job_rounds(job_id,occurrence_at,protocol_version,ordinal,attempt,claim_generation,fence_token_sha256,owner_id_sha256,status,event_sequence,observation_sha256,changed,model_called,tool_called,result,error_code,started_at,completed_at) VALUES(?,?,'scheduled-job-round.v1',1,1,1,?,?,'completed',0,?,1,0,0,'existing observation','',?,?)`, created.Job.ID, ts(req.Schedule.AnchorAt), digest, digest, digest, ts(now), ts(now))
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +64,19 @@ func TestSchemaV209PreservesObservationConsentRoundsAndForeignKeys(t *testing.T)
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
+	var gotSources, gotDigest string
+	if err := upgraded.db.QueryRowContext(t.Context(), `SELECT sources_json,content_sha256 FROM worker_parent_history_snapshots WHERE agent_id=?`, child.ID).Scan(&gotSources, &gotDigest); err != nil || gotSources != parentSources || gotDigest != parentDigest {
+		t.Fatalf("existing parent history changed: err=%v", err)
+	}
+	applied, err := upgraded.loadAppliedMigrations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version, before := range priorMigrations {
+		if after := applied[version]; after != before {
+			t.Fatalf("migration v%d changed: %+v != %+v", version, after, before)
+		}
+	}
 	job, err := upgraded.GetScheduledJob(t.Context(), created.Job.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +110,7 @@ func TestSchemaV209PreservesObservationConsentRoundsAndForeignKeys(t *testing.T)
 			t.Fatalf("%s=%d err=%v", pragma, got, err)
 		}
 	}
-	claimed, _, found, err := upgraded.ClaimDueConfirmedScheduledJob(t.Context(), "v209-observer", next)
+	claimed, _, found, err := upgraded.ClaimDueConfirmedScheduledJob(t.Context(), "v210-observer", next)
 	if err != nil || !found || claimed.ID != job.ID || claimed.Spec.ExecutionMode != domain.ScheduledJobReadOnly {
 		t.Fatalf("claim=%+v found=%v err=%v", claimed, found, err)
 	}

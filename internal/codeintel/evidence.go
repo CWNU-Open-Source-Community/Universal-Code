@@ -37,15 +37,15 @@ func (m *Manager) ValidateEvidence(ctx context.Context, root string,
 	}
 	key := serverKey(provenance.WorkspaceID, provenance.ServerID)
 	m.mu.Lock()
-	record, exists := m.records[key]
-	current := m.clients[key]
+	current := m.clients[workspaceClientKey(key, workspace.RootFingerprint)]
+	unavailable := m.closing || m.quarantined || current == nil
 	m.mu.Unlock()
-	if !exists || record.Health != HealthHealthy || current == nil {
+	if unavailable {
 		result.Reason = "reviewed language server is not currently healthy"
 		return result
 	}
-	if record.Generation != provenance.ServerGeneration ||
-		record.CapabilityFingerprint != provenance.CapabilityFingerprint {
+	if current.snapshot.Generation != provenance.ServerGeneration ||
+		current.snapshot.CapabilityFingerprint != provenance.CapabilityFingerprint {
 		result.State = EvidenceStale
 		result.Reason = "language server generation or capability fingerprint changed"
 		return result

@@ -33,7 +33,7 @@ type MergeBatchDeliveryResult struct {
 	Replayed    bool
 }
 
-func (s *BatchDeliveryService) Merge(ctx context.Context,
+func (s *BatchDeliveryService) merge(ctx context.Context,
 	request MergeBatchDeliveryRequest,
 ) (MergeBatchDeliveryResult, error) {
 	var result MergeBatchDeliveryResult

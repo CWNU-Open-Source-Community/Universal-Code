@@ -287,12 +287,49 @@ func (s *SQLiteStore) ValidateSpecialistToolDispatch(ctx context.Context, call t
 	if err != nil {
 		return err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id JOIN specialist_task_briefs brief ON brief.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND b.mode=? AND b.brief_fingerprint=brief.fingerprint AND (b.mode='batch' OR (b.mode='worker' AND c.name='specialist_result_read' AND b.worker_profile_json=(SELECT worker_profile_json FROM agent_nodes WHERE id=b.agent_id)) OR (b.mode='read' AND b.allowed_read_paths_json=(SELECT allowed_read_paths_json FROM agent_nodes WHERE id=b.agent_id) AND json_array_length(b.allowed_read_paths_json)>0)) AND c.call_id=? AND c.status='pending' AND c.payload_json=? AND c.name=? AND c.charge_id=?`, attempt.ID, call.WorkspaceID, mode, call.SpecialistToolCallID, string(input.Arguments), input.Tool, call.InvocationID).Scan(&n)
+	if mode == "worker" && input.Tool != domain.SpecialistResultReadName && !child.Worker.AllowsTool(input.Tool) {
+		return apperror.New(apperror.CodePolicyDenied, "isolated operation is outside the delegated worker tools")
+	}
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM specialist_tool_bindings b JOIN specialist_tool_calls c ON c.agent_attempt_id=b.agent_attempt_id JOIN specialist_task_briefs brief ON brief.agent_attempt_id=b.agent_attempt_id WHERE b.agent_attempt_id=? AND b.workspace_id=? AND b.mode=? AND b.brief_fingerprint=brief.fingerprint AND (b.mode='batch' OR (b.mode='worker' AND (c.name='specialist_result_read' OR b.batch_plan_id<>'') AND b.worker_profile_json=(SELECT worker_profile_json FROM agent_nodes WHERE id=b.agent_id)) OR (b.mode='read' AND b.allowed_read_paths_json=(SELECT allowed_read_paths_json FROM agent_nodes WHERE id=b.agent_id) AND json_array_length(b.allowed_read_paths_json)>0)) AND c.call_id=? AND c.status='pending' AND c.payload_json=? AND c.name=? AND c.charge_id=?`, attempt.ID, call.WorkspaceID, mode, call.SpecialistToolCallID, string(input.Arguments), input.Tool, call.InvocationID).Scan(&n)
 	if err != nil {
 		return err
 	}
 	if n != 1 {
 		return apperror.New(apperror.CodePolicyDenied, "child tool dispatch differs from its charged durable call")
+	}
+	return tx.Commit()
+}
+
+// A Batch invocation has no replayable process handle. Claim its first dispatch
+// atomically; an interrupted invocation must be inspected, never run again.
+func (s *SQLiteStore) StartSpecialistBatchTool(ctx context.Context, ref domain.AgentAttemptRef, callID, authorityJSON string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, _, run, err := loadActiveAgentAttemptTx(ctx, tx, ref)
+	if err != nil {
+		return err
+	}
+	c, err := getSpecialistToolCallTx(ctx, tx, ref, callID)
+	if err != nil {
+		return err
+	}
+	binding, err := validateSpecialistWorkerBindingTx(ctx, tx, ref, c.Name)
+	if err != nil {
+		return err
+	}
+	if binding.BatchPlanID == "" || run.Status != domain.RunRunning || c.Status != domain.SupervisorToolPending ||
+		c.ChargeID == "" || c.AuthorityJSON == "" || c.AuthorityJSON != authorityJSON || c.StartedAt != nil {
+		return apperror.New(apperror.CodeConflict, "Batch worker invocation lacks a fresh charged authority; a started invocation cannot be repeated")
+	}
+	changed, err := tx.ExecContext(ctx, `UPDATE specialist_tool_calls SET started_at=? WHERE agent_attempt_id=? AND call_id=? AND status='pending' AND started_at IS NULL`, ts(time.Now().UTC()), ref.AttemptID, callID)
+	if err != nil {
+		return err
+	}
+	if err := requireSingleAgentAttemptUpdate(changed, "Batch worker invocation already started"); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

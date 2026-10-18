@@ -133,14 +133,26 @@ func (s *CommandRuntimeService) authorizeCommandJobActor(ctx context.Context,
 	if b.worker == nil && actor.Source == domain.AgentAttributionLegacyUnknown {
 		return nil
 	}
-	if actor.AgentID != b.actor.ID || (b.worker != nil && (actor.Source != domain.AgentAttributionRecorded || actor.AgentAttemptID != b.worker.Ref.AttemptID)) {
+	if actor.AgentID != b.actor.ID || (b.worker != nil && actor.Source != domain.AgentAttributionRecorded) {
 		return apperror.New(apperror.CodeNotFound, "command Job does not belong to this Agent")
+	}
+	if b.worker != nil {
+		current, err := readWorkerExecutionContext(ctx, s.store, b.worker.Ref, s.drydocks)
+		if err != nil || current.Binding != *b.worker {
+			return apperror.New(apperror.CodeNotFound, "command Job requires the current worker attempt")
+		}
+		origin := domain.AgentAttemptRef{RunID: job.RunID, AgentID: actor.AgentID, AttemptID: actor.AgentAttemptID}
+		owned, err := readWorkerResourceContext(ctx, s.store, origin, s.drydocks)
+		if err != nil || workerResourceFingerprint(owned.Binding) != workerResourceFingerprint(*b.worker) ||
+			job.RunID != b.run.ID || job.SessionID != b.actor.SessionID || job.WorkspaceRootSHA256 != b.rootSHA256 {
+			return apperror.New(apperror.CodeNotFound, "command Job does not belong to this worker resource scope")
+		}
 	}
 	return nil
 }
 
 // nil means this is an ordinary root Job. A concrete false rejects a child
-// Job whose original attempt, selected worktree or permission no longer lives.
+// Job whose worker, selected worktree or permission no longer lives.
 func (s *CommandRuntimeService) workerCommandJobBindingsCurrent(ctx context.Context,
 	job runner.CommandRuntimeJob,
 ) (*bool, error) {
@@ -167,7 +179,7 @@ func (s *CommandRuntimeService) workerCommandJobBindingsCurrent(ctx context.Cont
 		return &current, err
 	}
 	ref := domain.AgentAttemptRef{RunID: job.RunID, AgentID: actor.AgentID, AttemptID: actor.AgentAttemptID}
-	worker, err := readWorkerExecutionContext(ctx, s.store, ref, s.drydocks)
+	worker, err := readWorkerResourceContext(ctx, s.store, ref, s.drydocks)
 	if err != nil {
 		// A stale child is a revoked lifetime, not a reconciler failure.
 		if apperror.CodeOf(err) == apperror.CodeConflict || apperror.CodeOf(err) == apperror.CodePolicyDenied ||
@@ -457,9 +469,10 @@ func (m *CommandRuntimeMultiplexer) PreflightSpecialistCommandApproval(ctx conte
 }
 
 // CloseSpecialistCommands revokes only process-local Jobs admitted by this
-// original child attempt. Cleanup does not acquire a new execution lease.
+// child, including earlier continued attempts. Cleanup needs no active attempt
+// or new execution lease, so an idle worker can also be revoked.
 func (s *CommandRuntimeService) CloseSpecialistCommands(ctx context.Context, ref domain.AgentAttemptRef) (int, error) {
-	if s == nil || s.store == nil || s.manager == nil || ctx == nil || ref.Validate() != nil {
+	if s == nil || s.store == nil || s.manager == nil || ctx == nil || ref.RunID == "" || ref.AgentID == "" {
 		return 0, apperror.New(apperror.CodeInvalidArgument, "worker command cleanup identity is invalid")
 	}
 	actors, ok := s.store.(commandJobActorStore)
@@ -483,7 +496,7 @@ func (s *CommandRuntimeService) CloseSpecialistCommands(ctx context.Context, ref
 			result = errors.Join(result, err)
 			continue
 		}
-		if actor.Source != domain.AgentAttributionRecorded || actor.AgentID != ref.AgentID || actor.AgentAttemptID != ref.AttemptID {
+		if actor.Source != domain.AgentAttributionRecorded || actor.AgentID != ref.AgentID {
 			continue
 		}
 		if _, err := s.manager.Stop(cleanup, job.ID, true, 0); err != nil {

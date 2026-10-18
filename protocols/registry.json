@@ -276,6 +276,10 @@
         "specialist_delegation_review.v1",
         "specialist_operator_step.v1",
         "specialist_tool_approval.v1",
+        "worker-batch-authority.v1",
+        "worker-history.v1",
+        "worker_resource.v1",
+        "worker_skill_read.v1",
         "workflow-summary.v1",
         "workflow.v1",
         "workflow_control.v1",
@@ -1964,9 +1968,16 @@
         "mcp.call.input.v1",
         "mcp.capabilities.v1",
         "mcp.content.input.v1",
-        "mcp_worker_scope.v1"
+        "mcp_worker_scope.v2"
       ],
-      "retired_identifiers": []
+      "retired_identifiers": [
+        {
+          "identifier": "mcp_worker_scope.v1",
+          "decision": "ADR 0192 replaces attempt-local MCP connection scope with worker scope while keeping every invocation bound to its current attempt.",
+          "migration_evidence": "The scope key indexes process-local client sessions only. Connections do not survive host restart; durable tool calls, approvals and receipts retain their original attempt identities and are not rewritten.",
+          "rollback": "Restore the v1 scope function from Git and restart the host to recreate attempt-local connections. Retain all durable invocation records unchanged."
+        }
+      ]
     },
     {
       "id": "mcp-live-input",

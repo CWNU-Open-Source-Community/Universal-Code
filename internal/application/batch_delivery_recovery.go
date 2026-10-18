@@ -84,6 +84,9 @@ func (s *BatchDeliveryService) Cancel(ctx context.Context,
 	if fenceErr != nil {
 		return result, fenceErr
 	}
+	if err := s.closeBatchWorkers(ctx, plan.ID); err != nil {
+		return result, apperror.Wrap(apperror.CodeFailedPrecondition, "batch worker cleanup is unconfirmed; worktrees preserved", err)
+	}
 	if err := s.stopBatchValidationJobs(ctx, plan.ID); err != nil {
 		return result, apperror.Wrap(apperror.CodeFailedPrecondition, "batch validation cleanup is unconfirmed; worktrees preserved", err)
 	}
@@ -271,7 +274,10 @@ func (s *BatchDeliveryService) Reconcile(ctx context.Context,
 		return result, apperror.Normalize(err)
 	}
 	if plan.Status.Terminal() {
-		return result, nil
+		result.MergeCompleted = plan.Status == domain.BatchDeliveryCompleted
+		err := s.closeBatchWorkers(ctx, plan.ID)
+		result.NeedsOperatorAttention = err != nil
+		return result, err
 	}
 	run, err := s.store.GetRun(ctx, plan.RunID)
 	if err != nil {
@@ -370,6 +376,7 @@ func (s *BatchDeliveryService) Reconcile(ctx context.Context,
 		workspaces, queue)
 	if mergeResult.Queue.Status == domain.BatchMergeQueueCompleted {
 		result.MergeCompleted = true
+		err = errors.Join(err, s.closeBatchWorkers(ctx, plan.ID))
 	}
 	if err != nil {
 		result.NeedsOperatorAttention = true

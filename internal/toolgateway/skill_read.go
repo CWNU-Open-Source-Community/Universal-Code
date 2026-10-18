@@ -114,10 +114,10 @@ func NormalizeSkillReadPayload(payload json.RawMessage) (SkillReadRequest, json.
 }
 
 func validateSkillReadCall(call ToolCall) error {
-	if call.Name != SkillReadTool || len(call.Arguments) != 0 || call.RequestedBy != "run_supervisor" ||
+	if call.Name != SkillReadTool || len(call.Arguments) != 0 || !recordedExecutionActor(call) ||
 		call.RunID == "" || call.SessionID == "" || call.AgentID == "" || call.AgentAttemptID == "" ||
 		call.OperationKey == "" || call.LeaseID == "" || call.LeaseGeneration <= 0 {
-		return apperror.New(apperror.CodeFailedPrecondition, "skill_read requires the current fenced root Supervisor")
+		return apperror.New(apperror.CodeFailedPrecondition, "skill_read requires a current fenced Supervisor or execution worker")
 	}
 	_, _, err := NormalizeSkillReadPayload(call.Payload)
 	return err

@@ -791,7 +791,7 @@ type specialistModelBudgetState struct {
 func (r *SubagentRunner) callModelWithRetry(ctx context.Context, run domain.Run,
 	ref domain.AgentAttemptRef, modelRef llm.ModelRef, request llm.ChatRequest,
 	contextAudit *llm.ModelContextAudit, maxTurnExecutionMillis int64,
-	protocolRepair int, budgetState *specialistModelBudgetState,
+	protocolRepair int, budgetState *specialistModelBudgetState, skillGuidance ...workerSkillReadGuidance,
 ) (specialistModelCallResult, error) {
 	result := specialistModelCallResult{}
 	retryPolicy := normalizeModelRetryPolicy(r.retryPolicy)
@@ -801,6 +801,11 @@ func (r *SubagentRunner) callModelWithRetry(ctx context.Context, run domain.Run,
 	for {
 		if err := ctx.Err(); err != nil {
 			return result, apperror.Normalize(err)
+		}
+		for _, guidance := range skillGuidance {
+			if err := guidance.requireCurrent(ctx, r.workerRuntime, request); err != nil {
+				return result, err
+			}
 		}
 		if len(run.Config.ProjectInstructions) > 0 {
 			if err := requireCurrentPinnedProjectInstructions(ctx, r.store, run); err != nil {

@@ -54,10 +54,14 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 	if scope.Call.SpecialistToolCallID != "" {
 		callID = scope.Call.SpecialistToolCallID
 	}
-	if slot.consumed[callID] {
+	consumedID := callID
+	if scope.Call.SpecialistToolCallID != "" {
+		consumedID = a.AgentAttemptID + "\x00" + callID
+	}
+	if slot.consumed[consumedID] {
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("outcome_unknown: this browser call was already dispatched; do not repeat")
 	}
-	slot.consumed[callID] = true
+	slot.consumed[consumedID] = true
 	var readiness *runner.CommandServiceReadiness
 	if p.ServiceJobID != "" {
 		if s.options.ServiceReadiness == nil {
@@ -96,7 +100,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			if received != runtimeAuthority {
 				return agentBrowserUnavailable("runtime activation does not match its private slot")
 			}
-			return s.check(c, a)
+			return s.checkResource(c, a)
 		}})
 		if e == nil {
 			s.mu.Lock()
@@ -167,8 +171,8 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			readiness = &observed
 			if !observed.Verified || observed.State != "ready" {
 				encoded, err := json.Marshal(struct {
-					Service *runner.CommandServiceReadiness `json:"service"`
-					Navigated bool `json:"navigated"`
+					Service   *runner.CommandServiceReadiness `json:"service"`
+					Navigated bool                            `json:"navigated"`
 				}{readiness, false})
 				return toolgateway.BrowserActionExecutionResult{Content: string(encoded)}, err
 			}

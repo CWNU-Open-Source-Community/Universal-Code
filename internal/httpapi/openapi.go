@@ -2681,7 +2681,10 @@ func (r *openAPISchemaRegistry) schema(valueType reflect.Type) map[string]any {
 
 func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]any {
 	if valueType == reflect.TypeOf(domain.WorkerProfile{}) {
-		return map[string]any{"type": "object", "properties": map[string]any{"tools": map[string]any{"anyOf": []any{map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, map[string]any{"type": "null"}}}}, "additionalProperties": false}
+		return map[string]any{"type": "object", "properties": map[string]any{
+			"tools":         map[string]any{"anyOf": []any{map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, map[string]any{"type": "null"}}},
+			"history_scope": map[string]any{"type": "string", "enum": []string{"", domain.WorkerHistoryDelegated, domain.WorkerHistoryParentSnapshot}},
+		}, "additionalProperties": false}
 	}
 	// The HTTP-only sidecar is flattened beside the sealed Report. Keep the
 	// original Report schema/field metadata intact instead of adding receipt data.

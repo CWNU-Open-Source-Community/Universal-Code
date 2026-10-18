@@ -41,6 +41,13 @@ func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *Special
 				result.ToolCalls++
 				continue
 			}
+			if executor.batch != nil && isBatchWorkerTool(c.Name) {
+				if err := r.resolveBatchWorkerTool(ctx, c, run, mission, child, attempt, executor, gateway); err != nil {
+					return false, err
+				}
+				result.ToolCalls++
+				continue
+			}
 			var callErr error
 			var terminal *domain.SupervisorToolResult
 			if c.StartedAt != nil {
@@ -51,7 +58,7 @@ func (r *SubagentRunner) resolveWorkerTools(ctx context.Context, result *Special
 				if err != nil {
 					callErr = err
 				} else {
-					authority, err := r.workerRuntime.bindWorkerToolAuthority(ctx, c, catalogue)
+					authority, err := r.workerRuntime.bindWorkerToolAuthority(ctx, c, r.batchWorkerCatalogue(catalogue, child))
 					if err != nil {
 						callErr = err
 					} else {
@@ -185,7 +192,7 @@ func workerGatewayCall(c domain.SpecialistToolCall, run domain.Run, mission doma
 	}
 	raw := json.RawMessage(c.AuthorityJSON)
 	switch {
-	case toolgateway.IsAgentCodeTool(call.Name):
+	case toolgateway.IsAgentCodeTool(call.Name) || toolgateway.IsCodeIntelTool(call.Name):
 		a, err := toolgateway.DecodeAgentCodeCallAuthority(raw)
 		if err != nil {
 			return call, err
@@ -216,6 +223,17 @@ func workerGatewayCall(c domain.SpecialistToolCall, run domain.Run, mission doma
 		call.AgentBrowserAuthority, call.CapabilityGeneration = raw, a.Generation
 		call.PermissionMode, call.PermissionRevision = a.PermissionMode, a.PermissionRevision
 		call.PermissionSnapshotID, call.PermissionGeneration, call.RunAuthorizationFence = a.PermissionSnapshotID, a.PermissionActivation, a.RunAuthorizationFence
+	case call.Name == toolgateway.SkillReadTool:
+		if err := validateWorkerSkillAuthority(call, raw); err != nil {
+			return call, err
+		}
+	case toolgateway.IsHistoryRecallTool(call.Name):
+		a, err := toolgateway.DecodeWorkerHistoryAuthority(raw)
+		if err != nil {
+			return call, err
+		}
+		call.PermissionMode, call.PermissionRevision = a.PermissionMode, a.PermissionRevision
+		call.PermissionSnapshotID, call.PermissionGeneration, call.PermissionRuntimeEpoch, call.RunAuthorizationFence = a.PermissionSnapshotID, a.PermissionGeneration, a.PermissionRuntimeEpoch, a.RunAuthorizationFence
 	default:
 		return call, errors.New("worker tool runtime is unavailable")
 	}

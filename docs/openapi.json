@@ -37664,6 +37664,9 @@
           },
           "owner_available": {
             "type": "boolean"
+          },
+          "waiting_approval": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -74445,6 +74448,14 @@
       "WorkerProfile": {
         "additionalProperties": false,
         "properties": {
+          "history_scope": {
+            "enum": [
+              "",
+              "delegated",
+              "parent_snapshot"
+            ],
+            "type": "string"
+          },
           "tools": {
             "anyOf": [
               {
@@ -74764,6 +74775,9 @@
       "WorkflowStep": {
         "additionalProperties": false,
         "properties": {
+          "batch_plan": {
+            "$ref": "#/components/schemas/WorkflowValueRef"
+          },
           "body": {
             "items": {
               "$ref": "#/components/schemas/WorkflowStep"

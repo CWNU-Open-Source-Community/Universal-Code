@@ -1078,6 +1078,12 @@ func prepareAcceptedBatchTextDeliveries(t *testing.T,
 func newBatchDeliveryApplicationFixture(t *testing.T,
 	withDependency bool, mode domain.RunExecutionPermissionMode, projects ...*projectconfig.Effective,
 ) batchDeliveryApplicationFixture {
+	return newBatchDeliveryApplicationFixtureWithWorker(t, withDependency, mode, nil, projects...)
+}
+
+func newBatchDeliveryApplicationFixtureWithWorker(t *testing.T,
+	withDependency bool, mode domain.RunExecutionPermissionMode, worker *domain.WorkerProfile, projects ...*projectconfig.Effective,
+) batchDeliveryApplicationFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is unavailable")
@@ -1179,11 +1185,11 @@ func newBatchDeliveryApplicationFixture(t *testing.T,
 	}
 	childSpec, err := domain.NormalizeChildTaskProposalSpec(domain.ChildTaskProposalSpec{
 		Version: domain.ChildTaskProposalVersion, Tasks: []domain.ChildTask{
-			{Title: "task one", Goal: "change internal one", Skills: []string{"model.chat"},
+			{Title: "task one", Goal: "change internal one", Skills: []string{"model.chat"}, Worker: worker,
 				SurfaceHint: domain.ChildTaskSurfaceHintCore, TurnLimit: 3, TokenLimit: 1024,
 				TimeoutMillis:     120000,
 				ExpectedArtifacts: []domain.ChildTaskExpectedArtifact{{PathHint: "internal/one", Kind: "code"}}},
-			{Title: "task two", Goal: "change internal two", Skills: []string{"model.chat"},
+			{Title: "task two", Goal: "change internal two", Skills: []string{"model.chat"}, Worker: worker,
 				SurfaceHint:        domain.ChildTaskSurfaceHintCore,
 				DependencyOrdinals: dependencies, TurnLimit: 3, TokenLimit: 1024,
 				TimeoutMillis:     120000,

@@ -1,0 +1,74 @@
+# Worker tools: OCR delegate review
+
+Reviewed on 2026-10-18 against `de318deb8f52ebcf33d29f414d0f3e39ee94bd76`.
+This slice adds on-demand Skills, scoped history recall, and the configured
+language server's read tools to execution workers. Batch integration and resource
+continuation are tracked separately in #374.
+
+OCR selected files and resolved review rules; the host agent and delegated
+reviewers read and assessed the implementation. No OCR model endpoint was used.
+The final source tree was preserved by the application's startup snapshot
+`b6f3ade888276865ceddbde2fd16b40fa7479045`; the recovered source matches that tree.
+
+## Coverage
+
+The source preview contained 46 paths: 36 reviewable and 10 selector exclusions.
+Of the 36 reviewable paths, 32 were manually reviewed: 7 new files in full and
+25 existing files by changed lines and relevant callers. Four generated files
+were regenerated and their changes checked, but excluded from full manual source
+review. Manual coverage of OCR's reviewable set is 88.89%.
+
+The [per-file checklist](coverage.json) records every previewed path, review scope
+and exclusion reason. The audit report and checklist themselves are not counted
+as implementation review coverage. There are no outstanding confirmed findings
+in this slice.
+
+Review focused on current permission checks, child/attempt authority, immutable
+parent-history admission scope, revalidation of history source visibility,
+Skill installation changes during retries, exact Skill reads after compaction,
+and preserving the existing read-only child profile.
+
+## Verification
+
+The integrated focused run passed in `internal/application`, `internal/store`,
+`internal/toolgateway`, `internal/domain`, and `internal/httpapi`:
+
+```text
+go test -p 1 ./internal/application ./internal/store ./internal/toolgateway ./internal/domain ./internal/httpapi -run '^(TestWorkerSkill|TestWorkerHistory|TestWorkerCodeIntel|TestWorkerCatalogue|TestExecutionWorkerReads|TestExecutionWorkerNarrowed|TestHistoryRecall|TestCleanInstallBaseline|TestWorkerProfile|TestOpenAPI)' -count=1 -timeout 180s
+```
+
+This run exercises real files and SQLite through controlled model responses.
+The optional real-gopls test skips when its binary environment variable is absent;
+that skip is not counted as a real language-server acceptance result here.
+The retained local log is `tools-integrated-tests.log` in this task's evidence
+directory.
+
+OpenAPI generation, clean-install baseline generation, frontend type checking,
+and 16 focused WorkflowPanel/SpecialistExecution UI tests passed. The actual
+WorkflowPanel component was viewed in Edge at 700 px and 390 px widths, with
+static API responses: the parent-history option was readable and the 390 px
+document had no horizontal overflow. This was a component-layout check, not a
+full backend task journey or an autonomous real-model acceptance run.
+
+## Integration follow-up
+
+Reviewing the Batch integration found that history recall treated every tool
+authority as an execution-permission snapshot. Skill and Batch receipts use
+different host-issued authority formats, so a completed receipt could fail an
+otherwise valid history search. The reader now verifies those exact formats,
+tool kinds and recorded child bindings; permission-bearing receipts retain their
+existing current-permission checks. This permits reading historical evidence,
+not reactivating a Skill or an old Batch owner.
+
+OCR delegate selected two production paths for this correction (the history
+reader and protocol registry); both changed regions and their callers were
+reviewed. The test changes and schema-history documentation were additionally
+read. Focused history tests and `TestSchemaHistoryListsEveryVersionInOrder`
+passed. The latter caught the missing v209 documentation row in CI; the row was
+added without changing the test or migration.
+
+## CI 跟进：Skill CLI 版本断言
+
+完整 CI 的 application 包已通过（1768.278 秒），唯一实际测试失败是 `TestSkillCLIListsShowsAndValidatesBuiltinsWithoutRuntimeState`。当前内置 `plan-delivery/manifest.json` 为 1.3.0，而主线遗留的 CLI 列表及过滤列表断言仍为 1.2.0。
+
+将两处预期值更新到已发布的内置版本，保留精确版本检查。`go test -p 1 ./internal/app -run '^TestSkillCLI' -count=1 -timeout 120s` 通过。重新执行 OCR delegate preview/rule，并人工阅读这两处差异、完整受影响测试函数和实际 manifest；测试文件按部分审阅记录，未宣称通读全部不变测试。

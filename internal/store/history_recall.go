@@ -342,37 +342,7 @@ func (s *SQLiteStore) readThreadHistory(ctx context.Context, q historyQueryer, r
 	}
 	value.ThreadID = scope.threadID
 	var parts map[string]string
-	if strings.HasPrefix(request.SourceID, "memory:") || strings.HasPrefix(request.SourceID, "note:") {
-		value.Record, parts, err = readHistoryMutableSource(ctx, q, scope, request.SourceID)
-	} else if strings.HasPrefix(request.SourceID, "message:") {
-		id, parseErr := strconv.ParseInt(strings.TrimPrefix(request.SourceID, "message:"), 10, 64)
-		if parseErr != nil || id <= 0 {
-			return value, historyNotFound()
-		}
-		value.Record, parts, err = readHistoryMessage(ctx, q, scope, id)
-	} else if strings.HasPrefix(request.SourceID, "summary:") {
-		id, parseErr := strconv.ParseInt(strings.TrimPrefix(request.SourceID, "summary:"), 10, 64)
-		if parseErr != nil || id <= 0 {
-			return value, historyNotFound()
-		}
-		value.Record, parts, err = readHistorySummary(ctx, q, scope, id)
-	} else if strings.HasPrefix(request.SourceID, "continuity:") {
-		var ref historyContinuityRef
-		if decodeHistoryToken(strings.TrimPrefix(request.SourceID, "continuity:"), &ref) != nil || !domain.ValidAgentID(ref.Run) || !validStoreDigest(ref.Fingerprint) {
-			return value, historyNotFound()
-		}
-		value.Record, parts, err = readHistoryContinuity(ctx, q, scope, "r.id=?", ref.Fingerprint, ref.Run)
-	} else if strings.HasPrefix(request.SourceID, "artifact:") {
-		value.Record, parts, err = readHistoryMCPArtifact(ctx, q, scope, strings.TrimPrefix(request.SourceID, "artifact:"))
-	} else if strings.HasPrefix(request.SourceID, "tool:") {
-		var ref historyToolRef
-		if decodeHistoryToken(strings.TrimPrefix(request.SourceID, "tool:"), &ref) != nil {
-			return value, historyNotFound()
-		}
-		value.Record, parts, err = readHistoryTool(ctx, q, scope, "c.run_id=? AND c.turn=? AND c.attempt_id=? AND c.call_id=?", ref.Run, ref.Turn, ref.Attempt, ref.Call)
-	} else {
-		return value, historyNotFound()
-	}
+	value.Record, parts, err = readHistorySource(ctx, q, scope, request.SourceID)
 	if err != nil {
 		return value, err
 	}
@@ -517,4 +487,45 @@ func historyExcerpt(content, query string) string {
 		end--
 	}
 	return content[start:end]
+}
+
+func readHistorySource(ctx context.Context, q historyQueryer, scope historyScope, sourceID string) (domain.HistoryRecord, map[string]string, error) {
+	var record domain.HistoryRecord
+	var parts map[string]string
+	var err error
+	if strings.HasPrefix(sourceID, "memory:") || strings.HasPrefix(sourceID, "note:") {
+		record, parts, err = readHistoryMutableSource(ctx, q, scope, sourceID)
+	} else if strings.HasPrefix(sourceID, "message:") {
+		id, parseErr := strconv.ParseInt(strings.TrimPrefix(sourceID, "message:"), 10, 64)
+		if parseErr != nil || id <= 0 {
+			return record, nil, historyNotFound()
+		}
+		record, parts, err = readHistoryMessage(ctx, q, scope, id)
+	} else if strings.HasPrefix(sourceID, "summary:") {
+		id, parseErr := strconv.ParseInt(strings.TrimPrefix(sourceID, "summary:"), 10, 64)
+		if parseErr != nil || id <= 0 {
+			return record, nil, historyNotFound()
+		}
+		record, parts, err = readHistorySummary(ctx, q, scope, id)
+	} else if strings.HasPrefix(sourceID, "continuity:") {
+		var ref historyContinuityRef
+		if decodeHistoryToken(strings.TrimPrefix(sourceID, "continuity:"), &ref) != nil || !domain.ValidAgentID(ref.Run) || !validStoreDigest(ref.Fingerprint) {
+			return record, nil, historyNotFound()
+		}
+		record, parts, err = readHistoryContinuity(ctx, q, scope, "r.id=?", ref.Fingerprint, ref.Run)
+	} else if strings.HasPrefix(sourceID, "artifact:") {
+		record, parts, err = readHistoryMCPArtifact(ctx, q, scope, strings.TrimPrefix(sourceID, "artifact:"))
+	} else if strings.HasPrefix(sourceID, "tool:") {
+		var ref historyToolRef
+		if decodeHistoryToken(strings.TrimPrefix(sourceID, "tool:"), &ref) != nil {
+			return record, nil, historyNotFound()
+		}
+		record, parts, err = readHistoryTool(ctx, q, scope, "c.run_id=? AND c.turn=? AND c.attempt_id=? AND c.call_id=?", ref.Run, ref.Turn, ref.Attempt, ref.Call)
+	} else {
+		return record, nil, historyNotFound()
+	}
+	if err != nil {
+		return record, nil, err
+	}
+	return record, parts, nil
 }

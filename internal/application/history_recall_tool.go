@@ -23,7 +23,10 @@ type HistoryRecallToolStore interface {
 	ReadThreadHistory(context.Context, string, domain.HistoryReadRequest) (domain.HistoryReadResult, error)
 }
 
-type HistoryRecallToolExecutor struct{ store HistoryRecallToolStore }
+type HistoryRecallToolExecutor struct {
+	store                 HistoryRecallToolStore
+	executionCapabilities domain.ExecutionPermissionRuntimeCapabilities
+}
 
 func (s *AgentRunner) historyRecallForTurn(ctx context.Context, turn domain.SupervisorTurn) (bool, error) {
 	if !s.historyRecallEnabled {
@@ -52,6 +55,9 @@ func (e *HistoryRecallToolExecutor) ExecuteHistoryRecall(ctx context.Context, ca
 	payload, err := toolgateway.NormalizeHistoryRecallPayload(call.Name, call.Payload)
 	if err != nil {
 		return nil, false, apperror.Wrap(apperror.CodeInvalidArgument, "invalid history recall request", err)
+	}
+	if call.RequestedBy == "specialist_runner" {
+		return e.executeWorkerHistoryRecall(ctx, call, payload)
 	}
 	if err := e.validateScope(ctx, call); err != nil {
 		return nil, false, err

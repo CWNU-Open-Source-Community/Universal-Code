@@ -786,7 +786,16 @@ func (s *AgentRunner) supervisorCodeIntelCapabilities(ctx context.Context,
 	if err != nil {
 		return result, apperror.Normalize(err)
 	}
-	for _, snapshot := range s.codeIntel.Capabilities(ctx, files.Workspace.ID, files.Workspace.RootPath) {
+	return s.codeIntelWorkspaceCapabilities(ctx, files.Workspace.ID, files.Workspace.RootPath), nil
+}
+
+func (s *AgentRunner) codeIntelWorkspaceCapabilities(ctx context.Context, workspaceID, root string) toolgateway.CodeIntelCapabilitySnapshot {
+	result := toolgateway.CodeIntelCapabilitySnapshot{ProtocolVersion: codeintel.ProtocolVersion,
+		Servers: []toolgateway.CodeIntelServerCapability{}, Refusals: map[string]string{}}
+	if s.codeIntel == nil {
+		return result
+	}
+	for _, snapshot := range s.codeIntel.Capabilities(ctx, workspaceID, root) {
 		if snapshot.Health != codeintel.HealthHealthy {
 			reason := string(snapshot.Health)
 			if snapshot.LastError != "" {
@@ -807,7 +816,7 @@ func (s *AgentRunner) supervisorCodeIntelCapabilities(ctx context.Context,
 		}
 		result.Servers = append(result.Servers, server)
 	}
-	return result, nil
+	return result
 }
 
 func supervisorToolOperationKey(runID string, turn int, name toolgateway.ToolName,

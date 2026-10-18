@@ -150,6 +150,31 @@ describe("Batch workbench", () => {
     await waitFor(() => expect(localStorage.length).toBe(0));
   });
 
+  it("retains an approval-waiting operation and resumes its original identity after remount", async () => {
+    const waiting = batchWorkbenchFixture();
+    waiting.children[0].waiting_approval = true;
+    const execute = vi.fn().mockResolvedValueOnce(waiting).mockResolvedValueOnce(batchWorkbenchFixture("ready_for_review"));
+    const getWorkbench = vi.fn().mockResolvedValue(batchWorkbenchFixture());
+    const client = { baseURL: "http://batch-test", getBatchWorkbench: getWorkbench, executeBatchWorkbenchChild: execute } as unknown as APIClient;
+    const controls = () => provider(<BatchWorkbenchControls client={client} runID="run-1" planID="batch-1" ordinal={1} />);
+    const user = userEvent.setup();
+    const first = render(controls());
+    await user.click(await screen.findByRole("button", { name: "Start child and return delivery" }));
+    await screen.findByRole("button", { name: "Continue child after approval" });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(localStorage.length).toBe(1);
+    const original = execute.mock.calls[0];
+    first.unmount();
+    getWorkbench.mockResolvedValue(waiting);
+    render(controls());
+    const resume = await screen.findByRole("button", { name: "Continue child after approval" });
+    expect(execute).toHaveBeenCalledOnce();
+    await user.click(resume);
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(execute.mock.calls[1]).toEqual(original);
+    await waitFor(() => expect(localStorage.length).toBe(0));
+  });
+
   it("prevents child execution when saving its original identity fails", async () => {
     const execute = vi.fn(); const client = { baseURL: "http://batch-test", getBatchWorkbench: vi.fn().mockResolvedValue(batchWorkbenchFixture()), executeBatchWorkbenchChild: execute } as unknown as APIClient;
     render(provider(<BatchWorkbenchControls client={client} runID="run-1" planID="batch-1" ordinal={1} />));
