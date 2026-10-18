@@ -72,6 +72,7 @@ type ThreadContextCompactionOperation struct {
 	ErrorMessage         string
 	CreatedAt            time.Time
 	StartedAt            *time.Time
+	TerminalAt           *time.Time
 	Replayed             bool
 }
 

@@ -72,4 +72,35 @@ func TestThreadContextCompactionHTTPUsesRealServiceAndControlBoundary(t *testing
 	if response.Code != http.StatusBadRequest || p.calls != 1 {
 		t.Fatalf("unknown field accepted status=%d calls=%d", response.Code, p.calls)
 	}
+	operationsPath := path + "ions"
+	for _, token := range []string{"", testControlToken} {
+		response = performSessionMessageRequest(t, api, http.MethodGet, operationsPath, token, "", "", nil)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("operation query accepted token without read authority: %d", response.Code)
+		}
+	}
+	response = performSessionMessageRequest(t, api, http.MethodGet, operationsPath, testAccessToken, "", "", nil)
+	var operations domain.ThreadContextCompactionOperations
+	decodeDataStatus(t, response, http.StatusOK, &operations)
+	if len(operations.Operations) != 1 || operations.Operations[0].Status != "completed" {
+		t.Fatalf("operations=%+v", operations)
+	}
+	response = performSessionMessageRequest(t, api, http.MethodGet, operationsPath, testAccessToken, "", "application/json", strings.NewReader(`{}`))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("GET accepted a body: %d", response.Code)
+	}
+	recoverPath := operationsPath + "/" + operations.Operations[0].OperationID + "/recover"
+	recoveryBody, _ := json.Marshal(domain.ThreadContextCompactionRecoveryRequest{Version: domain.ThreadContextCompactionRecoveryVersion, ExpectedRunID: run.ID, Action: "resume"})
+	for _, token := range []string{"", testAccessToken} {
+		response = performSessionMessageRequest(t, api, http.MethodPost, recoverPath, token, "", "application/json", bytes.NewReader(recoveryBody))
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("recovery accepted token without control: %d", response.Code)
+		}
+	}
+	response = performSessionMessageRequest(t, api, http.MethodPost, recoverPath, testControlToken, "", "application/json", bytes.NewReader(recoveryBody))
+	var recovered domain.ThreadContextCompactionOperationView
+	decodeDataStatus(t, response, http.StatusOK, &recovered)
+	if recovered.Result == nil || !recovered.Result.Replayed || recovered.Result.SummaryID != result.SummaryID || p.calls != 1 {
+		t.Fatalf("recovery=%+v calls=%d", recovered, p.calls)
+	}
 }

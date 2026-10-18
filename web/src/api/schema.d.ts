@@ -4828,6 +4828,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/context/compactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect recent and pending context compactions
+         * @description Returns up to 20 durable operations with pending operations first. Excludes source history, generated text and retry keys. A started operation may still be running; missing usage is not evidence of a free request.
+         */
+        get: operations["listThreadContextCompactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/context/compactions/{operation_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a saved summary or discard a pending compaction
+         * @description Uses the exact operation_id and expected_run_id as durable retry identity. Resume only installs a saved generated candidate after source and idle checks; it never dispatches a model request. Discard fences adoption of the candidate without cancelling the provider request. Unknown sent charges remain reserved, and late responses can only record accounting. Completed operations replay their existing result.
+         */
+        post: operations["recoverThreadContextCompaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/context/pin-proposals/{proposal_id}/resolve": {
         parameters: {
             query?: never;
@@ -14149,6 +14189,38 @@ export interface components {
             thread_id: string;
             /** @enum {string} */
             version: "thread_application_services.v1";
+        };
+        ThreadContextCompactionOperationView: {
+            /** Format: date-time */
+            created_at: string;
+            error_message?: string;
+            model?: string;
+            operation_id: string;
+            provider?: string;
+            result?: components["schemas"]["ThreadContextCompactionResult"];
+            run_id: string;
+            session_id: string;
+            source_sha256: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** @enum {string} */
+            status: "prepared" | "started" | "generated" | "completed" | "noop" | "failed";
+            /** Format: date-time */
+            terminal_at?: string;
+            usage_known: boolean;
+        };
+        ThreadContextCompactionOperations: {
+            operations: components["schemas"]["ThreadContextCompactionOperationView"][];
+            thread_id: string;
+            /** @enum {string} */
+            version: "thread_context_compaction_operations.v1";
+        };
+        ThreadContextCompactionRecoveryRequest: {
+            /** @enum {string} */
+            action: "resume" | "discard";
+            expected_run_id: string;
+            /** @enum {string} */
+            version: "thread_context_compaction_recovery.v1";
         };
         ThreadContextCompactionRequestView: {
             expected_run_id: string;
@@ -27719,6 +27791,90 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ThreadContextCompactionResult"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listThreadContextCompactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadContextCompactionOperations"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    recoverThreadContextCompaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+                /** @description Durable context compaction identity */
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadContextCompactionRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadContextCompactionOperationView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
