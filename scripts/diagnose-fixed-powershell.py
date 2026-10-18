@@ -26,7 +26,7 @@ def overlay(repo, directory, mode):
     if mode != "original":
         source = replace_once(source, "param([string]$RelativePathHex) if", "param([string]$RelativePathHex) " + marker("entry") + "if")
         source = replace_once(source, "$RelativePath = [Text.Encoding]::UTF8.GetString($Bytes); Get-ChildItem", "$RelativePath = [Text.Encoding]::UTF8.GetString($Bytes); " + marker("decoded") + "Get-ChildItem")
-        if mode in {"pipeline", "qualified", "discovery"}:
+        if mode in {"pipeline", "qualified", "discovery", "explicit-import", "explicit-all"}:
             source = replace_once(source, "| ConvertTo-Json -Compress }`", "| ConvertTo-Json -Compress; " + marker("completed") + "}`")
         else:
             source = replace_once(source, "Get-ChildItem -LiteralPath $RelativePath -Force | Select-Object Name,Length,Attributes | ConvertTo-Json -Compress }`", "$Items = @(Get-ChildItem -LiteralPath $RelativePath -Force); " + marker("enumerated") + "$Rows = @($Items | Select-Object Name,Length,Attributes); " + marker("projected") + "$Rows | ConvertTo-Json -Compress; " + marker("completed") + "}`")
@@ -34,6 +34,10 @@ def overlay(repo, directory, mode):
             source = replace_once(source, "Get-ChildItem -LiteralPath", r"Microsoft.PowerShell.Management\Get-ChildItem -LiteralPath")
         if mode == "discovery":
             source = replace_once(source, "Get-ChildItem -LiteralPath", "$Found = Get-Command -Name Get-ChildItem -CommandType Cmdlet; " + marker("discovered") + "Get-ChildItem -LiteralPath")
+        if mode == "explicit-import":
+            source = replace_once(source, "Get-ChildItem -LiteralPath", r"Microsoft.PowerShell.Core\Import-Module -Name ($PSHOME + '\Modules\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop; " + marker("imported") + "Get-ChildItem -LiteralPath")
+        if mode == "explicit-all":
+            source = replace_once(source, "Get-ChildItem -LiteralPath", r"Microsoft.PowerShell.Core\Import-Module -Name ($PSHOME + '\Modules\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1'),($PSHOME + '\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop; " + marker("imported") + "Get-ChildItem -LiteralPath")
         test = replace_once(test, "result.stderr.err != nil || len(result.stderr.value) != 0 {", "result.stderr.err != nil {")
         test = replace_once(test, "result := waitWindowsProfileTestProcess(process, time.Duration(plan.TimeoutMilliseconds)*time.Millisecond)", "result := waitWindowsProfileTestProcess(process, time.Duration(plan.TimeoutMilliseconds)*time.Millisecond)\n\t\t\tt.Logf(\"diagnostic-only phases: %s\", result.stderr.value)")
     replacements = {}
@@ -51,7 +55,7 @@ def main():
         raise RuntimeError("Windows-only diagnostic")
     repo = Path(__file__).resolve().parents[1]
     results = []
-    for mode in ["original", "discovery"]:
+    for mode in ["explicit-import", "explicit-all"]:
         with tempfile.TemporaryDirectory(prefix="fixed-powershell-") as temporary:
             path = overlay(repo, Path(temporary), mode)
             print(json.dumps({"diagnostic_only": True, "mode": mode, "budget_ms": 60000}), flush=True)
