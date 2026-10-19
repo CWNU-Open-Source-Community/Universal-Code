@@ -549,6 +549,7 @@ describe("projectThreadNarrative", () => {
       kind: "assistant",
       runId: "run-1",
       text: "第一部分内容。\n\n第二部分内容。",
+      messageIDs: ["part-1", "part-2"],
       branchSourceID: "part-2",
       changeSourceID: "part-1",
     }));

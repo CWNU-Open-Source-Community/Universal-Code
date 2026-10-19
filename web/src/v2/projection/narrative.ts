@@ -47,6 +47,7 @@ export type NarrativeEntry =
   | {
       id: string;
       kind: "assistant";
+      messageIDs?: string[];
       text: string;
       runId?: string;
       branchSourceID?: string;
@@ -320,10 +321,12 @@ export function projectThreadNarrative(
         // synthetic continuation turn. Keep distinct progress updates, but do
         // not show an identical durable answer twice in the conversation.
         if (previous.text !== text) previous.text = `${previous.text}\n\n${text}`;
+        previous.messageIDs = [...(previous.messageIDs ?? [previous.id]), item.id];
         previous.branchSourceID = branchSourceID;
         previous.changeSourceID ??= branchSourceID;
       } else {
         result.push({ id: item.id, kind: "assistant", text,
+          messageIDs: [item.id],
           runId: item.run_id,
           branchSourceID,
           changeSourceID: branchSourceID,

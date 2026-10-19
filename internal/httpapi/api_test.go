@@ -775,6 +775,12 @@ func TestThreadTranscriptKeepsCommittedInputBeforeToolsAcrossPages(t *testing.T)
 			t.Fatalf("page size %d lost or duplicated input/tool facts: users=%d tools=%d", limit, users, tools)
 		}
 	}
+	var matches []ThreadSearchResultView
+	decodeData(t, performRequest(t, api, http.MethodGet, "/api/v1/threads/search?q="+url.QueryEscape(input.Message.Content),
+		testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil), &matches)
+	if len(matches) != 2 || matches[1].MessageID != queued.ID {
+		t.Fatalf("search must retain the original queue anchor and the independent same-text message: %#v", matches)
+	}
 	after, err := st.ListRunEvents(ctx, run.ID)
 	if err != nil {
 		t.Fatal(err)

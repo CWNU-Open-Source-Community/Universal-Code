@@ -3,15 +3,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../api/client";
-import type { ThreadView, WorkspaceView } from "../api/types";
+import type { ThreadSearchResultView, ThreadView, WorkspaceView } from "../api/types";
 import { useConnectionStore } from "../state/connection";
 import { LocaleProvider } from "../lib/locale";
 import { V2Workbench } from "./app";
 import { v2QueryKeys } from "./query-keys";
 
 vi.mock("./components/conversation", () => ({
-  V2Conversation: ({ threadID, draft, onDraftChange }: { threadID: string; draft: string;
-    onDraftChange: (value: string) => void }) => <div data-testid="search-current-task">{threadID}
+  V2Conversation: ({ threadID, messageID, draft, onDraftChange }: { threadID: string; messageID?: string; draft: string;
+    onDraftChange: (value: string) => void }) => <div data-testid="search-current-task" data-message-id={messageID}>{threadID}
     <textarea aria-label="当前任务草稿" value={draft} onChange={(event) => onDraftChange(event.target.value)} />
   </div>,
 }));
@@ -23,7 +23,7 @@ const current: ThreadView = {
   composer_state: "ready", version: 1, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
 };
 const clients: QueryClient[] = [];
-const page = (items: ThreadView[] | WorkspaceView[], next_cursor = "") => ({
+const page = (items: ThreadView[] | WorkspaceView[] | ThreadSearchResultView[], next_cursor = "") => ({
   items, page: { limit: 100, next_cursor }, requestID: "task-search-fixture",
 });
 function deferred<T>() {
@@ -32,16 +32,26 @@ function deferred<T>() {
   const promise = new Promise<T>((fulfill, fail) => { resolve = fulfill; reject = fail; });
   return { promise, resolve, reject };
 }
-function start(getThreads: (query: { q?: string }, cursor: string, signal: AbortSignal) => unknown) {
+function start(getThreads: (query: { q?: string; include_archived?: boolean }, cursor: string, signal: AbortSignal) => unknown) {
   window.history.replaceState({}, "", `#/threads/${current.id}`);
-  const getPage = vi.fn((path: string, query: { q?: string }, cursor: string, signal: AbortSignal) =>
-    path === "/workspaces" ? Promise.resolve(page([workspace])) : Promise.resolve(getThreads(query, cursor, signal)));
+  const getPage = vi.fn(async (path: string, query: { q?: string; include_archived?: boolean }, cursor: string, signal: AbortSignal) => {
+    if (path === "/workspaces") return page([workspace]);
+    const result = await getThreads(query, cursor, signal) as ReturnType<typeof page>;
+    if (path !== "/threads/search") return result;
+    return { ...result, items: result.items.map((value) => {
+      if ("thread_id" in value) return value;
+      const thread = value as ThreadView;
+      return { id: thread.id, thread_id: thread.id, thread_title: thread.title, thread_status: thread.status,
+        workspace_id: thread.workspace_id ?? "", role: "title", snippet: thread.execution_state ?? thread.title,
+        created_at: thread.created_at } satisfies ThreadSearchResultView;
+    }) };
+  });
   const client = { hasThreadControl: true, getPage, get: vi.fn(), createThread: vi.fn(),
     submitThreadTurn: vi.fn(), executeRun: vi.fn(), transitionThread: vi.fn() } as unknown as APIClient;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(queryClient);
   render(<QueryClientProvider client={queryClient}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
-  const listCalls = () => getPage.mock.calls.filter(([path]) => path === "/threads");
+  const listCalls = () => getPage.mock.calls.filter(([path]) => path === "/threads" || path === "/threads/search");
   return { client, queryClient, listCalls };
 }
 async function openSearch() {
@@ -61,7 +71,27 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe("V2 task title search", () => {
+describe("V2 saved conversation search", () => {
+  it("shows saved message snippets and time, restarts archive pagination, and opens the exact archived message without a write", async () => {
+    const result: ThreadSearchResultView = { id: "older-message", message_id: "older-message", thread_id: "archived-thread",
+      thread_title: "Archived conversation", workspace_id: workspace.id, thread_status: "archived", role: "assistant",
+      snippet: "The saved answer contains the needle.", created_at: "2026-10-01T04:00:00Z" };
+    const { client, listCalls } = start((query) => query.q
+      ? page(query.include_archived ? [result] : [], query.include_archived ? "more-archived" : "") : page([current]));
+    const input = await openSearch();
+    fireEvent.change(input, { target: { value: "needle" } });
+    await screen.findByText("没有匹配的标题或消息");
+    await userEvent.click(screen.getByRole("checkbox", { name: "包含已归档对话" }));
+    const match = await screen.findByRole("button", { name: result.thread_title });
+    expect(match).toHaveAccessibleDescription(result.snippet);
+    expect(within(match).getByText("已归档 · 助手")).toBeInTheDocument();
+    expect(match.querySelector("time")).toHaveAttribute("datetime", result.created_at);
+    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", { q: "needle", include_archived: true, limit: 50 }, ""]);
+    await userEvent.click(match);
+    expect(window.location.hash).toBe("#/threads/archived-thread/messages/older-message");
+    expect(screen.getByTestId("search-current-task")).toHaveAttribute("data-message-id", "older-message");
+    for (const method of [client.createThread, client.submitThreadTurn, client.executeRun, client.transitionThread]) expect(method).not.toHaveBeenCalled();
+  });
   it("finds a title older than the first 100 tasks without preloading history or querying each task", async () => {
     const newest = [current, ...Array.from({ length: 99 }, (_, index) => ({ ...current,
       id: `newer-${index}`, title: `Newer task ${index}` }))];
@@ -71,9 +101,9 @@ describe("V2 task title search", () => {
     fireEvent.change(input, { target: { value: "needle" } });
     expect(await screen.findByRole("button", { name: older.title })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: current.title })).not.toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("搜索结果：已加载 1 条匹配对话；全部匹配结果已加载");
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("搜索结果：已加载 1 条匹配记录；全部匹配结果已加载");
     expect(listCalls()).toHaveLength(2);
-    expect(listCalls()[1]).toEqual(["/threads", { limit: 100, status: "active", q: "needle" }, "", expect.any(AbortSignal)]);
+    expect(listCalls()[1]).toEqual(["/threads/search", { limit: 50, include_archived: false, q: "needle" }, "", expect.any(AbortSignal)]);
     expect(client.get).not.toHaveBeenCalled();
     expect(screen.getByTestId("search-current-task")).toHaveTextContent(current.id);
     expect(window.location.hash).toBe(`#/threads/${current.id}`);
@@ -168,12 +198,12 @@ describe("V2 task title search", () => {
     await act(async () => { vi.advanceTimersByTime(500); });
     expect(listCalls()).toHaveLength(2);
     expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByRole("alert")).toHaveTextContent("标题搜索最多支持 256 个字符");
+    expect(screen.getByRole("alert")).toHaveTextContent("搜索最多支持 256 个字符");
     fireEvent.click(screen.getByRole("button", { name: "清除对话搜索" }));
     await act(async () => { vi.advanceTimersByTime(1); });
     expect(input).toHaveValue("");
     expect(input).not.toHaveAttribute("aria-invalid", "true");
-    expect(screen.queryByText("标题搜索最多支持 256 个字符，请缩短搜索词。")).not.toBeInTheDocument();
+    expect(screen.queryByText("搜索最多支持 256 个字符，请缩短搜索词。")).not.toBeInTheDocument();
     expect(listCalls().at(-1)?.[1]).toEqual({ limit: 100, status: "active" });
   });
 
@@ -191,20 +221,20 @@ describe("V2 task title search", () => {
     fireEvent.change(input, { target: { value: "alpha" } });
     await screen.findByRole("button", { name: first.title });
     expect(listCalls()).toHaveLength(2);
-    await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配对话" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配记录" }));
     await screen.findByRole("button", { name: older.title });
     expect(screen.getAllByRole("button", { name: first.title })).toHaveLength(1);
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("已加载 2 条匹配对话；还有更多匹配结果");
-    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads", { limit: 100, status: "active", q: "alpha" }, "more-alpha"]);
-    await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配对话" }));
-    await screen.findByRole("button", { name: "正在加载更多匹配对话…" });
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("已加载 2 条匹配记录；还有更多匹配结果");
+    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", { limit: 50, include_archived: false, q: "alpha" }, "more-alpha"]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配记录" }));
+    await screen.findByRole("button", { name: "正在加载更多匹配记录…" });
     fireEvent.change(input, { target: { value: "beta" } });
     await screen.findByRole("button", { name: next.title });
     expect(listCalls().find((call) => call[2] === "last-alpha")?.[3].aborted).toBe(true);
     await act(async () => { late.resolve(page([{ ...older, id: "late-alpha", title: "Late alpha" }])); });
     expect(screen.queryByRole("button", { name: "Late alpha" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: next.title })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "加载更多匹配对话" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "加载更多匹配记录" })).not.toBeInTheDocument();
   });
 
   it("retries a failed search page and reports empty results only after a successful search", async () => {
@@ -219,18 +249,18 @@ describe("V2 task title search", () => {
     });
     const input = await openSearch();
     fireEvent.change(input, { target: { value: "needle" } });
-    await screen.findByRole("button", { name: "加载更多匹配对话" });
-    await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配对话" }));
+    await screen.findByRole("button", { name: "加载更多匹配记录" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配记录" }));
     await screen.findByRole("button", { name: "重试加载对话" });
     expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("更多记录读取失败");
-    expect(screen.queryByText("没有匹配的未归档对话标题")).not.toBeInTheDocument();
+    expect(screen.queryByText("没有匹配的标题或消息")).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "重试加载对话" }));
     await screen.findByRole("button", { name: older.title });
     expect(listCalls().at(-1)?.[2]).toBe("retry-cursor");
     expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("全部匹配结果已加载");
     fireEvent.change(input, { target: { value: "empty" } });
-    expect(await screen.findByText("没有匹配的未归档对话标题")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("已加载 0 条匹配对话；全部匹配结果已加载");
+    expect(await screen.findByText("没有匹配的标题或消息")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("已加载 0 条匹配记录；全部匹配结果已加载");
   });
 
   it("keeps an initial search failure distinct from an empty result and retries the same title", async () => {
@@ -244,12 +274,12 @@ describe("V2 task title search", () => {
     fireEvent.change(input, { target: { value: "needle" } });
     await screen.findByRole("button", { name: "重试加载对话" });
     expect(within(screen.getByRole("complementary")).getByRole("alert")).toHaveTextContent("对话列表加载失败");
-    expect(screen.queryByText("没有匹配的未归档对话标题")).not.toBeInTheDocument();
+    expect(screen.queryByText("没有匹配的标题或消息")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: current.title })).not.toBeInTheDocument();
     expect(screen.getByTestId("search-current-task")).toHaveTextContent(current.id);
     await userEvent.setup().click(screen.getByRole("button", { name: "重试加载对话" }));
     await screen.findByRole("button", { name: result.title });
-    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads", { limit: 100, status: "active", q: "needle" }, ""]);
+    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", { limit: 50, include_archived: false, q: "needle" }, ""]);
   });
 
   it("retries first-page refresh failures rather than fetching later pages and hides stale idle status", async () => {
@@ -275,8 +305,8 @@ describe("V2 task title search", () => {
   it("invalidates every active title query through the existing list prefix while preserving archive caches", async () => {
     const { queryClient } = start(() => page([current]));
     await screen.findByRole("button", { name: current.title });
-    const activeAlpha = v2QueryKeys.threadSearch("active", "alpha");
-    const activeBeta = v2QueryKeys.threadSearch("active", "beta");
+    const activeAlpha = ["v2", "threads", "active", "messages", { q: "alpha", include_archived: false }];
+    const activeBeta = ["v2", "threads", "active", "messages", { q: "beta", include_archived: false }];
     const archived = v2QueryKeys.threads("archived");
     queryClient.setQueryData(activeAlpha, { pages: [page([current])], pageParams: [""] });
     queryClient.setQueryData(activeBeta, { pages: [page([current])], pageParams: [""] });
@@ -306,7 +336,7 @@ describe("V2 task title search", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     }
     for (let index = 1; index < tasks.length; index++) {
-      fireEvent.click(screen.getByRole("button", { name: title ? "加载更多匹配对话" : "加载更早对话" }));
+      fireEvent.click(screen.getByRole("button", { name: title ? "加载更多匹配记录" : "加载更早对话" }));
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
       expect(screen.getByRole("button", { name: tasks[index].title })).toBeInTheDocument();
     }
@@ -315,14 +345,14 @@ describe("V2 task title search", () => {
     execution_state = "completed";
     await act(async () => { await vi.advanceTimersByTimeAsync(45_000); });
     expect(listCalls()).toHaveLength(loadedCalls);
-    expect(screen.getByRole("button", { name: current.title })).toHaveAccessibleDescription("执行中");
+    expect(screen.getByRole("button", { name: current.title })).toHaveAccessibleDescription(title ? "running" : "执行中");
 
     fireEvent.click(screen.getByRole("button", { name: "刷新对话列表" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     const cursors = ["", "history-1", "history-2", "history-3", "history-4"];
     expect(listCalls().slice(loadedCalls).map((call) => call[2])).toEqual(cursors);
     for (const task of tasks) {
-      expect(screen.getByRole("button", { name: task.title })).toHaveAccessibleDescription("已完成");
+      expect(screen.getByRole("button", { name: task.title })).toHaveAccessibleDescription(title ? "completed" : "已完成");
     }
     execution_state = "paused";
     await act(async () => {
@@ -331,7 +361,7 @@ describe("V2 task title search", () => {
     });
     expect(listCalls().slice(loadedCalls + tasks.length).map((call) => call[2])).toEqual(cursors);
     for (const task of tasks) {
-      expect(screen.getByRole("button", { name: task.title })).toHaveAccessibleDescription("已暂停");
+      expect(screen.getByRole("button", { name: task.title })).toHaveAccessibleDescription(title ? "paused" : "已暂停");
     }
     await act(async () => { await vi.advanceTimersByTimeAsync(45_000); });
     expect(listCalls()).toHaveLength(loadedCalls + tasks.length * 2);
@@ -359,12 +389,12 @@ describe("V2 task title search", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(251); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(listCalls()).toHaveLength(3);
-    expect(screen.getByRole("button", { name: match.title })).toHaveAccessibleDescription("执行中");
+    expect(screen.getByRole("button", { name: match.title })).toHaveAccessibleDescription("running");
     execution_state = "completed";
     await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
     expect(listCalls()).toHaveLength(4);
-    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads", { limit: 100, status: "active", q: "needle" }, ""]);
-    expect(screen.getByRole("button", { name: match.title })).toHaveAccessibleDescription("已完成");
+    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", { limit: 50, include_archived: false, q: "needle" }, ""]);
+    expect(screen.getByRole("button", { name: match.title })).toHaveAccessibleDescription("completed");
 
     fireEvent.click(screen.getByRole("button", { name: "清除对话搜索" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });

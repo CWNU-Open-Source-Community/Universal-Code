@@ -2,7 +2,7 @@ import { lazy, useEffect, useMemo, useRef, useState, type RefObject } from "reac
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Folder, SlidersHorizontal } from "lucide-react";
 import type { APIClient } from "../api/client";
-import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WorkspaceView } from "../api/types";
+import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadSearchResultView, ThreadView, WorkspaceView } from "../api/types";
 import { normalizedTaskBudget } from "../api/task-configuration";
 import { useConnectionStore } from "../state/connection";
 import { V2Composer, v2ComposerNotSubmitted } from "./components/composer";
@@ -305,6 +305,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [threadSearch, setThreadSearch] = useState("");
   const [appliedThreadSearch, setAppliedThreadSearch] = useState("");
+  const [includeArchivedSearch, setIncludeArchivedSearch] = useState(false);
   const [searchComposing, setSearchComposing] = useState(false);
   const normalizedThreadSearch = threadSearch.trim();
   const searchTooLong = Array.from(normalizedThreadSearch).length > 256;
@@ -360,16 +361,28 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     staleTime: 30_000,
   });
   const threadsQuery = useInfiniteQuery({
-    queryKey: v2QueryKeys.threadSearch("active", appliedThreadSearch),
+    queryKey: v2QueryKeys.threadSearch("active", ""),
     queryFn: ({ signal, pageParam }) => client.getPage<ThreadView>("/threads",
-      { limit: 100, status: "active", ...(appliedThreadSearch ? { q: appliedThreadSearch } : {}) }, pageParam, signal),
+      { limit: 100, status: "active" }, pageParam, signal),
     initialPageParam: "", getNextPageParam: (last) => last.page.next_cursor || undefined,
-    enabled: !searchPending && !searchTooLong,
+    enabled: !appliedThreadSearch && !searchPending && !searchTooLong,
     // Infinite queries refetch every cached page. Poll only a single page;
     // history still refreshes explicitly and through the existing invalidations.
+    refetchInterval: (query) => !appliedThreadSearch && sidebarVisible && surface === "conversation" && !searchPending &&
+      (query.state.data?.pages.length ?? 1) === 1 ? 15_000 : false,
+  });
+  const messageSearchQuery = useInfiniteQuery({
+    queryKey: ["v2", "threads", "active", "messages", { q: appliedThreadSearch, include_archived: includeArchivedSearch }],
+    queryFn: ({ signal, pageParam }) => client.getPage<ThreadSearchResultView>("/threads/search",
+      { q: appliedThreadSearch, include_archived: includeArchivedSearch, limit: 50 }, pageParam, signal),
+    initialPageParam: "", getNextPageParam: (last) => last.page.next_cursor || undefined,
+    enabled: Boolean(appliedThreadSearch) && !searchPending && !searchTooLong,
     refetchInterval: (query) => sidebarVisible && surface === "conversation" && !searchPending &&
       (query.state.data?.pages.length ?? 1) === 1 ? 15_000 : false,
   });
+  const sidebarQuery = appliedThreadSearch ? messageSearchQuery : threadsQuery;
+  const searchResults = useMemo(() => [...new Map(messageSearchQuery.data?.pages.flatMap(({ items }) => items)
+    .map((item) => [item.id, item])).values()], [messageSearchQuery.data]);
   const workspaces = useMemo(() => [...new Map([...importedWorkspaces,
     ...(workspacesQuery.data?.pages.flatMap(({ items }) => items) ?? [])]
     .map((workspace) => [workspace.id, workspace])).values()], [workspacesQuery.data, importedWorkspaces]);
@@ -519,15 +532,20 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           }} onSelectThread={openConversation} searchOpen={searchOpen}
           search={threadSearch} appliedSearch={appliedThreadSearch} searchPending={searchPending}
           searchTooLong={searchTooLong}
+          searchResults={searchResults} includeArchived={includeArchivedSearch} onIncludeArchivedChange={setIncludeArchivedSearch}
+          onSelectSearchResult={(result) => {
+            navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) });
+            closeNavigationSidebar();
+          }}
           onSearchChange={(value) => { setThreadSearch(value); if (!value) setSearchComposing(false); }}
           onSearchCompositionChange={setSearchComposing}
-          hasMore={threadsQuery.hasNextPage} loading={threadsQuery.isLoading}
-          truncated={threadsQuery.data?.pages.at(-1)?.page.truncated === true}
-          loadingMore={threadsQuery.isFetchingNextPage} loadFailed={threadsQuery.isError}
-          loadMoreFailed={threadsQuery.isFetchNextPageError}
-          refreshing={threadsQuery.isFetching && !threadsQuery.isLoading && !threadsQuery.isFetchingNextPage}
-          onRetry={() => void (threadsQuery.isFetchNextPageError ? threadsQuery.fetchNextPage() : threadsQuery.refetch())}
-          onLoadMore={() => void threadsQuery.fetchNextPage()} onRefresh={() => void threadsQuery.refetch()}
+          hasMore={sidebarQuery.hasNextPage} loading={sidebarQuery.isLoading}
+          truncated={sidebarQuery.data?.pages.at(-1)?.page.truncated === true}
+          loadingMore={sidebarQuery.isFetchingNextPage} loadFailed={sidebarQuery.isError}
+          loadMoreFailed={sidebarQuery.isFetchNextPageError}
+          refreshing={sidebarQuery.isFetching && !sidebarQuery.isLoading && !sidebarQuery.isFetchingNextPage}
+          onRetry={() => void (sidebarQuery.isFetchNextPageError ? sidebarQuery.fetchNextPage() : sidebarQuery.refetch())}
+          onLoadMore={() => void sidebarQuery.fetchNextPage()} onRefresh={() => void sidebarQuery.refetch()}
           selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}
       </div>
       <div className="v2-product-surface">
@@ -639,6 +657,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             onExitInspector={() => changeView("conversation")}
             draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             onManageModels={() => openModels(false)} onOpenInspector={openInspector}
+            messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}
             threadID={selectedThreadID} workspaces={workspaces} />}
       </div>
     </div>

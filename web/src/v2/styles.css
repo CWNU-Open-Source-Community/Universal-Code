@@ -28,6 +28,15 @@
 .v2-approval-facts pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
 .v2-command-approvals { min-width: 0; }
 .v2-history-scope { font-size: 11px; line-height: 1.6; color: var(--v2-muted); margin: 8px 14px; }
+.v2-search-archived { display: flex; gap: 6px; align-items: center; margin: 4px 14px 8px; color: var(--v2-muted); font-size: 11px; }
+.v2-message-search-results { display: grid; gap: 4px; padding: 0 8px; }
+.v2-message-search-result { display: grid; gap: 5px; min-width: 0; width: 100%; padding: 10px 8px; border: 1px solid transparent; border-radius: 6px; text-align: left; background: transparent; color: var(--v2-ink); font: inherit; cursor: pointer; }
+.v2-message-search-result:hover, .v2-message-search-result:focus-visible { background: var(--v2-control-hover); border-color: var(--v2-border); }
+.v2-message-search-result strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.v2-message-search-meta { display: flex; flex-wrap: wrap; gap: 3px 8px; color: var(--v2-muted); font-size: 10px; }
+.v2-message-search-snippet { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; font-size: 11px; line-height: 1.65; }
+.v2-narrative > .is-search-target { outline: 2px solid var(--v2-accent); outline-offset: 6px; border-radius: 6px; }
+.v2-message-location button { margin-left: 8px; font: inherit; color: var(--v2-accent); background: transparent; border: 0; cursor: pointer; }
 .v2-load-history { display: block; margin: 12px auto; border: 1px solid var(--v2-border); border-radius: 7px; padding: 6px 12px; background: var(--v2-control); cursor: pointer; }
 .v2-composer-status { display: flex; flex-wrap: wrap; align-items: center; box-sizing: border-box; gap: 6px 12px; width: 100%; max-width: var(--v2-composer-width); margin: 0 auto 8px; padding-inline: 16px; }
 .v2-composer-status > .v2-agent-activity { flex: 0 0 auto; margin: 0; padding: 0; }

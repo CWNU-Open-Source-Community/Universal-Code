@@ -4688,6 +4688,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search saved conversation titles and public message bodies
+         * @description Searches complete saved user and assistant text, including compacted history, before pagination. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query and archive filter.
+         */
+        get: operations["searchSavedThreadMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}": {
         parameters: {
             query?: never;
@@ -5203,6 +5223,26 @@ export interface paths {
          * @description Queues input on the live Run, including while waiting for approval. If the last Run is terminal, atomically creates or reuses exactly one fresh successor Run and Session; no approval, lease, process, network, credential, execution profile, or capability authority is inherited.
          */
         post: operations["submitThreadMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/messages/{message_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Locate a saved public message in its conversation
+         * @description Returns the full redacted user or assistant message and a cursor opening its transcript window directly across Run boundaries. The message must belong to the exact non-deleted Thread and remain visible in its public transcript. Reading archived history performs no recovery or submission.
+         */
+        get: operations["getSavedThreadMessage"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -15161,6 +15201,23 @@ export interface components {
             ordinal: number;
             predecessor_run_id?: string;
             run: components["schemas"]["RunView"];
+        };
+        ThreadSavedMessageView: {
+            content: string;
+            message_id: string;
+            transcript_cursor: string;
+        };
+        ThreadSearchResultView: {
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            message_id?: string;
+            role: string;
+            snippet: string;
+            thread_id: string;
+            thread_status: string;
+            thread_title: string;
+            workspace_id: string;
         };
         ThreadStatistics: {
             /** Format: int64 */
@@ -27922,6 +27979,48 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    searchSavedThreadMessages: {
+        parameters: {
+            query: {
+                /** @description Page size from 1 to 100; defaults to 50 */
+                limit?: number;
+                /** @description Opaque cursor bound to this route and exact filter set */
+                cursor?: string;
+                q: string;
+                /** @description Include archived conversations */
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadSearchResultView"][];
+                        page: components["schemas"]["Page"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     getThread: {
         parameters: {
             query?: never;
@@ -29202,6 +29301,44 @@ export interface operations {
             413: components["responses"]["RequestEntityTooLarge"];
             414: components["responses"]["RequestTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getSavedThreadMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadSavedMessageView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

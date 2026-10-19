@@ -11,6 +11,7 @@ import { useRunEventStream } from "../../hooks/use-run-event-stream";
 import { threadActivityLabel } from "../../lib/thread-activity-label";
 import { prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
 import { useV2ThreadTranscript } from "../use-thread-transcript";
+import { useV2SavedMessage } from "../use-saved-message";
 import { V2Narrative } from "./narrative";
 import { V2LazySurface } from "./lazy-surface";
 import { projectAgentActivity } from "../projection/agent-activity";
@@ -328,11 +329,13 @@ export function V2TerminalDrawer({
     }}>{content}</div>, document.body);
 }
 
-export function V2Conversation({ client, threadID, workspaces, onArchive, onManageModels,
+export function V2Conversation({ client, threadID, workspaces, onArchive, onManageModels, messageID = "", onExitMessage,
   onOpenInspector, draft: legacyDraft, onDraftChange: legacyDraftChange, view = "conversation", onOpenTool, onOpenInspectorHome, onOpenWorktree, onExitInspector,
   reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated, onOpenThread }: {
   client: APIClient;
   threadID: string;
+  messageID?: string;
+  onExitMessage?: () => void;
   workspaces: WorkspaceView[];
   onArchive: (thread: ThreadView) => void;
   onOpenInspector: (returnFocus: HTMLElement | null) => void;
@@ -453,6 +456,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       trackApplicationPreviewSubmission(queryClient, input, "accepted", {
         runID: "run_id" in result ? result.run_id : undefined, messageID: result.steering.id,
       });
+      const location = currentMessageLocation.current;
+      if (messageID && location?.threadID === input.threadID && location.messageID === messageID) location.exit();
       return result;
     } catch (error) {
       trackApplicationPreviewSubmission(queryClient, input,
@@ -539,6 +544,18 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     row?: HTMLElement; offset?: number } | null>(null);
   const readingThreadRef = useRef("");
   const followLatestRef = useRef(true);
+  const locatedMessageRef = useRef<{ key: string; row: HTMLElement } | null>(null);
+  const returnToLatestMessage = useCallback(() => {
+    followLatestRef.current = true;
+    readingThreadRef.current = "";
+    queryClient.setQueryData(["v2", "reading", threadID], { top: 0, following: true });
+    onExitMessage?.();
+  }, [queryClient, threadID, onExitMessage]);
+  const currentMessageLocation = useRef<{ threadID: string; messageID: string; exit: () => void } | null>(null);
+  useLayoutEffect(() => {
+    currentMessageLocation.current = { threadID, messageID, exit: returnToLatestMessage };
+    return () => { currentMessageLocation.current = null; };
+  }, [threadID, messageID, returnToLatestMessage]);
   const scrollSizeRef = useRef<{ content: number; viewport: number } | null>(null);
   const [hasNewContent, setHasNewContent] = useState(false);
   const optimistic = useMemo(() => submissions.filter(({ pending }) => pending).map(({ input }) => ({
@@ -565,20 +582,22 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const streamRunID = activeRun?.id ?? "";
   const streamEnabled = Boolean(activeRun && ["preparing", "running", "waiting_approval"]
     .includes(activeRun.status));
-  const queuedRun = activeRun ?? detailQuery.data?.last_run;
+  const queuedRun = activeRun;
   const queueBinding = queuedRun?.session_id ? { threadID, runID: queuedRun.id, sessionID: queuedRun.session_id,
     workspaceID: detailQuery.data?.thread.workspace_id ?? "" } : null;
   // The panel owns polling; this observer shares its validated snapshots.
   const queueQuery = useV2QueuedMessagesQuery(client, queueBinding, false);
   const eventStream = useRunEventStream(client, streamEnabled ? streamRunID : "");
   const publicStream = usePublicModelStream(client, streamRunID, streamEnabled);
-  const transcriptQuery = useV2ThreadTranscript(client, threadID, {
+  const latestTranscriptQuery = useV2ThreadTranscript(client, threadID, {
     // Events drive ordinary updates. A slower head-only check also covers a
     // quiet connection or a durable write that follows its notification.
     refetchInterval: optimistic.length > 0 ? 750 : streamEnabled
       ? eventStream.status === "live" ? 10_000 : 1_200 : detailQuery.data?.thread.status === "active" ? 5_000 : false,
   });
-  const refreshTranscript = transcriptQuery.refetch;
+  const savedMessageQuery = useV2SavedMessage(client, threadID, messageID);
+  const transcriptQuery = messageID ? savedMessageQuery : latestTranscriptQuery;
+  const refreshTranscript = latestTranscriptQuery.refetch;
   const liveSnapshot = publicStream.snapshot?.call.run_id === streamRunID
     ? publicStream.snapshot : null;
   const latestFrame = eventStream.frames.at(-1);
@@ -622,18 +641,19 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const transcriptItems = transcriptQuery.items;
   const preparedNarrative = useMemo(() => prepareThreadNarrative(transcriptItems), [transcriptItems]);
   const durableNarrative = preparedNarrative.entries;
-  const liveNarrative = useMemo(() => projectLiveThreadNarrative(preparedNarrative, {
+  const liveNarrative = useMemo(() => messageID ? durableNarrative : projectLiveThreadNarrative(preparedNarrative, {
     runId: streamRunID, snapshot: liveSnapshot, status: publicStream.status,
-  }), [liveSnapshot, publicStream.status, streamRunID, preparedNarrative]);
+  }), [messageID, durableNarrative, liveSnapshot, publicStream.status, streamRunID, preparedNarrative]);
   const existingUserText = useMemo(() => new Set(durableNarrative.filter((entry) => entry.kind === "user")
     .map((entry) => JSON.stringify([entry.text, imageIdentities(entry.images), fileAttachmentIdentities(entry.attachments)]))),
   [durableNarrative]);
   const narrative = useMemo(() => {
+    if (messageID) return durableNarrative;
     const pending: NarrativeEntry[] = optimistic.filter(({ text, images, attachments }) => !existingUserText.has(JSON.stringify([text, imageIdentities(images), fileAttachmentIdentities(attachments)])))
       .map((entry) => ({ id: entry.id, kind: "user", text: entry.text,
         images: entry.images, attachments: entry.attachments, createdAt: entry.createdAt, provisional: true }));
     return pending.length ? [...liveNarrative, ...pending] : liveNarrative;
-  }, [liveNarrative, existingUserText, optimistic]);
+  }, [messageID, durableNarrative, liveNarrative, existingUserText, optimistic]);
   const transcriptSources = useMemo(() => new Map(transcriptItems.map((item) => [item.id, item])), [transcriptItems]);
   const visibleNarrative = useMemo(() => {
     // The complete queue is identity checked by readQueuedMessages. A failed
@@ -698,6 +718,21 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [visibleNarrative, detailQuery.data?.active_run?.status, liveSnapshot?.revision,
     transcriptQuery.data?.pages.length, transcriptQuery.isLoading, transcriptQuery.isFetchNextPageError,
     transcriptQuery.isFetchingNextPage, threadID, queryClient, view]);
+
+  useLayoutEffect(() => {
+    const location = messageID && view === "conversation" ? `${threadID}:${messageID}` : "";
+    if (locatedMessageRef.current?.key === location) return;
+    locatedMessageRef.current?.row.classList.remove("is-search-target");
+    if (!location) { locatedMessageRef.current = null; return; }
+    const row = [...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-message-ids]") ?? [])]
+      .find((element) => element.dataset.messageIds?.split(" ").includes(messageID));
+    if (!row) return;
+    followLatestRef.current = false;
+    row.scrollIntoView?.({ block: "start" });
+    row.focus({ preventScroll: true });
+    row.classList.add("is-search-target");
+    locatedMessageRef.current = { key: location, row };
+  }, [threadID, messageID, visibleNarrative, view, detailQuery.isLoading]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
@@ -1046,6 +1081,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following });
     }}>
       <div className="v2-conversation-content">
+        {messageID && <p className="v2-notice v2-message-location" role="status">
+          {t("正在查看搜索命中的消息及更早记录。", "Viewing the matching message and earlier history.")}
+          <button type="button" onClick={returnToLatestMessage}>{t("返回最新消息", "Back to latest messages")}</button>
+        </p>}
         {detail.thread.status === "archived" && <p className="v2-notice" role="status">
           {t("此对话已归档，仍可查看记录。请在设置的「已归档的聊天」中取消归档后继续发送。", "This conversation is archived. You can still view its history. Unarchive it in Settings → Archived chats to continue sending messages.")}
         </p>}
@@ -1149,8 +1188,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         paused={working || activePane !== null || menuOpen || view !== "conversation"} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
       <div className="v2-queue-composer-stack">
-      {currentRun.session_id && <V2QueuedMessages client={client} threadID={threadID} runID={currentRun.id} sessionID={currentRun.session_id}
-        workspaceID={detail.thread.workspace_id ?? ""} running={working || runActive}
+      {queueBinding && <V2QueuedMessages client={client} {...queueBinding} running={working || runActive}
         canPromote={client.hasThreadExecutionRead === true
           ? executionQuery.isSuccess && executionQuery.data.state === "running" &&
             executionQuery.data.execution_id === queueQuery.data?.execution_id

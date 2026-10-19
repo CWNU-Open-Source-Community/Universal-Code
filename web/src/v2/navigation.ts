@@ -4,7 +4,7 @@ import { useFileEditLeave } from "../components/file-edit-drafts";
 
 export type V2RunPane = "context" | "checkpoints" | "tools" | "ui-evidence";
 export type V2Route = { kind: "initial" | "new" | "thread" | "invalid";
-  threadID?: string; section?: V2SettingsSection; view?: "inspector";
+  threadID?: string; messageID?: string; section?: V2SettingsSection; view?: "inspector";
   tool?: "run" | "session" | "schedule"; resourceID?: string; pane?: V2RunPane };
 const sections: string[] = ["general", "models", "permissions", "appearance", "inspector", "archived",
   "extensions", "skills", "advanced-models", "about", "shortcuts", "connections", "task-configuration", "configuration", "usage"];
@@ -23,6 +23,8 @@ export function readV2Route(hash: string, pathname = "/"): V2Route {
       : { kind: "new", view: "inspector", tool: legacy[1] === "runs" ? "run" : "session", resourceID: id };
   }
   if (!hash || hash === "#") return { kind: "initial" };
+  const message = /^#\/threads\/([a-zA-Z0-9_.-]{1,256})\/messages\/([a-zA-Z0-9_.-]{1,256})$/u.exec(hash);
+  if (message) return { kind: "thread", threadID: message[1], messageID: message[2] };
   const match = /^#\/(new|threads\/([^/]+))(\/inspector(?:\/(schedule(?:\/[^/]+)?|runs\/[^/]+(?:\/(?:context|checkpoints|tools|ui-evidence))?|sessions\/[^/]+))?)?(?:\/settings\/([^/]+))?$/u.exec(hash);
   if (!match) return { kind: "invalid" };
   let threadID: string | undefined;
@@ -46,6 +48,7 @@ export function readV2Route(hash: string, pathname = "/"): V2Route {
 
 function routeHash(route: V2Route) {
   const base = route.kind === "thread" ? `#/threads/${encodeURIComponent(route.threadID!)}` : "#/new";
+  if (route.messageID && route.kind === "thread" && !route.section && !route.view) return `${base}/messages/${encodeURIComponent(route.messageID)}`;
   const tool = route.tool === "schedule" ? `/schedule${route.resourceID ? `/${encodeURIComponent(route.resourceID)}` : ""}` : route.tool && route.resourceID
     ? `/${route.tool}s/${encodeURIComponent(route.resourceID)}${route.tool === "run" && route.pane ? `/${route.pane}` : ""}` : "";
   return `${base}${route.view === "inspector" ? `/inspector${tool}` : ""}${route.section ? `/settings/${route.section}` : ""}`;
