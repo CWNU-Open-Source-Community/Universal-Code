@@ -28,10 +28,9 @@
 }
 
 :root {
-  --prayu-font-ui: "JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC",
-    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", monospace;
-  --prayu-font-display: "JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC",
-    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", monospace;
+  --prayu-font-ui: "Segoe UI", "HarmonyOS Sans SC", "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+  --prayu-font-display: var(--prayu-font-ui);
   --prayu-font-mono: "JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC",
     "Cascadia Code", Consolas, monospace;
   --prayu-prose-size: 15px;
@@ -2643,8 +2642,8 @@ body { background: transparent; }
   --prayu-selected: var(--prayu-primary-bg);
   --prayu-selected-ink: var(--prayu-primary-fg);
   --prayu-surface-solid: #eff1f5;
-  --prayu-text: #4c4f69;
-  --prayu-muted: #5c5f77;
+  --prayu-text: #30363d;
+  --prayu-muted: #697078;
   --prayu-border: var(--dsh-glass-rim-soft);
   --prayu-border-strong: var(--dsh-glass-rim);
   --prayu-shadow: rgb(0 0 0 / 12%);

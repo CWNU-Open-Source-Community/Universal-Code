@@ -85,7 +85,7 @@ async function narrowConversation(page: Page) {
   await page.setViewportSize({ width: 390, height: 844 });
   const toggle = page.getByRole("button", { name: /^(?:显示|隐藏)侧栏$/u });
   await expect(toggle).toBeVisible();
-  if (await toggle.getAttribute("aria-pressed") === "true") await toggle.click();
+  // Resizing closes the sidebar automatically; clicking during that change can reopen it.
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByRole("navigation", { name: "对话导航", exact: true })).toBeHidden();
 }

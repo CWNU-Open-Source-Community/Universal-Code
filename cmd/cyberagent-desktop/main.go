@@ -883,7 +883,7 @@ func runDesktop(config desktopOptions) error {
 
 	appOptions := &options.App{
 		Title: app.Name, Width: defaultDesktopWidth, Height: defaultDesktopHeight,
-		MinWidth: 320, MinHeight: 320,
+		MinWidth: 480, MinHeight: 600,
 		Frameless:        true,
 		WindowStartState: options.Normal,
 		BackgroundColour: options.NewRGBA(0, 0, 0, 0),

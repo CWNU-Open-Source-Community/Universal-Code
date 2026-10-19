@@ -74,13 +74,14 @@ export function V2NetworkScopeControl({ mode, targets, disabled = false, onChang
 
   return <div className="v2-network-scope-control" ref={shellRef}>
     <button aria-expanded={open} aria-haspopup="dialog" className="v2-composer-chip"
+      title={t(webAccessModeLabels[mode], mode === "disabled" ? "Search disabled" : mode === "rules" ? "Rule-based search" : "Full access")}
       disabled={disabled} onClick={() => {
         setDraft(targets.join("\n"));
         setOpen((value) => !value);
       }} ref={triggerRef} type="button">
       {mode !== "disabled" ? <Globe2 aria-hidden="true" size={14} />
         : <ShieldCheck aria-hidden="true" size={14} />}
-      {t(webAccessModeLabels[mode], mode === "disabled" ? "Search disabled" : mode === "rules" ? "Rule-based search" : "Full access")}
+      <span className="v2-composer-optional-label">{t(webAccessModeLabels[mode], mode === "disabled" ? "Search disabled" : mode === "rules" ? "Rule-based search" : "Full access")}</span>
       <ChevronDown aria-hidden="true" size={13} />
     </button>
     {open && <section aria-label={t("新对话网页访问", "New conversation web access")} className="v2-network-popover" ref={panelRef} role="dialog" tabIndex={-1}>
