@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { APIClient } from "../api/client";
 import { FileProposalRecovery } from "./file-proposal-recovery";
+import { applyPrayuTheme } from "../lib/appearance";
 
 vi.mock("@monaco-editor/react", () => ({
-  DiffEditor: ({ original, modified }: { original: string; modified: string }) =>
-    <pre aria-label="Recovered proposal diff">{original}{modified}</pre>,
+  DiffEditor: ({ original, modified, theme }: { original: string; modified: string; theme: string }) =>
+    <pre aria-label="Recovered proposal diff" data-theme={theme}>{original}{modified}</pre>,
 }));
 vi.mock("../lib/monaco-local", () => ({ configureLocalMonaco: vi.fn() }));
 
@@ -22,7 +23,12 @@ it("renders a durable pending proposal as read-only stale review context", async
   render(<QueryClientProvider client={new QueryClient()}>
     <FileProposalRecovery client={client} editID="edit-1" onClose={vi.fn()} runID="run-1" />
   </QueryClientProvider>);
-  expect(await screen.findByLabelText("Recovered proposal diff")).toHaveTextContent("before");
+  const editor = await screen.findByLabelText("Recovered proposal diff");
+  expect(editor).toHaveTextContent("before");
+  await act(async () => { applyPrayuTheme("light", false); });
+  expect(editor).toHaveAttribute("data-theme", "vs");
+  await act(async () => { applyPrayuTheme("dark", false); });
+  expect(editor).toHaveAttribute("data-theme", "vs-dark");
   expect(screen.getByText("Workspace source changed")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /apply|approve|create proposal/i }))
     .not.toBeInTheDocument();

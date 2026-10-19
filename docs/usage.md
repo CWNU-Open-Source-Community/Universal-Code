@@ -23,6 +23,34 @@ compatibility identifiers. The CLI binary and commands, `/api/v1/runs`,
 `/api/v1/sessions`, OpenAPI schemas, event types, and SQLite `work_item` identities
 remain unchanged. / 上述 CLI、API、协议、事件与 SQLite 标识保持不变。
 
+## 外观 / Appearance
+
+打开「设置 → 外观」选择主题，偏好保存在当前设备，重新打开应用后继续生效。
+Open **Settings → Appearance** to choose a theme. Your choice is saved on the current device.
+
+| 选项 / Option | 效果 / Behavior |
+| --- | --- |
+| 系统 / System | 随设备的浅色或深色设置即时切换，包括已打开的代码编辑器。Follows device appearance changes, including open code editors. |
+| 浅色 / Light | 明亮的中性白色界面。A bright, neutral white interface. |
+| 深色 / Dark | 深灰界面与玻璃材质。Dark gray surfaces with glass materials. |
+| 雾透 / Mist | 灰蓝透色与轻盈磨砂，可调模糊度、磨砂度、背景亮度和光斑。Muted blue-gray frosted surfaces with adjustable blur, opacity, brightness, and ambient glow. |
+
+![外观设置中的四个主题选项](images/appearance/theme-options.png)
+
+系统选项的预览左右分色；其他预览展示对应主题的侧栏、对话与输入框。手动选择浅色、
+深色或雾透后，设备设置的变化不会覆盖该选择。雾透的「还原默认值」恢复标准云母参数。
+System uses a split preview; the other previews show their sidebar, conversation, and composer.
+An explicit theme stays selected when the device appearance changes. Mist’s **Reset to defaults**
+restores the standard Mica settings.
+
+查看[浅色原图](images/appearance/conversation-light.png)、[深色原图](images/appearance/conversation-dark.png)
+和[雾透原图](images/appearance/conversation-mist.png)。截图于 2026-10-19 在 Windows / Edge
+中从生产构建拍摄，窗口为 1440 × 900；项目、回复和用量属于离线演示数据。
+README 的分割图由同一对话的浅色与深色原图组合。
+Screenshots were captured from a production build in Edge on Windows at 1440 × 900 on
+2026-10-19. Project content, replies, and usage are offline demonstration data. The README
+combines the Light and Dark captures of the same conversation.
+
 ## Portable Build Diagnostics
 
 ```powershell

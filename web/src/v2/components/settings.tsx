@@ -10,11 +10,11 @@ import {
   defaultPrayuGlassSettings,
   prayuGlassPresets,
   readPrayuGlassSettings,
-  readPrayuTheme,
+  readPrayuThemePreference,
   resetPrayuGlassSettings,
   type PrayuGlassPreset,
   type PrayuGlassSettings,
-  type PrayuTheme,
+  type PrayuThemePreference,
 } from "../../lib/appearance";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { v2QueryKeys } from "../query-keys";
@@ -179,11 +179,26 @@ function GeneralSettings({ threadID, workspaces, onPermissions }: {
   </>;
 }
 
+function ThemePreviewWindow({ theme }: { theme: "light" | "dark" | "glass" }) {
+  return <svg className="v2-theme-window" data-prayu-theme={theme} viewBox="0 0 120 80" fill="none">
+    <rect className="v2-theme-canvas" width="120" height="80" rx="9" />
+    <rect className="v2-theme-sidebar" x="5" y="5" width="27" height="70" rx="5" />
+    <rect className="v2-theme-panel" x="36" y="5" width="79" height="70" rx="5" />
+    <path className="v2-theme-mark" d="M12 13h5v5h-5zM18 19h5v5h-5z" />
+    <path className="v2-theme-line is-muted" d="M12 33h13M12 39h10M12 45h12" />
+    <path className="v2-theme-line" d="M62 16h43M46 30h47M46 42h42" />
+    <path className="v2-theme-line is-muted" d="M46 24h33M46 36h54" />
+    <rect className="v2-theme-input" x="43" y="53" width="65" height="16" rx="5" />
+    <path className="v2-theme-line is-muted" d="M49 59h22" />
+    <circle className="v2-theme-mark" cx="101" cy="63" r="2.5" />
+  </svg>;
+}
+
 function AppearanceSettings() {
   const { t } = useLocale();
-  const [theme, setTheme] = useState<PrayuTheme>(() => readPrayuTheme());
+  const [theme, setTheme] = useState<PrayuThemePreference>(() => readPrayuThemePreference());
   const [glass, setGlass] = useState<PrayuGlassSettings>(() => readPrayuGlassSettings());
-  const select = (next: PrayuTheme) => {
+  const select = (next: PrayuThemePreference) => {
     setTheme(next);
     applyPrayuTheme(next);
   };
@@ -212,12 +227,15 @@ function AppearanceSettings() {
   return <><h1>{t("外观", "Appearance")}</h1><section className="v2-settings-section"><h2>{t("主题与材质", "Theme & materials")}</h2>
     <div className="v2-settings-card v2-appearance-card">
       <div className="v2-theme-options" role="group" aria-label={t("应用主题", "App theme")}>
-        {(["light", "dark", "glass"] as const).map((option) => <button aria-pressed={theme === option}
+        {(["system", "light", "dark", "glass"] as const).map((option) => <button aria-pressed={theme === option}
           key={option} onClick={() => select(option)} type="button">
-          <span aria-hidden="true" className={`v2-theme-preview theme-${option}`} data-prayu-theme={option}><i /><i /></span>
-          <strong>{option === "light" ? t("浅色", "Light") : option === "dark" ? t("深色", "Dark") : t("雾透", "Mist")}</strong>
+          <span aria-hidden="true" className={`v2-theme-preview theme-${option}`}>
+            <ThemePreviewWindow theme={option === "system" ? "light" : option} />
+            {option === "system" && <ThemePreviewWindow theme="dark" />}
+          </span>
+          <strong>{option === "system" ? t("系统", "System") : option === "light" ? t("浅色", "Light") : option === "dark" ? t("深色", "Dark") : t("雾透", "Mist")}</strong>
         </button>)}</div>
-      <p>{t("雾透采用灰蓝透色与轻盈的磨砂质感；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "Mist combines a muted blue-gray tint with light frosted glass; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
+      <p>{t("系统模式随设备设置切换浅色与深色。雾透采用灰蓝透色与轻盈的磨砂质感；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "System follows your device’s light or dark appearance. Mist combines a muted blue-gray tint with light frosted glass; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
     </div></section>
     {theme === "glass" && <section className="v2-settings-section" aria-label={t("雾透玻璃参数", "Mist glass tuning")}>
       <h2>{t("雾透材质", "Mist material")}</h2>
