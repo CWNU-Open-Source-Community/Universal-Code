@@ -23,7 +23,7 @@
 .v2-assistant-turn .v2-turn-changes-scope { margin: 0; padding: 5px 16px 8px; color: var(--v2-muted); font-size: 12px; line-height: 1.5; }
 .v2-change-load-error { display: flex; align-items: center; gap: 8px; color: var(--v2-muted); font-size: 12px; margin-top: 12px; }
 .v2-change-load-error button { border: 0; background: transparent; text-decoration: underline; }
-.v2-change-overlay { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / 36%); display: grid; place-items: center; padding: 24px; }
+.v2-change-overlay { position: fixed; inset: 0; z-index: 500; background: rgb(0 0 0 / 36%); display: grid; place-items: center; padding: 24px; }
 .v2-change-dialog { width: min(1040px, 100%); height: min(720px, 88dvh); display: flex; flex-direction: column; color: var(--v2-ink); background: var(--prayu-surface-solid); border: 1px solid var(--v2-border-strong); border-radius: 14px; box-shadow: 0 16px 60px rgb(0 0 0 / 24%); font: 13px/1.6 var(--prayu-font-ui); overflow: hidden; }
 .v2-change-dialog-heading { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--v2-border); }
 .v2-change-dialog-heading h2 { font: inherit; font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
