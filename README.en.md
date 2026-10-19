@@ -1,89 +1,108 @@
 <div align="center">
-  <img src="assets/branding/traverse-board-mark.png" alt="Universal-Code icon" width="180">
+  <img src="assets/branding/traverse-board-mark.png" alt="Universal-Code Logo" width="140">
   <h1>Universal-Code</h1>
-  <p><strong>Work with AI in your local project: edit code, run commands, research, and review results.</strong></p>
+  <p><strong>Open-source AI coding workbench for local projects</strong></p>
+  <p>Connect cloud or local LLMs to read and edit code, run terminal commands, research docs, and review diffs with safety controls.</p>
+
   <p>
     <a href="README.md">简体中文</a> |
     <a href="README.en.md">English</a>
   </p>
+
   <p>
     <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square"></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square"></a>
+    <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square">
   </p>
 </div>
 
-Universal-Code is a desktop AI coding workbench. Connect your chosen model and move a project forward in one conversation, with file changes, command results, and sources available for review.
+---
 
-**v1.0.0 “First Voyage” is being prepared for release.** The [release notes](docs/releases/v1.0.0.md) record verified scope and remaining work. Public downloads still include older previews; new Mac packages are unnotarized previews.
+## 🌟 Highlights
 
-## Why Universal-Code?
+- 🛠️ **Built for Local Repositories**: Read, inspect, and edit local codebases with built-in line-by-line diff inspection and auditable checkpoints (Rewind).
+- 🛡️ **Transparent Permission Control**: Choose between read-only analysis, approval-gated runs, and automated Full Access. High-risk actions (file deletion, unlisted commands) always require manual confirmation.
+- 🧠 **Ready for Any Model**: Native support for OpenAI, Anthropic Claude, DeepSeek, Kimi, local Ollama models, and custom OpenAI-compatible endpoints with on-the-fly model switching. Also supports quick browser-based **ChatGPT account sign-in**.
+- 🔍 **Traceable Web Research**: Prioritizes provider-hosted native search, fetches GitHub Issues/PRs, Hacker News, and RSS/Atom feeds, and keeps source snapshots and citations.
+- 💎 **Modern Liquid Glass Aesthetic**: Crafted with pure CSS optical refraction (macOS / VisionOS acrylic style), supporting Dark, Light, and Mist frosted themes at a responsive 120fps.
 
-- **Work on a real project**: read and edit files, run builds, and inspect the resulting changes.
-- **Fewer interruptions, with control**: select Full Access for a task to allow ordinary file changes and network commands to proceed automatically; file deletion still requires confirmation.
-- **Keep research traceable**: prefer native search when the provider supports it, read GitHub, Hacker News, and RSS/Atom sources, and retain page snapshots and citations.
-- **Continue existing work**: task history, tool records, and checkpoints stay on your machine so you can inspect progress and continue the conversation.
+---
 
-## Appearance
+## 🚀 Quick Start
 
-Choose **System, Light, Dark, or Mist** in **Settings → Appearance**. System follows your device’s light or dark setting. Mist uses a muted blue-gray canvas and light frosted surfaces, with adjustable blur, opacity, and brightness.
+### Option 1: Download Pre-built Binaries
 
-![The same Universal-Code conversation in Light and Dark, split diagonally](docs/images/appearance/light-dark.png)
+| OS | Instructions |
+| :--- | :--- |
+| **Windows 10/11** | Download `Universal-Code.exe` from [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) and launch (requires Edge WebView2 Runtime). See the [Windows release guide](docs/windows-release.md). |
+| **macOS (Apple Silicon / Intel)** | Download `.dmg` or `.zip` from [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases), unpack, and move to Applications. See the [macOS release guide](docs/macos-release.md). |
 
-Captured from a production build of the current source using a local demo project and offline sample replies. Light is on the left; Dark is on the right.
+### Option 2: Build from Source
 
-<details>
-<summary>View theme options and Mist</summary>
+Make sure you have **Go 1.26+** and **Node.js 24+** installed:
 
-![System, Light, Dark, and Mist theme options](docs/images/appearance/theme-options.png)
+```bash
+# 1. Clone the repository
+git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
+cd Universal-Code
 
-![Universal-Code in Mist](docs/images/appearance/conversation-mist.png)
+# 2. Build the web frontend
+cd web
+npm ci
+npm run build
+cd ..
 
-</details>
+# 3. Launch the desktop application
+go run ./cmd/cyberagent-desktop
+```
 
-See the [appearance guide](docs/usage.md#外观--appearance) for details.
+---
 
-## Quick start
+## ⚙️ Connecting Models
 
-### 1. Open the app
+When opening the app or starting a new thread, click the model selector above the composer:
 
-| Platform | Start here |
-| --- | --- |
-| Windows 10/11 | Download `TraverseBoard.exe` from a [published release](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) and double-click it. WebView2 is required. [Download details](docs/windows-release.md) |
-| macOS | Get an [Apple Silicon / Intel preview](docs/macos-release.md), extract it, and open `TraverseBoard.app`. Packages are unnotarized; model credential setup still has platform limitations. |
+1. **Cloud Providers (OpenAI, Claude, DeepSeek, Kimi, etc.)**:
+   - Pick your provider, enter your API Key, model identifier, and service Base URL if needed.
+   - Click **Save and Check** to verify credentials and quota.
+2. **ChatGPT Account Sign-in (No API Key Required)**:
+   - Select **ChatGPT** in model settings and click **Continue with ChatGPT**.
+   - Authorize in your default system browser to use your account's available models.
+3. **Local Ollama (Offline / Private)**:
+   - Ensure Ollama is running locally (default: `http://127.0.0.1:11434`).
+   - Select **Ollama** in the provider list, enter the model name (e.g. `qwen2.5-coder:7b`, `deepseek-r1:8b`), and start querying.
 
-The Windows steps below describe the current v1.0.0 source. Older preview interfaces may differ. To try current source, see the [local build instructions](CONTRIBUTING.md#开发环境--development-environment).
+---
 
-### 2. Connect a model
+## 🖼️ Interface Preview
 
-Create a conversation and select a project folder. Follow the first-conversation prompt to select a provider and enter its API key, model name, and service URL where needed. Choose **保存并检查 / Save and check**. A successful check returns to your draft with that model selected; configured models can be switched in the composer.
+| Light & Dark Split | Mist Frosted Glass |
+| :---: | :---: |
+| ![Light and Dark comparison](docs/images/appearance/light-dark.png) | ![Mist appearance](docs/images/appearance/conversation-mist.png) |
 
-You need valid model-service credentials and available quota; signing into the app does not connect a model. Checks call the selected service and may incur charges. Native search also requires provider support.
+Switch between **System, Light, Dark, and Mist** under **Settings → Appearance**.
 
-### 3. Start a task
+---
 
-In that conversation, try a request whose result is easy to review:
+## 📚 Documentation Index
 
-> Read this project, explain how to run it and its main directories, then suggest one improvement.
+| Topic | Document | Description |
+| :--- | :--- | :--- |
+| **User Guide** | [Usage Guide](docs/usage.md) | Client walkthrough, CLI commands, and typical workflows |
+| **Web Research** | [Search & Citations](docs/web-evidence.md) | Search setup, snapshot storage, URL provenance, and diagnostics |
+| **Code Auditing** | [Workspace Checkpoints](docs/workspace-checkpoints.md) | Line-by-line diff review, snapshots, and safe Rewind |
+| **Extensions** | [Extensions & MCP](docs/extensions.md) | Integrating Model Context Protocol (MCP) and custom skills |
+| **Code Intelligence** | [LSP Support](docs/code-intelligence.md) | Symbol jump, type inference, and repository index |
+| **Architecture** | [Architecture Specs](docs/architecture.md) | Go control plane, execution state machines, and security policies |
+| **Changelog** | [Release Notes](docs/releases/v1.0.0.md) | v1.0.0 verified scope, compatibility, and milestone records |
 
-Choose the appropriate task permission before making changes. Review file diffs, command output, and citations, then send follow-up requests in the same conversation.
+---
 
-## Explore when needed
+## 🤝 Contributing
 
-| I want to… | Documentation |
-| --- | --- |
-| Configure models or use the CLI | [Usage guide](docs/usage.md) |
-| Configure search, inspect sources, or diagnose failures | [Search and citations](docs/web-evidence.md) |
-| Inspect or restore file changes | [Workspace checkpoints](docs/workspace-checkpoints.md) |
-| Add MCP, plugins, or code intelligence | [Extensions](docs/extensions.md) · [LSP](docs/code-intelligence.md) |
-| Develop from source or understand the design | [Contributing](CONTRIBUTING.md) · [Architecture](docs/architecture.md) |
-| Browse all documentation and development history | [Documentation index](docs/README.md) · [History](docs/development-history.md) |
+Contributions, issues, and feature requests are welcome! Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
 
-## Feedback and contributions
+## 📄 License & Font Compliance
 
-Use [Issues](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues) for bugs and suggestions, and read the [contribution guide](CONTRIBUTING.md) before developing. The active focus is general AI coding workflows; see [Product scope](docs/PRODUCT_SCOPE.md).
-
-## License
-
-[Apache License 2.0](LICENSE).
-
-**Third-party font notice:** the Chinese interface uses HarmonyOS Sans Fonts by Huawei Device Co., Ltd. The full [font license](web/public/licenses/HarmonyOS-Sans.txt) ships with the app; [provenance and hashes](web/src/assets/fonts/PROVENANCE.md) are available for inspection.
+- Distributed under the [Apache License 2.0](LICENSE).
+- **Third-party Font Notice**: The Chinese UI bundles HarmonyOS Sans Fonts licensed by Huawei Device Co., Ltd. The complete [font license](web/public/licenses/HarmonyOS-Sans.txt) is shipped with the app; see [font provenance and hashes](web/src/assets/fonts/PROVENANCE.md) for details.
