@@ -4848,6 +4848,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read recorded file changes before one Thread reply
+         * @description Read-only net change summary for applied FileEdit records since the previous durable assistant reply in the same Run. The source event must be an assistant Session message in this Thread. Repeated edits are combined, unapplied proposals are excluded, and current workspace files are never read. Redacted or discontinuous histories omit counts and diff bodies; bounded diff omission is explicit.
+         */
+        get: operations["getThreadChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/command-service-policy": {
         parameters: {
             query?: never;
@@ -14291,6 +14311,38 @@ export interface components {
             thread: components["schemas"]["ThreadView"];
             /** @enum {string} */
             version: "thread_branch.v1";
+        };
+        ThreadChangeFile: {
+            /** Format: int32 */
+            additions: number;
+            counts_available: boolean;
+            /** Format: int32 */
+            deletions: number;
+            destination_path?: string;
+            diff: string;
+            diff_truncated: boolean;
+            edit_ids: string[];
+            operation: string;
+            path: string;
+            reason?: string;
+            workspace_id: string;
+        };
+        ThreadChangeSummary: {
+            /** Format: int32 */
+            additions: number;
+            change_scope: string;
+            counts_available: boolean;
+            /** Format: int32 */
+            deletions: number;
+            /** Format: int32 */
+            file_count: number;
+            files: components["schemas"]["ThreadChangeFile"][];
+            partial: boolean;
+            reasons: string[];
+            run_id: string;
+            source_event_id: string;
+            thread_id: string;
+            version: string;
         };
         ThreadCommandServicePolicy: {
             /** @enum {string} */
@@ -28146,6 +28198,46 @@ export interface operations {
             413: components["responses"]["RequestEntityTooLarge"];
             414: components["responses"]["RequestTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getThreadChanges: {
+        parameters: {
+            query: {
+                /** @description Durable assistant session.message_created event ID from the Thread transcript */
+                source_event_id: string;
+            };
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadChangeSummary"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];
