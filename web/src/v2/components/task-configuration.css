@@ -13,10 +13,15 @@
 .v2-task-configuration input:focus-visible, .v2-task-configuration button:focus-visible, .v2-task-configuration summary:focus-visible { outline:2px solid var(--v2-accent); outline-offset:3px; }
 .v2-task-configuration-help, .v2-task-configuration small { color:var(--v2-muted); font-size:12px; }
 .v2-task-configuration dl { margin:8px 0; }
-.v2-task-configuration dl > div { display:grid; grid-template-columns:minmax(140px, 1fr) minmax(100px, 2fr); gap:12px; padding:6px 0; border-bottom:1px solid var(--v2-border); }
+.v2-task-configuration dl > div { display:grid; grid-template-columns:minmax(140px, 1fr) minmax(100px, 2fr); gap:12px; padding:6px 0; border-bottom:1px solid var(--v2-border); min-width:0; }
 .v2-task-configuration dt { color:var(--v2-muted); }
-.v2-task-configuration dd { margin:0; }
+.v2-task-configuration dd { margin:0; min-width:0; overflow-wrap:anywhere; }
 .v2-task-configuration small { display:block; }
 .v2-task-configuration [role="alert"] { padding:12px; border:1px solid var(--v2-border); border-radius:8px; }
 .v2-task-configuration summary { cursor:pointer; }
 .v2-task-configuration code { font-size:11px; }
+@media (max-width: 520px) {
+  .v2-task-configuration header { flex-wrap:wrap; }
+  .v2-task-configuration dl > div { grid-template-columns:minmax(0, 1fr); gap:4px; }
+}
+

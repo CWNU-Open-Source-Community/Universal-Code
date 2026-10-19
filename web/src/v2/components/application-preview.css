@@ -35,4 +35,4 @@
 .v2-preview-element { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--v2-border); }
 .v2-preview-element > span { flex:1; min-width:70px; overflow-wrap:anywhere; }
 .v2-preview-element input { width:45%; }
-@media (max-width:600px) { .v2-app-preview { width:100vw; padding:14px; } .v2-preview-element { flex-wrap:wrap; } }
+@media (max-width:600px) { .v2-app-preview { box-sizing:border-box; width:100%; max-width:100vw; padding:14px; } .v2-preview-element { flex-wrap:wrap; } }

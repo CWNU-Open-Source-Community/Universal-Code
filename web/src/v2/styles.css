@@ -574,7 +574,8 @@
   height: 27px;
   padding: 0 10px;
 }
-.v2-thread-group > header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-thread-group > header svg { flex-shrink: 0; }
+.v2-thread-group > header span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-thread-row-shell { border-radius: 10px; min-width: 0; position: relative; }
 .v2-thread-row-shell.is-selected { background: var(--v2-control-hover); }
 .v2-thread-row-shell:hover:not(.is-selected) { background: color-mix(in srgb, var(--v2-control-hover) 70%, transparent); }
@@ -590,7 +591,7 @@
   text-align: left;
   width: 100%;
 }
-.v2-thread-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-thread-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-thread-state { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--v2-muted); font-size: 10px; white-space: nowrap; }
 .v2-thread-state i { background: currentColor; border-radius: 50%; height: 6px; width: 6px; }
 .v2-thread-state.state-running { color: var(--v2-accent); }
@@ -1435,10 +1436,10 @@
 .v2-mcp-input a { color: var(--v2-ink); text-decoration: underline; text-underline-offset: 3px; }
 .v2-mcp-input button:disabled { opacity: .45; }
 
-.v2-new-conversation-body { align-items: center; display: flex; justify-content: center; min-height: 0; }
-.v2-new-copy { margin-top: 30px; max-width: 490px; text-align: center; }
-.v2-new-copy h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 18px 0 8px; }
-.v2-new-copy p { color: var(--v2-muted); line-height: 1.6; margin: 0; }
+.v2-new-conversation-body { align-items: center; display: flex; justify-content: center; min-height: 0; padding: 0 16px; }
+.v2-new-copy { box-sizing: border-box; margin-top: 30px; max-width: 490px; text-align: center; width: 100%; }
+.v2-new-copy h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 18px 0 8px; overflow-wrap: anywhere; }
+.v2-new-copy p { color: var(--v2-muted); line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
 .v2-orb { display: inline-grid; filter: drop-shadow(0 9px 18px var(--prayu-shadow)); height: 48px; place-items: center; position: relative; width: 48px; }
 .v2-orb i { background: radial-gradient(circle at 28% 27%, var(--prayu-primary-bg) 0 20%, var(--prayu-primary-hover) 55%, var(--prayu-muted) 100%); border: 1px solid var(--prayu-glass-highlight); border-radius: 47% 53% 48% 52%; inset: 2px; position: absolute; transform: rotate(18deg); }
 .v2-orb i:last-child { filter: blur(9px); inset: 7px; opacity: .45; transform: rotate(-28deg); }
