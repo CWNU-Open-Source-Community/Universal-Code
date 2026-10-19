@@ -125,14 +125,14 @@ func (p *testSkillPackagePicker) OpenSkillPackage(ctx context.Context) (string, 
 func TestDesktopBridgeBindsOnlyReviewedMethods(t *testing.T) {
 	typ := reflect.TypeFor[*DesktopBridge]()
 	want := []string{
-		"Bootstrap", "ChooseProjectlessDirectory", "CloseUserTerminal", "ConfirmVerificationSettings", "GetDebugTerminalAgentInput",
+		"Bootstrap", "ChooseProjectlessDirectory", "CloseUserTerminal", "ConfirmVerificationSettings", "CreateWorkspace", "GetDebugTerminalAgentInput",
 		"GetUserTerminal", "GetVerificationSettings", "GrantDebugTerminalAgentInput",
 		"ImportWorkspace", "InspectClipboardFiles", "InstallSkillPackage",
 		"ListSkillPackages", "OpenWorkspace", "PasteClipboardFiles", "PreviewSkillPackage",
 		"ReadUserTerminal", "RemoveSkillPackage", "ResizeUserTerminal",
 		"RestartWithRiskProfile", "RestartWithSandboxSettings", "RestartWithVerificationSettings",
 		"RevokeDebugTerminalAgentInput",
-		"SelectSkillPackage",
+		"SelectSkillPackage", "SelectWorkspaceDirectory",
 		"StartUserTerminal", "WorkspaceLaunchers", "WriteUserTerminal",
 	}
 	if typ.NumMethod() != len(want) {

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/workspace"
 )
@@ -27,9 +28,10 @@ type WorkspaceImporter interface {
 }
 
 type WorkspaceImportRequestView struct {
-	Version       string `json:"version"`
-	DirectoryPath string `json:"directory_path"`
-	Confirmed     bool   `json:"confirmed"`
+	Name          *string `json:"name,omitempty"`
+	Version       string  `json:"version"`
+	DirectoryPath string  `json:"directory_path"`
+	Confirmed     bool    `json:"confirmed"`
 }
 
 type WorkspaceImportView struct {
@@ -96,7 +98,28 @@ func (a *API) serveWorkspaceImport(writer http.ResponseWriter, request *http.Req
 		invalid()
 		return
 	}
-	record, err := a.workspaceImporter.Import(request.Context(), view.DirectoryPath)
+	var record session.WorkspaceRecord
+	if view.Name != nil {
+		name, nameErr := domain.NormalizeWorkspaceName(*view.Name)
+		if nameErr != nil {
+			a.writeError(writer, requestID, nameErr, 0)
+			return
+		}
+		named, ok := a.workspaceImporter.(interface {
+			ImportNamed(context.Context, string, string) (session.WorkspaceRecord, error)
+		})
+		if !ok {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeUnavailable, "Named project import is unavailable"), 0)
+			return
+		}
+		record, err = named.ImportNamed(request.Context(), view.DirectoryPath, name)
+	} else {
+		record, err = a.workspaceImporter.Import(request.Context(), view.DirectoryPath)
+	}
+	if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
 	if errors.Is(err, workspace.ErrInvalidImportDirectory) {
 		invalid()
 		return

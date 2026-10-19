@@ -383,6 +383,8 @@ interface NativeDesktopBridge {
   PasteClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   InspectClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   ImportWorkspace?: () => Promise<unknown>;
+  SelectWorkspaceDirectory?: () => Promise<unknown>;
+  CreateWorkspace?: (request: {handle:string;name:string}) => Promise<unknown>;
   ChooseProjectlessDirectory?: () => Promise<unknown>;
   InstallSkillPackage: (request: DesktopSkillInstallRequest) => Promise<unknown>;
   ListSkillPackages?: (request: DesktopSkillInventoryRequest) => Promise<unknown>;
@@ -688,6 +690,29 @@ export async function selectDesktopSkillPreview(): Promise<DesktopSkillPreview |
     throw new Error("Desktop Skill preview was rejected");
   }
   return previewValue;
+}
+
+export interface DesktopWorkspaceDirectorySelection { handle: string; directory_path: string; name: string }
+export async function selectDesktopWorkspaceDirectory(): Promise<DesktopWorkspaceDirectorySelection | null> {
+  const bridge = getBridge();
+  if (!activeBootstrap?.workspace_import_enabled || !bridge?.SelectWorkspaceDirectory) throw new Error("Native project selection is unavailable");
+  const result = await bridge.SelectWorkspaceDirectory();
+  if (!hasExactKeys(result, ["status", "selection"])) throw new Error("Native project selection was rejected");
+  if (result.status === "cancelled" && result.selection === null) return null;
+  const selection = result.selection;
+  if (result.status !== "selected" || !hasExactKeys(selection, ["handle", "directory_path", "name"]) ||
+    typeof selection.handle !== "string" || !/^[a-f0-9]{64}$/u.test(selection.handle) ||
+    !boundedText(selection.directory_path, 1, 4096) || !boundedText(selection.name, 1, 128)) throw new Error("Native project selection was rejected");
+  return selection as unknown as DesktopWorkspaceDirectorySelection;
+}
+export async function createDesktopWorkspace(handle: string, name: string): Promise<DesktopImportedWorkspace> {
+  const bridge = getBridge();
+  if (!activeBootstrap?.workspace_import_enabled || !bridge?.CreateWorkspace || !/^[a-f0-9]{64}$/u.test(handle) ||
+    !name.trim() || new TextEncoder().encode(name.trim()).length > 128 || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) throw new Error("Native project creation is unavailable or invalid");
+  const value = await bridge.CreateWorkspace({handle, name:name.trim()});
+  if (!hasExactKeys(value,["id","name","created_at"]) || !validWorkspaceID(value.id) || !boundedText(value.name,1,128) ||
+    typeof value.created_at !== "string" || !Number.isFinite(Date.parse(value.created_at))) throw new Error("Native project creation result was rejected");
+  return value as unknown as DesktopImportedWorkspace;
 }
 
 export async function importDesktopWorkspace(): Promise<DesktopImportedWorkspace | null> {

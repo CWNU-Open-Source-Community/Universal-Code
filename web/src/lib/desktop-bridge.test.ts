@@ -781,6 +781,18 @@ describe("desktop native bridge", () => {
     await expect(module.selectDesktopSkillPreview()).rejects.toThrow("rejected");
   });
 
+  it("selects a native folder without registering and creates only from the opaque handle", async()=>{
+    const selected={handle:"a".repeat(64),directory_path:"D:/projects/chosen",name:"chosen"};
+    const created={id:"ws-chosen",name:"Custom / name",created_at:"2026-10-20T00:00:00Z"};
+    const choose=vi.fn().mockResolvedValue({status:"selected",selection:selected});const create=vi.fn().mockResolvedValue(created);
+    installBridge({Bootstrap:vi.fn().mockResolvedValue({...bootstrap,control_token:"control-token-0123456789abcdefghijkl",control_enabled:false,run_creation_enabled:true,workspace_import_enabled:true,read_only_default:false}),SelectWorkspaceDirectory:choose,CreateWorkspace:create});
+    const module=await import("./desktop-bridge");await module.loadDesktopBootstrap();
+    expect(await module.selectDesktopWorkspaceDirectory()).toEqual(selected);expect(create).not.toHaveBeenCalled();
+    expect(await module.createDesktopWorkspace(selected.handle," Custom / name ")).toEqual(created);expect(create).toHaveBeenCalledWith({handle:selected.handle,name:"Custom / name"});
+    await expect(module.createDesktopWorkspace(selected.directory_path,"name")).rejects.toThrow();expect(create).toHaveBeenCalledTimes(1);
+    choose.mockResolvedValue({status:"cancelled",selection:null});expect(await module.selectDesktopWorkspaceDirectory()).toBeNull();expect(create).toHaveBeenCalledTimes(1);
+  });
+
   it("opens a registered Workspace only through a strict pathless native contract", async () => {
     const enabled = { ...bootstrap, workspace_open_enabled: true };
     const launchers = {
@@ -1126,6 +1138,8 @@ function installBridge(overrides: Partial<{
   RestartWithVerificationSettings: (request: unknown) => Promise<unknown>;
   Bootstrap: () => Promise<unknown>;
   ImportWorkspace: () => Promise<unknown>;
+  SelectWorkspaceDirectory: () => Promise<unknown>;
+  CreateWorkspace: (request: {handle:string;name:string}) => Promise<unknown>;
   ChooseProjectlessDirectory: () => Promise<unknown>;
   InstallSkillPackage: (request: unknown) => Promise<unknown>;
   ListSkillPackages: (request: unknown) => Promise<unknown>;

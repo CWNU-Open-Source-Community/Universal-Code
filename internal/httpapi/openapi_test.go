@@ -1741,6 +1741,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 						t.Fatal(err)
 					}
 					body = string(encoded)
+				} else if spec.OperationID == "renameWorkspace" {
+					body = `{"name":"OpenAPI project renamed"}`
 				} else if spec.Path == WorkspaceImportPath {
 					encoded, err := json.Marshal(WorkspaceImportRequestView{
 						Version:       WorkspaceImportProtocolVersion,

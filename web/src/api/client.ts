@@ -224,6 +224,7 @@ import type {
   RunWakeExecutionView,
   RuntimeCapabilitiesView,
   WorkspaceImportView,
+  WorkspaceProjectView,
   ThreadCreationControlRequestView,
   ThreadCreationControlView,
   ThreadMessageControlRequestView,
@@ -6968,7 +6969,17 @@ export class APIClient {
     }, signal, "", "PUT"));
   }
 
-  async importWorkspace(directoryPath: string, signal?: AbortSignal): Promise<WorkspaceImportView> {
+  async getWorkspaceProject(id: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
+    if (!boundedIdentity(id)) throw new Error("A project identity is required");
+    return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/project`, undefined, signal, "", "GET"), id);
+  }
+
+  async renameWorkspace(id: string, name: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
+    if (!boundedIdentity(id)) throw new Error("A project identity is required");
+    return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/name`, { name: normalizeWorkspaceName(name) }, signal, "", "PUT"), id);
+  }
+
+  async importWorkspace(directoryPath: string, signal?: AbortSignal, name?: string): Promise<WorkspaceImportView> {
     if (!this.hasWorkspaceImport) {
       throw new APIRequestError("Workspace import is unavailable for this connection",
         "PERMISSION_DENIED", 403);
@@ -6978,9 +6989,10 @@ export class APIClient {
       new TextEncoder().encode(directoryPath).length > 4_096) {
       throw new APIRequestError("A valid project directory is required", "INVALID_ARGUMENT", 400);
     }
+    if (name !== undefined) name = normalizeWorkspaceName(name);
     try {
       const value = await this.sendControlRequest<unknown>("/workspaces/import", {
-        version: "workspace_import.v1", directory_path: directoryPath, confirmed: true,
+        version: "workspace_import.v1", directory_path: directoryPath, confirmed: true, ...(name !== undefined ? { name } : {}),
       }, signal);
       if (!hasExactKeys(value, ["protocol_version", "workspace",
         "directory_content_modified", "agent_authority_granted"]) ||
@@ -6990,7 +7002,7 @@ export class APIClient {
         typeof value.workspace.id !== "string" ||
         !/^[A-Za-z0-9_.-]{1,256}$/u.test(value.workspace.id) ||
         !boundedText(value.workspace.name, 128) ||
-        /[\\/\u0000-\u001f\u007f]/u.test(value.workspace.name) ||
+        /[\u0000-\u001f\u007f]/u.test(value.workspace.name) ||
         !validDate(value.workspace.created_at)) {
         throw new APIRequestError("Workspace import response is invalid", "INVALID_RESPONSE", 502);
       }
@@ -10588,4 +10600,18 @@ function parsePriceSnapshotImport(value: unknown): PriceSnapshotImportView {
     throw new APIRequestError("Price snapshot import is invalid", "INVALID_RESPONSE", 502);
   }
   return value as unknown as PriceSnapshotImportView;
+}
+
+function normalizeWorkspaceName(name: string): string {
+  if (typeof name !== "string" || !name.trim() || new TextEncoder().encode(name.trim()).length > 128 || /[\u0000-\u001f\u007f-\u009f]/u.test(name))
+    throw new APIRequestError("A project name of 1–128 UTF-8 bytes without control characters is required", "INVALID_ARGUMENT", 400);
+  return name.trim();
+}
+function parseWorkspaceProject(value: unknown, id: string): WorkspaceProjectView {
+  if (!hasExactKeys(value, ["id", "name", "created_at", "directory_path", "thread_count", "active_thread_count"]) || value.id !== id ||
+    (typeof value.name !== "string" || !value.name) || !validDate(value.created_at) || typeof value.directory_path !== "string" || !value.directory_path || value.directory_path.length > 4096 ||
+    typeof value.thread_count !== "number" || !Number.isSafeInteger(value.thread_count) || value.thread_count < 0 ||
+    typeof value.active_thread_count !== "number" || !Number.isSafeInteger(value.active_thread_count) || value.active_thread_count < 0 || value.active_thread_count > value.thread_count)
+    throw new APIRequestError("Project details response is invalid", "INVALID_RESPONSE", 502);
+  return value as unknown as WorkspaceProjectView;
 }

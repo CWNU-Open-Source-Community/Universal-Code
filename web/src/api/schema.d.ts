@@ -6124,6 +6124,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename a registered project
+         * @description Changes only the display name. Directory and execution bindings remain fixed. The existing unique-name constraint rejects duplicate names; repeating the same name is idempotent.
+         */
+        put: operations["renameWorkspace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read project directory and conversation counts
+         * @description Requires control authorization. Counts all active (unarchived and undeleted) chats by project membership; active_thread_count counts pending input, approval, live execution leases, commands or terminals. Idle created Runs do not count as active.
+         */
+        get: operations["getWorkspaceProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/repository-commit-comparison": {
         parameters: {
             query?: never;
@@ -16721,6 +16761,7 @@ export interface components {
             confirmed: true;
             /** @description Operator-entered absolute existing directory on the server computer; at most 4096 UTF-8 bytes. Never a browser upload or directory enumeration request. */
             directory_path: string;
+            name?: string;
             /** @enum {string} */
             version: "workspace_import.v1";
         };
@@ -16738,6 +16779,20 @@ export interface components {
             before: components["schemas"]["Checkpoint"];
             replayed: boolean;
             transaction: components["schemas"]["Transaction"];
+        };
+        WorkspaceNameRequestView: {
+            name: string;
+        };
+        WorkspaceProjectView: {
+            /** Format: int64 */
+            active_thread_count: number;
+            /** Format: date-time */
+            created_at: string;
+            directory_path: string;
+            id: string;
+            name: string;
+            /** Format: int64 */
+            thread_count: number;
         };
         WorkspaceRestoreResult: {
             after?: components["schemas"]["Checkpoint"];
@@ -31527,6 +31582,92 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    renameWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identity */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceNameRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkspaceProjectView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getWorkspaceProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identity */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkspaceProjectView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

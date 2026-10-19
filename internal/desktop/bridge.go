@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
@@ -250,6 +251,8 @@ type DesktopBridgeConfig struct {
 // DesktopBridge is the complete renderer binding surface for D0-A. Keep this
 // type deliberately small: Wails binds every exported method.
 type DesktopBridge struct {
+	workspaceSelectionMu     sync.Mutex
+	workspaceSelection       *pendingWorkspaceDirectory
 	contextProvider          func() context.Context
 	filePicker               SkillPackageFilePicker
 	selector                 NativeSkillPackageSelector
