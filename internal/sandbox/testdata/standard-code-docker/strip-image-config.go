@@ -56,7 +56,7 @@ func main() {
 			delete(value, "Volumes")
 			delete(value, "Labels")
 			if key == "config" {
-				value["Labels"] = map[string]string{"org.traverse-board.project-actions": "1", "org.traverse-board.project-preparation": "1"}
+				value["Labels"] = map[string]string{"org.traverse-board.project-actions": "1", "org.traverse-board.project-preparation": "1", "org.traverse-board.pnpm-version": "10.28.1"}
 			}
 		}
 	}

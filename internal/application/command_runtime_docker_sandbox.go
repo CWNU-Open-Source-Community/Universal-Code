@@ -284,6 +284,10 @@ func commandRuntimeDockerCommand(spec runner.CommandRuntimeResolvedSpec) (
 	if toolchain == sandbox.DockerStandardCodeToolchainNode && len(spec.CanonicalArgv) > 1 && spec.CanonicalArgv[0] == "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && (spec.CanonicalArgv[1] == "ci" || spec.CanonicalArgv[1] == "rebuild") {
 		toolchain = sandbox.DockerStandardCodeToolchainNodePrepare
 	}
+	if toolchain == sandbox.DockerStandardCodeToolchainNode && len(spec.CanonicalArgv) > 1 && spec.CanonicalArgv[0] == sandbox.DockerStandardCodePNPMCLI &&
+		(spec.CanonicalArgv[1] == "fetch" || spec.CanonicalArgv[1] == "install" || (len(spec.CanonicalArgv) > 2 && spec.CanonicalArgv[1] == "--recursive" && spec.CanonicalArgv[2] == "rebuild")) {
+		toolchain = sandbox.DockerStandardCodeToolchainNodePrepare
+	}
 	command := standardcode.Command{ProtocolVersion: standardcode.CommandProtocolVersion,
 		Toolchain: toolchain, Arguments: append([]string(nil), spec.CanonicalArgv...),
 		WorkingDirectory: filepath.ToSlash(spec.Spec.WorkingDirectory),

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/sandbox"
 )
 
 func preparationFixture(t *testing.T, npm bool) (projectprep.Plan, string) {
@@ -38,6 +40,70 @@ func preparationFixture(t *testing.T, npm bool) (projectprep.Plan, string) {
 		t.Fatalf("plan %#v %v", plan, err)
 	}
 	return plan, root
+}
+
+func TestPNPMPreparationSeparatesSeedWorkspaceAndTestDirectories(t *testing.T) {
+	plan := projectprep.Plan{Version: projectprep.ProtocolVersion, Fingerprint: strings.Repeat("a", 64), Ready: true,
+		Ecosystem: "pnpm", Target: "monorepo/apps/web", WorkspaceRoot: "monorepo", Test: projectprep.Command{ID: "test.pnpm"}}
+	adapter := commandruntimeadapter.SandboxedWorkspace(application.CommandRuntimeDockerSandboxBackend, "fixture.v1", "generation")
+	for _, test := range []struct {
+		name, directory string
+		prepare         func(projectprep.Plan, commandruntimeadapter.Identity, string) (runner.CommandRuntimeSpec, error)
+	}{
+		{"fetch", projectprep.PNPMSeedDirectory(plan.Target), application.PrepareProjectPreparationFetchCommand},
+		{"install", plan.WorkspaceRoot, func(p projectprep.Plan, a commandruntimeadapter.Identity, r string) (runner.CommandRuntimeSpec, error) {
+			return application.PrepareProjectPreparationCommand(p, a, r, true)
+		}},
+		{"rebuild", plan.WorkspaceRoot, application.PrepareProjectPreparationRebuildCommand},
+		{"test", plan.Target, application.PrepareProjectPreparationTestCommand},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			spec, err := test.prepare(plan, adapter, t.TempDir())
+			if err != nil || spec.WorkingDirectory != test.directory || spec.Executable != "/opt/toolchains/node/bin/node" || spec.Arguments[0] != sandbox.DockerStandardCodePNPMCLI || spec.Network != runner.CommandRuntimeNetworkDisabled || spec.Credentials != runner.CommandRuntimeCredentialsNone {
+				t.Fatalf("pnpm command %+v %v", spec, err)
+			}
+			stage := "/workspace/" + projectprep.StageDirectory(plan.Target)
+			for _, required := range []string{"--offline", "--config.ignore-pnpmfile=true", "--config.manage-package-manager-versions=false", "--store-dir=/workspace/" + projectprep.PNPMStoreDirectory(plan.Target),
+				"--config.cache-dir=" + stage + "/pnpm-cache", "--config.state-dir=" + stage + "/pnpm-state", "--config.global-dir=" + stage + "/pnpm-global"} {
+				if !slices.Contains(spec.Arguments, required) {
+					t.Fatalf("missing fixed option %s: %+v", required, spec.Arguments)
+				}
+			}
+			if test.name == "install" || test.name == "fetch" {
+				if !slices.Contains(spec.Arguments, "--ignore-scripts") || !slices.Contains(spec.Arguments, "--frozen-lockfile") {
+					t.Fatal("default preparation runs scripts or changes lockfile", spec.Arguments)
+				}
+			}
+			if test.name == "rebuild" {
+				if !reflect.DeepEqual(spec.Arguments[1:4], []string{"--recursive", "rebuild", "--pending"}) || !slices.Contains(spec.Arguments, "--ignore-scripts=false") {
+					t.Fatal("rebuild did not preserve pending builds", spec.Arguments)
+				}
+				for _, arg := range spec.Arguments {
+					if strings.Contains(arg, "allow-all-build") {
+						t.Fatal("rebuild bypasses pnpm allowlist")
+					}
+				}
+			}
+			if test.name == "test" && (spec.Arguments[len(spec.Arguments)-1] != "test" || !slices.Contains(spec.Arguments, "--config.verify-deps-before-run=false")) {
+				t.Fatal("test forwards safety flags or auto-installs", spec.Arguments)
+			}
+		})
+	}
+	for _, adapter := range []commandruntimeadapter.Identity{
+		commandruntimeadapter.HostUnsandboxed("host"),
+		commandruntimeadapter.SandboxedWorkspace(application.CommandRuntimeLocalSandboxBackend, "fixture.v1", "generation"),
+		commandruntimeadapter.SandboxedWorkspace(application.CommandRuntimeSBXBackend, "fixture.v1", "generation"),
+	} {
+		if _, err := application.PrepareProjectPreparationTestCommand(plan, adapter, t.TempDir()); err == nil || !strings.Contains(err.Error(), "Docker") {
+			t.Fatalf("unsupported pnpm backend admitted: %+v %v", adapter, err)
+		}
+	}
+	for _, workspace := range []string{"", "../outside", "another-workspace"} {
+		plan.WorkspaceRoot = workspace
+		if _, err := application.PrepareProjectPreparationCommand(plan, adapter, t.TempDir(), false); err == nil {
+			t.Fatalf("invalid workspace admitted: %q", workspace)
+		}
+	}
 }
 
 func TestProjectPreparationCommandUsesOnlySandboxFixedOfflinePresets(t *testing.T) {

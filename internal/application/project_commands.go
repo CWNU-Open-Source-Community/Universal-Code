@@ -15,6 +15,7 @@ import (
 	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/repository"
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/sandbox"
 	"cyberagent-workbench/internal/toolgateway"
 )
 
@@ -94,6 +95,12 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 }
 
 func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Identity, workspaceRoot ...string) (string, []string, error) {
+	if id == "test.pnpm" {
+		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "pnpm workspace actions require the Standard Code Docker image with pnpm "+projectprep.PNPMVersion)
+		}
+		return "/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodePNPMCLI}, nil
+	}
 	name, found := toolgateway.ProjectCommandExecutable(id)
 	if !found {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition, "configured ID has no executable project command preset")
@@ -226,6 +233,11 @@ func checkDetectedProjectPaths(run domain.Run, plan projectprep.Plan) error {
 	}
 	if err := policy.Check(plan.Target); err != nil {
 		return err
+	}
+	if plan.WorkspaceRoot != "" {
+		if err := policy.Check(plan.WorkspaceRoot); err != nil {
+			return err
+		}
 	}
 	if err := policy.Check(plan.Manifest.Path); err != nil {
 		return err

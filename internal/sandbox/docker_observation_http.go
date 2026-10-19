@@ -165,6 +165,7 @@ func (transport dockerEngineReadOnlyTransport) InspectImage(ctx context.Context,
 		EnvironmentCount: len(payload.Config.Env), VolumeCount: len(payload.Config.Volumes),
 		ProjectActionsVersion: payload.Config.Labels[DockerStandardCodeProjectActionsLabel],
 		PreparationVersion:    payload.Config.Labels[DockerStandardCodePreparationLabel],
+		PNPMVersion:           payload.Config.Labels[DockerStandardCodePNPMVersionLabel],
 	}, nil
 }
 

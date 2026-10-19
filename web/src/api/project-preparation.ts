@@ -6,6 +6,7 @@ export interface ProjectPreparationPlan {
   ecosystem: string;
   toolchain: string;
   requested_version: string;
+  workspace_root?: string;
   files: Array<{ path: string; sha256: string }>;
   sources: string[];
   package_count: number;
@@ -115,6 +116,7 @@ export function parseProjectPreparation(value: unknown, runID: string, target?: 
     !record(value.plan) || !record(value.cache)) invalid();
   const plan = value.plan;
   if (!hash(plan.fingerprint) || !text(plan.ecosystem, 128) || !text(plan.toolchain, 256) ||
+    (plan.workspace_root !== undefined && !validPreparationTarget(plan.workspace_root)) ||
     !text(plan.requested_version, 256) || !Array.isArray(plan.files) || plan.files.length > 64 ||
     plan.files.some((file) => !record(file) || !validPreparationTarget(file.path) || !hash(file.sha256)) ||
     !Array.isArray(plan.sources) || plan.sources.length > 32 || !plan.sources.every(source) ||

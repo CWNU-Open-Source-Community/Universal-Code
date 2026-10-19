@@ -94,12 +94,12 @@ func TestProjectPreparationFinalCancellationWinsAndProgressClockStaysMonotonic(t
 	if _, err := f.st.UpdateProjectPreparation(t.Context(), o, 1); err != nil {
 		t.Fatal(err)
 	}
-	final, err := s.finishPreparation(t.Context(), o.RunID, o.ID, f.root, "", "", nil)
+	final, err := s.finishPreparation(t.Context(), o.RunID, o.ID, f.root, "", "", "", nil)
 	if err != nil || final.State != "cancelled" || !final.CancelRequested || final.UpdatedAt.Before(future) {
 		t.Fatalf("late cancellation/clock rollback lost: %+v %v", final, err)
 	}
 	o = savePreparationForFinalization(t, f, s, "final-failed")
-	final, err = s.finishPreparation(t.Context(), o.RunID, o.ID, f.root, "", "", errors.New("install exit 1"))
+	final, err = s.finishPreparation(t.Context(), o.RunID, o.ID, f.root, "", "", "", errors.New("install exit 1"))
 	if err != nil || final.State != "failed" || final.Error != "install exit 1" {
 		t.Fatalf("failed install became ready: %+v %v", final, err)
 	}

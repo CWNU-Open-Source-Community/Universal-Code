@@ -16,6 +16,8 @@ const (
 	GoProxyOrigin        = "https://proxy.golang.org"
 	GoProxyArchiveOrigin = "https://storage.googleapis.com"
 	KindNPMTarball       = "npm_tarball"
+	KindPNPMTarball      = "pnpm_tarball"
+	PNPMVersion          = "10.28.1"
 	KindGoMod            = "go_mod"
 	KindGoZip            = "go_zip"
 )
@@ -46,6 +48,7 @@ type Plan struct {
 	Version          string    `json:"version"`
 	Fingerprint      string    `json:"fingerprint"`
 	Target           string    `json:"target"`
+	WorkspaceRoot    string    `json:"workspace_root,omitempty"`
 	Ecosystem        string    `json:"ecosystem"`
 	Toolchain        string    `json:"toolchain"`
 	RequestedVersion string    `json:"requested_version,omitempty"`
@@ -53,6 +56,7 @@ type Plan struct {
 	Lockfiles        []File    `json:"lockfiles"`
 	Sources          []string  `json:"sources"`
 	Packages         []Package `json:"-"`
+	PNPMSeedLock     []byte    `json:"-"`
 	Install          Command   `json:"install"`
 	Test             Command   `json:"test"`
 	Ready            bool      `json:"ready"`
@@ -69,6 +73,12 @@ func StageDirectory(target string) string {
 
 func NPMCacheDirectory(target string) string      { return path.Join(StageDirectory(target), "npm-cache") }
 func GoModuleCacheDirectory(target string) string { return path.Join(StageDirectory(target), "go-mod") }
+func PNPMSeedDirectory(target string) string      { return path.Join(StageDirectory(target), "pnpm-seed") }
+func PNPMStoreDirectory(target string) string     { return path.Join(StageDirectory(target), "pnpm-store") }
+func PNPMTarballFile(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:]) + ".tgz"
+}
 
 func (p *Plan) seal() {
 	p.Ready = len(p.Issues) == 0 && p.Install.ID != ""
@@ -82,9 +92,10 @@ func (p *Plan) seal() {
 	// Packages are private in the HTTP projection, but are part of the exact
 	// review binding so altered URLs and checksums cannot reuse consent.
 	encoded, _ := json.Marshal(struct {
-		Plan     Plan
-		Packages []Package
-	}{*p, p.Packages})
+		Plan         Plan
+		Packages     []Package
+		PNPMSeedLock []byte
+	}{*p, p.Packages, p.PNPMSeedLock})
 	sum := sha256.Sum256(encoded)
 	p.Fingerprint = hex.EncodeToString(sum[:])
 }

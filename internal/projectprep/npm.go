@@ -12,12 +12,15 @@ import (
 )
 
 type npmManifest struct {
+	Name                 string            `json:"name"`
+	Version              string            `json:"version"`
 	PackageManager       string            `json:"packageManager"`
 	Engines              map[string]string `json:"engines"`
 	Scripts              map[string]string `json:"scripts"`
 	Dependencies         map[string]string `json:"dependencies"`
 	DevDependencies      map[string]string `json:"devDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	PeerDependencies     map[string]string `json:"peerDependencies"`
 	Workspaces           json.RawMessage   `json:"workspaces"`
 }
 

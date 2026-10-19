@@ -16,7 +16,7 @@ It never falls back to an unsandboxed host command.
 For project dependency preparation, use **Changes and delivery → Checks and
 delivery → Prepare project**. Review the detected lockfile and explicitly select
 the package origins; the application downloads verified artifacts, then installs
-offline in this fixed image. npm install scripts have a separate operator choice.
+offline in this fixed image. npm/pnpm install scripts have a separate operator choice.
 See [Prepare project dependencies](project-preparation.md) for cache reuse,
 failure recovery, and installed toolchain requirements.
 
@@ -29,7 +29,11 @@ $env:CYBERAGENT_STANDARD_CODE_DOCKER_IMAGE_DIGEST = "sha256:<64-lowercase-hex>"
 
 To build the repository fixture, first make the four exact base references named by
 `CYBERAGENT_STANDARD_CODE_{GO,NODE,PYTHON,RUST}_IMAGE_DIGEST` available in the
-fixed local Engine. Each value must be `name@sha256:<64-hex>`. Then run:
+fixed local Engine. Each value must be `name@sha256:<64-hex>`. Also download the
+[pnpm 10.28.1 archive](https://registry.npmjs.org/pnpm/-/pnpm-10.28.1.tgz) and set
+`CYBERAGENT_STANDARD_CODE_PNPM_TARBALL` to that local file. The build verifies its
+fixed SHA-512 integrity before copying it; it does not download package managers.
+Then run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File internal/sandbox/testdata/standard-code-docker/build-fixture.ps1
@@ -37,9 +41,11 @@ powershell -ExecutionPolicy Bypass -File internal/sandbox/testdata/standard-code
 
 The script refuses missing/unpinned bases, disables build-step networking and pulling,
 chooses a random tag it owns, strips inherited environment, volume, and label config,
-and prints the exact digest for both product and opt-in test vars. It sets the
-single fixed `org.traverse-board.project-actions=1` image label after removing
-inherited labels.
+and prints the exact digest for both product and opt-in test vars. After removing
+inherited labels, it sets `org.traverse-board.project-actions=1`,
+`org.traverse-board.project-preparation=1`, and `org.traverse-board.pnpm-version=10.28.1`.
+The last label enables pnpm preparation; older images retain their existing
+npm/Go capabilities and request a rebuild for pnpm.
 
 The current fixture contains `standard-code-docker-runner.v2`; rebuild it when
 upgrading from a v1 image. Durable v1 manifests remain readable as closed-stdin

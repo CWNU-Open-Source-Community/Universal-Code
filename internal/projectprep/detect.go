@@ -68,7 +68,17 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	if npm && goModule {
 		plan.Issues = append(plan.Issues, "Both package.json and go.mod are present; select a directory with one dependency toolchain")
 	} else if npm {
-		plan = detectNPM(plan, files)
+		if pnpmRoot, selected, findErr := findPNPMRoot(reader, files); selected || findErr != nil {
+			if findErr != nil {
+				plan.Issues = append(plan.Issues, findErr.Error())
+			}
+			plan = detectPNPM(plan, reader, files, pnpmRoot)
+			if err := ctx.Err(); err != nil {
+				return plan, err
+			}
+		} else {
+			plan = detectNPM(plan, files)
+		}
 	} else if goModule {
 		plan = detectGo(plan, files)
 	} else {
@@ -97,6 +107,10 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 				plan.Issues = append(plan.Issues, name+" declares another dependency toolchain in this directory; select a standalone project or configure an explicitly reviewed sandbox command")
 			}
 		}
+	}
+	if plan.Ecosystem == "pnpm" && len(plan.Lockfiles) > 63 {
+		plan.Issues = append(plan.Issues, "pnpm preparation supports at most 64 bound manifest/configuration files")
+		plan.Lockfiles = plan.Lockfiles[:63]
 	}
 	sort.Slice(plan.Lockfiles, func(i, j int) bool { return plan.Lockfiles[i].Path < plan.Lockfiles[j].Path })
 	sort.Strings(plan.Sources)

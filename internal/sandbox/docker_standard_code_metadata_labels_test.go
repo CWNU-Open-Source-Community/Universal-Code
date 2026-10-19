@@ -35,6 +35,7 @@ func (d standardCodeImageLabelsDoer) Do(request *http.Request) (*http.Response, 
 	labels := document["Config"].(map[string]any)["Labels"].(map[string]any)
 	labels[DockerStandardCodeProjectActionsLabel] = "1"
 	labels[DockerStandardCodePreparationLabel] = "1"
+	labels[DockerStandardCodePNPMVersionLabel] = DockerStandardCodePNPMVersion
 	if d.change != nil {
 		d.change(labels)
 	}
@@ -149,6 +150,7 @@ func TestDockerStandardCodeImageLabelsPreserveStrictOwnershipAndGenericProfiles(
 	}
 	inspection.Config.Labels[DockerStandardCodeProjectActionsLabel] = "1"
 	inspection.Config.Labels[DockerStandardCodePreparationLabel] = "1"
+	inspection.Config.Labels[DockerStandardCodePNPMVersionLabel] = DockerStandardCodePNPMVersion
 	if equalDockerLabels(inspection.Config.Labels, expected) {
 		t.Fatal("generic label equality accepted inherited metadata")
 	}
@@ -175,7 +177,7 @@ func TestDockerStandardCodeImageLabelsPreserveStrictOwnershipAndGenericProfiles(
 			})
 		}
 	}
-	for _, name := range []string{DockerStandardCodeProjectActionsLabel, DockerStandardCodePreparationLabel, "unknown.label", "desktop.docker.io/ports.scheme"} {
+	for _, name := range []string{DockerStandardCodeProjectActionsLabel, DockerStandardCodePreparationLabel, DockerStandardCodePNPMVersionLabel, "unknown.label", "desktop.docker.io/ports.scheme"} {
 		t.Run("unexpected/"+name, func(t *testing.T) {
 			copy := inspection
 			copy.Config.Labels = make(map[string]string, len(inspection.Config.Labels))
