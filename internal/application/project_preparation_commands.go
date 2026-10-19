@@ -78,6 +78,9 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
 		return runner.CommandRuntimeSpec{}, err
 	}
+	if !testing && plan.Ecosystem == "npm" && plan.WorkspaceRoot != "" && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Windows Local 沙箱无法创建 npm workspace 所需的内部链接；请选择现有 Docker 环境准备依赖")
+	}
 	id := "test.go"
 	if plan.Ecosystem == "npm" {
 		id = "test.npm"

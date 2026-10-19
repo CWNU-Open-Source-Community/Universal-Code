@@ -24,6 +24,11 @@ symlinks and Windows junctions are checked during finalization; command wrappers
 refer directly to the bound package files. Local dependency links outside the
 declared workspace remain unavailable.
 
+Windows Local LPAC cannot create the internal links required by npm workspace
+installation. Preparation reports this limit before creating an operation and
+asks the operator to choose an existing Docker environment. Ordinary npm
+projects retain their existing Local preparation path.
+
 ## Downloads and execution
 
 Go fetches the exact lock-bound artifacts through the existing public HTTPS,

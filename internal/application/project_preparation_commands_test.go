@@ -133,6 +133,34 @@ func TestNPMWorkspacePreparationSeparatesInstallAndMemberTestDirectories(t *test
 	}
 }
 
+func TestNPMWorkspacePreparationLocalExplainsUnsupportedLinks(t *testing.T) {
+	plan, root := preparationFixture(t, true)
+	adapter := commandruntimeadapter.SandboxedWorkspace(application.CommandRuntimeLocalSandboxBackend, "fixture", "generation")
+	plan.WorkspaceRoot = "."
+	if _, err := application.PrepareProjectPreparationCommand(plan, adapter, root, false); err == nil || !strings.Contains(err.Error(), "Windows Local") || !strings.Contains(err.Error(), "内部链接") || !strings.Contains(err.Error(), "Docker") {
+		t.Fatalf("workspace link limit was not explained: %v", err)
+	}
+	toolchain := t.TempDir()
+	node, npm := "node", "npm"
+	if runtime.GOOS == "windows" {
+		node, npm = "node.exe", "npm.cmd"
+	}
+	cli := filepath.Join(toolchain, "node_modules", "npm", "bin", "npm-cli.js")
+	if err := os.MkdirAll(filepath.Dir(cli), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{filepath.Join(toolchain, node), filepath.Join(toolchain, npm), cli} {
+		if err := os.WriteFile(name, []byte("intent preparation never executes this file"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", toolchain)
+	plan.WorkspaceRoot = ""
+	if spec, err := application.PrepareProjectPreparationCommand(plan, adapter, root, false); err != nil || spec.Executable != filepath.Join(toolchain, node) || spec.Network != runner.CommandRuntimeNetworkDisabled {
+		t.Fatalf("ordinary npm preparation changed: %+v %v", spec, err)
+	}
+}
+
 func TestProjectPreparationCommandUsesOnlySandboxFixedOfflinePresets(t *testing.T) {
 	goPlan, root := preparationFixture(t, false)
 	npmPlan, npmRoot := preparationFixture(t, true)
