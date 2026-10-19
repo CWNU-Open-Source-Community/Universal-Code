@@ -712,6 +712,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
 
   useEffect(() => {
     setMenuOpen(false);
+    setPeerDialog(null);
     setActivePane(null);
     setReviewFileTarget(undefined);
     setReviewToolTarget(undefined);
@@ -931,14 +932,14 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <CircleEllipsis aria-hidden="true" size={18} />
         </button>
         {menuOpen && <div className="v2-thread-menu" ref={menuRef} role="menu">
-          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} role="menuitem" type="button"
+          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} role="menuitem" type="button" ref={firstMenuItemRef}
             onClick={() => { peerReturnFocus.current = menuTriggerRef.current; setMenuOpen(false); setPeerDialog({ threadID }); }}>
             <MessagesSquare aria-hidden="true" size={15} />{t("发送到其他聊天", "Message another chat")}</button>
           <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
             setMenuOpen(false);
             menuTriggerRef.current?.focus();
             onArchive(detail.thread);
-          }} ref={firstMenuItemRef} role="menuitem" type="button">
+          }} role="menuitem" type="button">
             <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
           {view !== "inspector" && <button onClick={() => { setMenuOpen(false); onOpenInspector(menuTriggerRef.current); }}
             role="menuitem" type="button">

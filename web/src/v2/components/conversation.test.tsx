@@ -945,7 +945,7 @@ describe("V2Conversation", () => {
     const trigger = screen.getByRole("button", { name: "对话操作" });
 
     await user.click(trigger);
-    expect(screen.getByRole("menuitem", { name: "归档对话" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "发送到其他聊天" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();

@@ -39,12 +39,13 @@ it("retains the draft and idempotency key after an uncertain send, then closes o
   fixture.queryClient.clear();
 });
 
-it("keeps replies addressed to the source and attaches the original message identity", async () => {
+it("replies directly to the source even when it is outside the recent target list", async () => {
   const fixture = setup(true);
   const user = userEvent.setup();
   await screen.findByRole("option", { name: "API migration" });
   expect(screen.getByLabelText("To")).toBeDisabled();
   expect(screen.getByLabelText("To")).toHaveValue("thread-a");
+  expect(fixture.client.threadPeerTargets).not.toHaveBeenCalled();
   await user.type(screen.getByLabelText("Message"), "Confirmed");
   await user.click(screen.getByRole("button", { name: "Send message" }));
   await screen.findByRole("alert");

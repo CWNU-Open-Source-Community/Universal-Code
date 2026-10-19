@@ -37,7 +37,8 @@ export function V2PeerMessageCard({ message, threadID, onOpenThread, onReply }: 
     <p className="v2-peer-content">{message.content}</p>
     {message.error && <p className="v2-peer-error">{message.error}</p>}
     <footer><span>{message.status === "queued" ? t("等待接收；运行中的聊天会在当前轮结束后处理。", "Waiting for the recipient. A running chat receives this after its current turn.")
-      : message.status === "delivered" ? t("已加入对方上下文，处理结果以回复为准。", "Added to the other chat’s context. A reply will confirm the outcome.")
+      : message.status === "delivered" ? incoming ? t("此聊天已接收消息。", "This chat has received the message.")
+        : t("对方已接收，处理结果以回复为准。", "The recipient has received the message. A reply will confirm the outcome.")
         : message.status === "cancelled" ? t("此消息不会继续投递。", "This message will not be delivered.") : t("消息尚未送达。", "The message has not been delivered.")}</span>
       {incoming && onReply && <button onClick={(event) => onReply(message, event.currentTarget)} type="button">
         <Reply size={14} aria-hidden="true" />{t("回复", "Reply")}</button>}
@@ -63,8 +64,9 @@ export function V2PeerMessageDialog({ client, threadID, sourceTitle, reply, onCl
   const dialog = useModalFocusTrap<HTMLElement>(true, onClose, busy, reply ? contentRef : undefined,
     { isolateBackground: true, returnFocusRef });
   const targets = useQuery({ queryKey: ["thread", threadID, "peer-targets"],
-    queryFn: ({ signal }) => client.threadPeerTargets(threadID, signal), retry: false });
-  const target = targets.data?.items.find((item) => item.id === targetID);
+    queryFn: ({ signal }) => client.threadPeerTargets(threadID, signal), enabled: !reply, retry: false });
+  const availableTargets = reply ? [{ id: reply.source_thread_id, title: reply.source_title }] : targets.data?.items ?? [];
+  const target = availableTargets.find((item) => item.id === targetID);
   const tooLarge = peerMessageBytes(content.trim()) > maximumPeerMessageBytes;
   const canSend = client.hasThreadControl && Boolean(target) && Boolean(content.trim()) && !tooLarge && !busy;
   const send = async () => {
@@ -99,14 +101,13 @@ export function V2PeerMessageDialog({ client, threadID, sourceTitle, reply, onCl
       <div className="v2-peer-source"><span>{t("发自", "From")}</span><strong title={sourceTitle}>{sourceTitle}</strong></div>
       <label htmlFor={selectID}>{t("发送给", "To")}</label>
       <select id={selectID} value={targetID} disabled={busy || Boolean(reply)} onChange={(event) => { setTargetID(event.target.value); setError(""); }}>
-        <option value="">{targets.isPending ? t("正在加载聊天…", "Loading chats…") : t("选择聊天", "Choose a chat")}</option>
-        {targets.data?.items.map((item) => <option key={item.id} value={item.id}>{item.title || item.id}</option>)}
+        {!reply && <option value="">{targets.isPending ? t("正在加载聊天…", "Loading chats…") : t("选择聊天", "Choose a chat")}</option>}
+        {availableTargets.map((item) => <option key={item.id} value={item.id}>{item.title || item.id}</option>)}
       </select>
       {targets.isError && <p className="v2-peer-error" role="alert">{t("无法加载可接收消息的聊天。", "Could not load available chats.")}
         <button onClick={() => void targets.refetch()} type="button">{t("重试", "Retry")}</button></p>}
-      {targets.data && !targets.data.items.length && <p className="v2-peer-hint">{t("此项目中还没有其他可接收消息的聊天。", "There are no other available chats in this project.")}</p>}
-      {targets.data?.has_more && <p className="v2-peer-hint">{t("显示最近的 100 条可用聊天。", "Showing the 100 most recent available chats.")}</p>}
-      {reply && targets.data && !target && <p className="v2-peer-error" role="alert">{t("来源聊天已不可接收消息。", "The source chat can no longer receive messages.")}</p>}
+      {!reply && targets.data && !targets.data.items.length && <p className="v2-peer-hint">{t("此项目中还没有其他可接收消息的聊天。", "There are no other available chats in this project.")}</p>}
+      {!reply && targets.data?.has_more && <p className="v2-peer-hint">{t("显示最近的 100 条可用聊天。", "Showing the 100 most recent available chats.")}</p>}
       {reply && <blockquote className="v2-peer-reply-context">{reply.content}</blockquote>}
       <label htmlFor={contentID}>{t("消息", "Message")}</label>
       <textarea id={contentID} ref={contentRef} value={content} rows={5} disabled={busy}
