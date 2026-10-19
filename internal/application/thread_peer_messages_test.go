@@ -262,3 +262,28 @@ func TestThreadPeerMessagesRejectSelfForeignReplyAndStaleModelSource(t *testing.
 		t.Fatalf("rejected send queued data: %+v %v", items, err)
 	}
 }
+
+func TestThreadPeerMessagesCannotRestartAStoppedRecipient(t *testing.T) {
+	p := &peerMessageProvider{requests: make(chan llm.ChatRequest, 8)}
+	st, turns, targetRequest := threadControlFixture(t, p)
+	source := createPeerRun(t, st, p, "Source chat")
+	target, err := st.GetThread(t.Context(), targetRequest.ThreadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := application.NewRunService(st)
+	if _, err := runs.Start(t.Context(), target.ActiveRunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.Cancel(t.Context(), target.ActiveRunID); err != nil {
+		t.Fatal(err)
+	}
+	peer := application.NewThreadPeerMessageService(st, turns)
+	if _, err := peer.Send(t.Context(), domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: target.ID, Content: "Resume automatically", OperationKey: "peer-message-stopped-recipient", RequestedBy: "test_operator"}); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+		t.Fatalf("peer restarted a stopped recipient: %v", err)
+	}
+	stored, err := st.GetThread(t.Context(), target.ID)
+	if err != nil || stored.ActiveRunID != "" || stored.LastRunID != target.LastRunID {
+		t.Fatalf("peer created a successor before admission: %+v %v", stored, err)
+	}
+}

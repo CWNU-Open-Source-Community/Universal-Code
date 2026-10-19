@@ -172,3 +172,28 @@ func TestThreadPeerStoreFailedDeliveryCancelsInputAndSchedulingIncludesOtherTarg
 		t.Fatalf("failed input remained in handoff queue: %+v %v", queue, err)
 	}
 }
+
+func TestThreadPeerStoreFailedDeliveryBeforeRecipientStarts(t *testing.T) {
+	st := openWorkItemTestStore(t)
+	ctx := t.Context()
+	source := peerStoreRun(t, st, "Source")
+	_, target, err := application.NewRunService(st).Create(ctx, application.CreateRunRequest{Goal: "Unstarted recipient", Profile: "review", ModelRoute: "test/model", Interactive: true, Budget: domain.Budget{MaxTurns: 4}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := st.EnqueueThreadPeerMessage(ctx, domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(target.ID), Content: "unstarted peer input", OperationKey: "peer-store-unstarted-message", RequestedBy: "operator"}, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FailThreadPeerMessage(ctx, receipt.Message.ID, "Recipient was archived before starting"); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := st.GetThreadPeerMessage(ctx, receipt.Message.ID)
+	if err != nil || failed.Status != "failed" {
+		t.Fatalf("unstarted failure: %+v %v", failed, err)
+	}
+	input, err := st.GetOperatorSteering(ctx, receipt.Message.SteeringMessageID)
+	if err != nil || input.Status != domain.OperatorSteeringCancelled {
+		t.Fatalf("unstarted failed input remained consumable: %+v %v", input, err)
+	}
+}

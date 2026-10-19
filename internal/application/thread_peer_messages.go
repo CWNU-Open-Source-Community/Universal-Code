@@ -83,6 +83,14 @@ func (s *ThreadPeerMessageService) Send(ctx context.Context, request domain.Send
 	if !source.CanAcceptMessages() || !target.CanAcceptMessages() || source.WorkspaceID != target.WorkspaceID {
 		return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodeFailedPrecondition, "Peer chats must be active and in the same workspace")
 	}
+	if target.ActiveRunID == "" {
+		// Preparing an ordinary explicit message may create a successor and
+		// bind its runtime permission. A peer must first satisfy the recipient's
+		// existing automatic admission rules, including stop and Full activation.
+		if err := s.turns.CheckAutomaticTurn(ctx, target.ID); err != nil {
+			return domain.ThreadPeerMessageReceipt{}, err
+		}
+	}
 	// The recipient's existing successor creation copies its own configuration,
 	// Plan phase and permission preference. Sender settings never enter it.
 	prepared, err := s.turns.threads.prepareRun(ctx, SubmitThreadMessageRequest{peer: true, Version: domain.ThreadMessageProtocolVersion, ThreadID: target.ID, Content: request.Content, OperationKey: request.OperationKey, RequestedBy: "peer:" + source.ID}, domain.ThreadMessageIntent{})
@@ -99,7 +107,6 @@ func (s *ThreadPeerMessageService) Run(ctx context.Context) error {
 		return apperror.New(apperror.CodeFailedPrecondition, "Peer delivery dependencies are unavailable")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	var group sync.WaitGroup
 	var mu sync.Mutex
 	active := map[string]bool{}

@@ -204,7 +204,7 @@ func (s *SQLiteStore) EnqueueThreadPeerMessage(ctx context.Context, request doma
 		}
 	}
 	id := idgen.New("peer-message")
-	queued, _, err := enqueueOperatorSteeringTx(ctx, tx, domain.EnqueueOperatorSteeringRequest{RunID: runID, SessionID: targetSession, Content: request.Content, OperationKey: "peer-" + peerOperation(request.SourceThreadID, request.OperationKey), RequestedBy: "peer:" + request.SourceThreadID}, false)
+	queued, _, err := enqueueSteeringTx(ctx, tx, domain.EnqueueOperatorSteeringRequest{RunID: runID, SessionID: targetSession, Content: request.Content, OperationKey: "peer-" + peerOperation(request.SourceThreadID, request.OperationKey), RequestedBy: "peer:" + request.SourceThreadID}, false, "peer")
 	if err != nil {
 		return domain.ThreadPeerMessageReceipt{}, err
 	}
@@ -262,7 +262,7 @@ func (s *SQLiteStore) FailThreadPeerMessage(ctx context.Context, id, reason stri
 		return err
 	}
 	if input.Status == domain.OperatorSteeringPending {
-		_, err = s.CancelOperatorSteering(ctx, domain.CancelOperatorSteeringRequest{MessageID: input.ID, OperationKey: "peer-failure-" + id, RequestedBy: "peer_delivery", Reason: "Peer delivery could not start"})
+		_, err = s.cancelOperatorSteering(ctx, domain.CancelOperatorSteeringRequest{MessageID: input.ID, OperationKey: "peer-failure-" + id, RequestedBy: "peer_delivery", Reason: "Peer delivery could not start"}, true)
 		if err != nil {
 			if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeFailedPrecondition {
 				return nil

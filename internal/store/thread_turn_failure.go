@@ -188,7 +188,7 @@ func (s *SQLiteStore) EndFailedThreadTurn(ctx context.Context, threadID, runID, 
 	if err := requireThreadToolEffectsSettledTx(ctx, tx, runID); err != nil {
 		return empty, false, err
 	}
-	outcome := fmt.Sprintf("System-recorded failed turn %d. Execution outcome: %s. Handoff: %s. Attempt: %s. The preceding operator input remains part of this conversation. A new request starts a new turn and must account for completed actions instead of replaying them. The tool summaries below are bounded previews, not complete output.\n", checkpoint.NextTurn, handoff.Result.ErrorCode, handoffID, checkpoint.AttemptID)
+	outcome := fmt.Sprintf("System-recorded failed turn %d. Execution outcome: %s. Handoff: %s. Attempt: %s. The preceding input remains part of this conversation. A new request starts a new turn and must account for completed actions instead of replaying them. The tool summaries below are bounded previews, not complete output.\n", checkpoint.NextTurn, handoff.Result.ErrorCode, handoffID, checkpoint.AttemptID)
 	if handoff.Result.StopReason == "observed_failed_web_fetch" {
 		outcome += "The historical continuation did not retain its original machine-readable error code. FAILED_PRECONDITION labels this observed failed boundary, not the original model cause. No model or tool was rerun while recording this boundary. The original recorded error text follows.\n"
 	}

@@ -48,5 +48,11 @@ var threadPeerMessageStatements = func() []string {
 			statements = append(statements, `DROP TRIGGER trg_session_message_provenance_insert;`, strings.Replace(statement, "'uploaded_file',", "'peer_message', 'uploaded_file',", 1))
 		}
 	}
+	for _, statement := range operatorSteeringControlStatements {
+		if strings.HasPrefix(strings.TrimSpace(statement), "CREATE TRIGGER trg_operator_steering_cancellation_insert") {
+			statement = strings.Replace(statement, "run.status IN ('running', 'paused')", `(run.status IN ('running', 'paused') OR (run.status='created' AND NEW.requested_by='peer_delivery' AND EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=message.id)))`, 1)
+			statements = append(statements, `DROP TRIGGER trg_operator_steering_cancellation_insert;`, statement)
+		}
+	}
 	return statements
 }()

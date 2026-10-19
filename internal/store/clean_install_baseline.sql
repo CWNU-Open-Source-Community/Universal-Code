@@ -17617,7 +17617,7 @@ CREATE TRIGGER trg_operator_steering_cancellation_insert
 			JOIN runs run ON run.id = message.run_id
 			WHERE message.id = NEW.message_id AND message.run_id = NEW.run_id
 				AND message.status = 'pending'
-				AND ((NEW.kind = 'operator' AND run.status IN ('running', 'paused')
+				AND ((NEW.kind = 'operator' AND (run.status IN ('running', 'paused') OR (run.status='created' AND NEW.requested_by='peer_delivery' AND EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=message.id)))
 					AND NOT EXISTS (SELECT 1 FROM operator_steering_deliveries delivery
 						WHERE delivery.message_id = message.id AND delivery.status = 'prepared'))
 					OR (NEW.kind = 'run_terminal' AND run.status IN ('failed', 'cancelled')))
