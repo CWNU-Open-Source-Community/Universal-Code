@@ -982,11 +982,13 @@ describe("V2Conversation", () => {
     expect(fileTrigger).toHaveFocus();
   });
 
-  it("docks without trapping Tab and retains the selected file when narrowed", async () => {
+  it("collapses workbench panels in stages and restores the selected file without taking focus", async () => {
     let width = 1140;
     const resizes = new Set<() => void>();
     const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get")
-      .mockImplementation(function (this: HTMLElement) { return this.classList.contains("v2-conversation") ? width : 0; });
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("v2-shell") ? width : this.classList.contains("v2-conversation") ? width - 299 : 0;
+      });
     vi.stubGlobal("ResizeObserver", class {
       private resize: () => void;
       constructor(callback: ResizeObserverCallback) { this.resize = () => callback([], this as unknown as ResizeObserver); resizes.add(this.resize); }
@@ -995,22 +997,45 @@ describe("V2Conversation", () => {
     });
     try {
       const user = userEvent.setup();
-      const client = baseClient({ fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }) });
+      const client = baseClient({
+        fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }),
+        getPage: vi.fn(() => Promise.resolve(page([
+          transcriptItem("layout-link", "查看 [src/index.ts](src/index.ts)", 1),
+        ]))) as unknown as APIClient["getPage"],
+      });
       const directory = await client.workspaceExplore("workspace-1", ".");
       vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => path === "." ? directory : {
         ...directory, path, kind: "file", entries: [], content: "export const value = 1;",
       });
-      renderConversation(client);
+      const view = renderConversation(client);
+      view.container.classList.add("v2-shell", "has-sidebar");
       const trigger = await screen.findByRole("button", { name: "工作区文件" });
-      await user.click(trigger);
+      await user.click(await screen.findByRole("link", { name: "src/index.ts" }));
       const dock = await screen.findByRole("complementary", { name: "工作区文件" });
       expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
       expect(dock).not.toHaveAttribute("aria-modal");
+      within(dock).getByRole("button", { name: "关闭文件面板" }).focus();
       await user.tab({ shift: true });
       expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
-      await user.click(await within(dock).findByRole("button", { name: /index.ts/u }));
       expect(await within(dock).findByText("export const value = 1;")).toBeInTheDocument();
-      await act(async () => { width = 800; resizes.forEach((resize) => resize()); });
+      within(dock).getByRole("button", { name: "关闭文件面板" }).focus();
+      await act(async () => { width = 960; resizes.forEach((resize) => resize()); });
+      expect(screen.queryByRole("complementary", { name: "工作区文件" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "工作区文件" })).not.toBeInTheDocument();
+      expect(dock.closest(".v2-workbench-slot")).toHaveAttribute("inert");
+      expect(trigger).toHaveFocus();
+      screen.getByRole("button", { name: "发送 thread-a" }).focus();
+      await act(async () => { width = 961; resizes.forEach((resize) => resize()); });
+      expect(screen.getByRole("complementary", { name: "工作区文件" })).toBe(dock);
+      expect(within(dock).getByText("export const value = 1;")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
+      await act(async () => {
+        view.container.classList.remove("has-sidebar"); width = 800; resizes.forEach((resize) => resize());
+      });
+      expect(screen.getByRole("complementary", { name: "工作区文件" })).toBe(dock);
+      await act(async () => { width = 720; resizes.forEach((resize) => resize()); });
+      expect(screen.queryByRole("complementary", { name: "工作区文件" })).not.toBeInTheDocument();
+      await user.click(trigger);
       const modal = screen.getByRole("dialog", { name: "工作区文件" });
       expect(modal).toHaveAttribute("aria-modal", "true");
       expect(modal.parentElement?.parentElement).toBe(document.body);
@@ -1019,6 +1044,8 @@ describe("V2Conversation", () => {
       await user.keyboard("{Escape}");
       expect(screen.queryByRole("dialog", { name: "工作区文件" })).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();
+      await act(async () => { width = 1140; resizes.forEach((resize) => resize()); });
+      expect(screen.queryByRole("complementary", { name: "工作区文件" })).not.toBeInTheDocument();
     } finally {
       cleanup(); clientWidth.mockRestore(); vi.unstubAllGlobals();
     }

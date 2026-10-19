@@ -160,7 +160,7 @@ describe("V2Workbench inspector navigation", () => {
   });
   it("closes the narrow navigation drawer after new-task and settings navigation while retaining the draft", async () => {
     vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
-      matches: query === "(max-width: 760px)", media: query,
+      matches: query === "(max-width: 720px)", media: query,
       addEventListener: vi.fn(), removeEventListener: vi.fn(),
       addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(), onchange: null,
     })));
@@ -211,7 +211,7 @@ describe("V2Workbench inspector navigation", () => {
     vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
       matches: false, media: query,
       addEventListener: vi.fn((type: string, listener: (event: MediaQueryListEvent) => void) => {
-        if (query === "(max-width: 760px)" && type === "change") narrowListener = listener;
+        if (query === "(max-width: 720px)" && type === "change") narrowListener = listener;
       }),
       removeEventListener: vi.fn(),
       addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(), onchange: null,

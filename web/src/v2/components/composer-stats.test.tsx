@@ -72,6 +72,9 @@ it("opens metric explanations with the keyboard and closes them on Escape or out
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("note")).not.toBeInTheDocument();
   await user.tab();
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("note")).toHaveTextContent("缓存命中 97%");
+  await user.keyboard("{Escape}");
   await user.tab();
   await user.keyboard("{Enter}");
   expect(screen.getByRole("note")).toHaveTextContent("最近一次模型请求估算");

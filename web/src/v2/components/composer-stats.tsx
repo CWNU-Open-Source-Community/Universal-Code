@@ -52,8 +52,8 @@ export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
     `Main agent in this conversation: ${stats.turns} turns, ${stats.steps} model steps. ${speedLabel === undefined ? "Generation speed is unavailable." : `Average generation speed: ${speedLabel} tok/s.`} Speed is output tokens / measured generation time, excluding time to first token and tool execution.`,
   );
   const usageTitle = t(
-    `本对话主代理累计输入 ${format(stats.input_tokens)} Token（含缓存），输出 ${format(stats.output_tokens)} Token。${cacheKnown ? "缓存命中率 = 缓存读取 Token ÷ 输入 Token。" : `${stats.cache_reported_calls} / ${stats.usage_calls} 次调用提供了缓存明细，暂不计算命中率。`}`,
-    `Main agent totals: ${format(stats.input_tokens)} input tokens (including cache), ${format(stats.output_tokens)} output tokens. ${cacheKnown ? "Cache hit rate = cached input / all input tokens." : `${stats.cache_reported_calls} / ${stats.usage_calls} calls reported cache usage; hit rate is unavailable.`}`,
+    `本对话主代理累计输入 ${format(stats.input_tokens)} Token（含缓存），输出 ${format(stats.output_tokens)} Token。${cacheKnown ? `缓存命中 ${cacheLabel}。缓存命中率 = 缓存读取 Token ÷ 输入 Token。` : `${stats.cache_reported_calls} / ${stats.usage_calls} 次调用提供了缓存明细，暂不计算命中率。`}`,
+    `Main agent totals: ${format(stats.input_tokens)} input tokens (including cache), ${format(stats.output_tokens)} output tokens. ${cacheKnown ? `Cache hit ${cacheLabel}. Cache hit rate = cached input / all input tokens.` : `${stats.cache_reported_calls} / ${stats.usage_calls} calls reported cache usage; hit rate is unavailable.`}`,
   );
   const contextTitle = context ? t(
     `最近一次模型请求${context.estimated ? "估算" : "使用"} ${format(context.input_tokens)} / ${format(context.window_tokens)} Token（应用规划窗口）。`,
@@ -69,14 +69,14 @@ export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
       onClick={() => setExpanded(expanded === "activity" ? null : "activity")}>
       <Gauge size={14} strokeWidth={1.5} aria-hidden="true" />
       <span>{t(`${format(stats.turns)} 轮 ${format(stats.steps)} 步`, `${format(stats.turns)} turns ${format(stats.steps)} steps`)}</span>
-      {speedLabel !== undefined && <><span aria-hidden="true">·</span><span>{speedLabel} tok/s</span></>}
+      {speedLabel !== undefined && <span className="v2-composer-stat-detail"><span aria-hidden="true">·</span><span>{speedLabel} tok/s</span></span>}
     </button>}
     {stats.total_tokens > 0 && <button type="button" className="v2-composer-stat" title={usageTitle}
       aria-expanded={expanded === "usage"} aria-describedby={expanded === "usage" ? descriptionID : undefined}
       onClick={() => setExpanded(expanded === "usage" ? null : "usage")}>
       <Database size={14} strokeWidth={1.5} aria-hidden="true" />
       <span>{compactTokens(stats.total_tokens)} tok</span>
-      {stats.input_tokens > 0 && <><span aria-hidden="true">·</span><span>{t("缓存命中", "Cache hit")} {cacheLabel}</span></>}
+      {stats.input_tokens > 0 && <span className="v2-composer-stat-detail"><span aria-hidden="true">·</span><span>{t("缓存命中", "Cache hit")} {cacheLabel}</span></span>}
     </button>}
     {percent !== undefined && <button type="button" className="v2-composer-stat" title={contextTitle}
       aria-expanded={expanded === "context"} aria-describedby={expanded === "context" ? descriptionID : undefined}

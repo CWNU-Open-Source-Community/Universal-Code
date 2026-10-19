@@ -276,7 +276,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const view = route.view ?? "conversation";
   const settingsSection = route.section ?? "general";
   const newConversation = route.kind !== "thread";
-  const [narrowLayout, setNarrowLayout] = useState(() => Boolean(window.matchMedia?.("(max-width: 760px)").matches));
+  const [narrowLayout, setNarrowLayout] = useState(() => Boolean(window.matchMedia?.("(max-width: 720px)").matches));
   const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true);
   const [narrowSidebarVisible, setNarrowSidebarVisible] = useState(false);
   const sidebarVisible = narrowLayout ? narrowSidebarVisible : desktopSidebarVisible;
@@ -288,7 +288,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     else setDesktopSidebarVisible(visible);
   };
   useEffect(() => {
-    const media = window.matchMedia?.("(max-width: 760px)");
+    const media = window.matchMedia?.("(max-width: 720px)");
     if (!media) return;
     const onChange = (event: MediaQueryListEvent) => {
       if (sidebarSlot.current?.contains(document.activeElement)) sidebarToggle.current?.focus();
@@ -423,7 +423,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     },
   });
   const closeNavigationSidebar = () => {
-    if (window.matchMedia?.("(max-width: 760px)").matches) setSidebarVisible(false);
+    if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarVisible(false);
   };
   const openConversation = (threadID: string) => {
     setBackgroundCreations((current) => current.filter((thread) => thread.id !== threadID));

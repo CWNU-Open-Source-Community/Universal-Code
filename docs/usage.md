@@ -53,19 +53,32 @@ combines the Light and Dark captures of the same conversation.
 
 ### 窄窗口 / Narrow windows
 
-窗口变窄时，侧栏收为可打开的浮层，并保留宽屏时的显示偏好。任务导航收起次要入口，
+桌面窗口最小尺寸为 **480 × 600 逻辑像素**；系统显示缩放会影响截图中的实际像素数。
+The desktop window has a minimum size of **480 × 600 logical pixels**; display scaling changes the physical pixel count.
+
+两侧面板按窗口宽度依次收起：左侧栏展开时，文件或终端面板在 ≤960px 收起；
+左侧栏在 ≤720px 收起。左侧栏已隐藏时，右侧面板的阈值为 ≤720px。
+重新拉宽后恢复原文件或终端，手动关闭的面板保持关闭。左侧使用 300ms、右侧使用 500ms
+的推拉过渡；系统开启「减少动态效果」后立即切换。
+The file or terminal pane collapses at ≤960px with the sidebar open, or ≤720px with it hidden.
+The sidebar collapses at ≤720px. Widening restores the selected file or terminal; a manually closed pane stays closed.
+Transitions take 300ms on the left and 500ms on the right, and are disabled when reduced motion is enabled.
+
+窗口变窄时，侧栏收为可打开的浮层，并保留宽屏时的显示偏好。标题与常用工具合为一行，
 「审阅改动」「查看上下文」可从右上角对话菜单打开。输入框保留常用图标和模型选择，
 窄输入框的编辑模式切换移入「＋」菜单；窗口缩放、切换编辑模式都保留草稿。
+底部统计在窄窗口保持一行，点击轮次或用量可查看生成速度、缓存命中等完整说明。
 The sidebar becomes an overlay in narrow windows and remembers its desktop visibility.
-Review and context move into the conversation menu; editor mode moves into the composer’s
+The title and frequent tools share one row. Review and context move into the conversation menu; editor mode moves into the composer’s
 **+** menu. Drafts remain intact when resizing or switching editors.
+Statistics stay on one line; click activity or usage to see generation speed, cache usage and metric details.
 
 | 深色 / Dark | 雾透 / Mist |
 | --- | --- |
-| ![390px 深色对话](images/appearance/narrow-dark.png) | ![390px 雾透对话](images/appearance/narrow-mist.png) |
+| ![480px 深色对话](images/appearance/narrow-dark.png) | ![480px 雾透对话](images/appearance/narrow-mist.png) |
 
-以上为 390 × 844 的 Windows / Edge 生产构建截图，使用本地离线演示数据。
-These 390 × 844 captures use the production build in Edge on Windows with local demo data.
+以上为 480 × 844 的 Windows / Edge 生产构建截图，使用本地离线演示数据。
+These 480 × 844 captures use the production build in Edge on Windows with local demo data.
 
 ## Portable Build Diagnostics
 
