@@ -111,6 +111,49 @@ function expectNoNavigationWrites(client: APIClient) {
   }
 }
 
+it.each([false, true])("moves the text draft while retaining a late file reference: %s", async (lateUpload) => {
+  const storeID = `ds1_${"d".repeat(64)}`;
+  const prefix = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${storeID}:`;
+  const save = (key: string, value: unknown) => localStorage.setItem(prefix + encodeURIComponent(key),
+    JSON.stringify({ version: "v2_recovery.v1", value }));
+  let current = { ...createdThread, execution_state: "idle" as const, project_workspace_id: workspace.id, project_assignment_version: 1 };
+  const destination = { ...workspace, id: "workspace-destination", name: "Destination" };
+  save(`draft:thread:${current.id}`, "Keep this text");
+  useConnectionStore.getState().setHealth({ status: "ok", api_version: "api.v1",
+    app_version: "fixture", schema_version: 216, data_store_id: storeID });
+  window.history.replaceState({}, "", `#/threads/${current.id}`);
+  const move = deferred<Awaited<ReturnType<APIClient["moveThreadToProject"]>>>();
+  const client = { baseURL: "/api/v1", hasThreadControl: true,
+    getPage: vi.fn(async (path: string) => ({ items: path === "/workspaces" ? [workspace, destination] : [current],
+      page: { limit: 100 }, requestID: path })),
+    get: vi.fn(async () => ({ thread: current })), moveThreadToProject: vi.fn(() => move.promise),
+  } as unknown as APIClient;
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <V2Workbench client={client} /></QueryClientProvider>);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "移动 First turn 到项目" }));
+  await user.selectOptions(screen.getByRole("combobox", { name: "目标项目" }), destination.id);
+  await user.click(screen.getByRole("button", { name: "移动" }));
+  await waitFor(() => expect(client.moveThreadToProject).toHaveBeenCalledTimes(1));
+  const files = [{ id: "late-file", path: "notes.txt", digest: "a".repeat(64), partial: false, redacted: false }];
+  if (lateUpload) {
+    const scope = { key: `thread:${current.id}`, workspaceID: workspace.id };
+    save(`draft-document:${JSON.stringify([scope.key, scope.workspaceID])}:upload-complete`, {
+      version: "v2_draft_document.v1", scope, branchID: "upload-complete", ownerID: "upload-window", seq: 1,
+      bases: {}, snapshot: { text: "Keep this text", files, images: [] },
+    });
+  }
+  current = { ...current, workspace_id: destination.id, project_workspace_id: destination.id, project_assignment_version: 2 };
+  await act(async () => { move.resolve({ thread: current, replayed: false }); });
+  const drafts = Object.entries(localStorage).filter(([key]) => key.startsWith(prefix))
+    .map(([, value]) => JSON.parse(value).value).filter((value) => value?.version === "v2_draft_document.v1");
+  expect(drafts.find((value) => value.scope.workspaceID === destination.id)?.snapshot)
+    .toMatchObject({ text: "Keep this text", files: [] });
+  if (lateUpload) expect(drafts.some((value) => value.scope.workspaceID === workspace.id &&
+    value.snapshot.text === "" && value.snapshot.files[0]?.id === "late-file")).toBe(true);
+  expect(window.location.hash).toBe(`#/threads/${current.id}`);
+});
+
 describe("V2Workbench inspector navigation", () => {
   it("offers the new branch without replacing a chat selected while branching", async () => {
     const otherThread = { ...createdThread, id: "thread-other", title: "Other conversation" };

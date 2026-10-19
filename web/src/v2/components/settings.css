@@ -35,6 +35,13 @@
 .v2-setting-row > div:first-child span { color: var(--v2-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }
 .v2-setting-value { align-items: center; color: var(--v2-muted); display: flex; flex: 0 1 auto; gap: 8px; max-width: 48%; }
 .v2-setting-value code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-projectless-directory .v2-setting-row { align-items: flex-start; }
+.v2-projectless-path { display: block; font-size: 12px; line-height: 1.7; margin-top: 6px; overflow-wrap: anywhere; }
+.v2-projectless-directory .v2-settings-hint { color: var(--v2-muted); font-size: 13px; line-height: 1.6; margin: 10px 0 0; }
+.v2-projectless-form { border-top: 1px solid var(--v2-border); display: grid; gap: 10px; padding: 15px; }
+.v2-projectless-form p { color: var(--v2-muted); line-height: 1.6; margin: 0; }
+.v2-projectless-form input { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 8px; color: var(--v2-ink); min-width: 0; padding: 9px 10px; width: 100%; }
+.v2-projectless-form .v2-setting-value { justify-content: flex-end; max-width: none; }
 .v2-setting-value button,
 .v2-setting-value .v2-setting-link,
 .v2-settings-placeholder button,

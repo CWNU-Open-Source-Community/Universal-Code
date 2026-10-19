@@ -42,10 +42,10 @@ func (s *SQLiteStore) CheckThreadChangeUndoIdle(ctx context.Context, threadID, r
 func requireThreadChangeUndoIdleTx(ctx context.Context, tx *sql.Tx, threadID, runID, ownTransaction string) error {
 	var workspaceID string
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(owner.workspace_id,mission.workspace_id)
-	 FROM threads thread JOIN runs run ON run.id=thread.last_run_id
+	 FROM threads thread JOIN thread_runs binding ON binding.thread_id=thread.id JOIN runs run ON run.id=binding.run_id
 	 JOIN missions mission ON mission.id=run.mission_id
 	 LEFT JOIN run_file_drydock_bindings owner ON owner.run_id=run.id
-	 WHERE thread.id=? AND thread.last_run_id=? AND thread.status='active'`, threadID, runID).Scan(&workspaceID); err != nil {
+	 WHERE thread.id=? AND binding.run_id=? AND thread.status='active'`, threadID, runID).Scan(&workspaceID); err != nil {
 		return err
 	}
 	var busy bool
@@ -77,7 +77,7 @@ func requireThreadChangeUndoJournalTx(ctx context.Context, tx *sql.Tx, value wor
 	if err := tx.QueryRowContext(ctx, `SELECT thread.id FROM threads thread
 	 JOIN thread_runs binding ON binding.thread_id=thread.id
 	 JOIN run_events event ON event.run_id=binding.run_id
-	 WHERE thread.last_run_id=? AND event.event_id=? AND event.type='session.message_created'
+	 WHERE EXISTS(SELECT 1 FROM thread_runs target JOIN runs target_run ON target_run.id=target.run_id JOIN runs source_run ON source_run.id=event.run_id WHERE target.thread_id=thread.id AND target.run_id=? AND target_run.mission_id=source_run.mission_id) AND event.event_id=? AND event.type='session.message_created'
 	 AND event.source='session_store' AND json_extract(event.payload_json,'$.role')='assistant'
 	 AND json_extract(event.payload_json,'$.source_kind')='model_response'`, value.RunID, sourceID).Scan(&threadID); err != nil {
 		return err

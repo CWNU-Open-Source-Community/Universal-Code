@@ -1,5 +1,8 @@
 import type { components } from "./schema";
 
+export type ProjectlessDirectory = components["schemas"]["ProjectlessDirectory"];
+export type ProjectlessWorkspaceView = components["schemas"]["ProjectlessWorkspaceView"];
+
 export type ProjectActionsView = components["schemas"]["ProjectActionsView"];
 export type ProjectActionView = components["schemas"]["ProjectActionView"];
 export type ProjectActionResultView = components["schemas"]["ProjectActionResultView"];

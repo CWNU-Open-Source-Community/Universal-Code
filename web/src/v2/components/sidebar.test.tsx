@@ -27,6 +27,54 @@ const thread: ThreadView = {
   updated_at: "2026-08-29T00:00:00Z",
 };
 
+describe("sidebar project moves", () => {
+  const destination = { ...workspace, id: "workspace-2", name: "Empty project" };
+  const movable: ThreadView = { ...thread, project_workspace_id: workspace.id,
+    project_assignment_version: 1, execution_state: "idle" };
+  const props = { onArchive: vi.fn(), onNewConversation: vi.fn(), onOpenModels: vi.fn(),
+    onOpenSettings: vi.fn(), onSearchOpen: vi.fn(), onSelectThread: vi.fn(),
+    searchOpen: false, selectedThreadID: thread.id, workspaces: [workspace, destination],
+    onNewInProject: vi.fn() };
+
+  it("drops a known chat into an empty project without changing selection optimistically", () => {
+    const onMoveThread = vi.fn();
+    render(<V2Sidebar {...props} threads={[movable]} onMoveThread={onMoveThread} />);
+    const row = screen.getByRole("button", { name: thread.title });
+    const target = screen.getByRole("region", { name: "项目 Empty project" });
+    const data = new Map<string, string>();
+    const dataTransfer = { setData: (key: string, value: string) => data.set(key, value), getData: (key: string) => data.get(key) ?? "" };
+    fireEvent.dragStart(row, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    expect(target).toHaveClass("is-drop-target");
+    fireEvent.drop(target, { dataTransfer });
+    expect(onMoveThread).toHaveBeenCalledWith(movable, destination.id);
+    expect(within(screen.getByRole("region", { name: "项目 Traverse Board" })).getByRole("button", { name: thread.title })).toHaveAttribute("aria-current", "page");
+    fireEvent.drop(target, { dataTransfer });
+    expect(onMoveThread).toHaveBeenCalledOnce();
+  });
+
+  it("supports the keyboard project picker and groups local chats separately from their execution folder", async () => {
+    const user = userEvent.setup();
+    const onMoveThread = vi.fn();
+    const local = { ...movable, project_workspace_id: "" };
+    render(<V2Sidebar {...props} threads={[local]} onMoveThread={onMoveThread} />);
+    expect(within(screen.getByRole("region", { name: "项目 本地聊天" })).getByRole("button", { name: thread.title })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "移动 Permission audit 到项目" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "目标项目" }), destination.id);
+    await user.click(screen.getByRole("button", { name: "移动" }));
+    expect(onMoveThread).toHaveBeenCalledWith(local, destination.id);
+  });
+
+  it("does not let running chats or foreign drag data move projects", () => {
+    const onMoveThread = vi.fn();
+    render(<V2Sidebar {...props} threads={[{ ...movable, execution_state: "running" }]} onMoveThread={onMoveThread} />);
+    expect(screen.getByRole("button", { name: thread.title })).toHaveAttribute("draggable", "false");
+    expect(screen.getByRole("button", { name: "移动 Permission audit 到项目" })).toBeDisabled();
+    fireEvent.drop(screen.getByRole("region", { name: "项目 Empty project" }), { dataTransfer: { getData: () => thread.id } });
+    expect(onMoveThread).not.toHaveBeenCalled();
+  });
+});
+
 describe("V2Sidebar archive menu", () => {
   it("keeps identically named projects separate by identity and states search coverage", async () => {
     const second = { ...workspace, id: "workspace-2" };

@@ -126,7 +126,9 @@ func (s *SQLiteStore) ListWorkspacesPage(ctx context.Context, offset int, limit 
 	query := `SELECT id, name, root_path, created_at FROM workspaces`
 	if s.hideDrydockWorkspaces {
 		query += ` WHERE NOT EXISTS (SELECT 1 FROM drydock_workspaces drydock
-			WHERE drydock.workspace_id = workspaces.id)`
+			WHERE drydock.workspace_id = workspaces.id)
+			AND NOT EXISTS (SELECT 1 FROM projectless_workspace_allocations local
+			WHERE local.workspace_id = workspaces.id)`
 	}
 	rows, err := s.db.QueryContext(ctx, query+` ORDER BY name, id LIMIT ? OFFSET ?`,
 		limit, offset)

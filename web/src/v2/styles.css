@@ -628,6 +628,23 @@
 }
 .v2-thread-group > header svg { flex-shrink: 0; }
 .v2-thread-group > header span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-thread-group { border-radius: 10px; }
+.v2-thread-group.is-drop-target { background: var(--v2-control-hover); outline: 2px solid var(--prayu-focus); outline-offset: 2px; }
+.v2-project-empty { color: var(--v2-muted); font-size: 12px; margin: 4px 10px 8px; }
+.v2-project-new-chat { align-items: center; background: transparent; border: 0; border-radius: 6px; color: var(--v2-muted); display: flex; height: 24px; justify-content: center; margin-left: auto; padding: 0; width: 24px; flex-shrink: 0; }
+.v2-project-new-chat:hover { background: var(--v2-control-hover); color: var(--v2-text); }
+.v2-sidebar .v2-project-add { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--v2-muted); display: flex; font-size: 12px; gap: 8px; margin: 4px 12px; padding: 7px 9px; }
+.v2-sidebar .v2-project-add:hover { background: var(--v2-control-hover); color: var(--v2-text); }
+.v2-thread-row.has-project-control { padding-right: 57px; }
+.v2-thread-row[draggable="true"] { cursor: grab; }
+.v2-thread-row[draggable="true"]:active { cursor: grabbing; }
+.v2-thread-row-shell .v2-thread-move { right: 30px; }
+.v2-thread-project-dialog { max-width: 440px; }
+.v2-thread-project-dialog-body { display: grid; gap: 16px; padding: 20px; }
+.v2-thread-project-dialog-body > strong { overflow-wrap: anywhere; }
+.v2-thread-project-dialog-body label { display: grid; gap: 8px; }
+.v2-thread-project-dialog-body select { width: 100%; }
+.v2-thread-project-dialog-body p { color: var(--v2-muted); font-size: 13px; margin: 0; }
 .v2-thread-row-shell { border-radius: 10px; min-width: 0; position: relative; }
 .v2-thread-row-shell.is-selected { background: var(--v2-control-hover); }
 .v2-thread-row-shell:hover:not(.is-selected) { background: color-mix(in srgb, var(--v2-control-hover) 70%, transparent); }
@@ -2315,6 +2332,7 @@
 
 .v2-sidebar-backdrop { display: none; }
 .v2-workspace-start { margin-left: auto; position: relative; }
+.v2-sidebar .v2-workspace-start { margin-left: 0; }
 .v2-project-import { max-height: calc(100dvh - 24px); overflow: auto; }
 .v2-project-import-body { display: grid; gap: 16px; padding: 18px; }
 .v2-project-import-body p { color: var(--v2-muted); font-size: 13px; line-height: 1.6; margin: 0; }

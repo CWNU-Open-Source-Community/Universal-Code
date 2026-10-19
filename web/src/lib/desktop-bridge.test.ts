@@ -856,6 +856,41 @@ describe("desktop native bridge", () => {
     await expect(module.importDesktopWorkspace()).rejects.toThrow("rejected");
   });
 
+  it("selects a chat directory natively without accepting a renderer path", async () => {
+    const settings = { version: "projectless_directory.v1", directory_path: "D:\\Chats", default_directory_path: "C:\\Users\\me\\Documents\\Universal-Code" };
+    const choose = vi.fn().mockResolvedValue({ status: "selected", settings });
+    installBridge({ Bootstrap: vi.fn().mockResolvedValue({ ...bootstrap,
+      control_token: "control-token-0123456789abcdefghijkl", run_creation_enabled: true,
+      session_message_enabled: true, thread_control_enabled: true, read_only_default: false,
+      projectless_workspaces_enabled: true }), ChooseProjectlessDirectory: choose });
+    const module = await import("./desktop-bridge");
+    expect(module.desktopProjectlessDirectoryEnabled()).toBe(false);
+    await module.loadDesktopBootstrap();
+    expect(module.desktopProjectlessDirectoryEnabled()).toBe(true);
+    await expect(module.chooseDesktopProjectlessDirectory()).resolves.toEqual(settings);
+    expect(choose).toHaveBeenCalledExactlyOnceWith();
+    choose.mockResolvedValueOnce({ status: "cancelled", settings: null });
+    await expect(module.chooseDesktopProjectlessDirectory()).resolves.toBeNull();
+    choose.mockResolvedValueOnce({ status: "selected", settings: { ...settings, arbitrary_path_input: true } });
+    await expect(module.chooseDesktopProjectlessDirectory()).rejects.toThrow("rejected");
+  });
+
+  it("keeps chat directory selection disabled for legacy bootstraps and rejects inconsistent flags", async () => {
+    const choose = vi.fn();
+    installBridge({ ChooseProjectlessDirectory: choose });
+    let module = await import("./desktop-bridge");
+    await module.loadDesktopBootstrap();
+    expect(module.desktopProjectlessDirectoryEnabled()).toBe(false);
+    await expect(module.chooseDesktopProjectlessDirectory()).rejects.toThrow("disabled");
+    expect(choose).not.toHaveBeenCalled();
+    for (const flag of ["true", true]) {
+      vi.resetModules();
+      installBridge({ Bootstrap: vi.fn().mockResolvedValue({ ...bootstrap, projectless_workspaces_enabled: flag }) });
+      module = await import("./desktop-bridge");
+      await expect(module.loadDesktopBootstrap()).rejects.toThrow("rejected");
+    }
+  });
+
   it("treats a cancelled Workspace directory picker as a non-mutating result", async () => {
     const enabled = {
       ...bootstrap,
@@ -1091,6 +1126,7 @@ function installBridge(overrides: Partial<{
   RestartWithVerificationSettings: (request: unknown) => Promise<unknown>;
   Bootstrap: () => Promise<unknown>;
   ImportWorkspace: () => Promise<unknown>;
+  ChooseProjectlessDirectory: () => Promise<unknown>;
   InstallSkillPackage: (request: unknown) => Promise<unknown>;
   ListSkillPackages: (request: unknown) => Promise<unknown>;
   RemoveSkillPackage: (request: unknown) => Promise<unknown>;

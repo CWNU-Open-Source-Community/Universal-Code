@@ -4500,6 +4500,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/projectless-directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the default chat directory
+         * @description Requires control authorization because the operator settings include a host directory path.
+         */
+        get: operations["getProjectlessDirectory"];
+        /**
+         * Set the default chat directory
+         * @description Requires the server workspace import capability and an explicitly confirmed absolute existing directory on the service computer. Updates directory configuration without importing a project. Desktop uses its native pathless directory picker. Existing chat and draft directories retain their original paths.
+         */
+        put: operations["setProjectlessDirectory"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills/catalog/publishers": {
         parameters: {
             query?: never;
@@ -5369,6 +5393,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a chat to a registered project
+         * @description Changes project membership using expected_version and an idempotency key. A different project prepares a created Run in the target directory with fresh configuration and Ask execution permission. Historical Runs and files retain their original locations. An empty project_workspace_id detaches membership and keeps the execution directory. Busy chats and pending inputs reject the move.
+         */
+        post: operations["moveThreadProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/project-hooks": {
         parameters: {
             query?: never;
@@ -5900,6 +5944,26 @@ export interface paths {
          * @description Requires an explicit startup capability and the distinct control token. Accepts a confirmed absolute directory on the server computer, resolves its canonical root and returns bounded workspace metadata. Repeating the same canonical directory returns the same durable workspace. Registration never overwrites another workspace root, modifies directory contents or grants Agent authority. No directory enumeration or browser-file upload is performed; the native Desktop picker remains a separate pathless entry point.
          */
         post: operations["importWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/projectless": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Allocate a private chat working directory
+         * @description Reserves a durable workspace for one local chat draft before uploading attachments. Reusing the operation key retains the original root and workspace even after directory settings change. Private chat workspaces are omitted from project lists.
+         */
+        post: operations["allocateProjectlessWorkspace"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11362,6 +11426,24 @@ export interface components {
             replayed: boolean;
             run_id: string;
         };
+        ProjectlessDirectory: {
+            default_directory_path: string;
+            directory_path: string;
+            version: string;
+        };
+        ProjectlessDirectoryRequestView: {
+            confirmed: boolean;
+            directory_path: string;
+            version: string;
+        };
+        ProjectlessWorkspaceRequestView: {
+            version: string;
+        };
+        ProjectlessWorkspaceView: {
+            replayed: boolean;
+            version: string;
+            workspace: components["schemas"]["WorkspaceView"];
+        };
         ProviderAvailability: {
             ConfigurationError: boolean;
             CredentialSource: string;
@@ -12681,6 +12763,7 @@ export interface components {
             operator_approval_enabled: boolean;
             plan_delivery_control_enabled: boolean;
             process_execution_enabled: boolean;
+            projectless_workspaces_enabled?: boolean;
             /** @enum {string} */
             protocol_version: "runtime_capabilities.v1";
             provider_credential_enabled: boolean;
@@ -14576,7 +14659,7 @@ export interface components {
             /** @enum {string} */
             web_access_mode?: "disabled" | "rules" | "full";
             web_allowed_targets?: string[];
-            workspace_id: string;
+            workspace_id?: string;
         };
         ThreadCreationControlView: {
             mission: components["schemas"]["MissionView"];
@@ -14683,6 +14766,7 @@ export interface components {
             exported_at: string;
             messages: components["schemas"]["ThreadMessageView"][];
             mission: components["schemas"]["MissionView"];
+            missions: components["schemas"]["MissionView"][];
             /** @enum {string} */
             protocol_version: "thread_export.v1";
             runs: components["schemas"]["ThreadRunView"][];
@@ -14922,6 +15006,19 @@ export interface components {
             turn_request?: components["schemas"]["ThreadRequestObservationView"];
             /** @enum {string} */
             version: "plan_delivery_control.v1";
+        };
+        ThreadProjectMoveRequestView: {
+            /** Format: int64 */
+            expected_version: number;
+            project_workspace_id: string;
+            /** @enum {string} */
+            version: "thread_project_move.v1";
+        };
+        ThreadProjectMoveView: {
+            replayed: boolean;
+            thread: components["schemas"]["ThreadView"];
+            /** @enum {string} */
+            version: "thread_project_move.v1";
         };
         ThreadPullRequestCreateRequest: {
             approval_id: string;
@@ -15335,6 +15432,9 @@ export interface components {
             id: string;
             last_run_id: string;
             mission_id: string;
+            /** Format: int64 */
+            project_assignment_version?: number;
+            project_workspace_id?: string;
             /** @enum {string} */
             protocol_version: "thread.v1";
             /** @enum {string} */
@@ -27529,6 +27629,84 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    getProjectlessDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectlessDirectory"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    setProjectlessDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectlessDirectoryRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectlessDirectory"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     listSkillCatalogPublishers: {
         parameters: {
             query?: never;
@@ -29745,6 +29923,54 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    moveThreadProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadProjectMoveRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadProjectMoveView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     getProjectHooks: {
         parameters: {
             query?: never;
@@ -30919,6 +31145,50 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["WorkspaceImportView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    allocateProjectlessWorkspace: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectlessWorkspaceRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProjectlessWorkspaceView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

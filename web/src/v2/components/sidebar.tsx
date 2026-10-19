@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
-import { Archive, ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, Cpu, Folder, MessagesSquare, RefreshCw,
+import { useMemo, useState, type ReactNode } from "react";
+import { Archive, ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, Cpu, Folder, FolderInput, MessagesSquare, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
 import type { ThreadSearchResultView, ThreadView, WorkspaceView } from "../../api/types";
 import { useLocale } from "../../lib/locale";
+import { ThreadProjectDialog, threadProjectID } from "./thread-project-dialog";
 
 export type V2SettingsSection = "general" | "permissions" | "appearance" | "voice" |
   "models" | "plugins" | "browser" | "hooks" | "git" | "environment" |
@@ -30,6 +31,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onOpenInspector, inspectorActive = false, onOpenConnections,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
+  projectAction, onNewInProject, onMoveThread, movingThreadID = "", moveError = "",
   hasMore = false, truncated = false, loading = false, loadingMore = false, loadFailed = false,
   loadMoreFailed = false, refreshing = false, onLoadMore, onRefresh, onRetry }: {
   threads: ThreadView[];
@@ -52,25 +54,37 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   includeArchived?: boolean;
   onIncludeArchivedChange?: (value: boolean) => void;
   onSelectSearchResult?: (result: ThreadSearchResultView) => void;
+  projectAction?: ReactNode;
+  onNewInProject?: (projectID: string) => void;
+  onMoveThread?: (thread: ThreadView, projectID: string) => void;
+  movingThreadID?: string;
+  moveError?: string;
   hasMore?: boolean; truncated?: boolean; loading?: boolean; loadingMore?: boolean; loadFailed?: boolean;
   loadMoreFailed?: boolean; refreshing?: boolean;
   onLoadMore?: () => void; onRefresh?: () => void; onRetry?: () => void;
 }) {
   const { t, locale } = useLocale();
   const searching = Boolean(appliedSearch);
+  const [draggingThreadID, setDraggingThreadID] = useState("");
+  const [dropProjectID, setDropProjectID] = useState<string | null>(null);
+  const [projectCandidate, setProjectCandidate] = useState<ThreadView | null>(null);
   const resultCount = searching ? searchResults.length : threads.length;
   const workspaceNames = useMemo(() => new Map(workspaces.map((workspace) =>
     [workspace.id, workspace.name])), [workspaces]);
   const grouped = useMemo(() => {
     const result = new Map<string, ThreadView[]>();
     for (const thread of threads) {
-      const id = thread.workspace_id ?? "";
+      const id = threadProjectID(thread);
       const group = result.get(id);
       if (group) group.push(thread);
       else result.set(id, [thread]);
     }
+    if (onNewInProject) for (const workspace of workspaces) {
+      if (!result.has(workspace.id)) result.set(workspace.id, []);
+    }
+    if (draggingThreadID && !result.has("")) result.set("", []);
     return [...result.entries()];
-  }, [threads]);
+  }, [threads, workspaces, onNewInProject, draggingThreadID]);
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>();
     for (const { name } of workspaces) counts.set(name, (counts.get(name) ?? 0) + 1);
@@ -90,6 +104,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
       <button onClick={onOpenModels} type="button"><Cpu aria-hidden="true" size={16} />
         <span>{t("接入模型", "Connect models")}</span></button>
     </nav>
+    {!searchOpen && projectAction}
+    {moveError && <p className="v2-history-scope" role="alert">{moveError}</p>}
     {searchOpen && <div className="v2-sidebar-search"><Search aria-hidden="true" size={15} />
       <input aria-label={t("搜索对话", "Search conversations")} aria-invalid={searchTooLong || undefined}
         aria-describedby={`v2-thread-search-scope${searchTooLong ? " v2-thread-search-error" : ""}`} autoFocus
@@ -127,24 +143,47 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           <span className="v2-message-search-snippet" id={`search-result-${result.id}`}>{result.snippet}</span>
         </button>)}</div>}
       {!searchPending && !searching && grouped.map(([workspaceID, workspaceThreads]) => {
-        const name = workspaceID ? workspaceNames.get(workspaceID) ?? t("工作区", "Workspace") : t("本地任务", "Local tasks");
+        const name = workspaceID ? workspaceNames.get(workspaceID) ?? t("工作区", "Workspace") : t("本地聊天", "Local chats");
         const shortID = workspaceID.length > 16 ? `…${workspaceID.slice(-6)}` : workspaceID;
         const label = workspaceID && (duplicateNames.has(name) || !workspaceNames.has(workspaceID))
           ? `${name} · ${shortID}` : name;
-        return <section aria-label={t(`项目 ${label}`, `Project ${label}`)} className="v2-thread-group" key={workspaceID}>
-        <header title={workspaceID || name}><Folder aria-hidden="true" size={15} /><span>{label}</span></header>
+        const draggedThread = threads.find((thread) => thread.id === draggingThreadID);
+        const acceptsDrop = Boolean(onMoveThread && draggedThread && !movingThreadID && threadProjectID(draggedThread) !== workspaceID);
+        return <section aria-label={t(`项目 ${label}`, `Project ${label}`)} className={`v2-thread-group${dropProjectID === workspaceID ? " is-drop-target" : ""}`} key={workspaceID}
+          onDragOver={(event) => { if (acceptsDrop) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropProjectID(workspaceID); } }}
+          onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropProjectID(null); }}
+          onDrop={(event) => {
+            if (!acceptsDrop || !draggedThread || event.dataTransfer.getData("application/x-universal-code-thread") !== draggedThread.id) return;
+            event.preventDefault(); setDropProjectID(null); setDraggingThreadID(""); onMoveThread?.(draggedThread, workspaceID);
+          }}>
+        <header title={workspaceID || name}><Folder aria-hidden="true" size={15} /><span>{label}</span>
+          {onNewInProject && <button className="v2-project-new-chat" aria-label={t(`在 ${label} 中新建聊天`, `New chat in ${label}`)}
+            onClick={() => onNewInProject(workspaceID)} type="button"><SquarePen aria-hidden="true" size={14} /></button>}
+        </header>
+        {workspaceThreads.length === 0 && <p className="v2-project-empty">{draggingThreadID ? t("拖到这里", "Drop here") : t("暂无聊天", "No chats yet")}</p>}
         {workspaceThreads.map((thread) => {
           const execution = executionStatus(thread, loadFailed, t);
+          const canMove = Boolean(onMoveThread && !movingThreadID && thread.project_assignment_version &&
+            thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(execution.state));
           const statusID = `v2-thread-state-${thread.id}`;
           return <div className={`v2-thread-row-shell${selectedThreadID === thread.id
           ? " is-selected" : ""}`} key={thread.id}>
           <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={statusID}
-            className="v2-thread-row" onClick={() => onSelectThread(thread.id)} type="button">
+            className={`v2-thread-row${onMoveThread ? " has-project-control" : ""}`} onClick={() => onSelectThread(thread.id)} type="button"
+            draggable={canMove} onDragStart={(event) => {
+              if (!canMove) { event.preventDefault(); return; }
+              event.dataTransfer.setData("application/x-universal-code-thread", thread.id);
+              event.dataTransfer.effectAllowed = "move"; setDraggingThreadID(thread.id);
+            }} onDragEnd={() => { setDraggingThreadID(""); setDropProjectID(null); }}>
             <span className="v2-thread-title">{thread.title}</span>
             <span aria-hidden="true" className={`v2-thread-state state-${execution.state}`} title={execution.description}>
               <i />{execution.label}</span>
           </button>
           <span className="v2-thread-state-description" id={statusID}>{execution.description}</span>
+          {onMoveThread && <button aria-label={t(`移动 ${thread.title} 到项目`, `Move ${thread.title} to project`)}
+            className="v2-thread-more v2-thread-move" disabled={!canMove} title={canMove ? t("移动到项目，也可拖动聊天", "Move to a project, or drag the chat")
+              : t("当前任务暂不可移动，请等待执行或待处理消息结束", "Wait for execution and pending messages to finish before moving")}
+            onClick={() => setProjectCandidate(thread)} type="button"><FolderInput aria-hidden="true" size={15} /></button>}
           <button aria-label={t(`归档 ${thread.title}`, `Archive ${thread.title}`)} className="v2-thread-more"
             onClick={() => onArchive(thread)} title={t("归档此对话", "Archive this conversation")} type="button">
             <Archive aria-hidden="true" size={15} />
@@ -164,6 +203,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
         <PlugZap aria-hidden="true" size={16} />{t("连接与环境", "Connections and environment")}</button>}
       <button onClick={onOpenSettings} type="button"><Settings aria-hidden="true" size={16} />{t("设置", "Settings")}</button>
     </div>
+    {projectCandidate && onMoveThread && <ThreadProjectDialog thread={projectCandidate} workspaces={workspaces}
+      onClose={() => setProjectCandidate(null)} onMove={onMoveThread} />}
   </aside>;
 }
 

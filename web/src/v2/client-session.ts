@@ -11,6 +11,7 @@ function capabilities(state: ClientCapabilities): ClientCapabilities {
   return {
     runControlEnabled: state.runControlEnabled,
     workspaceImportEnabled: state.workspaceImportEnabled,
+    projectlessWorkspacesEnabled: state.projectlessWorkspacesEnabled,
     executionPermissionControlEnabled: state.executionPermissionControlEnabled,
     workspaceSandboxEnabled: state.workspaceSandboxEnabled,
     browserCDPPermissionControlEnabled: state.browserCDPPermissionControlEnabled,

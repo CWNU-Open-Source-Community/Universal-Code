@@ -974,6 +974,11 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			DataType:    reflect.TypeOf(ThreadCreationControlView{}),
 			RequestType: reflect.TypeOf(ThreadCreationControlRequestView{}), Control: true,
 			Parameters: []openAPIParameter{dockerSandboxIdempotencyKey}},
+		{Path: "/api/v1/threads/{thread_id}/project", Method: http.MethodPost,
+			OperationID: "moveThreadProject", Summary: "Move a chat to a registered project", Tag: "Control",
+			Description: "Changes project membership using expected_version and an idempotency key. A different project prepares a created Run in the target directory with fresh configuration and Ask execution permission. Historical Runs and files retain their original locations. An empty project_workspace_id detaches membership and keeps the execution directory. Busy chats and pending inputs reject the move.",
+			DataType:    reflect.TypeOf(ThreadProjectMoveView{}), RequestType: reflect.TypeOf(ThreadProjectMoveRequestView{}), Control: true, SuccessStatus: http.StatusOK,
+			NotFound: true, Parameters: []openAPIParameter{threadID, dockerSandboxIdempotencyKey}},
 		{Path: "/api/v1/threads/{thread_id}/branches", Method: http.MethodPost,
 			OperationID: "branchThread", Summary: "Branch a conversation at a durable assistant reply", Tag: "Control",
 			Description: "Atomically creates a fresh Thread, Run and Session containing conversation history through source_event_id, including earlier Runs. Historical assistant output is non-authorizing evidence. Requires Thread creation and Session message control. No model or tool is called; approvals and runtime authority are reset. Reusing a key with another reply conflicts.",
@@ -1279,6 +1284,13 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			Collection: true, Paginated: true, Parameters: append(paginationParameters(),
 				stringQueryParameter("status", "Exact Run status filter", runStatuses()),
 				identityQueryParameter("mission_id", "Exact Mission identity filter"))},
+		{Path: ProjectlessWorkspacePath, Method: http.MethodPost, OperationID: "allocateProjectlessWorkspace", Summary: "Allocate a private chat working directory", Tag: "Control", Control: true, SuccessStatus: http.StatusOK,
+			Description: "Reserves a durable workspace for one local chat draft before uploading attachments. Reusing the operation key retains the original root and workspace even after directory settings change. Private chat workspaces are omitted from project lists.",
+			DataType:    reflect.TypeOf(ProjectlessWorkspaceView{}), RequestType: reflect.TypeOf(ProjectlessWorkspaceRequestView{}), Parameters: []openAPIParameter{dockerSandboxIdempotencyKey}},
+		{Path: ProjectlessDirectoryPath, Method: http.MethodGet, OperationID: "getProjectlessDirectory", Summary: "Read the default chat directory", Tag: "Control", Control: true, EmptyBody: true, SuccessStatus: http.StatusOK,
+			Description: "Requires control authorization because the operator settings include a host directory path.", DataType: reflect.TypeOf(workspace.ProjectlessDirectory{})},
+		{Path: ProjectlessDirectoryPath, Method: http.MethodPut, OperationID: "setProjectlessDirectory", Summary: "Set the default chat directory", Tag: "Control", Control: true, SuccessStatus: http.StatusOK,
+			Description: "Requires the server workspace import capability and an explicitly confirmed absolute existing directory on the service computer. Updates directory configuration without importing a project. Desktop uses its native pathless directory picker. Existing chat and draft directories retain their original paths.", DataType: reflect.TypeOf(workspace.ProjectlessDirectory{}), RequestType: reflect.TypeOf(ProjectlessDirectoryRequestView{})},
 		{Path: WorkspaceImportPath, Method: http.MethodPost,
 			OperationID: "importWorkspace", Summary: "Register an existing server-side directory", Tag: "Control",
 			Description: "Requires an explicit startup capability and the distinct control token. Accepts a confirmed absolute directory on the server computer, resolves its canonical root and returns bounded workspace metadata. Repeating the same canonical directory returns the same durable workspace. Registration never overwrites another workspace root, modifies directory contents or grants Agent authority. No directory enumeration or browser-file upload is performed; the native Desktop picker remains a separate pathless entry point.",
@@ -2771,7 +2783,10 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 		property := r.ref(field.Type)
 		applyOpenAPIFieldMetadata(metadataTypeName, name, property)
 		properties[name] = property
-		if !omitEmpty {
+		// Older servers omit these additive capabilities and project assignments.
+		optionalAddition := metadataTypeName == "ThreadView" && (name == "project_workspace_id" || name == "project_assignment_version") ||
+			metadataTypeName == "RuntimeCapabilitiesView" && name == "projectless_workspaces_enabled"
+		if !omitEmpty && !optionalAddition {
 			required = append(required, name)
 		}
 	}
@@ -3799,6 +3814,8 @@ var openAPIFieldEnums = map[string][]string{
 	"ConfigurationSource.source":                               {"default", "operator", "project", "snapshot"},
 	"ConfigurationSource.field":                                {"budget.max_turns", "budget.max_tokens", "budget.max_tool_calls", "budget.max_cost_usd", "budget.timeout_seconds", "read_only", "allowed_profiles", "exclude_paths", "skill_suggestions", "test_command_id", "format_command_id"},
 	"ThreadCreationControlRequestView.version":                 {domain.ThreadCreationProtocolVersion},
+	"ThreadProjectMoveRequestView.version":                     {domain.ThreadProjectMoveVersion},
+	"ThreadProjectMoveView.version":                            {domain.ThreadProjectMoveVersion},
 	"ThreadBranchRequestView.version":                          {domain.ThreadBranchProtocolVersion},
 	"ThreadBranchView.version":                                 {domain.ThreadBranchProtocolVersion},
 	"ThreadCreationControlRequestView.profile":                 {string(domain.ProfileCode), string(domain.ProfileReview), string(domain.ProfileLearn), string(domain.ProfileScript)},

@@ -1166,6 +1166,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	standardCodeController := &standardCodePresetControllerStub{}
 	fixture.api.workspaceImportEnabled = true
 	fixture.api.workspaceImporter = workspace.NewManager("", fixture.store)
+	if _, err := (workspace.ProjectlessManager{Store: fixture.store}).SetDirectory(t.Context(), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
 	standardCodeAPI, err := New(fixture.store, Config{
 		AccessToken: testAccessToken, ControlToken: testControlToken,
 		RunControlEnabled: true, ExecutionPermissionControlEnabled: true,
@@ -1237,6 +1240,11 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	branchSourceEventID := branchEvents[len(branchEvents)-1].EventID
+	_, projectMoveRun, err := application.NewRunService(fixture.store).Create(t.Context(), application.CreateRunRequest{Goal: "OpenAPI project move", Profile: "review", WorkspaceID: fixture.workspace.ID, Interactive: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, spec := range openAPIOperationSpecs() {
 		requestPath := spec.Path
 		for placeholder, value := range replacements {
@@ -1304,6 +1312,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		} else if spec.Path == FileEditProposalRecoveryPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", fixture.run.ID)
 			requestPath = strings.ReplaceAll(requestPath, "{edit_id}", recoveryProposal.Edit.ID)
+		} else if spec.OperationID == "moveThreadProject" {
+			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(projectMoveRun.ID))
 		} else if spec.OperationID == "branchThread" || spec.OperationID == "getThreadChanges" || spec.OperationID == "undoThreadChanges" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(branchSourceRun.ID))
 		} else if spec.OperationID == "getSavedThreadMessage" {
@@ -1676,6 +1686,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"thread_context_compaction.v1","expected_run_id":"` + openAPIThreadRun.ID + `"}`
 				} else if spec.OperationID == "recoverThreadContextCompaction" {
 					body = `{"version":"thread_context_compaction_recovery.v1","expected_run_id":"` + contextRecoveryRun.ID + `","action":"discard"}`
+				} else if spec.OperationID == "moveThreadProject" {
+					body = `{"version":"thread_project_move.v1","project_workspace_id":"","expected_version":1}`
 				} else if spec.OperationID == "branchThread" {
 					body = `{"version":"thread_branch.v1","source_event_id":"` + branchSourceEventID + `"}`
 				} else if spec.OperationID == "createThread" {
@@ -1721,6 +1733,14 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					spec.Path == StandardCodePauseAndConfigurePathTemplate {
 					body = `{"version":"standard_code_preset.v1",` +
 						`"backend_intent":"auto","confirm_workspace_trust":false}`
+				} else if spec.OperationID == "allocateProjectlessWorkspace" {
+					body = `{"version":"projectless_workspace.v1"}`
+				} else if spec.OperationID == "setProjectlessDirectory" {
+					encoded, err := json.Marshal(ProjectlessDirectoryRequestView{Version: "projectless_directory.v1", DirectoryPath: t.TempDir(), Confirmed: true})
+					if err != nil {
+						t.Fatal(err)
+					}
+					body = string(encoded)
 				} else if spec.Path == WorkspaceImportPath {
 					encoded, err := json.Marshal(WorkspaceImportRequestView{
 						Version:       WorkspaceImportProtocolVersion,

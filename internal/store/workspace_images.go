@@ -115,7 +115,8 @@ func (s *SQLiteStore) ListSupervisorImageEvidence(ctx context.Context, cp domain
 	rows, err := tx.QueryContext(ctx, candidates+`SELECT m.id,COALESCE(m.session_message_id,0),m.image_count,i.id,i.workspace_id,i.sha256,i.mime_type,i.byte_size,i.width,i.height,i.name
 	 FROM selected m JOIN thread_message_images b ON b.message_id=m.id
 	 JOIN workspace_image_attachments i ON i.id=b.image_id
-	 JOIN thread_runs caller ON caller.run_id=? JOIN threads t ON t.id=caller.thread_id AND t.workspace_id=i.workspace_id
+	 JOIN operator_steering_messages original ON original.id=m.id JOIN sessions source ON source.id=original.session_id AND source.workspace_id=i.workspace_id
+	 JOIN thread_runs caller ON caller.run_id=?
 	 ORDER BY m.ordinal,m.sequence,b.ordinal`, append(args, cp.RunID)...)
 	if err != nil {
 		return projection, err

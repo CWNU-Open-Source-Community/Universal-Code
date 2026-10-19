@@ -38,7 +38,7 @@ func readHistorySummary(ctx context.Context, q historyQueryer, scope historyScop
 		return domain.HistoryRecord{}, nil, err
 	}
 	runID, ok := scope.sessions[summary.TaskID]
-	if !ok || summary.WorkspaceID != scope.workspaceID {
+	if !ok || summary.WorkspaceID != scope.runWorkspaces[runID] {
 		return domain.HistoryRecord{}, nil, historyNotFound()
 	}
 	summary.CreatedAt = parseTS(created)
@@ -55,7 +55,7 @@ func readHistorySummary(ctx context.Context, q historyQueryer, scope historyScop
 		var bound bool
 		if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM context_summaries
 			WHERE id=? AND id<? AND task_id=? AND COALESCE(workspace_id,'')=?)`,
-			summary.PreviousSummaryID, summary.ID, summary.TaskID, scope.workspaceID).Scan(&bound); err != nil {
+			summary.PreviousSummaryID, summary.ID, summary.TaskID, summary.WorkspaceID).Scan(&bound); err != nil {
 			return domain.HistoryRecord{}, nil, err
 		}
 		if !bound {
@@ -105,7 +105,7 @@ func readHistoryContinuity(ctx context.Context, q historyQueryer, scope historyS
 	if scope.sessions[snapshot.SourceSessionID] != snapshot.SourceRunID || scope.ordinals[snapshot.SourceRunID] == 0 {
 		return domain.HistoryRecord{}, nil, historyNotFound()
 	}
-	if scope.ordinals[snapshot.SourceRunID] > scope.ordinals[holderRun] || snapshot.WorkspaceID != scope.workspaceID {
+	if scope.ordinals[snapshot.SourceRunID] > scope.ordinals[holderRun] || snapshot.WorkspaceID != scope.runWorkspaces[holderRun] {
 		return domain.HistoryRecord{}, nil, apperror.New(apperror.CodeFailedPrecondition, "stored continuity source ordering or Workspace binding is invalid")
 	}
 	if err := snapshot.Validate(); err != nil || config.Fingerprint != snapshot.Fingerprint {

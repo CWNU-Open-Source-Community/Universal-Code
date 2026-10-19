@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, LoaderCircle, X } from "lucide-react";
+import { FolderOpen, FolderPlus, LoaderCircle, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { WorkspaceView } from "../../api/types";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
@@ -9,8 +9,9 @@ import { desktopWorkspaceImportEnabled, importDesktopWorkspace } from "../../lib
 import { useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
 
-export function V2WorkspaceStart({ client, onSelect }: {
+export function V2WorkspaceStart({ client, onSelect, variant = "composer" }: {
   client: APIClient; onSelect: (workspace: WorkspaceView) => void;
+  variant?: "composer" | "sidebar";
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -49,11 +50,12 @@ export function V2WorkspaceStart({ client, onSelect }: {
         : t("目录接入结果尚待确认。请使用相同路径重试，已有项目会保留。", "Directory import is not yet confirmed. Retry with the same path. Existing projects will be kept.")
     : t("目录未能接入，请检查连接后重试。输入的路径和任务草稿已保留。", "Could not connect this directory. Check the connection and try again. Your path and task draft have been kept.");
   return <div className="v2-workspace-start">
-    <button className="v2-composer-chip" disabled={importing.isPending}
+    <button className={variant === "sidebar" ? "v2-project-add" : "v2-composer-chip"} disabled={importing.isPending}
       onClick={() => { importing.reset(); if (native) importing.mutate(undefined); else setOpen(true); }}
       ref={trigger} type="button">
       {importing.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
-        : <FolderOpen aria-hidden="true" size={15} />}{native ? t("打开项目", "Open project") : t("接入项目", "Connect project")}
+        : variant === "sidebar" ? <FolderPlus aria-hidden="true" size={15} /> : <FolderOpen aria-hidden="true" size={15} />}
+      {variant === "sidebar" ? t("添加项目", "Add project") : native ? t("打开项目", "Open project") : t("接入项目", "Connect project")}
     </button>
     {native && importing.isError && <p role="alert">{t("未能打开项目，请重试选择文件夹。现有输入已保留。", "Could not open the project. Try selecting the folder again. Your input has been kept.")}</p>}
     {open && createPortal(<div className="v2-overlay" role="presentation" onMouseDown={(event) => {

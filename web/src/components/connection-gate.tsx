@@ -38,6 +38,7 @@ export function ConnectionGate() {
         runControlEnabled: bootstrap.control_enabled,
         // This HTTP capability is separate from the native directory picker.
         workspaceImportEnabled: false,
+        projectlessWorkspacesEnabled: bootstrap.projectless_workspaces_enabled === true && runtime.projectless_workspaces_enabled === true,
         executionPermissionControlEnabled: bootstrap.execution_permission_control_enabled,
         workspaceSandboxEnabled: bootstrap.workspace_sandbox_enabled,
         browserCDPPermissionControlEnabled:

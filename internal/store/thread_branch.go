@@ -106,7 +106,7 @@ func (s *SQLiteStore) CreateThreadBranch(ctx context.Context, request domain.Thr
 		return domain.ThreadBranchRecord{}, err
 	}
 	var workspace string
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(workspace_id,'') FROM threads WHERE id=?`, request.ThreadID).Scan(&workspace); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(m.workspace_id,'') FROM runs r JOIN missions m ON m.id=r.mission_id WHERE r.id=?`, anchor.runID).Scan(&workspace); err != nil {
 		return domain.ThreadBranchRecord{}, err
 	}
 	if mission.WorkspaceID != workspace || sess.WorkspaceID != workspace || run.Config.ContinuityContextFingerprint != "" || len(run.Config.ContinuityContext) > 0 {

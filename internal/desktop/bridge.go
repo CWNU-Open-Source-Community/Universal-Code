@@ -95,6 +95,7 @@ type ConnectionBootstrap struct {
 	AgentTerminalInputDefault          bool   `json:"agent_terminal_input_default"`
 	WorkspaceOpenEnabled               bool   `json:"workspace_open_enabled"`
 	WorkspaceImportEnabled             bool   `json:"workspace_import_enabled"`
+	ProjectlessWorkspacesEnabled       bool   `json:"projectless_workspaces_enabled"`
 	RendererPathInputSupported         bool   `json:"renderer_path_input_supported"`
 	RiskProfileRestartEnabled          bool   `json:"risk_profile_restart_enabled"`
 }
@@ -503,6 +504,7 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 			AgentTerminalInputDefault:          false,
 			WorkspaceOpenEnabled:               config.WorkspaceResolver != nil,
 			WorkspaceImportEnabled:             config.RunCreationEnabled && config.WorkspaceRegistrar != nil,
+			ProjectlessWorkspacesEnabled:       config.RunCreationEnabled && config.SessionMessageEnabled && config.WorkspaceRegistrar != nil,
 			RendererPathInputSupported:         false,
 			RiskProfileRestartEnabled:          config.RiskProfileRestartEnabled,
 		},

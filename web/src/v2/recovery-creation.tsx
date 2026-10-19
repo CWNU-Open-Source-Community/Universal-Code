@@ -18,7 +18,7 @@ import { validMCPReferences, type MCPDraftReference } from "../api/mcp-reference
 export interface CreationIntent {
   version: "v2_creation_recovery.v1";
   operationID: string;
-  request: ThreadCreationControlRequestView;
+  request: ThreadCreationControlRequestView & { workspace_id: string };
   content: string;
   files: V2FileReference[];
   images?: WorkspaceImageAttachment[];
@@ -39,7 +39,7 @@ const creationKey = (intent: CreationIntent) => `creation:${intent.operationID}`
 const createOperationKey = (intent: CreationIntent) => `v2-thread-create-${intent.operationID}`;
 const allowedRequestKeys = new Set(["version", "workspace_id", "goal", "profile", "surface", "phase", "network_mode", "allowed_targets", "web_access_mode", "web_allowed_targets", "provider", "model", "budget"]);
 
-function validRequest(value: unknown): value is ThreadCreationControlRequestView {
+function validRequest(value: unknown): value is CreationIntent["request"] {
   if (!record(value) || Object.keys(value).some((key) => !allowedRequestKeys.has(key)) ||
     value.version !== "thread_creation.v1" || !identity(value.workspace_id) || !text(value.goal) ||
     (value.profile !== undefined && !["code", "review", "learn", "script"].includes(String(value.profile))) ||
@@ -186,6 +186,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   }, [store, client, workspaceID, refresh]);
 
   const prepare = (request: ThreadCreationControlRequestView, content: string, files: V2FileReference[], submittedDraft: string, images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], projectSkills?: ProjectSkillChoice, mcpReferences?: MCPDraftReference[]): CreationIntent => {
+    if (!validRequest(request)) throw invalid();
     const saved = loadIntents();
     const candidate: CreationIntent = { version: "v2_creation_recovery.v1", operationID: crypto.randomUUID(),
       request, content, files, ...(images?.length ? { images } : {}), ...(attachments?.length ? { attachments } : {}), submittedDraft,
