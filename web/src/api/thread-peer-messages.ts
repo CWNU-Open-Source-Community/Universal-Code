@@ -1,44 +1,10 @@
-export interface ThreadPeerTarget {
-  id: string;
-  title: string;
-  workspace_id: string;
-  status: string;
-}
+import type { components } from "./schema";
 
-export interface ThreadPeerTargets {
-  version: "thread_peer_targets.v1";
-  source_thread_id: string;
-  workspace_id: string;
-  items: ThreadPeerTarget[];
-  has_more: boolean;
-}
-
-export interface ThreadPeerMessage {
-  id: string;
-  source_thread_id: string;
-  source_title: string;
-  target_thread_id: string;
-  target_title: string;
-  content: string;
-  reply_to?: string;
-  status: "queued" | "delivered" | "failed" | "cancelled";
-  created_at: string;
-  delivered_at?: string;
-  error?: string;
-}
-
-export interface ThreadPeerMessageRequest {
-  version: "thread_peer_message.v1";
-  target_thread_id: string;
-  content: string;
-  reply_to?: string;
-}
-
-export interface ThreadPeerMessageResult {
-  version: "thread_peer_message.v1";
-  message: ThreadPeerMessage;
-  replayed: boolean;
-}
+export type ThreadPeerTarget = components["schemas"]["ThreadPeerTarget"];
+export type ThreadPeerTargets = components["schemas"]["ThreadPeerTargets"];
+export type ThreadPeerMessage = components["schemas"]["ThreadPeerMessage"];
+export type ThreadPeerMessageRequest = components["schemas"]["ThreadPeerMessageRequestView"];
+export type ThreadPeerMessageResult = components["schemas"]["ThreadPeerMessageReceipt"];
 
 export const maximumPeerMessageBytes = 16_384;
 export const peerMessageBytes = (content: string) => new TextEncoder().encode(content).length;
