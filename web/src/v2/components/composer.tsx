@@ -10,7 +10,7 @@ import { V2FileContext, useV2FileReferences, type V2FileReference } from "./file
 import { useV2ThreadSubmissions, V2SubmissionError, v2TurnOutcomeKnown, type V2TurnInput } from "../use-thread-turn";
 import { useV2PersistenceWarning, useV2RecoveryStore } from "../recovery-storage";
 import { acceptedImageTypes, imageIdentities, maximumImages, type WorkspaceImageAttachment } from "../../api/image-attachments";
-import { fileAttachmentIdentities, maximumFileAttachments, type WorkspaceFileAttachment } from "../../api/file-attachments";
+import { fileAttachmentIdentities, maximumFileAttachments, maximumFileBytes, type WorkspaceFileAttachment } from "../../api/file-attachments";
 import { useV2FileInput, V2FileAttachments } from "./file-input";
 import { clipboardFiles, normalizeClipboardFile } from "../clipboard-files";
 import { desktopClipboardFilesAvailable } from "../../lib/desktop-bridge";
@@ -91,7 +91,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const attachmentPicker = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
-  const importStatus = useMemo(() => ({ busy: false, error: "" }), [workspaceID, threadID]);
+  const importStatus = useMemo(() => ({ busy: false, error: "", textNotice: "" }), [workspaceID, threadID]);
   const [, refreshImport] = useState(0);
   const addFiles = async (input: File[]) => {
     if (disabled || !client.hasThreadControl || !input.length) return;
@@ -164,6 +164,42 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
     managedDraft?.state.conflict || managedDraft?.state.error);
   const byteLength = new TextEncoder().encode(normalized).byteLength;
+  const attachmentByteLength = new TextEncoder().encode(content).byteLength;
+  const textAttachmentDisabled = disabled || !client.hasThreadControl || !workspaceID || importStatus.busy || images.uploading ||
+    attachments.uploading || attachments.pending || nativeClipboard.busy || nativeClipboard.pending ||
+    Boolean(managedDraft?.state.conflict || managedDraft?.state.error);
+  const convertTextToAttachment = async () => {
+    if (textAttachmentDisabled || !content) return;
+    const original = content;
+    importStatus.textNotice = "";
+    try {
+      const captured = managedDraft?.document.capture(managedDraft.scope, managedDraft.state.ref);
+      const name = t("粘贴的文本.txt", "Pasted text.txt");
+      const saved = await attachments.add([new File([original], name, { type: "text/plain" })], captured);
+      if (!saved.length) return;
+      // Only clear text after the full file and its draft reference are saved.
+      // Later edits and another draft's text must survive an in-flight upload.
+      if (captured && managedDraft) {
+        managedDraft.document.updateCaptured(captured, (current) => ({ ...current, text: current.text === original ? "" : current.text }));
+      } else if (currentScope.current === scope && currentContentRef.current === original) setContent("", original);
+      if (currentScope.current === scope && currentContentRef.current !== original && currentContentRef.current !== "") {
+        importStatus.textNotice = t("附件已保存；上传期间修改过的正文已保留。", "Attachment saved. Edits made during upload have been kept.");
+      }
+    } catch (failure) { importStatus.error = failure instanceof Error ? failure.message : t("文本附件未保存", "Text attachment was not saved"); }
+    finally { refreshImport((value) => value + 1); }
+  };
+  const restoreTextAttachment = (file: WorkspaceFileAttachment, text: string) => {
+    if (disabled) return;
+    if (managedDraft) managedDraft.document.update(managedDraft.scope, (current) => ({ ...current,
+      text: current.text ? `${current.text}\n\n${text}` : text,
+      attachments: (current.attachments ?? []).filter(({ id }) => id !== file.id),
+    }), managedDraft.state.ref);
+    else {
+      setContent(content ? `${content}\n\n${text}` : text);
+      attachments.update((current) => current.filter(({ id }) => id !== file.id));
+    }
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
   const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments), mcpReferenceIdentities(mcp.references)]);
   const sameMessagePending = pendingContents.current.has(fingerprint) ||
     pendingSubmissions.some(({ input }) => JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint);
@@ -320,6 +356,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
           pending || Boolean(error) && !v2TurnOutcomeKnown(error)).flatMap(({ input }) => input.images?.map(({ id }) => id) ?? [])]}
         onRemove={(id) => images.update((current) => current.filter((image) => image.id !== id))} />
       <V2FileAttachments client={client} attachments={attachments.attachments}
+        onRestore={disabled ? undefined : restoreTextAttachment}
         pendingIDs={[...[...pendingAttachments.current.values()].flat(), ...submissions.filter(({ pending, error }) =>
           pending || Boolean(error) && !v2TurnOutcomeKnown(error)).flatMap(({ input }) => input.attachments?.map(({ id }) => id) ?? [])]}
         onRemove={(id) => attachments.update((current) => current.filter((file) => file.id !== id))} />
@@ -333,6 +370,12 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
         onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
         placeholder={inputPlaceholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
+      {byteLength >= 4096 && <div className="v2-composer-text-attachment">
+        <span className={byteLength > maximumContentBytes ? "is-over-limit" : undefined}>
+          {t("正文", "Message")} {(byteLength / 1024).toFixed(1)} / 16 KiB</span>
+        <button type="button" disabled={textAttachmentDisabled || attachmentByteLength > maximumFileBytes}
+          onClick={() => void convertTextToAttachment()}>{attachments.uploading ? t("正在保存…", "Saving…") : t("转为文本附件", "Convert to text attachment")}</button>
+      </div>}
       <div className="v2-composer-footer">
         {!threadID && <label className="v2-workspace-picker">
           <FolderOpen aria-hidden="true" size={14} />
@@ -375,7 +418,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         {t(" 已选引用与草稿会保留；先移除项目文件引用，即可发送补充文字和上传附件。", " Your references and draft are kept. Remove project file references to send text and uploaded attachments.")}</p>}
     {mcp.references.length > 0 && fileReferenceUnavailableReason && <p className="v2-composer-caption" role="status">
       {t("MCP 引用需在当前任务结束并处理待批准操作后发送。草稿和已选内容会保留。", "Send MCP references after the task and pending approvals are complete. Your draft and selected content are kept.")}</p>}
-    {byteLength > maximumContentBytes && <p className="v2-composer-error">{t("消息不能超过 16 KiB", "Messages cannot exceed 16 KiB")}</p>}
+    {byteLength > maximumContentBytes && <p className="v2-composer-error">{t("正文不能超过 16 KiB，可转为文本附件后继续发送。", "Message text cannot exceed 16 KiB. Convert it to a text attachment to continue.")}</p>}
+    {attachmentByteLength > maximumFileBytes && <p className="v2-composer-error">{t("文本附件不能超过 5 MiB，请拆分内容。", "Text attachments cannot exceed 5 MiB. Split the content into smaller files.")}</p>}
+    {importStatus.textNotice && <p className="v2-composer-caption" role="status">{importStatus.textNotice}</p>}
     {modeSaveError && <p className="v2-composer-caption" role="status">{t("编辑模式已切换，但偏好未能保存；下次打开时会使用默认模式。", "Editor mode changed, but the preference could not be saved. The default mode will be used next time.")}</p>}
     {images.uploading && <p className="v2-composer-caption" role="status">{t("正在保存图片，完成后可发送…", "Saving images. You can send them when saving finishes…")}</p>}
     {(showImageCapability || draftSavedLocally) && <p className="v2-composer-caption" role="status">

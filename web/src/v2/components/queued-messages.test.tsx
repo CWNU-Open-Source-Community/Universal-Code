@@ -1,3 +1,4 @@
+import { Blob as NodeBlob } from "node:buffer";
 import { webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -333,19 +334,28 @@ it("opens full text and attachments outside the compact list with a modal focus 
   const file = { id: "file-a", workspace_id: binding.workspaceID, sha256: sha, name: "notes.txt", mime_type: "text/plain",
     byte_size: 8, readability: "text" as const, text_bytes: 8, redacted: false };
   const f = fixture([message(1, { content, attachments: [file] }), message(2)]);
+  f.client.downloadWorkspaceFile = vi.fn(async () => new NodeBlob(["raw text"], { type: "text/plain" }) as unknown as Blob);
   const ui = mount(f.client); const user = userEvent.setup();
   const preview = await screen.findByRole("button", { name: "查看消息 1 全文" });
   await user.click(preview);
   const dialog = screen.getByRole("dialog", { name: "消息 1 的全文与附件" });
   expect(ui.container.querySelector("ol")?.contains(dialog)).toBe(false);
   expect(dialog.querySelector("pre")?.textContent).toBe(content);
-  expect(within(dialog).getByRole("button", { name: "下载文件 notes.txt" })).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "Download file notes.txt" })).toBeInTheDocument();
   const close = within(dialog).getByRole("button", { name: "关闭消息详情" });
   expect(close).toHaveFocus();
   await user.keyboard("{Shift>}{Tab}{/Shift}");
-  expect(within(dialog).getByRole("button", { name: "下载文件 notes.txt" })).toHaveFocus();
+  expect(within(dialog).getByRole("button", { name: "Download file notes.txt" })).toHaveFocus();
   await user.keyboard("{Tab}");
   expect(close).toHaveFocus();
+  const filePreview = within(dialog).getByRole("button", { name: "Preview file notes.txt" });
+  await user.click(filePreview);
+  const textDialog = screen.getByRole("dialog", { name: "notes.txt" });
+  expect(await within(textDialog).findByText("raw text")).toBeInTheDocument();
+  expect(within(textDialog).queryByRole("button", { name: "Restore to message" })).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog", { name: "notes.txt" })).not.toBeInTheDocument();
+  expect(filePreview).toHaveFocus();
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(preview).toHaveFocus();

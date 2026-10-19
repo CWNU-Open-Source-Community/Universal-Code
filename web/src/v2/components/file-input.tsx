@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useId, useMemo, useReducer, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, File, LoaderCircle, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
+import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
+import { useLocale } from "../../lib/locale";
 import { maximumFileAttachments, maximumFileBytes, type WorkspaceFileAttachment } from "../../api/file-attachments";
 import { v2AttachmentReferenceKey } from "../attachment-keys";
 import { useV2DraftDocument } from "../draft-context";
@@ -23,11 +26,46 @@ export function useV2AttachmentReferences(workspaceID: string, threadID: string)
 
 const bytesLabel = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ?
   `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-function AttachmentCard({ client, file, onRemove, locked }: {
-  client: APIClient; file: WorkspaceFileAttachment; onRemove?: () => void; locked: boolean;
+function TextAttachmentPreview({ client, file, onClose, onRestore, returnFocusRef }: {
+  client: APIClient; file: WorkspaceFileAttachment; onClose: () => void; onRestore?: (text: string) => void;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
+  const { t } = useLocale();
+  const titleID = useId();
+  const close = useRef<HTMLButtonElement>(null);
+  const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, close, { isolateBackground: true, returnFocusRef });
+  const query = useQuery({ queryKey: ["file-attachment-text", file.workspace_id, file.id, file.sha256],
+    queryFn: async ({ signal }) => {
+      const blob = await client.downloadWorkspaceFile(file, signal);
+      return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(await blob.arrayBuffer());
+    }, staleTime: Infinity, retry: false });
+  return createPortal(<div className="v2-overlay" role="presentation" onMouseDown={(event) => {
+    if (event.target === event.currentTarget) onClose();
+  }}>
+    <section className="v2-dialog v2-text-attachment-dialog" role="dialog" aria-modal="true" aria-labelledby={titleID} ref={dialog} tabIndex={-1}>
+      <header><File size={18} aria-hidden="true" /><h2 id={titleID}>{file.name}</h2>
+        <button aria-label={t("关闭预览", "Close preview")} onClick={onClose} ref={close} type="button"><X size={16} /></button></header>
+      {query.isPending && <p role="status">{t("正在读取文本…", "Loading text…")}</p>}
+      {query.isError && <p role="alert">{t("无法预览此文件，请下载原文件查看。", "Cannot preview this file. Download the original to view it.")}</p>}
+      {query.data !== undefined && <pre tabIndex={0}>{query.data.slice(0, 65536)}</pre>}
+      {query.data !== undefined && query.data.length > 65536 && <p>{t("预览已截断；下载或放回正文会保留完整内容。", "Preview shortened. Downloading or restoring keeps the full content.")}</p>}
+      <footer><span>{bytesLabel(file.byte_size)}</span>
+        {onRestore && <button className="primary" type="button" disabled={query.data === undefined}
+          onClick={() => { if (query.data !== undefined) { onRestore(query.data); onClose(); } }}>{t("放回正文", "Restore to message")}</button>}
+      </footer>
+    </section>
+  </div>, document.body);
+}
+
+function AttachmentCard({ client, file, onRemove, onRestore, locked }: {
+  client: APIClient; file: WorkspaceFileAttachment; onRemove?: () => void; onRestore?: (text: string) => void; locked: boolean;
+}) {
+  const { t } = useLocale();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState(false);
+  const previewTrigger = useRef<HTMLButtonElement>(null);
+  const canPreview = /^text\/(plain|markdown)(?:;|$)/i.test(file.mime_type);
   const download = async () => {
     if (busy) return;
     setBusy(true); setError("");
@@ -42,22 +80,30 @@ function AttachmentCard({ client, file, onRemove, locked }: {
   };
   return <div className="v2-file-attachment">
     <File size={20} aria-hidden="true" />
-    <div className="v2-file-attachment-info"><strong title={file.name}>{file.name}</strong>
+    <div className="v2-file-attachment-info">{canPreview
+      ? <button className="v2-file-attachment-preview" type="button" ref={previewTrigger}
+        aria-label={t(`预览文件 ${file.name}`, `Preview file ${file.name}`)} title={file.name} onClick={() => setPreview(true)}>{file.name}</button>
+      : <strong title={file.name}>{file.name}</strong>}
       <small className="v2-file-attachment-size">{bytesLabel(file.byte_size)}</small>
-      {locked && <small>随原消息提交</small>}
+      {locked && <small>{t("随原消息提交", "Included in the original message")}</small>}
       {error && <small role="alert">{error}</small>}
     </div>
-    <button type="button" className="v2-composer-icon" aria-label={`下载文件 ${file.name}`} disabled={busy} onClick={() => void download()}>
+    <button type="button" className="v2-composer-icon" aria-label={t(`下载文件 ${file.name}`, `Download file ${file.name}`)} disabled={busy} onClick={() => void download()}>
       {busy ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}</button>
-    {onRemove && <button type="button" className="v2-composer-icon" aria-label={`移除文件 ${file.name}`} disabled={locked} onClick={onRemove}><X size={16} /></button>}
+    {onRemove && <button type="button" className="v2-composer-icon" aria-label={t(`移除文件 ${file.name}`, `Remove file ${file.name}`)} disabled={locked} onClick={onRemove}><X size={16} /></button>}
+    {preview && <TextAttachmentPreview client={client} file={file} onClose={() => setPreview(false)}
+      onRestore={locked ? undefined : onRestore} returnFocusRef={previewTrigger} />}
   </div>;
 }
-export function V2FileAttachments({ client, attachments, onRemove, pendingIDs = [] }: {
-  client: APIClient; attachments: WorkspaceFileAttachment[]; onRemove?: (id: string) => void; pendingIDs?: string[];
+export function V2FileAttachments({ client, attachments, onRemove, onRestore, pendingIDs = [] }: {
+  client: APIClient; attachments: WorkspaceFileAttachment[]; onRemove?: (id: string) => void;
+  onRestore?: (file: WorkspaceFileAttachment, text: string) => void; pendingIDs?: string[];
 }) {
+  const { t } = useLocale();
   if (!attachments.length) return null;
-  return <div className="v2-file-attachments" aria-label={onRemove ? "待发送的文件" : "消息附件"}>
+  return <div className="v2-file-attachments" aria-label={onRemove ? t("待发送的文件", "Files to send") : t("消息附件", "Message attachments")}>
     {attachments.map((file) => <AttachmentCard key={`${file.workspace_id}:${file.id}:${file.sha256}`} client={client} file={file}
+      onRestore={onRestore ? (text) => onRestore(file, text) : undefined}
       locked={pendingIDs.includes(file.id)} onRemove={onRemove ? () => onRemove(file.id) : undefined} />)}
   </div>;
 }
@@ -106,10 +152,11 @@ export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
     return validAttempt(saved) && saved.operationKey === attempt.operationKey &&
       saved.sha256 === attempt.sha256 && saved.byteSize === attempt.byteSize;
   };
-  const add = async (files: File[], batchCapture?: DraftCapture) => {
-    if (disabled || !workspaceID || !files.length || status.busy) return;
+  const add = async (files: File[], batchCapture?: DraftCapture): Promise<WorkspaceFileAttachment[]> => {
+    const saved: WorkspaceFileAttachment[] = [];
+    if (disabled || !workspaceID || !files.length || status.busy) return saved;
     if (files.length + references.attachments.length + status.attempts.size > maximumFileAttachments) {
-      status.error = "每条消息最多添加 4 个文件；请先处理待核对的附件。"; refresh(); return;
+      status.error = "每条消息最多添加 4 个文件；请先处理待核对的附件。"; refresh(); return saved;
     }
     status.busy = true; status.error = ""; refresh();
     const failures: string[] = [];
@@ -129,11 +176,13 @@ export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
               attachments: (current.attachments ?? []).some(({ id }) => id === attachment.id) ? current.attachments : [...(current.attachments ?? []), attachment] }));
             if (next.error || !next.persisted) throw new Error(next.error || "附件尚未保存到草稿。");
           } else references.update((current) => current.some(({ id }) => id === attachment.id) ? current : [...current, attachment]);
+          saved.push(attachment);
           forget(attempt.operationKey);
         } catch (failure) { failures.push(`${file.name}：${failure instanceof Error ? failure.message : "上传结果未确认"}`); }
       }
     } catch (failure) { failures.push(failure instanceof Error ? failure.message : "附件未加入"); }
     finally { status.busy = false; status.error = failures.join("\n"); refresh(); }
+    return saved;
   };
   const inspect = async (attempt: UploadAttempt) => {
     if (status.busy || disabled) return;
