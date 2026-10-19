@@ -237,6 +237,10 @@ func Build(threadID string, source []Source) ([]Item, error) {
 			items = append(items, projectRunBoundary(record))
 			continue
 		}
+		if record.Event.Type == "thread.peer_message.sent" || record.Event.Type == "thread.peer_message.received" {
+			items = append(items, Item{Version: ProtocolVersion, ID: record.Event.EventID, CanonicalID: record.Event.SubjectID, RunID: record.RunID, RunOrdinal: record.Ordinal, Sequence: record.Sequence, Type: TypeMessage, Stage: StageStarted, Kind: "peer_message", Source: "peer", Title: "聊天消息", SourceRef: record.Event.SubjectID, Durable: true, Verifiable: true, CreatedAt: record.CreatedAt})
+			continue
+		}
 		if record.Event.Type == events.OperatorSteeringQueuedEvent &&
 			(record.OperatorStatus == "pending" || record.OperatorStatus == "cancelled" ||
 				(record.OperatorStatus == "committed" && record.OperatorMessageBound)) &&

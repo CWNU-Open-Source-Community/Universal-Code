@@ -590,6 +590,11 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		a.store, lifecycleControl, executionControl, permissionCapabilities).
 		WithModelRouteRegistry(a.models).
 		WithLifecycleHooks(hookEngine)
+	var threadPeerMessages *application.ThreadPeerMessageService
+	if controlToken != "" {
+		threadPeerMessages = application.NewThreadPeerMessageService(a.store, threadTurnControl)
+		executionControl.WithThreadPeerMessages(threadPeerMessages)
+	}
 	var workspaceImporter httpapi.WorkspaceImporter
 	if *workspaceImport {
 		manager, err := a.workspaceManager()
@@ -825,6 +830,12 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			scheduleWorkerCancel()
 			<-scheduleWorkerDone
 		}()
+	}
+	if threadPeerMessages != nil {
+		peerCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { defer close(done); _ = threadPeerMessages.Run(peerCtx) }()
+		defer func() { cancel(); <-done }()
 	}
 	if prFollowupWorker != nil {
 		followupCtx, cancel := context.WithCancel(ctx)

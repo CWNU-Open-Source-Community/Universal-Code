@@ -87,6 +87,7 @@ type threadRunExecutionPermissionReader interface {
 }
 
 type SubmitThreadMessageRequest struct {
+	peer          bool
 	plan          *threadPlanCommitBinding
 	Version       string
 	ThreadID      string
@@ -308,7 +309,7 @@ func (s *ThreadService) prepareRun(ctx context.Context, request SubmitThreadMess
 		if files != nil {
 			threadRecord, run, successorCreated, err = s.store.(threadFileContinuationStore).EnsureThreadSuccessorWithFiles(ctx,
 				threadMessageIntentRequest(request), predecessor.ID, successorMission, candidate, mode, linkedSession, initialEvents, *files)
-		} else if store, ok := s.store.(threadMessageSuccessorStore); ok {
+		} else if store, ok := s.store.(threadMessageSuccessorStore); ok && !request.peer {
 			threadRecord, run, successorCreated, err = store.EnsureThreadSuccessorForMessage(ctx,
 				threadMessageIntentRequest(request), predecessor.ID, successorMission, candidate, mode, linkedSession, initialEvents)
 		} else {

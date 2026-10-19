@@ -115,6 +115,23 @@ Use **Steer** on a text-only queued message to add it to the current task, **Wit
 or the more menu to edit and preview its full content and attachments. Images and files stay queued
 for the next turn. The queue moves with the composer as it grows and scrolls internally when needed.
 
+### 模型之间的聊天协作 / Model collaboration across chats
+
+在当前聊天说明协作目标，例如「和接口实现那条聊天确认字段，再继续完成页面」。模型可以
+查找同一项目内的其他聊天，主动发送问题或已有结论，并接收对方模型的回复。聊天记录
+显示消息来源、目标和投递状态，点击对方标题可查看对应聊天。
+
+运行中的接收方会在当前轮结束后接收消息；允许自动继续的空闲聊天会由后台处理。
+接收方沿用自己的任务范围和权限。「已送达模型」表示消息已进入对方上下文，处理结果
+以对方回复为准。
+
+Describe the collaboration goal in the current chat, for example: “Confirm the fields with the
+API implementation chat, then finish the page.” The model can find another chat in the same project,
+send questions or findings, and receive its model's reply. Message cards show the source, destination
+and delivery status, with a link to the other chat. Busy chats receive messages after their current
+turn; eligible idle chats continue in the background. Each recipient keeps its own task scope and
+permissions. “Delivered to model” confirms context delivery; the reply reports the outcome.
+
 ### 用量统计 / Usage
 
 在「设置 → 用量统计」查看 Universal-Code 自身的模型调用。今日、近 30 天和全部

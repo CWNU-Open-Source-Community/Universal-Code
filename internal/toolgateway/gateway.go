@@ -61,6 +61,7 @@ type Gateway struct {
 	artifacts                  *artifact.Manager
 	structuredMemory           StructuredMemoryExecutor
 	historyRecall              HistoryRecallExecutor
+	threadPeerMessages         ThreadPeerMessagesExecutor
 	skillRead                  SkillReadExecutor
 	delegationProposals        SpecialistDelegationExecutor
 	childTaskProposals         ChildTaskProposalExecutor

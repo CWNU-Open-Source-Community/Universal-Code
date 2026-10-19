@@ -73,6 +73,7 @@ type supervisorBrowserActionTools struct {
 
 type supervisorToolOptions struct {
 	HistoryRecall      bool
+	ThreadPeerMessages bool
 	BuiltinSkills      []toolgateway.BuiltinSkillDescriptor
 	OwnedFileWorkspace bool
 	CommandRuntime     supervisorCommandRuntimeTools
@@ -170,6 +171,9 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 	}
 	out := make([]llm.ToolSpec, 0, len(definitions))
 	for _, definition := range definitions {
+		if toolgateway.IsThreadPeerMessageTool(definition.Name) && !configured.ThreadPeerMessages {
+			continue
+		}
 		if definition.Name == toolgateway.ContextPinProposeTool && !configured.HistoryRecall {
 			continue
 		}
@@ -321,6 +325,9 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 		}
 		if toolgateway.IsHistoryRecallTool(name) && !configured.HistoryRecall {
 			return nil, fmt.Errorf("provider requested unavailable history recall tool %q", call.Name)
+		}
+		if toolgateway.IsThreadPeerMessageTool(name) && !configured.ThreadPeerMessages {
+			return nil, fmt.Errorf("provider requested unavailable thread messaging tool %q", call.Name)
 		}
 		if name == toolgateway.ContextPinProposeTool && !configured.HistoryRecall {
 			return nil, errors.New("context pin proposals require an interactive Thread")
@@ -1314,6 +1321,7 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 	}
 	if name == toolgateway.DebugTerminalTool || toolgateway.IsCommandExecutionTool(name) ||
 		toolgateway.IsHistoryRecallTool(name) || name == toolgateway.SkillReadTool ||
+		toolgateway.IsThreadPeerMessageTool(name) ||
 		name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool ||
 		toolgateway.IsAgentCodeTool(name) || toolgateway.IsCodeIntelTool(name) ||
 		toolgateway.IsWebEvidenceTool(name) || toolgateway.IsBrowserActionTool(name) {
@@ -1358,6 +1366,7 @@ func recoverableSupervisorToolError(name toolgateway.ToolName,
 	case apperror.CodeFailedPrecondition, apperror.CodeNotFound, apperror.CodePolicyDenied:
 		return name == toolgateway.DebugTerminalTool || toolgateway.IsCommandExecutionTool(name) ||
 			toolgateway.IsHistoryRecallTool(name) || name == toolgateway.SkillReadTool ||
+			toolgateway.IsThreadPeerMessageTool(name) ||
 			name == toolgateway.MCPToolCallTool || name == toolgateway.MCPToolSearchTool || toolgateway.IsAgentCodeTool(name) ||
 			toolgateway.IsWebEvidenceTool(name) || toolgateway.IsBrowserActionTool(name) ||
 			toolgateway.IsCodeIntelTool(name)

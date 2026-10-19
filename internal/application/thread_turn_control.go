@@ -26,8 +26,9 @@ type ThreadExecutionState struct {
 }
 
 type queuedThreadTurn struct {
-	request SubmitThreadMessageRequest
-	result  ExecuteThreadTurnResult
+	automatic bool
+	request   SubmitThreadMessageRequest
+	result    ExecuteThreadTurnResult
 }
 
 type activeThreadTurn struct {
@@ -115,10 +116,12 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		return ExecuteThreadTurnResult{}, err
 	}
 	var intent domain.ThreadMessageIntent
-	if request.automatic {
+	if request.queued != nil {
+		intent.MessageID = request.queued.Message.ID
+	} else if request.automatic {
 		intent.MessageID, err = s.automaticMessageID(ctx, normalized)
 	}
-	if err == nil && (!request.automatic || intent.MessageID != "") {
+	if err == nil && request.queued == nil && (!request.automatic || intent.MessageID != "") {
 		intent, err = s.threads.reserveMessage(ctx, normalized)
 	}
 	if err != nil {
@@ -126,7 +129,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	}
 	// Confirm an already sealed outcome even while another request owns the
 	// Thread. Queue admission must not relabel a committed failed turn as success.
-	if intent.MessageID != "" {
+	if intent.MessageID != "" && request.queued == nil {
 		if replay, found, err := s.findCompletedReplay(ctx, normalized); found || err != nil {
 			return replay, err
 		}
@@ -155,6 +158,22 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	s.turnMu.Lock()
 	if active := s.activeTurns[request.ThreadID]; active != nil {
 		defer s.turnMu.Unlock()
+		if request.queued != nil {
+			if active.stopping || active.preparingPlan {
+				return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition, "Peer delivery waits for the current turn boundary")
+			}
+			for _, queued := range active.queue {
+				if queued.result.Submission.Message.ID == request.queued.Message.ID {
+					return queued.result, nil
+				}
+			}
+			if len(active.queue) >= domain.MaxPendingOperatorSteering {
+				return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeResourceExhausted, "The pending Thread message queue is full")
+			}
+			result := ExecuteThreadTurnResult{Submission: *request.queued}
+			active.queue = append(active.queue, queuedThreadTurn{request: normalized, result: result, automatic: true})
+			return result, nil
+		}
 		if request.automatic {
 			canReject = false
 			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation requires an idle task")
@@ -221,9 +240,11 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		}
 		// Reserve new automatic input only after idle admission. A rejected
 		// background request must not leave an unsettled message intent.
-		if _, err := s.threads.reserveMessage(ctx, normalized); err != nil {
-			s.turnMu.Unlock()
-			return ExecuteThreadTurnResult{}, err
+		if request.queued == nil {
+			if _, err := s.threads.reserveMessage(ctx, normalized); err != nil {
+				s.turnMu.Unlock()
+				return ExecuteThreadTurnResult{}, err
+			}
 		}
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -255,7 +276,11 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	}
 
 	var executionErr error
-	result, executionErr = s.execute(turnCtx, request)
+	if request.queued != nil {
+		result, executionErr = s.executeSubmissionMode(turnCtx, normalized, ExecuteThreadTurnResult{Submission: *request.queued}, true)
+	} else {
+		result, executionErr = s.execute(turnCtx, request)
+	}
 	for {
 		s.turnMu.Lock()
 		if executionErr == nil && turnCtx.Err() == nil && len(active.queue) == 0 && len(active.approvals) > 0 {
@@ -292,7 +317,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 				next.result.Submission.Run.ID)
 		}
 		if executionErr == nil {
-			_, executionErr = s.executeSubmission(turnCtx, next.request, next.result)
+			_, executionErr = s.executeSubmissionMode(turnCtx, next.request, next.result, next.automatic)
 		}
 		if executionErr != nil {
 			s.turnMu.Lock()

@@ -35,7 +35,7 @@ interface InspectorState {
 }
 const emptyState: InspectorState = { filter: "all", search: "", runID: "", selected: null };
 const filterLabels: Record<Filter, string> = { all: "全部", tools: "工具", approvals: "审批", exceptions: "异常" };
-const sourceLabels = { harness: "执行记录", model: "模型公开内容", operator: "用户输入" };
+const sourceLabels = { harness: "执行记录", model: "模型公开内容", operator: "用户输入", peer: "其他聊天" };
 const stageLabels = { started: "已开始", arguments_ready: "参数就绪", running: "运行中", result: "结果", blocked: "已阻塞" };
 const translate = (chinese: string) => chinese;
 const failureStates = new Set(["failed", "failure", "error", "denied", "deny", "blocked", "cancelled", "canceled",

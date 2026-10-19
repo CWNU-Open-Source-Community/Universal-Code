@@ -1,5 +1,6 @@
 import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../api/types";
 import { prepareThreadNarrative, projectLiveThreadNarrative, projectThreadNarrative, type ThreadTranscriptActivityItem } from "./narrative";
+import { peerMessageFixture } from "../../test/thread-peer-message";
 
 function item(overrides: Partial<ThreadTranscriptActivityItem>): ThreadTranscriptActivityItem {
   return {
@@ -53,6 +54,12 @@ describe("projectThreadNarrative", () => {
     ] })]);
   });
 
+  it("keeps cross-chat messages separate from user input and assistant replies", () => {
+    const message = peerMessageFixture();
+    const entries = projectThreadNarrative([item({ source: "peer", kind: "peer_message", peer_message: message })]);
+    expect(entries).toEqual([{ id: "item-1", kind: "peer", message, text: message.content,
+      createdAt: "2026-08-29T00:00:00Z", provisional: false }]);
+  });
   it("does not treat delivery receipts as branchable model replies", () => {
     const projected = projectThreadNarrative([item({ id: "delivery-receipt", source: "harness", kind: "plan",
       activity_type: "delivery", title: "切片交付检查点已记录", detail: "", status: "completed" })]);

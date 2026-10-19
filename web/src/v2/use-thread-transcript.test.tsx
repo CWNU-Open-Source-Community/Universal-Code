@@ -6,6 +6,7 @@ import type { APIClient } from "../api/client";
 import type { PageResult, ThreadDetailView, ThreadTranscriptItemView } from "../api/types";
 import { v2QueryKeys } from "./query-keys";
 import { useV2ThreadTranscript } from "./use-thread-transcript";
+import { peerMessageFixture } from "../test/thread-peer-message";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
@@ -137,6 +138,20 @@ it("replaces a same-identity projection and preserves its actual source and auth
   }));
   expect(view.result.current.items.find((entry) => entry.sequence === 189)).toBe(unchanged);
   expect(view.result.current.items).toHaveLength(200);
+  view.unmount(); fixture.queries.clear();
+});
+
+it("refreshes delivery status after a queued peer message moves off the latest transcript page", async () => {
+  const fixture = setup(200);
+  const message = peerMessageFixture();
+  fixture.update(190, { source: "peer", kind: "peer_message", peer_message: message });
+  const view = renderHook(() => useV2ThreadTranscript(fixture.client, "thread-b"), { wrapper: fixture.wrapper });
+  await waitFor(() => expect(view.result.current.items).toHaveLength(100));
+  fixture.append(120);
+  await act(async () => { await view.result.current.refetch(); });
+  fixture.update(190, { peer_message: { ...message, status: "delivered", delivered_at: "2026-10-19T09:00:01Z" } });
+  await act(async () => { await view.result.current.refetch(); });
+  await waitFor(() => expect(view.result.current.items.find((entry) => entry.sequence === 190)?.peer_message?.status).toBe("delivered"));
   view.unmount(); fixture.queries.clear();
 });
 

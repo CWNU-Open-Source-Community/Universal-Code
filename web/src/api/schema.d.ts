@@ -14830,6 +14830,22 @@ export interface components {
             thread_id: string;
             vision_capability?: components["schemas"]["VisionCapability"];
         };
+        ThreadPeerMessage: {
+            content: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            error?: string;
+            id: string;
+            reply_to?: string;
+            source_thread_id: string;
+            source_title: string;
+            /** @enum {string} */
+            status: "queued" | "delivered" | "failed" | "cancelled";
+            target_thread_id: string;
+            target_title: string;
+        };
         ThreadPlanControlRequestView: {
             /** @enum {string} */
             action: "enter_plan" | "enter_deliver" | "confirm";
@@ -15189,9 +15205,10 @@ export interface components {
             images?: components["schemas"]["WorkspaceImage"][];
             instruction_authorized: boolean;
             /** @enum {string} */
-            kind: "harness_status" | "model_update" | "operator_input" | "model_call" | "tool_call" | "approval" | "file_change" | "plan" | "dependency" | "browser";
+            kind: "harness_status" | "model_update" | "operator_input" | "model_call" | "tool_call" | "approval" | "file_change" | "plan" | "dependency" | "browser" | "peer_message";
             /** Format: int32 */
             model_attempt?: number;
+            peer_message?: components["schemas"]["ThreadPeerMessage"];
             /** Format: int32 */
             position?: number;
             promoted_from_message_id?: string;
@@ -15203,7 +15220,7 @@ export interface components {
             /** Format: int64 */
             sequence: number;
             /** @enum {string} */
-            source: "harness" | "model" | "operator";
+            source: "harness" | "model" | "operator" | "peer";
             source_ref?: string;
             /** @enum {string} */
             stage: "started" | "arguments_ready" | "running" | "result" | "blocked";

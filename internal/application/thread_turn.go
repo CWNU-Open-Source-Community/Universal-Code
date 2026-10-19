@@ -48,6 +48,7 @@ type threadEpochTransitionStore interface {
 }
 
 type ExecuteThreadTurnRequest struct {
+	queued        *SubmitThreadMessageResult
 	automatic     bool
 	plan          *threadPlanCommitBinding
 	Version       string

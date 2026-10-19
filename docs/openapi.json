@@ -70442,6 +70442,69 @@
         ],
         "type": "object"
       },
+      "ThreadPeerMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reply_to": {
+            "type": "string"
+          },
+          "source_thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "delivered",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "target_thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target_title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_thread_id",
+          "source_title",
+          "target_thread_id",
+          "target_title",
+          "content",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "ThreadPlanControlRequestView": {
         "additionalProperties": false,
         "properties": {
@@ -71885,13 +71948,17 @@
               "file_change",
               "plan",
               "dependency",
-              "browser"
+              "browser",
+              "peer_message"
             ],
             "type": "string"
           },
           "model_attempt": {
             "format": "int32",
             "type": "integer"
+          },
+          "peer_message": {
+            "$ref": "#/components/schemas/ThreadPeerMessage"
           },
           "position": {
             "format": "int32",
@@ -71927,7 +71994,8 @@
             "enum": [
               "harness",
               "model",
-              "operator"
+              "operator",
+              "peer"
             ],
             "type": "string"
           },

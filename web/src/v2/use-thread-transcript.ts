@@ -27,7 +27,8 @@ const mutableCommandStates = new Set(["pending", "prepared", "running", "stoppin
 // These DTOs include current database projections. Approval/event status rows
 // describe immutable events, so a historical "pending" event alone is not mutable.
 function isMutable(item: ThreadTranscriptItemView, terminalRuns: Set<string>) {
-  return item.source === "operator" && item.kind === "operator_input" &&
+  return item.kind === "peer_message" && item.peer_message?.status === "queued" ||
+    item.source === "operator" && item.kind === "operator_input" &&
     (item.status === "pending" || !item.status && !terminalRuns.has(item.run_id)) ||
     item.sequence === 0 && !terminalRunStates.has(item.status ?? "") ||
     item.tool_name === "command_runtime" && mutableCommandStates.has(item.activity_summary?.status ?? "");

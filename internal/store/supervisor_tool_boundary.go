@@ -169,7 +169,11 @@ func saveSupervisorOperatorInputTx(ctx context.Context, tx *sql.Tx, run domain.R
 		AND json_extract(event.payload_json,'$.tool_round_boundary')=1
 		ORDER BY event.sequence LIMIT 1`, run.ID, checkpoint.AttemptID, events.AgentTurnCompletedEvent).Scan(&originalID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return saveSessionMessageTx(ctx, tx, session.NewMessage(run.SessionID, "user", checkpoint.PendingInput))
+		input, inputErr := supervisorInputMessageTx(ctx, tx, run.ID, run.SessionID, checkpoint.AttemptID, checkpoint.PendingInput)
+		if inputErr != nil {
+			return session.Message{}, inputErr
+		}
+		return saveSessionMessageTx(ctx, tx, input)
 	}
 	if err != nil {
 		return session.Message{}, err
@@ -180,8 +184,12 @@ func saveSupervisorOperatorInputTx(ctx context.Context, tx *sql.Tx, run domain.R
 	if err != nil {
 		return session.Message{}, err
 	}
-	if message.SessionID != run.SessionID || message.Role != "user" || message.Content != checkpoint.PendingInput ||
-		message.Provenance.SourceKind != session.SourceOperatorMessage || !message.Provenance.InstructionAuthorized ||
+	expected, err := supervisorInputMessageTx(ctx, tx, run.ID, run.SessionID, checkpoint.AttemptID, checkpoint.PendingInput)
+	if err != nil {
+		return session.Message{}, err
+	}
+	if message.SessionID != run.SessionID || message.Role != expected.Role || message.Content != checkpoint.PendingInput ||
+		message.Provenance.SourceKind != expected.Provenance.SourceKind || message.Provenance.InstructionAuthorized != expected.Provenance.InstructionAuthorized || message.Provenance.SourceRef != expected.Provenance.SourceRef ||
 		message.Provenance.ContentSHA256 != session.ContentSHA256(checkpoint.PendingInput) {
 		return session.Message{}, apperror.New(apperror.CodeFailedPrecondition, "Internal tool continuation lost its exact original user input")
 	}

@@ -85,6 +85,13 @@ func (s *SQLiteStore) ReviseOperatorSteering(ctx context.Context,
 	if err != nil {
 		return domain.ReviseOperatorSteeringResult{}, err
 	}
+	peer, err := isThreadPeerSteering(ctx, tx, message.ID)
+	if err != nil {
+		return domain.ReviseOperatorSteeringResult{}, err
+	}
+	if peer {
+		return domain.ReviseOperatorSteeringResult{}, apperror.New(apperror.CodeFailedPrecondition, "Peer message content cannot be revised by the recipient")
+	}
 	if message.SessionID != normalized.SessionID || message.RunID != runID {
 		return domain.ReviseOperatorSteeringResult{}, apperror.New(apperror.CodeConflict,
 			"operator steering revision binding changed")
