@@ -1,6 +1,6 @@
 # Traverse Board · 针路簿 — Theme and Naming Specification v2
 
-Status: **Accepted for presentation; compatibility identifiers remain unchanged**
+Status: **Historical naming specification. Current product branding is documented in [Brand Assets](README.md).**
 
 > 针有所向，路有所记；牵星知位，行有所据。
 >
@@ -35,7 +35,7 @@ decision, not a trademark opinion.
 
 - 中文 locale：`针路簿`
 - 英文 locale：`Traverse Board`
-- icon-only surface：使用维护者批准的罗盘、帆船、星点与水纹图形标志；规范母版见
+- icon-only surface：使用维护者批准的玻璃地球、终端提示符与深蓝分段圆环图形标志；规范母版见
   `assets/branding/traverse-board-mark.png`，不用孤立字母代替
 - accessibility name：始终包含当前 locale 的完整产品名
 

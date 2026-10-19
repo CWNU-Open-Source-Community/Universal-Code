@@ -1,12 +1,13 @@
-# 品牌迁移 / Branding Migration
+# 品牌资产与历史迁移 / Brand Assets and Migration History
 
-Status: **Accepted for the first major product-brand migration.**
+当前产品名称为 **Universal-Code**，正式图标见下方「官方图形标志」。
+以下命名迁移文档保留此前的决策记录。
 
-项目方已批准 **Traverse Board · 针路簿** 作为产品展示品牌，并批准
+项目方曾批准 **Traverse Board · 针路簿** 作为产品展示品牌，并批准
 `Traverse-Board` 作为 GitHub 仓库 slug。此次迁移只改变产品展示与规范仓库地址；
 `.prayu`、`cyberagent`、协议、持久化 schema、安装 identity 等兼容接口继续保留。
 
-The owner has approved **Traverse Board · 针路簿** as the product display brand and
+The owner previously approved **Traverse Board · 针路簿** as the product display brand and
 `Traverse-Board` as the GitHub repository slug. This migration changes presentation and
 canonical repository URLs while preserving compatibility identifiers.
 
@@ -23,17 +24,17 @@ canonical repository URLs while preserving compatibility identifiers.
 
 ## 官方图形标志 / Official Mark
 
-维护者提供的罗盘、帆船、星点与水纹图形是项目的正式图标。规范母版位于
+维护者提供的玻璃地球、终端提示符与深蓝分段圆环图形是 Universal-Code 的正式图标。规范母版位于
 [`assets/branding/traverse-board-mark.png`](../../assets/branding/traverse-board-mark.png)，
 尺寸为 1254×1254，保留原始白色圆角承托；SHA-256 为
-`c63b452ca86ccb9a2003ab9711329491185a42825df6d9ca03aaebc078d250b3`。
+`a97e71e5f373d5d48ce24e39360cd390be2beabfe731037ac114ec38f12407d6`。
 
 Web、Windows 与 macOS 资产只允许从该母版进行确定性的缩放、圆角透明遮罩和容器
 格式转换，不得用字母 `T`、旧 `P` 标志或生成式重绘替代。小尺寸界面使用图形标志
 本身，并由周围的可访问名称提供完整产品名。运行
 `pwsh ./scripts/generate-brand-assets.ps1` 可一次重建所有受版本控制的平台派生件。
 
-The maintainer-supplied compass, sail, stars, and water artwork is the official project icon.
+The maintainer-supplied glass globe, terminal prompt, and segmented navy ring are the official Universal-Code icon.
 Platform assets are deterministic resize, rounded-alpha-mask, and container derivatives of
 the exact supplied master above; generative redraws and letter placeholders are not canonical.
 
@@ -43,7 +44,7 @@ the exact supplied master above; generative redraws and letter placeholders are 
 | Windows | MSIX Store/44/150px PNGs, 300px Partner Center listing icon, multi-resolution ICO, amd64/arm64 executable resources |
 | macOS | Complete 16px–1024px `TraverseBoard.icns` copied into the signed app bundle |
 
-## 当前结论 / Current Decision
+## 历史迁移结论 / Historical Migration Decision
 
 - 历史航海主题与当前 Go-owned、可恢复、可审计架构相符。
 - 项目方确认本项目是方向不同的开源 Agent 工作台，接受市场上存在同名商业软件这一
