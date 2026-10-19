@@ -427,25 +427,14 @@ function CommandDetail({ activityRef, client, command, threadID }: {
   const powerShellStartupError = command.status === "failed" && command.exit_code === 0xffff0000 &&
     command.stderr_preview?.startsWith("Windows PowerShell ") &&
     command.stderr_preview.includes("System.Management.Automation.Tracing.PSEtwLog");
-  return <article className="v2-command-detail">
+  return <article className="v2-command-detail v2-shell-detail">
     <header>
-      <code>{command.display_command}</code>
+      <strong>Shell</strong>
       <span className={isFailedStatus(command.status) ||
         (command.exit_code !== undefined && command.exit_code !== null && command.exit_code !== 0)
         ? "is-failed" : ""}><StatusLabel status={command.status} /></span>
     </header>
-    <dl>
-      {command.cwd && <><dt>目录</dt><dd><code>{command.cwd}</code></dd></>}
-      {(command.agent_label || command.agent_id) && <><dt>Agent</dt><dd>
-        <AgentIdentity id={command.agent_id} label={command.agent_label} />
-      </dd></>}
-      {command.environment_label && <><dt>环境</dt><dd>{command.environment_label}</dd></>}
-      {(command.exit_code !== undefined || duration) && <><dt>结果</dt><dd>
-        {command.exit_code !== undefined && command.exit_code !== null
-          ? `Exit ${command.exit_code}` : <StatusLabel status={command.status} />}
-        {duration ? ` · ${duration}` : ""}
-      </dd></>}
-    </dl>
+    <pre className="v2-command-input" aria-label="命令"><code>{command.display_command}</code></pre>
     {powerShellStartupError && <p className="v2-command-truncated">
       输出提示 PowerShell 初始化失败，当前检查未完成。若使用 Windows 隔离工作区，请安装 PowerShell 7，并在宿主环境中将 CYBERAGENT_POWERSHELL_PATH 设置为 pwsh.exe 的绝对路径，重启应用后重试。完整错误仍保留在下方。
     </p>}
@@ -455,6 +444,20 @@ function CommandDetail({ activityRef, client, command, threadID }: {
     {command.stderr_preview && <section aria-label="标准错误">
       <strong>stderr</strong><pre><code>{command.stderr_preview}</code></pre>
     </section>}
+    <details className="v2-command-metadata">
+      <summary><ChevronDown aria-hidden="true" size={12} /><span>执行信息</span>
+        <small>{command.exit_code !== undefined && command.exit_code !== null
+          ? `Exit ${command.exit_code}` : <StatusLabel status={command.status} />}
+          {duration ? ` · ${duration}` : ""}</small>
+      </summary>
+      <dl>
+        {command.cwd && <><dt>目录</dt><dd><code>{command.cwd}</code></dd></>}
+        {(command.agent_label || command.agent_id) && <><dt>Agent</dt><dd>
+          <AgentIdentity id={command.agent_id} label={command.agent_label} />
+        </dd></>}
+        {command.environment_label && <><dt>环境</dt><dd>{command.environment_label}</dd></>}
+      </dl>
+    </details>
     {(command.stdout_preview?.includes("\uFFFD") || command.stderr_preview?.includes("\uFFFD")) &&
       <p className="v2-command-truncated">{outputDecodingNotice}</p>}
     {command.truncated && <p className="v2-command-truncated">
@@ -482,12 +485,13 @@ function WebEvidenceDetail({ item }: { item: ActivityItem }) {
   </article>;
 }
 
-export function ActivityItemDetail({ client, item, threadID, initialOpen = false, expectedRunID }: {
+export function ActivityItemDetail({ client, item, threadID, initialOpen = false, expectedRunID, activity }: {
   client: APIClient;
   item: ActivityItem;
   threadID: string;
   initialOpen?: boolean;
   expectedRunID?: string;
+  activity?: ActivityEntry["activity"];
 }) {
   const failed = itemFailed(item);
   const [open, setOpen] = useState(initialOpen || failed);
@@ -513,14 +517,17 @@ export function ActivityItemDetail({ client, item, threadID, initialOpen = false
   });
 
   if (!detailRef && !fallbackAvailable) return <li className={`v2-activity-item${failed ? " is-failed" : ""}`}>
-    <span>{item.title}</span>{item.detail && <small>{item.detail}</small>}
+    {activity && <ActivityIcon activity={activity} />}
+    <span className="v2-activity-item-label" title={item.title}>{item.title}</span>
+    {item.detail && item.detail !== item.title && <small title={item.detail}>{item.detail}</small>}
     {item.status && <em><StatusLabel status={item.status} /></em>}
   </li>;
 
   return <li className={`v2-activity-item has-detail${failed ? " is-failed" : ""}`}>
     <details onToggle={(event) => setOpen(event.currentTarget.open)} open={open}>
       <summary aria-label={`${open ? "收起" : "查看"}${item.title}的执行详情`}>
-        <span>{item.summary?.command ?? item.title}</span>
+        {activity && <ActivityIcon activity={activity} />}
+        <span className="v2-activity-item-label" title={item.summary?.command ?? item.title}>{item.summary?.command ?? item.title}</span>
         {itemSummaryMeta(item) && <small>{itemSummaryMeta(item)}</small>}
         {itemSummaryStatus(item) && <em>{itemSummaryStatus(item)}</em>}
         <ChevronDown aria-hidden="true" size={13} />
@@ -577,7 +584,7 @@ export function V2ActivityGroup({ client, entry, threadID }: {
     <summary><ActivityIcon activity={entry.activity} />
       <span>{label}</span>
       <small>{detail}</small><ChevronDown aria-hidden="true" size={14} /></summary>
-    <ul>{entry.items.map((item, index) => <ActivityItemDetail client={client} item={item}
+    <ul>{entry.items.map((item, index) => <ActivityItemDetail client={client} item={item} activity={entry.activity}
       key={`${entry.id}:${item.detailRef ?? index}`} threadID={threadID} />)}</ul>
   </details>;
 }

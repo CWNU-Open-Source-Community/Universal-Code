@@ -42,6 +42,18 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
 }
 
 describe("projectThreadNarrative", () => {
+  it("preserves distinct tool names when no specialized title or command summary exists", () => {
+    const projected = projectThreadNarrative(["thread_list", "thread_send_message"].map((name, index) => item({
+      id: name, canonical_id: name, sequence: index + 1, tool_name: name,
+      source: "harness", kind: "tool_call", activity_type: "execute",
+      title: "工具执行已完成", detail: name, status: "completed", detail_available: false,
+    })));
+    expect(projected).toEqual([expect.objectContaining({ kind: "activity", count: 2, items: [
+      expect.objectContaining({ title: "thread_list", detailAvailable: false }),
+      expect.objectContaining({ title: "thread_send_message", detailAvailable: false }),
+    ] })]);
+  });
+
   it("keeps cross-chat messages separate from user input and assistant replies", () => {
     const message = peerMessageFixture();
     const entries = projectThreadNarrative([item({ source: "peer", kind: "peer_message", peer_message: message })]);
