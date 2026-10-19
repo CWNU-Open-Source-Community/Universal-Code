@@ -3,6 +3,7 @@ package projectprep_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -228,5 +229,126 @@ func TestPNPMConfigBindingsStayWithinPublicFileLimit(t *testing.T) {
 	plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
 	if err != nil || plan.Ready || !strings.Contains(strings.Join(plan.Issues, " "), "64 bound") || len(plan.Lockfiles) > 63 {
 		t.Fatalf("%#v %v", plan, err)
+	}
+}
+
+func TestPNPMCorepackExactVersionIntegritySuffix(t *testing.T) {
+	for _, tc := range []struct {
+		manager string
+		ready   bool
+	}{
+		{"pnpm@10.28.1+sha512." + strings.Repeat("a1", 64), true},
+		{"pnpm@10.28.1+sha224." + strings.Repeat("ab", 28), true},
+		{"pnpm@10.28.1+sha256." + strings.Repeat("ab", 32), true},
+		{"pnpm@10.28.1+sha384." + strings.Repeat("ab", 48), true},
+		{"pnpm@10.28.2+sha512." + strings.Repeat("ab", 64), false},
+		{"pnpm@10.28.1+sha512." + strings.Repeat("z", 128), false},
+		{"pnpm@10.28.1+sha512." + strings.Repeat("a", 127), false},
+		{"pnpm@10.28.1+sha512." + strings.Repeat("a", 128) + "+extra", false},
+		{"pnpm@10.28.1+file./runtime.js", false},
+	} {
+		files := pnpmFiles()
+		files["package.json"] = fmt.Sprintf(`{"private":true,"packageManager":%q}`, tc.manager)
+		plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+		if err != nil || plan.Ready != tc.ready || plan.RequestedVersion != projectprep.PNPMVersion {
+			t.Fatalf("manager=%s plan=%#v err=%v", tc.manager, plan, err)
+		}
+	}
+}
+
+func TestPNPMPatchesAreExplicitlyUnavailable(t *testing.T) {
+	for _, location := range []string{"lock", "workspace", "manifest", "npmrc"} {
+		t.Run(location, func(t *testing.T) {
+			files := pnpmFiles()
+			switch location {
+			case "lock":
+				files["pnpm-lock.yaml"] += "patchedDependencies:\n  is-number@7.0.0:\n    hash: abcdef\n    path: patches/is-number.patch\n"
+			case "workspace":
+				files["pnpm-workspace.yaml"] += "patchedDependencies:\n  is-number@7.0.0: patches/is-number.patch\n"
+			case "manifest":
+				files["package.json"] = `{"packageManager":"pnpm@10.28.1","pnpm":{"patchedDependencies":{"is-number@7.0.0":"patches/is-number.patch"}}}`
+			case "npmrc":
+				files[".npmrc"] = "patched-dependencies[is-number@7.0.0]=patches/is-number.patch\n"
+			}
+			plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+			if err != nil || plan.Ready || len(plan.PNPMSeedLock) > 0 || !strings.Contains(strings.Join(plan.Issues, " "), "patch files are not staged") {
+				t.Fatalf("%#v %v", plan, err)
+			}
+		})
+	}
+}
+
+func TestPNPMRejectsConfigurationThatChangesReviewedInputs(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"modulesDir", "custom_modules"}, {"virtualStoreDir", "../other"}, {"globalVirtualStoreDir", "../other"},
+		{"enableGlobalVirtualStore", "true"}, {"lockfileDir", "../other"}, {"dir", "../other"}, {"workspaceDir", "../other"},
+		{"global", "true"}, {"sharedWorkspaceLockfile", "false"}, {"nodeOptions", "--require=./unreviewed.cjs"},
+		{"useNodeVersion", "20.0.0"}, {"executionEnv", "{nodeVersion: 20.0.0}"}, {"scriptShell", "./unreviewed.sh"},
+		{"shellEmulator", "true"}, {"configDependencies", "{some-config: 1.0.0}"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			files := pnpmFiles()
+			files["pnpm-workspace.yaml"] += tc.key + ": " + tc.value + "\n"
+			plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+			if err != nil || plan.Ready || !strings.Contains(strings.Join(plan.Issues, " "), tc.key+" changes") {
+				t.Fatalf("%#v %v", plan, err)
+			}
+		})
+	}
+	for _, config := range []string{"node-options=--require=./unreviewed.cjs\n", "lockfile-dir=../other\n", "config-dependencies[plugin]=1.0.0\n"} {
+		files := pnpmFiles()
+		files[".npmrc"] = config
+		plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+		if err != nil || plan.Ready {
+			t.Fatalf("config=%s plan=%#v %v", config, plan, err)
+		}
+	}
+	files := pnpmFiles()
+	files["package.json"] = `{"pnpm":{"executionEnv":{"nodeVersion":"20.0.0"}}}`
+	plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+	if err != nil || plan.Ready {
+		t.Fatalf("manifest executionEnv: %#v %v", plan, err)
+	}
+}
+
+func TestPNPMDefaultLayoutAndPinnedCacheSettingsRemainUsable(t *testing.T) {
+	files := pnpmFiles()
+	files["pnpm-workspace.yaml"] += "modulesDir: node_modules\nvirtualStoreDir: node_modules/.pnpm\nenableGlobalVirtualStore: false\nglobal: false\nsharedWorkspaceLockfile: true\nshellEmulator: false\nnodeOptions: ''\nconfigDependencies: {}\npatchedDependencies: {}\ncacheDir: ../runtime-overrides-this\nstateDir: ../runtime-overrides-this\nglobalDir: ../runtime-overrides-this\n"
+	files[".npmrc"] = "modules-dir=node_modules\nvirtual-store-dir=node_modules/.pnpm\nenable-global-virtual-store=false\nshared-workspace-lockfile=true\n"
+	plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+	if err != nil || !plan.Ready {
+		t.Fatalf("%#v %v", plan, err)
+	}
+}
+
+type pnpmCancelContext struct {
+	context.Context
+	cancel        context.CancelFunc
+	checks, after int
+}
+
+func (c *pnpmCancelContext) Err() error {
+	c.checks++
+	if c.after > 0 && c.checks >= c.after {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestPNPMCancellationDuringDiscoveryReturnsContextError(t *testing.T) {
+	root := fixture(t, pnpmFiles())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	count := &pnpmCancelContext{Context: ctx, cancel: cancel}
+	if _, err := projectprep.Detect(count, root, "apps/web"); err != nil {
+		t.Fatal(err)
+	}
+	for _, after := range []int{1, count.checks / 2, count.checks - 1} {
+		ctx, cancel := context.WithCancel(t.Context())
+		_, err := projectprep.Detect(&pnpmCancelContext{Context: ctx, cancel: cancel, after: after}, root, "apps/web")
+		cancel()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation after check %d returned %v", after, err)
+		}
 	}
 }

@@ -73,6 +73,9 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 				plan.Issues = append(plan.Issues, findErr.Error())
 			}
 			plan = detectPNPM(plan, reader, files, pnpmRoot)
+			if err := ctx.Err(); err != nil {
+				return plan, err
+			}
 		} else {
 			plan = detectNPM(plan, files)
 		}

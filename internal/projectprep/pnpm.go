@@ -2,6 +2,7 @@ package projectprep
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,10 +113,16 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 			Packages []string `yaml:"packages"`
 			Registry string   `yaml:"registry"`
 		}
-		_, err := pnpmYAML(workspace.raw, &config)
+		configDocument, err := pnpmYAML(workspace.raw, &config)
 		if err != nil {
 			plan.Issues = append(plan.Issues, "pnpm-workspace.yaml is invalid: "+err.Error())
 		} else {
+			var settings map[string]any
+			if err := configDocument.Decode(&settings); err == nil {
+				for _, issue := range unsupportedPNPMSettings(settings) {
+					plan.Issues = append(plan.Issues, "pnpm-workspace.yaml "+issue)
+				}
+			}
 			if config.Packages == nil {
 				plan.Issues = append(plan.Issues, "pnpm-workspace.yaml must declare an explicit packages list")
 			}
@@ -149,8 +156,18 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 			plan.Issues = append(plan.Issues, manifestFile.Path+" is not a valid package manifest")
 			continue
 		}
-		if manifest.PackageManager != "" && manifest.PackageManager != "pnpm@"+PNPMVersion {
+		if !supportedPNPMManager(manifest.PackageManager) {
 			plan.Issues = append(plan.Issues, manifestFile.Path+" packageManager must select pnpm@"+PNPMVersion+"; other versions are not downloaded automatically")
+		}
+		var pnpmConfig struct {
+			PNPM map[string]any `json:"pnpm"`
+		}
+		if json.Unmarshal(manifestFile.raw, &pnpmConfig) != nil {
+			plan.Issues = append(plan.Issues, manifestFile.Path+" contains invalid pnpm configuration")
+		} else {
+			for _, issue := range unsupportedPNPMSettings(pnpmConfig.PNPM) {
+				plan.Issues = append(plan.Issues, manifestFile.Path+" pnpm."+issue)
+			}
 		}
 		if directory != workspaceRoot && manifest.Name == "" {
 			plan.Issues = append(plan.Issues, manifestFile.Path+" needs a workspace package name")
@@ -208,6 +225,9 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 	if err != nil || lock.LockfileVersion != "9.0" || lock.Importers == nil {
 		plan.Issues = append(plan.Issues, "pnpm-lock.yaml must use lockfileVersion 9.0 with an importers map")
 		return plan
+	}
+	if patches := pnpmMapValue(document.Content[0], "patchedDependencies"); patches != nil && patches.Tag != "!!null" && (patches.Kind != yaml.MappingNode || len(patches.Content) > 0) {
+		plan.Issues = append(plan.Issues, "pnpm-lock.yaml patchedDependencies are not supported by offline preparation; patch files are not staged")
 	}
 	if len(lock.Packages) > MaxPackages || len(lock.Snapshots) > MaxPackages || len(lock.Importers) > maxPNPMMembers+1 {
 		plan.Issues = append(plan.Issues, "pnpm-lock.yaml exceeds the preparation package or workspace member limit")
@@ -314,6 +334,25 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 	return plan
 }
 
+// Corepack appends a hexadecimal content hash to an exact manager version.
+// This preserves the pinned runtime selection; it does not ask Corepack to fetch.
+func supportedPNPMManager(value string) bool {
+	if value == "" || value == "pnpm@"+PNPMVersion {
+		return true
+	}
+	prefix := "pnpm@" + PNPMVersion + "+"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	algorithm, encoded, found := strings.Cut(strings.TrimPrefix(value, prefix), ".")
+	length := map[string]int{"sha224": 28, "sha256": 32, "sha384": 48, "sha512": 64}[algorithm]
+	if !found || length == 0 || len(encoded) != length*2 || encoded != strings.ToLower(encoded) {
+		return false
+	}
+	digest, err := hex.DecodeString(encoded)
+	return err == nil && len(digest) == length
+}
+
 func validatePNPMDependency(name, specifier, version, directory string, manifests map[string]npmManifest, names map[string]string, lock pnpmLock) error {
 	if strings.HasPrefix(version, "link:") {
 		link := strings.TrimPrefix(version, "link:")
@@ -400,6 +439,9 @@ func pnpmRegistries(raw []byte, registry map[string]string, apply bool) error {
 			return errors.New(".npmrc must contain explicit key=value settings")
 		}
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if issue := unsupportedPNPMSetting(key, value); issue != "" {
+			return errors.New(issue)
+		}
 		if key != "registry" && !strings.HasSuffix(key, ":registry") {
 			continue
 		}
@@ -416,6 +458,77 @@ func pnpmRegistries(raw []byte, registry map[string]string, apply bool) error {
 		}
 	}
 	return nil
+}
+
+// These settings change the reviewed installation tree or select additional
+// code/runtime inputs. The command layer pins cache directories and disables
+// pnpmfile hooks; other supported project settings retain native pnpm semantics.
+func unsupportedPNPMSettings(settings map[string]any) []string {
+	var issues []string
+	for _, key := range sortedPNPMKeys(settings) {
+		if issue := unsupportedPNPMSetting(key, settings[key]); issue != "" {
+			issues = append(issues, issue)
+		}
+	}
+	return issues
+}
+
+func unsupportedPNPMSetting(key string, value any) string {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "-", ""), "_", ""))
+	// npmrc supports indexed configuration keys. Do not let an indexed setting
+	// bypass the same policy applied to the corresponding YAML mapping.
+	if index := strings.IndexAny(normalized, "[."); index >= 0 {
+		normalized = normalized[:index]
+	}
+	if pnpmEmptySetting(value) {
+		return ""
+	}
+	text, _ := value.(string)
+	boolean := func(expected bool) bool {
+		if current, ok := value.(bool); ok {
+			return current == expected
+		}
+		return strings.EqualFold(text, fmt.Sprint(expected))
+	}
+	switch normalized {
+	case "patcheddependencies":
+		return key + " is not supported by offline preparation; patch files are not staged"
+	case "modulesdir":
+		if text == "node_modules" {
+			return ""
+		}
+	case "virtualstoredir":
+		if text == "node_modules/.pnpm" {
+			return ""
+		}
+	case "global", "enableglobalvirtualstore", "shellemulator":
+		if boolean(false) {
+			return ""
+		}
+	case "sharedworkspacelockfile":
+		if boolean(true) {
+			return ""
+		}
+	case "globalvirtualstoredir", "lockfiledir", "dir", "workspacedir", "nodeoptions", "usenodeversion", "executionenv", "scriptshell", "configdependencies":
+	default:
+		return ""
+	}
+	return key + " changes the prepared layout, runtime or code inputs and is not supported by project preparation"
+}
+
+func pnpmEmptySetting(value any) bool {
+	switch current := value.(type) {
+	case nil:
+		return true
+	case string:
+		return current == ""
+	case map[string]any:
+		return len(current) == 0
+	case []any:
+		return len(current) == 0
+	default:
+		return false
+	}
 }
 
 func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, error) {
