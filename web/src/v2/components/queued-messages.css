@@ -13,15 +13,13 @@
   font-size: 13px;
   line-height: 1.5;
 }
-.v2-composer-options:not([hidden]):not(:empty) { margin-bottom: 6px; }
 .v2-queue-composer-stack { min-width: 0; }
 .v2-queue-composer-stack:has(> .v2-shared-composer:not([hidden])) > .v2-queued-messages {
-  border-radius: 22px 22px 0 0;
-  margin-bottom: -1px;
-}
-.v2-queue-composer-stack:has(> .v2-queued-messages) > .v2-shared-composer .v2-composer-surface {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  border-radius: 20px 20px 0 0;
+  margin-bottom: -14px;
+  padding-bottom: 18px;
+  width: calc(100% - 24px);
+  max-width: calc(var(--v2-composer-width, 738px) - 24px);
 }
 .v2-queue-composer-stack:focus-within > .v2-queued-messages { border-color: var(--v2-border-strong); }
 .v2-queued-messages > header { display: flex; align-items: center; gap: 4px; min-height: 28px; }

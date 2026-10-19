@@ -19,6 +19,6 @@ export function V2PhasePicker({ phase, onChange, disabled = false, planAvailable
     title={planning ? t("关闭计划模式，发送消息后按默认方式处理", "Turn off plan mode and handle the next message normally")
       : !planAvailable ? t("当前连接未启用计划模式", "Plan mode is not enabled for this connection") : t("开启后先分析并形成计划，确认计划后执行", "Analyze and prepare a plan, then execute after confirmation")}
     onClick={() => onChange(planning ? "deliver" : "plan")}>
-    <ListChecks aria-hidden="true" size={14} />{t("计划模式", "Plan mode")}
+    <ListChecks aria-hidden="true" size={14} /><span className="v2-composer-optional-label">{t("计划模式", "Plan mode")}</span>
   </button>;
 }
