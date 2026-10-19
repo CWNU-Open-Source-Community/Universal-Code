@@ -10,9 +10,19 @@
   </p>
 
   <p>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square"></a>
-    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square"></a>
-    <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square">
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/releases"><img alt="Release" src="https://img.shields.io/github/v/release/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=blue&logo=github"></a>
+    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=green"></a>
+    <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blueviolet?style=flat-square">
+    <img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white">
+    <img alt="Node" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
+    <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black">
+    <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square"></a>
+  </p>
+  <p>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github&color=gold"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/issues"><img alt="Issues" src="https://img.shields.io/github/issues/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=orange"></a>
   </p>
 </div>
 
