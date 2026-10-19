@@ -584,6 +584,8 @@ metadata；原始 artifact 下载额外返回 `no-store`、ETag、精确 SHA-256
 | `POST` | `/api/v1/sandbox/docker/cancellations` | Control-bearer, sticky cancellation and exact cleanup convergence |
 | `GET` | `/api/v1/sandbox/docker/status?admission_id={admission_id}` | Metadata-only admission/launch/terminal projection |
 | `GET` | `/api/v1/workspaces` | Bounded Workspace ID/name/creation metadata; no host root path |
+| `GET` | `/api/v1/workspaces/{workspace_id}/project` | Control bearer only: exact registered directory and project conversation counts, including active execution or pending input/approval |
+| `PUT` | `/api/v1/workspaces/{workspace_id}/name` | Control bearer only: persist a nonempty display name (up to 128 UTF-8 bytes, no control characters); preserve directory binding; duplicate names return 409 |
 | `GET` | `/api/v1/workspaces/{workspace_id}/explore` | One bounded directory level or redacted UTF-8 file evidence; canonical relative path only, no host root |
 | `GET` | `/api/v1/workspaces/{workspace_id}/search` | One bounded deterministic filename/redacted-text search; canonical evidence references only, no indexer |
 | `GET` | `/api/v1/workspaces/{workspace_id}/repository-state` | Bounded exact-root Git metadata only; no parent discovery, host root, body, remote, process, network, or hook |
@@ -1135,3 +1137,5 @@ Most pagination is a bounded live SQLite projection, not a multi-request snapsho
 - No real general Shell or LocalSandbox execution. Docker execution is limited to schema v99 admissions over an already-compiled exact plan, fresh process-local capability, exact per-call approval, current Policy/permission/budget/readiness, and network none. There is no arbitrary Docker request, scoped egress, pull/build/exec/TTY, daemon endpoint, mount override, host fallback, or renderer-issued capability.
 - No per-resource authorization below the process token. Future remote or multi-user use requires a separate identity and authorization design.
 - Repository history, exact-file history, exact commit detail, and redacted commit-file preview have no checkout/fetch/push/ref-update or raw-blob endpoint. Verification plans, associations, exact-item drilldown, and Handoff coverage do not run checks or imply aggregate outcomes. Handoff exports have no import/resume endpoint.
+
+Workspace import accepts an optional `name` while retaining the confirmed server-directory gate. Re-importing a registered directory returns its existing identity and name. The desktop creation dialog uses `SelectWorkspaceDirectory` to obtain a temporary opaque handle without registering anything, followed by `CreateWorkspace({handle,name})` only on confirmation. The legacy native `ImportWorkspace` flow remains available.

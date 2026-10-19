@@ -1,5 +1,8 @@
 import type { components } from "./schema";
 
+export type ProjectlessDirectory = components["schemas"]["ProjectlessDirectory"];
+export type ProjectlessWorkspaceView = components["schemas"]["ProjectlessWorkspaceView"];
+
 export type ProjectActionsView = components["schemas"]["ProjectActionsView"];
 export type ProjectActionView = components["schemas"]["ProjectActionView"];
 export type ProjectActionResultView = components["schemas"]["ProjectActionResultView"];
@@ -502,3 +505,5 @@ export interface VerificationPlanItemCoveragePage {
 export type TaskBudgetSettings = components["schemas"]["TaskBudgetSettings"];
 export type TaskConfigurationRequest = components["schemas"]["TaskConfigurationRequest"];
 export type TaskConfigurationView = components["schemas"]["TaskConfigurationView"];
+
+export type WorkspaceProjectView = components["schemas"]["WorkspaceProjectView"];

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
@@ -154,5 +155,35 @@ func TestChatResourcesReadStoredAttachmentAndGeneratedFile(t *testing.T) {
 	read, err = b.ReadChatResource(ref)
 	if err != nil || read.RelativePath != "generated.md" || read.DataBase64 != base64.StdEncoding.EncodeToString([]byte("generated result")) {
 		t.Fatalf("read generated file: %#v %v", read, err)
+	}
+	// Moving the conversation changes its current workspace, while old replies
+	// must continue reading the original run's file even if names overlap.
+	target := t.TempDir()
+	for _, id := range []string{"move-target", "unrelated-project"} {
+		if err := state.SaveWorkspace(t.Context(), store.WorkspaceRecord{ID: id, Name: id, RootPath: target, CreatedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(target, "generated.md"), []byte("different project file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	thread, err := state.GetThreadByRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := application.NewThreadProjectMoveService(state, nil).Move(t.Context(), domain.ThreadProjectMoveRequest{
+		Version: domain.ThreadProjectMoveVersion, ThreadID: thread.ID, ProjectWorkspaceID: "move-target",
+		ExpectedVersion: thread.ProjectAssignmentVersion, OperationKey: "chat-resource-move-0001", RequestedBy: "test_operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref.WorkspaceID = moved.Thread.WorkspaceID
+	read, err = b.ReadChatResource(ref)
+	if err != nil || read.DataBase64 != base64.StdEncoding.EncodeToString([]byte("generated result")) {
+		t.Fatalf("historical file after project move: %#v %v", read, err)
+	}
+	ref.WorkspaceID = "unrelated-project"
+	if _, err := b.ReadChatResource(ref); err == nil {
+		t.Fatal("unrelated workspace accepted for historical run")
 	}
 }

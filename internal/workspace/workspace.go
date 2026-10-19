@@ -16,6 +16,8 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/agent"
+	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -87,6 +89,17 @@ func (m *Manager) Ensure(ctx context.Context, name string) (session.WorkspaceRec
 // Import registers an existing directory without creating or modifying any
 // content inside it. Re-selecting the same canonical directory is idempotent.
 func (m *Manager) Import(ctx context.Context, selectedPath string) (session.WorkspaceRecord, error) {
+	return m.ImportNamed(ctx, selectedPath, "")
+}
+
+func (m *Manager) ImportNamed(ctx context.Context, selectedPath, name string) (session.WorkspaceRecord, error) {
+	if name != "" {
+		var err error
+		name, err = domain.NormalizeWorkspaceName(name)
+		if err != nil {
+			return session.WorkspaceRecord{}, err
+		}
+	}
 	if ctx == nil || m == nil || m.Store == nil {
 		return session.WorkspaceRecord{}, fmt.Errorf("%w: workspace manager is unavailable",
 			ErrInvalidImportDirectory)
@@ -122,7 +135,14 @@ func (m *Manager) Import(ctx context.Context, selectedPath string) (session.Work
 			}
 			names[record.Name] = true
 		}
-		name := baseName
+		chosenName := name
+		if chosenName != "" && names[chosenName] {
+			return session.WorkspaceRecord{}, apperror.New(apperror.CodeConflict, "A project with this name already exists")
+		}
+		name := chosenName
+		if name == "" {
+			name = baseName
+		}
 		if names[name] {
 			name = baseName + "-" + suffix
 			for number := 2; names[name]; number++ {
@@ -249,3 +269,6 @@ func shortID(id string) string {
 	}
 	return id[len(id)-8:]
 }
+
+// ResolveImportDirectory validates a native selection without registering it.
+func ResolveImportDirectory(path string) (string, error) { return canonicalImportRoot(path) }

@@ -15,6 +15,7 @@ interface ConnectionState {
   controlToken: string;
   runControlEnabled: boolean;
   workspaceImportEnabled: boolean;
+  projectlessWorkspacesEnabled: boolean;
   executionPermissionControlEnabled: boolean;
   workspaceSandboxEnabled: boolean;
   browserCDPPermissionControlEnabled: boolean;
@@ -85,6 +86,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   controlToken: "",
   runControlEnabled: false,
   workspaceImportEnabled: false,
+  projectlessWorkspacesEnabled: false,
   executionPermissionControlEnabled: false,
   workspaceSandboxEnabled: false,
   browserCDPPermissionControlEnabled: false,
@@ -138,6 +140,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
     set({ token, health, controlToken, apiBaseURL,
       runControlEnabled: present && (capabilities.runControlEnabled ?? true),
       workspaceImportEnabled: present && capabilities.workspaceImportEnabled === true,
+      projectlessWorkspacesEnabled: present && capabilities.projectlessWorkspacesEnabled === true,
       executionPermissionControlEnabled: present &&
         (capabilities.executionPermissionControlEnabled ?? false),
       workspaceSandboxEnabled: present &&
@@ -218,6 +221,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   disconnect: () => set({ token: "", controlToken: "", health: null, apiBaseURL: undefined,
     runControlEnabled: false, runCreationEnabled: false,
     workspaceImportEnabled: false,
+    projectlessWorkspacesEnabled: false,
     standardCodePresetEnabled: false, sessionMessageEnabled: false,
     threadControlEnabled: false,
     executionPermissionControlEnabled: false, workspaceSandboxEnabled: false,

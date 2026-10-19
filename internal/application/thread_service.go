@@ -342,6 +342,10 @@ func (s *ThreadService) prepareRun(ctx context.Context, request SubmitThreadMess
 		return SubmitThreadMessageResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"Thread Run Session is not active")
 	}
+	threadRecord, err = s.store.GetThread(ctx, threadRecord.ID)
+	if err != nil {
+		return SubmitThreadMessageResult{}, apperror.Normalize(err)
+	}
 	return SubmitThreadMessageResult{Thread: threadRecord, Run: run,
 		Session: linkedSession, PredecessorRunID: predecessorID, SuccessorCreated: successorCreated}, nil
 }
@@ -747,8 +751,12 @@ func (s *ThreadService) Transition(ctx context.Context, id string,
 		}
 		s.capabilities.RuntimeAuthority.RevokeThread(id)
 	}
-	return s.store.TransitionThreadWithOperationKey(ctx, id, action,
+	result, err := s.store.TransitionThreadWithOperationKey(ctx, id, action,
 		expectedVersion, requestedBy, operationKey, time.Now().UTC())
+	if err != nil {
+		return result, err
+	}
+	return s.store.GetThread(ctx, id)
 }
 
 func (s *ThreadService) Export(ctx context.Context, id string) (domain.ThreadExport, error) {

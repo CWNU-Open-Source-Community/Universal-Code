@@ -368,7 +368,7 @@ describe("APIClient", () => {
       { ...valid, directory_content_modified: true }, { ...valid, protocol_version: "invalid-version" },
       { ...valid, directory_path: "D:\\private-project" },
       ...[{ root_path: "D:\\private-project" }, { id: "D:\\private-project" },
-        { name: "D:\\private-project" }, { created_at: "invalid" }]
+        { created_at: "invalid" }]
         .map((drift) => ({ ...valid, workspace: { ...valid.workspace, ...drift } })),
       { protocol_version: valid.protocol_version, workspace: valid.workspace }];
     for (const data of bad) {
@@ -5297,3 +5297,26 @@ function operationReceipt(kind: "file_edit_apply" | "run_wake_consume" | "skill_
     replayed: false, retry_safe: true, retry_strategy: retryStrategy,
     recovery_action: "none", cleanup_state: cleanupState };
 }
+
+describe("project metadata", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("reads private details and renames with the control bearer", async () => {
+    const data={id:"ws-project",name:"项目 / Example",created_at:"2026-10-20T00:00:00Z",directory_path:"D:/projects/example",thread_count:19,active_thread_count:2};
+    const fetchMock=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({version:"api.v1",request_id:"project",data}),{status:200}));vi.stubGlobal("fetch",fetchMock);
+    const client=new APIClient("read-secret","/api/v1","control-secret");
+    expect(await client.getWorkspaceProject(data.id)).toEqual(data);
+    expect(await client.renameWorkspace(data.id," 项目 / Example ")).toEqual(data);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({method:"GET",headers:{Authorization:"Bearer control-secret"}});
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/workspaces/ws-project/name");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({name:data.name});
+    await expect(client.renameWorkspace(data.id,"bad\nname")).rejects.toMatchObject({code:"INVALID_ARGUMENT"});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("imports a supplied display name without changing old call signatures",async()=>{
+    const data={protocol_version:"workspace_import.v1",workspace:{id:"ws-project",name:"Name / name",created_at:"2026-10-20T00:00:00Z"},directory_content_modified:false,agent_authority_granted:false};
+    const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({version:"api.v1",request_id:"project",data}),{status:200}));vi.stubGlobal("fetch",fetchMock);
+    const client=new APIClient("read-secret","/api/v1","control-secret",{workspaceImportEnabled:true});
+    expect(await client.importWorkspace("D:/projects/name",undefined," Name / name ")).toEqual(data);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({name:"Name / name"});
+  });
+});

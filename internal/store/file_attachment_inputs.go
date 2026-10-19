@@ -31,8 +31,8 @@ func (s *SQLiteStore) ListSupervisorFileAttachmentInputs(ctx context.Context, cp
 		return set, err
 	}
 	defer finish()
-	err = tx.QueryRowContext(ctx, `SELECT t.id,r.session_id,t.workspace_id FROM thread_runs tr
-	 JOIN threads t ON t.id=tr.thread_id JOIN runs r ON r.id=tr.run_id AND r.session_id=tr.session_id
+	err = tx.QueryRowContext(ctx, `SELECT t.id,r.session_id,source.workspace_id FROM thread_runs tr
+	 JOIN threads t ON t.id=tr.thread_id JOIN runs r ON r.id=tr.run_id AND r.session_id=tr.session_id JOIN sessions source ON source.id=r.session_id
 	 WHERE tr.run_id=?`, cp.RunID).Scan(&set.ThreadID, &set.SessionID, &set.WorkspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return set, nil
@@ -74,8 +74,9 @@ func (s *SQLiteStore) ListSupervisorFileAttachmentInputs(ctx context.Context, cp
 	 FROM thread_runs caller JOIN threads t ON t.id=caller.thread_id AND t.active_run_id=caller.run_id
 	 JOIN thread_runs prior ON prior.thread_id=t.id AND prior.ordinal<=caller.ordinal
 	 JOIN operator_steering_messages m ON m.run_id=prior.run_id AND m.session_id=prior.session_id
+	 JOIN sessions source ON source.id=prior.session_id
 	 LEFT JOIN thread_message_attachments b ON b.message_id=m.id
-	 LEFT JOIN workspace_file_attachments f ON f.id=b.attachment_id AND f.workspace_id=t.workspace_id
+	 LEFT JOIN workspace_file_attachments f ON f.id=b.attachment_id AND f.workspace_id=source.workspace_id
 	 WHERE caller.run_id=? AND m.attachment_count>0 AND (m.id=? OR
 	 EXISTS(SELECT 1 FROM retained_thread_inputs retained WHERE retained.message_id=m.id) OR
 	 (m.status='committed' AND EXISTS(SELECT 1 FROM operator_steering_deliveries d WHERE d.message_id=m.id AND d.status='committed')
@@ -93,7 +94,7 @@ func (s *SQLiteStore) ListSupervisorFileAttachmentInputs(ctx context.Context, cp
 			rows.Close()
 			return set, err
 		}
-		if ordinal != counts[messageID] || file.WorkspaceID != set.WorkspaceID {
+		if ordinal != counts[messageID] {
 			rows.Close()
 			return set, apperror.New(apperror.CodeConflict, "Attachment input source binding is incomplete")
 		}

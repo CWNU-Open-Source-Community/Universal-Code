@@ -16,19 +16,19 @@ import { V2Titlebar } from "./components/titlebar";
 import { useV2Client } from "./client-session";
 import { v2QueryKeys } from "./query-keys";
 import { registerV2RecoveredTurn, useV2RestoreTurns, useV2ThreadTurn, v2TurnFailed } from "./use-thread-turn";
-import { V2WorkspaceStart } from "./components/workspace-start";
+import { ProjectDialog, V2WorkspaceStart } from "./components/workspace-start";
 import { useV2Navigation, type V2RunPane } from "./navigation";
 import { readDensity } from "../lib/ui-density";
 import { useLocale } from "../lib/locale";
 import { V2RecoveryProvider, useV2PersistentState, useV2PersistenceWarning, useV2RecoveryStore } from "./recovery-storage";
-import { useV2Drafts } from "./recovery-session";
+import { useV2Drafts, validRecoveryTurn } from "./recovery-session";
 import { readV2Route } from "./navigation";
 import { useV2CreationRecovery } from "./recovery-creation";
 import type { WorkspaceImageAttachment } from "../api/image-attachments";
 import { mcpReferenceIdentities, type MCPDraftReference } from "../api/mcp-references";
 import { v2MCPReferenceKey } from "./components/mcp-reference-picker";
 import { fileAttachmentIdentities, type WorkspaceFileAttachment } from "../api/file-attachments";
-import { v2AttachmentReferenceKey } from "./attachment-keys";
+import { v2AttachmentImportKey, v2AttachmentReferenceKey } from "./attachment-keys";
 import { v2ImageReferenceKey } from "./components/image-input";
 import { assertV2DraftVersion, getV2DraftDocument, readV2Draft, requireV2DraftVersion, useV2DraftDocument, v2DraftScope } from "./draft-context";
 import type { V2DraftVersion } from "./draft-version";
@@ -39,6 +39,8 @@ import { V2PhasePicker, type V2WorkPhase } from "./components/phase-picker";
 import { useV2DraftTaskConfiguration } from "./draft-task-configuration";
 import { submitSkillChoice, type ProjectSkillChoice } from "../api/project-skills";
 import { useV2WebAccessDefaults } from "./web-access-defaults";
+import { useProjectlessWorkspace } from "./projectless-workspace";
+import { threadProjectID } from "./components/thread-project-dialog";
 
 type CreationAttempt = Map<string, string>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -56,12 +58,14 @@ const V2InspectorHome = lazy(() => import("./components/inspector-home").then((m
   default: module.V2InspectorHome,
 })));
 
-function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, onCreated,
+function NewConversation({ client, workspaces, workspaceID, projectID, workspaceNotice, onWorkspaceChange, onCreated,
   onTurnSuccess, onManageModels, onOpenTaskConfiguration, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
   draft: legacyDraft, onDraftChange: legacyDraftChange, creationAttemptRef, options, onOptionsChange, moreProjects, onImported }: {
   client: APIClient;
   workspaces: WorkspaceView[];
   workspaceID: string;
+  projectID?: string;
+  workspaceNotice?: React.ReactNode;
   onWorkspaceChange: (workspaceID: string) => void;
   onImported: (workspace: WorkspaceView, currentDraft?: string) => void;
   onCreated: (thread: ThreadView, submittedDraft: string, files: V2FileReference[], images?: WorkspaceImageAttachment[], version?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], shouldOpen?: boolean, mcpReferences?: MCPDraftReference[]) => void;
@@ -204,9 +208,10 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
       <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}</header>
     <div className="v2-new-conversation-body"><div className="v2-new-copy">
       <span className="v2-orb" aria-hidden="true"><i /><i /></span>
-      <h1>{t("接下来要做什么？", "What would you like to do next?")}</h1><p>{workspaceID ? t("描述目标，随时查看进展、补充消息或停止。", "Describe your goal. Check progress, add messages, or stop at any time.")
+      <h1>{t("接下来要做什么？", "What would you like to do next?")}</h1><p>{workspaceID || client.hasProjectlessWorkspaces ? t("描述目标，随时查看进展、补充消息或停止。", "Describe your goal. Check progress, add messages, or stop at any time.")
         : t("先接入项目。你也可以先写下需求，选择项目后继续。", "Connect a project to get started. You can write your request first and continue after selecting a project.")}</p>
     </div></div>
+    {workspaceNotice}
     {creationRecovery.notice}
     {modelCatalogError && <div className="v2-notice" role="alert">{modelCatalogError}</div>}
     {!webAccessValid && <div className="v2-notice" role="alert">{t("保存的网页访问设置需要更新，请在输入框下方重新选择。", "Saved web access settings need updating. Choose again below the input.")}</div>}
@@ -231,7 +236,7 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
           onOptionsChange({ ...options, networkMode: nextMode, allowedTargets: nextTargets });
         }} targets={allowedTargets} /></>}
       onWorkspaceChange={onWorkspaceChange} placeholder={t("输入任务或问题…", "Enter a task or question…")} threadID=""
-      workspaceID={workspaceID} workspaces={workspaces} />
+      workspaceID={workspaceID} projectID={projectID} allowProjectless={client.hasProjectlessWorkspaces} workspaces={workspaces} />
       </div>
   </section>;
 }
@@ -317,15 +322,33 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     return () => window.clearTimeout(timer);
   }, [normalizedThreadSearch, searchComposing, searchTooLong]);
   const [storedWorkspace, setWorkspaceID] = useV2PersistentState<unknown>("workspace", "");
-  const workspaceID = typeof storedWorkspace === "string" ? storedWorkspace : "";
+  const projectID = typeof storedWorkspace === "string" ? storedWorkspace : "";
+  const localWorkspace = useProjectlessWorkspace(client, route.kind === "new" && !route.section && !route.tool && !projectID);
+  const workspaceID = projectID || (client.hasProjectlessWorkspaces ? localWorkspace.workspaceID : "");
   const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
   const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
   const draftTaskConfiguration = useV2DraftTaskConfiguration(workspaceID);
   // An explicitly imported existing project may be outside the first list page.
   // Retain its pathless receipt so selection survives list refetches.
   const [importedWorkspaces, setImportedWorkspaces] = useState<WorkspaceView[]>([]);
+  const [editingProject, setEditingProject] = useState<WorkspaceView | null>(null);
   const [backgroundCreations, setBackgroundCreations] = useState<ThreadView[]>([]);
   const [drafts, setDrafts] = useV2Drafts();
+  useEffect(() => {
+    if (projectID || !localWorkspace.workspaceID || !drafts["new:"]) return;
+    const text = drafts["new:"];
+    if (recovery) {
+      const document = getV2DraftDocument(recovery);
+      const scope = v2DraftScope(localWorkspace.workspaceID);
+      const target = readV2Draft(document, recovery, scope);
+      if (target.ref || target.snapshot.text || target.error || target.conflict) return;
+      const copied = document.update(scope, { text }, null);
+      if (!copied.persisted || copied.error) return;
+    }
+    setDrafts((current) => ({ ...current,
+      [`new:${localWorkspace.workspaceID}`]: current[`new:${localWorkspace.workspaceID}`] ?? text,
+      "new:": current["new:"] === text ? "" : current["new:"] }));
+  }, [projectID, localWorkspace.workspaceID, drafts, recovery, setDrafts]);
   const creationAttemptRef = useRef<CreationAttempt>(new Map());
   const webAccessDefaults = useV2WebAccessDefaults();
   const [newThreadModelRoute, setNewThreadModelRoute] = useState<NewThreadOptions["modelRoute"]>(null);
@@ -389,12 +412,12 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const threads = useMemo(() => [...new Map(threadsQuery.data?.pages.flatMap(({ items }) =>
     items).map((thread) => [thread.id, thread])).values()], [threadsQuery.data]);
   useEffect(() => {
-    if (!workspaceID && workspaces[0]) {
+    if (!client.hasProjectlessWorkspaces && !workspaceID && workspaces[0]) {
       const id = workspaces[0].id;
       setDrafts((current) => ({ ...current, [`new:${id}`]: current[`new:${id}`] ?? current["new:"] ?? "" }));
       setWorkspaceID(id);
     }
-  }, [workspaceID, workspaces]);
+  }, [client.hasProjectlessWorkspaces, workspaceID, workspaces]);
   useEffect(() => {
     if (route.kind !== "initial" || !threadsQuery.isSuccess) return;
     const saved = recovery?.read<unknown>("route", "");
@@ -435,6 +458,62 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("archived") });
     },
   });
+  const projectMoveKeys = useRef(new Map<string, string>());
+  const moveMutation = useMutation({
+    mutationFn: async ({ thread, destination }: { thread: ThreadView; destination: string }) => {
+      const changingWorkspace = Boolean(destination && destination !== thread.workspace_id);
+      const sourceScope = v2DraftScope(thread.workspace_id ?? "", thread.id);
+      const targetScope = v2DraftScope(destination || sourceScope.workspaceID, thread.id);
+      const document = recovery ? getV2DraftDocument(recovery) : null;
+      const source = document && recovery ? readV2Draft(document, recovery, sourceScope) : null;
+      const target = document ? document.read(targetScope) : null;
+      if (recovery) {
+        recovery.assertReadable("turn:");
+        if (recovery.entries<unknown>("turn:").some(([, input]) => validRecoveryTurn(input) && input.threadID === thread.id))
+          throw new Error(t("消息还在确认中，请等待发送结果后移动。", "Wait for the pending message to be confirmed before moving."));
+      }
+      if (changingWorkspace) {
+        if (queryClient.getQueryData<{ pending: () => boolean }>(v2AttachmentImportKey(sourceScope.workspaceID, thread.id))?.pending() ||
+          recovery?.entries(`file-upload:${JSON.stringify([sourceScope.workspaceID, thread.id])}:`).length ||
+          recovery?.entries(`native-clipboard:${JSON.stringify([sourceScope.workspaceID, thread.id])}:`).length)
+          throw new Error(t("此聊天的附件还在保存或待核对，请完成后再移动。", "Finish saving or checking this chat's attachments before moving."));
+        if (source?.error || source?.conflict || target?.error || target?.conflict)
+          throw new Error(t("请先处理此对话的草稿冲突，再移动项目。", "Resolve this conversation's draft conflict before moving."));
+        const references = source ? [source.snapshot.files, source.snapshot.images,
+          source.snapshot.attachments ?? [], source.snapshot.mcpReferences ?? []] : [
+          queryClient.getQueryData<unknown[]>(v2FileReferenceKey(sourceScope.workspaceID, thread.id)) ?? [],
+          queryClient.getQueryData<unknown[]>(v2ImageReferenceKey(sourceScope.workspaceID, thread.id)) ?? [],
+          queryClient.getQueryData<unknown[]>(v2AttachmentReferenceKey(sourceScope.workspaceID, thread.id)) ?? [],
+          queryClient.getQueryData<unknown[]>(v2MCPReferenceKey(sourceScope.workspaceID, thread.id)) ?? [],
+        ];
+        if (references.some((items) => items.length))
+          throw new Error(t("草稿中还有原项目的附件或引用，请先发送或移除后移动。", "Send or remove the draft's attachments and references before moving."));
+        if (target && (target.snapshot.text || target.snapshot.files.length || target.snapshot.images.length ||
+          target.snapshot.attachments?.length || target.snapshot.mcpReferences?.length))
+          throw new Error(t("此对话在目标目录还有未发送草稿，请先处理后再移动。", "This chat has an unsent draft in the destination folder. Resolve it before moving."));
+      }
+      const fingerprint = JSON.stringify([thread.id, destination, thread.project_assignment_version]);
+      const key = projectMoveKeys.current.get(fingerprint) ?? `v2-project-move-${crypto.randomUUID()}`;
+      projectMoveKeys.current.set(fingerprint, key);
+      const result = await client.moveThreadToProject(thread.id, destination, thread.project_assignment_version!, key);
+      if (changingWorkspace && document && recovery) {
+        const latest = readV2Draft(document, recovery, sourceScope);
+        if (!latest.error) {
+          const copied = document.update(targetScope, { text: latest.snapshot.text }, target?.ref ?? null);
+          if (copied.persisted && !copied.error && !copied.conflict && !latest.conflict && latest.ref)
+            document.update(sourceScope, { text: "" }, latest.ref);
+        }
+      }
+      projectMoveKeys.current.delete(fingerprint);
+      return result;
+    },
+    onSuccess: ({ thread }) => {
+      queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(thread.id), (current) => current ? { ...current, thread } : current);
+      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.thread(thread.id) });
+      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
+    },
+    onError: () => { void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") }); },
+  });
   const closeNavigationSidebar = () => {
     if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarVisible(false);
   };
@@ -444,12 +523,11 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) });
     closeNavigationSidebar();
   };
-  const startNew = () => {
+  const startNew = (destination?: string) => {
     updateModelSetupToken("");
-    const currentWorkspace = queryClient.getQueryData<ThreadDetailView>(
-      v2QueryKeys.thread(selectedThreadID))?.thread.workspace_id ??
-      threads.find(({ id }) => id === selectedThreadID)?.workspace_id;
-    if (currentWorkspace) selectWorkspace(currentWorkspace);
+    const currentThread = queryClient.getQueryData<ThreadDetailView>(
+      v2QueryKeys.thread(selectedThreadID))?.thread ?? threads.find(({ id }) => id === selectedThreadID);
+    selectWorkspace(destination ?? (client.hasProjectlessWorkspaces ? "" : currentThread ? threadProjectID(currentThread) : projectID));
     navigate({ kind: "new" });
     closeNavigationSidebar();
   };
@@ -521,7 +599,16 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       <div className="v2-sidebar-slot" ref={sidebarSlot} aria-hidden={!sidebarVisible} inert={!sidebarVisible}>
       {surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
         onSelect={setSettingsSection} section={settingsSection} /> : <V2Sidebar
-          onArchive={setArchiveCandidate} onNewConversation={startNew} onOpenModels={() => openModels(newConversation)}
+          onArchive={setArchiveCandidate} onNewConversation={() => startNew()} onOpenModels={() => openModels(newConversation)}
+          onNewInProject={(id) => startNew(id)} client={client}
+          onEditProject={client.hasControl ? setEditingProject : undefined}
+          onMoveThread={client.hasThreadControl ? (thread, destination) => moveMutation.mutate({ thread, destination }) : undefined}
+          movingThreadID={moveMutation.isPending ? moveMutation.variables.thread.id : undefined}
+          moveError={moveMutation.isError ? moveMutation.error.message : undefined}
+          projectAction={<V2WorkspaceStart client={client} variant="sidebar" onSelect={(workspace) => {
+            setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace]);
+            startNew(workspace.id);
+          }} />}
           onOpenSettings={openSettings}
           onOpenConnections={() => setSettingsSection("connections")}
           onOpenInspector={() => changeView(view === "inspector" ? "conversation" : "inspector")}
@@ -548,9 +635,12 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           onLoadMore={() => void sidebarQuery.fetchNextPage()} onRefresh={() => void sidebarQuery.refetch()}
           selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}
       </div>
-      <div className="v2-product-surface">
+      {editingProject && <ProjectDialog client={client} workspace={editingProject} onClose={() => setEditingProject(null)}
+        onSaved={(workspace) => setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace])} />}
+      <div className="v2-product-surface" inert={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}
+        aria-busy={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}>
         {route.kind === "invalid" ? <div className="v2-notice" role="alert">{t("任务地址无法识别。", "The task address is not recognized.")}
-          <button onClick={startNew} type="button">{t("打开新对话", "Open new conversation")}</button></div>
+          <button onClick={() => startNew()} type="button">{t("打开新对话", "Open new conversation")}</button></div>
           : surface === "settings" ? <V2LazySurface resetKey="settings" loadingText={t("正在加载设置…", "Loading settings…")} errorLabel={t("设置", "Settings")}>
           <V2Settings client={client} onOpenInspector={openInspector}
           onSelectSection={setSettingsSection} onOpenThread={openConversation} onOpenTask={(workspaceID) => {
@@ -579,6 +669,12 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             <V2InspectorHome client={client} onOpenTool={openTool} onOpenSettings={setSettingsSection} /></V2LazySurface>
           : newConversation || !selectedThreadID
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
+            projectID={projectID}
+            workspaceNotice={!projectID && client.hasProjectlessWorkspaces && <>
+              {localWorkspace.pending && <p className="v2-notice" role="status">{t("正在准备聊天工作目录…", "Preparing the chat folder…")}</p>}
+              {localWorkspace.error && <div className="v2-notice" role="alert">{localWorkspace.error}
+                <button onClick={localWorkspace.retry} type="button">{t("重试", "Retry")}</button></div>}
+            </>}
             phase={phase} onPhaseChange={setSavedPhase}
             creationAttemptRef={creationAttemptRef}
             options={newThreadOptions} onOptionsChange={setNewThreadOptions}
@@ -588,6 +684,21 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true, mcpReferences = []) => {
               const source = `new:${thread.workspace_id}`;
               const target = `thread:${thread.id}`;
+              if (thread.project_workspace_id === "") {
+                // Preserve edits made while the first message was being created.
+                if (recovery && version) {
+                  const document = getV2DraftDocument(recovery);
+                  const original = readV2Draft(document, recovery, version.scope);
+                  if (original.ref?.branchID !== version.ref.branchID || original.ref?.seq !== version.ref.seq) {
+                    const targetScope = v2DraftScope(thread.workspace_id ?? "", thread.id);
+                    const targetDraft = readV2Draft(document, recovery, targetScope);
+                    const occupied = targetDraft.snapshot.text || targetDraft.snapshot.files.length || targetDraft.snapshot.images.length ||
+                      targetDraft.snapshot.attachments?.length || targetDraft.snapshot.mcpReferences?.length;
+                    document.update(targetScope, original.snapshot, occupied ? null : targetDraft.ref);
+                  }
+                }
+                localWorkspace.consume(thread.workspace_id ?? "");
+              }
               // Move the submitted version into the durable Thread's draft.
               // Anything typed or selected during creation stays in its project.
               if (!version) {

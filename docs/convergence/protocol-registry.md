@@ -26,7 +26,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 141 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 144 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -48,7 +48,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
-| [workspace-repository-ledgers](#workspace-repository-ledgers) | `internal-durable` | Workspace and repository maintainers | 11 | true |
+| [workspace-repository-ledgers](#workspace-repository-ledgers) | `internal-durable` | Workspace and repository maintainers | 12 | true |
 
 ## Families
 
@@ -989,7 +989,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>141 active identifiers</summary>
+<details><summary>144 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -1051,6 +1051,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `plan_delivery_control.v1`
 - `plugin-lifecycle.v1`
 - `pr-followup.v1`
+- `projectless_directory.v1`
+- `projectless_workspace.v1`
 - `provider_credential.v1`
 - `provider_diagnostic.v1`
 - `provider_model_discovery.v1`
@@ -1120,6 +1122,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_model_route_control.v1`
 - `thread_peer_message.v1`
 - `thread_peer_targets.v1`
+- `thread_project_move.v1`
 - `thread_queued_messages.v1`
 - `thread_run_recovery.v1`
 - `ui-evidence-artifact.v1`
@@ -2018,10 +2021,11 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `workspace-repository-ledgers-reader` (`v1`, active) at `internal/store`
 
-<details><summary>11 active identifiers</summary>
+<details><summary>12 active identifiers</summary>
 
 - `repository_commit_detail.v1`
 - `repository_history.v1`
+- `workspace.projectless_directory.v1`
 - `workspace_checkpoint_manual.v1`
 - `workspace_fork_operation.v1`
 - `workspace_fork_request.v1`

@@ -284,5 +284,7 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v213 | 保存同项目聊天消息的来源、回复关系和投递状态，复用持久输入队列并保留消息不具备用户授权的来源约束 | persist same-workspace chat message provenance, reply links and delivery status, reusing the durable input queue while enforcing non-authorizing message provenance |
 | v214 | 将聊天列表和消息发送工具接入既有工具账本，保留原有调用记录和执行身份约束 | admit chat listing and message sending tools to the existing tool ledger while preserving recorded calls and execution identity constraints |
 | v215 | 将 pnpm 缓存准备、工作区安装和脚本执行分别绑定到准确的目录与授权，保留旧项目准备记录 | bind pnpm store fetch, workspace installation and script execution to their exact directories and authority while preserving existing preparation records |
+| v216 | 保存聊天的项目归属和不可变移动收据，跨项目时创建新的执行上下文并保留原有历史与目录绑定 | persist chat project assignments and immutable move receipts, creating fresh execution context across projects while preserving historical directory bindings |
+| v217 | 为本地聊天持久分配独立工作目录并保存默认根目录设置，保留创建重试和已有聊天的目录身份 | persist private working directories and default-root settings for local chats, retaining directory identity across creation retries and existing conversations |
 
 </details>

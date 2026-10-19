@@ -183,7 +183,15 @@ func (c *ControlPlane) ReadChatResource(ctx context.Context, r ChatResourceReque
 			return ChatResource{}, err
 		}
 		if files.Source.ID != r.WorkspaceID && files.Workspace.ID != r.WorkspaceID {
-			return ChatResource{}, apperror.New(apperror.CodeConflict, "File reference does not belong to this run")
+			// A moved conversation sends its current workspace ID. Accept it
+			// only for this run's own thread, then retain the historical root.
+			thread, err := c.stateStore.GetThreadByRun(ctx, r.RunID)
+			if err != nil {
+				return ChatResource{}, err
+			}
+			if thread.WorkspaceID != r.WorkspaceID {
+				return ChatResource{}, apperror.New(apperror.CodeConflict, "File reference does not belong to this run")
+			}
 		}
 		workspace.RootPath = files.Workspace.RootPath
 	}

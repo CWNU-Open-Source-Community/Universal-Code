@@ -57,6 +57,9 @@ func (s *SQLiteStore) CreateMissionRunWithOperation(ctx context.Context,
 		return existing, true, nil
 	}
 
+	if err := ensureProjectlessWorkspaceUnusedTx(ctx, tx, operation.WorkspaceID); err != nil {
+		return domain.RunCreationOperation{}, false, err
+	}
 	if err := createMissionRunTx(ctx, tx, mission, run, mode, linkedSession,
 		true, initialEvents); err != nil {
 		return domain.RunCreationOperation{}, false, err

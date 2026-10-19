@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
@@ -95,6 +96,7 @@ type ConnectionBootstrap struct {
 	AgentTerminalInputDefault          bool   `json:"agent_terminal_input_default"`
 	WorkspaceOpenEnabled               bool   `json:"workspace_open_enabled"`
 	WorkspaceImportEnabled             bool   `json:"workspace_import_enabled"`
+	ProjectlessWorkspacesEnabled       bool   `json:"projectless_workspaces_enabled"`
 	RendererPathInputSupported         bool   `json:"renderer_path_input_supported"`
 	RiskProfileRestartEnabled          bool   `json:"risk_profile_restart_enabled"`
 }
@@ -251,6 +253,8 @@ type DesktopBridgeConfig struct {
 // DesktopBridge is the complete renderer binding surface for D0-A. Keep this
 // type deliberately small: Wails binds every exported method.
 type DesktopBridge struct {
+	workspaceSelectionMu     sync.Mutex
+	workspaceSelection       *pendingWorkspaceDirectory
 	contextProvider          func() context.Context
 	filePicker               SkillPackageFilePicker
 	selector                 NativeSkillPackageSelector
@@ -509,6 +513,7 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 			AgentTerminalInputDefault:          false,
 			WorkspaceOpenEnabled:               config.WorkspaceResolver != nil,
 			WorkspaceImportEnabled:             config.RunCreationEnabled && config.WorkspaceRegistrar != nil,
+			ProjectlessWorkspacesEnabled:       config.RunCreationEnabled && config.SessionMessageEnabled && config.WorkspaceRegistrar != nil,
 			RendererPathInputSupported:         false,
 			RiskProfileRestartEnabled:          config.RiskProfileRestartEnabled,
 		},

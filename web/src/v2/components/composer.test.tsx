@@ -27,6 +27,30 @@ function renderComposer(onSubmit: ComposerSubmit = vi.fn(async () => undefined),
 }
 
 describe("V2Composer", () => {
+  it("keeps local-chat text editable but blocks late attachments and a second creation while the first is pending", async () => {
+    localStorage.setItem("universal-code.composer-plain-text", "true");
+    let finish!: () => void;
+    const submit = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const upload = vi.fn();
+    const localClient = { hasThreadControl: true, uploadWorkspaceFile: upload } as unknown as APIClient;
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Composer client={localClient} onSubmit={submit} onWorkspaceChange={vi.fn()} threadID=""
+        workspaceID="private-chat" projectID="" allowProjectless workspaces={[]} />
+    </QueryClientProvider>);
+    const user = userEvent.setup();
+    const input = screen.getByRole("textbox", { name: "开始新对话" });
+    await user.type(input, "第一条消息");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+    expect(screen.getByRole("button", { name: "添加附件" })).toBeDisabled();
+    await user.clear(input); await user.type(input, "创建期间继续写下的草稿");
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    fireEvent.drop(input, { dataTransfer: { files: [new File(["late"], "late.txt", { type: "text/plain" })] } });
+    expect(upload).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledOnce();
+    await act(async () => finish());
+    expect(input).toHaveValue("创建期间继续写下的草稿");
+    expect(screen.getByRole("button", { name: "添加附件" })).toBeEnabled();
+  });
   it("changes editor mode from the compact add menu without submitting or losing the draft", async () => {
     localStorage.setItem("universal-code.composer-plain-text", "true");
     const { onSubmit } = renderComposer();

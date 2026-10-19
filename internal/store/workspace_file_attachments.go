@@ -181,7 +181,7 @@ func listOperatorMessageAttachmentsTx(ctx context.Context, reader interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, runID, messageID string) ([]domain.WorkspaceFileAttachment, error) {
-	rows, err := reader.QueryContext(ctx, `SELECT f.id FROM thread_message_attachments b JOIN workspace_file_attachments f ON f.id=b.attachment_id JOIN operator_steering_messages m ON m.id=b.message_id JOIN thread_runs tr ON tr.run_id=m.run_id JOIN threads t ON t.id=tr.thread_id AND t.workspace_id=f.workspace_id WHERE m.id=? AND m.run_id=? ORDER BY b.ordinal`, messageID, runID)
+	rows, err := reader.QueryContext(ctx, `SELECT f.id FROM thread_message_attachments b JOIN workspace_file_attachments f ON f.id=b.attachment_id JOIN operator_steering_messages m ON m.id=b.message_id JOIN thread_runs tr ON tr.run_id=m.run_id JOIN sessions source ON source.id=tr.session_id AND source.workspace_id=f.workspace_id WHERE m.id=? AND m.run_id=? ORDER BY b.ordinal`, messageID, runID)
 	if err != nil {
 		return nil, err
 	}

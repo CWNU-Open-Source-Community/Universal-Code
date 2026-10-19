@@ -4396,6 +4396,13 @@ CREATE TABLE project_preparations (
 		created_at TEXT NOT NULL, updated_at TEXT NOT NULL CHECK(updated_at>=created_at)
 	, workspace_root TEXT NOT NULL DEFAULT '' CHECK(length(workspace_root)<=4096), seed_directory TEXT NOT NULL DEFAULT '' CHECK(length(seed_directory)<=4096), fetch_job_id TEXT NOT NULL DEFAULT '' CHECK(length(fetch_job_id)<=128));
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE projectless_workspace_allocations (
+		operation_key_digest TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL UNIQUE,
+		root_path TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	);
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE provider_price_snapshots (
 		id TEXT PRIMARY KEY,
 		protocol_version TEXT NOT NULL,
@@ -12742,6 +12749,10 @@ CREATE TABLE thread_peer_messages (
 		 reply_to TEXT NOT NULL DEFAULT '', depth INTEGER NOT NULL CHECK(depth BETWEEN 0 AND 8),
 		 delivered_at TEXT, error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
 		 CHECK(source_thread_id<>target_thread_id));
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_project_assignments (thread_id TEXT PRIMARY KEY REFERENCES threads(id), project_workspace_id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0));
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_project_moves (operation_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, thread_id TEXT NOT NULL REFERENCES threads(id), predecessor_run_id TEXT NOT NULL REFERENCES runs(id), successor_run_id TEXT REFERENCES runs(id), project_workspace_id TEXT NOT NULL, assignment_version INTEGER NOT NULL, created_at TEXT NOT NULL);
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE thread_runs (
 		thread_id TEXT NOT NULL,
@@ -26886,6 +26897,10 @@ CREATE TRIGGER trg_thread_image_immutable BEFORE UPDATE ON thread_message_images
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_thread_image_nodelete BEFORE DELETE ON thread_message_images BEGIN SELECT RAISE(ABORT, 'Thread image binding is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_initial_project AFTER INSERT ON threads BEGIN
+	 INSERT INTO thread_project_assignments(thread_id,project_workspace_id,version)
+	 VALUES(NEW.id, CASE WHEN EXISTS(SELECT 1 FROM projectless_workspace_allocations WHERE workspace_id=NEW.workspace_id) THEN '' ELSE NEW.workspace_id END, 1); END;
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_thread_mcp_reference_delete BEFORE DELETE ON thread_mcp_references
 	 BEGIN SELECT RAISE(ABORT,'MCP reference receipts are retained'); END;
 -- traverse-board-clean-install-object-boundary --
@@ -27029,6 +27044,10 @@ CREATE TRIGGER trg_thread_plan_module_source_insert
      AND original.acceptance_json=NEW.acceptance_json AND original.dependencies_json=NEW.dependencies_json
  ) BEGIN SELECT RAISE(ABORT,'Thread Plan module differs from its source'); END;
 -- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_project_move_immutable BEFORE UPDATE ON thread_project_moves BEGIN SELECT RAISE(ABORT,'Thread project move receipt is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_project_move_nodelete BEFORE DELETE ON thread_project_moves BEGIN SELECT RAISE(ABORT,'Thread project move receipt is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_thread_run_insert_session_lifecycle
 		BEFORE INSERT ON thread_runs
 		WHEN NOT EXISTS (
@@ -27110,9 +27129,15 @@ CREATE TRIGGER trg_thread_status_projects_bound_sessions
 						AND run.status NOT IN ('completed', 'failed', 'cancelled'));
 		END;
 -- traverse-board-clean-install-object-boundary --
-CREATE TRIGGER trg_threads_binding_immutable
-		BEFORE UPDATE OF protocol_version, workspace_id, mission_id, created_at ON threads
-		BEGIN SELECT RAISE(ABORT, 'thread identity binding is immutable'); END;
+CREATE TRIGGER trg_thread_workspace_transition BEFORE UPDATE OF workspace_id,mission_id ON threads WHEN NOT EXISTS (
+ SELECT 1 FROM thread_project_moves move JOIN runs r ON r.id=move.successor_run_id JOIN missions m ON m.id=r.mission_id
+ JOIN sessions s ON s.id=r.session_id JOIN runs predecessor ON predecessor.id=move.predecessor_run_id
+ WHERE move.thread_id=OLD.id AND move.predecessor_run_id=OLD.last_run_id AND predecessor.status IN ('completed','failed','cancelled')
+ AND r.status='created' AND r.mission_id=NEW.mission_id AND m.workspace_id=NEW.workspace_id AND s.workspace_id=NEW.workspace_id
+ AND NOT EXISTS(SELECT 1 FROM thread_runs used WHERE used.run_id=r.id))
+ BEGIN SELECT RAISE(ABORT,'Thread workspace change requires a fresh Run and move receipt'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_threads_binding_immutable BEFORE UPDATE OF protocol_version,created_at ON threads BEGIN SELECT RAISE(ABORT,'Thread identity is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_ui_evidence_artifact_attempt_quota
 		BEFORE INSERT ON ui_evidence_artifacts

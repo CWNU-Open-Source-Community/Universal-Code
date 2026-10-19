@@ -46,19 +46,21 @@ func ValidThreadStatus(status ThreadStatus) bool {
 // and authority boundary. ActiveRunID is empty between a terminal Run and the
 // atomically-created successor.
 type Thread struct {
-	ID              string       `json:"id"`
-	ProtocolVersion string       `json:"protocol_version"`
-	WorkspaceID     string       `json:"workspace_id,omitempty"`
-	MissionID       string       `json:"mission_id"`
-	Title           string       `json:"title"`
-	Status          ThreadStatus `json:"status"`
-	ActiveRunID     string       `json:"active_run_id,omitempty"`
-	LastRunID       string       `json:"last_run_id"`
-	Version         int64        `json:"version"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ArchivedAt      *time.Time   `json:"archived_at,omitempty"`
-	DeletedAt       *time.Time   `json:"deleted_at,omitempty"`
+	ProjectWorkspaceID       string       `json:"project_workspace_id"`
+	ProjectAssignmentVersion int64        `json:"project_assignment_version"`
+	ID                       string       `json:"id"`
+	ProtocolVersion          string       `json:"protocol_version"`
+	WorkspaceID              string       `json:"workspace_id,omitempty"`
+	MissionID                string       `json:"mission_id"`
+	Title                    string       `json:"title"`
+	Status                   ThreadStatus `json:"status"`
+	ActiveRunID              string       `json:"active_run_id,omitempty"`
+	LastRunID                string       `json:"last_run_id"`
+	Version                  int64        `json:"version"`
+	CreatedAt                time.Time    `json:"created_at"`
+	UpdatedAt                time.Time    `json:"updated_at"`
+	ArchivedAt               *time.Time   `json:"archived_at,omitempty"`
+	DeletedAt                *time.Time   `json:"deleted_at,omitempty"`
 }
 
 func (t Thread) Validate() error {
@@ -225,6 +227,7 @@ type ThreadExecutionFacts struct {
 }
 
 type ThreadExport struct {
+	Missions        []Mission             `json:"missions"`
 	ProtocolVersion string                `json:"protocol_version"`
 	ExportedAt      time.Time             `json:"exported_at"`
 	Thread          Thread                `json:"thread"`

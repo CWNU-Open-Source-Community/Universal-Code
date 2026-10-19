@@ -97,6 +97,16 @@ describe("connection store", () => {
     expect(useConnectionStore.getState().workspaceImportEnabled).toBe(false);
   });
 
+  it("carries local chat directory capability through the real V2 client and clears it on reconnect", () => {
+    const connect = useConnectionStore.getState().connect;
+    connect("read", health, "control", { projectlessWorkspacesEnabled: true });
+    expect(createV2Client(useConnectionStore.getState()).hasProjectlessWorkspaces).toBe(true);
+    connect("read", health, "", { projectlessWorkspacesEnabled: true });
+    expect(createV2Client(useConnectionStore.getState()).hasProjectlessWorkspaces).toBe(false);
+    connect("read", health, "control");
+    expect(createV2Client(useConnectionStore.getState()).hasProjectlessWorkspaces).toBe(false);
+  });
+
   it("preserves the execution read route independently of control credentials and clears it on reconnect", () => {
     const connect = useConnectionStore.getState().connect;
     connect("read", health, "", { runExecutionEnabled: true, threadExecutionReadEnabled: true });

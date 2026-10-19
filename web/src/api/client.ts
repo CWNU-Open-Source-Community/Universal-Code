@@ -1,4 +1,5 @@
 import { WorkflowClient } from "./workflows";
+import type { ProjectlessDirectory, ProjectlessWorkspaceView } from "./types";
 import type { ThreadChangeSummary, ThreadChangeUndo } from "./thread-changes";
 import { validThreadPeerMessage } from "./thread-peer-messages";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
@@ -223,6 +224,7 @@ import type {
   RunWakeExecutionView,
   RuntimeCapabilitiesView,
   WorkspaceImportView,
+  WorkspaceProjectView,
   ThreadCreationControlRequestView,
   ThreadCreationControlView,
   ThreadMessageControlRequestView,
@@ -303,6 +305,7 @@ export type QueryValue = boolean | number | string | undefined;
 export interface ClientCapabilities {
   runControlEnabled?: boolean;
   workspaceImportEnabled?: boolean;
+  projectlessWorkspacesEnabled?: boolean;
   executionPermissionControlEnabled?: boolean;
   workspaceSandboxEnabled?: boolean;
   browserCDPPermissionControlEnabled?: boolean;
@@ -538,7 +541,7 @@ function parseRunCreationControl(value: unknown,
 function parseThreadView(value: unknown, expectedThreadID = ""): ThreadView {
   const required = ["composer_state", "created_at", "id", "last_run_id", "mission_id",
     "protocol_version", "status", "title", "updated_at", "version"];
-  const optional = ["active_run_id", "archived_at", "deleted_at", "workspace_id", "execution_state"];
+  const optional = ["active_run_id", "archived_at", "deleted_at", "workspace_id", "execution_state", "project_workspace_id", "project_assignment_version"];
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, ...optional]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
     value.protocol_version !== "thread.v1" || !boundedIdentity(value.id) ||
@@ -547,6 +550,9 @@ function parseThreadView(value: unknown, expectedThreadID = ""): ThreadView {
     !boundedText(value.title, 4_096) || !safePositiveInteger(value.version) ||
     !validDate(value.created_at) || !validDate(value.updated_at) ||
     (value.workspace_id !== undefined && !boundedIdentity(value.workspace_id)) ||
+    (value.project_workspace_id !== undefined && value.project_workspace_id !== "" && !boundedIdentity(value.project_workspace_id)) ||
+    (value.project_assignment_version !== undefined && !safePositiveInteger(value.project_assignment_version)) ||
+    ((value.project_workspace_id !== undefined) !== (value.project_assignment_version !== undefined)) ||
     (value.active_run_id !== undefined && !boundedIdentity(value.active_run_id)) ||
     (value.archived_at !== undefined && !validDate(value.archived_at)) ||
     (value.deleted_at !== undefined && !validDate(value.deleted_at)) ||
@@ -582,15 +588,19 @@ function parseThreadCreationControl(value: unknown,
   }
   const requestedModelRoute = request.provider && request.model
     ? `${request.provider}/${request.model}` : null;
+  const thread = parseThreadView(value.thread);
+  const workspaceID = request.workspace_id || thread.workspace_id;
+  if (typeof workspaceID !== "string" || !boundedIdentity(workspaceID) || (!request.workspace_id && thread.project_workspace_id !== "")) {
+    throw new APIRequestError("Thread creation workspace binding is invalid", "INVALID_RESPONSE", 502);
+  }
   const runCreation = parseRunCreationControl({ mission: value.mission, mode: value.mode,
     replayed: value.replayed, run: value.run, session: value.session }, {
-    version: "run_creation.v1", goal: request.goal, workspace_id: request.workspace_id,
+    version: "run_creation.v1", goal: request.goal, workspace_id: workspaceID,
     profile: request.profile, surface: request.surface, phase: request.phase,
     network_mode: request.network_mode, allowed_targets: request.allowed_targets, budget: request.budget,
     web_access_mode: request.web_access_mode, web_allowed_targets: request.web_allowed_targets,
   }, requestedModelRoute);
-  const thread = parseThreadView(value.thread);
-  if (thread.status !== "active" || thread.workspace_id !== request.workspace_id ||
+  if (thread.status !== "active" || thread.workspace_id !== workspaceID ||
     thread.mission_id !== runCreation.mission.id || thread.title !== request.goal ||
     thread.active_run_id !== runCreation.run.id || thread.last_run_id !== runCreation.run.id ||
     thread.composer_state !== "ready") {
@@ -3003,6 +3013,9 @@ function parseRuntimeCapabilities(value: unknown): RuntimeCapabilitiesView {
   if (isRecord(value) && Object.hasOwn(value, "thread_execution_read_enabled")) {
     capabilityKeys.push("thread_execution_read_enabled");
   }
+  if (isRecord(value) && Object.hasOwn(value, "projectless_workspaces_enabled")) {
+    capabilityKeys.push("projectless_workspaces_enabled");
+  }
   if (isRecord(value) && Object.hasOwn(value, "chatgpt_auth_enabled")) {
     capabilityKeys.push("chatgpt_auth_enabled");
   }
@@ -3562,6 +3575,7 @@ export function clientCapabilitiesFromRuntime(value: RuntimeCapabilitiesView): C
   return {
     runControlEnabled: value.run_control_enabled,
     workspaceImportEnabled: value.workspace_import_enabled === true,
+    projectlessWorkspacesEnabled: value.projectless_workspaces_enabled === true,
     executionPermissionControlEnabled: value.execution_permission_control_enabled,
     workspaceSandboxEnabled: value.workspace_sandbox_enabled,
     browserCDPPermissionControlEnabled: value.browser_cdp_permission_control_enabled,
@@ -6775,10 +6789,20 @@ export function parsePluginSkillInstall(value: unknown, surface: string,
   return { protocol_version: "plugin-installation.v2", installation, replayed: value.replayed };
 }
 
+export function parseProjectlessDirectory(value: unknown): ProjectlessDirectory {
+  if (!hasExactKeys(value, ["version", "directory_path", "default_directory_path"]) ||
+    value.version !== "projectless_directory.v1" || !boundedText(value.directory_path, 4096) ||
+    !boundedText(value.default_directory_path, 4096)) {
+    throw new APIRequestError("Projectless directory response is invalid", "INVALID_RESPONSE", 502);
+  }
+  return value as ProjectlessDirectory;
+}
+
 export class APIClient {
   readonly baseURL: string;
   readonly hasControl: boolean;
   readonly hasWorkspaceImport: boolean;
+  readonly hasProjectlessWorkspaces: boolean;
   readonly hasExecutionPermissionControl: boolean;
   readonly hasBrowserCDPPermissionControl: boolean;
   readonly hasFullCDPDebug: boolean;
@@ -6832,6 +6856,7 @@ export class APIClient {
     const controlPresent = controlToken.trim() !== "";
     this.hasControl = controlPresent && (capabilities.runControlEnabled ?? true);
     this.hasWorkspaceImport = controlPresent && capabilities.workspaceImportEnabled === true;
+    this.hasProjectlessWorkspaces = controlPresent && capabilities.projectlessWorkspacesEnabled === true;
     this.hasExecutionPermissionControl = controlPresent &&
       (capabilities.executionPermissionControlEnabled ?? false);
     this.hasBrowserCDPPermissionControl = controlPresent &&
@@ -6914,7 +6939,47 @@ export class APIClient {
     return parseRuntimeCapabilities(await this.get<unknown>("/capabilities", {}, signal));
   }
 
-  async importWorkspace(directoryPath: string, signal?: AbortSignal): Promise<WorkspaceImportView> {
+  async createProjectlessWorkspace(idempotencyKey: string, signal?: AbortSignal): Promise<ProjectlessWorkspaceView> {
+    if (!this.hasProjectlessWorkspaces) throw new Error("Projectless conversations are unavailable");
+    const value = await this.sendControl<unknown>("/workspaces/projectless", {
+      version: "projectless_workspace.v1",
+    }, idempotencyKey, signal);
+    if (!hasExactKeys(value, ["version", "workspace", "replayed"]) ||
+      value.version !== "projectless_workspace.v1" || typeof value.replayed !== "boolean" ||
+      !hasExactKeys(value.workspace, ["id", "name", "created_at"]) ||
+      !boundedIdentity(value.workspace.id) || !boundedText(value.workspace.name, 128) ||
+      !validDate(value.workspace.created_at)) {
+      throw new APIRequestError("Projectless workspace response is invalid", "INVALID_RESPONSE", 502);
+    }
+    return value as unknown as ProjectlessWorkspaceView;
+  }
+
+  async getProjectlessDirectory(signal?: AbortSignal): Promise<ProjectlessDirectory> {
+    if (!this.hasProjectlessWorkspaces) throw new Error("Projectless conversations are unavailable");
+    return parseProjectlessDirectory(await this.sendControlRequest<unknown>(
+      "/settings/projectless-directory", undefined, signal, "", "GET"));
+  }
+
+  async setProjectlessDirectory(directoryPath: string, signal?: AbortSignal): Promise<ProjectlessDirectory> {
+    if (!this.hasProjectlessWorkspaces || !this.hasWorkspaceImport || !directoryPath.trim()) {
+      throw new Error("Choose a directory with workspace import enabled");
+    }
+    return parseProjectlessDirectory(await this.sendControlRequest<unknown>("/settings/projectless-directory", {
+      version: "projectless_directory.v1", directory_path: directoryPath, confirmed: true,
+    }, signal, "", "PUT"));
+  }
+
+  async getWorkspaceProject(id: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
+    if (!boundedIdentity(id)) throw new Error("A project identity is required");
+    return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/project`, undefined, signal, "", "GET"), id);
+  }
+
+  async renameWorkspace(id: string, name: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
+    if (!boundedIdentity(id)) throw new Error("A project identity is required");
+    return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/name`, { name: normalizeWorkspaceName(name) }, signal, "", "PUT"), id);
+  }
+
+  async importWorkspace(directoryPath: string, signal?: AbortSignal, name?: string): Promise<WorkspaceImportView> {
     if (!this.hasWorkspaceImport) {
       throw new APIRequestError("Workspace import is unavailable for this connection",
         "PERMISSION_DENIED", 403);
@@ -6924,9 +6989,10 @@ export class APIClient {
       new TextEncoder().encode(directoryPath).length > 4_096) {
       throw new APIRequestError("A valid project directory is required", "INVALID_ARGUMENT", 400);
     }
+    if (name !== undefined) name = normalizeWorkspaceName(name);
     try {
       const value = await this.sendControlRequest<unknown>("/workspaces/import", {
-        version: "workspace_import.v1", directory_path: directoryPath, confirmed: true,
+        version: "workspace_import.v1", directory_path: directoryPath, confirmed: true, ...(name !== undefined ? { name } : {}),
       }, signal);
       if (!hasExactKeys(value, ["protocol_version", "workspace",
         "directory_content_modified", "agent_authority_granted"]) ||
@@ -6936,7 +7002,7 @@ export class APIClient {
         typeof value.workspace.id !== "string" ||
         !/^[A-Za-z0-9_.-]{1,256}$/u.test(value.workspace.id) ||
         !boundedText(value.workspace.name, 128) ||
-        /[\\/\u0000-\u001f\u007f]/u.test(value.workspace.name) ||
+        /[\u0000-\u001f\u007f]/u.test(value.workspace.name) ||
         !validDate(value.workspace.created_at)) {
         throw new APIRequestError("Workspace import response is invalid", "INVALID_RESPONSE", 502);
       }
@@ -9141,6 +9207,28 @@ export class APIClient {
       idempotencyKey, signal), threadID);
   }
 
+  async moveThreadToProject(threadID: string, projectWorkspaceID: string, expectedVersion: number,
+    idempotencyKey: string, signal?: AbortSignal): Promise<{ thread: ThreadView; replayed: boolean }> {
+    if (!this.hasThreadControl || !boundedIdentity(threadID) ||
+      (projectWorkspaceID !== "" && !boundedIdentity(projectWorkspaceID)) || !safePositiveInteger(expectedVersion)) {
+      throw new Error("A conversation, project and current project assignment version are required");
+    }
+    const result = await this.sendControl<unknown>(`/threads/${encodeURIComponent(threadID)}/project`, {
+      version: "thread_project_move.v1", project_workspace_id: projectWorkspaceID,
+      expected_version: expectedVersion,
+    }, idempotencyKey, signal);
+    if (!hasExactKeys(result, ["version", "thread", "replayed"]) ||
+      result.version !== "thread_project_move.v1" || typeof result.replayed !== "boolean") {
+      throw new APIRequestError("Project move response is invalid", "INVALID_RESPONSE", 502);
+    }
+    const thread = parseThreadView(result.thread, threadID);
+    if ((!result.replayed && thread.project_workspace_id !== projectWorkspaceID) ||
+      !safePositiveInteger(thread.project_assignment_version) || thread.project_assignment_version <= expectedVersion) {
+      throw new APIRequestError("Project move response does not match the requested destination", "INVALID_RESPONSE", 502);
+    }
+    return { thread, replayed: result.replayed };
+  }
+
   async transitionThread(threadID: string, action: "archive" | "restore" | "delete",
     body: ThreadLifecycleControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadLifecycleControlView> {
@@ -9908,7 +9996,7 @@ export class APIClient {
   }
 
   private async sendControlRequest<T>(path: string, body: unknown, signal?: AbortSignal,
-    idempotencyKey = "", method: "POST" | "PUT" | "PATCH" | "DELETE" = "POST"): Promise<T> {
+    idempotencyKey = "", method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "POST"): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
       Authorization: `Bearer ${this.controlToken}`,
@@ -9920,7 +10008,7 @@ export class APIClient {
     const response = await fetch(this.url(path), {
       method,
       headers,
-      body: JSON.stringify(body),
+      body: method === "GET" ? undefined : JSON.stringify(body),
       signal,
       cache: "no-store",
       credentials: "omit",
@@ -10512,4 +10600,18 @@ function parsePriceSnapshotImport(value: unknown): PriceSnapshotImportView {
     throw new APIRequestError("Price snapshot import is invalid", "INVALID_RESPONSE", 502);
   }
   return value as unknown as PriceSnapshotImportView;
+}
+
+function normalizeWorkspaceName(name: string): string {
+  if (typeof name !== "string" || !name.trim() || new TextEncoder().encode(name.trim()).length > 128 || /[\u0000-\u001f\u007f-\u009f]/u.test(name))
+    throw new APIRequestError("A project name of 1–128 UTF-8 bytes without control characters is required", "INVALID_ARGUMENT", 400);
+  return name.trim();
+}
+function parseWorkspaceProject(value: unknown, id: string): WorkspaceProjectView {
+  if (!hasExactKeys(value, ["id", "name", "created_at", "directory_path", "thread_count", "active_thread_count"]) || value.id !== id ||
+    (typeof value.name !== "string" || !value.name) || !validDate(value.created_at) || typeof value.directory_path !== "string" || !value.directory_path || value.directory_path.length > 4096 ||
+    typeof value.thread_count !== "number" || !Number.isSafeInteger(value.thread_count) || value.thread_count < 0 ||
+    typeof value.active_thread_count !== "number" || !Number.isSafeInteger(value.active_thread_count) || value.active_thread_count < 0 || value.active_thread_count > value.thread_count)
+    throw new APIRequestError("Project details response is invalid", "INVALID_RESPONSE", 502);
+  return value as unknown as WorkspaceProjectView;
 }
