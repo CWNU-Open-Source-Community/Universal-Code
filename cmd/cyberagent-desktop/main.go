@@ -860,6 +860,8 @@ func runDesktop(config desktopOptions) error {
 		ClipboardReader:                   desktop.NewNativeClipboardFileReader(),
 		ClipboardFiles:                    controlPlane.ClipboardFileImporter(),
 		ClipboardImages:                   controlPlane.ClipboardImageImporter(),
+		ResourceReader:                    controlPlane,
+		ResourceHost:                      nativeChatResourceHost{},
 		UserTerminalController:            controlPlane.UserTerminalController(),
 		DebugTerminalAgentInputController: controlPlane.DebugTerminalAgentInputController(),
 		RiskProfileRestartEnabled:         config.riskProfileRestart,

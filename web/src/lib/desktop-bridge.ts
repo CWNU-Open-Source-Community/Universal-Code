@@ -379,6 +379,11 @@ export interface DesktopLegacySkillInstallResult {
 
 interface NativeDesktopBridge {
   Bootstrap: () => Promise<unknown>;
+  OpenExternalURL?: (url: string) => Promise<unknown>;
+  PreviewExternalURL?: (url: string) => Promise<unknown>;
+  SaveExternalURL?: (url: string) => Promise<unknown>;
+  ReadChatResource?: (request: import("./chat-resources").ChatResourceRef & { version: string }) => Promise<unknown>;
+  ChatResourceAction?: (request: import("./chat-resources").ChatResourceRef & { version: string; action: string }) => Promise<unknown>;
   PasteClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   InspectClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   ImportWorkspace?: () => Promise<unknown>;
