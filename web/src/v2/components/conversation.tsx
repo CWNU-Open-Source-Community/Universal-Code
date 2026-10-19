@@ -383,7 +383,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const composerContainerRef = useRef<HTMLDivElement>(null);
   const [composerFocusRequest, setComposerFocusRequest] = useState<{ threadID: string } | null>(null);
   const [confirmedSubmission, setConfirmedSubmission] = useState<V2TurnInput | null>(null);
-  const [deliveryMode, setDeliveryMode] = useState<"next_turn" | "steer">("next_turn");
   const reviewTrigger = useRef<HTMLButtonElement>(null);
   const [fileDrawerState, setFileDrawerState] = useState<{
     path: string;
@@ -698,7 +697,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setFileDrawerState({ path: ".", line: undefined, runID: undefined });
     setComposerFocusRequest(null);
     olderScrollAnchorRef.current = null;
-    setDeliveryMode("next_turn");
   }, [threadID, view]);
   useEffect(() => {
     if (!reviewEntry || reviewEntry.threadID !== threadID) return;
@@ -784,10 +782,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
   const canSteer = executionQuery.data?.state === "running" ||
     (!executionQuery.data && detail.active_run?.status === "running");
-  // A paused run is not gone: steer stays unavailable, but the explanation
-  // names the pause so the operator does not think the task ended.
-  const steerUnavailable = currentRun.status === "paused" ? t("当前任务已暂停", "The current task is paused")
-    : t("当前任务已停止或不再运行", "The current task has stopped or is no longer running");
   const activityLabel = threadActivityLabel({ threadID, execution: executionQuery.data,
     readable: client.hasThreadExecutionRead === true, error: executionQuery.isError });
   const fileReferenceUnavailableReason = currentRun.status === "waiting_approval"
@@ -800,13 +794,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         : undefined;
 
   const send = async (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => {
-    if (deliveryMode === "steer" && !canSteer) {
-      throw new Error(`${steerUnavailable}。纠正草稿已保留；请选择“下一轮处理”发送。`);
-    }
-    if (deliveryMode === "steer" && (files?.length || images?.length || attachments?.length || mcpReferences?.length)) {
-      throw new Error("更新当前任务目前只支持文字。附件和引用已保留，请选择“下一轮处理”发送完整消息。");
-    }
-    const fingerprint = JSON.stringify([deliveryMode, content, files ?? [], imageIdentities(images), fileAttachmentIdentities(attachments), mcpReferenceIdentities(mcpReferences)]);
+    const fingerprint = JSON.stringify(["next_turn", content, files ?? [], imageIdentities(images), fileAttachmentIdentities(attachments), mcpReferenceIdentities(mcpReferences)]);
     let replaced = submissions.findLast(({ error }) => v2TurnOutcomeKnown(error))?.input.operationKey;
     // The user's new request waits for unknown earlier submissions to settle.
     // Confirmation uses the original payload and key, never the edited draft.
@@ -826,7 +814,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       { text: draft ?? content, files: files ?? [], images: images ?? [], attachments, mcpReferences });
     const operationKey = `v2-thread-turn-${globalThis.crypto.randomUUID()}`;
     const input: V2TurnInput = { threadID, workspaceID: detail.thread.workspace_id ?? "", content,
-      ...(deliveryMode === "steer" ? { deliveryMode: "steer" as const, sessionID: currentRun.session_id } : {}),
       ...(draft !== undefined ? { draft } : {}),
       operationKey, createdAt: new Date().toISOString(), ...(files?.length ? { files } : {}),
       ...(images?.length ? { images } : {}),
@@ -975,7 +962,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         if (!onDraftChange) return;
         if (!draft?.includes(APPLICATION_PREVIEW_START_REQUEST)) appendDraftAndReveal(APPLICATION_PREVIEW_START_REQUEST);
         else appendDraftAndReveal("");
-        setDeliveryMode("next_turn");
         queryClient.setQueryData<ApplicationPreviewRequest>(applicationPreviewRequestKey(threadID), {
           request: APPLICATION_PREVIEW_START_REQUEST, phase: "draft",
         });
@@ -1111,18 +1097,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {view === "inspector" && <button className="v2-inspector-composer-toggle"
         aria-expanded={inspectorComposerOpen} onClick={() => setInspectorComposerOpen((open) => !open)} type="button">
         {inspectorComposerOpen ? t("收起消息编辑器", "Collapse message editor") : draft ? t("继续编辑草稿", "Continue editing draft") : t("补充消息", "Add a message")}</button>}
-      <div className="v2-composer-options" hidden={view === "inspector" && !inspectorComposerOpen}>
-      {(canSteer || deliveryMode === "steer") && <label className="v2-composer-caption">{t("发送方式", "Delivery mode")}
-        <select aria-label={t("发送方式", "Delivery mode")} value={deliveryMode} onChange={(event) => setDeliveryMode(event.target.value as "next_turn" | "steer")}>
-          <option value="next_turn">{t("下一轮处理", "Handle in next turn")}</option>
-          <option value="steer">{t("更新当前任务（仅文字）", "Update current task (text only)")}</option>
-        </select>
-      </label>}
-      {deliveryMode === "steer" && !canSteer && <p className="v2-composer-caption" role="alert">
-        {steerUnavailable}{t("，不能更新当前任务；纠正草稿会保留。", ". The current task cannot be updated; your correction draft is kept.")}
-        <button className="v2-composer-chip" onClick={() => setDeliveryMode("next_turn")} type="button">{t("切换为下一轮处理", "Switch to next turn")}</button>
-      </p>}
-      </div>
       {view === "conversation" && <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive}
         onDismiss={() => setComposerFocusRequest({ threadID })} />}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}

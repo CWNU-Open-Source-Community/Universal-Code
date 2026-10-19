@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command } from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { WorkspaceView } from "../../api/types";
@@ -321,6 +321,16 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
         placeholder={inputPlaceholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
       <div className="v2-composer-footer">
+        {!threadID && <label className="v2-workspace-picker">
+          <FolderOpen aria-hidden="true" size={14} />
+          <span className="sr-only">{t("工作区", "Workspace")}</span>
+          <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || workspaces.length === 0}
+            onChange={(event) => onWorkspaceChange(event.target.value)} value={workspaceID}>
+            {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+            </option>)}
+          </select>
+        </label>}
         <div className="v2-composer-tools">
           <V2ComposerAddMenu actions={addActions} disabled={disabled} key={scope} triggerRef={addTriggerRef} />
           <button className="v2-composer-mode-toggle" type="button" disabled={disabled}
@@ -334,21 +344,13 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
               requestAnimationFrame(() => {
                 if (document.activeElement === toggle && !toggle.closest("[inert]")) inputRef.current?.focus();
               });
-            }}>{plainText ? t("纯文本", "Plain text") : "Markdown"}</button>
+            }}><SquarePen aria-hidden="true" size={15} /><span className="v2-composer-optional-label">{plainText ? t("纯文本", "Plain text") : "Markdown"}</span></button>
           {client.hasThreadControl &&
             <input ref={attachmentPicker} type="file" multiple hidden aria-label={t("选择图片或文件", "Choose images or files")}
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
           {threadID && threadControls?.(hasUnsentDraft)}
-          {!threadID ? <label className="v2-workspace-picker">
-            <span className="sr-only">{t("工作区", "Workspace")}</span>
-            <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || workspaces.length === 0}
-              onChange={(event) => onWorkspaceChange(event.target.value)} value={workspaceID}>
-              {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </option>)}
-            </select>
-          </label> : <V2PermissionControl client={client} threadID={threadID}
+          {threadID && <V2PermissionControl client={client} threadID={threadID}
             onOpenModelSettings={onManageModels ? () => onManageModels(false) : undefined} />}
         </div>
         <div className="v2-composer-actions">

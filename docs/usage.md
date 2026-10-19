@@ -68,6 +68,24 @@ false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
 
+### 补充消息与排队 / Follow-up messages and queue
+
+任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击
+条目右侧的「引导」加入当前任务；「撤回」取消待处理消息，更多菜单提供编辑和全文、附件预览。
+图片和文件附件保留在下一轮消息中。输入框增高时，排队卡片随它向上移动；多条消息在卡片内滚动。
+底栏按输入框的可用宽度收起次要标签，模型名称过长时省略显示，完整名称仍可在模型菜单查看。
+
+![紧凑宽度下的新对话输入框](images/composer/new-conversation.png)
+
+![输入框上方的待处理消息与引导操作](images/composer/queued-messages.png)
+
+以上为 Windows / Edge 生产构建截图，任务与回复使用本地离线演示数据。
+
+Follow-up messages sent during execution appear above the composer and run in order afterward.
+Use **Steer** on a text-only queued message to add it to the current task, **Withdraw** to cancel it,
+or the more menu to edit and preview its full content and attachments. Images and files stay queued
+for the next turn. The queue moves with the composer as it grows and scrolls internally when needed.
+
 ### 用量统计 / Usage
 
 在「设置 → 用量统计」查看 Universal-Code 自身的模型调用。今日、近 30 天和全部

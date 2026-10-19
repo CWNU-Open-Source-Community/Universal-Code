@@ -142,14 +142,15 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
     {variant === "menu" ? <>
       <button aria-controls={open ? id : undefined} aria-expanded={open} aria-haspopup="menu"
         className={`v2-composer-chip${mode === "full" ? " is-risk" : ""}`}
+        title={`${selected.label}${mode === "full" ? ` · ${activationLabels[fullActivation]}` : ""}`}
         onClick={() => { focusLastRef.current = false; setOpen((value) => !value); }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault(); focusLastRef.current = event.key === "ArrowUp"; setOpen(true);
           }
         }} ref={triggerRef} type="button">
-        <SelectedIcon aria-hidden="true" size={14} />{selected.label}
-        {mode === "full" ? ` · ${activationLabels[fullActivation]}` : ""}
+        <SelectedIcon aria-hidden="true" size={14} /><span className="v2-composer-permission-label">{selected.label}
+        {mode === "full" ? ` · ${activationLabels[fullActivation]}` : ""}</span>
         <ChevronDown aria-hidden="true" size={13} />
       </button>
       {open && <div aria-label={t("选择执行权限", "Choose execution permissions")} className="v2-permission-popover" id={id}

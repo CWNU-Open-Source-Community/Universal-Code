@@ -1,6 +1,6 @@
 import { lazy, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Folder } from "lucide-react";
+import { Folder, SlidersHorizontal } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WorkspaceView } from "../api/types";
 import { normalizedTaskBudget } from "../api/task-configuration";
@@ -221,8 +221,9 @@ function NewConversation({ client, workspaces, workspaceID, onWorkspaceChange, o
       onManageModels={onManageModels} onPendingModelRouteChange={(route) =>
         onOptionsChange({ ...options, modelRoute: route })}
       pendingModelRoute={modelRoute}
-      newThreadControls={<><button aria-label={t("任务预算与项目配置", "Task budget and project configuration")} className="v2-composer-chip"
-        onClick={onOpenTaskConfiguration} type="button">{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</button>
+      newThreadControls={<><button aria-label={t("任务预算与项目配置", "Task budget and project configuration")} className="v2-composer-chip v2-composer-task-config"
+        title={t("任务预算与项目配置", "Task budget and project configuration")}
+        onClick={onOpenTaskConfiguration} type="button"><SlidersHorizontal aria-hidden="true" size={14} /><span className="v2-composer-optional-label">{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</span></button>
       <V2PhasePicker phase={phase} onChange={onPhaseChange}
         disabled={!client.hasThreadControl} planAvailable={client.hasPlanDelivery} />
       <V2NetworkScopeControl disabled={!client.hasThreadControl}

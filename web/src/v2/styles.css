@@ -1220,22 +1220,30 @@
   z-index: 2;
 }
 .v2-composer textarea::placeholder { color: color-mix(in srgb, var(--v2-muted) 78%, transparent); }
-.v2-composer-footer { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; min-height: 48px; justify-content: space-between; padding: 8px 12px 12px; position: relative; z-index: 5; }
-.v2-composer-tools { align-items: center; display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
-.v2-composer-actions { align-items: center; display: flex; flex: 0 1 auto; gap: 8px; margin-left: auto; min-width: 0; max-width: 100%; }
-.v2-composer-actions > .v2-model-route-control { min-width: 0; }
+.v2-composer-footer { align-items: center; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; min-height: 48px; padding: 8px 12px 12px; position: relative; z-index: 5; }
+.v2-composer-footer:has(> .v2-workspace-picker) { grid-template-columns: minmax(0, 1fr) auto auto; }
+.v2-composer-tools { align-items: center; display: flex; gap: 6px; min-width: 0; }
+.v2-composer-tools > * { flex-shrink: 0; }
+.v2-composer-actions { align-items: center; display: flex; gap: 6px; min-width: 0; max-width: 100%; justify-self: end; }
+.v2-composer-actions > .v2-model-route-control { min-width: 0; max-width: 160px; }
+.v2-composer-footer .v2-model-route-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-composer-footer svg { flex-shrink: 0; }
+.v2-composer-footer :is(.v2-thread-plan-controls, .v2-permission-host.is-menu) { flex-wrap: nowrap; gap: 6px; }
+.v2-composer-footer .v2-composer-mode-toggle { display: inline-flex; align-items: center; gap: 6px; height: 34px; }
 .v2-composer-footer :is(.v2-phase-toggle, .v2-plan-trigger, .v2-composer-chip, .v2-workspace-picker select, .v2-model-route-trigger) {
   align-items: center;
   border-radius: 9px;
   box-sizing: border-box;
   display: inline-flex;
   font: 500 13px/20px var(--prayu-font-ui);
-  gap: 8px;
+  gap: 5px;
   height: 34px;
   min-height: 34px;
   padding: 0 8px;
 }
-.v2-composer-footer .v2-thread-plan-controls { gap: 8px; }
+.v2-composer-permission-label { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-workspace-picker { align-items: center; display: flex; gap: 4px; min-width: 0; color: var(--v2-muted); }
+.v2-workspace-picker select { min-width: 0; width: 100%; text-overflow: ellipsis; }
 .v2-composer-surface > .v2-file-references { padding: 12px 16px 0; }
 .v2-composer-add { flex: 0 0 auto; position: relative; }
 .v2-composer-add-trigger { color: var(--v2-muted); }
@@ -2280,16 +2288,36 @@
   .v2-high-risk-actions button { flex: 1; }
 }
 
-@container composer (max-width: 600px) {
-  .v2-composer-footer { flex-wrap: wrap; gap: 8px; position: relative; }
-  .v2-composer-tools { flex-basis: 100%; }
-  .v2-composer-actions { justify-content: flex-end; max-width: 100%; width: 100%; }
+@container composer (max-width: 760px) {
+  .v2-composer-footer :is(.v2-composer-mode-toggle, .v2-composer-task-config) > .v2-composer-optional-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .v2-composer-tools .v2-permission-control,
   .v2-composer-tools .v2-network-scope-control { position: static; }
   .v2-composer-tools .v2-permission-popover,
   .v2-composer-tools .v2-network-popover { bottom: calc(100% + 8px); left: 0; width: min(360px, calc(100cqw - 24px)); max-height: min(560px, 65dvh); overflow-y: auto; }
   .v2-composer-actions > .v2-model-route-control { position: static; }
   .v2-composer-actions .v2-model-route-popover { bottom: calc(100% + 8px); right: 0; max-width: calc(100cqw - 24px); }
+}
+
+@container composer (max-width: 700px) {
+  .v2-composer-footer .v2-composer-optional-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .v2-composer-footer .v2-plan-trigger.has-attention { box-shadow: inset 0 -2px var(--v2-muted); }
+}
+
+@container composer (max-width: 520px) {
+  .v2-composer-footer:has(> .v2-workspace-picker) { grid-template-columns: auto minmax(0, 1fr); }
+  .v2-composer-footer > .v2-workspace-picker { grid-column: 1 / -1; grid-row: 1; }
+  .v2-composer-footer > .v2-workspace-picker select { max-width: 100%; width: auto; }
+  .v2-composer-actions > .v2-model-route-control { max-width: 110px; }
+  .v2-composer-footer .v2-composer-permission-label { max-width: 64px; }
+  .v2-composer-footer :is(.v2-thread-plan-controls, .v2-permission-host.is-menu),
+  .v2-composer-tools, .v2-composer-actions { gap: 3px; }
+  .v2-composer-footer :is(.v2-phase-toggle, .v2-plan-trigger, .v2-composer-chip, .v2-composer-mode-toggle) { padding-inline: 6px; }
+}
+
+@container composer (max-width: 400px) {
+  .v2-composer-footer .v2-composer-permission-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .v2-composer-actions > .v2-model-route-control { max-width: 90px; }
+  .v2-composer-tools :is(.v2-permission-control, .v2-network-scope-control) > button > svg:last-child { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

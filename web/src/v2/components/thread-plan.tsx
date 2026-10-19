@@ -143,7 +143,7 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
         start({ version: "plan_delivery_control.v1", action: next === "plan" ? "enter_plan" : "enter_deliver", run_id: runID });
       }} />}
       {hasPlanEntry && <button className={`v2-plan-trigger${needsAttention ? " has-attention" : ""}`} ref={trigger} type="button" onClick={show} aria-haspopup="dialog" aria-expanded={open}>
-        <ListChecks size={14} aria-hidden="true" />{attempt || damaged ? "计划操作待核对" : detail.isError ? "计划读取失败" : needsAttention ? "计划操作未完成" : "查看计划"}
+        <ListChecks size={14} aria-hidden="true" /><span className="v2-composer-optional-label">{attempt || damaged ? "计划操作待核对" : detail.isError ? "计划读取失败" : needsAttention ? "计划操作未完成" : "查看计划"}</span>
       </button>}
     </div>
     {open && createPortal(<div className="v2-plan-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
