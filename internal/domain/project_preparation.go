@@ -1,8 +1,11 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path"
 	"strings"
 	"time"
 )
@@ -12,12 +15,13 @@ import (
 type ProjectPreparationOperation struct {
 	ID, RunID, KeyDigest, RequestFingerprint      string
 	Target, PlanFingerprint, Backend, RequestedBy string
+	WorkspaceRoot, SeedDirectory                  string
 	RequestJSON, OwnerID                          string
 	PermissionRevision                            int64
 	State                                         string
 	CompletedPackages, TotalPackages, CacheHits   int
 	DownloadedBytes                               int64
-	JobID, ScriptJobID, Error                     string
+	JobID, ScriptJobID, FetchJobID, Error         string
 	CancelRequested                               bool
 	Revision                                      int64
 	CreatedAt, UpdatedAt                          time.Time
@@ -45,8 +49,23 @@ func (o ProjectPreparationOperation) Validate() error {
 		len(o.RequestJSON) > 64*1024 || !json.Valid([]byte(o.RequestJSON)) || len(o.Error) > 4096 {
 		return errors.New("project preparation record is invalid")
 	}
-	if o.JobID != "" && !ValidAgentID(o.JobID) || o.ScriptJobID != "" && !ValidAgentID(o.ScriptJobID) {
+	if o.JobID != "" && !ValidAgentID(o.JobID) || o.ScriptJobID != "" && !ValidAgentID(o.ScriptJobID) || o.FetchJobID != "" && (!ValidAgentID(o.FetchJobID) || len(o.FetchJobID) > 128) {
 		return errors.New("project preparation Job identity is invalid")
+	}
+	if o.WorkspaceRoot == "" {
+		if o.SeedDirectory != "" || o.FetchJobID != "" {
+			return errors.New("project preparation fetch requires its workspace binding")
+		}
+	} else {
+		if o.Backend != "docker_standard_code" || path.Clean(o.WorkspaceRoot) != o.WorkspaceRoot || len(o.WorkspaceRoot) > 4096 ||
+			strings.ContainsAny(o.WorkspaceRoot, "\\:\r\n\x00") || strings.HasPrefix(o.WorkspaceRoot, "/") || o.WorkspaceRoot == ".." || strings.HasPrefix(o.WorkspaceRoot, "../") ||
+			(o.WorkspaceRoot != "." && o.Target != o.WorkspaceRoot && !strings.HasPrefix(o.Target, o.WorkspaceRoot+"/")) {
+			return errors.New("project preparation workspace binding is invalid")
+		}
+		sum := sha256.Sum256([]byte(o.Target))
+		if o.SeedDirectory != ".traverse-preparation/"+hex.EncodeToString(sum[:])+"/pnpm-seed" {
+			return errors.New("project preparation seed does not belong to its target")
+		}
 	}
 	switch o.State {
 	case "pending", "downloading", "installing", "ready", "failed", "cancelled", "interrupted":

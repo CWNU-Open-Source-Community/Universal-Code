@@ -4394,7 +4394,7 @@ CREATE TABLE project_preparations (
 		cancel_requested INTEGER NOT NULL CHECK(cancel_requested IN (0,1)),
 		revision INTEGER NOT NULL CHECK(revision>0),
 		created_at TEXT NOT NULL, updated_at TEXT NOT NULL CHECK(updated_at>=created_at)
-	);
+	, workspace_root TEXT NOT NULL DEFAULT '' CHECK(length(workspace_root)<=4096), seed_directory TEXT NOT NULL DEFAULT '' CHECK(length(seed_directory)<=4096), fetch_job_id TEXT NOT NULL DEFAULT '' CHECK(length(fetch_job_id)<=128));
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE provider_price_snapshots (
 		id TEXT PRIMARY KEY,
@@ -18569,13 +18569,27 @@ CREATE TRIGGER trg_plugin_transitions_update_immutable
 CREATE TRIGGER trg_project_preparation_delete BEFORE DELETE ON project_preparations BEGIN SELECT RAISE(ABORT,'preparation receipts are retained'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_project_preparation_insert BEFORE INSERT ON project_preparations
-	 WHEN NEW.state!='pending' OR NEW.revision!=1 OR NEW.completed_packages!=0 OR NEW.cache_hits!=0
+	 WHEN NEW.fetch_job_id!=''
+	 OR ((NEW.workspace_root='' OR NEW.seed_directory='') AND (NEW.workspace_root!='' OR NEW.seed_directory!=''))
+	 OR (NEW.workspace_root!='' AND (NEW.backend!='docker_standard_code'
+	  OR (NEW.workspace_root!='.' AND NEW.target!=NEW.workspace_root AND substr(NEW.target,1,length(NEW.workspace_root)+1)!=NEW.workspace_root||'/')))
+	 OR NEW.state!='pending' OR NEW.revision!=1 OR NEW.completed_packages!=0 OR NEW.cache_hits!=0
 	 OR NEW.downloaded_bytes!=0 OR NEW.job_id!='' OR NEW.script_job_id!='' OR NEW.cancel_requested!=0 OR NEW.error!=''
 	 OR NEW.created_at!=NEW.updated_at OR NOT EXISTS (SELECT 1 FROM runs WHERE id=NEW.run_id AND status IN ('created','paused','running'))
 	 BEGIN SELECT RAISE(ABORT,'invalid preparation admission'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_project_preparation_update BEFORE UPDATE ON project_preparations
-	 WHEN NEW.id!=OLD.id OR NEW.run_id!=OLD.run_id OR NEW.key_digest!=OLD.key_digest
+	 WHEN NEW.workspace_root!=OLD.workspace_root OR NEW.seed_directory!=OLD.seed_directory
+	 OR (OLD.fetch_job_id!='' AND NEW.fetch_job_id!=OLD.fetch_job_id)
+	 OR (NEW.fetch_job_id!='' AND (NEW.seed_directory='' OR NOT EXISTS (
+	  SELECT 1 FROM command_runtime_jobs job WHERE job.id=NEW.fetch_job_id
+	   AND job.run_id=NEW.run_id AND job.adapter_backend=NEW.backend
+	   AND job.working_directory=NEW.seed_directory AND job.permission_revision=NEW.permission_revision
+	   AND json_extract(job.intent_json,'$.purpose')='Populate pnpm dependency store '||NEW.request_fingerprint)))
+	 OR (NEW.state='ready' AND NEW.seed_directory!='' AND NOT EXISTS (
+	  SELECT 1 FROM command_runtime_jobs job WHERE job.id=NEW.fetch_job_id
+	   AND job.state='completed' AND job.exit_code=0 AND job.tree_reaped=1))
+	 OR NEW.id!=OLD.id OR NEW.run_id!=OLD.run_id OR NEW.key_digest!=OLD.key_digest
 	 OR NEW.request_fingerprint!=OLD.request_fingerprint OR NEW.target!=OLD.target OR NEW.plan_fingerprint!=OLD.plan_fingerprint
 	 OR NEW.backend!=OLD.backend OR NEW.requested_by!=OLD.requested_by OR NEW.request_json!=OLD.request_json
 	 OR NEW.owner_id!=OLD.owner_id OR NEW.permission_revision!=OLD.permission_revision OR NEW.total_packages!=OLD.total_packages
@@ -18585,12 +18599,12 @@ CREATE TRIGGER trg_project_preparation_update BEFORE UPDATE ON project_preparati
 	 OR (OLD.script_job_id!='' AND NEW.script_job_id!=OLD.script_job_id)
 	 OR (NEW.job_id!='' AND NOT EXISTS (SELECT 1 FROM command_runtime_jobs job
 	  WHERE job.id=NEW.job_id AND job.run_id=NEW.run_id AND job.adapter_backend=NEW.backend
-	   AND job.working_directory=NEW.target AND job.permission_revision=NEW.permission_revision
+	   AND job.working_directory=COALESCE(NULLIF(NEW.workspace_root,''),NEW.target) AND job.permission_revision=NEW.permission_revision
 	   AND json_extract(job.intent_json,'$.purpose')='Prepare project dependencies '||NEW.request_fingerprint))
 	 OR (NEW.script_job_id!='' AND (COALESCE(json_extract(NEW.request_json,'$.run_install_scripts'),0)!=1
 	  OR NOT EXISTS (SELECT 1 FROM command_runtime_jobs job
 	   WHERE job.id=NEW.script_job_id AND job.run_id=NEW.run_id AND job.adapter_backend=NEW.backend
-	    AND job.working_directory=NEW.target AND job.permission_revision=NEW.permission_revision
+	    AND job.working_directory=COALESCE(NULLIF(NEW.workspace_root,''),NEW.target) AND job.permission_revision=NEW.permission_revision
 	    AND json_extract(job.intent_json,'$.purpose')='Run dependency installation scripts '||NEW.request_fingerprint)))
 	 OR (NEW.state='ready' AND (NEW.cancel_requested!=0 OR NEW.completed_packages!=NEW.total_packages OR NEW.error!=''
 	  OR NOT EXISTS (SELECT 1 FROM command_runtime_jobs job WHERE job.id=NEW.job_id

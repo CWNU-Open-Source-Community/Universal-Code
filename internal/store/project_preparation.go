@@ -10,12 +10,12 @@ import (
 	"cyberagent-workbench/internal/domain"
 )
 
-const preparationSelect = `SELECT id,run_id,key_digest,request_fingerprint,target,plan_fingerprint,backend,requested_by,request_json,owner_id,permission_revision,state,completed_packages,total_packages,cache_hits,downloaded_bytes,job_id,script_job_id,error,cancel_requested,revision,created_at,updated_at FROM project_preparations`
+const preparationSelect = `SELECT id,run_id,key_digest,request_fingerprint,target,plan_fingerprint,backend,requested_by,request_json,owner_id,permission_revision,state,completed_packages,total_packages,cache_hits,downloaded_bytes,job_id,script_job_id,error,cancel_requested,revision,created_at,updated_at,workspace_root,seed_directory,fetch_job_id FROM project_preparations`
 
 func scanPreparation(row interface{ Scan(...any) error }) (domain.ProjectPreparationOperation, error) {
 	var o domain.ProjectPreparationOperation
 	var created, updated string
-	err := row.Scan(&o.ID, &o.RunID, &o.KeyDigest, &o.RequestFingerprint, &o.Target, &o.PlanFingerprint, &o.Backend, &o.RequestedBy, &o.RequestJSON, &o.OwnerID, &o.PermissionRevision, &o.State, &o.CompletedPackages, &o.TotalPackages, &o.CacheHits, &o.DownloadedBytes, &o.JobID, &o.ScriptJobID, &o.Error, &o.CancelRequested, &o.Revision, &created, &updated)
+	err := row.Scan(&o.ID, &o.RunID, &o.KeyDigest, &o.RequestFingerprint, &o.Target, &o.PlanFingerprint, &o.Backend, &o.RequestedBy, &o.RequestJSON, &o.OwnerID, &o.PermissionRevision, &o.State, &o.CompletedPackages, &o.TotalPackages, &o.CacheHits, &o.DownloadedBytes, &o.JobID, &o.ScriptJobID, &o.Error, &o.CancelRequested, &o.Revision, &created, &updated, &o.WorkspaceRoot, &o.SeedDirectory, &o.FetchJobID)
 	if err != nil {
 		return o, err
 	}
@@ -134,7 +134,7 @@ func (s *SQLiteStore) BeginProjectPreparation(ctx context.Context, o domain.Proj
 	if active != 0 {
 		return o, false, apperror.New(apperror.CodeConflict, "a project preparation is already active for this task")
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO project_preparations (id,run_id,key_digest,request_fingerprint,target,plan_fingerprint,backend,requested_by,request_json,owner_id,permission_revision,state,completed_packages,total_packages,cache_hits,downloaded_bytes,job_id,script_job_id,error,cancel_requested,revision,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.RunID, o.KeyDigest, o.RequestFingerprint, o.Target, o.PlanFingerprint, o.Backend, o.RequestedBy, o.RequestJSON, o.OwnerID, o.PermissionRevision, o.State, o.CompletedPackages, o.TotalPackages, o.CacheHits, o.DownloadedBytes, o.JobID, o.ScriptJobID, o.Error, o.CancelRequested, o.Revision, ts(o.CreatedAt), ts(o.UpdatedAt))
+	_, err = tx.ExecContext(ctx, `INSERT INTO project_preparations (id,run_id,key_digest,request_fingerprint,target,plan_fingerprint,backend,requested_by,request_json,owner_id,permission_revision,state,completed_packages,total_packages,cache_hits,downloaded_bytes,job_id,script_job_id,error,cancel_requested,revision,created_at,updated_at,workspace_root,seed_directory,fetch_job_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.RunID, o.KeyDigest, o.RequestFingerprint, o.Target, o.PlanFingerprint, o.Backend, o.RequestedBy, o.RequestJSON, o.OwnerID, o.PermissionRevision, o.State, o.CompletedPackages, o.TotalPackages, o.CacheHits, o.DownloadedBytes, o.JobID, o.ScriptJobID, o.Error, o.CancelRequested, o.Revision, ts(o.CreatedAt), ts(o.UpdatedAt), o.WorkspaceRoot, o.SeedDirectory, o.FetchJobID)
 	if err != nil {
 		return o, false, err
 	}
@@ -150,7 +150,7 @@ func (s *SQLiteStore) UpdateProjectPreparation(ctx context.Context, o domain.Pro
 	if o.Revision != expectedRevision+1 {
 		return o, apperror.New(apperror.CodeInvalidArgument, "preparation revision must advance once")
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE project_preparations SET state=?,completed_packages=?,cache_hits=?,downloaded_bytes=?,job_id=?,script_job_id=?,error=?,cancel_requested=?,revision=?,updated_at=? WHERE run_id=? AND id=? AND revision=? AND owner_id=?`, o.State, o.CompletedPackages, o.CacheHits, o.DownloadedBytes, o.JobID, o.ScriptJobID, o.Error, o.CancelRequested, o.Revision, ts(o.UpdatedAt), o.RunID, o.ID, expectedRevision, o.OwnerID)
+	result, err := s.db.ExecContext(ctx, `UPDATE project_preparations SET state=?,completed_packages=?,cache_hits=?,downloaded_bytes=?,job_id=?,script_job_id=?,error=?,cancel_requested=?,revision=?,updated_at=?,fetch_job_id=? WHERE run_id=? AND id=? AND revision=? AND owner_id=?`, o.State, o.CompletedPackages, o.CacheHits, o.DownloadedBytes, o.JobID, o.ScriptJobID, o.Error, o.CancelRequested, o.Revision, ts(o.UpdatedAt), o.FetchJobID, o.RunID, o.ID, expectedRevision, o.OwnerID)
 	if err != nil {
 		return o, err
 	}
