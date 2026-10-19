@@ -51,6 +51,35 @@ Screenshots were captured from a production build in Edge on Windows at 1440 × 
 2026-10-19. Project content, replies, and usage are offline demonstration data. The README
 combines the Light and Dark captures of the same conversation.
 
+### 窄窗口 / Narrow windows
+
+桌面窗口最小尺寸为 **480 × 600 逻辑像素**；系统显示缩放会影响截图中的实际像素数。
+The desktop window has a minimum size of **480 × 600 logical pixels**; display scaling changes the physical pixel count.
+
+两侧面板按窗口宽度依次收起：左侧栏展开时，文件或终端面板在 ≤960px 收起；
+左侧栏在 ≤720px 收起。左侧栏已隐藏时，右侧面板的阈值为 ≤720px。
+重新拉宽后恢复原文件或终端，手动关闭的面板保持关闭。左侧使用 300ms、右侧使用 500ms
+的推拉过渡；系统开启「减少动态效果」后立即切换。
+The file or terminal pane collapses at ≤960px with the sidebar open, or ≤720px with it hidden.
+The sidebar collapses at ≤720px. Widening restores the selected file or terminal; a manually closed pane stays closed.
+Transitions take 300ms on the left and 500ms on the right, and are disabled when reduced motion is enabled.
+
+窗口变窄时，侧栏收为可打开的浮层，并保留宽屏时的显示偏好。标题与常用工具合为一行，
+「审阅改动」「查看上下文」可从右上角对话菜单打开。输入框保留常用图标和模型选择，
+窄输入框的编辑模式切换移入「＋」菜单；窗口缩放、切换编辑模式都保留草稿。
+底部统计在窄窗口保持一行，点击轮次或用量可查看生成速度、缓存命中等完整说明。
+The sidebar becomes an overlay in narrow windows and remembers its desktop visibility.
+The title and frequent tools share one row. Review and context move into the conversation menu; editor mode moves into the composer’s
+**+** menu. Drafts remain intact when resizing or switching editors.
+Statistics stay on one line; click activity or usage to see generation speed, cache usage and metric details.
+
+| 深色 / Dark | 雾透 / Mist |
+| --- | --- |
+| ![480px 深色对话](images/appearance/narrow-dark.png) | ![480px 雾透对话](images/appearance/narrow-mist.png) |
+
+以上为 480 × 844 的 Windows / Edge 生产构建截图，使用本地离线演示数据。
+These 480 × 844 captures use the production build in Edge on Windows with local demo data.
+
 ## Portable Build Diagnostics
 
 ```powershell
@@ -67,6 +96,24 @@ manual Windows 10/WebView2/display/launch/recovery matrix, so release readiness 
 false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
+
+### 补充消息与排队 / Follow-up messages and queue
+
+任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击
+条目右侧的「引导」加入当前任务；「撤回」取消待处理消息，更多菜单提供编辑和全文、附件预览。
+图片和文件附件保留在下一轮消息中。输入框增高时，排队卡片随它向上移动；多条消息在卡片内滚动。
+底栏按输入框的可用宽度收起次要标签，模型名称过长时省略显示，完整名称仍可在模型菜单查看。
+
+![紧凑宽度下的新对话输入框](images/composer/new-conversation.png)
+
+![输入框上方的待处理消息与引导操作](images/composer/queued-messages.png)
+
+以上为 Windows / Edge 生产构建截图，任务与回复使用本地离线演示数据。
+
+Follow-up messages sent during execution appear above the composer and run in order afterward.
+Use **Steer** on a text-only queued message to add it to the current task, **Withdraw** to cancel it,
+or the more menu to edit and preview its full content and attachments. Images and files stay queued
+for the next turn. The queue moves with the composer as it grows and scrolls internally when needed.
 
 ### 用量统计 / Usage
 

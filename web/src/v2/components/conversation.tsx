@@ -114,7 +114,7 @@ export function V2FileDrawer({
   const closeButton = useRef<HTMLButtonElement>(null);
   const leaveFileEdit = useFileEditLeave();
   const onClose = () => leaveFileEdit(close);
-  const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton, {
+  const dialog = useModalFocusTrap<HTMLElement>(!docked, onClose, false, closeButton, {
     isolateBackground: !docked,
     trapFocus: !docked,
     returnFocusRef,
@@ -166,6 +166,7 @@ export function V2FileDrawer({
         className={`v2-inspector-drawer v2-file-drawer${docked ? " is-docked" : ""}`}
         ref={dialog}
         role={docked ? "complementary" : "dialog"}
+        onKeyDown={(event) => { if (docked && event.key === "Escape") { event.stopPropagation(); onClose(); } }}
         tabIndex={-1}
       >
         <header>
@@ -234,7 +235,7 @@ export function V2TerminalDrawer({
 }) {
   const { t } = useLocale();
   const closeButton = useRef<HTMLButtonElement>(null);
-  const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton, {
+  const dialog = useModalFocusTrap<HTMLElement>(!docked, onClose, false, closeButton, {
     isolateBackground: !docked,
     trapFocus: !docked,
     returnFocusRef,
@@ -265,6 +266,7 @@ export function V2TerminalDrawer({
         aria-label={t("任务终端", "Task terminal")}
         aria-modal={docked ? undefined : "true"}
         className={`v2-inspector-drawer v2-terminal-drawer${docked ? " is-docked" : ""}`}
+        onKeyDown={(event) => { if (docked && event.key === "Escape") { event.stopPropagation(); onClose(); } }}
         ref={dialog}
         role={docked ? "complementary" : "dialog"}
         tabIndex={-1}
@@ -381,15 +383,22 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     peerReturnFocus.current = trigger;
     setPeerDialog({ threadID, reply: message });
   }, [threadID]);
-  const [activePane, setActivePane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
+  const [activePane, setSelectedPane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
+  const [roomForDock, setRoomForDock] = useState(false);
+  const [compactPaneOpen, setCompactPaneOpen] = useState(false);
+  const docked = view === "conversation" && roomForDock;
+  const setActivePane = useCallback((pane: typeof activePane) => {
+    setSelectedPane(pane);
+    setCompactPaneOpen(pane !== null && !docked);
+  }, [docked]);
   const leaveFileEdit = useFileEditLeave();
   const setPaneOpen = (pane: NonNullable<typeof activePane>, open: boolean) =>
     (open || activePane === pane) && leaveFileEdit(() => setActivePane(open ? pane : null));
   const reviewOpen = activePane === "review";
   const previewOpen = activePane === "preview";
   const contextOpen = activePane === "context";
-  const filesOpen = activePane === "files";
-  const terminalDrawerOpen = activePane === "terminal";
+  const filesOpen = activePane === "files" && (docked || compactPaneOpen);
+  const terminalDrawerOpen = activePane === "terminal" && (docked || compactPaneOpen);
   const setReviewOpen = (open: boolean) => setPaneOpen("review", open);
   const setPreviewOpen = (open: boolean) => setPaneOpen("preview", open);
   const setContextOpen = (open: boolean) => setPaneOpen("context", open);
@@ -398,12 +407,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const [reviewToolTarget, setReviewToolTarget] = useState<{ runID: string; tool: "github-review" }>();
   const reviewReturnFocus = useRef<HTMLButtonElement | null>(null);
   const contextTrigger = useRef<HTMLButtonElement>(null);
+  const contextReturnFocus = useRef<HTMLButtonElement | null>(null);
   const previewTrigger = useRef<HTMLButtonElement>(null);
   const [inspectorComposerOpen, setInspectorComposerOpen] = useState(false);
   const composerContainerRef = useRef<HTMLDivElement>(null);
   const [composerFocusRequest, setComposerFocusRequest] = useState<{ threadID: string } | null>(null);
   const [confirmedSubmission, setConfirmedSubmission] = useState<V2TurnInput | null>(null);
-  const [deliveryMode, setDeliveryMode] = useState<"next_turn" | "steer">("next_turn");
   const reviewTrigger = useRef<HTMLButtonElement>(null);
   const [fileDrawerState, setFileDrawerState] = useState<{
     path: string;
@@ -442,7 +451,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       setActivePane("files");
       setFileDrawerState({ path, line, runID });
     });
-  }, [leaveFileEdit]);
+  }, [leaveFileEdit, setActivePane]);
   const turn = useV2ThreadTurn(client);
   const submissions = useV2ThreadSubmissions(threadID);
   const submitTrackedTurn = async (input: V2TurnInput) => {
@@ -523,10 +532,15 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [submissions]);
   const executionQuery = useV2ThreadExecution(client, threadID);
   const conversationRef = useRef<HTMLElement>(null);
-  const [roomForDock, setRoomForDock] = useState(false);
-  const docked = view === "conversation" && roomForDock;
+  const workbenchSlot = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const workflowFocusTarget = (target: HTMLButtonElement | null) => {
+    const group = target?.closest(".v2-task-workflows");
+    return group && getComputedStyle(group).display === "none" ? menuTriggerRef.current : target;
+  };
+  const contextFocusTarget = { get current() { return workflowFocusTarget(contextReturnFocus.current); } };
+  const reviewFocusTarget = { get current() { return workflowFocusTarget(reviewReturnFocus.current); } };
   const menuRef = useRef<HTMLDivElement>(null);
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const olderScrollAnchorRef = useRef<{ threadID: string; height: number; top: number; pages: number;
@@ -719,7 +733,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setFileDrawerState({ path: ".", line: undefined, runID: undefined });
     setComposerFocusRequest(null);
     olderScrollAnchorRef.current = null;
-    setDeliveryMode("next_turn");
   }, [threadID, view]);
   useEffect(() => {
     if (!reviewEntry || reviewEntry.threadID !== threadID) return;
@@ -772,14 +785,23 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   useLayoutEffect(() => {
     const container = conversationRef.current;
     if (!container) return;
-    // Reserve at least 600px for the conversation beside a 340px panel.
-    const measure = () => setRoomForDock(container.clientWidth >= 960);
+    const shell = container.closest<HTMLElement>(".v2-shell");
+    const measure = () => {
+      const fits = (shell ?? container).clientWidth > (shell?.classList.contains("has-sidebar") ? 960 : 720);
+      if (!fits && workbenchSlot.current?.contains(document.activeElement)) {
+        (workbenchSlot.current.querySelector(".v2-file-drawer") ? fileTrigger : terminalTrigger).current?.focus();
+      }
+      setRoomForDock(fits);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(container);
+    if (shell) observer.observe(shell);
     return () => observer.disconnect();
   }, [detailQuery.isSuccess]);
+
+  useEffect(() => { if (docked) setCompactPaneOpen(false); }, [docked]);
 
   if (detailQuery.isLoading) return <div className="v2-main-loading"><LoaderCircle className="spin" size={20} />
     <span>{t("正在打开对话…", "Opening conversation…")}</span></div>;
@@ -805,10 +827,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
   const canSteer = executionQuery.data?.state === "running" ||
     (!executionQuery.data && detail.active_run?.status === "running");
-  // A paused run is not gone: steer stays unavailable, but the explanation
-  // names the pause so the operator does not think the task ended.
-  const steerUnavailable = currentRun.status === "paused" ? t("当前任务已暂停", "The current task is paused")
-    : t("当前任务已停止或不再运行", "The current task has stopped or is no longer running");
   const activityLabel = threadActivityLabel({ threadID, execution: executionQuery.data,
     readable: client.hasThreadExecutionRead === true, error: executionQuery.isError });
   const fileReferenceUnavailableReason = currentRun.status === "waiting_approval"
@@ -821,13 +839,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         : undefined;
 
   const send = async (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => {
-    if (deliveryMode === "steer" && !canSteer) {
-      throw new Error(`${steerUnavailable}。纠正草稿已保留；请选择“下一轮处理”发送。`);
-    }
-    if (deliveryMode === "steer" && (files?.length || images?.length || attachments?.length || mcpReferences?.length)) {
-      throw new Error("更新当前任务目前只支持文字。附件和引用已保留，请选择“下一轮处理”发送完整消息。");
-    }
-    const fingerprint = JSON.stringify([deliveryMode, content, files ?? [], imageIdentities(images), fileAttachmentIdentities(attachments), mcpReferenceIdentities(mcpReferences)]);
+    const fingerprint = JSON.stringify(["next_turn", content, files ?? [], imageIdentities(images), fileAttachmentIdentities(attachments), mcpReferenceIdentities(mcpReferences)]);
     let replaced = submissions.findLast(({ error }) => v2TurnOutcomeKnown(error))?.input.operationKey;
     // The user's new request waits for unknown earlier submissions to settle.
     // Confirmation uses the original payload and key, never the edited draft.
@@ -847,7 +859,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       { text: draft ?? content, files: files ?? [], images: images ?? [], attachments, mcpReferences });
     const operationKey = `v2-thread-turn-${globalThis.crypto.randomUUID()}`;
     const input: V2TurnInput = { threadID, workspaceID: detail.thread.workspace_id ?? "", content,
-      ...(deliveryMode === "steer" ? { deliveryMode: "steer" as const, sessionID: currentRun.session_id } : {}),
       ...(draft !== undefined ? { draft } : {}),
       operationKey, createdAt: new Date().toISOString(), ...(files?.length ? { files } : {}),
       ...(images?.length ? { images } : {}),
@@ -901,20 +912,21 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setReviewOpen(false); setPreviewOpen(false); setContextOpen(false);
     setComposerFocusRequest({ threadID });
   };
+  const companionDocked = view === "conversation" && !compactPaneOpen;
   const companion = <>
-    {filesOpen && <V2FileDrawer client={client} threadID={threadID}
+    {activePane === "files" && <V2FileDrawer client={client} threadID={threadID}
       workspaceID={detail.thread.workspace_id ?? ""}
       runID={fileDrawerState.runID || currentRun.id} initialPath={fileDrawerState.path}
-      initialLine={fileDrawerState.line} docked={docked}
+      initialLine={fileDrawerState.line} docked={companionDocked}
       onPathChange={(path) => setFileDrawerState((current) => ({ ...current, path, line: undefined }))}
       onClose={() => {
         setActivePane(null);
         if (fileReturnFocus.current?.isConnected) fileReturnFocus.current.focus();
         else fileTrigger.current?.focus();
       }} returnFocusRef={fileReturnFocus} />}
-    {terminalDrawerOpen && <V2TerminalDrawer runID={currentRun.id} sessionID={currentTerminalSessionID}
+    {activePane === "terminal" && <V2TerminalDrawer runID={currentRun.id} sessionID={currentTerminalSessionID}
       threadTitle={detail.thread.title} workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
-      onSession={handleTerminalSessionChange} docked={docked}
+      onSession={handleTerminalSessionChange} docked={companionDocked}
       onClose={() => {
         setTerminalDrawerOpen(false);
         if (terminalReturnFocus.current?.isConnected) terminalReturnFocus.current.focus();
@@ -941,6 +953,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             onArchive(detail.thread);
           }} role="menuitem" type="button">
             <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
+          <button className="v2-task-compact-action" onClick={() => {
+            setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
+            reviewReturnFocus.current = menuTriggerRef.current; setReviewOpen(true);
+          }} role="menuitem" type="button"><FileDiff aria-hidden="true" size={15} />{t("审阅改动", "Review changes")}</button>
+          <button className="v2-task-compact-action" onClick={() => {
+            setMenuOpen(false); contextReturnFocus.current = menuTriggerRef.current; setContextOpen(true);
+          }} role="menuitem" type="button"><BookOpen aria-hidden="true" size={15} />{t("查看上下文", "View context")}</button>
           {view !== "inspector" && <button onClick={() => { setMenuOpen(false); onOpenInspector(menuTriggerRef.current); }}
             role="menuitem" type="button">
             <Microscope aria-hidden="true" size={15} />{t("打开 Inspector", "Open Inspector")}</button>}
@@ -950,36 +969,37 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             <MessagesSquare aria-hidden="true" size={15} />{t("返回对话视图", "Return to conversation")}</button>}
         </div>}
       </div>
-    </header>
-    {peerDialog?.threadID === threadID && <V2PeerMessageDialog key={`${threadID}:${peerDialog.reply?.id ?? "new"}`}
-      client={client} threadID={threadID} sourceTitle={detail.thread.title} reply={peerDialog.reply}
-      onClose={() => setPeerDialog(null)} returnFocusRef={peerReturnFocus} />}
     <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={view === "conversation" && activePane === null} disabled={view === "inspector" && !onExitInspector}
-          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} type="button"><MessagesSquare size={16} aria-hidden="true" />{t("对话", "Conversation")}</button>
+          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} title={t("对话", "Conversation")} type="button"><MessagesSquare size={16} aria-hidden="true" /><span className="v2-task-nav-label">{t("对话", "Conversation")}</span></button>
         <button aria-label={t("工作区文件", "Workspace files")} aria-pressed={filesOpen} onClick={() => {
           if (filesOpen) { leaveFileEdit(() => setActivePane(null)); return; }
           fileReturnFocus.current = fileTrigger.current;
-          setFileDrawerState({ path: ".", line: undefined, runID: currentRun.id }); setActivePane("files");
-        }} ref={fileTrigger} type="button"><FolderTree aria-hidden="true" size={16} />{t("文件", "Files")}</button>
+          if (activePane !== "files") setFileDrawerState({ path: ".", line: undefined, runID: currentRun.id });
+          setActivePane("files");
+        }} ref={fileTrigger} title={t("工作区文件", "Workspace files")} type="button"><FolderTree aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("文件", "Files")}</span></button>
         <button aria-label={t("终端", "Terminal")} aria-pressed={terminalDrawerOpen} title={terminalAvailable ? t("打开任务终端", "Open task terminal") : t("桌面终端仅在桌面端可用", "The terminal is available in the desktop app")} onClick={() => {
           terminalReturnFocus.current = terminalTrigger.current; setTerminalDrawerOpen(!terminalDrawerOpen);
-        }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} />{t("终端", "Terminal")}</button>
+        }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("终端", "Terminal")}</span></button>
         <button aria-label={t("应用预览", "App preview")} aria-pressed={previewOpen} onClick={() => setPreviewOpen(true)}
-          ref={previewTrigger} type="button"><PanelTop aria-hidden="true" size={16} />{t("应用预览", "App preview")}</button>
+          ref={previewTrigger} title={t("应用预览", "App preview")} type="button"><PanelTop aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("应用预览", "App preview")}</span></button>
       </div>
       <div className="v2-task-workflows" role="group" aria-label={t("任务流程", "Task workflow")}>
         <button aria-label={t("审阅改动", "Review changes")} aria-pressed={reviewOpen} onClick={() => {
           setReviewFileTarget(undefined); setReviewToolTarget(undefined); reviewReturnFocus.current = reviewTrigger.current; setReviewOpen(true);
-        }} ref={reviewTrigger} type="button"><FileDiff aria-hidden="true" size={16} />{t("改动与交付", "Changes and delivery")}</button>
-        <button aria-label={t("查看上下文", "View context")} aria-pressed={contextOpen} onClick={() => setContextOpen(true)}
-          ref={contextTrigger} type="button"><BookOpen aria-hidden="true" size={16} />{t("上下文与恢复", "Context and recovery")}</button>
+        }} ref={reviewTrigger} title={t("改动与交付", "Changes and delivery")} type="button"><FileDiff aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("改动与交付", "Changes and delivery")}</span></button>
+        <button aria-label={t("查看上下文", "View context")} aria-pressed={contextOpen} onClick={() => { contextReturnFocus.current = contextTrigger.current; setContextOpen(true); }}
+          ref={contextTrigger} title={t("上下文与恢复", "Context and recovery")} type="button"><BookOpen aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("上下文与恢复", "Context and recovery")}</span></button>
         <button aria-pressed={view === "inspector" && activePane === null}
-          onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} type="button">
-          <Microscope aria-hidden="true" size={16} />{t("观察执行", "Observe execution")}</button>
+          onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} title={t("观察执行", "Observe execution")} type="button">
+          <Microscope aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("观察执行", "Observe execution")}</span></button>
       </div>
     </nav>
+    </header>
+    {peerDialog?.threadID === threadID && <V2PeerMessageDialog key={`${threadID}:${peerDialog.reply?.id ?? "new"}`}
+      client={client} threadID={threadID} sourceTitle={detail.thread.title} reply={peerDialog.reply}
+      onClose={() => setPeerDialog(null)} returnFocusRef={peerReturnFocus} />}
     {view === "inspector" && (onOpenTool || onOpenInspectorHome) && <nav className="v2-inspector-advanced" aria-label={t("执行观察工具", "Execution tools")}>
       {onOpenInspectorHome && <button onClick={onOpenInspectorHome} type="button">{t("全部运行与会话", "All runs and sessions")}</button>}
       {onOpenTool && <>
@@ -992,8 +1012,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       onReply={replyToPinProposal}
       onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
       onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
-      onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextTrigger} />}
-    {!docked && companion}
+      onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextFocusTarget} />}
+    {compactPaneOpen && companion}
     {previewOpen && <V2LazySurface loadingText={t("正在加载应用预览…", "Loading app preview…")} errorLabel={t("应用预览", "App preview")} resetKey={threadID}
       onDismiss={() => { setPreviewOpen(false); previewTrigger.current?.focus(); }}>
       <V2ApplicationPreview key={threadID} client={client} runID={currentRun.id} threadID={threadID}
@@ -1002,14 +1022,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         if (!onDraftChange) return;
         if (!draft?.includes(APPLICATION_PREVIEW_START_REQUEST)) appendDraftAndReveal(APPLICATION_PREVIEW_START_REQUEST);
         else appendDraftAndReveal("");
-        setDeliveryMode("next_turn");
         queryClient.setQueryData<ApplicationPreviewRequest>(applicationPreviewRequestKey(threadID), {
           request: APPLICATION_PREVIEW_START_REQUEST, phase: "draft",
         });
       }} />
     </V2LazySurface>}
     {reviewOpen && <V2LazySurface loadingText={t("正在加载改动审阅…", "Loading change review…")} errorLabel={t("改动审阅", "Change review")} resetKey={threadID}
-      onDismiss={() => { setReviewOpen(false); (reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current)?.focus(); }}>
+      onDismiss={() => { setReviewOpen(false); workflowFocusTarget(reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current)?.focus(); }}>
       <V2TaskReview client={client} detail={detail} working={working}
       onOpenWorktree={onOpenWorktree}
       initialFileTarget={reviewFileTarget}
@@ -1017,7 +1036,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       onClose={() => {
         if (!reviewReturnFocus.current?.isConnected) reviewReturnFocus.current = reviewTrigger.current;
         setReviewOpen(false);
-      }} returnFocusRef={reviewReturnFocus} onRequestChange={appendDraftAndReveal} /></V2LazySurface>}
+      }} returnFocusRef={reviewFocusTarget} onRequestChange={appendDraftAndReveal} /></V2LazySurface>}
     <div className="v2-conversation-stage">
     <div className="v2-conversation-main-column">
     {view === "inspector" && !transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载 Inspector…", "Loading Inspector…")}
@@ -1140,18 +1159,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {view === "inspector" && <button className="v2-inspector-composer-toggle"
         aria-expanded={inspectorComposerOpen} onClick={() => setInspectorComposerOpen((open) => !open)} type="button">
         {inspectorComposerOpen ? t("收起消息编辑器", "Collapse message editor") : draft ? t("继续编辑草稿", "Continue editing draft") : t("补充消息", "Add a message")}</button>}
-      <div className="v2-composer-options" hidden={view === "inspector" && !inspectorComposerOpen}>
-      {(canSteer || deliveryMode === "steer") && <label className="v2-composer-caption">{t("发送方式", "Delivery mode")}
-        <select aria-label={t("发送方式", "Delivery mode")} value={deliveryMode} onChange={(event) => setDeliveryMode(event.target.value as "next_turn" | "steer")}>
-          <option value="next_turn">{t("下一轮处理", "Handle in next turn")}</option>
-          <option value="steer">{t("更新当前任务（仅文字）", "Update current task (text only)")}</option>
-        </select>
-      </label>}
-      {deliveryMode === "steer" && !canSteer && <p className="v2-composer-caption" role="alert">
-        {steerUnavailable}{t("，不能更新当前任务；纠正草稿会保留。", ". The current task cannot be updated; your correction draft is kept.")}
-        <button className="v2-composer-chip" onClick={() => setDeliveryMode("next_turn")} type="button">{t("切换为下一轮处理", "Switch to next turn")}</button>
-      </p>}
-      </div>
       {view === "conversation" && <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive}
         onDismiss={() => setComposerFocusRequest({ threadID })} />}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
@@ -1187,7 +1194,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     </div>
     </div>
-    {docked && companion}
+    {view === "conversation" && !compactPaneOpen && <div className={`v2-workbench-slot${docked && (filesOpen || terminalDrawerOpen) ? " is-open" : ""}`}
+      ref={workbenchSlot} aria-hidden={!docked || !(filesOpen || terminalDrawerOpen)} inert={!docked || !(filesOpen || terminalDrawerOpen)}>
+      {companion}
+    </div>}
     </div>
   </section>;
 }

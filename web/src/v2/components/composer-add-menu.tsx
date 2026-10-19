@@ -8,6 +8,7 @@ export interface ComposerAddAction {
   detail: string;
   icon: ReactNode;
   disabled?: boolean;
+  compactOnly?: boolean;
   onSelect: () => void;
 }
 
@@ -31,7 +32,8 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
   useEffect(() => {
     if (!open) return;
     tabbingRef.current = false;
-    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+      .filter((item) => getComputedStyle(item).display !== "none");
     (items[focusLastRef.current ? items.length - 1 : 0] ?? menuRef.current)?.focus();
     const outside = (event: MouseEvent) => {
       if (!shellRef.current?.contains(event.target as Node)) {
@@ -61,7 +63,8 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); return; }
         if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
         event.preventDefault(); event.stopPropagation();
-        const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+        const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+          .filter((item) => getComputedStyle(item).display !== "none");
         const current = items.indexOf(document.activeElement as HTMLButtonElement);
         const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
           : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
@@ -69,6 +72,7 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
       }}>
       <div className="v2-composer-add-heading" role="presentation">{t("添加到对话", "Add to conversation")}</div>
       {actions.map((action) => <button aria-label={action.label} aria-describedby={`${id}-${action.id}`}
+        className={action.compactOnly ? "v2-composer-compact-action" : undefined}
         disabled={action.disabled} key={action.id} role="menuitem" tabIndex={-1} type="button"
         onClick={() => { close(true); action.onSelect(); }}>
         {action.icon}<span><strong>{action.label}</strong><small id={`${id}-${action.id}`}>{action.detail}</small></span>

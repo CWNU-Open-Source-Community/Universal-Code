@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command } from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { WorkspaceView } from "../../api/types";
@@ -250,6 +250,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     }
   };
 
+  const toggleEditorMode = (trigger: HTMLElement | null) => {
+    const next = !plainText;
+    setPlainText(next);
+    try { localStorage.setItem(composerPlainTextKey, String(next)); setModeSaveError(false); }
+    catch { setModeSaveError(true); }
+    requestAnimationFrame(() => {
+      if (trigger && document.activeElement === trigger && !trigger.closest("[inert]")) inputRef.current?.focus();
+    });
+  };
   const addActions: ComposerAddAction[] = [];
   if (client.hasThreadControl) addActions.push({ id: "upload", label: t("添加图片或文件", "Add images or files"),
     detail: !workspaceID ? t("先选择项目，再添加附件", "Select a project before adding attachments") : t("从电脑选择，也可直接粘贴或拖入", "Choose from your computer, paste, or drag files here"),
@@ -274,6 +283,10 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     icon: <ClipboardPaste aria-hidden="true" size={18} />,
     disabled: disabled || !workspaceID || nativeClipboard.busy || nativeClipboard.pending,
     onSelect: () => void nativeClipboard.onPasteFallback() });
+  addActions.push({ id: "editor-mode", compactOnly: true,
+    label: plainText ? t("切换为 Markdown 编辑", "Switch to Markdown editing") : t("切换为纯文本编辑", "Switch to plain text editing"),
+    detail: t("切换输入方式，保留当前草稿", "Change the editor and keep your draft"),
+    icon: <SquarePen aria-hidden="true" size={18} />, disabled, onSelect: () => toggleEditorMode(addTriggerRef.current) });
 
   return <form className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
     onSubmit={(event) => void submit(event)} onKeyDownCapture={onKeyDown} onPasteCapture={(event) => {
@@ -321,34 +334,28 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
         placeholder={inputPlaceholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
       <div className="v2-composer-footer">
+        {!threadID && <label className="v2-workspace-picker">
+          <FolderOpen aria-hidden="true" size={14} />
+          <span className="sr-only">{t("工作区", "Workspace")}</span>
+          <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || workspaces.length === 0}
+            onChange={(event) => onWorkspaceChange(event.target.value)} value={workspaceID}>
+            {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+            </option>)}
+          </select>
+        </label>}
         <div className="v2-composer-tools">
           <V2ComposerAddMenu actions={addActions} disabled={disabled} key={scope} triggerRef={addTriggerRef} />
           <button className="v2-composer-mode-toggle" type="button" disabled={disabled}
             aria-label={plainText ? t("切换为 Markdown 编辑", "Switch to Markdown editing") : t("切换为纯文本编辑", "Switch to plain text editing")}
             title={plainText ? t("显示格式；Ctrl+Enter 发送", "Show formatting; Ctrl+Enter to send") : t("编辑 Markdown 原文", "Edit Markdown source")}
-            onClick={(event) => {
-              const toggle = event.currentTarget;
-              const next = !plainText; setPlainText(next);
-              try { localStorage.setItem(composerPlainTextKey, String(next)); setModeSaveError(false); }
-              catch { setModeSaveError(true); }
-              requestAnimationFrame(() => {
-                if (document.activeElement === toggle && !toggle.closest("[inert]")) inputRef.current?.focus();
-              });
-            }}>{plainText ? t("纯文本", "Plain text") : "Markdown"}</button>
+            onClick={(event) => toggleEditorMode(event.currentTarget)}><SquarePen aria-hidden="true" size={15} /><span className="v2-composer-optional-label">{plainText ? t("纯文本", "Plain text") : "Markdown"}</span></button>
           {client.hasThreadControl &&
             <input ref={attachmentPicker} type="file" multiple hidden aria-label={t("选择图片或文件", "Choose images or files")}
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
           {threadID && threadControls?.(hasUnsentDraft)}
-          {!threadID ? <label className="v2-workspace-picker">
-            <span className="sr-only">{t("工作区", "Workspace")}</span>
-            <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || workspaces.length === 0}
-              onChange={(event) => onWorkspaceChange(event.target.value)} value={workspaceID}>
-              {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </option>)}
-            </select>
-          </label> : <V2PermissionControl client={client} threadID={threadID}
+          {threadID && <V2PermissionControl client={client} threadID={threadID}
             onOpenModelSettings={onManageModels ? () => onManageModels(false) : undefined} />}
         </div>
         <div className="v2-composer-actions">

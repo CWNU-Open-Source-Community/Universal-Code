@@ -406,9 +406,8 @@ describe("V2Conversation", () => {
     expect(within(ui.container.querySelector(".v2-narrative")!).getByText("同样的排队要求")).toBeInTheDocument();
   });
 
-  it("sends an explicit current-task correction through the Session endpoint", async () => {
-    const submitSessionMessage = vi.fn(() => Promise.resolve({ steering: { id: "steer-current" } } as Awaited<
-      ReturnType<APIClient["submitSessionMessage"]>>));
+  it("queues ordinary sends during an active run without a delivery-mode selector", async () => {
+    const submitSessionMessage = vi.fn();
     const submitThreadTurn = vi.fn();
     const client = baseClient({
       get: vi.fn(() => Promise.resolve({ ...detail("thread-a"),
@@ -417,16 +416,14 @@ describe("V2Conversation", () => {
     } as Partial<APIClient>);
     renderConversation(client);
     const user = userEvent.setup();
-    await screen.findByRole("combobox", { name: "发送方式" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "发送方式" }), "steer");
-    await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
-    await waitFor(() => expect(submitSessionMessage).toHaveBeenCalledWith("sess-thread-a",
-      { version: "session_message_submission.v1", content: "pending-thread-a", delivery_mode: "steer" },
-      expect.any(String)));
-    expect(submitThreadTurn).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("button", { name: "发送 thread-a" }));
+    expect(screen.queryByRole("combobox", { name: "发送方式" })).not.toBeInTheDocument();
+    await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
+      expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
+    expect(submitSessionMessage).not.toHaveBeenCalled();
   });
 
-  it("keeps an explicit correction draft when the task ends before sending", async () => {
+  it("sends the same draft normally when the task ends before sending", async () => {
     const execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
       state: "running", execution_id: "execution-a", queued_messages: 0, capability_grant: false };
     const submitSessionMessage = vi.fn();
@@ -437,22 +434,10 @@ describe("V2Conversation", () => {
       threadExecution: vi.fn(() => Promise.resolve(execution)), submitSessionMessage, submitThreadTurn,
     } as Partial<APIClient>));
     const user = userEvent.setup();
-    await screen.findByRole("combobox", { name: "发送方式" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "发送方式" }), "steer");
+    await screen.findByRole("button", { name: "发送 thread-a" });
     await act(async () => { view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"),
       { ...execution, state: "idle", execution_id: undefined }); });
-    expect(screen.getByRole("combobox", { name: "发送方式" })).toHaveValue("steer");
-    // The invalid mode is explained before sending, and sending stays blocked.
-    expect(await screen.findByText(/当前任务已停止或不再运行/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
-    expect(submitSessionMessage).not.toHaveBeenCalled();
-    expect(submitThreadTurn).not.toHaveBeenCalled();
-    // Switching back to next-turn clears the hint; the selector hides again
-    // because no running task can accept a correction.
-    await user.click(screen.getByRole("button", { name: "切换为下一轮处理" }));
-    expect(screen.queryByText(/当前任务已停止或不再运行/)).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "发送方式" })).not.toBeInTheDocument();
-    // The retained draft now goes out as a regular next-turn message.
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
       expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
@@ -859,29 +844,30 @@ describe("V2Conversation", () => {
     expect(onDraftChange).toHaveBeenCalledWith("");
   });
 
-  it("explains an unavailable correction as paused when the run is paused", async () => {
+  it("retains the paused state and sends a normal continuation after a run pauses", async () => {
     const execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
       state: "running", execution_id: "execution-a", queued_messages: 0, capability_grant: false };
     const pausedDetail: ThreadDetailView = { ...detail("thread-a"),
       active_run: { id: "run-thread-a", session_id: "sess-thread-a", status: "paused" } } as ThreadDetailView;
-    const view = renderConversation(baseClient({ hasThreadExecutionRead: true,
+    const submitThreadTurn = vi.fn();
+    const submitSessionMessage = vi.fn();
+    const view = renderConversation(baseClient({ hasThreadExecutionRead: true, submitThreadTurn, submitSessionMessage,
       get: vi.fn(() => Promise.resolve({ ...detail("thread-a"),
         active_run: { id: "run-thread-a", session_id: "sess-thread-a", status: "running" } })),
       threadExecution: vi.fn(() => Promise.resolve(execution)),
     } as Partial<APIClient>));
     const user = userEvent.setup();
-    await screen.findByRole("combobox", { name: "发送方式" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "发送方式" }), "steer");
+    await screen.findByRole("button", { name: "发送 thread-a" });
     await act(async () => {
       view.queryClient.setQueryData(v2QueryKeys.thread("thread-a"), pausedDetail);
       view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"),
         { ...execution, state: "idle", execution_id: undefined });
     });
-    // The pause is named explicitly instead of implying the task ended.
-    expect(await screen.findByText(/当前任务已暂停，不能更新当前任务/)).toBeInTheDocument();
-    expect(screen.queryByText(/当前任务已停止或不再运行/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "切换为下一轮处理" }));
-    expect(screen.queryByText(/当前任务已暂停，不能更新当前任务/)).not.toBeInTheDocument();
+    expect(screen.getByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
+    await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
+      expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
+    expect(submitSessionMessage).not.toHaveBeenCalled();
   });
 
   it("shows confirmed Agent activity and stopping while the submission response is still pending", async () => {
@@ -996,11 +982,13 @@ describe("V2Conversation", () => {
     expect(fileTrigger).toHaveFocus();
   });
 
-  it("docks without trapping Tab and retains the selected file when narrowed", async () => {
+  it("collapses workbench panels in stages and restores the selected file without taking focus", async () => {
     let width = 1140;
     const resizes = new Set<() => void>();
     const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get")
-      .mockImplementation(function (this: HTMLElement) { return this.classList.contains("v2-conversation") ? width : 0; });
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("v2-shell") ? width : this.classList.contains("v2-conversation") ? width - 299 : 0;
+      });
     vi.stubGlobal("ResizeObserver", class {
       private resize: () => void;
       constructor(callback: ResizeObserverCallback) { this.resize = () => callback([], this as unknown as ResizeObserver); resizes.add(this.resize); }
@@ -1009,22 +997,45 @@ describe("V2Conversation", () => {
     });
     try {
       const user = userEvent.setup();
-      const client = baseClient({ fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }) });
+      const client = baseClient({
+        fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }),
+        getPage: vi.fn(() => Promise.resolve(page([
+          transcriptItem("layout-link", "查看 [src/index.ts](src/index.ts)", 1),
+        ]))) as unknown as APIClient["getPage"],
+      });
       const directory = await client.workspaceExplore("workspace-1", ".");
       vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => path === "." ? directory : {
         ...directory, path, kind: "file", entries: [], content: "export const value = 1;",
       });
-      renderConversation(client);
+      const view = renderConversation(client);
+      view.container.classList.add("v2-shell", "has-sidebar");
       const trigger = await screen.findByRole("button", { name: "工作区文件" });
-      await user.click(trigger);
+      await user.click(await screen.findByRole("link", { name: "src/index.ts" }));
       const dock = await screen.findByRole("complementary", { name: "工作区文件" });
       expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
       expect(dock).not.toHaveAttribute("aria-modal");
+      within(dock).getByRole("button", { name: "关闭文件面板" }).focus();
       await user.tab({ shift: true });
       expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
-      await user.click(await within(dock).findByRole("button", { name: /index.ts/u }));
       expect(await within(dock).findByText("export const value = 1;")).toBeInTheDocument();
-      await act(async () => { width = 800; resizes.forEach((resize) => resize()); });
+      within(dock).getByRole("button", { name: "关闭文件面板" }).focus();
+      await act(async () => { width = 960; resizes.forEach((resize) => resize()); });
+      expect(screen.queryByRole("complementary", { name: "工作区文件" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "工作区文件" })).not.toBeInTheDocument();
+      expect(dock.closest(".v2-workbench-slot")).toHaveAttribute("inert");
+      expect(trigger).toHaveFocus();
+      screen.getByRole("button", { name: "发送 thread-a" }).focus();
+      await act(async () => { width = 961; resizes.forEach((resize) => resize()); });
+      expect(screen.getByRole("complementary", { name: "工作区文件" })).toBe(dock);
+      expect(within(dock).getByText("export const value = 1;")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
+      await act(async () => {
+        view.container.classList.remove("has-sidebar"); width = 800; resizes.forEach((resize) => resize());
+      });
+      expect(screen.getByRole("complementary", { name: "工作区文件" })).toBe(dock);
+      await act(async () => { width = 720; resizes.forEach((resize) => resize()); });
+      expect(screen.queryByRole("complementary", { name: "工作区文件" })).not.toBeInTheDocument();
+      await user.click(trigger);
       const modal = screen.getByRole("dialog", { name: "工作区文件" });
       expect(modal).toHaveAttribute("aria-modal", "true");
       expect(modal.parentElement?.parentElement).toBe(document.body);
@@ -1033,6 +1044,8 @@ describe("V2Conversation", () => {
       await user.keyboard("{Escape}");
       expect(screen.queryByRole("dialog", { name: "工作区文件" })).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();
+      await act(async () => { width = 1140; resizes.forEach((resize) => resize()); });
+      expect(screen.queryByRole("complementary", { name: "工作区文件" })).not.toBeInTheDocument();
     } finally {
       cleanup(); clientWidth.mockRestore(); vi.unstubAllGlobals();
     }
