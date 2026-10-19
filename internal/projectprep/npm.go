@@ -12,6 +12,8 @@ import (
 )
 
 type npmManifest struct {
+	Name                 string            `json:"name"`
+	Version              string            `json:"version"`
 	PackageManager       string            `json:"packageManager"`
 	Engines              map[string]string `json:"engines"`
 	Scripts              map[string]string `json:"scripts"`
