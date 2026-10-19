@@ -127,6 +127,7 @@ func (c SupervisorToolCall) Validate() error {
 		c.ToolName != "specialist_delegation_propose" &&
 		c.ToolName != "child_task_propose" &&
 		c.ToolName != "context_pin_propose" &&
+		c.ToolName != "thread_list" && c.ToolName != "thread_send_message" &&
 		c.ToolName != "plan_delivery_propose" &&
 		c.ToolName != "controlled_command_propose" &&
 		c.ToolName != "one_shot_command_propose" &&

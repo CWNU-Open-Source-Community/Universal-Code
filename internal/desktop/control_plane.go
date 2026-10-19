@@ -79,6 +79,9 @@ type ControlPlane struct {
 	scheduledJobWorker             *scheduler.Worker
 	prFollowupWorker               *application.PRFollowupService
 	workflowWorker                 *application.WorkflowService
+	threadPeerMessages             *application.ThreadPeerMessageService
+	threadPeerCancel               context.CancelFunc
+	threadPeerDone                 chan struct{}
 	workerMu                       sync.Mutex
 	workerCancel                   context.CancelFunc
 	workerDone                     chan struct{}
@@ -880,6 +883,11 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		stateStore, lifecycleControl, executionControl,
 		config.ExecutionPermissionCapabilities).WithModelRouteRegistry(models).
 		WithLifecycleHooks(hookEngine)
+	var threadPeerMessages *application.ThreadPeerMessageService
+	if config.RunExecutionEnabled && config.ModelControlEnabled && config.ControlToken != "" {
+		threadPeerMessages = application.NewThreadPeerMessageService(stateStore, threadTurnControl)
+		executionControl.WithThreadPeerMessages(threadPeerMessages)
+	}
 	var threadGit *application.ThreadGitService
 	if config.GitAdvancedControlEnabled || config.GitHubReviewControlEnabled {
 		localGit, gitErr := repository.NewMutationExecutor()
@@ -964,6 +972,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		FullCDPSessionControlEnabled:          fullCDPSessionControlEnabled,
 		RunLifecycleController:                lifecycleControl,
 		ThreadTurnController:                  threadTurnControl,
+		ThreadPeerMessages:                    threadPeerMessages,
 		ThreadContextCompactionController:     application.NewThreadContextCompactionService(stateStore, models.Router()).WithExecutionState(threadTurnControl),
 		StandardCodePresetController:          standardCodePreset,
 		StandardCodeDeliveryController:        standardCodeDeliveryController,
@@ -1069,7 +1078,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		codeIntelManager:               codeIntelManager,
 		terminalManager:                terminalManager, boundaryMonitor: boundaryMonitor,
 		wakeWorker: wakeWorker, scheduledJobWorker: scheduledJobWorker, prFollowupWorker: prFollowupWorker,
-		workflowWorker: workflowWorker}, nil
+		workflowWorker: workflowWorker, threadPeerMessages: threadPeerMessages}, nil
 }
 
 // CommandRuntimeProcessStatus exposes non-authorizing process facts to the
@@ -1201,10 +1210,10 @@ func (c *ControlPlane) StartWakeWorker(parent context.Context) error {
 	if c.closed {
 		return errors.New("desktop control plane is closed")
 	}
-	if c.wakeWorker == nil && c.scheduledJobWorker == nil && c.prFollowupWorker == nil && c.workflowWorker == nil {
+	if c.wakeWorker == nil && c.scheduledJobWorker == nil && c.prFollowupWorker == nil && c.workflowWorker == nil && c.threadPeerMessages == nil {
 		return nil
 	}
-	if c.workerDone != nil || c.scheduledWorkerDone != nil || c.prFollowupDone != nil || c.workflowDone != nil {
+	if c.workerDone != nil || c.scheduledWorkerDone != nil || c.prFollowupDone != nil || c.workflowDone != nil || c.threadPeerDone != nil {
 		return errors.New("desktop background worker is already started")
 	}
 	if c.wakeWorker != nil {
@@ -1242,6 +1251,12 @@ func (c *ControlPlane) StartWakeWorker(parent context.Context) error {
 			defer close(done)
 			_ = c.workflowWorker.Run(ctx)
 		}(c.workflowDone)
+	}
+	if c.threadPeerMessages != nil {
+		ctx, cancel := context.WithCancel(parent)
+		c.threadPeerCancel = cancel
+		c.threadPeerDone = make(chan struct{})
+		go func(done chan struct{}) { defer close(done); _ = c.threadPeerMessages.Run(ctx) }(c.threadPeerDone)
 	}
 	return nil
 }
@@ -1343,6 +1358,7 @@ func (c *ControlPlane) Close() error {
 		scheduledCancel, scheduledDone := c.scheduledWorkerCancel, c.scheduledWorkerDone
 		prFollowupCancel, prFollowupDone := c.prFollowupCancel, c.prFollowupDone
 		workflowCancel, workflowDone := c.workflowCancel, c.workflowDone
+		peerCancel, peerDone := c.threadPeerCancel, c.threadPeerDone
 		webFetchCancel, webFetchDone := c.webFetchReconcileCancel, c.webFetchReconcileDone
 		c.workerCancel = nil
 		c.workerDone = nil
@@ -1350,9 +1366,16 @@ func (c *ControlPlane) Close() error {
 		c.scheduledWorkerDone = nil
 		c.prFollowupCancel, c.prFollowupDone = nil, nil
 		c.workflowCancel, c.workflowDone = nil, nil
+		c.threadPeerCancel, c.threadPeerDone = nil, nil
 		c.webFetchReconcileCancel = nil
 		c.webFetchReconcileDone = nil
 		c.workerMu.Unlock()
+		if peerCancel != nil {
+			peerCancel()
+		}
+		if peerDone != nil {
+			<-peerDone
+		}
 		if workflowCancel != nil {
 			workflowCancel()
 		}

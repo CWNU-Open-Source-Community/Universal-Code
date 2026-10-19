@@ -336,7 +336,7 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	}
 	skillCandidateEnabled := slices.ContainsFunc(skillContext.Items,
 		func(item skills.ContextItem) bool { return item.Name == runSkillGeneratorName })
-	toolOptions := supervisorToolOptions{HistoryRecall: historyRecallAvailable, BuiltinSkills: builtinSkills, CommandRuntime: commandRuntime, OwnedFileWorkspace: ownedFileWorkspace,
+	toolOptions := supervisorToolOptions{HistoryRecall: historyRecallAvailable, ThreadPeerMessages: historyRecallAvailable && s.threadPeerMessages != nil, BuiltinSkills: builtinSkills, CommandRuntime: commandRuntime, OwnedFileWorkspace: ownedFileWorkspace,
 		AgentCode: supervisorAgentCodeTools{Capabilities: agentCodeCapabilities,
 			Authority: agentCodeAuthority},
 		CodeIntel: supervisorCodeIntelTools{Capabilities: codeIntelCapabilities,
@@ -346,6 +346,9 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 		BrowserActions: supervisorBrowserActionTools{
 			Capabilities: browserActionCapabilities,
 			Authority:    browserActionAuthority}}
+	if toolOptions.ThreadPeerMessages {
+		messages = append(messages, llm.Message{Role: "system", Content: threadPeerMessageGuidance})
+	}
 	request := llm.ChatRequest{
 		Messages: messages,
 		Tools: supervisorStructuredToolSpecs(turn.Mode.Surface, turn.Mode.Phase,
