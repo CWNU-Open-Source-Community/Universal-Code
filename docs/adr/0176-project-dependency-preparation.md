@@ -16,6 +16,14 @@ instruction. The product uses installed toolchains and the selected Local,
 Docker Engine, or Docker Sandboxes runtime. Host execution is not selected by
 this flow.
 
+npm workspaces use the root package-lock v2/v3 and bind every discovered member
+manifest along with root configuration. Selecting a member prepares the whole
+workspace at its shared root, then runs tests in the selected member. Only
+lock-declared internal links to those bound members are accepted. npm-installed
+symlinks and Windows junctions are checked during finalization; command wrappers
+refer directly to the bound package files. Local dependency links outside the
+declared workspace remain unavailable.
+
 ## Downloads and execution
 
 Go fetches the exact lock-bound artifacts through the existing public HTTPS,

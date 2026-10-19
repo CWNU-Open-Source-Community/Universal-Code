@@ -106,6 +106,33 @@ func TestPNPMPreparationSeparatesSeedWorkspaceAndTestDirectories(t *testing.T) {
 	}
 }
 
+func TestNPMWorkspacePreparationSeparatesInstallAndMemberTestDirectories(t *testing.T) {
+	plan := projectprep.Plan{Version: projectprep.ProtocolVersion, Fingerprint: strings.Repeat("a", 64), Ready: true, Ecosystem: "npm", Target: "repo/apps/web", WorkspaceRoot: "repo", Test: projectprep.Command{ID: "test.npm"}}
+	for _, backend := range []string{application.CommandRuntimeDockerSandboxBackend, application.CommandRuntimeSBXBackend} {
+		adapter := commandruntimeadapter.SandboxedWorkspace(backend, "fixture", "generation")
+		install, err := application.PrepareProjectPreparationCommand(plan, adapter, t.TempDir(), false)
+		if err != nil || install.WorkingDirectory != "repo" || !slices.Contains(install.Arguments, "--workspaces=true") || !slices.Contains(install.Arguments, "--include-workspace-root=true") || install.Network != runner.CommandRuntimeNetworkDisabled {
+			t.Fatalf("install %+v %v", install, err)
+		}
+		cache := projectprep.NPMCacheDirectory(plan.Target)
+		if !slices.Contains(install.Arguments, "--cache=../"+cache) {
+			t.Fatalf("root cache %+v", install)
+		}
+		test, err := application.PrepareProjectPreparationTestCommand(plan, adapter, t.TempDir())
+		if err != nil || test.WorkingDirectory != "repo/apps/web" || slices.Contains(test.Arguments, "--workspaces=true") {
+			t.Fatalf("test %+v %v", test, err)
+		}
+		rebuild, err := application.PrepareProjectPreparationRebuildCommand(plan, adapter, t.TempDir())
+		if err != nil || rebuild.WorkingDirectory != "repo" || rebuild.Arguments[1] != "rebuild" {
+			t.Fatalf("rebuild %+v %v", rebuild, err)
+		}
+	}
+	plan.WorkspaceRoot = "../outside"
+	if _, err := application.PrepareProjectPreparationCommand(plan, commandruntimeadapter.SandboxedWorkspace(application.CommandRuntimeDockerSandboxBackend, "fixture", "generation"), t.TempDir(), false); err == nil {
+		t.Fatal("escaping installation root accepted")
+	}
+}
+
 func TestProjectPreparationCommandUsesOnlySandboxFixedOfflinePresets(t *testing.T) {
 	goPlan, root := preparationFixture(t, false)
 	npmPlan, npmRoot := preparationFixture(t, true)

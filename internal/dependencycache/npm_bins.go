@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"cyberagent-workbench/internal/projectprep"
 )
 
 var npmBinName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.+-]*$`)
@@ -22,6 +24,46 @@ var npmBinPath = regexp.MustCompile(`^[A-Za-z0-9_./+@-]+$`)
 // this reads metadata and writes files but never executes package content.
 // The caller holds the same Run lease through the installation and this step.
 func FinalizeNPM(ctx context.Context, workspaceRoot, target string, guest bool) error {
+	return finalizeNPM(ctx, workspaceRoot, target, guest, nil)
+}
+
+// FinalizeNPMWorkspace accepts only the exact internal links from the reviewed
+// lock. Member-local installations are inspected along with the shared root.
+func FinalizeNPMWorkspace(ctx context.Context, workspaceRoot string, plan projectprep.Plan, guest bool) error {
+	if plan.WorkspaceRoot == "" {
+		return FinalizeNPM(ctx, workspaceRoot, plan.Target, guest)
+	}
+	opened, err := os.OpenRoot(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	for link, member := range plan.NPMWorkspaceLinks {
+		if !npmWorkspaceLinkMatches(opened, workspaceRoot, link, member) {
+			opened.Close()
+			return errors.New("installed npm workspace link is missing or changed")
+		}
+	}
+	if err := opened.Close(); err != nil {
+		return err
+	}
+	directories := map[string]bool{plan.WorkspaceRoot: true}
+	for _, member := range plan.NPMWorkspaceLinks {
+		directories[member] = true
+	}
+	names := make([]string, 0, len(directories))
+	for directory := range directories {
+		names = append(names, directory)
+	}
+	sort.Strings(names)
+	for _, directory := range names {
+		if err := finalizeNPM(ctx, workspaceRoot, directory, guest, plan.NPMWorkspaceLinks); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func finalizeNPM(ctx context.Context, workspaceRoot, target string, guest bool, workspaceLinks map[string]string) error {
 	if ctx == nil || !filepath.IsAbs(workspaceRoot) || path.IsAbs(target) || strings.Contains(target, `\`) || (target != "" && target != "." && (path.Clean(target) != target || target == ".." || strings.HasPrefix(target, "../"))) {
 		return errors.New("npm finalization target is invalid")
 	}
@@ -46,7 +88,9 @@ func FinalizeNPM(ctx context.Context, workspaceRoot, target string, guest bool) 
 		return errors.New("installed node_modules directory is unavailable")
 	}
 	count := 0
-	return fs.WalkDir(root.FS(), modules, func(current string, entry fs.DirEntry, walkErr error) error {
+	workspaceBins := map[string]string{}
+	var visit fs.WalkDirFunc
+	visit = func(current string, entry fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -57,14 +101,39 @@ func FinalizeNPM(ctx context.Context, workspaceRoot, target string, guest bool) 
 		if count > 250000 {
 			return errors.New("npm installation exceeds its entry limit")
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return errors.New("installed npm package contains a symbolic link")
+		if entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			expected, allowed := workspaceLinks[current]
+			if !allowed || !npmWorkspaceLinkMatches(root, workspaceRoot, current, expected) {
+				return errors.New("installed npm package contains an unreviewed symbolic link")
+			}
+			// Read the bound member directly. Windows junctions contain an
+			// absolute target, which os.Root intentionally will not traverse.
+			manifest := path.Join(expected, "package.json")
+			info, err := root.Lstat(manifest)
+			if err != nil || !info.Mode().IsRegular() {
+				return errors.New("linked npm workspace package manifest is unavailable")
+			}
+			binDirectory, ok := packageBinDirectory(current)
+			if !ok {
+				return errors.New("installed npm workspace link has an invalid package location")
+			}
+			workspaceBins[manifest] = binDirectory
+			if err := visit(manifest, fs.FileInfoToDirEntry(info), nil); err != nil {
+				return err
+			}
+			if !npmWorkspaceLinkMatches(root, workspaceRoot, current, expected) {
+				return errors.New("installed npm workspace link changed during finalization")
+			}
+			return nil
 		}
 		if entry.IsDir() || entry.Name() != "package.json" {
 			return nil
 		}
 		packageDirectory := path.Dir(current)
 		binDirectory, ok := packageBinDirectory(packageDirectory)
+		if reviewedBin, exists := workspaceBins[current]; exists {
+			binDirectory, ok = reviewedBin, true
+		}
 		if !ok {
 			return nil
 		}
@@ -173,7 +242,28 @@ func FinalizeNPM(ctx context.Context, workspaceRoot, target string, guest bool) 
 			}
 		}
 		return nil
-	})
+	}
+	return fs.WalkDir(root.FS(), modules, visit)
+}
+
+func npmWorkspaceLinkMatches(root *os.Root, workspaceRoot, current, expected string) bool {
+	if path.Clean(expected) != expected || path.IsAbs(expected) || expected == ".." || strings.HasPrefix(expected, "../") {
+		return false
+	}
+	for directory := expected; directory != "."; directory = path.Dir(directory) {
+		info, err := root.Lstat(directory)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+	}
+	target, err := root.Readlink(current)
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(workspaceRoot, filepath.FromSlash(path.Dir(current)), target)
+	}
+	return filepath.Clean(target) == filepath.Join(workspaceRoot, filepath.FromSlash(expected))
 }
 
 func packageBinDirectory(directory string) (string, bool) {

@@ -30,15 +30,19 @@ type npmLock struct {
 }
 
 type npmLockedPackage struct {
+	Name                 string            `json:"name"`
+	Version              string            `json:"version"`
 	Resolved             string            `json:"resolved"`
 	Integrity            string            `json:"integrity"`
 	Link                 bool              `json:"link"`
 	Dependencies         map[string]string `json:"dependencies"`
 	DevDependencies      map[string]string `json:"devDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	PeerDependencies     map[string]string `json:"peerDependencies"`
+	Workspaces           json.RawMessage   `json:"workspaces"`
 }
 
-func detectNPM(plan Plan, files map[string]sourceFile) Plan {
+func detectNPM(plan Plan, files map[string]sourceFile, members map[string]npmManifest) Plan {
 	plan.Ecosystem, plan.Toolchain, plan.Manifest = "npm", "node/npm", files["package.json"].File
 	plan.Install = Command{ID: "install.npm", Display: "npm ci --offline --ignore-scripts --bin-links=false --no-audit --no-fund", Arguments: []string{"ci", "--offline", "--ignore-scripts", "--bin-links=false", "--no-audit", "--no-fund"}}
 	var manifest npmManifest
@@ -57,7 +61,7 @@ func detectNPM(plan Plan, files map[string]sourceFile) Plan {
 	if strings.TrimSpace(manifest.Scripts["test"]) != "" {
 		plan.Test = Command{ID: "test.npm", Display: "npm test --offline --no-audit --no-fund", Arguments: []string{"test", "--offline", "--no-audit", "--no-fund"}}
 	}
-	if workspace := strings.TrimSpace(string(manifest.Workspaces)); workspace != "" && workspace != "null" && workspace != "[]" {
+	if workspace := strings.TrimSpace(string(manifest.Workspaces)); members == nil && workspace != "" && workspace != "null" && workspace != "[]" {
 		plan.Issues = append(plan.Issues, "npm workspaces require a reviewed workspace plan; select a standalone package directory")
 	}
 	for _, name := range []string{"npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"} {
@@ -90,6 +94,9 @@ func detectNPM(plan Plan, files map[string]sourceFile) Plan {
 	if !found || !sameDependencies(root.Dependencies, manifest.Dependencies) || !sameDependencies(root.DevDependencies, manifest.DevDependencies) || !sameDependencies(root.OptionalDependencies, manifest.OptionalDependencies) {
 		plan.Issues = append(plan.Issues, "package-lock.json root dependencies differ from package.json; regenerate and review the lockfile")
 	}
+	if members != nil {
+		plan = validateNPMWorkspaceLock(plan, manifest, lock, members)
+	}
 	names := make([]string, 0, len(lock.Packages))
 	for name := range lock.Packages {
 		if name != "" {
@@ -100,7 +107,13 @@ func detectNPM(plan Plan, files map[string]sourceFile) Plan {
 	origins := map[string]bool{}
 	for _, name := range names {
 		pkg := lock.Packages[name]
-		if !safeNPMPath(name) || pkg.Link {
+		if _, member := members[name]; member {
+			continue
+		}
+		if members != nil && pkg.Link {
+			continue // validated and bound to an exact member above
+		}
+		if !npmInstallationPath(name, members) || pkg.Link {
 			plan.Issues = append(plan.Issues, "Locked package "+name+" uses an unsupported local or workspace link")
 			continue
 		}

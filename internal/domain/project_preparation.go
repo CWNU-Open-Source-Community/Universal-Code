@@ -57,14 +57,18 @@ func (o ProjectPreparationOperation) Validate() error {
 			return errors.New("project preparation fetch requires its workspace binding")
 		}
 	} else {
-		if o.Backend != "docker_standard_code" || path.Clean(o.WorkspaceRoot) != o.WorkspaceRoot || len(o.WorkspaceRoot) > 4096 ||
+		if (o.Backend != "docker_standard_code" && o.Backend != "local_windows_lpac" && o.Backend != "docker_sandboxes") || path.Clean(o.WorkspaceRoot) != o.WorkspaceRoot || len(o.WorkspaceRoot) > 4096 ||
 			strings.ContainsAny(o.WorkspaceRoot, "\\:\r\n\x00") || strings.HasPrefix(o.WorkspaceRoot, "/") || o.WorkspaceRoot == ".." || strings.HasPrefix(o.WorkspaceRoot, "../") ||
 			(o.WorkspaceRoot != "." && o.Target != o.WorkspaceRoot && !strings.HasPrefix(o.Target, o.WorkspaceRoot+"/")) {
 			return errors.New("project preparation workspace binding is invalid")
 		}
-		sum := sha256.Sum256([]byte(o.Target))
-		if o.SeedDirectory != ".traverse-preparation/"+hex.EncodeToString(sum[:])+"/pnpm-seed" {
-			return errors.New("project preparation seed does not belong to its target")
+		if o.SeedDirectory != "" {
+			sum := sha256.Sum256([]byte(o.Target))
+			if o.Backend != "docker_standard_code" || o.SeedDirectory != ".traverse-preparation/"+hex.EncodeToString(sum[:])+"/pnpm-seed" {
+				return errors.New("project preparation seed does not belong to its target")
+			}
+		} else if o.FetchJobID != "" {
+			return errors.New("project preparation fetch requires its seed binding")
 		}
 	}
 	switch o.State {

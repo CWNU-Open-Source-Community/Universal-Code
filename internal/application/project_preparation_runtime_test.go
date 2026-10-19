@@ -62,3 +62,11 @@ func TestDetectedProjectChecksWorkspaceRootExclusions(t *testing.T) {
 		t.Fatal("excluded workspace root admitted")
 	}
 }
+
+func TestDetectedProjectChecksNPMWorkspaceSiblingManifestExclusions(t *testing.T) {
+	run := domain.Run{Config: pinActionConfig(projectconfig.Effective{Protocol: projectconfig.ProtocolVersion, ExcludePaths: []string{"packages/private"}})}
+	plan := projectprep.Plan{Ecosystem: "npm", Target: "apps/web", WorkspaceRoot: ".", Manifest: projectprep.File{Path: "apps/web/package.json"}, Lockfiles: []projectprep.File{{Path: "package.json"}, {Path: "package-lock.json"}, {Path: "packages/private/package.json"}}}
+	if err := checkDetectedProjectPaths(run, plan); err == nil {
+		t.Fatal("excluded sibling workspace member admitted")
+	}
+}
