@@ -7,6 +7,7 @@ import type { ThreadChangeFile, ThreadChangeSummary } from "../../api/thread-cha
 import { parseUnifiedDiff } from "../../components/unified-diff";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { useLocale } from "../../lib/locale";
+import { TurnChangeUndo } from "./turn-change-undo";
 import "./turn-changes.css";
 
 function ChangeCounts({ value }: { value: Pick<ThreadChangeSummary, "additions" | "deletions" | "counts_available"> }) {
@@ -112,7 +113,10 @@ export function V2TurnChanges({ client, threadID, runID, sourceEventID }: {
         <span className="v2-turn-changes-icon"><FileDiff size={21} aria-hidden="true" /></span>
         <div><h3>{summary.files.length ? t(`已编辑 ${summary.file_count} 个文件`, `${summary.file_count} ${summary.file_count === 1 ? "file" : "files"} edited`)
           : t("本轮改动", "Changes in this turn")}</h3><ChangeCounts value={summary} /></div>
-        {summary.files.length > 0 && <button className="v2-turn-changes-review" onClick={(event) => open(0, event.currentTarget)} type="button">{t("查看变更", "View changes")}</button>}
+        {summary.files.length > 0 && <span className="v2-turn-changes-actions">
+          {client.hasWorkspaceCheckpointControl && typeof client.undoThreadChanges === "function" && <TurnChangeUndo client={client} summary={summary} />}
+          <button className="v2-turn-changes-review" onClick={(event) => open(0, event.currentTarget)} type="button">{t("查看变更", "View changes")}</button>
+        </span>}
       </header>
       <ul id={listID} className="v2-turn-changes-files">
         {(expanded ? summary.files : summary.files.slice(0, 3)).map((file, index) => <li key={file.edit_ids[0]}>
