@@ -36,6 +36,7 @@ vi.mock("../projection/narrative", () => ({
     promotedToMessageID: item.promoted_to_message_id,
     promotedFromMessageID: item.promoted_from_message_id,
     runId: item.run_id,
+    branchSourceID: item.durable && !item.provisional ? item.id : undefined,
   })) }),
   projectLiveThreadNarrative: (prepared: { entries: unknown[] }) => prepared.entries,
 }));
@@ -146,7 +147,8 @@ function renderFileDrawer(client: APIClient, runID = "run-old") {
 }
 
 function renderConversation(client: APIClient, initialThreadID = "thread-a", extras?: ReactNode,
-  draftProps?: { draft: string; onDraftChange: (content: string, expected?: string) => void }) {
+  draftProps?: { draft?: string; onDraftChange?: (content: string, expected?: string) => void;
+    onBranchCreated?: (thread: ThreadDetailView["thread"]) => void }) {
   const queryClient = new QueryClient({ defaultOptions: {
     queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
   } });
@@ -213,6 +215,23 @@ function queueSnapshot(runID = "run-thread-a", sessionID = "sess-thread-a") {
 }
 
 describe("V2Conversation", () => {
+  it("keeps one composer when switching between cached source and branch chats", async () => {
+    const statistics = { turns: 1, steps: 2, input_tokens: 48, output_tokens: 16, total_tokens: 64,
+      cache_read_tokens: 0, cache_reported_calls: 0, usage_calls: 2, timed_output_tokens: 0, decode_millis: 0 };
+    const view = renderConversation(baseClient());
+    await screen.findByRole("button", { name: "发送 thread-a" });
+    act(() => {
+      view.queryClient.setQueryData(v2QueryKeys.thread("thread-a"), { ...detail("thread-a"), statistics });
+      view.queryClient.setQueryData(v2QueryKeys.thread("thread-branch"), { ...detail("thread-branch"), statistics });
+    });
+    view.rerenderThread("thread-branch");
+    await screen.findByRole("button", { name: "发送 thread-branch" });
+    expect(screen.queryByRole("button", { name: "发送 thread-a" })).not.toBeInTheDocument();
+    view.rerenderThread("thread-a");
+    expect(screen.getAllByRole("button", { name: /^发送 thread-/u })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "发送 thread-a" })).toBeInTheDocument();
+  });
+
   it("synchronizes durable records after reconnect, model finalization and the Run becoming terminal", async () => {
     const active = { ...detail("thread-a"), active_run: { id: "run-thread-a", status: "running" } };
     let items = [transcriptItem("first", "First", 1)];
@@ -1149,6 +1168,41 @@ describe("V2Conversation", () => {
     await user.click(copyCodeBtn);
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("const sum = (a: number, b: number) => a + b;"));
     expect(await screen.findByRole("button", { name: "已复制代码" })).toBeInTheDocument();
+  });
+
+  it("creates a new chat from the selected reply and hands off navigation without executing it", async () => {
+    const branched = detail("thread-branch").thread;
+    const onBranchCreated = vi.fn();
+    const postControl = vi.fn().mockResolvedValue({ version: "thread_branch.v1", thread: branched, source_event_id: "selected-reply" });
+    const client = baseClient({ postControl, getPage: vi.fn().mockResolvedValue(page([
+      transcriptItem("selected-reply", "Earlier answer", 1), transcriptItem("later-reply", "Later answer", 2),
+    ])) });
+    const user = userEvent.setup();
+    renderConversation(client, "thread-a", undefined, { onBranchCreated });
+    const actions = await screen.findAllByRole("button", { name: "分支到新聊天" });
+    await user.click(actions[0]);
+    expect(postControl).toHaveBeenCalledExactlyOnceWith("/threads/thread-a/branches",
+      { version: "thread_branch.v1", source_event_id: "selected-reply" }, expect.stringMatching(/^thread-branch-/u));
+    expect(onBranchCreated).toHaveBeenCalledExactlyOnceWith(branched);
+    expect(client.submitThreadTurn).not.toHaveBeenCalled();
+  });
+
+  it("retains the source chat when branching fails and retries with the original request key", async () => {
+    const onBranchCreated = vi.fn();
+    const postControl = vi.fn().mockRejectedValueOnce(new Error("Branch response lost"))
+      .mockResolvedValue({ version: "thread_branch.v1", thread: detail("new-branch").thread, source_event_id: "selected-reply" });
+    const client = baseClient({ postControl, getPage: vi.fn().mockResolvedValue(page([
+      transcriptItem("selected-reply", "Keep this answer", 1),
+    ])) });
+    const user = userEvent.setup();
+    renderConversation(client, "thread-a", undefined, { onBranchCreated });
+    await user.click(await screen.findByRole("button", { name: "分支到新聊天" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Branch response lost");
+    expect(screen.getByText("Keep this answer")).toBeInTheDocument();
+    expect(onBranchCreated).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "分支到新聊天" }));
+    expect(postControl.mock.calls[1]).toEqual(postControl.mock.calls[0]);
+    expect(onBranchCreated).toHaveBeenCalledTimes(1);
   });
 
   it("opens desktop terminal drawer from header and collapses without destroying session", async () => {

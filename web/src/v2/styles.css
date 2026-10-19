@@ -314,31 +314,57 @@
 .v2-assistant-actions {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: 4px;
   margin-top: 8px;
 }
 
-.v2-assistant-action-btn {
+.v2-shell .v2-assistant-action-btn {
   align-items: center;
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 7px;
   color: var(--v2-muted);
   cursor: pointer;
   display: inline-flex;
-  font-size: 11px;
-  gap: 5px;
-  height: 26px;
-  padding: 0 8px;
-  transition: background-color var(--prayu-motion-fast) ease, border-color var(--prayu-motion-fast) ease,
-    color var(--prayu-motion-fast) ease;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  position: relative;
+  flex: 0 0 auto;
+  transition: background-color var(--prayu-motion-fast) ease, color var(--prayu-motion-fast) ease;
 }
 
-.v2-assistant-action-btn:hover,
-.v2-assistant-action-btn:focus-visible {
-  background: var(--v2-control);
-  border-color: var(--v2-border);
+.v2-shell .v2-assistant-action-btn:hover:not(:disabled),
+.v2-shell .v2-assistant-action-btn:focus-visible {
+  background: var(--v2-control-hover);
   color: var(--v2-ink);
+}
+
+.v2-shell .v2-assistant-action-btn:disabled { cursor: default; opacity: .45; }
+.v2-shell .v2-assistant-action-btn.is-error { color: var(--v2-danger); }
+.v2-assistant-action-tooltip {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  bottom: calc(100% + 7px);
+  padding: 7px 11px;
+  border: 1px solid var(--v2-border);
+  border-radius: 10px;
+  background: var(--v2-floating-surface);
+  color: var(--v2-ink);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 10%);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+.v2-assistant-action-btn:hover > .v2-assistant-action-tooltip,
+.v2-assistant-action-btn:focus-visible > .v2-assistant-action-tooltip { visibility: visible; }
+.v2-assistant-action-error { color: var(--v2-danger); font-size: 12px; margin: 4px 0 0; }
+@media (pointer: coarse) {
+  .v2-shell .v2-assistant-action-btn { width: 36px; height: 36px; }
 }
 
 .v2-file-link {

@@ -1220,6 +1220,23 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		"{candidate_id}":      openAPIConfirmCandidate.ID,
 		"{node_id}":           openAPICheckpoint.ID,
 	}
+	_, branchSourceRun, err := application.NewRunService(fixture.store).Create(t.Context(), application.CreateRunRequest{
+		Goal: "OpenAPI branch source", Profile: "review", WorkspaceID: fixture.workspace.ID, Interactive: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.SaveSessionMessage(t.Context(), session.NewMessage(branchSourceRun.SessionID, "user", "Retain the selected conversation")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.SaveSessionMessage(t.Context(), session.NewMessage(branchSourceRun.SessionID, "assistant", "Selected OpenAPI reply")); err != nil {
+		t.Fatal(err)
+	}
+	branchEvents, err := fixture.store.ListRunEvents(t.Context(), branchSourceRun.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchSourceEventID := branchEvents[len(branchEvents)-1].EventID
 	for _, spec := range openAPIOperationSpecs() {
 		requestPath := spec.Path
 		for placeholder, value := range replacements {
@@ -1287,6 +1304,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		} else if spec.Path == FileEditProposalRecoveryPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", fixture.run.ID)
 			requestPath = strings.ReplaceAll(requestPath, "{edit_id}", recoveryProposal.Edit.ID)
+		} else if spec.OperationID == "branchThread" {
+			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(branchSourceRun.ID))
 		} else if spec.OperationID == "deleteThread" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", deleteThread.ID)
 		} else if spec.OperationID == "rejectContextMemoryCandidate" {
@@ -1648,6 +1667,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"thread_context_compaction.v1","expected_run_id":"` + openAPIThreadRun.ID + `"}`
 				} else if spec.OperationID == "recoverThreadContextCompaction" {
 					body = `{"version":"thread_context_compaction_recovery.v1","expected_run_id":"` + contextRecoveryRun.ID + `","action":"discard"}`
+				} else if spec.OperationID == "branchThread" {
+					body = `{"version":"thread_branch.v1","source_event_id":"` + branchSourceEventID + `"}`
 				} else if spec.OperationID == "createThread" {
 					body = `{"version":"thread_creation.v1","goal":"OpenAPI live Thread",` +
 						`"workspace_id":"` + fixture.workspace.ID + `"}`

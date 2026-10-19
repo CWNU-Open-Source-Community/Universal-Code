@@ -570,7 +570,7 @@ func matchThreadMutationPath(requestPath string) (string, string, bool) {
 		return "", "", false
 	}
 	switch parts[1] {
-	case "messages", "turns", "interrupt", "recovery", "archive", "restore", "delete":
+	case "messages", "turns", "branches", "interrupt", "recovery", "archive", "restore", "delete":
 		return parts[0], parts[1], true
 	default:
 		return "", "", false
@@ -743,6 +743,10 @@ func (a *API) serveThreadMutationControl(writer http.ResponseWriter, request *ht
 	operationKey, err := sessionControlIdempotencyKey(request.Header, "Thread "+action)
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	if action == "branches" {
+		a.serveThreadBranch(writer, request, requestID, threadID, operationKey)
 		return
 	}
 	if action == "interrupt" {

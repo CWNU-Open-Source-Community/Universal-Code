@@ -22,19 +22,25 @@ function LocaleSwitch() {
   return <button onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")} type="button">Switch test language</button>;
 }
 
+const branchNavigation = vi.hoisted(() => ({ complete: undefined as ((thread: ThreadView) => void) | undefined }));
+
 vi.mock("./components/conversation", () => ({
-  V2Conversation: ({ threadID, view = "conversation", draft, onDraftChange, reviewEntry }: {
+  V2Conversation: ({ threadID, view = "conversation", draft, onDraftChange, reviewEntry, onBranchCreated }: {
     threadID: string;
     view?: "conversation" | "inspector";
     draft: string;
     onDraftChange: (value: string) => void;
     reviewEntry?: { threadID: string; runID: string };
-  }) => (
+    onBranchCreated?: (thread: ThreadView) => void;
+  }) => {
+    branchNavigation.complete = onBranchCreated;
+    return (
     <div data-testid="v2-conversation" data-view={view}>{threadID}
       <textarea aria-label="任务草稿 fixture" value={draft} onChange={(event) => onDraftChange(event.target.value)} />
       {reviewEntry && <output aria-label="Requested GitHub review">{`${reviewEntry.threadID}:${reviewEntry.runID}`}</output>}
     </div>
-  ),
+    );
+  },
 }));
 
 const workspace: WorkspaceView = {
@@ -81,6 +87,7 @@ const selectableModelCatalog = (provider = "fixture-provider", model = "fixture-
 const readyModelCatalog = () => vi.fn().mockResolvedValue(selectableModelCatalog());
 
 afterEach(() => {
+  branchNavigation.complete = undefined;
   cleanup();
   useConnectionStore.getState().disconnect();
   vi.restoreAllMocks();
@@ -105,6 +112,31 @@ function expectNoNavigationWrites(client: APIClient) {
 }
 
 describe("V2Workbench inspector navigation", () => {
+  it("offers the new branch without replacing a chat selected while branching", async () => {
+    const otherThread = { ...createdThread, id: "thread-other", title: "Other conversation" };
+    const branched = { ...createdThread, id: "thread-branch", title: "Branched conversation" };
+    window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
+    const client = navigationClient();
+    vi.mocked(client.getPage).mockImplementation(async (path: string) => ({
+      items: path === "/workspaces" ? [workspace] : [createdThread, otherThread],
+      page: { limit: 100 }, requestID: path,
+    }) as never);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    await screen.findByTestId("v2-conversation");
+    const completeSourceBranch = branchNavigation.complete!;
+    await user.click(await screen.findByRole("button", { name: "Other conversation" }));
+    await user.type(screen.getByRole("textbox", { name: "任务草稿 fixture" }), "Keep this draft");
+    act(() => completeSourceBranch(branched));
+    expect(window.location.hash).toBe(`#/threads/${otherThread.id}`);
+    expect(screen.getByRole("textbox", { name: "任务草稿 fixture" })).toHaveValue("Keep this draft");
+    await user.click(screen.getByRole("button", { name: "打开已创建的对话" }));
+    expect(window.location.hash).toBe(`#/threads/${branched.id}`);
+    expect(screen.getByRole("textbox", { name: "任务草稿 fixture" })).toHaveValue("");
+    expectNoNavigationWrites(client);
+  });
+
   it("opens the source task's GitHub delivery tool from connections while retaining the task draft", async () => {
     // Exercise navigation after the settings chunk is ready, independent of CI module-load time.
     await import("./components/settings");
