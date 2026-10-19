@@ -356,6 +356,11 @@ describe("V2 appearance and mist glass controls", () => {
     expect(screen.queryByRole("region", { name: "雾透玻璃参数" })).not.toBeInTheDocument();
 
     const themeGroup = screen.getByRole("group", { name: "应用主题" });
+    expect(within(themeGroup).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["系统", "浅色", "深色", "雾透"]);
+    await user.click(within(themeGroup).getByRole("button", { name: "系统" }));
+    expect(within(themeGroup).getByRole("button", { name: "系统" })).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem("prayu.theme")).toBe("system");
     await user.click(within(themeGroup).getByRole("button", { name: "雾透" }));
 
     const glassRegion = screen.getByRole("region", { name: "雾透玻璃参数" });

@@ -12,16 +12,35 @@
   </p>
 </div>
 
-Universal Code 是一个桌面 AI 编程工作台。连接你选择的模型，在同一段对话中推进项目，查看文件改动、命令结果和资料来源。
+Universal-Code 是一个桌面 AI 编程工作台。连接你选择的模型，在同一段对话中推进项目，查看文件改动、命令结果和资料来源。
 
 **v1.0.0「启航」正在准备发布。** [发布说明](docs/releases/v1.0.0.md)记录已验证范围和待完成事项；目前公开下载仍有历史预览，Mac 新包为未公证预览。
 
-## 为什么选择 Universal Code
+## 为什么选择 Universal-Code
 
 - **围绕真实项目工作**：阅读和修改文件、运行构建、查看差异，把任务结果落到工作区。
 - **少打断，保留控制**：选择当前任务的 Full Access 后，普通文件修改与联网命令可自动执行；文件删除仍需确认。
 - **查资料时保留来源**：优先使用供应商支持的原生搜索，也能读取 GitHub、Hacker News 和 RSS/Atom，并保留网页快照与引用。
 - **继续已有工作**：任务历史、工具记录和检查点保存在本机，可回看进度、检查改动和继续对话。
+
+## 外观
+
+在 **设置 → 外观** 中选择 **系统、浅色、深色、雾透**。系统模式随设备设置切换浅深；雾透使用灰蓝底色与轻盈的磨砂材质，还可调整模糊度、磨砂度和亮度。
+
+![Universal-Code 同一段对话的浅色与深色外观，左浅右深斜向分割](docs/images/appearance/light-dark.png)
+
+截图来自当前源码的生产构建，使用本地演示项目与离线示例回复。左侧为浅色，右侧为深色。
+
+<details>
+<summary>查看主题选项与雾透外观</summary>
+
+![系统、浅色、深色、雾透四个主题选项](docs/images/appearance/theme-options.png)
+
+![Universal-Code 雾透外观](docs/images/appearance/conversation-mist.png)
+
+</details>
+
+更多设置见[外观说明](docs/usage.md#外观--appearance)。
 
 ## 快速开始
 

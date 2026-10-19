@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import type { FileEditProposalSourceView } from "../api/types";
 import { FileProposalEditor } from "./file-proposal-editor";
+import { applyPrayuTheme } from "../lib/appearance";
 
 vi.mock("@monaco-editor/react", () => ({
-  default: ({ value, onChange }: { value: string; onChange: (value: string) => void }) =>
-    <textarea aria-label="Monaco proposal editor" onChange={(event) => onChange(event.target.value)}
+  default: ({ value, onChange, theme }: { value: string; onChange: (value: string) => void; theme: string }) =>
+    <textarea aria-label="Monaco proposal editor" data-theme={theme} onChange={(event) => onChange(event.target.value)}
       value={value} />,
   DiffEditor: ({ original, modified }: { original: string; modified: string }) =>
     <pre aria-label="Monaco diff preview">{original}{modified}</pre>,
@@ -34,6 +35,10 @@ describe("FileProposalEditor", () => {
       <FileProposalEditor client={client} onClose={vi.fn()} runID="run-1" source={source} />
     </QueryClientProvider>);
     const editor = await screen.findByLabelText("Monaco proposal editor");
+    await act(async () => { applyPrayuTheme("light", false); });
+    expect(editor).toHaveAttribute("data-theme", "vs");
+    await act(async () => { applyPrayuTheme("dark", false); });
+    expect(editor).toHaveAttribute("data-theme", "vs-dark");
     await user.clear(editor);
     await user.type(editor, "after");
     await user.click(screen.getByRole("button", { name: "Create proposal" }));

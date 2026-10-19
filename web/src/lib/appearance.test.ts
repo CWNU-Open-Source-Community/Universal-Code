@@ -1,11 +1,15 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
 import {
   applyPrayuGlassSettings,
   applyPrayuTheme,
   defaultPrayuGlassSettings,
+  initializePrayuAppearance,
   prayuGlassPresets,
   readPrayuGlassSettings,
   readPrayuTheme,
+  readPrayuThemePreference,
   resetPrayuGlassSettings,
+  usePrayuTheme,
 } from "./appearance";
 
 describe("Prayu appearance", () => {
@@ -21,10 +25,57 @@ describe("Prayu appearance", () => {
   });
 
   afterEach(() => {
+    applyPrayuTheme("dark", false);
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it("persists and restores the Catppuccin Latte glass mode with default Mica parameters", () => {
+  it("follows system changes, restores the preference, and stops following after a manual choice", async () => {
+    const media = Object.assign(new EventTarget(), { matches: true });
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
+    const light = vi.fn();
+    const dark = vi.fn();
+    const previousRuntime = window.runtime;
+    window.runtime = { WindowSetLightTheme: light, WindowSetDarkTheme: dark };
+    try {
+      expect(readPrayuThemePreference()).toBe("system");
+      applyPrayuTheme("system");
+      expect(window.localStorage.getItem("prayu.theme")).toBe("system");
+      expect(document.documentElement.dataset.prayuTheme).toBe("light");
+      expect(light).toHaveBeenCalledOnce();
+      const { result, unmount } = renderHook(usePrayuTheme);
+      expect(result.current).toBe("light");
+
+      media.matches = false;
+      await act(async () => { media.dispatchEvent(new Event("change")); });
+      await waitFor(() => expect(result.current).toBe("dark"));
+      expect(readPrayuTheme()).toBe("dark");
+      expect(readPrayuThemePreference()).toBe("system");
+      expect(document.documentElement.dataset.prayuTheme).toBe("dark");
+      expect(document.documentElement.style.colorScheme).toBe("dark");
+      expect(dark).toHaveBeenCalledOnce();
+      unmount();
+
+      initializePrayuAppearance();
+      light.mockClear();
+      media.matches = true;
+      media.dispatchEvent(new Event("change"));
+      expect(document.documentElement.dataset.prayuTheme).toBe("light");
+      expect(light).toHaveBeenCalledOnce();
+
+      for (const theme of ["glass", "dark", "light"] as const) {
+        applyPrayuTheme(theme);
+        media.matches = !media.matches;
+        media.dispatchEvent(new Event("change"));
+        expect(document.documentElement.dataset.prayuTheme).toBe(theme);
+        expect(readPrayuThemePreference()).toBe(theme);
+      }
+    } finally {
+      window.runtime = previousRuntime;
+    }
+  });
+
+  it("persists and restores mist with default Mica parameters", () => {
     applyPrayuTheme("glass");
 
     expect(document.documentElement.dataset.prayuTheme).toBe("glass");

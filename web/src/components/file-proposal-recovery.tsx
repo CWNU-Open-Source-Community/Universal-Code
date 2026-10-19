@@ -4,7 +4,7 @@ import { DiffEditor } from "@monaco-editor/react";
 import { AlertTriangle, History, X } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { useLocale } from "../lib/locale";
-import { readPrayuTheme } from "../lib/appearance";
+import { usePrayuTheme } from "../lib/appearance";
 import { ErrorState, LoadingState, StatusBadge } from "./common";
 
 export function FileProposalRecovery({ client, runID, editID, onClose }: {
@@ -14,6 +14,7 @@ export function FileProposalRecovery({ client, runID, editID, onClose }: {
   onClose: () => void;
 }) {
   const { t } = useLocale();
+  const theme = usePrayuTheme();
   const [editorState, setEditorState] = useState<"loading" | "ready" | "failed">("loading");
   const query = useQuery({
     queryKey: ["run", runID, "file-edit-recovery", editID],
@@ -51,7 +52,7 @@ export function FileProposalRecovery({ client, runID, editID, onClose }: {
         modified={recovery.proposed_content} original={recovery.original_content}
         options={{ automaticLayout: true, fontFamily: 'var(--prayu-font-mono, "JetBrains Mono", Consolas, monospace)',
           fontSize: 13, letterSpacing: 0, minimap: { enabled: false }, readOnly: true, renderSideBySide: true,
-          scrollBeyondLastLine: false }} theme={readPrayuTheme() === "dark" ? "vs-dark" : "vs"} /> :
+          scrollBeyondLastLine: false }} theme={theme === "dark" ? "vs-dark" : "vs"} /> :
         <div className={`monaco-local-state${editorState === "failed" ? " inline-warning" : ""}`}
           role={editorState === "failed" ? "alert" : "status"}>
           {editorState === "failed" ? t("无法加载本地编辑器资源", "Local editor assets could not be loaded") : t("正在加载本地编辑器", "Loading local editor")}

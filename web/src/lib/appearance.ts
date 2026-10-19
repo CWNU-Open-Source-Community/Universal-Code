@@ -1,6 +1,8 @@
+import { useSyncExternalStore } from "react";
 import { setDesktopWindowTheme } from "./desktop-window";
 
 export type PrayuTheme = "light" | "dark" | "glass";
+export type PrayuThemePreference = PrayuTheme | "system";
 export type PrayuGlassMode = "mica" | "compat";
 export type PrayuGlassPreset = "clear" | "standard" | "frosted";
 
@@ -14,6 +16,7 @@ export interface PrayuGlassSettings {
 
 const themeStorageKey = "prayu.theme";
 const glassStorageKey = "prayu.glass";
+let stopWatchingSystemTheme: (() => void) | undefined;
 
 export const defaultPrayuGlassSettings: Readonly<PrayuGlassSettings> = Object.freeze({
   mode: "mica",
@@ -111,22 +114,53 @@ export function resetPrayuGlassSettings(persist = true): PrayuGlassSettings {
   return normalized;
 }
 
-export function readPrayuTheme(): PrayuTheme {
-  if (typeof window === "undefined") return "dark";
+export function readPrayuThemePreference(): PrayuThemePreference {
+  if (typeof window === "undefined") return "system";
   try {
     const stored = window.localStorage.getItem(themeStorageKey);
-    if (stored === "light" || stored === "dark" || stored === "glass") return stored;
+    if (stored === "system" || stored === "light" || stored === "dark" || stored === "glass") return stored;
   } catch {
     // Fall through to the system preference.
   }
-  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return "system";
 }
 
-export function applyPrayuTheme(theme: PrayuTheme, persist = true): void {
-  document.documentElement.dataset.prayuTheme = theme;
-  document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
+export function readPrayuTheme(): PrayuTheme {
+  const preference = readPrayuThemePreference();
+  if (preference !== "system") return preference;
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function subscribeToTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-prayu-theme"] });
+  return () => observer.disconnect();
+}
+
+function readAppliedTheme(): PrayuTheme {
+  return (document.documentElement.dataset.prayuTheme as PrayuTheme | undefined) ?? readPrayuTheme();
+}
+
+export function usePrayuTheme(): PrayuTheme {
+  return useSyncExternalStore(subscribeToTheme, readAppliedTheme, readPrayuTheme);
+}
+
+export function applyPrayuTheme(theme: PrayuThemePreference, persist = true): void {
+  stopWatchingSystemTheme?.();
+  stopWatchingSystemTheme = undefined;
+  const systemTheme = theme === "system" ? window.matchMedia?.("(prefers-color-scheme: light)") : undefined;
+  const syncTheme = () => {
+    const resolved = theme === "system" ? systemTheme?.matches ? "light" : "dark" : theme;
+    document.documentElement.dataset.prayuTheme = resolved;
+    document.documentElement.style.colorScheme = resolved === "dark" ? "dark" : "light";
+    setDesktopWindowTheme(resolved);
+  };
+  syncTheme();
   syncGlassVariables(readPrayuGlassSettings());
-  setDesktopWindowTheme(theme);
+  if (systemTheme) {
+    systemTheme.addEventListener("change", syncTheme);
+    stopWatchingSystemTheme = () => systemTheme.removeEventListener("change", syncTheme);
+  }
   if (!persist) return;
   try {
     window.localStorage.setItem(themeStorageKey, theme);
@@ -136,6 +170,6 @@ export function applyPrayuTheme(theme: PrayuTheme, persist = true): void {
 }
 
 export function initializePrayuAppearance(): void {
-  applyPrayuTheme(readPrayuTheme(), false);
+  applyPrayuTheme(readPrayuThemePreference(), false);
 }
 

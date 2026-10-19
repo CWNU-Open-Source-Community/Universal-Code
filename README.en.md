@@ -12,16 +12,35 @@
   </p>
 </div>
 
-Universal Code is a desktop AI coding workbench. Connect your chosen model and move a project forward in one conversation, with file changes, command results, and sources available for review.
+Universal-Code is a desktop AI coding workbench. Connect your chosen model and move a project forward in one conversation, with file changes, command results, and sources available for review.
 
 **v1.0.0 “First Voyage” is being prepared for release.** The [release notes](docs/releases/v1.0.0.md) record verified scope and remaining work. Public downloads still include older previews; new Mac packages are unnotarized previews.
 
-## Why Universal Code?
+## Why Universal-Code?
 
 - **Work on a real project**: read and edit files, run builds, and inspect the resulting changes.
 - **Fewer interruptions, with control**: select Full Access for a task to allow ordinary file changes and network commands to proceed automatically; file deletion still requires confirmation.
 - **Keep research traceable**: prefer native search when the provider supports it, read GitHub, Hacker News, and RSS/Atom sources, and retain page snapshots and citations.
 - **Continue existing work**: task history, tool records, and checkpoints stay on your machine so you can inspect progress and continue the conversation.
+
+## Appearance
+
+Choose **System, Light, Dark, or Mist** in **Settings → Appearance**. System follows your device’s light or dark setting. Mist uses a muted blue-gray canvas and light frosted surfaces, with adjustable blur, opacity, and brightness.
+
+![The same Universal-Code conversation in Light and Dark, split diagonally](docs/images/appearance/light-dark.png)
+
+Captured from a production build of the current source using a local demo project and offline sample replies. Light is on the left; Dark is on the right.
+
+<details>
+<summary>View theme options and Mist</summary>
+
+![System, Light, Dark, and Mist theme options](docs/images/appearance/theme-options.png)
+
+![Universal-Code in Mist](docs/images/appearance/conversation-mist.png)
+
+</details>
+
+See the [appearance guide](docs/usage.md#外观--appearance) for details.
 
 ## Quick start
 
