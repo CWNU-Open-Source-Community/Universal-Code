@@ -100,6 +100,10 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		!filepath.IsAbs(workspaceRoot) || filepath.Clean(workspaceRoot) != workspaceRoot {
 		return stats, errors.New("reviewed dependency preparation and current authority are required")
 	}
+	stagedBytes, err := pnpmSeedBytes(plan)
+	if err != nil {
+		return stats, err
+	}
 	origins := make(map[string]bool, len(approvedOrigins))
 	for _, raw := range approvedOrigins {
 		origin, err := canonicalOrigin(raw)
@@ -131,7 +135,6 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		return stats, err
 	}
 	defer cache.Close()
-	var stagedBytes int64
 	for index, pkg := range plan.Packages {
 		if err := authorityCheck(ctx); err != nil {
 			return stats, err
@@ -233,6 +236,11 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 			progress(Progress{Completed: index + 1, Total: len(plan.Packages), ID: pkg.ID, FromCache: hit, Bytes: stats.Bytes})
 		}
 	}
+	if plan.Ecosystem == "pnpm" {
+		if err := writePNPMSeed(ctx, workspace, plan, authorityCheck); err != nil {
+			return stats, err
+		}
+	}
 	return stats, nil
 }
 
@@ -322,6 +330,14 @@ func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 		}
 		hexDigest := hex.EncodeToString(digest)
 		return path.Join(projectprep.NPMCacheDirectory(target), "_cacache/content-v2", algorithm, hexDigest[:2], hexDigest[2:4], hexDigest[4:]), nil
+	case projectprep.KindPNPMTarball:
+		if strings.TrimSpace(pkg.ID) == "" {
+			return "", errors.New("pnpm artifact needs a package identity")
+		}
+		if _, _, err := npmIntegrity(pkg.Integrity); err != nil {
+			return "", err
+		}
+		return path.Join(projectprep.StageDirectory(target), "pnpm-tarballs", projectprep.PNPMTarballFile(pkg.ID)), nil
 	case projectprep.KindGoMod, projectprep.KindGoZip:
 		if module.Check(pkg.ModulePath, pkg.Version) != nil || module.CanonicalVersion(pkg.Version) != pkg.Version || !strings.HasPrefix(pkg.Integrity, "h1:") {
 			return "", errors.New("Go artifact needs a canonical module version and h1 checksum")
@@ -361,7 +377,7 @@ func verifyArtifact(pkg projectprep.Package, body []byte) error {
 		return fmt.Errorf("dependency artifact byte limit is invalid: %w", ErrIntegrity)
 	}
 	switch pkg.Kind {
-	case projectprep.KindNPMTarball:
+	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball:
 		algorithm, expected, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
 			return err
