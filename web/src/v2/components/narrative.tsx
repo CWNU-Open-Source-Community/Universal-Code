@@ -1,6 +1,6 @@
 import { Children, isValidElement, memo, useMemo, useRef, useState } from "react";
 import { replaceEqualDeep } from "@tanstack/react-query";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy, LoaderCircle, Split } from "lucide-react";
 import { remarkCjkAutolinks } from "../../components/remark-cjk-autolinks";
@@ -10,6 +10,7 @@ import { useLocale } from "../../lib/locale";
 import { V2ImagePreview } from "./image-input";
 import { V2FileAttachments } from "./file-input";
 import { V2ActivityGroup } from "./activity-detail";
+import { rehypeStreamReveal } from "./stream-reveal";
 
 export interface FileLinkTarget {
   path: string;
@@ -178,38 +179,54 @@ interface NarrativeRowProps {
   }) => void;
 }
 
+const StreamRevealSpan: Components["span"] = ({ node, children, ...props }) =>
+  <span key={String(node?.properties.dataStreamStart ?? "")} {...props}>{children}</span>;
+
 function MessageMarkdown({ entry, onOpenFile }: {
   entry: Extract<NarrativeEntry, { kind: "user" | "assistant" }>;
   onOpenFile: NarrativeRowProps["onOpenFile"];
 }) {
+  const live = entry.kind === "assistant" && entry.provisional;
+  const [reveal, setReveal] = useState({ text: entry.text, live, start: undefined as number | undefined });
+  if (reveal.text !== entry.text || reveal.live !== live) {
+    // Only an append to an already visible live message animates. Opening a
+    // thread, correcting text and replacing it with durable output stay immediate.
+    setReveal({ text: entry.text, live, start: live && reveal.live &&
+      entry.text.length > reveal.text.length && entry.text.startsWith(reveal.text)
+      ? reveal.text.length : undefined });
+  }
+  const runID = "runId" in entry ? entry.runId : undefined;
+  const components = useMemo<Components>(() => ({
+    a: ({ node: _node, href, children, ...props }) => {
+      const fileLink = parseProjectFileLink(href ?? "");
+      if (fileLink) {
+        return <a
+          href={href}
+          className="v2-file-link"
+          title={`在工作区中打开 ${fileLink.path}${fileLink.line ? ` (第 ${fileLink.line} 行)` : ""}`}
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenFile?.({
+              path: fileLink.path,
+              line: fileLink.line,
+              runID,
+              triggerElement: event.currentTarget,
+            });
+          }}
+          {...props}
+        >{children}</a>;
+      }
+      return <a href={href} target="_blank" rel="noreferrer noopener" {...props}>{children}</a>;
+    },
+    pre: ({ node: _node, children, ...props }) => <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>,
+    span: StreamRevealSpan,
+  }), [onOpenFile, runID]);
   return <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkCjkAutolinks]}
-      urlTransform={(url) => (parseProjectFileLink(url) ? url : defaultUrlTransform(url))}
-      components={{
-        a: ({ href, children, ...props }) => {
-          const fileLink = parseProjectFileLink(href ?? "");
-          if (fileLink) {
-            return <a
-              href={href}
-              className="v2-file-link"
-              title={`在工作区中打开 ${fileLink.path}${fileLink.line ? ` (第 ${fileLink.line} 行)` : ""}`}
-              onClick={(event) => {
-                event.preventDefault();
-                onOpenFile?.({
-                  path: fileLink.path,
-                  line: fileLink.line,
-                  runID: "runId" in entry ? entry.runId : undefined,
-                  triggerElement: event.currentTarget,
-                });
-              }}
-              {...props}
-            >{children}</a>;
-          }
-          return <a href={href} target="_blank" rel="noreferrer noopener" {...props}>{children}</a>;
-        },
-        pre: ({ children, ...props }) => <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>,
-      }}
-    >{entry.text}</ReactMarkdown>;
+    remarkPlugins={[remarkGfm, remarkCjkAutolinks]}
+    rehypePlugins={reveal.start === undefined ? [] : [[rehypeStreamReveal, { start: reveal.start }]]}
+    urlTransform={(url) => (parseProjectFileLink(url) ? url : defaultUrlTransform(url))}
+    components={components}
+  >{entry.text}</ReactMarkdown>;
 }
 
 const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch }: NarrativeRowProps) {
