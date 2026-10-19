@@ -158,7 +158,12 @@ func TestChatResourcesReadStoredAttachmentAndGeneratedFile(t *testing.T) {
 	}
 	// Moving the conversation changes its current workspace, while old replies
 	// must continue reading the original run's file even if names overlap.
-	target := t.TempDir()
+	// Match the canonical roots returned by the project picker. TempDir can
+	// contain /var symlinks on macOS or short directory names on Windows.
+	target, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, id := range []string{"move-target", "unrelated-project"} {
 		if err := state.SaveWorkspace(t.Context(), store.WorkspaceRecord{ID: id, Name: id, RootPath: target, CreatedAt: time.Now().UTC()}); err != nil {
 			t.Fatal(err)
