@@ -22,14 +22,18 @@ func (r *namedTestWorkspaceRegistrar) RegisterNamedWorkspaceDirectory(ctx contex
 }
 func TestDesktopWorkspaceSelectDoesNotRegisterAndCreateRequiresNativeHandle(t *testing.T) {
 	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	registrar := &namedTestWorkspaceRegistrar{}
 	bridge := newWorkspaceImportBridge(t, testWorkspaceDirectoryPicker{path: root}, registrar)
 	selected, err := bridge.SelectWorkspaceDirectory()
 	if err != nil || selected.Selection == nil || registrar.calls != 0 {
 		t.Fatal(selected, err, registrar.calls)
 	}
-	if selected.Selection.DirectoryPath != filepath.Clean(root) {
-		t.Fatal(selected)
+	if selected.Selection.DirectoryPath != canonicalRoot {
+		t.Fatalf("selected directory %q, want canonical directory %q", selected.Selection.DirectoryPath, canonicalRoot)
 	}
 	if _, err = bridge.CreateWorkspace(CreateWorkspaceRequest{Handle: root, Name: "attempt"}); err == nil || registrar.calls != 0 {
 		t.Fatal("renderer path accepted", err)
