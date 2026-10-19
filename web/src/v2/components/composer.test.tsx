@@ -173,7 +173,7 @@ describe("V2Composer", () => {
     const oversized = "界".repeat(5_500);
     fireEvent.change(screen.getByRole("textbox", { name: "开始新对话" }),
       { target: { value: oversized } });
-    expect(screen.getByText("消息不能超过 16 KiB")).toBeInTheDocument();
+    expect(screen.getByText("正文不能超过 16 KiB，可转为文本附件后继续发送。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   });
 });
