@@ -85,7 +85,7 @@ func (a *API) runContextSummary(request *http.Request, runID string) (any, *Page
 		return nil, nil, err
 	}
 	if run.ID != runID || sess.ID != run.SessionID || mission.ID != run.MissionID ||
-		sess.WorkspaceID != mission.WorkspaceID || thread.WorkspaceID != mission.WorkspaceID {
+		sess.WorkspaceID != mission.WorkspaceID {
 		return nil, nil, apperror.New(apperror.CodeConflict, "stored context Run, Session, and Workspace binding differs")
 	}
 	view := RunContextSummaryView{RunID: run.ID, ThreadID: thread.ID,

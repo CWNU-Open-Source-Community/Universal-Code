@@ -89,19 +89,22 @@ func insertInitialThreadTx(ctx context.Context, tx *sql.Tx, mission domain.Missi
 }
 
 func (s *SQLiteStore) GetThread(ctx context.Context, id string) (domain.Thread, error) {
-	return scanThread(s.db.QueryRowContext(ctx, threadSelect+` WHERE id = ?`, strings.TrimSpace(id)))
+	item, err := scanThread(s.db.QueryRowContext(ctx, threadSelect+` WHERE id = ?`, strings.TrimSpace(id)))
+	return s.withProjectAssignment(ctx, item, err)
 }
 
 func (s *SQLiteStore) GetThreadByRun(ctx context.Context, runID string) (domain.Thread, error) {
-	return scanThread(s.db.QueryRowContext(ctx, threadSelect+`
+	item, err := scanThread(s.db.QueryRowContext(ctx, threadSelect+`
 		WHERE id = (SELECT thread_id FROM thread_runs WHERE run_id = ?)`,
 		strings.TrimSpace(runID)))
+	return s.withProjectAssignment(ctx, item, err)
 }
 
 func (s *SQLiteStore) GetThreadBySession(ctx context.Context, sessionID string) (domain.Thread, error) {
-	return scanThread(s.db.QueryRowContext(ctx, threadSelect+`
+	item, err := scanThread(s.db.QueryRowContext(ctx, threadSelect+`
 		WHERE id = (SELECT thread_id FROM thread_runs WHERE session_id = ?)`,
 		strings.TrimSpace(sessionID)))
+	return s.withProjectAssignment(ctx, item, err)
 }
 
 func (s *SQLiteStore) ListThreadsByCreationPage(ctx context.Context, filter domain.ThreadFilter,
@@ -150,7 +153,17 @@ func (s *SQLiteStore) ListThreadsByCreationPage(ctx context.Context, filter doma
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if err = readProjectAssignment(ctx, s.db, &items[i]); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 // GetThreadExecutionFacts reads a whole bounded list page in one SQLite
@@ -1081,6 +1094,8 @@ func (s *SQLiteStore) ExportThread(ctx context.Context, threadID string) (domain
 	if err != nil {
 		return domain.ThreadExport{}, err
 	}
+	missions := []domain.Mission{}
+	seenMissions := map[string]bool{}
 	runs := make([]domain.Run, 0, len(bindings))
 	sessions := make([]domain.ThreadSession, 0, len(bindings))
 	for _, binding := range bindings {
@@ -1089,6 +1104,14 @@ func (s *SQLiteStore) ExportThread(ctx context.Context, threadID string) (domain
 			return domain.ThreadExport{}, err
 		}
 		runs = append(runs, run)
+		if !seenMissions[run.MissionID] {
+			historical, err := s.GetMission(ctx, run.MissionID)
+			if err != nil {
+				return domain.ThreadExport{}, err
+			}
+			missions = append(missions, historical)
+			seenMissions[run.MissionID] = true
+		}
 		linkedSession, err := s.GetSession(ctx, binding.SessionID)
 		if err != nil {
 			return domain.ThreadExport{}, err
@@ -1111,7 +1134,7 @@ func (s *SQLiteStore) ExportThread(ctx context.Context, threadID string) (domain
 		return domain.ThreadExport{}, err
 	}
 	return domain.ThreadExport{ProtocolVersion: domain.ThreadExportProtocolVersion,
-		ExportedAt: time.Now().UTC(), Thread: threadRecord, Mission: mission,
+		ExportedAt: time.Now().UTC(), Thread: threadRecord, Mission: mission, Missions: missions,
 		Bindings: bindings, Runs: runs, Sessions: sessions, Messages: messages, Events: events,
 		AuditEvents: auditEvents}, nil
 }
@@ -1125,6 +1148,8 @@ func scanThread(row scanner) (domain.Thread, error) {
 		&item.Version, &created, &updated, &archived, &deleted); err != nil {
 		return domain.Thread{}, err
 	}
+	item.ProjectWorkspaceID = item.WorkspaceID
+	item.ProjectAssignmentVersion = 1
 	item.Status = domain.ThreadStatus(status)
 	item.CreatedAt = parseTS(created)
 	item.UpdatedAt = parseTS(updated)

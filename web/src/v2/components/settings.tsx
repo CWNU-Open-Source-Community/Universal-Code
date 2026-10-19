@@ -30,6 +30,7 @@ import { V2ProviderSettings } from "./provider-settings";
 import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { V2ExecutionSettings } from "./execution-settings";
 import { V2CommandServiceSettings } from "./command-service-settings";
+import { V2ProjectlessDirectorySettings } from "./projectless-directory-settings";
 import { V2WebAccessSettings } from "./web-access-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
@@ -147,7 +148,8 @@ function FontLicenseControl() {
   </>;
 }
 
-function GeneralSettings({ threadID, workspaces, onPermissions }: {
+function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
+  client: APIClient;
   threadID: string;
   workspaces: WorkspaceView[];
   onPermissions: () => void;
@@ -176,6 +178,7 @@ function GeneralSettings({ threadID, workspaces, onPermissions }: {
         </SettingRow>
       </div>
     </section>
+    <V2ProjectlessDirectorySettings client={client} />
   </>;
 }
 
@@ -466,7 +469,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   const { t } = useLocale();
   return <main className="v2-settings-main"><div className="v2-settings-toolbar" />
     <div className="v2-settings-scroll"><div className={`v2-settings-content${section === "usage" ? " v2-usage-content" : ""}`}>
-      {section === "general" && <GeneralSettings onPermissions={() => onSelectSection("permissions")}
+      {section === "general" && <GeneralSettings client={client} onPermissions={() => onSelectSection("permissions")}
         threadID={threadID} workspaces={workspaces} />}
       {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}
         onChange={onDefaultWebAccessChange} hasThread={Boolean(threadID)}

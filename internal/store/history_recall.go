@@ -18,11 +18,12 @@ import (
 )
 
 type historyScope struct {
-	threadID    string
-	runID       string
-	workspaceID string
-	sessions    map[string]string // exact Session -> Run, validated as one predecessor chain
-	ordinals    map[string]int
+	threadID      string
+	runID         string
+	workspaceID   string
+	runWorkspaces map[string]string
+	sessions      map[string]string // exact Session -> Run, validated as one predecessor chain
+	ordinals      map[string]int
 }
 
 type historyQueryer interface {
@@ -64,7 +65,7 @@ type historyToolRef struct {
 // beginThreadRequestObservation uses a dedicated, deferred read transaction:
 // the normal store DSN is BEGIN IMMEDIATE even for TxOptions.ReadOnly.
 func (s *SQLiteStore) historyScope(ctx context.Context, q historyQueryer, runID string) (historyScope, error) {
-	value := historyScope{runID: runID, sessions: map[string]string{}, ordinals: map[string]int{}}
+	value := historyScope{runID: runID, sessions: map[string]string{}, ordinals: map[string]int{}, runWorkspaces: map[string]string{}}
 	if !domain.ValidAgentID(runID) {
 		return value, apperror.New(apperror.CodeInvalidArgument, "history recall requires a valid current Run")
 	}
@@ -81,12 +82,23 @@ func (s *SQLiteStore) historyScope(ctx context.Context, q historyQueryer, runID 
 		return value, err
 	}
 	value.workspaceID = workspaceID
+	// Historical schemas before v216 retain a single-workspace lineage and have
+	// no project-move receipts. Once v216 is recorded, its ledger is required.
+	var projectMoveSchema bool
+	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=216)`).Scan(&projectMoveSchema); err != nil {
+		return value, err
+	}
+	projectMoveCount := `0`
+	if projectMoveSchema {
+		projectMoveCount = `(SELECT COUNT(*) FROM thread_project_moves p WHERE p.thread_id=b.thread_id AND p.predecessor_run_id=b.predecessor_run_id AND p.successor_run_id=b.run_id AND p.project_workspace_id=m.workspace_id)`
+	}
 	rows, err := q.QueryContext(ctx, `SELECT b.run_id,b.session_id,b.ordinal,COALESCE(b.predecessor_run_id,''),
 		r.session_id,r.mission_id,COALESCE(m.workspace_id,''),COALESCE(s.workspace_id,''),
 		(SELECT COUNT(*) FROM thread_events e WHERE e.thread_id=b.thread_id AND e.run_id=b.run_id
 		 AND e.type='thread.run_successor_created' AND e.source='thread_continuation'
 		 AND json_extract(e.payload_json,'$.predecessor_run_id')=b.predecessor_run_id
-		 AND json_extract(e.payload_json,'$.successor_run_id')=b.run_id)
+		 AND json_extract(e.payload_json,'$.successor_run_id')=b.run_id),
+		`+projectMoveCount+`
 		FROM thread_runs b LEFT JOIN runs r ON r.id=b.run_id
 		LEFT JOIN missions m ON m.id=r.mission_id LEFT JOIN sessions s ON s.id=b.session_id
 		WHERE b.thread_id=? ORDER BY b.ordinal LIMIT 1025`, value.threadID)
@@ -95,19 +107,22 @@ func (s *SQLiteStore) historyScope(ctx context.Context, q historyQueryer, runID 
 	}
 	defer rows.Close()
 	previous, count := "", 0
+	previousMission, previousWorkspace := "", ""
 	for rows.Next() {
 		var boundRun, boundSession, predecessor, actualSession, actualMission, actualWorkspace, sessionWorkspace string
-		var ordinal, events int
-		if err := rows.Scan(&boundRun, &boundSession, &ordinal, &predecessor, &actualSession, &actualMission, &actualWorkspace, &sessionWorkspace, &events); err != nil {
+		var ordinal, events, moves int
+		if err := rows.Scan(&boundRun, &boundSession, &ordinal, &predecessor, &actualSession, &actualMission, &actualWorkspace, &sessionWorkspace, &events, &moves); err != nil {
 			return value, err
 		}
 		count++
 		if count > 1024 {
 			return value, apperror.New(apperror.CodeResourceExhausted, "history lineage exceeds the bounded recall scope")
 		}
-		if ordinal != count || predecessor != previous || actualSession != boundSession || actualMission != missionID || actualWorkspace != workspaceID || sessionWorkspace != workspaceID || (ordinal > 1 && events != 1) {
+		if ordinal != count || predecessor != previous || actualSession != boundSession || actualMission == "" || sessionWorkspace != actualWorkspace || (ordinal > 1 && (actualMission != previousMission || actualWorkspace != previousWorkspace) && moves != 1) || (boundRun == runID && (actualMission != missionID || actualWorkspace != workspaceID)) || (ordinal > 1 && events != 1) {
 			return value, apperror.New(apperror.CodeFailedPrecondition, "history recall predecessor or Session provenance is inconsistent")
 		}
+		value.runWorkspaces[boundRun] = actualWorkspace
+		previousMission, previousWorkspace = actualMission, actualWorkspace
 		value.sessions[boundSession] = boundRun
 		value.ordinals[boundRun] = ordinal
 		previous = boundRun
@@ -388,7 +403,7 @@ func readHistoryMCPArtifact(ctx context.Context, q historyQueryer, scope history
 	if err != nil {
 		return domain.HistoryRecord{}, nil, err
 	}
-	if scope.sessions[blob.SessionID] != blob.RunID || blob.WorkspaceID != scope.workspaceID {
+	if scope.sessions[blob.SessionID] != blob.RunID || blob.WorkspaceID != scope.runWorkspaces[blob.RunID] {
 		return domain.HistoryRecord{}, nil, historyNotFound()
 	}
 	record, err := safeHistoryMetadata(domain.HistoryRecord{SourceID: "artifact:" + id, Kind: "tool_output_artifact",

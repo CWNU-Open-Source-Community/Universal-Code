@@ -1,5 +1,5 @@
 import { parsePluginSkillInstall, parseSkillPackageInventory, parseSkillPackageRemoval } from "../api/client";
-import type { PluginSkillInstallView, SkillPackageInventoryView, SkillPackageRemovalView } from "../api/types";
+import type { PluginSkillInstallView, ProjectlessDirectory, SkillPackageInventoryView, SkillPackageRemovalView } from "../api/types";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 import { validVerificationFeatureReadiness, type VerificationFeatureReadiness } from "../api/verification-readiness";
@@ -172,6 +172,7 @@ export interface DesktopConnectionBootstrap {
   agent_terminal_input_default: false;
   workspace_open_enabled: boolean;
   workspace_import_enabled: boolean;
+  projectless_workspaces_enabled?: boolean;
   risk_profile_restart_enabled: boolean;
   renderer_path_input_supported: false;
 }
@@ -382,6 +383,9 @@ interface NativeDesktopBridge {
   PasteClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   InspectClipboardFiles?: (request: DesktopClipboardFilesRequest) => Promise<unknown>;
   ImportWorkspace?: () => Promise<unknown>;
+  SelectWorkspaceDirectory?: () => Promise<unknown>;
+  CreateWorkspace?: (request: {handle:string;name:string}) => Promise<unknown>;
+  ChooseProjectlessDirectory?: () => Promise<unknown>;
   InstallSkillPackage: (request: DesktopSkillInstallRequest) => Promise<unknown>;
   ListSkillPackages?: (request: DesktopSkillInventoryRequest) => Promise<unknown>;
   RemoveSkillPackage?: (request: DesktopSkillRemovalRequest) => Promise<unknown>;
@@ -538,6 +542,11 @@ export function desktopWorkspaceImportEnabled(): boolean {
   return activeBootstrap?.workspace_import_enabled === true && getWorkspaceImportBridge() !== null;
 }
 
+export function desktopProjectlessDirectoryEnabled(): boolean {
+  return activeBootstrap?.projectless_workspaces_enabled === true &&
+    typeof getBridge()?.ChooseProjectlessDirectory === "function";
+}
+
 export function desktopDebugRestartEnabled(): boolean {
   return activeBootstrap?.risk_profile_restart_enabled === true && getDebugRestartBridge() !== null;
 }
@@ -683,6 +692,29 @@ export async function selectDesktopSkillPreview(): Promise<DesktopSkillPreview |
   return previewValue;
 }
 
+export interface DesktopWorkspaceDirectorySelection { handle: string; directory_path: string; name: string }
+export async function selectDesktopWorkspaceDirectory(): Promise<DesktopWorkspaceDirectorySelection | null> {
+  const bridge = getBridge();
+  if (!activeBootstrap?.workspace_import_enabled || !bridge?.SelectWorkspaceDirectory) throw new Error("Native project selection is unavailable");
+  const result = await bridge.SelectWorkspaceDirectory();
+  if (!hasExactKeys(result, ["status", "selection"])) throw new Error("Native project selection was rejected");
+  if (result.status === "cancelled" && result.selection === null) return null;
+  const selection = result.selection;
+  if (result.status !== "selected" || !hasExactKeys(selection, ["handle", "directory_path", "name"]) ||
+    typeof selection.handle !== "string" || !/^[a-f0-9]{64}$/u.test(selection.handle) ||
+    !boundedText(selection.directory_path, 1, 4096) || !boundedText(selection.name, 1, 128)) throw new Error("Native project selection was rejected");
+  return selection as unknown as DesktopWorkspaceDirectorySelection;
+}
+export async function createDesktopWorkspace(handle: string, name: string): Promise<DesktopImportedWorkspace> {
+  const bridge = getBridge();
+  if (!activeBootstrap?.workspace_import_enabled || !bridge?.CreateWorkspace || !/^[a-f0-9]{64}$/u.test(handle) ||
+    !name.trim() || new TextEncoder().encode(name.trim()).length > 128 || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) throw new Error("Native project creation is unavailable or invalid");
+  const value = await bridge.CreateWorkspace({handle, name:name.trim()});
+  if (!hasExactKeys(value,["id","name","created_at"]) || !validWorkspaceID(value.id) || !boundedText(value.name,1,128) ||
+    typeof value.created_at !== "string" || !Number.isFinite(Date.parse(value.created_at))) throw new Error("Native project creation result was rejected");
+  return value as unknown as DesktopImportedWorkspace;
+}
+
 export async function importDesktopWorkspace(): Promise<DesktopImportedWorkspace | null> {
   const bridge = getWorkspaceImportBridge();
   if (!bridge || !activeBootstrap?.workspace_import_enabled) {
@@ -693,6 +725,27 @@ export async function importDesktopWorkspace(): Promise<DesktopImportedWorkspace
     throw new Error("Desktop Workspace import result was rejected");
   }
   return value.status === "cancelled" ? null : value.workspace;
+}
+
+export async function chooseDesktopProjectlessDirectory(): Promise<ProjectlessDirectory | null> {
+  const bridge = getBridge();
+  if (!desktopProjectlessDirectoryEnabled() || !bridge?.ChooseProjectlessDirectory) {
+    throw new Error("Desktop chat directory selection is disabled");
+  }
+  const value = await bridge.ChooseProjectlessDirectory();
+  if (!hasExactKeys(value, ["status", "settings"])) {
+    throw new Error("Desktop chat directory selection result was rejected");
+  }
+  if (value.status === "cancelled" && value.settings === null) return null;
+  const settings = value.settings;
+  if (value.status !== "selected" || !hasExactKeys(settings,
+    ["version", "directory_path", "default_directory_path"]) ||
+    settings.version !== "projectless_directory.v1" ||
+    !boundedText(settings.directory_path, 1, 4096) ||
+    !boundedText(settings.default_directory_path, 1, 4096)) {
+    throw new Error("Desktop chat directory selection result was rejected");
+  }
+  return settings as unknown as ProjectlessDirectory;
 }
 
 export async function restartDesktopInDebugMode(): Promise<DesktopDebugRestartResult> {
@@ -1051,8 +1104,11 @@ function getDebugRestartBridge(): NativeDebugRestartBridge | null {
 function validBootstrap(value: unknown): value is DesktopConnectionBootstrap {
   const chatGPTKeys = isRecord(value) && Object.hasOwn(value, "chatgpt_auth_enabled")
     ? ["chatgpt_auth_enabled"] : [];
+  const projectlessKeys = isRecord(value) && Object.hasOwn(value, "projectless_workspaces_enabled")
+    ? ["projectless_workspaces_enabled"] : [];
   if (!hasExactKeys(value, [
     ...chatGPTKeys,
+    ...projectlessKeys,
     "agent_code_tools_enabled", "api_base_url", "api_version", "app_version",
     "code_intel_enabled",
     "approval_control_enabled", "command_runtime_enabled",
@@ -1141,6 +1197,8 @@ function validBootstrap(value: unknown): value is DesktopConnectionBootstrap {
     typeof value.user_terminal_enabled === "boolean" &&
     value.agent_terminal_input_default === false &&
     typeof value.workspace_import_enabled === "boolean" &&
+    (value.projectless_workspaces_enabled === undefined || typeof value.projectless_workspaces_enabled === "boolean") &&
+    (!value.projectless_workspaces_enabled || (value.run_creation_enabled && value.session_message_enabled)) &&
     typeof value.workspace_open_enabled === "boolean" &&
     typeof value.risk_profile_restart_enabled === "boolean" &&
     (!value.risk_profile_restart_enabled || (value.control_token !== "" &&

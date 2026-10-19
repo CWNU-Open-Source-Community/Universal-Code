@@ -101,11 +101,11 @@ func materializeOriginalAttachmentInputs(ctx context.Context, store fileAttachme
 		if err := ctx.Err(); err != nil {
 			return input, err
 		}
-		metadata, raw, err := store.GetWorkspaceFileAttachment(ctx, set.WorkspaceID, file.ID)
+		metadata, raw, err := store.GetWorkspaceFileAttachment(ctx, file.WorkspaceID, file.ID)
 		if err != nil {
 			return input, err
 		}
-		if domain.NewFileAttachmentInput(metadata) != file || file.WorkspaceID != set.WorkspaceID {
+		if domain.NewFileAttachmentInput(metadata) != file {
 			return input, apperror.New(apperror.CodeConflict, "Original attachment identity changed before execution")
 		}
 		relative := filepath.FromSlash(file.RelativePath)

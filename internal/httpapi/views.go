@@ -1137,21 +1137,23 @@ type SessionView struct {
 }
 
 type ThreadView struct {
-	ID              string     `json:"id"`
-	ProtocolVersion string     `json:"protocol_version"`
-	WorkspaceID     string     `json:"workspace_id,omitempty"`
-	MissionID       string     `json:"mission_id"`
-	Title           string     `json:"title"`
-	Status          string     `json:"status"`
-	ActiveRunID     string     `json:"active_run_id,omitempty"`
-	LastRunID       string     `json:"last_run_id"`
-	Version         int64      `json:"version"`
-	ComposerState   string     `json:"composer_state"`
-	ExecutionState  string     `json:"execution_state,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
-	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	ProjectWorkspaceID       string     `json:"project_workspace_id"`
+	ProjectAssignmentVersion int64      `json:"project_assignment_version"`
+	ID                       string     `json:"id"`
+	ProtocolVersion          string     `json:"protocol_version"`
+	WorkspaceID              string     `json:"workspace_id,omitempty"`
+	MissionID                string     `json:"mission_id"`
+	Title                    string     `json:"title"`
+	Status                   string     `json:"status"`
+	ActiveRunID              string     `json:"active_run_id,omitempty"`
+	LastRunID                string     `json:"last_run_id"`
+	Version                  int64      `json:"version"`
+	ComposerState            string     `json:"composer_state"`
+	ExecutionState           string     `json:"execution_state,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+	ArchivedAt               *time.Time `json:"archived_at,omitempty"`
+	DeletedAt                *time.Time `json:"deleted_at,omitempty"`
 }
 
 type ThreadRunView struct {
@@ -1499,6 +1501,7 @@ type ThreadEventView struct {
 }
 
 type ThreadExportView struct {
+	Missions        []MissionView             `json:"missions"`
 	ProtocolVersion string                    `json:"protocol_version"`
 	ExportedAt      time.Time                 `json:"exported_at"`
 	Thread          ThreadView                `json:"thread"`
@@ -1924,6 +1927,7 @@ func threadView(value domain.Thread, activeRunStatus ...domain.RunStatus) Thread
 		composerState = "waiting_approval"
 	}
 	return ThreadView{ID: value.ID, ProtocolVersion: value.ProtocolVersion,
+		ProjectWorkspaceID: value.ProjectWorkspaceID, ProjectAssignmentVersion: value.ProjectAssignmentVersion,
 		WorkspaceID: value.WorkspaceID, MissionID: value.MissionID, Title: value.Title,
 		Status: string(value.Status), ActiveRunID: value.ActiveRunID,
 		LastRunID: value.LastRunID, Version: value.Version, ComposerState: composerState,

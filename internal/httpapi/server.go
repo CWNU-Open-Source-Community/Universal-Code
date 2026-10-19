@@ -1245,6 +1245,18 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveExtensionMutation(tracked, request, requestID, identity, kind)
 		return
 	}
+	if request.URL.Path == ProjectlessWorkspacePath {
+		a.serveProjectlessWorkspace(tracked, request, requestID)
+		return
+	}
+	if request.URL.Path == ProjectlessDirectoryPath {
+		a.serveProjectlessDirectory(tracked, request, requestID)
+		return
+	}
+	if id, action, matched := matchWorkspaceProjectPath(request.URL.Path); matched {
+		a.serveWorkspaceProject(tracked, request, requestID, id, action)
+		return
+	}
 	if request.URL.Path == WorkspaceImportPath {
 		a.serveWorkspaceImport(tracked, request, requestID)
 		return

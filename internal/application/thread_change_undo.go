@@ -159,6 +159,13 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 	if err != nil {
 		return r, apperror.Normalize(err)
 	}
+	sourceRun, sourceErr := s.store.GetRun(ctx, summary.RunID)
+	if sourceErr != nil {
+		return r, apperror.Normalize(sourceErr)
+	}
+	if sourceRun.MissionID != run.MissionID {
+		run = sourceRun
+	}
 	mission, err := s.store.GetMission(ctx, run.MissionID)
 	if err != nil {
 		return r, apperror.Normalize(err)

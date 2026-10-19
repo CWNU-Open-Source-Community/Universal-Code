@@ -69,9 +69,8 @@ func (s *SQLiteStore) InspectThreadCreationRequest(ctx context.Context, workspac
 		JOIN sessions session ON session.id=binding.session_id
 		JOIN missions mission ON mission.id=run.mission_id
 		WHERE binding.run_id=? AND binding.session_id=? AND run.session_id=binding.session_id
-		AND binding.ordinal=1 AND thread.mission_id=? AND mission.id=thread.mission_id
-		AND thread.workspace_id=? AND mission.workspace_id=thread.workspace_id
-		AND session.workspace_id=thread.workspace_id`, operation.RunID, operation.SessionID,
+		AND binding.ordinal=1 AND mission.id=?
+		AND mission.workspace_id=? AND session.workspace_id=mission.workspace_id`, operation.RunID, operation.SessionID,
 		operation.MissionID, workspaceID).Scan(&threadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, apperror.New(apperror.CodeConflict, "Thread creation request binding is inconsistent")
@@ -177,6 +176,9 @@ func (s *SQLiteStore) InspectThreadTurnRequest(ctx context.Context, threadID, ke
 	if exact != 1 || message.RunID != intent.RunID || message.RequestedBy != requester {
 		return value, apperror.New(apperror.CodeConflict, "Thread request message binding is inconsistent")
 	}
+	if err = tx.QueryRowContext(ctx, `SELECT workspace_id FROM sessions WHERE id=?`, message.SessionID).Scan(&value.WorkspaceID); err != nil {
+		return value, err
+	}
 	if !legacy {
 		var files []domain.WorkspaceFileReference
 		var images []domain.ImageReference
@@ -184,7 +186,7 @@ func (s *SQLiteStore) InspectThreadTurnRequest(ctx context.Context, threadID, ke
 		if err = json.Unmarshal([]byte(attachmentsJSON), &attachments); err != nil {
 			return value, err
 		}
-		if err = validateObservedThreadAttachments(ctx, tx, thread.WorkspaceID, message, attachments); err != nil {
+		if err = validateObservedThreadAttachments(ctx, tx, value.WorkspaceID, message, attachments); err != nil {
 			return value, err
 		}
 		if err = json.Unmarshal([]byte(filesJSON), &files); err != nil {
@@ -193,7 +195,7 @@ func (s *SQLiteStore) InspectThreadTurnRequest(ctx context.Context, threadID, ke
 		if err = json.Unmarshal([]byte(imagesJSON), &images); err != nil {
 			return value, err
 		}
-		if err = validateObservedThreadImages(ctx, tx, thread.WorkspaceID, message, images); err != nil {
+		if err = validateObservedThreadImages(ctx, tx, value.WorkspaceID, message, images); err != nil {
 			return value, err
 		}
 		_, fingerprint, _, err := threadMessageIntentIdentity(domain.ThreadMessageIntentRequest{ThreadID: threadID, Content: message.OriginalContent, Files: files, Images: images, Attachments: attachments, RequestedBy: requester, OperationKey: key})

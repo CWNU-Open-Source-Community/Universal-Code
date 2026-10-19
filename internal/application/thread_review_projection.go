@@ -203,6 +203,10 @@ func (s *ThreadReviewService) reviewOnce(ctx context.Context, threadID string) (
 }
 
 func (s *ThreadReviewService) historicalReviewWorkspace(ctx context.Context, thread domain.Thread, run domain.Run) (string, error) {
+	mission, err := s.store.GetMission(ctx, run.MissionID)
+	if err != nil {
+		return "", apperror.Normalize(err)
+	}
 	owned, found, err := readRunFileDrydock(ctx, s.store, run.ID)
 	if err != nil {
 		return "", apperror.Normalize(err)
@@ -217,9 +221,9 @@ func (s *ThreadReviewService) historicalReviewWorkspace(ctx context.Context, thr
 				return "", nil
 			} // Unavailable target is never relabelled as the source.
 		}
-		return thread.WorkspaceID, nil
+		return mission.WorkspaceID, nil
 	}
-	if owned.MissionID != thread.MissionID || owned.SourceWorkspaceID != thread.WorkspaceID || owned.WorkspaceID == "" || owned.WorkspaceID == thread.WorkspaceID {
+	if owned.MissionID != mission.ID || owned.SourceWorkspaceID != mission.WorkspaceID || owned.WorkspaceID == "" || owned.WorkspaceID == mission.WorkspaceID {
 		return "", threadReviewBindingError()
 	}
 	if owned.RunID == run.ID {

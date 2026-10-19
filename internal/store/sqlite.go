@@ -502,7 +502,9 @@ func migrationPlan() []migration {
 		migration{Version: 212, Name: "Thread development service preference", Statements: threadCommandServicePolicyStatements},
 		migration{Version: 213, Name: "Non-authorizing same-workspace Thread peer messages", Statements: threadPeerMessageStatements},
 		migration{Version: 214, Name: "Fenced Thread peer messaging tools", Statements: threadPeerToolLedgerStatements(), DisableForeignKeys: true},
-		migration{Version: 215, Name: "Exact pnpm workspace preparation and fetch receipts", Statements: pnpmPreparationReceiptStatements()})
+		migration{Version: 215, Name: "Exact pnpm workspace preparation and fetch receipts", Statements: pnpmPreparationReceiptStatements()},
+		migration{Version: 216, Name: "Thread project moves preserve Run workspaces", Statements: threadProjectMoveStatements()},
+		migration{Version: 217, Name: "Private per-chat working directories", Statements: projectlessWorkspaceStatements})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {
@@ -523,7 +525,9 @@ func (s *SQLiteStore) ListWorkspaces(ctx context.Context) ([]WorkspaceRecord, er
 	query := `SELECT id, name, root_path, created_at FROM workspaces`
 	if s.hideDrydockWorkspaces {
 		query += ` WHERE NOT EXISTS (SELECT 1 FROM drydock_workspaces drydock
-			WHERE drydock.workspace_id = workspaces.id)`
+			WHERE drydock.workspace_id = workspaces.id)
+			AND NOT EXISTS (SELECT 1 FROM projectless_workspace_allocations local
+			WHERE local.workspace_id = workspaces.id)`
 	}
 	rows, err := s.db.QueryContext(ctx, query+` ORDER BY name`)
 	if err != nil {

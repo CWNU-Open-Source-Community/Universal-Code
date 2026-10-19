@@ -74,6 +74,7 @@ type RuntimeCapabilitiesView struct {
 	FullCDPSessionControlEnabled       bool                         `json:"full_cdp_session_control_enabled"`
 	RunCreationEnabled                 bool                         `json:"run_creation_enabled"`
 	WorkspaceImportEnabled             bool                         `json:"workspace_import_enabled"`
+	ProjectlessWorkspacesEnabled       bool                         `json:"projectless_workspaces_enabled"`
 	StandardCodePresetEnabled          bool                         `json:"standard_code_preset_enabled"`
 	SessionMessageEnabled              bool                         `json:"session_message_enabled"`
 	ThreadControlEnabled               bool                         `json:"thread_control_enabled"`
@@ -203,6 +204,7 @@ func (a *API) runtimeCapabilities(request *http.Request) (any, *Page, error) {
 		ProtocolVersion:   RuntimeCapabilitiesProtocolVersion,
 		RunControlEnabled: a.controlEnabled, RunCreationEnabled: a.runCreationEnabled,
 		WorkspaceImportEnabled:             a.workspaceImportEnabled,
+		ProjectlessWorkspacesEnabled:       projectlessEnabled(a),
 		StandardCodePresetEnabled:          a.standardCodePresetEnabled,
 		ExecutionPermissionControlEnabled:  a.executionPermissionControlEnabled,
 		WorkspaceSandboxEnabled:            a.executionPermissionCapabilities.WorkspaceSandboxEnabled,

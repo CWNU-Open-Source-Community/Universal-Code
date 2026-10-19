@@ -37,7 +37,7 @@ type ThreadTurnController interface {
 type ThreadCreationControlRequestView struct {
 	Version           string                     `json:"version"`
 	Goal              string                     `json:"goal"`
-	WorkspaceID       string                     `json:"workspace_id"`
+	WorkspaceID       string                     `json:"workspace_id,omitempty"`
 	Profile           string                     `json:"profile,omitempty"`
 	Surface           string                     `json:"surface,omitempty"`
 	Phase             string                     `json:"phase,omitempty"`
@@ -594,7 +594,11 @@ func (a *API) threadExport(request *http.Request, threadID string) (any, *Page, 
 			break
 		}
 	}
-	return ThreadExportView{ProtocolVersion: value.ProtocolVersion,
+	missions := make([]MissionView, len(value.Missions))
+	for i, mission := range value.Missions {
+		missions[i] = missionView(mission)
+	}
+	return ThreadExportView{Missions: missions, ProtocolVersion: value.ProtocolVersion,
 		ExportedAt: value.ExportedAt, Thread: threadView(value.Thread, activeStatus),
 		Mission: missionView(value.Mission), Runs: runs, Sessions: sessions, Messages: messages,
 		Events: eventViews, AuditEvents: auditViews}, nil, nil
@@ -610,7 +614,7 @@ func matchThreadMutationPath(requestPath string) (string, string, bool) {
 		return "", "", false
 	}
 	switch parts[1] {
-	case "messages", "turns", "branches", "interrupt", "recovery", "archive", "restore", "delete":
+	case "project", "messages", "turns", "branches", "interrupt", "recovery", "archive", "restore", "delete":
 		return parts[0], parts[1], true
 	default:
 		return "", "", false
@@ -725,6 +729,19 @@ func (a *API) serveThreadCreationControl(writer http.ResponseWriter, request *ht
 		customModelProvider = route.Custom
 		expectedProviderDefinitionRevision = route.DefinitionRevision
 	}
+	if view.WorkspaceID == "" {
+		manager, enabled := a.projectlessManager()
+		if !enabled {
+			a.writeError(writer, requestID, apperror.New(apperror.CodeFailedPrecondition, "local chat directories are unavailable"), 0)
+			return
+		}
+		record, _, err := manager.Allocate(request.Context(), operationKey)
+		if err != nil {
+			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		view.WorkspaceID = record.ID
+	}
 	result, err := application.NewControlledRunCreationService(a.store).
 		WithLifecycleHooks(a.lifecycleHooks).Create(request.Context(),
 		application.ControlledRunCreationRequest{Version: domain.RunCreationProtocolVersion,
@@ -783,6 +800,10 @@ func (a *API) serveThreadMutationControl(writer http.ResponseWriter, request *ht
 	operationKey, err := sessionControlIdempotencyKey(request.Header, "Thread "+action)
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	if action == "project" {
+		a.serveThreadProjectMove(writer, request, requestID, threadID, operationKey)
 		return
 	}
 	if action == "branches" {
