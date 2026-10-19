@@ -41,6 +41,18 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
 }
 
 describe("projectThreadNarrative", () => {
+  it("preserves distinct tool names when no specialized title or command summary exists", () => {
+    const projected = projectThreadNarrative(["thread_list", "thread_send_message"].map((name, index) => item({
+      id: name, canonical_id: name, sequence: index + 1, tool_name: name,
+      source: "harness", kind: "tool_call", activity_type: "execute",
+      title: "工具执行已完成", detail: name, status: "completed", detail_available: false,
+    })));
+    expect(projected).toEqual([expect.objectContaining({ kind: "activity", count: 2, items: [
+      expect.objectContaining({ title: "thread_list", detailAvailable: false }),
+      expect.objectContaining({ title: "thread_send_message", detailAvailable: false }),
+    ] })]);
+  });
+
   it("does not treat delivery receipts as branchable model replies", () => {
     const projected = projectThreadNarrative([item({ id: "delivery-receipt", source: "harness", kind: "plan",
       activity_type: "delivery", title: "切片交付检查点已记录", detail: "", status: "completed" })]);

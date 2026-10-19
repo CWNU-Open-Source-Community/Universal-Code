@@ -222,7 +222,7 @@ export function projectThreadNarrative(
           ? "规划结果记录" : undefined) ??
           (fileChange ? fileChangeLabels[fileChange] : undefined) ??
           evidence?.title ?? item.activity_summary?.command ??
-          safeToolActivityTitle(item.tool_name ?? "", activity, item.title),
+          safeToolActivityTitle(item.tool_name ?? "", item.title),
         detail: evidence?.detail ?? item.detail?.trim() ?? "",
         status: evidence?.status ?? item.status?.trim() ?? item.stage?.trim() ?? "",
         provisional: item.provisional,
@@ -448,8 +448,7 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
       stage: liveToolStage(item.status),
       kind: "tool_call",
       source: "model",
-      title: safeToolActivityTitle(item.tool_name ?? "", classifyLiveTool(item.tool_name ?? ""),
-        "工具执行"),
+      title: safeToolActivityTitle(item.tool_name ?? "", "工具执行"),
       detail: liveToolDetail(item.status, item.argument_bytes ?? 0),
       status: item.status,
       verifiable: false,
@@ -518,8 +517,7 @@ function classifyLiveTool(name: string): Exclude<NarrativeToolKind, "plan"> {
   }
 }
 
-function safeToolActivityTitle(toolName: string, activity: NarrativeToolKind,
-  fallback: string): string {
+function safeToolActivityTitle(toolName: string, fallback: string): string {
   switch (toolName.toLowerCase()) {
   case "history_search": return "搜索对话历史";
   case "history_read": return "读取历史原文";
@@ -534,12 +532,9 @@ function safeToolActivityTitle(toolName: string, activity: NarrativeToolKind,
   case "web_search": return "联网搜索";
   case "source_search": return "搜索专业来源";
   case "web_fetch": return "抓取网页";
+  case "command_runtime": return "运行命令";
   }
-  if (!toolName) return fallback;
-  const generic: Record<NarrativeToolKind, string> = {
-    search: "搜索", read: "读取", edit: "修改", execute: "工具执行", verify: "验证", plan: "规划",
-  };
-  return generic[activity];
+  return toolName || fallback;
 }
 
 function liveToolStage(status: string): ThreadTranscriptItemView["stage"] {

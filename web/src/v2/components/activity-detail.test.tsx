@@ -134,8 +134,9 @@ describe("V2ActivityGroup", () => {
     const user = userEvent.setup();
     await user.click(screen.getByText("运行"));
     await user.click(screen.getByLabelText("查看长命令的执行详情"));
-    await waitFor(() => expect(view.container.querySelector(".v2-command-detail > header > code")?.textContent).toBe(command));
-    expect(view.container.querySelector(".v2-command-detail pre code")?.textContent).toBe(stdout);
+    await waitFor(() => expect(view.container.querySelector(".v2-command-input code")?.textContent).toBe(command));
+    expect(view.container.querySelector(".v2-command-detail > header > strong")).toHaveTextContent("Shell");
+    expect(view.container.querySelector('section[aria-label="标准输出"] pre code')?.textContent).toBe(stdout);
   });
 
   it.each([
@@ -281,7 +282,9 @@ describe("V2ActivityGroup", () => {
     expect(threadActivityDetail).toHaveBeenCalledTimes(1);
     expect(threadActivityDetail).toHaveBeenCalledWith(
       "thread-1", "command-1", expect.any(AbortSignal));
-    expect(screen.getByText("packages/core")).toBeInTheDocument();
+    expect(screen.getByText("packages/core")).not.toBeVisible();
+    await user.click(screen.getByText("执行信息"));
+    expect(screen.getByText("packages/core")).toBeVisible();
     expect(screen.getByText("Root Agent")).toBeInTheDocument();
     expect(screen.getByTitle("agent-root")).toHaveTextContent("agent-root");
     expect(screen.getByText("Workspace Sandbox · 无网络")).toBeInTheDocument();
@@ -735,6 +738,41 @@ describe("V2ActivityGroup", () => {
     expect(screen.getByText("可引用")).toBeInTheDocument();
     expect(screen.getByText(/网页内容作为参考资料展示/u)).toHaveTextContent("操作授权以任务要求和审批为准");
     expect(threadActivityDetail).not.toHaveBeenCalled();
+  });
+
+  it("expands individual calls independently inside a tool group and reuses their loaded details", async () => {
+    const threadActivityDetail = vi.fn((_threadID: string, activityRef: string) => Promise.resolve({
+      version: "thread_activity_detail.v2", activity_ref: activityRef, run_id: "run-1",
+      tools: [{ name: "command_runtime", label: "运行命令", status: "completed",
+        agent_id: "agent-root", agent_role: "root", agent_label: "Root Agent",
+        detail: commandDetail([{ command: activityRef, working_directory: ".",
+          status: "completed", exit_code: 0, duration_milliseconds: 25,
+          stdout_preview: `output: ${activityRef}`, stderr_preview: "", artifacts: [],
+          execution_environment: "Workspace Sandbox", network: "disabled", truncated: false }]) }],
+    }));
+    const client = { threadActivityDetail } as unknown as APIClient;
+    const user = userEvent.setup();
+    renderActivity(client, activity({ count: 2, items: ["first", "second"].map((name) => ({
+      title: name, detail: "", status: "completed", provisional: false,
+      detailRef: name, detailAvailable: true,
+    })) }));
+
+    await user.click(screen.getByText("运行了 2 项"));
+    expect(threadActivityDetail).not.toHaveBeenCalled();
+    await user.click(screen.getByLabelText("查看first的执行详情"));
+    expect(await screen.findByText("output: first")).toBeVisible();
+    expect(screen.queryByText("output: second")).not.toBeInTheDocument();
+    expect(threadActivityDetail).toHaveBeenCalledTimes(1);
+    expect(threadActivityDetail).toHaveBeenLastCalledWith("thread-1", "first", expect.any(AbortSignal));
+
+    await user.click(screen.getByLabelText("查看second的执行详情"));
+    expect(await screen.findByText("output: second")).toBeVisible();
+    await user.click(screen.getByLabelText("收起first的执行详情"));
+    expect(screen.getByText("output: first")).not.toBeVisible();
+    expect(screen.getByText("output: second")).toBeVisible();
+    await user.click(screen.getByLabelText("查看first的执行详情"));
+    expect(screen.getByText("output: first")).toBeVisible();
+    expect(threadActivityDetail).toHaveBeenCalledTimes(2);
   });
 
   it("keeps old transcript activities readable without requesting unavailable details", async () => {
