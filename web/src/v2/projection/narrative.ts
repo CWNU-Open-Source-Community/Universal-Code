@@ -2,6 +2,7 @@ import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../
 import type { PublicModelStreamStatus } from "../../hooks/use-public-model-stream";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../../api/file-attachments";
+import type { ThreadPeerMessage } from "../../api/thread-peer-messages";
 
 export type NarrativeToolKind = "search" | "read" | "edit" | "execute" | "verify" | "plan";
 export type NarrativeFileChange = "proposed" | "approved" | "applied" | "denied" | "failed" | "unknown";
@@ -22,6 +23,14 @@ export type ThreadTranscriptActivityItem = ThreadTranscriptItemView & {
 };
 
 export type NarrativeEntry =
+  | {
+      id: string;
+      kind: "peer";
+      message: ThreadPeerMessage;
+      text: string;
+      createdAt: string;
+      provisional: false;
+    }
   | {
       id: string;
       kind: "user";
@@ -277,6 +286,12 @@ export function projectThreadNarrative(
         result.push(entry);
         canonicalActivities.set(canonicalKey, { entry, leaf, stageRank });
       }
+      continue;
+    }
+
+    if (item.source === "peer" && item.kind === "peer_message" && item.peer_message) {
+      result.push({ id: item.id, kind: "peer", message: item.peer_message, text: item.peer_message.content,
+        createdAt: item.created_at, provisional: false });
       continue;
     }
 

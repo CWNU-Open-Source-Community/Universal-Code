@@ -592,6 +592,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               type="button">{t("加载更多项目", "Load more projects")}</button>}
             workspaceID={workspaceID} workspaces={workspaces} />
           : <V2Conversation client={client} onArchive={setArchiveCandidate}
+            onOpenThread={openConversation}
             onBranchCreated={(thread) => {
               if (routeRef.current === route) openConversation(thread.id);
               else setBackgroundCreations((current) => [...current.filter(({ id }) => id !== thread.id), thread]);

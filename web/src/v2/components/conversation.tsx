@@ -55,6 +55,8 @@ import { UserTerminalPanel } from "../../components/user-terminal-panel";
 import { desktopUserTerminalEnabled, closeDesktopUserTerminal } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { V2IdentityDisclosure } from "./identity-disclosure";
+import { V2PeerMessageDialog, type PeerReply } from "./thread-peer-messages";
+import type { ThreadPeerMessage } from "../../api/thread-peer-messages";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
@@ -328,7 +330,7 @@ export function V2TerminalDrawer({
 
 export function V2Conversation({ client, threadID, workspaces, onArchive, onManageModels,
   onOpenInspector, draft: legacyDraft, onDraftChange: legacyDraftChange, view = "conversation", onOpenTool, onOpenInspectorHome, onOpenWorktree, onExitInspector,
-  reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated }: {
+  reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated, onOpenThread }: {
   client: APIClient;
   threadID: string;
   workspaces: WorkspaceView[];
@@ -346,6 +348,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   onReviewEntryHandled?: (requestID: string) => void;
   reviewMemoryRef?: RefObject<TaskReviewToolMemory>;
   onBranchCreated?: (thread: ThreadView) => void;
+  onOpenThread?: (threadID: string) => void;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -372,6 +375,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const [checking, setChecking] = useState<string[]>([]);
   const [observations, setObservations] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+  const [peerDialog, setPeerDialog] = useState<{ threadID: string; reply?: ThreadPeerMessage } | null>(null);
+  const peerReturnFocus = useRef<HTMLElement | null>(null);
+  const replyToPeer = useCallback<PeerReply>((message, trigger) => {
+    peerReturnFocus.current = trigger;
+    setPeerDialog({ threadID, reply: message });
+  }, [threadID]);
   const [activePane, setActivePane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
   const leaveFileEdit = useFileEditLeave();
   const setPaneOpen = (pane: NonNullable<typeof activePane>, open: boolean) =>
@@ -540,7 +549,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       const detail = query.state.data;
       if (detail?.active_run && ["preparing", "running", "waiting_approval"]
         .includes(detail.active_run.status)) return 1_500;
-      return optimistic.length > 0 ? 750 : false;
+      return optimistic.length > 0 ? 750 : detail?.thread.status === "active" ? 5_000 : false;
     },
   });
   const managedDraft = useV2DraftDocument(detailQuery.data?.thread.workspace_id ?? "", threadID);
@@ -561,7 +570,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     // Events drive ordinary updates. A slower head-only check also covers a
     // quiet connection or a durable write that follows its notification.
     refetchInterval: optimistic.length > 0 ? 750 : streamEnabled
-      ? eventStream.status === "live" ? 10_000 : 1_200 : false,
+      ? eventStream.status === "live" ? 10_000 : 1_200 : detailQuery.data?.thread.status === "active" ? 5_000 : false,
   });
   const refreshTranscript = transcriptQuery.refetch;
   const liveSnapshot = publicStream.snapshot?.call.run_id === streamRunID
@@ -922,6 +931,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <CircleEllipsis aria-hidden="true" size={18} />
         </button>
         {menuOpen && <div className="v2-thread-menu" ref={menuRef} role="menu">
+          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} role="menuitem" type="button"
+            onClick={() => { peerReturnFocus.current = menuTriggerRef.current; setMenuOpen(false); setPeerDialog({ threadID }); }}>
+            <MessagesSquare aria-hidden="true" size={15} />{t("发送到其他聊天", "Message another chat")}</button>
           <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
             setMenuOpen(false);
             menuTriggerRef.current?.focus();
@@ -938,6 +950,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         </div>}
       </div>
     </header>
+    {peerDialog?.threadID === threadID && <V2PeerMessageDialog key={`${threadID}:${peerDialog.reply?.id ?? "new"}`}
+      client={client} threadID={threadID} sourceTitle={detail.thread.title} reply={peerDialog.reply}
+      onClose={() => setPeerDialog(null)} returnFocusRef={peerReturnFocus} />}
     <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={view === "conversation" && activePane === null} disabled={view === "inspector" && !onExitInspector}
@@ -1057,7 +1072,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
         {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile}
-          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} />}
+          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
+          onPeerReply={client.hasThreadControl && detail.thread.status === "active" ? replyToPeer : undefined} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")

@@ -1,5 +1,7 @@
 import { WorkflowClient } from "./workflows";
 import type { ThreadChangeSummary, ThreadChangeUndo } from "./thread-changes";
+import { maximumPeerMessageBytes, peerMessageBytes, parseThreadPeerTargets, parseThreadPeerMessageResult,
+  validThreadPeerMessage, type ThreadPeerMessageRequest } from "./thread-peer-messages";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import { parseTaskSkillCandidates, type TaskSkillCandidateScope } from "./task-skill-candidates";
 import { validSkillSelectionRef } from "./project-skills";
@@ -707,8 +709,8 @@ const threadTranscriptTypes = ["message", "search", "read", "edit", "execute", "
   "approval", "checkpoint", "delivery"];
 const threadTranscriptStages = ["started", "arguments_ready", "running", "result", "blocked"];
 const threadTranscriptKinds = ["harness_status", "model_update", "operator_input", "model_call",
-  "tool_call", "approval", "file_change", "plan", "dependency", "browser"];
-const threadTranscriptSources = ["harness", "model", "operator"];
+  "tool_call", "approval", "file_change", "plan", "dependency", "browser", "peer_message"];
+const threadTranscriptSources = ["harness", "model", "operator", "peer"];
 
 function validWebEvidenceURL(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > 4_096 ||
@@ -761,7 +763,7 @@ function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemView {
   const optional = ["activity_detail_ref", "activity_summary", "attempt_id", "boundary_reason", "detail",
     "detail_available", "delivery_mode", "durable_call_id", "promoted_to_message_id", "promoted_from_message_id",
     "model_attempt", "position", "source_ref", "status", "stream_call_id", "stream_item_id",
-    "stream_response_id", "tool_name", "tool_round", "web_evidence", "images", "attachments"];
+    "stream_response_id", "tool_name", "tool_round", "web_evidence", "images", "attachments", "peer_message"];
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, ...optional]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
     value.version !== "thread_transcript.v1" || !boundedIdentity(value.id) ||
@@ -810,6 +812,11 @@ function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemView {
   }
   if (value.attachments !== undefined && (!validFileAttachments(value.attachments) || value.source !== "operator")) {
     throw new APIRequestError("消息附件引用无效。", "INVALID_RESPONSE", 502);
+  }
+  if ((value.source === "peer" || value.kind === "peer_message" || value.peer_message !== undefined) &&
+    (value.source !== "peer" || value.kind !== "peer_message" || value.instruction_authorized !== false ||
+      !validThreadPeerMessage(value.peer_message))) {
+    throw new APIRequestError("The cross-chat message source is invalid.", "INVALID_RESPONSE", 502);
   }
   if (value.activity_summary !== undefined) {
     const summary = value.activity_summary;
@@ -8986,6 +8993,24 @@ export class APIClient {
   async threadExecution(threadID: string, signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
     return parseThreadExecution(await this.get<unknown>(
       `/threads/${encodeURIComponent(threadID)}/execution`, {}, signal), threadID);
+  }
+
+  async threadPeerTargets(threadID: string, signal?: AbortSignal) {
+    return parseThreadPeerTargets(await this.get<unknown>(
+      `/threads/${encodeURIComponent(threadID)}/peer-targets`, {}, signal), threadID);
+  }
+
+  async sendThreadPeerMessage(threadID: string, request: ThreadPeerMessageRequest, operationKey: string,
+    signal?: AbortSignal) {
+    if (!this.hasThreadControl || !boundedIdentity(threadID) || !boundedIdentity(request.target_thread_id) ||
+      request.target_thread_id === threadID || request.version !== "thread_peer_message.v1" ||
+      !request.content.trim() || request.content.includes("\0") || peerMessageBytes(request.content.trim()) > maximumPeerMessageBytes ||
+      (request.reply_to !== undefined && !boundedIdentity(request.reply_to))) {
+      throw new Error("Choose another chat and enter a message of up to 16 KB.");
+    }
+    const body = { ...request, content: request.content.trim() };
+    return parseThreadPeerMessageResult(await this.sendControl<unknown>(
+      `/threads/${encodeURIComponent(threadID)}/peer-messages`, body, operationKey, signal), threadID, body);
   }
 
   async threadChanges(threadID: string, runID: string, sourceEventID: string,
