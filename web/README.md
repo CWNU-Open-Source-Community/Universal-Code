@@ -4,7 +4,7 @@
 
 ---
 
-## 🛠️ 技术栈 (Tech Stack)
+## 技术栈 (Tech Stack)
 
 - **核心框架**：React 18 + TypeScript + Vite
 - **代码与 Diff 编辑器**：Monaco Editor (本地离线打包，支持按需加载与 Proposal 恢复)
@@ -14,7 +14,7 @@
 
 ---
 
-## 🚀 本地开发与联调模式 (Getting Started)
+## 本地开发与联调模式 (Getting Started)
 
 ### 方式一：Vite 独立开发代理模式 (推荐日常前端开发)
 
@@ -50,7 +50,7 @@ go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765 --ui-dir web/dist
 
 ---
 
-## 🖥️ 核心业务功能视图 (Key Views & Components)
+## 核心业务功能视图 (Key Views & Components)
 
 | 核心视图 | 对应模块路径 | 功能说明 |
 | :--- | :--- | :--- |
@@ -63,7 +63,7 @@ go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765 --ui-dir web/dist
 
 ---
 
-## 📁 目录结构 (Directory Layout)
+## 目录结构 (Directory Layout)
 
 ```text
 web/
@@ -84,7 +84,7 @@ web/
 
 ---
 
-## 🧪 常用脚本与检查指令
+## 常用脚本与检查指令
 
 | 命令 | 用途 |
 | :--- | :--- |
@@ -97,7 +97,7 @@ web/
 
 ---
 
-## 💎 纯 CSS 视觉与设计规范 (Design Language)
+## 纯 CSS 视觉与设计规范 (Design Language)
 
 - **纯 CSS 物理光学折射**：采用由 GreyD097 纯 CSS 方案启发的双向对角内阴影 (`inset 1.5px -1.5px` 与 `inset -1.5px 1.5px`)，在按钮和面板边缘模拟凸透镜全反射效果。
 - **环境底光网格**：注入多点离散光场 (`--prayu-ambient-radial`) 搭配 `backdrop-filter: blur(34px) saturate(190%) contrast(102%)`，确保在深色模式下呈现透亮亚克力质感，杜绝普通黑底导致的色彩发灰坍塌。

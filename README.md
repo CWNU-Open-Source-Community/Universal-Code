@@ -28,17 +28,17 @@
 
 ---
 
-## 🌟 核心特性
+## 核心特性
 
-- 🛠️ **深度聚焦本地项目**：直接阅读、分析与修改本地代码库，内置 Diff 逐行审阅与可信撤销（Rewind / Checkpoints）能力。
-- 🛡️ **透明可控的安全策略**：支持只读分析、交互审批（Approval Mode）与全自动（Full Access）权限分级，高危操作（文件删除、非白名单命令）严格阻断并要求人工确认。
-- 🧠 **主流模型即开即用**：原生接入 OpenAI、Anthropic Claude、DeepSeek、Kimi、Ollama 本地模型与任何兼容 OpenAI 的第三方 API，支持单会话内即时热切，并支持通过系统浏览器快速完成 **ChatGPT 账户授权登录**。
-- 🔍 **真实来源的网络检索**：优先调用供应商原生搜索，支持直接抓取 GitHub PR/Issue、Hacker News 与 RSS/Atom 资讯，自动附带快照存证与引用出处。
-- 💎 **现代苹果液态玻璃美学**：采用纯 CSS 物理折射模型（macOS / VisionOS 亚克力液态玻璃风格），提供深色、浅色与雾透磨砂质感，兼具 120fps 极速渲染。
+- **深度聚焦本地项目**：直接阅读、分析与修改本地代码库，内置 Diff 逐行审阅与可信撤销（Rewind / Checkpoints）能力。
+- **透明可控的安全策略**：支持只读分析、交互审批（Approval Mode）与全自动（Full Access）权限分级，高危操作（文件删除、非白名单命令）严格阻断并要求人工确认。
+- **主流模型即开即用**：原生接入 OpenAI、Anthropic Claude、DeepSeek、Kimi、Ollama 本地模型与任何兼容 OpenAI 的第三方 API，支持单会话内即时热切，并支持通过系统浏览器快速完成 ChatGPT 账户授权登录。
+- **真实来源的网络检索**：优先调用供应商原生搜索，支持直接抓取 GitHub PR/Issue、Hacker News 与 RSS/Atom 资讯，自动附带快照存证与引用出处。
+- **现代苹果液态玻璃美学**：采用纯 CSS 物理折射模型（macOS / VisionOS 亚克力液态玻璃风格），提供深色、浅色与雾透磨砂质感，兼具 120fps 极速渲染。
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 方式一：下载预编译客户端
 
@@ -68,7 +68,7 @@ go run ./cmd/cyberagent-desktop
 
 ---
 
-## ⚙️ 模型配置与连接
+## 模型配置与连接
 
 首次打开客户端或新建对话时，点击输入区上方的模型选择器进行配置：
 
@@ -84,7 +84,7 @@ go run ./cmd/cyberagent-desktop
 
 ---
 
-## 🖼️ 界面预览
+## 界面预览
 
 | 浅色与深色对比 | 雾透磨砂玻璃 (Mist) |
 | :---: | :---: |
@@ -94,7 +94,7 @@ go run ./cmd/cyberagent-desktop
 
 ---
 
-## 📚 详细文档导航
+## 详细文档导航
 
 | 领域 | 文档链接 | 描述 |
 | :--- | :--- | :--- |
@@ -108,11 +108,11 @@ go run ./cmd/cyberagent-desktop
 
 ---
 
-## 🤝 参与贡献
+## 参与贡献
 
 欢迎提交 Issue 与 Pull Request！在开始开发前，请先阅读我们的 [贡献指南 (CONTRIBUTING.md)](CONTRIBUTING.md)。
 
-## 📄 开源许可证与字体合规
+## 开源许可证与字体合规
 
 - 本项目基于 [Apache License 2.0](LICENSE) 协议开源。
 - **第三方字体声明**：中文界面包含华为技术有限公司授权的 HarmonyOS Sans Fonts，完整 [字体许可文本](web/public/licenses/HarmonyOS-Sans.txt) 随软件一并分发；字体源文件与校验哈希详见 [字体出处说明](web/src/assets/fonts/PROVENANCE.md)。
