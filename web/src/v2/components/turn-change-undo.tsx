@@ -47,7 +47,7 @@ export function TurnChangeUndo({ client, summary }: { client: APIClient; summary
       case "incomplete_history": return t("缺少完整的原始编辑记录，无法恢复。", "The original edit records are incomplete and cannot be restored.");
       case "permission_denied": return t("当前没有恢复文件的权限。", "File restore permission is unavailable.");
       case "workspace_changed": return t("工作目录已发生变化，请先检查当前目录。", "The working directory has changed. Check the current directory first.");
-      case "restore_failed": return t("文件恢复未完成，请检查文件状态后重试。", "The file restore did not complete. Check the file state before retrying.");
+      case "restore_failed": return t("文件恢复未完成，请检查下列文件状态。", "The file restore did not complete. Check the file states below.");
       default: return t("当前状态无法安全恢复，请检查文件与任务状态后重试。", "Check the file and task state before retrying the restore.");
     }
   };

@@ -92,6 +92,21 @@ it("keeps completed undo state after reloading the summary", () => {
   expect(api).not.toHaveBeenCalled();
 });
 
+it("prefers a refreshed completed receipt over an earlier available preview", async () => {
+  const user = userEvent.setup();
+  const api = vi.fn().mockResolvedValue(result());
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const control = (value: ThreadChangeSummary) => <QueryClientProvider client={queryClient}>
+    <TurnChangeUndo client={{ undoThreadChanges: api } as unknown as APIClient} summary={value} />
+  </QueryClientProvider>;
+  const view = render(control(summary));
+  await user.click(screen.getByRole("button", { name: "Undo this turn’s changes" }));
+  await screen.findByRole("button", { name: "Confirm undo" });
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  view.rerender(control({ ...summary, undo: result({ state: "completed" }) }));
+  expect(screen.getByRole("button", { name: "This turn’s changes were undone" })).toHaveAttribute("aria-disabled", "true");
+});
+
 it("reports partial progress without claiming the entire turn was undone", async () => {
   const user = userEvent.setup();
   const api = vi.fn().mockResolvedValueOnce(result()).mockResolvedValueOnce(result({ state: "partial",
