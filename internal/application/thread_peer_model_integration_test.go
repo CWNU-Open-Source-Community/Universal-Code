@@ -84,7 +84,7 @@ func TestRootModelListsChatsSendsAndReceivesOnePeerReply(t *testing.T) {
 		rounds, _ := st.ListRunSupervisorToolRoundsPage(t.Context(), source.ID, 0, 20)
 		t.Fatalf("source turn: %v; calls=%d rounds=%+v", err, len(provider.Requests()), rounds)
 	}
-	items, err := peer.Messages(t.Context(), sourceID)
+	items, err := st.ListThreadPeerMessages(t.Context(), sourceID, 200)
 	if err != nil || len(items) != 1 || items[0].SourceThreadID != sourceID || items[0].TargetThreadID != targetID || items[0].Status != "queued" {
 		t.Fatalf("model send=%+v err=%v", items, err)
 	}
@@ -95,7 +95,7 @@ func TestRootModelListsChatsSendsAndReceivesOnePeerReply(t *testing.T) {
 	defer func() { cancel(); <-done }()
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		items, err = peer.Messages(t.Context(), sourceID)
+		items, err = st.ListThreadPeerMessages(t.Context(), sourceID, 200)
 		a, aErr := turns.ExecutionState(t.Context(), sourceID)
 		b, bErr := turns.ExecutionState(t.Context(), targetID)
 		if err == nil && aErr == nil && bErr == nil && len(items) == 2 && items[0].Status == "delivered" && items[1].Status == "delivered" && len(provider.Requests()) == 6 && a.State == "idle" && b.State == "idle" {

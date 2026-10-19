@@ -25,17 +25,39 @@ func peerStoreRun(t *testing.T, st *SQLiteStore, title string) domain.Run {
 	return run
 }
 
+func peerStoreSource(t *testing.T, st *SQLiteStore, source domain.Run) (domain.RunExecutionLease, domain.SupervisorCheckpoint) {
+	t.Helper()
+	lease := acquireTestRunExecutionLease(t, t.Context(), st, source.ID)
+	if _, err := st.EnqueueOperatorSteering(t.Context(), domain.EnqueueOperatorSteeringRequest{RunID: source.ID, SessionID: source.SessionID, Content: "Coordinate within this chat's existing task", OperationKey: "peer-source-instruction-" + source.ID, RequestedBy: "test_operator"}); err != nil {
+		t.Fatal(err)
+	}
+	turn, err := st.BeginSupervisorTurn(t.Context(), lease, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lease, turn.Checkpoint
+}
+
+func peerStoreRequest(source, target domain.Run, cp domain.SupervisorCheckpoint, content, key string) domain.SendThreadPeerMessageRequest {
+	return domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(target.ID), Content: content, OperationKey: key, RequestedBy: "run_supervisor", SourceRunID: source.ID, SourceAttemptID: cp.AttemptID, SourceLeaseID: cp.LeaseID, SourceLeaseGeneration: cp.LeaseGeneration}
+}
+
 func TestThreadPeerStoreAutomaticRepliesAreFencedAndBounded(t *testing.T) {
 	st := openWorkItemTestStore(t)
 	ctx := t.Context()
 	a := peerStoreRun(t, st, "A")
 	b := peerStoreRun(t, st, "B")
-	first, err := st.EnqueueThreadPeerMessage(ctx, domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(a.ID), TargetThreadID: domain.InitialThreadID(b.ID), Content: "Please share results within your existing scope", OperationKey: "peer-store-first-user-message", RequestedBy: "operator"}, b.ID)
+	leaseA, sourceCP := peerStoreSource(t, st, a)
+	first, err := st.EnqueueThreadPeerMessage(ctx, peerStoreRequest(a, b, sourceCP, "Please share results within your existing scope", "peer-store-first-model-message"), b.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	current := first.Message
-	leases := map[string]domain.RunExecutionLease{a.ID: acquireTestRunExecutionLease(t, ctx, st, a.ID), b.ID: acquireTestRunExecutionLease(t, ctx, st, b.ID)}
+	cp, response := recordOperatorSteeringModelSuccess(t, ctx, st, sourceCP, "Request sent")
+	if _, _, _, err := st.CompleteSupervisorTurn(ctx, cp, response, domain.RootAction{Version: domain.RootLifecycleVersion, Kind: domain.RootActionFinish, Message: response.Text, Summary: "done"}, policy.Decision{Allowed: true}, 0); err != nil {
+		t.Fatal(err)
+	}
+	leases := map[string]domain.RunExecutionLease{a.ID: leaseA, b.ID: acquireTestRunExecutionLease(t, ctx, st, b.ID)}
 	for depth := 1; depth <= domain.MaxThreadPeerReplyDepth+1; depth++ {
 		sender, recipient := b, a
 		if depth%2 == 0 {
@@ -52,7 +74,8 @@ func TestThreadPeerStoreAutomaticRepliesAreFencedAndBounded(t *testing.T) {
 		if input.SessionID != sender.SessionID || input.Provenance.SourceKind != session.SourcePeerMessage || input.Provenance.InstructionAuthorized {
 			t.Fatalf("sender input provenance: %+v", input)
 		}
-		request := domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(sender.ID), TargetThreadID: domain.InitialThreadID(recipient.ID), Content: fmt.Sprintf("Reply %d", depth), ReplyTo: current.ID, OperationKey: fmt.Sprintf("peer-store-model-reply-%02d", depth), RequestedBy: "run_supervisor", ModelInitiated: true, SourceRunID: sender.ID, SourceAttemptID: turn.Checkpoint.AttemptID, SourceLeaseID: leases[sender.ID].LeaseID, SourceLeaseGeneration: leases[sender.ID].Generation}
+		request := peerStoreRequest(sender, recipient, turn.Checkpoint, fmt.Sprintf("Reply %d", depth), fmt.Sprintf("peer-store-model-reply-%02d", depth))
+		request.ReplyTo = current.ID
 		unlinked := request
 		unlinked.ReplyTo = ""
 		unlinked.OperationKey += "-unlinked"
@@ -69,12 +92,6 @@ func TestThreadPeerStoreAutomaticRepliesAreFencedAndBounded(t *testing.T) {
 		if depth > domain.MaxThreadPeerReplyDepth {
 			if apperror.CodeOf(err) != apperror.CodeResourceExhausted {
 				t.Fatalf("automatic reply limit: %v", err)
-			}
-			request.ModelInitiated = false
-			request.OperationKey += "-human"
-			human, err := st.EnqueueThreadPeerMessage(ctx, request, recipient.ID)
-			if err != nil || human.Message.Depth != 0 {
-				t.Fatalf("human reply did not reset chain: %+v %v", human, err)
 			}
 			break
 		}
@@ -102,7 +119,8 @@ func TestThreadPeerStoreBindingPreventsOperatorPromotion(t *testing.T) {
 	ctx := t.Context()
 	source := peerStoreRun(t, st, "Source")
 	target := peerStoreRun(t, st, "Target")
-	receipt, err := st.EnqueueThreadPeerMessage(ctx, domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(target.ID), Content: "peer text", OperationKey: "peer-store-provenance-binding", RequestedBy: "operator"}, target.ID)
+	_, sourceCP := peerStoreSource(t, st, source)
+	receipt, err := st.EnqueueThreadPeerMessage(ctx, peerStoreRequest(source, target, sourceCP, "peer text", "peer-store-provenance-binding"), target.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,9 +153,10 @@ func TestThreadPeerStoreFailedDeliveryCancelsInputAndSchedulingIncludesOtherTarg
 	source := peerStoreRun(t, st, "Source")
 	blocked := peerStoreRun(t, st, "Blocked target")
 	ready := peerStoreRun(t, st, "Ready target")
+	_, sourceCP := peerStoreSource(t, st, source)
 	var first domain.ThreadPeerMessage
 	for i := range domain.MaxPendingOperatorSteering {
-		receipt, err := st.EnqueueThreadPeerMessage(ctx, domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(blocked.ID), Content: "Wait at the next boundary", OperationKey: fmt.Sprintf("peer-fairness-blocked-%03d", i), RequestedBy: "operator"}, blocked.ID)
+		receipt, err := st.EnqueueThreadPeerMessage(ctx, peerStoreRequest(source, blocked, sourceCP, "Wait at the next boundary", fmt.Sprintf("peer-fairness-blocked-%03d", i)), blocked.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,7 +164,7 @@ func TestThreadPeerStoreFailedDeliveryCancelsInputAndSchedulingIncludesOtherTarg
 			first = receipt.Message
 		}
 	}
-	other, err := st.EnqueueThreadPeerMessage(ctx, domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(ready.ID), Content: "Dispatch this target", OperationKey: "peer-fairness-ready-operation", RequestedBy: "operator"}, ready.ID)
+	other, err := st.EnqueueThreadPeerMessage(ctx, peerStoreRequest(source, ready, sourceCP, "Dispatch this target", "peer-fairness-ready-operation"), ready.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +200,8 @@ func TestThreadPeerStoreFailedDeliveryBeforeRecipientStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := st.EnqueueThreadPeerMessage(ctx, domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(target.ID), Content: "unstarted peer input", OperationKey: "peer-store-unstarted-message", RequestedBy: "operator"}, target.ID)
+	_, sourceCP := peerStoreSource(t, st, source)
+	receipt, err := st.EnqueueThreadPeerMessage(ctx, peerStoreRequest(source, target, sourceCP, "unstarted peer input", "peer-store-unstarted-message"), target.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

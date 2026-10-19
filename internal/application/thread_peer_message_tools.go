@@ -65,7 +65,7 @@ func (e *threadPeerMessageToolExecutor) ExecuteThreadPeerMessages(ctx context.Co
 		}
 		result, err = e.service.Send(ctx, domain.SendThreadPeerMessageRequest{
 			SourceThreadID: thread.ID, TargetThreadID: input.TargetThreadID, Content: input.Content,
-			ReplyTo: input.ReplyTo, OperationKey: call.OperationKey, RequestedBy: "run_supervisor", ModelInitiated: true,
+			ReplyTo: input.ReplyTo, OperationKey: call.OperationKey, RequestedBy: "run_supervisor",
 			SourceRunID: call.RunID, SourceAttemptID: call.AgentAttemptID,
 			SourceLeaseID: call.LeaseID, SourceLeaseGeneration: call.LeaseGeneration,
 		})

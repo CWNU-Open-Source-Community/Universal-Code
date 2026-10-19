@@ -72,6 +72,26 @@ func createPeerRun(t *testing.T, st *store.SQLiteStore, p llm.Provider, title st
 	}
 	return run
 }
+
+func peerSourceRequest(t *testing.T, st *store.SQLiteStore, source domain.Run) domain.SendThreadPeerMessageRequest {
+	t.Helper()
+	if _, err := application.NewRunService(st).Start(t.Context(), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	acquired, err := st.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: source.ID, OwnerID: "peer-source-test", TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _, _ = st.ReleaseRunExecutionLease(context.Background(), acquired.Lease) })
+	if _, err := st.EnqueueOperatorSteering(t.Context(), domain.EnqueueOperatorSteeringRequest{RunID: source.ID, SessionID: source.SessionID, Content: "Coordinate within this chat's existing task", OperationKey: "peer-source-instruction-" + source.ID, RequestedBy: "test_operator"}); err != nil {
+		t.Fatal(err)
+	}
+	turn, err := st.BeginSupervisorTurn(t.Context(), acquired.Lease, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), RequestedBy: "run_supervisor", SourceRunID: source.ID, SourceAttemptID: turn.Checkpoint.AttemptID, SourceLeaseID: acquired.Lease.LeaseID, SourceLeaseGeneration: acquired.Lease.Generation}
+}
 func waitPeerCommitted(t *testing.T, st *store.SQLiteStore, id string) domain.ThreadPeerMessage {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
@@ -124,7 +144,8 @@ func TestThreadPeerMessagesRestartIdleQueueAndProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(target.ID), Content: "Share the result within your existing permissions.", OperationKey: "peer-message-idle-first-key", RequestedBy: "test_operator"}
+	request := peerSourceRequest(t, st, source)
+	request.TargetThreadID, request.Content, request.OperationKey = domain.InitialThreadID(target.ID), "Share the result within your existing permissions.", "peer-message-idle-first-key"
 	first, err := peer.Send(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +226,9 @@ func TestThreadPeerMessagesBusyTurnConsumesAtBoundary(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("initial turn did not start")
 	}
-	receipt, err := peer.Send(t.Context(), domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: targetRequest.ThreadID, Content: "Peer input at the next turn boundary", OperationKey: "peer-message-busy-operation", RequestedBy: "test_operator"})
+	request := peerSourceRequest(t, st, source)
+	request.TargetThreadID, request.Content, request.OperationKey = targetRequest.ThreadID, "Peer input at the next turn boundary", "peer-message-busy-operation"
+	receipt, err := peer.Send(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +260,8 @@ func TestThreadPeerMessagesRejectSelfForeignReplyAndStaleModelSource(t *testing.
 	st, turns, target := threadControlFixture(t, p)
 	source := createPeerRun(t, st, p, "Source chat")
 	peer := application.NewThreadPeerMessageService(st, turns)
-	request := domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: target.ThreadID, Content: "hello", OperationKey: "peer-message-validation-key", RequestedBy: "test_operator"}
+	request := peerSourceRequest(t, st, source)
+	request.TargetThreadID, request.Content, request.OperationKey = target.ThreadID, "hello", "peer-message-validation-key"
 	self := request
 	self.TargetThreadID = self.SourceThreadID
 	if _, err := peer.Send(t.Context(), self); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
@@ -249,13 +273,17 @@ func TestThreadPeerMessagesRejectSelfForeignReplyAndStaleModelSource(t *testing.
 		t.Fatalf("foreign reply accepted: %v", err)
 	}
 	stale := request
-	stale.ModelInitiated = true
 	stale.SourceRunID = source.ID
 	stale.SourceAttemptID = "stale-attempt"
 	stale.SourceLeaseID = "stale-lease"
 	stale.SourceLeaseGeneration = 1
 	if _, err := peer.Send(t.Context(), stale); err == nil {
 		t.Fatal("stale model source accepted")
+	}
+	unfenced := request
+	unfenced.SourceRunID, unfenced.SourceAttemptID, unfenced.SourceLeaseID, unfenced.SourceLeaseGeneration = "", "", "", 0
+	if _, err := peer.Send(t.Context(), unfenced); err == nil {
+		t.Fatal("unfenced peer source accepted")
 	}
 	items, err := st.ListThreadPeerMessages(t.Context(), target.ThreadID, 200)
 	if err != nil || len(items) != 0 {
@@ -279,7 +307,9 @@ func TestThreadPeerMessagesCannotRestartAStoppedRecipient(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := application.NewThreadPeerMessageService(st, turns)
-	if _, err := peer.Send(t.Context(), domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: target.ID, Content: "Resume automatically", OperationKey: "peer-message-stopped-recipient", RequestedBy: "test_operator"}); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+	request := peerSourceRequest(t, st, source)
+	request.TargetThreadID, request.Content, request.OperationKey = target.ID, "Resume automatically", "peer-message-stopped-recipient"
+	if _, err := peer.Send(t.Context(), request); apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
 		t.Fatalf("peer restarted a stopped recipient: %v", err)
 	}
 	stored, err := st.GetThread(t.Context(), target.ID)

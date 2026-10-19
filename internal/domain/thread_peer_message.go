@@ -13,7 +13,6 @@ type SendThreadPeerMessageRequest struct {
 	ReplyTo               string
 	OperationKey          string
 	RequestedBy           string
-	ModelInitiated        bool
 	SourceRunID           string
 	SourceAttemptID       string
 	SourceLeaseID         string

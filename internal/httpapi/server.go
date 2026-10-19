@@ -361,7 +361,6 @@ type Config struct {
 	CommandRuntimeAdvertiser              toolgateway.CommandRuntimeAdvertiser
 	RunLifecycleController                RunLifecycleController
 	ThreadTurnController                  ThreadTurnController
-	ThreadPeerMessages                    *application.ThreadPeerMessageService
 	ThreadContextCompactionController     ThreadContextCompactionController
 	ThreadReviewReader                    ThreadReviewReader
 	ThreadGitController                   ThreadGitController
@@ -476,7 +475,6 @@ type API struct {
 	capabilityReadinessRuntime            application.CapabilityReadinessRuntime
 	runLifecycleController                RunLifecycleController
 	threadTurnController                  ThreadTurnController
-	threadPeerMessages                    *application.ThreadPeerMessageService
 	threadContextCompactionController     ThreadContextCompactionController
 	threadReview                          ThreadReviewReader
 	threadGitController                   ThreadGitController
@@ -951,7 +949,6 @@ func New(store Store, config Config) (*API, error) {
 		capabilityReadinessRuntime:          readinessRuntime,
 		runLifecycleController:              config.RunLifecycleController,
 		threadTurnController:                config.ThreadTurnController,
-		threadPeerMessages:                  config.ThreadPeerMessages,
 		threadContextCompactionController:   config.ThreadContextCompactionController,
 		threadReview:                        config.ThreadReviewReader,
 		threadGitController:                 config.ThreadGitController,
@@ -1298,10 +1295,6 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if threadID, matched := matchThreadChangesUndoPath(request.URL.Path); matched {
 		a.serveThreadChangesUndo(tracked, request, requestID, threadID)
-		return
-	}
-	if threadID, action, matched := matchThreadPeerPath(request.URL.Path); matched {
-		a.serveThreadPeerMessages(tracked, request, requestID, threadID, action)
 		return
 	}
 	if threadID, action, matched := matchThreadMutationPath(request.URL.Path); matched &&

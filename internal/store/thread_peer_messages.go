@@ -163,44 +163,40 @@ func (s *SQLiteStore) EnqueueThreadPeerMessage(ctx context.Context, request doma
 		if err != nil {
 			return domain.ThreadPeerMessageReceipt{}, err
 		}
-		if request.ModelInitiated {
-			depth = parentDepth + 1
-		}
+		depth = parentDepth + 1
 		if depth > domain.MaxThreadPeerReplyDepth {
 			return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodeResourceExhausted, "Peer reply chain reached its eight-reply limit")
 		}
 	}
-	if request.ModelInitiated {
-		if sourceRun != request.SourceRunID || !domain.ValidAgentID(request.SourceAttemptID) {
-			return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodeConflict, "Model peer source no longer owns the source chat")
-		}
-		if err := requireRunExecutionLeaseTx(ctx, tx, request.SourceRunID, request.SourceLeaseID, request.SourceLeaseGeneration); err != nil {
+	if sourceRun != request.SourceRunID || !domain.ValidAgentID(request.SourceAttemptID) {
+		return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodeConflict, "Model peer source no longer owns the source chat")
+	}
+	if err := requireRunExecutionLeaseTx(ctx, tx, request.SourceRunID, request.SourceLeaseID, request.SourceLeaseGeneration); err != nil {
+		return domain.ThreadPeerMessageReceipt{}, err
+	}
+	var cp domain.SupervisorCheckpoint
+	cp, err = scanSupervisorCheckpoint(tx.QueryRowContext(ctx, supervisorCheckpointSelect, sourceRun))
+	if err != nil {
+		return domain.ThreadPeerMessageReceipt{}, err
+	}
+	if cp.AttemptID != request.SourceAttemptID || cp.LeaseID != request.SourceLeaseID || cp.LeaseGeneration != request.SourceLeaseGeneration || cp.Phase != domain.SupervisorTurnStarted {
+		return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodeConflict, "Model peer source attempt changed")
+	}
+	var sourceSession string
+	if err := tx.QueryRowContext(ctx, `SELECT session_id FROM runs WHERE id=?`, sourceRun).Scan(&sourceSession); err != nil {
+		return domain.ThreadPeerMessageReceipt{}, err
+	}
+	input, err := supervisorInputMessageTx(ctx, tx, sourceRun, sourceSession, cp.AttemptID, cp.PendingInput)
+	if err != nil {
+		return domain.ThreadPeerMessageReceipt{}, err
+	}
+	if input.Provenance.SourceKind == session.SourcePeerMessage {
+		var currentPeerID string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM thread_peer_messages WHERE 'thread:'||source_thread_id||'/peer-message:'||id=?`, input.Provenance.SourceRef).Scan(&currentPeerID); err != nil {
 			return domain.ThreadPeerMessageReceipt{}, err
 		}
-		var cp domain.SupervisorCheckpoint
-		cp, err = scanSupervisorCheckpoint(tx.QueryRowContext(ctx, supervisorCheckpointSelect, sourceRun))
-		if err != nil {
-			return domain.ThreadPeerMessageReceipt{}, err
-		}
-		if cp.AttemptID != request.SourceAttemptID || cp.LeaseID != request.SourceLeaseID || cp.LeaseGeneration != request.SourceLeaseGeneration || cp.Phase != domain.SupervisorTurnStarted {
-			return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodeConflict, "Model peer source attempt changed")
-		}
-		var sourceSession string
-		if err := tx.QueryRowContext(ctx, `SELECT session_id FROM runs WHERE id=?`, sourceRun).Scan(&sourceSession); err != nil {
-			return domain.ThreadPeerMessageReceipt{}, err
-		}
-		input, err := supervisorInputMessageTx(ctx, tx, sourceRun, sourceSession, cp.AttemptID, cp.PendingInput)
-		if err != nil {
-			return domain.ThreadPeerMessageReceipt{}, err
-		}
-		if input.Provenance.SourceKind == session.SourcePeerMessage {
-			var currentPeerID string
-			if err := tx.QueryRowContext(ctx, `SELECT id FROM thread_peer_messages WHERE 'thread:'||source_thread_id||'/peer-message:'||id=?`, input.Provenance.SourceRef).Scan(&currentPeerID); err != nil {
-				return domain.ThreadPeerMessageReceipt{}, err
-			}
-			if request.ReplyTo != currentPeerID {
-				return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodePolicyDenied, "A peer-triggered turn may send only a reply to its current peer message")
-			}
+		if request.ReplyTo != currentPeerID {
+			return domain.ThreadPeerMessageReceipt{}, apperror.New(apperror.CodePolicyDenied, "A peer-triggered turn may send only a reply to its current peer message")
 		}
 	}
 	id := idgen.New("peer-message")

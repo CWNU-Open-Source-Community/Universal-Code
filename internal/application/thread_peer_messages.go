@@ -16,7 +16,6 @@ type threadPeerStore interface {
 	FindThreadPeerMessage(context.Context, domain.SendThreadPeerMessageRequest) (domain.ThreadPeerMessage, bool, error)
 	EnqueueThreadPeerMessage(context.Context, domain.SendThreadPeerMessageRequest, string) (domain.ThreadPeerMessageReceipt, error)
 	GetThreadPeerMessage(context.Context, string) (domain.ThreadPeerMessage, error)
-	ListThreadPeerMessages(context.Context, string, int) ([]domain.ThreadPeerMessage, error)
 	ListThreadPeerTargets(context.Context, string) (domain.ThreadPeerTargets, error)
 	ListPendingThreadPeerMessages(context.Context) ([]domain.ThreadPeerMessage, error)
 	FailThreadPeerMessage(context.Context, string, string) error
@@ -41,16 +40,6 @@ func (s *ThreadPeerMessageService) Targets(ctx context.Context, sourceID string)
 		return domain.ThreadPeerTargets{}, apperror.New(apperror.CodeInvalidArgument, "Source chat identity is invalid")
 	}
 	return s.store.ListThreadPeerTargets(ctx, sourceID)
-}
-
-func (s *ThreadPeerMessageService) Messages(ctx context.Context, threadID string) ([]domain.ThreadPeerMessage, error) {
-	if s == nil || s.store == nil {
-		return nil, apperror.New(apperror.CodeFailedPrecondition, "Peer messaging is unavailable")
-	}
-	if _, err := s.store.GetThread(ctx, threadID); err != nil {
-		return nil, err
-	}
-	return s.store.ListThreadPeerMessages(ctx, threadID, 200)
 }
 
 func (s *ThreadPeerMessageService) Send(ctx context.Context, request domain.SendThreadPeerMessageRequest) (domain.ThreadPeerMessageReceipt, error) {
