@@ -10,7 +10,7 @@
 .v2-peer-message > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 11px; color: var(--v2-muted); }
 .v2-peer-message > footer > button { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; border: 0; background: transparent; padding: 5px 0 5px 8px; color: var(--v2-ink); font-size: 12px; }
 .v2-peer-overlay { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgb(0 0 0 / 28%); }
-.v2-peer-dialog { display: flex; flex-direction: column; width: min(560px, 100%); max-height: calc(100dvh - 40px); min-width: 0; border: 1px solid var(--v2-border-strong); border-radius: 16px; background: var(--v2-floating-surface); box-shadow: 0 16px 56px rgb(0 0 0 / 20%); color: var(--v2-ink); overflow: hidden; }
+.v2-peer-dialog { display: flex; flex-direction: column; width: min(560px, 100%); max-height: calc(100dvh - 40px); min-width: 0; border: 1px solid var(--v2-border-strong); border-radius: 16px; background: var(--prayu-surface-solid); box-shadow: 0 16px 56px rgb(0 0 0 / 20%); color: var(--v2-ink); overflow: hidden; }
 .v2-peer-dialog > header { display: flex; align-items: center; gap: 10px; padding: 18px 20px; border-bottom: 1px solid var(--v2-border); }
 .v2-peer-dialog > header h2 { flex: 1; font-size: 15px; font-weight: 600; margin: 0; }
 .v2-peer-dialog > header > button { display: grid; place-items: center; border: 0; background: transparent; border-radius: 7px; padding: 5px; color: var(--v2-muted); }
