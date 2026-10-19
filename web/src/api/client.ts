@@ -1,5 +1,5 @@
 import { WorkflowClient } from "./workflows";
-import type { ThreadChangeSummary } from "./thread-changes";
+import type { ThreadChangeSummary, ThreadChangeUndo } from "./thread-changes";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import { parseTaskSkillCandidates, type TaskSkillCandidateScope } from "./task-skill-candidates";
 import { validSkillSelectionRef } from "./project-skills";
@@ -8995,6 +8995,24 @@ export class APIClient {
     if (value.version !== "thread_change_summary.v1" || value.thread_id !== threadID ||
       value.run_id !== runID || value.source_event_id !== sourceEventID) {
       throw new Error("The change summary does not match this reply.");
+    }
+    return value;
+  }
+
+  async undoThreadChanges(threadID: string, runID: string, sourceEventID: string,
+    confirm: boolean, signal?: AbortSignal): Promise<ThreadChangeUndo> {
+    if (!this.hasWorkspaceCheckpointControl || !boundedIdentity(threadID) ||
+      !boundedIdentity(runID) || !boundedIdentity(sourceEventID)) {
+      throw new Error("Workspace restore authority and an exact reply are required.");
+    }
+    const value = await this.sendControl<ThreadChangeUndo>(`/threads/${encodeURIComponent(threadID)}/changes/undo`,
+      { version: "thread_change_undo.v1", source_event_id: sourceEventID, confirm },
+      `thread-change-undo-${sourceEventID}`, signal);
+    if (value.version !== "thread_change_undo.v1" || value.thread_id !== threadID ||
+      value.run_id !== runID || value.source_event_id !== sourceEventID ||
+      !["available", "unavailable", "conflict", "applying", "completed", "partial"].includes(value.state) ||
+      !Array.isArray(value.conflicts) || !Array.isArray(value.restored_paths) || !Array.isArray(value.remaining_paths)) {
+      throw new Error("The undo result does not match this reply.");
     }
     return value;
   }

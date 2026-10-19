@@ -4868,6 +4868,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/changes/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview or undo recorded changes for one Thread reply
+         * @description With confirm=false, checks current authority and conflicts without writing. With confirm=true, restores only receipt-proven paths to their state before this reply interval. One durable operation is bound to the exact Thread and source event; completed and partial results replay without applying again. Requires an idle physical working directory and current control authorization.
+         */
+        post: operations["undoThreadChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/command-service-policy": {
         parameters: {
             query?: never;
@@ -14341,6 +14361,27 @@ export interface components {
             reasons: string[];
             run_id: string;
             source_event_id: string;
+            thread_id: string;
+            undo?: components["schemas"]["ThreadChangeUndoResult"];
+            version: string;
+        };
+        ThreadChangeUndoConflict: {
+            path?: string;
+            reason: string;
+        };
+        ThreadChangeUndoRequest: {
+            confirm: boolean;
+            source_event_id: string;
+            version: string;
+        };
+        ThreadChangeUndoResult: {
+            conflicts: components["schemas"]["ThreadChangeUndoConflict"][];
+            remaining_paths: string[];
+            replayed: boolean;
+            restored_paths: string[];
+            run_id: string;
+            source_event_id: string;
+            state: string;
             thread_id: string;
             version: string;
         };
@@ -28238,6 +28279,51 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    undoThreadChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadChangeUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadChangeUndoResult"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

@@ -136,6 +136,16 @@ func (s *RunWorktreeService) ReconcileWorkspaceCheckpoints(ctx context.Context) 
 			return nil, apperror.New(apperror.CodeConflict,
 				"checkpoint recovery transaction workspace does not match its owner")
 		}
+		if workspacecheckpoint.IsThreadUndo(transaction) {
+			scoped := *s.checkpoints
+			scoped.withRunWorkspaceResolver(func(ctx context.Context, runID string) (session.WorkspaceInfo, bool, error) {
+				if runID != run.ID {
+					return session.WorkspaceInfo{}, false, apperror.New(apperror.CodeConflict, "reply undo recovery Run changed")
+				}
+				return resolved.Workspace, true, nil
+			})
+			return &scoped, nil
+		}
 		// Older Drydock boundaries used the ordinary cursor table. Preserve that
 		// recorded identity when it still points at this transaction; never adopt
 		// a source cursor or a different Drydock boundary into the new file cursor.

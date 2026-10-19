@@ -1795,6 +1795,7 @@
         "thread_application_services.v1",
         "thread_branch.v1",
         "thread_change_summary.v1",
+        "thread_change_undo.v1",
         "thread_command_service_policy.v1",
         "thread_context_compaction.v1",
         "thread_context_compaction_operations.v1",

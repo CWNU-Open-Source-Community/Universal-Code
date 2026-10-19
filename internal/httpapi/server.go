@@ -1293,6 +1293,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveThreadContextCompactionRecovery(tracked, request, requestID, threadID, operationID)
 		return
 	}
+	if threadID, matched := matchThreadChangesUndoPath(request.URL.Path); matched {
+		a.serveThreadChangesUndo(tracked, request, requestID, threadID)
+		return
+	}
 	if threadID, action, matched := matchThreadMutationPath(request.URL.Path); matched &&
 		request.Method != http.MethodGet {
 		a.serveThreadMutationControl(tracked, request, requestID, threadID, action)
