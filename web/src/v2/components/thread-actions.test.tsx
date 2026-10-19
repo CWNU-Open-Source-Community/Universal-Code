@@ -48,4 +48,3 @@ it("keeps a failed rename editable and saves a corrected title", async () => {
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   expect(renameThread).toHaveBeenLastCalledWith(thread.id, "Finished review");
 });
-
