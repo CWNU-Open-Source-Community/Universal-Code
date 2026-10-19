@@ -57,3 +57,12 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+
+@media (max-width: 760px) {
+  .v2-composer-stats {
+    gap: 2px 8px;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 18px;
+  }
+}

@@ -276,6 +276,17 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const settingsSection = route.section ?? "general";
   const newConversation = route.kind !== "thread";
   const [sidebarVisible, setSidebarVisible] = useState(() => !window.matchMedia?.("(max-width: 760px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 760px)");
+    if (!media) return;
+    const onChange = (event: MediaQueryListEvent) => setSidebarVisible(!event.matches);
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    }
+    media.addListener?.(onChange);
+    return () => media.removeListener?.(onChange);
+  }, []);
   const [searchOpen, setSearchOpen] = useState(false);
   const [threadSearch, setThreadSearch] = useState("");
   const [appliedThreadSearch, setAppliedThreadSearch] = useState("");

@@ -941,27 +941,27 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={view === "conversation" && activePane === null} disabled={view === "inspector" && !onExitInspector}
-          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} type="button"><MessagesSquare size={16} aria-hidden="true" />{t("对话", "Conversation")}</button>
+          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} title={t("对话", "Conversation")} type="button"><MessagesSquare size={16} aria-hidden="true" /><span className="v2-task-nav-label">{t("对话", "Conversation")}</span></button>
         <button aria-label={t("工作区文件", "Workspace files")} aria-pressed={filesOpen} onClick={() => {
           if (filesOpen) { leaveFileEdit(() => setActivePane(null)); return; }
           fileReturnFocus.current = fileTrigger.current;
           setFileDrawerState({ path: ".", line: undefined, runID: currentRun.id }); setActivePane("files");
-        }} ref={fileTrigger} type="button"><FolderTree aria-hidden="true" size={16} />{t("文件", "Files")}</button>
+        }} ref={fileTrigger} title={t("工作区文件", "Workspace files")} type="button"><FolderTree aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("文件", "Files")}</span></button>
         <button aria-label={t("终端", "Terminal")} aria-pressed={terminalDrawerOpen} title={terminalAvailable ? t("打开任务终端", "Open task terminal") : t("桌面终端仅在桌面端可用", "The terminal is available in the desktop app")} onClick={() => {
           terminalReturnFocus.current = terminalTrigger.current; setTerminalDrawerOpen(!terminalDrawerOpen);
-        }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} />{t("终端", "Terminal")}</button>
+        }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("终端", "Terminal")}</span></button>
         <button aria-label={t("应用预览", "App preview")} aria-pressed={previewOpen} onClick={() => setPreviewOpen(true)}
-          ref={previewTrigger} type="button"><PanelTop aria-hidden="true" size={16} />{t("应用预览", "App preview")}</button>
+          ref={previewTrigger} title={t("应用预览", "App preview")} type="button"><PanelTop aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("应用预览", "App preview")}</span></button>
       </div>
       <div className="v2-task-workflows" role="group" aria-label={t("任务流程", "Task workflow")}>
         <button aria-label={t("审阅改动", "Review changes")} aria-pressed={reviewOpen} onClick={() => {
           setReviewFileTarget(undefined); setReviewToolTarget(undefined); reviewReturnFocus.current = reviewTrigger.current; setReviewOpen(true);
-        }} ref={reviewTrigger} type="button"><FileDiff aria-hidden="true" size={16} />{t("改动与交付", "Changes and delivery")}</button>
+        }} ref={reviewTrigger} title={t("改动与交付", "Changes and delivery")} type="button"><FileDiff aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("改动与交付", "Changes and delivery")}</span></button>
         <button aria-label={t("查看上下文", "View context")} aria-pressed={contextOpen} onClick={() => setContextOpen(true)}
-          ref={contextTrigger} type="button"><BookOpen aria-hidden="true" size={16} />{t("上下文与恢复", "Context and recovery")}</button>
+          ref={contextTrigger} title={t("上下文与恢复", "Context and recovery")} type="button"><BookOpen aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("上下文与恢复", "Context and recovery")}</span></button>
         <button aria-pressed={view === "inspector" && activePane === null}
-          onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} type="button">
-          <Microscope aria-hidden="true" size={16} />{t("观察执行", "Observe execution")}</button>
+          onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} title={t("观察执行", "Observe execution")} type="button">
+          <Microscope aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("观察执行", "Observe execution")}</span></button>
       </div>
     </nav>
     {view === "inspector" && (onOpenTool || onOpenInspectorHome) && <nav className="v2-inspector-advanced" aria-label={t("执行观察工具", "Execution tools")}>

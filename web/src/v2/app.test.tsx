@@ -206,6 +206,36 @@ describe("V2Workbench inspector navigation", () => {
     expectDrawerClosed();
   });
 
+  it("automatically collapses the sidebar when squeezed to narrow width and restores it when widened", async () => {
+    let narrowListener: ((event: MediaQueryListEvent) => void) | undefined;
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: false, media: query,
+      addEventListener: vi.fn((type: string, listener: (event: MediaQueryListEvent) => void) => {
+        if (query === "(max-width: 760px)" && type === "change") narrowListener = listener;
+      }),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(), onchange: null,
+    })));
+    window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
+    const client = { hasThreadControl: true, getPage: vi.fn(async (path: string) => ({
+      items: path === "/workspaces" ? [workspace] : [createdThread],
+      page: { limit: 100 }, requestID: path,
+    })) } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><V2Workbench client={client} /></QueryClientProvider>);
+    await screen.findByTestId("v2-conversation");
+    expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
+
+    act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
+    expect(screen.queryByRole("navigation", { name: "对话导航" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveAttribute("aria-pressed", "false");
+
+    act(() => { narrowListener?.({ matches: false } as MediaQueryListEvent); });
+    expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("loads past 100 Threads and preserves an older URL selection through failed paging and refresh", async () => {
     const user = userEvent.setup();
     const first = Array.from({ length: 100 }, (_, index) => ({ ...createdThread,
