@@ -599,8 +599,12 @@
 }
 .v2-sidebar-search:focus-within,
 .v2-settings-search:focus-within { background: var(--v2-floating-surface); border-color: var(--v2-border-strong); }
+.v2-sidebar-search:has(input:focus-visible),
+.v2-settings-search:has(input:focus-visible) { outline: 2px solid var(--prayu-focus); outline-offset: 2px; }
 .v2-sidebar-search input,
 .v2-settings-search input { background: transparent; border: 0; min-width: 0; outline: 0; width: 100%; }
+.v2-shell :is(.v2-sidebar-search, .v2-settings-search) input:focus-visible { outline: 0; }
+.v2-sidebar-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
 .v2-sidebar-search > button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--v2-muted); flex-shrink: 0; padding: 3px; cursor: pointer; }
 .v2-sidebar-search > button:focus-visible { outline: 2px solid var(--v2-accent); border-radius: 4px; }
 

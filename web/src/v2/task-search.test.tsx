@@ -137,6 +137,12 @@ describe("V2 saved conversation search", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "搜索" }));
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     await screen.findByRole("button", { name: current.title });
+    expect(screen.getByRole("region", { name: `项目 ${workspace.name}` })).toContainElement(
+      screen.getByRole("button", { name: current.title }));
+    expect(screen.queryByText(/搜索全部已保存/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "包含已归档对话" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: other.title })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "对话列表状态" })).not.toHaveTextContent("搜索结果");
     checkCurrent();
     for (const method of [client.createThread, client.submitThreadTurn, client.executeRun, client.transitionThread]) {
       expect(method).not.toHaveBeenCalled();
