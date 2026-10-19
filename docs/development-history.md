@@ -283,5 +283,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v212 | 保存任务的开发服务策略，并在独占策略下拒绝新的共享服务 Job | persist per-Thread development service preferences and reject shared-service Job admission under the exclusive preference |
 | v213 | 保存同项目聊天消息的来源、回复关系和投递状态，复用持久输入队列并保留消息不具备用户授权的来源约束 | persist same-workspace chat message provenance, reply links and delivery status, reusing the durable input queue while enforcing non-authorizing message provenance |
 | v214 | 将聊天列表和消息发送工具接入既有工具账本，保留原有调用记录和执行身份约束 | admit chat listing and message sending tools to the existing tool ledger while preserving recorded calls and execution identity constraints |
+| v215 | 将 pnpm 缓存准备、工作区安装和脚本执行分别绑定到准确的目录与授权，保留旧项目准备记录 | bind pnpm store fetch, workspace installation and script execution to their exact directories and authority while preserving existing preparation records |
 
 </details>
