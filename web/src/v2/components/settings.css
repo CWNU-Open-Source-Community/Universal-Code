@@ -32,7 +32,7 @@
 .v2-setting-row + .v2-setting-row::before { background: var(--v2-border); content: ""; height: 1px; left: 15px; position: absolute; right: 15px; top: 0; }
 .v2-setting-row > div:first-child { display: grid; flex: 1; gap: 3px; min-width: 0; }
 .v2-setting-row > div:first-child strong { font-weight: 600; }
-.v2-setting-row > div:first-child span { color: var(--v2-muted); font-size: 13px; line-height: 1.6; }
+.v2-setting-row > div:first-child span { color: var(--v2-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }
 .v2-setting-value { align-items: center; color: var(--v2-muted); display: flex; flex: 0 1 auto; gap: 8px; max-width: 48%; }
 .v2-setting-value code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-setting-value button,
@@ -425,7 +425,7 @@
   .v2-permission-settings-card .v2-permission-options { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 580px) {
   .v2-setting-row { align-items: stretch; flex-direction: column; gap: 10px; padding-block: 14px; }
   .v2-setting-value { align-self: flex-start; max-width: 100%; flex-wrap: wrap; }
 }
