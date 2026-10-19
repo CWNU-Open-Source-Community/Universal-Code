@@ -1,10 +1,6 @@
 import type { components } from "./schema";
 
-export type ThreadPeerTarget = components["schemas"]["ThreadPeerTarget"];
-export type ThreadPeerTargets = components["schemas"]["ThreadPeerTargets"];
 export type ThreadPeerMessage = components["schemas"]["ThreadPeerMessage"];
-export type ThreadPeerMessageRequest = components["schemas"]["ThreadPeerMessageRequestView"];
-export type ThreadPeerMessageResult = components["schemas"]["ThreadPeerMessageReceipt"];
 
 export const maximumPeerMessageBytes = 16_384;
 export const peerMessageBytes = (content: string) => new TextEncoder().encode(content).length;
@@ -23,26 +19,4 @@ export function validThreadPeerMessage(value: unknown): value is ThreadPeerMessa
     (value.reply_to === undefined || identity(value.reply_to)) &&
     (value.delivered_at === undefined || date(value.delivered_at)) &&
     (value.error === undefined || text(value.error));
-}
-
-export function parseThreadPeerTargets(value: unknown, sourceThreadID: string): ThreadPeerTargets {
-  if (!record(value) || value.version !== "thread_peer_targets.v1" || value.source_thread_id !== sourceThreadID ||
-    !text(value.workspace_id) || typeof value.has_more !== "boolean" || !Array.isArray(value.items) ||
-    value.items.length > 100 || !value.items.every((item) => record(item) && identity(item.id) &&
-      item.id !== sourceThreadID && text(item.title) && item.workspace_id === value.workspace_id && item.status === "active") ||
-    new Set(value.items.map((item) => item.id)).size !== value.items.length) {
-    throw new Error("The available chats could not be confirmed.");
-  }
-  return value as unknown as ThreadPeerTargets;
-}
-
-export function parseThreadPeerMessageResult(value: unknown, sourceThreadID: string,
-  request: ThreadPeerMessageRequest): ThreadPeerMessageResult {
-  if (!record(value) || value.version !== "thread_peer_message.v1" || typeof value.replayed !== "boolean" ||
-    !validThreadPeerMessage(value.message) || value.message.source_thread_id !== sourceThreadID ||
-    value.message.target_thread_id !== request.target_thread_id ||
-    (value.message.reply_to ?? "") !== (request.reply_to ?? "")) {
-    throw new Error("The message delivery could not be confirmed. Retry without changing the message.");
-  }
-  return value as unknown as ThreadPeerMessageResult;
 }

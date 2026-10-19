@@ -12,7 +12,7 @@ import { V2FileAttachments } from "./file-input";
 import { V2ActivityGroup } from "./activity-detail";
 import { rehypeStreamReveal } from "./stream-reveal";
 import { V2TurnChanges } from "./turn-changes";
-import { V2PeerMessageCard, type PeerReply } from "./thread-peer-messages";
+import { V2PeerMessageCard } from "./thread-peer-messages";
 
 export interface FileLinkTarget {
   path: string;
@@ -174,7 +174,6 @@ interface NarrativeRowProps {
   threadID: string;
   onBranch?: BranchReply;
   onOpenThread?: (id: string) => void;
-  onPeerReply?: PeerReply;
   onOpenFile?: (target: {
     path: string;
     line?: number;
@@ -233,9 +232,9 @@ function MessageMarkdown({ entry, onOpenFile }: {
   >{entry.text}</ReactMarkdown>;
 }
 
-const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch, onOpenThread, onPeerReply }: NarrativeRowProps) {
+const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch, onOpenThread }: NarrativeRowProps) {
   if (entry.kind === "peer") return <li className="v2-peer-turn"><V2PeerMessageCard message={entry.message}
-    threadID={threadID} onOpenThread={onOpenThread} onReply={onPeerReply} /></li>;
+    threadID={threadID} onOpenThread={onOpenThread} /></li>;
   if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn">
     <details className="v2-promoted-message-history">
       <summary title={entry.text}>排队消息已转为引导</summary>
@@ -263,18 +262,17 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
 }, (previous, next) => previous.client === next.client && previous.threadID === next.threadID &&
   previous.onOpenFile === next.onOpenFile &&
   previous.onBranch === next.onBranch &&
-  previous.onOpenThread === next.onOpenThread && previous.onPeerReply === next.onPeerReply &&
+  previous.onOpenThread === next.onOpenThread &&
   // Live updates reuse durable entries by reference. A durable refresh can
   // rebuild a group: compare its complete public projection before skipping it.
   replaceEqualDeep(previous.entry, next.entry) === previous.entry);
 
-export const V2Narrative = memo(function V2Narrative({ client, entries, threadID, onOpenFile, onBranch, onOpenThread, onPeerReply }: {
+export const V2Narrative = memo(function V2Narrative({ client, entries, threadID, onOpenFile, onBranch, onOpenThread }: {
   client: APIClient;
   entries: NarrativeEntry[];
   threadID: string;
   onBranch?: BranchReply;
   onOpenThread?: (id: string) => void;
-  onPeerReply?: PeerReply;
   onOpenFile?: (target: {
     path: string;
     line?: number;
@@ -284,5 +282,5 @@ export const V2Narrative = memo(function V2Narrative({ client, entries, threadID
 }) {
   return <ol className="v2-narrative">{entries.map((entry) =>
     <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} onOpenFile={onOpenFile} onBranch={onBranch}
-      onOpenThread={onOpenThread} onPeerReply={onPeerReply} />)}</ol>;
+      onOpenThread={onOpenThread} />)}</ol>;
 });

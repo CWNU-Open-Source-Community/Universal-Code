@@ -8,33 +8,10 @@
 .v2-peer-status.is-failed, .v2-peer-error { color: var(--v2-danger); }
 .v2-peer-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; margin: 12px 0; }
 .v2-peer-message > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 11px; color: var(--v2-muted); }
-.v2-peer-message > footer > button { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; border: 0; background: transparent; padding: 5px 0 5px 8px; color: var(--v2-ink); font-size: 12px; }
-.v2-peer-overlay { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgb(0 0 0 / 28%); }
-.v2-peer-dialog { display: flex; flex-direction: column; width: min(560px, 100%); max-height: calc(100dvh - 40px); min-width: 0; border: 1px solid var(--v2-border-strong); border-radius: 16px; background: var(--prayu-surface-solid); box-shadow: 0 16px 56px rgb(0 0 0 / 20%); color: var(--v2-ink); overflow: hidden; }
-.v2-peer-dialog > header { display: flex; align-items: center; gap: 10px; padding: 18px 20px; border-bottom: 1px solid var(--v2-border); }
-.v2-peer-dialog > header h2 { flex: 1; font-size: 15px; font-weight: 600; margin: 0; }
-.v2-peer-dialog > header > button { display: grid; place-items: center; border: 0; background: transparent; border-radius: 7px; padding: 5px; color: var(--v2-muted); }
-.v2-peer-dialog-body { overflow-y: auto; min-height: 0; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-.v2-peer-hint { font-size: 12px; color: var(--v2-muted); line-height: 1.6; margin: 0; }
-.v2-peer-source { display: flex; gap: 10px; min-width: 0; font-size: 12px; padding: 4px 0 8px; }
-.v2-peer-source > span { color: var(--v2-muted); flex-shrink: 0; }
-.v2-peer-source strong { font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.v2-peer-dialog-body > label { font-size: 12px; margin-top: 4px; }
-.v2-peer-dialog-body > select, .v2-peer-dialog-body > textarea { width: 100%; min-width: 0; box-sizing: border-box; background: var(--v2-control); color: var(--v2-ink); border: 1px solid var(--v2-border); border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 13px; line-height: 1.6; }
-.v2-peer-dialog-body > textarea { resize: vertical; min-height: 130px; }
-.v2-peer-reply-context { font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 90px; overflow-y: auto; border-left: 2px solid var(--v2-border-strong); color: var(--v2-muted); padding-left: 12px; margin: 0; }
-.v2-peer-dialog > footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--v2-border); }
-.v2-peer-dialog > footer > button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--v2-border); border-radius: 8px; background: var(--v2-control); color: var(--v2-ink); padding: 8px 14px; font-size: 13px; }
-.v2-peer-dialog > footer > .v2-peer-send { background: var(--v2-ink); border-color: var(--v2-ink); color: var(--v2-main-surface); }
-.v2-peer-dialog button:disabled, .v2-peer-dialog select:disabled { cursor: default; opacity: .5; }
 .v2-peer-error { font-size: 12px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
-.v2-peer-error > button { margin-left: 8px; }
-.v2-peer-message button, .v2-peer-dialog button { cursor: pointer; font-family: inherit; }
-.v2-peer-message button:focus-visible, .v2-peer-dialog :is(button, select, textarea):focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 3px; }
+.v2-peer-message button { cursor: pointer; font-family: inherit; }
+.v2-peer-message button:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 3px; }
 @media (max-width: 560px) {
-  .v2-peer-overlay { padding: 12px; }
-  .v2-peer-dialog { max-height: calc(100dvh - 24px); }
-  .v2-peer-dialog > header, .v2-peer-dialog-body { padding: 16px; }
   .v2-peer-message { padding: 12px; }
   .v2-peer-message > header { flex-wrap: wrap; }
   .v2-peer-message > footer { align-items: flex-start; }

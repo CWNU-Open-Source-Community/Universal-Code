@@ -1,7 +1,6 @@
 import { WorkflowClient } from "./workflows";
 import type { ThreadChangeSummary, ThreadChangeUndo } from "./thread-changes";
-import { maximumPeerMessageBytes, peerMessageBytes, parseThreadPeerTargets, parseThreadPeerMessageResult,
-  validThreadPeerMessage, type ThreadPeerMessageRequest } from "./thread-peer-messages";
+import { validThreadPeerMessage } from "./thread-peer-messages";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import { parseTaskSkillCandidates, type TaskSkillCandidateScope } from "./task-skill-candidates";
 import { validSkillSelectionRef } from "./project-skills";
@@ -8993,24 +8992,6 @@ export class APIClient {
   async threadExecution(threadID: string, signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
     return parseThreadExecution(await this.get<unknown>(
       `/threads/${encodeURIComponent(threadID)}/execution`, {}, signal), threadID);
-  }
-
-  async threadPeerTargets(threadID: string, signal?: AbortSignal) {
-    return parseThreadPeerTargets(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/peer-targets`, {}, signal), threadID);
-  }
-
-  async sendThreadPeerMessage(threadID: string, request: ThreadPeerMessageRequest, operationKey: string,
-    signal?: AbortSignal) {
-    if (!this.hasThreadControl || !boundedIdentity(threadID) || !boundedIdentity(request.target_thread_id) ||
-      request.target_thread_id === threadID || request.version !== "thread_peer_message.v1" ||
-      !request.content.trim() || request.content.includes("\0") || peerMessageBytes(request.content.trim()) > maximumPeerMessageBytes ||
-      (request.reply_to !== undefined && !boundedIdentity(request.reply_to))) {
-      throw new Error("Choose another chat and enter a message of up to 16 KB.");
-    }
-    const body = { ...request, content: request.content.trim() };
-    return parseThreadPeerMessageResult(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/peer-messages`, body, operationKey, signal), threadID, body);
   }
 
   async threadChanges(threadID: string, runID: string, sourceEventID: string,

@@ -55,8 +55,6 @@ import { UserTerminalPanel } from "../../components/user-terminal-panel";
 import { desktopUserTerminalEnabled, closeDesktopUserTerminal } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { V2IdentityDisclosure } from "./identity-disclosure";
-import { V2PeerMessageDialog, type PeerReply } from "./thread-peer-messages";
-import type { ThreadPeerMessage } from "../../api/thread-peer-messages";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
@@ -377,12 +375,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const [checking, setChecking] = useState<string[]>([]);
   const [observations, setObservations] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
-  const [peerDialog, setPeerDialog] = useState<{ threadID: string; reply?: ThreadPeerMessage } | null>(null);
-  const peerReturnFocus = useRef<HTMLElement | null>(null);
-  const replyToPeer = useCallback<PeerReply>((message, trigger) => {
-    peerReturnFocus.current = trigger;
-    setPeerDialog({ threadID, reply: message });
-  }, [threadID]);
   const [activePane, setSelectedPane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
   const [roomForDock, setRoomForDock] = useState(false);
   const [compactPaneOpen, setCompactPaneOpen] = useState(false);
@@ -726,7 +718,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
 
   useEffect(() => {
     setMenuOpen(false);
-    setPeerDialog(null);
     setActivePane(null);
     setReviewFileTarget(undefined);
     setReviewToolTarget(undefined);
@@ -944,14 +935,11 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <CircleEllipsis aria-hidden="true" size={18} />
         </button>
         {menuOpen && <div className="v2-thread-menu" ref={menuRef} role="menu">
-          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} role="menuitem" type="button" ref={firstMenuItemRef}
-            onClick={() => { peerReturnFocus.current = menuTriggerRef.current; setMenuOpen(false); setPeerDialog({ threadID }); }}>
-            <MessagesSquare aria-hidden="true" size={15} />{t("发送到其他聊天", "Message another chat")}</button>
           <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
             setMenuOpen(false);
             menuTriggerRef.current?.focus();
             onArchive(detail.thread);
-          }} role="menuitem" type="button">
+          }} ref={firstMenuItemRef} role="menuitem" type="button">
             <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
           <button className="v2-task-compact-action" onClick={() => {
             setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
@@ -997,9 +985,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     </nav>
     </header>
-    {peerDialog?.threadID === threadID && <V2PeerMessageDialog key={`${threadID}:${peerDialog.reply?.id ?? "new"}`}
-      client={client} threadID={threadID} sourceTitle={detail.thread.title} reply={peerDialog.reply}
-      onClose={() => setPeerDialog(null)} returnFocusRef={peerReturnFocus} />}
     {view === "inspector" && (onOpenTool || onOpenInspectorHome) && <nav className="v2-inspector-advanced" aria-label={t("执行观察工具", "Execution tools")}>
       {onOpenInspectorHome && <button onClick={onOpenInspectorHome} type="button">{t("全部运行与会话", "All runs and sessions")}</button>}
       {onOpenTool && <>
@@ -1092,8 +1077,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
         {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile}
-          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
-          onPeerReply={client.hasThreadControl && detail.thread.status === "active" ? replyToPeer : undefined} />}
+          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
