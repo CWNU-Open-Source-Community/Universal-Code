@@ -27,6 +27,23 @@ function renderComposer(onSubmit: ComposerSubmit = vi.fn(async () => undefined),
 }
 
 describe("V2Composer", () => {
+  it("changes editor mode from the compact add menu without submitting or losing the draft", async () => {
+    localStorage.setItem("universal-code.composer-plain-text", "true");
+    const { onSubmit } = renderComposer();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox", { name: "开始新对话" }), "保留草稿");
+    await user.click(screen.getByRole("button", { name: "添加附件" }));
+    await user.click(screen.getByRole("menuitem", { name: "切换为 Markdown 编辑" }));
+    expect(screen.getByRole("textbox", { name: "开始新对话" })).toHaveTextContent("保留草稿");
+    await user.click(screen.getByRole("button", { name: "添加附件" }));
+    await user.click(screen.getByRole("menuitem", { name: "切换为纯文本编辑" }));
+    const input = screen.getByRole("textbox", { name: "开始新对话" });
+    expect(input).toHaveValue("保留草稿");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("respects a newer focus choice after switching editor mode (moved=%s)", (moved) => {
     localStorage.setItem("universal-code.composer-plain-text", "false");
     renderComposer();

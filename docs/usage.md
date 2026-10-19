@@ -51,6 +51,22 @@ Screenshots were captured from a production build in Edge on Windows at 1440 × 
 2026-10-19. Project content, replies, and usage are offline demonstration data. The README
 combines the Light and Dark captures of the same conversation.
 
+### 窄窗口 / Narrow windows
+
+窗口变窄时，侧栏收为可打开的浮层，并保留宽屏时的显示偏好。任务导航收起次要入口，
+「审阅改动」「查看上下文」可从右上角对话菜单打开。输入框保留常用图标和模型选择，
+窄输入框的编辑模式切换移入「＋」菜单；窗口缩放、切换编辑模式都保留草稿。
+The sidebar becomes an overlay in narrow windows and remembers its desktop visibility.
+Review and context move into the conversation menu; editor mode moves into the composer’s
+**+** menu. Drafts remain intact when resizing or switching editors.
+
+| 深色 / Dark | 雾透 / Mist |
+| --- | --- |
+| ![390px 深色对话](images/appearance/narrow-dark.png) | ![390px 雾透对话](images/appearance/narrow-mist.png) |
+
+以上为 390 × 844 的 Windows / Edge 生产构建截图，使用本地离线演示数据。
+These 390 × 844 captures use the production build in Edge on Windows with local demo data.
+
 ## Portable Build Diagnostics
 
 ```powershell
@@ -67,6 +83,24 @@ manual Windows 10/WebView2/display/launch/recovery matrix, so release readiness 
 false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
+
+### 补充消息与排队 / Follow-up messages and queue
+
+任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击
+条目右侧的「引导」加入当前任务；「撤回」取消待处理消息，更多菜单提供编辑和全文、附件预览。
+图片和文件附件保留在下一轮消息中。输入框增高时，排队卡片随它向上移动；多条消息在卡片内滚动。
+底栏按输入框的可用宽度收起次要标签，模型名称过长时省略显示，完整名称仍可在模型菜单查看。
+
+![紧凑宽度下的新对话输入框](images/composer/new-conversation.png)
+
+![输入框上方的待处理消息与引导操作](images/composer/queued-messages.png)
+
+以上为 Windows / Edge 生产构建截图，任务与回复使用本地离线演示数据。
+
+Follow-up messages sent during execution appear above the composer and run in order afterward.
+Use **Steer** on a text-only queued message to add it to the current task, **Withdraw** to cancel it,
+or the more menu to edit and preview its full content and attachments. Images and files stay queued
+for the next turn. The queue moves with the composer as it grows and scrolls internally when needed.
 
 ### 用量统计 / Usage
 

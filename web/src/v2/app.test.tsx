@@ -234,6 +234,18 @@ describe("V2Workbench inspector navigation", () => {
     act(() => { narrowListener?.({ matches: false } as MediaQueryListEvent); });
     expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
+
+    screen.getByRole("button", { name: "新对话" }).focus();
+    act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
+    expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveFocus();
+    const sidebar = document.querySelector(".v2-sidebar-slot");
+    expect(sidebar).toHaveAttribute("inert");
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    act(() => { narrowListener?.({ matches: false } as MediaQueryListEvent); });
+    fireEvent.click(screen.getByRole("button", { name: "隐藏侧栏" }));
+    act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
+    act(() => { narrowListener?.({ matches: false } as MediaQueryListEvent); });
+    expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("loads past 100 Threads and preserves an older URL selection through failed paging and refresh", async () => {

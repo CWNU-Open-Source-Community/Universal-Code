@@ -1,4 +1,5 @@
 import { ArrowLeft, Minus, PanelLeft, Square, X } from "lucide-react";
+import type { Ref } from "react";
 import { desktopBridgeAvailable, desktopIsMacPlatform } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import {
@@ -7,8 +8,9 @@ import {
   toggleDesktopWindowMaximised,
 } from "../../lib/desktop-window";
 
-export function V2Titlebar({ sidebarVisible, onToggleSidebar, onBack, canGoBack = false }: {
+export function V2Titlebar({ sidebarVisible, sidebarToggleRef, onToggleSidebar, onBack, canGoBack = false }: {
   sidebarVisible: boolean;
+  sidebarToggleRef?: Ref<HTMLButtonElement>;
   onToggleSidebar: () => void;
   onBack: () => void;
   canGoBack?: boolean;
@@ -19,7 +21,7 @@ export function V2Titlebar({ sidebarVisible, onToggleSidebar, onBack, canGoBack 
   return <header className={`v2-titlebar${mac ? " is-mac" : ""}`}>
     <div className="v2-titlebar-navigation" data-v2-no-drag="true">
       <button aria-label={sidebarVisible ? t("隐藏侧栏", "Hide sidebar") : t("显示侧栏", "Show sidebar")}
-        aria-pressed={sidebarVisible} onClick={onToggleSidebar} type="button">
+        aria-pressed={sidebarVisible} onClick={onToggleSidebar} ref={sidebarToggleRef} type="button">
         <PanelLeft aria-hidden="true" size={16} />
       </button>
       <button aria-label={t("返回", "Back")} disabled={!canGoBack} onClick={onBack} type="button">

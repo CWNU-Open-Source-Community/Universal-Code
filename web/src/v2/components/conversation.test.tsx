@@ -406,9 +406,8 @@ describe("V2Conversation", () => {
     expect(within(ui.container.querySelector(".v2-narrative")!).getByText("同样的排队要求")).toBeInTheDocument();
   });
 
-  it("sends an explicit current-task correction through the Session endpoint", async () => {
-    const submitSessionMessage = vi.fn(() => Promise.resolve({ steering: { id: "steer-current" } } as Awaited<
-      ReturnType<APIClient["submitSessionMessage"]>>));
+  it("queues ordinary sends during an active run without a delivery-mode selector", async () => {
+    const submitSessionMessage = vi.fn();
     const submitThreadTurn = vi.fn();
     const client = baseClient({
       get: vi.fn(() => Promise.resolve({ ...detail("thread-a"),
@@ -417,16 +416,14 @@ describe("V2Conversation", () => {
     } as Partial<APIClient>);
     renderConversation(client);
     const user = userEvent.setup();
-    await screen.findByRole("combobox", { name: "发送方式" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "发送方式" }), "steer");
-    await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
-    await waitFor(() => expect(submitSessionMessage).toHaveBeenCalledWith("sess-thread-a",
-      { version: "session_message_submission.v1", content: "pending-thread-a", delivery_mode: "steer" },
-      expect.any(String)));
-    expect(submitThreadTurn).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("button", { name: "发送 thread-a" }));
+    expect(screen.queryByRole("combobox", { name: "发送方式" })).not.toBeInTheDocument();
+    await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
+      expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
+    expect(submitSessionMessage).not.toHaveBeenCalled();
   });
 
-  it("keeps an explicit correction draft when the task ends before sending", async () => {
+  it("sends the same draft normally when the task ends before sending", async () => {
     const execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
       state: "running", execution_id: "execution-a", queued_messages: 0, capability_grant: false };
     const submitSessionMessage = vi.fn();
@@ -437,22 +434,10 @@ describe("V2Conversation", () => {
       threadExecution: vi.fn(() => Promise.resolve(execution)), submitSessionMessage, submitThreadTurn,
     } as Partial<APIClient>));
     const user = userEvent.setup();
-    await screen.findByRole("combobox", { name: "发送方式" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "发送方式" }), "steer");
+    await screen.findByRole("button", { name: "发送 thread-a" });
     await act(async () => { view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"),
       { ...execution, state: "idle", execution_id: undefined }); });
-    expect(screen.getByRole("combobox", { name: "发送方式" })).toHaveValue("steer");
-    // The invalid mode is explained before sending, and sending stays blocked.
-    expect(await screen.findByText(/当前任务已停止或不再运行/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
-    expect(submitSessionMessage).not.toHaveBeenCalled();
-    expect(submitThreadTurn).not.toHaveBeenCalled();
-    // Switching back to next-turn clears the hint; the selector hides again
-    // because no running task can accept a correction.
-    await user.click(screen.getByRole("button", { name: "切换为下一轮处理" }));
-    expect(screen.queryByText(/当前任务已停止或不再运行/)).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "发送方式" })).not.toBeInTheDocument();
-    // The retained draft now goes out as a regular next-turn message.
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
       expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
@@ -859,29 +844,30 @@ describe("V2Conversation", () => {
     expect(onDraftChange).toHaveBeenCalledWith("");
   });
 
-  it("explains an unavailable correction as paused when the run is paused", async () => {
+  it("retains the paused state and sends a normal continuation after a run pauses", async () => {
     const execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
       state: "running", execution_id: "execution-a", queued_messages: 0, capability_grant: false };
     const pausedDetail: ThreadDetailView = { ...detail("thread-a"),
       active_run: { id: "run-thread-a", session_id: "sess-thread-a", status: "paused" } } as ThreadDetailView;
-    const view = renderConversation(baseClient({ hasThreadExecutionRead: true,
+    const submitThreadTurn = vi.fn();
+    const submitSessionMessage = vi.fn();
+    const view = renderConversation(baseClient({ hasThreadExecutionRead: true, submitThreadTurn, submitSessionMessage,
       get: vi.fn(() => Promise.resolve({ ...detail("thread-a"),
         active_run: { id: "run-thread-a", session_id: "sess-thread-a", status: "running" } })),
       threadExecution: vi.fn(() => Promise.resolve(execution)),
     } as Partial<APIClient>));
     const user = userEvent.setup();
-    await screen.findByRole("combobox", { name: "发送方式" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "发送方式" }), "steer");
+    await screen.findByRole("button", { name: "发送 thread-a" });
     await act(async () => {
       view.queryClient.setQueryData(v2QueryKeys.thread("thread-a"), pausedDetail);
       view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"),
         { ...execution, state: "idle", execution_id: undefined });
     });
-    // The pause is named explicitly instead of implying the task ended.
-    expect(await screen.findByText(/当前任务已暂停，不能更新当前任务/)).toBeInTheDocument();
-    expect(screen.queryByText(/当前任务已停止或不再运行/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "切换为下一轮处理" }));
-    expect(screen.queryByText(/当前任务已暂停，不能更新当前任务/)).not.toBeInTheDocument();
+    expect(screen.getByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
+    await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
+      expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
+    expect(submitSessionMessage).not.toHaveBeenCalled();
   });
 
   it("shows confirmed Agent activity and stopping while the submission response is still pending", async () => {
