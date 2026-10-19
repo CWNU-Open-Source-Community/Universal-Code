@@ -8,6 +8,8 @@ afterEach(() => {
 });
 
 it("restores task/settings identity and rejects malformed links without guessing another task", () => {
+  expect(readV2Route("#/threads/thread-42/messages/event-8")).toEqual({ kind: "thread", threadID: "thread-42", messageID: "event-8" });
+  expect(readV2Route("#/threads/thread-42/messages/%2fother")).toEqual({ kind: "invalid" });
   expect(readV2Route("#/threads/thread-42/settings/models")).toEqual({ kind: "thread", threadID: "thread-42", section: "models" });
   expect(readV2Route("#/threads/thread-42/settings/advanced-models")).toEqual({
     kind: "thread", threadID: "thread-42", section: "advanced-models",

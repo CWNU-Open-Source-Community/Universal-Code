@@ -235,13 +235,13 @@ function MessageMarkdown({ entry, onOpenFile }: {
 const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch, onOpenThread }: NarrativeRowProps) {
   if (entry.kind === "peer") return <li className="v2-peer-turn"><V2PeerMessageCard message={entry.message}
     threadID={threadID} onOpenThread={onOpenThread} /></li>;
-  if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn">
+  if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn" data-message-ids={entry.id} tabIndex={-1}>
     <details className="v2-promoted-message-history">
       <summary title={entry.text}>排队消息已转为引导</summary>
       <div className="v2-promoted-message-content">{entry.text}<V2ImagePreview client={client} images={entry.images ?? []} />
         <V2FileAttachments client={client} attachments={entry.attachments ?? []} /></div>
     </details></li>;
-  if (entry.kind === "user") return <li className="v2-user-turn">
+  if (entry.kind === "user") return <li className="v2-user-turn" data-message-ids={entry.id} tabIndex={-1}>
     <div><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
       <V2FileAttachments client={client} attachments={entry.attachments ?? []} />{entry.status === "cancelled" &&
       <small className="v2-message-status">已取消，不会继续处理</small>}
@@ -250,6 +250,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
         <small className="v2-message-status">已加入当前任务</small>}
       {entry.provisional && !entry.status && <small className="v2-message-status">正在发送…</small>}</div></li>;
   if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
+    data-message-ids={(entry.messageIDs ?? [entry.id]).join(" ")} tabIndex={-1}
     className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}`}>
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
     {!entry.provisional && entry.changeSourceID && entry.runId && typeof client.threadChanges === "function" &&

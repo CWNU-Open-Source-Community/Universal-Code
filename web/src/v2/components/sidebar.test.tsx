@@ -43,7 +43,7 @@ describe("V2Sidebar archive menu", () => {
     await user.click(within(other).getByRole("button", { name: thread.title }));
     expect(onSelectThread).toHaveBeenCalledWith("thread-2");
     expect(within(first).getByRole("button", { name: thread.title })).toBeInTheDocument();
-    expect(screen.getByText(/不含消息正文/)).toHaveTextContent("搜索全部未归档对话标题");
+    expect(screen.getByText(/搜索全部已保存/)).toHaveTextContent("用户、助手正文");
     expect(screen.getByRole("status")).toHaveTextContent("已加载 2 条对话；还有更早记录");
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索对话" }), { target: { value: "missing" } });
     expect(onSearchChange).toHaveBeenCalledWith("missing");
@@ -178,7 +178,7 @@ it("updates both navigation sidebars at runtime and searches the translated sett
   expect(within(project).getByText("我的新对话项目")).toBeInTheDocument();
   expect(within(project).getByRole("button", { name: "新对话检查" })).toHaveAccessibleDescription("Running");
   expect(screen.getByRole("status", { name: "Conversation list status" })).toHaveTextContent("Loaded 1 conversation; The current list is fully loaded.");
-  expect(screen.getByRole("searchbox", { name: "Search conversations" })).toHaveAttribute("placeholder", "Search all unarchived conversation titles…");
+  expect(screen.getByRole("searchbox", { name: "Search conversations" })).toHaveAttribute("placeholder", "Search titles and message text…");
 
   const settings = screen.getByRole("navigation", { name: "Settings categories" });
   expect(within(settings).getByRole("button", { name: "Models" })).toHaveAttribute("aria-current", "page");

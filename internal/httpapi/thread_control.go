@@ -118,6 +118,9 @@ func (a *API) routeThreads(request *http.Request, segments []string) (any, *Page
 	case 1:
 		return a.threads(request)
 	case 2:
+		if segments[1] == "search" {
+			return a.searchThreadMessages(request)
+		}
 		if segments[1] == "creation-request" {
 			return a.threadRequestObservation(request, "")
 		}
@@ -151,6 +154,9 @@ func (a *API) routeThreads(request *http.Request, segments []string) (any, *Page
 			return state, nil, err
 		}
 	case 4:
+		if segments[2] == "messages" {
+			return a.savedThreadMessage(request, segments[1], segments[3])
+		}
 		if segments[2] == "activities" {
 			return a.threadActivityDetail(request, segments[1], segments[3])
 		}

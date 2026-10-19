@@ -148,6 +148,7 @@ function renderFileDrawer(client: APIClient, runID = "run-old") {
 
 function renderConversation(client: APIClient, initialThreadID = "thread-a", extras?: ReactNode,
   draftProps?: { draft?: string; onDraftChange?: (content: string, expected?: string) => void;
+    messageID?: string; onExitMessage?: () => void;
     onBranchCreated?: (thread: ThreadDetailView["thread"]) => void }) {
   const queryClient = new QueryClient({ defaultOptions: {
     queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
@@ -215,6 +216,78 @@ function queueSnapshot(runID = "run-thread-a", sessionID = "sess-thread-a") {
 }
 
 describe("V2Conversation", () => {
+  it("loads and focuses the complete saved message window in an archived chat without submitting or restoring it", async () => {
+    const content = "An old full answer beyond the transcript preview.";
+    const getPage = vi.fn((_path: string, _query: unknown, cursor = "") => Promise.resolve(cursor
+      ? page([transcriptItem("old-message", "truncated preview", 1)])
+      : page([transcriptItem("latest-message", "Latest unrelated answer", 120)])));
+    const exit = vi.fn();
+    const client = baseClient({ getPage,
+      get: vi.fn((path: string) => Promise.resolve(path.endsWith("/messages/old-message")
+        ? { message_id: "old-message", content, transcript_cursor: "target-window" }
+        : { ...detail("thread-a"), last_run: { ...detail("thread-a").last_run, session_id: "session-archived" },
+          thread: { ...detail("thread-a").thread, status: "archived", composer_state: "archived" } })),
+      transitionThread: vi.fn(), executeRun: vi.fn(),
+    } as unknown as Partial<APIClient>);
+    const ui = renderConversation(client, "thread-a", undefined, { messageID: "old-message", onExitMessage: exit });
+    const message = await screen.findByText(content);
+    const row = message.closest("[data-message-ids]")!;
+    expect(row).toHaveClass("is-search-target");
+    expect(row).toHaveFocus();
+    expect(screen.queryByText("Latest unrelated answer")).not.toBeInTheDocument();
+    expect(screen.queryByText("truncated preview")).not.toBeInTheDocument();
+    expect(getPage).toHaveBeenCalledWith("/threads/thread-a/transcript", { limit: 100 }, "target-window", expect.any(AbortSignal));
+    expect(screen.getByText(/此对话已归档，仍可查看记录/)).toBeInTheDocument();
+    expect(vi.mocked(client.get).mock.calls.some(([path]) => path.endsWith("/queued-messages"))).toBe(false);
+    expect(screen.queryByText(/暂时无法读取完整队列/)).not.toBeInTheDocument();
+    for (const method of [client.submitThreadTurn, client.transitionThread, client.executeRun]) expect(method).not.toHaveBeenCalled();
+    const returnButton = screen.getByRole("button", { name: "返回最新消息" });
+    returnButton.focus();
+    const scroller = ui.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+    Object.defineProperties(scroller, { scrollHeight: { value: 2000, configurable: true }, clientHeight: { value: 500, configurable: true } });
+    scroller.scrollTop = 77;
+    fireEvent.scroll(scroller);
+    act(() => ui.queryClient.setQueryData([...v2QueryKeys.transcript("thread-a"), "message", "old-message"], {
+      pages: [page([transcriptItem("earlier-message", "Earlier context added", 0), transcriptItem("old-message", "truncated preview", 1)])],
+      pageParams: ["target-window"],
+    }));
+    await screen.findByText("Earlier context added");
+    expect(returnButton).toHaveFocus();
+    expect(scroller.scrollTop).toBe(77);
+    expect(row).toHaveClass("is-search-target");
+    await userEvent.click(screen.getByRole("button", { name: "返回最新消息" }));
+    expect(ui.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 0, following: true });
+    expect(exit).toHaveBeenCalledOnce();
+    ui.queryClient.clear();
+  });
+  it.each(["accepted", "rejected", "switched"])("returns from a searched message only after an accepted send in the same view (%s)", async (outcome) => {
+    const response = deferred<{ steering: { id: string } }>();
+    const submitThreadTurn = vi.fn(() => response.promise);
+    const exit = vi.fn();
+    const client = baseClient({ submitThreadTurn,
+      get: vi.fn((path: string) => Promise.resolve(path.endsWith("/messages/old-message")
+        ? { message_id: "old-message", content: "Saved message", transcript_cursor: "target-window" }
+        : detail(path.includes("thread-b") ? "thread-b" : "thread-a"))),
+      getPage: vi.fn(() => Promise.resolve(page([transcriptItem("old-message", "Saved message", 1)]))),
+    } as unknown as Partial<APIClient>);
+    const ui = renderConversation(client, "thread-a", undefined, { messageID: "old-message", onExitMessage: exit });
+    await screen.findByText("Saved message");
+    await userEvent.click(screen.getByRole("button", { name: "发送 thread-a" }));
+    expect(exit).not.toHaveBeenCalled();
+    if (outcome === "switched") {
+      ui.rerenderThread("thread-b");
+      await screen.findByText("Title thread-b");
+    }
+    await act(async () => {
+      if (outcome === "rejected") response.reject(new APIRequestError("Rejected", "CONFLICT", 409, "confirmed", false));
+      else response.resolve({ steering: { id: "new-message" } });
+    });
+    if (outcome === "accepted") {
+      await waitFor(() => expect(exit).toHaveBeenCalledOnce());
+      expect(ui.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 0, following: true });
+    } else expect(exit).not.toHaveBeenCalled();
+    ui.queryClient.clear();
+  });
   it("keeps one composer when switching between cached source and branch chats", async () => {
     const statistics = { turns: 1, steps: 2, input_tokens: 48, output_tokens: 16, total_tokens: 64,
       cache_read_tokens: 0, cache_reported_calls: 0, usage_calls: 2, timed_output_tokens: 0, decode_millis: 0 };
@@ -689,6 +762,7 @@ describe("V2Conversation", () => {
   it("describes an unconfirmed stop without claiming to cancel accepted input", async () => {
     const current = detail("thread-a");
     current.last_run.session_id = "session-thread-a";
+    current.active_run = { ...current.last_run, status: "running" };
     renderConversation(baseClient({ hasThreadExecutionRead: true,
       threadExecution: vi.fn(async () => ({ state: "stop_failed", queued_messages: 0 } as ThreadExecutionView)),
       get: vi.fn(async (path: string) => path.endsWith("/queued-messages") ? {
