@@ -11287,6 +11287,7 @@ export interface components {
             sources: string[];
             test_command: string;
             toolchain: string;
+            workspace_root?: string;
         };
         ProjectPreparationRequestView: {
             allowed_sources: string[];

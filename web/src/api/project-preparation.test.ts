@@ -52,3 +52,11 @@ it("treats an admitted response without an operation as an unknown outcome", asy
   await expect(new APIClient("read", "/api/v1", "control").prepareProject("run-1", request, "fixed"))
     .rejects.toMatchObject({ code: "INVALID_RESPONSE", status: 502 });
 });
+
+it("accepts a shared workspace root but rejects a root outside the run", () => {
+  const view = preparationView({ target: "apps/web" });
+  view.plan.workspace_root = ".";
+  expect(parseProjectPreparation(view, "run-1", "apps/web").plan.workspace_root).toBe(".");
+  view.plan.workspace_root = "../outside";
+  expect(() => parseProjectPreparation(view, "run-1")).toThrow();
+});

@@ -23,6 +23,24 @@ function setup() {
 }
 beforeEach(() => localStorage.clear());
 
+it("explains shared pnpm installation scope while keeping tests and consent on the selected package", async () => {
+  const { client, ui } = setup();
+  const initial = preparationView();
+  client.getProjectPreparation.mockImplementation((runID: string, target: string) => Promise.resolve(preparationView({ run_id: runID, target,
+    backend: "docker_standard_code", plan: { ...initial.plan, ecosystem: "pnpm", toolchain: "pnpm", workspace_root: ".",
+      install_command: "pnpm install --offline --frozen-lockfile --ignore-scripts", test_command: "pnpm test" } })));
+  render(ui());
+  fireEvent.change(await screen.findByRole("textbox", { name: /项目目录/ }), { target: { value: "apps/web" } });
+  fireEvent.click(screen.getByRole("button", { name: "检测目录" }));
+  await screen.findByText(/将准备整个工作区的依赖/);
+  expect(screen.getByText("apps/web", { selector: "code" })).toBeInTheDocument();
+  expect(screen.getByText("pnpm test")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox", { name: "运行依赖的安装脚本（在Docker中）" }));
+  expect(screen.getByText(/pnpm --recursive rebuild --pending/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "准备项目" }));
+  await waitFor(() => expect(client.prepareProject).toHaveBeenCalledWith("run-1", expect.objectContaining({ target: "apps/web", run_install_scripts: true }), expect.any(String)));
+});
+
 it("canonicalizes newly selected package sources before persisting and submitting consent", async () => {
   const { client, ui } = setup();
   const sources = ["https://proxy.golang.org", "https://storage.googleapis.com"];

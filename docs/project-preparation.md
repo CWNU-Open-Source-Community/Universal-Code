@@ -24,12 +24,34 @@
 | 项目 | 检测文件 | 安装与测试 |
 | --- | --- | --- |
 | npm | `package.json`、`package-lock.json` v2/v3，以及已有的 Node 版本配置 | 离线 `npm ci`；存在 `scripts.test` 时检测 npm 测试动作 |
+| pnpm | `package.json`、`pnpm-lock.yaml` v9；多包项目同时读取 `pnpm-workspace.yaml` 和成员清单 | Docker 镜像固定 pnpm 10.28.1；离线安装整个工作区，在选中包内执行 `pnpm test` |
 | Go | `go.mod`、`go.sum` 和声明的 Go 工具链版本 | 离线准备模块；检测 `go test -mod=readonly ./...` |
 
 使用项目已有的锁文件。缺少锁文件、清单与锁文件不一致、依赖校验信息
 缺失时，先生成并审阅锁文件，再点击「刷新检测」。选择同时包含
 `package.json` 和 `go.mod` 的目录时，应分别选择对应的独立项目目录。
-工作区项目、其他包管理器和本地模块替换会显示需要处理的具体原因。
+npm workspaces、Yarn/Bun、Python/Rust 和本地 Go 模块替换仍不在内置安装范围内，
+检测会显示具体原因。
+
+### pnpm 多包项目
+
+例如工作区包含 `apps/web` 和 `packages/shared-ui`，并使用 `workspace:*`
+引用内部包时，可以直接选择 `apps/web`。检测会在任务目录内向上找到共享锁文件，
+列出根目录及各成员的配置，并显示「依赖安装目录」。准备会安装整个工作区，
+测试仍只在 `apps/web` 中执行。成员清单或锁文件变化后，需要重新检测和确认。
+
+先按[Docker 镜像构建说明](standard-code-docker.md#fixed-image)安装包含
+pnpm 10.28.1 的镜像。旧镜像会提示重建；Windows Local 的目录链接限制与
+原生 pnpm workspace 不兼容，当前 pnpm 准备入口仅支持 Docker Engine。
+
+准备先下载并校验锁定的 tarball，再由镜像中的 pnpm 填充独立缓存，最后使用
+原锁文件执行离线、冻结锁文件的安装。项目锁文件不会被改写成临时下载路径。
+支持常用 `*`、`**`、`?` 与 `!` 排除形式的成员目录匹配，以及
+`workspace:*`、`workspace:^`、`workspace:~` 和精确成员版本。
+当前最多 60 个成员、64 个需要确认的清单及配置文件。成员使用 `package.json`；
+`package.yaml` / `package.json5`、catalog、patch、外部本地文件/Git 依赖、
+自定义安装目录和切换 Node 版本等配置会给出不可用原因。
+项目声明其他 pnpm 版本时，需要先核对并更新项目版本及锁文件。
 
 工具链应提前安装在所选环境中。Local 使用可读取的本机 Node.js/npm 或
 Go 安装目录；Docker Engine 镜像和 Docker Sandboxes 模板应包含所需工具。
@@ -66,10 +88,12 @@ Go 代理将模块归档重定向到 Google Storage 时，需要同时勾选列�
 字节数。应用共享缓存保存经过校验的下载内容，每个任务在自己的工作
 目录安装依赖。再次使用前会核对校验值，损坏内容需要重新获取。
 
-npm 的「运行依赖的安装脚本」默认关闭。首次安装先关闭脚本完成依赖
-安装，生成项目命令入口；勾选后，再在当前所选沙箱中执行离线
-`npm rebuild`。需要生成原生组件的依赖应核对其安装要求，再选择此项。
-这项选择与包源下载授权分别保存。
+npm/pnpm 的「运行依赖的安装脚本」默认关闭。首次安装先关闭脚本完成依赖
+安装，生成项目命令入口；勾选后，npm 在当前沙箱中执行离线 `npm rebuild`，
+pnpm 执行独立的 `pnpm --recursive rebuild --pending`。需要生成原生组件的
+依赖应核对其安装要求，再选择此项。pnpm 继续遵守项目的
+依赖构建白名单；需要构建的包应先在项目中明确允许。
+这项选择与包源下载授权分别保存。pnpmfile 配置钩子始终关闭。
 
 「项目已准备」表示本次安装成功。测试通过需要运行测试，并核对其
 终态与退出码；测试失败时可将结果放回对话，让代理修复后再次运行。
@@ -96,7 +120,8 @@ npm 的「运行依赖的安装脚本」默认关闭。首次安装先关闭脚�
 准备工作流通过所选 Local、Docker Engine 或 Docker Sandboxes 执行。
 各后端的平台与版本要求见[执行环境选择](sandbox-environments.md)，
 具体运行结果以当前安装记录、测试记录和对应验收记录为准。
-本批真实运行、截图与尚待验证的环境见
-[项目依赖准备验收](acceptance/2026-10-14-project-preparation.md)。
+初版 npm/Go 的真实运行与截图见
+[项目依赖准备验收](acceptance/2026-10-14-project-preparation.md)；pnpm 的验证范围见
+[pnpm 项目准备验证记录](acceptance/2026-10-19-pnpm-project-preparation.md)。
 检测、授权、缓存和中断恢复合同见
 [ADR 0176](adr/0176-project-dependency-preparation.md)。

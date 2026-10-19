@@ -42,6 +42,7 @@ type ProjectPreparationPlanView struct {
 	Ecosystem        string             `json:"ecosystem"`
 	Toolchain        string             `json:"toolchain"`
 	RequestedVersion string             `json:"requested_version"`
+	WorkspaceRoot    string             `json:"workspace_root,omitempty"`
 	Files            []projectprep.File `json:"files"`
 	Sources          []string           `json:"sources"`
 	PackageCount     int                `json:"package_count"`
@@ -149,6 +150,13 @@ func (s *ProjectPreparationService) inspect(ctx context.Context, runID, target s
 	if err != nil {
 		return view, plan, "", nil, err
 	}
+	for _, directory := range []string{plan.Target, plan.WorkspaceRoot} {
+		if directory != "" {
+			if err := policy.Check(directory); err != nil {
+				return view, plan, "", nil, err
+			}
+		}
+	}
 	for _, file := range append([]projectprep.File{plan.Manifest}, plan.Lockfiles...) {
 		if file.Path != "" {
 			if err := policy.Check(file.Path); err != nil {
@@ -158,6 +166,7 @@ func (s *ProjectPreparationService) inspect(ctx context.Context, runID, target s
 	}
 	view.Target = plan.Target
 	view.Plan = ProjectPreparationPlanView{Fingerprint: plan.Fingerprint, Ecosystem: plan.Ecosystem, Toolchain: plan.Toolchain, RequestedVersion: plan.RequestedVersion, Files: append([]projectprep.File{}, plan.Lockfiles...), Sources: append([]string{}, plan.Sources...), PackageCount: len(plan.Packages), InstallCommand: plan.Install.Display, TestCommand: plan.Test.Display, Ready: plan.Ready, Issues: append([]string{}, plan.Issues...)}
+	view.Plan.WorkspaceRoot = plan.WorkspaceRoot
 	if plan.Manifest.Path != "" {
 		view.Plan.Files = append([]projectprep.File{plan.Manifest}, view.Plan.Files...)
 	}
@@ -196,7 +205,7 @@ func (s *ProjectPreparationService) inspect(ctx context.Context, runID, target s
 	if err == nil && plan.Ready {
 		_, err = PrepareProjectPreparationCommand(plan, service.adapter, files.Workspace.RootPath, false)
 		if err == nil {
-			err = service.projectPreparationReady(ctx)
+			err = service.projectPreparationReady(ctx, plan.Ecosystem)
 		}
 	}
 	view.Available = err == nil && plan.Ready
@@ -259,8 +268,8 @@ func (s *ProjectPreparationService) Prepare(ctx context.Context, r PrepareProjec
 	if !view.Available {
 		return view, apperror.New(apperror.CodeFailedPrecondition, view.Reason)
 	}
-	if r.RunInstallScripts && plan.Ecosystem != "npm" {
-		return view, apperror.New(apperror.CodeInvalidArgument, "installation scripts are supported only for npm preparation")
+	if r.RunInstallScripts && plan.Ecosystem != "npm" && plan.Ecosystem != "pnpm" {
+		return view, apperror.New(apperror.CodeInvalidArgument, "installation scripts require npm or pnpm preparation")
 	}
 	if r.Target != plan.Target || r.ExpectedFingerprint != plan.Fingerprint {
 		return view, apperror.New(apperror.CodeConflict, "项目文件已变化，请重新检测并确认依赖源")
@@ -288,6 +297,10 @@ func (s *ProjectPreparationService) Prepare(ctx context.Context, r PrepareProjec
 	requestJSON, _ := json.Marshal(r)
 	now := time.Now().UTC()
 	o := domain.ProjectPreparationOperation{ID: opID, RunID: r.RunID, KeyDigest: keyDigest, RequestFingerprint: fingerprint, Target: plan.Target, PlanFingerprint: plan.Fingerprint, Backend: service.adapter.Backend, RequestedBy: r.RequestedBy, RequestJSON: string(requestJSON), OwnerID: s.ownerID, PermissionRevision: permission.Revision, State: "pending", TotalPackages: len(plan.Packages), Revision: 1, CreatedAt: now, UpdatedAt: now}
+	if plan.Ecosystem == "pnpm" {
+		o.WorkspaceRoot = plan.WorkspaceRoot
+		o.SeedDirectory = projectprep.PNPMSeedDirectory(plan.Target)
+	}
 	// Close and admission serialize the WaitGroup addition. Once Close has
 	// started, a new durable operation cannot be left without an owner.
 	s.mu.Lock()
@@ -391,14 +404,17 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 		}
 		return nil
 	}
-	before := func(c context.Context, currentRoot string) error {
+	checkPlan := func(c context.Context, currentRoot string) error {
 		if err := check(c); err != nil {
 			return err
 		}
-		if err := service.projectPreparationReady(c); err != nil {
+		if err := service.projectPreparationReady(c, plan.Ecosystem); err != nil {
 			return err
 		}
-		if err := recheckPreparationPlan(c, currentRoot, root, plan); err != nil {
+		return recheckPreparationPlan(c, currentRoot, root, plan)
+	}
+	before := func(c context.Context, currentRoot string) error {
+		if err := checkPlan(c, currentRoot); err != nil {
 			return err
 		}
 		if _, err := s.change(c, o.RunID, o.ID, func(v *domain.ProjectPreparationOperation) { v.State = "downloading" }); err != nil {
@@ -450,24 +466,33 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 		if plan.Ecosystem == "npm" {
 			return dependencycache.FinalizeNPM(c, currentRoot, plan.Target, service.adapter.Backend != CommandRuntimeLocalSandboxBackend)
 		}
+		if plan.Ecosystem == "pnpm" {
+			return recheckPreparationPlan(c, currentRoot, root, plan)
+		}
 		return nil
 	}
 	spec, err := PrepareProjectPreparationCommand(plan, service.adapter, root, false)
 	var result OperatorCommandResult
-	var installJobID, scriptJobID string
+	var fetchJobID, installJobID, scriptJobID string
 	var jobPersistenceError error
-	persistJob := func(v OperatorCommandResult, scripts bool) {
-		if scripts {
+	persistJob := func(v OperatorCommandResult, phase string) {
+		switch phase {
+		case "fetch":
+			fetchJobID = v.Job.ID
+		case "scripts":
 			scriptJobID = v.Job.ID
-		} else {
+		default:
 			installJobID = v.Job.ID
 		}
 		writeCtx, done := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer done()
 		_, writeErr := s.change(writeCtx, o.RunID, o.ID, func(o *domain.ProjectPreparationOperation) {
-			if scripts {
+			switch phase {
+			case "fetch":
+				o.FetchJobID = v.Job.ID
+			case "scripts":
 				o.ScriptJobID = v.Job.ID
-			} else {
+			default:
 				o.JobID = v.Job.ID
 			}
 		})
@@ -476,10 +501,29 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 			cancel()
 		}
 	}
+	if err == nil && plan.Ecosystem == "pnpm" {
+		// Populate the native store inside the same sandbox that installs the
+		// workspace. The broker supplies only verified, locally staged tarballs.
+		var fetchSpec runner.CommandRuntimeSpec
+		fetchSpec, err = PrepareProjectPreparationFetchCommand(plan, service.adapter, root)
+		if err == nil {
+			fetchSpec.Purpose = "Populate pnpm dependency store " + o.RequestFingerprint
+			result, err = service.runPreparedOperatorCommand(ctx, OperatorCommandRequest{RunID: o.RunID, OperationKey: "prep-fetch-" + o.KeyDigest, RequestedBy: r.RequestedBy, ConfirmExecution: true, Command: fetchSpec}, func(v OperatorCommandResult) {
+				persistJob(v, "fetch")
+			}, before, nil)
+			err = errors.Join(err, jobPersistenceError)
+			if err == nil && !preparationCommandSucceeded(result.Job) {
+				err = errors.New("pnpm 缓存准备失败；请查看命令输出")
+			}
+		}
+		// Installation has its own lease and must recheck the reviewed project
+		// and authority; it must not download or replay progress a second time.
+		before = checkPlan
+	}
 	if err == nil {
 		spec.Purpose = "Prepare project dependencies " + o.RequestFingerprint
 		result, err = service.runPreparedOperatorCommand(ctx, OperatorCommandRequest{RunID: o.RunID, OperationKey: "prep-install-" + o.KeyDigest, RequestedBy: r.RequestedBy, ConfirmExecution: true, Command: spec}, func(v OperatorCommandResult) {
-			persistJob(v, false)
+			persistJob(v, "install")
 		}, before, after)
 		if result.Job.ID != "" {
 			installJobID = result.Job.ID
@@ -489,12 +533,12 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 			err = fmt.Errorf("依赖安装失败；请查看安装输出")
 		}
 	}
-	if err == nil && r.RunInstallScripts && plan.Ecosystem == "npm" {
+	if err == nil && r.RunInstallScripts && (plan.Ecosystem == "npm" || plan.Ecosystem == "pnpm") {
 		spec, err = PrepareProjectPreparationRebuildCommand(plan, service.adapter, root)
 		if err == nil {
 			spec.Purpose = "Run dependency installation scripts " + o.RequestFingerprint
 			result, err = service.runPreparedOperatorCommand(ctx, OperatorCommandRequest{RunID: o.RunID, OperationKey: "prep-scripts-" + o.KeyDigest, RequestedBy: r.RequestedBy, ConfirmExecution: true, Command: spec}, func(v OperatorCommandResult) {
-				persistJob(v, true)
+				persistJob(v, "scripts")
 			}, func(c context.Context, currentRoot string) error {
 				if err := check(c); err != nil {
 					return err
@@ -515,7 +559,7 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 	if err == nil {
 		err = ctx.Err()
 	}
-	_, _ = s.finishPreparation(finalCtx, o.RunID, o.ID, root, installJobID, scriptJobID, err)
+	_, _ = s.finishPreparation(finalCtx, o.RunID, o.ID, root, fetchJobID, installJobID, scriptJobID, err)
 }
 
 // Each command lease, including the separately authorized rebuild, binds to
@@ -538,8 +582,11 @@ func preparationCommandSucceeded(job runner.CommandRuntimeJob) bool {
 	return job.State == runner.CommandRuntimeJobCompleted && job.ExitCode != nil && *job.ExitCode == 0 && job.TreeReaped
 }
 
-func (s *ProjectPreparationService) finishPreparation(ctx context.Context, runID, id, root, installJobID, scriptJobID string, executionError error) (domain.ProjectPreparationOperation, error) {
+func (s *ProjectPreparationService) finishPreparation(ctx context.Context, runID, id, root, fetchJobID, installJobID, scriptJobID string, executionError error) (domain.ProjectPreparationOperation, error) {
 	return s.change(ctx, runID, id, func(v *domain.ProjectPreparationOperation) {
+		if v.FetchJobID == "" && fetchJobID != "" {
+			v.FetchJobID = fetchJobID
+		}
 		if v.JobID == "" && installJobID != "" {
 			v.JobID = installJobID
 		}
@@ -614,6 +661,9 @@ func (s *ProjectPreparationService) operationView(ctx context.Context, o domain.
 		v.Error = "上次准备已中断；重新准备将复用已校验的下载"
 	}
 	jobID := o.JobID
+	if jobID == "" {
+		jobID = o.FetchJobID
+	}
 	if o.ScriptJobID != "" {
 		jobID = o.ScriptJobID
 	}

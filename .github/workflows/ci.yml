@@ -121,6 +121,27 @@ jobs:
           if packages:
               subprocess.run(["go", "test", "-count=1", *packages], check=True)
           PY
+      - name: Set up Node for native pnpm preparation verification
+        if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Prepare integrity-pinned pnpm test toolchain
+        if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, io, os, pathlib, shutil, tarfile, urllib.request
+          data = urllib.request.urlopen("https://registry.npmjs.org/pnpm/-/pnpm-10.28.1.tgz", timeout=60).read()
+          expected = "fX27yp6ZRHt8O/enMoavqva+mSUeuUmLrvp9QGiS9nuHmts6HX5of8TMwaOIxxdfuq5WeiarRNEGe1T8sNajFg=="
+          if base64.b64encode(hashlib.sha512(data).digest()).decode() != expected:
+              raise SystemExit("pnpm test toolchain integrity mismatch")
+          target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "pnpm-preparation-test"
+          with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+              archive.extractall(target, filter="data")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"TRAVERSE_PNPM_TEST_NODE={shutil.which('node')}\n")
+              env.write(f"TRAVERSE_PNPM_TEST_CLI={target / 'package/bin/pnpm.cjs'}\n")
+          PY
       - name: Test and vet selected Go packages
         if: ${{ needs.classify.outputs.backend == 'true' }}
         env:
@@ -147,7 +168,7 @@ jobs:
           go test -race -timeout 15m -count=1
           ./internal/domain ./internal/executionauth ./internal/application
           ./internal/store ./internal/httpapi
-          -run 'WorkspaceAccess|RunExecutionPermission|ExecutionPermission|PermissionDrift|SchemaV126|SchemaV193|ProjectPreparation|AgentCodeExecutorCreatesReviewedFileAndFailsClosedOnCASConflict|CommandOperationApprovalRealNativeThreeModes'
+          -run 'WorkspaceAccess|RunExecutionPermission|ExecutionPermission|PermissionDrift|SchemaV126|SchemaV193|ProjectPreparation|PNPMPreparation|AgentCodeExecutorCreatesReviewedFileAndFailsClosedOnCASConflict|CommandOperationApprovalRealNativeThreeModes'
 
   go-audit:
     name: Go dependency audit

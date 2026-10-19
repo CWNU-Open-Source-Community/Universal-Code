@@ -60,7 +60,7 @@ export function ProjectPreparationPanel({ view, operation, disabled = false, bus
   const blocked = disabled || busy || active || uncertain || operationReadFailed;
   const backend = environmentLabel(view.backend, t);
   const installCommand = runInstallScripts
-    ? view.plan.install_command + "\nnpm rebuild --offline" : view.plan.install_command;
+    ? view.plan.install_command + (view.plan.ecosystem === "pnpm" ? "\npnpm --recursive rebuild --pending" : "\nnpm rebuild --offline") : view.plan.install_command;
   const stateLabel = (state: string) => ({
     pending: t("等待开始", "Waiting to start"), downloading: t("正在获取依赖", "Fetching dependencies"),
     installing: t("正在安装依赖", "Installing dependencies"), ready: t("项目已准备", "Project prepared"),
@@ -80,6 +80,10 @@ export function ProjectPreparationPanel({ view, operation, disabled = false, bus
         : view.cache.status === "partial" ? t("部分可复用", "Partially cached") : t("尚无缓存", "Empty")}
         <small>{t("已缓存 ", "Cached ")}{view.cache.cached_packages} / {view.cache.total_packages} {t("个包", "packages")}</small></dd></div>
     </dl>
+    {view.plan.workspace_root && <p className="v2-delivery-muted">
+      {t("依赖安装目录：", "Dependency installation directory: ")}<code>{view.plan.workspace_root}</code>
+      {view.plan.workspace_root !== view.target && <>{t("。将准备整个工作区的依赖；测试仍在所选目录 ", ". Dependencies are prepared for the whole workspace; tests still run in ")}<code>{view.target}</code>{t(" 中运行。", ".")}</>}
+    </p>}
     <details className="v2-preparation-sources">
       <summary>{t("配置与锁文件", "Configuration and lockfiles")}</summary>
       {view.plan.files.length > 0 ? <ul>{view.plan.files.map((file) => <li key={file.path}><code>{file.path}</code></li>)}</ul>
@@ -100,9 +104,10 @@ export function ProjectPreparationPanel({ view, operation, disabled = false, bus
           event.target.checked ? [...current, source] : current.filter((item) => item !== source))} />
         <span>{t("允许下载：", "Allow downloads: ")}<code>{source}</code></span>
       </label>) : <p>{t("此项目没有需要下载的依赖源。", "This project has no package sources to download from.")}</p>}
-      {view.plan.ecosystem === "npm" && <label className="v2-preparation-scripts"><input type="checkbox" checked={runInstallScripts}
+      {(view.plan.ecosystem === "npm" || view.plan.ecosystem === "pnpm") && <label className="v2-preparation-scripts"><input type="checkbox" checked={runInstallScripts}
         onChange={(event) => setRunInstallScripts(event.target.checked)} />
         <span>{t("运行依赖的安装脚本（在", "Run dependency install scripts (in ")}{backend}{t("中）", ")")}</span></label>}
+      {view.plan.ecosystem === "pnpm" && <p>{t("安装脚本继续遵守项目的 pnpm 依赖构建白名单。", "Install scripts continue to respect the project's pnpm dependency build allowlist.")}</p>}
     </fieldset>
     <div className="v2-preparation-actions">
       <button type="button" disabled={blocked || !view.available} onClick={() => onPrepare({ allowedSources, runInstallScripts })}>

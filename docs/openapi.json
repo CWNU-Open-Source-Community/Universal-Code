@@ -56073,6 +56073,9 @@
           },
           "toolchain": {
             "type": "string"
+          },
+          "workspace_root": {
+            "type": "string"
           }
         },
         "required": [
