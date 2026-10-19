@@ -28,17 +28,17 @@
 
 ---
 
-## 🌟 Highlights
+## Highlights
 
-- 🛠️ **Built for Local Repositories**: Read, inspect, and edit local codebases with built-in line-by-line diff inspection and auditable checkpoints (Rewind).
-- 🛡️ **Transparent Permission Control**: Choose between read-only analysis, approval-gated runs, and automated Full Access. High-risk actions (file deletion, unlisted commands) always require manual confirmation.
-- 🧠 **Ready for Any Model**: Native support for OpenAI, Anthropic Claude, DeepSeek, Kimi, local Ollama models, and custom OpenAI-compatible endpoints with on-the-fly model switching. Also supports quick browser-based **ChatGPT account sign-in**.
-- 🔍 **Traceable Web Research**: Prioritizes provider-hosted native search, fetches GitHub Issues/PRs, Hacker News, and RSS/Atom feeds, and keeps source snapshots and citations.
-- 💎 **Modern Liquid Glass Aesthetic**: Crafted with pure CSS optical refraction (macOS / VisionOS acrylic style), supporting Dark, Light, and Mist frosted themes at a responsive 120fps.
+- **Built for Local Repositories**: Read, inspect, and edit local codebases with built-in line-by-line diff inspection and auditable checkpoints (Rewind).
+- **Transparent Permission Control**: Choose between read-only analysis, approval-gated runs, and automated Full Access. High-risk actions (file deletion, unlisted commands) always require manual confirmation.
+- **Ready for Any Model**: Native support for OpenAI, Anthropic Claude, DeepSeek, Kimi, local Ollama models, and custom OpenAI-compatible endpoints with on-the-fly model switching. Also supports quick browser-based ChatGPT account sign-in.
+- **Traceable Web Research**: Prioritizes provider-hosted native search, fetches GitHub Issues/PRs, Hacker News, and RSS/Atom feeds, and keeps source snapshots and citations.
+- **Modern Liquid Glass Aesthetic**: Crafted with pure CSS optical refraction (macOS / VisionOS acrylic style), supporting Dark, Light, and Mist frosted themes at a responsive 120fps.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Option 1: Download Pre-built Binaries
 
@@ -68,7 +68,7 @@ go run ./cmd/cyberagent-desktop
 
 ---
 
-## ⚙️ Connecting Models
+## Connecting Models
 
 When opening the app or starting a new thread, click the model selector above the composer:
 
@@ -84,7 +84,7 @@ When opening the app or starting a new thread, click the model selector above th
 
 ---
 
-## 🖼️ Interface Preview
+## Interface Preview
 
 | Light & Dark Split | Mist Frosted Glass |
 | :---: | :---: |
@@ -94,7 +94,7 @@ Switch between **System, Light, Dark, and Mist** under **Settings → Appearance
 
 ---
 
-## 📚 Documentation Index
+## Documentation Index
 
 | Topic | Document | Description |
 | :--- | :--- | :--- |
@@ -108,11 +108,11 @@ Switch between **System, Light, Dark, and Mist** under **Settings → Appearance
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions, issues, and feature requests are welcome! Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
 
-## 📄 License & Font Compliance
+## License & Font Compliance
 
 - Distributed under the [Apache License 2.0](LICENSE).
 - **Third-party Font Notice**: The Chinese UI bundles HarmonyOS Sans Fonts licensed by Huawei Device Co., Ltd. The complete [font license](web/public/licenses/HarmonyOS-Sans.txt) is shipped with the app; see [font provenance and hashes](web/src/assets/fonts/PROVENANCE.md) for details.
