@@ -308,7 +308,7 @@ func (a *API) threadTranscript(request *http.Request, threadID string) (any, *Pa
 func (a *API) threads(request *http.Request) (any, *Page, error) {
 	values := request.URL.Query()
 	if err := validateSingleQueryValues(values, "limit", "cursor", "status",
-		"include_deleted", "q"); err != nil {
+		"include_deleted", "q", "pinned", "execution_state"); err != nil {
 		return nil, nil, err
 	}
 	if query, exists := values["q"]; exists && len(query) != 1 {
@@ -330,6 +330,13 @@ func (a *API) threads(request *http.Request) (any, *Page, error) {
 		return nil, nil, err
 	}
 	filter := domain.ThreadFilter{Limit: stableListStoreLimit(pageRequest), TitleQuery: titleQuery}
+	if raw, ok := singleQueryValue(values, "pinned"); ok {
+		pinned, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			return nil, nil, apperror.New(apperror.CodeInvalidArgument, "pinned must be true or false")
+		}
+		filter.Pinned = &pinned
+	}
 	if raw, ok := singleQueryValue(values, "status"); ok {
 		filter.Status = domain.ThreadStatus(strings.ToLower(raw))
 		if !domain.ValidThreadStatus(filter.Status) {
@@ -343,6 +350,12 @@ func (a *API) threads(request *http.Request) (any, *Page, error) {
 			return nil, nil, apperror.New(apperror.CodeInvalidArgument,
 				"include_deleted must be true or false")
 		}
+	}
+	if raw, ok := singleQueryValue(values, "execution_state"); ok {
+		if len(values["execution_state"]) != 1 || (raw != "running" && raw != "waiting_approval") {
+			return nil, nil, apperror.New(apperror.CodeInvalidArgument, "execution_state must be running or waiting_approval")
+		}
+		return a.filteredThreadList(request.Context(), filter, pageRequest, raw)
 	}
 	items, err := a.store.ListThreadsByCreationPage(request.Context(), filter,
 		pageRequest.Anchor.BeforeCreatedAt, pageRequest.Anchor.BeforeID)

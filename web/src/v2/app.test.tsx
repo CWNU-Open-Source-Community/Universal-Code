@@ -1456,7 +1456,8 @@ it("switches the new conversation and shell language without changing user proje
   const group = screen.getByRole("region", { name: "Project 我的新对话项目" });
   expect(within(group).getByText("我的新对话项目")).toBeInTheDocument();
   expect(within(group).getByRole("button", { name: "新对话：排查连接" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Archive 新对话：排查连接" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "新对话：排查连接 chat options" }));
+  expect(screen.getByRole("menuitem", { name: "Archive 新对话：排查连接" })).toBeInTheDocument();
   expect(window.localStorage.getItem("prayu.locale.v1")).toBe("en-US");
 
   await user.click(screen.getByRole("button", { name: "Switch test language" }));

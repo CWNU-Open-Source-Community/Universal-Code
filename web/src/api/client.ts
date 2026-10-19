@@ -541,13 +541,14 @@ function parseRunCreationControl(value: unknown,
 function parseThreadView(value: unknown, expectedThreadID = ""): ThreadView {
   const required = ["composer_state", "created_at", "id", "last_run_id", "mission_id",
     "protocol_version", "status", "title", "updated_at", "version"];
-  const optional = ["active_run_id", "archived_at", "deleted_at", "workspace_id", "execution_state", "project_workspace_id", "project_assignment_version"];
+  const optional = ["active_run_id", "archived_at", "deleted_at", "workspace_id", "execution_state", "project_workspace_id", "project_assignment_version", "pinned"];
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, ...optional]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
     value.protocol_version !== "thread.v1" || !boundedIdentity(value.id) ||
     (expectedThreadID !== "" && value.id !== expectedThreadID) ||
     !boundedIdentity(value.mission_id) || !boundedIdentity(value.last_run_id) ||
     !boundedText(value.title, 4_096) || !safePositiveInteger(value.version) ||
+    (value.pinned !== undefined && typeof value.pinned !== "boolean") ||
     !validDate(value.created_at) || !validDate(value.updated_at) ||
     (value.workspace_id !== undefined && !boundedIdentity(value.workspace_id)) ||
     (value.project_workspace_id !== undefined && value.project_workspace_id !== "" && !boundedIdentity(value.project_workspace_id)) ||
@@ -6977,6 +6978,18 @@ export class APIClient {
   async renameWorkspace(id: string, name: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
     if (!boundedIdentity(id)) throw new Error("A project identity is required");
     return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/name`, { name: normalizeWorkspaceName(name) }, signal, "", "PUT"), id);
+  }
+
+  async renameThread(id: string, title: string, signal?: AbortSignal): Promise<ThreadView> {
+    if (!boundedIdentity(id) || !boundedText(title.trim(), 4096) || /[\p{Cc}]/u.test(title)) {
+      throw new Error("A conversation identity and a title of 1–4096 characters without control characters are required");
+    }
+    return parseThreadView(await this.sendControlRequest<unknown>(`/threads/${encodeURIComponent(id)}/name`, { title: title.trim() }, signal, "", "PUT"), id);
+  }
+
+  async pinThread(id: string, pinned: boolean, signal?: AbortSignal): Promise<ThreadView> {
+    if (!boundedIdentity(id) || typeof pinned !== "boolean") throw new Error("A conversation identity and pinned state are required");
+    return parseThreadView(await this.sendControlRequest<unknown>(`/threads/${encodeURIComponent(id)}/pin`, { pinned }, signal, "", "PUT"), id);
   }
 
   async importWorkspace(directoryPath: string, signal?: AbortSignal, name?: string): Promise<WorkspaceImportView> {

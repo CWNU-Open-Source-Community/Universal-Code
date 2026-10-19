@@ -21,7 +21,12 @@ func projectMoveIdentity(r domain.ThreadProjectMoveRequest) (string, string) {
 	return runmutation.Fingerprint(domain.ThreadProjectMoveVersion, r.ThreadID, r.OperationKey), runmutation.Fingerprint(domain.ThreadProjectMoveVersion, r.ThreadID, r.ProjectWorkspaceID, strconv.FormatInt(r.ExpectedVersion, 10), r.RequestedBy)
 }
 func readProjectAssignment(ctx context.Context, q historyQueryer, t *domain.Thread) error {
-	err := q.QueryRowContext(ctx, `SELECT project_workspace_id,version FROM thread_project_assignments WHERE thread_id=?`, t.ID).Scan(&t.ProjectWorkspaceID, &t.ProjectAssignmentVersion)
+	// Read sidebar metadata with project membership to avoid a second per-row query.
+	err := q.QueryRowContext(ctx, `SELECT p.project_workspace_id,p.version,t.pinned FROM thread_project_assignments p JOIN threads t ON t.id=p.thread_id WHERE p.thread_id=?`, t.ID).Scan(&t.ProjectWorkspaceID, &t.ProjectAssignmentVersion, &t.Pinned)
+	if err != nil && strings.Contains(err.Error(), "no such column: t.pinned") {
+		// Historical migration-prefix fixtures predate pinned conversations.
+		err = q.QueryRowContext(ctx, `SELECT project_workspace_id,version FROM thread_project_assignments WHERE thread_id=?`, t.ID).Scan(&t.ProjectWorkspaceID, &t.ProjectAssignmentVersion)
+	}
 	// Historical migration-prefix fixtures predate project membership.
 	if err != nil && strings.Contains(err.Error(), "no such table: thread_project_assignments") {
 		t.ProjectWorkspaceID = t.WorkspaceID
