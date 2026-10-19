@@ -28,7 +28,7 @@ export function V2PeerMessageCard({ message, threadID, onOpenThread }: {
     </header>
     <p className="v2-peer-content">{message.content}</p>
     {message.error && <p className="v2-peer-error">{message.error}</p>}
-    <footer><span>{message.status === "queued" ? t("等待接收；运行中的聊天会在当前轮结束后处理。", "Waiting for the recipient. A running chat receives this after its current turn.")
+    <footer><span>{message.reply_to && <>{t("回复消息", "Reply")} · </>}{message.status === "queued" ? t("等待接收；运行中的聊天会在当前轮结束后处理。", "Waiting for the recipient. A running chat receives this after its current turn.")
       : message.status === "delivered" ? incoming ? t("此聊天已接收消息。", "This chat has received the message.")
         : t("对方已接收，处理结果以回复为准。", "The recipient has received the message. A reply will confirm the outcome.")
         : message.status === "cancelled" ? t("此消息不会继续投递。", "This message will not be delivered.") : t("消息尚未送达。", "The message has not been delivered.")}</span>
