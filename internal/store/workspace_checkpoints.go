@@ -449,13 +449,21 @@ func isWorkspaceRestoreTransaction(kind workspacecheckpoint.TransactionKind) boo
 // recovery finishes. Resume and lease acquisition check this in their own write
 // transactions, so neither can enter between restore preparation and file IO.
 func requireNoOpenWorkspaceRestoreTx(ctx context.Context, tx *sql.Tx, runID string) error {
+	// Historical stores use the mission workspace before physical owner bindings exist.
+	workspaceQuery := `SELECT mission.workspace_id FROM runs run
+	 JOIN missions mission ON mission.id=run.mission_id WHERE run.id=?`
+	if hasBindings, err := hasRunFileDrydockBindings(ctx, tx); err != nil {
+		return err
+	} else if hasBindings {
+		workspaceQuery = `SELECT COALESCE(owner.workspace_id,mission.workspace_id)
+	 FROM runs run JOIN missions mission ON mission.id=run.mission_id
+	 LEFT JOIN run_file_drydock_bindings owner ON owner.run_id=run.id WHERE run.id=?`
+	}
 	var pending bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
 		SELECT 1 FROM workspace_checkpoint_transactions pending
 		WHERE (pending.run_id = ? OR (pending.trigger_receipt_id LIKE 'thread-reply-undo:%'
-		 AND pending.workspace_id=(SELECT COALESCE(owner.workspace_id,mission.workspace_id)
-		 FROM runs run JOIN missions mission ON mission.id=run.mission_id
-		 LEFT JOIN run_file_drydock_bindings owner ON owner.run_id=run.id WHERE run.id=?)))
+		 AND pending.workspace_id=(`+workspaceQuery+`)))
 			AND kind IN ('rewind', 'undo', 'redo', 'fork') AND status IN ('prepared', 'applying'))`,
 		runID, runID).Scan(&pending); err != nil {
 		return err
