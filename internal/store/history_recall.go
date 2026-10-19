@@ -82,13 +82,23 @@ func (s *SQLiteStore) historyScope(ctx context.Context, q historyQueryer, runID 
 		return value, err
 	}
 	value.workspaceID = workspaceID
+	// Historical schemas before v216 retain a single-workspace lineage and have
+	// no project-move receipts. Once v216 is recorded, its ledger is required.
+	var projectMoveSchema bool
+	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=216)`).Scan(&projectMoveSchema); err != nil {
+		return value, err
+	}
+	projectMoveCount := `0`
+	if projectMoveSchema {
+		projectMoveCount = `(SELECT COUNT(*) FROM thread_project_moves p WHERE p.thread_id=b.thread_id AND p.predecessor_run_id=b.predecessor_run_id AND p.successor_run_id=b.run_id AND p.project_workspace_id=m.workspace_id)`
+	}
 	rows, err := q.QueryContext(ctx, `SELECT b.run_id,b.session_id,b.ordinal,COALESCE(b.predecessor_run_id,''),
 		r.session_id,r.mission_id,COALESCE(m.workspace_id,''),COALESCE(s.workspace_id,''),
 		(SELECT COUNT(*) FROM thread_events e WHERE e.thread_id=b.thread_id AND e.run_id=b.run_id
 		 AND e.type='thread.run_successor_created' AND e.source='thread_continuation'
 		 AND json_extract(e.payload_json,'$.predecessor_run_id')=b.predecessor_run_id
 		 AND json_extract(e.payload_json,'$.successor_run_id')=b.run_id),
-		(SELECT COUNT(*) FROM thread_project_moves p WHERE p.thread_id=b.thread_id AND p.predecessor_run_id=b.predecessor_run_id AND p.successor_run_id=b.run_id AND p.project_workspace_id=m.workspace_id)
+		`+projectMoveCount+`
 		FROM thread_runs b LEFT JOIN runs r ON r.id=b.run_id
 		LEFT JOIN missions m ON m.id=r.mission_id LEFT JOIN sessions s ON s.id=b.session_id
 		WHERE b.thread_id=? ORDER BY b.ordinal LIMIT 1025`, value.threadID)

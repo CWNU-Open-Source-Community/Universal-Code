@@ -198,6 +198,7 @@ func TestDesktopBridgeBootstrapsMemoryOnlyClosedAuthority(t *testing.T) {
 		bootstrap.UIEvidenceControlEnabled ||
 		bootstrap.WorkspaceOpenEnabled ||
 		bootstrap.WorkspaceImportEnabled ||
+		bootstrap.ProjectlessWorkspacesEnabled ||
 		bootstrap.RendererPathInputSupported ||
 		bootstrap.RiskProfileRestartEnabled || bootstrap.ChatGPTAuthEnabled {
 		t.Fatalf("unexpected bootstrap: %#v", bootstrap)
@@ -239,6 +240,7 @@ func TestDesktopBridgeBootstrapsMemoryOnlyClosedAuthority(t *testing.T) {
 		"batch_delivery_control_enabled", "batch_delivery_host_validation_enabled",
 		"ui_evidence_control_enabled",
 		"workspace_import_enabled",
+		"projectless_workspaces_enabled",
 		"workspace_open_enabled",
 	})
 }

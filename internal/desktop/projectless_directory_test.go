@@ -18,6 +18,10 @@ func TestChooseProjectlessDirectoryUsesNativeSelectionOnly(t *testing.T) {
 	defer state.Close()
 	plane := &ControlPlane{stateStore: state}
 	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	bridge := newWorkspaceImportBridge(t, testWorkspaceDirectoryPicker{path: root}, plane)
 	bridge.bootstrap.ProjectlessWorkspacesEnabled = true
 	method, _ := reflect.TypeFor[*DesktopBridge]().MethodByName("ChooseProjectlessDirectory")
@@ -25,11 +29,11 @@ func TestChooseProjectlessDirectoryUsesNativeSelectionOnly(t *testing.T) {
 		t.Fatal("renderer can pass an arbitrary host path")
 	}
 	result, err := bridge.ChooseProjectlessDirectory()
-	if err != nil || result.Status != "selected" || result.Settings == nil || result.Settings.DirectoryPath != root {
+	if err != nil || result.Status != "selected" || result.Settings == nil || result.Settings.DirectoryPath != canonicalRoot {
 		t.Fatalf("selection=%+v err=%v", result, err)
 	}
 	stored, err := (workspace.ProjectlessManager{Store: state}).Directory(t.Context())
-	if err != nil || stored.DirectoryPath != root {
+	if err != nil || stored.DirectoryPath != canonicalRoot {
 		t.Fatalf("setting did not persist: %+v %v", stored, err)
 	}
 	entries, err := os.ReadDir(root)
@@ -42,7 +46,7 @@ func TestChooseProjectlessDirectoryUsesNativeSelectionOnly(t *testing.T) {
 		t.Fatalf("cancelled=%+v err=%v", cancelled, err)
 	}
 	stored, err = (workspace.ProjectlessManager{Store: state}).Directory(t.Context())
-	if err != nil || stored.DirectoryPath != root {
+	if err != nil || stored.DirectoryPath != canonicalRoot {
 		t.Fatalf("cancellation changed saved root: %+v %v", stored, err)
 	}
 }
