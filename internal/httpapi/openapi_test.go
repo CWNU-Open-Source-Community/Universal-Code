@@ -1306,6 +1306,9 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath = strings.ReplaceAll(requestPath, "{edit_id}", recoveryProposal.Edit.ID)
 		} else if spec.OperationID == "branchThread" || spec.OperationID == "getThreadChanges" || spec.OperationID == "undoThreadChanges" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(branchSourceRun.ID))
+		} else if spec.OperationID == "getSavedThreadMessage" {
+			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(branchSourceRun.ID))
+			requestPath = strings.ReplaceAll(requestPath, "{message_id}", branchSourceEventID)
 		} else if spec.OperationID == "deleteThread" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", deleteThread.ID)
 		} else if spec.OperationID == "rejectContextMemoryCandidate" {
@@ -1317,6 +1320,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 			requestPath += "?workspace_id=" + fixture.workspace.ID
 		} else if spec.OperationID == "searchWorkspace" {
 			requestPath += "?query=README"
+		} else if spec.OperationID == "searchSavedThreadMessages" {
+			requestPath += "?q=Selected"
 		} else if spec.Path == TaskSkillCandidatesPath {
 			requestPath += "?workspace_id=" + fixture.workspace.ID + "&surface=code&phase=deliver&profile=review"
 		} else if spec.OperationID == "getWorkspaceRepositoryFileHistory" {
@@ -2091,6 +2096,25 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					requestPath, response.Code, response.Body.String())
 			}
 			assertSecurityHeaders(t, response)
+			if spec.OperationID == "searchSavedThreadMessages" {
+				var matches []ThreadSearchResultView
+				decodeDataStatus(t, response, http.StatusOK, &matches)
+				found := false
+				for _, match := range matches {
+					if match.MessageID == branchSourceEventID && match.ThreadID == domain.InitialThreadID(branchSourceRun.ID) {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("saved message search did not return the stored reply: %+v", matches)
+				}
+			} else if spec.OperationID == "getSavedThreadMessage" {
+				var message ThreadSavedMessageView
+				decodeDataStatus(t, response, http.StatusOK, &message)
+				if message.MessageID != branchSourceEventID || message.Content != "Selected OpenAPI reply" || message.TranscriptCursor == "" {
+					t.Fatalf("saved message route lost its content or location: %+v", message)
+				}
+			}
 			if spec.OperationID == "inspectProjectPreparation" || spec.OperationID == "prepareProject" {
 				var view application.ProjectPreparationView
 				decodeDataStatus(t, response, expectedStatus, &view)
