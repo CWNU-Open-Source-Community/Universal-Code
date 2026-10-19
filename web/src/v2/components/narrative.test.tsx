@@ -9,6 +9,28 @@ const markdown = vi.hoisted(() => vi.fn(({ children }: { children: string }) => 
 vi.mock("react-markdown", () => ({ default: markdown }));
 afterEach(() => { cleanup(); markdown.mockClear(); });
 
+it("copies and reuses processed user text, quotes only the selection, and branches from that input", async () => {
+  const user = userEvent.setup();
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  const onCompose = vi.fn(); const onBranch = vi.fn().mockResolvedValue(undefined);
+  const entry: NarrativeEntry = { kind: "user", id: "queued-event", branchSourceID: "queued-event", status: "committed",
+    text: "Keep the first part and quote this.", createdAt: "", provisional: false };
+  const get = vi.fn().mockResolvedValue({ message_id: entry.id, content: entry.text });
+  render(<V2Narrative client={{ get } as unknown as APIClient} entries={[entry]} threadID="thread" onCompose={onCompose} onBranch={onBranch} />);
+  await user.click(screen.getByRole("button", { name: "Copy message" }));
+  expect(writeText).toHaveBeenCalledWith(entry.text);
+  await user.click(screen.getByRole("button", { name: "Reuse text in composer" }));
+  expect(onCompose).toHaveBeenLastCalledWith(entry.text);
+  const node = screen.getByText(entry.text).firstChild!;
+  const range = document.createRange(); range.setStart(node, 24); range.setEnd(node, 34);
+  window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range);
+  await user.click(screen.getByRole("button", { name: "Quote message" }));
+  expect(onCompose).toHaveBeenLastCalledWith("> quote this\n\n");
+  await user.click(screen.getByRole("button", { name: "Branch into new chat" }));
+  expect(onBranch).toHaveBeenCalledWith("queued-event", expect.any(String));
+  expect(screen.getByText(entry.text)).toBeInTheDocument();
+});
+
 it("renders only changing output while reusing a thousand historical Markdown rows", () => {
   const client = {} as APIClient;
   const history: NarrativeEntry[] = Array.from({ length: 1_000 }, (_, index) => ({
@@ -29,6 +51,25 @@ it("renders only changing output while reusing a thousand historical Markdown ro
   view.rerender(<V2Narrative client={client} entries={revised} threadID="thread-1" />);
   expect(markdown).toHaveBeenCalledTimes(1_022);
   expect(screen.getByText("Corrected durable answer")).toBeInTheDocument();
+});
+
+it("loads the full stored user message for copy and reuse, and does not replace a failed load with its preview", async () => {
+  const user = userEvent.setup();
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  const full = "Original text ".repeat(1000) + "FINAL_REQUIREMENT";
+  const get = vi.fn().mockResolvedValue({ message_id: "input", content: full });
+  const onCompose = vi.fn();
+  render(<V2Narrative client={{ get } as unknown as APIClient} entries={[{ id: "input", kind: "user", text: "Original text…",
+    createdAt: "", provisional: false, status: "committed" }]} threadID="thread" onCompose={onCompose} />);
+  expect(get).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Copy message" }));
+  expect(writeText).toHaveBeenCalledWith(full);
+  await user.click(screen.getByRole("button", { name: "Reuse text in composer" }));
+  expect(onCompose).toHaveBeenCalledExactlyOnceWith(full);
+  get.mockRejectedValueOnce(new Error("Offline"));
+  await user.click(screen.getByRole("button", { name: "Reuse text in composer" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Offline");
+  expect(onCompose).toHaveBeenCalledOnce();
 });
 
 it("copies the full reply and branches from its final durable event with icon actions", async () => {

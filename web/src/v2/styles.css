@@ -872,7 +872,7 @@
   padding: 0;
 }
 .v2-narrative > li { min-width: 0; }
-.v2-user-turn { display: flex; justify-content: flex-end; }
+.v2-user-turn { display: flex; flex-direction: column; align-items: flex-end; }
 .v2-message-status { color: var(--v2-muted); display: block; font-size: 11px; margin-top: 6px; }
 .v2-user-turn > div {
   background: var(--v2-control-hover);
@@ -888,6 +888,23 @@
   white-space: pre-wrap;
 }
 .v2-user-markdown { white-space: normal; }
+.v2-user-turn > .v2-user-actions { background: transparent; border: 0; padding: 0; white-space: normal; }
+.v2-shortcut-search { display: flex; align-items: center; gap: 10px; margin: 24px 0 16px; }
+.v2-shortcut-search input { flex: 1; min-width: 0; }
+.v2-shortcut-search button { flex-shrink: 0; }
+.v2-shortcut-row { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
+.v2-shortcut-row + .v2-shortcut-row { border-top: 1px solid var(--v2-border); }
+.v2-shortcut-row > span { flex: 1; min-width: 0; }
+.v2-shortcut-binding { min-width: 100px; max-width: 55%; }
+.v2-shortcut-binding kbd { font-family: var(--prayu-font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.v2-shortcut-reset { display: inline-flex; padding: 6px; }
+.v2-markdown-code-block { --code-keyword: #7240a0; --code-string: #245a87; --code-number: #96500c; --code-comment: #69717c; --code-name: #8f304c; }
+[data-prayu-theme="dark"] .v2-markdown-code-block { --code-keyword: #c9a2ef; --code-string: #98c6f0; --code-number: #e9b27a; --code-comment: #9aa5b5; --code-name: #f0a4bb; }
+.v2-markdown-code-block :is(.hljs-keyword, .hljs-literal, .hljs-selector-tag) { color: var(--code-keyword); }
+.v2-markdown-code-block :is(.hljs-string, .hljs-attr, .hljs-regexp, .hljs-addition) { color: var(--code-string); }
+.v2-markdown-code-block :is(.hljs-number, .hljs-built_in, .hljs-type) { color: var(--code-number); }
+.v2-markdown-code-block :is(.hljs-comment, .hljs-meta) { color: var(--code-comment); }
+.v2-markdown-code-block :is(.hljs-title, .hljs-name, .hljs-deletion) { color: var(--code-name); }
 :is(.v2-assistant-turn, .v2-user-markdown) {
   font-size: var(--prayu-prose-size);
   font-weight: var(--prayu-weight-body);

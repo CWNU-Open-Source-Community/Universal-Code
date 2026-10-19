@@ -41,6 +41,7 @@ import { submitSkillChoice, type ProjectSkillChoice } from "../api/project-skill
 import { useV2WebAccessDefaults } from "./web-access-defaults";
 import { useProjectlessWorkspace } from "./projectless-workspace";
 import { threadProjectID } from "./components/thread-project-dialog";
+import { useChatShortcuts } from "./chat-preferences";
 
 type CreationAttempt = Map<string, string>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -590,6 +591,16 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     closeNavigationSidebar();
   };
 
+  useChatShortcuts({
+    newChat: () => startNew(),
+    search: () => { if (surface === "settings") returnFromSettings(); setSidebarVisible(true); setSearchOpen(true); },
+    settings: openSettings,
+    sidebar: () => setSidebarVisible(!sidebarVisible),
+    composer: () => {
+      if (surface === "settings") returnFromSettings();
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
+    },
+  });
   return <div className={`v2-shell${sidebarVisible ? " has-sidebar" : " no-sidebar"}`}>
     <V2Titlebar canGoBack={navigation.canGoBack} onBack={surface === "settings" ? returnFromSettings : goBack}
       onToggleSidebar={() => setSidebarVisible(!sidebarVisible)} sidebarVisible={sidebarVisible} sidebarToggleRef={sidebarToggle} />

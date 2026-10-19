@@ -578,6 +578,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const managedDraft = useV2DraftDocument(detailQuery.data?.thread.workspace_id ?? "", threadID);
   const draft = managedDraft?.state.snapshot.text ?? legacyDraft;
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
+  const composeTarget = useRef({ draft, onDraftChange });
+  composeTarget.current = { draft, onDraftChange };
+  const composeMessage = useCallback((text: string) => {
+    const current = composeTarget.current;
+    current.onDraftChange?.(current.draft ? `${current.draft}\n\n${text}` : text, current.draft);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-conversation .v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
+  }, []);
   const activeRun = detailQuery.data?.active_run;
   const streamRunID = activeRun?.id ?? "";
   const streamEnabled = Boolean(activeRun && ["preparing", "running", "waiting_approval"]
@@ -1116,7 +1123,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
         {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile}
-          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread} />}
+          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
+          onCompose={client.hasThreadControl && onDraftChange && detail.thread.status !== "archived" ? composeMessage : undefined} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
