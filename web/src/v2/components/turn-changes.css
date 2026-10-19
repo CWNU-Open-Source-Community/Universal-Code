@@ -1,0 +1,59 @@
+.v2-turn-changes { margin-top: 16px; border: 1px solid var(--v2-border); border-radius: 12px; overflow: hidden; background: var(--v2-main-surface); font-size: 13px; line-height: 1.5; }
+.v2-turn-changes button, .v2-change-dialog button, .v2-change-load-error button { color: inherit; font: inherit; cursor: pointer; }
+.v2-turn-changes button:focus-visible, .v2-change-dialog button:focus-visible, .v2-change-diff:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -3px; }
+.v2-turn-changes-heading { display: flex; align-items: center; gap: 12px; padding: 15px 16px; background: color-mix(in srgb, var(--v2-control) 48%, transparent); }
+.v2-turn-changes-icon { flex: 0 0 38px; height: 38px; display: grid; place-items: center; border-radius: 9px; background: var(--v2-control); color: var(--v2-muted); }
+.v2-turn-changes-heading > div { min-width: 0; flex: 1; }
+.v2-assistant-turn .v2-turn-changes h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.v2-change-counts { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 400; }
+.v2-change-added { color: var(--prayu-diff-add); }
+.v2-change-removed { color: var(--prayu-diff-delete); }
+.v2-change-unavailable { color: var(--v2-muted); font-size: 12px; white-space: nowrap; }
+.v2-turn-changes-review { border: 1px solid var(--v2-border); border-radius: 8px; padding: 5px 10px; background: transparent; flex-shrink: 0; }
+.v2-turn-changes button:hover, .v2-change-dialog button:hover { background: var(--v2-control-hover); }
+.v2-assistant-turn .v2-turn-changes-files { list-style: none; padding: 6px 0; margin: 0; border-top: 1px solid var(--v2-border); }
+.v2-assistant-turn .v2-turn-changes-files li { margin: 0; }
+.v2-turn-changes-files button { width: 100%; min-height: 35px; display: flex; align-items: center; gap: 16px; text-align: left; background: transparent; border: 0; padding: 7px 16px; }
+.v2-turn-changes-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-turn-changes-expand { width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 16px; border: 0; border-top: 1px solid var(--v2-border); background: transparent; text-align: left; }
+.v2-assistant-turn .v2-turn-changes-scope { margin: 0; padding: 5px 16px 8px; color: var(--v2-muted); font-size: 12px; line-height: 1.5; }
+.v2-change-load-error { display: flex; align-items: center; gap: 8px; color: var(--v2-muted); font-size: 12px; margin-top: 12px; }
+.v2-change-load-error button { border: 0; background: transparent; text-decoration: underline; }
+.v2-change-overlay { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / 36%); display: grid; place-items: center; padding: 24px; }
+.v2-change-dialog { width: min(1040px, 100%); height: min(720px, 88dvh); display: flex; flex-direction: column; color: var(--v2-ink); background: var(--prayu-surface-solid); border: 1px solid var(--v2-border-strong); border-radius: 14px; box-shadow: 0 16px 60px rgb(0 0 0 / 24%); font: 13px/1.6 var(--prayu-font-ui); overflow: hidden; }
+.v2-change-dialog-heading { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--v2-border); }
+.v2-change-dialog-heading h2 { font: inherit; font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
+.v2-change-dialog-heading > button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; }
+.v2-change-dialog-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(180px, 26%) minmax(0, 1fr); }
+.v2-change-file-nav { overflow-y: auto; padding: 8px; border-right: 1px solid var(--v2-border); }
+.v2-change-file-nav button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; }
+.v2-change-file-nav button > span:first-child { overflow-wrap: anywhere; }
+.v2-change-file-nav button[aria-current="true"] { background: var(--v2-control-hover); }
+.v2-change-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.v2-change-detail > header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--v2-border); }
+.v2-change-detail > header strong { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.v2-change-note { margin: 12px 16px; color: var(--v2-muted); }
+.v2-change-diff { overflow: auto; flex: 1; min-height: 0; padding: 8px 0; font: 13px/1.7 var(--v2-mono); }
+.v2-change-diff-line { display: flex; width: max-content; min-width: 100%; }
+.v2-change-diff-line > span { flex: 0 0 44px; text-align: right; padding-right: 12px; color: var(--v2-muted); user-select: none; }
+.v2-change-diff-line code { white-space: pre; font: inherit; padding-right: 16px; }
+.v2-change-diff-line.is-add { background: color-mix(in srgb, var(--prayu-diff-add) 12%, transparent); }
+.v2-change-diff-line.is-delete { background: color-mix(in srgb, var(--prayu-diff-delete) 12%, transparent); }
+.v2-change-diff-line.is-hunk, .v2-change-diff-line.is-meta { color: var(--v2-muted); }
+.v2-change-more-lines { margin: 12px 16px; padding: 6px 10px; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-control); }
+.v2-change-dialog > footer { padding: 9px 18px; color: var(--v2-muted); font-size: 12px; border-top: 1px solid var(--v2-border); }
+@media (max-width: 600px) {
+  .v2-turn-changes-heading { gap: 9px; padding: 12px; }
+  .v2-turn-changes-icon { display: none; }
+  .v2-turn-changes-files button { gap: 10px; padding: 8px 12px; }
+  .v2-turn-changes-expand { padding-inline: 12px; }
+  .v2-change-overlay { padding: 10px; }
+  .v2-change-dialog { height: 92dvh; }
+  .v2-change-dialog-heading { padding: 10px 12px; gap: 7px; }
+  .v2-change-dialog-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .v2-change-file-nav { max-height: 140px; border-right: 0; border-bottom: 1px solid var(--v2-border); }
+  .v2-change-file-nav button { flex-direction: row; align-items: center; gap: 10px; }
+  .v2-change-file-nav button > span:first-child { flex: 1; min-width: 0; }
+  .v2-change-dialog > footer { padding: 8px 12px; }
+  .v2-change-diff-line > span { flex-basis: 32px; padding-right: 8px; }
+}

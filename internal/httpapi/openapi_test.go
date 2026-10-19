@@ -1304,14 +1304,16 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		} else if spec.Path == FileEditProposalRecoveryPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", fixture.run.ID)
 			requestPath = strings.ReplaceAll(requestPath, "{edit_id}", recoveryProposal.Edit.ID)
-		} else if spec.OperationID == "branchThread" {
+		} else if spec.OperationID == "branchThread" || spec.OperationID == "getThreadChanges" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(branchSourceRun.ID))
 		} else if spec.OperationID == "deleteThread" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", deleteThread.ID)
 		} else if spec.OperationID == "rejectContextMemoryCandidate" {
 			requestPath = strings.ReplaceAll(spec.Path, "{candidate_id}", openAPIRejectCandidate.ID)
 		}
-		if spec.OperationID == "listContextMemoryCandidates" || spec.OperationID == "getContextMemoryCandidate" {
+		if spec.OperationID == "getThreadChanges" {
+			requestPath += "?source_event_id=" + branchSourceEventID
+		} else if spec.OperationID == "listContextMemoryCandidates" || spec.OperationID == "getContextMemoryCandidate" {
 			requestPath += "?workspace_id=" + fixture.workspace.ID
 		} else if spec.OperationID == "searchWorkspace" {
 			requestPath += "?query=README"

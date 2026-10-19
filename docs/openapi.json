@@ -28295,6 +28295,101 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/threads/{thread_id}/changes": {
+      "get": {
+        "operationId": "getThreadChanges",
+        "summary": "Read recorded file changes before one Thread reply",
+        "description": "Read-only net change summary for applied FileEdit records since the previous durable assistant reply in the same Run. The source event must be an assistant Session message in this Thread. Repeated edits are combined, unapplied proposals are excluded, and current workspace files are never read. Redacted or discontinuous histories omit counts and diff bodies; bounded diff omission is explicit.",
+        "tags": [
+          "Threads"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_event_id",
+            "in": "query",
+            "description": "Durable assistant session.message_created event ID from the Thread transcript",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadChangeSummary"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
     "/api/v1/threads/{thread_id}/command-service-policy": {
       "get": {
         "operationId": "getThreadCommandServicePolicy",
@@ -68166,6 +68261,134 @@
           "session",
           "source_event_id",
           "replayed"
+        ],
+        "type": "object"
+      },
+      "ThreadChangeFile": {
+        "additionalProperties": false,
+        "properties": {
+          "additions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "counts_available": {
+            "type": "boolean"
+          },
+          "deletions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "destination_path": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "string"
+          },
+          "diff_truncated": {
+            "type": "boolean"
+          },
+          "edit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "path",
+          "operation",
+          "additions",
+          "deletions",
+          "counts_available",
+          "diff",
+          "diff_truncated",
+          "edit_ids"
+        ],
+        "type": "object"
+      },
+      "ThreadChangeSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "additions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "change_scope": {
+            "type": "string"
+          },
+          "counts_available": {
+            "type": "boolean"
+          },
+          "deletions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "file_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadChangeFile"
+            },
+            "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_event_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "thread_id",
+          "source_event_id",
+          "run_id",
+          "change_scope",
+          "files",
+          "file_count",
+          "additions",
+          "deletions",
+          "counts_available",
+          "partial",
+          "reasons"
         ],
         "type": "object"
       },

@@ -41,6 +41,7 @@ export type NarrativeEntry =
       text: string;
       runId?: string;
       branchSourceID?: string;
+      changeSourceID?: string;
       createdAt: string;
       provisional: boolean;
     }
@@ -305,10 +306,12 @@ export function projectThreadNarrative(
         // not show an identical durable answer twice in the conversation.
         if (previous.text !== text) previous.text = `${previous.text}\n\n${text}`;
         previous.branchSourceID = branchSourceID;
+        previous.changeSourceID ??= branchSourceID;
       } else {
         result.push({ id: item.id, kind: "assistant", text,
           runId: item.run_id,
           branchSourceID,
+          changeSourceID: branchSourceID,
           createdAt: item.created_at, provisional: item.provisional });
       }
       continue;

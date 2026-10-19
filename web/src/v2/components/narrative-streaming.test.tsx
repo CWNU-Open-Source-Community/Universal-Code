@@ -28,7 +28,7 @@ it("reveals only new appends and does not replay a loaded, corrected or complete
   expect(reveal()).toBeNull();
   view.rerender(content("已更正。最终回复。", false));
   expect(reveal()).toBeNull();
-  expect(screen.getByRole("button", { name: /^(复制回复|Copy response)$/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Copy response" })).toBeInTheDocument();
 });
 
 it("keeps Markdown emphasis and file links intact as unfinished markup closes", () => {
@@ -62,7 +62,7 @@ it("leaves code stable during streaming and copies the original code and reply",
   fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
   await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("const one = 1;\nconst two = 2;\n"));
   view.rerender(content(full, false));
-  fireEvent.click(screen.getByRole("button", { name: /^(复制回复|Copy response)$/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Copy response" }));
   await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(full));
 });
 

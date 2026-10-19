@@ -1,4 +1,5 @@
 import { WorkflowClient } from "./workflows";
+import type { ThreadChangeSummary } from "./thread-changes";
 import { creationBudgetMatches, normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
 import { parseTaskSkillCandidates, type TaskSkillCandidateScope } from "./task-skill-candidates";
 import { validSkillSelectionRef } from "./project-skills";
@@ -8985,6 +8986,17 @@ export class APIClient {
   async threadExecution(threadID: string, signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
     return parseThreadExecution(await this.get<unknown>(
       `/threads/${encodeURIComponent(threadID)}/execution`, {}, signal), threadID);
+  }
+
+  async threadChanges(threadID: string, runID: string, sourceEventID: string,
+    signal?: AbortSignal): Promise<ThreadChangeSummary> {
+    const value = await this.get<ThreadChangeSummary>(`/threads/${encodeURIComponent(threadID)}/changes`,
+      { source_event_id: sourceEventID }, signal);
+    if (value.version !== "thread_change_summary.v1" || value.thread_id !== threadID ||
+      value.run_id !== runID || value.source_event_id !== sourceEventID) {
+      throw new Error("The change summary does not match this reply.");
+    }
+    return value;
   }
 
   async inspectThreadCreationRequest(workspaceID: string, operationKey: string,

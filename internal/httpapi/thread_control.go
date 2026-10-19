@@ -128,6 +128,8 @@ func (a *API) routeThreads(request *http.Request, segments []string) (any, *Page
 			return a.threadPlanObservation(request, segments[1])
 		case "review":
 			return a.threadReviewView(request, segments[1])
+		case "changes":
+			return a.threadChanges(request, segments[1])
 		case "turn-request":
 			return a.threadRequestObservation(request, segments[1])
 		case "messages":
