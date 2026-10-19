@@ -55,6 +55,16 @@ func getThreadTurnFailure(ctx context.Context, q interface {
 		return value, false, apperror.New(apperror.CodeFailedPrecondition, "persisted Thread failure binding is invalid")
 	}
 	var exact int
+	inputProvenance := `AND original.role='user' AND original.source_kind='operator_message' AND original.instruction_authorized=1`
+	if exists, err := storeTableExists(ctx, q, "thread_peer_messages"); err != nil {
+		return value, false, err
+	} else if exists {
+		inputProvenance = `AND ((original.role='user' AND original.source_kind='operator_message' AND original.instruction_authorized=1
+		 AND NOT EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=message.id))
+		 OR (original.role='tool' AND original.source_kind='peer_message' AND original.instruction_authorized=0
+		 AND EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=message.id
+		 AND original.source_ref='thread:'||peer.source_thread_id||'/peer-message:'||peer.id)))`
+	}
 	err = q.QueryRowContext(ctx, `SELECT COUNT(*) FROM operator_steering_messages message
 		JOIN operator_steering_deliveries delivery ON delivery.message_id=message.id
 		JOIN session_messages original ON original.id=message.session_message_id
@@ -65,8 +75,8 @@ func getThreadTurnFailure(ctx context.Context, q interface {
 		JOIN thread_runs binding ON binding.run_id=message.run_id AND binding.session_id=message.session_id
 		WHERE message.id=? AND message.run_id=? AND message.status='committed'
 		AND original.id=? AND original.session_id=message.session_id
-		AND original.role='user' AND original.content=message.content
-		AND original.source_kind='operator_message' AND original.instruction_authorized=1
+		AND original.content=message.content
+		`+inputProvenance+`
 		AND original.content_sha256=message.content_sha256
 		AND outcome.session_id=message.session_id AND outcome.role='tool'
 		AND outcome.source_kind='tool_result' AND outcome.source_ref=item.operation_id AND outcome.instruction_authorized=0
@@ -262,6 +272,13 @@ func (s *SQLiteStore) EndFailedThreadTurn(ctx context.Context, threadID, runID, 
 		return empty, false, err
 	}
 	value.EventSequence = event.Sequence
+	if exists, err := storeTableExists(ctx, tx, "thread_peer_messages"); err != nil {
+		return empty, false, err
+	} else if exists {
+		if _, err := tx.ExecContext(ctx, `UPDATE thread_peer_messages SET error=? WHERE steering_message_id=? AND error='' AND delivered_at IS NULL`, value.ErrorCode, messageID); err != nil {
+			return empty, false, err
+		}
+	}
 	checkpoint.NextTurn++
 	checkpoint.Phase = domain.SupervisorIdle
 	checkpoint.AttemptID, checkpoint.PendingInput, checkpoint.RepairReason, checkpoint.LastError = "", "", "", ""

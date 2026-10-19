@@ -5233,6 +5233,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/peer-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sent and received peer messages
+         * @description Returns the newest 200 peer records and current durable delivery status; older records remain readable in the paginated transcript. Delivered means submitted to the model, never completion of requested work.
+         */
+        get: operations["listThreadPeerMessages"];
+        put?: never;
+        /**
+         * Send plain text to another existing chat
+         * @description Atomically queues a non-authorizing peer message in another active chat in the same workspace. The recipient consumes it at an existing turn boundary or starts its existing execution while idle. Recipient permissions, Plan and approvals remain authoritative. A user reply resets the bounded automatic reply chain. The operation key replays the same receipt.
+         */
+        post: operations["sendThreadPeerMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/peer-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active chats available for peer messages
+         * @description Returns at most 100 other active chats in this chat's workspace. has_more explicitly reports truncation. This discovery grants no recipient permissions.
+         */
+        get: operations["listThreadPeerTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/plan": {
         parameters: {
             query?: never;
@@ -14830,6 +14874,56 @@ export interface components {
             thread_id: string;
             vision_capability?: components["schemas"]["VisionCapability"];
         };
+        ThreadPeerMessage: {
+            content: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            error?: string;
+            id: string;
+            reply_to?: string;
+            source_thread_id: string;
+            source_title: string;
+            /** @enum {string} */
+            status: "queued" | "delivered" | "failed" | "cancelled";
+            target_thread_id: string;
+            target_title: string;
+        };
+        ThreadPeerMessageReceipt: {
+            message: components["schemas"]["ThreadPeerMessage"];
+            replayed: boolean;
+            /** @enum {string} */
+            version: "thread_peer_message.v1";
+        };
+        ThreadPeerMessageRequestView: {
+            content: string;
+            reply_to?: string;
+            target_thread_id: string;
+            /** @enum {string} */
+            version: "thread_peer_message.v1";
+        };
+        ThreadPeerMessagesView: {
+            has_more: boolean;
+            items: components["schemas"]["ThreadPeerMessage"][];
+            thread_id: string;
+            /** @enum {string} */
+            version: "thread_peer_message.v1";
+        };
+        ThreadPeerTarget: {
+            id: string;
+            status: string;
+            title: string;
+            workspace_id: string;
+        };
+        ThreadPeerTargets: {
+            has_more: boolean;
+            items: components["schemas"]["ThreadPeerTarget"][];
+            source_thread_id: string;
+            /** @enum {string} */
+            version: "thread_peer_targets.v1";
+            workspace_id: string;
+        };
         ThreadPlanControlRequestView: {
             /** @enum {string} */
             action: "enter_plan" | "enter_deliver" | "confirm";
@@ -15189,9 +15283,10 @@ export interface components {
             images?: components["schemas"]["WorkspaceImage"][];
             instruction_authorized: boolean;
             /** @enum {string} */
-            kind: "harness_status" | "model_update" | "operator_input" | "model_call" | "tool_call" | "approval" | "file_change" | "plan" | "dependency" | "browser";
+            kind: "harness_status" | "model_update" | "operator_input" | "model_call" | "tool_call" | "approval" | "file_change" | "plan" | "dependency" | "browser" | "peer_message";
             /** Format: int32 */
             model_attempt?: number;
+            peer_message?: components["schemas"]["ThreadPeerMessage"];
             /** Format: int32 */
             position?: number;
             promoted_from_message_id?: string;
@@ -15203,7 +15298,7 @@ export interface components {
             /** Format: int64 */
             sequence: number;
             /** @enum {string} */
-            source: "harness" | "model" | "operator";
+            source: "harness" | "model" | "operator" | "peer";
             source_ref?: string;
             /** @enum {string} */
             stage: "started" | "arguments_ready" | "running" | "result" | "blocked";
@@ -29267,6 +29362,128 @@ export interface operations {
             413: components["responses"]["RequestEntityTooLarge"];
             414: components["responses"]["RequestTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listThreadPeerMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadPeerMessagesView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    sendThreadPeerMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque key bound to this source, target, content and reply */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadPeerMessageRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadPeerMessageReceipt"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listThreadPeerTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadPeerTargets"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

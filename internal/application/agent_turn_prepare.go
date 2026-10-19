@@ -272,6 +272,23 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 		return nil, result, failure
 	}
 	visibleBaseInput := supervisorBoundaryInputDelivery(input, boundaryReceipt.Returned)
+	if reader, ok := s.store.(interface {
+		PreparedSupervisorInputMessage(context.Context, domain.SupervisorCheckpoint) (session.Message, error)
+	}); ok {
+		inputMessage, inputErr := reader.PreparedSupervisorInputMessage(ctx, turn.Checkpoint)
+		if inputErr != nil {
+			return nil, result, s.recordFailure(ctx, &result, inputErr, 0)
+		}
+		if inputMessage.Provenance.SourceKind == session.SourcePeerMessage {
+			inputMessage.Content = visibleBaseInput
+			inputMessage.Provenance.ContentSHA256 = ""
+			inputMessage, inputErr = session.PrepareMessageForStorage(inputMessage)
+			if inputErr != nil {
+				return nil, result, s.recordFailure(ctx, &result, inputErr, 0)
+			}
+			visibleBaseInput = session.ProjectContextMessage(inputMessage).Content
+		}
+	}
 	modelInput, pendingInstructions, steeringSequence, err := supervisorInputWithPendingInstructions(ctx, s.store, *turn, visibleBaseInput)
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)

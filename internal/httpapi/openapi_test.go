@@ -1116,6 +1116,11 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, peerTargetRun, err := application.NewRunService(fixture.store).Create(t.Context(), application.CreateRunRequest{Goal: "OpenAPI peer message recipient", WorkspaceID: fixture.workspace.ID, Profile: "review", ModelRoute: "review", Interactive: true, Budget: domain.Budget{MaxTurns: 8}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.api.threadPeerMessages = application.NewThreadPeerMessageService(fixture.store, application.NewThreadTurnService(fixture.store, nil, nil))
 	fixture.api.threadTurnController = &openAPIThreadPlanController{
 		threadID: openAPIThread.ID, runID: openAPIThreadRun.ID,
 		threadTurnControllerStub: &threadTurnControllerStub{
@@ -1676,6 +1681,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				} else if spec.OperationID == "createThread" {
 					body = `{"version":"thread_creation.v1","goal":"OpenAPI live Thread",` +
 						`"workspace_id":"` + fixture.workspace.ID + `"}`
+				} else if spec.OperationID == "sendThreadPeerMessage" {
+					body = `{"version":"thread_peer_message.v1","target_thread_id":"` + domain.InitialThreadID(peerTargetRun.ID) + `","content":"OpenAPI peer message"}`
 				} else if spec.OperationID == "submitThreadMessage" ||
 					spec.OperationID == "executeThreadTurn" {
 					body = `{"version":"thread_message_submission.v1",` +

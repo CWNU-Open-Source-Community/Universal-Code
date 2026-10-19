@@ -744,8 +744,7 @@ func commitOperatorSteeringDeliveryTx(ctx context.Context, tx *sql.Tx, run domai
 	if message.Status != domain.OperatorSteeringPending || message.Content != checkpoint.PendingInput ||
 		message.SessionID != run.SessionID || userMessage.SessionID != run.SessionID ||
 		userMessage.Content != message.Content || userMessage.ID <= 0 ||
-		userMessage.Provenance.SourceKind != session.SourceOperatorMessage ||
-		!userMessage.Provenance.InstructionAuthorized ||
+		!validQueuedInputProvenanceTx(ctx, tx, message.ID, userMessage) ||
 		userMessage.Provenance.ContentSHA256 != message.ContentSHA256 {
 		return domain.OperatorSteeringMessage{}, false,
 			apperror.New(apperror.CodeConflict,

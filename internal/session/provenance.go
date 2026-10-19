@@ -21,6 +21,7 @@ const (
 	UntrustedContextEnvelopeVersion = "untrusted_context.v1"
 
 	SourceOperatorMessage = "operator_message"
+	SourcePeerMessage     = "peer_message"
 	SourceModelResponse   = "model_response"
 	SourceGoControl       = "go_control"
 	SourceWorkspaceFile   = "workspace_file"
@@ -241,7 +242,7 @@ func validateProvenance(role string, provenance ContextProvenance, legacy bool) 
 		if role != "system" || !provenance.InstructionAuthorized || provenance.SourceRef != "" {
 			return errors.New("go control provenance does not match its role or authority")
 		}
-	case SourceWorkspaceFile, SourceWorkspaceImage, SourceUploadedFile, SourceWorkspaceList, SourceWorkspaceDiff, SourceToolResult, SourceGoCommandResult:
+	case SourcePeerMessage, SourceWorkspaceFile, SourceWorkspaceImage, SourceUploadedFile, SourceWorkspaceList, SourceWorkspaceDiff, SourceToolResult, SourceGoCommandResult:
 		if role != "tool" || provenance.InstructionAuthorized {
 			return errors.New("evidence provenance does not match its role or authority")
 		}

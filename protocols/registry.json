@@ -525,6 +525,8 @@
         "thread_message_intent_request.v1",
         "thread_model_route_operation.v1",
         "thread_model_route_request.v1",
+        "thread_peer_operation.v1",
+        "thread_peer_request.v1",
         "toolcontract.discovery.v1",
         "toolcontract.launch.v1",
         "toolcontract.operation.v1"
@@ -1808,6 +1810,8 @@
         "thread_message_submission.v1",
         "thread_model_route.v1",
         "thread_model_route_control.v1",
+        "thread_peer_message.v1",
+        "thread_peer_targets.v1",
         "thread_queued_messages.v1",
         "thread_run_recovery.v1",
         "ui-evidence-artifact.v1",

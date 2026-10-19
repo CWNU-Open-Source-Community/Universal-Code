@@ -1,0 +1,264 @@
+package application_test
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/store"
+)
+
+type peerMessageProvider struct {
+	requests chan llm.ChatRequest
+	release  chan struct{}
+	calls    atomic.Int32
+}
+
+func (p *peerMessageProvider) Name() string { return "peer-message-test" }
+func (p *peerMessageProvider) ListModels(context.Context) ([]llm.ModelInfo, error) {
+	return []llm.ModelInfo{{ID: "model", Provider: p.Name()}}, nil
+}
+func (p *peerMessageProvider) SupportsTools(string) bool    { return false }
+func (p *peerMessageProvider) SupportsVision(string) bool   { return false }
+func (p *peerMessageProvider) SupportsJSONMode(string) bool { return true }
+func (p *peerMessageProvider) StreamChat(ctx context.Context, request llm.ChatRequest) (<-chan llm.ChatChunk, error) {
+	response, err := p.Chat(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	chunks := make(chan llm.ChatChunk, 2)
+	chunks <- llm.ChatChunk{Text: response.Text}
+	chunks <- llm.FinalChatChunk(response)
+	close(chunks)
+	return chunks, nil
+}
+func (p *peerMessageProvider) Chat(ctx context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.calls.Add(1)
+	select {
+	case p.requests <- request:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if p.release != nil {
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return &llm.ChatResponse{Text: rootActionResponse(domain.RootActionFinish, "Peer response recorded.", "done", ""), Provider: p.Name(), Model: "model", Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}}, nil
+}
+
+func peerServices(st *store.SQLiteStore, p llm.Provider) (*application.ThreadTurnService, *application.ThreadPeerMessageService) {
+	router := llm.NewRouter(llm.ModelRef{Provider: p.Name(), Model: "model"})
+	router.RegisterProvider(p)
+	turns := application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st), application.NewRunExecutionHandoffService(st, router, policy.NewDefaultChecker()))
+	return turns, application.NewThreadPeerMessageService(st, turns)
+}
+func createPeerRun(t *testing.T, st *store.SQLiteStore, p llm.Provider, title string) domain.Run {
+	t.Helper()
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{Goal: title, Profile: "review", ModelRoute: p.Name() + "/model", Interactive: true, Budget: domain.Budget{MaxTurns: 8}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+func waitPeerCommitted(t *testing.T, st *store.SQLiteStore, id string) domain.ThreadPeerMessage {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		message, err := st.GetThreadPeerMessage(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input, err := st.GetOperatorSteering(t.Context(), message.SteeringMessageID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if input.Status == domain.OperatorSteeringCommitted {
+			return message
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("peer message was not consumed")
+	return domain.ThreadPeerMessage{}
+}
+func startPeerWorker(t *testing.T, s *application.ThreadPeerMessageService) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("peer worker did not stop")
+		}
+	})
+}
+
+func TestThreadPeerMessagesRestartIdleQueueAndProvenance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "peer.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &peerMessageProvider{requests: make(chan llm.ChatRequest, 8)}
+	source := createPeerRun(t, st, p, "Source chat")
+	target := createPeerRun(t, st, p, "Target chat")
+	_, peer := peerServices(st, p)
+	_, err = st.SaveSessionMessage(t.Context(), session.NewMessage(source.SessionID, "user", "source-only private context"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: domain.InitialThreadID(target.ID), Content: "Share the result within your existing permissions.", OperationKey: "peer-message-idle-first-key", RequestedBy: "test_operator"}
+	first, err := peer.Send(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Message.Status != "queued" || first.Message.DeliveredAt != nil {
+		t.Fatalf("unexpected receipt: %+v", first)
+	}
+	replay, err := peer.Send(t.Context(), request)
+	if err != nil || !replay.Replayed || replay.Message.ID != first.Message.ID {
+		t.Fatalf("replay: %+v %v", replay, err)
+	}
+	request.Content = "Different content"
+	if _, err := peer.Send(t.Context(), request); apperror.CodeOf(err) != apperror.CodeConflict {
+		t.Fatalf("changed intent accepted: %v", err)
+	}
+	request.OperationKey = "peer-message-idle-second-key"
+	second, err := peer.Send(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	_, peer = peerServices(st, p)
+	startPeerWorker(t, peer)
+	for _, id := range []string{first.Message.ID, second.Message.ID} {
+		message := waitPeerCommitted(t, st, id)
+		if message.Status != "delivered" || message.DeliveredAt == nil {
+			t.Fatalf("delivery status: %+v", message)
+		}
+	}
+	for range 2 {
+		select {
+		case request := <-p.requests:
+			var input string
+			for _, message := range request.Messages {
+				input += message.Content + "\n"
+			}
+			if !strings.Contains(input, `"source_kind":"peer_message"`) || !strings.Contains(input, `"instruction_authorized":false`) || strings.Contains(input, "source-only private context") {
+				t.Fatalf("peer provenance/context isolation lost: %s", input)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("model did not receive peer input")
+		}
+	}
+	messages, err := st.ListSessionMessages(t.Context(), target.SessionID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peers := 0
+	for _, message := range messages {
+		if message.Provenance.SourceKind == session.SourcePeerMessage {
+			peers++
+			if message.Role != "tool" || message.Provenance.InstructionAuthorized {
+				t.Fatalf("peer input promoted: %+v", message)
+			}
+		}
+	}
+	if peers != 2 || p.calls.Load() != 2 {
+		t.Fatalf("peer count=%d model calls=%d", peers, p.calls.Load())
+	}
+}
+
+func TestThreadPeerMessagesBusyTurnConsumesAtBoundary(t *testing.T) {
+	p := &peerMessageProvider{requests: make(chan llm.ChatRequest, 8), release: make(chan struct{}, 8)}
+	st, turns, targetRequest := threadControlFixture(t, p)
+	source := createPeerRun(t, st, p, "Source chat")
+	peer := application.NewThreadPeerMessageService(st, turns)
+	done := make(chan error, 1)
+	go func() { _, err := turns.Execute(t.Context(), targetRequest); done <- err }()
+	select {
+	case <-p.requests:
+	case <-time.After(5 * time.Second):
+		t.Fatal("initial turn did not start")
+	}
+	receipt, err := peer.Send(t.Context(), domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: targetRequest.ThreadID, Content: "Peer input at the next turn boundary", OperationKey: "peer-message-busy-operation", RequestedBy: "test_operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startPeerWorker(t, peer)
+	time.Sleep(600 * time.Millisecond)
+	if p.calls.Load() != 1 {
+		t.Fatal("peer started a concurrent model turn")
+	}
+	p.release <- struct{}{}
+	select {
+	case request := <-p.requests:
+		if !strings.Contains(request.Messages[len(request.Messages)-1].Content, `"source_kind":"peer_message"`) {
+			t.Fatalf("peer input was not enveloped: %+v", request.Messages[len(request.Messages)-1])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("peer did not reach the next turn")
+	}
+	p.release <- struct{}{}
+	if err := awaitTurnResult(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if message := waitPeerCommitted(t, st, receipt.Message.ID); message.Status != "delivered" {
+		t.Fatalf("peer status: %+v", message)
+	}
+}
+
+func TestThreadPeerMessagesRejectSelfForeignReplyAndStaleModelSource(t *testing.T) {
+	p := &peerMessageProvider{requests: make(chan llm.ChatRequest, 8)}
+	st, turns, target := threadControlFixture(t, p)
+	source := createPeerRun(t, st, p, "Source chat")
+	peer := application.NewThreadPeerMessageService(st, turns)
+	request := domain.SendThreadPeerMessageRequest{SourceThreadID: domain.InitialThreadID(source.ID), TargetThreadID: target.ThreadID, Content: "hello", OperationKey: "peer-message-validation-key", RequestedBy: "test_operator"}
+	self := request
+	self.TargetThreadID = self.SourceThreadID
+	if _, err := peer.Send(t.Context(), self); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("self accepted: %v", err)
+	}
+	foreign := request
+	foreign.ReplyTo = "peer-message-not-received"
+	if _, err := peer.Send(t.Context(), foreign); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("foreign reply accepted: %v", err)
+	}
+	stale := request
+	stale.ModelInitiated = true
+	stale.SourceRunID = source.ID
+	stale.SourceAttemptID = "stale-attempt"
+	stale.SourceLeaseID = "stale-lease"
+	stale.SourceLeaseGeneration = 1
+	if _, err := peer.Send(t.Context(), stale); err == nil {
+		t.Fatal("stale model source accepted")
+	}
+	items, err := st.ListThreadPeerMessages(t.Context(), target.ThreadID, 200)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("rejected send queued data: %+v %v", items, err)
+	}
+}

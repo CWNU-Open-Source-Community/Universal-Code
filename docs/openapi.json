@@ -30815,6 +30815,295 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/threads/{thread_id}/peer-messages": {
+      "get": {
+        "operationId": "listThreadPeerMessages",
+        "summary": "List sent and received peer messages",
+        "description": "Returns the newest 200 peer records and current durable delivery status; older records remain readable in the paginated transcript. Delivered means submitted to the model, never completion of requested work.",
+        "tags": [
+          "Threads"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadPeerMessagesView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "post": {
+        "operationId": "sendThreadPeerMessage",
+        "summary": "Send plain text to another existing chat",
+        "description": "Atomically queues a non-authorizing peer message in another active chat in the same workspace. The recipient consumes it at an existing turn boundary or starts its existing execution while idle. Recipient permissions, Plan and approvals remain authoritative. A user reply resets the bounded automatic reply chain. The operation key replays the same receipt.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque key bound to this source, target, content and reply",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadPeerMessageReceipt"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadPeerMessageRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
+    "/api/v1/threads/{thread_id}/peer-targets": {
+      "get": {
+        "operationId": "listThreadPeerTargets",
+        "summary": "List active chats available for peer messages",
+        "description": "Returns at most 100 other active chats in this chat's workspace. has_more explicitly reports truncation. This discovery grants no recipient permissions.",
+        "tags": [
+          "Threads"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "description": "Thread identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadPeerTargets"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
     "/api/v1/threads/{thread_id}/plan": {
       "get": {
         "operationId": "inspectThreadPlanRequest",
@@ -70442,6 +70731,218 @@
         ],
         "type": "object"
       },
+      "ThreadPeerMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reply_to": {
+            "type": "string"
+          },
+          "source_thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "delivered",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "target_thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target_title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_thread_id",
+          "source_title",
+          "target_thread_id",
+          "target_title",
+          "content",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ThreadPeerMessageReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/ThreadPeerMessage"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "version": {
+            "enum": [
+              "thread_peer_message.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "message",
+          "replayed"
+        ],
+        "type": "object"
+      },
+      "ThreadPeerMessageRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "reply_to": {
+            "type": "string"
+          },
+          "target_thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_peer_message.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "target_thread_id",
+          "content"
+        ],
+        "type": "object"
+      },
+      "ThreadPeerMessagesView": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadPeerMessage"
+            },
+            "type": "array"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_peer_message.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "thread_id",
+          "items",
+          "has_more"
+        ],
+        "type": "object"
+      },
+      "ThreadPeerTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "workspace_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ThreadPeerTargets": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadPeerTarget"
+            },
+            "type": "array"
+          },
+          "source_thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "thread_peer_targets.v1"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "source_thread_id",
+          "workspace_id",
+          "items",
+          "has_more"
+        ],
+        "type": "object"
+      },
       "ThreadPlanControlRequestView": {
         "additionalProperties": false,
         "properties": {
@@ -71885,13 +72386,17 @@
               "file_change",
               "plan",
               "dependency",
-              "browser"
+              "browser",
+              "peer_message"
             ],
             "type": "string"
           },
           "model_attempt": {
             "format": "int32",
             "type": "integer"
+          },
+          "peer_message": {
+            "$ref": "#/components/schemas/ThreadPeerMessage"
           },
           "position": {
             "format": "int32",
@@ -71927,7 +72432,8 @@
             "enum": [
               "harness",
               "model",
-              "operator"
+              "operator",
+              "peer"
             ],
             "type": "string"
           },

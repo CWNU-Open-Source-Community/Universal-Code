@@ -11,7 +11,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
-| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 55 | true |
+| [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 57 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
@@ -26,7 +26,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 139 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 141 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -294,7 +294,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `approval-preference-reader` (`v1, v2`, active) at `internal/domain`
   - `computer-use-app-grant-fingerprint-reader` (`v1`, active) at `internal/store/computer_use_app_approval.go`
 
-<details><summary>55 active identifiers</summary>
+<details><summary>57 active identifiers</summary>
 
 - `approval_grant_consumption.v1`
 - `approval_grant_operation_key.v1`
@@ -348,6 +348,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_message_intent_request.v1`
 - `thread_model_route_operation.v1`
 - `thread_model_route_request.v1`
+- `thread_peer_operation.v1`
+- `thread_peer_request.v1`
 - `toolcontract.discovery.v1`
 - `toolcontract.launch.v1`
 - `toolcontract.operation.v1`
@@ -986,7 +988,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>139 active identifiers</summary>
+<details><summary>141 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -1115,6 +1117,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_message_submission.v1`
 - `thread_model_route.v1`
 - `thread_model_route_control.v1`
+- `thread_peer_message.v1`
+- `thread_peer_targets.v1`
 - `thread_queued_messages.v1`
 - `thread_run_recovery.v1`
 - `ui-evidence-artifact.v1`

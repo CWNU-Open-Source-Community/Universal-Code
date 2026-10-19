@@ -281,7 +281,7 @@ func loadApprovalContinuationTx(ctx context.Context, q hostCommandProposalQuerye
 		handoff.Items[0].MessageID, handoff.Operation.RunID, handoff.Operation.SessionID, original.ID, handoff.Items[0].MessageSequence).Scan(&exact); err != nil {
 		return value, err
 	}
-	if exact != 1 || session.ValidateStoredMessage(original) != nil || original.SessionID != handoff.Operation.SessionID || original.Role != "user" || original.Provenance.SourceKind != session.SourceOperatorMessage || !original.Provenance.InstructionAuthorized {
+	if exact != 1 || session.ValidateStoredMessage(original) != nil || original.SessionID != handoff.Operation.SessionID || !validQueuedInputProvenanceTx(ctx, q, handoff.Items[0].MessageID, original) {
 		return value, apperror.New(apperror.CodeConflict, "Approval continuation original input is invalid")
 	}
 	value.ThreadID, value.OriginTurn, value.OriginAttemptID, value.UserMessageID, value.Input = origin.ThreadID, origin.OriginTurn, origin.OriginAttemptID, origin.UserMessageID, original.Content

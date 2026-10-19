@@ -183,12 +183,21 @@ func (a *API) threadQueuedMessages(request *http.Request, threadID string) (any,
 		content := redact.String(message.Content)
 		changeable := a.sessionSteeringControlEnabled && !message.Prepared &&
 			(snapshot.RunStatus == domain.RunRunning || snapshot.RunStatus == domain.RunPaused)
+		peer := false
+		if reader, ok := a.store.(interface {
+			ThreadPeerMessageForSteering(context.Context, string) (domain.ThreadPeerMessage, bool, error)
+		}); ok {
+			_, peer, err = reader.ThreadPeerMessageForSteering(request.Context(), message.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 		view.Items = append(view.Items, ThreadQueuedMessageView{ID: message.ID, Sequence: message.Sequence,
 			Status: string(message.Status), DeliveryMode: string(message.DeliveryMode), Prepared: message.Prepared, Content: content,
 			ContentSHA256: message.ContentSHA256, ContentRedacted: content != message.Content,
 			Revision: message.Revision, CreatedAt: message.CreatedAt, EditedAt: message.EditedAt,
 			Images: append([]domain.WorkspaceImage{}, queued.Images...), Attachments: append([]domain.WorkspaceFileAttachment{}, queued.Attachments...),
-			CanEdit: changeable, CanCancel: changeable})
+			CanEdit: changeable && !peer, CanCancel: changeable})
 		if message.Prepared {
 			view.Prepared++
 		} else {

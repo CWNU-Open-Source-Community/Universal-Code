@@ -1201,6 +1201,7 @@ type ThreadMessageView struct {
 }
 
 type ThreadTranscriptItemView struct {
+	PeerMessage           *domain.ThreadPeerMessage        `json:"peer_message,omitempty"`
 	Version               string                           `json:"version"`
 	ID                    string                           `json:"id"`
 	CanonicalID           string                           `json:"canonical_id"`

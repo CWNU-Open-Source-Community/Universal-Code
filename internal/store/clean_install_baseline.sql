@@ -6191,7 +6191,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 		CHECK(position BETWEEN 1 AND 4),
 		CHECK(model_attempt > 0),
 		CHECK(tool_name IN ('skill_read', 'history_search', 'history_read', 'work_item_create', 'note_create',
-			'specialist_delegation_propose', 'child_task_propose', 'context_pin_propose',
+			'specialist_delegation_propose', 'child_task_propose', 'context_pin_propose', 'thread_list', 'thread_send_message',
 			'plan_delivery_propose', 'controlled_command_propose',
 			'one_shot_command_propose', 'host_command_propose',
 			'sandbox_docker_run_propose', 'skill_candidate_propose', 'debug_terminal',
@@ -12733,6 +12733,16 @@ CREATE TABLE thread_message_intents (
 		CHECK(message_id IS NULL OR (run_id IS NOT NULL AND rejected = 0))
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE thread_peer_messages (
+		 id TEXT PRIMARY KEY, source_thread_id TEXT NOT NULL REFERENCES threads(id),
+		 target_thread_id TEXT NOT NULL REFERENCES threads(id),
+		 steering_message_id TEXT NOT NULL UNIQUE REFERENCES operator_steering_messages(id),
+		 source_run_id TEXT NOT NULL REFERENCES runs(id),
+		 operation_key_digest TEXT NOT NULL UNIQUE, request_fingerprint TEXT NOT NULL,
+		 reply_to TEXT NOT NULL DEFAULT '', depth INTEGER NOT NULL CHECK(depth BETWEEN 0 AND 8),
+		 delivered_at TEXT, error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+		 CHECK(source_thread_id<>target_thread_id));
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE thread_runs (
 		thread_id TEXT NOT NULL,
 		run_id TEXT NOT NULL UNIQUE,
@@ -14419,6 +14429,10 @@ CREATE INDEX idx_thread_execution_permission_snapshots_thread_revision
 		ON thread_execution_permission_snapshots(thread_id, revision DESC);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_thread_message_intents_thread ON thread_message_intents(thread_id);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX idx_thread_peer_source ON thread_peer_messages(source_thread_id,created_at);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX idx_thread_peer_target ON thread_peer_messages(target_thread_id,created_at);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_thread_runs_thread_run ON thread_runs(thread_id, ordinal);
 -- traverse-board-clean-install-object-boundary --
@@ -17641,18 +17655,16 @@ CREATE TRIGGER trg_operator_steering_cancellation_update_immutable
 			SELECT RAISE(ABORT, 'operator steering cancellations cannot be updated');
 		END;
 -- traverse-board-clean-install-object-boundary --
-CREATE TRIGGER trg_operator_steering_commit_binding
-		BEFORE UPDATE ON operator_steering_messages
-		WHEN NEW.status = 'committed' AND NOT EXISTS (
-			SELECT 1 FROM session_messages message
-			WHERE message.id = NEW.session_message_id AND message.session_id = NEW.session_id
-				AND message.role = 'user' AND message.content = NEW.content
-				AND message.content_sha256 = NEW.content_sha256
-				AND message.source_kind = 'operator_message'
-				AND message.instruction_authorized = 1)
-		BEGIN
-			SELECT RAISE(ABORT, 'operator steering Session message binding is invalid');
-		END;
+CREATE TRIGGER trg_operator_steering_commit_binding BEFORE UPDATE ON operator_steering_messages
+		 WHEN NEW.status='committed' AND NOT EXISTS (SELECT 1 FROM session_messages message
+		 WHERE message.id=NEW.session_message_id AND message.session_id=NEW.session_id
+		 AND message.content=NEW.content AND message.content_sha256=NEW.content_sha256
+		 AND ((message.role='user' AND message.source_kind='operator_message' AND message.instruction_authorized=1
+		 AND NOT EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=NEW.id))
+		 OR (message.role='tool' AND message.source_kind='peer_message' AND message.instruction_authorized=0
+		 AND EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=NEW.id
+		 AND message.source_ref='thread:'||peer.source_thread_id||'/peer-message:'||peer.id))))
+		 BEGIN SELECT RAISE(ABORT,'operator steering Session message binding is invalid'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_operator_steering_delete_immutable
 		BEFORE DELETE ON operator_steering_messages BEGIN
@@ -24787,7 +24799,7 @@ CREATE TRIGGER trg_session_message_provenance_insert
 					AND NEW.instruction_authorized = 0 AND NEW.source_ref = '')
 				OR (NEW.source_kind = 'go_control' AND NEW.role = 'system'
 					AND NEW.instruction_authorized = 1 AND NEW.source_ref = '')
-				OR (NEW.source_kind IN ('uploaded_file', 'workspace_image', 'workspace_file', 'workspace_listing', 'workspace_diff',
+				OR (NEW.source_kind IN ('peer_message', 'uploaded_file', 'workspace_image', 'workspace_file', 'workspace_listing', 'workspace_diff',
 					'tool_result', 'go_command_result') AND NEW.role = 'tool'
 					AND NEW.instruction_authorized = 0 AND length(NEW.source_ref) BETWEEN 1 AND 512)
 			)
@@ -26897,6 +26909,24 @@ CREATE TRIGGER trg_thread_message_intent_immutable BEFORE UPDATE ON thread_messa
 		OR (OLD.message_id IS NOT NULL AND NEW.message_id IS NOT OLD.message_id)
 		OR NEW.rejected < OLD.rejected
 		BEGIN SELECT RAISE(ABORT, 'Thread message intent binding is immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_peer_binding BEFORE INSERT ON thread_peer_messages WHEN NOT EXISTS (
+		 SELECT 1 FROM threads source JOIN threads target ON target.workspace_id=source.workspace_id
+		 JOIN thread_runs origin ON origin.thread_id=source.id AND origin.run_id=NEW.source_run_id
+		 JOIN thread_runs recipient ON recipient.thread_id=target.id
+		 JOIN operator_steering_messages message ON message.run_id=recipient.run_id
+		 WHERE source.id=NEW.source_thread_id AND target.id=NEW.target_thread_id
+		 AND source.status='active' AND target.status='active' AND message.id=NEW.steering_message_id
+		 AND message.status='pending' AND message.delivery_mode='next_turn' AND message.image_count=0 AND message.attachment_count=0)
+		 BEGIN SELECT RAISE(ABORT,'Peer message scope binding is invalid'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER trg_thread_peer_identity_immutable BEFORE UPDATE ON thread_peer_messages
+		 WHEN NEW.id IS NOT OLD.id OR NEW.source_thread_id IS NOT OLD.source_thread_id OR NEW.target_thread_id IS NOT OLD.target_thread_id
+		 OR NEW.steering_message_id IS NOT OLD.steering_message_id OR NEW.source_run_id IS NOT OLD.source_run_id
+		 OR NEW.operation_key_digest IS NOT OLD.operation_key_digest OR NEW.request_fingerprint IS NOT OLD.request_fingerprint
+		 OR NEW.reply_to IS NOT OLD.reply_to OR NEW.depth IS NOT OLD.depth OR NEW.created_at IS NOT OLD.created_at
+		 OR (OLD.delivered_at IS NOT NULL AND NEW.delivered_at IS NOT OLD.delivered_at)
+		 BEGIN SELECT RAISE(ABORT,'Peer message identity is immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_thread_plan_continuation_event_insert
  BEFORE INSERT ON run_events WHEN NEW.type='thread.plan_continued' AND (
