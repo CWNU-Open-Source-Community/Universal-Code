@@ -4828,6 +4828,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Branch a conversation at a durable assistant reply
+         * @description Atomically creates a fresh Thread, Run and Session containing conversation history through source_event_id, including earlier Runs. Historical assistant output is non-authorizing evidence. Requires Thread creation and Session message control. No model or tool is called; approvals and runtime authority are reset. Reusing a key with another reply conflicts.
+         */
+        post: operations["branchThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/command-service-policy": {
         parameters: {
             query?: never;
@@ -14257,6 +14277,20 @@ export interface components {
             thread_id: string;
             /** @enum {string} */
             version: "thread_application_services.v1";
+        };
+        ThreadBranchRequestView: {
+            source_event_id: string;
+            /** @enum {string} */
+            version: "thread_branch.v1";
+        };
+        ThreadBranchView: {
+            replayed: boolean;
+            run: components["schemas"]["RunView"];
+            session: components["schemas"]["SessionView"];
+            source_event_id: string;
+            thread: components["schemas"]["ThreadView"];
+            /** @enum {string} */
+            version: "thread_branch.v1";
         };
         ThreadCommandServicePolicy: {
             /** @enum {string} */
@@ -28049,6 +28083,54 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ThreadLifecycleControlView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    branchThread: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadBranchRequestView"];
+            };
+        };
+        responses: {
+            /** @description Resource created or idempotently replayed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadBranchView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
