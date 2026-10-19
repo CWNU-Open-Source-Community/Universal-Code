@@ -1924,6 +1924,22 @@ the runtime's fixed CI environment. The default package directory is the Run
 workspace; `--path web` selects an allowed relative package directory. This is
 distinct from Node's built-in test runner, and adds no Jest-specific flags.
 
+Python projects can select `test_command_id: test.python` for
+`python -m unittest discover -v`, or `test_command_id: test.pytest` for
+`python -m pytest`. Rust projects can select `test_command_id: test.rust` for
+`cargo test --offline`. Set the ID in `.prayu/config.yaml` before creating the
+task; the same actions work from the checks panel, the `run_tests` tool, and
+reviewed `before_finish_test` hooks. The optional test directory becomes the
+command's working directory.
+
+Python uses `python` on Windows, `python3` on Unix, and the fixed Python 3 path
+inside Standard Code Docker. Cargo uses the selected environment's native
+toolchain. Install the project's dependencies in that environment beforehand;
+`test.pytest` requires pytest to be installed for that Python interpreter.
+These test actions do not install packages or enable network access. Missing
+tools or dependencies produce an unavailable action or the actual failed Job.
+The current SBX template does not support these Python/Rust presets.
+
 The same panel can detect npm and Go tests from project files when no test action
 is pinned. Use **Prepare project** first to review the lockfile, authorize exact
 package sources, and install dependencies offline in the selected sandbox.
@@ -1968,7 +1984,8 @@ hooks:
 任务创建时固定了项目配置；配置变化后，在新任务中使用重新审阅的配置。
 
 `after_edit_format` 通过 `format.go` 处理主 Agent 成功应用的 FileEdit 中的 `.go` 文件；
-`before_finish_test` 在任务工作区根目录运行 `test.go`、`test.node` 或 `test.npm`。
+`before_finish_test` 在任务工作区根目录运行配置的 `test.go`、`test.node`、`test.npm`、
+`test.python`、`test.pytest` 或 `test.rust`。
 测试失败会回到 Agent 的修复循环，尚未通过的版本不能直接报告完成。动作使用当前
 命令后端、Full／Ask／Auto 规则及任务预算，并记录普通命令 Job；信任项目配置不增加
 执行权限。审批后的恢复继续原调用，不重复运行已完成的动作。

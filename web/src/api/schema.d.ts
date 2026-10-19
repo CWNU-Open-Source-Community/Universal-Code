@@ -11345,7 +11345,7 @@ export interface components {
         };
         ProjectHookView: {
             /** @enum {string} */
-            command_id: "format.go" | "test.go" | "test.npm" | "test.node";
+            command_id: "format.go" | "test.go" | "test.npm" | "test.node" | "test.python" | "test.pytest" | "test.rust";
             /** @enum {string} */
             event: "after_edit" | "before_finish";
             target: string;

@@ -13,10 +13,13 @@ import (
 // These IDs are owned by the command registry, never interpreted as repository
 // shell text. Execution still goes through command_runtime and its Job ledger.
 var projectCommandPresets = map[string]string{
-	"test.go":   "go",
-	"test.node": "node",
-	"test.npm":  "node",
-	"format.go": "gofmt",
+	"test.go":     "go",
+	"test.node":   "node",
+	"test.npm":    "node",
+	"test.python": "python",
+	"test.pytest": "python",
+	"test.rust":   "cargo",
+	"format.go":   "gofmt",
 }
 
 func ProjectCommandExecutable(id string) (string, bool) {
@@ -36,6 +39,12 @@ func ProjectCommandSpec(id, executable, target string, launcher ...string) (runn
 		arguments = []string{"test", "./..."}
 	case "test.node":
 		arguments = []string{"--test"}
+	case "test.python":
+		arguments = []string{"-m", "unittest", "discover", "-v"}
+	case "test.pytest":
+		arguments = []string{"-m", "pytest"}
+	case "test.rust":
+		arguments = []string{"test", "--offline"}
 	case "test.npm":
 		if len(launcher) != 1 || (!filepath.IsAbs(launcher[0]) && !path.IsAbs(launcher[0])) || filepath.Base(launcher[0]) != "npm-cli.js" {
 			return runner.CommandRuntimeSpec{}, fmt.Errorf("test.npm requires the installed npm CLI entrypoint")

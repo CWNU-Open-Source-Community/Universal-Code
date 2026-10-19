@@ -3523,7 +3523,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ProjectHooksView.state":                                   {"not_configured", "needs_review", "trusted", "changed", "disabled"},
 	"ProjectHooksReviewRequest.version":                        {application.ProjectHooksVersion},
 	"ProjectHookView.event":                                    {"after_edit", "before_finish"},
-	"ProjectHookView.command_id":                               {"format.go", "test.go", "test.npm", "test.node"},
+	"ProjectHookView.command_id":                               {"format.go", "test.go", "test.npm", "test.node", "test.python", "test.pytest", "test.rust"},
 	"ProjectPreparationView.protocol_version":                  {application.ProjectPreparationProtocolVersion},
 	"ProjectPreparationOperationView.protocol_version":         {application.ProjectPreparationProtocolVersion},
 	"ProjectPreparationRequestView.version":                    {application.ProjectPreparationProtocolVersion},
