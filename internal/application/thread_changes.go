@@ -21,18 +21,19 @@ const (
 )
 
 type ThreadChangeSummary struct {
-	Version         string             `json:"version"`
-	ThreadID        string             `json:"thread_id"`
-	SourceEventID   string             `json:"source_event_id"`
-	RunID           string             `json:"run_id"`
-	ChangeScope     string             `json:"change_scope"`
-	Files           []ThreadChangeFile `json:"files"`
-	FileCount       int                `json:"file_count"`
-	Additions       int                `json:"additions"`
-	Deletions       int                `json:"deletions"`
-	CountsAvailable bool               `json:"counts_available"`
-	Partial         bool               `json:"partial"`
-	Reasons         []string           `json:"reasons"`
+	Version         string                  `json:"version"`
+	ThreadID        string                  `json:"thread_id"`
+	SourceEventID   string                  `json:"source_event_id"`
+	RunID           string                  `json:"run_id"`
+	ChangeScope     string                  `json:"change_scope"`
+	Files           []ThreadChangeFile      `json:"files"`
+	FileCount       int                     `json:"file_count"`
+	Additions       int                     `json:"additions"`
+	Deletions       int                     `json:"deletions"`
+	CountsAvailable bool                    `json:"counts_available"`
+	Partial         bool                    `json:"partial"`
+	Reasons         []string                `json:"reasons"`
+	Undo            *ThreadChangeUndoResult `json:"undo,omitempty"`
 }
 
 type ThreadChangeFile struct {

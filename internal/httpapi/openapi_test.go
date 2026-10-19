@@ -1304,7 +1304,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		} else if spec.Path == FileEditProposalRecoveryPathTemplate {
 			requestPath = strings.ReplaceAll(spec.Path, "{run_id}", fixture.run.ID)
 			requestPath = strings.ReplaceAll(requestPath, "{edit_id}", recoveryProposal.Edit.ID)
-		} else if spec.OperationID == "branchThread" || spec.OperationID == "getThreadChanges" {
+		} else if spec.OperationID == "branchThread" || spec.OperationID == "getThreadChanges" || spec.OperationID == "undoThreadChanges" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", domain.InitialThreadID(branchSourceRun.ID))
 		} else if spec.OperationID == "deleteThread" {
 			requestPath = strings.ReplaceAll(spec.Path, "{thread_id}", deleteThread.ID)
@@ -1453,6 +1453,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 						t.Fatal(err)
 					}
 					body = string(encoded)
+				} else if spec.OperationID == "undoThreadChanges" {
+					body = `{"version":"thread_change_undo.v1","source_event_id":"` + branchSourceEventID + `","confirm":false}`
 				} else if spec.OperationID == "startRunWorkflow" {
 					body = `{"version":"workflow_start.v1","definition_id":"` + workflowDefinition.ID + `","inputs":{},"confirm_start":true}`
 				} else if strings.HasPrefix(spec.Path, "/api/v1/runs/{run_id}/workflows/{execution_id}/") {

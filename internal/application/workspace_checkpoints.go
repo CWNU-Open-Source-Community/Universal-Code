@@ -690,6 +690,19 @@ func (s *WorkspaceCheckpointService) Timeline(ctx context.Context, runID string,
 	if err != nil {
 		return WorkspaceCheckpointTimeline{}, apperror.Normalize(err)
 	}
+	visibleCheckpoints := make([]workspacecheckpoint.Checkpoint, 0, len(checkpoints))
+	for _, checkpoint := range checkpoints {
+		if !workspacecheckpoint.IsThreadUndoCheckpoint(checkpoint) {
+			visibleCheckpoints = append(visibleCheckpoints, checkpoint)
+		}
+	}
+	visibleTransactions := make([]workspacecheckpoint.Transaction, 0, len(transactions))
+	for _, transaction := range transactions {
+		if !workspacecheckpoint.IsThreadUndo(transaction) {
+			visibleTransactions = append(visibleTransactions, transaction)
+		}
+	}
+	checkpoints, transactions = visibleCheckpoints, visibleTransactions
 	usage, err := s.store.WorkspaceCheckpointStorageUsage(ctx)
 	if err != nil {
 		return WorkspaceCheckpointTimeline{}, apperror.Normalize(err)
@@ -754,6 +767,9 @@ func (s *WorkspaceCheckpointService) Restore(ctx context.Context,
 	target, err := s.store.GetWorkspaceCheckpointSnapshot(ctx, request.TargetCheckpointID)
 	if err != nil {
 		return WorkspaceRestoreResult{}, apperror.Normalize(err)
+	}
+	if workspacecheckpoint.IsThreadUndoCheckpoint(target.Checkpoint) {
+		return WorkspaceRestoreResult{}, apperror.New(apperror.CodeFailedPrecondition, "selected reply paths cannot be used as a whole Workspace checkpoint")
 	}
 	if target.Checkpoint.RunID != binding.run.ID ||
 		target.Checkpoint.WorkspaceID != binding.workspace.ID {
@@ -1283,6 +1299,13 @@ func (s *WorkspaceCheckpointService) reconcile(ctx context.Context,
 			if binding.workspace.ID != transaction.WorkspaceID {
 				return reconciled, apperror.New(apperror.CodeConflict,
 					"checkpoint recovery cannot change the recorded workspace")
+			}
+			if workspacecheckpoint.IsThreadUndo(transaction) {
+				if err := scoped.reconcileThreadChangeUndo(ctx, binding, transaction); err != nil {
+					return reconciled, err
+				}
+				reconciled++
+				continue
 			}
 			before, getErr := scoped.store.GetWorkspaceCheckpointSnapshot(ctx,
 				transaction.BeforeCheckpointID)

@@ -327,7 +327,11 @@ func (s *SQLiteStore) CreateWorkspaceCheckpointTransaction(ctx context.Context,
 			`SELECT `+workspaceCheckpointTransactionColumns+`
 			FROM workspace_checkpoint_transactions WHERE operation_key_digest = ?`, value.OperationKeyDigest))
 		if lookupErr == nil {
-			if !sameWorkspaceCheckpointTransactionIntent(existing, value) {
+			sameIntent := sameWorkspaceCheckpointTransactionIntent(existing, value)
+			if workspacecheckpoint.IsThreadUndo(existing) && workspacecheckpoint.IsThreadUndo(value) {
+				sameIntent = existing.RunID == value.RunID && existing.WorkspaceID == value.WorkspaceID && existing.TriggerReceiptID == value.TriggerReceiptID && existing.RequestFingerprint == value.RequestFingerprint
+			}
+			if !sameIntent {
 				return workspacecheckpoint.Transaction{}, false, apperror.New(
 					apperror.CodeConflict, "workspace checkpoint operation key was reused")
 			}
@@ -339,18 +343,23 @@ func (s *SQLiteStore) CreateWorkspaceCheckpointTransaction(ctx context.Context,
 		if !errors.Is(lookupErr, sql.ErrNoRows) {
 			return workspacecheckpoint.Transaction{}, false, lookupErr
 		}
-		var pausedAndActive bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+		if workspacecheckpoint.IsThreadUndo(value) {
+			if err := requireThreadChangeUndoJournalTx(ctx, tx, value); err != nil {
+				return workspacecheckpoint.Transaction{}, false, err
+			}
+		} else {
+			var pausedAndActive bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
 			SELECT 1 FROM runs run JOIN sessions session_record ON session_record.id = run.session_id
 			WHERE run.id = ? AND run.status = 'paused' AND session_record.status = 'active'
 				AND session_record.workspace_id = ?)`, value.RunID, value.WorkspaceID).Scan(&pausedAndActive); err != nil {
-			return workspacecheckpoint.Transaction{}, false, err
-		}
-		if !pausedAndActive {
-			if hasBindings, err := hasRunFileDrydockBindings(ctx, tx); err != nil {
 				return workspacecheckpoint.Transaction{}, false, err
-			} else if hasBindings {
-				if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			}
+			if !pausedAndActive {
+				if hasBindings, err := hasRunFileDrydockBindings(ctx, tx); err != nil {
+					return workspacecheckpoint.Transaction{}, false, err
+				} else if hasBindings {
+					if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
 					SELECT 1 FROM runs run JOIN sessions linked ON linked.id=run.session_id
 					JOIN run_file_drydock_bindings owner ON owner.run_id=run.id AND owner.session_id=linked.id
 					JOIN drydock_workspaces d ON d.id=owner.drydock_id
@@ -358,12 +367,12 @@ func (s *SQLiteStore) CreateWorkspaceCheckpointTransaction(ctx context.Context,
 					WHERE run.id=? AND run.status='paused' AND linked.status='active'
 					AND linked.workspace_id=owner.source_workspace_id AND owner.workspace_id=?
 					AND d.state<>'cleaned' AND (owner.thread_id='' OR thread.last_run_id=run.id))`,
-					value.RunID, value.WorkspaceID).Scan(&pausedAndActive); err != nil {
-					return workspacecheckpoint.Transaction{}, false, err
-				}
-				if pausedAndActive {
-					var busy bool
-					if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+						value.RunID, value.WorkspaceID).Scan(&pausedAndActive); err != nil {
+						return workspacecheckpoint.Transaction{}, false, err
+					}
+					if pausedAndActive {
+						var busy bool
+						if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
 						SELECT 1 FROM run_file_drydock_bindings current
 						WHERE current.run_id=? AND current.workspace_id=? AND (
 						EXISTS(SELECT 1 FROM run_file_drydock_bindings other JOIN run_execution_leases lease ON lease.run_id=other.run_id
@@ -372,22 +381,23 @@ func (s *SQLiteStore) CreateWorkspaceCheckpointTransaction(ctx context.Context,
 						 WHERE pending.workspace_id=current.workspace_id AND pending.status IN ('prepared','applying'))
 						OR EXISTS(SELECT 1 FROM drydock_cleanup_operations cleanup
 						 WHERE cleanup.drydock_id=current.drydock_id AND cleanup.status='prepared')))`,
-						value.RunID, value.WorkspaceID, ts(time.Now().UTC())).Scan(&busy); err != nil {
-						return workspacecheckpoint.Transaction{}, false, err
-					}
-					if busy {
-						return workspacecheckpoint.Transaction{}, false, apperror.New(apperror.CodeConflict,
-							"Thread working directory has an unfinished execution, mutation, or cleanup")
+							value.RunID, value.WorkspaceID, ts(time.Now().UTC())).Scan(&busy); err != nil {
+							return workspacecheckpoint.Transaction{}, false, err
+						}
+						if busy {
+							return workspacecheckpoint.Transaction{}, false, apperror.New(apperror.CodeConflict,
+								"Thread working directory has an unfinished execution, mutation, or cleanup")
+						}
 					}
 				}
 			}
-		}
-		if !pausedAndActive {
-			return workspacecheckpoint.Transaction{}, false, apperror.New(apperror.CodeFailedPrecondition,
-				"workspace restore preparation requires a paused Run and active Session")
-		}
-		if err := requireNoActiveRunControlLeaseTx(ctx, tx, value.RunID, time.Now().UTC()); err != nil {
-			return workspacecheckpoint.Transaction{}, false, err
+			if !pausedAndActive {
+				return workspacecheckpoint.Transaction{}, false, apperror.New(apperror.CodeFailedPrecondition,
+					"workspace restore preparation requires a paused Run and active Session")
+			}
+			if err := requireNoActiveRunControlLeaseTx(ctx, tx, value.RunID, time.Now().UTC()); err != nil {
+				return workspacecheckpoint.Transaction{}, false, err
+			}
 		}
 	}
 	err = insertWorkspaceCheckpointTransactionTx(ctx, tx, value)
@@ -441,9 +451,13 @@ func isWorkspaceRestoreTransaction(kind workspacecheckpoint.TransactionKind) boo
 func requireNoOpenWorkspaceRestoreTx(ctx context.Context, tx *sql.Tx, runID string) error {
 	var pending bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM workspace_checkpoint_transactions WHERE run_id = ?
+		SELECT 1 FROM workspace_checkpoint_transactions pending
+		WHERE (pending.run_id = ? OR (pending.trigger_receipt_id LIKE 'thread-reply-undo:%'
+		 AND pending.workspace_id=(SELECT COALESCE(owner.workspace_id,mission.workspace_id)
+		 FROM runs run JOIN missions mission ON mission.id=run.mission_id
+		 LEFT JOIN run_file_drydock_bindings owner ON owner.run_id=run.id WHERE run.id=?)))
 			AND kind IN ('rewind', 'undo', 'redo', 'fork') AND status IN ('prepared', 'applying'))`,
-		runID).Scan(&pending); err != nil {
+		runID, runID).Scan(&pending); err != nil {
 		return err
 	}
 	if pending {
@@ -615,6 +629,7 @@ func (s *SQLiteStore) ListWorkspaceCheckpointTransactionsPendingCursor(ctx conte
 			FROM workspace_checkpoint_transactions transaction_record
 			WHERE transaction_record.status IN ('completed', 'failed', 'interrupted')
 				AND transaction_record.kind != 'fork'
+				AND transaction_record.trigger_receipt_id NOT LIKE 'thread-reply-undo:%'
 				AND transaction_record.after_checkpoint_id != ''
 				AND (EXISTS (SELECT 1 FROM workspace_checkpoint_run_state state
 					WHERE state.run_id = transaction_record.run_id
