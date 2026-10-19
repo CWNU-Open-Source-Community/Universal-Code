@@ -62,7 +62,9 @@ func TestPNPMPreparationSeparatesSeedWorkspaceAndTestDirectories(t *testing.T) {
 			if err != nil || spec.WorkingDirectory != test.directory || spec.Executable != "/opt/toolchains/node/bin/node" || spec.Arguments[0] != sandbox.DockerStandardCodePNPMCLI || spec.Network != runner.CommandRuntimeNetworkDisabled || spec.Credentials != runner.CommandRuntimeCredentialsNone {
 				t.Fatalf("pnpm command %+v %v", spec, err)
 			}
-			for _, required := range []string{"--offline", "--config.ignore-pnpmfile=true", "--config.manage-package-manager-versions=false", "--store-dir=/workspace/" + projectprep.PNPMStoreDirectory(plan.Target)} {
+			stage := "/workspace/" + projectprep.StageDirectory(plan.Target)
+			for _, required := range []string{"--offline", "--config.ignore-pnpmfile=true", "--config.manage-package-manager-versions=false", "--store-dir=/workspace/" + projectprep.PNPMStoreDirectory(plan.Target),
+				"--config.cache-dir=" + stage + "/pnpm-cache", "--config.state-dir=" + stage + "/pnpm-state", "--config.global-dir=" + stage + "/pnpm-global"} {
 				if !slices.Contains(spec.Arguments, required) {
 					t.Fatalf("missing fixed option %s: %+v", required, spec.Arguments)
 				}

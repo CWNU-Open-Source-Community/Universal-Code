@@ -140,7 +140,10 @@ func preparePNPMPreparationSpec(plan projectprep.Plan, adapter commandruntimeada
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "pnpm test target is outside its workspace")
 	}
 	workingDirectory := plan.WorkspaceRoot
-	common := []string{"--offline", "--config.ignore-pnpmfile=true", "--config.manage-package-manager-versions=false", "--reporter=append-only", "--store-dir=" + sandbox.DockerStandardCodeWorkspaceTarget + "/" + projectprep.PNPMStoreDirectory(plan.Target)}
+	stage := sandbox.DockerStandardCodeWorkspaceTarget + "/" + projectprep.StageDirectory(plan.Target)
+	common := []string{"--offline", "--config.ignore-pnpmfile=true", "--config.manage-package-manager-versions=false", "--reporter=append-only",
+		"--store-dir=" + sandbox.DockerStandardCodeWorkspaceTarget + "/" + projectprep.PNPMStoreDirectory(plan.Target),
+		"--config.cache-dir=" + stage + "/pnpm-cache", "--config.state-dir=" + stage + "/pnpm-state", "--config.global-dir=" + stage + "/pnpm-global"}
 	arguments := []string{}
 	switch action {
 	case "fetch":
