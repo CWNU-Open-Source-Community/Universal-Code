@@ -281,5 +281,7 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v210 | 为定时任务加入自动执行模式、不可变执行同意和按轮次绑定的执行回执，保留既有计划与观察同意 | add automatic execution mode, immutable execution consent and occurrence-bound execution receipts for scheduled jobs while preserving existing schedules and observation consent |
 | v211 | 仅为 Plan 中宿主准备的注册测试放行长后台 Job，保留 root/worker、精确命令、离线及当前权限条件 | admit long background Jobs only for host-prepared registered tests in Plan while retaining root/worker ownership, exact command, offline and current-permission conditions |
 | v212 | 保存任务的开发服务策略，并在独占策略下拒绝新的共享服务 Job | persist per-Thread development service preferences and reject shared-service Job admission under the exclusive preference |
+| v213 | 保存同项目聊天消息的来源、回复关系和投递状态，复用持久输入队列并保留消息不具备用户授权的来源约束 | persist same-workspace chat message provenance, reply links and delivery status, reusing the durable input queue while enforcing non-authorizing message provenance |
+| v214 | 将聊天列表和消息发送工具接入既有工具账本，保留原有调用记录和执行身份约束 | admit chat listing and message sending tools to the existing tool ledger while preserving recorded calls and execution identity constraints |
 
 </details>
