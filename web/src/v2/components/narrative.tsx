@@ -11,6 +11,7 @@ import { V2ImagePreview } from "./image-input";
 import { V2FileAttachments } from "./file-input";
 import { V2ActivityGroup } from "./activity-detail";
 import { rehypeStreamReveal } from "./stream-reveal";
+import { V2TurnChanges } from "./turn-changes";
 
 export interface FileLinkTarget {
   path: string;
@@ -247,6 +248,8 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
   if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
     className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}`}>
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
+    {!entry.provisional && entry.changeSourceID && entry.runId && typeof client.threadChanges === "function" &&
+      <V2TurnChanges client={client} threadID={threadID} runID={entry.runId} sourceEventID={entry.changeSourceID} />}
     {!entry.provisional && <AssistantMessageActions text={entry.text} branchSourceID={entry.branchSourceID} onBranch={onBranch} />}
   </li>;
   if (entry.kind === "activity") return <li className="v2-activity-turn">

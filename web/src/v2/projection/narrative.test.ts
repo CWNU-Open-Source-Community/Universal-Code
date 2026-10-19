@@ -531,6 +531,7 @@ describe("projectThreadNarrative", () => {
       runId: "run-1",
       text: "第一部分内容。\n\n第二部分内容。",
       branchSourceID: "part-2",
+      changeSourceID: "part-1",
     }));
   });
 });
