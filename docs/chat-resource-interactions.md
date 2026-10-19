@@ -15,6 +15,12 @@ Windows 桌面端的“复制文件”写入系统文件剪贴板，可以粘贴
 
 ## 截图
 
+以下前后对比来自真实生产页面与 API：基线为 main `2bbdab93`，修改后为本 PR `e38f7152`。在 Windows Chromium 1280 × 900 下，通过仓库的离线模型测试入口发送相同两条消息，再对网址执行右键操作；这里没有注入桌面桥接替身。网页环境中的原生文件操作仍需桌面桥接。
+
+| 修改前：普通链接 | 修改后：高亮链接和右键菜单 |
+| --- | --- |
+| ![修改前的真实聊天](images/chat-resources/actual-chat-before.png) | ![修改后的网址操作](images/chat-resources/actual-url-after.png) |
+
 下面使用此分支的实际聊天组件渲染演示对话，网页信息来自真实 SignPath / GitHub 请求。页面中的原生桥接动作以记录调用替代，因此截图用于核对界面；Windows 剪贴板另有原生测试。并非打包桌面应用的整窗截图。
 
 ![浅色网页信息卡片](images/chat-resources/link-preview-light.png)
