@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
 import type { NarrativeEntry } from "../projection/narrative";
@@ -28,4 +29,49 @@ it("renders only changing output while reusing a thousand historical Markdown ro
   view.rerender(<V2Narrative client={client} entries={revised} threadID="thread-1" />);
   expect(markdown).toHaveBeenCalledTimes(1_022);
   expect(screen.getByText("Corrected durable answer")).toBeInTheDocument();
+});
+
+it("copies the full reply and branches from its final durable event with icon actions", async () => {
+  const user = userEvent.setup();
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  let finish!: () => void;
+  const onBranch = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+  const entry: NarrativeEntry = { id: "first-event", branchSourceID: "last-event", kind: "assistant",
+    text: "**Full answer**\n\nSecond part", createdAt: "", provisional: false };
+  render(<V2Narrative client={{} as APIClient} entries={[entry]} threadID="thread-1" onBranch={onBranch} />);
+
+  const copy = screen.getByRole("button", { name: "Copy response" });
+  const branch = screen.getByRole("button", { name: "Branch into new chat" });
+  expect(copy.querySelector("svg")).not.toBeNull();
+  expect(branch.querySelector("svg")).not.toBeNull();
+  await user.click(copy);
+  expect(writeText).toHaveBeenCalledWith(entry.text);
+  expect(screen.getByRole("button", { name: "Response copied" })).toBeInTheDocument();
+  await user.dblClick(branch);
+  expect(onBranch).toHaveBeenCalledExactlyOnceWith("last-event", expect.stringMatching(/^thread-branch-/u));
+  expect(screen.getByRole("button", { name: "Creating new chat…" })).toBeDisabled();
+  await act(async () => finish());
+  expect(screen.getByRole("button", { name: "Branch into new chat" })).toBeEnabled();
+});
+
+it("retains the same branch request when retrying a failed response", async () => {
+  const user = userEvent.setup();
+  const onBranch = vi.fn().mockRejectedValueOnce(new Error("Connection lost")).mockResolvedValue(undefined);
+  render(<V2Narrative client={{} as APIClient} entries={[{ id: "reply", branchSourceID: "source-event", kind: "assistant",
+    text: "Answer", createdAt: "", provisional: false }]} threadID="thread-1" onBranch={onBranch} />);
+  await user.click(screen.getByRole("button", { name: "Branch into new chat" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Connection lost");
+  await user.click(screen.getByRole("button", { name: "Branch into new chat" }));
+  expect(onBranch.mock.calls[1]).toEqual(onBranch.mock.calls[0]);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("waits for a saved reply before exposing branch actions", () => {
+  const client = {} as APIClient;
+  const onBranch = vi.fn();
+  const entry: NarrativeEntry = { id: "reply", kind: "assistant", text: "Streaming", createdAt: "", provisional: true };
+  const view = render(<V2Narrative client={client} entries={[entry]} threadID="thread-1" onBranch={onBranch} />);
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  view.rerender(<V2Narrative client={client} entries={[{ ...entry, provisional: false }]} threadID="thread-1" onBranch={onBranch} />);
+  expect(screen.getByRole("button", { name: "Branch into new chat" })).toBeDisabled();
 });

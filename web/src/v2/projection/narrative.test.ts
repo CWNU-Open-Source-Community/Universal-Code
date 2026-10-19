@@ -41,6 +41,12 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
 }
 
 describe("projectThreadNarrative", () => {
+  it("does not treat delivery receipts as branchable model replies", () => {
+    const projected = projectThreadNarrative([item({ id: "delivery-receipt", source: "harness", kind: "plan",
+      activity_type: "delivery", title: "切片交付检查点已记录", detail: "", status: "completed" })]);
+    expect(projected).toEqual([expect.objectContaining({ kind: "assistant", branchSourceID: undefined })]);
+  });
+
   it("projects live output without rereading or rebuilding a thousand durable rows", () => {
     let historicalReads = 0;
     const transcript = Array.from({ length: 1_000 }, (_, index) => item({
@@ -277,7 +283,7 @@ describe("projectThreadNarrative", () => {
 
     expect(projected).toEqual([
       expect.objectContaining({ kind: "user", text: "只回复：流式链路已连通" }),
-      expect.objectContaining({ kind: "assistant", text: "流式链路已连通" }),
+      expect.objectContaining({ kind: "assistant", text: "流式链路已连通", branchSourceID: "answer-2" }),
     ]);
   });
 
@@ -524,6 +530,7 @@ describe("projectThreadNarrative", () => {
       kind: "assistant",
       runId: "run-1",
       text: "第一部分内容。\n\n第二部分内容。",
+      branchSourceID: "part-2",
     }));
   });
 });

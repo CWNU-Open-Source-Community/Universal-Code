@@ -40,6 +40,7 @@ export type NarrativeEntry =
       kind: "assistant";
       text: string;
       runId?: string;
+      branchSourceID?: string;
       createdAt: string;
       provisional: boolean;
     }
@@ -295,15 +296,19 @@ export function projectThreadNarrative(
       if (isInternalModelUpdate(item)) continue;
       const text = normalizedText(item);
       if (!text) continue;
+      const branchSourceID = item.source === "model" && item.kind === "model_update" && item.durable && !item.provisional
+        ? item.id : undefined;
       const previous = result.at(-1);
       if (previous?.kind === "assistant" && !previous.provisional && !item.provisional && previous.runId === item.run_id) {
         // A Supervisor may emit the same final answer again while closing its
         // synthetic continuation turn. Keep distinct progress updates, but do
         // not show an identical durable answer twice in the conversation.
         if (previous.text !== text) previous.text = `${previous.text}\n\n${text}`;
+        previous.branchSourceID = branchSourceID;
       } else {
         result.push({ id: item.id, kind: "assistant", text,
           runId: item.run_id,
+          branchSourceID,
           createdAt: item.created_at, provisional: item.provisional });
       }
       continue;

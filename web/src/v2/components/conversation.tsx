@@ -328,7 +328,7 @@ export function V2TerminalDrawer({
 
 export function V2Conversation({ client, threadID, workspaces, onArchive, onManageModels,
   onOpenInspector, draft: legacyDraft, onDraftChange: legacyDraftChange, view = "conversation", onOpenTool, onOpenInspectorHome, onOpenWorktree, onExitInspector,
-  reviewEntry, onReviewEntryHandled, reviewMemoryRef }: {
+  reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated }: {
   client: APIClient;
   threadID: string;
   workspaces: WorkspaceView[];
@@ -345,9 +345,20 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   reviewEntry?: { threadID: string; runID: string; requestID: string };
   onReviewEntryHandled?: (requestID: string) => void;
   reviewMemoryRef?: RefObject<TaskReviewToolMemory>;
+  onBranchCreated?: (thread: ThreadView) => void;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
+  const branchReply = useCallback(async (sourceEventID: string, operationKey: string) => {
+    const result = await client.postControl<{ version: string; thread: ThreadView; source_event_id: string }>(
+      `/threads/${encodeURIComponent(threadID)}/branches`,
+      { version: "thread_branch.v1", source_event_id: sourceEventID }, operationKey);
+    if (result?.version !== "thread_branch.v1" || !result.thread?.id || result.thread.id === threadID || result.source_event_id !== sourceEventID) {
+      throw new Error(t("无法确认新聊天，请重试。", "Could not confirm the new chat. Try again."));
+    }
+    void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads() });
+    onBranchCreated?.(result.thread);
+  }, [client, threadID, queryClient, onBranchCreated, t]);
   const previewRequest = useQuery<ApplicationPreviewRequest | null>({
     queryKey: applicationPreviewRequestKey(threadID), queryFn: () => null,
     initialData: null, enabled: false, gcTime: Infinity,
@@ -1045,7 +1056,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {view === "conversation" && !transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
-        {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile} />}
+        {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile}
+          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
@@ -1153,7 +1165,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         placeholder={t("输入消息…", "Type a message…")} runActive={runActive}
         runID={currentRun.id} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""}
         workspaces={workspaces} />
-      <V2ComposerStats key={threadID} statistics={detail.statistics} />
+      <V2ComposerStats key={`statistics:${threadID}`} statistics={detail.statistics} />
       </div>
       </div>
     </div>
