@@ -15,11 +15,11 @@ import (
 	"testing"
 )
 
-const approvedBrandMasterSHA256 = "c63b452ca86ccb9a2003ab9711329491185a42825df6d9ca03aaebc078d250b3"
+const approvedBrandMasterSHA256 = "a97e71e5f373d5d48ce24e39360cd390be2beabfe731037ac114ec38f12407d6"
 
-// Both COFF resources now embed the reviewed PerMonitorV2/asInvoker manifest
-// alongside the unchanged approved icons, so their bytes change the set digest.
-const approvedBrandDerivativeSetSHA256 = "f8706a26dc124037c5f0249b462c4ec44d0794c6c48a5b6fb52c0267ec731766"
+// Generated from the approved globe-and-terminal master, including both COFF
+// resources with the shared PerMonitorV2/asInvoker manifest.
+const approvedBrandDerivativeSetSHA256 = "98e5cc53e87c82c0b6557608b6a40cac40046bf91223c42d8d2af1803806068c"
 
 func TestApprovedBrandMasterAndPlatformAssetsStaySynchronized(t *testing.T) {
 	t.Parallel()
