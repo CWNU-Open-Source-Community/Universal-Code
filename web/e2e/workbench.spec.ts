@@ -46,19 +46,22 @@ async function importProject(page: Page) {
   const trigger = page.getByRole("button", { name: "接入项目", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "接入已有项目" });
-  const input = dialog.getByRole("textbox", { name: "项目文件夹路径" });
+  const dialog = page.getByRole("dialog", { name: "创建项目" });
+  const input = dialog.getByRole("textbox", { name: "项目名称" });
   await expect(input).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
-  await input.fill(metadata().workspace);
+  await dialog.getByRole("button", { name: "添加", exact: true }).click();
+  await dialog.getByRole("textbox", { name: "项目文件夹路径" }).fill(metadata().workspace);
+  await dialog.getByRole("button", { name: "添加", exact: true }).click();
+  await input.focus();
   await page.keyboard.press("Shift+Tab");
-  await expect(dialog.getByRole("button", { name: "关闭项目接入" })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "关闭项目窗口" })).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(dialog.getByRole("button", { name: "接入此目录" })).toBeFocused();
-  await dialog.getByRole("button", { name: "接入此目录" }).click();
+  await expect(dialog.getByRole("button", { name: "创建项目", exact: true })).toBeFocused();
+  await dialog.getByRole("button", { name: "创建项目", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("combobox", { name: "选择工作区" })).not.toHaveValue("");
 }

@@ -224,7 +224,7 @@ describe("V2Workbench inspector navigation", () => {
     await user.click(within(screen.getByRole("navigation", { name: "对话导航" })).getByRole("button", { name: "新对话" }));
     expectDrawerClosed();
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    expect(screen.getByRole("dialog", { name: "接入已有项目" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "创建项目" })).toBeInTheDocument();
     await user.keyboard("{Escape}");
     await user.type(screen.getByRole("textbox", { name: "开始新对话" }), "窄窗口中的项目需求");
     await user.click(screen.getByRole("button", { name: "显示侧栏" }));
@@ -660,9 +660,11 @@ describe("V2Workbench first turn", () => {
     await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "A项目等待目录的草稿");
     await user.click(screen.getByRole("button", { name: "发送消息" }));
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    const dialog = screen.getByRole("dialog", { name: "接入已有项目" });
+    const dialog = screen.getByRole("dialog", { name: "创建项目" });
+    await user.click(within(dialog).getByRole("button", { name: "添加" }));
     await user.type(within(dialog).getByRole("textbox", { name: "项目文件夹路径" }), "D:\\later-workspace");
-    await user.click(within(dialog).getByRole("button", { name: "接入此目录" }));
+    await user.click(within(dialog).getByRole("button", { name: "添加" }));
+    await user.click(within(dialog).getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "选择工作区" }))
       .toHaveValue(otherWorkspace.id));
     await act(async () => catalog.resolve(result));
@@ -690,9 +692,11 @@ describe("V2Workbench first turn", () => {
     await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "A项目往返后仍未提交的草稿");
     await user.click(screen.getByRole("button", { name: "发送消息" }));
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    const dialog = screen.getByRole("dialog", { name: "接入已有项目" });
+    const dialog = screen.getByRole("dialog", { name: "创建项目" });
+    await user.click(within(dialog).getByRole("button", { name: "添加" }));
     await user.type(within(dialog).getByRole("textbox", { name: "项目文件夹路径" }), "D:\\round-trip-workspace");
-    await user.click(within(dialog).getByRole("button", { name: "接入此目录" }));
+    await user.click(within(dialog).getByRole("button", { name: "添加" }));
+    await user.click(within(dialog).getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "选择工作区" }))
       .toHaveValue(otherWorkspace.id));
     await user.selectOptions(screen.getByRole("combobox", { name: "选择工作区" }), workspace.id);
@@ -858,14 +862,16 @@ describe("V2Workbench first turn", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "在新项目中继续这份需求");
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    const dialog = screen.getByRole("dialog", { name: "接入已有项目" });
+    const dialog = screen.getByRole("dialog", { name: "创建项目" });
+    await user.click(within(dialog).getByRole("button", { name: "添加" }));
     await user.type(within(dialog).getByRole("textbox", { name: "项目文件夹路径" }), "D:\\older project");
-    await user.click(within(dialog).getByRole("button", { name: "接入此目录" }));
+    await user.click(within(dialog).getByRole("button", { name: "添加" }));
+    await user.click(within(dialog).getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(imported.id);
     expect(screen.getByRole("textbox", { name: "开始新对话" })).toHaveValue("在新项目中继续这份需求");
-    expect(client.importWorkspace).toHaveBeenCalledWith("D:\\older project");
+    expect(client.importWorkspace).toHaveBeenCalledWith("D:\\older project", undefined, "older project");
     expect(screen.getByRole("button", { name: "接入项目" })).toHaveFocus();
   });
 
@@ -886,8 +892,10 @@ describe("V2Workbench first turn", () => {
   it("imports through the native picker and preserves input when the picker is cancelled", async () => {
     let imported = false;
     vi.spyOn(desktopBridge, "desktopWorkspaceImportEnabled").mockReturnValue(true);
-    const picker = vi.spyOn(desktopBridge, "importDesktopWorkspace")
-      .mockResolvedValueOnce(null).mockImplementationOnce(async () => { imported = true; return workspace; });
+    const picker = vi.spyOn(desktopBridge, "selectDesktopWorkspaceDirectory")
+      .mockResolvedValueOnce(null).mockResolvedValueOnce({ handle: "native-directory", name: workspace.name, directory_path: "D:\\project" });
+    const create = vi.spyOn(desktopBridge, "createDesktopWorkspace")
+      .mockImplementationOnce(async () => { imported = true; return workspace; });
     const client = { hasThreadControl: true, getPage: vi.fn(async (path: string) => ({
       items: path === "/workspaces" && imported ? [workspace] : [],
       page: { limit: 100 }, requestID: path,
@@ -899,13 +907,20 @@ describe("V2Workbench first turn", () => {
     const composer = await screen.findByRole("textbox", { name: "开始新对话" });
     await user.type(composer, "在选择项目之前写下的需求");
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "打开项目" }));
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("button", { name: "取消" }));
     expect(composer).toHaveValue("在选择项目之前写下的需求");
-    await user.click(screen.getByRole("button", { name: "打开项目" }));
+    expect(create).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "接入项目" }));
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await screen.findByText("D:\\project");
+    await user.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(workspace.id));
     expect(composer).toHaveValue("在选择项目之前写下的需求");
     expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
     expect(picker.mock.calls.every((args) => args.length === 0)).toBe(true);
+    expect(create).toHaveBeenCalledExactlyOnceWith("native-directory", workspace.name);
   });
 
   it.each(["deliver", "plan"] as const)("opens the durable thread during the first %s turn with its selected phase", async (phase) => {

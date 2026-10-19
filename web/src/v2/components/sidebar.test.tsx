@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render as renderComponent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ThreadView, WorkspaceView } from "../../api/types";
@@ -6,7 +7,8 @@ import { LocaleProvider, useLocale } from "../../lib/locale";
 import { V2SettingsSidebar, V2Sidebar } from "./sidebar";
 
 function render(ui: ReactElement) {
-  return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
+  return renderComponent(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <LocaleProvider>{ui}</LocaleProvider></QueryClientProvider>);
 }
 
 beforeEach(() => localStorage.setItem("prayu.locale.v1", "zh-CN"));
@@ -35,6 +37,20 @@ describe("sidebar project moves", () => {
     onOpenSettings: vi.fn(), onSearchOpen: vi.fn(), onSelectThread: vi.fn(),
     searchOpen: false, selectedThreadID: thread.id, workspaces: [workspace, destination],
     onNewInProject: vi.fn() };
+
+  it("collapses projects without hiding local chats and can expand all projects again", async () => {
+    const user = userEvent.setup();
+    render(<V2Sidebar {...props} threads={[movable, { ...movable, id: "local", title: "本地草稿", project_workspace_id: "" }]} />);
+    await user.click(screen.getByRole("button", { name: "Traverse Board" }));
+    expect(screen.queryByRole("button", { name: thread.title })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本地草稿" })).toBeInTheDocument();
+    await user.click(screen.getByLabelText("项目选项"));
+    await user.click(screen.getByRole("button", { name: "展开所有项目" }));
+    expect(screen.getByRole("button", { name: thread.title })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    expect(screen.queryByRole("region", { name: "项目 Traverse Board" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本地草稿" })).toBeInTheDocument();
+  });
 
   it("drops a known chat into an empty project without changing selection optimistically", () => {
     const onMoveThread = vi.fn();

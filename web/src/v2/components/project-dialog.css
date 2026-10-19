@@ -1,0 +1,36 @@
+.v2-dialog.v2-project-dialog { width: 560px; max-height: calc(100dvh - 32px); overflow: auto; }
+.v2-dialog.v2-project-dialog > header { border: 0; grid-template-columns: minmax(0, 1fr) 30px; padding: 22px 24px 12px; }
+.v2-dialog.v2-project-dialog h2 { font-size: 21px; line-height: 1.4; }
+.v2-project-dialog-body { padding: 8px 24px 24px; }
+.v2-project-name { align-items: center; background: var(--v2-main-surface); border: 1px solid var(--v2-border-strong); border-radius: 12px; display: flex; gap: 14px; padding: 13px 15px; }
+.v2-project-name:focus-within { border-color: var(--prayu-focus); outline: 2px solid color-mix(in srgb, var(--prayu-focus) 20%, transparent); outline-offset: 1px; }
+.v2-project-name svg { flex-shrink: 0; }
+.v2-project-name input { background: transparent; border: 0; color: var(--v2-ink); font: inherit; min-width: 0; padding: 0; width: 100%; }
+.v2-project-name input:focus-visible { outline: none; }
+.v2-project-source-label { font-size: 13px; font-weight: 600; margin: 20px 0 10px; }
+.v2-project-source { align-items: center; background: var(--v2-main-surface); border: 1px solid var(--v2-border); border-radius: 13px; display: flex; flex-direction: column; gap: 14px; justify-content: center; min-height: 124px; padding: 20px; }
+.v2-project-source p { color: var(--v2-muted); font-size: 13px; line-height: 1.6; margin: 0; }
+.v2-project-source button { align-items: center; background: var(--v2-control); border: 1px solid transparent; border-radius: 8px; display: inline-flex; flex-shrink: 0; font: inherit; gap: 6px; padding: 6px 10px; }
+.v2-project-source button:hover:not(:disabled) { background: var(--v2-control-hover); }
+.v2-project-source.has-folder { flex-direction: row; justify-content: flex-start; min-height: 100px; }
+.v2-project-source > svg { flex-shrink: 0; }
+.v2-project-source-path { display: grid; flex: 1; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+.v2-project-source-path strong { font-size: 14px; font-weight: 500; }
+.v2-project-source-path span { color: var(--v2-muted); font-size: 12px; line-height: 1.65; }
+.v2-project-path-entry { display: grid; gap: 12px; width: 100%; }
+.v2-project-path-entry label { display: grid; font-size: 13px; gap: 8px; }
+.v2-project-path-entry input { background: transparent; border: 1px solid var(--v2-border-strong); border-radius: 8px; color: var(--v2-ink); font: inherit; min-width: 0; padding: 9px 10px; width: 100%; }
+.v2-project-path-entry button { justify-self: end; }
+.v2-dialog.v2-project-dialog .v2-project-folder-note { color: var(--v2-muted); font-size: 12px; line-height: 1.6; margin: 14px 0 0; }
+.v2-dialog.v2-project-dialog .v2-inline-error { color: var(--v2-danger); font-size: 12px; line-height: 1.6; margin-bottom: 0; }
+.v2-dialog.v2-project-dialog footer { border: 0; padding: 8px 24px 24px; gap: 12px; }
+.v2-dialog.v2-project-dialog footer button { border-radius: 10px; min-height: 36px; padding: 7px 16px; }
+.v2-dialog.v2-project-dialog footer button:not(.primary) { background: transparent; border-color: transparent; color: var(--v2-muted); }
+@media (max-width: 520px) {
+  .v2-dialog.v2-project-dialog > header { padding: 18px 18px 10px; }
+  .v2-project-dialog-body { padding: 8px 18px 20px; }
+  .v2-dialog.v2-project-dialog footer { padding: 8px 18px 18px; }
+}
+.v2-dialog.v2-project-dialog footer button.primary { background: var(--v2-ink); border-color: transparent; box-shadow: none; color: var(--prayu-surface-solid); }
+.v2-dialog.v2-project-dialog footer button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--v2-ink) 85%, var(--prayu-surface-solid)); }
+.v2-dialog.v2-project-dialog button:disabled { cursor: default; opacity: .45; }

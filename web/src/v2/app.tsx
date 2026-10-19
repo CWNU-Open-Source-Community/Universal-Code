@@ -16,7 +16,7 @@ import { V2Titlebar } from "./components/titlebar";
 import { useV2Client } from "./client-session";
 import { v2QueryKeys } from "./query-keys";
 import { registerV2RecoveredTurn, useV2RestoreTurns, useV2ThreadTurn, v2TurnFailed } from "./use-thread-turn";
-import { V2WorkspaceStart } from "./components/workspace-start";
+import { ProjectDialog, V2WorkspaceStart } from "./components/workspace-start";
 import { useV2Navigation, type V2RunPane } from "./navigation";
 import { readDensity } from "../lib/ui-density";
 import { useLocale } from "../lib/locale";
@@ -331,6 +331,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   // An explicitly imported existing project may be outside the first list page.
   // Retain its pathless receipt so selection survives list refetches.
   const [importedWorkspaces, setImportedWorkspaces] = useState<WorkspaceView[]>([]);
+  const [editingProject, setEditingProject] = useState<WorkspaceView | null>(null);
   const [backgroundCreations, setBackgroundCreations] = useState<ThreadView[]>([]);
   const [drafts, setDrafts] = useV2Drafts();
   useEffect(() => {
@@ -599,7 +600,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       {surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
         onSelect={setSettingsSection} section={settingsSection} /> : <V2Sidebar
           onArchive={setArchiveCandidate} onNewConversation={() => startNew()} onOpenModels={() => openModels(newConversation)}
-          onNewInProject={(id) => startNew(id)}
+          onNewInProject={(id) => startNew(id)} client={client}
+          onEditProject={client.hasControl ? setEditingProject : undefined}
           onMoveThread={client.hasThreadControl ? (thread, destination) => moveMutation.mutate({ thread, destination }) : undefined}
           movingThreadID={moveMutation.isPending ? moveMutation.variables.thread.id : undefined}
           moveError={moveMutation.isError ? moveMutation.error.message : undefined}
@@ -633,6 +635,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           onLoadMore={() => void sidebarQuery.fetchNextPage()} onRefresh={() => void sidebarQuery.refetch()}
           selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}
       </div>
+      {editingProject && <ProjectDialog client={client} workspace={editingProject} onClose={() => setEditingProject(null)}
+        onSaved={(workspace) => setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace])} />}
       <div className="v2-product-surface" inert={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}
         aria-busy={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}>
         {route.kind === "invalid" ? <div className="v2-notice" role="alert">{t("任务地址无法识别。", "The task address is not recognized.")}
