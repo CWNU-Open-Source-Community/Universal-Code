@@ -32,20 +32,17 @@ describe("workbench Composer layout", () => {
 });
 
 describe("product typography roles", () => {
-  it("uses the approved JetBrains and HarmonyOS stacks for interface and display text", () => {
+  it("uses proportional interface fonts and shares them with display text", () => {
     const uiStack = styles.match(/--prayu-font-ui:\s*([^;]+);/u)?.[1] ?? "";
     const displayStack = styles.match(/--prayu-font-display:\s*([^;]+);/u)?.[1] ?? "";
 
-    expect(uiStack).toContain("JetBrains Mono Variable");
+    expect(uiStack).toMatch(/^"Segoe UI",/u);
     expect(uiStack).toContain("HarmonyOS Sans SC");
     expect(uiStack).toContain("Microsoft YaHei UI");
-    expect(uiStack).toContain("monospace");
-    expect(uiStack).not.toContain("Cascadia Code");
-    expect(displayStack).toContain("JetBrains Mono Variable");
-    expect(displayStack).toContain("HarmonyOS Sans SC");
-    expect(displayStack).toContain("Microsoft YaHei UI");
-    expect(displayStack).toContain("PingFang SC");
-    expect(displayStack).toContain("monospace");
+    expect(uiStack).toContain("PingFang SC");
+    expect(uiStack).toMatch(/system-ui,\s*sans-serif$/u);
+    expect(uiStack).not.toMatch(/JetBrains Mono|Cascadia Code|monospace/u);
+    expect(displayStack).toBe("var(--prayu-font-ui)");
   });
 
   it("loads the four byte-identical vendor HarmonyOS Sans TTF weights", () => {
