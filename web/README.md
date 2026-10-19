@@ -1,150 +1,120 @@
-# Traverse Board · 针路簿 Web Console
+# Universal-Code Web Console
 
-## 中文
+本目录包含 **Universal-Code** 的前端桌面与 Web 用户界面，基于 React 18、TypeScript 与 Vite 构建。
 
-schema v42 的 Run 概览显示三个 Plan 方向、已选方向、切片数量与是否仍需显式切换到 Deliver。D1-P1 在独立 capability 下增加“方向三选一”和“进入 Deliver”两个显式操作；选择不改阶段，Deliver 不启动/恢复执行，`capability_grant` 始终为 `false`。
+---
 
-schema v45-v46 的 Run 概览显示操作者引导队列的 pending/prepared/committed/cancelled 计数和有界元数据。D1-S1/S2 通过两个独立 capability 增加现有 Run-bound Session 的 enqueue/replay 和 pending-only 取消；`prepared=true` 时 UI 不提供取消。schema v73 再增加独立的 Run start/pause/resume 和最多八条冻结输入的显式 RunSupervisor 交接。浏览器不接收消息/模型正文、工具参数、operation 或 lease 身份，也不能编辑、重排或后台唤醒队列。
+## 技术栈 (Tech Stack)
 
-schema v71 的 External Skills 面板只读显示 Run 固定选择的 surface/profile、版本、信任类别、token 上界、声明工具数量以及 root/Specialist 准备/提交计数。它不接收 Skill 正文、路径、字节数、hash/digest/fingerprint、安装/选择 ID、operation key 或操作者/agent 身份，也没有 Run 选择、授权或执行按钮。D1-B1 仅在 Desktop 原生预览后提供另一次显式惰性安装确认；它不自动改变该面板对应的 Run 选择。
+- **核心框架**：React 18 + TypeScript + Vite
+- **代码与 Diff 编辑器**：Monaco Editor (本地离线打包，支持按需加载与 Proposal 恢复)
+- **视觉与样式系统**：纯 CSS 苹果液态玻璃（Apple Liquid Glass Acrylic）+ Tailwind CSS 工具类
+- **测试框架**：Vitest + React Testing Library
+- **数据协议**：基于 OpenAPI 3.1 强类型 DTO，通过 Server-Sent Events (SSE) 接收实时流式执行日志
 
-这是针路簿的本地 read-mostly 运维界面。React/Vite 只消费 Go 生成的 OpenAPI 3.1 DTO 和 `api.v1`，不会重新实现 Policy、审批、工作区权限、Shell、Docker、模型路由或 SQLite 逻辑。当前窄 mutation 包括非授权档位、受控 Run/Session/Plan/审批、Go-issued FileEdit 提案/审阅/apply、不可变操作者验证、显式 plan-item/evidence 关联、record-only 快照回执及其不授权元数据复核、status-only Provider 凭证设置、wake 意图/前台消费，以及 Desktop 确认式惰性 Skill 安装。FileEdit 恢复、Repository Diff/History/Exact Commit/Comparison 键盘可访问成对预览、逐检查项验证快照下载/回执历史、带复核元数据和精确 Verify 导航的 Code Handoff、带有界审计事实的 Code Journey 和 runtime capability/worker health 是只读投影；wake worker 只能由 Go 进程启动参数开启，TypeScript 没有运行时启用入口。
+---
 
-## 针路簿桌面界面 / Traverse Board Desktop Surface
+## 本地开发与联调模式 (Getting Started)
 
-D1-UX1/UX2/UX3 建立了最初的双表面工作台；D1-UX10/UX11 已用原生 Acrylic 和组件令牌替代
-旧背景与艺术字。当前 `PrayuBrand` 使用维护者批准的 `traverse-board-mark.png` 规范图片派生资产，
-不读取截图或旧字标图片。品牌、标题、导航和正文统一使用平台比例 UI 字体，中英文按同一语义
-层级设置字重与颜色；JetBrains Mono 只保留给代码、终端、Diff、指纹、精确标识和快捷键。
-任务、Run、设置导航和分段控制共享苹果风液态玻璃语义：空闲态透明、悬停态半透明、选中态为
-纯白不透明圆角表面和深色图标文字。旧橙色笔刷的渐变、裁切与伪元素已从源码删除。设置页显示
-真实 API、schema、版本、surface 与 capability 投影，只持久化外观和紧凑度，不保存凭证或
-授权结果。
+### 方式一：Vite 独立开发代理模式 (推荐日常前端开发)
 
-D1-UX4/UX5/UX6 增加 Wails 无边框窗口和原生最小化/最大化/关闭控制、默认 286 px 且可在
-232-420 px 内拖拽/键盘调整并本地记忆的侧栏，以及 Agent 输入区的附件/工作区、目标模式、计划模式、
-插件/Skill、模型、推理强度和上下文占用控件。侧栏拖拽热区保持透明，不显示橙色分隔线。模型列表
-按需读取 Go API 的真实可用性并沿用既有路由 mutation；当前 Provider 合同没有
-`reasoning_effort`，所以“高/最高”只展示为禁用能力，不会伪造已生效状态。桌面与移动布局都保持
-无横向溢出。
+该模式支持热模块替换 (HMR)，修改代码后浏览器即时更新：
 
-The current Traverse Board shell uses the maintainer-approved `traverse-board-mark.png` image
-derivative rather than a screenshot or legacy wordmark asset. Task, Run, Settings, and segmented
-selections share one Apple-inspired liquid-glass language: transparent at rest, translucent on
-hover, and opaque white with dark ink when selected. The legacy orange-brush gradients, clipping
-paths, and pseudo-elements have been deleted. D1-UX4/UX5/UX6 add a frameless Wails window,
-native window controls,
-a bounded and persisted resizable sidebar with a transparent drag target, and composer
-controls for attachments, target/plan modes, installed Skills, lazy Go-backed model routing,
-truthful reasoning capability state, and conservative context usage. Settings remains a
-read-only projection of Go-owned runtime facts. Established `CYBERAGENT_*`, HTTP, API, and
-CLI identifiers remain for backward compatibility.
-
-D1-UX11 adds `浅色`, `深色`, and `透明玻璃` as persisted appearance choices. The third mode
-uses the native Windows Acrylic compositor in Desktop and a readable translucent dark
-fallback in ordinary browsers. The three-way picker remains within a 390 px viewport without
-horizontal overflow. Appearance changes never alter Go permissions or runtime capabilities.
-
-D1-G1/I3/F1 进一步增加只读 Repository 页、metadata-only 多文件 change-set 摘要和 Code-only Journey。Repository 不执行 `git`、网络或 hook，也不返回 host root/body/remote；change set 不提供 Apply All，所有 mutation 仍是逐文件独立 Go route；Journey 的导航组件自身没有 API client，D1-V12 仅由父级传入既有严格 Handoff 查询中的最多三条非授权审计事实。
-
-schema v78 / D1-G2/V1/F2 增加有界脱敏 Repository Diff、独立 Verify 与 Code Handoff。Diff 最多 50 项、单项 64 KiB、总计 512 KiB；Verify 只记录操作者 `pass|fail|unknown` 观察，不运行命令或授予权限；Handoff 只汇总持久化 Plan/Queue/ChangeSet/Verification/Actions/Reports，并通过 Go event high-water 拒绝撕裂快照。三者都不提供 Git mutation、批量 apply、自动恢复或复合执行。
-
-Windows Desktop 与普通 `api serve` 现在都读取 Go 的
-`runtime_capabilities.v1`。React 只据此显示 FileEdit、系统凭证和 wake worker 状态；
-health 不含 token、owner、lease、Run 或私有错误，不能运行时启用 worker、安装服务
-或授予 mutation。每条控制 route 仍独立执行 control-token 与 capability 检查。
-
-当前界面提供：
-
-- Run 列表、状态过滤、目标/预算/租约摘要；
-- 注册 Workspace 选择，以及 Profile/Code-Cyber/Plan-Deliver 配置下的受控 Run 创建；
-- 有界 root/Specialist Agent 图、operator-gated delegation 审查/应用/调度摘要；
-- 只读 Fan-out 计划与最新 execution/shard 元数据；
-- Finding/Report 严重度、来源、Artifact metadata 与生命周期时间线；
-- 带 `Last-Event-ID` 恢复的鉴权 SSE 事件流；
-- WorkItem、Note、Artifact descriptor 和 Supervisor ToolRound 视图；
-- 操作者引导队列计数、顺序与状态元数据；
-- 外部 Skill 的有界来源、预算与交付状态元数据；
-- Session 列表、绑定 Run 和包含压缩状态的消息历史；
-- capability 开启且 Run 为 running/paused 时的 Session composer；成功只显示排队 sequence/status；
-- 未 prepared 的 pending 消息取消、Run Start/Pause/Resume 和 `maxSteps=1..8` 的 Run Queue 控件；
-- 只读脱敏 Provider/模型路由对话框、显式 Plan 选择/Deliver 控件和 metadata-only Approvals 页；
-- Windows Credential Manager 的 Provider 设置/删除入口；密码只驻留输入与单次请求，响应固定不回读明文且当前提示重启；
-- Diff 审阅后独立 apply、wake schedule/cancel 后一次前台 consume，以及 Desktop 原生 Skill 预览后的惰性安装确认；
-- Go-owned Files 页：只浏览注册 Workspace 的 canonical 相对路径、脱敏有界 UTF-8 与 non-authorizing provenance；
-- Go-owned Repository 页：只读 exact-root Git 状态、200 项输出上限、无父发现/重定向 metadata/进程/网络/hook；
-- Repository Local history：最多 50 个 first-parent commit、64 个本地 branch，主题脱敏且不返回 author/email/body/remote/root；
-- Repository Exact commit/comparison：只接受精确 object ID，最多显示 200 条 changed path/status/mode metadata；比较行可分别预览或在同一可聚焦只读区域成对显示既有 base/head 脱敏 regular-file preview，并用按钮或普通左右方向键在有界变化集合内导航；Escape/关闭图标会恢复精确触发焦点；不显示 author/email/body/blob/remote/root，不 checkout 或修改 ref；
-- Repository Diff：最多 50 项 secret-redacted patch、单项 64 KiB/总计 512 KiB，非文本内容闭集显示且无 mutation；
-- 本地 lazy Monaco/Diff editor：只编辑 Go 发放的完整安全 UTF-8 source，并用短期 handle 创建待审 proposal；过期 handle 仅在旧 hash 仍匹配时换发，durable pending proposal 只恢复成不可编辑 Diff；不接收 host path、不直接写文件、无 CDN fallback；
-- 多文件 change-set 摘要：最多 100 项，只显示状态/字节/独立 action readiness，partial apply 可见且没有 batch/atomic mutation；
-- Code-only Journey：Scope、Plan、Queue and execute、Review、Verify and report 只导航既有视图，并显示最多三条 metadata-only/non-authorizing receipt-review 审计事实；
-- Go-owned Actions 页：聚合最多 100 条 pending steering/approval/FileEdit/due-wake metadata，只导航到既有视图，不自动处理；
-- Evidence 页：只列 exact Run/Session 已附加来源/hash/time 与固定 false instruction authority，source navigation 复用既有 Files 边界；
-- Verify 页：独立 capability 下记录/列出不可变 `pass|fail|unknown` 操作者观察，明确不是命令、模型断言、审批或授权；
-- Verify plan：单独记录最多 32 项 immutable operator checklist，固定 guidance-only，不执行检查、不推导结果；
-- Verify association：操作者显式把一条 later evidence 关联到一个 earlier plan item；每项只显示 pass/fail/unknown 计数与 frozen snapshot-keyset 分页，并可下载 digest-bound Markdown/JSON metadata snapshot、显式记录不可变 metadata receipt，再单独确认或质疑其元数据；回执/复核历史不含正文/操作者身份且固定不是 snapshot/result acceptance、approval 或 execution，矛盾证据保留且不推导整份计划通过；
-- Handoff 页：可重建显示 Plan/Queue/ChangeSet/Verification/Actions/Reports 有界摘要，以及最多 20 条 receipt-review metadata 与 confirmed/disputed 计数，并下载带 event high-water/byte count/SHA-256 的 Markdown/JSON；复核引用只有在 Verify 独立匹配 review/receipt/plan/item digest 后才聚焦，漂移不 fallback；不复制 reviewer identity/private body，不接受结果或启动/恢复执行；
-- `Ctrl+K` 命令面板：只导航既有 Run 页签或刷新当前查询，不提交 mutation、路径、正文、审批、进程或 capability；
-- apply/wake/install 的统一 durable operation receipt，严格显示 replay/retry/cleanup 状态；
-- `preview|docker|local` 执行档位、固定门禁与 false authority 状态；
-- 只驻留页面内存的 read bearer token 和可选 distinct control token。
-
-浏览器不持久化 token，也不把 token 放入 URL、body 或静态资源请求。可选 control token 只驻留页面内存；Go 决定 Workspace/Run/Session 绑定、默认预算、backend、scope、审批、风险、门禁和全部权限位。不确定失败后的 operation key 只在同一未改变意图下复用；消息、lifecycle action、`maxSteps`、Diff 或 wake 意图改变都会轮换 key。除独立 Explorer 返回的有界、脱敏、明确非授权 Workspace 文本外，Artifact/Skill/Session 正文、模型输出、工具参数、私有叙述、lease/fencing token 和宿主/容器进程启动仍不向 Web 开放；FileEdit apply 和 Skill Registry 写入只能走各自的窄 Go control。事件 envelope 版本由 Go/OpenAPI/TypeScript 共用 literal `v1`；SSE 在 parse/transport failure 后先 cancel reader 再重连，避免遗留响应占满浏览器连接。
-
-同一 bundle 也被 Desktop 编译进 Wails v2.13.0 Windows 壳。React 通过四个方法的严格 native bridge 取得内存连接材料、选择/预览 Skill，并消费一次性安装确认句柄；不监听端口、不使用 Local Storage。Desktop 通过同一高水位 cursor 轮询事件，Skill picker 不向 React 暴露路径或 bytes。Actions、Evidence 和命令面板只消费 read bearer/本地导航。New Run、Session、Plan、Approval、FileEdit proposal/review/apply、Provider credential 和 wake mutation 始终走进程内 Go HTTP Handler，并且只在各自 capability 开启时出现。Monaco 及五类 worker 均从本地 bundle 惰性加载；Provider 修改由 Go 原子 reload generation，`--enable-wake-worker` 只在 Go 启动时生效，UI 只显示其 1 x 1-step health/drain。
-
-### 生产式本地运行
-
-```powershell
-# repository root
-cd web
-npm ci
-npm run check:api
-npm run build
-cd ..
-$env:CYBERAGENT_API_TOKEN = "<local-read-token>"
-$env:CYBERAGENT_API_CONTROL_TOKEN = "<optional-distinct-control-token>"
-go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765 --ui-dir web/dist
-```
-
-打开 `http://127.0.0.1:8765`，输入同一个 read token；需要切换档位或创建 Run 时再输入 distinct control token。`--ui-dir` 必须指向 Vite 生产输出；Go 会在启动时校验并读入不可变快照。HTML 不缓存，带哈希的静态资源使用 immutable 缓存，未知资源与不安全 fallback fail closed。静态请求匿名可读，但携带 `Authorization`、query、body 或非 GET/HEAD 方法会被拒绝，避免 bearer 意外发送给资源处理器。
-
-### Vite 开发模式
-
-```powershell
-# terminal 1: repository root
-$env:CYBERAGENT_API_TOKEN = "<local-read-token>"
-$env:CYBERAGENT_API_CONTROL_TOKEN = "<optional-distinct-control-token>"
+```bash
+# 终端 1：在仓库根目录启动 Go API 核心服务
 go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765
 
-# terminal 2
+# 终端 2：启动前端 Vite 开发服务器
 cd web
 npm ci
-npm run check:api
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5173`。默认代理目标为 `http://127.0.0.1:8765`；需要改端口时设置 `CYBERAGENT_API_TARGET`，该值仍必须是 HTTP(S) 回环 URL。
+开发服务器默认监听 `http://127.0.0.1:5173`，已内置代理将 `/api` 请求自动转发至 `http://127.0.0.1:8765`。
 
-## English
+### 方式二：生产打包与 Go 统一托管模式 (验证构建与最终交付)
 
-This is the local read-mostly operations UI for CyberAgent Workbench. React/Vite consumes the Go-generated OpenAPI 3.1 DTOs and `api.v1`; it does not reimplement policy, approvals, workspace authorization, Shell, Docker, model routing, or SQLite behavior. Its narrow mutations include controlled Run/Session/Plan/approval operations, Go-issued FileEdit propose/review/apply, immutable operator verification evidence, guidance-only checklists, explicit plan-item/evidence associations, record-only snapshot receipts, and non-authorizing receipt-metadata review, status-only Provider credential setting, wake intent/foreground consumption, and Desktop-confirmed inert Skill installation. FileEdit recovery, exact-root Repository state/redacted Diff/local history/exact-commit comparison with keyboard-accessible paired base/head previews, deterministic verification snapshot download/history, independent multi-file summaries, Code Handoff/export with exact review navigation, bounded Code Journey audit facts, and runtime capability/worker health are read-only projections. Journey navigation itself has no API client; its parent passes only the existing strict Handoff facts. TypeScript has no runtime endpoint that can enable the wake worker or batch-apply files.
+该模式直接由 Go 进程提供生产静态资源服务，测试最真实的桌面打包环境：
 
-The current UI includes controlled Run/Session/Plan/approval workflows, Agent/delegation/Fan-out/Finding views, resumable events, Workspace Files/search, repository state/redacted Diffs/local history/exact-commit comparison with keyboard-accessible paired base/head previews, evidence/actions/verification plans/outcomes/explicit associations with frozen pagination, digest-bound snapshot downloads, immutable metadata receipt history, and one non-authorizing review per receipt, regenerable Code Handoff export with exact fail-closed Verify navigation, bounded Journey audit facts, durable receipts, a navigation/refresh-only `Ctrl+K` palette, a locally bundled lazy Monaco proposal/recovery/Diff editor, and status-only system-credential controls with Registry generation status. Bearers, retry keys, source handles, review navigation targets, and password inputs stay in page memory and never enter a URL or browser storage. TypeScript submits no backend, scope, gate, private lease, host path, tool argument, or authority field; a proposal submission contains only a Go-issued handle and replacement text and cannot write the file. Verification plans are guidance, outcomes remain explicit operator observations, associations preserve contradictory evidence and never infer an overall pass, and snapshot download, record-only receipt/review, Handoff export, and review navigation cannot accept a result, resume, or mutate a Run. Go/OpenAPI/TypeScript share event-envelope literal `v1`, and failed SSE streams are cancelled before reconnect so abandoned responses cannot consume browser connection slots.
-
-For the production-style local path, run `npm run build`, then start `cyberagent api serve --ui-dir web/dist`. Go validates and snapshots the bundle at startup, serves it from the same loopback origin as `api.v1`, applies a strict CSP, disables HTML caching, and gives only hashed assets immutable caching. Static requests are anonymous but reject authorization headers, queries, bodies, and methods other than GET/HEAD. For frontend development, Vite can still proxy same-origin `/api` requests to a loopback Go service and rejects non-loopback targets.
-
-Desktop compiles the same bundle into a Wails v2.13.0 Windows shell. React obtains ephemeral connection material through a strict four-method native bridge and calls the Go API in process without a listening port or browser storage. Desktop consumes `run-event-poll.v1` with the same Run-bound high-water cursor as SSE, while WebView2 and renderer-origin/navigation gates fail closed. Monaco uses only local bundled assets/workers. FileEdit proposal/recovery, Provider credential/generation, and wake controls/health remain independent Go HTTP capabilities; the optional worker can be enabled only at process startup and stays capped at one intent/one step.
-
-Open `http://127.0.0.1:8765` for the Go-hosted build or `http://127.0.0.1:5173` for Vite development, then enter the same read token shown or configured for the Go process. Enter the distinct control token only for a narrow mutation. Bounded execution may call the configured model and approved structured tools through Go, but no Web control can start a Shell, Local, Docker, or other host/container process.
-
-## Checks
-
-```powershell
-npm run check:api
-npm run typecheck
-npm test
+```bash
+cd web
+npm ci
 npm run build
-npm audit --audit-level=low
+cd ..
+
+# 启动 Go 服务托管前端产物
+go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765 --ui-dir web/dist
 ```
+
+访问 `http://127.0.0.1:8765` 即可使用。如配置了 API Token，需在首次加载时输入对应凭证。
+
+---
+
+## 核心业务功能视图 (Key Views & Components)
+
+| 核心视图 | 对应模块路径 | 功能说明 |
+| :--- | :--- | :--- |
+| **会话舞台 (Stage)** | `src/v2/components/conversation.tsx` | 连续任务对话流、消息卡片、工具调用状态呈现与响应流式打字机。 |
+| **伴侣停靠坞 (Companion Dock)** | `src/v2/styles.css` (`.v2-companion-dock`) | 智能对齐右侧的工作流面板，支持检查点、代码审查与工具箱原生平移停靠。 |
+| **任务输入舱 (Composer)** | `src/v2/components/composer.tsx` | 任务指令输入、文件/图片附件上传、模型选择器与权限档位切换。 |
+| **代码 Diff 与编辑** | `src/components/unified-diff.tsx` / `monaco/` | 逐行差异对比、待审提案（Proposal）接受/驳回与本地 Monaco 编辑。 |
+| **网络检索存证** | `src/components/safe-markdown.tsx` / `evidence/` | 网页快照渲染、GitHub/HN/RSS 来源标注与点击溯源。 |
+| **系统设置与外观** | `src/v2/components/provider-settings.tsx` | 多模型凭据配置、系统/浅色/深色/雾透磨砂玻璃外观实时切换。 |
+
+---
+
+## 目录结构 (Directory Layout)
+
+```text
+web/
+├── src/
+│   ├── api/             # Go 后端 API 客户端、OpenAPI 生成的 DTO (schema.d.ts)
+│   ├── assets/          # 字体（HarmonyOS Sans SC）、图标与图片静态资源
+│   ├── components/      # 通用基础 UI 组件（按钮、模态框、Diff 视图、状态卡片等）
+│   ├── hooks/           # 通用 React Hooks（流式读取、按键绑定、焦点捕获等）
+│   ├── lib/             # 格式化、剪贴板、剪裁等纯函数工具库
+│   ├── v2/              # V2 双列会话舞台与伴侣停靠面板 (Companion Dock)
+│   │   ├── components/  # V2 核心组件（会话流、输入区、工作台、停靠抽屉）
+│   │   └── styles.css   # V2 苹果液态玻璃控件与弹性停靠样式
+│   ├── App.tsx          # 前端根组件与顶层路由调度
+│   └── styles.css       # 全局样式、设计令牌与主题光场定义
+├── package.json
+└── vite.config.ts
+```
+
+---
+
+## 常用脚本与检查指令
+
+| 命令 | 用途 |
+| :--- | :--- |
+| `npm run dev` | 启动 Vite 热重载开发服务器 |
+| `npm run typecheck` | 执行 TypeScript 全量静态类型检查 (`tsc -b`) |
+| `npm test` | 运行 Vitest 全量单元与集成测试套件 |
+| `npm run build` | 编译打包前端生产静态资源到 `dist/` |
+| `npm run check:api` | 检查前端 DTO 与 `docs/openapi.json` 是否存在接口漂移 |
+| `npm run generate:api`| 基于 `docs/openapi.json` 重新生成 `src/api/schema.d.ts` |
+
+---
+
+## 纯 CSS 视觉与设计规范 (Design Language)
+
+- **纯 CSS 物理光学折射**：采用由 GreyD097 纯 CSS 方案启发的双向对角内阴影 (`inset 1.5px -1.5px` 与 `inset -1.5px 1.5px`)，在按钮和面板边缘模拟凸透镜全反射效果。
+- **环境底光网格**：注入多点离散光场 (`--prayu-ambient-radial`) 搭配 `backdrop-filter: blur(34px) saturate(190%) contrast(102%)`，确保在深色模式下呈现透亮亚克力质感，杜绝普通黑底导致的色彩发灰坍塌。
+- **极致渲染性能**：绝不使用高开销的 SVG 滤镜（`feTurbulence`）或全屏 WebGL Canvas，确保承载数千行代码与终端滚动输出时维持 120fps 丝滑帧率。
+
+---
+
+## English Overview
+
+Universal-Code Web Console is the desktop and web operator interface for Universal-Code, built with **React 18**, **TypeScript**, and **Vite**.
+
+### Quick Start
+1. Run backend: `go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765`
+2. Run frontend: `npm ci && npm run dev`
+3. Open `http://127.0.0.1:5173` (requests to `/api` are automatically proxied).
+
+### Key Features
+- **Fluid Companion Dock**: A docked assistant panel alongside the main conversation stage without overlapping content.
+- **Monaco Diff Viewer**: Line-by-line inspection and auditable rollback.
+- **Pure CSS Apple Liquid Glass**: Acrylic blur and specular rim sheen with zero WebGL/SVG performance overhead.

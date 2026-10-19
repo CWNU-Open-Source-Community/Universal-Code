@@ -1,91 +1,118 @@
 <div align="center">
-  <img src="assets/branding/traverse-board-mark.png" alt="Universal-Code 图标" width="180">
+  <img src="assets/branding/traverse-board-mark.png" alt="Universal-Code Logo" width="140">
   <h1>Universal-Code</h1>
-  <p><strong>在本地项目中，让 AI 帮你改代码、运行命令、查资料并审阅结果。</strong></p>
+  <p><strong>面向本地项目的开源 AI 编程工作台</strong></p>
+  <p>连接云端与本地大模型，在同一工作流中读写代码、运行终端命令、查阅资料并实时审阅 Diff 改动。</p>
+
   <p>
     <a href="README.md">简体中文</a> |
     <a href="README.en.md">English</a>
   </p>
+
   <p>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square"></a>
-    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/releases"><img alt="Release" src="https://img.shields.io/github/v/release/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=blue&logo=github"></a>
+    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=green"></a>
+    <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blueviolet?style=flat-square">
+    <img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white">
+    <img alt="Node" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
+    <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black">
+    <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square"></a>
+  </p>
+  <p>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github&color=gold"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/issues"><img alt="Issues" src="https://img.shields.io/github/issues/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=orange"></a>
   </p>
 </div>
 
-Universal-Code 是一个桌面 AI 编程工作台。连接你选择的模型，在同一段对话中推进项目，查看文件改动、命令结果和资料来源。
+---
 
-**v1.0.0「启航」正在准备发布。** [发布说明](docs/releases/v1.0.0.md)记录已验证范围和待完成事项；目前公开下载仍有历史预览，Mac 新包为未公证预览。
+## 核心特性
 
-## 为什么选择 Universal-Code
+- **深度聚焦本地项目**：直接阅读、分析与修改本地代码库，内置 Diff 逐行审阅与可信撤销（Rewind / Checkpoints）能力。
+- **透明可控的安全策略**：支持只读分析、交互审批（Approval Mode）与全自动（Full Access）权限分级，高危操作（文件删除、非白名单命令）严格阻断并要求人工确认。
+- **主流模型即开即用**：原生接入 OpenAI、Anthropic Claude、DeepSeek、Kimi、Ollama 本地模型与任何兼容 OpenAI 的第三方 API，支持单会话内即时热切，并支持通过系统浏览器快速完成 ChatGPT 账户授权登录。
+- **真实来源的网络检索**：优先调用供应商原生搜索，支持直接抓取 GitHub PR/Issue、Hacker News 与 RSS/Atom 资讯，自动附带快照存证与引用出处。
+- **现代苹果液态玻璃美学**：采用纯 CSS 物理折射模型（macOS / VisionOS 亚克力液态玻璃风格），提供深色、浅色与雾透磨砂质感，兼具 120fps 极速渲染。
 
-- **围绕真实项目工作**：阅读和修改文件、运行构建、查看差异，把任务结果落到工作区。
-- **少打断，保留控制**：选择当前任务的 Full Access 后，普通文件修改与联网命令可自动执行；文件删除仍需确认。
-- **查资料时保留来源**：优先使用供应商支持的原生搜索，也能读取 GitHub、Hacker News 和 RSS/Atom，并保留网页快照与引用。
-- **继续已有工作**：任务历史、工具记录和检查点保存在本机，可回看进度、检查改动和继续对话。
-
-## 外观
-
-在 **设置 → 外观** 中选择 **系统、浅色、深色、雾透**。系统模式随设备设置切换浅深；雾透使用灰蓝底色与轻盈的磨砂材质，还可调整模糊度、磨砂度和亮度。
-
-![Universal-Code 同一段对话的浅色与深色外观，左浅右深斜向分割](docs/images/appearance/light-dark.png)
-
-截图来自当前源码的生产构建，使用本地演示项目与离线示例回复。左侧为浅色，右侧为深色。
-
-<details>
-<summary>查看主题选项与雾透外观</summary>
-
-![系统、浅色、深色、雾透四个主题选项](docs/images/appearance/theme-options.png)
-
-![Universal-Code 雾透外观](docs/images/appearance/conversation-mist.png)
-
-</details>
-
-更多设置见[外观说明](docs/usage.md#外观--appearance)。
+---
 
 ## 快速开始
 
-### 1. 打开应用
+### 方式一：下载预编译客户端
 
-| 平台 | 从这里开始 |
-| --- | --- |
-| Windows 10/11 | [下载已发布版本](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases)中的 `TraverseBoard.exe`，双击打开；需要 WebView2。[下载说明](docs/windows-release.md) |
-| macOS | [获取 Apple Silicon / Intel 预览包](docs/macos-release.md)，解压并打开 `TraverseBoard.app`。当前未公证，模型凭据配置仍有平台限制。 |
+| 平台 | 下载与运行说明 |
+| :--- | :--- |
+| **Windows 10/11** | 前往 [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) 下载 `Universal-Code.exe`，双击即可运行（需系统安装 WebView2 Runtime）。详见 [Windows 安装说明](docs/windows-release.md)。 |
+| **macOS (Apple Silicon / Intel)** | 前往 [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) 下载 `.dmg` 或 `.zip`，解压并拖入 Applications。详见 [macOS 安装说明](docs/macos-release.md)。 |
 
-下面是当前 v1.0.0 源码中的 Windows 上手流程；历史预览的界面可能不同。需要试用最新源码时，见[本地构建](CONTRIBUTING.md#开发环境--development-environment)。
+### 方式二：从源码构建运行
 
-### 2. 连接模型
+确保本地已安装 **Go 1.26+** 与 **Node.js 24+**：
 
-新建对话并选择项目文件夹。首次对话按提示连接模型，选择供应商并填写 API Key、模型名称及必要的服务地址，点击 **保存并检查**。检查通过后会回到原草稿并选中该模型；已有模型可在输入区切换。
+```bash
+# 1. 克隆代码仓库
+git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
+cd Universal-Code
 
-桌面版也可在模型设置中选择 **ChatGPT**，点击 **Continue with ChatGPT** 在系统浏览器授权，然后选择账户模型并完成检查。支持刷新模型、重新登录和退出；[实现与验收记录](docs/acceptance/2026-10-15-chatgpt-sign-in.md)注明了当前验证范围。
+# 2. 构建前端控制台
+cd web
+npm ci
+npm run build
+cd ..
 
-需要模型服务的可用凭据和额度。检查会实际调用所选服务，消耗对应订阅额度或产生 API 费用；原生搜索也取决于该服务是否支持。
+# 3. 启动桌面应用或服务
+go run ./cmd/cyberagent-desktop
+```
 
-### 3. 发出第一条任务
+---
 
-在这段对话中，先试一个容易核对结果的请求：
+## 模型配置与连接
 
-> 阅读这个项目，说明启动方式和主要目录，再指出一处值得改进的地方。
+首次打开客户端或新建对话时，点击输入区上方的模型选择器进行配置：
 
-需要执行修改时，在当前任务选择合适的权限档。完成后查看文件差异、命令输出和引用；有后续要求，直接在同一对话继续。
+1. **云端 API（OpenAI / Claude / DeepSeek / Kimi 等）**：
+   - 选择对应提供商，填入你的 API Key、模型标识符及服务 Base URL（如适用）。
+   - 点击 **保存并检查**，系统将发起一次轻量调用以验证额度与连通性。
+2. **ChatGPT 账户浏览器授权（无需 API Key）**：
+   - 在模型配置中选择 **ChatGPT**，点击 **Continue with ChatGPT**。
+   - 系统将唤起系统浏览器完成授权，随后可直接选择账户可用模型。
+3. **本地 Ollama（零门槛离线运行）**：
+   - 本地启动 Ollama 服务（默认 `http://127.0.0.1:11434`）。
+   - 在提供商列表选择 **Ollama**，输入模型名称（如 `qwen2.5-coder:7b`、`deepseek-r1:8b`）即可直接调用。
 
-## 按需了解更多
+---
 
-| 想做什么 | 文档 |
-| --- | --- |
-| 配置模型或使用 CLI | [使用手册](docs/usage.md) |
-| 配置搜索、查看来源与排查失败 | [搜索与引用](docs/web-evidence.md) |
-| 检查或恢复文件改动 | [工作区检查点](docs/workspace-checkpoints.md) |
-| 接入 MCP、插件或代码智能 | [扩展](docs/extensions.md) · [LSP](docs/code-intelligence.md) |
-| 从源码开发，了解设计 | [贡献指南](CONTRIBUTING.md) · [架构](docs/architecture.md) |
-| 查看全部文档和开发历史 | [文档导航](docs/README.md) · [历史索引](docs/development-history.md) |
+## 界面预览
 
-## 反馈与贡献
+| 浅色与深色对比 | 雾透磨砂玻璃 (Mist) |
+| :---: | :---: |
+| ![浅色与深色界面对比](docs/images/appearance/light-dark.png) | ![雾透外观](docs/images/appearance/conversation-mist.png) |
 
-通过 [Issues](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues)反馈问题或建议，参与开发请阅读[贡献指南](CONTRIBUTING.md)。当前核心方向是通用 AI 编程工作流，详见[产品范围](docs/PRODUCT_SCOPE.md)。
+可在客户端 **设置 → 外观** 中自由切换 **系统跟随、浅色、深色、雾透玻璃**。
 
-## 许可证
+---
 
-[Apache License 2.0](LICENSE)。
+## 详细文档导航
 
-**第三方字体声明：** 中文界面使用 Huawei Device Co., Ltd. 的 HarmonyOS Sans Fonts，完整[字体许可](web/public/licenses/HarmonyOS-Sans.txt)随软件发布；[来源与哈希](web/src/assets/fonts/PROVENANCE.md)可供核对。
+| 领域 | 文档链接 | 描述 |
+| :--- | :--- | :--- |
+| **使用指南** | [用户手册 (Usage Guide)](docs/usage.md) | 完整客户端使用、CLI 命令与常见工作流 |
+| **搜索与取证** | [网络检索与快照 (Web Evidence)](docs/web-evidence.md) | 检索配置、快照存储、URL 溯源与失败诊断 |
+| **改动审计** | [工作区检查点 (Checkpoints)](docs/workspace-checkpoints.md) | 逐行 Diff 审阅、快照保存与安全恢复 (Rewind) |
+| **生态扩展** | [扩展与 MCP 协议 (Extensions)](docs/extensions.md) | 接入 Model Context Protocol (MCP) 与外部 Skill |
+| **代码智能** | [LSP 语言服务器 (Code Intelligence)](docs/code-intelligence.md) | 符号跳转、类型推断与代码索引支持 |
+| **系统架构** | [架构设计方案 (Architecture)](docs/architecture.md) | Go 控制面、执行状态机与安全策略实现 |
+| **发布日志** | [版本发布说明 (Release Notes)](docs/releases/v1.0.0.md) | v1.0.0 验证范围、兼容性与更新记录 |
+
+---
+
+## 参与贡献
+
+欢迎提交 Issue 与 Pull Request！在开始开发前，请先阅读我们的 [贡献指南 (CONTRIBUTING.md)](CONTRIBUTING.md)。
+
+## 开源许可证与字体合规
+
+- 本项目基于 [Apache License 2.0](LICENSE) 协议开源。
+- **第三方字体声明**：中文界面包含华为技术有限公司授权的 HarmonyOS Sans Fonts，完整 [字体许可文本](web/public/licenses/HarmonyOS-Sans.txt) 随软件一并分发；字体源文件与校验哈希详见 [字体出处说明](web/src/assets/fonts/PROVENANCE.md)。
