@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Archive, ArchiveRestore, ArrowLeft, Box, Cpu, Folder, MessagesSquare, RefreshCw,
+import { Archive, ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, Cpu, Folder, MessagesSquare, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
 import type { ThreadView, WorkspaceView } from "../../api/types";
 import { useLocale } from "../../lib/locale";
@@ -7,7 +7,7 @@ import { useLocale } from "../../lib/locale";
 export type V2SettingsSection = "general" | "permissions" | "appearance" | "voice" |
   "models" | "plugins" | "browser" | "hooks" | "git" | "environment" |
   "worktrees" | "keyboard" | "inspector" | "archived" | "extensions" | "skills" |
-  "advanced-models" | "about" | "shortcuts" | "connections" | "task-configuration" | "configuration";
+  "advanced-models" | "about" | "shortcuts" | "connections" | "task-configuration" | "configuration" | "usage";
 
 const executionLabels = {
   idle: ["空闲", "Idle"], running: ["执行中", "Running"], stopping: ["正在停止", "Stopping"], stop_failed: ["停止失败", "Stop failed"],
@@ -156,6 +156,7 @@ const settingsGroups: Array<{ label: [string, string]; items: Array<{
     { id: "general", label: ["常规", "General"], icon: Settings },
     { id: "configuration", label: ["配置", "Configuration"], icon: Settings },
     { id: "appearance", label: ["外观", "Appearance"], icon: Palette },
+    { id: "usage", label: ["用量统计", "Usage"], icon: ChartNoAxesCombined },
     { id: "shortcuts", label: ["快捷键", "Shortcuts"], icon: Keyboard },
     { id: "about", label: ["关于", "About"], icon: Info },
   ] },

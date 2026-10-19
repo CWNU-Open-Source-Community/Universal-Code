@@ -15,12 +15,14 @@ import (
 )
 
 const (
-	ControlledCommandPlanProtocolVersion    = "controlled_command_plan.v1"
-	ControlledCommandPolicyVersion          = "controlled_command_policy.v1"
-	DefaultControlledCommandTimeout         = 30 * time.Second
-	MaxControlledCommandTimeout             = 2 * time.Minute
-	MaxControlledRelativePathRunes          = 512
-	controlledPowerShellWorkspaceListScript = `& { param([string]$RelativePathHex) if ($RelativePathHex -notmatch '\Ah[0-9a-f]+\z' -or (($RelativePathHex.Length - 1) % 2) -ne 0) { throw 'invalid relative path' }; $Hex = $RelativePathHex.Substring(1); $Bytes = [byte[]]@(for ($Index = 0; $Index -lt $Hex.Length; $Index += 2) { [Convert]::ToByte($Hex.Substring($Index, 2), 16) }); $RelativePath = [Text.Encoding]::UTF8.GetString($Bytes); Get-ChildItem -LiteralPath $RelativePath -Force | Select-Object Name,Length,Attributes | ConvertTo-Json -Compress }`
+	ControlledCommandPlanProtocolVersion = "controlled_command_plan.v1"
+	ControlledCommandPolicyVersion       = "controlled_command_policy.v1"
+	DefaultControlledCommandTimeout      = 30 * time.Second
+	MaxControlledCommandTimeout          = 2 * time.Minute
+	MaxControlledRelativePathRunes       = 512
+	// Load the known system manifests directly before cmdlet discovery can
+	// analyze available binary modules in Windows PowerShell 5.
+	controlledPowerShellWorkspaceListScript = `& { param([string]$RelativePathHex) if ($RelativePathHex -notmatch '\Ah[0-9a-f]+\z' -or (($RelativePathHex.Length - 1) % 2) -ne 0) { throw 'invalid relative path' }; $Hex = $RelativePathHex.Substring(1); $Bytes = [byte[]]@(for ($Index = 0; $Index -lt $Hex.Length; $Index += 2) { [Convert]::ToByte($Hex.Substring($Index, 2), 16) }); $RelativePath = [Text.Encoding]::UTF8.GetString($Bytes); Microsoft.PowerShell.Core\Import-Module -Name ($PSHOME + '\Modules\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1'),($PSHOME + '\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop; Get-ChildItem -LiteralPath $RelativePath -Force | Select-Object Name,Length,Attributes | ConvertTo-Json -Compress }`
 )
 
 var ErrControlledCommandBoundary = errors.New(

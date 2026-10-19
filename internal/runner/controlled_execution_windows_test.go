@@ -126,6 +126,24 @@ func TestWindowsFixedCommandRuntimeUsesRestrictedNativeProcess(t *testing.T) {
 			if !bytes.Contains(result.stdout.value, []byte(want)) {
 				t.Fatalf("fixed output missing %q: %q", want, result.stdout.value)
 			}
+			if kind == ControlledCommandPowerShellWorkspaceList {
+				var listing struct {
+					Name       string
+					Length     int64
+					Attributes uint32
+				}
+				if err := json.Unmarshal(result.stdout.value, &listing); err != nil || listing.Name != want || listing.Length != int64(len("marker")) {
+					t.Fatalf("fixed listing changed: %q, error=%v", result.stdout.value, err)
+				}
+				markerPath, err := windows.UTF16PtrFromString(filepath.Join(request.WorkspaceRoot, want))
+				if err != nil {
+					t.Fatal(err)
+				}
+				attributes, err := windows.GetFileAttributes(markerPath)
+				if err != nil || listing.Attributes != attributes {
+					t.Fatalf("fixed listing attributes=%d want=%d error=%v", listing.Attributes, attributes, err)
+				}
+			}
 			if reaped, err := waitControlledJobReaped(t.Context(), native.job, time.Second); err != nil || !reaped {
 				t.Fatal("fixed process tree remained", reaped, err)
 			}

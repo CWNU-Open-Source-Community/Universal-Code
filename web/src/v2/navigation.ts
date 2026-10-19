@@ -7,7 +7,7 @@ export type V2Route = { kind: "initial" | "new" | "thread" | "invalid";
   threadID?: string; section?: V2SettingsSection; view?: "inspector";
   tool?: "run" | "session" | "schedule"; resourceID?: string; pane?: V2RunPane };
 const sections: string[] = ["general", "models", "permissions", "appearance", "inspector", "archived",
-  "extensions", "skills", "advanced-models", "about", "shortcuts", "connections", "task-configuration", "configuration"];
+  "extensions", "skills", "advanced-models", "about", "shortcuts", "connections", "task-configuration", "configuration", "usage"];
 
 // Fragments work with both the loopback UI and the existing Desktop asset
 // server. History contains navigation identity only, never tokens or drafts.

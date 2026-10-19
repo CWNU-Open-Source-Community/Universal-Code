@@ -15,6 +15,7 @@ it("restores task/settings identity and rejects malformed links without guessing
   expect(readV2Route("#/new")).toEqual({ kind: "new" });
   expect(readV2Route("#/new/settings/task-configuration")).toEqual({ kind: "new", section: "task-configuration" });
   expect(readV2Route("#/new/settings/configuration")).toEqual({ kind: "new", section: "configuration" });
+  expect(readV2Route("#/new/settings/usage")).toEqual({ kind: "new", section: "usage" });
   expect(readV2Route("#/threads/thread-42/settings/configuration")).toEqual({ kind: "thread", threadID: "thread-42", section: "configuration" });
   for (const hash of ["#/threads/%ZZ", "#/threads/../../another", "#/threads/%2fother", "#/threads/task/settings/unknown"]) {
     expect(readV2Route(hash)).toEqual({ kind: "invalid" });
