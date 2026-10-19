@@ -189,6 +189,7 @@ type DockerImageInspection struct {
 	VolumeCount           int
 	ProjectActionsVersion string
 	PreparationVersion    string
+	PNPMVersion           string
 }
 
 func (image DockerImageInspection) Normalize(requestedDigest string) (DockerImageInspection, error) {
@@ -198,7 +199,7 @@ func (image DockerImageInspection) Normalize(requestedDigest string) (DockerImag
 		!validObservationText(image.User, 256, true) ||
 		!validObservationText(image.RootFSType, 64, true) ||
 		!validObservationText(image.GraphDriver, 128, true) || len(image.RepoDigests) > 128 ||
-		image.EnvironmentCount < 0 || image.EnvironmentCount > 4096 ||
+		!validObservationText(image.PNPMVersion, 64, true) || image.EnvironmentCount < 0 || image.EnvironmentCount > 4096 ||
 		image.VolumeCount < 0 || image.VolumeCount > 4096 || (image.ProjectActionsVersion != "" && image.ProjectActionsVersion != "1") || (image.PreparationVersion != "" && image.PreparationVersion != "1") {
 		return DockerImageInspection{}, errors.New("docker image inspection is invalid")
 	}

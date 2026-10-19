@@ -997,7 +997,7 @@ func equalDockerLabels(actual map[string]string, expected []DockerContainerLabel
 }
 
 // The fixed Standard Code image carries version metadata that Docker inherits
-// into Config.Labels. Those two fixed values grant no ownership: every managed
+// into Config.Labels. Those fixed values grant no ownership: every managed
 // and lifecycle label must still match exactly, and generic profiles retain
 // strict label equality.
 func dockerContainerProfileLabelsMatch(actual map[string]string, spec DockerContainerSpec,
@@ -1011,6 +1011,10 @@ func dockerContainerProfileLabelsMatch(actual map[string]string, spec DockerCont
 		switch name {
 		case DockerStandardCodeProjectActionsLabel, DockerStandardCodePreparationLabel:
 			if value != "1" {
+				return false
+			}
+		case DockerStandardCodePNPMVersionLabel:
+			if value != DockerStandardCodePNPMVersion {
 				return false
 			}
 		default:

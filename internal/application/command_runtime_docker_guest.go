@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/sandbox"
 )
 
 // Docker resolves fixed image executables without consulting the host PATH.
@@ -47,7 +48,7 @@ func (e *DockerSandboxCommandRuntimeExecutor) NormalizeCommandRuntimeSpec(spec r
 	intent.Executable = guest
 	for _, argument := range intent.Arguments {
 		if strings.HasPrefix(argument, `\\`) || (len(argument) > 1 && argument[1] == ':') ||
-			(path.IsAbs(argument) && !strings.HasPrefix(argument, "/workspace/") && argument != "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js") {
+			(path.IsAbs(argument) && !strings.HasPrefix(argument, "/workspace/") && argument != "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && argument != sandbox.DockerStandardCodePNPMCLI) {
 			return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 		}
 	}

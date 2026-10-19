@@ -130,6 +130,17 @@ func (probe DockerReadinessProbe) ProjectPreparationAvailable(ctx context.Contex
 	return err == nil && image.ProjectActionsVersion == "1" && image.PreparationVersion == "1", err
 }
 
+// PNPMPreparationAvailable reads only the admitted image's fixed version label.
+// Older preparation images remain usable for npm and Go.
+func (probe DockerReadinessProbe) PNPMPreparationAvailable(ctx context.Context, digest string) (bool, error) {
+	image, err := probe.Transport.InspectImage(ctx, digest)
+	if err != nil {
+		return false, err
+	}
+	image, err = image.Normalize(digest)
+	return err == nil && image.ProjectActionsVersion == "1" && image.PreparationVersion == "1" && image.PNPMVersion == DockerStandardCodePNPMVersion, err
+}
+
 func (readiness DockerReadiness) Validate() error {
 	status, remediation, ok := dockerReadinessDisposition(readiness.ReasonCode)
 	if !ok || readiness.ProtocolVersion != DockerReadinessProtocolVersion ||

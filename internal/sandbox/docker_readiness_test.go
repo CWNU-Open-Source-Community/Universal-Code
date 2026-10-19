@@ -10,6 +10,29 @@ import (
 
 var _ ReadinessProbe = DockerReadinessProbe{}
 
+func TestPNPMPreparationRequiresExactVersionWithoutDisablingOlderPreparation(t *testing.T) {
+	transport, digest := readyDockerReadinessTestTransport(t)
+	probe := fixedDockerReadinessTestProbe(t, transport)
+	transport.image.ProjectActionsVersion, transport.image.PreparationVersion = "1", "1"
+	for _, version := range []string{"", "10.28.0", DockerStandardCodePNPMVersion} {
+		transport.image.PNPMVersion = version
+		if ready, err := probe.ProjectPreparationAvailable(t.Context(), digest); err != nil || !ready {
+			t.Fatalf("pnpm metadata disabled npm/Go preparation: %q %t %v", version, ready, err)
+		}
+		if ready, err := probe.PNPMPreparationAvailable(t.Context(), digest); err != nil || ready != (version == DockerStandardCodePNPMVersion) {
+			t.Fatalf("pnpm version %q ready=%t error=%v", version, ready, err)
+		}
+	}
+	if ready, err := probe.PNPMPreparationAvailable(t.Context(), "sha256:"+strings.Repeat("f", 64)); err == nil || ready {
+		t.Fatalf("pnpm metadata accepted another image: %t %v", ready, err)
+	}
+	for _, call := range transport.calls {
+		if call != "image" {
+			t.Fatalf("capability inspection performed %q", call)
+		}
+	}
+}
+
 func TestPreparationImageMetadataRequiresIndependentUpdatedMarker(t *testing.T) {
 	transport, digest := readyDockerReadinessTestTransport(t)
 	probe := fixedDockerReadinessTestProbe(t, transport)

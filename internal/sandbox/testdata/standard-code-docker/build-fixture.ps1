@@ -4,6 +4,21 @@
 
 $ErrorActionPreference = "Stop"
 $fixtureDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Explicit, pre-downloaded input; the build never contacts a package registry.
+# https://registry.npmjs.org/pnpm/-/pnpm-10.28.1.tgz
+$pnpmTarball = [Environment]::GetEnvironmentVariable("CYBERAGENT_STANDARD_CODE_PNPM_TARBALL")
+$pnpmIntegrity = "sha512-fX27yp6ZRHt8O/enMoavqva+mSUeuUmLrvp9QGiS9nuHmts6HX5of8TMwaOIxxdfuq5WeiarRNEGe1T8sNajFg=="
+if ([string]::IsNullOrWhiteSpace($pnpmTarball)) {
+  throw "CYBERAGENT_STANDARD_CODE_PNPM_TARBALL must name the pre-downloaded pnpm 10.28.1 tarball ($pnpmIntegrity); this script does not download"
+}
+$pnpmFile = Get-Item -LiteralPath $pnpmTarball -Force
+if ($pnpmFile.PSIsContainer -or ($pnpmFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+  throw "pnpm tarball must be a regular file without reparse indirection"
+}
+$expectedPNPMHash = ([BitConverter]::ToString([Convert]::FromBase64String($pnpmIntegrity.Substring(7)))).Replace('-', '')
+if ((Get-FileHash -LiteralPath $pnpmFile.FullName -Algorithm SHA512).Hash -ne $expectedPNPMHash) {
+  throw "pnpm 10.28.1 tarball does not match its fixed SRI checksum"
+}
 $required = @(
   "CYBERAGENT_STANDARD_CODE_GO_IMAGE_DIGEST",
   "CYBERAGENT_STANDARD_CODE_NODE_IMAGE_DIGEST",
@@ -50,6 +65,11 @@ New-Item -ItemType Directory -Path $imageDirectory | Out-Null
 
 try {
   Copy-Item -LiteralPath (Join-Path $fixtureDirectory "Dockerfile") -Destination $contextDirectory
+  $stagedPNPM = Join-Path $contextDirectory "pnpm-10.28.1.tgz"
+  Copy-Item -LiteralPath $pnpmFile.FullName -Destination $stagedPNPM
+  if ((Get-FileHash -LiteralPath $stagedPNPM -Algorithm SHA512).Hash -ne $expectedPNPMHash) {
+    throw "staged pnpm tarball changed before the offline build"
+  }
   $previousGOOS = $env:GOOS
   $previousGOARCH = $env:GOARCH
   $previousCGO = $env:CGO_ENABLED
@@ -105,9 +125,10 @@ try {
   $config = $configJSON | ConvertFrom-Json
   if (($null -ne $config.Env -and @($config.Env).Count -ne 0) -or
       $null -ne $config.Volumes -or $null -eq $config.Labels -or
-      @($config.Labels.PSObject.Properties).Count -ne 2 -or
+      @($config.Labels.PSObject.Properties).Count -ne 3 -or
       $config.Labels.'org.traverse-board.project-actions' -ne '1' -or
       $config.Labels.'org.traverse-board.project-preparation' -ne '1' -or
+      $config.Labels.'org.traverse-board.pnpm-version' -ne '10.28.1' -or
       $config.User -ne "65532:65532" -or $config.WorkingDir -ne "/workspace" -or
       @($config.Entrypoint).Count -ne 1 -or
       $config.Entrypoint[0] -ne "/traverse-board/standard-code-runner") {
