@@ -197,7 +197,18 @@ func (s *ThreadTurnService) checkAutomaticTurnForRun(ctx context.Context, thread
 	if err != nil {
 		return apperror.Normalize(err)
 	}
-	if queue.Prepared+queue.Pending > 0 && (!ownPending || queue.Prepared+queue.Pending != 1) {
+	peerQueue := false
+	if ownPending {
+		if reader, ok := s.threads.store.(interface {
+			PendingPeerQueueOwnsInput(context.Context, string, string) (bool, error)
+		}); ok {
+			peerQueue, err = reader.PendingPeerQueueOwnsInput(ctx, run.ID, ownMessageID)
+			if err != nil {
+				return apperror.Normalize(err)
+			}
+		}
+	}
+	if queue.Prepared+queue.Pending > 0 && (!ownPending || queue.Prepared+queue.Pending != 1) && !peerQueue {
 		return apperror.New(apperror.CodeFailedPrecondition, "Automatic continuation must wait for existing task input and approvals")
 	}
 	if found && cp.AttemptID != "" && queue.Prepared != 1 {

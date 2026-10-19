@@ -50,6 +50,7 @@ const sourceLabels: Record<ThreadTranscriptItemView["source"], [string, string]>
   harness: ["Harness 事实", "Harness fact"],
   model: ["模型公开内容", "Public model content"],
   operator: ["用户", "Operator"],
+  peer: ["其他聊天", "Other chat"],
 };
 
 export interface ThreadTranscriptProps {

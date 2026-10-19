@@ -101,6 +101,13 @@ func (s *SQLiteStore) promoteOrRejectOperatorSteering(ctx context.Context, reque
 	if err != nil {
 		return domain.PromoteOperatorSteeringResult{}, err
 	}
+	peer, err := isThreadPeerSteering(ctx, tx, message.ID)
+	if err != nil {
+		return domain.PromoteOperatorSteeringResult{}, err
+	}
+	if peer {
+		return domain.PromoteOperatorSteeringResult{}, apperror.New(apperror.CodeFailedPrecondition, "Peer messages cannot become operator corrections")
+	}
 	if message.SessionID != r.SessionID || message.RunID != runID || message.Revision != r.ExpectedRevision || message.ContentSHA256 != r.ExpectedContentSHA256 {
 		return domain.PromoteOperatorSteeringResult{}, apperror.New(apperror.CodeConflict, "queued message changed before promotion")
 	}

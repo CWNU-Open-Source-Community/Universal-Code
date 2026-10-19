@@ -564,6 +564,11 @@ func (s *SQLiteStore) RecordSupervisorModelStarted(ctx context.Context, checkpoi
 	if err := appendSupervisorEventTx(ctx, tx, run, events.ModelStartedEvent, "model_gateway", subject, payload); err != nil {
 		return false, err
 	}
+	if attempt.Purpose != llm.ModelPurposeContextCompaction {
+		if err := markPeerInputDeliveredTx(ctx, tx, checkpoint); err != nil {
+			return false, err
+		}
+	}
 	if attempt.ProtocolRepair == 1 {
 		repairStarted, err := supervisorModelEventExistsTx(ctx, tx, run.ID, events.ProtocolRepairStartedEvent, checkpoint.AttemptID)
 		if err != nil {

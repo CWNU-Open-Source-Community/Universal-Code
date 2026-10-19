@@ -76,6 +76,9 @@ func buildToolRegistry() toolRegistry {
 		requireExecutor("structured memory", func(g *Gateway, _ ToolCall) bool { return g.structuredMemory != nil }), true, true)
 	addSupervisor(HistoryRecallToolDefinitions(), NormalizeHistoryRecallPayload,
 		(*Gateway).invokeHistoryRecall, nil, true, true)
+	addSupervisor(ThreadPeerMessageToolDefinitions(), NormalizeThreadPeerMessagePayload,
+		(*Gateway).invokeThreadPeerMessages,
+		requireExecutor("thread messaging", func(g *Gateway, _ ToolCall) bool { return g.threadPeerMessages != nil }), false, true)
 	addSupervisor([]ToolDefinition{contextPinProposeDefinition},
 		func(_ ToolName, payload json.RawMessage) (json.RawMessage, error) {
 			_, canonical, err := normalizeContextPinPayload(payload)

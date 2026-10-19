@@ -214,7 +214,24 @@ func (a *API) threadTranscript(request *http.Request, threadID string) (any, *Pa
 	if hasMore {
 		source = source[:pageRequest.Limit]
 	}
-	items, err := threadtranscript.Build(threadID, source)
+	buildSource := make([]threadtranscript.Source, 0, len(source))
+	peerStore, _ := a.store.(interface {
+		ThreadPeerMessageForSteering(context.Context, string) (domain.ThreadPeerMessage, bool, error)
+		GetThreadPeerMessage(context.Context, string) (domain.ThreadPeerMessage, error)
+	})
+	for _, record := range source {
+		if peerStore != nil && record.Event != nil && record.Event.Type == "operator.steering_queued" {
+			_, found, lookupErr := peerStore.ThreadPeerMessageForSteering(request.Context(), record.Event.SubjectID)
+			if lookupErr != nil {
+				return nil, nil, lookupErr
+			}
+			if found {
+				continue
+			}
+		}
+		buildSource = append(buildSource, record)
+	}
+	items, err := threadtranscript.Build(threadID, buildSource)
 	if err != nil {
 		return nil, nil, apperror.Wrap(apperror.CodeFailedPrecondition,
 			"durable Thread transcript could not be projected", err)
@@ -225,6 +242,21 @@ func (a *API) threadTranscript(request *http.Request, threadID string) (any, *Pa
 	summaries := make(map[string]*ThreadActivitySummaryView)
 	for index := range items {
 		views[index] = threadTranscriptItemView(items[index])
+		if items[index].Source == "peer" && peerStore != nil {
+			peer, lookupErr := peerStore.GetThreadPeerMessage(request.Context(), items[index].SourceRef)
+			if lookupErr != nil {
+				return nil, nil, lookupErr
+			}
+			views[index].PeerMessage = &peer
+			views[index].Detail = peer.Content
+			views[index].Status = peer.Status
+			switch peer.Status {
+			case "delivered":
+				views[index].Stage = "result"
+			case "failed", "cancelled":
+				views[index].Stage = "blocked"
+			}
+		}
 		if items[index].Source == runactivity.SourceOperator && items[index].SourceRef != "" {
 			if imageStore, ok := a.store.(workspaceImageStore); ok {
 				images, imageErr := imageStore.ListOperatorMessageImages(request.Context(), items[index].RunID, items[index].SourceRef)

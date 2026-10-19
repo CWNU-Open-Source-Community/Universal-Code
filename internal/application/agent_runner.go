@@ -211,6 +211,7 @@ type ExecutionResult struct {
 type AgentRunner struct {
 	generatedContextCompactionEnabled     bool
 	historyRecallEnabled                  bool
+	threadPeerMessages                    *ThreadPeerMessageService
 	store                                 AgentRunnerStore
 	router                                *llm.Router
 	checker                               policy.Checker

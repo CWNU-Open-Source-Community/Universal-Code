@@ -1,0 +1,18 @@
+.v2-peer-message { border: 1px solid var(--v2-border); border-radius: 12px; min-width: 0; padding: 14px 16px; background: color-mix(in srgb, var(--v2-control) 40%, transparent); }
+.v2-peer-message > header { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--v2-muted); font-size: 12px; }
+.v2-peer-message > header > svg { flex-shrink: 0; }
+.v2-peer-chat-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--v2-ink); padding: 2px 0; text-align: left; min-width: 0; overflow-wrap: anywhere; }
+.v2-peer-chat-link > svg { flex-shrink: 0; }
+.v2-peer-chat-link:disabled { opacity: 1; }
+.v2-peer-status { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; white-space: nowrap; color: var(--v2-muted); font-size: 11px; flex-shrink: 0; }
+.v2-peer-status.is-failed, .v2-peer-error { color: var(--v2-danger); }
+.v2-peer-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; margin: 12px 0; }
+.v2-peer-message > footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 11px; color: var(--v2-muted); }
+.v2-peer-error { font-size: 12px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.v2-peer-message button { cursor: pointer; font-family: inherit; }
+.v2-peer-message button:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 3px; }
+@media (max-width: 560px) {
+  .v2-peer-message { padding: 12px; }
+  .v2-peer-message > header { flex-wrap: wrap; }
+  .v2-peer-message > footer { align-items: flex-start; }
+}

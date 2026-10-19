@@ -109,6 +109,12 @@ func (s *SQLiteStore) enqueueOperatorSteering(ctx context.Context,
 func enqueueOperatorSteeringTx(ctx context.Context, tx *sql.Tx,
 	request domain.EnqueueOperatorSteeringRequest, onlyIfBusy bool,
 ) (domain.OperatorSteeringEnqueueResult, bool, error) {
+	return enqueueSteeringTx(ctx, tx, request, onlyIfBusy, "operator")
+}
+
+func enqueueSteeringTx(ctx context.Context, tx *sql.Tx,
+	request domain.EnqueueOperatorSteeringRequest, onlyIfBusy bool, source string,
+) (domain.OperatorSteeringEnqueueResult, bool, error) {
 	normalized, err := request.Normalize()
 	if err != nil {
 		return domain.OperatorSteeringEnqueueResult{}, false,
@@ -299,7 +305,7 @@ func enqueueOperatorSteeringTx(ctx context.Context, tx *sql.Tx,
 		return domain.OperatorSteeringEnqueueResult{}, false, err
 	}
 	if err := appendSupervisorEventTx(ctx, tx, run, events.OperatorSteeringQueuedEvent,
-		"operator", message.ID, map[string]any{
+		source, message.ID, map[string]any{
 			"sequence": message.Sequence, "status": message.Status,
 			"pending_count": pendingCount + 1,
 		}); err != nil {
@@ -310,6 +316,12 @@ func enqueueOperatorSteeringTx(ctx context.Context, tx *sql.Tx,
 
 func (s *SQLiteStore) CancelOperatorSteering(ctx context.Context,
 	request domain.CancelOperatorSteeringRequest,
+) (domain.OperatorSteeringCancellationResult, error) {
+	return s.cancelOperatorSteering(ctx, request, false)
+}
+
+func (s *SQLiteStore) cancelOperatorSteering(ctx context.Context,
+	request domain.CancelOperatorSteeringRequest, allowCreated bool,
 ) (domain.OperatorSteeringCancellationResult, error) {
 	normalized, err := request.Normalize()
 	if err != nil {
@@ -386,7 +398,7 @@ func (s *SQLiteStore) CancelOperatorSteering(ctx context.Context,
 	if err != nil {
 		return domain.OperatorSteeringCancellationResult{}, err
 	}
-	if run.Status != domain.RunRunning && run.Status != domain.RunPaused {
+	if run.Status != domain.RunRunning && run.Status != domain.RunPaused && !(allowCreated && run.Status == domain.RunCreated) {
 		return domain.OperatorSteeringCancellationResult{},
 			apperror.New(apperror.CodeFailedPrecondition,
 				fmt.Sprintf("run %s cannot cancel operator steering while %s", run.ID, run.Status))
@@ -744,8 +756,7 @@ func commitOperatorSteeringDeliveryTx(ctx context.Context, tx *sql.Tx, run domai
 	if message.Status != domain.OperatorSteeringPending || message.Content != checkpoint.PendingInput ||
 		message.SessionID != run.SessionID || userMessage.SessionID != run.SessionID ||
 		userMessage.Content != message.Content || userMessage.ID <= 0 ||
-		userMessage.Provenance.SourceKind != session.SourceOperatorMessage ||
-		!userMessage.Provenance.InstructionAuthorized ||
+		!validQueuedInputProvenanceTx(ctx, tx, message.ID, userMessage) ||
 		userMessage.Provenance.ContentSHA256 != message.ContentSHA256 {
 		return domain.OperatorSteeringMessage{}, false,
 			apperror.New(apperror.CodeConflict,
