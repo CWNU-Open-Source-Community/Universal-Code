@@ -36,10 +36,13 @@ type pnpmSnapshot struct {
 	OptionalDependencies map[string]string `yaml:"optionalDependencies"`
 }
 type pnpmLock struct {
-	LockfileVersion string                       `yaml:"lockfileVersion"`
-	Importers       map[string]pnpmImporter      `yaml:"importers"`
-	Packages        map[string]pnpmLockedPackage `yaml:"packages"`
-	Snapshots       map[string]pnpmSnapshot      `yaml:"snapshots"`
+	LockfileVersion string `yaml:"lockfileVersion"`
+	Settings        struct {
+		AutoInstallPeers *bool `yaml:"autoInstallPeers"`
+	} `yaml:"settings"`
+	Importers map[string]pnpmImporter      `yaml:"importers"`
+	Packages  map[string]pnpmLockedPackage `yaml:"packages"`
+	Snapshots map[string]pnpmSnapshot      `yaml:"snapshots"`
 }
 
 // Walk only ancestors inside os.Root. A selected member retains its target;
@@ -108,10 +111,13 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 	workspace, hasWorkspace := read(r, "pnpm-workspace.yaml")
 	patterns := []string{}
 	registry := map[string]string{"": "https://registry.npmjs.org"}
+	autoInstallPeers := true
+	var workspaceAutoInstallPeers *bool
 	if hasWorkspace {
 		var config struct {
-			Packages []string `yaml:"packages"`
-			Registry string   `yaml:"registry"`
+			Packages         []string `yaml:"packages"`
+			Registry         string   `yaml:"registry"`
+			AutoInstallPeers *bool    `yaml:"autoInstallPeers"`
 		}
 		configDocument, err := pnpmYAML(workspace.raw, &config)
 		if err != nil {
@@ -127,6 +133,7 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 				plan.Issues = append(plan.Issues, "pnpm-workspace.yaml must declare an explicit packages list")
 			}
 			patterns = config.Packages
+			workspaceAutoInstallPeers = config.AutoInstallPeers
 			if config.Registry != "" {
 				registry[""] = strings.TrimSuffix(config.Registry, "/")
 			}
@@ -146,6 +153,14 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 	for _, directory := range members {
 		at := reader
 		at.target = directory
+		// pnpm's workspace finder expands each pattern to all three manifest
+		// formats, even when package.json also exists. Bind and reject alternate
+		// formats rather than let recursive rebuild discover an unreviewed member.
+		for _, name := range []string{"package.yaml", "package.json5"} {
+			if file, found := read(at, name); found {
+				plan.Issues = append(plan.Issues, file.Path+" is an unsupported pnpm manifest; preparation requires package.json only")
+			}
+		}
 		manifestFile, found := read(at, "package.json")
 		if !found {
 			plan.Issues = append(plan.Issues, path.Join(directory, "package.json")+" is required for pnpm preparation")
@@ -182,7 +197,7 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 		for _, name := range []string{".npmrc", ".nvmrc", ".node-version", ".tool-versions", ".pnpmfile.cjs"} {
 			config, found := read(at, name)
 			if found && name == ".npmrc" {
-				if err := pnpmRegistries(config.raw, registry, directory == workspaceRoot); err != nil {
+				if err := pnpmRegistries(config.raw, registry, directory == workspaceRoot, &autoInstallPeers); err != nil {
 					plan.Issues = append(plan.Issues, config.Path+": "+err.Error())
 				}
 			}
@@ -199,6 +214,10 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 				}
 			}
 		}
+	}
+	// pnpm 10 loads the workspace YAML after project npmrc settings.
+	if workspaceAutoInstallPeers != nil {
+		autoInstallPeers = *workspaceAutoInstallPeers
 	}
 	// Ancestor npm configuration can affect a nested standalone project. Bind
 	// it as review input, but registry routing comes from the installation root.
@@ -229,6 +248,9 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 	if patches := pnpmMapValue(document.Content[0], "patchedDependencies"); patches != nil && patches.Tag != "!!null" && (patches.Kind != yaml.MappingNode || len(patches.Content) > 0) {
 		plan.Issues = append(plan.Issues, "pnpm-lock.yaml patchedDependencies are not supported by offline preparation; patch files are not staged")
 	}
+	if lock.Settings.AutoInstallPeers != nil && *lock.Settings.AutoInstallPeers != autoInstallPeers {
+		plan.Issues = append(plan.Issues, "pnpm-lock.yaml settings.autoInstallPeers differs from the project configuration")
+	}
 	if len(lock.Packages) > MaxPackages || len(lock.Snapshots) > MaxPackages || len(lock.Importers) > maxPNPMMembers+1 {
 		plan.Issues = append(plan.Issues, "pnpm-lock.yaml exceeds the preparation package or workspace member limit")
 		return plan
@@ -244,10 +266,11 @@ func detectPNPM(plan Plan, reader fileReader, selectedFiles map[string]sourceFil
 			plan.Issues = append(plan.Issues, "pnpm-lock.yaml is missing importer "+key)
 			continue
 		}
+		dependencies, devDependencies, optionalDependencies := pnpmEffectiveDependencies(manifest, autoInstallPeers)
 		for _, group := range []struct {
 			locked map[string]pnpmDependency
 			wanted map[string]string
-		}{{importer.Dependencies, manifest.Dependencies}, {importer.DevDependencies, manifest.DevDependencies}, {importer.OptionalDependencies, manifest.OptionalDependencies}} {
+		}{{importer.Dependencies, dependencies}, {importer.DevDependencies, devDependencies}, {importer.OptionalDependencies, optionalDependencies}} {
 			if len(group.locked) != len(group.wanted) {
 				plan.Issues = append(plan.Issues, "pnpm-lock.yaml importer "+key+" dependencies differ from package.json")
 			}
@@ -428,7 +451,7 @@ func pnpmPackageID(id string) (string, string, bool) {
 	return name, version, true
 }
 
-func pnpmRegistries(raw []byte, registry map[string]string, apply bool) error {
+func pnpmRegistries(raw []byte, registry map[string]string, apply bool, autoInstallPeers *bool) error {
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
@@ -441,6 +464,15 @@ func pnpmRegistries(raw []byte, registry map[string]string, apply bool) error {
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 		if issue := unsupportedPNPMSetting(key, value); issue != "" {
 			return errors.New(issue)
+		}
+		if key == "auto-install-peers" {
+			if value != "true" && value != "false" {
+				return errors.New("auto-install-peers must be true or false")
+			}
+			if apply {
+				*autoInstallPeers = value == "true"
+			}
+			continue
 		}
 		if key != "registry" && !strings.HasSuffix(key, ":registry") {
 			continue
@@ -458,6 +490,41 @@ func pnpmRegistries(raw []byte, registry map[string]string, apply bool) error {
 		}
 	}
 	return nil
+}
+
+// Mirrors pnpm 10's satisfiesPackageManifest: peers are auto-installed only
+// when absent from all explicit dependency groups; optional > prod > dev.
+func pnpmEffectiveDependencies(manifest npmManifest, autoInstallPeers bool) (map[string]string, map[string]string, map[string]string) {
+	dependencies := make(map[string]string, len(manifest.Dependencies)+len(manifest.PeerDependencies))
+	dev := make(map[string]string, len(manifest.DevDependencies))
+	optional := make(map[string]string, len(manifest.OptionalDependencies))
+	for name, version := range manifest.Dependencies {
+		dependencies[name] = version
+	}
+	for name, version := range manifest.DevDependencies {
+		dev[name] = version
+	}
+	for name, version := range manifest.OptionalDependencies {
+		optional[name] = version
+	}
+	if autoInstallPeers {
+		for name, version := range manifest.PeerDependencies {
+			_, prodExists := dependencies[name]
+			_, devExists := dev[name]
+			_, optionalExists := optional[name]
+			if !prodExists && !devExists && !optionalExists {
+				dependencies[name] = version
+			}
+		}
+	}
+	for name := range optional {
+		delete(dependencies, name)
+		delete(dev, name)
+	}
+	for name := range dependencies {
+		delete(dev, name)
+	}
+	return dependencies, dev, optional
 }
 
 // These settings change the reviewed installation tree or select additional
@@ -588,6 +655,15 @@ func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, e
 		if matched {
 			at := reader
 			at.target = current
+			for _, name := range []string{"package.yaml", "package.json5"} {
+				file, found, err := at.read(name)
+				if err != nil {
+					return fmt.Errorf("%s: %w", path.Join(current, name), err)
+				}
+				if found {
+					return fmt.Errorf("%s is an unsupported pnpm manifest; preparation requires package.json only", file.Path)
+				}
+			}
 			_, found, err := at.read("package.json")
 			if err != nil {
 				return fmt.Errorf("%s: %w", current, err)

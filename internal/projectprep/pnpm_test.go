@@ -352,3 +352,67 @@ func TestPNPMCancellationDuringDiscoveryReturnsContextError(t *testing.T) {
 		}
 	}
 }
+
+func TestPNPMRejectsAlternateManifestsDiscoveredByNativeWorkspaceFinder(t *testing.T) {
+	for _, name := range []string{"package.yaml", "package.json5"} {
+		for _, directory := range []string{".", "packages/hidden", "packages/local-lib"} {
+			t.Run(directory+"/"+name, func(t *testing.T) {
+				files := pnpmFiles()
+				filename := filepath.ToSlash(filepath.Join(directory, name))
+				files[filename] = "name: hidden\nversion: 1.0.0\nscripts:\n  postinstall: node unexpected.cjs\n"
+				if name == "package.json5" {
+					files[filename] = "{name: 'hidden', version: '1.0.0', scripts: {postinstall: 'node unexpected.cjs'}}"
+				}
+				plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+				if err != nil || plan.Ready || len(plan.PNPMSeedLock) > 0 || !strings.Contains(strings.Join(plan.Issues, " "), filename+" is an unsupported pnpm manifest") {
+					t.Fatalf("%#v %v", plan, err)
+				}
+			})
+		}
+	}
+	files := pnpmFiles()
+	files["packages/excluded/package.yaml"] = "name: excluded\n"
+	plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+	if err != nil || !plan.Ready {
+		t.Fatalf("excluded alternate manifest changed the selected workspace: %#v %v", plan, err)
+	}
+}
+
+func TestPNPMPeerDependenciesMatchNativeImporterGroups(t *testing.T) {
+	for _, tc := range []struct {
+		name, manifest, group, specifier, workspace, npmrc string
+		auto, ready                                        bool
+	}{
+		{name: "default auto peers", manifest: `"peerDependencies":{"is-number":"7.0.0"}`, group: "dependencies", specifier: "7.0.0", auto: true, ready: true},
+		{name: "disabled YAML", manifest: `"peerDependencies":{"is-number":"7.0.0"}`, workspace: "autoInstallPeers: false\n", auto: false, ready: true},
+		{name: "disabled npmrc", manifest: `"peerDependencies":{"is-number":"7.0.0"}`, npmrc: "auto-install-peers=false\n", auto: false, ready: true},
+		{name: "YAML overrides npmrc", manifest: `"peerDependencies":{"is-number":"7.0.0"}`, group: "dependencies", specifier: "7.0.0", workspace: "autoInstallPeers: true\n", npmrc: "auto-install-peers=false\n", auto: true, ready: true},
+		{name: "prod overrides peer", manifest: `"peerDependencies":{"is-number":"^6.0.0"},"dependencies":{"is-number":"7.0.0"}`, group: "dependencies", specifier: "7.0.0", auto: true, ready: true},
+		{name: "dev overrides peer", manifest: `"peerDependencies":{"is-number":"^6.0.0"},"devDependencies":{"is-number":"7.0.0"}`, group: "devDependencies", specifier: "7.0.0", auto: true, ready: true},
+		{name: "optional overrides all", manifest: `"peerDependencies":{"is-number":"^6.0.0"},"dependencies":{"is-number":"^7.0.0"},"devDependencies":{"is-number":"~7.0.0"},"optionalDependencies":{"is-number":"7.0.0"}`, group: "optionalDependencies", specifier: "7.0.0", auto: true, ready: true},
+		{name: "prod overrides dev", manifest: `"peerDependencies":{"is-number":"^6.0.0"},"dependencies":{"is-number":"7.0.0"},"devDependencies":{"is-number":"~7.0.0"}`, group: "dependencies", specifier: "7.0.0", auto: true, ready: true},
+		{name: "missing installed peer", manifest: `"peerDependencies":{"is-number":"7.0.0"}`, auto: true, ready: false},
+		{name: "stale auto setting", manifest: `"peerDependencies":{"is-number":"7.0.0"}`, workspace: "autoInstallPeers: false\n", auto: true, ready: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := pnpmFiles()
+			files["packages/local-lib/package.json"] = `{"name":"local-lib","version":"1.0.0",` + tc.manifest + `}`
+			files["pnpm-workspace.yaml"] += tc.workspace
+			if tc.npmrc != "" {
+				files[".npmrc"] = tc.npmrc
+			}
+			importer := "  packages/local-lib: {}\n"
+			if tc.group != "" {
+				importer = "  packages/local-lib:\n    " + tc.group + ":\n      is-number:\n        specifier: " + tc.specifier + "\n        version: 7.0.0\n"
+			}
+			files["pnpm-lock.yaml"] = strings.Replace(files["pnpm-lock.yaml"], "  packages/local-lib:\n    dependencies:\n      is-number:\n        specifier: 7.0.0\n        version: 7.0.0\n", importer, 1)
+			if !tc.auto {
+				files["pnpm-lock.yaml"] = strings.Replace(files["pnpm-lock.yaml"], "autoInstallPeers: true", "autoInstallPeers: false", 1)
+			}
+			plan, err := projectprep.Detect(t.Context(), fixture(t, files), "apps/web")
+			if err != nil || plan.Ready != tc.ready {
+				t.Fatalf("%#v %v", plan, err)
+			}
+		})
+	}
+}
