@@ -83,9 +83,11 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 		}
 	} else if goModule {
 		plan = detectGo(plan, files)
+	} else if _, cargo := files["Cargo.toml"]; cargo {
+		plan = detectCargo(plan, reader, files)
 	} else {
 		for _, candidate := range []struct{ name, ecosystem, toolchain string }{
-			{"Cargo.toml", "rust", "cargo"}, {"pyproject.toml", "python", "python"}, {"requirements.txt", "python", "pip"}, {"Pipfile", "python", "pipenv"}, {"deno.json", "deno", "deno"}, {"deno.jsonc", "deno", "deno"}, {"composer.json", "php", "composer"}, {"Gemfile", "ruby", "bundler"},
+			{"pyproject.toml", "python", "python"}, {"requirements.txt", "python", "pip"}, {"Pipfile", "python", "pipenv"}, {"deno.json", "deno", "deno"}, {"deno.jsonc", "deno", "deno"}, {"composer.json", "php", "composer"}, {"Gemfile", "ruby", "bundler"},
 		} {
 			if file, found := files[candidate.name]; found {
 				plan.Ecosystem, plan.Toolchain, plan.Manifest = candidate.ecosystem, candidate.toolchain, file.File
@@ -94,7 +96,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 			}
 		}
 		if plan.Ecosystem == "" {
-			plan.Issues = append(plan.Issues, "No supported package.json or go.mod was found in the selected directory")
+			plan.Issues = append(plan.Issues, "No supported package.json, go.mod or Cargo.toml was found in the selected directory")
 		}
 		for name, file := range files {
 			if strings.Contains(name, "lock") || name == "go.sum" {

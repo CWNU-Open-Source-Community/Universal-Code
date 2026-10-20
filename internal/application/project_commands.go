@@ -88,6 +88,18 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 	if (slot == "format") != (id == "format.go") {
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "configured command preset does not match its project action")
 	}
+	if id == "test.rust" && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, cargoLocalTestReason)
+	}
+	if id == "test.rust" && len(workspaceRoot) == 1 {
+		plan, detectErr := projectprep.Detect(context.Background(), workspaceRoot[0], target)
+		if detectErr == nil && plan.Ecosystem == "rust" && plan.Ready {
+			if err := checkDetectedProjectPaths(run, plan); err != nil {
+				return runner.CommandRuntimeSpec{}, err
+			}
+			return PrepareProjectPreparationTestCommand(plan, adapter, workspaceRoot[0])
+		}
+	}
 	executable, launcher, err := resolveProjectCommandToolchain(id, adapter, workspaceRoot...)
 	if err != nil {
 		return runner.CommandRuntimeSpec{}, err
