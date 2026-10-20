@@ -373,6 +373,7 @@ func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 		ExecutablePath           string                         `json:"executable_path"`
 		ExecutableSHA256         string                         `json:"executable_sha256"`
 		ExecutableIdentityKind   string                         `json:"executable_identity_kind,omitempty"`
+		InvocationPath           string                         `json:"invocation_path,omitempty"`
 		Argv                     []string                       `json:"argv"`
 		WorkingDirectory         string                         `json:"working_directory"`
 		Environment              []CommandRuntimeEnvironment    `json:"environment"`
@@ -391,6 +392,7 @@ func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 		Version: spec.Spec.Version, WorkspaceMode: spec.Spec.WorkspaceMode, Profile: spec.Spec.Profile,
 		ExecutablePath: spec.ExecutablePath, ExecutableSHA256: spec.ExecutableSHA256,
 		ExecutableIdentityKind: spec.ExecutableIdentityKind,
+		InvocationPath:         commandRuntimePythonInvocationPath(spec),
 		Argv:                   cloneCommandRuntimeStrings(spec.CanonicalArgv),
 		WorkingDirectory:       spec.Spec.WorkingDirectory,
 		Environment:            cloneCommandRuntimeEnvironment(spec.Spec.Environment),
@@ -798,6 +800,7 @@ func commandRuntimeIntentJSON(spec CommandRuntimeResolvedSpec) string {
 		ExecutablePath           string                         `json:"executable_path"`
 		ExecutableSHA256         string                         `json:"executable_sha256"`
 		ExecutableIdentityKind   string                         `json:"executable_identity_kind,omitempty"`
+		InvocationPath           string                         `json:"invocation_path,omitempty"`
 		Argv                     []string                       `json:"argv"`
 		WorkingDirectory         string                         `json:"working_directory"`
 		Environment              []CommandRuntimeEnvironment    `json:"environment"`
@@ -817,6 +820,7 @@ func commandRuntimeIntentJSON(spec CommandRuntimeResolvedSpec) string {
 		Profile: spec.Spec.Profile, ExecutablePath: spec.ExecutablePath,
 		ExecutableSHA256:       spec.ExecutableSHA256,
 		ExecutableIdentityKind: spec.ExecutableIdentityKind,
+		InvocationPath:         commandRuntimePythonInvocationPath(spec),
 		Argv:                   cloneCommandRuntimeStrings(spec.CanonicalArgv),
 		WorkingDirectory:       spec.Spec.WorkingDirectory,
 		Environment:            cloneCommandRuntimeEnvironment(spec.Spec.Environment),
