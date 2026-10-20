@@ -114,8 +114,11 @@ func (p *agentBrowserHTTPProductProvider) StreamChat(ctx context.Context, r llm.
 }
 
 func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
-	if os.Getenv("AGENT_BROWSER_HTTP_TEST") != "1" || runtime.GOOS != "windows" {
-		t.Skip("owned Windows Chromium HTTP acceptance")
+	if os.Getenv("AGENT_BROWSER_HTTP_TEST") != "1" {
+		t.Skip("owned Chromium HTTP acceptance")
+	}
+	if !browserruntime.AgentBrowserPlatformAvailable() {
+		t.Fatal("requested native Agent Browser HTTP runtime is unavailable")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -133,7 +136,10 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 		fmt.Fprint(w, `<!doctype html><title>HTTP browser fixture</title><h1>HTTP approved dynamic page</h1><button onclick="fetch('/publish',{method:'POST'}).then(()=>document.getElementById('result').textContent='Published exactly once')">Publish fixture</button><p id="result">Draft ready</p>`)
 	}))
 	defer site.Close()
-	home := filepath.Clean(t.TempDir())
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	st, err := store.Open(filepath.Join(home, "store.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +227,11 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 	closedResponse := performControlPathRequest(t, api, base+"/agent-browser/close", "http-browser-close", strings.NewReader(string(body)))
 	var closed AgentBrowserStatusView
 	decodeDataStatus(t, closedResponse, http.StatusOK, &closed)
-	if !closed.TreeReaped || !closed.ProfileRemoved || closed.CleanupPending || writes.Load() != 1 {
+	processesStopped := closed.TreeReaped
+	if runtime.GOOS == "darwin" {
+		processesStopped = !closed.TreeReaped && closed.ProcessScope == browserruntime.DarwinAgentBrowserProcessScope && closed.ProcessScopeVerified
+	}
+	if !processesStopped || !closed.ProfileRemoved || closed.CleanupPending || writes.Load() != 1 {
 		t.Fatalf("cleanup=%+v", closed)
 	}
 	if output := os.Getenv("AGENT_BROWSER_HTTP_EVIDENCE"); output != "" {

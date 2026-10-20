@@ -111,7 +111,7 @@ it("renders a failed browser with a stop control", async () => {
 });
 
 it.each([
-  ["platform_unsupported", /macOS \/ Linux/],
+  ["platform_unsupported", /当前系统尚未提供可用的 Agent 浏览器适配器/],
   ["full_access_required", /完全访问（Full）/],
   ["runtime_unavailable", /没有可用的 Agent 浏览器运行时/],
 ])("shows the actual unavailable state: %s", async (code, message) => {

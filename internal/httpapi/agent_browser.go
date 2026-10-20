@@ -38,26 +38,28 @@ type AgentBrowserScreenshotView struct {
 // Public projection intentionally excludes runtime authority, endpoint/profile
 // handles and raw backend errors. Reading it never launches a browser.
 type AgentBrowserStatusView struct {
-	Version         string                      `json:"version"`
-	RunID           string                      `json:"run_id"`
-	SessionID       string                      `json:"session_id,omitempty"`
-	Generation      uint64                      `json:"generation"`
-	State           string                      `json:"state"`
-	Available       bool                        `json:"available"`
-	CanStart        bool                        `json:"can_start"`
-	Product         string                      `json:"product,omitempty"`
-	Headless        bool                        `json:"headless"`
-	URL             string                      `json:"url,omitempty"`
-	Title           string                      `json:"title,omitempty"`
-	DocumentEpoch   uint64                      `json:"document_epoch"`
-	LastAction      string                      `json:"last_action,omitempty"`
-	UpdatedAt       time.Time                   `json:"updated_at"`
-	Screenshot      *AgentBrowserScreenshotView `json:"screenshot,omitempty"`
-	FailureCode     string                      `json:"failure_code,omitempty"`
-	UnavailableCode string                      `json:"unavailable_code,omitempty"`
-	CleanupPending  bool                        `json:"cleanup_pending"`
-	TreeReaped      bool                        `json:"tree_reaped"`
-	ProfileRemoved  bool                        `json:"profile_removed"`
+	Version              string                      `json:"version"`
+	RunID                string                      `json:"run_id"`
+	SessionID            string                      `json:"session_id,omitempty"`
+	Generation           uint64                      `json:"generation"`
+	State                string                      `json:"state"`
+	Available            bool                        `json:"available"`
+	CanStart             bool                        `json:"can_start"`
+	Product              string                      `json:"product,omitempty"`
+	Headless             bool                        `json:"headless"`
+	URL                  string                      `json:"url,omitempty"`
+	Title                string                      `json:"title,omitempty"`
+	DocumentEpoch        uint64                      `json:"document_epoch"`
+	LastAction           string                      `json:"last_action,omitempty"`
+	UpdatedAt            time.Time                   `json:"updated_at"`
+	Screenshot           *AgentBrowserScreenshotView `json:"screenshot,omitempty"`
+	FailureCode          string                      `json:"failure_code,omitempty"`
+	UnavailableCode      string                      `json:"unavailable_code,omitempty"`
+	CleanupPending       bool                        `json:"cleanup_pending"`
+	TreeReaped           bool                        `json:"tree_reaped"`
+	ProfileRemoved       bool                        `json:"profile_removed"`
+	ProcessScope         string                      `json:"process_scope,omitempty"`
+	ProcessScopeVerified bool                        `json:"process_scope_verified"`
 }
 
 type AgentBrowserCloseRequestView struct {
@@ -173,6 +175,8 @@ func publicAgentBrowserStatus(value application.AgentBrowserView, runID string) 
 		view.CleanupPending = value.Cleanup.CleanupPending
 		view.TreeReaped = value.Cleanup.TreeReaped
 		view.ProfileRemoved = value.Cleanup.ProfileRemoved
+		view.ProcessScope = value.Cleanup.ProcessScope
+		view.ProcessScopeVerified = value.Cleanup.ProcessScopeVerified
 	}
 	if value.ArtifactLocator != "" && isLowerHexSHA256(value.ScreenshotSHA256) && value.ScreenshotBytes > 0 && value.ScreenshotBytes <= 20*1024*1024 {
 		view.Screenshot = &AgentBrowserScreenshotView{Locator: value.ArtifactLocator, SHA256: value.ScreenshotSHA256, ByteSize: value.ScreenshotBytes, MIMEType: "image/png"}

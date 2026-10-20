@@ -485,13 +485,19 @@ jobs:
         env:
           CGO_ENABLED: '1'
           TRAVERSE_TEST_DARWIN_CHROME: '1'
+          TRAVERSE_TEST_AGENT_BROWSER: '1'
+          TRAVERSE_TEST_AGENT_BROWSER_PRODUCT: chrome
+          AGENT_BROWSER_HTTP_TEST: '1'
           TRAVERSE_DARWIN_CHROME_EVIDENCE: ${{ github.workspace }}/build/darwin-chrome-evidence
+          AGENT_BROWSER_HTTP_EVIDENCE: ${{ github.workspace }}/build/darwin-chrome-evidence
         run: |
           mkdir -p "$TRAVERSE_DARWIN_CHROME_EVIDENCE"
           sw_vers > "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           uname -m >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           git rev-parse HEAD >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
-          go test -v -count=1 -timeout=4m ./internal/browserruntime -run '^TestDarwinChromeNativeBindingAndLifecycle$'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' '/Applications/Google Chrome.app/Contents/Info.plist' >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
+          go test -v -count=1 -timeout=6m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$'
+          go test -v -count=1 -timeout=3m ./internal/httpapi -run '^TestAgentBrowserHTTPProductApprovalAndScreenshot$'
       - name: Upload native Chrome experiment and actual browser PNGs
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

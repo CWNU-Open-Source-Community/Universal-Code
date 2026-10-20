@@ -141,6 +141,7 @@ static int uc_chrome_spawn(const char *executable, const char *profile,
   if (!result) result = posix_spawn_file_actions_addopen(&files, STDIN_FILENO, "/dev/null", 0, 0);
   if (!result) result = posix_spawn_file_actions_addopen(&files, STDOUT_FILENO, "/dev/null", 1, 0);
   if (!result) result = posix_spawn_file_actions_addopen(&files, STDERR_FILENO, log, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (!result) result = posix_spawn_file_actions_addchdir_np(&files, "/Applications/Google Chrome.app/Contents/MacOS");
   pid_t pid = 0;
   if (!result) result = posix_spawn(&pid, executable, &files, &attr, argv, env);
   posix_spawn_file_actions_destroy(&files);
@@ -151,11 +152,14 @@ static int uc_chrome_spawn(const char *executable, const char *profile,
     if (!result && (getpgid(pid) != pid)) result = EPERM;
     char actual[PROC_PIDPATHINFO_MAXSIZE];
     if (!result && (proc_pidpath(pid, actual, sizeof(actual)) <= 0 || strcmp(actual, executable))) result = ESTALE;
-    if (!result) {
-      *out_stage = 3;
-      if (kill(pid, SIGCONT)) result = errno;
+    if (result) {
+      kill(pid, SIGKILL);
+      pid_t waited;
+      do { waited = waitpid(pid, NULL, 0); } while (waited < 0 && errno == EINTR);
+      // Preserve the owned PID if rejection cleanup itself failed. The caller
+      // must retain its profile rather than issue a no-resource receipt.
+      if (waited < 0) { *out_pid = pid; *out_stage = 3; }
     }
-    if (result) { kill(pid, SIGKILL); while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {} }
     else { *out_pid = pid; *out_stage = 0; }
   }
 done:
@@ -166,16 +170,28 @@ done:
 typedef struct { int pid, ppid, pgid, uid, zombie; uint64_t sec, usec, rss; } uc_proc_sample;
 static int uc_chrome_sample(int pid, uc_proc_sample *out) {
   struct proc_bsdinfo bsd;
-  if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, sizeof(bsd)) != sizeof(bsd)) return ESRCH;
+  errno = 0;
+  if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, sizeof(bsd)) != sizeof(bsd)) {
+    return errno == ENOENT ? ESRCH : (errno ? errno : EIO);
+  }
   struct proc_taskinfo task;
   memset(&task, 0, sizeof(task));
-  if (bsd.pbi_status != SZOMB && proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, sizeof(task)) != sizeof(task)) return EACCES;
+  errno = 0;
+  if (bsd.pbi_status != SZOMB && proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, sizeof(task)) != sizeof(task)) {
+    return errno == ENOENT ? ESRCH : (errno ? errno : EIO);
+  }
   *out = (uc_proc_sample){pid, (int)bsd.pbi_ppid, (int)bsd.pbi_pgid, (int)bsd.pbi_uid,
     bsd.pbi_status == SZOMB, bsd.pbi_start_tvsec, bsd.pbi_start_tvusec, task.pti_resident_size};
   return 0;
 }
 static int uc_chrome_group(int group, int *pids, int capacity) {
   int count = proc_listpgrppids(group, pids, capacity * sizeof(int));
+  if (count < 0) return -errno;
+  if (count >= capacity) return -ENOSPC;
+  return count;
+}
+static int uc_chrome_children(int pid, int *pids, int capacity) {
+  int count = proc_listchildpids(pid, pids, capacity * sizeof(int));
   if (count < 0) return -errno;
   if (count >= capacity) return -ENOSPC;
   return count;
@@ -272,6 +288,19 @@ func darwinChromeCDHash(bundle string) (string, error) {
 }
 
 func darwinChromeSpawn(executable, profile, digest string) (int, error) {
+	pid, err := darwinChromeSpawnSuspended(executable, profile, digest)
+	if err != nil {
+		return 0, err
+	}
+	if err = syscall.Kill(pid, syscall.SIGCONT); err != nil {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		_, _ = darwinChromeWait(pid)
+		return 0, err
+	}
+	return pid, nil
+}
+
+func darwinChromeSpawnSuspended(executable, profile, digest string) (int, error) {
 	path, directory, hash := C.CString(executable), C.CString(profile), C.CString(digest)
 	defer C.free(unsafe.Pointer(path))
 	defer C.free(unsafe.Pointer(directory))
@@ -279,7 +308,7 @@ func darwinChromeSpawn(executable, profile, digest string) (int, error) {
 	var pid, stage C.int
 	status := C.uc_chrome_spawn(path, directory, hash, &pid, &stage)
 	if status != 0 {
-		return 0, &darwinChromeStartError{int(stage), int(status)}
+		return int(pid), &darwinChromeStartError{int(stage), int(status)}
 	}
 	return int(pid), nil
 }
@@ -325,6 +354,21 @@ func darwinChromeCrashpad(profile string) ([]int, error) {
 	result := make([]int, count)
 	for index, pid := range pids[:count] {
 		result[index] = int(pid)
+	}
+	return result, nil
+}
+
+func darwinChromeChildren(pid int) ([]int, error) {
+	var pids [512]C.int
+	count := int(C.uc_chrome_children(C.int(pid), &pids[0], C.int(len(pids))))
+	if count < 0 {
+		return nil, syscall.Errno(-count)
+	}
+	result := make([]int, 0, count)
+	for _, child := range pids[:count] {
+		if child > 0 {
+			result = append(result, int(child))
+		}
 	}
 	return result, nil
 }

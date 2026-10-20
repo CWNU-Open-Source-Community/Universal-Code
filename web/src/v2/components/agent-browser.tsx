@@ -18,7 +18,7 @@ function stateText(status: AgentBrowserStatus): string {
     case "waiting_user": return "网页需要人工处理";
     case "failed": return "浏览器操作未完成";
     case "closing": return "正在停止浏览器…";
-    case "cleanup_pending": return "浏览器已停止，仍在清理临时资料";
+    case "cleanup_pending": return "会话已停止，仍在清理临时进程或资料";
     case "closed": return "浏览器已停止";
     case "idle": return "等待 Agent 打开网页";
     default: return "当前环境无法使用 Agent 浏览器";
@@ -34,7 +34,7 @@ function actionText(action?: string): string {
 
 function unavailableText(code: AgentBrowserStatus["unavailable_code"]): string {
   switch (code) {
-    case "platform_unsupported": return "当前 macOS / Linux 版本尚不支持 Agent 浏览器复验。你可以自行打开应用页面检查，Agent 不会把它记为已完成浏览器验收。";
+    case "platform_unsupported": return "当前系统尚未提供可用的 Agent 浏览器适配器。你可以自行打开应用页面检查，Agent 不会把它记为已完成浏览器验收。";
     case "full_access_required": return "Agent 浏览器需要当前任务启用完全访问（Full）。启用后，Agent 可打开独立浏览器检查页面。";
     case "run_unavailable": return "当前任务已暂停、结束或权限已变更，浏览器暂不可用。";
     case "session_unavailable": return "上一浏览器会话尚未完成清理，请稍后重新读取状态。";

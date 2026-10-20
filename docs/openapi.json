@@ -37116,6 +37116,16 @@
           "last_action": {
             "type": "string"
           },
+          "process_scope": {
+            "enum": [
+              "no_owned_process_resources",
+              "darwin_group_and_scoped_children.v1"
+            ],
+            "type": "string"
+          },
+          "process_scope_verified": {
+            "type": "boolean"
+          },
           "product": {
             "type": "string"
           },
@@ -37193,7 +37203,8 @@
           "updated_at",
           "cleanup_pending",
           "tree_reaped",
-          "profile_removed"
+          "profile_removed",
+          "process_scope_verified"
         ],
         "type": "object"
       },
