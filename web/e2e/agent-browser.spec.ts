@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 
 test("native Agent Browser uses the production API and visible workbench", async ({ page }) => {
   test.skip(process.env.WORKBENCH_JOURNEY_BROWSER !== "1", "explicit native browser acceptance");
-  test.setTimeout(120_000);
+  const nativeMac = process.platform === "darwin";
+  test.setTimeout(nativeMac ? 240_000 : 120_000);
   const metadata = JSON.parse(process.env.WORKBENCH_JOURNEY_METADATA!) as {
     workspace: string; read_token: string; control_token: string;
   };
@@ -52,7 +53,7 @@ test("native Agent Browser uses the production API and visible workbench", async
     await expect.poll(async () => (await readStatus()).unavailable_code).toBe("platform_unsupported");
     await expect(card.getByRole("button", { name: "停止浏览器" })).toHaveCount(0);
   } else {
-    await expect.poll(async () => (await readStatus()).last_action, { timeout: 60_000 }).toBe("browser_screenshot");
+    await expect.poll(async () => (await readStatus()).last_action, { timeout: nativeMac ? 180_000 : 60_000 }).toBe("browser_screenshot");
     const image = card.getByRole("img", { name: /Agent 浏览器页面：Owned Agent Browser check/u });
     await expect(image).toBeVisible();
     expect(await image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);

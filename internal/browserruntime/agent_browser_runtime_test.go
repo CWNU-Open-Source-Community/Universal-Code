@@ -236,7 +236,13 @@ func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) 
 	}
 	active := &atomic.Bool{}
 	active.Store(true)
-	request := AgentBrowserStartRequest{HomePath: home, Headless: true, Product: BrowserProductEdge, RuntimeDeadline: time.Now().Add(2 * time.Minute), Authority: AgentBrowserAuthority{RunID: "runtime-test", ManagerBootID: agentBrowserToken(), SessionID: agentBrowserToken(), Generation: 1, PermissionSnapshotID: "snapshot-test", PermissionRevision: 1, PermissionActivation: 1, RunAuthorizationFence: 1, PermissionMode: "full"}, CheckAuthority: func(ctx context.Context, _ AgentBrowserAuthority) error {
+	startupTimeout, lifetime := 40*time.Second, 2*time.Minute
+	if runtime.GOOS == "darwin" {
+		// A cold full Chrome bundle signature check took 77s on the native
+		// Intel runner. Keep it enabled and leave time for the actual actions.
+		startupTimeout, lifetime = 3*time.Minute, 5*time.Minute
+	}
+	request := AgentBrowserStartRequest{HomePath: home, Headless: true, Product: BrowserProductEdge, RuntimeDeadline: time.Now().Add(lifetime), Authority: AgentBrowserAuthority{RunID: "runtime-test", ManagerBootID: agentBrowserToken(), SessionID: agentBrowserToken(), Generation: 1, PermissionSnapshotID: "snapshot-test", PermissionRevision: 1, PermissionActivation: 1, RunAuthorizationFence: 1, PermissionMode: "full"}, CheckAuthority: func(ctx context.Context, _ AgentBrowserAuthority) error {
 		if !active.Load() {
 			return errors.New("authority revoked")
 		}
@@ -253,7 +259,7 @@ func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) 
 	if product := os.Getenv("TRAVERSE_TEST_AGENT_BROWSER_PRODUCT"); product != "" {
 		request.Product = BrowserProduct(product)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 	defer cancel()
 	r, err := LaunchAgentBrowser(ctx, request)
 	if err != nil {

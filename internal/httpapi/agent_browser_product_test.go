@@ -120,7 +120,13 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 	if !browserruntime.AgentBrowserPlatformAvailable() {
 		t.Fatal("requested native Agent Browser HTTP runtime is unavailable")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	testTimeout, browserLifetime := time.Minute, time.Minute
+	if runtime.GOOS == "darwin" {
+		// Include the native bundle signature check before exercising HTTP
+		// approval, screenshots, and cleanup on slower Intel runners.
+		testTimeout, browserLifetime = 3*time.Minute, 4*time.Minute
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 	var writes atomic.Int32
 	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +163,7 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 	if _, err = application.NewRunExecutionPermissionService(st, caps).Change(ctx, application.ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: "full", OperationKey: "http-browser-full-access", RequestedBy: "test_operator", Reason: "owned local browser HTTP test", ConfirmFull: true}); err != nil {
 		t.Fatal(err)
 	}
-	browser := application.NewAgentBrowserService(st, application.AgentBrowserOptions{HomePath: home, Capabilities: caps, Headless: true, SessionLifetime: time.Minute})
+	browser := application.NewAgentBrowserService(st, application.AgentBrowserOptions{HomePath: home, Capabilities: caps, Headless: true, SessionLifetime: browserLifetime})
 	defer browser.Shutdown(context.Background())
 	provider := &agentBrowserHTTPProductProvider{url: site.URL}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "fixture"})
