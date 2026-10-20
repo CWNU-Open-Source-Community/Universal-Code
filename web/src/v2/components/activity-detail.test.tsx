@@ -1,5 +1,6 @@
+import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
@@ -312,7 +313,7 @@ describe("V2ActivityGroup", () => {
 
       expect(await screen.findByText(output)).toBeInTheDocument();
       expect(screen.getByText("部分输出字符无法正确解码，当前文本可能不完整。")).toBeInTheDocument();
-      expect(view.container.querySelector(".v2-command-detail header .is-failed")).toHaveTextContent("failed");
+      expect(view.container.querySelector(".v2-command-detail header .is-failed")).toHaveTextContent("失败");
       expect(screen.getByText("Exit 4294901760 · 99ms")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
       expect(threadActivityDetail).toHaveBeenCalledTimes(1);
@@ -345,7 +346,7 @@ describe("V2ActivityGroup", () => {
     const explanation = screen.queryByText("输出提示 PowerShell 初始化失败，当前检查未完成。若使用 Windows 隔离工作区，请安装 PowerShell 7，并在宿主环境中将 CYBERAGENT_POWERSHELL_PATH 设置为 pwsh.exe 的绝对路径，重启应用后重试。完整错误仍保留在下方。");
     if (notice) expect(explanation).toBeInTheDocument();
     else expect(explanation).not.toBeInTheDocument();
-    expect(view.container.querySelector(".v2-command-detail header .is-failed")).toHaveTextContent("failed");
+    expect(view.container.querySelector(".v2-command-detail header .is-failed")).toHaveTextContent("失败");
     expect(screen.getByText(`Exit ${exitCode} · 99ms`)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
     expect(threadActivityDetail).toHaveBeenCalledTimes(1);
@@ -796,3 +797,8 @@ describe("V2ActivityGroup", () => {
     await waitFor(() => expect(threadActivityDetail).not.toHaveBeenCalled());
   });
 });
+
+function render(ui: ReactElement) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
+}

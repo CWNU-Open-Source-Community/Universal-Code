@@ -1,7 +1,10 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { Blob as NodeBlob } from "node:buffer";
 import { webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { QueueBinding, QueuePromotion, QueuePromotionRejection, QueuedMessage } from "../../api/queued-messages";
@@ -341,18 +344,18 @@ it("opens full text and attachments outside the compact list with a modal focus 
   const dialog = screen.getByRole("dialog", { name: "消息 1 的全文与附件" });
   expect(ui.container.querySelector("ol")?.contains(dialog)).toBe(false);
   expect(dialog.querySelector("pre")?.textContent).toBe(content);
-  expect(within(dialog).getByRole("button", { name: "Download file notes.txt" })).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "下载文件 notes.txt" })).toBeInTheDocument();
   const close = within(dialog).getByRole("button", { name: "关闭消息详情" });
   expect(close).toHaveFocus();
   await user.keyboard("{Shift>}{Tab}{/Shift}");
-  expect(within(dialog).getByRole("button", { name: "Download file notes.txt" })).toHaveFocus();
+  expect(within(dialog).getByRole("button", { name: "下载文件 notes.txt" })).toHaveFocus();
   await user.keyboard("{Tab}");
   expect(close).toHaveFocus();
-  const filePreview = within(dialog).getByRole("button", { name: "Preview file notes.txt" });
+  const filePreview = within(dialog).getByRole("button", { name: "预览文件 notes.txt" });
   await user.click(filePreview);
   const textDialog = screen.getByRole("dialog", { name: "notes.txt" });
   expect(await within(textDialog).findByText("raw text")).toBeInTheDocument();
-  expect(within(textDialog).queryByRole("button", { name: "Restore to message" })).not.toBeInTheDocument();
+  expect(within(textDialog).queryByRole("button", { name: "恢复到输入框" })).not.toBeInTheDocument();
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog", { name: "notes.txt" })).not.toBeInTheDocument();
   expect(filePreview).toHaveFocus();
@@ -732,3 +735,9 @@ it("keeps the operation recoverable if persisting a verified unchanged result fa
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

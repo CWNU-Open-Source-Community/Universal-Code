@@ -1,4 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { WorkspaceImageAttachment } from "../../api/image-attachments";
@@ -148,3 +151,9 @@ it("does not fetch a thumbnail for an image outside the current workspace", asyn
   const version = screen.getByRole("radio", { name: "版本 1" }).closest("article")!;
   expect(within(version).getByText("c.png · 60 × 40")).toBeInTheDocument();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

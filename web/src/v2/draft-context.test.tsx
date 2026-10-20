@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../lib/locale";
 import { useRef, useState } from "react";
-import { act, cleanup, fireEvent, render, within, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, within, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../api/client";
 import type { WorkspaceImageAttachment } from "../api/image-attachments";
@@ -272,3 +275,9 @@ describe("React draft documents across independent windows", () => {
     expect(final.api.submitThreadTurn).not.toHaveBeenCalled();
   });
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}
