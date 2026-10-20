@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,8 +30,20 @@ func TestCommandRuntimePlatformPythonVenv(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(resolved.AbsoluteDirectory, "test_venv.py"), []byte(test), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	legacy := resolved
-	legacy.Spec.Executable = legacy.ExecutablePath
+	legacySpec := resolved.Spec
+	legacySpec.Executable = resolved.ExecutablePath
+	legacySpec.Environment = []CommandRuntimeEnvironment{}
+	legacy, err := NormalizeCommandRuntimeSpec(legacySpec, resolved.WorkspaceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Prove the fixture itself works through the real venv entry point with
+	// the same restricted environment, before comparing canonical launches.
+	probe := exec.Command(resolved.Spec.Executable, "-c", "import sys; print(sys.prefix); import venv_dependency")
+	probe.Dir, probe.Env = resolved.AbsoluteDirectory, legacy.Environment
+	if output, err := probe.CombinedOutput(); err != nil || strings.TrimSpace(string(output)) != venv {
+		t.Fatalf("original venv entry point failed: %v\n%s", err, output)
+	}
 	if code, output := runCommandRuntimePythonVenv(t, legacy); code != 1 || !strings.Contains(output, "ModuleNotFoundError") {
 		t.Fatalf("canonical-only launch did not expose the venv regression: exit=%d output=%s", code, output)
 	}
@@ -58,6 +71,7 @@ func TestCommandRuntimePlatformPythonVenvBindings(t *testing.T) {
 	}
 	other := resolved.Spec
 	other.Executable = alias
+	other.Environment = []CommandRuntimeEnvironment{}
 	second, err := NormalizeCommandRuntimeSpec(other, resolved.WorkspaceRoot)
 	if err != nil {
 		t.Fatal(err)
@@ -66,8 +80,69 @@ func TestCommandRuntimePlatformPythonVenvBindings(t *testing.T) {
 		CommandRuntimeSpecFingerprint(second) == CommandRuntimeSpecFingerprint(resolved) {
 		t.Fatal("different invocation paths did not retain one image and distinct fingerprints")
 	}
-	legacy := resolved
-	legacy.Spec.Executable = legacy.ExecutablePath
+	legacySpec := resolved.Spec
+	legacySpec.Executable = resolved.ExecutablePath
+	legacySpec.Environment = []CommandRuntimeEnvironment{}
+	legacy, err := NormalizeCommandRuntimeSpec(legacySpec, resolved.WorkspaceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historical := legacy
+	if runtime.GOOS == "darwin" && strings.Contains(resolved.ExecutablePath, ".framework/") {
+		if legacy.EnvironmentSHA256 == resolved.EnvironmentSHA256 || !strings.Contains(strings.Join(resolved.Environment, "\n"), "PYTHONEXECUTABLE="+resolved.Spec.Executable) {
+			t.Fatal("Framework launcher alias is missing from the bound environment")
+		}
+		conflicting := resolved.Spec
+		conflicting.Environment = []CommandRuntimeEnvironment{{Name: "PYTHONEXECUTABLE", Value: resolved.ExecutablePath}}
+		if _, err := NormalizeCommandRuntimeSpec(conflicting, resolved.WorkspaceRoot); !errors.Is(err, ErrCommandRuntimeBoundary) {
+			t.Fatalf("conflicting Framework launcher override was accepted: %v", err)
+		}
+		changed := resolved
+		changed.Environment = append([]string(nil), resolved.Environment...)
+		for i, entry := range changed.Environment {
+			if strings.HasPrefix(entry, "PYTHONEXECUTABLE=") {
+				changed.Environment[i] = "PYTHONEXECUTABLE=" + resolved.ExecutablePath
+			}
+		}
+		if err := ValidateCommandRuntimeLaunchSpec(changed); !errors.Is(err, ErrCommandRuntimeBoundary) {
+			t.Fatalf("changed Framework launcher environment was accepted: %v", err)
+		}
+		var bound struct {
+			Environment []CommandRuntimeEnvironment `json:"environment"`
+		}
+		if err := json.Unmarshal([]byte(commandRuntimeIntentJSON(resolved)), &bound); err != nil || len(bound.Environment) != 1 || bound.Environment[0].Name != "PYTHONEXECUTABLE" || bound.Environment[0].Value != resolved.Spec.Executable {
+			t.Fatalf("Framework launcher is missing from the stored intent: %+v %v", bound, err)
+		}
+		again, err := NormalizeCommandRuntimeSpec(resolved.Spec, resolved.WorkspaceRoot)
+		if err != nil || CommandRuntimeSpecFingerprint(again) != CommandRuntimeSpecFingerprint(resolved) {
+			t.Fatalf("Framework environment normalization changed its binding: %v", err)
+		}
+		// A plain alias outside any venv must retain the canonical environment
+		// and base prefix, even when its target is a Framework launcher.
+		if second.EnvironmentSHA256 != legacy.EnvironmentSHA256 || len(second.Spec.Environment) != 0 {
+			t.Fatal("plain Framework alias acquired a venv launcher override")
+		}
+		plainSpec := second.Spec
+		plainSpec.Arguments = []string{"-c", "import sys; print(sys.prefix)"}
+		plain, err := NormalizeCommandRuntimeSpec(plainSpec, resolved.WorkspaceRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		base := exec.Command(resolved.ExecutablePath, plainSpec.Arguments...)
+		base.Dir, base.Env = legacy.AbsoluteDirectory, legacy.Environment
+		basePrefix, err := base.CombinedOutput()
+		if err != nil {
+			t.Fatalf("base interpreter probe: %v\n%s", err, basePrefix)
+		}
+		if code, prefix := runCommandRuntimePythonVenv(t, plain); code != 0 || prefix != string(basePrefix) {
+			t.Fatalf("plain Framework alias changed sys.prefix: exit=%d prefix=%q base=%q", code, prefix, basePrefix)
+		}
+		// Reproduce the previous argv[0]-only binding, before the derived
+		// Framework environment was included in its intent and digest.
+		historical = resolved
+		historical.Spec.Environment = []CommandRuntimeEnvironment{}
+		historical.Environment, historical.EnvironmentSHA256 = legacy.Environment, legacy.EnvironmentSHA256
+	}
 	if strings.Contains(commandRuntimeIntentJSON(legacy), "invocation_path") ||
 		CommandRuntimeSpecFingerprint(legacy) == CommandRuntimeSpecFingerprint(resolved) {
 		t.Fatal("the historical canonical-only binding can authorize new venv semantics")
@@ -79,7 +154,7 @@ func TestCommandRuntimePlatformPythonVenvBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := commandRuntimeTestRequest(manager, 5000)
-	request.Spec = legacy
+	request.Spec = historical
 	request.Scope.WorkspaceRootSHA256 = legacy.WorkspaceRootSHA256
 	job, replayed, err := manager.Start(t.Context(), request)
 	if err != nil || replayed {

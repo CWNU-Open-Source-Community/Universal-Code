@@ -325,6 +325,11 @@ func normalizeCommandRuntimeSpec(spec CommandRuntimeSpec,
 		environment = commandRuntimePlatformEnvironmentWithoutProxy(executablePath,
 			root, environment, spec.Network, spec.Environment)
 	}
+	spec.Environment = environmentSpec
+	environment, err = commandRuntimePythonEnvironment(&spec, executablePath, environment)
+	if err != nil {
+		return CommandRuntimeResolvedSpec{}, err
+	}
 	sort.Slice(environment, func(left int, right int) bool {
 		leftKey, _, _ := strings.Cut(environment[left], "=")
 		rightKey, _, _ := strings.Cut(environment[right], "=")
@@ -335,7 +340,6 @@ func normalizeCommandRuntimeSpec(spec CommandRuntimeSpec,
 		return CommandRuntimeResolvedSpec{}, ErrCommandRuntimeBoundary
 	}
 	environmentSHA := sha256.Sum256(encodedEnvironment)
-	spec.Environment = environmentSpec
 	rootDigest := sha256.Sum256([]byte(root))
 	return CommandRuntimeResolvedSpec{
 		Spec: spec, ExecutablePath: executablePath,
