@@ -1,0 +1,61 @@
+{
+  "phase": "after",
+  "platform": "darwin",
+  "product_revision": "9b98f99ec1d8b97f2f0d210246ca5df020e2a255",
+  "harness_revision": "9b98f99ec1d8b97f2f0d210246ca5df020e2a255",
+  "backend": "production app.ExecuteContext",
+  "frontend": "production Vite build",
+  "provider": "controlled offline fixture",
+  "provider_reply_held_for_capture": true,
+  "full_permission_confirmed_in_ui": true,
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "observed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261020040901-a6c5a70701e4",
+    "session_id": "agent-browser-20261020040902-435b15f159ea",
+    "generation": 1,
+    "state": "ready",
+    "available": true,
+    "can_start": false,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:49411/",
+    "title": "Owned Agent Browser check",
+    "document_epoch": 7,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-10-20T04:09:15.326718Z",
+    "screenshot": {
+      "locator": "workspace:///.cyberagent-workbench/browser-artifacts/run-20261020040901-a6c5a70701e4/db5afca6f15d5fe9685b14e12878db506f46f6cbc64ae82bda63c9c00fe0d723.png",
+      "sha256": "834065fda0d3cfc0cf394d41f80a8a67b06e34dd8149db102edb822e70df7715",
+      "byte_size": 35726,
+      "mime_type": "image/png"
+    },
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": false,
+    "process_scope_verified": false
+  },
+  "closed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261020040901-a6c5a70701e4",
+    "session_id": "agent-browser-20261020040902-435b15f159ea",
+    "generation": 1,
+    "state": "closed",
+    "available": true,
+    "can_start": true,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:49411/",
+    "document_epoch": 10,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-10-20T04:09:19.030798Z",
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": true,
+    "process_scope": "darwin_group_and_scoped_children.v1",
+    "process_scope_verified": true
+  }
+}

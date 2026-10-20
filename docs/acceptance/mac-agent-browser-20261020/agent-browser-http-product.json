@@ -1,0 +1,111 @@
+{
+  "actual_browser": true,
+  "closed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261020040642-6fcab6165066",
+    "session_id": "agent-browser-20261020040642-a1bd330d2bce",
+    "generation": 1,
+    "state": "closed",
+    "available": false,
+    "can_start": false,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:49356/",
+    "document_epoch": 8,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-10-20T04:06:53.117073Z",
+    "failure_code": "browser_unavailable",
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": true,
+    "process_scope": "darwin_group_and_scoped_children.v1",
+    "process_scope_verified": true
+  },
+  "decision": {
+    "version": "approval_control.v1",
+    "run_id": "run-20261020040642-6fcab6165066",
+    "approval_id": "approval-20261020040652-3ccf4314534b",
+    "proposal_id": "toolu_9cf0dd9d35e4369a1cc79ccb",
+    "tool_name": "agent_browser_sensitive",
+    "action": "approve_once",
+    "status": "approved",
+    "replayed": true,
+    "process_execution_enabled": false,
+    "shell_execution_enabled": false,
+    "docker_execution_enabled": false,
+    "workspace_write_applied": false,
+    "session_grant_created": false,
+    "capability_grant": false,
+    "execution_resumed": false,
+    "retry_completed": false,
+    "retry_scheduled": false,
+    "continuation": {
+      "state": "completed",
+      "replayed": true,
+      "model_called": false,
+      "tool_called": false
+    }
+  },
+  "model_received_pixels": true,
+  "preview": {
+    "protocol_version": "approval_queue.v1",
+    "run_id": "run-20261020040642-6fcab6165066",
+    "approval_id": "approval-20261020040652-3ccf4314534b",
+    "proposal_id": "toolu_9cf0dd9d35e4369a1cc79ccb",
+    "tool_name": "agent_browser_sensitive",
+    "workspace_id": "browser-http-workspace",
+    "effect": "browser_sensitive_action",
+    "working_directory": "",
+    "fields": [
+      {
+        "name": "operation",
+        "value": "browser_click"
+      },
+      {
+        "name": "url",
+        "value": "http://127.0.0.1:49356/"
+      },
+      {
+        "name": "summary",
+        "value": "Publish one synthetic draft to the test-owned fixture"
+      },
+      {
+        "name": "effect",
+        "value": "external_write"
+      }
+    ],
+    "source_current": true,
+    "redacted": false,
+    "truncated": false
+  },
+  "provider_kind": "controlled_fixture",
+  "provider_requests": 4,
+  "run_id": "run-20261020040642-6fcab6165066",
+  "status": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261020040642-6fcab6165066",
+    "session_id": "agent-browser-20261020040642-a1bd330d2bce",
+    "generation": 1,
+    "state": "ready",
+    "available": true,
+    "can_start": false,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:49356/",
+    "title": "HTTP browser fixture",
+    "document_epoch": 7,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-10-20T04:06:52.840581Z",
+    "screenshot": {
+      "locator": "workspace:///.cyberagent-workbench/browser-artifacts/run-20261020040642-6fcab6165066/3ba8dfc83fb044e48944206ee0370e4eed7a030636d1ceb09cb494af761cedb8.png",
+      "sha256": "9520a120f7078262bd23b46860aac34bef5aa41d63c9e64d305feda2f16d74a4",
+      "byte_size": 16992,
+      "mime_type": "image/png"
+    },
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": false,
+    "process_scope_verified": false
+  },
+  "writes": 1
+}
