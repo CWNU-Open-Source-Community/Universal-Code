@@ -489,7 +489,9 @@ jobs:
           TRAVERSE_TEST_KEYCHAIN: '1'
         run: go test -v -tags keychainintegration -count=1 -timeout=90s ./internal/credential
       - name: Verify POSIX command runtime transport
-        run: go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree)$'
+        run: |
+          python3 --version
+          go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree|PythonVenv.*)$'
       - name: Verify dependency cache roots on macOS
         run: go test -count=1 ./internal/dependencycache
       - name: Verify desktop boundaries without packaging

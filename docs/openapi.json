@@ -56812,7 +56812,10 @@
               "format.go",
               "test.go",
               "test.npm",
-              "test.node"
+              "test.node",
+              "test.python",
+              "test.pytest",
+              "test.rust"
             ],
             "maxLength": 256,
             "minLength": 1,

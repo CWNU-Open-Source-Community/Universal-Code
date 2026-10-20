@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
@@ -148,6 +149,9 @@ func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Ide
 		}
 		return node, launcher, nil
 	}
+	if name == "python" && runtime.GOOS != "windows" {
+		name = "python3"
+	}
 	executable, err := exec.LookPath(name)
 	if err != nil {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition, "project command toolchain is unavailable: "+name)
@@ -165,6 +169,10 @@ func dockerProjectExecutable(id string) (string, bool) {
 		return "/opt/toolchains/go/bin/go", true
 	case "test.node", "test.npm":
 		return "/opt/toolchains/node/bin/node", true
+	case "test.python", "test.pytest":
+		return "/opt/toolchains/python/usr-local/bin/python3", true
+	case "test.rust":
+		return "/usr/local/cargo/bin/cargo", true
 	case "format.go":
 		return "/opt/toolchains/go/bin/gofmt", true
 	default:

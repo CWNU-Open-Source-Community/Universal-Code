@@ -8,6 +8,12 @@ const response = (data: unknown) => new Response(JSON.stringify({ version: "api.
 
 afterEach(() => vi.unstubAllGlobals());
 
+it.each(["test.python", "test.pytest", "test.rust"])("accepts reviewed %s completion hooks", (commandID) => {
+  const native = { ...view, hooks: [{ event: "before_finish", command_id: commandID, target: "." }] };
+  expect(parseProjectHooks(native, "thread-1").hooks[0].command_id).toBe(commandID);
+  expect(() => parseProjectHooks({ ...native, hooks: [{ ...native.hooks[0], event: "after_edit" }] }, "thread-1")).toThrow();
+});
+
 it("reads with the read credential and reviews only the displayed fingerprint and revision using control", async () => {
   const trusted = { ...view, state: "trusted", trusted: true, revision: 1 };
   const fetch = vi.fn().mockResolvedValueOnce(response(view)).mockResolvedValueOnce(response(trusted))
