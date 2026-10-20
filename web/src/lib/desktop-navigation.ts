@@ -1,4 +1,5 @@
 import { desktopBridgeAvailable } from "./desktop-bridge";
+import { openWebURL, webURL } from "./chat-resources";
 
 function sameRendererOrigin(raw: string): boolean {
   try {
@@ -49,9 +50,16 @@ export function installDesktopNavigationGuard(): () => void {
   const onLink = (event: Event) => {
     const anchor = closestElement(event, "a[href]");
     const href = anchor?.getAttribute("href");
+    // File links use a same-origin fragment and a React handler. External web
+    // addresses leave through the native browser, never inside this renderer.
     if (href !== null && href !== undefined && !sameRendererOrigin(href) &&
       !sameRendererBlobDownload(anchor, href, event)) {
       block(event);
+      if (webURL(href) && event instanceof MouseEvent && (event.button === 0 || event.button === 1)) {
+        void openWebURL(href).catch((error) => {
+          document.dispatchEvent(new CustomEvent("uc-link-error", { detail: error instanceof Error ? error.message : "无法打开链接" }));
+        });
+      }
     }
   };
   const onSubmit = (event: Event) => {

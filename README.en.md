@@ -44,27 +44,37 @@
 
 | OS | Instructions |
 | :--- | :--- |
-| **Windows 10/11** | Download `Universal-Code.exe` from [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) and launch (requires Edge WebView2 Runtime). See the [Windows release guide](docs/windows-release.md). |
-| **macOS (Apple Silicon / Intel)** | Download `.dmg` or `.zip` from [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases), unpack, and move to Applications. See the [macOS release guide](docs/macos-release.md). |
+| **Windows 10/11** | Get the current Actions test package and launch steps from the [Windows download guide](docs/windows-release.md). The executable is named `TraverseBoard.exe`; double-click it to launch. Edge WebView2 Runtime is required. The newest public Release remains the [older preview from 2026-09-05](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview). |
+| **macOS (Apple Silicon / Intel)** | Get the Actions preview ZIP for your architecture from the [macOS download guide](docs/macos-release.md), unpack it, and open `TraverseBoard.app`. It is ad-hoc signed and unnotarized. Public Releases do not yet contain Mac packages. |
+
+Use the [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) as the ongoing candidate entry point. Actions downloads require a GitHub login and expire. Each platform guide records the candidate version, source revision, and expiry date.
+Packages retain their historical filenames; the product name shown in the application is Universal-Code.
 
 ### Option 2: Build from Source
 
-Make sure you have **Go 1.26+** and **Node.js 24+** installed:
+Install **Go as pinned in [go.mod](go.mod), currently 1.26.9**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
 cd Universal-Code
-
-# 2. Build the web frontend
-cd web
-npm ci
-npm run build
-cd ..
-
-# 3. Launch the desktop application
-go run ./cmd/cyberagent-desktop
 ```
+
+On Windows, run in PowerShell from the repository root:
+
+```powershell
+.\scripts\build-desktop.ps1 -Version v1.0.0-dev
+.\build\desktop\TraverseBoard.exe
+```
+
+On macOS, install Xcode Command Line Tools, then run from the repository root:
+
+```sh
+CGO_ENABLED=1 bash scripts/build-desktop-darwin.sh -Version v1.0.0-dev
+open build/desktop/TraverseBoard.app
+```
+
+The scripts install locked frontend dependencies, check and build the embedded UI, and use the platform's required Go tags and linker options.
+The desktop application includes its backend. See the [Windows](docs/windows-release.md) / [macOS](docs/macos-release.md) guides for the full requirements.
 
 ---
 

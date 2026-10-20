@@ -4,11 +4,42 @@
 
 ## 下载与启动 / Download and launch
 
-从 [GitHub Releases](https://github.com/CWNU-Open-Source-Community/Traverse-Board/releases) 获取已发布版本的 `TraverseBoard.exe`，双击打开。Windows 10/11 需要 Edge WebView2 Evergreen Runtime。v1.0.0 尚在发布准备中，现有公开预览不代表包含主线的全部功能；最新进度见 [v1.0.0 发布说明](releases/v1.0.0.md)。
+截至 2026-10-20，最新公开 Release 为 [v0.1.0-pr195-preview](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview)，发布于 2026-09-05、源码为 `8df0df9ad48a9d53c03fdb63ac78d5c7199219b0`。其中的 `TraverseBoard.exe` 是旧预览，不能用于验收当前主线功能。v1.0.0 进度见 [发布说明](releases/v1.0.0.md)。
 
-Download `TraverseBoard.exe` from a published [GitHub Release](https://github.com/CWNU-Open-Source-Community/Traverse-Board/releases) and double-click it. Windows 10/11 requires Edge WebView2 Evergreen Runtime. v1.0.0 is still being prepared; existing public previews do not necessarily contain current main-branch features.
+As of 2026-10-20, the newest public Release is the older [v0.1.0-pr195-preview](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview), published on 2026-09-05 from revision `8df0df9ad48a9d53c03fdb63ac78d5c7199219b0`. Its `TraverseBoard.exe` predates current main-branch features.
 
-开发者的只读入口为 `TraverseBoard.exe --safe-view`；完整本机操作说明见[测试指南](../packaging/windows/LOCAL-TEST-GUIDE.txt)。
+### 当前测试候选 / Current test candidate
+
+长期入口为 [Desktop release 打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)，成功运行中的 Windows artifact 可用于测试。当前中央 CI 主干运行不上传 Windows 应用包。
+
+The [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) remains the ongoing Windows candidate entry point. Main-branch central CI does not currently upload a Windows application package.
+
+[PR #411 的 Desktop release 打包检查](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692)已通过。以下候选版本为 `v1.0.0-pr.411`，源码绑定 PR 合并检出 `4158910bc9f478b3511459e0b5babfdc0d4def97`；它与 PR 分支头提交不同。完整中央 CI 状态见 [PR 检查](https://github.com/CWNU-Open-Source-Community/Universal-Code/pull/411/checks)。
+
+The [PR #411 Desktop release packaging check](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692) passed. The candidate is `v1.0.0-pr.411`, built from the PR merge checkout `4158910bc9f478b3511459e0b5babfdc0d4def97`. See the [PR checks](https://github.com/CWNU-Open-Source-Community/Universal-Code/pull/411/checks) for the full central CI status.
+
+1. 登录 GitHub，下载 [Windows 测试候选](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692/artifacts/12215261616)（`TraverseBoard-windows-release-v1.0.0-pr.411`）。该 artifact 保留 14 天，**2026-11-02 19:13 UTC 到期**。
+2. 解开 GitHub Actions 的传输 ZIP，双击根目录的 **`TraverseBoard.exe`**。Windows 10/11 需要已安装的 Edge WebView2 Evergreen Runtime。
+3. 这是未签名测试候选，可能出现 SmartScreen 提示。窗口显示 Universal-Code，文件仍沿用历史名。测试说明见[本机测试指南](../packaging/windows/LOCAL-TEST-GUIDE.txt)。
+
+Sign in to GitHub, download the [Windows test candidate](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692/artifacts/12215261616), and extract the Actions transport ZIP. It expires on **2026-11-02 at 19:13 UTC**. Double-click the root `TraverseBoard.exe` on Windows 10/11 with Edge WebView2 Evergreen Runtime installed. This unsigned candidate may trigger SmartScreen; the application displays Universal-Code while retaining the historical filename.
+
+候选到期后，在 [Desktop release 工作流](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)选择较新的成功运行，核对版本、源码 revision 和 `TraverseBoard-windows-release-*` artifact。Actions 测试包与公开 Release 的直发 EXE 分发方式不同。只读启动入口为 `TraverseBoard.exe --safe-view`。
+
+If this artifact has expired, select a newer successful [Desktop release run](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml), check its version and source revision, and download its `TraverseBoard-windows-release-*` artifact. `TraverseBoard.exe --safe-view` starts the read-only view.
+
+### 从源码构建与启动 / Build and launch from source
+
+在仓库根目录使用 PowerShell、[go.mod](../go.mod) 固定的 Go（当前 1.26.9）与 Node.js 24（CI 为 24.16.0）：
+
+```powershell
+.\scripts\build-desktop.ps1 -Version v1.0.0-dev
+.\build\desktop\TraverseBoard.exe
+```
+
+构建脚本包含 `npm ci`、前端检查与构建、Go 桌面检查，以及 `desktop,production,wv2runtime.error` 标签；生成的 EXE 内含界面和后端。若前端已单独构建，可用 `-SkipFrontend`。仅运行不带标签的 `go run ./cmd/cyberagent-desktop` 会因构建约束而失败。
+
+Run the commands above in PowerShell from the repository root using the Go version pinned in [go.mod](../go.mod) and Node.js 24. The script checks and builds the frontend and desktop application with the required tags. Use `-SkipFrontend` only when `web/dist` has already been built. The resulting EXE includes the UI and backend.
 
 ## 成品与发布合同 / Deliverables and release contract
 

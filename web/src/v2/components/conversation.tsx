@@ -1122,7 +1122,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {view === "conversation" && !transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
-        {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile}
+        {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""} onOpenFile={openFile}
           onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
           onCompose={client.hasThreadControl && onDraftChange && detail.thread.status !== "archived" ? composeMessage : undefined} />}
         {submissionNotices.map(({ input, error }) =>

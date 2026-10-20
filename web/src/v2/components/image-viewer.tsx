@@ -4,7 +4,14 @@ import { Copy, Download, Maximize2, Minus, Plus, X } from "lucide-react";
 import type { WorkspaceImageAttachment } from "../../api/image-attachments";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 
-async function clipboardPNG(blob: Blob, image: WorkspaceImageAttachment): Promise<Blob> {
+type PreviewImage = Pick<WorkspaceImageAttachment, "name" | "mime_type" | "width" | "height">;
+export async function copyImageToClipboard(blob: Blob, image: PreviewImage): Promise<void> {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("当前浏览器不支持复制图片，请下载原图。");
+  const png = clipboardPNG(blob, image);
+  void png.catch(() => {});
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}
+async function clipboardPNG(blob: Blob, image: PreviewImage): Promise<Blob> {
   // Reuse the authenticated, hash-verified bytes. Fetching the display's blob:
   // URL is unnecessary and disallowed by the page's connect-src policy.
   if (blob.type !== image.mime_type) throw new Error("原图格式与保存记录不一致。");
@@ -26,7 +33,7 @@ async function clipboardPNG(blob: Blob, image: WorkspaceImageAttachment): Promis
 
 /** Presents the already verified original Blob URL; zoom never rewrites pixels. */
 export function V2ImageViewer({ image, url, blob, onClose, returnFocusRef }: {
-  image: WorkspaceImageAttachment;
+  image: PreviewImage;
   url: string;
   blob: Blob;
   onClose: () => void;
@@ -69,11 +76,7 @@ export function V2ImageViewer({ image, url, blob, onClose, returnFocusRef }: {
     }
     setCopying(true);
     try {
-      const png = clipboardPNG(blob, image);
-      // Retain the click's activation while PNG conversion resolves. Handle an
-      // early permission rejection without leaving a rejected conversion promise.
-      void png.catch(() => {});
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      await copyImageToClipboard(blob, image);
       setCopied(true);
     } catch (failure) {
       setCopyError(failure instanceof DOMException && failure.name === "NotAllowedError"

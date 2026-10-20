@@ -782,6 +782,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 <details><summary>19 active identifiers</summary>
 
+- `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
 - `desktop_connection_bootstrap.v1`
 - `desktop_debug_terminal_agent_input.v1`
