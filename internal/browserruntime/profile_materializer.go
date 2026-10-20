@@ -51,7 +51,7 @@ var profileCleanupJanitors = struct {
 // created independently and revalidated before the next one is touched; this
 // deliberately avoids applying MkdirAll to a caller-controlled path.
 func PrepareFullCDPProfileRuntimeRoot(homePath string) (string, error) {
-	homePath = strings.TrimSpace(homePath)
+	homePath = filepath.FromSlash(strings.TrimSpace(homePath))
 	if homePath == "" || !filepath.IsAbs(homePath) || filepath.Clean(homePath) != homePath ||
 		!profilePathHasNoIndirection(homePath) {
 		return "", errors.New("full CDP application home is unavailable or indirect")
