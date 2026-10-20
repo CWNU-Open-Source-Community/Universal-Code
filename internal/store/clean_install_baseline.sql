@@ -18583,8 +18583,9 @@ CREATE TRIGGER trg_project_preparation_delete BEFORE DELETE ON project_preparati
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_project_preparation_insert BEFORE INSERT ON project_preparations
 	 WHEN NEW.fetch_job_id!=''
-	 OR ((NEW.workspace_root='' OR NEW.seed_directory='') AND (NEW.workspace_root!='' OR NEW.seed_directory!=''))
-	 OR (NEW.workspace_root!='' AND (NEW.backend!='docker_standard_code'
+	 OR (NEW.seed_directory!='' AND NEW.workspace_root='')
+	 OR (NEW.workspace_root!='' AND (NEW.backend NOT IN ('docker_standard_code','local_windows_lpac','docker_sandboxes')
+	  OR (NEW.seed_directory!='' AND NEW.backend!='docker_standard_code')
 	  OR (NEW.workspace_root!='.' AND NEW.target!=NEW.workspace_root AND substr(NEW.target,1,length(NEW.workspace_root)+1)!=NEW.workspace_root||'/')))
 	 OR NEW.state!='pending' OR NEW.revision!=1 OR NEW.completed_packages!=0 OR NEW.cache_hits!=0
 	 OR NEW.downloaded_bytes!=0 OR NEW.job_id!='' OR NEW.script_job_id!='' OR NEW.cancel_requested!=0 OR NEW.error!=''

@@ -45,23 +45,24 @@ type Command struct {
 }
 
 type Plan struct {
-	Version          string    `json:"version"`
-	Fingerprint      string    `json:"fingerprint"`
-	Target           string    `json:"target"`
-	WorkspaceRoot    string    `json:"workspace_root,omitempty"`
-	Ecosystem        string    `json:"ecosystem"`
-	Toolchain        string    `json:"toolchain"`
-	RequestedVersion string    `json:"requested_version,omitempty"`
-	Manifest         File      `json:"manifest"`
-	Lockfiles        []File    `json:"lockfiles"`
-	Sources          []string  `json:"sources"`
-	Packages         []Package `json:"-"`
-	PNPMSeedLock     []byte    `json:"-"`
-	Install          Command   `json:"install"`
-	Test             Command   `json:"test"`
-	Ready            bool      `json:"ready"`
-	Issues           []string  `json:"issues"`
-	CacheKey         string    `json:"cache_key"`
+	Version           string            `json:"version"`
+	Fingerprint       string            `json:"fingerprint"`
+	Target            string            `json:"target"`
+	WorkspaceRoot     string            `json:"workspace_root,omitempty"`
+	Ecosystem         string            `json:"ecosystem"`
+	Toolchain         string            `json:"toolchain"`
+	RequestedVersion  string            `json:"requested_version,omitempty"`
+	Manifest          File              `json:"manifest"`
+	Lockfiles         []File            `json:"lockfiles"`
+	Sources           []string          `json:"sources"`
+	Packages          []Package         `json:"-"`
+	PNPMSeedLock      []byte            `json:"-"`
+	NPMWorkspaceLinks map[string]string `json:"-"`
+	Install           Command           `json:"install"`
+	Test              Command           `json:"test"`
+	Ready             bool              `json:"ready"`
+	Issues            []string          `json:"issues"`
+	CacheKey          string            `json:"cache_key"`
 }
 
 // StageDirectory is relative to the Run workspace and stable for one target.
@@ -92,10 +93,11 @@ func (p *Plan) seal() {
 	// Packages are private in the HTTP projection, but are part of the exact
 	// review binding so altered URLs and checksums cannot reuse consent.
 	encoded, _ := json.Marshal(struct {
-		Plan         Plan
-		Packages     []Package
-		PNPMSeedLock []byte
-	}{*p, p.Packages, p.PNPMSeedLock})
+		Plan              Plan
+		Packages          []Package
+		PNPMSeedLock      []byte
+		NPMWorkspaceLinks map[string]string `json:",omitempty"`
+	}{*p, p.Packages, p.PNPMSeedLock, p.NPMWorkspaceLinks})
 	sum := sha256.Sum256(encoded)
 	p.Fingerprint = hex.EncodeToString(sum[:])
 }
