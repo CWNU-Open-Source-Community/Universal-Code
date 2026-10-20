@@ -60,6 +60,22 @@ the project, authorization and cached content.
 
 ## Acceptance
 
+### Yarn Classic
+
+Yarn preparation accepts standalone packages declaring `yarn@1.22.22` with a
+Classic v1 lockfile. The broker verifies every HTTPS registry tarball using the
+locked SHA-256/SHA-512 SRI, then writes a task-local offline mirror. Yarn runs
+with a fixed configuration and private cache, ignores repository `yarn-path`,
+installs with `--offline --frozen-lockfile --ignore-scripts`, and leaves source
+manifests and lockfiles unchanged. Tests use the same mirror and existing Job
+authorization. Installation-script opt-in is not offered for this format.
+
+Execution requires the fixed Standard Code Docker image's `1.22.22` Yarn label.
+Older images retain npm/Go support and report the missing Yarn requirement.
+Modern Yarn, workspaces, Git/file dependencies and conflicting lockfiles receive
+an actionable unsupported-plan message. These formats use different resolution
+or cache semantics and are not represented as Classic-compatible.
+
 Verification covers missing dependencies, denied origins and redirects, corrupt
 cache entries, changed lock files, real offline installation and testing,
 nonzero tests followed by repair, cancellation/reopening, and final delivery.

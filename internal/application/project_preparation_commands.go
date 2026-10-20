@@ -59,6 +59,9 @@ func PrepareProjectPreparationTestCommand(plan projectprep.Plan, adapter command
 }
 
 func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing, runInstallScripts bool) (runner.CommandRuntimeSpec, error) {
+	if plan.Ecosystem == "yarn" {
+		return prepareYarnPreparationSpec(plan, adapter, testing)
+	}
 	if plan.Ecosystem == "pnpm" {
 		action := "install"
 		if testing {
@@ -133,6 +136,36 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 		TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288},
 		Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
 		Purpose: "Project preparation " + actionID + " " + plan.Fingerprint,
+	})
+}
+
+func prepareYarnPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, testing bool) (runner.CommandRuntimeSpec, error) {
+	if !plan.Ready || plan.Version != projectprep.ProtocolVersion || len(plan.Fingerprint) != 64 || plan.RequestedVersion != projectprep.YarnVersion {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Yarn dependency preparation plan is unavailable")
+	}
+	if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Yarn preparation requires the Standard Code Docker image with Yarn "+projectprep.YarnVersion)
+	}
+	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
+		return runner.CommandRuntimeSpec{}, err
+	}
+	stage := sandbox.DockerStandardCodeWorkspaceTarget + "/" + projectprep.StageDirectory(plan.Target)
+	arguments := []string{sandbox.DockerStandardCodeYarnCLI, "--no-default-rc", "--use-yarnrc", stage + "/yarnrc",
+		"--cache-folder", stage + "/yarn-cache", "--offline", "--non-interactive", "--no-progress"}
+	action := "install.yarn"
+	if testing {
+		arguments, action = append(arguments, "run", "test"), "test.yarn"
+	} else {
+		arguments = append(append([]string{sandbox.DockerStandardCodeYarnCLI, "install"}, arguments[1:]...), "--frozen-lockfile", "--ignore-scripts")
+	}
+	return runner.NormalizeCommandRuntimeIntent(runner.CommandRuntimeSpec{
+		Version: runner.CommandRuntimeProtocolVersion, Profile: runner.CommandRuntimeProcess,
+		Executable: "/opt/toolchains/node/bin/node", Arguments: arguments, WorkingDirectory: plan.Target,
+		Environment: []runner.CommandRuntimeEnvironment{},
+		StdinPolicy: runner.CommandRuntimeStdinClosed, CloseInitialStdin: true,
+		TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288},
+		Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
+		Purpose: "Project preparation " + action + " " + plan.Fingerprint,
 	})
 }
 
