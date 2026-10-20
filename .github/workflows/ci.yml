@@ -149,6 +149,18 @@ jobs:
         run: |
           printf '%s' "$GO_PLAN" > "$RUNNER_TEMP/go-plan.json"
           python -B scripts/ci/run_go_checks.py --plan "$RUNNER_TEMP/go-plan.json"
+      - name: Set up Python 3.9 for macOS packaging compatibility
+        if: ${{ needs.classify.outputs.packaging == 'true' }}
+        id: macos-package-python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.9'
+          update-environment: false
+      - name: Verify macOS archive tooling on Python 3.9
+        if: ${{ needs.classify.outputs.packaging == 'true' }}
+        env:
+          MACOS_PACKAGE_TEST_PYTHON: ${{ steps.macos-package-python.outputs.python-path }}
+        run: '"$MACOS_PACKAGE_TEST_PYTHON" -B -m unittest discover -s scripts -p test_macos_release.py -v'
 
   go-race:
     name: Go authority race checks
@@ -450,10 +462,18 @@ jobs:
         run: go test -count=1 ./internal/analyzer -run '^Test(SubprocessConformance|AnalyzerResultStaging|Analyzer(ImmutableHandleHandoff|DedicatedLowPrivilegeIdentity|ReadOnlyFilesystemPrivateStaging)Conformance)'
 
   desktop-macos:
-    name: macOS Desktop shell
+    name: macOS Desktop shell (${{ matrix.arch }})
     needs: classify
     if: ${{ !cancelled() && needs.classify.result == 'success' && needs.classify.outputs.native == 'true' }}
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up repository-pinned Go
@@ -464,6 +484,14 @@ jobs:
           cache: true
       - name: Report Go toolchain
         run: go version
+      - name: Verify native macOS architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          case "$(uname -m):$(go env GOARCH):$EXPECTED_ARCH" in
+            arm64:arm64:arm64|x86_64:amd64:amd64) ;;
+            *) echo "Runner, Go and expected native architectures differ" >&2; exit 1 ;;
+          esac
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -490,12 +518,14 @@ jobs:
           go test -count=1 -tags desktop ./cmd/cyberagent-desktop ./web
       - name: Build and verify downloadable macOS preview
         if: ${{ needs.classify.outputs.packaging == 'true' }}
-        run: bash scripts/release-desktop-darwin.sh "v1.0.0-ci.$GITHUB_RUN_ID" "$GITHUB_SHA" "$(go env GOARCH)"
+        env:
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: bash scripts/release-desktop-darwin.sh "v1.0.0-ci.$GITHUB_RUN_ID" "$GITHUB_SHA" "$RELEASE_ARCH"
       - name: Upload downloadable macOS preview
         if: ${{ needs.classify.outputs.packaging == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: TraverseBoard-macos-preview-arm64
+          name: TraverseBoard-macos-preview-${{ matrix.arch }}
           path: build/macos-public/*
           if-no-files-found: error
           retention-days: 30

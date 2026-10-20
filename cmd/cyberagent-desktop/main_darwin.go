@@ -87,6 +87,10 @@ func appleScriptStringLiteral(value string) string {
 }
 
 func applyDesktopPlatformOptions(appOptions *options.App) {
+	// Wails omits the native titlebar and close button for a frameless window.
+	// HiddenInset supplies the full-size content layout while keeping macOS
+	// traffic lights, so override the shared Windows frameless setting.
+	appOptions.Frameless = false
 	appOptions.Mac = desktopMacOptions()
 }
 
