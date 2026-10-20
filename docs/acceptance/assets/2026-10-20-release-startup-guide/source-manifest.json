@@ -1,0 +1,149 @@
+{
+  "base_revision": "2bbdab93ec244426b431cbc2f0595917e802931e",
+  "renderer": "markdown-it-py 4.2.0, CommonMark + HTML + table, same CSS for before and after",
+  "browser": "Chrome 155.0.0.0, Playwright CLI 0.1.22, viewport 1440x1200",
+  "before": {
+    "README.md": {
+      "file_sha256": "67c998138d82117bb1ece326435e3de21d09255dff9748350e16defd03d877c9",
+      "rendered_excerpt_sha256": "174db54f149a1918c08db839e10789de0d0dc724fdae180570027964f5638495",
+      "start_heading": "## 快速开始",
+      "end_before_heading": "## 模型配置与连接"
+    },
+    "README.en.md": {
+      "file_sha256": "4209086b53dc3c20eb5c68e9d75ca6bf2297106410e78170a11ccd26347de312",
+      "rendered_excerpt_sha256": "15ae392e1a0a0525dda1aaccbea44e48b829e00f277dae73ee21fee3759b5cd4",
+      "start_heading": "## Quick Start",
+      "end_before_heading": "## Connecting Models"
+    },
+    "docs/windows-release.md": {
+      "file_sha256": "8648d8846fe5b24ca9d52123073aec6dd4cf9fc8abbbf37cb2c88574b36abc69",
+      "rendered_excerpt_sha256": "73c180a34a20accd6f52ce6d10bbaf934b713dd75b0118a871c47ec20ccd6607",
+      "start_heading": null,
+      "end_before_heading": "## 成品与发布合同"
+    },
+    "docs/macos-release.md": {
+      "file_sha256": "3f82f54d72697ca2bffb9d7a4d3009dcadc3be2777440b17ae0a4785ba7ee983",
+      "rendered_excerpt_sha256": "3f82f54d72697ca2bffb9d7a4d3009dcadc3be2777440b17ae0a4785ba7ee983",
+      "start_heading": null,
+      "end_before_heading": null
+    }
+  },
+  "after": {
+    "README.md": {
+      "file_sha256": "92b0e6d17b1d9f70f4b7d7552686510603c82a2bc7d57015359272329d6132b3",
+      "rendered_excerpt_sha256": "4399ef771209ce9c001cf4bb0cb633ef81948bde4b11b2060546ba8b2b2f9b35",
+      "start_heading": "## 快速开始",
+      "end_before_heading": "## 模型配置与连接"
+    },
+    "README.en.md": {
+      "file_sha256": "ae781bf7cd7ba83295e83cea4f7e9d95a6c92f53a98f7dac47450a81040ef8ba",
+      "rendered_excerpt_sha256": "28309f80d359d81142f7a08d69b835bdca34eaa0438349ac7731eab3f4a3fae5",
+      "start_heading": "## Quick Start",
+      "end_before_heading": "## Connecting Models"
+    },
+    "docs/windows-release.md": {
+      "file_sha256": "03c2234714f2bc2cb8778a7f307f24ada0fa52df438e0396f23966c4704a2b61",
+      "rendered_excerpt_sha256": "e9371e622fc97d55006309adefa70734c6b5ed1490017d70808edac9a6b885ef",
+      "start_heading": null,
+      "end_before_heading": "## 成品与发布合同"
+    },
+    "docs/macos-release.md": {
+      "file_sha256": "70934aa81df81e5441ea6ad9b5c05abbceaa8cd88796690d5303ccd49c40bfec",
+      "rendered_excerpt_sha256": "70934aa81df81e5441ea6ad9b5c05abbceaa8cd88796690d5303ccd49c40bfec",
+      "start_heading": null,
+      "end_before_heading": null
+    }
+  },
+  "local_windows_build": {
+    "protocol_version": "portable_release_metadata.v1",
+    "app_version": "v1.0.0-dev",
+    "revision": "2bbdab93ec244426b431cbc2f0595917e802931e",
+    "source_date_epoch": 1792432658,
+    "modified": true,
+    "go_version": "go1.26.9",
+    "node_version": "v24.14.0",
+    "npm_version": "11.9.0",
+    "rust_version": "1.97.1",
+    "go_sum_sha256": "5287ae7ea2213d648e418457da659afc3e274fbc787a8c8f706416fba7de6e12",
+    "node_lock_sha256": "b32e75fc40e7881a4a39520547fbfcad494bb88d96b68ed03b8dbcd106d85f3a",
+    "cargo_lock_sha256": "1c0890a39dd1952d6286223dfe12028f86fd96adac30822efdd36312dbb6527d",
+    "embedded_analyzer_sha256": "59d51f86c03dbf4ae2d5b82e0080cd99e697b067666379273f1eeb47e952aa88",
+    "target_os": "windows",
+    "target_arch": "amd64",
+    "cgo_enabled": "1",
+    "trimpath": true,
+    "binary_name": "TraverseBoard.exe",
+    "sha256": "0c6834a0fef3295dffbe0fcc8b117623ea5519be10dc9cc818004eed53809a1a",
+    "operator_preview_included": false,
+    "operator_preview_launcher_name": "",
+    "operator_preview_launcher_sha256": "",
+    "local_test_guide_name": "LOCAL-TEST-GUIDE.txt",
+    "local_test_guide_sha256": "deeae82979229a14e0689b2ac73771085bdff7325ce5c2d3b0835acc9789e83b",
+    "default_ui_language": "zh-CN",
+    "reproducibility_checked": false,
+    "reproducible": false,
+    "installer_included": false,
+    "registry_writes": false,
+    "startup_task": false,
+    "auto_update_enabled": false,
+    "manual_windows_10_matrix_required": true
+  },
+  "screenshots": {
+    "after-macos.png": {
+      "sha256": "5ad0451f02be99e7838824e85280a47a084afc79061a70c814d4604a12c994f6",
+      "size": [
+        1425,
+        2232
+      ]
+    },
+    "after-readme-en.png": {
+      "sha256": "23a95f4ed8334b9379650c4b6dc633af44c82d60c116035f06ea654bf9d96e28",
+      "size": [
+        1440,
+        1200
+      ]
+    },
+    "after-readme-zh.png": {
+      "sha256": "a010d66170967dfe070f3dc7b104869973b72928b8c415821fc15d8e72d65196",
+      "size": [
+        1440,
+        1200
+      ]
+    },
+    "after-windows.png": {
+      "sha256": "151359cd6e51cb3d1bae22376b86e1b162eab6b4fc5ec2a0739168fdf2deeb88",
+      "size": [
+        1425,
+        1403
+      ]
+    },
+    "before-macos.png": {
+      "sha256": "853a07557702db86e2baa128131f0d79108f7ed1e7b161681cca4001390c97aa",
+      "size": [
+        1425,
+        1431
+      ]
+    },
+    "before-readme-en.png": {
+      "sha256": "85dd38b33a0eb59b5803b17aca7f09dac124abb42cf84cc5e04aee109bc0da42",
+      "size": [
+        1440,
+        1200
+      ]
+    },
+    "before-readme-zh.png": {
+      "sha256": "ccedfbb41acbb5df143e6bb52c3f22751e5b798a3efd1ae9693d306c7aeea94d",
+      "size": [
+        1440,
+        1200
+      ]
+    },
+    "before-windows.png": {
+      "sha256": "44af417f22017ef8461eef138ad42f876c27b37f2b26ec9a0c98a74c1cb0f3ef",
+      "size": [
+        1440,
+        1200
+      ]
+    }
+  }
+}
