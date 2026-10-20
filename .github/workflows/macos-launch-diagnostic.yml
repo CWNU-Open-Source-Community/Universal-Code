@@ -1,0 +1,81 @@
+name: Native Mac launch timing
+
+on:
+  push:
+    branches: [Qiyuanqiii/macos-launch-diagnostic-20261020]
+
+permissions:
+  contents: read
+
+jobs:
+  timing:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 28a8a4f501809ea4b93ccf202da4ce5ca28e787a
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Measure actual native Chrome startup with all identity checks
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          cat > internal/browserruntime/release_launch_timing_darwin_test.go <<'GO'
+          //go:build darwin && cgo
+          package browserruntime
+          import (
+              "context"
+              "net/http"
+              "net/http/httptest"
+              "path/filepath"
+              "sync/atomic"
+              "testing"
+              "time"
+          )
+          func TestReleaseDarwinLaunchTiming(t *testing.T) {
+              started := time.Now()
+              root, err := filepath.EvalSymlinks(t.TempDir())
+              if err != nil { t.Fatal(err) }
+              var checks atomic.Int32
+              request := AgentBrowserStartRequest{
+                  HomePath: root, Headless: true, Product: BrowserProductChrome,
+                  RuntimeDeadline: time.Now().Add(4*time.Minute),
+                  Authority: AgentBrowserAuthority{
+                      RunID:"release-timing", ManagerBootID:agentBrowserToken(), SessionID:agentBrowserToken(),
+                      Generation:1, PermissionSnapshotID:"timing-snapshot", PermissionRevision:1,
+                      PermissionActivation:1, RunAuthorizationFence:1, PermissionMode:"full",
+                  },
+                  CheckAuthority:func(ctx context.Context, _ AgentBrowserAuthority) error {
+                      if n:=checks.Add(1); n<=4 { t.Logf("authority checkpoint %d after %s", n, time.Since(started)) }
+                      return ctx.Err()
+                  },
+              }
+              ctx,cancel:=context.WithTimeout(t.Context(), 3*time.Minute)
+              defer cancel()
+              runtime,err:=LaunchAgentBrowser(ctx, request)
+              t.Logf("launch returned after %s, err=%v",time.Since(started),err)
+              if err!=nil { t.Fatal(err) }
+              defer func() {
+                  closeCtx, closeCancel:=context.WithTimeout(context.Background(),20*time.Second)
+                  defer closeCancel()
+                  result,err:=runtime.Close(closeCtx)
+                  if err!=nil || !result.ProcessesStopped() || !result.ProfileRemoved || result.CleanupPending {
+                      t.Errorf("owned cleanup: %+v %v",result,err)
+                  }
+              }()
+              server:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+                  w.Header().Set("Content-Type","text/html")
+                  _,_=w.Write([]byte("<!doctype html><title>Native preview check</title><button>Ready</button>"))
+              }))
+              defer server.Close()
+              if _,err=runtime.Navigate(ctx,server.URL);err!=nil {t.Fatal(err)}
+              snapshot,err:=runtime.Snapshot(ctx)
+              if err!=nil {t.Fatal(err)}
+              t.Logf("real page snapshot after %s: %+v",time.Since(started),snapshot)
+          }
+          GO
+          go test -v -count=1 -timeout=5m ./internal/browserruntime -run '^TestReleaseDarwinLaunchTiming$'
