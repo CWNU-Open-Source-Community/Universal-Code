@@ -154,7 +154,7 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	caps := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
-	if _, err = application.NewRunExecutionPermissionService(st, caps).Change(ctx, application.ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: "full_access", OperationKey: "http-browser-full-access", RequestedBy: "test_operator", Reason: "owned local browser HTTP test", ConfirmFull: true}); err != nil {
+	if _, err = application.NewRunExecutionPermissionService(st, caps).Change(ctx, application.ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: "full", OperationKey: "http-browser-full-access", RequestedBy: "test_operator", Reason: "owned local browser HTTP test", ConfirmFull: true}); err != nil {
 		t.Fatal(err)
 	}
 	browser := application.NewAgentBrowserService(st, application.AgentBrowserOptions{HomePath: home, Capabilities: caps, Headless: true, SessionLifetime: time.Minute})
