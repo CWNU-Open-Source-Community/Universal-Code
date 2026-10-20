@@ -36,6 +36,8 @@ func (d standardCodeImageLabelsDoer) Do(request *http.Request) (*http.Response, 
 	labels[DockerStandardCodeProjectActionsLabel] = "1"
 	labels[DockerStandardCodePreparationLabel] = "1"
 	labels[DockerStandardCodePNPMVersionLabel] = DockerStandardCodePNPMVersion
+	labels[DockerStandardCodeYarnVersionLabel] = DockerStandardCodeYarnVersion
+	labels[DockerStandardCodeBunVersionLabel] = DockerStandardCodeBunVersion
 	if d.change != nil {
 		d.change(labels)
 	}
@@ -73,7 +75,7 @@ func standardCodeImageLabelsWriteRequest(t *testing.T, toolchain string) DockerC
 }
 
 func TestDockerStandardCodeImageLabelsReachOwnedLifecycleAndIO(t *testing.T) {
-	for _, toolchain := range []string{DockerStandardCodeToolchainNodePrepare, DockerStandardCodeToolchainGoPrepare} {
+	for _, toolchain := range []string{DockerStandardCodeToolchainNodePrepare, DockerStandardCodeToolchainGoPrepare, DockerStandardCodeToolchainBunPrepare} {
 		t.Run(toolchain, func(t *testing.T) {
 			write := standardCodeImageLabelsWriteRequest(t, toolchain)
 			endpoint := mustDockerLifecycleEndpoint(t)
@@ -151,6 +153,7 @@ func TestDockerStandardCodeImageLabelsPreserveStrictOwnershipAndGenericProfiles(
 	inspection.Config.Labels[DockerStandardCodeProjectActionsLabel] = "1"
 	inspection.Config.Labels[DockerStandardCodePreparationLabel] = "1"
 	inspection.Config.Labels[DockerStandardCodePNPMVersionLabel] = DockerStandardCodePNPMVersion
+	inspection.Config.Labels[DockerStandardCodeBunVersionLabel] = DockerStandardCodeBunVersion
 	if equalDockerLabels(inspection.Config.Labels, expected) {
 		t.Fatal("generic label equality accepted inherited metadata")
 	}
@@ -177,7 +180,7 @@ func TestDockerStandardCodeImageLabelsPreserveStrictOwnershipAndGenericProfiles(
 			})
 		}
 	}
-	for _, name := range []string{DockerStandardCodeProjectActionsLabel, DockerStandardCodePreparationLabel, DockerStandardCodePNPMVersionLabel, "unknown.label", "desktop.docker.io/ports.scheme"} {
+	for _, name := range []string{DockerStandardCodeProjectActionsLabel, DockerStandardCodePreparationLabel, DockerStandardCodePNPMVersionLabel, DockerStandardCodeBunVersionLabel, "unknown.label", "desktop.docker.io/ports.scheme"} {
 		t.Run("unexpected/"+name, func(t *testing.T) {
 			copy := inspection
 			copy.Config.Labels = make(map[string]string, len(inspection.Config.Labels))

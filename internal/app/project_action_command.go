@@ -15,7 +15,7 @@ import (
 
 func (a *App) runProjectAction(ctx context.Context, args []string) error {
 	fs := newFlagSet("run project-action", a.errOut)
-	target := fs.String("path", "", "Exact relative Go file for formatting or package directory for npm tests")
+	target := fs.String("path", "", "Exact relative Go file for formatting or project directory for tests")
 	key := fs.String("operation-key", "", "Stable command operation key")
 	operator := fs.String("operator", "cli_operator", "Operator identity")
 	prepare := fs.Bool("prepare", false, "Print the typed intent without execution")

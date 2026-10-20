@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/httpapi"
@@ -149,19 +150,19 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key"} {
 		_, fullFound := fullTools[name]
 		_, restrictedFound := restrictedTools[name]
-		if runtime.GOOS == "windows" && !fullFound {
-			t.Fatalf("Windows Full Provider tools omitted %s: %v", name,
+		if browserruntime.AgentBrowserPlatformAvailable() && !fullFound {
+			t.Fatalf("native Full Provider tools omitted %s: %v", name,
 				desktopSourceWiringToolNames(captured[0].Tools))
 		}
-		if runtime.GOOS != "windows" && fullFound {
-			t.Fatalf("non-Windows host advertised unavailable ordinary browser tool %s", name)
+		if !browserruntime.AgentBrowserPlatformAvailable() && fullFound {
+			t.Fatalf("host without an adapter advertised ordinary browser tool %s", name)
 		}
 		if restrictedFound {
 			t.Fatalf("Ask Run received ordinary browser tool %s: %v", name,
 				desktopSourceWiringToolNames(captured[1].Tools))
 		}
 	}
-	if runtime.GOOS != "windows" {
+	if !browserruntime.AgentBrowserPlatformAvailable() {
 		return
 	}
 
@@ -184,7 +185,11 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	}
 	var closed httpapi.AgentBrowserStatusView
 	decodeDesktopControlData(t, closedResponse, &closed)
-	if closed.State != "closed" || !closed.TreeReaped || !closed.ProfileRemoved || closed.CleanupPending {
+	processesStopped := closed.TreeReaped
+	if runtime.GOOS == "darwin" {
+		processesStopped = !closed.TreeReaped && closed.ProcessScope == "no_owned_process_resources" && closed.ProcessScopeVerified
+	}
+	if closed.State != "closed" || !processesStopped || !closed.ProfileRemoved || closed.CleanupPending {
 		t.Fatalf("idle Agent browser session did not close cleanly: %#v", closed)
 	}
 }

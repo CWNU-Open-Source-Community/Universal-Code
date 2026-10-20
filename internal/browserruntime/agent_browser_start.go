@@ -68,11 +68,11 @@ func validateAgentBrowserProcessSpec(spec BrowserStartSpec) error {
 	return nil
 }
 
-func LaunchAgentBrowser(ctx context.Context, request AgentBrowserStartRequest) (_ *AgentBrowserRuntime, launchErr error) {
-	cleanupReceipt := AgentBrowserCleanup{SessionID: request.Authority.SessionID, TreeReaped: true, ProfileRemoved: true}
+func launchPEAgentBrowser(ctx context.Context, request AgentBrowserStartRequest) (_ *AgentBrowserRuntime, launchErr error) {
+	cleanupReceipt := AgentBrowserNoProcessCleanup(request.Authority.SessionID)
 	defer func() {
 		if launchErr != nil {
-			cleanupReceipt.CleanupPending = !cleanupReceipt.TreeReaped || !cleanupReceipt.ProfileRemoved
+			cleanupReceipt.CleanupPending = !cleanupReceipt.ProcessesStopped() || !cleanupReceipt.ProfileRemoved
 			launchErr = &AgentBrowserLaunchError{Err: launchErr, Cleanup: cleanupReceipt}
 		}
 	}()
@@ -120,7 +120,7 @@ func LaunchAgentBrowser(ctx context.Context, request AgentBrowserStartRequest) (
 	}
 	cleanupReceipt.ProfileRemoved = false
 	life, cancel := context.WithDeadline(context.Background(), request.RuntimeDeadline)
-	r := &AgentBrowserRuntime{request: request, profile: profile, identity: identity, life: life, cancel: cancel,
+	r := &AgentBrowserRuntime{request: request, profile: profile, product: identity.Product, life: life, cancel: cancel,
 		done: make(chan struct{}), operation: make(chan struct{}, 1), refs: map[string]agentBrowserRef{}, state: "starting", epoch: 1}
 	r.operation <- struct{}{}
 	defer func() {
@@ -153,32 +153,39 @@ func LaunchAgentBrowser(ctx context.Context, request AgentBrowserStartRequest) (
 		return nil, err
 	}
 	r.process = &BrowserProcess{spec: spec, platform: platform}
+	if err := r.connect(ctx, profile.path); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (r *AgentBrowserRuntime) connect(ctx context.Context, profilePath string) error {
 	startCtx, startCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer startCancel()
-	stopLife := context.AfterFunc(life, startCancel)
+	stopLife := context.AfterFunc(r.life, startCancel)
 	defer stopLife()
-	endpoint, err := waitForDevToolsEndpoint(startCtx, profile.path, r.process)
+	endpoint, err := waitForDevToolsEndpoint(startCtx, profilePath, r.process)
 	if err != nil {
 		if exit, ok := r.process.Exit(); ok {
-			return nil, fmt.Errorf("agent browser endpoint: %w (exit=%d tree_reaped=%t)", err, exit.ExitCode, exit.TreeReaped)
+			return fmt.Errorf("agent browser endpoint: %w (exit=%d tree_reaped=%t)", err, exit.ExitCode, exit.TreeReaped)
 		}
-		return nil, fmt.Errorf("agent browser endpoint: %w", err)
+		return fmt.Errorf("agent browser endpoint: %w", err)
 	}
 	conn, err := dialRestrictedCDP(startCtx, endpoint)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	r.cdp = newAgentBrowserCDP(conn, r.onEvent)
 	if err := r.initialize(startCtx); err != nil {
-		return nil, err
+		return err
 	}
-	if err := request.CheckAuthority(startCtx, request.Authority); err != nil {
-		return nil, err
+	if err := r.request.CheckAuthority(startCtx, r.request.Authority); err != nil {
+		return err
 	}
 	r.mu.Lock()
 	r.state = "ready"
 	r.mu.Unlock()
 	go r.reapOnInvalidation()
 	go r.monitor()
-	return r, nil
+	return nil
 }

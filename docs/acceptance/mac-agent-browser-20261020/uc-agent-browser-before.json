@@ -1,0 +1,31 @@
+{
+  "phase": "before",
+  "platform": "darwin",
+  "product_revision": "3341c0e3a35b9f84a38b913465c0252e10f95649",
+  "harness_revision": "9b98f99ec1d8b97f2f0d210246ca5df020e2a255",
+  "backend": "production app.ExecuteContext",
+  "frontend": "production Vite build",
+  "provider": "controlled offline fixture",
+  "provider_reply_held_for_capture": false,
+  "full_permission_confirmed_in_ui": true,
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "observed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261020040840-4818e00bf9cd",
+    "generation": 0,
+    "state": "unavailable",
+    "available": false,
+    "can_start": false,
+    "headless": true,
+    "document_epoch": 0,
+    "updated_at": "0001-01-01T00:00:00Z",
+    "failure_code": "browser_unavailable",
+    "unavailable_code": "platform_unsupported",
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": false
+  }
+}

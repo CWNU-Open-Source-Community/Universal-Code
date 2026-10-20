@@ -325,6 +325,11 @@ func normalizeCommandRuntimeSpec(spec CommandRuntimeSpec,
 		environment = commandRuntimePlatformEnvironmentWithoutProxy(executablePath,
 			root, environment, spec.Network, spec.Environment)
 	}
+	spec.Environment = environmentSpec
+	environment, err = commandRuntimePythonEnvironment(&spec, executablePath, environment)
+	if err != nil {
+		return CommandRuntimeResolvedSpec{}, err
+	}
 	sort.Slice(environment, func(left int, right int) bool {
 		leftKey, _, _ := strings.Cut(environment[left], "=")
 		rightKey, _, _ := strings.Cut(environment[right], "=")
@@ -335,7 +340,6 @@ func normalizeCommandRuntimeSpec(spec CommandRuntimeSpec,
 		return CommandRuntimeResolvedSpec{}, ErrCommandRuntimeBoundary
 	}
 	environmentSHA := sha256.Sum256(encodedEnvironment)
-	spec.Environment = environmentSpec
 	rootDigest := sha256.Sum256([]byte(root))
 	return CommandRuntimeResolvedSpec{
 		Spec: spec, ExecutablePath: executablePath,
@@ -373,6 +377,7 @@ func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 		ExecutablePath           string                         `json:"executable_path"`
 		ExecutableSHA256         string                         `json:"executable_sha256"`
 		ExecutableIdentityKind   string                         `json:"executable_identity_kind,omitempty"`
+		InvocationPath           string                         `json:"invocation_path,omitempty"`
 		Argv                     []string                       `json:"argv"`
 		WorkingDirectory         string                         `json:"working_directory"`
 		Environment              []CommandRuntimeEnvironment    `json:"environment"`
@@ -391,6 +396,7 @@ func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 		Version: spec.Spec.Version, WorkspaceMode: spec.Spec.WorkspaceMode, Profile: spec.Spec.Profile,
 		ExecutablePath: spec.ExecutablePath, ExecutableSHA256: spec.ExecutableSHA256,
 		ExecutableIdentityKind: spec.ExecutableIdentityKind,
+		InvocationPath:         commandRuntimePythonInvocationPath(spec),
 		Argv:                   cloneCommandRuntimeStrings(spec.CanonicalArgv),
 		WorkingDirectory:       spec.Spec.WorkingDirectory,
 		Environment:            cloneCommandRuntimeEnvironment(spec.Spec.Environment),
@@ -798,6 +804,7 @@ func commandRuntimeIntentJSON(spec CommandRuntimeResolvedSpec) string {
 		ExecutablePath           string                         `json:"executable_path"`
 		ExecutableSHA256         string                         `json:"executable_sha256"`
 		ExecutableIdentityKind   string                         `json:"executable_identity_kind,omitempty"`
+		InvocationPath           string                         `json:"invocation_path,omitempty"`
 		Argv                     []string                       `json:"argv"`
 		WorkingDirectory         string                         `json:"working_directory"`
 		Environment              []CommandRuntimeEnvironment    `json:"environment"`
@@ -817,6 +824,7 @@ func commandRuntimeIntentJSON(spec CommandRuntimeResolvedSpec) string {
 		Profile: spec.Spec.Profile, ExecutablePath: spec.ExecutablePath,
 		ExecutableSHA256:       spec.ExecutableSHA256,
 		ExecutableIdentityKind: spec.ExecutableIdentityKind,
+		InvocationPath:         commandRuntimePythonInvocationPath(spec),
 		Argv:                   cloneCommandRuntimeStrings(spec.CanonicalArgv),
 		WorkingDirectory:       spec.Spec.WorkingDirectory,
 		Environment:            cloneCommandRuntimeEnvironment(spec.Spec.Environment),

@@ -1257,6 +1257,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		a.serveWorkspaceProject(tracked, request, requestID, id, action)
 		return
 	}
+	if id, action, matched := matchThreadMetadataPath(request.URL.Path); matched {
+		a.serveThreadMetadata(tracked, request, requestID, id, action)
+		return
+	}
 	if request.URL.Path == WorkspaceImportPath {
 		a.serveWorkspaceImport(tracked, request, requestID)
 		return

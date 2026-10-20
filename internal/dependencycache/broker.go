@@ -104,6 +104,25 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 	if err != nil {
 		return stats, err
 	}
+	if plan.Ecosystem == "yarn" {
+		stagedBytes += int64(len(yarnPreparationRC))
+		for _, pkg := range plan.Packages {
+			if pkg.Kind != projectprep.KindYarnTarball {
+				return stats, errors.New("Yarn preparation contains a different artifact kind")
+			}
+		}
+	}
+	if err := validateCargoPlan(plan); err != nil {
+		return stats, err
+	}
+	pythonBytes, err := pythonSeedBytes(plan)
+	if err != nil {
+		return stats, err
+	}
+	stagedBytes += pythonBytes
+	if err := validateBunPlan(plan); err != nil {
+		return stats, err
+	}
 	origins := make(map[string]bool, len(approvedOrigins))
 	for _, raw := range approvedOrigins {
 		origin, err := canonicalOrigin(raw)
@@ -135,6 +154,12 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		return stats, err
 	}
 	defer cache.Close()
+	if err := resetCargoVendor(ctx, workspace, plan, authorityCheck); err != nil {
+		return stats, err
+	}
+	if err := resetBunCache(ctx, workspace, plan, authorityCheck); err != nil {
+		return stats, err
+	}
 	for index, pkg := range plan.Packages {
 		if err := authorityCheck(ctx); err != nil {
 			return stats, err
@@ -212,6 +237,16 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		if err := writeAtomic(workspace, relative, body, 0600); err != nil {
 			return stats, err
 		}
+		if pkg.Kind == projectprep.KindCargoCrate {
+			expanded, err := stageCargoCrate(ctx, workspace, plan.Target, pkg, body, MaxPreparationBytes-stagedBytes, authorityCheck)
+			if err != nil {
+				return stats, err
+			}
+			stagedBytes += expanded
+			if stagedBytes > MaxPreparationBytes {
+				return stats, errors.New("Cargo vendor exceeded the preparation byte limit")
+			}
+		}
 		if pkg.Kind == projectprep.KindGoMod || pkg.Kind == projectprep.KindGoZip {
 			info, _ := json.Marshal(struct {
 				Version string
@@ -227,6 +262,13 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 				}
 			}
 		}
+		if pkg.Kind == projectprep.KindBunTarball {
+			expanded, err := stageBunTarball(ctx, workspace, plan.Target, pkg, body, MaxPreparationBytes-stagedBytes, authorityCheck)
+			if err != nil {
+				return stats, err
+			}
+			stagedBytes += expanded
+		}
 		if hit {
 			stats.CachedPackages++
 		} else {
@@ -241,8 +283,23 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 			return stats, err
 		}
 	}
+	if plan.Ecosystem == "yarn" {
+		if err := authorityCheck(ctx); err != nil {
+			return stats, err
+		}
+		if err := writeAtomic(workspace, projectprep.YarnRCPath(plan.Target), []byte(yarnPreparationRC), 0600); err != nil {
+			return stats, err
+		}
+	}
+	if plan.Ecosystem == "python" {
+		if err := writePythonSeed(ctx, workspace, plan, authorityCheck); err != nil {
+			return stats, err
+		}
+	}
 	return stats, nil
 }
+
+const yarnPreparationRC = "yarn-offline-mirror \"./yarn-mirror\"\nyarn-offline-mirror-pruning false\ndisable-self-update-check true\n"
 
 // Git reads this directory-local exclusion itself, so staging never edits the
 // linked worktree's shared repository configuration or a project's ignore file.
@@ -323,6 +380,24 @@ func artifactURL(raw string) (*url.URL, error) {
 
 func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 	switch pkg.Kind {
+	case projectprep.KindCargoCrate:
+		if !projectprep.ValidCargoPackage(pkg.ModulePath, pkg.Version) || pkg.ID != pkg.ModulePath+"@"+pkg.Version {
+			return "", errors.New("Cargo artifact requires a locked package identity")
+		}
+		return path.Join(projectprep.StageDirectory(target), "cargo-crates", pkg.ModulePath+"-"+pkg.Version+".crate"), nil
+	case projectprep.KindPythonWheel:
+		if !projectprep.ValidPythonWheelName(pkg.ID) || !strings.HasPrefix(pkg.Integrity, "sha256-") {
+			return "", errors.New("Python artifact requires a wheel filename and SHA-256 integrity")
+		}
+		if _, _, err := npmIntegrity(pkg.Integrity); err != nil {
+			return "", err
+		}
+		return path.Join(projectprep.PythonWheelDirectory(target), pkg.ID), nil
+	case projectprep.KindBunTarball:
+		if !projectprep.ValidBunPackage(pkg.ModulePath, pkg.Version) {
+			return "", errors.New("invalid Bun cache identity")
+		}
+		return path.Join(projectprep.StageDirectory(target), "bun-tarballs", projectprep.PNPMTarballFile(pkg.ID)), nil
 	case projectprep.KindNPMTarball:
 		algorithm, digest, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
@@ -338,6 +413,15 @@ func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 			return "", err
 		}
 		return path.Join(projectprep.StageDirectory(target), "pnpm-tarballs", projectprep.PNPMTarballFile(pkg.ID)), nil
+	case projectprep.KindYarnTarball:
+		if _, _, err := npmIntegrity(pkg.Integrity); err != nil {
+			return "", err
+		}
+		name, err := projectprep.YarnTarballFile(pkg.URL)
+		if err != nil {
+			return "", err
+		}
+		return path.Join(projectprep.YarnMirrorDirectory(target), name), nil
 	case projectprep.KindGoMod, projectprep.KindGoZip:
 		if module.Check(pkg.ModulePath, pkg.Version) != nil || module.CanonicalVersion(pkg.Version) != pkg.Version || !strings.HasPrefix(pkg.Integrity, "h1:") {
 			return "", errors.New("Go artifact needs a canonical module version and h1 checksum")
@@ -377,10 +461,19 @@ func verifyArtifact(pkg projectprep.Package, body []byte) error {
 		return fmt.Errorf("dependency artifact byte limit is invalid: %w", ErrIntegrity)
 	}
 	switch pkg.Kind {
-	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball:
+	case projectprep.KindCargoCrate:
+		expected, err := hex.DecodeString(pkg.Integrity)
+		sum := sha256.Sum256(body)
+		if err != nil || len(expected) != 32 || !bytes.Equal(expected, sum[:]) {
+			return ErrIntegrity
+		}
+	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball, projectprep.KindBunTarball, projectprep.KindPythonWheel:
 		algorithm, expected, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
 			return err
+		}
+		if pkg.Kind == projectprep.KindPythonWheel && algorithm != "sha256" {
+			return ErrIntegrity
 		}
 		var actual []byte
 		if algorithm == "sha512" {

@@ -28,5 +28,5 @@ func ValidateCommandRuntimeLaunchSpec(spec CommandRuntimeResolvedSpec) error {
 	if err := commandRuntimeExecutableAttributes(executable); err != nil {
 		return fmt.Errorf("%w: executable is no longer a supported native image", ErrCommandRuntimeBoundary)
 	}
-	return nil
+	return validateCommandRuntimePythonInvocation(spec)
 }

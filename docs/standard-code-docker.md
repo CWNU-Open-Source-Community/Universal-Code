@@ -16,7 +16,8 @@ It never falls back to an unsandboxed host command.
 For project dependency preparation, use **Changes and delivery → Checks and
 delivery → Prepare project**. Review the detected lockfile and explicitly select
 the package origins; the application downloads verified artifacts, then installs
-offline in this fixed image. npm/pnpm install scripts have a separate operator choice.
+offline in this fixed image. npm/pnpm install scripts have a separate operator choice;
+Bun preparation always disables lifecycle scripts.
 See [Prepare project dependencies](project-preparation.md) for cache reuse,
 failure recovery, and installed toolchain requirements.
 
@@ -27,9 +28,13 @@ this digest and never pulls:
 $env:CYBERAGENT_STANDARD_CODE_DOCKER_IMAGE_DIGEST = "sha256:<64-lowercase-hex>"
 ```
 
-To build the repository fixture, first make the four exact base references named by
-`CYBERAGENT_STANDARD_CODE_{GO,NODE,PYTHON,RUST}_IMAGE_DIGEST` available in the
-fixed local Engine. Each value must be `name@sha256:<64-hex>`. Also download the
+To build the repository fixture, first make the five exact base references named by
+`CYBERAGENT_STANDARD_CODE_{GO,NODE,PYTHON,RUST,BUN}_IMAGE_DIGEST` available in the
+fixed local Engine. Each value must be `name@sha256:<64-hex>`.
+`CYBERAGENT_STANDARD_CODE_BUN_IMAGE_DIGEST` must contain Bun **1.4.3** at
+`/usr/local/bin/bun`; the build checks the copied executable's version.
+The Node image must also contain Yarn **1.22.22** at `/opt/yarn-v1.22.22`.
+Also download the
 [pnpm 10.28.1 archive](https://registry.npmjs.org/pnpm/-/pnpm-10.28.1.tgz) and set
 `CYBERAGENT_STANDARD_CODE_PNPM_TARBALL` to that local file. The build verifies its
 fixed SHA-512 integrity before copying it; it does not download package managers.
@@ -43,9 +48,10 @@ The script refuses missing/unpinned bases, disables build-step networking and pu
 chooses a random tag it owns, strips inherited environment, volume, and label config,
 and prints the exact digest for both product and opt-in test vars. After removing
 inherited labels, it sets `org.traverse-board.project-actions=1`,
-`org.traverse-board.project-preparation=1`, and `org.traverse-board.pnpm-version=10.28.1`.
-The last label enables pnpm preparation; older images retain their existing
-npm/Go capabilities and request a rebuild for pnpm.
+`org.traverse-board.project-preparation=1`, `org.traverse-board.pnpm-version=10.28.1`,
+`org.traverse-board.yarn-version=1.22.22`, and `org.traverse-board.bun-version=1.4.3`.
+The version labels enable pnpm, Yarn and Bun preparation; older images retain their existing
+npm/Go capabilities and request a rebuild for the missing package manager.
 
 The current fixture contains `standard-code-docker-runner.v2`; rebuild it when
 upgrading from a v1 image. Durable v1 manifests remain readable as closed-stdin

@@ -2,7 +2,7 @@ import { localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, CircleEllipsis, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -840,8 +840,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <span>{t("正在打开对话…", "Opening conversation…")}</span></div>;
   if (detailQuery.isError || !detailQuery.data) return <div className="v2-main-error" role="alert">
     <strong>{t("无法打开对话", "Unable to open conversation")}</strong><span>{t("请检查服务连接，然后重试。已有输入会保留。", "Check the service connection and retry. Your input is kept.")}</span>
-    <button onClick={() => void detailQuery.refetch()} type="button">{t("重新打开", "Reopen")}</button>
-    <details><summary>{t("查看原因", "Show reason")}</summary>{detailQuery.error instanceof Error
+    <button className="v2-retry-action" onClick={() => void detailQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={15} />{t("重新打开", "Reopen")}</button>
+    <details><summary><ChevronDown aria-hidden="true" size={14} />{t("查看原因", "Show reason")}</summary>{detailQuery.error instanceof Error
       ? localUIMessage(detailQuery.error.message, t) : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
   const detail = detailQuery.data;
   const currentRun = detail.active_run ?? detail.last_run;

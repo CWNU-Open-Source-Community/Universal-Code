@@ -120,7 +120,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			var launchFailure *browserruntime.AgentBrowserLaunchError
 			if errors.As(e, &launchFailure) && launchFailure.Cleanup.SessionID == a.BrowserSessionID {
 				receipt := launchFailure.Cleanup
-				receipt.CleanupPending = receipt.CleanupPending || !receipt.TreeReaped || !receipt.ProfileRemoved
+				receipt.CleanupPending = receipt.CleanupPending || !receipt.ProcessesStopped() || !receipt.ProfileRemoved
 				slot.view.Cleanup = &receipt
 			}
 			s.mu.Unlock()

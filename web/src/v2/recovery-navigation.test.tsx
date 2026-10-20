@@ -137,11 +137,11 @@ function harness(operation: Operation) {
     if (activityMatch) return { run_id: activityMatch[1] };
     throw new Error(`Unexpected read: ${path}`);
   });
-  const getPage = vi.fn(async (path: string, _query?: unknown, cursor = "") => ({
+  const getPage = vi.fn(async (path: string, query?: { pinned?: boolean }, cursor = "") => ({
     items: path === "/workspaces" ? [sourceWorkspace, ...(forkPublished ? [forkWorkspace] : [])]
-      : path === "/threads" ? cursor ? [thread("thread-other")]
+      : path === "/threads" && !query?.pinned ? cursor ? [thread("thread-other")]
         : [thread(sourceThreadID), ...(recoveryPublished ? [thread(`thread-returned-${operation}`, returnedRunID)] : [])] : [],
-    page: { limit: 100, ...(path === "/threads" && !cursor ? { next_cursor: "thread-page-2" } : {}) }, requestID: path,
+    page: { limit: 100, ...(path === "/threads" && !query?.pinned && !cursor ? { next_cursor: "thread-page-2" } : {}) }, requestID: path,
   }));
   const postControl = vi.fn(() => result.promise);
   const client = { hasControl: true, hasThreadControl: true, hasWorkspaceCheckpointControl: true,
@@ -217,7 +217,7 @@ async function expectRefreshed(h: ReturnType<typeof harness>) {
       expect(h.queryClient.getQueryState(key)?.isInvalidated).toBe(true);
     }
     expect(h.getPage.mock.calls.filter(([path]) => path === "/workspaces")).toHaveLength(2);
-    expect(h.getPage.mock.calls.filter(([path]) => path === "/threads").map(([, , cursor]) => cursor))
+    expect(h.getPage.mock.calls.filter(([path, query]) => path === "/threads" && !query?.pinned).map(([, , cursor]) => cursor))
       .toEqual(["", "thread-page-2"]);
     expect(h.queryClient.getQueryData<InfiniteData<{ items: ThreadView[] }>>(h.activeThreadsKey)
       ?.pages.flatMap((page) => page.items).some((item) => item.active_run_id === h.returnedRunID)).toBe(true);

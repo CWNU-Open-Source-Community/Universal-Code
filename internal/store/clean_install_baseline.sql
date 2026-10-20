@@ -12785,7 +12785,7 @@ CREATE TABLE threads (
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL,
 		archived_at TEXT,
-		deleted_at TEXT,
+		deleted_at TEXT, pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)),
 		FOREIGN KEY(mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
 		FOREIGN KEY(active_run_id) REFERENCES runs(id) ON DELETE RESTRICT,
 		FOREIGN KEY(last_run_id) REFERENCES runs(id) ON DELETE RESTRICT,
@@ -14451,6 +14451,8 @@ CREATE UNIQUE INDEX idx_threads_active_run_unique ON threads(active_run_id)
 		WHERE active_run_id IS NOT NULL AND active_run_id <> '';
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_threads_created_at ON threads(created_at DESC, id DESC);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX idx_threads_status_pinned_created ON threads(status,pinned,created_at DESC,id DESC);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_threads_status_updated_at ON threads(status, updated_at DESC);
 -- traverse-board-clean-install-object-boundary --
@@ -18581,8 +18583,9 @@ CREATE TRIGGER trg_project_preparation_delete BEFORE DELETE ON project_preparati
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_project_preparation_insert BEFORE INSERT ON project_preparations
 	 WHEN NEW.fetch_job_id!=''
-	 OR ((NEW.workspace_root='' OR NEW.seed_directory='') AND (NEW.workspace_root!='' OR NEW.seed_directory!=''))
-	 OR (NEW.workspace_root!='' AND (NEW.backend!='docker_standard_code'
+	 OR (NEW.seed_directory!='' AND NEW.workspace_root='')
+	 OR (NEW.workspace_root!='' AND (NEW.backend NOT IN ('docker_standard_code','local_windows_lpac','docker_sandboxes')
+	  OR (NEW.seed_directory!='' AND NEW.backend!='docker_standard_code')
 	  OR (NEW.workspace_root!='.' AND NEW.target!=NEW.workspace_root AND substr(NEW.target,1,length(NEW.workspace_root)+1)!=NEW.workspace_root||'/')))
 	 OR NEW.state!='pending' OR NEW.revision!=1 OR NEW.completed_packages!=0 OR NEW.cache_hits!=0
 	 OR NEW.downloaded_bytes!=0 OR NEW.job_id!='' OR NEW.script_job_id!='' OR NEW.cancel_requested!=0 OR NEW.error!=''

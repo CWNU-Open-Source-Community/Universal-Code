@@ -3,6 +3,7 @@ package browserruntime
 import (
 	"context"
 	"errors"
+	"runtime"
 	"time"
 )
 
@@ -106,10 +107,44 @@ type AgentBrowserScreenshot struct {
 }
 
 type AgentBrowserCleanup struct {
-	SessionID      string `json:"session_id"`
-	TreeReaped     bool   `json:"tree_reaped"`
-	ProfileRemoved bool   `json:"profile_removed"`
-	CleanupPending bool   `json:"cleanup_pending"`
+	SessionID            string `json:"session_id"`
+	TreeReaped           bool   `json:"tree_reaped"`
+	ProfileRemoved       bool   `json:"profile_removed"`
+	CleanupPending       bool   `json:"cleanup_pending"`
+	ProcessScope         string `json:"process_scope,omitempty"`
+	ProcessScopeVerified bool   `json:"process_scope_verified,omitempty"`
+}
+
+const DarwinAgentBrowserProcessScope = "darwin_group_and_scoped_children.v1"
+const agentBrowserNoProcessScope = "no_owned_process_resources"
+
+// AgentBrowserNoProcessCleanup requires no live or unreaped process resources.
+// It must never substitute for missing evidence after a failed termination.
+func AgentBrowserNoProcessCleanup(sessionID string) AgentBrowserCleanup {
+	if runtime.GOOS == "darwin" {
+		return AgentBrowserCleanup{SessionID: sessionID, ProfileRemoved: true, ProcessScope: agentBrowserNoProcessScope, ProcessScopeVerified: true}
+	}
+	return AgentBrowserCleanup{SessionID: sessionID, TreeReaped: true, ProfileRemoved: true}
+}
+
+// ProcessesStopped checks the actual adapter's scope. Darwin never supplies a
+// Windows Job/tree claim; its receipt covers the group and attributed children.
+func (c AgentBrowserCleanup) ProcessesStopped() bool {
+	switch c.ProcessScope {
+	case "":
+		return c.TreeReaped && !c.ProcessScopeVerified
+	case DarwinAgentBrowserProcessScope, agentBrowserNoProcessScope:
+		return !c.TreeReaped && c.ProcessScopeVerified
+	default:
+		return false
+	}
+}
+
+type agentBrowserOwnedProcess interface {
+	PID() int
+	Done() <-chan struct{}
+	Exit() (BrowserProcessExit, bool)
+	Stop(context.Context) error
 }
 
 type AgentBrowserActionError struct {

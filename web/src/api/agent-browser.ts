@@ -31,6 +31,8 @@ export interface AgentBrowserStatus {
   cleanup_pending: boolean;
   tree_reaped: boolean;
   profile_removed: boolean;
+  process_scope?: "no_owned_process_resources" | "darwin_group_and_scoped_children.v1";
+  process_scope_verified?: boolean;
 }
 
 const states = new Set<AgentBrowserStatus["state"]>(["unavailable", "idle", "starting", "ready", "loading", "busy", "waiting_user", "failed", "closing", "closed", "cleanup_pending"]);
@@ -74,6 +76,10 @@ export function parseAgentBrowserStatus(value: unknown, runID: string): AgentBro
     !optionalText(value.product, 64) || !optionalText(value.title, 1024) || !optionalText(value.last_action, 128) ||
     !safePageURL(value.url) || typeof value.updated_at !== "string" || !Number.isFinite(Date.parse(value.updated_at)) ||
     typeof value.cleanup_pending !== "boolean" || typeof value.tree_reaped !== "boolean" || typeof value.profile_removed !== "boolean" ||
+    (value.process_scope !== undefined && value.process_scope !== "no_owned_process_resources" && value.process_scope !== "darwin_group_and_scoped_children.v1") ||
+    (value.process_scope_verified !== undefined && typeof value.process_scope_verified !== "boolean") ||
+    (value.process_scope === undefined && value.process_scope_verified === true) ||
+    (value.process_scope !== undefined && (value.tree_reaped || typeof value.process_scope_verified !== "boolean")) ||
     (value.session_id !== undefined && !identity(value.session_id)) ||
     (value.failure_code !== undefined && value.failure_code !== "action_failed" && value.failure_code !== "browser_unavailable") ||
     (value.unavailable_code !== undefined && (typeof value.unavailable_code !== "string" || !unavailableCodes.has(value.unavailable_code))) ||

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -127,7 +126,7 @@ func NewAgentBrowserService(st AgentBrowserStore, options AgentBrowserOptions) *
 		}
 		return value, nil
 	}
-	s.available = runtime.GOOS == "windows" && filepath.IsAbs(options.HomePath) && options.Capabilities.Validate() == nil
+	s.available = browserruntime.AgentBrowserPlatformAvailable() && filepath.IsAbs(options.HomePath) && options.Capabilities.Validate() == nil
 	return s
 }
 func agentBrowserUnavailable(message string) error {
@@ -196,7 +195,8 @@ func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuth
 			// only a fresh provider advertisement may allocate its successor.
 			slot.closed = true
 			slot.view.State = "closed"
-			slot.view.Cleanup = &browserruntime.AgentBrowserCleanup{SessionID: slot.authority.BrowserSessionID, TreeReaped: true, ProfileRemoved: true}
+			cleanup := browserruntime.AgentBrowserNoProcessCleanup(slot.authority.BrowserSessionID)
+			slot.view.Cleanup = &cleanup
 			slot.view.UpdatedAt = time.Now().UTC()
 		}
 	}
@@ -259,7 +259,7 @@ func agentBrowserRuntimeEnded(r agentBrowserRuntime) bool {
 	return state == "closed" || state == "closing" || state == "cleanup_pending"
 }
 func agentBrowserCleanupComplete(slot *agentBrowserSlot) bool {
-	return slot.closed && slot.view.Cleanup != nil && slot.view.Cleanup.TreeReaped && slot.view.Cleanup.ProfileRemoved && !slot.view.Cleanup.CleanupPending
+	return slot.closed && slot.view.Cleanup != nil && slot.view.Cleanup.ProcessesStopped() && slot.view.Cleanup.ProfileRemoved && !slot.view.Cleanup.CleanupPending
 }
 
 func agentBrowserUnusedColdSlot(slot *agentBrowserSlot) bool {
@@ -307,7 +307,7 @@ func (s *AgentBrowserService) Capabilities(ctx context.Context, runID string) (A
 }
 
 func (s *AgentBrowserService) unavailableCode(ctx context.Context, runID string) string {
-	if runtime.GOOS != "windows" {
+	if !browserruntime.AgentBrowserPlatformAvailable() {
 		return "platform_unsupported"
 	}
 	if s == nil || s.store == nil || !s.available {
@@ -403,16 +403,17 @@ func (s *AgentBrowserService) Close(ctx context.Context, runID, sessionID string
 		launchCleanup = &receipt
 	}
 	s.mu.Unlock()
-	cleanup := browserruntime.AgentBrowserCleanup{SessionID: sessionID, TreeReaped: true, ProfileRemoved: true}
+	cleanup := browserruntime.AgentBrowserNoProcessCleanup(sessionID)
 	var e error
 	if r == nil && launchAttempted {
 		cleanup.TreeReaped = false
+		cleanup.ProcessScopeVerified = false
 		cleanup.ProfileRemoved = false
 		cleanup.CleanupPending = true
 		if launchCleanup != nil && launchCleanup.SessionID == sessionID {
 			cleanup = *launchCleanup
 		}
-		cleanup.CleanupPending = cleanup.CleanupPending || !cleanup.TreeReaped || !cleanup.ProfileRemoved
+		cleanup.CleanupPending = cleanup.CleanupPending || !cleanup.ProcessesStopped() || !cleanup.ProfileRemoved
 		if cleanup.CleanupPending {
 			e = agentBrowserUnavailable("browser launch failed without complete cleanup evidence; session cannot be reopened")
 		}

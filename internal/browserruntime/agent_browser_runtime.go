@@ -20,8 +20,8 @@ type agentBrowserRef struct {
 type AgentBrowserRuntime struct {
 	request                                   AgentBrowserStartRequest
 	profile                                   agentBrowserProfile
-	identity                                  BrowserExecutableIdentity
-	process                                   *BrowserProcess
+	product                                   BrowserProduct
+	process                                   agentBrowserOwnedProcess
 	cdp                                       *agentBrowserCDP
 	life                                      context.Context
 	cancel                                    context.CancelFunc
@@ -263,7 +263,7 @@ func (r *AgentBrowserRuntime) Status() AgentBrowserStatus {
 	if r.life.Err() != nil && state != "closed" && state != "cleanup_pending" {
 		state = "closing"
 	}
-	return AgentBrowserStatus{Version: AgentBrowserProtocolVersion, SessionID: r.request.Authority.SessionID, Generation: r.request.Authority.Generation, Product: r.identity.Product, State: state, CanonicalURL: r.currentURL, DocumentEpoch: r.epoch, SupportedActions: []string{"navigate", "snapshot", "click", "type", "screenshot", "scroll", "key"}}
+	return AgentBrowserStatus{Version: AgentBrowserProtocolVersion, SessionID: r.request.Authority.SessionID, Generation: r.request.Authority.Generation, Product: r.product, State: state, CanonicalURL: r.currentURL, DocumentEpoch: r.epoch, SupportedActions: []string{"navigate", "snapshot", "click", "type", "screenshot", "scroll", "key"}}
 }
 
 // Done signals invalidation and the end of the first cleanup attempt. Inspect
@@ -285,18 +285,22 @@ func (r *AgentBrowserRuntime) Close(ctx context.Context) (AgentBrowserCleanup, e
 	}
 	var err error
 	if r.process == nil {
-		result.TreeReaped = true
+		result = AgentBrowserNoProcessCleanup(result.SessionID)
+		result.ProfileRemoved = false
 	} else {
 		err = r.process.Stop(ctx)
 		exit, ok := r.process.Exit()
 		result.TreeReaped = ok && exit.TreeReaped
+		if ok {
+			result.ProcessScope, result.ProcessScopeVerified = exit.ProcessScope, exit.ProcessScopeVerified
+		}
 	}
-	if result.TreeReaped {
+	if result.ProcessesStopped() {
 		cleanupErr := r.profile.cleanup()
 		result.ProfileRemoved = cleanupErr == nil
 		err = errors.Join(err, cleanupErr)
 	}
-	result.CleanupPending = !result.TreeReaped || !result.ProfileRemoved
+	result.CleanupPending = !result.ProcessesStopped() || !result.ProfileRemoved
 	if result.CleanupPending && err == nil {
 		err = errors.New("agent browser cleanup is pending")
 	}

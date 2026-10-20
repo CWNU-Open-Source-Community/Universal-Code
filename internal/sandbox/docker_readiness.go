@@ -141,6 +141,24 @@ func (probe DockerReadinessProbe) PNPMPreparationAvailable(ctx context.Context, 
 	return err == nil && image.ProjectActionsVersion == "1" && image.PreparationVersion == "1" && image.PNPMVersion == DockerStandardCodePNPMVersion, err
 }
 
+func (probe DockerReadinessProbe) YarnPreparationAvailable(ctx context.Context, digest string) (bool, error) {
+	image, err := probe.Transport.InspectImage(ctx, digest)
+	if err != nil {
+		return false, err
+	}
+	image, err = image.Normalize(digest)
+	return err == nil && image.ProjectActionsVersion == "1" && image.PreparationVersion == "1" && image.YarnVersion == DockerStandardCodeYarnVersion, err
+}
+
+func (probe DockerReadinessProbe) BunPreparationAvailable(ctx context.Context, digest string) (bool, error) {
+	image, err := probe.Transport.InspectImage(ctx, digest)
+	if err != nil {
+		return false, err
+	}
+	image, err = image.Normalize(digest)
+	return err == nil && image.ProjectActionsVersion == "1" && image.PreparationVersion == "1" && image.BunVersion == DockerStandardCodeBunVersion, err
+}
+
 func (readiness DockerReadiness) Validate() error {
 	status, remediation, ok := dockerReadinessDisposition(readiness.ReasonCode)
 	if !ok || readiness.ProtocolVersion != DockerReadinessProtocolVersion ||

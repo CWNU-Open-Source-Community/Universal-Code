@@ -131,7 +131,7 @@ func parseExecutionLimitsForToolchain(values []string, toolchain string) (execut
 	limits := executionLimits{GrowthBytes: parsed[0], GrowthEntries: parsed[1],
 		FileBytes: parsed[2], FreeBytes: parsed[3], FreeEntries: parsed[4]}
 	growthBytes, growthEntries, fileBytes := workspaceGrowthBytes, int64(workspaceGrowthEntries), workspaceFileBytes
-	if toolchain == "go-prepare" || toolchain == "node-prepare" {
+	if toolchain == "go-prepare" || toolchain == "node-prepare" || toolchain == "bun-prepare" {
 		growthBytes, growthEntries, fileBytes = 1024*1024*1024, 200000, 64*1024*1024
 	}
 	if limits != (executionLimits{GrowthBytes: growthBytes,
@@ -230,7 +230,9 @@ func fixedToolchainAt(toolchain, scratchRoot string) (string, []string, error) {
 			}
 		}
 		return "/opt/toolchains/node/bin/node", append(baseEnvironment,
-			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false", "NPM_CONFIG_OFFLINE=true", "NPM_CONFIG_USERCONFIG="+userConfig, "NPM_CONFIG_GLOBALCONFIG="+globalConfig), nil
+			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false", "NPM_CONFIG_OFFLINE=true", "NPM_CONFIG_USERCONFIG="+userConfig, "NPM_CONFIG_GLOBALCONFIG="+globalConfig, "YARN_IGNORE_PATH=1"), nil
+	case "bun", "bun-prepare":
+		return "/opt/toolchains/bun/bin/bun", append(baseEnvironment, "PATH=/opt/toolchains/bun/bin:/opt/toolchains/node/bin:"+basePath, "BUN_FEATURE_FLAG_DISABLE_NATIVE_DEPENDENCY_LINKER=1"), nil
 	case "python":
 		return "/opt/toolchains/python/usr-local/bin/python3", append(baseEnvironment,
 			"PATH=/opt/toolchains/python/usr-local/bin:"+basePath,

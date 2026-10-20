@@ -605,6 +605,8 @@
         "browser_status_result.v1",
         "browser_target_scope.v1",
         "browser_type.v1",
+        "darwin_agent_browser_exit.v1",
+        "darwin_chrome_supervision.v1",
         "full_cdp_cookie_access.v1",
         "full_cdp_interaction.v1",
         "full_cdp_page_snapshot.v1",
@@ -1706,6 +1708,7 @@
         "context_pin_proposal.v1",
         "context_provenance.v0",
         "context_provenance.v1",
+        "darwin_group_and_scoped_children.v1",
         "debug-query.v1",
         "diagnostic-bundle.v1",
         "docker_environment.v1",
@@ -3933,7 +3936,8 @@
       "identifier": "fixture.v1",
       "kind": "test-fixture",
       "sources": [
-        "internal/application/project_preparation_commands_test.go"
+        "internal/application/project_preparation_commands_test.go",
+        "internal/application/project_preparation_yarn_test.go"
       ],
       "reason": "Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter."
     },

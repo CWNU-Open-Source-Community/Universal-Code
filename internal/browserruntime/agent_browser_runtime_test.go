@@ -220,10 +220,20 @@ func agentBrowserTestRuntime(t *testing.T) (*AgentBrowserRuntime, *atomic.Bool) 
 
 func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) error) (*AgentBrowserRuntime, *atomic.Bool) {
 	t.Helper()
-	if runtime.GOOS != "windows" || os.Getenv("TRAVERSE_TEST_AGENT_BROWSER") != "1" {
-		t.Skip("opt-in real installed Windows browser")
+	if os.Getenv("TRAVERSE_TEST_AGENT_BROWSER") != "1" {
+		t.Skip("opt-in real installed browser")
+	}
+	if !AgentBrowserPlatformAvailable() {
+		t.Fatal("requested real Agent Browser runtime is unavailable")
 	}
 	home := t.TempDir()
+	if runtime.GOOS == "darwin" {
+		var err error
+		home, err = filepath.EvalSymlinks(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	active := &atomic.Bool{}
 	active.Store(true)
 	request := AgentBrowserStartRequest{HomePath: home, Headless: true, Product: BrowserProductEdge, RuntimeDeadline: time.Now().Add(2 * time.Minute), Authority: AgentBrowserAuthority{RunID: "runtime-test", ManagerBootID: agentBrowserToken(), SessionID: agentBrowserToken(), Generation: 1, PermissionSnapshotID: "snapshot-test", PermissionRevision: 1, PermissionActivation: 1, RunAuthorizationFence: 1, PermissionMode: "full"}, CheckAuthority: func(ctx context.Context, _ AgentBrowserAuthority) error {
@@ -237,6 +247,9 @@ func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) 
 		}
 		return ctx.Err()
 	}}
+	if runtime.GOOS == "darwin" {
+		request.Product = BrowserProductChrome
+	}
 	if product := os.Getenv("TRAVERSE_TEST_AGENT_BROWSER_PRODUCT"); product != "" {
 		request.Product = BrowserProduct(product)
 	}
@@ -250,14 +263,14 @@ func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		result, err := r.Close(ctx)
-		if err != nil || !result.TreeReaped || !result.ProfileRemoved || result.CleanupPending {
+		if err != nil || !result.ProcessesStopped() || !result.ProfileRemoved || result.CleanupPending {
 			t.Errorf("owned cleanup: %+v %v", result, err)
 		}
 		if _, err := os.Stat(r.profile.path); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("profile survives: %v", err)
 		}
 	})
-	t.Logf("owned browser launched: product=%s pid=%d profile=%s", r.identity.Product, r.process.PID(), r.profile.path)
+	t.Logf("owned browser launched: product=%s pid=%d profile=%s", r.product, r.process.PID(), r.profile.path)
 	return r, active
 }
 
@@ -438,7 +451,7 @@ setInterval(async()=>{const s=await(await fetch('/state')).json();if(s.replace&&
 		t.Fatalf("cancelled session reusable: %v", err)
 	}
 	result, err := r.Close(ctx)
-	if err != nil || !result.TreeReaped || !result.ProfileRemoved {
+	if err != nil || !result.ProcessesStopped() || !result.ProfileRemoved {
 		t.Fatalf("cancel cleanup: %+v %v", result, err)
 	}
 	t.Logf("owned cancellation cleanup: %+v", result)
@@ -493,7 +506,7 @@ func TestAgentBrowserPublicMDN(t *testing.T) {
 func TestAgentBrowserLaunchFailurePreservesCleanupEvidence(t *testing.T) {
 	_, e := LaunchAgentBrowser(t.Context(), AgentBrowserStartRequest{Authority: AgentBrowserAuthority{SessionID: "early-invalid"}})
 	var failure *AgentBrowserLaunchError
-	if !errors.As(e, &failure) || failure.Cleanup.SessionID != "early-invalid" || !failure.Cleanup.TreeReaped || !failure.Cleanup.ProfileRemoved || failure.Cleanup.CleanupPending {
+	if !errors.As(e, &failure) || failure.Cleanup.SessionID != "early-invalid" || !failure.Cleanup.ProcessesStopped() || !failure.Cleanup.ProfileRemoved || failure.Cleanup.CleanupPending {
 		t.Fatalf("early boundary receipt %+v %v", failure, e)
 	}
 	if runtime.GOOS != "windows" {

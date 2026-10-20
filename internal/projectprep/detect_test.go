@@ -165,7 +165,7 @@ func TestGoMissingUnsafeAndUnsupportedInputs(t *testing.T) {
 func TestDetectionBoundsPathsFilesAndCancellation(t *testing.T) {
 	root := fixture(t, map[string]string{"Cargo.toml": "[package]\nname = \"example\"\n"})
 	plan, err := projectprep.Detect(context.Background(), root, ".")
-	if err != nil || plan.Ready || plan.Toolchain != "cargo" || !strings.Contains(strings.Join(plan.Issues, " "), "not supported") {
+	if err != nil || plan.Ready || plan.Toolchain != "cargo" || !strings.Contains(strings.Join(plan.Issues, " "), "Cargo.lock is missing") {
 		t.Fatalf("unsupported toolchain hidden: %#v %v", plan, err)
 	}
 	for _, target := range []string{"../outside", "C:/outside", "/outside", "web\\nested"} {

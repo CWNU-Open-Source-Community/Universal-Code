@@ -40,10 +40,14 @@ func (unixCommandRuntimeStarter) Start(ctx context.Context, _ CommandRuntimeScop
 	spec CommandRuntimeResolvedSpec,
 ) (commandRuntimeProcess, error) {
 	if validateCommandRuntimeLaunchDirectory(spec) != nil ||
-		commandRuntimeFileDigestMatches(spec.ExecutablePath, spec.ExecutableSHA256) != nil {
+		commandRuntimeFileDigestMatches(spec.ExecutablePath, spec.ExecutableSHA256) != nil ||
+		validateCommandRuntimePythonInvocation(spec) != nil {
 		return nil, ErrCommandRuntimeBoundary
 	}
 	command := exec.Command(spec.ExecutablePath, spec.CanonicalArgv...)
+	if invocation := commandRuntimePythonInvocationPath(spec); invocation != "" {
+		command.Args[0] = invocation
+	}
 	command.Dir = spec.AbsoluteDirectory
 	command.Env = append([]string(nil), spec.Environment...)
 	command.SysProcAttr = commandRuntimeSysProcAttr()
@@ -84,7 +88,8 @@ func (unixCommandRuntimeStarter) Start(ctx context.Context, _ CommandRuntimeScop
 		return nil, err
 	}
 	if validateCommandRuntimeLaunchDirectory(spec) != nil ||
-		commandRuntimeFileDigestMatches(spec.ExecutablePath, spec.ExecutableSHA256) != nil {
+		commandRuntimeFileDigestMatches(spec.ExecutablePath, spec.ExecutableSHA256) != nil ||
+		validateCommandRuntimePythonInvocation(spec) != nil {
 		cleanup()
 		return nil, ErrCommandRuntimeBoundary
 	}

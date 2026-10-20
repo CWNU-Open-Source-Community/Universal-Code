@@ -8,6 +8,25 @@ import (
 )
 
 func (s *CommandRuntimeService) projectPreparationReady(ctx context.Context, ecosystem ...string) error {
+	if len(ecosystem) == 1 && ecosystem[0] == "yarn" {
+		if executor, ok := s.sandbox.(*DockerSandboxCommandRuntimeExecutor); ok && s.adapter.Backend == CommandRuntimeDockerSandboxBackend {
+			if probe, ok := executor.service.docker.readiness.(interface {
+				YarnPreparationAvailable(context.Context, string) (bool, error)
+			}); ok {
+				ready, err := probe.YarnPreparationAvailable(ctx, executor.service.imageDigest)
+				if err != nil {
+					return apperror.New(apperror.CodeUnavailable, "Docker Yarn preparation image inspection failed")
+				}
+				if ready {
+					return nil
+				}
+			}
+		}
+		return apperror.New(apperror.CodeFailedPrecondition, "Yarn preparation requires the Standard Code Docker image with Yarn "+projectprep.YarnVersion)
+	}
+	if len(ecosystem) == 1 && ecosystem[0] == "bun" {
+		return s.bunPreparationReady(ctx)
+	}
 	pnpm := len(ecosystem) == 1 && ecosystem[0] == "pnpm"
 	if s.adapter.Backend != CommandRuntimeDockerSandboxBackend {
 		if pnpm {

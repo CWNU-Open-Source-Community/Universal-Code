@@ -36,6 +36,8 @@ func (e *DockerSandboxCommandRuntimeExecutor) NormalizeCommandRuntimeSpec(spec r
 		guest = "/opt/toolchains/python/usr-local/bin/python3"
 	case "cargo", "cargo.exe":
 		guest = "/usr/local/cargo/bin/cargo"
+	case "bun", "bun.exe":
+		guest = sandbox.DockerStandardCodeBunExecutable
 	default:
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}
@@ -48,7 +50,7 @@ func (e *DockerSandboxCommandRuntimeExecutor) NormalizeCommandRuntimeSpec(spec r
 	intent.Executable = guest
 	for _, argument := range intent.Arguments {
 		if strings.HasPrefix(argument, `\\`) || (len(argument) > 1 && argument[1] == ':') ||
-			(path.IsAbs(argument) && !strings.HasPrefix(argument, "/workspace/") && argument != "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && argument != sandbox.DockerStandardCodePNPMCLI) {
+			(path.IsAbs(argument) && !strings.HasPrefix(argument, "/workspace/") && argument != "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && argument != sandbox.DockerStandardCodePNPMCLI && argument != sandbox.DockerStandardCodeYarnCLI) {
 			return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 		}
 	}

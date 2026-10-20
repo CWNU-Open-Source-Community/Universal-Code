@@ -15,6 +15,9 @@ func TestProjectCommandsAreNativeRegistryPresets(t *testing.T) {
 	}{
 		{"test.go", "", []string{"test", "./..."}},
 		{"test.node", "", []string{"--test"}},
+		{"test.python", "", []string{"-m", "unittest", "discover", "-v"}},
+		{"test.pytest", "", []string{"-m", "pytest"}},
+		{"test.rust", "", []string{"test", "--offline"}},
 		{"format.go", "pkg/example.go", []string{"-w", "./pkg/example.go"}},
 	} {
 		if _, registered := TypedActionIDs()[test.id]; !registered {

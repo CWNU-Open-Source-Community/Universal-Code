@@ -53,6 +53,7 @@ type Thread struct {
 	WorkspaceID              string       `json:"workspace_id,omitempty"`
 	MissionID                string       `json:"mission_id"`
 	Title                    string       `json:"title"`
+	Pinned                   bool         `json:"pinned,omitempty"`
 	Status                   ThreadStatus `json:"status"`
 	ActiveRunID              string       `json:"active_run_id,omitempty"`
 	LastRunID                string       `json:"last_run_id"`
@@ -192,6 +193,7 @@ type ThreadRunAuditEvent struct {
 
 type ThreadFilter struct {
 	Status         ThreadStatus
+	Pinned         *bool
 	IncludeDeleted bool
 	TitleQuery     string
 	Limit          int

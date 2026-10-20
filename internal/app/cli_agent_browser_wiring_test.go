@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
@@ -143,7 +143,7 @@ func TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser(t *testing.T) {
 			home := newCanonicalCLIHome(t)
 			t.Setenv("CYBERAGENT_HOME", home)
 			runID := createCLIAgentBrowserRun(t, home, test.permission)
-			wantBrowser := test.browserWanted && runtime.GOOS == "windows"
+			wantBrowser := test.browserWanted && browserruntime.AgentBrowserPlatformAvailable()
 			provider := &cliAgentBrowserProvider{expectBrowser: wantBrowser}
 			router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 			router.RegisterProvider(provider)
@@ -175,8 +175,8 @@ func TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser(t *testing.T) {
 }
 
 func TestCLIWakeConsumeWiresOrdinaryAgentBrowser(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("ordinary Agent browser adapter is Windows-only")
+	if !browserruntime.AgentBrowserPlatformAvailable() {
+		t.Skip("ordinary Agent browser adapter is unavailable")
 	}
 	for _, confirmFull := range []bool{false, true} {
 		t.Run(fmt.Sprintf("confirm-full=%t", confirmFull), func(t *testing.T) {
@@ -238,8 +238,8 @@ func TestCLIWakeConsumeWiresOrdinaryAgentBrowser(t *testing.T) {
 }
 
 func TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("ordinary Agent browser adapter is Windows-only")
+	if !browserruntime.AgentBrowserPlatformAvailable() {
+		t.Skip("ordinary Agent browser adapter is unavailable")
 	}
 	for _, test := range []struct {
 		name                       string
@@ -474,8 +474,8 @@ func assertCLIAgentBrowserDurableResult(t *testing.T, home, runID string, wantBr
 }
 
 func TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("ordinary Agent browser adapter is Windows-only")
+	if !browserruntime.AgentBrowserPlatformAvailable() {
+		t.Skip("ordinary Agent browser adapter is unavailable")
 	}
 	home := newCanonicalCLIHome(t)
 	runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull)
@@ -526,7 +526,7 @@ func TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess
 	}
 	after, err := owned.browser.GetStatus(t.Context(), runID)
 	if err != nil || after.Capabilities.Available || after.State != "closed" ||
-		after.Cleanup == nil || !after.Cleanup.TreeReaped || !after.Cleanup.ProfileRemoved ||
+		after.Cleanup == nil || !after.Cleanup.ProcessesStopped() || !after.Cleanup.ProfileRemoved ||
 		after.Cleanup.CleanupPending {
 		t.Fatalf("owned browser after close=%#v err=%v", after, err)
 	}

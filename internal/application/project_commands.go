@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
@@ -87,14 +89,58 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 	if (slot == "format") != (id == "format.go") {
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "configured command preset does not match its project action")
 	}
+	if id == "test.rust" && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, cargoLocalTestReason)
+	}
+	if id == "test.rust" && len(workspaceRoot) == 1 {
+		plan, detectErr := projectprep.Detect(context.Background(), workspaceRoot[0], target)
+		if detectErr == nil && plan.Ecosystem == "rust" && plan.Ready {
+			if err := checkDetectedProjectPaths(run, plan); err != nil {
+				return runner.CommandRuntimeSpec{}, err
+			}
+			return PrepareProjectPreparationTestCommand(plan, adapter, workspaceRoot[0])
+		}
+	}
 	executable, launcher, err := resolveProjectCommandToolchain(id, adapter, workspaceRoot...)
 	if err != nil {
 		return runner.CommandRuntimeSpec{}, err
+	}
+	if (id == "test.python" || id == "test.pytest") && len(workspaceRoot) == 1 {
+		plan, detectErr := projectprep.Detect(context.Background(), workspaceRoot[0], target)
+		if detectErr != nil {
+			return runner.CommandRuntimeSpec{}, detectErr
+		}
+		_, lockErr := os.Lstat(filepath.Join(workspaceRoot[0], filepath.FromSlash(target), "pylock.toml"))
+		if lockErr == nil || !os.IsNotExist(lockErr) {
+			if lockErr != nil || plan.Ecosystem != "python" || !plan.Ready {
+				return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Python dependency lock is unavailable; inspect and prepare the project before testing")
+			}
+			if err := checkDetectedProjectPaths(run, plan); err != nil {
+				return runner.CommandRuntimeSpec{}, err
+			}
+			module := "unittest"
+			if id == "test.pytest" {
+				module = "pytest"
+			}
+			return preparePythonPreparationSpec(plan, adapter, workspaceRoot[0], true, module)
+		}
 	}
 	return toolgateway.ProjectCommandSpec(id, executable, target, launcher...)
 }
 
 func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Identity, workspaceRoot ...string) (string, []string, error) {
+	if id == "test.yarn" {
+		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "Yarn actions require the Standard Code Docker image with Yarn "+projectprep.YarnVersion)
+		}
+		return "/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodeYarnCLI}, nil
+	}
+	if id == "test.bun" {
+		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition, bunRuntimeReason)
+		}
+		return sandbox.DockerStandardCodeBunExecutable, nil, nil
+	}
 	if id == "test.pnpm" {
 		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
 			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "pnpm workspace actions require the Standard Code Docker image with pnpm "+projectprep.PNPMVersion)
@@ -148,6 +194,9 @@ func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Ide
 		}
 		return node, launcher, nil
 	}
+	if name == "python" && runtime.GOOS != "windows" {
+		name = "python3"
+	}
 	executable, err := exec.LookPath(name)
 	if err != nil {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition, "project command toolchain is unavailable: "+name)
@@ -165,6 +214,10 @@ func dockerProjectExecutable(id string) (string, bool) {
 		return "/opt/toolchains/go/bin/go", true
 	case "test.node", "test.npm":
 		return "/opt/toolchains/node/bin/node", true
+	case "test.python", "test.pytest":
+		return "/opt/toolchains/python/usr-local/bin/python3", true
+	case "test.rust":
+		return "/usr/local/cargo/bin/cargo", true
 	case "format.go":
 		return "/opt/toolchains/go/bin/gofmt", true
 	default:

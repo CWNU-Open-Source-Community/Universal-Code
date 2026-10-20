@@ -19,7 +19,7 @@ function stateText(status: AgentBrowserStatus, t: LocaleText): string {
     case "waiting_user": return t("网页需要人工处理", "Page needs your attention");
     case "failed": return t("浏览器操作未完成", "Browser action incomplete");
     case "closing": return t("正在停止浏览器…", "Stopping browser…");
-    case "cleanup_pending": return t("浏览器已停止，仍在清理临时资料", "Browser stopped; cleaning up temporary data");
+    case "cleanup_pending": return t("会话已停止，仍在清理临时进程或资料", "Session stopped; cleaning up temporary processes or data");
     case "closed": return t("浏览器已停止", "Browser stopped");
     case "idle": return t("等待 Agent 打开网页", "Waiting for the agent to open a page");
     default: return t("当前环境无法使用 Agent 浏览器", "Agent browser unavailable in this environment");
@@ -35,7 +35,7 @@ function actionText(action: string | undefined, t: LocaleText): string {
 
 function unavailableText(code: AgentBrowserStatus["unavailable_code"], t: LocaleText): string {
   switch (code) {
-    case "platform_unsupported": return t("当前 macOS / Linux 版本尚不支持 Agent 浏览器复验。你可以自行打开应用页面检查，Agent 不会把它记为已完成浏览器验收。", "Agent browser verification is unavailable in this macOS/Linux version. You can inspect the app manually; the agent will not record that as completed browser verification.");
+    case "platform_unsupported": return t("当前系统尚未提供可用的 Agent 浏览器适配器。你可以自行打开应用页面检查，Agent 不会把它记为已完成浏览器验收。", "No agent browser adapter is available on this system. You can inspect the app manually; the agent will not record that as completed browser verification.");
     case "full_access_required": return t("Agent 浏览器需要当前任务启用完全访问（Full）。启用后，Agent 可打开独立浏览器检查页面。", "The agent browser requires Full access for the current task. Once enabled, the agent can inspect pages in a separate browser.");
     case "run_unavailable": return t("当前任务已暂停、结束或权限已变更，浏览器暂不可用。", "The task paused, ended or changed permissions. Its browser is unavailable.");
     case "session_unavailable": return t("上一浏览器会话尚未完成清理，请稍后重新读取状态。", "The previous browser session is still cleaning up. Refresh its status later.");

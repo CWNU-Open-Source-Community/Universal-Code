@@ -299,8 +299,9 @@ func TestBrowserRuntimeProductionPrimitivesStayInAuditedAdapters(t *testing.T) {
 			"network_probe_windows.go": true,
 		},
 		"os.Mkdir": {
-			"profile_materializer.go":  true,
-			"network_probe_windows.go": true,
+			"profile_materializer.go":          true,
+			"network_probe_windows.go":         true,
+			"agent_browser_platform_darwin.go": true,
 		},
 		"os.Rename": {
 			"profile_materializer.go": true,

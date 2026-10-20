@@ -59,6 +59,8 @@ type BrowserProcessExit struct {
 	StartSpecFingerprint string    `json:"start_spec_fingerprint"`
 	ExitCode             int       `json:"exit_code"`
 	TreeReaped           bool      `json:"tree_reaped"`
+	ProcessScope         string    `json:"process_scope,omitempty"`
+	ProcessScopeVerified bool      `json:"process_scope_verified,omitempty"`
 	TimedOut             bool      `json:"timed_out"`
 	Cancelled            bool      `json:"cancelled"`
 	StartedAt            time.Time `json:"started_at"`

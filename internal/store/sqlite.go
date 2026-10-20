@@ -504,7 +504,9 @@ func migrationPlan() []migration {
 		migration{Version: 214, Name: "Fenced Thread peer messaging tools", Statements: threadPeerToolLedgerStatements(), DisableForeignKeys: true},
 		migration{Version: 215, Name: "Exact pnpm workspace preparation and fetch receipts", Statements: pnpmPreparationReceiptStatements()},
 		migration{Version: 216, Name: "Thread project moves preserve Run workspaces", Statements: threadProjectMoveStatements()},
-		migration{Version: 217, Name: "Private per-chat working directories", Statements: projectlessWorkspaceStatements})
+		migration{Version: 217, Name: "Private per-chat working directories", Statements: projectlessWorkspaceStatements},
+		migration{Version: 218, Name: "Pinned conversations", Statements: threadPinStatements},
+		migration{Version: 219, Name: "npm workspace preparation binds the shared installation root", Statements: npmWorkspacePreparationStatements()})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {
