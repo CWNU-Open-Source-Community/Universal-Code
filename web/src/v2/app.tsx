@@ -385,7 +385,9 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     staleTime: 30_000,
   });
   const threadsQuery = useInfiniteQuery({
-    queryKey: [...v2QueryKeys.threadSearch("active", ""), { execution_state: executionFilter }],
+    queryKey: executionFilter
+      ? [...v2QueryKeys.threadSearch("active", ""), { execution_state: executionFilter }]
+      : v2QueryKeys.threadSearch("active", ""),
     queryFn: ({ signal, pageParam }) => client.getPage<ThreadView>("/threads",
       { limit: 100, status: "active", ...(executionFilter ? { execution_state: executionFilter } : {}) }, pageParam, signal),
     initialPageParam: "", getNextPageParam: (last) => last.page.next_cursor || undefined,
