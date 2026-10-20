@@ -466,7 +466,7 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 		if plan.Ecosystem == "npm" {
 			return dependencycache.FinalizeNPM(c, currentRoot, plan.Target, service.adapter.Backend != CommandRuntimeLocalSandboxBackend)
 		}
-		if plan.Ecosystem == "pnpm" {
+		if plan.Ecosystem == "pnpm" || plan.Ecosystem == "yarn" {
 			return recheckPreparationPlan(c, currentRoot, root, plan)
 		}
 		return nil

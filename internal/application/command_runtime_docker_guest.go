@@ -48,7 +48,7 @@ func (e *DockerSandboxCommandRuntimeExecutor) NormalizeCommandRuntimeSpec(spec r
 	intent.Executable = guest
 	for _, argument := range intent.Arguments {
 		if strings.HasPrefix(argument, `\\`) || (len(argument) > 1 && argument[1] == ':') ||
-			(path.IsAbs(argument) && !strings.HasPrefix(argument, "/workspace/") && argument != "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && argument != sandbox.DockerStandardCodePNPMCLI) {
+			(path.IsAbs(argument) && !strings.HasPrefix(argument, "/workspace/") && argument != "/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js" && argument != sandbox.DockerStandardCodePNPMCLI && argument != sandbox.DockerStandardCodeYarnCLI) {
 			return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 		}
 	}

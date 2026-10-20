@@ -104,6 +104,14 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 	if err != nil {
 		return stats, err
 	}
+	if plan.Ecosystem == "yarn" {
+		stagedBytes += int64(len(yarnPreparationRC))
+		for _, pkg := range plan.Packages {
+			if pkg.Kind != projectprep.KindYarnTarball {
+				return stats, errors.New("Yarn preparation contains a different artifact kind")
+			}
+		}
+	}
 	origins := make(map[string]bool, len(approvedOrigins))
 	for _, raw := range approvedOrigins {
 		origin, err := canonicalOrigin(raw)
@@ -241,8 +249,18 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 			return stats, err
 		}
 	}
+	if plan.Ecosystem == "yarn" {
+		if err := authorityCheck(ctx); err != nil {
+			return stats, err
+		}
+		if err := writeAtomic(workspace, projectprep.YarnRCPath(plan.Target), []byte(yarnPreparationRC), 0600); err != nil {
+			return stats, err
+		}
+	}
 	return stats, nil
 }
+
+const yarnPreparationRC = "yarn-offline-mirror \"./yarn-mirror\"\nyarn-offline-mirror-pruning false\ndisable-self-update-check true\n"
 
 // Git reads this directory-local exclusion itself, so staging never edits the
 // linked worktree's shared repository configuration or a project's ignore file.
@@ -338,6 +356,15 @@ func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 			return "", err
 		}
 		return path.Join(projectprep.StageDirectory(target), "pnpm-tarballs", projectprep.PNPMTarballFile(pkg.ID)), nil
+	case projectprep.KindYarnTarball:
+		if _, _, err := npmIntegrity(pkg.Integrity); err != nil {
+			return "", err
+		}
+		name, err := projectprep.YarnTarballFile(pkg.URL)
+		if err != nil {
+			return "", err
+		}
+		return path.Join(projectprep.YarnMirrorDirectory(target), name), nil
 	case projectprep.KindGoMod, projectprep.KindGoZip:
 		if module.Check(pkg.ModulePath, pkg.Version) != nil || module.CanonicalVersion(pkg.Version) != pkg.Version || !strings.HasPrefix(pkg.Integrity, "h1:") {
 			return "", errors.New("Go artifact needs a canonical module version and h1 checksum")
@@ -377,7 +404,7 @@ func verifyArtifact(pkg projectprep.Package, body []byte) error {
 		return fmt.Errorf("dependency artifact byte limit is invalid: %w", ErrIntegrity)
 	}
 	switch pkg.Kind {
-	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball:
+	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball:
 		algorithm, expected, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
 			return err

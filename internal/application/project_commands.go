@@ -96,6 +96,12 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 }
 
 func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Identity, workspaceRoot ...string) (string, []string, error) {
+	if id == "test.yarn" {
+		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "Yarn actions require the Standard Code Docker image with Yarn "+projectprep.YarnVersion)
+		}
+		return "/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodeYarnCLI}, nil
+	}
 	if id == "test.pnpm" {
 		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
 			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "pnpm workspace actions require the Standard Code Docker image with pnpm "+projectprep.PNPMVersion)

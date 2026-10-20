@@ -68,7 +68,9 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	if npm && goModule {
 		plan.Issues = append(plan.Issues, "Both package.json and go.mod are present; select a directory with one dependency toolchain")
 	} else if npm {
-		if pnpmRoot, selected, findErr := findPNPMRoot(reader, files); selected || findErr != nil {
+		if selectsYarn(files) {
+			plan = detectYarn(plan, files)
+		} else if pnpmRoot, selected, findErr := findPNPMRoot(reader, files); selected || findErr != nil {
 			if findErr != nil {
 				plan.Issues = append(plan.Issues, findErr.Error())
 			}

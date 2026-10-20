@@ -17,6 +17,8 @@ const (
 	GoProxyArchiveOrigin = "https://storage.googleapis.com"
 	KindNPMTarball       = "npm_tarball"
 	KindPNPMTarball      = "pnpm_tarball"
+	KindYarnTarball      = "yarn_tarball"
+	YarnVersion          = "1.22.22"
 	PNPMVersion          = "10.28.1"
 	KindGoMod            = "go_mod"
 	KindGoZip            = "go_zip"
@@ -75,6 +77,10 @@ func NPMCacheDirectory(target string) string      { return path.Join(StageDirect
 func GoModuleCacheDirectory(target string) string { return path.Join(StageDirectory(target), "go-mod") }
 func PNPMSeedDirectory(target string) string      { return path.Join(StageDirectory(target), "pnpm-seed") }
 func PNPMStoreDirectory(target string) string     { return path.Join(StageDirectory(target), "pnpm-store") }
+func YarnMirrorDirectory(target string) string {
+	return path.Join(StageDirectory(target), "yarn-mirror")
+}
+func YarnRCPath(target string) string { return path.Join(StageDirectory(target), "yarnrc") }
 func PNPMTarballFile(id string) string {
 	sum := sha256.Sum256([]byte(id))
 	return hex.EncodeToString(sum[:]) + ".tgz"
