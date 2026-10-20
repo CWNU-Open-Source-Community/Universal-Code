@@ -51,6 +51,16 @@ macOS 当前任务确认 Full 后，可以通过普通浏览器工具打开独�
 
 同一产品实现还在 Windows 实际 Chrome 上通过浏览器运行时、HTTP 产品流程和 UC 页面验证，Windows 清理仍要求真实 `TreeReaped=true`。
 
+## CI 源文件审计清单修正
+
+[PR CI run 39368598832 的 Go checks](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39368598832/job/118451257748) 在 `TestBrowserRuntimeProductionPrimitivesStayInAuditedAdapters` 失败：`agent_browser_platform_darwin.go` 为独占临时 profile 创建固定的 `Data`、`Home`、`Crashpad` 子目录，但测试的 `os.Mkdir` 逐文件允许表遗漏了这个原生适配文件。本次将该文件加入这一项允许表，保留逐文件检查及全部禁止项。
+
+在 Windows / Go 1.26.9 上，以下测试先复现 CI 的相同错误，再于清单修正后通过；此次修正仅涉及审计测试和本验收说明。
+
+```sh
+go test -v -count=1 -timeout 3m ./internal/browserruntime -run '^TestBrowserRuntimeProductionPrimitivesStayInAuditedAdapters$'
+```
+
 ## 使用条件与清理合同
 
 首次实现仅接受固定路径的稳定版 Google Chrome。启动同时核验原生 Mach-O、整个 bundle 的签名、固定 Google Team ID `EQHXZ8M8AV` / bundle ID `com.google.Chrome`；挂起子进程通过相同 CDHash 的动态校验及再次 Full 权限检查后才恢复。每个会话使用独占的一次性 profile、私有 HOME/TMPDIR 和 Crashpad 目录，浏览器使用临时 mock Keychain，避免访问个人浏览器资料。
