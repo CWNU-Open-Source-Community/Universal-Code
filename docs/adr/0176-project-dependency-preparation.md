@@ -99,3 +99,19 @@ that source. Host installation remains unavailable. Windows Local can fetch
 offline but its test preflight reports the missing full Rust compiler/linker
 capability; it does not broaden the LPAC toolchain bindings. Explicit Full tests
 retain the existing host authorization and Job receipts.
+
+## Fixed Bun text-lock preparation
+
+Bun 1.4.3 preparation accepts a standalone default-registry project with an
+explicit packageManager and a v2 text bun.lock. Root dependencies, original
+manifest/lock bytes, package identities and integrity values bind preparation.
+The existing broker verifies registry tarballs and generates the versioned Bun
+cache in the Run workspace; unsafe paths/links and expanded size violations fail.
+The installed toolchain runs offline, frozen and script-free with copyfile and
+forced reinstallation, so edited installed packages are refreshed from the cache.
+
+The product uses the existing Standard Code Docker adapter with an exact Bun
+version label, fixed guest executable/environment, normal permissions and Job
+receipts. Other adapters and older images report an unavailable reason. No new
+execution framework or persistence schema is introduced. The acceptance report
+separates native Bun verification from the unexecuted Docker product path.

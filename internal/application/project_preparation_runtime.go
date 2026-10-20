@@ -24,6 +24,9 @@ func (s *CommandRuntimeService) projectPreparationReady(ctx context.Context, eco
 		}
 		return apperror.New(apperror.CodeFailedPrecondition, "Yarn preparation requires the Standard Code Docker image with Yarn "+projectprep.YarnVersion)
 	}
+	if len(ecosystem) == 1 && ecosystem[0] == "bun" {
+		return s.bunPreparationReady(ctx)
+	}
 	pnpm := len(ecosystem) == 1 && ecosystem[0] == "pnpm"
 	if s.adapter.Backend != CommandRuntimeDockerSandboxBackend {
 		if pnpm {

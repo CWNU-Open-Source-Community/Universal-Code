@@ -72,7 +72,9 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	if (npm && goModule) || ((npm || goModule || cargo) && python) {
 		plan.Issues = append(plan.Issues, "Multiple dependency toolchains are present; select a directory with one dependency toolchain")
 	} else if npm {
-		if selectsYarn(files) {
+		if bunSelected(reader, files) {
+			plan = detectBun(plan, reader, files)
+		} else if selectsYarn(files) {
 			plan = detectYarn(plan, files)
 		} else if pnpmRoot, selected, findErr := findPNPMRoot(reader, files); selected || findErr != nil {
 			if findErr != nil {

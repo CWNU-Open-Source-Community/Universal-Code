@@ -21,6 +21,9 @@ const (
 	DockerStandardCodeYarnVersion           = "1.22.22"
 	DockerStandardCodeYarnCLI               = "/opt/toolchains/yarn/bin/yarn.js"
 	DockerStandardCodePNPMCLI               = "/opt/toolchains/node/lib/node_modules/pnpm/bin/pnpm.cjs"
+	DockerStandardCodeBunVersionLabel       = "org.traverse-board.bun-version"
+	DockerStandardCodeBunVersion            = "1.4.3"
+	DockerStandardCodeBunExecutable         = "/opt/toolchains/bun/bin/bun"
 	DockerStandardCodeWorkspaceTarget       = "/workspace"
 	DockerStandardCodeGitMetadataTarget     = "/workspace/.git"
 	DockerStandardCodeGitMetadataMask       = "gitdir: .traverse-board-git-disabled\n"
@@ -49,6 +52,8 @@ const (
 	DockerStandardCodeToolchainNode        = "node"
 	DockerStandardCodeToolchainPython      = "python"
 	DockerStandardCodeToolchainRust        = "rust"
+	DockerStandardCodeToolchainBun         = "bun"
+	DockerStandardCodeToolchainBunPrepare  = "bun-prepare"
 	DockerStandardCodeStdinClosed          = "closed"
 	DockerStandardCodeStdinPipe            = "pipe"
 
@@ -126,7 +131,7 @@ func validDockerStandardCodeStdinPolicy(value string) bool {
 func validDockerStandardCodeToolchain(value string) bool {
 	switch value {
 	case DockerStandardCodeToolchainGo, DockerStandardCodeToolchainGofmt, DockerStandardCodeToolchainNode,
-		DockerStandardCodeToolchainPython, DockerStandardCodeToolchainRust, DockerStandardCodeToolchainGoPrepare, DockerStandardCodeToolchainNodePrepare:
+		DockerStandardCodeToolchainPython, DockerStandardCodeToolchainRust, DockerStandardCodeToolchainBun, DockerStandardCodeToolchainBunPrepare, DockerStandardCodeToolchainGoPrepare, DockerStandardCodeToolchainNodePrepare:
 		return true
 	default:
 		return false
@@ -308,7 +313,7 @@ func ParseDockerStandardCodeManifest(manifest Manifest) (
 }
 
 func dockerStandardCodeWriteLimits(toolchain string) (int64, int, int64) {
-	if toolchain == DockerStandardCodeToolchainGoPrepare || toolchain == DockerStandardCodeToolchainNodePrepare {
+	if toolchain == DockerStandardCodeToolchainGoPrepare || toolchain == DockerStandardCodeToolchainNodePrepare || toolchain == DockerStandardCodeToolchainBunPrepare {
 		return 1024 * 1024 * 1024, 200000, 64 * 1024 * 1024
 	}
 	return DockerStandardCodeWorkspaceGrowthBytes, DockerStandardCodeWorkspaceGrowthEntries, DockerStandardCodeWorkspaceFileBytes

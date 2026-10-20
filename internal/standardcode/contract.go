@@ -104,7 +104,9 @@ func validToolchain(value string) bool {
 		sandbox.DockerStandardCodeToolchainGofmt,
 		sandbox.DockerStandardCodeToolchainNode,
 		sandbox.DockerStandardCodeToolchainPython,
-		sandbox.DockerStandardCodeToolchainRust:
+		sandbox.DockerStandardCodeToolchainRust,
+		sandbox.DockerStandardCodeToolchainBun,
+		sandbox.DockerStandardCodeToolchainBunPrepare:
 		return true
 	default:
 		return false

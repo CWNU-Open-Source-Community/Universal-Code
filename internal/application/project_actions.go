@@ -180,6 +180,9 @@ func (s *CommandRuntimeService) projectPresetReady(ctx context.Context, id strin
 	if id == "test.yarn" {
 		return s.projectPreparationReady(ctx, "yarn")
 	}
+	if id == "test.bun" {
+		return s.projectPreparationReady(ctx, "bun")
+	}
 	if id == "test.pnpm" {
 		return s.projectPreparationReady(ctx, "pnpm")
 	}
@@ -347,7 +350,7 @@ func projectActionRequestFingerprint(run domain.Run, request ProjectActionReques
 func detectedProjectActionPurpose(purpose, requestFingerprint string) (string, bool) {
 	parts := strings.Fields(purpose)
 	if len(parts) != 6 || strings.Join(parts[:3], " ") != "Detected project action" ||
-		parts[4] != requestFingerprint || len(parts[5]) != 64 || (parts[3] != "test.go" && parts[3] != "test.npm" && parts[3] != "test.pnpm" && parts[3] != "test.yarn" && parts[3] != "test.rust" && parts[3] != "test.python") {
+		parts[4] != requestFingerprint || len(parts[5]) != 64 || (parts[3] != "test.go" && parts[3] != "test.npm" && parts[3] != "test.pnpm" && parts[3] != "test.yarn" && parts[3] != "test.bun" && parts[3] != "test.rust" && parts[3] != "test.python") {
 		return "", false
 	}
 	return parts[3], true
@@ -507,7 +510,7 @@ func (s *ProjectActionsService) GetJob(ctx context.Context, runID, jobID string)
 	}
 	parts := strings.Fields(intent.Purpose)
 	configured := len(parts) == 5 && strings.Join(parts[:3], " ") == "Configured project action" && len(parts[4]) == 64
-	detected := len(parts) == 6 && strings.Join(parts[:3], " ") == "Detected project action" && len(parts[4]) == 64 && len(parts[5]) == 64 && (parts[3] == "test.go" || parts[3] == "test.npm" || parts[3] == "test.pnpm" || parts[3] == "test.yarn" || parts[3] == "test.rust" || parts[3] == "test.python")
+	detected := len(parts) == 6 && strings.Join(parts[:3], " ") == "Detected project action" && len(parts[4]) == 64 && len(parts[5]) == 64 && (parts[3] == "test.go" || parts[3] == "test.npm" || parts[3] == "test.pnpm" || parts[3] == "test.yarn" || parts[3] == "test.bun" || parts[3] == "test.rust" || parts[3] == "test.python")
 	if !configured && !detected {
 		return ProjectActionResultView{}, apperror.New(apperror.CodeNotFound, "Job is not a configured project action")
 	}

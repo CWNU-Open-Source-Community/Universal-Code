@@ -1021,6 +1021,10 @@ func dockerContainerProfileLabelsMatch(actual map[string]string, spec DockerCont
 			if value != DockerStandardCodeYarnVersion {
 				return false
 			}
+		case DockerStandardCodeBunVersionLabel:
+			if value != DockerStandardCodeBunVersion {
+				return false
+			}
 		default:
 			filtered[name] = value
 		}

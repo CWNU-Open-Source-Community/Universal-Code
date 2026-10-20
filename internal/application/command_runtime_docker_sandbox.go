@@ -274,9 +274,11 @@ func commandRuntimeDockerCommand(spec runner.CommandRuntimeResolvedSpec) (
 		toolchain = sandbox.DockerStandardCodeToolchainPython
 	case "cargo", "cargo.exe":
 		toolchain = sandbox.DockerStandardCodeToolchainRust
+	case "bun", "bun.exe":
+		toolchain = sandbox.DockerStandardCodeToolchainBun
 	default:
 		return standardcode.Command{}, errors.New(
-			"Docker Standard Code accepts only the fixed Go, Node, Python, or Rust toolchain")
+			"Docker Standard Code accepts only a fixed image toolchain")
 	}
 	if toolchain == sandbox.DockerStandardCodeToolchainGo && len(spec.CanonicalArgv) == 2 && spec.CanonicalArgv[0] == "mod" && spec.CanonicalArgv[1] == "download" {
 		toolchain = sandbox.DockerStandardCodeToolchainGoPrepare
@@ -290,6 +292,9 @@ func commandRuntimeDockerCommand(spec runner.CommandRuntimeResolvedSpec) (
 	if toolchain == sandbox.DockerStandardCodeToolchainNode && len(spec.CanonicalArgv) > 1 && spec.CanonicalArgv[0] == sandbox.DockerStandardCodePNPMCLI &&
 		(spec.CanonicalArgv[1] == "fetch" || spec.CanonicalArgv[1] == "install" || (len(spec.CanonicalArgv) > 2 && spec.CanonicalArgv[1] == "--recursive" && spec.CanonicalArgv[2] == "rebuild")) {
 		toolchain = sandbox.DockerStandardCodeToolchainNodePrepare
+	}
+	if toolchain == sandbox.DockerStandardCodeToolchainBun && len(spec.CanonicalArgv) > 0 && spec.CanonicalArgv[0] == "install" {
+		toolchain = sandbox.DockerStandardCodeToolchainBunPrepare
 	}
 	command := standardcode.Command{ProtocolVersion: standardcode.CommandProtocolVersion,
 		Toolchain: toolchain, Arguments: append([]string(nil), spec.CanonicalArgv...),

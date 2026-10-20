@@ -120,6 +120,9 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		return stats, err
 	}
 	stagedBytes += pythonBytes
+	if err := validateBunPlan(plan); err != nil {
+		return stats, err
+	}
 	origins := make(map[string]bool, len(approvedOrigins))
 	for _, raw := range approvedOrigins {
 		origin, err := canonicalOrigin(raw)
@@ -152,6 +155,9 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 	}
 	defer cache.Close()
 	if err := resetCargoVendor(ctx, workspace, plan, authorityCheck); err != nil {
+		return stats, err
+	}
+	if err := resetBunCache(ctx, workspace, plan, authorityCheck); err != nil {
 		return stats, err
 	}
 	for index, pkg := range plan.Packages {
@@ -255,6 +261,13 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 					return stats, err
 				}
 			}
+		}
+		if pkg.Kind == projectprep.KindBunTarball {
+			expanded, err := stageBunTarball(ctx, workspace, plan.Target, pkg, body, MaxPreparationBytes-stagedBytes, authorityCheck)
+			if err != nil {
+				return stats, err
+			}
+			stagedBytes += expanded
 		}
 		if hit {
 			stats.CachedPackages++
@@ -380,6 +393,11 @@ func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 			return "", err
 		}
 		return path.Join(projectprep.PythonWheelDirectory(target), pkg.ID), nil
+	case projectprep.KindBunTarball:
+		if !projectprep.ValidBunPackage(pkg.ModulePath, pkg.Version) {
+			return "", errors.New("invalid Bun cache identity")
+		}
+		return path.Join(projectprep.StageDirectory(target), "bun-tarballs", projectprep.PNPMTarballFile(pkg.ID)), nil
 	case projectprep.KindNPMTarball:
 		algorithm, digest, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
@@ -449,7 +467,7 @@ func verifyArtifact(pkg projectprep.Package, body []byte) error {
 		if err != nil || len(expected) != 32 || !bytes.Equal(expected, sum[:]) {
 			return ErrIntegrity
 		}
-	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball, projectprep.KindPythonWheel:
+	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball, projectprep.KindBunTarball, projectprep.KindPythonWheel:
 		algorithm, expected, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
 			return err

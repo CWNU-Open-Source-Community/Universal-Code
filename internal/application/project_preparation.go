@@ -189,6 +189,9 @@ func (s *ProjectPreparationService) inspect(ctx context.Context, runID, target s
 	} else {
 		err = errors.New("开始编码以准备所选沙箱")
 	}
+	if plan.Ready && plan.Ecosystem == "bun" && service == nil && err != nil {
+		err = fmt.Errorf("%s; %w", bunRuntimeReason, err)
+	}
 	if err == nil && service.adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace {
 		err = errors.New("请为任务选择 Local、Docker Engine 或 Docker Sandboxes")
 	}
@@ -471,7 +474,7 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 			}
 			return dependencycache.FinalizeNPMWorkspace(c, currentRoot, plan, service.adapter.Backend != CommandRuntimeLocalSandboxBackend)
 		}
-		if plan.Ecosystem == "pnpm" || plan.Ecosystem == "yarn" || plan.Ecosystem == "rust" {
+		if plan.Ecosystem == "pnpm" || plan.Ecosystem == "yarn" || plan.Ecosystem == "bun" || plan.Ecosystem == "rust" {
 			return recheckPreparationPlan(c, currentRoot, root, plan)
 		}
 		return nil
