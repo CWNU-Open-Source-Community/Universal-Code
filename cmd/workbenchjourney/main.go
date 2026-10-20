@@ -54,6 +54,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// macOS /var is an alias. Exercise the production profile's canonical-path
+	// requirement with the actual temporary directory, without weakening it.
+	temp, err = filepath.EvalSymlinks(temp)
+	if err != nil {
+		return err
+	}
 	defer func() {
 		if err := os.RemoveAll(temp); err != nil {
 			fmt.Fprintln(os.Stderr, "remove journey directory:", err)
@@ -83,7 +89,17 @@ func run() error {
 	}
 	provider := httptest.NewServer(http.HandlerFunc(serveModel))
 	defer provider.Close()
+	browserJourney := os.Getenv("WORKBENCH_JOURNEY_BROWSER") == "1"
+	if browserJourney {
+		site := newBrowserJourneySite()
+		defer site.Close()
+		browserJourneyURL = site.URL
+	}
 	readToken, controlToken := randomID(), randomID()
+	providerTimeout := "10"
+	if browserJourney {
+		providerTimeout = "90"
+	}
 	// Explicit empty credentials prevent inheriting a developer's paid providers.
 	for name, value := range map[string]string{
 		"CYBERAGENT_HOME":      filepath.Join(temp, "home"),
@@ -92,7 +108,7 @@ func run() error {
 		"CYBERAGENT_OLLAMA_BASE_URL": "", "CYBERAGENT_OLLAMA_MODEL": "",
 		"CYBERAGENT_ANTHROPIC_API_KEY":  "offline-journey-provider",
 		"CYBERAGENT_ANTHROPIC_BASE_URL": provider.URL, "CYBERAGENT_ANTHROPIC_MODEL": model,
-		"CYBERAGENT_ANTHROPIC_TIMEOUT_SECONDS": "10",
+		"CYBERAGENT_ANTHROPIC_TIMEOUT_SECONDS": providerTimeout,
 		"CYBERAGENT_CODE_INTEL_CONFIG":         "", "CYBERAGENT_WEB_SEARCH_ENDPOINT": "",
 	} {
 		if err := os.Setenv(name, value); err != nil {
@@ -114,8 +130,12 @@ func run() error {
 		"temp_root": temp,
 	})
 	fmt.Printf("journey_metadata: %s\n", metadata)
-	if code := app.ExecuteContext(ctx, []string{"api", "serve", "--listen", "127.0.0.1:0", "--ui-dir", *uiDir,
-		"--enable-workspace-import", "--enable-file-edit-proposals", "--enable-wake-worker"}, os.Stdout, os.Stderr); code != 0 {
+	arguments := []string{"api", "serve", "--listen", "127.0.0.1:0", "--ui-dir", *uiDir,
+		"--enable-workspace-import", "--enable-file-edit-proposals", "--enable-wake-worker"}
+	if browserJourney {
+		arguments = append(arguments, "--enable-permission-control", "--enable-danger-full-access")
+	}
+	if code := app.ExecuteContext(ctx, arguments, os.Stdout, os.Stderr); code != 0 {
 		return fmt.Errorf("journey API exited %d", code)
 	}
 	return nil
@@ -142,13 +162,14 @@ type modelRequest struct {
 }
 
 type contentBlock struct {
-	Type    string          `json:"type"`
-	Text    string          `json:"text,omitempty"`
-	ID      string          `json:"id,omitempty"`
-	Name    string          `json:"name,omitempty"`
-	Input   any             `json:"input,omitempty"`
-	Content json.RawMessage `json:"content,omitempty"`
-	IsError bool            `json:"is_error,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	Input     any             `json:"input,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
 }
 
 func serveModel(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +191,13 @@ func serveModel(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "journey provider:", err)
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if block.Type == "journey_browser_hold" {
+		// Keep the actual run active after its completed browser tools while the
+		// operator captures the production card and stops the browser through UI.
+		// Global teardown cancels the request; the provider timeout is also bounded.
+		<-r.Context().Done()
 		return
 	}
 	stopReason := "end_turn"
@@ -247,6 +275,9 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 		}
 		return text(map[string]string{"version": "model_harness_probe.v1", "status": "ok", "nonce": nonce[1]})
 	}
+	if strings.Contains(history, "JOURNEY_BROWSER:") {
+		return nextBrowserJourneyResponse(request, results, tool, text)
+	}
 	if strings.Contains(history, "JOURNEY_CONTEXT:") {
 		if strings.Contains(history, "JOURNEY_PIN_QUESTION_SHOWN") {
 			return rootReply("已收到答复，继续验证本次任务上下文。")
@@ -266,6 +297,12 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 			}
 		}
 		return false
+	}
+	if strings.Contains(history, "JOURNEY_BROWSER_SETUP:") {
+		if observed("JOURNEY_FILE_PROOF_2026") {
+			return text(map[string]string{"version": "root_lifecycle.v1", "action": "wait", "message": "JOURNEY_BROWSER_SETUP_READY: 已读取项目文件，等待操作员启用 Full 并检查浏览器。", "reason": "Operator will confirm Full access"})
+		}
+		return read("README.md")
 	}
 	if strings.Contains(string(request.System), "specialist_lifecycle.v1") {
 		if !strings.Contains(history, childGoal) {

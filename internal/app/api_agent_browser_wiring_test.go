@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/httpapi"
 	"cyberagent-workbench/internal/modelregistry"
@@ -176,19 +177,19 @@ func TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key"} {
 		_, fullFound := fullTools[name]
 		_, restrictedFound := restrictedTools[name]
-		if runtime.GOOS == "windows" && !fullFound {
-			t.Fatalf("Windows current Full API Provider tools omitted %s: %v", name,
+		if browserruntime.AgentBrowserPlatformAvailable() && !fullFound {
+			t.Fatalf("native current Full API Provider tools omitted %s: %v", name,
 				apiAgentBrowserToolNames(captured[0].Tools))
 		}
-		if runtime.GOOS != "windows" && fullFound {
-			t.Fatalf("non-Windows API advertised unavailable ordinary browser tool %s", name)
+		if !browserruntime.AgentBrowserPlatformAvailable() && fullFound {
+			t.Fatalf("API host without an adapter advertised ordinary browser tool %s", name)
 		}
 		if restrictedFound {
 			t.Fatalf("Ask API Run received ordinary browser tool %s: %v", name,
 				apiAgentBrowserToolNames(captured[1].Tools))
 		}
 	}
-	if runtime.GOOS != "windows" {
+	if !browserruntime.AgentBrowserPlatformAvailable() {
 		return
 	}
 
@@ -205,7 +206,11 @@ func TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 		"api-agent-browser-close-0001",
 		[]byte(fmt.Sprintf(`{"version":"agent_browser_close.v1","session_id":%q}`, status.SessionID)),
 		http.StatusOK, &closed)
-	if closed.State != "closed" || !closed.TreeReaped || !closed.ProfileRemoved || closed.CleanupPending {
+	processesStopped := closed.TreeReaped
+	if runtime.GOOS == "darwin" {
+		processesStopped = !closed.TreeReaped && closed.ProcessScope == "no_owned_process_resources" && closed.ProcessScopeVerified
+	}
+	if closed.State != "closed" || !processesStopped || !closed.ProfileRemoved || closed.CleanupPending {
 		t.Fatalf("idle API Agent browser session did not close cleanly: %#v", closed)
 	}
 }

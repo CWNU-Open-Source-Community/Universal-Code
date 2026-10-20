@@ -6442,6 +6442,9 @@ export interface components {
             generation: number;
             headless: boolean;
             last_action?: string;
+            /** @enum {string} */
+            process_scope?: "no_owned_process_resources" | "darwin_group_and_scoped_children.v1";
+            process_scope_verified: boolean;
             product?: string;
             profile_removed: boolean;
             run_id: string;

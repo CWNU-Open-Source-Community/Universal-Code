@@ -12,7 +12,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 57 | true |
-| [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 23 | false |
+| [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 25 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
 | [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
@@ -26,7 +26,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 144 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 145 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -378,7 +378,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `browser-cdp-process-session-reader` (`v1`, active) at `internal/browserruntime`
 
-<details><summary>23 active identifiers</summary>
+<details><summary>25 active identifiers</summary>
 
 - `browser-action-tools.v1`
 - `browser_cdp_outcome.v1`
@@ -393,6 +393,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `browser_status_result.v1`
 - `browser_target_scope.v1`
 - `browser_type.v1`
+- `darwin_agent_browser_exit.v1`
+- `darwin_chrome_supervision.v1`
 - `full_cdp_cookie_access.v1`
 - `full_cdp_interaction.v1`
 - `full_cdp_page_snapshot.v1`
@@ -990,7 +992,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>144 active identifiers</summary>
+<details><summary>145 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
@@ -1013,6 +1015,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `context_pin_proposal.v1`
 - `context_provenance.v0`
 - `context_provenance.v1`
+- `darwin_group_and_scoped_children.v1`
 - `debug-query.v1`
 - `diagnostic-bundle.v1`
 - `docker_environment.v1`

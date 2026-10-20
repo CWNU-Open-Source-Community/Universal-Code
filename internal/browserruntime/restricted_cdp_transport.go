@@ -834,7 +834,7 @@ func (client *restrictedCDPClient) close(ctx context.Context) error {
 }
 
 func waitForDevToolsEndpoint(ctx context.Context, profilePath string,
-	process *BrowserProcess,
+	process interface{ Done() <-chan struct{} },
 ) (*url.URL, error) {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
