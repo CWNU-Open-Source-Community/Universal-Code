@@ -24,3 +24,18 @@ The native executions used the existing Full-access host command adapter in an i
 Passed the focused registry, project configuration and application tests, including native argument selection, pinned configuration, excluded and escaping paths, guest paths independent of host PATH, unavailable host toolchains and unsupported SBX rejection. The frontend project-hook parser tests passed (7 tests), as did API generation and the production frontend build.
 
 The Docker daemon was unavailable on this machine, so Docker executable-path selection was tested but these commands were not run in a container. The local Python interpreter has no pytest installed; `test.pytest` has command/configuration test coverage but was not executed successfully here. Test actions use preinstalled dependencies and do not install packages or enable network access.
+
+## POSIX virtual environments
+
+The runner previously launched only the canonical interpreter path. A real Linux
+symlink venv reproduced the resulting `ModuleNotFoundError`: Python lost the
+venv's `site-packages` even though the interpreter image and digest were correct.
+The runner now binds the Python invocation path in the command intent and uses
+it for `argv[0]`, while executing the same canonical image. It rechecks the
+alias before launch and after dispatch authorization.
+
+The actual Linux runner passed the venv unittest, distinct-alias binding,
+historical-intent replay rejection and alias-replacement checks. Windows shared
+binding and dispatch tests passed. Existing non-Python intent JSON and
+fingerprints remain unchanged. The macOS CI transport step now runs the venv
+tests; macOS execution was not available locally.
