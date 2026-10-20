@@ -19,6 +19,7 @@ package browserruntime
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include "chrome_process_observation_darwin.h"
 
 // The publisher policy is fixed. A locally discovered signer is never trusted
 // simply because its signature verifies. CDHash binds the admitted native slice.
@@ -184,26 +185,13 @@ static int uc_chrome_sample(int pid, uc_proc_sample *out) {
     bsd.pbi_status == SZOMB, bsd.pbi_start_tvsec, bsd.pbi_start_tvusec, task.pti_resident_size};
   return 0;
 }
-static int uc_chrome_group(int group, int *pids, int capacity) {
-  int count = proc_listpgrppids(group, pids, capacity * sizeof(int));
-  if (count < 0) return -errno;
-  if (count >= capacity) return -ENOSPC;
-  return count;
-}
-static int uc_chrome_children(int pid, int *pids, int capacity) {
-  int count = proc_listchildpids(pid, pids, capacity * sizeof(int));
-  if (count < 0) return -errno;
-  if (count >= capacity) return -ENOSPC;
-  return count;
-}
 
 // Parse only argc arguments for a matching executable; never export a process'
 // environment or unrelated command line. Crashpad deliberately reparents itself.
 static int uc_chrome_crashpad(const char *profile, int *pids, int capacity) {
   int all[8192];
-  int total = proc_listallpids(all, sizeof(all));
-  if (total < 0) return -errno;
-  if (total >= 8192) return -ENOSPC;
+  int total = uc_chrome_all_processes(all, 8192);
+  if (total < 0) return total;
   char *expected = NULL;
   if (asprintf(&expected, "--database=%s/Crashpad", profile) < 0) return -ENOMEM;
   int found = 0;
