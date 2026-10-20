@@ -1,7 +1,10 @@
 package application
 
 import (
+	"path"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 
 	"cyberagent-workbench/internal/apperror"
@@ -59,6 +62,12 @@ func PrepareProjectPreparationTestCommand(plan projectprep.Plan, adapter command
 }
 
 func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing, runInstallScripts bool) (runner.CommandRuntimeSpec, error) {
+	if plan.Ecosystem == "rust" {
+		if testing && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, cargoLocalTestReason)
+		}
+		return prepareCargoPreparationSpec(plan, adapter, workspaceRoot, testing)
+	}
 	if plan.Ecosystem == "yarn" {
 		return prepareYarnPreparationSpec(plan, adapter, testing)
 	}
@@ -167,6 +176,48 @@ func prepareYarnPreparationSpec(plan projectprep.Plan, adapter commandruntimeada
 		Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
 		Purpose: "Project preparation " + action + " " + plan.Fingerprint,
 	})
+}
+
+const cargoLocalTestReason = "Windows Local 当前缺少完整 Rust 编译与链接能力；请选择现有 Docker 环境运行测试。Local 仍可准备离线依赖缓存。"
+
+func prepareCargoPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing bool) (runner.CommandRuntimeSpec, error) {
+	if !plan.Ready || plan.Version != projectprep.ProtocolVersion || len(plan.Fingerprint) != 64 {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "dependency preparation plan is unavailable")
+	}
+	if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace && !(testing && adapter.Kind == commandruntimeadapter.KindHostUnsandboxed) {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodePolicyDenied, "Cargo preparation requires the selected sandbox runtime")
+	}
+	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
+		return runner.CommandRuntimeSpec{}, err
+	}
+	executable, _, err := resolveProjectCommandToolchain("test.rust", adapter, workspaceRoot)
+	if err != nil {
+		return runner.CommandRuntimeSpec{}, err
+	}
+	vendor := path.Join(sandbox.DockerStandardCodeWorkspaceTarget, projectprep.CargoVendorDirectory(plan.Target))
+	if adapter.Backend != CommandRuntimeDockerSandboxBackend && adapter.Backend != CommandRuntimeSBXBackend {
+		if !filepath.IsAbs(workspaceRoot) {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Cargo preparation requires its resolved workspace")
+		}
+		vendor = filepath.Join(workspaceRoot, filepath.FromSlash(projectprep.CargoVendorDirectory(plan.Target)))
+		// Cargo passes a source directory to compiler subprocesses. A canonical
+		// extended Windows path avoids MAX_PATH failures in deep worktrees.
+		if runtime.GOOS == "windows" && !strings.HasPrefix(vendor, `\\?\`) {
+			if strings.HasPrefix(vendor, `\\`) {
+				vendor = `\\?\UNC\` + strings.TrimPrefix(vendor, `\\`)
+			} else {
+				vendor = `\\?\` + vendor
+			}
+		}
+	}
+	action := "fetch"
+	actionID := "install.rust"
+	if testing {
+		action = "test"
+		actionID = "test.rust"
+	}
+	arguments := []string{action, "--offline", "--locked", "--manifest-path", "Cargo.toml", "--config", `source.crates-io.replace-with="traverse-vendor"`, "--config", "source.traverse-vendor.directory=" + strconv.Quote(vendor), "--config", "net.offline=true"}
+	return runner.NormalizeCommandRuntimeIntent(runner.CommandRuntimeSpec{Version: runner.CommandRuntimeProtocolVersion, Profile: runner.CommandRuntimeProcess, Executable: executable, Arguments: arguments, WorkingDirectory: plan.Target, Environment: []runner.CommandRuntimeEnvironment{}, StdinPolicy: runner.CommandRuntimeStdinClosed, CloseInitialStdin: true, TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288}, Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone, Purpose: "Project preparation " + actionID + " " + plan.Fingerprint})
 }
 
 func preparePNPMPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, action string) (runner.CommandRuntimeSpec, error) {

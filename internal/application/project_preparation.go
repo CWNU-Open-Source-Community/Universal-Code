@@ -471,7 +471,7 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 			}
 			return dependencycache.FinalizeNPMWorkspace(c, currentRoot, plan, service.adapter.Backend != CommandRuntimeLocalSandboxBackend)
 		}
-		if plan.Ecosystem == "pnpm" || plan.Ecosystem == "yarn" {
+		if plan.Ecosystem == "pnpm" || plan.Ecosystem == "yarn" || plan.Ecosystem == "rust" {
 			return recheckPreparationPlan(c, currentRoot, root, plan)
 		}
 		return nil

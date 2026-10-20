@@ -151,6 +151,21 @@ jobs:
               env.write(f"TRAVERSE_NPM_TEST_CLI={pathlib.Path(shutil.which('npm')).resolve()}\n")
               env.write(f"TRAVERSE_NPM_TEST_TARBALL={npm_archive}\n")
           PY
+      - name: Prepare integrity-pinned Cargo verification fixture
+        if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
+        run: |
+          python - <<'PY'
+          import hashlib, os, pathlib, subprocess, urllib.request
+          data = urllib.request.urlopen("https://static.crates.io/crates/itoa/itoa-1.0.15.crate", timeout=60).read()
+          if hashlib.sha256(data).hexdigest() != "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c":
+              raise SystemExit("Cargo verification crate integrity mismatch")
+          archive = pathlib.Path(os.environ["RUNNER_TEMP"]) / "itoa-1.0.15.crate"
+          archive.write_bytes(data)
+          cargo = subprocess.check_output(["rustup", "which", "cargo"], text=True).strip()
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"TRAVERSE_CARGO_TEST_BIN={cargo}\n")
+              env.write(f"TRAVERSE_CARGO_TEST_CRATE={archive}\n")
+          PY
       - name: Test and vet selected Go packages
         if: ${{ needs.classify.outputs.backend == 'true' }}
         env:

@@ -82,3 +82,20 @@ nonzero tests followed by repair, cancellation/reopening, and final delivery.
 The acceptance report records the actual runtime and model used, completed
 cases and manual interventions. Unsupported or unexecuted combinations remain
 separate from successful cases.
+
+## Cargo projects and workspaces
+
+An explicit Cargo root with a v3/v4 Cargo.lock binds its root/member manifests,
+recursive in-root path dependencies and Cargo configuration. Only crates.io
+registry packages with exact SHA-256 checksums are prepared. Git/custom registry,
+patch/replace, external local dependencies, workspace redirects, toolchain files
+and source/build/environment overrides receive a concrete unsupported reason.
+The target remains the selected root; no ancestor workspace is inferred.
+
+The existing broker verifies `.crate` bytes, rejects unsafe archive entries and
+materializes a bounded directory source with per-file checksums. Existing command
+adapters run fixed `cargo fetch --offline --locked` and `test.rust` arguments with
+that source. Host installation remains unavailable. Windows Local can fetch
+offline but its test preflight reports the missing full Rust compiler/linker
+capability; it does not broaden the LPAC toolchain bindings. Explicit Full tests
+retain the existing host authorization and Job receipts.

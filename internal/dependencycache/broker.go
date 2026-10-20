@@ -112,6 +112,9 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 			}
 		}
 	}
+	if err := validateCargoPlan(plan); err != nil {
+		return stats, err
+	}
 	origins := make(map[string]bool, len(approvedOrigins))
 	for _, raw := range approvedOrigins {
 		origin, err := canonicalOrigin(raw)
@@ -143,6 +146,9 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		return stats, err
 	}
 	defer cache.Close()
+	if err := resetCargoVendor(ctx, workspace, plan, authorityCheck); err != nil {
+		return stats, err
+	}
 	for index, pkg := range plan.Packages {
 		if err := authorityCheck(ctx); err != nil {
 			return stats, err
@@ -219,6 +225,16 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 		}
 		if err := writeAtomic(workspace, relative, body, 0600); err != nil {
 			return stats, err
+		}
+		if pkg.Kind == projectprep.KindCargoCrate {
+			expanded, err := stageCargoCrate(ctx, workspace, plan.Target, pkg, body, MaxPreparationBytes-stagedBytes, authorityCheck)
+			if err != nil {
+				return stats, err
+			}
+			stagedBytes += expanded
+			if stagedBytes > MaxPreparationBytes {
+				return stats, errors.New("Cargo vendor exceeded the preparation byte limit")
+			}
 		}
 		if pkg.Kind == projectprep.KindGoMod || pkg.Kind == projectprep.KindGoZip {
 			info, _ := json.Marshal(struct {
@@ -341,6 +357,11 @@ func artifactURL(raw string) (*url.URL, error) {
 
 func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 	switch pkg.Kind {
+	case projectprep.KindCargoCrate:
+		if !projectprep.ValidCargoPackage(pkg.ModulePath, pkg.Version) || pkg.ID != pkg.ModulePath+"@"+pkg.Version {
+			return "", errors.New("Cargo artifact requires a locked package identity")
+		}
+		return path.Join(projectprep.StageDirectory(target), "cargo-crates", pkg.ModulePath+"-"+pkg.Version+".crate"), nil
 	case projectprep.KindNPMTarball:
 		algorithm, digest, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
@@ -404,6 +425,12 @@ func verifyArtifact(pkg projectprep.Package, body []byte) error {
 		return fmt.Errorf("dependency artifact byte limit is invalid: %w", ErrIntegrity)
 	}
 	switch pkg.Kind {
+	case projectprep.KindCargoCrate:
+		expected, err := hex.DecodeString(pkg.Integrity)
+		sum := sha256.Sum256(body)
+		if err != nil || len(expected) != 32 || !bytes.Equal(expected, sum[:]) {
+			return ErrIntegrity
+		}
 	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball:
 		algorithm, expected, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
