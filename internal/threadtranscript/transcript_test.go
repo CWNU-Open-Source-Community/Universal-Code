@@ -247,6 +247,16 @@ func TestBuildProjectsWebEvidenceSecurityOutcomeInsteadOfGenericCompletion(t *te
 	}
 }
 
+func TestImportedBranchReplyRetainsItsOrigin(t *testing.T) {
+	source := eventSource("branch-run", 1, 1, events.ModelPublicCommentaryEvent,
+		`{"text":"Earlier answer","source_event_id":"original-reply"}`, time.Now().UTC())
+	source.Event.Source = "thread_branch"
+	items, err := Build("branch-thread", []Source{source})
+	if err != nil || len(items) != 1 || items[0].SourceRef != "branch-assistant:original-reply" {
+		t.Fatalf("imported reply lost its origin: items=%#v err=%v", items, err)
+	}
+}
+
 func eventSource(runID string, ordinal, sequence int64, eventType, payload string,
 	createdAt time.Time,
 ) Source {

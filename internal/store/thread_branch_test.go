@@ -257,3 +257,84 @@ func TestThreadBranchPreservesImageAndFileBindingsWithinWorkspace(t *testing.T) 
 		t.Fatal("branch response exposed file bodies")
 	}
 }
+
+func TestThreadBranchDeliveredUserExcludesItsReplyAndKeepsOriginal(t *testing.T) {
+	st, _, run, input, _ := threadIntentFixture(t)
+	input.Files = nil
+	input.OperationKey = "branch-user-input"
+	if _, err := st.ReserveThreadMessageIntent(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := st.CommitThreadMessage(t.Context(), input, run.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var anchor string
+	if err := st.db.QueryRow(`SELECT event_id FROM run_events WHERE type='operator.steering_queued' AND subject_id=?`, queued.Message.ID).Scan(&anchor); err != nil {
+		t.Fatal(err)
+	}
+	request := domain.ThreadBranchRequest{Version: domain.ThreadBranchProtocolVersion, ThreadID: input.ThreadID,
+		SourceEventID: anchor, OperationKey: "branch-from-user", RequestedBy: "test_operator"}
+	service := application.NewThreadBranchService(st)
+	if _, err := service.Branch(t.Context(), request); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("pending message was accepted: %v", err)
+	}
+	// A public update can precede the commit of the input. The new branch
+	// must still stop at that input, not at its later Session commit.
+	branchReplyEvent(t, st, run, "FUTURE_REPLY_CANARY")
+	message, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, "user", input.Content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE operator_steering_messages SET status='committed',session_message_id=?,committed_at=? WHERE id=?`, message.ID, ts(time.Now().UTC()), queued.Message.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.ListSessionMessages(t.Context(), run.SessionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, err := service.Branch(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := st.ListSessionMessages(t.Context(), branch.Session.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := 0
+	for _, m := range messages {
+		if strings.Contains(m.Content, "FUTURE_REPLY_CANARY") {
+			t.Fatal("user branch inherited its future reply")
+		}
+		if m.Role == "user" && m.Content == input.Content {
+			users++
+		}
+	}
+	if users != 1 {
+		t.Fatalf("selected user message copied %d times", users)
+	}
+	after, err := st.ListSessionMessages(t.Context(), run.SessionID, false)
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("original conversation changed: %v", err)
+	}
+	replay, err := service.Branch(t.Context(), request)
+	if err != nil || replay.Thread.ID != branch.Thread.ID {
+		t.Fatalf("retry created a second branch: %v", err)
+	}
+	request.OperationKey = "cancelled-user-branch"
+	withdrawn, err := st.EnqueueOperatorSteering(t.Context(), domain.EnqueueOperatorSteeringRequest{
+		RunID: run.ID, SessionID: run.SessionID, Content: "withdrawn input", OperationKey: "withdrawn-input-operation", RequestedBy: "test_operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CancelOperatorSteering(t.Context(), domain.CancelOperatorSteeringRequest{MessageID: withdrawn.Message.ID,
+		OperationKey: "cancel-withdrawn-input", RequestedBy: "test_operator", Reason: "withdrawn"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.db.QueryRow(`SELECT event_id FROM run_events WHERE type='operator.steering_queued' AND subject_id=?`, withdrawn.Message.ID).Scan(&request.SourceEventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Branch(t.Context(), request); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("cancelled message accepted: %v", err)
+	}
+}

@@ -34,6 +34,7 @@ export type NarrativeEntry =
   | {
       id: string;
       kind: "user";
+      branchSourceID?: string;
       text: string;
       images?: WorkspaceImageAttachment[];
       attachments?: WorkspaceFileAttachment[];
@@ -304,6 +305,7 @@ export function projectThreadNarrative(
       // event's status title as if the user had typed it.
       const text = images?.length || attachments?.length ? item.detail?.trim() ?? "" : normalizedText(item);
       if (text || images?.length || attachments?.length) result.push({ id: item.id, kind: "user", text, images, attachments,
+        branchSourceID: item.durable && !item.provisional && item.status !== "pending" && item.status !== "cancelled" ? item.id : undefined,
         status: item.status, deliveryMode: item.delivery_mode, promotedToMessageID: item.promoted_to_message_id,
         promotedFromMessageID: item.promoted_from_message_id, createdAt: item.created_at, provisional: item.provisional });
       continue;
@@ -315,6 +317,7 @@ export function projectThreadNarrative(
       if (!text) continue;
       const branchSourceID = item.source === "model" && item.kind === "model_update" && item.durable && !item.provisional
         ? item.id : undefined;
+      const changeSourceID = item.source_ref?.startsWith("branch-assistant:") ? undefined : branchSourceID;
       const previous = result.at(-1);
       if (previous?.kind === "assistant" && !previous.provisional && !item.provisional && previous.runId === item.run_id) {
         // A Supervisor may emit the same final answer again while closing its
@@ -323,13 +326,13 @@ export function projectThreadNarrative(
         if (previous.text !== text) previous.text = `${previous.text}\n\n${text}`;
         previous.messageIDs = [...(previous.messageIDs ?? [previous.id]), item.id];
         previous.branchSourceID = branchSourceID;
-        previous.changeSourceID ??= branchSourceID;
+        previous.changeSourceID ??= changeSourceID;
       } else {
         result.push({ id: item.id, kind: "assistant", text,
           messageIDs: [item.id],
           runId: item.run_id,
           branchSourceID,
-          changeSourceID: branchSourceID,
+          changeSourceID,
           createdAt: item.created_at, provisional: item.provisional });
       }
       continue;

@@ -28,6 +28,8 @@ import {
 import { V2PermissionControl } from "./permission-control";
 import { V2ProviderSettings } from "./provider-settings";
 import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
+import { saveChatPreferences, useChatPreferences, type SendPreference } from "../chat-preferences";
+import { V2KeyboardSettings } from "./keyboard-settings";
 import { V2ExecutionSettings } from "./execution-settings";
 import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2ProjectlessDirectorySettings } from "./projectless-directory-settings";
@@ -35,7 +37,6 @@ import { V2WebAccessSettings } from "./web-access-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
-import { ShortcutSettings } from "../../components/shared-settings-panels";
 import { ModelAvailabilitySettings } from "../../components/model-availability-dialog";
 import { V2AboutSettings, V2ExtensionSettings, V2InspectorPreferences, V2SkillSettings } from "./advanced-settings";
 import "./settings.css";
@@ -155,6 +156,8 @@ function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
   onPermissions: () => void;
 }) {
   const { locale, setLocale, t } = useLocale();
+  const { send } = useChatPreferences();
+  const [saveError, setSaveError] = useState(false);
   return <>
     <h1>{t("常规", "General")}</h1>
     <p className="v2-settings-lead">{t("调整应用偏好。项目访问范围和执行环境可在「当前任务权限」中设置。", "Adjust app preferences. Manage project access and execution environments in Current task permissions.")}</p>
@@ -173,6 +176,17 @@ function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
           <button className="v2-setting-link" aria-label={t("管理当前任务权限", "Manage current task permissions")} disabled={!threadID}
             onClick={onPermissions} type="button">{t("管理", "Manage")}</button>
         </SettingRow>
+        <SettingRow title={t("发送消息", "Send messages")} detail={t("Shift+Enter 始终换行，Ctrl／⌘+Enter 始终发送。列表和代码块中 Enter 继续编辑。", "Shift+Enter always adds a line; Ctrl/⌘+Enter always sends. Enter continues editing lists and code blocks.")}>
+          <select aria-label={t("Enter 发送偏好", "Enter send preference")} value={send} onChange={(event) => {
+            try { saveChatPreferences({ send: event.target.value as SendPreference }); setSaveError(false); }
+            catch { setSaveError(true); }
+          }}>
+            <option value="enter">{t("Enter 发送", "Enter sends")}</option>
+            <option value="multiline">{t("多行消息用 Ctrl／⌘+Enter", "Ctrl/⌘+Enter for multiline messages")}</option>
+            <option value="modifier">{t("始终用 Ctrl／⌘+Enter", "Always use Ctrl/⌘+Enter")}</option>
+          </select>
+        </SettingRow>
+        {saveError && <p role="alert">{t("发送偏好未能保存，请检查本机存储后重试。", "Could not save the send preference. Check local storage and try again.")}</p>}
         <SettingRow detail={t("中文界面使用 HarmonyOS Sans Fonts；完整许可文本随软件发布。", "Chinese text uses HarmonyOS Sans Fonts. The full license is bundled with the app.")} title={t("第三方字体", "Third-party fonts")}>
           <FontLicenseControl />
         </SettingRow>
@@ -508,7 +522,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "skills" && <V2SkillSettings client={client} desktop={desktop} />}
       {section === "about" && <V2AboutSettings client={client} desktop={desktop} />}
       {(section === "shortcuts" || section === "keyboard") && <div className="v2-shared-settings">
-        <ShortcutSettings /><p>{t("使用方向键与 Enter 操作当前菜单或对话框；输入普通段落时按 Enter 发送，列表和代码块中按 Enter 续行。Ctrl+Enter 发送，Shift+Enter 换行。", "Use arrow keys and Enter in menus and dialogs. Enter sends regular paragraphs and adds a line in lists and code blocks. Ctrl+Enter sends; Shift+Enter adds a line.")}</p>
+        <V2KeyboardSettings />
       </div>}
       {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
       {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",

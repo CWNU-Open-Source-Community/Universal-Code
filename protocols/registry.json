@@ -1313,6 +1313,7 @@
         "desktop_workspace_open.v1",
         "prayu.run-navigation.v1",
         "universal-code.batch-workbench.v1",
+        "universal-code.chat-preferences.v1",
         "universal-code.specialist-continuation.v1",
         "v2_file_upload.v1"
       ],
