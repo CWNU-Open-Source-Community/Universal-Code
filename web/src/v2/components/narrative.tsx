@@ -13,46 +13,10 @@ import { V2ActivityGroup } from "./activity-detail";
 import { rehypeStreamReveal } from "./stream-reveal";
 import { V2TurnChanges } from "./turn-changes";
 import { V2PeerMessageCard } from "./thread-peer-messages";
-
-export interface FileLinkTarget {
-  path: string;
-  line?: number;
-}
-
-export function parseProjectFileLink(href: string): FileLinkTarget | null {
-  if (!href) return null;
-  // Ignore protocol-relative external URLs
-  if (href.startsWith("//")) return null;
-  // Ignore external URI schemes like http:, https:, mailto:, ftp://, etc.
-  if (/^(https?|ftp|mailto|javascript|data|tel):/i.test(href)) return null;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(href) && !href.startsWith("file://")) return null;
-  if (href.startsWith("#") || href.startsWith("?")) return null;
-
-  let raw = href;
-  if (raw.startsWith("file:///")) {
-    raw = raw.slice(8);
-  } else if (raw.startsWith("file://")) {
-    raw = raw.slice(7);
-  }
-
-  let line: number | undefined;
-  const hashMatch = /#L(\d+)/i.exec(raw);
-  if (hashMatch) {
-    line = parseInt(hashMatch[1], 10);
-    raw = raw.slice(0, raw.indexOf("#"));
-  } else {
-    const colonMatch = /:(\d+)(?::\d+)?$/.exec(raw);
-    if (colonMatch) {
-      line = parseInt(colonMatch[1], 10);
-      raw = raw.slice(0, colonMatch.index);
-    }
-  }
-
-  raw = raw.replace(/^(\.\/)+/, "").replace(/^\/+/, "");
-  if (!raw || raw === ".") return null;
-
-  return { path: raw, line };
-}
+import { ChatLinkErrors, ChatResourceContext, ResourceImage, ResourceLink } from "./resource-link";
+import { remarkResourceLinks } from "./remark-resource-links";
+import { parseProjectFileLink } from "../../lib/chat-resources";
+export { parseProjectFileLink, type FileLinkTarget } from "../../lib/chat-resources";
 
 function extractTextFromNode(node: React.ReactNode): string {
   if (typeof node === "string") return node;
@@ -200,32 +164,13 @@ function MessageMarkdown({ entry, onOpenFile }: {
   }
   const runID = "runId" in entry ? entry.runId : undefined;
   const components = useMemo<Components>(() => ({
-    a: ({ node: _node, href, children, ...props }) => {
-      const fileLink = parseProjectFileLink(href ?? "");
-      if (fileLink) {
-        return <a
-          href={href}
-          className="v2-file-link"
-          title={`在工作区中打开 ${fileLink.path}${fileLink.line ? ` (第 ${fileLink.line} 行)` : ""}`}
-          onClick={(event) => {
-            event.preventDefault();
-            onOpenFile?.({
-              path: fileLink.path,
-              line: fileLink.line,
-              runID,
-              triggerElement: event.currentTarget,
-            });
-          }}
-          {...props}
-        >{children}</a>;
-      }
-      return <a href={href} target="_blank" rel="noreferrer noopener" {...props}>{children}</a>;
-    },
+    a: ({ href, children }) => <ResourceLink href={href} runID={runID} onOpenFile={onOpenFile}>{children}</ResourceLink>,
+    img: ({ src, alt }) => <ResourceImage src={typeof src === "string" ? src : undefined} alt={alt} runID={runID} onOpenFile={onOpenFile} />,
     pre: ({ node: _node, children, ...props }) => <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>,
     span: StreamRevealSpan,
   }), [onOpenFile, runID]);
   return <ReactMarkdown
-    remarkPlugins={[remarkGfm, remarkCjkAutolinks]}
+    remarkPlugins={[remarkGfm, remarkCjkAutolinks, remarkResourceLinks]}
     rehypePlugins={reveal.start === undefined ? [] : [[rehypeStreamReveal, { start: reveal.start }]]}
     urlTransform={(url) => (parseProjectFileLink(url) ? url : defaultUrlTransform(url))}
     components={components}
@@ -268,10 +213,11 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
   // rebuild a group: compare its complete public projection before skipping it.
   replaceEqualDeep(previous.entry, next.entry) === previous.entry);
 
-export const V2Narrative = memo(function V2Narrative({ client, entries, threadID, onOpenFile, onBranch, onOpenThread }: {
+export const V2Narrative = memo(function V2Narrative({ client, entries, threadID, workspaceID = "", onOpenFile, onBranch, onOpenThread }: {
   client: APIClient;
   entries: NarrativeEntry[];
   threadID: string;
+  workspaceID?: string;
   onBranch?: BranchReply;
   onOpenThread?: (id: string) => void;
   onOpenFile?: (target: {
@@ -281,7 +227,8 @@ export const V2Narrative = memo(function V2Narrative({ client, entries, threadID
     triggerElement?: HTMLElement | null;
   }) => void;
 }) {
-  return <ol className="v2-narrative">{entries.map((entry) =>
+  const resources = useMemo(() => ({ workspaceID }), [workspaceID]);
+  return <ChatResourceContext.Provider value={resources}><ChatLinkErrors /><ol className="v2-narrative">{entries.map((entry) =>
     <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} onOpenFile={onOpenFile} onBranch={onBranch}
-      onOpenThread={onOpenThread} />)}</ol>;
+      onOpenThread={onOpenThread} />)}</ol></ChatResourceContext.Provider>;
 });

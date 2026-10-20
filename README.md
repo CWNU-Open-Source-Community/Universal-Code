@@ -99,6 +99,7 @@ go run ./cmd/cyberagent-desktop
 | 领域 | 文档链接 | 描述 |
 | :--- | :--- | :--- |
 | **使用指南** | [用户手册 (Usage Guide)](docs/usage.md) | 完整客户端使用、CLI 命令与常见工作流 |
+| **聊天资源** | [链接、文件与剪贴板](docs/chat-resource-interactions.md) | 外链预览、资源右键菜单、文件与图片复制粘贴 |
 | **搜索与取证** | [网络检索与快照 (Web Evidence)](docs/web-evidence.md) | 检索配置、快照存储、URL 溯源与失败诊断 |
 | **改动审计** | [工作区检查点 (Checkpoints)](docs/workspace-checkpoints.md) | 逐行 Diff 审阅、快照保存与安全恢复 (Rewind) |
 | **生态扩展** | [扩展与 MCP 协议 (Extensions)](docs/extensions.md) | 接入 Model Context Protocol (MCP) 与外部 Skill |
