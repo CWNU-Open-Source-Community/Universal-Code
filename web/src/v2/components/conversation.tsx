@@ -1,7 +1,7 @@
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, CircleEllipsis, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -578,6 +578,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const managedDraft = useV2DraftDocument(detailQuery.data?.thread.workspace_id ?? "", threadID);
   const draft = managedDraft?.state.snapshot.text ?? legacyDraft;
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
+  const composeTarget = useRef({ draft, onDraftChange });
+  composeTarget.current = { draft, onDraftChange };
+  const composeMessage = useCallback((text: string) => {
+    const current = composeTarget.current;
+    current.onDraftChange?.(current.draft ? `${current.draft}\n\n${text}` : text, current.draft);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-conversation .v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
+  }, []);
   const activeRun = detailQuery.data?.active_run;
   const streamRunID = activeRun?.id ?? "";
   const streamEnabled = Boolean(activeRun && ["preparing", "running", "waiting_approval"]
@@ -833,8 +840,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <span>{t("正在打开对话…", "Opening conversation…")}</span></div>;
   if (detailQuery.isError || !detailQuery.data) return <div className="v2-main-error" role="alert">
     <strong>{t("无法打开对话", "Unable to open conversation")}</strong><span>{t("请检查服务连接，然后重试。已有输入会保留。", "Check the service connection and retry. Your input is kept.")}</span>
-    <button onClick={() => void detailQuery.refetch()} type="button">{t("重新打开", "Reopen")}</button>
-    <details><summary>{t("查看原因", "Show reason")}</summary>{detailQuery.error instanceof Error
+    <button className="v2-retry-action" onClick={() => void detailQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={15} />{t("重新打开", "Reopen")}</button>
+    <details><summary><ChevronDown aria-hidden="true" size={14} />{t("查看原因", "Show reason")}</summary>{detailQuery.error instanceof Error
       ? detailQuery.error.message : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
   const detail = detailQuery.data;
   const currentRun = detail.active_run ?? detail.last_run;
@@ -1115,8 +1122,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {view === "conversation" && !transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
-        {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} onOpenFile={openFile}
-          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread} />}
+        {view === "conversation" && <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""} onOpenFile={openFile}
+          onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
+          onCompose={client.hasThreadControl && onDraftChange && detail.thread.status !== "archived" ? composeMessage : undefined} />}
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")

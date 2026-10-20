@@ -40,9 +40,11 @@ bun run --no-install test
 
 官方资料说明硬性离线和 frozen 行为：[bun install](https://bun.com/docs/pm/cli/install)、[文本锁文件](https://bun.com/docs/pm/lockfile)。缓存内部键由 [Bun 1.4.3 源码](https://github.com/oven-sh/bun/blob/bun-v1.4.3/src/install/PackageManager/PackageManagerDirectories.rs) 与实际安装共同确认。[生命周期文档](https://bun.com/docs/pm/lifecycle)说明默认 trusted allowlist，因此本批始终显式禁用脚本。
 
-整合 Yarn、Cargo 与 Python 准备入口后，projectprep/application 的 Bun、Yarn、Cargo、Python 聚焦检查通过；重新执行真实 Bun 检测、缓存、双目录离线安装、强制复装和原测试也通过。Windows 原生测试曾直接把 `t.TempDir()` 传入要求规范路径的缓存构造器，现改为任务临时目录内的 `cache` 子目录，保留生产路径校验。
+整合 Yarn、Cargo 与 Python 准备入口后，projectprep/application 的 Bun、Yarn、Cargo、Python 聚焦检查通过；重新执行真实 Bun 检测、缓存、双目录离线安装、强制复装和原测试也通过。Windows Go 1.26.9 使用含正斜杠的 `GOTMPDIR` 时，`t.TempDir()` 返回的混合分隔符路径被生产缓存构造器拒绝；测试改为该临时目录内的 `cache` 子目录，保留生产路径校验。
 
 一次更广的 application 检查达到 3 分钟超时，停在已有 PNPM manifest-changes 场景，未计为通过；随后按本批共享入口执行的上述检查通过。Docker 容器整链仍未运行。
+
+同步主线 npm workspace 与 Python 父分支后，再次运行 Bun 检测/缓存/原生安装、npm workspace 检测/命令目录/成员排除规则、Python 命令边界和原生语言预设检查，全部通过；主线的 workspace 链接与 Python seed 指纹绑定均保留。
 
 最终整合与原生 Bun 日志保存在本机 `output/playwright/bun-delivery`；下面两张生产页面截图随本文件提交。
 

@@ -300,8 +300,10 @@ func (s *ProjectPreparationService) Prepare(ctx context.Context, r PrepareProjec
 	requestJSON, _ := json.Marshal(r)
 	now := time.Now().UTC()
 	o := domain.ProjectPreparationOperation{ID: opID, RunID: r.RunID, KeyDigest: keyDigest, RequestFingerprint: fingerprint, Target: plan.Target, PlanFingerprint: plan.Fingerprint, Backend: service.adapter.Backend, RequestedBy: r.RequestedBy, RequestJSON: string(requestJSON), OwnerID: s.ownerID, PermissionRevision: permission.Revision, State: "pending", TotalPackages: len(plan.Packages), Revision: 1, CreatedAt: now, UpdatedAt: now}
-	if plan.Ecosystem == "pnpm" {
+	if plan.WorkspaceRoot != "" {
 		o.WorkspaceRoot = plan.WorkspaceRoot
+	}
+	if plan.Ecosystem == "pnpm" {
 		o.SeedDirectory = projectprep.PNPMSeedDirectory(plan.Target)
 	}
 	// Close and admission serialize the WaitGroup addition. Once Close has
@@ -467,7 +469,10 @@ func (s *ProjectPreparationService) execute(ctx context.Context, cancel context.
 			return err
 		}
 		if plan.Ecosystem == "npm" {
-			return dependencycache.FinalizeNPM(c, currentRoot, plan.Target, service.adapter.Backend != CommandRuntimeLocalSandboxBackend)
+			if err := recheckPreparationPlan(c, currentRoot, root, plan); err != nil {
+				return err
+			}
+			return dependencycache.FinalizeNPMWorkspace(c, currentRoot, plan, service.adapter.Backend != CommandRuntimeLocalSandboxBackend)
 		}
 		if plan.Ecosystem == "pnpm" || plan.Ecosystem == "yarn" || plan.Ecosystem == "bun" || plan.Ecosystem == "rust" {
 			return recheckPreparationPlan(c, currentRoot, root, plan)

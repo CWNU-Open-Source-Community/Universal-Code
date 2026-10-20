@@ -85,7 +85,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 				return plan, err
 			}
 		} else {
-			plan = detectNPM(plan, files)
+			plan = detectNPMProject(plan, reader, files)
 		}
 	} else if goModule {
 		plan = detectGo(plan, files)
@@ -120,8 +120,8 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 			}
 		}
 	}
-	if plan.Ecosystem == "pnpm" && len(plan.Lockfiles) > 63 {
-		plan.Issues = append(plan.Issues, "pnpm preparation supports at most 64 bound manifest/configuration files")
+	if (plan.Ecosystem == "pnpm" || plan.WorkspaceRoot != "") && len(plan.Lockfiles) > 63 {
+		plan.Issues = append(plan.Issues, plan.Ecosystem+" preparation supports at most 64 bound manifest/configuration files")
 		plan.Lockfiles = plan.Lockfiles[:63]
 	}
 	sort.Slice(plan.Lockfiles, func(i, j int) bool { return plan.Lockfiles[i].Path < plan.Lockfiles[j].Path })

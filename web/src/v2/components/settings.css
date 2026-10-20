@@ -43,6 +43,10 @@
 .v2-projectless-form input { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 8px; color: var(--v2-ink); min-width: 0; padding: 9px 10px; width: 100%; }
 .v2-projectless-form .v2-setting-value { justify-content: flex-end; max-width: none; }
 .v2-setting-value button,
+.v2-setting-value select,
+.v2-shortcut-search button,
+.v2-shortcut-row button,
+.v2-shortcut-reset-all,
 .v2-setting-value .v2-setting-link,
 .v2-settings-placeholder button,
 .v2-archive-list button {
@@ -59,9 +63,19 @@
   white-space: nowrap;
 }
 .v2-setting-value button:hover,
+.v2-shortcut-search button:hover,
+.v2-shortcut-row button:not(:disabled):hover,
+.v2-shortcut-reset-all:hover,
 .v2-setting-value .v2-setting-link:hover,
 .v2-settings-placeholder button:hover,
 .v2-archive-list button:hover { background: var(--v2-control-hover); color: var(--v2-ink); }
+.v2-setting-value select { max-width: 100%; min-width: 0; height: 34px; }
+.v2-shortcut-search input { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 10px; color: var(--v2-ink); padding: 10px 12px; }
+.v2-shortcut-search button, .v2-shortcut-row button, .v2-shortcut-reset-all { cursor: pointer; height: 34px; }
+.v2-shortcut-row button:disabled { cursor: default; opacity: .4; }
+.v2-shortcut-row button[data-shortcut-recorder] { outline: 2px solid var(--prayu-focus); outline-offset: 2px; }
+.v2-shortcut-binding { justify-content: center; }
+.v2-shortcut-list + .v2-settings-lead { margin-top: 16px; }
 .v2-switch { background: var(--prayu-primary-bg); border-radius: 999px; display: inline-flex; height: 20px; padding: 2px; width: 32px; }
 .v2-switch i { background: var(--prayu-primary-fg); border-radius: 50%; box-shadow: 0 1px 3px var(--prayu-primary-shadow); height: 16px; margin-left: auto; width: 16px; }
 .v2-setting-value .v2-switch { background: var(--prayu-primary-bg); height: 20px; padding: 2px; width: 32px; }

@@ -599,13 +599,17 @@ func pnpmEmptySetting(value any) bool {
 }
 
 func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, error) {
+	return workspaceMembers(reader, root, patterns, "pnpm")
+}
+
+func workspaceMembers(reader fileReader, root string, patterns []string, manager string) ([]string, error) {
 	if len(patterns) > 128 {
-		return nil, errors.New("pnpm workspace supports at most 128 package patterns")
+		return nil, fmt.Errorf("%s workspace supports at most 128 package patterns", manager)
 	}
 	for _, pattern := range patterns {
 		value := strings.TrimPrefix(pattern, "!")
 		if len(value) > 256 || strings.Count(value, "**") > 1 || !pnpmSafeRelative(value) || strings.ContainsAny(value, "{}[]") {
-			return nil, errors.New("pnpm workspace patterns must be relative paths using *, ** or ? without parent traversal")
+			return nil, fmt.Errorf("%s workspace patterns must be relative paths using *, ** or ? without parent traversal", manager)
 		}
 	}
 	members := []string{}
@@ -619,7 +623,7 @@ func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, e
 		}
 		count++
 		if count > 25000 {
-			return errors.New("pnpm workspace discovery exceeds 25000 directory entries")
+			return fmt.Errorf("%s workspace discovery exceeds 25000 directory entries", manager)
 		}
 		if current == root {
 			return nil
@@ -644,7 +648,7 @@ func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, e
 			}
 		}
 		if entry.Type()&(fs.ModeSymlink|fs.ModeIrregular) != 0 && relevant {
-			return fmt.Errorf("pnpm workspace member path %s contains symlink indirection", current)
+			return fmt.Errorf("%s workspace member path %s contains symlink indirection", manager, current)
 		}
 		if !entry.IsDir() {
 			return nil
@@ -656,6 +660,9 @@ func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, e
 			at := reader
 			at.target = current
 			for _, name := range []string{"package.yaml", "package.json5"} {
+				if manager != "pnpm" {
+					break
+				}
 				file, found, err := at.read(name)
 				if err != nil {
 					return fmt.Errorf("%s: %w", path.Join(current, name), err)
@@ -671,7 +678,7 @@ func pnpmMembers(reader fileReader, root string, patterns []string) ([]string, e
 			if found {
 				members = append(members, current)
 				if len(members) > maxPNPMMembers {
-					return errors.New("pnpm workspace supports at most 60 members")
+					return fmt.Errorf("%s workspace supports at most 60 members", manager)
 				}
 			}
 		}

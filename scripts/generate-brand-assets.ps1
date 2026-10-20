@@ -210,7 +210,7 @@ function Convert-PngBytesToIndexed8 {
             } elseif ([int]$indexedPixels[$index] -eq $transparentPaletteIndex) {
                 # The adaptive quantizer may also use the corner's palette slot
                 # for opaque artwork. Move those pixels to its nearest colour so
-                # the transparent entry cannot punch holes in the sail/compass.
+                # the transparent entry cannot punch holes in the artwork.
                 $indexedPixels[$index] = [byte]$replacementIndex
             }
         }

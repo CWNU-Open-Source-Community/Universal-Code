@@ -96,6 +96,9 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
 		return runner.CommandRuntimeSpec{}, err
 	}
+	if !testing && plan.Ecosystem == "npm" && plan.WorkspaceRoot != "" && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Windows Local 沙箱无法创建 npm workspace 所需的内部链接；请选择现有 Docker 环境准备依赖")
+	}
 	id := "test.go"
 	if plan.Ecosystem == "npm" {
 		id = "test.npm"
@@ -107,12 +110,24 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 		return runner.CommandRuntimeSpec{}, err
 	}
 	arguments := []string{"mod", "download"}
+	workingDirectory := plan.Target
+	if plan.Ecosystem == "npm" && plan.WorkspaceRoot != "" {
+		if err := (workspaceidentity.PathPolicy{}).Check(plan.WorkspaceRoot); err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		if plan.WorkspaceRoot != "." && plan.Target != plan.WorkspaceRoot && !strings.HasPrefix(plan.Target, plan.WorkspaceRoot+"/") {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "npm test target is outside its workspace")
+		}
+	}
 	actionID := "install.go"
 	if testing {
 		arguments, actionID = []string{"test", "-mod=readonly", "./..."}, "test.go"
 	}
 	if plan.Ecosystem == "npm" {
-		cache, err := filepath.Rel(filepath.FromSlash(plan.Target), filepath.FromSlash(projectprep.NPMCacheDirectory(plan.Target)))
+		if !testing && plan.WorkspaceRoot != "" {
+			workingDirectory = plan.WorkspaceRoot
+		}
+		cache, err := filepath.Rel(filepath.FromSlash(workingDirectory), filepath.FromSlash(projectprep.NPMCacheDirectory(plan.Target)))
 		if err != nil {
 			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "project cache path is unavailable")
 		}
@@ -125,10 +140,13 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 			arguments, actionID = []string{"test", "--offline", "--global=false", "--prefix=.", "--no-audit", "--no-fund", "--cache=" + filepath.ToSlash(cache)}, "test.npm"
 		}
 		arguments = append(append([]string{}, launcher...), arguments...)
+		if plan.WorkspaceRoot != "" && !testing {
+			arguments = append(arguments, "--workspaces=true", "--include-workspace-root=true")
+		}
 	}
 	return runner.NormalizeCommandRuntimeIntent(runner.CommandRuntimeSpec{
 		Version: runner.CommandRuntimeProtocolVersion, Profile: runner.CommandRuntimeProcess,
-		Executable: executable, Arguments: arguments, WorkingDirectory: plan.Target,
+		Executable: executable, Arguments: arguments, WorkingDirectory: workingDirectory,
 		Environment: []runner.CommandRuntimeEnvironment{}, StdinPolicy: runner.CommandRuntimeStdinClosed, CloseInitialStdin: true,
 		TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288},
 		Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
