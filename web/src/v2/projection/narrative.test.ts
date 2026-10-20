@@ -41,6 +41,19 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
   };
 }
 
+it("branches only from saved, delivered user inputs", () => {
+  for (const status of ["committed", "pending", "cancelled"]) {
+    const entries = projectThreadNarrative([item({ id: "user-event", source: "operator", kind: "operator_input", status,
+      detail: "User request", instruction_authorized: true })]);
+    expect(entries[0]).toMatchObject({ kind: "user", branchSourceID: status === "committed" ? "user-event" : undefined });
+  }
+});
+
+it("keeps imported replies branchable without requesting edits from their new run", () => {
+  const entries = projectThreadNarrative([item({ id: "copied-reply", source_ref: "branch-assistant:original-reply" })]);
+  expect(entries[0]).toMatchObject({ kind: "assistant", branchSourceID: "copied-reply", changeSourceID: undefined });
+});
+
 describe("projectThreadNarrative", () => {
   it("preserves distinct tool names when no specialized title or command summary exists", () => {
     const projected = projectThreadNarrative(["thread_list", "thread_send_message"].map((name, index) => item({

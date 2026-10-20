@@ -1298,6 +1298,7 @@
       },
       "rebuild_source": "Go Application DTOs plus explicitly user-owned local presentation settings.",
       "active_identifiers": [
+          "desktop_chat_resource.v1",
         "desktop_clipboard_files.v1",
         "desktop_connection_bootstrap.v1",
         "desktop_debug_terminal_agent_input.v1",
@@ -1314,6 +1315,7 @@
         "desktop_workspace_open.v1",
         "prayu.run-navigation.v1",
         "universal-code.batch-workbench.v1",
+        "universal-code.chat-preferences.v1",
         "universal-code.specialist-continuation.v1",
         "v2_file_upload.v1"
       ],
@@ -3934,7 +3936,8 @@
       "identifier": "fixture.v1",
       "kind": "test-fixture",
       "sources": [
-        "internal/application/project_preparation_commands_test.go"
+        "internal/application/project_preparation_commands_test.go",
+        "internal/application/project_preparation_yarn_test.go"
       ],
       "reason": "Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter."
     },

@@ -5297,6 +5297,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/{thread_id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rename a conversation */
+        put: operations["renameThread"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/threads/{thread_id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin or unpin a conversation */
+        put: operations["pinThread"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/{thread_id}/plan": {
         parameters: {
             query?: never;
@@ -11348,7 +11382,7 @@ export interface components {
         };
         ProjectHookView: {
             /** @enum {string} */
-            command_id: "format.go" | "test.go" | "test.npm" | "test.node";
+            command_id: "format.go" | "test.go" | "test.npm" | "test.node" | "test.python" | "test.pytest" | "test.rust";
             /** @enum {string} */
             event: "after_edit" | "before_finish";
             target: string;
@@ -14998,6 +15032,9 @@ export interface components {
             thread_id: string;
             vision_capability?: components["schemas"]["VisionCapability"];
         };
+        ThreadNameRequestView: {
+            title: string;
+        };
         ThreadPeerMessage: {
             content: string;
             /** Format: date-time */
@@ -15013,6 +15050,9 @@ export interface components {
             status: "queued" | "delivered" | "failed" | "cancelled";
             target_thread_id: string;
             target_title: string;
+        };
+        ThreadPinRequestView: {
+            pinned: boolean;
         };
         ThreadPlanControlRequestView: {
             /** @enum {string} */
@@ -15475,6 +15515,7 @@ export interface components {
             id: string;
             last_run_id: string;
             mission_id: string;
+            pinned?: boolean;
             /** Format: int64 */
             project_assignment_version?: number;
             project_workspace_id?: string;
@@ -28099,6 +28140,10 @@ export interface operations {
                 status?: "active" | "archived" | "deleted";
                 /** @description Trimmed literal title substring across all matching tasks; at most 256 Unicode characters. ASCII case-insensitive, other Unicode exact; no message-body search. */
                 q?: string;
+                /** @description Filter persisted conversation pins before pagination */
+                pinned?: boolean;
+                /** @description Current execution state across saved history; a bounded scan may return an empty page with a continuation cursor */
+                execution_state?: "running" | "waiting_approval";
                 /** @description Include soft-deleted Threads */
                 include_deleted?: boolean;
             };
@@ -29643,6 +29688,96 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["ThreadModelRouteView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    renameThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadNameRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    pinThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread identity */
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadPinRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

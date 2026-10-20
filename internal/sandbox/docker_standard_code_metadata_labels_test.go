@@ -36,6 +36,7 @@ func (d standardCodeImageLabelsDoer) Do(request *http.Request) (*http.Response, 
 	labels[DockerStandardCodeProjectActionsLabel] = "1"
 	labels[DockerStandardCodePreparationLabel] = "1"
 	labels[DockerStandardCodePNPMVersionLabel] = DockerStandardCodePNPMVersion
+	labels[DockerStandardCodeYarnVersionLabel] = DockerStandardCodeYarnVersion
 	if d.change != nil {
 		d.change(labels)
 	}

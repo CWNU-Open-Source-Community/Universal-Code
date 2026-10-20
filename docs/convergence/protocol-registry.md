@@ -21,7 +21,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 18 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 20 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
@@ -782,8 +782,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
 
-<details><summary>18 active identifiers</summary>
+<details><summary>20 active identifiers</summary>
 
+- `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
 - `desktop_connection_bootstrap.v1`
 - `desktop_debug_terminal_agent_input.v1`
@@ -800,6 +801,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_workspace_open.v1`
 - `prayu.run-navigation.v1`
 - `universal-code.batch-workbench.v1`
+- `universal-code.chat-preferences.v1`
 - `universal-code.specialist-continuation.v1`
 - `v2_file_upload.v1`
 
@@ -2103,7 +2105,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `docker_observation_store_test.v1` | `test-fixture` | `internal/store/docker_observation_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `docker_sandbox_product_lifecycle_test.v1` | `test-fixture` | `internal/store/docker_sandbox_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `fake-browser-process.v1` | `test-fixture` | `internal/browserruntime/production_runtime_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
-| `fixture.v1` | `test-fixture` | `internal/application/project_preparation_commands_test.go` | Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter. |
+| `fixture.v1` | `test-fixture` | `internal/application/project_preparation_commands_test.go`, `internal/application/project_preparation_yarn_test.go` | Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter. |
 | `fixture.wrong.v1` | `negative-version-fixture` | `internal/analyzer/subprocess_conformance_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `foreign.v1` | `negative-version-fixture` | `internal/store/run_progress_browser_state_test.go` | Foreign receipt envelope in an exact sealed-progress rejection test; never a production protocol. |
 | `full_cdp_session.v0` | `negative-version-fixture` | `internal/httpapi/full_cdp_session_control_test.go` | Unknown-version HTTP fixture retained to prove fail-closed Full CDP session decoding. |

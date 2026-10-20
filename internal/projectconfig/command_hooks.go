@@ -21,8 +21,12 @@ func validateCommandHooks(hooks *CommandHooks, testID, formatID string) error {
 	if hooks.AfterEditFormat && formatID != "format.go" {
 		return errors.New("after_edit_format requires format_command_id: format.go")
 	}
-	if hooks.BeforeFinishTest && testID != "test.go" && testID != "test.node" && testID != "test.npm" {
-		return errors.New("before_finish_test requires test_command_id: test.go, test.node or test.npm")
+	if hooks.BeforeFinishTest {
+		switch testID {
+		case "test.go", "test.node", "test.npm", "test.python", "test.pytest", "test.rust":
+		default:
+			return errors.New("before_finish_test requires a registered project test command")
+		}
 	}
 	return nil
 }

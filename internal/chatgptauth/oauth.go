@@ -432,7 +432,14 @@ func (c *Client) loginAttempt(ctx context.Context, host string, registration, ol
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
-	defer server.Close()
+	defer func() {
+		// Let the accepted callback finish its HTTP response before closing it.
+		// A denial can return immediately, racing the handler's buffered reply.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+		_ = server.Close()
+	}()
 	localURL := "http://" + listener.Addr().String() + "/auth/start/" + startTicket
 	onReady(localURL)
 	for {

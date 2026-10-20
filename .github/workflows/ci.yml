@@ -121,12 +121,12 @@ jobs:
           if packages:
               subprocess.run(["go", "test", "-count=1", *packages], check=True)
           PY
-      - name: Set up Node for native pnpm preparation verification
+      - name: Set up Node for native package preparation verification
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: Prepare integrity-pinned pnpm test toolchain
+      - name: Prepare integrity-pinned package preparation fixtures
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
         run: |
           python - <<'PY'
@@ -138,9 +138,33 @@ jobs:
           target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "pnpm-preparation-test"
           with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
               archive.extractall(target, filter="data")
+          npm_data = urllib.request.urlopen("https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz", timeout=60).read()
+          npm_expected = "41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
+          if base64.b64encode(hashlib.sha512(npm_data).digest()).decode() != npm_expected:
+              raise SystemExit("npm workspace fixture integrity mismatch")
+          npm_archive = target / "is-number-7.0.0.tgz"
+          npm_archive.write_bytes(npm_data)
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write(f"TRAVERSE_PNPM_TEST_NODE={shutil.which('node')}\n")
               env.write(f"TRAVERSE_PNPM_TEST_CLI={target / 'package/bin/pnpm.cjs'}\n")
+              env.write(f"TRAVERSE_NPM_TEST_NODE={shutil.which('node')}\n")
+              env.write(f"TRAVERSE_NPM_TEST_CLI={pathlib.Path(shutil.which('npm')).resolve()}\n")
+              env.write(f"TRAVERSE_NPM_TEST_TARBALL={npm_archive}\n")
+          PY
+      - name: Prepare integrity-pinned Cargo verification fixture
+        if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
+        run: |
+          python - <<'PY'
+          import hashlib, os, pathlib, subprocess, urllib.request
+          data = urllib.request.urlopen("https://static.crates.io/crates/itoa/itoa-1.0.15.crate", timeout=60).read()
+          if hashlib.sha256(data).hexdigest() != "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c":
+              raise SystemExit("Cargo verification crate integrity mismatch")
+          archive = pathlib.Path(os.environ["RUNNER_TEMP"]) / "itoa-1.0.15.crate"
+          archive.write_bytes(data)
+          cargo = subprocess.check_output(["rustup", "which", "cargo"], text=True).strip()
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"TRAVERSE_CARGO_TEST_BIN={cargo}\n")
+              env.write(f"TRAVERSE_CARGO_TEST_CRATE={archive}\n")
           PY
       - name: Test and vet selected Go packages
         if: ${{ needs.classify.outputs.backend == 'true' }}
@@ -480,7 +504,9 @@ jobs:
           TRAVERSE_TEST_KEYCHAIN: '1'
         run: go test -v -tags keychainintegration -count=1 -timeout=90s ./internal/credential
       - name: Verify POSIX command runtime transport
-        run: go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree)$'
+        run: |
+          python3 --version
+          go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree|PythonVenv.*)$'
       - name: Verify signed Chrome native startup and lifecycle on macOS
         env:
           CGO_ENABLED: '1'

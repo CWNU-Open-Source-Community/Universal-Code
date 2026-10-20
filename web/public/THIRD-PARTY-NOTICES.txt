@@ -7,3 +7,7 @@ The complete HarmonyOS Sans Fonts License Agreement is distributed at:
 Provider logo path data is derived from the Simple Icons project and is
 available under CC0 1.0 Universal: https://github.com/simple-icons/simple-icons
 All product names, logos, and brands remain property of their respective owners.
+
+Chat code highlighting uses highlight.js (BSD-3-Clause).
+Copyright (c) 2006, Ivan Sagalaev. All rights reserved.
+The complete license is distributed at /licenses/highlight.js.txt.

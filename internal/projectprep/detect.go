@@ -68,7 +68,9 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	if npm && goModule {
 		plan.Issues = append(plan.Issues, "Both package.json and go.mod are present; select a directory with one dependency toolchain")
 	} else if npm {
-		if pnpmRoot, selected, findErr := findPNPMRoot(reader, files); selected || findErr != nil {
+		if selectsYarn(files) {
+			plan = detectYarn(plan, files)
+		} else if pnpmRoot, selected, findErr := findPNPMRoot(reader, files); selected || findErr != nil {
 			if findErr != nil {
 				plan.Issues = append(plan.Issues, findErr.Error())
 			}
@@ -77,13 +79,15 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 				return plan, err
 			}
 		} else {
-			plan = detectNPM(plan, files)
+			plan = detectNPMProject(plan, reader, files)
 		}
 	} else if goModule {
 		plan = detectGo(plan, files)
+	} else if _, cargo := files["Cargo.toml"]; cargo {
+		plan = detectCargo(plan, reader, files)
 	} else {
 		for _, candidate := range []struct{ name, ecosystem, toolchain string }{
-			{"Cargo.toml", "rust", "cargo"}, {"pyproject.toml", "python", "python"}, {"requirements.txt", "python", "pip"}, {"Pipfile", "python", "pipenv"}, {"deno.json", "deno", "deno"}, {"deno.jsonc", "deno", "deno"}, {"composer.json", "php", "composer"}, {"Gemfile", "ruby", "bundler"},
+			{"pyproject.toml", "python", "python"}, {"requirements.txt", "python", "pip"}, {"Pipfile", "python", "pipenv"}, {"deno.json", "deno", "deno"}, {"deno.jsonc", "deno", "deno"}, {"composer.json", "php", "composer"}, {"Gemfile", "ruby", "bundler"},
 		} {
 			if file, found := files[candidate.name]; found {
 				plan.Ecosystem, plan.Toolchain, plan.Manifest = candidate.ecosystem, candidate.toolchain, file.File
@@ -92,7 +96,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 			}
 		}
 		if plan.Ecosystem == "" {
-			plan.Issues = append(plan.Issues, "No supported package.json or go.mod was found in the selected directory")
+			plan.Issues = append(plan.Issues, "No supported package.json, go.mod or Cargo.toml was found in the selected directory")
 		}
 		for name, file := range files {
 			if strings.Contains(name, "lock") || name == "go.sum" {
@@ -108,8 +112,8 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 			}
 		}
 	}
-	if plan.Ecosystem == "pnpm" && len(plan.Lockfiles) > 63 {
-		plan.Issues = append(plan.Issues, "pnpm preparation supports at most 64 bound manifest/configuration files")
+	if (plan.Ecosystem == "pnpm" || plan.WorkspaceRoot != "") && len(plan.Lockfiles) > 63 {
+		plan.Issues = append(plan.Issues, plan.Ecosystem+" preparation supports at most 64 bound manifest/configuration files")
 		plan.Lockfiles = plan.Lockfiles[:63]
 	}
 	sort.Slice(plan.Lockfiles, func(i, j int) bool { return plan.Lockfiles[i].Path < plan.Lockfiles[j].Path })

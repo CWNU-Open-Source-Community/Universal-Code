@@ -1,7 +1,10 @@
 package application
 
 import (
+	"path"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 
 	"cyberagent-workbench/internal/apperror"
@@ -59,6 +62,15 @@ func PrepareProjectPreparationTestCommand(plan projectprep.Plan, adapter command
 }
 
 func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing, runInstallScripts bool) (runner.CommandRuntimeSpec, error) {
+	if plan.Ecosystem == "rust" {
+		if testing && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, cargoLocalTestReason)
+		}
+		return prepareCargoPreparationSpec(plan, adapter, workspaceRoot, testing)
+	}
+	if plan.Ecosystem == "yarn" {
+		return prepareYarnPreparationSpec(plan, adapter, testing)
+	}
 	if plan.Ecosystem == "pnpm" {
 		action := "install"
 		if testing {
@@ -78,6 +90,9 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
 		return runner.CommandRuntimeSpec{}, err
 	}
+	if !testing && plan.Ecosystem == "npm" && plan.WorkspaceRoot != "" && adapter.Backend == CommandRuntimeLocalSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Windows Local 沙箱无法创建 npm workspace 所需的内部链接；请选择现有 Docker 环境准备依赖")
+	}
 	id := "test.go"
 	if plan.Ecosystem == "npm" {
 		id = "test.npm"
@@ -89,12 +104,24 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 		return runner.CommandRuntimeSpec{}, err
 	}
 	arguments := []string{"mod", "download"}
+	workingDirectory := plan.Target
+	if plan.Ecosystem == "npm" && plan.WorkspaceRoot != "" {
+		if err := (workspaceidentity.PathPolicy{}).Check(plan.WorkspaceRoot); err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		if plan.WorkspaceRoot != "." && plan.Target != plan.WorkspaceRoot && !strings.HasPrefix(plan.Target, plan.WorkspaceRoot+"/") {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "npm test target is outside its workspace")
+		}
+	}
 	actionID := "install.go"
 	if testing {
 		arguments, actionID = []string{"test", "-mod=readonly", "./..."}, "test.go"
 	}
 	if plan.Ecosystem == "npm" {
-		cache, err := filepath.Rel(filepath.FromSlash(plan.Target), filepath.FromSlash(projectprep.NPMCacheDirectory(plan.Target)))
+		if !testing && plan.WorkspaceRoot != "" {
+			workingDirectory = plan.WorkspaceRoot
+		}
+		cache, err := filepath.Rel(filepath.FromSlash(workingDirectory), filepath.FromSlash(projectprep.NPMCacheDirectory(plan.Target)))
 		if err != nil {
 			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "project cache path is unavailable")
 		}
@@ -107,15 +134,90 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 			arguments, actionID = []string{"test", "--offline", "--global=false", "--prefix=.", "--no-audit", "--no-fund", "--cache=" + filepath.ToSlash(cache)}, "test.npm"
 		}
 		arguments = append(append([]string{}, launcher...), arguments...)
+		if plan.WorkspaceRoot != "" && !testing {
+			arguments = append(arguments, "--workspaces=true", "--include-workspace-root=true")
+		}
 	}
 	return runner.NormalizeCommandRuntimeIntent(runner.CommandRuntimeSpec{
 		Version: runner.CommandRuntimeProtocolVersion, Profile: runner.CommandRuntimeProcess,
-		Executable: executable, Arguments: arguments, WorkingDirectory: plan.Target,
+		Executable: executable, Arguments: arguments, WorkingDirectory: workingDirectory,
 		Environment: []runner.CommandRuntimeEnvironment{}, StdinPolicy: runner.CommandRuntimeStdinClosed, CloseInitialStdin: true,
 		TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288},
 		Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
 		Purpose: "Project preparation " + actionID + " " + plan.Fingerprint,
 	})
+}
+
+func prepareYarnPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, testing bool) (runner.CommandRuntimeSpec, error) {
+	if !plan.Ready || plan.Version != projectprep.ProtocolVersion || len(plan.Fingerprint) != 64 || plan.RequestedVersion != projectprep.YarnVersion {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Yarn dependency preparation plan is unavailable")
+	}
+	if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Yarn preparation requires the Standard Code Docker image with Yarn "+projectprep.YarnVersion)
+	}
+	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
+		return runner.CommandRuntimeSpec{}, err
+	}
+	stage := sandbox.DockerStandardCodeWorkspaceTarget + "/" + projectprep.StageDirectory(plan.Target)
+	arguments := []string{sandbox.DockerStandardCodeYarnCLI, "--no-default-rc", "--use-yarnrc", stage + "/yarnrc",
+		"--cache-folder", stage + "/yarn-cache", "--offline", "--non-interactive", "--no-progress"}
+	action := "install.yarn"
+	if testing {
+		arguments, action = append(arguments, "run", "test"), "test.yarn"
+	} else {
+		arguments = append(append([]string{sandbox.DockerStandardCodeYarnCLI, "install"}, arguments[1:]...), "--frozen-lockfile", "--ignore-scripts")
+	}
+	return runner.NormalizeCommandRuntimeIntent(runner.CommandRuntimeSpec{
+		Version: runner.CommandRuntimeProtocolVersion, Profile: runner.CommandRuntimeProcess,
+		Executable: "/opt/toolchains/node/bin/node", Arguments: arguments, WorkingDirectory: plan.Target,
+		Environment: []runner.CommandRuntimeEnvironment{},
+		StdinPolicy: runner.CommandRuntimeStdinClosed, CloseInitialStdin: true,
+		TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288},
+		Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone,
+		Purpose: "Project preparation " + action + " " + plan.Fingerprint,
+	})
+}
+
+const cargoLocalTestReason = "Windows Local 当前缺少完整 Rust 编译与链接能力；请选择现有 Docker 环境运行测试。Local 仍可准备离线依赖缓存。"
+
+func prepareCargoPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing bool) (runner.CommandRuntimeSpec, error) {
+	if !plan.Ready || plan.Version != projectprep.ProtocolVersion || len(plan.Fingerprint) != 64 {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "dependency preparation plan is unavailable")
+	}
+	if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace && !(testing && adapter.Kind == commandruntimeadapter.KindHostUnsandboxed) {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodePolicyDenied, "Cargo preparation requires the selected sandbox runtime")
+	}
+	if err := (workspaceidentity.PathPolicy{}).Check(plan.Target); err != nil {
+		return runner.CommandRuntimeSpec{}, err
+	}
+	executable, _, err := resolveProjectCommandToolchain("test.rust", adapter, workspaceRoot)
+	if err != nil {
+		return runner.CommandRuntimeSpec{}, err
+	}
+	vendor := path.Join(sandbox.DockerStandardCodeWorkspaceTarget, projectprep.CargoVendorDirectory(plan.Target))
+	if adapter.Backend != CommandRuntimeDockerSandboxBackend && adapter.Backend != CommandRuntimeSBXBackend {
+		if !filepath.IsAbs(workspaceRoot) {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Cargo preparation requires its resolved workspace")
+		}
+		vendor = filepath.Join(workspaceRoot, filepath.FromSlash(projectprep.CargoVendorDirectory(plan.Target)))
+		// Cargo passes a source directory to compiler subprocesses. A canonical
+		// extended Windows path avoids MAX_PATH failures in deep worktrees.
+		if runtime.GOOS == "windows" && !strings.HasPrefix(vendor, `\\?\`) {
+			if strings.HasPrefix(vendor, `\\`) {
+				vendor = `\\?\UNC\` + strings.TrimPrefix(vendor, `\\`)
+			} else {
+				vendor = `\\?\` + vendor
+			}
+		}
+	}
+	action := "fetch"
+	actionID := "install.rust"
+	if testing {
+		action = "test"
+		actionID = "test.rust"
+	}
+	arguments := []string{action, "--offline", "--locked", "--manifest-path", "Cargo.toml", "--config", `source.crates-io.replace-with="traverse-vendor"`, "--config", "source.traverse-vendor.directory=" + strconv.Quote(vendor), "--config", "net.offline=true"}
+	return runner.NormalizeCommandRuntimeIntent(runner.CommandRuntimeSpec{Version: runner.CommandRuntimeProtocolVersion, Profile: runner.CommandRuntimeProcess, Executable: executable, Arguments: arguments, WorkingDirectory: plan.Target, Environment: []runner.CommandRuntimeEnvironment{}, StdinPolicy: runner.CommandRuntimeStdinClosed, CloseInitialStdin: true, TimeoutMilliseconds: 300000, Output: runner.CommandRuntimeOutputPolicy{InlineBytes: 16384, ArtifactBytes: 524288}, Network: runner.CommandRuntimeNetworkDisabled, Credentials: runner.CommandRuntimeCredentialsNone, Purpose: "Project preparation " + actionID + " " + plan.Fingerprint})
 }
 
 func preparePNPMPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, action string) (runner.CommandRuntimeSpec, error) {

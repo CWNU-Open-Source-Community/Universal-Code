@@ -230,7 +230,7 @@ func fixedToolchainAt(toolchain, scratchRoot string) (string, []string, error) {
 			}
 		}
 		return "/opt/toolchains/node/bin/node", append(baseEnvironment,
-			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false", "NPM_CONFIG_OFFLINE=true", "NPM_CONFIG_USERCONFIG="+userConfig, "NPM_CONFIG_GLOBALCONFIG="+globalConfig), nil
+			"PATH=/opt/toolchains/node/bin:"+basePath, "npm_config_audit=false", "npm_config_fund=false", "NPM_CONFIG_OFFLINE=true", "NPM_CONFIG_USERCONFIG="+userConfig, "NPM_CONFIG_GLOBALCONFIG="+globalConfig, "YARN_IGNORE_PATH=1"), nil
 	case "python":
 		return "/opt/toolchains/python/usr-local/bin/python3", append(baseEnvironment,
 			"PATH=/opt/toolchains/python/usr-local/bin:"+basePath,

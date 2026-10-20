@@ -1144,6 +1144,7 @@ type ThreadView struct {
 	WorkspaceID              string     `json:"workspace_id,omitempty"`
 	MissionID                string     `json:"mission_id"`
 	Title                    string     `json:"title"`
+	Pinned                   bool       `json:"pinned,omitempty"`
 	Status                   string     `json:"status"`
 	ActiveRunID              string     `json:"active_run_id,omitempty"`
 	LastRunID                string     `json:"last_run_id"`
@@ -1928,7 +1929,7 @@ func threadView(value domain.Thread, activeRunStatus ...domain.RunStatus) Thread
 	}
 	return ThreadView{ID: value.ID, ProtocolVersion: value.ProtocolVersion,
 		ProjectWorkspaceID: value.ProjectWorkspaceID, ProjectAssignmentVersion: value.ProjectAssignmentVersion,
-		WorkspaceID: value.WorkspaceID, MissionID: value.MissionID, Title: value.Title,
+		WorkspaceID: value.WorkspaceID, MissionID: value.MissionID, Title: value.Title, Pinned: value.Pinned,
 		Status: string(value.Status), ActiveRunID: value.ActiveRunID,
 		LastRunID: value.LastRunID, Version: value.Version, ComposerState: composerState,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,

@@ -22,6 +22,8 @@ func TestDockerPreparationWritesUseBoundedToolchainVariant(t *testing.T) {
 		{"/opt/toolchains/node/bin/node", []string{"/opt/toolchains/node/lib/node_modules/npm/bin/npm-cli.js", "test"}, sandbox.DockerStandardCodeToolchainNode},
 		{"/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodePNPMCLI, "fetch", "--offline"}, sandbox.DockerStandardCodeToolchainNodePrepare},
 		{"/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodePNPMCLI, "install", "--offline"}, sandbox.DockerStandardCodeToolchainNodePrepare},
+		{"/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodeYarnCLI, "install", "--offline"}, sandbox.DockerStandardCodeToolchainNodePrepare},
+		{"/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodeYarnCLI, "--offline", "run", "test"}, sandbox.DockerStandardCodeToolchainNode},
 		{"/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodePNPMCLI, "--recursive", "rebuild", "--pending"}, sandbox.DockerStandardCodeToolchainNodePrepare},
 		{"/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodePNPMCLI, "--offline", "test"}, sandbox.DockerStandardCodeToolchainNode},
 		{"/opt/toolchains/node/bin/node", []string{"/workspace/pnpm.cjs", "install"}, sandbox.DockerStandardCodeToolchainNode},
@@ -60,5 +62,13 @@ func TestDetectedProjectChecksWorkspaceRootExclusions(t *testing.T) {
 	plan := projectprep.Plan{Target: "apps/web", WorkspaceRoot: "private", Manifest: projectprep.File{Path: "apps/web/package.json"}}
 	if err := checkDetectedProjectPaths(run, plan); err == nil {
 		t.Fatal("excluded workspace root admitted")
+	}
+}
+
+func TestDetectedProjectChecksNPMWorkspaceSiblingManifestExclusions(t *testing.T) {
+	run := domain.Run{Config: pinActionConfig(projectconfig.Effective{Protocol: projectconfig.ProtocolVersion, ExcludePaths: []string{"packages/private"}})}
+	plan := projectprep.Plan{Ecosystem: "npm", Target: "apps/web", WorkspaceRoot: ".", Manifest: projectprep.File{Path: "apps/web/package.json"}, Lockfiles: []projectprep.File{{Path: "package.json"}, {Path: "package-lock.json"}, {Path: "packages/private/package.json"}}}
+	if err := checkDetectedProjectPaths(run, plan); err == nil {
+		t.Fatal("excluded sibling workspace member admitted")
 	}
 }

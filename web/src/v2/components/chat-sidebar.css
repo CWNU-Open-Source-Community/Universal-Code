@@ -1,0 +1,14 @@
+.v2-chat-filters { display: flex; gap: 4px; padding: 5px 12px 9px; }
+.v2-chat-filters button { background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--v2-muted); font: inherit; font-size: 12px; padding: 5px 9px; }
+.v2-chat-filters button:hover { background: var(--v2-control-hover); }
+.v2-chat-filters button[aria-pressed="true"] { background: var(--v2-control); border-color: var(--v2-border); color: var(--v2-ink); }
+.v2-chat-pins { margin-bottom: 12px; }
+.v2-chat-pins > h2 { align-items: center; color: var(--v2-muted); display: flex; font-size: 12px; font-weight: 500; gap: 7px; margin: 7px 12px; }
+.v2-chat-pins .v2-thread-row { padding-left: 12px; }
+.v2-chat-actions { font: 13px/1.5 var(--prayu-font-ui); position: fixed; width: 175px; z-index: 210; }
+.v2-chat-actions button:focus-visible { background: var(--v2-control-hover); outline: 2px solid var(--prayu-focus); outline-offset: -2px; }
+.v2-sidebar .v2-thread-row-shell:focus-within .v2-thread-more { opacity: 1; pointer-events: auto; }
+.v2-chat-rename { max-width: 440px; }
+.v2-chat-rename-field { display: grid; gap: 9px; padding: 20px; }
+.v2-chat-rename-field input { box-sizing: border-box; width: 100%; }
+.v2-chat-action-error { color: var(--v2-danger); font-size: 12px; margin: 8px 12px; overflow-wrap: anywhere; }

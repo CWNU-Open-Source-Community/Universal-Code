@@ -61,6 +61,8 @@ macOS 当前任务确认 Full 后，可以通过普通浏览器工具打开独�
 go test -v -count=1 -timeout 3m ./internal/browserruntime -run '^TestBrowserRuntimeProductionPrimitivesStayInAuditedAdapters$'
 ```
 
+为解除 PR 的实际工作流冲突，分支合入 `main` 的 `bdd92b5b30f4625141d375aad46a372230b13d41`。冲突处保留主线新增的 `python3 --version` 和 `PythonVenv.*` 运行器检查，同时保留上述原生 Chrome、HTTP、产品入口及实际 UC 前后图步骤；合并后复验了对应浏览器审计测试与 `scripts/ci` 的 Python 测试。
+
 ## 使用条件与清理合同
 
 首次实现仅接受固定路径的稳定版 Google Chrome。启动同时核验原生 Mach-O、整个 bundle 的签名、固定 Google Team ID `EQHXZ8M8AV` / bundle ID `com.google.Chrome`；挂起子进程通过相同 CDHash 的动态校验及再次 Full 权限检查后才恢复。每个会话使用独占的一次性 profile、私有 HOME/TMPDIR 和 Crashpad 目录，浏览器使用临时 mock Keychain，避免访问个人浏览器资料。

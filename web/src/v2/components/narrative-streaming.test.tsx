@@ -11,6 +11,21 @@ const assistant = (text: string, provisional = true): NarrativeEntry => ({
   id: "reply", kind: "assistant", text, createdAt: "", provisional, runId: "run-1",
 });
 
+it("highlights explicit languages without interpreting code as HTML or changing copied text", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const code = 'const html = "<img src=x onerror=alert(1)>";\n';
+  const view = render(<V2Narrative client={client} entries={[assistant(`\`\`\`javascript\n${code}\`\`\``, false)]} threadID="thread" />);
+  await waitFor(() => expect(view.container.querySelector(".hljs-keyword")).toHaveTextContent("const"));
+  expect(view.container.querySelector("pre code")).toHaveTextContent(code.trim());
+  expect(view.container.querySelector("img")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(code));
+  view.rerender(<V2Narrative client={client} entries={[assistant("```unknown-format\n<literal>\n```", false)]} threadID="thread" />);
+  expect(view.container.querySelector("pre")).toHaveTextContent("<literal>");
+  expect(view.container.querySelector(".hljs-keyword")).toBeNull();
+});
+
 it("reveals only new appends and does not replay a loaded, corrected or completed reply", () => {
   const content = (text: string, provisional = true) =>
     <V2Narrative client={client} entries={[assistant(text, provisional)]} threadID="thread-1" />;
@@ -59,7 +74,7 @@ it("leaves code stable during streaming and copies the original code and reply",
   view.rerender(content(full));
   expect(view.container.querySelector("pre")).toBe(code);
   expect(code?.querySelector(".v2-stream-reveal")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+  fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
   await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("const one = 1;\nconst two = 2;\n"));
   view.rerender(content(full, false));
   fireEvent.click(screen.getByRole("button", { name: "Copy response" }));

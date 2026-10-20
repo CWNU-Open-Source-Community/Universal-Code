@@ -27,6 +27,7 @@ export function CommandPalette({ commands }: { commands: CommandPaletteCommand[]
 
   useEffect(() => {
     const shortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229) return;
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase() === "k") {
         event.preventDefault();
         setOpen((current) => !current);

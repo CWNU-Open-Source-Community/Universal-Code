@@ -29,6 +29,9 @@ func TestFixedProjectToolchainsKeepFormatterAndNestedNPMInGuest(t *testing.T) {
 			bindings[name] = value
 		}
 	}
+	if bindings["YARN_IGNORE_PATH"] != "1" {
+		t.Fatal("repository yarn-path can replace the fixed Yarn executable")
+	}
 	if home := bindings["HOME"]; home == "" {
 		t.Fatal("npm has no isolated home")
 	} else if info, err := os.Stat(home); err != nil || !info.IsDir() {

@@ -25,13 +25,27 @@
 | --- | --- | --- |
 | npm | `package.json`、`package-lock.json` v2/v3，以及已有的 Node 版本配置 | 离线 `npm ci`；存在 `scripts.test` 时检测 npm 测试动作 |
 | pnpm | `package.json`、`pnpm-lock.yaml` v9；多包项目同时读取 `pnpm-workspace.yaml` 和成员清单 | Docker 镜像固定 pnpm 10.28.1；离线安装整个工作区，在选中包内执行 `pnpm test` |
+| Yarn Classic | `package.json`、`yarn.lock` v1 | 固定 Yarn 1.22.22，离线、冻结锁文件且关闭安装脚本；支持单包项目 |
 | Go | `go.mod`、`go.sum` 和声明的 Go 工具链版本 | 离线准备模块；检测 `go test -mod=readonly ./...` |
+| Rust / Cargo | `Cargo.toml`、`Cargo.lock` v3/v4；workspace 成员及本地依赖清单 | 准备经校验的 crates.io vendor，执行 `cargo fetch --offline --locked`；测试复用同一 vendor |
 
 使用项目已有的锁文件。缺少锁文件、清单与锁文件不一致、依赖校验信息
 缺失时，先生成并审阅锁文件，再点击「刷新检测」。选择同时包含
 `package.json` 和 `go.mod` 的目录时，应分别选择对应的独立项目目录。
-npm workspaces、Yarn/Bun、Python/Rust 和本地 Go 模块替换仍不在内置安装范围内，
+npm workspaces、Yarn workspace/Berry、Bun、Python 和本地 Go 模块替换仍不在内置安装范围内，
 检测会显示具体原因。
+
+### Cargo 项目与 workspace
+
+选择包含共享 `Cargo.lock` 的 workspace 根目录，或独立 Cargo 项目目录。
+准备会绑定成员与仓库内本地依赖清单，从已授权的 crates.io 源下载锁定归档，
+校验 SHA-256 后生成任务私有的 vendor。原有清单和锁文件保持不变。
+Git、自定义 registry、外部本地依赖及会改变来源或工具链的配置会显示不可用原因。
+
+Windows Local 支持离线 fetch；编译测试需要所选运行环境具有可用的 Rust
+标准库及链接工具。当前 Local 的 LPAC 限制会在测试前明确提示。
+实际运行及 Full 测试结果见 [Cargo 准备记录](acceptance/2026-10-20-cargo-project-preparation.md)。
+Yarn Classic 的验证范围见 [Yarn 准备记录](acceptance/2026-10-20-yarn-project-preparation/README.md)。
 
 ### pnpm 多包项目
 
