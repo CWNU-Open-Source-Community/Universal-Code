@@ -80,14 +80,14 @@ function AttachmentCard({ client, file, onRemove, onRestore, locked }: {
       const link = document.createElement("a"); link.href = url; link.download = file.name;
       document.body.append(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "文件下载失败"); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : t("文件下载失败", "File download failed")); }
     finally { setBusy(false); }
   };
   const native = nativeResourcesAvailable();
   const copy = async () => {
     setError(""); setCopied(false); setBusy(true);
     try { await resourceAction(reference, "copy_file"); setCopied(true); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "复制文件失败"); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : t("复制文件失败", "Could not copy file")); }
     finally { setBusy(false); }
   };
   return <div className="v2-file-attachment" onContextMenu={native ? (event) => {
@@ -101,17 +101,17 @@ function AttachmentCard({ client, file, onRemove, onRestore, locked }: {
       <small className="v2-file-attachment-size">{bytesLabel(file.byte_size)}</small>
       {locked && <small>{t("随原消息提交", "Included in the original message")}</small>}
       {error && <small role="alert">{error}</small>}
-      {copied && <small role="status">已复制文件，可粘贴到输入框</small>}
+      {copied && <small role="status">{t("已复制文件，可粘贴到输入框", "File copied. You can paste it into the composer.")}</small>}
     </div>
-    {native && <button type="button" className="v2-composer-icon" aria-label={`复制文件 ${file.name}`} title="复制文件" disabled={busy} onClick={() => void copy()}><Copy size={16} /></button>}
+    {native && <button type="button" className="v2-composer-icon" aria-label={t(`复制文件 ${file.name}`, `Copy file ${file.name}`)} title={t("复制文件", "Copy file")} disabled={busy} onClick={() => void copy()}><Copy size={16} /></button>}
     <button type="button" className="v2-composer-icon" aria-label={t(`下载文件 ${file.name}`, `Download file ${file.name}`)} disabled={busy} onClick={() => void download()}>
       {busy ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}</button>
     {onRemove && <button type="button" className="v2-composer-icon" aria-label={t(`移除文件 ${file.name}`, `Remove file ${file.name}`)} disabled={locked} onClick={onRemove}><X size={16} /></button>}
-    {native && <button type="button" className="v2-composer-icon" aria-label={`文件操作 ${file.name}`} aria-haspopup="menu" onClick={(event) => {
+    {native && <button type="button" className="v2-composer-icon" aria-label={t(`文件操作 ${file.name}`, `File actions ${file.name}`)} aria-haspopup="menu" onClick={(event) => {
       const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right - 248, y: rect.bottom, trigger: event.currentTarget });
     }}><MoreHorizontal size={16} /></button>}
-    {menu && <ResourceMenu position={menu} items={fileMenuItems(reference, () => canPreview ? setPreview(true) : resourceAction(reference, "open"))}
-      onClose={() => setMenu(null)} onResult={(message, failed) => { if (failed) setError(message); else if (message === "已复制文件") setCopied(true); }} />}
+    {menu && <ResourceMenu position={menu} items={fileMenuItems(reference, () => canPreview ? setPreview(true) : resourceAction(reference, "open"), t)}
+      onClose={() => setMenu(null)} onResult={(message, failed) => { if (failed) setError(message); else if (message === t("已复制文件", "File copied")) setCopied(true); }} />}
     {preview && <TextAttachmentPreview client={client} file={file} onClose={() => setPreview(false)}
       onRestore={locked ? undefined : onRestore} returnFocusRef={previewTrigger} />}
   </div>;
@@ -140,6 +140,7 @@ const validAttempt = (value: unknown): value is UploadAttempt => {
 export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
   client: APIClient; workspaceID: string; threadID: string; disabled: boolean;
 }) {
+  const { t } = useLocale();
   const references = useV2AttachmentReferences(workspaceID, threadID);
   const store = useV2RecoveryStore();
   const prefix = `file-upload:${JSON.stringify([workspaceID, threadID])}:`;
@@ -150,7 +151,7 @@ export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
     const entries = store.entries<unknown>(prefix); store.assertReadable(prefix);
     status.attempts.clear();
     for (const [key, value] of entries) {
-      if (!validAttempt(value) || key !== prefix + value.operationKey) { store.reject(key); throw new Error("原文件上传记录无法读取，已保留原记录。"); }
+      if (!validAttempt(value) || key !== prefix + value.operationKey) { store.reject(key); throw new Error(t("原文件上传记录无法读取，已保留原记录。", "The original upload record cannot be read. The record is kept.")); }
       status.attempts.set(value.operationKey, value);
     }
   };
@@ -177,14 +178,14 @@ export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
     const saved: WorkspaceFileAttachment[] = [];
     if (disabled || !workspaceID || !files.length || status.busy) return saved;
     if (files.length + references.attachments.length + status.attempts.size > maximumFileAttachments) {
-      status.error = "每条消息最多添加 4 个文件；请先处理待核对的附件。"; refresh(); return saved;
+      status.error = t("每条消息最多添加 4 个文件；请先处理待核对的附件。", "Each message supports up to 4 files. Resolve attachments awaiting confirmation first."); refresh(); return saved;
     }
     status.busy = true; status.error = ""; refresh();
     const failures: string[] = [];
     try {
       const captured = batchCapture ?? references.draft?.document.capture(references.draft.scope, references.draft.state.ref);
       for (const file of files) {
-        if (file.size > maximumFileBytes) { failures.push(`${file.name}：超过 5 MiB，未加入。`); continue; }
+        if (file.size > maximumFileBytes) { failures.push(t(`${file.name}：超过 5 MiB，未加入。`, `${file.name}: exceeds 5 MiB; not added.`)); continue; }
         const bytes = await file.arrayBuffer();
         const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
         const attempt: UploadAttempt = { version: "v2_file_upload.v1", operationKey: `v2-file-upload-${crypto.randomUUID()}`, name: file.name, sha256, byteSize: file.size };
@@ -195,13 +196,13 @@ export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
           if (captured && references.draft) {
             const next = references.draft.document.updateCaptured(captured, (current) => ({ ...current,
               attachments: (current.attachments ?? []).some(({ id }) => id === attachment.id) ? current.attachments : [...(current.attachments ?? []), attachment] }));
-            if (next.error || !next.persisted) throw new Error(next.error || "附件尚未保存到草稿。");
+            if (next.error || !next.persisted) throw new Error(next.error || t("附件尚未保存到草稿。", "The attachment has not been saved to the draft."));
           } else references.update((current) => current.some(({ id }) => id === attachment.id) ? current : [...current, attachment]);
           saved.push(attachment);
           forget(attempt.operationKey);
-        } catch (failure) { failures.push(`${file.name}：${failure instanceof Error ? failure.message : "上传结果未确认"}`); }
+        } catch (failure) { failures.push(`${file.name}：${failure instanceof Error ? failure.message : t("上传结果未确认", "Upload result unconfirmed")}`); }
       }
-    } catch (failure) { failures.push(failure instanceof Error ? failure.message : "附件未加入"); }
+    } catch (failure) { failures.push(failure instanceof Error ? failure.message : t("附件未加入", "Attachment not added")); }
     finally { status.busy = false; status.error = failures.join("\n"); refresh(); }
     return saved;
   };
@@ -212,24 +213,24 @@ export function useV2FileInput({ client, workspaceID, threadID, disabled }: {
     try {
       const result = await client.inspectWorkspaceFileUpload(workspaceID, attempt.operationKey);
       if (!stillPending(attempt)) return;
-      if (result.state !== "stored" || !result.attachment) throw new Error("尚未找到原上传结果；原请求仍可能稍后完成。可稍后核对，或不将该附件加入本条消息。");
-      if (result.attachment.sha256 !== attempt.sha256 || result.attachment.byte_size !== attempt.byteSize) throw new Error("原上传结果与文件不符，未加入草稿。");
-      if (references.attachments.length >= maximumFileAttachments && !references.attachments.some(({ id }) => id === result.attachment!.id)) throw new Error("文件数量已达上限，请先移除一个附件。");
+      if (result.state !== "stored" || !result.attachment) throw new Error(t("尚未找到原上传结果；原请求仍可能稍后完成。可稍后核对，或不将该附件加入本条消息。", "The original upload result was not found; the request may still finish. Check later or leave this attachment out of the message."));
+      if (result.attachment.sha256 !== attempt.sha256 || result.attachment.byte_size !== attempt.byteSize) throw new Error(t("原上传结果与文件不符，未加入草稿。", "The upload result does not match the file and was not added to the draft."));
+      if (references.attachments.length >= maximumFileAttachments && !references.attachments.some(({ id }) => id === result.attachment!.id)) throw new Error(t("文件数量已达上限，请先移除一个附件。", "The file limit is reached. Remove an attachment first."));
       references.update((current) => current.some(({ id }) => id === result.attachment!.id) ? current : [...current, result.attachment!]);
       if (references.draft) {
         const next = references.draft.document.read(references.draft.scope);
-        if (next.error || !next.persisted) throw new Error(next.error || "附件尚未保存到草稿。");
+        if (next.error || !next.persisted) throw new Error(next.error || t("附件尚未保存到草稿。", "The attachment has not been saved to the draft."));
       }
       forget(attempt.operationKey);
-    } catch (failure) { status.error = failure instanceof Error ? failure.message : "原上传结果尚未确认"; }
+    } catch (failure) { status.error = failure instanceof Error ? failure.message : t("原上传结果尚未确认", "Original upload result unconfirmed"); }
     finally { status.busy = false; refresh(); }
   };
   return { ...references, add, uploading: status.busy, error: status.error, pending: status.attempts.size > 0,
     notice: status.attempts.size > 0 && <div className="v2-attachment-pending" role="status">
       {[...status.attempts.values()].map((attempt) => <div key={attempt.operationKey}>
-        <span>{attempt.name} · {status.busy ? "正在保存或核对" : "上传结果待核对"}</span>
-        <button type="button" disabled={status.busy || disabled} onClick={() => void inspect(attempt)}>核对原上传</button>
-        <button type="button" disabled={status.busy} onClick={() => forget(attempt.operationKey)}>不加入本条消息</button>
+        <span>{attempt.name} · {status.busy ? t("正在保存或核对", "Saving or checking") : t("上传结果待核对", "Upload awaiting confirmation")}</span>
+        <button type="button" disabled={status.busy || disabled} onClick={() => void inspect(attempt)}>{t("核对原上传", "Check original upload")}</button>
+        <button type="button" disabled={status.busy} onClick={() => forget(attempt.operationKey)}>{t("不加入本条消息", "Leave out of this message")}</button>
       </div>)}
     </div> };
 }

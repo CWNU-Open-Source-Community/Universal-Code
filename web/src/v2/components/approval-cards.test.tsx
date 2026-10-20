@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIClient } from "../../api/client";
 import type { ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
@@ -325,3 +328,9 @@ describe("V2ApprovalCards", () => {
     ));
   });
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

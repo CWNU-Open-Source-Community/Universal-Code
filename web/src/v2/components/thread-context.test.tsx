@@ -1,6 +1,9 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider, useLocale, type PrayuLocale } from "../../lib/locale";
 import { createRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { ThreadDetailView } from "../../api/types";
@@ -54,6 +57,28 @@ function mount(f: ReturnType<typeof fixture>, initial = detail()) {
   return { ...view, requestChange, close, rerenderDetail: (value: ThreadDetailView) => view.rerender(wrap(value)) };
 }
 afterEach(cleanup);
+
+test("switching language updates context controls while preserving draft and original content", async () => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const f = fixture(); const user = userEvent.setup();
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let setLanguage: (locale: PrayuLocale) => void = () => undefined;
+  function LanguageControl() { setLanguage = useLocale().setLocale; return null; }
+  renderComponent(<LocaleProvider><LanguageControl /><QueryClientProvider client={queries}>
+    <V2ThreadContext client={f.client} threadID="task-a" detail={detail()} onClose={vi.fn()} onRequestChange={vi.fn()} />
+  </QueryClientProvider></LocaleProvider>);
+  await screen.findByText("保留最初目标：生成日志汇总，不能改接口。");
+  await user.type(screen.getByLabelText("需要继续保留的目标、限制或纠正"), "这段用户草稿不能被翻译");
+  act(() => setLanguage("en-US"));
+  expect(screen.getByRole("dialog", { name: "Task context" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Keep for this task" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Compact conversation" })).toBeVisible();
+  expect(screen.getByLabelText("Goals, constraints or corrections to retain")).toHaveValue("这段用户草稿不能被翻译");
+  expect(screen.getByText("保留最初目标：生成日志汇总，不能改接口。")).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "摘要与压缩" })).not.toBeInTheDocument();
+  act(() => setLanguage("zh-CN"));
+  expect(screen.getByLabelText("需要继续保留的目标、限制或纠正")).toHaveValue("这段用户草稿不能被翻译");
+});
 
 test("ordinary context drawer reads diagnostic receipts from the bound summary endpoint without control writes", async () => {
   const f = fixture();
@@ -220,3 +245,11 @@ test("uses a modal close control and Escape, returning focus when unmounted", as
   view.rerender(<button ref={returnFocus}>上下文入口</button>);
   await waitFor(() => expect(screen.getByRole("button", { name: "上下文入口" })).toHaveFocus());
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, { ...options, wrapper: ({ children }) => <LocaleProvider>
+    {Wrapper ? <Wrapper>{children}</Wrapper> : children}
+  </LocaleProvider> });
+}

@@ -1,3 +1,5 @@
+import { useLocale } from "../lib/locale";
+import { localUIMessage } from "../lib/local-ui-message";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { canonicalExactNetworkTarget, canonicalWebAccessSettings } from "../api/client";
@@ -123,6 +125,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   handoff(intent: CreationIntent, thread: ThreadView): V2TurnInput;
   notice: ReactNode;
 } {
+  const { t } = useLocale();
   const store = useV2RecoveryStore();
   const [intents, setIntents] = useState<CreationIntent[]>([]);
   const [observations, setObservations] = useState<Record<string, Observation>>({});
@@ -131,7 +134,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   const verifiedThreads = useRef(new Map<string, ThreadView>());
 
   const loadIntents = (): CreationIntent[] => {
-    if (!store) throw new V2PersistenceError("当前连接不支持可靠保存创建请求，请先完成连接。");
+    if (!store) throw new V2PersistenceError(t("当前连接不支持可靠保存创建请求，请先完成连接。", "This connection cannot reliably save creation requests. Complete the connection first."));
     const entries = store.entries<unknown>("creation:");
     const turns = store.entries<unknown>("turn:");
     store.assertReadable();
@@ -172,11 +175,11 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
         if (abort.signal.aborted) return;
         if (thread && !intent.projectSkills?.refs.length) verifiedThreads.current.set(intent.operationID, thread);
         setObservations((current) => ({ ...current, [intent.operationID]: thread
-          ? { thread, message: "已找到原对话。点击“打开原对话”查看首条消息的提交结果。" }
-          : { message: "本次查询尚未找到创建记录。可点击“重新核对”；再次发送相同内容时会先核对原请求。" } }));
+          ? { thread, message: t("已找到原对话。点击“打开原对话”查看首条消息的提交结果。", "The original conversation was found. Open it to check the first message submission.") }
+          : { message: t("本次查询尚未找到创建记录。可点击“重新核对”；再次发送相同内容时会先核对原请求。", "No creation record was found. Check again; resending the same content checks the original request first.") } }));
       }).catch(() => {
         if (!abort.signal.aborted) setObservations((current) => ({ ...current,
-          [intent.operationID]: { message: "暂时无法核对原创建请求，原内容与请求标识已保留。请点击“重新核对”查看结果。" } }));
+          [intent.operationID]: { message: t("暂时无法核对原创建请求，原内容与请求标识已保留。请点击“重新核对”查看结果。", "Could not check the original creation request. Its content and identity are kept. Select Check again to read the result.") } }));
       });
     }
     return () => abort.abort();
@@ -213,11 +216,11 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
         requireSaved(saved);
       }
       verifiedThreads.current.set(saved.operationID, thread);
-      setObservations((current) => ({ ...current, [saved.operationID]: { thread, message: "已找到原对话；首条消息将沿用原请求标识。" } }));
+      setObservations((current) => ({ ...current, [saved.operationID]: { thread, message: t("已找到原对话；首条消息将沿用原请求标识。", "The original conversation was found. Its first message will use the original request identity.") } }));
       return thread;
     } catch (failure) {
       setObservations((current) => ({ ...current, [saved.operationID]: {
-        message: `创建或技能选择尚未完成，原对话和内容已保留。${failure instanceof Error ? failure.message : "请重新核对后重试。"}`, } }));
+        message: `${t("创建或技能选择尚未完成，原对话和内容已保留。", "Creation or skill selection is unfinished. The original conversation and content are kept. ")}${failure instanceof Error ? localUIMessage(failure.message, t) : t("请重新核对后重试。", "Check again and retry.")}`, } }));
       throw failure;
     }
   };
@@ -241,18 +244,18 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   };
 
   const notice = !store ? null : <>
-    {error && <p className="v2-notice tone-warning" role="alert">{error}</p>}
-    {intents.map((intent) => <section key={intent.operationID} className="v2-notice" aria-label="上次创建的对话">
+    {error && <p className="v2-notice tone-warning" role="alert">{localUIMessage(error, t)}</p>}
+    {intents.map((intent) => <section key={intent.operationID} className="v2-notice" aria-label={t("上次创建的对话", "Previously created conversation")}>
       <p>{intent.request.goal.slice(0, 120)}</p>
-      <p role="status">{observations[intent.operationID]?.message ?? "原创建请求已保存，结果尚待确认。可点击“重新核对”查看记录。"}</p>
+      <p role="status">{observations[intent.operationID]?.message ?? t("原创建请求已保存，结果尚待确认。可点击“重新核对”查看记录。", "The original creation request is saved and its result is unconfirmed. Select Check again to read the record.")}</p>
       {observations[intent.operationID]?.thread && <button className="v2-composer-chip" onClick={async () => {
         try {
           const thread = intent.projectSkills?.refs.length ? await resolve(intent) : observations[intent.operationID].thread!;
           const input = handoff(intent, thread);
           onRecovered(thread, intent.submittedDraft, intent.files, input);
         } catch (failure) { setError(failure instanceof Error ? failure.message : invalid().message); }
-      }}>打开原对话</button>}
-      <button className="v2-composer-chip" onClick={() => setRefresh((value) => value + 1)}>重新核对</button>
+      }}>{t("打开原对话", "Open original conversation")}</button>}
+      <button className="v2-composer-chip" onClick={() => setRefresh((value) => value + 1)}>{t("重新核对", "Check again")}</button>
     </section>)}
   </>;
   return { prepare, resolve, handoff, notice };

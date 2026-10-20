@@ -1,3 +1,4 @@
+import { useLocale, type LocaleText } from "../../lib/locale";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ChevronDown, ClipboardList, FilePenLine, LoaderCircle, Search,
@@ -6,7 +7,7 @@ import type { APIClient } from "../../api/client";
 import type { ThreadActivityArtifactReferenceView, ThreadActivityDetailView as APIThreadActivityDetailView,
   ThreadActivityBoundaryView, ThreadActivityJSONFieldSummaryView,
   ThreadActivityCommandDetailView, ThreadActivityToolDetailView, ThreadActivityTypedDetailView } from "../../api/types";
-import { fileChangeLabels, type NarrativeEntry } from "../projection/narrative";
+import { type NarrativeFileChange, type NarrativeEntry } from "../projection/narrative";
 import { parseUnifiedDiff } from "../../components/unified-diff";
 import { SavedCommandOutput } from "../../components/saved-command-output";
 import { StatusLabel } from "../../components/common";
@@ -44,7 +45,7 @@ export interface ThreadActivityDetailView {
 }
 
 const failurePattern = /(fail|error|block|deny|cancel|unavailable|ignored|bypass|timed?[_ -]?out|kill|interrupt|失败|错误|阻塞|拒绝|取消|超时|终止|中断)/iu;
-const outputDecodingNotice = "部分输出字符无法正确解码，当前文本可能不完整。";
+const outputDecodingNotice = (t: LocaleText) => t("部分输出字符无法正确解码，当前文本可能不完整。", "Some output characters could not be decoded. The displayed text may be incomplete.");
 
 function isFailedStatus(status: string): boolean {
   return failurePattern.test(status.trim());
@@ -64,11 +65,11 @@ function itemRunning(item: ActivityItem): boolean {
   return isRunningStatus(item.summary?.status ?? item.status);
 }
 
-function itemSummaryMeta(item: ActivityItem): string {
+function itemSummaryMeta(item: ActivityItem, t: LocaleText): string {
   const summary = item.summary;
   if (!summary) return item.detail;
   const duration = durationLabel(summary.duration_milliseconds, summary.status);
-  const count = summary.command_count > 1 ? `${summary.command_count} 条命令` : "";
+  const count = summary.command_count > 1 ? t(`${summary.command_count} 条命令`, `${summary.command_count} commands`) : "";
   return [count, duration].filter(Boolean).join(" · ");
 }
 
@@ -79,17 +80,18 @@ function itemSummaryStatus(item: ActivityItem): ReactNode {
   return summary.status ? <StatusLabel status={summary.status} /> : "";
 }
 
-function commandEnvironmentLabel(command: Pick<ThreadActivityCommandDetailView, "execution_environment" | "network">): string {
+function commandEnvironmentLabel(command: Pick<ThreadActivityCommandDetailView, "execution_environment" | "network">, t: LocaleText): string {
   // The requested network setting does not establish isolation on the host.
-  const network = command.execution_environment === "Host · Full Access" ? "宿主网络未隔离"
-    : command.execution_environment === "Workspace Sandbox" && command.network === "disabled" ? "无网络"
-    : "网络隔离未确认";
+  const network = command.execution_environment === "Host · Full Access" ? t("宿主网络未隔离", "Host network is not isolated")
+    : command.execution_environment === "Workspace Sandbox" && command.network === "disabled" ? t("无网络", "No network")
+    : t("网络隔离未确认", "Network isolation unconfirmed");
   return `${command.execution_environment} · ${network}`;
 }
 
 /** Maps the already strictly parsed Go projection into conversation labels. */
 export function projectThreadActivityDetail(
   value: APIThreadActivityDetailView,
+  t: LocaleText = (chinese) => chinese,
 ): ThreadActivityDetailView {
   const tool = value.tools[0];
   const commands = tool.detail.kind === "command" ? tool.detail.command.commands.map((command) => ({
@@ -102,7 +104,7 @@ export function projectThreadActivityDetail(
       stderr_preview: command.stderr_preview,
       truncated: command.truncated,
       artifacts: command.artifacts,
-      environment_label: commandEnvironmentLabel(command),
+      environment_label: commandEnvironmentLabel(command, t),
       agent_id: tool.agent_id,
       agent_label: tool.agent_label,
     } satisfies ThreadActivityCommandDetail)) : [];
@@ -123,6 +125,7 @@ export function ThreadActivityToolDetailPanel({ activityRef, client, runID, thre
   threadID: string;
   tool: ThreadActivityToolDetailView;
 }) {
+  const { t } = useLocale();
   if (tool.detail.kind !== "command") {
     return <TypedToolDetail client={client} runID={runID} typed={{
       detail: tool.detail,
@@ -145,7 +148,7 @@ export function ThreadActivityToolDetailPanel({ activityRef, client, runID, thre
       stderr_preview: command.stderr_preview,
       truncated: command.truncated,
       artifacts: command.artifacts,
-      environment_label: commandEnvironmentLabel(command),
+      environment_label: commandEnvironmentLabel(command, t),
       agent_id: tool.agent_id,
       agent_label: tool.agent_label,
     }}
@@ -160,7 +163,8 @@ function shortAgentID(value: string): string {
 }
 
 function AgentIdentity({ id, label }: { id: string; label?: string }) {
-  if (id === "unknown") return <>{label || "历史活动（执行者未知）"}</>;
+  const { t } = useLocale();
+  if (id === "unknown") return <>{label || t("历史活动（执行者未知）", "Historical activity (unknown agent)")}</>;
   return <>{label || "Agent"} <code title={id}>{shortAgentID(id)}</code></>;
 }
 
@@ -191,15 +195,45 @@ function byteSizeLabel(size: number): string {
   return `${(size / 1_048_576).toFixed(1)} MB`;
 }
 
-function typedKindLabel(kind: ThreadActivityTypedDetailView["kind"]): string {
+function typedKindLabel(kind: ThreadActivityTypedDetailView["kind"], t: LocaleText): string {
   const labels: Record<ThreadActivityTypedDetailView["kind"], string> = {
-    command: "运行命令",
-    web_search: "联网搜索", web_fetch: "网页读取",
-    file_read: "文件读取", file_edit: "文件修改", verification: "验证", mcp: "MCP",
-    browser: "浏览器",
+    command: t("运行命令", "Run command"),
+    web_search: t("联网搜索", "Web search"), web_fetch: t("网页读取", "Web read"),
+    file_read: t("文件读取", "File read"), file_edit: t("文件修改", "File edit"), verification: t("验证", "Verify"), mcp: "MCP",
+    browser: t("浏览器", "Browser"),
   };
   return labels[kind];
 }
+
+const fileChangeLabel = (kind: NarrativeFileChange, t: LocaleText) => {
+ const labels = {
+  "proposed": [
+    "已提出修改，等待审阅",
+    "Edit proposed; awaiting review"
+  ],
+  "approved": [
+    "修改已批准，尚未应用",
+    "Edit approved; not applied"
+  ],
+  "applied": [
+    "修改已应用",
+    "Edit applied"
+  ],
+  "denied": [
+    "修改已拒绝",
+    "Edit denied"
+  ],
+  "failed": [
+    "文件修改失败",
+    "File edit failed"
+  ],
+  "unknown": [
+    "文件修改记录",
+    "File edit records"
+  ]
+} as const;
+ return t(labels[kind][0], labels[kind][1]);
+};
 
 const maxRenderedDiffLines = 2_000;
 
@@ -208,6 +242,7 @@ function FileEditDiff({ client, editID, runID }: {
   editID: string;
   runID: string;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const preview = useQuery({
     queryKey: ["v2", "file-edit-diff", runID, editID],
@@ -223,20 +258,20 @@ function FileEditDiff({ client, editID, runID }: {
 
   return <section className="v2-file-edit-diff">
     <button aria-expanded={open} onClick={() => setOpen((value) => !value)} type="button">
-      {open ? "收起 Diff" : "查看 Diff"}
+      {open ? t("收起 Diff", "Hide diff") : t("查看 Diff", "View diff")}
     </button>
     {open && <div className="v2-file-edit-diff-content">
-      {preview.data && <details><summary>查看此编辑的原目录身份</summary><code>{preview.data.workspace_id}</code></details>}
+      {preview.data && <details><summary>{t("查看此编辑的原目录身份", "View the original directory identity for this edit")}</summary><code>{preview.data.workspace_id}</code></details>}
       {preview.isLoading && <p className="v2-activity-detail-state" role="status">
-        <LoaderCircle aria-hidden="true" className="spin" size={14} />正在读取文件 Diff…</p>}
+        <LoaderCircle aria-hidden="true" className="spin" size={14} />{t("正在读取文件 Diff…", "Loading file diff…")}</p>}
       {preview.isError && <div className="v2-activity-detail-state is-error" role="alert">
-        <span>Diff 加载失败。</span>
-        <button onClick={() => void preview.refetch()} type="button">重试</button>
+        <span>{t("Diff 加载失败。", "Could not load diff.")}</span>
+        <button onClick={() => void preview.refetch()} type="button">{t("重试", "Retry")}</button>
       </div>}
       {preview.data && preview.data.diff === "" && <p className="v2-activity-detail-state">
-        该文件修改没有文本 Diff。</p>}
+        {t("该文件修改没有文本 Diff。", "This file edit has no text diff.")}</p>}
       {preview.data && parsed && preview.data.diff !== "" && <>
-        <div aria-label={`文件 Diff：${preview.data.path}`} className="v2-unified-diff" role="table">
+        <div aria-label={t(`文件 Diff：${preview.data.path}`, `File diff: ${preview.data.path}`)} className="v2-unified-diff" role="table">
           {visibleLines.map((line, index) => <div
             aria-label={`${line.kind} ${line.text}`}
             className={`v2-unified-diff-line is-${line.kind}`}
@@ -247,10 +282,10 @@ function FileEditDiff({ client, editID, runID }: {
             <code>{line.text || " "}</code>
           </div>)}
         </div>
-        <small>{preview.data.secrets_redacted ? "敏感内容已脱敏" : "未发现需脱敏内容"}
+        <small>{preview.data.secrets_redacted ? t("敏感内容已脱敏", "Sensitive content redacted") : t("未发现需脱敏内容", "No sensitive content found")}
           {displayTruncated
-            ? ` · Diff 共 ${parsed.lines.length} 行，为保持界面流畅仅显示前 ${maxRenderedDiffLines} 行`
-            : ` · ${parsed.additions} 行新增，${parsed.deletions} 行删除`}</small>
+            ? t(` · Diff 共 ${parsed.lines.length} 行，为保持界面流畅仅显示前 ${maxRenderedDiffLines} 行`, ` · Showing the first ${maxRenderedDiffLines} of ${parsed.lines.length} diff lines`)
+            : t(` · ${parsed.additions} 行新增，${parsed.deletions} 行删除`, ` · ${parsed.additions} lines added, ${parsed.deletions} removed`)}</small>
       </>}
     </div>}
   </section>;
@@ -271,12 +306,13 @@ function SafeJSONFieldList({ label, values }: {
 function BoundaryFacts({ boundary }: {
   boundary: ThreadActivityBoundaryView;
 }) {
+  const { t } = useLocale();
   return <>
-    <dt>授权</dt><dd>{boundary.authorization === "policy_checked" ? "已通过策略检查" :
-      boundary.authorization === "pending" ? "等待授权" : "已拒绝"}</dd>
-    {boundary.error_code && <><dt>错误</dt><dd><code>{boundary.error_code}</code></dd></>}
-    {boundary.failure_reason && <><dt>原因</dt><dd>{boundary.failure_reason}</dd></>}
-    {boundary.truncated && <><dt>内容</dt><dd>已截断</dd></>}
+    <dt>{t("授权", "Authorization")}</dt><dd>{boundary.authorization === "policy_checked" ? t("已通过策略检查", "Policy check passed") :
+      boundary.authorization === "pending" ? t("等待授权", "Awaiting authorization") : t("已拒绝", "Denied")}</dd>
+    {boundary.error_code && <><dt>{t("错误", "Error")}</dt><dd><code>{boundary.error_code}</code></dd></>}
+    {boundary.failure_reason && <><dt>{t("原因", "Reason")}</dt><dd>{boundary.failure_reason}</dd></>}
+    {boundary.truncated && <><dt>{t("内容", "Content")}</dt><dd>{t("已截断", "Truncated")}</dd></>}
   </>;
 }
 
@@ -285,21 +321,22 @@ function TypedToolDetail({ client, runID, typed }: {
   runID: string;
   typed: NonNullable<ThreadActivityDetailView["typed"]>;
 }) {
+  const { t } = useLocale();
   const detail = typed.detail;
   const duration = durationLabel(typed.duration_ms, typed.status);
   const { boundary, operation } = typedDetailCommon(detail);
   return <article className="v2-command-detail v2-tool-facts">
-    <header><strong>{typedKindLabel(detail.kind)} · {operation}</strong>
+    <header><strong>{typedKindLabel(detail.kind, t)} · {operation}</strong>
       <span className={isFailedStatus(typed.status) ? "is-failed" : ""}><StatusLabel status={typed.status} /></span>
     </header>
     <dl>
       <dt>Agent</dt><dd><AgentIdentity id={typed.agent_id} label={typed.agent_label} /></dd>
       <BoundaryFacts boundary={boundary} />
-      {duration && <><dt>耗时</dt><dd>{duration}</dd></>}
+      {duration && <><dt>{t("耗时", "Duration")}</dt><dd>{duration}</dd></>}
     </dl>
     <TypedDetailBody client={client} detail={detail} runID={runID} status={typed.status} />
     {boundary.untrusted && <p className="v2-untrusted-output">
-      结果来自外部来源，作为参考资料展示。操作授权以任务要求和审批为准。</p>}
+      {t("结果来自外部来源，作为参考资料展示。操作授权以任务要求和审批为准。", "Results from external sources are shown as references. Task instructions and approvals determine action permissions.")}</p>}
   </article>;
 }
 
@@ -324,20 +361,21 @@ function TypedDetailBody({ client, detail, runID, status }: {
   runID: string;
   status: string;
 }) {
+  const { t } = useLocale();
   switch (detail.kind) {
     case "web_search": {
       const value = detail.web_search;
       return <><dl>
-        <dt>查询</dt><dd><code>{value.query}</code></dd>
-        {value.provider && <><dt>提供商</dt><dd>{value.provider}</dd></>}
-        {value.search_policy && <><dt>搜索策略</dt><dd>{value.search_policy}</dd></>}
-        {value.selection_reason && <><dt>路由原因</dt><dd>{value.selection_reason}</dd></>}
-        <dt>结果</dt><dd>{isFailedStatus(status) && value.source_count === 0 ? "未取得搜索结果"
-          : `${value.source_count} 个来源 · ${value.citeable ? "可引用" : "待验证"}`}</dd>
-      </dl>{value.sources.length > 0 && <section className="v2-tool-facts-list" aria-label="搜索来源">
-        <strong>搜索来源</strong><ol>{value.sources.map((source) => <li key={`${source.rank}:${source.url}`}>
+        <dt>{t("查询", "Query")}</dt><dd><code>{value.query}</code></dd>
+        {value.provider && <><dt>{t("提供商", "Provider")}</dt><dd>{value.provider}</dd></>}
+        {value.search_policy && <><dt>{t("搜索策略", "Search policy")}</dt><dd>{value.search_policy}</dd></>}
+        {value.selection_reason && <><dt>{t("路由原因", "Routing reason")}</dt><dd>{value.selection_reason}</dd></>}
+        <dt>{t("结果", "Result")}</dt><dd>{isFailedStatus(status) && value.source_count === 0 ? t("未取得搜索结果", "No search results retrieved")
+          : t(`${value.source_count} 个来源 · ${value.citeable ? "可引用" : "待验证"}`, `${value.source_count} sources · ${value.citeable ? "Citeable" : "Unverified"}`)}</dd>
+      </dl>{value.sources.length > 0 && <section className="v2-tool-facts-list" aria-label={t("搜索来源", "Search sources")}>
+        <strong>{t("搜索来源", "Search sources")}</strong><ol>{value.sources.map((source) => <li key={`${source.rank}:${source.url}`}>
           <a href={source.url} rel="noreferrer" target="_blank">{source.title || source.url}</a>
-          <small>{source.provider || "未知提供商"} · {source.citeable ? "可引用" : "待验证"}</small>
+          <small>{source.provider || t("未知提供商", "Unknown provider")} · {source.citeable ? t("可引用", "Citeable") : t("待验证", "Unverified")}</small>
         </li>)}</ol>
       </section>}</>;
     }
@@ -347,69 +385,69 @@ function TypedDetailBody({ client, detail, runID, status }: {
         <dt>URL</dt><dd>{value.url.startsWith("https://")
           ? <a href={value.url} rel="noreferrer" target="_blank">{value.url}</a>
           : <code>{value.url}</code>}</dd>
-        <dt>抓取状态</dt><dd><StatusLabel status={value.state || "unknown"} />
+        <dt>{t("抓取状态", "Fetch status")}</dt><dd><StatusLabel status={value.state || "unknown"} />
           {value.http_status ? ` · HTTP ${value.http_status}` : ""}</dd>
-        <dt>Robots</dt><dd>{value.robots || "未记录"}
+        <dt>Robots</dt><dd>{value.robots || t("未记录", "Not recorded")}
           {value.robots_policy ? ` · ${value.robots_policy}` : ""}</dd>
-        <dt>重定向</dt><dd>{value.redirects}</dd>
-        <dt>证据</dt><dd>{value.citeable ? "可引用" : "不可引用"}
-          {value.partial ? " · 部分内容" : ""}</dd>
+        <dt>{t("重定向", "Redirects")}</dt><dd>{value.redirects}</dd>
+        <dt>{t("证据", "Evidence")}</dt><dd>{value.citeable ? t("可引用", "Citeable") : t("不可引用", "Not citeable")}
+          {value.partial ? t("· 部分内容", " · Partial content") : ""}</dd>
       </dl>;
     }
     case "file_read": {
       const value = detail.file_read;
       return <dl>
-        {value.path && <><dt>路径</dt><dd><code>{value.path}</code></dd></>}
-        {value.query && <><dt>查询</dt><dd><code>{value.query}</code></dd></>}
-        {value.pattern && <><dt>范围</dt><dd><code>{value.pattern}</code></dd></>}
-        {value.start_line > 0 && <><dt>行范围</dt><dd>{value.start_line}–{value.end_line}</dd></>}
-        <dt>结果</dt><dd>{value.summary}</dd>
+        {value.path && <><dt>{t("路径", "Path")}</dt><dd><code>{value.path}</code></dd></>}
+        {value.query && <><dt>{t("查询", "Query")}</dt><dd><code>{value.query}</code></dd></>}
+        {value.pattern && <><dt>{t("范围", "Scope")}</dt><dd><code>{value.pattern}</code></dd></>}
+        {value.start_line > 0 && <><dt>{t("行范围", "Line range")}</dt><dd>{value.start_line}–{value.end_line}</dd></>}
+        <dt>{t("结果", "Result")}</dt><dd>{value.summary}</dd>
       </dl>;
     }
     case "file_edit": {
       const value = detail.file_edit;
       return <><dl>
-        <dt>操作</dt><dd>{value.action || "修改"}</dd>
-        {value.path && <><dt>文件</dt><dd><code>{value.path}</code></dd></>}
-        {value.destination_path && <><dt>目标</dt><dd><code>{value.destination_path}</code></dd></>}
+        <dt>{t("操作", "Operation ")}</dt><dd>{value.action || t("修改", "Edit")}</dd>
+        {value.path && <><dt>{t("文件", "File")}</dt><dd><code>{value.path}</code></dd></>}
+        {value.destination_path && <><dt>{t("目标", "Target")}</dt><dd><code>{value.destination_path}</code></dd></>}
         <dt>Diff</dt><dd>{value.diff.summary ||
-          `+${value.diff.added_lines} −${value.diff.removed_lines} · ${value.diff.hunks} 个区块`}</dd>
-        <dt>应用结果</dt><dd>{value.apply_status || (value.applied ? "已应用" : "尚未应用")}
-          {value.replayed ? " · 幂等重放" : ""}</dd>
+          t(`+${value.diff.added_lines} −${value.diff.removed_lines} · ${value.diff.hunks} 个区块`, `+${value.diff.added_lines} −${value.diff.removed_lines} · ${value.diff.hunks} hunks`)}</dd>
+        <dt>{t("应用结果", "Apply result")}</dt><dd>{value.apply_status || (value.applied ? t("已应用", "Applied") : t("尚未应用", "Not applied"))}
+          {value.replayed ? t("· 幂等重放", " · Replayed") : ""}</dd>
       </dl>{value.diff_available
         ? <FileEditDiff client={client} editID={value.edit_id} runID={runID} />
-        : <p className="v2-activity-detail-state">本次活动没有可展示的 Diff。</p>}</>;
+        : <p className="v2-activity-detail-state">{t("本次活动没有可展示的 Diff。", "No diff is available for this activity.")}</p>}</>;
     }
     case "mcp": {
       const value = detail.mcp;
       return <><dl>
-        <dt>服务器</dt><dd><code>{value.server}</code></dd>
-        <dt>工具</dt><dd><code>{value.tool}</code></dd>
-        <dt>结果摘要</dt><dd>{value.result.summary}</dd>
+        <dt>{t("服务器", "Server")}</dt><dd><code>{value.server}</code></dd>
+        <dt>{t("工具", "Tool")}</dt><dd><code>{value.tool}</code></dd>
+        <dt>{t("结果摘要", "Result summary")}</dt><dd>{value.result.summary}</dd>
       </dl>
-      <SafeJSONFieldList label="参数" values={value.arguments} />
-      <SafeJSONFieldList label="结果字段" values={value.result.fields} />
+      <SafeJSONFieldList label={t("参数", "Arguments")} values={value.arguments} />
+      <SafeJSONFieldList label={t("结果字段", "Result fields")} values={value.result.fields} />
       <MCPContentPreview contents={value.contents} omitted={value.omitted_contents} truncated={value.content_truncated} /></>;
     }
     case "verification": {
       const value = detail.verification;
       return <dl>
-        <dt>工具</dt><dd><code>{value.tool}</code></dd>
-        {value.path && <><dt>文件</dt><dd><code>{value.path}</code></dd></>}
-        {value.query && <><dt>查询</dt><dd><code>{value.query}</code></dd></>}
-        {value.position && <><dt>位置</dt><dd>{value.position}</dd></>}
-        <dt>结果</dt><dd>{value.summary}</dd>
+        <dt>{t("工具", "Tool")}</dt><dd><code>{value.tool}</code></dd>
+        {value.path && <><dt>{t("文件", "File")}</dt><dd><code>{value.path}</code></dd></>}
+        {value.query && <><dt>{t("查询", "Query")}</dt><dd><code>{value.query}</code></dd></>}
+        {value.position && <><dt>{t("位置", "Position")}</dt><dd>{value.position}</dd></>}
+        <dt>{t("结果", "Result")}</dt><dd>{value.summary}</dd>
       </dl>;
     }
     case "browser": {
       const value = detail.browser;
       return <dl>
-        <dt>动作</dt><dd><code>{value.action}</code></dd>
+        <dt>{t("动作", "Action")}</dt><dd><code>{value.action}</code></dd>
         {value.url && <><dt>URL</dt><dd><code>{value.url}</code></dd></>}
-        {value.selector && <><dt>选择器</dt><dd><code>{value.selector}</code></dd></>}
-        {value.input_length > 0 && <><dt>输入</dt><dd>{value.input_length} 个字符（内容不显示）</dd></>}
-        {value.artifact_bytes > 0 && <><dt>产物</dt><dd>{byteSizeLabel(value.artifact_bytes)}</dd></>}
-        <dt>结果</dt><dd>{value.summary}</dd>
+        {value.selector && <><dt>{t("选择器", "Selector")}</dt><dd><code>{value.selector}</code></dd></>}
+        {value.input_length > 0 && <><dt>{t("输入", "Input")}</dt><dd>{t(`${value.input_length} 个字符（内容不显示）`, `${value.input_length} characters (content hidden)`)}</dd></>}
+        {value.artifact_bytes > 0 && <><dt>{t("产物", "Artifact")}</dt><dd>{byteSizeLabel(value.artifact_bytes)}</dd></>}
+        <dt>{t("结果", "Result")}</dt><dd>{value.summary}</dd>
       </dl>;
     }
   }
@@ -421,6 +459,7 @@ function CommandDetail({ activityRef, client, command, threadID }: {
   command: ThreadActivityCommandDetail;
   threadID: string;
 }) {
+  const { t } = useLocale();
   const duration = durationLabel(command.duration_ms, command.status);
   // This display-only projection has no executable/adapter identity. The
   // observed output can suggest a startup problem, never prove no side effects.
@@ -434,34 +473,33 @@ function CommandDetail({ activityRef, client, command, threadID }: {
         (command.exit_code !== undefined && command.exit_code !== null && command.exit_code !== 0)
         ? "is-failed" : ""}><StatusLabel status={command.status} /></span>
     </header>
-    <pre className="v2-command-input" aria-label="命令"><code>{command.display_command}</code></pre>
+    <pre className="v2-command-input" aria-label={t("命令", "Command")}><code>{command.display_command}</code></pre>
     {powerShellStartupError && <p className="v2-command-truncated">
-      输出提示 PowerShell 初始化失败，当前检查未完成。若使用 Windows 隔离工作区，请安装 PowerShell 7，并在宿主环境中将 CYBERAGENT_POWERSHELL_PATH 设置为 pwsh.exe 的绝对路径，重启应用后重试。完整错误仍保留在下方。
-    </p>}
-    {command.stdout_preview && <section aria-label="标准输出">
+      {t("输出提示 PowerShell 初始化失败，当前检查未完成。若使用 Windows 隔离工作区，请安装 PowerShell 7，并在宿主环境中将 CYBERAGENT_POWERSHELL_PATH 设置为 pwsh.exe 的绝对路径，重启应用后重试。完整错误仍保留在下方。", "The output indicates PowerShell initialization failed, so this check is incomplete. For a Windows isolated workspace, install PowerShell 7 and set CYBERAGENT_POWERSHELL_PATH in the host environment to the absolute path of pwsh.exe. Restart the app and retry. The full error is kept below.")}</p>}
+    {command.stdout_preview && <section aria-label={t("标准输出", "Standard output")}>
       <strong>stdout</strong><pre><code>{command.stdout_preview}</code></pre>
     </section>}
-    {command.stderr_preview && <section aria-label="标准错误">
+    {command.stderr_preview && <section aria-label={t("标准错误", "Standard error")}>
       <strong>stderr</strong><pre><code>{command.stderr_preview}</code></pre>
     </section>}
     <details className="v2-command-metadata">
-      <summary><ChevronDown aria-hidden="true" size={12} /><span>执行信息</span>
+      <summary><ChevronDown aria-hidden="true" size={12} /><span>{t("执行信息", "Execution details")}</span>
         <small>{command.exit_code !== undefined && command.exit_code !== null
           ? `Exit ${command.exit_code}` : <StatusLabel status={command.status} />}
           {duration ? ` · ${duration}` : ""}</small>
       </summary>
       <dl>
-        {command.cwd && <><dt>目录</dt><dd><code>{command.cwd}</code></dd></>}
+        {command.cwd && <><dt>{t("目录", "Directory")}</dt><dd><code>{command.cwd}</code></dd></>}
         {(command.agent_label || command.agent_id) && <><dt>Agent</dt><dd>
           <AgentIdentity id={command.agent_id} label={command.agent_label} />
         </dd></>}
-        {command.environment_label && <><dt>环境</dt><dd>{command.environment_label}</dd></>}
+        {command.environment_label && <><dt>{t("环境", "Environment")}</dt><dd>{command.environment_label}</dd></>}
       </dl>
     </details>
     {(command.stdout_preview?.includes("\uFFFD") || command.stderr_preview?.includes("\uFFFD")) &&
-      <p className="v2-command-truncated">{outputDecodingNotice}</p>}
+      <p className="v2-command-truncated">{outputDecodingNotice(t)}</p>}
     {command.truncated && <p className="v2-command-truncated">
-      输出过长，当前仅显示已脱敏预览。</p>}
+      {t("输出过长，当前仅显示已脱敏预览。", "The output is too long. Only a redacted preview is shown.")}</p>}
     {command.artifacts.map((reference) => <SavedCommandOutput activityRef={activityRef}
       artifactRef={reference.artifact_ref} client={client} key={reference.artifact_ref}
       reference={reference} threadID={threadID} />)}
@@ -469,6 +507,7 @@ function CommandDetail({ activityRef, client, command, threadID }: {
 }
 
 function WebEvidenceDetail({ item }: { item: ActivityItem }) {
+  const { t } = useLocale();
   const evidence = item.webEvidence;
   if (!evidence) return null;
   return <article className="v2-command-detail v2-tool-facts">
@@ -476,12 +515,12 @@ function WebEvidenceDetail({ item }: { item: ActivityItem }) {
       <span className={isFailedStatus(item.status) ? "is-failed" : ""}><StatusLabel status={item.status} /></span>
     </header>
     <dl>
-      {evidence.title && <><dt>来源</dt><dd>{evidence.title}</dd></>}
+      {evidence.title && <><dt>{t("来源", "Source")}</dt><dd>{evidence.title}</dd></>}
       <dt>URL</dt><dd><code>{evidence.url}</code></dd>
-      <dt>证据</dt><dd>{evidence.citeable ? "可引用" : "不可引用"}
-        {evidence.partial ? " · 部分内容" : ""}{evidence.stale ? " · 已过期" : ""}</dd>
+      <dt>{t("证据", "Evidence")}</dt><dd>{evidence.citeable ? t("可引用", "Citeable") : t("不可引用", "Not citeable")}
+        {evidence.partial ? t("· 部分内容", " · Partial content") : ""}{evidence.stale ? t("· 已过期", " · Expired") : ""}</dd>
     </dl>
-    <p className="v2-untrusted-output">网页内容作为参考资料展示。操作授权以任务要求和审批为准。</p>
+    <p className="v2-untrusted-output">{t("网页内容作为参考资料展示。操作授权以任务要求和审批为准。", "Web content is shown as reference material. Task instructions and approvals determine action permissions.")}</p>
   </article>;
 }
 
@@ -493,6 +532,7 @@ export function ActivityItemDetail({ client, item, threadID, initialOpen = false
   expectedRunID?: string;
   activity?: ActivityEntry["activity"];
 }) {
+  const { t } = useLocale();
   const failed = itemFailed(item);
   const [open, setOpen] = useState(initialOpen || failed);
   useEffect(() => {
@@ -505,13 +545,13 @@ export function ActivityItemDetail({ client, item, threadID, initialOpen = false
     queryFn: async ({ signal }) => {
       const detail = await client.threadActivityDetail(threadID, detailRef ?? "", signal);
       if (expectedRunID && detail.run_id !== expectedRunID) throw new Error("Activity detail Run identity does not match");
-      return projectThreadActivityDetail(detail);
+      return detail;
     },
+    select: (detail) => projectThreadActivityDetail(detail, t),
     enabled: open && Boolean(detailRef),
     retry: false,
     refetchInterval: (activityQuery) => (activityQuery.state.data
-      ? activityQuery.state.data.commands.some((command) => isRunningStatus(command.status)) ||
-        Boolean(activityQuery.state.data.typed && isRunningStatus(activityQuery.state.data.typed.status))
+      ? activityQuery.state.data.tools.some((tool) => isRunningStatus(tool.status) || (tool.detail.kind === "command" && tool.detail.command.commands.some((command) => isRunningStatus(command.status))))
       : itemRunning(item)) ? 1_000 : false,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -525,22 +565,22 @@ export function ActivityItemDetail({ client, item, threadID, initialOpen = false
 
   return <li className={`v2-activity-item has-detail${failed ? " is-failed" : ""}`}>
     <details onToggle={(event) => setOpen(event.currentTarget.open)} open={open}>
-      <summary aria-label={`${open ? "收起" : "查看"}${item.title}的执行详情`}>
+      <summary aria-label={t(`${open ? "收起" : "查看"}${item.title}的执行详情`, `${open ? "Collapse" : "View"} execution details for ${item.title}`)}>
         {activity && <ActivityIcon activity={activity} />}
         <span className="v2-activity-item-label" title={item.summary?.command ?? item.title}>{item.summary?.command ?? item.title}</span>
-        {itemSummaryMeta(item) && <small>{itemSummaryMeta(item)}</small>}
+        {itemSummaryMeta(item, t) && <small>{itemSummaryMeta(item, t)}</small>}
         {itemSummaryStatus(item) && <em>{itemSummaryStatus(item)}</em>}
         <ChevronDown aria-hidden="true" size={13} />
       </summary>
       <div className="v2-activity-detail-panel">
         {detailRef && query.isLoading && <p className="v2-activity-detail-state" role="status">
-          <LoaderCircle aria-hidden="true" className="spin" size={14} />正在加载执行详情…</p>}
+          <LoaderCircle aria-hidden="true" className="spin" size={14} />{t("正在加载执行详情…", "Loading execution details…")}</p>}
         {detailRef && query.isError && <div className="v2-activity-detail-state is-error" role="alert">
-          <span>执行详情加载失败。</span>
-          <button onClick={() => void query.refetch()} type="button">重试</button>
+          <span>{t("执行详情加载失败。", "Could not load execution details.")}</span>
+          <button onClick={() => void query.refetch()} type="button">{t("重试", "Retry")}</button>
         </div>}
         {query.data && query.data.commands.length === 0 && !query.data.typed && <p className="v2-activity-detail-state">
-          此活动没有可展示的命令详情。</p>}
+          {t("此活动没有可展示的命令详情。", "No command details are available for this activity.")}</p>}
         {query.data?.typed && <TypedToolDetail client={client} runID={query.data.run_id}
           typed={query.data.typed} />}
         {query.data?.commands.map((command, index) => <CommandDetail activityRef={detailRef ?? ""}
@@ -557,20 +597,21 @@ export function V2ActivityGroup({ client, entry, threadID }: {
   entry: ActivityEntry;
   threadID: string;
 }) {
-  const labels = { search: "搜索", read: "读取", edit: "修改", execute: "运行", verify: "验证", plan: "规划" };
+  const { t } = useLocale();
+  const labels = { search: t("搜索", "Search"), read: t("读取", "Read"), edit: t("修改", "Edit"), execute: t("运行", "Run"), verify: t("验证", "Verify"), plan: t("规划", "Plan") };
   const latestItem = entry.items.at(-1);
   const fileChanges = entry.items.flatMap((item) => item.fileChange ? [item.fileChange] : []);
   const distinctChanges = new Set(fileChanges);
   // Tool completion confirms a request was handled, not that a file was written.
   // The transcript exposes event IDs, not a shared edit ID: retain the audit
   // leaves without presenting their count as a number of changed files.
-  const label = entry.activity === "plan" ? "规划" : entry.activity === "edit"
-    ? distinctChanges.size === 1 ? fileChangeLabels[fileChanges[0]] : "文件修改记录"
-    : `${labels[entry.activity]}${entry.count > 1 ? `了 ${entry.count} 项` : ""}`;
+  const label = entry.activity === "plan" ? t("规划", "Plan") : entry.activity === "edit"
+    ? distinctChanges.size === 1 ? fileChangeLabel(fileChanges[0], t) : t("文件修改记录", "File edit records")
+    : entry.count > 1 ? t(`${labels[entry.activity]}了 ${entry.count} 项`, `${labels[entry.activity]} · ${entry.count} items`) : labels[entry.activity];
   const detail = entry.activity === "edit"
-    ? fileChanges.length > 1 ? fileChangeLabels[fileChanges.at(-1)!] : "展开查看请求与审阅记录"
+    ? fileChanges.length > 1 ? fileChangeLabel(fileChanges.at(-1)!, t) : t("展开查看请求与审阅记录", "Expand to view requests and review records")
     : latestItem?.summary ? [latestItem.summary.command,
-    itemSummaryStatus(latestItem), itemSummaryMeta(latestItem)].filter(Boolean).map((part, index) =>
+    itemSummaryStatus(latestItem), itemSummaryMeta(latestItem, t)].filter(Boolean).map((part, index) =>
       <Fragment key={index}>{index > 0 && " · "}{part}</Fragment>) :
     entry.detail || entry.title;
   const failed = entry.items.some(itemFailed);

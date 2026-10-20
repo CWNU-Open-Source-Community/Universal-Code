@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
@@ -40,9 +43,9 @@ describe("V2Inspector", () => {
       item("later-model-result", { sequence: 3, title: "模型调用完成", status: "completed" }),
     ]);
     const view = draw();
-    expect(view.container.querySelector('[data-transcript-id="open-boundary"]')).toHaveTextContent("Not ended");
+    expect(view.container.querySelector('[data-transcript-id="open-boundary"]')).toHaveTextContent("未结束");
     expect(view.container.querySelector('[data-transcript-id="old-model-start"]')).toHaveTextContent("记录时执行中");
-    expect(view.container.querySelector('[data-transcript-id="later-model-result"]')).toHaveTextContent("completed");
+    expect(view.container.querySelector('[data-transcript-id="later-model-result"]')).toHaveTextContent("已完成");
     await userEvent.setup().click(screen.getByRole("button", { name: /模型调用开始/ }));
     expect(screen.getByText(/这是记录保存时的执行状态/)).toHaveTextContent("Agent 的当前活动请查看对话上方的工作状态");
     expect(screen.getByText("model.started:old-attempt")).toBeInTheDocument();
@@ -147,7 +150,7 @@ describe("V2Inspector", () => {
     const { draw } = setup([item("blocked-original", { sequence: 87, status: "failed", stage: "blocked", detail: "Actual failure explanation" })]);
     const view = draw();
     const row = view.container.querySelector('[data-transcript-id="blocked-original"] button')!;
-    expect(row).toHaveTextContent("failed");
+    expect(row).toHaveTextContent("失败");
     expect(row).toHaveTextContent("执行记录");
     expect(row).toHaveTextContent("Actual failure explanation");
     expect(row).not.toHaveTextContent("#87");
@@ -228,3 +231,9 @@ describe("V2Inspector", () => {
     expect(view.container.querySelectorAll("[data-transcript-id]")).toHaveLength(2);
   });
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

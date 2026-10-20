@@ -1,4 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { cleanup, render as renderComponent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ThreadRunRecoveryView } from "../../api/types";
 import { ContextDiagnosticsPanel, validContextDiagnostics, type ContextDiagnostic } from "./context-diagnostics";
@@ -52,3 +55,11 @@ test("diagnostic parser rejects malformed identity, invalid phases and contradic
   ]) expect(validContextDiagnostics({ records: [changed], truncated: false })).toBe(false);
   expect(validContextDiagnostics({ records: [receipt("generation_started"), receipt("generation_received")], truncated: false })).toBe(false);
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, { ...options, wrapper: ({ children }) => <LocaleProvider>
+    {Wrapper ? <Wrapper>{children}</Wrapper> : children}
+  </LocaleProvider> });
+}

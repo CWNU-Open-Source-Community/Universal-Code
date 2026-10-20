@@ -3,6 +3,7 @@ import { LoaderCircle, Square } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { ThreadExecutionView } from "../../api/types";
 import { v2QueryKeys } from "../query-keys";
+import { useLocale } from "../../lib/locale";
 
 export function useV2ThreadExecution(client: APIClient, threadID: string) {
   return useQuery({
@@ -20,6 +21,7 @@ export function V2ThreadExecutionControl({ client, threadID, execution }: {
   threadID: string;
   execution: ThreadExecutionView | undefined;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const stop = useMutation({
     mutationKey: ["v2", "thread-stop", threadID],
@@ -33,14 +35,14 @@ export function V2ThreadExecutionControl({ client, threadID, execution }: {
   const stopping = stop.isPending || execution?.state === "stopping";
   return <>
     {execution && execution.state !== "idle" && client.hasThreadControl && client.hasRunExecution &&
-      <button aria-label={stopping ? "正在停止" : execution.state === "stop_failed" ? "重试停止" : "停止当前执行"} className="v2-stop-button"
+      <button aria-label={stopping ? t("正在停止", "Stopping") : execution.state === "stop_failed" ? t("重试停止", "Retry stop") : t("停止当前执行", "Stop current run")} className="v2-stop-button"
         disabled={stopping} onClick={() => execution.execution_id && stop.mutate({ threadID,
           executionID: execution.execution_id })}
-        title="停止当前执行；已完成的修改和已受理的补充要求会保留" type="button">
+        title={t("停止当前执行；已完成的修改和已受理的补充要求会保留", "Stop this run; completed changes and accepted instructions are kept")} type="button">
         {stopping ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
-          : <Square aria-hidden="true" size={13} />} {stopping ? "正在停止…" : execution.state === "stop_failed" ? "重试停止" : "停止"}
+          : <Square aria-hidden="true" size={13} />} {stopping ? t("正在停止…", "Stopping…") : execution.state === "stop_failed" ? t("重试停止", "Retry stop") : t("停止", "Stop")}
       </button>}
-    {stop.isError && <span role="alert">停止请求未确认，请刷新执行状态后重试。</span>}
+    {stop.isError && <span role="alert">{t("停止请求未确认，请刷新执行状态后重试。", "The stop request is unconfirmed. Refresh execution status before retrying.")}</span>}
   </>;
 }
 
@@ -50,6 +52,7 @@ type ResumeInput = { threadID: string; runID: string; operationKey: string };
 export function V2PausedThreadControl({ client, threadID, runID }: {
   client: APIClient; threadID: string; runID: string;
 }) {
+  const { t } = useLocale();
   const queryClient = useQueryClient();
   const mutationKey = [...resumeMutationKey, threadID, runID] as const;
   const attempts = useMutationState({
@@ -87,10 +90,10 @@ export function V2PausedThreadControl({ client, threadID, runID }: {
     resume.mutate({ threadID, runID, operationKey: current?.state.status === "error" && original
       ? original.operationKey : `v2-resume-${globalThis.crypto.randomUUID()}` });
   };
-  return <div className="v2-paused-thread" role="status"><span>发送消息即可继续，也可以仅解除暂停。</span>
+  return <div className="v2-paused-thread" role="status"><span>{t("发送消息即可继续，也可以仅解除暂停。", "Send a message to continue, or simply unpause the run.")}</span>
     {client.hasRunLifecycle && <button disabled={pending} onClick={submit}
-      title="恢复运行状态；发送新消息后继续处理要求，失败的操作需另行发起" type="button">
-      {pending ? "正在解除…" : "解除暂停"}</button>}
-    {attempt?.status === "error" && <p role="alert">解除暂停未确认，可重试：{attempt.error?.message}</p>}
+      title={t("恢复运行状态；发送新消息后继续处理要求，失败的操作需另行发起", "Unpause the run; send a message to continue. Failed actions must be requested again")} type="button">
+      {pending ? t("正在解除…", "Unpausing…") : t("解除暂停", "Unpause")}</button>}
+    {attempt?.status === "error" && <p role="alert">{t("解除暂停未确认，可重试：", "Unpause is unconfirmed. You can retry: ")}{attempt.error?.message}</p>}
   </div>;
 }

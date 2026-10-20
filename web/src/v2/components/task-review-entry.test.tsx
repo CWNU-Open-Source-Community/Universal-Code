@@ -1,6 +1,9 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { createRef, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, render as renderComponent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { GitHubReviewWriteReviewResultView, ThreadDetailView } from "../../api/types";
@@ -66,3 +69,9 @@ it("leaves a missing requested Run explicit and does not mount GitHub tools for 
   expect(screen.getByRole("alert")).toHaveTextContent("无法找到目标执行记录 run-missing");
   expect(screen.queryByRole("region", { name: "GitHub review fixture" })).not.toBeInTheDocument();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

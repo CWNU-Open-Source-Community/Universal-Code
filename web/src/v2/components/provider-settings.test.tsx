@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider, useLocale } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import type { APIClient } from "../../api/client";
@@ -1216,4 +1219,35 @@ describe("V2 custom Provider settings", () => {
     await waitFor(() => expect(controls.qualifyModelHarness).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
   });
+});
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}
+
+function SwitchSettingsLocale() {
+  const { setLocale } = useLocale();
+  return <button onClick={() => setLocale("en-US")}>Switch to English</button>;
+}
+
+it("keeps the provider draft when language changes and validates duplicate keys in English", async () => {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const user = userEvent.setup(); const controls = createClient();
+  renderComponent(<LocaleProvider><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <SwitchSettingsLocale /><V2ProviderSettings client={controls.client} />
+  </QueryClientProvider></LocaleProvider>);
+  await user.click(await screen.findByRole("button", { name: "添加供应商" }));
+  await fillRequiredProvider(user);
+  fireEvent.change(screen.getByRole("textbox", { name: "高级 JSON" }), {
+    target: { value: '{"region":"one","region":"two"}' },
+  });
+  await user.click(screen.getByRole("button", { name: "Switch to English" }));
+  expect(screen.getByLabelText("Display name")).toHaveValue("Nova Cloud");
+  expect(screen.getByRole("textbox", { name: "Advanced JSON" })).toHaveValue('{"region":"one","region":"two"}');
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent('Advanced JSON contains the duplicate field "region".');
+  expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
+  expect(controls.changeProviderCredential).not.toHaveBeenCalled();
 });

@@ -1,4 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../lib/locale";
+import { act, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { V2RecoveryProvider } from "./recovery-storage";
 import { useNativeClipboard } from "./use-native-clipboard";
@@ -115,3 +118,9 @@ it("a late observation does not reset another window's already-added receipt mar
   expect(screen.queryByText("加入已保存的附件")).not.toBeInTheDocument();
   expect(screen.getByText("已加入找到的附件，原批次是否完整仍待确认。核对附件列表后，可点击“结束本次粘贴核对”。")).toBeInTheDocument();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

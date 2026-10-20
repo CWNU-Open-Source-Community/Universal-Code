@@ -1,4 +1,7 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import type { APIClient } from "../../api/client";
 import type { WorkspaceImageAttachment } from "../../api/image-attachments";
 import { V2ImagePreview } from "./image-input";
@@ -155,3 +158,9 @@ it.each(["mime", "dimensions"])("rejects mismatched %s while retaining the origi
   expect(fetch).not.toHaveBeenCalled();
   if (mismatch === "dimensions") expect(bitmap.close).toHaveBeenCalledTimes(1);
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

@@ -1,3 +1,4 @@
+import { localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +9,6 @@ import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/type
 import { readThreadReview } from "../../api/task-delivery";
 import { usePublicModelStream } from "../../hooks/use-public-model-stream";
 import { useRunEventStream } from "../../hooks/use-run-event-stream";
-import { threadActivityLabel } from "../../lib/thread-activity-label";
 import { prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
 import { useV2ThreadTranscript } from "../use-thread-transcript";
 import { useV2SavedMessage } from "../use-saved-message";
@@ -29,7 +29,7 @@ import { useV2QueuedMessagesQuery, V2QueuedMessages } from "./queued-messages";
 import { V2AgentBrowser } from "./agent-browser";
 import { v2AttachmentReferenceKey } from "../attachment-keys";
 import { v2ImageReferenceKey } from "./image-input";
-import { APPLICATION_PREVIEW_START_REQUEST, applicationPreviewRequestCopy, applicationPreviewRequestKey, applicationServicesQueryKey,
+import { applicationPreviewStartRequest, applicationPreviewRequestCopy, applicationPreviewRequestKey, applicationServicesQueryKey,
   trackApplicationPreviewSubmission, type ApplicationPreviewRequest } from "../application-preview-request";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import type { V2RunPane } from "../navigation";
@@ -139,7 +139,7 @@ export function V2FileDrawer({
           if (runMatch.workspace_id) return runMatch.workspace_id;
           // A recorded Run with no workspace has an unavailable target;
           // neither the current target nor the source can replace it.
-          throw new Error("此执行的文件目录当前不可用。");
+          throw new Error(t("此执行的文件目录当前不可用。", "The file directory for this run is currently unavailable."));
         }
         if (review.current_run_id === runID && review.target?.state === "available" && review.target.workspace_id) {
           return review.target.workspace_id;
@@ -149,7 +149,7 @@ export function V2FileDrawer({
         );
         if (changeMatch?.workspace_id) return changeMatch.workspace_id;
       }
-      throw new Error("尚未找到此执行的文件目录绑定。");
+      throw new Error(t("尚未找到此执行的文件目录绑定。", "No file directory binding was found for this run."));
     },
     enabled: Boolean(runID || defaultWorkspaceID),
     staleTime: 30_000,
@@ -254,7 +254,7 @@ export function V2TerminalDrawer({
         onSession("");
       }
     } catch (err) {
-      setTerminationError(err instanceof Error ? err.message : "终止终端失败");
+      setTerminationError(err instanceof Error ? err.message : t("终止终端失败", "Could not terminate the terminal"));
     } finally {
       setTerminating(false);
     }
@@ -488,8 +488,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         : await inspectV2TurnRequest(client, input);
       if (result.state === "not_received" || (result.state === "received" && !result.message_id)) {
         setObservations((current) => ({ ...current, [input.operationKey]: result.state === "not_received"
-          ? "服务端暂未找到原提交。请继续核对；确认需要重试时，可主动发送原消息。"
-          : "原提交已登记，但消息尚未入队。可以继续核对，或主动继续提交原消息。" }));
+          ? t("服务端暂未找到原提交。请继续核对；确认需要重试时，可主动发送原消息。", "The original submission was not found on the server. Check again, or explicitly resend the original message if needed.")
+          : t("原提交已登记，但消息尚未入队。可以继续核对，或主动继续提交原消息。", "The submission was recorded, but the message has not been queued. Check again or explicitly resume the original submission.") }));
         return "unresolved";
       }
       const accepted = result.state !== "rejected" &&
@@ -516,7 +516,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       ]);
       return accepted ? "accepted" : "rejected";
     } catch (error) {
-      setObservations((current) => ({ ...current, [input.operationKey]: "暂时无法读取原提交结果，原消息和新草稿均已保留。" }));
+      setObservations((current) => ({ ...current, [input.operationKey]: t("暂时无法读取原提交结果，原消息和新草稿均已保留。", "Could not read the original submission result. The original message and new draft are kept.") }));
       throw new V2SubmissionError(input, error);
     } finally { setChecking((current) => current.filter((key) => key !== input.operationKey)); }
   };
@@ -646,7 +646,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     }
   }, [threadID, streamRunID, streamEnabled, eventStream.status, publicStream.status, refreshTranscript]);
   const transcriptItems = transcriptQuery.items;
-  const preparedNarrative = useMemo(() => prepareThreadNarrative(transcriptItems), [transcriptItems]);
+  const preparedNarrative = useMemo(() => prepareThreadNarrative(transcriptItems, t), [transcriptItems, t]);
   const durableNarrative = preparedNarrative.entries;
   const liveNarrative = useMemo(() => messageID ? durableNarrative : projectLiveThreadNarrative(preparedNarrative, {
     runId: streamRunID, snapshot: liveSnapshot, status: publicStream.status,
@@ -842,7 +842,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <strong>{t("无法打开对话", "Unable to open conversation")}</strong><span>{t("请检查服务连接，然后重试。已有输入会保留。", "Check the service connection and retry. Your input is kept.")}</span>
     <button className="v2-retry-action" onClick={() => void detailQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={15} />{t("重新打开", "Reopen")}</button>
     <details><summary><ChevronDown aria-hidden="true" size={14} />{t("查看原因", "Show reason")}</summary>{detailQuery.error instanceof Error
-      ? detailQuery.error.message : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
+      ? localUIMessage(detailQuery.error.message, t) : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
   const detail = detailQuery.data;
   const currentRun = detail.active_run ?? detail.last_run;
   const workspace = workspaces.find(({ id }) => id === detail.thread.workspace_id);
@@ -854,20 +854,20 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     (executionQuery.data?.state === "running" || executionQuery.data?.state === "stopping"));
   const replyToPinProposal = async (content: string, operationKey: string) => {
     const previous = submissions.find((item) => item.input.operationKey === operationKey)?.input;
-    if (previous && previous.content !== content) throw new Error("原答复身份与当前内容不一致，请重新读取。");
+    if (previous && previous.content !== content) throw new Error(t("原答复身份与当前内容不一致，请重新读取。", "The original reply identity does not match the current content. Reload it."));
     await submitTrackedTurn(previous ?? { threadID, workspaceID: detail.thread.workspace_id ?? "",
       content, operationKey, createdAt: new Date().toISOString() });
   };
   const canSteer = executionQuery.data?.state === "running" ||
     (!executionQuery.data && detail.active_run?.status === "running");
-  const activityLabel = threadActivityLabel({ threadID, execution: executionQuery.data,
-    readable: client.hasThreadExecutionRead === true, error: executionQuery.isError });
+  const confirmedExecution = client.hasThreadExecutionRead === true && !executionQuery.isError &&
+    executionQuery.data?.thread_id === threadID ? executionQuery.data : undefined;
   const fileReferenceUnavailableReason = currentRun.status === "waiting_approval"
       ? t("当前任务正在等待批准，暂时不能新增文件引用。请先处理待批准的操作。", "This task is awaiting approval. Resolve pending approvals before adding file references.")
-      : working || runActive ? modelActive || activityLabel === "正在工作" || activityLabel === "正在停止"
+      : working || runActive ? modelActive || confirmedExecution?.state === "running" || confirmedExecution?.state === "stopping"
         ? t("项目内文件引用需等执行结束后发送；补充文字和上传附件可以排队。", "Send project file references after execution finishes. Text and uploaded attachments can be queued.")
         : turnSubmitting ? t("消息正在提交，暂时不能新增文件引用。已有输入会保留。", "A message is being submitted. Existing input is kept; file references cannot be added yet.")
-          : activityLabel === "停止未完成" ? t("停止尚未完成，暂时不能新增文件引用。请先重试停止。", "Stopping has not finished. Retry stopping before adding file references.")
+          : confirmedExecution?.state === "stop_failed" ? t("停止尚未完成，暂时不能新增文件引用。请先重试停止。", "Stopping has not finished. Retry stopping before adding file references.")
             : t("活动状态尚未确认，暂时不能新增文件引用。已有输入会保留。", "The activity status is not yet confirmed. Existing input is kept; file references cannot be added yet.")
         : undefined;
 
@@ -883,7 +883,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       if (outcome === "unresolved") {
         if (recovery) {
           if (JSON.stringify([input.deliveryMode ?? "next_turn", input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint) { await submitTrackedTurn(input); return; }
-          throw new V2SubmissionError(input, new Error("原提交尚未确认。新草稿已保留，请先核对或继续提交原消息。"));
+          throw new V2SubmissionError(input, new Error(t("原提交尚未确认。新草稿已保留，请先核对或继续提交原消息。", "The original submission is unconfirmed. Your new draft is kept; check or retry the original message first.")));
         }
         replaced = input.operationKey;
       }
@@ -938,7 +938,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     executionError: executionQuery.isError, submitting: turnSubmitting, reconciling,
     snapshot: liveSnapshot, streamStatus: publicStream.status,
     progressError: Boolean(eventStream.error || publicStream.error || transcriptQuery.isError),
-    transcript: transcriptItems });
+    transcript: transcriptItems }, t);
   const appendDraftAndReveal = (content: string) => {
     if (content) onDraftChange?.(draft?.trim() ? `${draft}\n\n${content}` : content);
     if (view === "inspector") setInspectorComposerOpen(true);
@@ -1047,10 +1047,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       startRequest={previewRequest.data} canRequestStart={Boolean(onDraftChange)}
       onClose={() => setPreviewOpen(false)} returnFocusRef={previewTrigger} onRequestStart={() => {
         if (!onDraftChange) return;
-        if (!draft?.includes(APPLICATION_PREVIEW_START_REQUEST)) appendDraftAndReveal(APPLICATION_PREVIEW_START_REQUEST);
+        const previousRequest = previewRequest.data;
+        const request = previousRequest && ["draft", "rejected"].includes(previousRequest.phase)
+          ? previousRequest.request : applicationPreviewStartRequest(t);
+        if (!draft?.includes(request)) appendDraftAndReveal(request);
         else appendDraftAndReveal("");
         queryClient.setQueryData<ApplicationPreviewRequest>(applicationPreviewRequestKey(threadID), {
-          request: APPLICATION_PREVIEW_START_REQUEST, phase: "draft",
+          request, phase: "draft",
         });
       }} />
     </V2LazySurface>}
@@ -1130,7 +1133,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
               : v2TurnFailed(error) ? t("本轮执行未完成，失败记录与已完成的修改会保留。可以直接发送“继续”或补充要求。", "This turn did not finish. The failure history and completed changes are kept. Send “continue” or add instructions.")
               : observations[input.operationKey] ?? t("暂时无法确认这条消息的结果。草稿与引用已保留；发送新要求时会先核对原提交，也可以重试核对。", "The result of this message is not yet confirmed. Your draft and references are kept. Sending new instructions will first check the original submission; you can also retry the check.")}</p>
-            <details><summary>{t("查看原因", "Show reason")}</summary>{error instanceof Error ? error.message : t("请求失败", "Request failed")}</details>
+            <details><summary>{t("查看原因", "Show reason")}</summary>{error instanceof Error ? localUIMessage(error.message, t) : t("请求失败", "Request failed")}</details>
             {!v2TurnOutcomeKnown(error) &&
               <button disabled={turnSubmitting || checking.includes(input.operationKey)} onClick={() => {
                 void confirmSubmission(input).catch(() => undefined);
@@ -1171,7 +1174,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {previewRequest.data && <p className="v2-composer-caption" role={previewRequest.data.phase === "failed" ? "alert" : "status"}>
         {applicationPreviewRequestCopy(previewRequest.data, !previewServices.isError && Boolean(previewRequest.data.runID &&
           previewRequest.data.messageID && previewServices.data?.services.some((service) =>
-            service.run_id === previewRequest.data?.runID && service.source_message_id === previewRequest.data?.messageID)))}
+            service.run_id === previewRequest.data?.runID && service.source_message_id === previewRequest.data?.messageID)), t)}
         <button onClick={() => setPreviewOpen(true)} type="button">{t("查看应用服务", "View app services")}</button>
       </p>}
       {managedDraft && <V2DraftConflict key={threadID} client={client} workspaceID={detail.thread.workspace_id ?? ""}

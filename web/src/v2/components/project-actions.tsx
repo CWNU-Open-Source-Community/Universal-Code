@@ -195,8 +195,8 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
       {result.job.stderr && <><h4>{t("标准错误", "Standard error")}</h4><pre>{result.job.stderr}</pre></>}
       {(result.job.stdout_truncated || result.job.stderr_truncated) && <p>{t("输出较长，此处显示保留的部分。", "Only the retained portion of the output is shown.")}</p>}
       {failed && onFeedback && <button type="button" onClick={() => onFeedback(
-        "请修复这次项目验证失败。\nRun: " + runID + "\nJob: " + result.job.id + "\n动作: " + result.command_id +
-        "\n退出码: " + result.job.exit_code + "\n" + (result.job.stderr || result.job.stdout).slice(-4000))}>
+        t("请修复这次项目验证失败。\nRun: ", "Fix this project verification failure.\nRun: ") + runID + "\nJob: " + result.job.id + t("\n动作: ", "\nAction: ") + result.command_id +
+        t("\n退出码: ", "\nExit code: ") + result.job.exit_code + "\n" + (result.job.stderr || result.job.stdout).slice(-4000))}>
         {t("将失败结果放回对话", "Send failure to conversation")}</button>}
     </section>}
   </section>;

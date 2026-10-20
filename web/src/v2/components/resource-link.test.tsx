@@ -1,4 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../../api/client";
 import type { NarrativeEntry } from "../projection/narrative";
@@ -135,3 +138,9 @@ it("rejects executable URL schemes and preserves absolute local paths for native
   expect(parseProjectFileLink("../outside.txt")).toBeNull();
   expect(parseProjectFileLink("vscode://open-file")).toBeNull();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

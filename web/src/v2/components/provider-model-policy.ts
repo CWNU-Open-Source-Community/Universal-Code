@@ -1,3 +1,5 @@
+import type { LocaleText } from "../../lib/locale";
+
 export const providerModelLimit = 128;
 
 export type ProviderModelPolicy = {
@@ -19,19 +21,19 @@ export function policyShape(value: unknown): value is ProviderModelPolicy {
     ["window_tokens", "default_output_tokens", "max_output_tokens"].every((key) => typeof value[key] === "number");
 }
 
-export function providerModelPolicyError(config: Record<string, unknown>): string | undefined {
+export function providerModelPolicyError(config: Record<string, unknown>, t: LocaleText = (chinese) => chinese): string | undefined {
   const policies = config.model_context_windows;
   if (policies === undefined) return;
   if (!record(policies) || Object.keys(policies).length === 0 || Object.keys(policies).length > providerModelLimit) {
-    return "高级 JSON 中的 model_context_windows 必须包含 1–128 个模型策略；原内容已保留。";
+    return t("高级 JSON 中的 model_context_windows 必须包含 1–128 个模型策略；原内容已保留。", "model_context_windows in advanced JSON must contain 1–128 model policies. Original content is preserved.");
   }
   for (const [model, policy] of Object.entries(policies)) {
-    if (!policyShape(policy)) return `模型“${model}”的输出策略含缺失或未知字段；请在高级 JSON 中修正，原内容已保留。`;
-    if (!Object.values(policy).every(Number.isSafeInteger)) return `模型“${model}”的 token 数必须为整数。`;
-    if (policy.window_tokens < 4096 || policy.window_tokens > 2097152) return `模型“${model}”的上下文窗口须为 4096–2097152 token。`;
-    if (policy.default_output_tokens < 1 || policy.max_output_tokens < policy.default_output_tokens) return `模型“${model}”的默认输出须至少为 1，且不能大于单次输出上限。`;
+    if (!policyShape(policy)) return t(`模型“${model}”的输出策略含缺失或未知字段；请在高级 JSON 中修正，原内容已保留。`, `Output policy for "${model}" has missing or unknown fields. Correct advanced JSON; original content is preserved.`);
+    if (!Object.values(policy).every(Number.isSafeInteger)) return t(`模型“${model}”的 token 数必须为整数。`, `Token counts for "${model}" must be integers.`);
+    if (policy.window_tokens < 4096 || policy.window_tokens > 2097152) return t(`模型“${model}”的上下文窗口须为 4096–2097152 token。`, `The context window for "${model}" must be 4096–2097152 tokens.`);
+    if (policy.default_output_tokens < 1 || policy.max_output_tokens < policy.default_output_tokens) return t(`模型“${model}”的默认输出须至少为 1，且不能大于单次输出上限。`, `Default output for "${model}" must be at least 1 and no greater than the per-request output limit.`);
     if (policy.max_output_tokens > 1000000 || policy.max_output_tokens >= policy.window_tokens - 1024) {
-      return `模型“${model}”的单次输出上限须不超过 1000000，并小于上下文窗口减去 1024 token 的安全余量。`;
+      return t(`模型“${model}”的单次输出上限须不超过 1000000，并小于上下文窗口减去 1024 token 的安全余量。`, `The output limit for "${model}" must be at most 1000000 and below the context window minus a 1024-token safety margin.`);
     }
   }
 }
@@ -47,13 +49,13 @@ export function providerModelGroups(models: string[], config: Record<string, unk
   return [...groups].map(([wireModel, aliases]) => ({ wireModel, aliases }));
 }
 
-export function providerPolicyControlsError(config: Record<string, unknown>): string | undefined {
+export function providerPolicyControlsError(config: Record<string, unknown>, t: LocaleText = (chinese) => chinese): string | undefined {
   if (config.model_mapping !== undefined && (!record(config.model_mapping) ||
     Object.values(config.model_mapping).some((value) => typeof value !== "string" || value.trim() === "" || value.trim() !== value))) {
-    return "先修正高级 JSON 中的 model_mapping，再设置实际模型的输出策略。";
+    return t("先修正高级 JSON 中的 model_mapping，再设置实际模型的输出策略。", "Fix model_mapping in advanced JSON before configuring model output policies.");
   }
   if (config.model_context_windows !== undefined && !record(config.model_context_windows)) {
-    return "先修正高级 JSON 中的 model_context_windows；原内容已保留。";
+    return t("先修正高级 JSON 中的 model_context_windows；原内容已保留。", "Fix model_context_windows in advanced JSON first. Original content is preserved.");
   }
 }
 

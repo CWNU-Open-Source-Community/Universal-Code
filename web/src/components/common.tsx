@@ -1,3 +1,4 @@
+import { localUIMessage } from "../lib/local-ui-message";
 import type { ReactNode } from "react";
 import { ChevronDown, LoaderCircle } from "lucide-react";
 import { useLocale } from "../lib/locale";
@@ -60,7 +61,7 @@ export function LoadingState({ label }: { label?: string }) {
 
 export function ErrorState({ error }: { error: unknown }) {
   const { t } = useLocale();
-  const message = error instanceof Error ? error.message : t("请求失败", "Request failed");
+  const message = error instanceof Error ? localUIMessage(error.message, t) : t("请求失败", "Request failed");
   return <div className="state-message state-error" role="alert">{message}</div>;
 }
 

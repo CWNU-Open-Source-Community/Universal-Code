@@ -1,6 +1,9 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { createRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { ThreadDetailView } from "../../api/types";
@@ -49,7 +52,7 @@ it("reviews each task execution and carries exact edit context into a correction
   await user.selectOptions(screen.getByRole("combobox", { name: "选择审阅的执行记录" }), "run-1");
   await waitFor(() => expect(fileEditQueue).toHaveBeenCalledWith("run-1", expect.any(AbortSignal)));
   await user.click(await screen.findByRole("button", { name: /README.md/ }));
-  await user.click(screen.getByRole("button", { name: "Request changes to this diff" }));
+  await user.click(screen.getByRole("button", { name: "引用此差异请求修改" }));
   expect(onRequestChange).toHaveBeenCalledWith(expect.stringContaining("执行记录：run-1"));
   expect(onRequestChange).toHaveBeenCalledWith(expect.stringContaining("编辑：edit-1"));
   expect(onRequestChange).toHaveBeenCalledWith(expect.stringContaining(edit.proposed_hash));
@@ -195,7 +198,7 @@ it("preserves an unknown report through modal closure and a different execution'
   await waitFor(() => expect(screen.queryByRole("button", { name: "确认上次报告" })).not.toBeInTheDocument());
   expect(queryClient.getQueryData(["run", "run-2", "standard-code-delivery-intent"])).toBeNull();
   expect(screen.getByRole("combobox", { name: "选择审阅的执行记录" })).toHaveValue("run-2");
-  expect(await screen.findByText("The report is stale; the current revision is not verified")).toBeInTheDocument();
+  expect(await screen.findByText("报告已过期，当前版本未验证")).toBeInTheDocument();
 });
 
 it("requires an explicit configured preset and can read an older execution's existing detail", async () => {
@@ -245,17 +248,17 @@ it("offers coding configuration and the exact plan within the current task while
   const client = { ...reportClient(vi.fn()), get, runCapabilityReadiness, configureStandardCode } as unknown as APIClient;
   renderReview(client, new QueryClient({ defaultOptions: { queries: { retry: false } } }), detail);
   await openHistory(user, "检查与交付");
-  expect(await screen.findByText("No plan proposal yet")).toBeInTheDocument();
+  expect(await screen.findByText("尚无计划方案")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "生成当前交付报告" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("group", { name: "Run execution permission" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: /Check and configure Local/ }));
-  await screen.findByText("Confirm Workspace source");
+  expect(screen.queryByRole("group", { name: "执行权限" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /检查并配置 Local/ }));
+  await screen.findByText("确认工作区来源");
   expect(configureStandardCode).toHaveBeenCalledWith("run-2", "configure", {
     version: "standard_code_preset.v1", backend_intent: "local", confirm_workspace_trust: false }, expect.any(String));
   expect(screen.getByRole("combobox", { name: "选择审阅的执行记录" })).toHaveValue("run-2");
   await user.selectOptions(screen.getByRole("combobox", { name: "选择审阅的执行记录" }), "run-1");
   expect(await screen.findByText(/当前未结束的 Code 执行；历史执行仍可审阅/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Check and configure Local/ })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /检查并配置 Local/ })).toBeDisabled();
 });
 
 it("shares a nonauthorizing backend draft between actual task settings and review entrances", async () => {
@@ -277,16 +280,22 @@ it("shares a nonauthorizing backend draft between actual task settings and revie
   const settings = () => <QueryClientProvider client={queries}><V2ExecutionSettings client={client}
     threadID="thread-1" workspaces={[]} /></QueryClientProvider>;
   const view = render(settings());
-  const settingsPicker = await screen.findByRole("group", { name: "Coding backend" });
+  const settingsPicker = await screen.findByRole("group", { name: "编码环境后端" });
   await user.click(within(settingsPicker).getByRole("button", { name: /^Docker Engine/u }));
   view.unmount();
   const review = renderReview(client, queries, detail);
   await openHistory(user, "检查与交付");
-  const picker = await screen.findByRole("group", { name: "Coding backend" });
+  const picker = await screen.findByRole("group", { name: "编码环境后端" });
   expect(within(picker).getByRole("button", { name: /^Docker Engine/u })).toHaveAttribute("aria-pressed", "true");
   await user.click(within(picker).getByRole("button", { name: /^Docker Sandboxes/u }));
   review.unmount(); render(settings());
-  const reopenedPicker = await screen.findByRole("group", { name: "Coding backend" });
+  const reopenedPicker = await screen.findByRole("group", { name: "编码环境后端" });
   expect(within(reopenedPicker).getByRole("button", { name: /^Docker Sandboxes/u })).toHaveAttribute("aria-pressed", "true");
   expect(configureStandardCode).not.toHaveBeenCalled(); expect(postControl).not.toHaveBeenCalled();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

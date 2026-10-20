@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export type PrayuLocale = "zh-CN" | "en-US";
+export type LocaleText = (chinese: string, english: string) => string;
 
 const localeStorageKey = "prayu.locale.v1";
 

@@ -1,3 +1,4 @@
+import type { LocaleText } from "../../lib/locale";
 import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../api/types";
 import type { PublicModelStreamStatus } from "../../hooks/use-public-model-stream";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../../api/image-attachments";
@@ -7,14 +8,16 @@ import type { ThreadPeerMessage } from "../../api/thread-peer-messages";
 export type NarrativeToolKind = "search" | "read" | "edit" | "execute" | "verify" | "plan";
 export type NarrativeFileChange = "proposed" | "approved" | "applied" | "denied" | "failed" | "unknown";
 
-export const fileChangeLabels: Record<NarrativeFileChange, string> = {
-  proposed: "已提出修改，等待审阅",
-  approved: "修改已批准，尚未应用",
-  applied: "修改已应用",
-  denied: "修改已拒绝",
-  failed: "文件修改失败",
-  unknown: "文件修改记录",
-};
+function localizedFileChangeLabels(t: LocaleText): Record<NarrativeFileChange, string> { return {
+  proposed: t("已提出修改，等待审阅", "Changes proposed; awaiting review"),
+  approved: t("修改已批准，尚未应用", "Changes approved; not yet applied"),
+  applied: t("修改已应用", "Changes applied"),
+  denied: t("修改已拒绝", "Changes rejected"),
+  failed: t("文件修改失败", "File change failed"),
+  unknown: t("文件修改记录", "File change record"),
+}; }
+
+export const fileChangeLabels = localizedFileChangeLabels((chinese) => chinese);
 
 export type ThreadTranscriptActivityItem = ThreadTranscriptItemView & {
   activity_detail_ref?: string;
@@ -119,10 +122,10 @@ function compareTranscriptItems(left: ThreadTranscriptItemView, right: ThreadTra
 }
 
 /** Index durable identities once, independently of the model's changing output. */
-export function prepareThreadNarrative(transcript: ThreadTranscriptActivityItem[]) {
+export function prepareThreadNarrative(transcript: ThreadTranscriptActivityItem[], t: LocaleText = (chinese) => chinese) {
   return {
-    transcript,
-    entries: projectThreadNarrative(transcript),
+    transcript, t,
+    entries: projectThreadNarrative(transcript, undefined, t),
     context: liveTranscriptContext(transcript),
     latest: transcript.reduce<ThreadTranscriptItemView | undefined>((latest, item) =>
       !latest || compareTranscriptItems(latest, item) < 0 ? item : latest, undefined),
@@ -131,15 +134,16 @@ export function prepareThreadNarrative(transcript: ThreadTranscriptActivityItem[
 
 export function projectLiveThreadNarrative(prepared: ReturnType<typeof prepareThreadNarrative>,
   live: LiveNarrativeProjection): NarrativeEntry[] {
+  const t = prepared.t;
   if (!live.snapshot || live.snapshot.call.run_id !== live.runId) return prepared.entries;
-  const provisional = projectLiveTranscriptItems(prepared.context, live.snapshot, live.status);
+  const provisional = projectLiveTranscriptItems(prepared.context, live.snapshot, live.status, t);
   if (!provisional.length) return prepared.entries;
   // Replayed output can precede newer durable facts. Keep the original ordering
   // semantics for that uncommon case; ordinary live updates only project a tail.
   if (prepared.latest && provisional.some((item) => compareTranscriptItems(item, prepared.latest!) < 0)) {
-    return projectThreadNarrative(prepared.transcript, live);
+    return projectThreadNarrative(prepared.transcript, live, t);
   }
-  const tail = projectThreadNarrative(provisional);
+  const tail = projectThreadNarrative(provisional, undefined, t);
   if (!tail.length) return prepared.entries;
   const previous = prepared.entries.at(-1);
   const first = tail[0];
@@ -201,6 +205,7 @@ function noticeTone(item: ThreadTranscriptItemView): "neutral" | "warning" | "su
 export function projectThreadNarrative(
   transcript: ThreadTranscriptActivityItem[],
   live?: LiveNarrativeProjection,
+  t: LocaleText = (chinese) => chinese,
 ): NarrativeEntry[] {
   const result: NarrativeEntry[] = [];
   const noticeEvents = new Set<string>();
@@ -212,7 +217,7 @@ export function projectThreadNarrative(
     stageRank: number;
   }>();
   const provisional = live?.snapshot && live.snapshot.call.run_id === live.runId
-    ? projectLiveTranscriptItems(liveTranscriptContext(transcript), live.snapshot, live.status) : [];
+    ? projectLiveTranscriptItems(liveTranscriptContext(transcript), live.snapshot, live.status, t) : [];
   const ordered = [...transcript, ...provisional].sort(compareTranscriptItems);
 
   for (const item of ordered) {
@@ -225,15 +230,15 @@ export function projectThreadNarrative(
       (item.source === "harness" || item.source === "model");
     const activity = planTool ? "plan" : item.activity_type as NarrativeToolKind;
     if (toolActivities.has(activity)) {
-      const evidence = safeWebEvidenceNarrative(item);
+      const evidence = safeWebEvidenceNarrative(item, t);
       const fileChange = item.kind === "file_change" ? fileChangeState(item.status) : undefined;
       const leaf = {
         title: (planTool && item.stage === "result" && !item.durable_call_id && !item.stream_item_id &&
           !item.stream_call_id && (!item.canonical_id || item.canonical_id === item.id)
-          ? "规划结果记录" : undefined) ??
-          (fileChange ? fileChangeLabels[fileChange] : undefined) ??
+          ? t("规划结果记录", "Plan result") : undefined) ??
+          (fileChange ? localizedFileChangeLabels(t)[fileChange] : undefined) ??
           evidence?.title ?? item.activity_summary?.command ??
-          safeToolActivityTitle(item.tool_name ?? "", item.title),
+          safeToolActivityTitle(item.tool_name ?? "", item.title, t),
         detail: evidence?.detail ?? item.detail?.trim() ?? "",
         status: evidence?.status ?? item.status?.trim() ?? item.stage?.trim() ?? "",
         provisional: item.provisional,
@@ -372,7 +377,7 @@ function fileChangeState(status: string | undefined): NarrativeFileChange {
   }
 }
 
-function safeWebEvidenceNarrative(item: ThreadTranscriptItemView): {
+function safeWebEvidenceNarrative(item: ThreadTranscriptItemView, t: LocaleText): {
   title: string;
   detail: string;
   status: string;
@@ -381,22 +386,22 @@ function safeWebEvidenceNarrative(item: ThreadTranscriptItemView): {
   if (item.status === "robots_ignored") return {
     title: item.title === "Full Access 已忽略站点 Robots 限制" ||
       item.title === "Robots 无法验证，已按 Full Access 继续"
-      ? item.title : "网页已抓取（未检查 Robots）",
+      ? (item.title === "Full Access 已忽略站点 Robots 限制" ? t("Full Access 已忽略站点 Robots 限制", "Full Access bypassed the site’s Robots restrictions") : t("Robots 无法验证，已按 Full Access 继续", "Robots could not be verified; continued with Full Access")) : t("网页已抓取（未检查 Robots）", "Page fetched (Robots not checked)"),
     detail: item.title === "Full Access 已忽略站点 Robots 限制"
-      ? "站点禁止抓取；Full Access 仍继续创建了快照"
+      ? t("站点禁止抓取；Full Access 仍继续创建了快照", "The site disallows crawling; Full Access continued and created a snapshot")
       : item.title === "Robots 无法验证，已按 Full Access 继续"
-        ? "未能验证站点 Robots 规则；Full Access 仍继续创建了快照"
-        : "抓取结果可用，但未验证站点的 Robots 规则",
+        ? t("未能验证站点 Robots 规则；Full Access 仍继续创建了快照", "Could not verify the site's Robots rules; Full Access continued and created a snapshot")
+        : t("抓取结果可用，但未验证站点的 Robots 规则", "The fetched content is available, but the site's Robots rules were not verified"),
     status: "robots_ignored",
   };
   switch (item.web_evidence.state) {
-  case "fetched": return { title: "网页已抓取", detail: "已创建可引用的网页快照", status: "fetched" };
-  case "partial": return { title: "网页已部分抓取", detail: "快照内容不完整，请谨慎引用", status: "partial" };
-  case "stale": return { title: "网页快照已过期", detail: "现有快照可能不再反映当前页面", status: "stale" };
+  case "fetched": return { title: t("网页已抓取", "Page fetched"), detail: t("已创建可引用的网页快照", "Created a citable page snapshot"), status: "fetched" };
+  case "partial": return { title: t("网页已部分抓取", "Page partially fetched"), detail: t("快照内容不完整，请谨慎引用", "The snapshot is incomplete; cite it with care"), status: "partial" };
+  case "stale": return { title: t("网页快照已过期", "Page snapshot expired"), detail: t("现有快照可能不再反映当前页面", "The snapshot may no longer reflect the current page"), status: "stale" };
   case "blocked": return item.title === "Robots 规则阻止抓取"
-    ? { title: "Robots 规则阻止抓取", detail: "站点的 Robots 规则不允许本次抓取", status: "blocked" }
-    : { title: "网页抓取被阻止", detail: "未获得可验证的网页内容", status: "blocked" };
-  case "failed": return { title: "网页验证不可用", detail: "未能创建可验证的网页快照", status: "verification_unavailable" };
+    ? { title: t("Robots 规则阻止抓取", "Robots rules blocked fetching"), detail: t("站点的 Robots 规则不允许本次抓取", "The site's Robots rules disallow this fetch"), status: "blocked" }
+    : { title: t("网页抓取被阻止", "Page fetch blocked"), detail: t("未获得可验证的网页内容", "No verifiable page content was obtained"), status: "blocked" };
+  case "failed": return { title: t("网页验证不可用", "Page verification unavailable"), detail: t("未能创建可验证的网页快照", "Could not create a verifiable page snapshot"), status: "verification_unavailable" };
   default: return undefined;
   }
 }
@@ -412,7 +417,7 @@ function toolLifecycleStageRank(stage: ThreadTranscriptItemView["stage"]): numbe
 
 function projectLiveTranscriptItems(context: LiveTranscriptContext,
   snapshot: PublicModelStreamSnapshot,
-  liveStatus: PublicModelStreamStatus): ThreadTranscriptItemView[] {
+  liveStatus: PublicModelStreamStatus, t: LocaleText): ThreadTranscriptItemView[] {
   const knownIdentities = context.identities;
   const runOrdinal = context.runOrdinals.get(snapshot.call.run_id) ?? context.nextRunOrdinal;
   const expectedRound = snapshot.call.tool_round + 1;
@@ -439,7 +444,7 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
       stage: liveStatus === "finalizing" || snapshot.message_complete ? "result" : "running",
       kind: "model_update",
       source: "model",
-      title: snapshot.content_kind === "tool_commentary" ? "工作进展" : "Universal-Code",
+      title: snapshot.content_kind === "tool_commentary" ? t("工作进展", "Work progress") : "Universal-Code",
       detail: text,
       status: liveStatus === "finalizing" || snapshot.message_complete ? "completed" : "running",
       verifiable: false,
@@ -469,8 +474,8 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
       stage: liveToolStage(item.status),
       kind: "tool_call",
       source: "model",
-      title: safeToolActivityTitle(item.tool_name ?? "", "工具执行"),
-      detail: liveToolDetail(item.status, item.argument_bytes ?? 0),
+      title: safeToolActivityTitle(item.tool_name ?? "", t("工具执行", "Tool execution"), t),
+      detail: liveToolDetail(item.status, item.argument_bytes ?? 0, t),
       status: item.status,
       verifiable: false,
       instruction_authorized: false,
@@ -538,22 +543,22 @@ function classifyLiveTool(name: string): Exclude<NarrativeToolKind, "plan"> {
   }
 }
 
-function safeToolActivityTitle(toolName: string, fallback: string): string {
+function safeToolActivityTitle(toolName: string, fallback: string, t: LocaleText): string {
   switch (toolName.toLowerCase()) {
-  case "history_search": return "搜索对话历史";
-  case "history_read": return "读取历史原文";
-  case "plan_delivery_propose": return "生成交付计划";
-  case "read_file": case "workspace_read": return "读取文件";
+  case "history_search": return t("搜索对话历史", "Search conversation history");
+  case "history_read": return t("读取历史原文", "Read original history");
+  case "plan_delivery_propose": return t("生成交付计划", "Generate delivery plan");
+  case "read_file": case "workspace_read": return t("读取文件", "Read file");
   case "workspace_search": case "workspace_grep": case "workspace_glob": case "code_search":
-  case "find_files": return "搜索工作区";
-  case "workspace_apply": return "文件应用请求";
+  case "find_files": return t("搜索工作区", "Search workspace");
+  case "workspace_apply": return t("文件应用请求", "File apply request");
   case "workspace_change": case "replace_file": case "file_edit":
-  case "apply_patch": return "文件修改请求";
-  case "run_tests": case "code_diagnostics": return "验证";
-  case "web_search": return "联网搜索";
-  case "source_search": return "搜索专业来源";
-  case "web_fetch": return "抓取网页";
-  case "command_runtime": return "运行命令";
+  case "apply_patch": return t("文件修改请求", "File change request");
+  case "run_tests": case "code_diagnostics": return t("验证", "Verify");
+  case "web_search": return t("联网搜索", "Web search");
+  case "source_search": return t("搜索专业来源", "Search specialist sources");
+  case "web_fetch": return t("抓取网页", "Fetch page");
+  case "command_runtime": return t("运行命令", "Run command");
   }
   return toolName || fallback;
 }
@@ -564,10 +569,10 @@ function liveToolStage(status: string): ThreadTranscriptItemView["stage"] {
   return "started";
 }
 
-function liveToolDetail(status: string, argumentBytes: number): string {
-  const state = status === "ready_for_validation" ? "参数已就绪，等待 Go 验证" :
-    status === "completed" ? "准备完成，正在提交 Go 验证" :
-      status === "failed" ? "工具请求准备失败" : status === "cancelled" ?
-        "工具请求已取消" : "正在准备工具请求";
-  return argumentBytes > 0 ? `${state} · ${argumentBytes} 字节` : state;
+function liveToolDetail(status: string, argumentBytes: number, t: LocaleText): string {
+  const state = status === "ready_for_validation" ? t("参数已就绪，等待 Go 验证", "Arguments ready; awaiting Go validation") :
+    status === "completed" ? t("准备完成，正在提交 Go 验证", "Preparation finished; submitting for Go validation") :
+      status === "failed" ? t("工具请求准备失败", "Tool request preparation failed") : status === "cancelled" ?
+        t("工具请求已取消", "Tool request cancelled") : t("正在准备工具请求", "Preparing tool request");
+  return argumentBytes > 0 ? t(`${state} · ${argumentBytes} 字节`, `${state} · ${argumentBytes} bytes`) : state;
 }

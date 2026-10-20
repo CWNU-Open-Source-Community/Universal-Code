@@ -1,3 +1,4 @@
+import { useLocale } from "../../lib/locale";
 import { useEffect, useMemo, useReducer, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Download, ImagePlus, LoaderCircle, X } from "lucide-react";
@@ -26,6 +27,7 @@ export function useV2ImageReferences(workspaceID: string, threadID: string) {
 function ImagePreview({ client, image, onRemove, locked }: {
   client: APIClient; image: WorkspaceImageAttachment; onRemove?: () => void; locked?: boolean;
 }) {
+  const { t } = useLocale();
   const [original, setOriginal] = useState<{ url: string; blob: Blob } | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -41,15 +43,15 @@ function ImagePreview({ client, image, onRemove, locked }: {
     void client.downloadWorkspaceImage(image, abort.signal).then((blob) => {
       if (abort.signal.aborted) return;
       objectURL = URL.createObjectURL(blob); setOriginal({ url: objectURL, blob });
-    }).catch((failure) => { if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : "图片暂时无法读取"); });
+    }).catch((failure) => { if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : t("图片暂时无法读取", "Image temporarily unavailable")); });
     return () => { abort.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [client, image.id, image.sha256, image.workspace_id, retry]);
-  const name = image.name || "截图";
+  const name = image.name || t("截图", "Screenshot");
   const url = original?.url;
   const menuItems = original ? [
-    { label: "打开图片", action: () => setOpen(true) },
-    { label: "复制图片", icon: <Copy />, action: () => copyImageToClipboard(original.blob, image) },
-    { label: "图片另存为…", icon: <Download />, action: () => {
+    { label: t("打开图片", "Open image"), action: () => setOpen(true) },
+    { label: t("复制图片", "Copy image"), successMessage: t("已复制图片", "Image copied"), icon: <Copy />, action: () => copyImageToClipboard(original.blob, image, t) },
+    { label: t("图片另存为…", "Save image as…"), icon: <Download />, action: () => {
       const a = document.createElement("a"); a.href = original.url; a.download = name; document.body.append(a); a.click(); a.remove();
     } },
   ] : [];
@@ -57,20 +59,20 @@ function ImagePreview({ client, image, onRemove, locked }: {
     event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, trigger: trigger.current! });
   } : undefined}>
     <button className="v2-image-thumb" type="button" disabled={!url} ref={trigger} onClick={() => setOpen(true)}
-      aria-label={`预览图片 ${name}`} title={`${name} · ${image.width} × ${image.height}`} onKeyDown={(event) => {
+      aria-label={t(`预览图片 ${name}`, `Preview image ${name}`)} title={`${name} · ${image.width} × ${image.height}`} onKeyDown={(event) => {
         if (original && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) {
           event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom, trigger: event.currentTarget });
         }
       }}>
-      {url ? <img src={url} alt={name} /> : error ? <span>读取失败</span> : <LoaderCircle className="spin" size={18} />}
+      {url ? <img src={url} alt={name} /> : error ? <span>{t("读取失败", "Could not load")}</span> : <LoaderCircle className="spin" size={18} />}
     </button>
     <span className="v2-image-caption" title={name}>{name}</span>
-    {onRemove && <button className="v2-image-remove" type="button" aria-label={`移除图片 ${name}`} disabled={locked}
+    {onRemove && <button className="v2-image-remove" type="button" aria-label={t(`移除图片 ${name}`, `Remove image ${name}`)} disabled={locked}
       onClick={onRemove}><X size={14} aria-hidden="true" /></button>}
-    {locked && <small>随原消息提交</small>}
+    {locked && <small>{t("随原消息提交", "Submitting with original message")}</small>}
     {notice && <small role="status">{notice}</small>}
     {menu && <ResourceMenu position={menu} items={menuItems} onClose={() => setMenu(null)} onResult={(message, failed) => { if (failed) setError(message); else setNotice(message); }} />}
-    {error && <button className="v2-image-retry" title={error} type="button" onClick={() => setRetry((value) => value + 1)}>重新读取图片</button>}
+    {error && <button className="v2-image-retry" title={error} type="button" onClick={() => setRetry((value) => value + 1)}>{t("重新读取图片", "Reload image")}</button>}
     {open && original && <V2ImageViewer image={image} url={original.url} blob={original.blob} onClose={close} returnFocusRef={trigger} />}
   </div>;
 }
@@ -78,8 +80,9 @@ function ImagePreview({ client, image, onRemove, locked }: {
 export function V2ImagePreview({ client, images, onRemove, pendingIDs = [] }: {
   client: APIClient; images: WorkspaceImageAttachment[]; onRemove?: (id: string) => void; pendingIDs?: string[];
 }) {
+  const { t } = useLocale();
   if (!images.length) return null;
-  return <div className="v2-image-list" aria-label={onRemove ? "待发送的图片" : "消息图片"}>
+  return <div className="v2-image-list" aria-label={onRemove ? t("待发送的图片", "Images to send") : t("消息图片", "Message images")}>
     {images.map((image) => <ImagePreview key={`${image.workspace_id}:${image.id}:${image.sha256}`} client={client} image={image}
       locked={pendingIDs.includes(image.id)} onRemove={onRemove ? () => onRemove(image.id) : undefined} />)}
   </div>;
@@ -88,6 +91,7 @@ export function V2ImagePreview({ client, images, onRemove, pendingIDs = [] }: {
 export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
   client: APIClient; workspaceID: string; threadID: string; disabled: boolean;
 }) {
+  const { t } = useLocale();
   const references = useV2ImageReferences(workspaceID, threadID);
   const status = useMemo(() => ({ busy: false, error: "" }), [workspaceID, threadID]);
   const [, refresh] = useReducer((count: number) => count + 1, 0);
@@ -98,9 +102,9 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
   const picker = useRef<HTMLInputElement>(null);
   const add = async (files: File[], batchCapture?: DraftCapture) => {
     if (disabled || !workspaceID || !files.length || status.busy) return;
-    if (files.length + references.images.length > maximumImages) { setError("每条消息最多添加 4 张图片。"); return; }
+    if (files.length + references.images.length > maximumImages) { setError(t("每条消息最多添加 4 张图片。", "Each message supports up to 4 images.")); return; }
     if (files.some((file) => !acceptedImageTypes.includes(file.type) || !file.size || file.size > maximumImageBytes)) {
-      setError("请选择 PNG、JPEG 或 WebP，每张不超过 5 MiB。"); return;
+      setError(t("请选择 PNG、JPEG 或 WebP，每张不超过 5 MiB。", "Choose PNG, JPEG or WebP images, up to 5 MiB each.")); return;
     }
     setUploading(true); setError("");
     try {
@@ -111,7 +115,7 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
           (current) => ({ ...current, images: current.images.some(({ id }) => id === image.id) ? current.images : [...current.images, image] }));
         else references.update((current) => current.some(({ id }) => id === image.id) ? current : [...current, image]);
       }
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "图片上传失败，请重新选择。"); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : t("图片上传失败，请重新选择。", "Image upload failed. Select it again.")); }
     finally { setUploading(false); }
   };
   const onPaste = (event: ClipboardEvent<HTMLFormElement>) => {
@@ -123,10 +127,10 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
     event.preventDefault(); void add([...event.dataTransfer.files]);
   };
   const button = <>
-    <button type="button" className="v2-composer-icon" aria-label="添加图片" title="粘贴、拖入或选择图片"
+    <button type="button" className="v2-composer-icon" aria-label={t("添加图片", "Add image")} title={t("粘贴、拖入或选择图片", "Paste, drop or choose images")}
       disabled={disabled || !workspaceID || uploading || references.images.length >= maximumImages}
       onClick={() => picker.current?.click()}>{uploading ? <LoaderCircle className="spin" size={17} /> : <ImagePlus size={17} />}</button>
-    <input ref={picker} type="file" accept={acceptedImageTypes.join(",")} multiple hidden aria-label="选择图片文件"
+    <input ref={picker} type="file" accept={acceptedImageTypes.join(",")} multiple hidden aria-label={t("选择图片文件", "Choose image files")}
       onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void add(files); }} />
   </>;
   return { ...references, add, uploading, error, button, onPaste, onDrop,

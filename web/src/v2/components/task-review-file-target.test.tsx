@@ -1,6 +1,9 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { createRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { FileEditPreviewView, ThreadDetailView } from "../../api/types";
@@ -61,7 +64,7 @@ it.each(["run-current", "run-history"])("opens the initial exact %s target with 
   render(provider(<Harness />));
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "查看此提案" }));
-  expect(await screen.findByRole("complementary", { name: `Review ${runID}.txt` })).toBeInTheDocument();
+  expect(await screen.findByRole("complementary", { name: `审阅 ${runID}.txt` })).toBeInTheDocument();
   expect(screen.getByRole("combobox", { name: "选择审阅的执行记录" })).toHaveValue(runID);
   expect(api.fileEdit).toHaveBeenCalledWith(runID, `${runID}-edit`, expect.any(AbortSignal));
   expect(api.fileEditQueue.mock.calls.every(([id]) => id === runID)).toBe(true);
@@ -81,11 +84,11 @@ it("takes each default overview proposal straight to its own run and edit withou
   const actions = screen.getAllByRole("button", { name: "查看并审阅" });
   expect(within(actions[0].closest("article")!).getByText("run-current.txt")).toBeInTheDocument();
   await user.click(actions[0]);
-  expect(await screen.findByRole("complementary", { name: "Review run-current.txt" })).toBeInTheDocument();
+  expect(await screen.findByRole("complementary", { name: "审阅 run-current.txt" })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "返回任务改动" }));
   const historical = (await screen.findByText("run-history.txt")).closest("article")!;
   await user.click(within(historical).getByRole("button", { name: "查看并审阅" }));
-  expect(await screen.findByRole("complementary", { name: "Review run-history.txt" })).toBeInTheDocument();
+  expect(await screen.findByRole("complementary", { name: "审阅 run-history.txt" })).toBeInTheDocument();
   expect(screen.getByRole("combobox", { name: "选择审阅的执行记录" })).toHaveValue("run-history");
   expect(api.fileEdit.mock.calls.map(([runID]) => runID)).toEqual(["run-current", "run-history"]);
   expect(api.reviewFileEdit).not.toHaveBeenCalled(); expect(api.applyFileEdit).not.toHaveBeenCalled();
@@ -123,7 +126,7 @@ it("does not replace an opened historical target after its run disappears from r
       initialFileTarget={target} onClose={vi.fn()} onRequestChange={vi.fn()} returnFocusRef={createRef()} />
   </QueryClientProvider>;
   const view = render(component(detail()));
-  await screen.findByRole("complementary", { name: "Review run-history.txt" });
+  await screen.findByRole("complementary", { name: "审阅 run-history.txt" });
   const refreshed = detail(); refreshed.runs = refreshed.runs.filter(({ run }) => run.id !== "run-history");
   view.rerender(component(refreshed));
   expect(screen.getByText(/无法找到目标执行记录 run-history/)).toBeInTheDocument();
@@ -132,3 +135,9 @@ it("does not replace an opened historical target after its run disappears from r
   expect(api.fileEdit.mock.calls.map(([runID]) => runID)).toEqual(["run-history"]);
   expect(api.reviewFileEdit).not.toHaveBeenCalled(); expect(api.applyFileEdit).not.toHaveBeenCalled();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

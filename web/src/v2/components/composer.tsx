@@ -1,3 +1,4 @@
+import { localUIMessage } from "../../lib/local-ui-message";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
@@ -80,14 +81,14 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     return (incomingImages: WorkspaceImageAttachment[], incomingFiles: WorkspaceFileAttachment[]) => {
       const merge = <T extends { id: string }>(current: T[], incoming: T[], maximum: number) => {
         const next = [...current, ...incoming.filter((item) => !current.some(({ id }) => id === item.id))];
-        if (next.length > maximum) throw new Error("附件数量超过上限：每条消息最多 4 张图片和 4 个文件。已保存的附件会保留，请先移除多余附件再加入。");
+        if (next.length > maximum) throw new Error(t("附件数量超过上限：每条消息最多 4 张图片和 4 个文件。已保存的附件会保留，请先移除多余附件再加入。", "Each message supports up to 4 images and 4 files. Saved attachments are kept; remove extras before adding more."));
         return next;
       };
       if (captured && managedDraft) {
         const next = managedDraft.document.updateCaptured(captured, (current) => ({ ...current,
           images: merge(current.images, incomingImages, maximumImages),
           attachments: merge(current.attachments ?? [], incomingFiles, maximumFileAttachments) }));
-        if (next.error || !next.persisted) throw new Error(next.error || "附件尚未可靠保存到草稿。");
+        if (next.error || !next.persisted) throw new Error(next.error || t("附件尚未可靠保存到草稿。", "Attachments have not been saved reliably to the draft."));
       } else {
         const nextImages = merge(images.images, incomingImages, maximumImages);
         const nextFiles = merge(attachments.attachments, incomingFiles, maximumFileAttachments);
@@ -106,12 +107,12 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const addFiles = async (input: File[]) => {
     if (attachmentsDisabled || !client.hasThreadControl || !input.length) return;
     if (!workspaceID) {
-      importStatus.error = "先选择项目，再粘贴或拖入附件；本次文件尚未加入。";
+      importStatus.error = t("先选择项目，再粘贴或拖入附件；本次文件尚未加入。", "Choose a project before pasting or dropping attachments. These files have not been added.");
       refreshImport((value) => value + 1); return;
     }
     if (importStatus.busy || images.uploading || attachments.uploading || nativeClipboard.busy ||
       queryClient.getQueryData<{ pending: () => boolean }>(v2AttachmentImportKey(workspaceID, threadID))?.pending()) {
-      importStatus.error = "上一批附件仍在保存，本次文件未加入；请完成后再次粘贴或拖入。";
+      importStatus.error = t("上一批附件仍在保存，本次文件未加入；请完成后再次粘贴或拖入。", "The previous attachments are still saving. These files have not been added; paste or drop them again when saving finishes.");
       refreshImport((value) => value + 1); return;
     }
     importStatus.busy = true; importStatus.error = ""; refreshImport((value) => value + 1);
@@ -124,7 +125,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       const selected = await Promise.all(input.map(normalizeClipboardFile));
       await images.add(selected.filter((file) => acceptedImageTypes.includes(file.type)), captured);
       await attachments.add(selected.filter((file) => !acceptedImageTypes.includes(file.type)), captured);
-    } catch (failure) { importStatus.error = failure instanceof Error ? failure.message : "附件未加入"; }
+    } catch (failure) { importStatus.error = failure instanceof Error ? failure.message : t("附件未加入", "Attachments were not added"); }
     finally { importStatus.busy = false; refreshImport((value) => value + 1); }
   };
   const imageCapability = useV2ImageCapability(client, threadID, pendingModelRoute, images.images.length > 0, runActive);
@@ -272,9 +273,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       if (currentScope.current === scope) setError({ reason,
         message: reason instanceof APIRequestError && reason.turnFailed === true
           ? reason.code === "CANCELLED"
-            ? "本轮已停止，输入和已完成的工作已保留。可发送新消息继续。"
-            : "本轮执行失败，输入和已完成的工作已保留。可发送新消息继续。"
-          : reason instanceof Error ? reason.message : "消息发送失败",
+            ? t("本轮已停止，输入和已完成的工作已保留。可发送新消息继续。", "This turn stopped. Your input and completed work are kept. Send a new message to continue.")
+            : t("本轮执行失败，输入和已完成的工作已保留。可发送新消息继续。", "This turn failed. Your input and completed work are kept. Send a new message to continue.")
+          : reason instanceof Error ? reason.message : t("消息发送失败", "Message could not be sent"),
         inputFingerprint: JSON.stringify([normalized, submittedFiles, imageIdentities(submittedImages), fileAttachmentIdentities(submittedAttachments), mcpReferenceIdentities(submittedMCP)]), operationKey });
     } finally {
       pendingContents.current.delete(fingerprint);
@@ -450,6 +451,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     {(attachments.error || importStatus.error) && <p className="v2-composer-error" role="alert">{attachments.error || importStatus.error}</p>}
     {error && !presentedSubmissionErrors.some((input) => input.threadID === threadID &&
       input.workspaceID === workspaceID && input.operationKey === error.operationKey) &&
-      <p className="v2-composer-error" role="alert">{error.message}</p>}
+      <p className="v2-composer-error" role="alert">{localUIMessage(error.message, t)}</p>}
   </form>;
 }

@@ -1,4 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { fireEvent, render as renderComponent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
 import type { ThreadActivityToolDetailView } from "../../api/types";
@@ -36,3 +39,9 @@ it("renders saved content in the actual activity panel without fetching resource
   fireEvent.error(audio);
   expect(screen.getByText("已保存的音频无法播放。")).toBeInTheDocument();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+ localStorage.setItem("prayu.locale.v1", "zh-CN");
+ const Wrapper=options?.wrapper;
+ return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

@@ -1,3 +1,4 @@
+import { useLocale , type LocaleText } from "../../lib/locale";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -31,7 +32,7 @@ interface Choice {
   server: ExtensionMCPServerView;
   fields: { name: string; description?: string; required: boolean }[];
 }
-const choiceLabels: Record<Choice["kind"], string> = { resource: "资源", template: "资源模板", prompt: "Prompt" };
+const choiceLabels = (t: LocaleText): Record<Choice["kind"], string> => ({ resource: t("资源", "Resource"), template: t("资源模板", "Resource template"), prompt: "Prompt" });
 
 export function V2MCPReferencePicker({ client, workspaceID, runID, kind, onClose, onSelect, returnFocusRef }: {
   client: APIClient;
@@ -42,6 +43,7 @@ export function V2MCPReferencePicker({ client, workspaceID, runID, kind, onClose
   onSelect: (reference: MCPDraftReference) => void;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
+  const { t } = useLocale();
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState<Choice | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -81,34 +83,34 @@ export function V2MCPReferencePicker({ client, workspaceID, runID, kind, onClose
   };
   return createPortal(<div className="v2-inspector-backdrop" role="presentation"
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section aria-label={kind === "resource" ? "选择 MCP 资源" : "选择 MCP Prompt"} aria-modal="true"
+    <section aria-label={kind === "resource" ? t("选择 MCP 资源", "Choose MCP resource") : t("选择 MCP Prompt", "Choose MCP prompt")} aria-modal="true"
       className="v2-inspector-drawer v2-mcp-picker" ref={dialog} role="dialog" tabIndex={-1}>
-      <header><strong>{kind === "resource" ? "引用 MCP 资源" : "使用 MCP Prompt"}</strong>
-        <button aria-label="关闭 MCP 选择" onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>
-      <p>发送消息即授权读取这次选定的内容。服务器返回的内容会作为参考资料提供给模型。</p>
+      <header><strong>{kind === "resource" ? t("引用 MCP 资源", "Reference MCP resource") : t("使用 MCP Prompt", "Use MCP prompt")}</strong>
+        <button aria-label={t("关闭 MCP 选择", "Close MCP picker")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>
+      <p>{t("发送消息即授权读取这次选定的内容。服务器返回的内容会作为参考资料提供给模型。", "Sending the message authorizes reading the selected content. The server's response is provided to the model as reference material.")}</p>
       {selection ? <form className="v2-mcp-arguments" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); add(selection); }}>
         <button className="v2-mcp-back" onClick={() => { setSelection(null); setValues({}); }} type="button">
-          <ArrowLeft aria-hidden="true" size={15} /> 返回列表</button>
+          <ArrowLeft aria-hidden="true" size={15} /> {t("返回列表", "Back to list")}</button>
         <strong>{selection.server.name}</strong><code>{selection.name}</code>
-        {selection.kind === "template" && <p>填写需要的模板变量；空的可选变量将省略。</p>}
-        {selection.fields.map((field, index) => <label key={field.name}><span>{field.name}{field.required ? "（必填）" : "（可选）"}</span>
+        {selection.kind === "template" && <p>{t("填写需要的模板变量；空的可选变量将省略。", "Enter template variables. Empty optional variables are omitted.")}</p>}
+        {selection.fields.map((field, index) => <label key={field.name}><span>{field.name}{field.required ? t("（必填）", " (required)") : t("（可选）", " (optional)")}</span>
           {field.description && <small>{field.description}</small>}
           <input autoComplete="off" maxLength={16384} ref={index === 0 ? firstField : undefined} required={field.required} value={fieldValue(field.name)}
             onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />
         </label>)}
-        <button className="v2-mcp-add" disabled={selection.fields.some(({ name, required }) => required && !fieldValue(name).trim())} type="submit">添加到消息</button>
+        <button className="v2-mcp-add" disabled={selection.fields.some(({ name, required }) => required && !fieldValue(name).trim())} type="submit">{t("添加到消息", "Add to message")}</button>
       </form> : <div className="v2-mcp-catalog">
-        <input aria-label="搜索 MCP 内容" placeholder="搜索服务器或名称…" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
-        {inventory.isPending && <p role="status">正在读取已批准的 MCP 目录…</p>}
-        {inventory.error && <p role="alert">{inventory.error instanceof Error ? inventory.error.message : "MCP 目录加载失败"}
-          <button onClick={() => void inventory.refetch()} type="button">重试</button></p>}
+        <input aria-label={t("搜索 MCP 内容", "Search MCP content")} placeholder={t("搜索服务器或名称…", "Search server or name…")} type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+        {inventory.isPending && <p role="status">{t("正在读取已批准的 MCP 目录…", "Loading approved MCP catalog…")}</p>}
+        {inventory.error && <p role="alert">{inventory.error instanceof Error ? inventory.error.message : t("MCP 目录加载失败", "Could not load MCP catalog")}
+          <button onClick={() => void inventory.refetch()} type="button">{t("重试", "Retry")}</button></p>}
         {!inventory.isPending && !inventory.error && filtered.length === 0 && <p role="status">{choices.length === 0
-          ? "当前项目没有已启用的 MCP 内容。可在设置的“扩展”中连接并批准服务器。" : "没有匹配的 MCP 内容。"}</p>}
+          ? t("当前项目没有已启用的 MCP 内容。可在设置的“扩展”中连接并批准服务器。", "No MCP content is enabled for this project. Connect and approve a server in Settings → Extensions.") : t("没有匹配的 MCP 内容。", "No matching MCP content.")}</p>}
         <ul>{filtered.map((choice) => <li key={JSON.stringify([choice.server.id, choice.kind, choice.name])}>
-          <button aria-label={`${choice.server.name} · ${choiceLabels[choice.kind]} · ${choice.name}`}
+          <button aria-label={`${choice.server.name} · ${choiceLabels(t)[choice.kind]} · ${choice.name}`}
             onClick={() => { if (choice.fields.length) { setValues({}); setSelection(choice); } else add(choice); }} type="button">
-            <span>{choice.server.name}<small>{choiceLabels[choice.kind]}</small></span>
-            <code>{choice.name}</code>{choice.fields.length > 0 && <small>{choice.fields.length} 个参数</small>}
+            <span>{choice.server.name}<small>{choiceLabels(t)[choice.kind]}</small></span>
+            <code>{choice.name}</code>{choice.fields.length > 0 && <small>{t(`${choice.fields.length} 个参数`, `${choice.fields.length} parameters`)}</small>}
           </button></li>)}</ul>
       </div>}
     </section>
@@ -121,11 +123,12 @@ export function V2MCPReferenceChips({ references, disabled, pendingIDs, onRemove
   pendingIDs: string[];
   onRemove: (id: string) => void;
 }) {
-  return references.length > 0 ? <div className="v2-file-references" aria-label="待发送的 MCP 引用">
+  const { t } = useLocale();
+  return references.length > 0 ? <div className="v2-file-references" aria-label={t("待发送的 MCP 引用", "MCP references to send")}>
     {references.map((item) => <span key={item.id} title={`${item.serverName} · ${item.label}\n${JSON.stringify(item.reference.arguments)}`}>
       <small>{item.reference.method === "prompts/get" ? "Prompt" : "MCP"}</small><code>{item.serverName}: {item.label}</code>
-      {pendingIDs.includes(item.id) && <small>随消息提交中</small>}
-      <button aria-label={`移除 MCP 引用 ${item.label}`} disabled={disabled || pendingIDs.includes(item.id)} onClick={() => onRemove(item.id)} type="button">
+      {pendingIDs.includes(item.id) && <small>{t("随消息提交中", "Submitting with message")}</small>}
+      <button aria-label={t(`移除 MCP 引用 ${item.label}`, `Remove MCP reference ${item.label}`)} disabled={disabled || pendingIDs.includes(item.id)} onClick={() => onRemove(item.id)} type="button">
         <X aria-hidden="true" size={13} /></button></span>)}
   </div> : null;
 }

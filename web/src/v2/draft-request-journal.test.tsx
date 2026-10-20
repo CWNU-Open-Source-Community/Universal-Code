@@ -219,3 +219,5 @@ it("does not rebind an already saved turn key to the same text from another draf
   expect(view.submitThreadTurn).not.toHaveBeenCalled();
   view.queries.clear();
 });
+
+vi.mock("../lib/locale", () => ({ useLocale: () => ({ t: (chinese: string) => chinese, locale: "zh-CN" }) }));

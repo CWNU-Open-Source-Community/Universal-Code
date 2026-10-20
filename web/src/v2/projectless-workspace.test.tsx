@@ -51,3 +51,5 @@ it("does not allocate when the operation key cannot be saved", async () => {
   await waitFor(() => expect(hook.result.current.error).toContain("尚未保存"));
   expect(allocate).not.toHaveBeenCalled();
 });
+
+vi.mock("../lib/locale", () => ({ useLocale: () => ({ t: (chinese: string) => chinese, locale: "zh-CN" }) }));

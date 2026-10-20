@@ -1,3 +1,4 @@
+import { useLocale } from "../../lib/locale";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { ChevronUp, CornerUpRight, FileText, ListEnd, MoreHorizontal, Pencil, Text, Trash2, X } from "lucide-react";
@@ -13,12 +14,13 @@ export function V2QueuedMessageRow({ client, message, editDisabled, cancelDisabl
   promotionUnavailable: string; onPromote: () => void;
   onEdit: () => void; onCancel: () => void; onCollapse: () => void;
 }) {
+  const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const preview = useRef<HTMLButtonElement>(null);
-  const attachments = [message.images.length > 0 ? `${message.images.length} 张图片` : "",
-    message.attachments.length === 1 ? message.attachments[0].name : message.attachments.length > 1 ? `${message.attachments.length} 个文件` : ""].filter(Boolean).join(" · ");
-  return <li aria-label={`消息 ${message.sequence}`}>
+  const attachments = [message.images.length > 0 ? t(`${message.images.length} 张图片`, `${message.images.length} images`) : "",
+    message.attachments.length === 1 ? message.attachments[0].name : message.attachments.length > 1 ? t(`${message.attachments.length} 个文件`, `${message.attachments.length} files`) : ""].filter(Boolean).join(" · ");
+  return <li aria-label={t(`消息 ${message.sequence}`, `Message ${message.sequence}`)}>
     <div className="v2-queue-row">
       <ListEnd className="v2-queue-row-icon" size={15} aria-hidden="true" />
       {message.images.length > 0 ? <div className="v2-queue-thumbnail" onClickCapture={(event) => {
@@ -26,21 +28,21 @@ export function V2QueuedMessageRow({ client, message, editDisabled, cancelDisabl
         if (imageButton) { event.preventDefault(); event.stopPropagation(); onDetails(imageButton); }
       }}><V2ImagePreview client={client} images={message.images.slice(0, 1)} /></div>
         : message.attachments.length > 0 && <FileText className="v2-queue-row-icon" size={18} aria-hidden="true" />}
-      <button className="v2-queue-preview" type="button" aria-label={`查看消息 ${message.sequence} 全文`}
+      <button className="v2-queue-preview" type="button" aria-label={t(`查看消息 ${message.sequence} 全文`, `View full text of message ${message.sequence}`)}
         ref={preview} aria-haspopup="dialog" aria-expanded={detailsOpen} aria-controls={detailsOpen ? detailsID : undefined}
         title={message.content || attachments} onClick={() => onDetails(preview.current)}>
-        <span>{message.content || attachments || "（没有文字）"}</span>
+        <span>{message.content || attachments || t("（没有文字）", "(No text)")}</span>
         {message.content && attachments && <small>{attachments}</small>}
       </button>
-      {message.delivery_mode === "steer" && <span className="v2-queue-mode">更新当前任务</span>}
+      {message.delivery_mode === "steer" && <span className="v2-queue-mode">{t("更新当前任务", "Update current task")}</span>}
       {!message.prepared && message.delivery_mode !== "steer" && <button className="v2-queue-promote" type="button"
-        aria-label="引导当前任务" title={promotionUnavailable || "引导当前任务"} disabled={Boolean(promotionUnavailable)}
-        onClick={onPromote}><CornerUpRight size={14} aria-hidden="true" /><span>引导</span></button>}
-      {message.prepared ? <span className="v2-queue-processing" title="正在处理，无法修改或撤回">处理中</span>
-        : <button className="v2-queue-icon" type="button" aria-label="撤回" title={`撤回消息 ${message.sequence}`}
+        aria-label={t("引导当前任务", "Guide current task")} title={promotionUnavailable || t("引导当前任务", "Guide current task")} disabled={Boolean(promotionUnavailable)}
+        onClick={onPromote}><CornerUpRight size={14} aria-hidden="true" /><span>{t("引导", "Guide")}</span></button>}
+      {message.prepared ? <span className="v2-queue-processing" title={t("正在处理，无法修改或撤回", "Processing; cannot edit or withdraw")}>{t("处理中", "Processing")}</span>
+        : <button className="v2-queue-icon" type="button" aria-label={t("撤回", "Withdraw")} title={t(`撤回消息 ${message.sequence}`, `Withdraw message ${message.sequence}`)}
           disabled={cancelDisabled} onClick={onCancel}><Trash2 size={15} aria-hidden="true" /></button>}
-      <button className="v2-queue-icon" type="button" ref={trigger} aria-label={`消息 ${message.sequence} 的更多操作`}
-        aria-expanded={menuOpen} aria-haspopup="menu" title="更多操作" onClick={() => setMenuOpen((value) => !value)}
+      <button className="v2-queue-icon" type="button" ref={trigger} aria-label={t(`消息 ${message.sequence} 的更多操作`, `More actions for message ${message.sequence}`)}
+        aria-expanded={menuOpen} aria-haspopup="menu" title={t("更多操作", "More actions")} onClick={() => setMenuOpen((value) => !value)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setMenuOpen(true); }
         }}><MoreHorizontal size={17} aria-hidden="true" /></button>
@@ -54,6 +56,7 @@ export function V2QueueMessageDetails({ client, snapshot, current, queueKnown, d
   client: APIClient; snapshot: QueuedMessage; current?: QueuedMessage; queueKnown: boolean; detailsID: string;
   trigger: HTMLElement | null; fallbackFocus: RefObject<HTMLButtonElement | null>; onClose: () => void;
 }) {
+  const { t } = useLocale();
   const titleID = useId();
   const closeButton = useRef<HTMLButtonElement>(null);
   const lastSeen = useRef(snapshot);
@@ -79,17 +82,17 @@ export function V2QueueMessageDetails({ client, snapshot, current, queueKnown, d
     <section className="v2-queue-details-dialog" id={detailsID} role="dialog" aria-modal="true" aria-labelledby={titleID}
       tabIndex={-1} ref={modal}>
       <header>
-        <div><h2 id={titleID}>消息 {message.sequence} 的全文与附件</h2>
-          <small>{message.delivery_mode === "steer" ? "更新当前任务" : "下一轮处理"}
-            {current?.prepared && " · 正在处理"}</small></div>
-        <button type="button" ref={closeButton} aria-label="关闭消息详情" title="关闭（Esc）" onClick={onClose}>
+        <div><h2 id={titleID}>{t(`消息 ${message.sequence} 的全文与附件`, `Message ${message.sequence}: text and attachments`)}</h2>
+          <small>{message.delivery_mode === "steer" ? t("更新当前任务", "Update current task") : t("下一轮处理", "Process next turn")}
+            {current?.prepared && t("· 正在处理", " · Processing")}</small></div>
+        <button type="button" ref={closeButton} aria-label={t("关闭消息详情", "Close message details")} title={t("关闭（Esc）", "Close (Esc)")} onClick={onClose}>
           <X size={19} aria-hidden="true" /></button>
       </header>
-      <div className="v2-queue-details-body" tabIndex={0} aria-label="消息全文与附件">
-        {!queueKnown && <p role="status">暂时无法确认最新队列状态，下面保留最近读取的内容。</p>}
-        {queueKnown && !current && <p role="status">这条消息已离开待处理队列，下面保留最后读取的内容。</p>}
-        <pre>{message.content || "（没有文字）"}</pre>
-        {message.content_redacted && <p>正文包含已隐藏内容。编辑时请填写完整的新正文。</p>}
+      <div className="v2-queue-details-body" tabIndex={0} aria-label={t("消息全文与附件", "Message text and attachments")}>
+        {!queueKnown && <p role="status">{t("暂时无法确认最新队列状态，下面保留最近读取的内容。", "The latest queue state cannot be confirmed. The last loaded content is kept below.")}</p>}
+        {queueKnown && !current && <p role="status">{t("这条消息已离开待处理队列，下面保留最后读取的内容。", "This message left the pending queue. The last loaded content is kept below.")}</p>}
+        <pre>{message.content || t("（没有文字）", "(No text)")}</pre>
+        {message.content_redacted && <p>{t("正文包含已隐藏内容。编辑时请填写完整的新正文。", "Some text is hidden. Enter the complete new text when editing.")}</p>}
         <V2ImagePreview client={client} images={message.images} />
         <V2FileAttachments client={client} attachments={message.attachments} />
       </div>
@@ -101,6 +104,7 @@ function QueueMessageMenu({ trigger, message, editDisabled, onClose, onEdit, onD
   trigger: RefObject<HTMLButtonElement | null>; message: QueuedMessage; editDisabled: boolean;
   onClose: () => void; onEdit: () => void; onDetails: () => void; onCollapse: () => void;
 }) {
+  const { t } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const closeRef = useRef(onClose);
@@ -137,7 +141,7 @@ function QueueMessageMenu({ trigger, message, editDisabled, onClose, onEdit, onD
     };
   }, [trigger]);
   const select = (action: () => void) => { trigger.current?.focus({ preventScroll: true }); onClose(); action(); };
-  return createPortal(<div className="v2-queue-menu" role="menu" aria-label={`消息 ${message.sequence} 的操作`} ref={ref} style={position}
+  return createPortal(<div className="v2-queue-menu" role="menu" aria-label={t(`消息 ${message.sequence} 的操作`, `Actions for message ${message.sequence}`)} ref={ref} style={position}
     onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && event.relatedTarget !== trigger.current) onClose(); }}
     onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); select(() => undefined); return; }
@@ -150,8 +154,8 @@ function QueueMessageMenu({ trigger, message, editDisabled, onClose, onEdit, onD
         : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       items[next]?.focus();
     }}>
-    {!message.prepared && <button type="button" role="menuitem" disabled={editDisabled} onClick={() => select(onEdit)}><Pencil size={15} aria-hidden="true" />编辑消息</button>}
-    <button type="button" role="menuitem" onClick={() => select(onDetails)}><Text size={15} aria-hidden="true" />查看全文与附件</button>
-    <button type="button" role="menuitem" onClick={() => select(onCollapse)}><ChevronUp size={15} aria-hidden="true" />收起待处理消息</button>
+    {!message.prepared && <button type="button" role="menuitem" disabled={editDisabled} onClick={() => select(onEdit)}><Pencil size={15} aria-hidden="true" />{t("编辑消息", "Edit message")}</button>}
+    <button type="button" role="menuitem" onClick={() => select(onDetails)}><Text size={15} aria-hidden="true" />{t("查看全文与附件", "View text and attachments")}</button>
+    <button type="button" role="menuitem" onClick={() => select(onCollapse)}><ChevronUp size={15} aria-hidden="true" />{t("收起待处理消息", "Collapse pending messages")}</button>
   </div>, trigger.current?.closest(".v2-shell") ?? document.body);
 }

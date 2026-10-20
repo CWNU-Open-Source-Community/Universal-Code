@@ -12,29 +12,32 @@ import {
   V2HighRiskActivationDialog,
 } from "./high-risk-activation-dialog";
 
-const sessionCopy: Record<DesktopRuntimeRiskProfile, {
+import { useLocale, type LocaleText } from "../../lib/locale";
+
+const sessionCopy = (t: LocaleText): Record<DesktopRuntimeRiskProfile, {
   label: string;
   detail: string;
-}> = {
+}> => ({
   safe: {
-    label: "标准运行时",
-    detail: "完全访问可在当前任务中即时确认；持久终端和后台调试运行时未开启。",
+    label: t("标准运行时", "Standard runtime"),
+    detail: t("完全访问可在当前任务中即时确认；持久终端和后台调试运行时未开启。", "Full access can be confirmed for the current task. Persistent terminal and background debug runtimes are not enabled."),
   },
   debug: {
-    label: "调试已开启",
-    detail: "本次应用会话已初始化持久终端、后台进程和限时终端输入运行时。",
+    label: t("调试已开启", "Debug enabled"),
+    detail: t("本次应用会话已初始化持久终端、后台进程和限时终端输入运行时。", "Persistent terminals, background processes and time-limited terminal input are initialized for this app session."),
   },
-};
+});
 
 function actionState(current: DesktopRuntimeRiskProfile | null,
-  restartEnabled: boolean): { disabled: boolean; label: string } {
-  if (current === null) return { disabled: true, label: "桌面会话不可用" };
-  if (current === "debug") return { disabled: true, label: "调试运行时已开启" };
-  if (!restartEnabled) return { disabled: true, label: "重启入口不可用" };
-  return { disabled: false, label: "启用调试模式并重启" };
+  restartEnabled: boolean, t: LocaleText): { disabled: boolean; label: string } {
+  if (current === null) return { disabled: true, label: t("桌面会话不可用", "Desktop session unavailable") };
+  if (current === "debug") return { disabled: true, label: t("调试运行时已开启", "Debug runtime enabled") };
+  if (!restartEnabled) return { disabled: true, label: t("重启入口不可用", "Restart unavailable") };
+  return { disabled: false, label: t("启用调试模式并重启", "Enable debug mode and restart") };
 }
 
 export function V2RuntimeCapabilityControl() {
+  const { t } = useLocale();
   const titleID = useId();
   const [open, setOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -63,28 +66,27 @@ export function V2RuntimeCapabilityControl() {
     setOpen(false);
   };
   const phase = restarting ? "restarting" : mutation.isPending ? "confirming" : "idle";
-  const status = current ? sessionCopy[current] : {
-    label: "无法读取",
-    detail: "当前页面没有可验证的桌面运行时能力信息。",
+  const status = current ? sessionCopy(t)[current] : {
+    label: t("无法读取", "Unavailable"),
+    detail: t("当前页面没有可验证的桌面运行时能力信息。", "Verified desktop runtime capability information is unavailable on this page."),
   };
 
   return <section aria-labelledby={titleID}
     className="v2-settings-card v2-runtime-capability-card">
     <header>
       <div><span className="v2-runtime-icon"><ShieldCheck aria-hidden="true" size={18} /></span>
-        <div><h2 id={titleID}>调试运行时</h2><p>持久终端与后台进程</p></div></div>
+        <div><h2 id={titleID}>{t("调试运行时", "Debug runtime")}</h2><p>{t("持久终端与后台进程", "Persistent terminals and background processes")}</p></div></div>
       <span className={`v2-runtime-status is-${current ?? "unavailable"}`}>{status.label}</span>
     </header>
     <div className="v2-runtime-capability-body">
       <p className="v2-runtime-session-detail">{status.detail}</p>
-      <div aria-label="调试运行时能力" className="v2-runtime-actions" role="group">
+      <div aria-label={t("调试运行时能力", "Debug runtime capabilities")} className="v2-runtime-actions" role="group">
         {(() => {
-          const action = actionState(current, restartEnabled);
+          const action = actionState(current, restartEnabled, t);
           return <article>
             <span><Bug aria-hidden="true" size={18} /></span>
-            <div><strong>调试模式</strong><p>
-              提供持久终端、后台进程和限时终端输入支持；实际使用还需在当前任务选择本地执行、Debug 交互并确认完全访问。
-            </p></div>
+            <div><strong>{t("调试模式", "Debug mode")}</strong><p>
+              {t("提供持久终端、后台进程和限时终端输入支持；实际使用还需在当前任务选择本地执行、Debug 交互并确认完全访问。", "Supports persistent terminals, background processes and time-limited terminal input. Select local execution and Debug interaction and confirm full access for the task before use.")}</p></div>
             <button aria-label={action.label} disabled={action.disabled || mutation.isPending || restarting}
               onClick={beginActivation} type="button">
               {mutation.isPending
@@ -96,9 +98,7 @@ export function V2RuntimeCapabilityControl() {
         })()}
       </div>
       <p className="v2-runtime-boundary">
-        开启调试模式会重启应用，准备持久终端和后台进程。重启后任务权限仍保留，请在当前任务重新确认完全访问。
-        普通启动使用标准运行时；在当前任务开启完全访问时，先暂停执行并等待资源释放完成即可。
-      </p>
+        {t("开启调试模式会重启应用，准备持久终端和后台进程。重启后任务权限仍保留，请在当前任务重新确认完全访问。\r\n        普通启动使用标准运行时；在当前任务开启完全访问时，先暂停执行并等待资源释放完成即可。", "Enabling debug mode restarts the app to prepare persistent terminals and background processes. Task permissions remain; reconfirm full access after restart. Normal startup uses the standard runtime. Pause task execution and wait for resources to be released before enabling full access.")}</p>
     </div>
     <V2HighRiskActivationDialog error={mutation.isError
       ? desktopErrorMessage(mutation.error) : undefined}

@@ -1,3 +1,5 @@
+import { useLocale } from "../lib/locale";
+import { localUIMessage } from "../lib/local-ui-message";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { APIClient } from "../api/client";
@@ -257,10 +259,12 @@ const noSubscription = () => () => {};
 const noWarning = () => null;
 
 export function useV2PersistenceWarning(): string | null {
+  const { t } = useLocale();
   const context = useContext(RecoveryContext);
   const warning = useSyncExternalStore(context?.store?.subscribeWarning ?? noSubscription,
     context?.store?.getWarning ?? noWarning, noWarning);
-  return warning ?? context?.warning ?? null;
+  const message = warning ?? context?.warning;
+  return message ? localUIMessage(message, t) : null;
 }
 
 export function useV2PersistentState<T>(key: string, initial: T | (() => T)): [T, Dispatch<SetStateAction<T>>] {

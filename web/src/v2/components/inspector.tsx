@@ -1,3 +1,4 @@
+import { useLocale, type LocaleText } from "../../lib/locale";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, Search, X } from "lucide-react";
@@ -34,10 +35,9 @@ interface InspectorState {
   position?: TranscriptReadingPosition;
 }
 const emptyState: InspectorState = { filter: "all", search: "", runID: "", selected: null };
-const filterLabels: Record<Filter, string> = { all: "全部", tools: "工具", approvals: "审批", exceptions: "异常" };
-const sourceLabels = { harness: "执行记录", model: "模型公开内容", operator: "用户输入", peer: "其他聊天" };
-const stageLabels = { started: "已开始", arguments_ready: "参数就绪", running: "运行中", result: "结果", blocked: "已阻塞" };
-const translate = (chinese: string) => chinese;
+const filterLabels = (t: LocaleText): Record<Filter, string> => ({ all: t("全部", "All"), tools: t("工具", "Tool"), approvals: t("审批", "Approvals"), exceptions: t("异常", "Exceptions") });
+const sourceLabels = (t: LocaleText) => ({ harness: t("执行记录", "Execution records"), model: t("模型公开内容", "Public model content"), operator: t("用户输入", "User input"), peer: t("其他聊天", "Other conversations") });
+const stageLabels = (t: LocaleText) => ({ started: t("已开始", "Started"), arguments_ready: t("参数就绪", "Arguments ready"), running: t("运行中", "Running"), result: t("结果", "Result"), blocked: t("已阻塞", "Blocked") });
 const failureStates = new Set(["failed", "failure", "error", "denied", "deny", "blocked", "cancelled", "canceled",
   "timed_out", "timeout", "interrupted", "killed", "unavailable", "verification_unavailable", "conflict", "stopped"]);
 
@@ -61,6 +61,7 @@ export function V2Inspector(props: V2InspectorProps) {
 
 function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot, liveStatus,
   hasOlder, isFetchingOlder, onLoadOlder }: V2InspectorProps) {
+  const { t, locale } = useLocale();
   const queryClient = useQueryClient();
   const stateKey = useMemo(() => ["v2", "thread", threadID, "inspector-view"], [threadID]);
   const state = useQuery<InspectorState>({ queryKey: stateKey, queryFn: () => emptyState,
@@ -110,76 +111,77 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
   const currentRunID = detail.thread.active_run_id || detail.thread.last_run_id;
   const hasFilters = ui.filter !== "all" || ui.search !== "" || ui.runID !== "";
   const reset = () => update({ filter: "all", search: "", runID: "", position: undefined });
-  return <section className={`v2-inspector-content${ui.selected ? " has-selection" : ""}`} aria-label="Inspector 记录">
+  return <section className={`v2-inspector-content${ui.selected ? " has-selection" : ""}`} aria-label={t("Inspector 记录", "Inspector records")}>
     <header className="v2-inspector-controls">
       <div className="v2-inspector-range">
-        <strong>执行记录</strong>
-        <span>已加载 {durableItems.length} 条{hasOlder ? " · 还有更早记录" : " · 已到最早记录"}</span>
-        {items.some((item) => item.provisional) && <span>含未落盘的实时内容</span>}
+        <strong>{t("执行记录", "Execution records")}</strong>
+        <span>{t(`已加载 ${durableItems.length} 条`, `${durableItems.length} records loaded`)}{hasOlder ? t(" · 还有更早记录", " · Earlier records available") : t(" · 已到最早记录", " · Earliest record reached")}</span>
+        {items.some((item) => item.provisional) && <span>{t("含未落盘的实时内容", "Includes unsaved live content")}</span>}
       </div>
       <div className="v2-inspector-tools">
-        <div className="v2-inspector-filters" role="group" aria-label="记录类型">
-          {(Object.keys(filterLabels) as Filter[]).map((filter) => <button key={filter} type="button"
-            aria-pressed={ui.filter === filter} onClick={() => update({ filter, position: undefined })}>{filterLabels[filter]}</button>)}
+        <div className="v2-inspector-filters" role="group" aria-label={t("记录类型", "Record type")}>
+          {(Object.keys(filterLabels(t)) as Filter[]).map((filter) => <button key={filter} type="button"
+            aria-pressed={ui.filter === filter} onClick={() => update({ filter, position: undefined })}>{filterLabels(t)[filter]}</button>)}
         </div>
         <label className="v2-inspector-search"><Search size={15} aria-hidden="true" />
-          <input aria-label="在已加载记录中查找" placeholder="查找已加载记录" value={ui.search}
+          <input aria-label={t("在已加载记录中查找", "Search loaded records")} placeholder={t("查找已加载记录", "Search loaded records")} value={ui.search}
             onChange={(event) => update({ search: event.target.value, position: undefined })} /></label>
-        {(runs.length > 1 || ui.runID) && <label className="v2-inspector-run"><span>执行范围</span><select aria-label="执行记录范围" value={ui.runID}
+        {(runs.length > 1 || ui.runID) && <label className="v2-inspector-run"><span>{t("执行范围", "Run scope")}</span><select aria-label={t("执行记录范围", "Execution record scope")} value={ui.runID}
           onChange={(event) => update({ runID: event.target.value, position: undefined })}>
-          <option value="">全部执行记录</option>
-          {ui.runID && !runs.some(([runID]) => runID === ui.runID) && <option value={ui.runID}>已选执行（暂未加载）</option>}
+          <option value="">{t("全部执行记录", "All runs")}</option>
+          {ui.runID && !runs.some(([runID]) => runID === ui.runID) && <option value={ui.runID}>{t("已选执行（暂未加载）", "Selected run (not loaded)")}</option>}
           {runs.map(([runID, ordinal]) => <option key={runID} value={runID}>
-            执行 {ordinal}{runID === currentRunID ? " · 当前" : " · 历史只读"}</option>)}
+            {t("执行", "Run")}{ordinal}{runID === currentRunID ? t("· 当前", " · Current") : t("· 历史只读", " · Historical, read only")}</option>)}
         </select></label>}
       </div>
-      <div className="v2-inspector-scope"><span>显示 {visible.filter((item) => item.sequence !== 0).length} 条记录 · 查找仅覆盖已加载内容</span>
-        {hasFilters && <button type="button" onClick={reset}>清除筛选</button>}
+      <div className="v2-inspector-scope"><span>{t(`显示 ${visible.filter((item) => item.sequence !== 0).length} 条记录 · 查找仅覆盖已加载内容`, `${visible.filter((item) => item.sequence !== 0).length} records shown · Search covers loaded content only`)}</span>
+        {hasFilters && <button type="button" onClick={reset}>{t("清除筛选", "Clear filters")}</button>}
         <button type="button" onClick={() => { reset(); setLatestRequest((value) => value + 1); }}>
-          <ArrowDown size={14} aria-hidden="true" />回到最新</button>
+          <ArrowDown size={14} aria-hidden="true" />{t("回到最新", "Jump to latest")}</button>
       </div>
     </header>
     <div className="v2-inspector-body">
       <div className="v2-inspector-records" ref={listRef}>
         {visible.length > 0 ? <VirtualTranscriptList key={`${ui.filter}:${ui.runID}:${ui.search}`}
           items={visible} hasOlder={hasOlder} isFetchingOlder={isFetchingOlder} onLoadOlder={onLoadOlder}
-          t={translate} initialPosition={ui.position} onPositionChange={onPositionChange} latestRequest={latestRequest}
+          t={t} initialPosition={ui.position} onPositionChange={onPositionChange} latestRequest={latestRequest}
           renderItem={(item) => <button type="button" className={`v2-inspector-row${item.sequence === 0 ? " is-boundary" : ""}${isException(item) ? " is-exception" : ""}`}
             aria-pressed={ui.selected?.id === item.id && ui.selected.runID === item.run_id}
             onClick={(event) => { selectedButton.current = event.currentTarget; update({ selected: { id: item.id, runID: item.run_id } }); }}>
-            <span className="v2-inspector-row-heading"><strong>{item.sequence === 0 ? `执行 ${item.run_ordinal}` : item.tool_name || item.title}</strong>
+            <span className="v2-inspector-row-heading"><strong>{item.sequence === 0 ? t(`执行 ${item.run_ordinal}`, `Run ${item.run_ordinal}`) : item.tool_name || item.title}</strong>
               {item.status && <span>{item.sequence === 0 ? <LifecycleStatusLabel status={item.status} />
-                : item.status === "running" && item.durable && !item.provisional ? "记录时执行中" : <StatusLabel status={item.status} />}</span>}</span>
+                : item.status === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : <StatusLabel status={item.status} />}</span>}</span>
             {item.detail && <span className="v2-inspector-row-preview">{item.detail.slice(0, 200)}</span>}
-            {!!item.images?.length && <span className="v2-inspector-row-preview">{item.images.length} 张图片</span>}
-            <span className="v2-inspector-row-meta"><span>{sourceLabels[item.source]}</span>
-              <span>执行 {item.run_ordinal}</span>
-              <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString("zh-CN", { hour12: false })}</time>
-              {item.provisional && <span>未落盘</span>}</span>
+            {!!item.images?.length && <span className="v2-inspector-row-preview">{t(`${item.images.length} 张图片`, `${item.images.length} images`)}</span>}
+            <span className="v2-inspector-row-meta"><span>{sourceLabels(t)[item.source]}</span>
+              <span>{t(`执行 ${item.run_ordinal}`, `Run ${item.run_ordinal}`)}</span>
+              <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString(locale, { hour12: false })}</time>
+              {item.provisional && <span>{t("未落盘", "Not saved")}</span>}</span>
           </button>} /> : <div className="v2-inspector-empty" role="status">
-          <p>{items.length ? "已加载范围内没有匹配记录。" : "还没有公开记录。"}</p>
+          <p>{items.length ? t("已加载范围内没有匹配记录。", "No matching records in the loaded history.") : t("还没有公开记录。", "No public records yet.")}</p>
           {hasOlder && <button type="button" disabled={isFetchingOlder} onClick={onLoadOlder}>
-            {isFetchingOlder ? "正在加载较早记录…" : "加载较早记录"}</button>}
+            {isFetchingOlder ? t("正在加载较早记录…", "Loading earlier records…") : t("加载较早记录", "Load earlier records")}</button>}
         </div>}
       </div>
-      {ui.selected && <aside className="v2-inspector-detail" aria-label="选中记录详情"
+      {ui.selected && <aside className="v2-inspector-detail" aria-label={t("选中记录详情", "Selected record details")}
         onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDetail(); } }}>
-        <header><strong>记录详情</strong><button ref={closeRef} type="button" aria-label="关闭记录详情" onClick={closeDetail}><X size={18} /></button></header>
+        <header><strong>{t("记录详情", "Record details")}</strong><button ref={closeRef} type="button" aria-label={t("关闭记录详情", "Close record details")} onClick={closeDetail}><X size={18} /></button></header>
         {selected ? <InspectorDetail key={`${selected.run_id}:${selected.id}`} client={client} threadID={threadID} item={selected} /> :
-          <p>选中记录暂不在已加载范围内。可加载更早记录后继续查看。</p>}
+          <p>{t("选中记录暂不在已加载范围内。可加载更早记录后继续查看。", "The selected record is outside the loaded history. Load earlier records to view it.")}</p>}
       </aside>}
     </div>
   </section>;
 }
 
 function InspectorDetail({ client, threadID, item }: { client: APIClient; threadID: string; item: ThreadTranscriptItemView }) {
+  const { t } = useLocale();
   return <div className="v2-inspector-detail-content">
     <h3>{item.tool_name || item.title}</h3>
-    <p className="v2-inspector-origin">{sourceLabels[item.source]} · {item.stage === "running" && item.durable && !item.provisional ? "记录时执行中" : stageLabels[item.stage]}
-      {item.provisional ? " · 尚未落盘" : " · 已保存"}</p>
+    <p className="v2-inspector-origin">{sourceLabels(t)[item.source]} · {item.stage === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
+      {item.provisional ? t("· 尚未落盘", " · Not saved yet") : t("· 已保存", " · Saved")}</p>
     {item.durable && !item.provisional && item.status === "running" && item.sequence !== 0 &&
-      <p className="v2-inspector-origin">这是记录保存时的执行状态。Agent 的当前活动请查看对话上方的工作状态。</p>}
-    {item.source === "model" && <p className="v2-inspector-origin">公开模型内容；实际执行结果以对应工具记录为准。</p>}
+      <p className="v2-inspector-origin">{t("这是记录保存时的执行状态。Agent 的当前活动请查看对话上方的工作状态。", "This was the execution state when the record was saved. Check the conversation's activity status for what the agent is doing now.")}</p>}
+    {item.source === "model" && <p className="v2-inspector-origin">{t("公开模型内容；实际执行结果以对应工具记录为准。", "Public model content. Tool records show the actual execution results.")}</p>}
     {item.detail && (item.activity_type === "message" && item.source === "model" ? <SafeMarkdown>{item.detail}</SafeMarkdown> :
       <pre className="v2-inspector-record-text">{item.detail}</pre>)}
     {item.source === "operator" && <V2ImagePreview client={client} images={item.images ?? []} />}
@@ -189,14 +191,14 @@ function InspectorDetail({ client, threadID, item }: { client: APIClient; thread
         detailAvailable: item.durable && !item.provisional && Boolean(item.detail_available && item.activity_detail_ref),
         detailRef: item.activity_detail_ref, summary: item.activity_summary, webEvidence: item.web_evidence,
       }} /></ul>}
-    <details className="v2-inspector-identities"><summary>来源与精确标识</summary>
-      {item.images?.map((image) => <p key={image.id}>图片 {image.name || image.id}<br />
+    <details className="v2-inspector-identities"><summary>{t("来源与精确标识", "Source and exact identifiers")}</summary>
+      {item.images?.map((image) => <p key={image.id}>{t("图片", "Image")}{image.name || image.id}<br />
         <code>{image.id}</code><br /><code>SHA256 {image.sha256}</code></p>)}
-      <dl>{Object.entries({ "记录 ID": item.id, "稳定标识": item.canonical_id, "执行 ID": item.run_id,
-        "序号": item.sequence, "来源": item.source, "来源引用": item.source_ref, "调用 ID": item.durable_call_id,
-        "尝试 ID": item.attempt_id, "模型尝试": item.model_attempt, "工具轮次（非用户工作轮）": item.tool_round,
-        "流记录": item.stream_item_id, "详情引用": item.activity_detail_ref, "时间": item.created_at,
-        "可核验记录": item.verifiable ? "是" : "否", "用户指令授权": item.instruction_authorized ? "是" : "否" })
+      <dl>{Object.entries({ [t("记录 ID", "Record ID")]: item.id, [t("稳定标识", "Stable ID")]: item.canonical_id, [t("执行 ID", "Run ID")]: item.run_id,
+        [t("序号", "Sequence")]: item.sequence, [t("来源", "Source")]: item.source, [t("来源引用", "Source reference")]: item.source_ref, [t("调用 ID", "Call ID")]: item.durable_call_id,
+        [t("尝试 ID", "Attempt ID")]: item.attempt_id, [t("模型尝试", "Model attempt")]: item.model_attempt, [t("工具轮次（非用户工作轮）", "Tool round (not user turn)")]: item.tool_round,
+        [t("流记录", "Stream record")]: item.stream_item_id, [t("详情引用", "Detail reference")]: item.activity_detail_ref, [t("时间", "Time")]: item.created_at,
+        [t("可核验记录", "Verifiable record")]: item.verifiable ? t("是", "Yes") : t("否", "No"), [t("用户指令授权", "Authorized by user instruction")]: item.instruction_authorized ? t("是", "Yes") : t("否", "No") })
         .filter(([, value]) => value !== undefined).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     </details>
   </div>;
