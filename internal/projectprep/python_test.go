@@ -72,3 +72,15 @@ func TestPythonPlanRejectsUnsupportedAndUnsafeSources(t *testing.T) {
 		t.Fatalf("missing lock was accepted: %+v %v", plan, err)
 	}
 }
+
+func TestPythonPlanRejectsMixedToolchains(t *testing.T) {
+	for _, manifest := range []string{"package.json", "go.mod", "Cargo.toml"} {
+		t.Run(manifest, func(t *testing.T) {
+			root := fixture(t, map[string]string{"pylock.toml": pythonLockFixture, manifest: ""})
+			plan, err := projectprep.Detect(t.Context(), root, ".")
+			if err != nil || plan.Ready || !strings.Contains(strings.Join(plan.Issues, " "), "Multiple dependency toolchains") {
+				t.Fatalf("mixed toolchains accepted: %+v err=%v", plan, err)
+			}
+		})
+	}
+}
