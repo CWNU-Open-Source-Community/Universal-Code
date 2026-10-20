@@ -1,3 +1,4 @@
+import { useLocale } from "../../lib/locale";
 import { Children, createContext, isValidElement, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ const text = (value: ReactNode): string => Children.toArray(value).map((child): 
 function FloatingPreview({ trigger, filePath, fileRef, url, onEnter, onLeave, onOpen }: {
   trigger: HTMLElement; filePath?: string; fileRef?: ChatResourceRef; url?: URL; onEnter: () => void; onLeave: () => void; onOpen: () => void;
 }) {
+  const { t } = useLocale();
   const element = useRef<HTMLDivElement>(null);
   const rect = trigger.getBoundingClientRect();
   const [point, setPoint] = useState({ x: rect.left, y: rect.bottom + 8, maxHeight: 520 });
@@ -38,22 +40,23 @@ function FloatingPreview({ trigger, filePath, fileRef, url, onEnter, onLeave, on
     observer?.observe(card);
     return () => observer?.disconnect();
   }, [trigger, preview.data, preview.isError, local.data]);
-  return createPortal(<div role={filePath ? "tooltip" : "dialog"} aria-label={filePath ? undefined : "链接预览"} ref={element}
+  return createPortal(<div role={filePath ? "tooltip" : "dialog"} aria-label={filePath ? undefined : t("链接预览", "Link preview")} ref={element}
     className={`v2-link-preview${filePath ? " v2-resource-file-tip" : ""}`} style={{ left: point.x, top: point.y, maxHeight: point.maxHeight }}
     onMouseEnter={onEnter} onMouseLeave={onLeave}>
     {filePath ? `${local.data || fileRef?.path || filePath}${filePath.match(/ \(line \d+\)$/u)?.[0] ?? ""}` : <>
-      <header>{url?.hostname === "github.com" ? <GitBranch size={16} /> : <Globe size={16} />}<span>{url?.hostname}</span><button type="button" onClick={onOpen}>打开 <ExternalLink size={14} /></button></header>
-      {preview.data?.image && <img src={preview.data.image} alt="网页预览" />}
+      <header>{url?.hostname === "github.com" ? <GitBranch size={16} /> : <Globe size={16} />}<span>{url?.hostname}</span><button type="button" onClick={onOpen}>{t("打开", "Open")}<ExternalLink size={14} /></button></header>
+      {preview.data?.image && <img src={preview.data.image} alt={t("网页预览", "Web preview")} />}
       <div className="v2-link-preview-body"><strong>{preview.data?.title || shortWebLabel(url!)}</strong>
         {preview.data?.description && preview.data.description.replace(/\/$/u, "") !== url?.href.replace(/\/$/u, "") && <p>{preview.data.description}</p>}<p>{url?.href}</p>
-        {preview.isLoading && <p role="status">正在读取网页信息…</p>}
-        {preview.isError && <p>预览暂不可用，仍可打开原链接。</p>}
+        {preview.isLoading && <p role="status">{t("正在读取网页信息…", "Loading page information…")}</p>}
+        {preview.isError && <p>{t("预览暂不可用，仍可打开原链接。", "Preview unavailable. You can still open the original link.")}</p>}
       </div>
     </>}
   </div>, trigger.closest(".v2-shell") ?? document.body);
 }
 
 export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?: string; children: ReactNode; runID?: string; onOpenFile?: OpenFile }) {
+  const { t } = useLocale();
   const { workspaceID } = useContext(ChatResourceContext);
   const file = parseProjectFileLink(href), url = webURL(href);
   const trigger = useRef<HTMLAnchorElement>(null);
@@ -89,7 +92,7 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
         const blob = new Blob([Uint8Array.from(atob(data.data_base64), (c) => c.charCodeAt(0))], { type: media });
         const bitmap = await createImageBitmap(blob);
         try {
-          if (bitmap.width * bitmap.height > 16 * 1024 * 1024) throw new Error("图片尺寸过大，请另存为后查看。");
+          if (bitmap.width * bitmap.height > 16 * 1024 * 1024) throw new Error(t("图片尺寸过大，请另存为后查看。", "This image is too large to preview. Save it to view it."));
           setImage({ url: URL.createObjectURL(blob), blob, name: data.name, mime_type: media, width: bitmap.width, height: bitmap.height });
         } finally { bitmap.close(); }
         return;
@@ -101,21 +104,21 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
   const label = text(children), rawLabel = children == null || label === href || label === url?.href;
   if (!file && !url) return <span>{children}</span>;
   const Icon = file ? File : url?.hostname === "github.com" ? GitBranch : Globe;
-  const items: ResourceMenuItem[] = file ? nativeResourcesAvailable() && workspaceID ? fileMenuItems(reference, open) : [
-    { label: "打开文件", icon: <File />, action: open }, { label: "复制路径", icon: <Copy />, action: () => navigator.clipboard.writeText(file.path) },
+  const items: ResourceMenuItem[] = file ? nativeResourcesAvailable() && workspaceID ? fileMenuItems(reference, open, t) : [
+    { label: t("打开文件", "Open file"), icon: <File />, action: open }, { label: t("复制路径", "Copy path"), successMessage: t("已复制路径", "Path copied"), icon: <Copy />, action: () => navigator.clipboard.writeText(file.path) },
   ] : [
-    ...(url?.hostname === "github.com" && /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/u.test(url.pathname) ? [{ label: "在 GitHub 查看改动", icon: <GitPullRequest />, action: () => openWebURL(`${url.origin}${url.pathname.replace(/\/$/u, "")}/files`) }] : []),
-    { label: "在浏览器中打开", icon: <Globe />, action: () => openWebURL(url!.href) },
+    ...(url?.hostname === "github.com" && /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/u.test(url.pathname) ? [{ label: t("在 GitHub 查看改动", "View changes on GitHub"), icon: <GitPullRequest />, action: () => openWebURL(`${url.origin}${url.pathname.replace(/\/$/u, "")}/files`) }] : []),
+    { label: t("在浏览器中打开", "Open in browser"), icon: <Globe />, action: () => openWebURL(url!.href) },
     ...(!desktopBridgeAvailable() ? [
-      { label: "在新标签页打开", icon: <PanelsTopLeft />, action: () => openWebURL(url!.href, "tab") },
-      { label: "在新窗口打开", icon: <ExternalLink />, action: () => openWebURL(url!.href, "window") },
+      { label: t("在新标签页打开", "Open in new tab"), icon: <PanelsTopLeft />, action: () => openWebURL(url!.href, "tab") },
+      { label: t("在新窗口打开", "Open in new window"), icon: <ExternalLink />, action: () => openWebURL(url!.href, "window") },
     ] : []),
-    { label: "复制链接", icon: <Copy />, divider: true, action: () => navigator.clipboard.writeText(url!.href) },
-    ...(nativeResourcesAvailable() ? [{ label: "链接另存为…", icon: <Download />, action: () => saveWebURL(url!.href) }] : []),
+    { label: t("复制链接", "Copy link"), successMessage: t("已复制链接", "Link copied"), icon: <Copy />, divider: true, action: () => navigator.clipboard.writeText(url!.href) },
+    ...(nativeResourcesAvailable() ? [{ label: t("链接另存为…", "Save link as…"), icon: <Download />, action: () => saveWebURL(url!.href) }] : []),
   ];
   return <><a ref={trigger} href={file ? "#workspace-file" : url!.href} className={`v2-resource-link${file ? " v2-file-link" : ""}`}
     title={file ? `${file.path}${file.line ? ` (line ${file.line})` : ""}` : url!.href}
-    onClick={(event) => { event.preventDefault(); void open().catch((error) => result(error instanceof Error ? error.message : "无法打开资源", true)); }}
+    onClick={(event) => { event.preventDefault(); void open().catch((error) => result(error instanceof Error ? error.message : t("无法打开资源", "Could not open resource"), true)); }}
     onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave}
     onContextMenu={(event) => { event.preventDefault(); clearTimeout(timer.current); setHover(false); setMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget }); }}
     onKeyDown={(event) => { if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setHover(false); setMenu({ x: rect.left, y: rect.bottom, trigger: event.currentTarget }); } }}>
@@ -130,16 +133,19 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
 }
 
 export function ChatLinkErrors() {
+  const { t } = useLocale();
   const [error, setError] = useState("");
   useEffect(() => {
     const report = (event: Event) => setError(String((event as CustomEvent).detail));
     document.addEventListener("uc-link-error", report);
     return () => document.removeEventListener("uc-link-error", report);
   }, []);
-  return error ? <p className="v2-resource-status" role="alert">{error} <button type="button" onClick={() => setError("")}>关闭</button></p> : null;
+  return error ? <p className="v2-resource-status" role="alert">{error} <button type="button" onClick={() => setError("")}>{t("关闭", "Close")}</button></p> : null;
 }
 
-export function ResourceImage({ src = "", alt = "图片", runID, onOpenFile }: { src?: string; alt?: string; runID?: string; onOpenFile?: OpenFile }) {
+export function ResourceImage({ src = "", alt: imageAlt, runID, onOpenFile }: { src?: string; alt?: string; runID?: string; onOpenFile?: OpenFile }) {
+  const { t } = useLocale();
+  const alt = imageAlt ?? t("图片", "Image");
   const { workspaceID } = useContext(ChatResourceContext);
   const file = parseProjectFileLink(src);
   const resource = useQuery({ queryKey: ["chat-generated-image", workspaceID, runID, file?.path],

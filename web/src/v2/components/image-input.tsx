@@ -50,7 +50,7 @@ function ImagePreview({ client, image, onRemove, locked }: {
   const url = original?.url;
   const menuItems = original ? [
     { label: t("打开图片", "Open image"), action: () => setOpen(true) },
-    { label: t("复制图片", "Copy image"), icon: <Copy />, action: () => copyImageToClipboard(original.blob, image, t) },
+    { label: t("复制图片", "Copy image"), successMessage: t("已复制图片", "Image copied"), icon: <Copy />, action: () => copyImageToClipboard(original.blob, image, t) },
     { label: t("图片另存为…", "Save image as…"), icon: <Download />, action: () => {
       const a = document.createElement("a"); a.href = original.url; a.download = name; document.body.append(a); a.click(); a.remove();
     } },

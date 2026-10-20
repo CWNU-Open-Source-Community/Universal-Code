@@ -43,9 +43,9 @@ describe("V2Inspector", () => {
       item("later-model-result", { sequence: 3, title: "模型调用完成", status: "completed" }),
     ]);
     const view = draw();
-    expect(view.container.querySelector('[data-transcript-id="open-boundary"]')).toHaveTextContent("Not ended");
+    expect(view.container.querySelector('[data-transcript-id="open-boundary"]')).toHaveTextContent("未结束");
     expect(view.container.querySelector('[data-transcript-id="old-model-start"]')).toHaveTextContent("记录时执行中");
-    expect(view.container.querySelector('[data-transcript-id="later-model-result"]')).toHaveTextContent("completed");
+    expect(view.container.querySelector('[data-transcript-id="later-model-result"]')).toHaveTextContent("已完成");
     await userEvent.setup().click(screen.getByRole("button", { name: /模型调用开始/ }));
     expect(screen.getByText(/这是记录保存时的执行状态/)).toHaveTextContent("Agent 的当前活动请查看对话上方的工作状态");
     expect(screen.getByText("model.started:old-attempt")).toBeInTheDocument();
@@ -150,7 +150,7 @@ describe("V2Inspector", () => {
     const { draw } = setup([item("blocked-original", { sequence: 87, status: "failed", stage: "blocked", detail: "Actual failure explanation" })]);
     const view = draw();
     const row = view.container.querySelector('[data-transcript-id="blocked-original"] button')!;
-    expect(row).toHaveTextContent("failed");
+    expect(row).toHaveTextContent("失败");
     expect(row).toHaveTextContent("执行记录");
     expect(row).toHaveTextContent("Actual failure explanation");
     expect(row).not.toHaveTextContent("#87");

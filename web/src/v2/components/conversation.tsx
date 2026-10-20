@@ -861,7 +861,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const canSteer = executionQuery.data?.state === "running" ||
     (!executionQuery.data && detail.active_run?.status === "running");
   const activityLabel = threadActivityLabel({ threadID, execution: executionQuery.data,
-    readable: client.hasThreadExecutionRead === true, error: executionQuery.isError });
+    readable: client.hasThreadExecutionRead === true, error: executionQuery.isError }, t);
   const fileReferenceUnavailableReason = currentRun.status === "waiting_approval"
       ? t("当前任务正在等待批准，暂时不能新增文件引用。请先处理待批准的操作。", "This task is awaiting approval. Resolve pending approvals before adding file references.")
       : working || runActive ? modelActive || activityLabel === "正在工作" || activityLabel === "正在停止"
