@@ -48,7 +48,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 		}
 	}
 	reader := fileReader{ctx: ctx, root: root, target: target}
-	known := []string{"package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb", "go.mod", "go.sum", "go.work", "Cargo.toml", "Cargo.lock", "pyproject.toml", "requirements.txt", "poetry.lock", "uv.lock", "Pipfile", "Pipfile.lock", "deno.json", "deno.jsonc", "composer.json", "composer.lock", "Gemfile", "Gemfile.lock", ".npmrc", ".nvmrc", ".node-version", ".tool-versions"}
+	known := []string{"package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb", "go.mod", "go.sum", "go.work", "Cargo.toml", "Cargo.lock", "pyproject.toml", "pylock.toml", "requirements.txt", "poetry.lock", "uv.lock", "Pipfile", "Pipfile.lock", "deno.json", "deno.jsonc", "composer.json", "composer.lock", "Gemfile", "Gemfile.lock", ".npmrc", ".nvmrc", ".node-version", ".tool-versions"}
 	files := make(map[string]sourceFile)
 	for _, name := range known {
 		value, found, err := reader.read(name)
@@ -65,8 +65,12 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	}
 	_, npm := files["package.json"]
 	_, goModule := files["go.mod"]
-	if npm && goModule {
-		plan.Issues = append(plan.Issues, "Both package.json and go.mod are present; select a directory with one dependency toolchain")
+	_, cargo := files["Cargo.toml"]
+	_, pythonManifest := files["pyproject.toml"]
+	_, pythonLock := files["pylock.toml"]
+	python := pythonManifest || pythonLock
+	if (npm && goModule) || ((npm || goModule || cargo) && python) {
+		plan.Issues = append(plan.Issues, "Multiple dependency toolchains are present; select a directory with one dependency toolchain")
 	} else if npm {
 		if selectsYarn(files) {
 			plan = detectYarn(plan, files)
@@ -83,11 +87,13 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 		}
 	} else if goModule {
 		plan = detectGo(plan, files)
-	} else if _, cargo := files["Cargo.toml"]; cargo {
+	} else if cargo {
 		plan = detectCargo(plan, reader, files)
+	} else if python {
+		plan = detectPython(plan, files)
 	} else {
 		for _, candidate := range []struct{ name, ecosystem, toolchain string }{
-			{"pyproject.toml", "python", "python"}, {"requirements.txt", "python", "pip"}, {"Pipfile", "python", "pipenv"}, {"deno.json", "deno", "deno"}, {"deno.jsonc", "deno", "deno"}, {"composer.json", "php", "composer"}, {"Gemfile", "ruby", "bundler"},
+			{"requirements.txt", "python", "pip"}, {"Pipfile", "python", "pipenv"}, {"deno.json", "deno", "deno"}, {"deno.jsonc", "deno", "deno"}, {"composer.json", "php", "composer"}, {"Gemfile", "ruby", "bundler"},
 		} {
 			if file, found := files[candidate.name]; found {
 				plan.Ecosystem, plan.Toolchain, plan.Manifest = candidate.ecosystem, candidate.toolchain, file.File
@@ -96,7 +102,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 			}
 		}
 		if plan.Ecosystem == "" {
-			plan.Issues = append(plan.Issues, "No supported package.json, go.mod or Cargo.toml was found in the selected directory")
+			plan.Issues = append(plan.Issues, "No supported package.json, go.mod, Cargo.toml, pyproject.toml or pylock.toml was found in the selected directory")
 		}
 		for name, file := range files {
 			if strings.Contains(name, "lock") || name == "go.sum" {
@@ -105,7 +111,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 		}
 	}
 	if npm || goModule {
-		for _, name := range []string{"Cargo.toml", "pyproject.toml", "requirements.txt", "Pipfile", "deno.json", "deno.jsonc", "composer.json", "Gemfile"} {
+		for _, name := range []string{"Cargo.toml", "pyproject.toml", "pylock.toml", "requirements.txt", "Pipfile", "deno.json", "deno.jsonc", "composer.json", "Gemfile"} {
 			if file, found := files[name]; found {
 				plan.Lockfiles = append(plan.Lockfiles, file.File)
 				plan.Issues = append(plan.Issues, name+" declares another dependency toolchain in this directory; select a standalone project or configure an explicitly reviewed sandbox command")

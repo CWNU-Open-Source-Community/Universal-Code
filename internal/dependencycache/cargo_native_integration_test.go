@@ -28,7 +28,7 @@ func TestCargoNativeLockedWorkspacePreparation(t *testing.T) {
 	if !filepath.IsAbs(cargo) {
 		t.Fatal("native Cargo must be explicit")
 	}
-	cache := t.TempDir()
+	cache := filepath.Join(t.TempDir(), "cache")
 	broker, err := dependencycache.New(cache)
 	if err != nil {
 		t.Fatal(err)

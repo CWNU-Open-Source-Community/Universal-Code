@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -103,6 +104,26 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 	executable, launcher, err := resolveProjectCommandToolchain(id, adapter, workspaceRoot...)
 	if err != nil {
 		return runner.CommandRuntimeSpec{}, err
+	}
+	if (id == "test.python" || id == "test.pytest") && len(workspaceRoot) == 1 {
+		plan, detectErr := projectprep.Detect(context.Background(), workspaceRoot[0], target)
+		if detectErr != nil {
+			return runner.CommandRuntimeSpec{}, detectErr
+		}
+		_, lockErr := os.Lstat(filepath.Join(workspaceRoot[0], filepath.FromSlash(target), "pylock.toml"))
+		if lockErr == nil || !os.IsNotExist(lockErr) {
+			if lockErr != nil || plan.Ecosystem != "python" || !plan.Ready {
+				return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Python dependency lock is unavailable; inspect and prepare the project before testing")
+			}
+			if err := checkDetectedProjectPaths(run, plan); err != nil {
+				return runner.CommandRuntimeSpec{}, err
+			}
+			module := "unittest"
+			if id == "test.pytest" {
+				module = "pytest"
+			}
+			return preparePythonPreparationSpec(plan, adapter, workspaceRoot[0], true, module)
+		}
 	}
 	return toolgateway.ProjectCommandSpec(id, executable, target, launcher...)
 }

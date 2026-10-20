@@ -115,6 +115,11 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 	if err := validateCargoPlan(plan); err != nil {
 		return stats, err
 	}
+	pythonBytes, err := pythonSeedBytes(plan)
+	if err != nil {
+		return stats, err
+	}
+	stagedBytes += pythonBytes
 	origins := make(map[string]bool, len(approvedOrigins))
 	for _, raw := range approvedOrigins {
 		origin, err := canonicalOrigin(raw)
@@ -273,6 +278,11 @@ func (b *Broker) Prepare(ctx context.Context, plan projectprep.Plan, approvedOri
 			return stats, err
 		}
 	}
+	if plan.Ecosystem == "python" {
+		if err := writePythonSeed(ctx, workspace, plan, authorityCheck); err != nil {
+			return stats, err
+		}
+	}
 	return stats, nil
 }
 
@@ -362,6 +372,14 @@ func artifactStagePath(target string, pkg projectprep.Package) (string, error) {
 			return "", errors.New("Cargo artifact requires a locked package identity")
 		}
 		return path.Join(projectprep.StageDirectory(target), "cargo-crates", pkg.ModulePath+"-"+pkg.Version+".crate"), nil
+	case projectprep.KindPythonWheel:
+		if !projectprep.ValidPythonWheelName(pkg.ID) || !strings.HasPrefix(pkg.Integrity, "sha256-") {
+			return "", errors.New("Python artifact requires a wheel filename and SHA-256 integrity")
+		}
+		if _, _, err := npmIntegrity(pkg.Integrity); err != nil {
+			return "", err
+		}
+		return path.Join(projectprep.PythonWheelDirectory(target), pkg.ID), nil
 	case projectprep.KindNPMTarball:
 		algorithm, digest, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
@@ -431,10 +449,13 @@ func verifyArtifact(pkg projectprep.Package, body []byte) error {
 		if err != nil || len(expected) != 32 || !bytes.Equal(expected, sum[:]) {
 			return ErrIntegrity
 		}
-	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball:
+	case projectprep.KindNPMTarball, projectprep.KindPNPMTarball, projectprep.KindYarnTarball, projectprep.KindPythonWheel:
 		algorithm, expected, err := npmIntegrity(pkg.Integrity)
 		if err != nil {
 			return err
+		}
+		if pkg.Kind == projectprep.KindPythonWheel && algorithm != "sha256" {
+			return ErrIntegrity
 		}
 		var actual []byte
 		if algorithm == "sha512" {
