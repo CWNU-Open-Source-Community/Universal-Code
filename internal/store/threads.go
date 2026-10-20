@@ -133,6 +133,10 @@ func (s *SQLiteStore) ListThreadsByCreationPage(ctx context.Context, filter doma
 		query += ` AND instr(lower(title), ?) > 0`
 		args = append(args, titleQuery)
 	}
+	if filter.Pinned != nil {
+		query += ` AND pinned = ?`
+		args = append(args, *filter.Pinned)
+	}
 	if !beforeCreatedAt.IsZero() {
 		query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
 		anchor := ts(beforeCreatedAt)

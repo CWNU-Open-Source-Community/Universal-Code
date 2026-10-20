@@ -8,6 +8,29 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../../api/client";
 import { V2Composer } from "./composer";
 import { V2RecoveryProvider } from "../recovery-storage";
+import { chatPreferencesKey, saveChatPreferences } from "../chat-preferences";
+
+it.each([false, true])("honors live send preferences in plain mode %s without sending IME or Shift+Enter", (plain) => {
+  const submit = vi.fn();
+  const view = render(<MarkdownInput value={"first\nsecond"} onChange={vi.fn()} onSubmit={submit} plainText={plain}
+    scope="preference" label="Message" placeholder="" disabled={false} inputRef={null} />);
+  const input = screen.getByRole("textbox");
+  act(() => saveChatPreferences({ send: "modifier" }));
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true, isComposing: true });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  expect(submit).toHaveBeenCalledOnce();
+  act(() => saveChatPreferences({ send: "multiline" }));
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(submit).toHaveBeenCalledOnce();
+  view.rerender(<MarkdownInput value="single" onChange={vi.fn()} onSubmit={submit} plainText={plain}
+    scope="preference" label="Message" placeholder="" disabled={false} inputRef={null} />);
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(submit).toHaveBeenCalledTimes(2);
+  view.unmount(); localStorage.removeItem(chatPreferencesKey);
+});
 
 function Harness({ initial = "", scope = "one", submit = vi.fn() }: { initial?: string; scope?: string; submit?: (text: string) => void }) {
   const [value, setValue] = useState(initial);

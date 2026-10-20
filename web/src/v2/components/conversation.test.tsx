@@ -1084,7 +1084,9 @@ describe("V2Conversation", () => {
       const view = renderConversation(client);
       view.container.classList.add("v2-shell", "has-sidebar");
       const trigger = await screen.findByRole("button", { name: "工作区文件" });
-      await user.click(await screen.findByRole("link", { name: "src/index.ts" }));
+      const sourceLink = await screen.findByRole("link", { name: "index.ts" });
+      expect(sourceLink).toHaveAttribute("title", "src/index.ts");
+      await user.click(sourceLink);
       const dock = await screen.findByRole("complementary", { name: "工作区文件" });
       expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
       expect(dock).not.toHaveAttribute("aria-modal");
@@ -1133,7 +1135,8 @@ describe("V2Conversation", () => {
     const user = userEvent.setup();
     renderConversation(client);
 
-    const fileLink = await screen.findByRole("link", { name: "src/index.ts:42" });
+    const fileLink = await screen.findByRole("link", { name: "index.ts (line 42)" });
+    expect(fileLink).toHaveAttribute("title", "src/index.ts (line 42)");
     expect(fileLink).toHaveClass("v2-file-link");
 
     await user.click(fileLink);
@@ -1148,7 +1151,7 @@ describe("V2Conversation", () => {
     const user = userEvent.setup();
     renderConversation(client);
 
-    const fileLink = await screen.findByRole("link", { name: "README.md:42" });
+    const fileLink = await screen.findByRole("link", { name: "README.md (line 42)" });
     expect(fileLink).toHaveClass("v2-file-link");
 
     await user.click(fileLink);

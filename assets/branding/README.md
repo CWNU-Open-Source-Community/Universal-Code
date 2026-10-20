@@ -1,11 +1,11 @@
-# Traverse Board Brand Mark
+# Universal-Code Brand Mark
 
 `traverse-board-mark.png` is the maintainer-approved canonical project icon:
-a compass-and-sail mark with stars and water on a soft white rounded tile.
+a glass globe with a terminal prompt and a segmented navy ring on a soft white rounded tile.
 
 - Canvas: 1254×1254 RGB PNG
 - Background: opaque white with the supplied rounded-tile treatment
-- SHA-256: `c63b452ca86ccb9a2003ab9711329491185a42825df6d9ca03aaebc078d250b3`
+- SHA-256: `a97e71e5f373d5d48ce24e39360cd390be2beabfe731037ac114ec38f12407d6`
 - Source treatment: preserved exactly as supplied; no generative redraw
 
 Web, Windows, and macOS assets are deterministic resize, rounded-alpha-mask,

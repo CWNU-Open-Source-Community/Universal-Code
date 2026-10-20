@@ -21,6 +21,7 @@ type branchAnchor struct {
 	runID              string
 	ordinal, sequence  int64
 	eventType, payload string
+	userMessageID      int64
 }
 
 func readBranchAnchor(ctx context.Context, q historyQueryer, request domain.ThreadBranchRequest) (branchAnchor, error) {
@@ -35,6 +36,19 @@ func readBranchAnchor(ctx context.Context, q historyQueryer, request domain.Thre
 	if err != nil {
 		return anchor, err
 	}
+	if anchor.eventType == events.OperatorSteeringQueuedEvent {
+		// The transcript places a delivered input at its queue event. Resolve
+		// its committed message without advancing the cutoff into the reply.
+		err := q.QueryRowContext(ctx, `SELECT m.id FROM run_events e
+			JOIN operator_steering_messages o ON o.id=e.subject_id AND o.run_id=e.run_id
+			JOIN session_messages m ON m.id=o.session_message_id
+			JOIN runs r ON r.id=e.run_id AND r.session_id=m.session_id
+			WHERE e.event_id=? AND o.status='committed' AND m.role='user' AND m.source_kind='operator_message'`, request.SourceEventID).Scan(&anchor.userMessageID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return anchor, apperror.New(apperror.CodeInvalidArgument, "Branching requires a delivered user message or durable assistant reply")
+		}
+		return anchor, err
+	}
 	var payload struct {
 		Role, Content, Text string
 		SourceKind          string `json:"source_kind"`
@@ -43,10 +57,11 @@ func readBranchAnchor(ctx context.Context, q historyQueryer, request domain.Thre
 		return anchor, apperror.New(apperror.CodeFailedPrecondition, "The selected reply has invalid stored content")
 	}
 	if (anchor.eventType == events.SessionMessageEvent && payload.Role == "assistant" && payload.SourceKind == session.SourceModelResponse && strings.TrimSpace(payload.Content) != "") ||
+		(anchor.eventType == events.SessionMessageEvent && payload.Role == "user" && payload.SourceKind == session.SourceOperatorMessage && strings.TrimSpace(payload.Content) != "") ||
 		(anchor.eventType == events.ModelPublicCommentaryEvent && strings.TrimSpace(payload.Text) != "") {
 		return anchor, nil
 	}
-	return anchor, apperror.New(apperror.CodeInvalidArgument, "Branching requires a durable assistant reply")
+	return anchor, apperror.New(apperror.CodeInvalidArgument, "Branching requires a delivered user message or durable assistant reply")
 }
 
 func (s *SQLiteStore) GetThreadBranchSource(ctx context.Context, request domain.ThreadBranchRequest) (domain.ThreadBranchSource, error) {
@@ -149,14 +164,14 @@ func copyBranchMessagesTx(ctx context.Context, tx *sql.Tx, request domain.Thread
 		LEFT JOIN run_events queued ON queued.run_id=b.run_id AND queued.type='operator.steering_queued' AND queued.subject_id=o.id
 		WHERE b.thread_id=? AND m.role!='system'
 		AND NOT EXISTS(SELECT 1 FROM operator_message_attachment_evidence attachment WHERE attachment.session_message_id=m.id)
-		AND (b.ordinal<? OR (b.ordinal=? AND e.sequence<=?))
+		AND (b.ordinal<? OR (b.ordinal=? AND e.sequence<=?) OR m.id=?)
 		UNION ALL
 		SELECT 0,b.session_id,'assistant',json_extract(e.payload_json,'$.text'),'context_provenance.v1','model_response','',
 		'',0,0,0,e.created_at,'',b.ordinal,e.sequence,e.event_id,COALESCE(json_extract(e.payload_json,'$.attempt_id'),'')
 		FROM thread_runs b JOIN run_events e ON e.run_id=b.run_id
 		WHERE b.thread_id=? AND e.type='model.public_commentary' AND json_type(e.payload_json,'$.context_message_id') IS NULL
 		AND (b.ordinal<? OR (b.ordinal=? AND e.sequence<=?))
-		ORDER BY 14,15`, request.ThreadID, anchor.ordinal, anchor.ordinal, anchor.sequence, request.ThreadID, anchor.ordinal, anchor.ordinal, anchor.sequence)
+		ORDER BY 14,15`, request.ThreadID, anchor.ordinal, anchor.ordinal, anchor.sequence, anchor.userMessageID, request.ThreadID, anchor.ordinal, anchor.ordinal, anchor.sequence)
 	if err != nil {
 		return err
 	}

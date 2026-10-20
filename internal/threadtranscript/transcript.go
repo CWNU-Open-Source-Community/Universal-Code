@@ -415,6 +415,15 @@ func projectActivity(source Source, projected runactivity.Item) Item {
 		_ = json.Unmarshal([]byte(source.Event.PayloadJSON), &payload)
 		item.SourceRef = safeIdentity(payload.SourceRef)
 	}
+	if source.Event.Type == events.ModelPublicCommentaryEvent && source.Event.Source == "thread_branch" {
+		var payload struct {
+			SourceEventID string `json:"source_event_id"`
+		}
+		_ = json.Unmarshal([]byte(source.Event.PayloadJSON), &payload)
+		if id := safeIdentity(payload.SourceEventID); id != "" {
+			item.SourceRef = "branch-assistant:" + id
+		}
+	}
 	if projected.Kind == runactivity.KindToolCall {
 		var payload struct {
 			Tool             string `json:"tool"`

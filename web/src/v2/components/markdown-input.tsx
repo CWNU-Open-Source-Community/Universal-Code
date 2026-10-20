@@ -8,6 +8,7 @@ import { Image } from "@tiptap/extension-image";
 import { Slice } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import "./markdown-input.css";
+import { sendsOnEnter, useChatPreferences } from "../chat-preferences";
 
 export const composerPlainTextKey = "universal-code.composer-plain-text";
 export function readComposerPlainText(): boolean {
@@ -24,11 +25,12 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
   plainText: boolean; scope: string; label: string; placeholder: string;
   disabled: boolean; inputRef: Ref<MarkdownInputHandle>;
 }) {
+  const { send } = useChatPreferences();
   const mount = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const editor = useRef<Editor | null>(null);
-  const latest = useRef({ value, onChange, onSubmit, disabled, label, placeholder });
-  latest.current = { value, onChange, onSubmit, disabled, label, placeholder };
+  const latest = useRef({ value, onChange, onSubmit, disabled, label, placeholder, send });
+  latest.current = { value, onChange, onSubmit, disabled, label, placeholder, send };
   const representedValue = useRef(value);
   const restoreFocus = useRef(false);
 
@@ -66,7 +68,7 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
           // ordinary paragraphs retain the existing Enter-to-send behavior.
           const structured = Array.from({ length: $from.depth }, (_, index) => $from.node(index + 1))
             .some((node) => ["codeBlock", "listItem", "taskItem", "blockquote", "table", "heading"].includes(node.type.name));
-          if (structured && !event.ctrlKey && !event.metaKey) return false;
+          if (!sendsOnEnter(latest.current.send, latest.current.value, event.ctrlKey || event.metaKey, structured)) return false;
           event.preventDefault(); latest.current.onSubmit(); return true;
         },
         handlePaste(view, event) {
@@ -131,7 +133,8 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
   return plainText ? <textarea aria-label={label} disabled={disabled} ref={textarea} rows={1}
     placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)}
     onKeyDown={(event) => {
-      if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+      if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229 &&
+        sendsOnEnter(send, value, event.ctrlKey || event.metaKey)) {
         event.preventDefault(); onSubmit();
       }
     }} /> : <div className="v2-markdown-input-host" ref={mount} />;

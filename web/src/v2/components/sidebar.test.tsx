@@ -123,7 +123,8 @@ describe("V2Sidebar archive menu", () => {
       searchOpen={false} selectedThreadID={thread.id} threads={[thread]}
       workspaces={[workspace]} />);
 
-    await user.click(screen.getByRole("button", { name: "归档 Permission audit" }));
+    await user.click(screen.getByRole("button", { name: "Permission audit 聊天选项" }));
+    await user.click(screen.getByRole("menuitem", { name: "归档 Permission audit" }));
 
     expect(onArchive).toHaveBeenCalledTimes(1);
     expect(onArchive).toHaveBeenCalledWith(thread);

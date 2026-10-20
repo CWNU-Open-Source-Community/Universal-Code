@@ -121,12 +121,12 @@ jobs:
           if packages:
               subprocess.run(["go", "test", "-count=1", *packages], check=True)
           PY
-      - name: Set up Node for native pnpm preparation verification
+      - name: Set up Node for native package preparation verification
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: Prepare integrity-pinned pnpm test toolchain
+      - name: Prepare integrity-pinned package preparation fixtures
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
         run: |
           python - <<'PY'
@@ -138,9 +138,18 @@ jobs:
           target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "pnpm-preparation-test"
           with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
               archive.extractall(target, filter="data")
+          npm_data = urllib.request.urlopen("https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz", timeout=60).read()
+          npm_expected = "41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
+          if base64.b64encode(hashlib.sha512(npm_data).digest()).decode() != npm_expected:
+              raise SystemExit("npm workspace fixture integrity mismatch")
+          npm_archive = target / "is-number-7.0.0.tgz"
+          npm_archive.write_bytes(npm_data)
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write(f"TRAVERSE_PNPM_TEST_NODE={shutil.which('node')}\n")
               env.write(f"TRAVERSE_PNPM_TEST_CLI={target / 'package/bin/pnpm.cjs'}\n")
+              env.write(f"TRAVERSE_NPM_TEST_NODE={shutil.which('node')}\n")
+              env.write(f"TRAVERSE_NPM_TEST_CLI={pathlib.Path(shutil.which('npm')).resolve()}\n")
+              env.write(f"TRAVERSE_NPM_TEST_TARBALL={npm_archive}\n")
           PY
       - name: Prepare integrity-pinned Cargo verification fixture
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}

@@ -240,6 +240,8 @@ type DesktopBridgeConfig struct {
 	ClipboardReader                    ClipboardFileReader
 	ClipboardFiles                     ClipboardFileImporter
 	ClipboardImages                    ClipboardImageImporter
+	ResourceReader                     ChatResourceReader
+	ResourceHost                       ChatResourceHost
 	UserTerminalController             UserTerminalController
 	DebugTerminalAgentInputController  application.DebugTerminalAgentInputController
 	RiskProfileRestartEnabled          bool
@@ -267,6 +269,8 @@ type DesktopBridge struct {
 	clipboardFiles           ClipboardFileImporter
 	clipboardImages          ClipboardImageImporter
 	clipboardActive          atomic.Bool
+	resourceReader           ChatResourceReader
+	resourceHost             ChatResourceHost
 	userTerminal             UserTerminalController
 	debugTerminalAgentInput  application.DebugTerminalAgentInputController
 	riskProfileRestarter     DesktopRiskProfileRestarter
@@ -446,6 +450,8 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 		clipboardReader:          config.ClipboardReader,
 		clipboardFiles:           config.ClipboardFiles,
 		clipboardImages:          config.ClipboardImages,
+		resourceReader:           config.ResourceReader,
+		resourceHost:             config.ResourceHost,
 		userTerminal:             config.UserTerminalController,
 		debugTerminalAgentInput:  config.DebugTerminalAgentInputController,
 		riskProfileRestarter:     config.RiskProfileRestarter,

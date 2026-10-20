@@ -38,7 +38,7 @@ Local fetch Job：`command-job-96d9b61107678e39c19c25c4`；Full test Job：`comm
 
 解析、归档和 broker 检查覆盖成员摘要变化、Git/registry 拒绝、锁文件校验和、归档路径及大小上限、链接/大小写冲突、缓存损坏、权限撤销和取消。原始网络 EOF 和 Local 编译失败均保留在本机 `output/playwright/cargo-project-preparation`，没有改为成功记录。
 
-Windows Go 1.26.9 的补充验证复现了原生测试缓存路径不规范的问题：直接使用 `t.TempDir()` 被生产缓存构造器拒绝。测试改用该临时目录下的 `cache` 子目录，保留原有绝对路径与规范路径校验；重新运行真实 Cargo，在两个中文/空格目录中的离线 fetch、编译及原测试全部通过。此次结果保存在本机 `output/playwright/cargo-native-fixture/native-cargo.log`。
+Windows Go1.26.9 使用含正斜杠的 `GOTMPDIR` 时，`t.TempDir()` 返回的混合分隔符路径被生产缓存构造器拒绝。测试改用该临时目录下的 `cache` 子目录，保留原有绝对路径与规范路径校验；重新运行真实 Cargo，在两个中文/空格目录中的离线 fetch、编译及原测试全部通过。此次结果保存在本机 `output/playwright/cargo-native-fixture/native-cargo.log`。
 
 ## 界面截图
 

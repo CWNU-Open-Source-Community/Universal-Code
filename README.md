@@ -44,27 +44,37 @@
 
 | 平台 | 下载与运行说明 |
 | :--- | :--- |
-| **Windows 10/11** | 前往 [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) 下载 `Universal-Code.exe`，双击即可运行（需系统安装 WebView2 Runtime）。详见 [Windows 安装说明](docs/windows-release.md)。 |
-| **macOS (Apple Silicon / Intel)** | 前往 [Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) 下载 `.dmg` 或 `.zip`，解压并拖入 Applications。详见 [macOS 安装说明](docs/macos-release.md)。 |
+| **Windows 10/11** | 当前 Actions 测试包及启动步骤见 [Windows 下载说明](docs/windows-release.md)。实际文件名为 `TraverseBoard.exe`，双击运行，需 Edge WebView2 Runtime。最新公开 Release 仍是 [2026-09-05 的旧预览](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview)。 |
+| **macOS (Apple Silicon / Intel)** | 从 [macOS 下载说明](docs/macos-release.md) 获取对应架构的 Actions 预览 ZIP，解包后打开 `TraverseBoard.app`。当前仅有 ad-hoc 签名，未公证；公开 Release 尚无 Mac 包。 |
+
+持续更新的候选入口为 [Desktop release 打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)。Actions 下载需要登录 GitHub，且有保留期限；对应版本、源码提交和到期时间见平台说明。
+测试包沿用历史文件名，窗口中的产品名为 Universal-Code。
 
 ### 方式二：从源码构建运行
 
-确保本地已安装 **Go 1.26+** 与 **Node.js 24+**：
+安装 **Go（版本遵循 [go.mod](go.mod)，当前为 1.26.9）** 与 **Node.js 24**（CI 使用 24.16.0），然后克隆仓库：
 
 ```bash
-# 1. 克隆代码仓库
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
 cd Universal-Code
-
-# 2. 构建前端控制台
-cd web
-npm ci
-npm run build
-cd ..
-
-# 3. 启动桌面应用或服务
-go run ./cmd/cyberagent-desktop
 ```
+
+Windows 在仓库根目录的 PowerShell 中运行：
+
+```powershell
+.\scripts\build-desktop.ps1 -Version v1.0.0-dev
+.\build\desktop\TraverseBoard.exe
+```
+
+macOS 需要 Xcode Command Line Tools。在仓库根目录运行：
+
+```sh
+CGO_ENABLED=1 bash scripts/build-desktop-darwin.sh -Version v1.0.0-dev
+open build/desktop/TraverseBoard.app
+```
+
+脚本会安装前端锁定依赖、检查并构建内嵌界面，再使用各平台需要的 Go 标签和链接参数生成桌面应用。
+应用包含后端服务，无需另外启动后端。完整要求见 [Windows](docs/windows-release.md) / [macOS](docs/macos-release.md) 说明。
 
 ---
 
@@ -99,6 +109,7 @@ go run ./cmd/cyberagent-desktop
 | 领域 | 文档链接 | 描述 |
 | :--- | :--- | :--- |
 | **使用指南** | [用户手册 (Usage Guide)](docs/usage.md) | 完整客户端使用、CLI 命令与常见工作流 |
+| **聊天资源** | [链接、文件与剪贴板](docs/chat-resource-interactions.md) | 外链预览、资源右键菜单、文件与图片复制粘贴 |
 | **搜索与取证** | [网络检索与快照 (Web Evidence)](docs/web-evidence.md) | 检索配置、快照存储、URL 溯源与失败诊断 |
 | **改动审计** | [工作区检查点 (Checkpoints)](docs/workspace-checkpoints.md) | 逐行 Diff 审阅、快照保存与安全恢复 (Rewind) |
 | **生态扩展** | [扩展与 MCP 协议 (Extensions)](docs/extensions.md) | 接入 Model Context Protocol (MCP) 与外部 Skill |
