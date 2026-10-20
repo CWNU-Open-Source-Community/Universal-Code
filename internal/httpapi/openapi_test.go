@@ -1743,6 +1743,10 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = string(encoded)
 				} else if spec.OperationID == "renameWorkspace" {
 					body = `{"name":"OpenAPI project renamed"}`
+				} else if spec.OperationID == "renameThread" {
+					body = `{"title":"OpenAPI conversation renamed"}`
+				} else if spec.OperationID == "pinThread" {
+					body = `{"pinned":true}`
 				} else if spec.Path == WorkspaceImportPath {
 					encoded, err := json.Marshal(WorkspaceImportRequestView{
 						Version:       WorkspaceImportProtocolVersion,

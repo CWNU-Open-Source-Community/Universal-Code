@@ -12785,7 +12785,7 @@ CREATE TABLE threads (
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL,
 		archived_at TEXT,
-		deleted_at TEXT,
+		deleted_at TEXT, pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)),
 		FOREIGN KEY(mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
 		FOREIGN KEY(active_run_id) REFERENCES runs(id) ON DELETE RESTRICT,
 		FOREIGN KEY(last_run_id) REFERENCES runs(id) ON DELETE RESTRICT,
@@ -14451,6 +14451,8 @@ CREATE UNIQUE INDEX idx_threads_active_run_unique ON threads(active_run_id)
 		WHERE active_run_id IS NOT NULL AND active_run_id <> '';
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_threads_created_at ON threads(created_at DESC, id DESC);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX idx_threads_status_pinned_created ON threads(status,pinned,created_at DESC,id DESC);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX idx_threads_status_updated_at ON threads(status, updated_at DESC);
 -- traverse-board-clean-install-object-boundary --

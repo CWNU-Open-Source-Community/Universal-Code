@@ -34,8 +34,9 @@ function deferred<T>() {
 }
 function start(getThreads: (query: { q?: string; include_archived?: boolean }, cursor: string, signal: AbortSignal) => unknown) {
   window.history.replaceState({}, "", `#/threads/${current.id}`);
-  const getPage = vi.fn(async (path: string, query: { q?: string; include_archived?: boolean }, cursor: string, signal: AbortSignal) => {
+  const getPage = vi.fn(async (path: string, query: { q?: string; include_archived?: boolean; pinned?: boolean }, cursor: string, signal: AbortSignal) => {
     if (path === "/workspaces") return page([workspace]);
+    if (path === "/threads" && query.pinned) return page([]);
     const result = await getThreads(query, cursor, signal) as ReturnType<typeof page>;
     if (path !== "/threads/search") return result;
     return { ...result, items: result.items.map((value) => {
@@ -51,7 +52,8 @@ function start(getThreads: (query: { q?: string; include_archived?: boolean }, c
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(queryClient);
   render(<QueryClientProvider client={queryClient}><LocaleProvider><V2Workbench client={client} /></LocaleProvider></QueryClientProvider>);
-  const listCalls = () => getPage.mock.calls.filter(([path]) => path === "/threads" || path === "/threads/search");
+  const listCalls = () => getPage.mock.calls.filter(([path, query]) =>
+    (path === "/threads" && !query.pinned) || path === "/threads/search");
   return { client, queryClient, listCalls };
 }
 async function openSearch() {

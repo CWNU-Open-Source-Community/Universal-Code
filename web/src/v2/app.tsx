@@ -377,6 +377,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     setWorkspaceID(id);
   };
   const [archiveCandidate, setArchiveCandidate] = useState<ThreadView | null>(null);
+  const [executionFilter, setExecutionFilter] = useState<"" | "running" | "waiting_approval">("");
   const workspacesQuery = useInfiniteQuery({
     queryKey: v2QueryKeys.workspaces,
     queryFn: ({ signal, pageParam }) => client.getPage<WorkspaceView>("/workspaces", { limit: 100 }, pageParam, signal),
@@ -384,9 +385,11 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     staleTime: 30_000,
   });
   const threadsQuery = useInfiniteQuery({
-    queryKey: v2QueryKeys.threadSearch("active", ""),
+    queryKey: executionFilter
+      ? [...v2QueryKeys.threadSearch("active", ""), { execution_state: executionFilter }]
+      : v2QueryKeys.threadSearch("active", ""),
     queryFn: ({ signal, pageParam }) => client.getPage<ThreadView>("/threads",
-      { limit: 100, status: "active" }, pageParam, signal),
+      { limit: 100, status: "active", ...(executionFilter ? { execution_state: executionFilter } : {}) }, pageParam, signal),
     initialPageParam: "", getNextPageParam: (last) => last.page.next_cursor || undefined,
     enabled: !appliedThreadSearch && !searchPending && !searchTooLong,
     // Infinite queries refetch every cached page. Poll only a single page;
@@ -601,6 +604,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
         onSelect={setSettingsSection} section={settingsSection} /> : <V2Sidebar
           onArchive={setArchiveCandidate} onNewConversation={() => startNew()} onOpenModels={() => openModels(newConversation)}
           onNewInProject={(id) => startNew(id)} client={client}
+          executionFilter={executionFilter} onExecutionFilterChange={setExecutionFilter}
+          visible={sidebarVisible && surface === "conversation"}
           onEditProject={client.hasControl ? setEditingProject : undefined}
           onMoveThread={client.hasThreadControl ? (thread, destination) => moveMutation.mutate({ thread, destination }) : undefined}
           movingThreadID={moveMutation.isPending ? moveMutation.variables.thread.id : undefined}
