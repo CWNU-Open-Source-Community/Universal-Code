@@ -216,8 +216,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           </button>
         </div>; })}
       </section>; })}
-      {!searchPending && loadFailed && <p className="v2-history-scope" role="alert">{threads.length ? t("对话列表加载失败，已有记录仍可打开。", "The conversation list could not be loaded. Existing records can still be opened.") : t("对话列表加载失败，请重试读取。", "The conversation list could not be loaded. Please try again.")}
-        <button disabled={refreshing || loadingMore} onClick={onRetry ?? (loadMoreFailed ? onLoadMore : onRefresh)} type="button">{t("重试加载对话", "Retry loading conversations")}</button></p>}
+      {!searchPending && loadFailed && <p className="v2-history-scope v2-history-error" role="alert">{threads.length ? t("对话列表加载失败，已有记录仍可打开。", "The conversation list could not be loaded. Existing records can still be opened.") : t("对话列表加载失败，请重试读取。", "The conversation list could not be loaded. Please try again.")}
+        <button className="v2-retry-action" disabled={refreshing || loadingMore} onClick={onRetry ?? (loadMoreFailed ? onLoadMore : onRefresh)} type="button"><RefreshCw aria-hidden="true" size={14} />{t("重试加载对话", "Retry loading conversations")}</button></p>}
       {!searchPending && hasMore && <button className="v2-load-history" disabled={loadingMore || refreshing || loading}
         onClick={onLoadMore} type="button">{loadingMore ? searching ? t("正在加载更多匹配记录…", "Loading more matches…") : t("正在加载更早对话…", "Loading earlier conversations…")
           : searching ? t("加载更多匹配记录", "Load more matches") : t("加载更早对话", "Load earlier conversations")}</button>}

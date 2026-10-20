@@ -782,7 +782,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     </div>}
     {(workspacesQuery.isError || threadsQuery.isError) && <div className="v2-toast" role="alert">
       {t("项目或对话列表加载失败，已有内容会保留。", "Projects or conversations could not be loaded. Existing content has been kept.")}
-      <button onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">{t("重试加载", "Retry loading")}</button>
+      <button className="v2-retry-action" onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">{t("重试加载", "Retry loading")}</button>
     </div>}
     {persistenceWarning && <div className="v2-toast" role={recovery ? "alert" : "status"}>{persistenceWarning}</div>}
     <V2ConfirmDialog busy={archiveMutation.isPending} confirmLabel={t("归档", "Archive")} description={t("此对话会从侧栏隐藏，但消息、执行记录和审计证据都会保留。你可以随时从设置中恢复。", "This conversation will be hidden from the sidebar. Messages, execution records, and audit evidence will be kept. You can restore it in Settings at any time.")}

@@ -28,6 +28,27 @@
 .v2-approval-facts pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
 .v2-command-approvals { min-width: 0; }
 .v2-history-scope { font-size: 11px; line-height: 1.6; color: var(--v2-muted); margin: 8px 14px; }
+.v2-history-error { display: grid; gap: 4px; }
+.v2-shell .v2-retry-action {
+  align-items: center;
+  background: var(--v2-control);
+  border: 0;
+  border-radius: 999px;
+  color: var(--v2-ink);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 13px;
+  gap: 7px;
+  justify-content: center;
+  line-height: 1.5;
+  min-height: 36px;
+  padding: 8px 16px;
+}
+.v2-retry-action > svg { flex-shrink: 0; }
+.v2-shell .v2-history-error .v2-retry-action { background: transparent; justify-self: start; margin-left: -8px; min-height: 32px; padding: 6px 8px; }
+.v2-shell .v2-retry-action:hover:not(:disabled) { background: var(--v2-control-hover); }
+.v2-shell .v2-retry-action:disabled { cursor: wait; opacity: .5; }
 .v2-search-archived { display: flex; gap: 6px; align-items: center; margin: 4px 14px 8px; color: var(--v2-muted); font-size: 11px; }
 .v2-message-search-results { display: grid; gap: 4px; padding: 0 8px; }
 .v2-message-search-result { display: grid; gap: 5px; min-width: 0; width: 100%; padding: 10px 8px; border: 1px solid transparent; border-radius: 6px; text-align: left; background: transparent; color: var(--v2-ink); font: inherit; cursor: pointer; }
@@ -1231,8 +1252,17 @@
 .v2-transcript-empty > span { align-items: center; background: var(--v2-control); border-radius: 50%; display: flex; height: 34px; justify-content: center; width: 34px; }
 .v2-main-loading,
 .v2-main-error { align-items: center; display: flex; gap: 10px; height: 100%; justify-content: center; }
-.v2-main-error { flex-direction: column; }
-.v2-main-error span { color: var(--v2-muted); }
+.v2-main-error { flex-direction: column; font-size: 13px; line-height: 1.65; padding: 28px; text-align: center; }
+.v2-main-error > strong { color: var(--v2-ink); font-size: 16px; font-weight: 600; }
+.v2-main-error > span { color: var(--v2-muted); max-width: 420px; }
+.v2-main-error > .v2-retry-action { margin-top: 8px; }
+.v2-main-error > details { color: var(--v2-muted); max-width: min(480px, 100%); overflow-wrap: anywhere; }
+.v2-main-error summary { align-items: center; border-radius: 8px; cursor: pointer; display: inline-flex; font-size: 12px; gap: 5px; list-style: none; padding: 5px 8px; }
+.v2-main-error summary::-webkit-details-marker { display: none; }
+.v2-main-error summary > svg { flex-shrink: 0; transform: rotate(-90deg); }
+.v2-main-error details[open] > summary { display: flex; justify-content: center; margin-bottom: 6px; }
+.v2-main-error details[open] > summary > svg { transform: none; }
+.v2-main-error summary:hover { background: var(--v2-control); color: var(--v2-ink); }
 
 .v2-composer-dock {
   background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--v2-main-surface) 94%, transparent) 27%);
@@ -2119,6 +2149,7 @@
 .v2-inspector-facts strong { color: var(--v2-ink); font-size: 12px; overflow-wrap: anywhere; text-transform: none; }
 .v2-shell .v2-open-legacy { background: var(--prayu-primary-bg); border: 1px solid var(--prayu-primary-border); border-radius: 10px; color: var(--prayu-primary-fg); box-shadow: 0 2px 8px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight); height: 38px; margin: auto 16px 16px; }
 .v2-toast { backdrop-filter: blur(24px); background: var(--v2-floating-surface); border: 1px solid var(--v2-border); border-radius: 11px; bottom: 18px; box-shadow: 0 12px 32px rgb(0 0 0 / 16%); left: 50%; padding: 10px 14px; position: fixed; transform: translateX(-50%); z-index: 600; }
+.v2-toast:has(> .v2-retry-action) { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; max-width: calc(100vw - 32px); width: max-content; }
 
 .sr-only,
 .v2-shell .sr-only { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
