@@ -39,7 +39,7 @@ func TestBunNativeFrozenOfflineCache(t *testing.T) {
 		"bun.lock":         `{"lockfileVersion":2,"configVersion":1,"workspaces":{"":{"name":"frozen-bun-fixture","dependencies":{"is-number":"7.0.0","@colors/colors":"1.6.0",},},},"packages":{"is-number":["is-number@7.0.0","",{},"sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],"@colors/colors":["@colors/colors@1.6.0","",{},"sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA=="],}}`,
 		"original.test.ts": `import {test,expect} from 'bun:test';import isNumber from 'is-number';import colors from '@colors/colors';test('original_registry_test',()=>{expect(isNumber('42')).toBe(true);expect(colors.stripColors(colors.green('ok'))).toBe('ok');});`,
 	}
-	shared := t.TempDir()
+	shared := filepath.Join(t.TempDir(), "cache")
 	broker, err := dependencycache.New(shared)
 	if err != nil {
 		t.Fatal(err)
