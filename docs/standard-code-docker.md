@@ -33,6 +33,7 @@ To build the repository fixture, first make the five exact base references named
 fixed local Engine. Each value must be `name@sha256:<64-hex>`.
 `CYBERAGENT_STANDARD_CODE_BUN_IMAGE_DIGEST` must contain Bun **1.4.3** at
 `/usr/local/bin/bun`; the build checks the copied executable's version.
+The Node image must also contain Yarn **1.22.22** at `/opt/yarn-v1.22.22`.
 Also download the
 [pnpm 10.28.1 archive](https://registry.npmjs.org/pnpm/-/pnpm-10.28.1.tgz) and set
 `CYBERAGENT_STANDARD_CODE_PNPM_TARBALL` to that local file. The build verifies its
@@ -48,8 +49,8 @@ chooses a random tag it owns, strips inherited environment, volume, and label co
 and prints the exact digest for both product and opt-in test vars. After removing
 inherited labels, it sets `org.traverse-board.project-actions=1`,
 `org.traverse-board.project-preparation=1`, `org.traverse-board.pnpm-version=10.28.1`,
-and `org.traverse-board.bun-version=1.4.3`.
-The version labels enable pnpm and Bun preparation; older images retain their existing
+`org.traverse-board.yarn-version=1.22.22`, and `org.traverse-board.bun-version=1.4.3`.
+The version labels enable pnpm, Yarn and Bun preparation; older images retain their existing
 npm/Go capabilities and request a rebuild for the missing package manager.
 
 The current fixture contains `standard-code-docker-runner.v2`; rebuild it when

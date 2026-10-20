@@ -127,11 +127,12 @@ try {
   $config = $configJSON | ConvertFrom-Json
   if (($null -ne $config.Env -and @($config.Env).Count -ne 0) -or
       $null -ne $config.Volumes -or $null -eq $config.Labels -or
-      @($config.Labels.PSObject.Properties).Count -ne 4 -or
+      @($config.Labels.PSObject.Properties).Count -ne 5 -or
       $config.Labels.'org.traverse-board.project-actions' -ne '1' -or
       $config.Labels.'org.traverse-board.project-preparation' -ne '1' -or
       $config.Labels.'org.traverse-board.pnpm-version' -ne '10.28.1' -or
       $config.Labels.'org.traverse-board.yarn-version' -ne '1.22.22' -or
+      $config.Labels.'org.traverse-board.bun-version' -ne '1.4.3' -or
       $config.User -ne "65532:65532" -or $config.WorkingDir -ne "/workspace" -or
       @($config.Entrypoint).Count -ne 1 -or
       $config.Entrypoint[0] -ne "/traverse-board/standard-code-runner") {
