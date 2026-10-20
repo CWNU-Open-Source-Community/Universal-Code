@@ -1,4 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { render as renderComponent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parseReviewDiff, ReviewDiff } from "./review-diff";
 
@@ -100,3 +103,9 @@ it("shows trailing non-hunk file metadata without adding it to another file's qu
   expect(feedback.mock.calls[0][0]).not.toContain("logo.bin");
   expect(feedback.mock.calls[0][0]).toContain("旧文件路径：a/src/app.ts");
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

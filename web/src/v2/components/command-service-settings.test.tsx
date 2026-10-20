@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { commandServicePolicyVersion, type ThreadCommandServicePolicyRequest, type ThreadCommandServicePolicyView } from "../../api/command-service-policy";
@@ -187,3 +190,9 @@ it("does not show a previous Thread's cached policy or services after switching 
   expect(screen.getByRole("button", { name: "自动选择" })).not.toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "始终独占" })).toBeDisabled();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

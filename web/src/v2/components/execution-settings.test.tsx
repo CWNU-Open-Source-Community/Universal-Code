@@ -1,14 +1,13 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { RunDetailView, ThreadDetailView } from "../../api/types";
 import { capabilityReadinessFixture, patchCapabilityReadiness } from "../../test/capability-readiness";
 import { V2ExecutionSettings } from "./execution-settings";
-
-vi.mock("../../lib/locale", () => ({
-  useLocale: () => ({ locale: "zh-CN", t: (chinese: string) => chinese }),
-}));
 
 function runDetail(id = "run-1"): RunDetailView {
   return {
@@ -115,3 +114,9 @@ describe("V2ExecutionSettings", () => {
     expect(screen.queryByText(/普通任务的文件工具使用已接入的项目目录/u)).not.toBeInTheDocument();
   });
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

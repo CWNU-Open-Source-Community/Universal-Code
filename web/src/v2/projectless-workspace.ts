@@ -1,3 +1,5 @@
+import { useLocale } from "../lib/locale";
+import { localUIMessage } from "../lib/local-ui-message";
 import { useEffect, useState } from "react";
 import type { APIClient } from "../api/client";
 import type { WorkspaceView } from "../api/types";
@@ -18,6 +20,7 @@ const validSlot = (value: unknown): value is DraftWorkspace => {
 
 // Reserve before uploading attachments; retries and reloads use the same key.
 export function useProjectlessWorkspace(client: APIClient, active: boolean) {
+  const { t } = useLocale();
   const store = useV2RecoveryStore();
   const [saved, setSaved] = useV2PersistentState<unknown>(slotKey, null);
   const slot = validSlot(saved) ? saved : null;
@@ -51,7 +54,7 @@ export function useProjectlessWorkspace(client: APIClient, active: boolean) {
   return {
     workspaceID: slot?.workspace?.id ?? "",
     pending: client.hasProjectlessWorkspaces && active && !slot?.workspace && !error && !invalid,
-    error: invalid ? "保存的工作目录请求无法读取，原记录已保留。" : error,
+    error: localUIMessage(invalid ? "保存的工作目录请求无法读取，原记录已保留。" : error, t),
     retry: () => setAttempt((value) => value + 1),
     consume: (workspaceID: string) => setSaved((current: unknown) =>
       validSlot(current) && current.workspace?.id === workspaceID ? null : current),

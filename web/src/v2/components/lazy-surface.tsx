@@ -1,3 +1,4 @@
+import { useLocale, type LocaleText } from "../../lib/locale";
 import { Component, Suspense, type ReactNode } from "react";
 
 type LazySurfaceProps = {
@@ -8,7 +9,7 @@ type LazySurfaceProps = {
   onDismiss?: () => void;
 };
 
-class LazySurfaceBoundary extends Component<LazySurfaceProps, { failed: boolean }> {
+class LazySurfaceBoundary extends Component<LazySurfaceProps & { t: LocaleText }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
@@ -17,9 +18,9 @@ class LazySurfaceBoundary extends Component<LazySurfaceProps, { failed: boolean 
 
   render() {
     if (this.state.failed) return <div className="v2-module-loading" role="alert">
-      <p>{this.props.errorLabel}加载失败。</p>
-      <p>请先保存输入，再重新加载页面重试。</p>
-      {this.props.onDismiss && <button type="button" onClick={this.props.onDismiss}>关闭</button>}
+      <p>{this.props.t(`${this.props.errorLabel}加载失败。`, `Could not load ${this.props.errorLabel}.`)}</p>
+      <p>{this.props.t("请先保存输入，再重新加载页面重试。", "Save your input, then reload the page to retry.")}</p>
+      {this.props.onDismiss && <button type="button" onClick={this.props.onDismiss}>{this.props.t("关闭", "Close")}</button>}
     </div>;
     return <Suspense fallback={<div className="v2-module-loading" role="status">{this.props.loadingText}</div>}>
       {this.props.children}
@@ -28,5 +29,6 @@ class LazySurfaceBoundary extends Component<LazySurfaceProps, { failed: boolean 
 }
 
 export function V2LazySurface(props: LazySurfaceProps) {
-  return <LazySurfaceBoundary key={props.resetKey} {...props} />;
+  const { t } = useLocale();
+  return <LazySurfaceBoundary key={props.resetKey} {...props} t={t} />;
 }

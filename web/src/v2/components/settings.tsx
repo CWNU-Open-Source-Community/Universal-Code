@@ -22,7 +22,7 @@ import type { V2SettingsSection } from "./sidebar";
 import { V2ConfirmDialog } from "./dialog";
 import { V2ModelSettings, type V2ModelProviderPreset } from "./model-settings";
 import {
-  v2ModelProviderPresets,
+  localizedModelProviderPresets,
   type V2ConfiguredModelProviderPreset,
 } from "./model-provider-presets";
 import { V2PermissionControl } from "./permission-control";
@@ -326,9 +326,9 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
       .map((status) => status.provider),
   ), [credentials.data?.items]);
   const presets = useMemo<V2ConfiguredModelProviderPreset[]>(() =>
-    v2ModelProviderPresets.map((preset) => ({ ...preset,
+    localizedModelProviderPresets(t).map((preset) => ({ ...preset,
       credentialConfigured: configuredProviderIDs.has(preset.id) })),
-  [configuredProviderIDs]);
+  [configuredProviderIDs, t]);
 
   const restoreCatalogFocus = () => {
     const selectedID = selectedIDRef.current;

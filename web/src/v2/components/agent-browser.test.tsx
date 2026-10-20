@@ -1,4 +1,7 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { V2AgentBrowser } from "./agent-browser";
@@ -179,3 +182,9 @@ it("hides an older server without the status route", async () => {
   await waitFor(() => expect(client.get).toHaveBeenCalled());
   expect(page.container).toBeEmptyDOMElement();
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

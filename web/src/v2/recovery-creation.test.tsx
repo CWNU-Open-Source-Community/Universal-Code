@@ -1,4 +1,7 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../lib/locale";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import type { APIClient } from "../api/client";
 import type { ThreadCreationControlRequestView, ThreadView } from "../api/types";
 import type { V2FileReference } from "./components/file-context";
@@ -326,3 +329,9 @@ describe("first-message creation recovery", () => {
     expect(screen.queryByRole("button", { name: "打开原对话" })).not.toBeInTheDocument();
   });
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

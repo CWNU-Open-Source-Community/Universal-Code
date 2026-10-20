@@ -9,7 +9,7 @@ import { V2ApprovalModeControl } from "./approval-mode-control";
 import type { ApprovalModeSelectionRequest } from "./approval-mode-contract";
 import { browserCDPQueryKey, V2BrowserCDPControl } from "./browser-cdp-control";
 import { V2RunNetworkAuthorityControl } from "./run-network-authority-control";
-import { webAccessModeLabels } from "./web-access-mode";
+import { webAccessModeLabel } from "./web-access-mode";
 
 function effectCopy(result: ThreadExecutionPermissionControlView, t: ReturnType<typeof useLocale>["t"]): string {
   if (result.current_run_effect === "deferred") return t("当前执行保持不变，选择用于下一次执行",
@@ -116,14 +116,14 @@ function ThreadPermissionControl({ client, threadID, variant = "menu", onOpenMod
     </>}
     {variant === "menu" ? <div className="v2-network-scope-control" ref={networkRef}>
       <button aria-label={t("网页访问与搜索", "Web access and search")}
-        title={networkMode?.runID === currentRunID ? webAccessModeLabels[networkMode.mode] : t("网页访问与搜索", "Web & search")}
+        title={networkMode?.runID === currentRunID ? webAccessModeLabel(networkMode.mode, t) : t("网页访问与搜索", "Web & search")}
         aria-controls={networkOpen ? networkID : undefined} aria-expanded={networkOpen} aria-haspopup="dialog"
         className="v2-composer-chip" onClick={() => {
           if (networkConfirmationOpenRef.current) return;
           setNetworkOpen((value) => !value);
         }} ref={networkTriggerRef} type="button">
         <Globe2 aria-hidden="true" size={14} /><span className="v2-composer-optional-label">{networkMode?.runID === currentRunID
-          ? webAccessModeLabels[networkMode.mode] : t("网页访问与搜索", "Web & search")}</span>
+          ? webAccessModeLabel(networkMode.mode, t) : t("网页访问与搜索", "Web & search")}</span>
         <ChevronDown aria-hidden="true" size={13} />
       </button>
       {networkOpen && <section aria-label={t("网页访问与搜索", "Web access and search")}

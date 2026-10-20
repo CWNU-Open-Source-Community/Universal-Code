@@ -568,3 +568,15 @@ describe("projectThreadNarrative", () => {
     }));
   });
 });
+
+it("localizes generated activity labels while preserving original messages, commands, and evidence", () => {
+  const english = (_chinese: string, translated: string) => translated;
+  const transcript = [item({ id: "read", canonical_id: "read", activity_type: "read", kind: "tool_call", tool_name: "workspace_read", detail: "原始工具输出" }),
+    item({ id: "reply", canonical_id: "reply", sequence: 2, detail: "原始中文答复" })];
+  const prepared = prepareThreadNarrative(transcript, english);
+  expect(prepared.entries[0]).toMatchObject({ kind: "activity", title: "Read file", detail: "原始工具输出" });
+  expect(prepared.entries[1]).toMatchObject({ kind: "assistant", text: "原始中文答复" });
+  const live = projectLiveThreadNarrative(prepareThreadNarrative([], english), { runId: "run-1", status: "live",
+    snapshot: snapshot({ text: "", items: [{ id: "tool-1", type: "tool_call", tool_name: "command_runtime", status: "running", argument_bytes: 12, durable: false, provisional: true, response_id: "response-1" }] }) });
+  expect(live[0]).toMatchObject({ kind: "activity", title: "Run command", detail: "Preparing tool request · 12 bytes" });
+});

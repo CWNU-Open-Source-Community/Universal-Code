@@ -1,3 +1,4 @@
+import { localUIMessage } from "../../lib/local-ui-message";
 import { useLocale } from "../../lib/locale";
 import { useId, useRef, useState } from "react";
 import type { APIClient } from "../../api/client";
@@ -54,7 +55,7 @@ export function V2DraftConflict({ state, client, workspaceID, onResolve }: {
   return <section className="v2-draft-conflict" aria-label={t("草稿版本核对", "Review draft versions")}>
     {state.error && <div className="v2-draft-conflict-error" role="alert">
       <p><strong>{t("草稿尚未安全保存。", "The draft has not been safely saved.")}</strong> {t("当前页面仍保留内容，刷新或关闭可能丢失未保存的修改；请先复制需要保留的文字。", "The page still holds your content. Reloading or closing may lose unsaved edits; copy any text you need first.")}</p>
-      <p>{state.error}</p>
+      <p>{localUIMessage(state.error, t)}</p>
     </div>}
     {state.conflict && <>
       <div className="v2-draft-conflict-summary">

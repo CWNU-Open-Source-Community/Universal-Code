@@ -274,7 +274,7 @@ describe("Composer network layout and interaction", () => {
     const summary = screen.getByText("Web access and search");
     expect(summary.tagName).toBe("SUMMARY");
     await user.click(summary);
-    expect(await screen.findByText("当前任务网页访问")).toBeVisible();
+    expect(await screen.findByText("Current task web access")).toBeVisible();
     expect(summary.closest("details")).toHaveAttribute("open");
     expect(fixture.container.querySelector(".v2-network-popover")).toBeNull();
     expect(fixture.setRunWebAccess).not.toHaveBeenCalled();

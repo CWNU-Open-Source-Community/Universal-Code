@@ -1,5 +1,8 @@
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import { InspectorRecordBrowser } from "./inspector-record-browser";
@@ -20,7 +23,7 @@ describe("Inspector saved record browser", () => {
     mount(getPage);
     await userEvent.setup().click(screen.getByRole("button", { name: "运行记录" }));
     const saved = await screen.findByRole("button", { name: "打开运行记录 run-open" });
-    expect(saved).toHaveTextContent("Not ended");
+    expect(saved).toHaveTextContent("未结束");
     expect(saved).not.toHaveTextContent("running");
     expect(screen.getByText(/选择历史执行或会话/)).toHaveTextContent("需要继续任务时，回到对应对话发送消息");
     expect(getPage).toHaveBeenCalledExactlyOnceWith("/runs", { limit: 50 }, "", expect.any(AbortSignal));
@@ -55,7 +58,7 @@ describe("Inspector saved record browser", () => {
     const onOpen = mount(getPage);
     await user.click(screen.getByRole("button", { name: "会话记录" }));
     await user.click(await screen.findByRole("button", { name: "打开会话记录 session-b" }));
-    expect(screen.getByRole("button", { name: "打开会话记录 session-a" })).toHaveTextContent("Not closed");
+    expect(screen.getByRole("button", { name: "打开会话记录 session-a" })).toHaveTextContent("未关闭");
     expect(onOpen).toHaveBeenCalledExactlyOnceWith("session", "session-b");
     expect(getPage).toHaveBeenCalledExactlyOnceWith("/sessions", { limit: 50 }, "", expect.any(AbortSignal));
     expect(screen.getByText(/会话标题和 ID/)).toHaveTextContent("不含消息正文");
@@ -91,7 +94,7 @@ describe("Inspector saved record browser", () => {
     const failed = await screen.findByRole("button", { name: "打开运行记录 run-failed" });
     const pending = screen.getByRole("button", { name: "打开运行记录 run-approval" });
     expect(failed).toHaveTextContent("failed");
-    expect(pending).toHaveTextContent("waiting approval");
+    expect(pending).toHaveTextContent("等待审批");
     expect(failed.querySelector(".v2-record-status")).toHaveClass("is-failed");
     expect(pending.querySelector(".v2-record-status")).toHaveClass("is-pending");
     await user.click(pending);
@@ -110,3 +113,9 @@ describe("Inspector saved record browser", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("暂无会话记录"));
   });
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}

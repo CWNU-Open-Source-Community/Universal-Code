@@ -321,3 +321,5 @@ describe("V2 scoped recovery storage", () => {
     expect(setItem).not.toHaveBeenCalled();
   });
 });
+
+vi.mock("../lib/locale", () => ({ useLocale: () => ({ t: (chinese: string) => chinese, locale: "zh-CN" }) }));

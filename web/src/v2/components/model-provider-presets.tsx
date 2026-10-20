@@ -1,5 +1,6 @@
 import type { V2ModelProviderPreset } from "./model-settings";
 import type { V2ProviderDraftPreset } from "./provider-settings";
+import type { LocaleText } from "../../lib/locale";
 
 export interface V2ConfiguredModelProviderPreset extends V2ModelProviderPreset {
   /** Each preset opens a supported API provider draft. */
@@ -37,7 +38,7 @@ const icons = {
   opencode: <BrandIcon path="M22 24H2V0h20zM17 4.8H7v14.4h10z" />,
 } as const;
 
-export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] = [
+export const localizedModelProviderPresets = (t: LocaleText): readonly V2ConfiguredModelProviderPreset[] => [
   {
     id: "official-anthropic",
     providerName: "Claude",
@@ -45,8 +46,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.anthropic,
     draft: {
       id: "official-anthropic",
-      displayName: "Claude 官方 API",
-      note: "Anthropic 官方 Messages API；默认使用服务方原生搜索，首次搜索会核实可用性。API Key 仅保存到操作系统凭据库。",
+      displayName: t("Claude 官方 API", "Official Claude API"),
+      note: t("Anthropic 官方 Messages API；默认使用服务方原生搜索，首次搜索会核实可用性。API Key 仅保存到操作系统凭据库。", "Official Anthropic Messages API. Uses provider-native search by default and verifies availability on first search. API keys are stored only in OS credentials."),
       websiteURL: "https://www.anthropic.com/",
       endpointURL: "https://api.anthropic.com/v1/messages",
       transport: "anthropic_messages",
@@ -64,8 +65,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.openai,
     draft: {
       id: "official-openai",
-      displayName: "OpenAI 官方 API",
-      note: "OpenAI 官方 Responses API；支持由 Harness 探测并启用原生 Web Search。",
+      displayName: t("OpenAI 官方 API", "Official OpenAI API"),
+      note: t("OpenAI 官方 Responses API；支持由 Harness 探测并启用原生 Web Search。", "Official OpenAI Responses API. Harness can detect and enable native Web Search."),
       websiteURL: "https://openai.com/",
       endpointURL: "https://api.openai.com/v1/responses",
       transport: "openai_responses",
@@ -83,8 +84,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.deepseek,
     draft: {
       id: "official-deepseek",
-      displayName: "DeepSeek 官方 API",
-      note: "DeepSeek 官方 Responses API；默认关闭私有推理以保证无状态多工具续传，高级 JSON 可显式调整。",
+      displayName: t("DeepSeek 官方 API", "Official DeepSeek API"),
+      note: t("DeepSeek 官方 Responses API；默认关闭私有推理以保证无状态多工具续传，高级 JSON 可显式调整。", "Official DeepSeek Responses API. Private reasoning is disabled by default for stateless multi-tool continuation. Override it in advanced JSON."),
       websiteURL: "https://www.deepseek.com/",
       endpointURL: "https://api.deepseek.com/responses",
       transport: "openai_responses",
@@ -102,8 +103,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.gemini,
     draft: {
       id: "official-google-gemini",
-      displayName: "Google Gemini 官方 API",
-      note: "Google 官方 OpenAI 兼容接口（Beta）；高级 JSON 可继续覆盖兼容参数。",
+      displayName: t("Google Gemini 官方 API", "Official Google Gemini API"),
+      note: t("Google 官方 OpenAI 兼容接口（Beta）；高级 JSON 可继续覆盖兼容参数。", "Google's official OpenAI-compatible endpoint (Beta). Override compatibility parameters in advanced JSON."),
       websiteURL: "https://ai.google.dev/",
       endpointURL: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       transport: "openai_chat_completions",
@@ -121,8 +122,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: <GrokIcon />,
     draft: {
       id: "official-xai",
-      displayName: "xAI Grok 官方 API",
-      note: "xAI 官方 Responses API；支持由 Harness 探测并启用原生搜索。",
+      displayName: t("xAI Grok 官方 API", "Official xAI Grok API"),
+      note: t("xAI 官方 Responses API；支持由 Harness 探测并启用原生搜索。", "Official xAI Responses API. Harness can detect and enable native search."),
       websiteURL: "https://x.ai/",
       endpointURL: "https://api.x.ai/v1/responses",
       transport: "openai_responses",
@@ -140,8 +141,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.minimax,
     draft: {
       id: "official-minimax",
-      displayName: "MiniMax 官方 API",
-      note: "MiniMax 官方 Responses API。",
+      displayName: t("MiniMax 官方 API", "Official MiniMax API"),
+      note: t("MiniMax 官方 Responses API。", "Official MiniMax Responses API."),
       websiteURL: "https://www.minimax.io/",
       endpointURL: "https://api.minimax.io/v1/responses",
       transport: "openai_responses",
@@ -159,8 +160,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.xiaomi,
     draft: {
       id: "official-mimo",
-      displayName: "Xiaomi MiMo 官方 API",
-      note: "MiMo 按量付费 Responses API；请使用此服务的专用凭据。Token Plan 请单独配置对应端点和凭据。",
+      displayName: t("Xiaomi MiMo 官方 API", "Official Xiaomi MiMo API"),
+      note: t("MiMo 按量付费 Responses API；请使用此服务的专用凭据。Token Plan 请单独配置对应端点和凭据。", "MiMo pay-as-you-go Responses API. Use credentials for this service. Configure the Token Plan endpoint and credentials separately."),
       websiteURL: "https://mimo.xiaomi.com/",
       endpointURL: "https://api.xiaomimimo.com/v1/responses",
       transport: "openai_responses",
@@ -178,8 +179,8 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     icon: icons.kimi,
     draft: {
       id: "official-kimi",
-      displayName: "Kimi 官方 API",
-      note: "Moonshot 普通开放平台 API；与 Kimi for Coding 的会员 Key、域名和配额分开。",
+      displayName: t("Kimi 官方 API", "Official Kimi API"),
+      note: t("Moonshot 普通开放平台 API；与 Kimi for Coding 的会员 Key、域名和配额分开。", "Moonshot's standard platform API. Its keys, endpoint and quota are separate from Kimi for Coding."),
       websiteURL: "https://platform.moonshot.ai/",
       endpointURL: "https://api.moonshot.ai/v1/chat/completions",
       transport: "openai_chat_completions",
@@ -198,7 +199,7 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     draft: {
       id: "official-kimi-coding",
       displayName: "Kimi for Coding",
-      note: "Kimi Code 会员接口；使用专属会员 Key，并保留真实客户端身份。",
+      note: t("Kimi Code 会员接口；使用专属会员 Key，并保留真实客户端身份。", "Kimi Code subscription endpoint. Use its subscription key and preserve the real client identity."),
       websiteURL: "https://www.kimi.com/code",
       endpointURL: "https://api.kimi.com/coding/v1/chat/completions",
       transport: "openai_chat_completions",
@@ -217,7 +218,7 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     draft: {
       id: "opencode-go",
       displayName: "OpenCode Go",
-      note: "OpenCode Go 订阅网关；请使用 Go API Key。OpenCode Zen 请单独配置对应路由。",
+      note: t("OpenCode Go 订阅网关；请使用 Go API Key。OpenCode Zen 请单独配置对应路由。", "OpenCode Go subscription gateway. Use a Go API key. Configure OpenCode Zen routes separately."),
       websiteURL: "https://opencode.ai/",
       endpointURL: "https://opencode.ai/zen/go/v1/responses",
       transport: "openai_responses",
@@ -229,3 +230,5 @@ export const v2ModelProviderPresets: readonly V2ConfiguredModelProviderPreset[] 
     },
   },
 ] as const;
+
+export const v2ModelProviderPresets = localizedModelProviderPresets((chinese) => chinese);

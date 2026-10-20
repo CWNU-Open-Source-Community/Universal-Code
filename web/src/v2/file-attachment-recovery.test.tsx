@@ -223,3 +223,5 @@ it("preserves corrupt attachment state and the original journal instead of clear
   expect(client.submitThreadTurn).not.toHaveBeenCalled();
   view.queries.clear();
 });
+
+vi.mock("../lib/locale", () => ({ useLocale: () => ({ t: (chinese: string) => chinese, locale: "zh-CN" }) }));

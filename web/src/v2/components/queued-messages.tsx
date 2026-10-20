@@ -1,3 +1,4 @@
+import { localUIMessage } from "../../lib/local-ui-message";
 import { useLocale, type LocaleText } from "../../lib/locale";
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +16,7 @@ import { V2DraftConflict } from "./draft-conflict";
 import { V2QueuedMessageRow, V2QueueMessageDetails } from "./queued-message-row";
 import "./queued-messages.css";
 
-const explanation = (error: unknown, t: LocaleText) => error instanceof Error ? error.message : t("操作暂未完成，内容已保留。", "The operation is not complete. Your content is kept.");
+const explanation = (error: unknown, t: LocaleText) => error instanceof Error ? localUIMessage(error.message, t) : t("操作暂未完成，内容已保留。", "The operation is not complete. Your content is kept.");
 const knownRejection = (error: unknown) => error instanceof APIRequestError && [400, 401, 403, 404, 409, 412, 413, 422].includes(error.status);
 const empty = (text = "") => ({ text, files: [], images: [] });
 const promotionInput = (operation: QueueOperation, t: LocaleText): QueuePromotionInput => {
@@ -272,7 +273,7 @@ function QueueEditor({ edit, current, client, document, store, locked, queueKnow
     {(!queueKnown || !current || current.prepared || stale) && <p role="status">{!queueKnown ? t("尚未确认最新队列状态。", "The latest queue state is unconfirmed.") : !current ? t("这条消息已离开待处理队列。", "This message left the pending queue.") : current.prepared ? t("这条消息正在处理。", "This message is being processed.") : t("这条消息已在其他窗口更新。", "This message was updated in another window.")}{t("本地编辑稿仍保留，可选中文字复制。", "Your local edit is kept. Select text to copy it.")}</p>}
     {stale && current && <details><summary>{t("查看当前排队正文", "View current queued text")}</summary><pre>{current.content}</pre></details>}
     {bytes > 16384 && <p role="alert">{t("正文超过 16 KiB，请缩短后保存。", "The text exceeds 16 KiB. Shorten it before saving.")}</p>}
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{localUIMessage(error, t)}</p>}
     <div className="v2-queued-message-actions"><button type="button" disabled={!eligible} onClick={save}>{t("保存修改", "Save changes")}</button>
       <button type="button" disabled={locked || state.conflict || !state.ref} onClick={() => {
         try { if (state.ref) closeQueueEdit(store, document, edit, state.ref); refresh(); } catch (failure) { setError(explanation(failure, t)); }

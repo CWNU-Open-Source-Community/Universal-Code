@@ -1,4 +1,7 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+import { LocaleProvider } from "../../lib/locale";
+import { act, cleanup, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState, type RefObject } from "react";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
@@ -174,3 +177,9 @@ it("keeps a pending clipboard response tied to the original identity after navig
   expect(writeText.mock.calls.map(([identity]) => identity)).toEqual(["run-a", "run-b"]);
   expect(screen.getByRole("status")).toHaveTextContent("已复制此执行 ID。");
 });
+
+function render(ui: ReactElement, options?: RenderOptions) {
+  localStorage.setItem("prayu.locale.v1", "zh-CN");
+  const Wrapper = options?.wrapper;
+  return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
+}
