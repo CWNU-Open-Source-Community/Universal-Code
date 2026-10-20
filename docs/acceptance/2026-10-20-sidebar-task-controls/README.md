@@ -53,6 +53,12 @@ Passed:
 - Sidebar, chat actions and metadata client tests: 30 tests.
 - `npm run typecheck`, `npm run build`, and `npm run check:api`.
 
+CI follow-up: the migration history now includes v218. The unfiltered list keeps
+its existing query-cache key, and search/recovery fixtures return a separate
+empty pinned page instead of treating pinned requests as history pagination.
+All 59 tests across task search, recovery navigation, sidebar and chat actions,
+plus the schema-history check, passed after this correction.
+
 The tests cover authorization and malformed writes, repeated absolute PUTs,
 retained Mission/Session identity, pin persistence through upgrade and restart,
 older matching records, empty scan pages with continuation, and filter-scoped
