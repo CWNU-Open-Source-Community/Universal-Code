@@ -38,7 +38,11 @@ func TestYarnMirrorUsesVerifiedCacheAndControlledConfiguration(t *testing.T) {
 	if err != nil || string(rc) != yarnPreparationRC {
 		t.Fatal("controlled configuration missing", err)
 	}
-	stats, err = b.Prepare(t.Context(), plan, nil, t.TempDir(), nil, authority)
+	replayRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err = b.Prepare(t.Context(), plan, nil, replayRoot, nil, authority)
 	if err != nil || calls != 1 || stats.CachedPackages != 1 || stats.Bytes != 0 {
 		t.Fatal("offline cache replay failed", stats, err)
 	}

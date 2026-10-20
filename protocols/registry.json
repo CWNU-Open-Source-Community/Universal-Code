@@ -3931,7 +3931,8 @@
       "identifier": "fixture.v1",
       "kind": "test-fixture",
       "sources": [
-        "internal/application/project_preparation_commands_test.go"
+        "internal/application/project_preparation_commands_test.go",
+        "internal/application/project_preparation_yarn_test.go"
       ],
       "reason": "Synthetic selected sandbox adapter identity used to verify fixed preparation argv; never written by a production adapter."
     },
