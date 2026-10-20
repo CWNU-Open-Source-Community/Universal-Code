@@ -1,7 +1,10 @@
 Traverse Board · 针路簿 macOS 本地试用说明
 ==========================
 
-从下载的产品 ZIP 解压后，直接双击同目录 TraverseBoard.app；无需安装 Go、Node 或 Xcode。
+如果下载的是 DMG：双击打开映像，把 TraverseBoard.app 拖到 Applications 快捷入口；
+复制完成后弹出映像，再从“应用程序”打开。DMG 不会自动安装或修改系统设置。
+如果下载的是 ZIP：解压后直接打开同目录 TraverseBoard.app。
+两种格式均无需安装 Go、Node 或 Xcode；DMG 格式不代表已签名公证。
 需要 macOS 12（Monterey）或更新版本。
 以下命令在解压后的产品目录执行；源码构建后先进入 build/desktop/。
 
@@ -89,7 +92,11 @@ English；选择保存在本机界面存储中。
 Traverse Board macOS Local Test Guide
 ============================
 
-After extracting the product ZIP, double-click TraverseBoard.app in that directory.
+For a DMG: open the image and drag TraverseBoard.app to the Applications shortcut.
+After the copy completes, eject the image and open the app from Applications.
+The image does not install anything or change system settings automatically.
+For a ZIP: extract it and double-click TraverseBoard.app in that directory.
+DMG packaging does not imply Developer ID signing or notarization.
 Requires macOS 12 Monterey or later.
 Go, Node and Xcode are only build dependencies. Run the commands below from the
 extracted product directory; after building from source, first enter build/desktop/.

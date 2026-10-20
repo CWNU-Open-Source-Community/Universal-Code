@@ -33,6 +33,8 @@ on:
       - 'scripts/check-macos-compat.sh'
       - 'scripts/release-desktop-darwin.sh'
       - 'scripts/macos-release.py'
+      - 'scripts/package-desktop-dmg.py'
+      - 'scripts/test_macos_dmg.py'
       - 'scripts/test_macos_release.py'
       - 'scripts/build-desktop.ps1'
       - 'scripts/check-windows-compat.ps1'
@@ -205,7 +207,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Verify Mac archive rejection cases
-        run: python3 -B -m unittest discover -s scripts -p test_macos_release.py -v
+        run: python3 -B -m unittest discover -s scripts -p 'test_macos_*.py' -v
 
       - name: Verify Go module graph and checksums
         run: |
@@ -273,11 +275,24 @@ jobs:
           RELEASE_REVISION: ${{ needs.dependency-boundaries.outputs.revision }}
           RELEASE_ARCH: ${{ matrix.arch }}
         run: bash scripts/release-desktop-darwin.sh "$RELEASE_VERSION" "$RELEASE_REVISION" "$RELEASE_ARCH"
+      - name: Build and verify Mac preview disk image
+        env:
+          RELEASE_VERSION: ${{ needs.dependency-boundaries.outputs.version }}
+          RELEASE_REVISION: ${{ needs.dependency-boundaries.outputs.revision }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/package-desktop-dmg.py "$RELEASE_VERSION" "$RELEASE_REVISION" "$RELEASE_ARCH"
       - name: Upload exact Mac preview archive and verification sidecars
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: TraverseBoard-macos-${{ matrix.arch }}-${{ needs.dependency-boundaries.outputs.revision }}
           path: build/macos-public/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload exact Mac preview disk image and checksum
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TraverseBoard-macos-dmg-${{ matrix.arch }}-${{ needs.dependency-boundaries.outputs.revision }}
+          path: build/macos-dmg/*
           if-no-files-found: error
           retention-days: 30
 

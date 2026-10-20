@@ -16,7 +16,10 @@ to a Developer ID signed or notarized release.
   reserves the native traffic-light area at all window widths.
 - Regular native CI runs on both `macos-15` (arm64) and `macos-15-intel` (amd64),
   checks the runner/Go architecture, and uploads distinct preview artifacts.
-  Packaging changes also run the archive suite under Python 3.9.
+  Packaging changes also run the ZIP and DMG suites under Python 3.9.
+- `scripts/package-desktop-dmg.py` converts the verified ZIP into a compressed
+  DMG with an Applications shortcut for drag-to-install. CI uploads the DMG
+  separately, preserving the existing ZIP publication contract and stable gate.
 - The bundled guide now describes the implemented Keychain store and separates
   the external Terminal.app launcher from the unavailable embedded Debug terminal
   and Windows-specific isolation capabilities.
@@ -33,15 +36,20 @@ npm run check:api
 npm test -- --maxWorkers=1
 npm run build
 cd ..
-python3 -B -m unittest discover -s scripts -p test_macos_release.py -v
+python3 -B -m unittest discover -s scripts -p 'test_macos_*.py' -v
 bash scripts/release-desktop-darwin.sh v1.0.0-macos.20261020 "$(git rev-parse HEAD)" "$(go env GOARCH)"
+python3 scripts/package-desktop-dmg.py v1.0.0-macos.20261020 "$(git rev-parse HEAD)" "$(go env GOARCH)"
 ```
 
 The release wrapper requires a clean checkout, builds twice, checks the native
 Mach-O/signature/metadata, generates licenses and SBOM, creates the ZIP, and
 extracts it into a new directory for verification. Artifacts are in
 `build/macos-public`. `TraverseBoard.app` and its bundle identifier retain their
-existing compatibility names.
+existing compatibility names. The DMG and its SHA-256 checksum are written separately to
+`build/macos-dmg`; image verification and read-only mount verification check the
+packaged app and Applications shortcut. Opening the image does not install the
+application: the user drags it into Applications and ejects the image after the
+copy completes. A DMG does not replace code signing or notarization.
 
 For a local UI check, launch with a separate application data directory:
 
@@ -62,8 +70,12 @@ with the app identity. No real provider credentials are needed for this check.
 On macOS 26.5.2 (25F84), Apple Silicon, with Go 1.26.9 / Node 24.19.0 /
 Python 3.9.6:
 
-- Frontend production build, desktop-tag boundary tests, 17 archive tests and
-  real isolated Keychain integration passed.
+- Frontend API contract and production build, all 253 frontend test files /
+  2478 tests, desktop-tag boundary tests, 24 ZIP/DMG tests, Go vet and real
+  isolated Keychain integration passed.
+- The compressed DMG passed `hdiutil verify`, read-only mount verification of
+  payload hashes, modes, Applications shortcut and code signature, then detached
+  without a residual mount.
 - Consecutive native binary builds matched; all 14 automated compatibility
   checks passed, including the ad-hoc signature and macOS 12 deployment target.
 - The native close/minimize/zoom controls are present; sidebar toggle works.

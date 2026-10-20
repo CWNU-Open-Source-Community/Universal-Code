@@ -10,6 +10,13 @@ Download the matching `TraverseBoard-…-macos-…-preview.zip` from Assets, ext
 `TraverseBoard.app`. Matching `.sha256` and `.manifest.json` sidecars bind the complete archive.
 The ZIP includes the launcher, local guide, build metadata, SBOM and licenses.
 
+CI 候选同时提供独立的 `TraverseBoard-macos-dmg-<arch>-…` artifact。
+打开其中的 DMG，将 `TraverseBoard.app` 拖到 `Applications`；复制完成后弹出映像。
+DMG 来自同一份核验后的 ZIP，带独立的 checksum。它是拖拽复制容器，不是公证或自动安装器。
+CI candidates also provide a separate architecture-specific DMG artifact. Open the image,
+drag `TraverseBoard.app` to `Applications`, then eject it after copying. The DMG is built
+from the verified ZIP and has its own checksum; it does not add notarization or auto-install.
+
 Mac 信任状态 / Mac trust state: **ad-hoc signed; not notarized; release_ready=false**.
 尚未通过干净 Mac 的首次启动、模型配置和退出恢复验收；macOS 可能阻止首次打开。
 请先阅读包内 `LOCAL-TEST-GUIDE.txt`。系统 Keychain 凭据存储已实现；实际应用中的
