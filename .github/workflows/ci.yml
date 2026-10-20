@@ -563,6 +563,10 @@ jobs:
         run: |
           python3 --version
           go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree|PythonVenv.*)$'
+      - name: Verify browser startup tool deadlines and cancellation on macOS
+        run: >-
+          go test -v -count=1 -timeout=1m ./internal/application
+          -run '^(TestSupervisorBrowserTimeoutIncludesDarwinLaunch|TestAgentBrowserLaunch.*|TestAgentBrowserCancelledStartedCallNeverDispatchesAgain)$'
       - name: Verify signed Chrome native startup and lifecycle on macOS
         env:
           CGO_ENABLED: '1'

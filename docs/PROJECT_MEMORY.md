@@ -1,5 +1,14 @@
 # Prayu Project Memory
 
+> 2026-10-20 macOS browser CI follow-up: native test startup budgets alone do
+> not cover the production tool dispatcher. macOS `browser_navigate` now has
+> a three-minute execution budget for first-launch Chrome signature verification;
+> shorter parent deadlines, cancellation and existing authority checks still
+> apply. Other browser tools and platforms retain their thirty-second budgets.
+> The native UI journey allows time for subsequent actions and reports failed
+> browser state immediately. Vite is pinned to 8.3.4 for the current audit fix.
+> Linux tests cannot certify the native macOS path; both Mac CI lanes must pass.
+
 > 2026-10-11 sandbox integration: Local remains the default; users can explicitly
 > select their own Docker Engine or Windows sbx 0.47.0. The SBX production path
 > now binds a zero-tool helper, owns its fixed namespace, checks guest isolation
