@@ -479,7 +479,7 @@
   padding-left: 8px;
 }
 
-/* WKWebView's hidden inset titlebar keeps the native traffic lights above
+/* WKWebView's hidden titlebar keeps the native traffic lights above
    the web content. Reserve their space at every window width. */
 .v2-titlebar.is-mac .v2-titlebar-navigation {
   padding-left: 92px;

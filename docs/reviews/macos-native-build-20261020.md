@@ -12,7 +12,9 @@ to a Developer ID signed or notarized release.
   re-verifies its resulting sidecars, in addition to the archive rejection tests.
 - The Darwin platform override disables the shared frameless setting. Wails only
   installs the native titlebar/close control when the window is not frameless;
-  `TitleBarHiddenInset()` still lets the renderer fill the window. V2 navigation
+  `TitleBarHidden()` still lets the renderer fill the window. It avoids the
+  extra native toolbar inset so the traffic lights align with the compact
+  sidebar-toggle row. V2 navigation
   reserves the native traffic-light area at all window widths.
 - Regular native CI runs on both `macos-15` (arm64) and `macos-15-intel` (amd64),
   checks the runner/Go architecture, and uploads distinct preview artifacts.
@@ -78,7 +80,8 @@ Python 3.9.6:
   without a residual mount.
 - Consecutive native binary builds matched; all 14 automated compatibility
   checks passed, including the ad-hoc signature and macOS 12 deployment target.
-- The native close/minimize/zoom controls are present; sidebar toggle works.
+- The native close/minimize/zoom controls are present and align with the
+  sidebar-toggle row; sidebar collapse/expand and native close still work.
 - The native folder picker registered a disposable project. Closing via the
   native close button exited with status 0; relaunching with the same data
   directory preserved the project. SQLite integrity was `ok`, with no foreign
