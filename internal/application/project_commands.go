@@ -135,6 +135,12 @@ func resolveProjectCommandToolchain(id string, adapter commandruntimeadapter.Ide
 		}
 		return "/opt/toolchains/node/bin/node", []string{sandbox.DockerStandardCodeYarnCLI}, nil
 	}
+	if id == "test.bun" {
+		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition, bunRuntimeReason)
+		}
+		return sandbox.DockerStandardCodeBunExecutable, nil, nil
+	}
 	if id == "test.pnpm" {
 		if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace || adapter.Backend != CommandRuntimeDockerSandboxBackend {
 			return "", nil, apperror.New(apperror.CodeFailedPrecondition, "pnpm workspace actions require the Standard Code Docker image with pnpm "+projectprep.PNPMVersion)

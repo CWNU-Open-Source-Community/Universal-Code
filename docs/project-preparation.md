@@ -26,6 +26,7 @@
 | npm | `package.json`、`package-lock.json` v2/v3，以及已有的 Node 版本配置 | 离线 `npm ci`；存在 `scripts.test` 时检测 npm 测试动作 |
 | pnpm | `package.json`、`pnpm-lock.yaml` v9；多包项目同时读取 `pnpm-workspace.yaml` 和成员清单 | Docker 镜像固定 pnpm 10.28.1；离线安装整个工作区，在选中包内执行 `pnpm test` |
 | Yarn Classic | `package.json`、`yarn.lock` v1 | 固定 Yarn 1.22.22，离线、冻结锁文件且关闭安装脚本；支持单包项目 |
+| Bun | `package.json`、文本 `bun.lock` v2/config v1 | Docker 镜像固定 Bun 1.4.3；经校验的 registry 缓存用于离线、冻结锁文件且关闭安装脚本的安装 |
 | Go | `go.mod`、`go.sum` 和声明的 Go 工具链版本 | 离线准备模块；检测 `go test -mod=readonly ./...` |
 | Rust / Cargo | `Cargo.toml`、`Cargo.lock` v3/v4；workspace 成员及本地依赖清单 | 准备经校验的 crates.io vendor，执行 `cargo fetch --offline --locked`；测试复用同一 vendor |
 | Python | `pylock.toml` 1.0 和可选 `pyproject.toml` | Docker 中使用 pip >=25.3 将锁定 wheel 离线安装到任务私有目录；检测原生 unittest 动作 |
@@ -33,8 +34,23 @@
 使用项目已有的锁文件。缺少锁文件、清单与锁文件不一致、依赖校验信息
 缺失时，先生成并审阅锁文件，再点击「刷新检测」。选择同时包含
 `package.json`、`go.mod`、`Cargo.toml` 或 Python 清单/锁文件的混合项目目录时，应分别选择对应的独立项目目录。
-npm workspaces、Yarn workspace/Berry、Bun 和本地 Go 模块替换仍不在内置安装范围内，
+npm workspaces、Yarn workspace/Berry 和本地 Go 模块替换仍不在内置安装范围内，
 检测会显示具体原因。
+
+### Bun 文本锁文件
+
+选择声明 `packageManager: bun@1.4.3` 的单包项目，使用文本 `bun.lock`
+v2/config v1。当前支持默认 npm registry 中具有精确稳定版本与 SHA-256/SHA-512
+完整性值的包。二进制锁文件、workspace、自定义 registry、Git/本地来源、
+patch、catalog 及会改变安装配置的文件会显示具体不可用原因。
+
+准备先复验 tarball，生成任务私有的 Bun 缓存，再通过固定 Docker 工具链执行
+`--offline --frozen-lockfile --ignore-scripts --force --backend=copyfile`。
+原清单和锁文件保持不变；已有安装包从缓存重新复制。存在 `scripts.test` 时，
+测试执行 `bun run --no-install test`。镜像需包含 Bun 1.4.3 及对应版本标签，
+构建步骤见 [Docker 镜像说明](standard-code-docker.md#fixed-image)。
+真实原生验证、界面截图及未运行的容器路径见
+[Bun 准备记录](acceptance/2026-10-20-bun-project-preparation.md)。
 
 ### Cargo 项目与 workspace
 

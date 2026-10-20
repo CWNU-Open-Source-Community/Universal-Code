@@ -74,6 +74,9 @@ func prepareProjectPreparationSpec(plan projectprep.Plan, adapter commandruntime
 	if plan.Ecosystem == "python" {
 		return preparePythonPreparationSpec(plan, adapter, workspaceRoot, testing, "unittest")
 	}
+	if plan.Ecosystem == "bun" {
+		return prepareBunPreparationSpec(plan, adapter, testing, runInstallScripts)
+	}
 	if plan.Ecosystem == "pnpm" {
 		action := "install"
 		if testing {

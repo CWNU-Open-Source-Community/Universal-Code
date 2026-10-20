@@ -36,6 +36,8 @@ func (e *DockerSandboxCommandRuntimeExecutor) NormalizeCommandRuntimeSpec(spec r
 		guest = "/opt/toolchains/python/usr-local/bin/python3"
 	case "cargo", "cargo.exe":
 		guest = "/usr/local/cargo/bin/cargo"
+	case "bun", "bun.exe":
+		guest = sandbox.DockerStandardCodeBunExecutable
 	default:
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}

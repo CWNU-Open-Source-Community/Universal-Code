@@ -157,6 +157,34 @@ jobs:
               env.write(f"TRAVERSE_CARGO_TEST_BIN={cargo}\n")
               env.write(f"TRAVERSE_CARGO_TEST_CRATE={archive}\n")
           PY
+      - name: Prepare integrity-pinned Bun offline verification inputs
+        if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, io, os, pathlib, urllib.request, zipfile
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "bun-preparation-test"
+          root.mkdir()
+          data = urllib.request.urlopen("https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip", timeout=60).read()
+          if hashlib.sha256(data).hexdigest() != "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18":
+              raise SystemExit("Bun 1.4.3 verification binary integrity mismatch")
+          with zipfile.ZipFile(io.BytesIO(data)) as archive:
+              binary = root / "bun"
+              binary.write_bytes(archive.read("bun-linux-x64/bun"))
+              binary.chmod(0o700)
+          fixtures = [
+              ("is-number-7.0.0.tgz", "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz", "41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==", "TRAVERSE_BUN_TEST_TARBALL"),
+              ("colors-1.6.0.tgz", "https://registry.npmjs.org/@colors/colors/-/colors-1.6.0.tgz", "Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==", "TRAVERSE_BUN_TEST_SCOPED_TARBALL"),
+          ]
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"TRAVERSE_BUN_TEST_BIN={binary}\n")
+              for name, url, digest, variable in fixtures:
+                  data = urllib.request.urlopen(url, timeout=60).read()
+                  if hashlib.sha512(data).digest() != base64.b64decode(digest):
+                      raise SystemExit(f"Bun verification tarball integrity mismatch: {name}")
+                  artifact = root / name
+                  artifact.write_bytes(data)
+                  env.write(f"{variable}={artifact}\n")
+          PY
       - name: Test and vet selected Go packages
         if: ${{ needs.classify.outputs.backend == 'true' }}
         env:

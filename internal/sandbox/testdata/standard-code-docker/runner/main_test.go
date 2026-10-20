@@ -42,6 +42,23 @@ func TestFixedProjectToolchainsKeepFormatterAndNestedNPMInGuest(t *testing.T) {
 	}
 }
 
+func TestBunUsesFixedGuestToolchainAndPreparationBounds(t *testing.T) {
+	for _, toolchain := range []string{"bun", "bun-prepare"} {
+		executable, environment, err := fixedToolchainAt(toolchain, t.TempDir())
+		joined := strings.Join(environment, "\n")
+		if err != nil || executable != "/opt/toolchains/bun/bin/bun" || !strings.Contains(joined, "PATH=/opt/toolchains/bun/bin:/opt/toolchains/node/bin:/usr/bin:/bin") || !strings.Contains(joined, "BUN_FEATURE_FLAG_DISABLE_NATIVE_DEPENDENCY_LINKER=1") {
+			t.Fatalf("Bun toolchain %q %+v %v", executable, environment, err)
+		}
+	}
+	values := []string{"1073741824", "200000", "67108864", strconv.FormatInt(workspaceFreeBytes, 10), strconv.FormatInt(workspaceFreeEntries, 10)}
+	if _, err := parseExecutionLimitsForToolchain(values, "bun-prepare"); err != nil {
+		t.Fatal("Bun preparation bounds rejected", err)
+	}
+	if _, err := parseExecutionLimitsForToolchain(values, "bun"); err == nil {
+		t.Fatal("Bun test acquired preparation write bounds")
+	}
+}
+
 func TestDependencyWriteLimitsRemainSpecificAndOffline(t *testing.T) {
 	values := []string{"1073741824", "200000", "67108864", strconv.FormatInt(workspaceFreeBytes, 10), strconv.FormatInt(workspaceFreeEntries, 10)}
 	if _, err := parseExecutionLimits(values); err == nil {
