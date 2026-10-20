@@ -1,7 +1,10 @@
 Traverse Board · 针路簿 macOS 本地试用说明
 ==========================
 
-从下载的产品 ZIP 解压后，直接双击同目录 TraverseBoard.app；无需安装 Go、Node 或 Xcode。
+如果下载的是 DMG：双击打开映像，把 TraverseBoard.app 拖到 Applications 快捷入口；
+复制完成后弹出映像，再从“应用程序”打开。DMG 不会自动安装或修改系统设置。
+如果下载的是 ZIP：解压后直接打开同目录 TraverseBoard.app。
+两种格式均无需安装 Go、Node 或 Xcode；DMG 格式不代表已签名公证。
 需要 macOS 12（Monterey）或更新版本。
 以下命令在解压后的产品目录执行；源码构建后先进入 build/desktop/。
 
@@ -32,17 +35,21 @@ Node 版本不符时脚本会在前端检查前明确报错；如果 web/dist �
 首次接入真实模型
 ----------------
 1. 打开左侧"模型切换"，或进入"设置与账户 > 模型与配置"。
-2. macOS 系统凭证库尚未接入（没有明文回退）。请改用环境变量：在启动前为
-   mimo、deepseek 或 anthropic 设置对应变量（例如 DEEPSEEK_API_KEY、
-   DEEPSEEK_BASE_URL、MIMO_API_KEY、MIMO_BASE_URL、
-   CYBERAGENT_ANTHROPIC_API_KEY），然后重新启动针路簿。环境变量始终优先，
-   不会写入 SQLite、日志或事件流。终端内可这样启动：
+2. 在模型设置中保存 API Key；macOS 构建已接入系统 Keychain，不提供明文回退。
+   系统可能要求解锁或授权。拒绝、取消或锁定会显示操作错误；不同 ad-hoc
+   构建之间的升级授权体验仍需实际应用验收。
+   也可在启动前为 mimo、deepseek 或 anthropic 设置对应环境变量（例如
+   DEEPSEEK_API_KEY、DEEPSEEK_BASE_URL、MIMO_API_KEY、MIMO_BASE_URL、
+   CYBERAGENT_ANTHROPIC_API_KEY）。环境变量优先于 Keychain，修改后需重启。
+   API Key 不写入 SQLite、日志或事件流。
 
    本地 Ollama 无凭证，只需显式设置 CYBERAGENT_OLLAMA_BASE_URL（仅 loopback
    http，默认 http://127.0.0.1:11434）与 CYBERAGENT_OLLAMA_MODEL；请先自行
    安装 Ollama 并 pull 模型，针路簿不会自动安装或下载。
 
-       DEEPSEEK_API_KEY=sk-... ./TraverseBoard.app/Contents/MacOS/cyberagent-desktop
+   使用已配置环境变量的终端启动：
+
+       ./TraverseBoard.app/Contents/MacOS/cyberagent-desktop
 
 3. 依次点击 Provider 的"连接诊断"和"Harness 验证"。Harness 验证会发起最多
    两次真实、受限的模型请求，但不会执行 Shell、文件、浏览器或工具动作。
@@ -71,8 +78,12 @@ English；选择保存在本机界面存储中。
 
 当前限制
 --------
-- 系统凭证库、ConPTY 用户终端、受限浏览器与完整 CDP 仍是 Windows 专属，
-  相关开关在 macOS 上保持关闭或失败关闭。
+- Keychain 存储已实现；锁定、取消、重启和不同构建升级仍需实际应用验收。
+- 可通过"打开工作区"启动独立的 Terminal.app。代码中已有 macOS Bash PTY
+  后端，但内嵌 Debug 用户终端仍缺少 macOS 锁屏/休眠边界监控；不要添加
+  --enable-user-terminal，它会因监控不可用而启动失败。
+- Local Sandbox、受限浏览器与完整 CDP 的 Windows 平台边界在 macOS 上
+  仍不可用，不会自动回退到宿主执行。独立 Terminal.app 不代表沙箱能力。
 - 本机产物只有 ad-hoc 签名，未公证，release_ready=false；从其他机器拷贝
   打开时可能需要在 Finder 中右键选择"打开"。
 - 数据目录：~/.cyberagent-workbench。不要把 API key、cyberagent.db 或凭证
@@ -81,7 +92,11 @@ English；选择保存在本机界面存储中。
 Traverse Board macOS Local Test Guide
 ============================
 
-After extracting the product ZIP, double-click TraverseBoard.app in that directory.
+For a DMG: open the image and drag TraverseBoard.app to the Applications shortcut.
+After the copy completes, eject the image and open the app from Applications.
+The image does not install anything or change system settings automatically.
+For a ZIP: extract it and double-click TraverseBoard.app in that directory.
+DMG packaging does not imply Developer ID signing or notarization.
 Requires macOS 12 Monterey or later.
 Go, Node and Xcode are only build dependencies. Run the commands below from the
 extracted product directory; after building from source, first enter build/desktop/.
@@ -117,20 +132,24 @@ Xcode command line tools (codesign) and Go 1.26.9.
 Connect a real model
 --------------------
 1. Open Model selection, or Settings and account > Models and providers.
-2. The macOS system credential store is not wired yet and there is no
-   plaintext fallback. Use environment variables instead: set the matching
-   variable for mimo, deepseek, or anthropic before launching (for example
-   DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, MIMO_API_KEY, MIMO_BASE_URL,
-   CYBERAGENT_ANTHROPIC_API_KEY), then restart Traverse Board. Environment variables
-   always take priority and never reach SQLite, logs, or events. From a
-   terminal you can start it with:
+2. Save the API key in model settings. macOS builds use the system Keychain
+   without a plaintext fallback. macOS may request unlock or access approval;
+   denial, cancellation and locking are reported as operation errors. Upgrade
+   authorization between different ad-hoc builds still needs application testing.
+   Environment variables are also supported: set the matching variable for
+   mimo, deepseek, or anthropic before launching (for example DEEPSEEK_API_KEY,
+   DEEPSEEK_BASE_URL, MIMO_API_KEY, MIMO_BASE_URL, CYBERAGENT_ANTHROPIC_API_KEY).
+   Environment variables take priority over Keychain and require a restart after
+   changes. API keys are not written to SQLite, logs, or events.
 
    Local Ollama is keyless: set CYBERAGENT_OLLAMA_BASE_URL (loopback http
    only, default http://127.0.0.1:11434) and CYBERAGENT_OLLAMA_MODEL
    explicitly. Install Ollama and pull the model yourself first; Traverse Board never
    installs or downloads.
 
-       DEEPSEEK_API_KEY=sk-... ./TraverseBoard.app/Contents/MacOS/cyberagent-desktop
+   Start from a terminal with your environment already configured:
+
+       ./TraverseBoard.app/Contents/MacOS/cyberagent-desktop
 
 3. Run Provider diagnostics, then Harness qualification. Qualification
    performs at most two bounded real model calls and executes no shell, file,
@@ -165,10 +184,15 @@ for the interface.
 
 Current limits
 --------------
-- The system credential store, restricted browser, and Full CDP remain
-  unavailable on macOS. ConPTY is Windows-only; the default-off user terminal
-  uses a local Bash PTY when all Debug startup gates are supplied. This PTY
-  path still requires the manual macOS evidence in ADR 0114 before release.
+- Keychain storage is implemented. Locking, cancellation, restart and upgrades
+  between different builds still require application testing.
+- Open Workspace can launch the separate Terminal.app. A macOS Bash PTY backend
+  exists, but the embedded Debug user terminal still lacks macOS lock/sleep
+  boundary monitoring. Do not add --enable-user-terminal: startup fails when
+  that monitor is unavailable.
+- Local Sandbox, the restricted browser and Full CDP still depend on Windows
+  platform boundaries and remain unavailable on macOS, with no automatic host
+  execution fallback. The separate Terminal.app is not a sandbox.
 - The local artifact is only ad-hoc signed and not notarized;
   release_ready=false. When opened after being copied from another machine,
   you may need to right-click and choose Open in Finder.

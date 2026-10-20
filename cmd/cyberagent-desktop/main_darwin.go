@@ -87,14 +87,18 @@ func appleScriptStringLiteral(value string) string {
 }
 
 func applyDesktopPlatformOptions(appOptions *options.App) {
+	// Wails omits the native titlebar and close button for a frameless window.
+	// Hidden supplies the full-size content layout while keeping macOS
+	// traffic lights, so override the shared Windows frameless setting.
+	appOptions.Frameless = false
 	appOptions.Mac = desktopMacOptions()
 }
 
 func desktopMacOptions() *mac.Options {
 	return &mac.Options{
-		// HiddenInset keeps native traffic lights over a full-size content
-		// window while the React shell owns the remaining chrome.
-		TitleBar: mac.TitleBarHiddenInset(),
+		// Hidden keeps the standard traffic lights aligned with the compact
+		// React titlebar. HiddenInset adds an NSToolbar that lowers them.
+		TitleBar: mac.TitleBarHidden(),
 		// Follow the system appearance; the renderer applies its own
 		// light/dark/glass tokens through the existing desktop bindings.
 		Appearance:           mac.DefaultAppearance,

@@ -214,9 +214,11 @@ def package(source, directory, version, revision, arch):
                 "target_os": "darwin", "target_arch": arch, "channel": "preview",
                 "archive_name": archive_name, "archive_sha256": sha(path.read_bytes()),
                 "ad_hoc_signed": True, "notarized": False, "release_ready": False, "files": entries}
-    (directory / manifest_name).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+    # Keep the sidecars byte-stable on Windows and compatible with the Python
+    # 3.9 bundled with Xcode; Path.write_text(newline=...) requires Python 3.10.
+    (directory / manifest_name).write_bytes((json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
     checksum = f"{manifest['archive_sha256']}  {archive_name}\n{sha((directory / manifest_name).read_bytes())}  {manifest_name}\n"
-    (directory / checksum_name).write_text(checksum, encoding="utf-8", newline="\n")
+    (directory / checksum_name).write_bytes(checksum.encode("utf-8"))
     verify(directory, version, revision, arch, native=True)
     return manifest
 

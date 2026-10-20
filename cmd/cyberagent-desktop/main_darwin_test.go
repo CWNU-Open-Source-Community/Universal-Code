@@ -47,12 +47,12 @@ func TestDesktopStartupFailureMessageIsBoundedAndPathFree(t *testing.T) {
 	}
 }
 
-func TestDesktopMacOptionsPinTransparentFramelessBoundary(t *testing.T) {
+func TestDesktopMacOptionsPinTransparentTitlebar(t *testing.T) {
 	macOptions := desktopMacOptions()
 	if macOptions == nil || macOptions.TitleBar == nil ||
 		!macOptions.TitleBar.HideTitle || !macOptions.TitleBar.FullSizeContent ||
 		!macOptions.WebviewIsTransparent || !macOptions.WindowIsTranslucent {
-		t.Fatalf("macOS frameless boundary is incomplete: %#v", macOptions)
+		t.Fatalf("macOS transparent titlebar boundary is incomplete: %#v", macOptions)
 	}
 	if !macOptions.DisableEscapeExitsFullscreen {
 		t.Fatalf("Escape can exit fullscreen before React modals: %#v", macOptions)
@@ -63,11 +63,17 @@ func TestDesktopMacOptionsPinTransparentFramelessBoundary(t *testing.T) {
 	}
 }
 
-func TestApplyDesktopPlatformOptionsPinsOnlyMacOptions(t *testing.T) {
-	appOptions := &options.App{}
+func TestApplyDesktopPlatformOptionsPreservesMacNativeWindowControls(t *testing.T) {
+	// Match the shared shell's Windows-style chrome before platform overrides.
+	appOptions := &options.App{Frameless: true}
 	applyDesktopPlatformOptions(appOptions)
 	if appOptions.Mac == nil || appOptions.Windows != nil || appOptions.Linux != nil {
 		t.Fatalf("platform options drifted across operating systems: %#v", appOptions)
+	}
+	if appOptions.Frameless || appOptions.Mac.TitleBar == nil ||
+		appOptions.Mac.TitleBar.HideTitleBar || appOptions.Mac.TitleBar.UseToolbar ||
+		!appOptions.Mac.TitleBar.FullSizeContent || !appOptions.Mac.TitleBar.HideTitle {
+		t.Fatalf("macOS native traffic lights lost their compact titlebar: %#v", appOptions)
 	}
 }
 

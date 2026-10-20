@@ -11,6 +11,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 
@@ -110,9 +111,8 @@ class MacArchiveTest(unittest.TestCase):
             "release_ready": False, "files": sorted(rows, key=lambda row: row["path"]),
         }
         (self.directory / manifest_name).write_text(json.dumps(manifest), encoding="utf-8")
-        (self.directory / checksum_name).write_text(
-            f"{manifest['archive_sha256']}  {archive_name}\n{release.sha((self.directory / manifest_name).read_bytes())}  {manifest_name}\n",
-            encoding="utf-8", newline="\n")
+        (self.directory / checksum_name).write_bytes(
+            f"{manifest['archive_sha256']}  {archive_name}\n{release.sha((self.directory / manifest_name).read_bytes())}  {manifest_name}\n".encode("utf-8"))
         return path
 
     def verify(self, **kwargs):
@@ -123,6 +123,44 @@ class MacArchiveTest(unittest.TestCase):
         self.assertFalse(self.verify()["release_ready"])
         with self.assertRaisesRegex(ValueError, "Stable macOS publication requires"):
             self.verify(require_ready=True)
+
+    def test_package_writes_portable_sidecars(self):
+        self.write()
+        source = self.directory / "source"
+        for name, data in self.contents.items():
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        (self.directory / "LICENSE").write_bytes(self.contents["LICENSE"])
+
+        # Exercise package(), including its sidecar writers, with synthetic
+        # inputs. Native signature checks remain covered by the Mac builder.
+        def archive_stage(command, check):
+            self.assertEqual(command[:4], ["/usr/bin/ditto", "-c", "-k", "--norsrc"])
+            self.assertTrue(check)
+            stage = Path(command[4])
+            with zipfile.ZipFile(command[5], "w") as archive:
+                for path in stage.rglob("*"):
+                    if path.is_file():
+                        name = path.relative_to(stage).as_posix()
+                        info = zipfile.ZipInfo(name)
+                        info.create_system = 3
+                        mode = 0o755 if name in release.EXECUTABLES else 0o644
+                        info.external_attr = (stat.S_IFREG | mode) << 16
+                        archive.writestr(info, path.read_bytes())
+
+        output = self.directory / "packaged"
+        with mock.patch.object(release, "ROOT", self.directory.resolve()), \
+                mock.patch.object(release.sys, "platform", "darwin"), \
+                mock.patch.object(release.subprocess, "run", side_effect=archive_stage), \
+                mock.patch.object(release, "native_verify") as native_verify:
+            manifest = release.package(source, output, VERSION, REVISION, "arm64")
+        native_verify.assert_called_once()
+        self.assertEqual(release.verify(output, VERSION, REVISION, "arm64"), manifest)
+        for name in release.names(VERSION, REVISION, "arm64")[1:]:
+            data = (output / name).read_bytes()
+            self.assertTrue(data.endswith(b"\n"))
+            self.assertNotIn(b"\r", data)
 
     def test_old_revision_inside_rehashed_archive(self):
         self.metadata["revision"] = "f" * 40
