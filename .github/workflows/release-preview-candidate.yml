@@ -1,0 +1,194 @@
+name: Main desktop preview candidate
+
+on:
+  push:
+    branches: [Qiyuanqiii/release-preview-20261020]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REVISION: 28a8a4f501809ea4b93ccf202da4ce5ca28e787a
+  PREVIEW_VERSION: v1.0.0-preview.20261020
+  CGO_ENABLED: '1'
+
+jobs:
+  native-preview:
+    name: Preview (${{ matrix.platform }}-${{ matrix.arch }})
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: macos
+            arch: arm64
+          - runner: macos-15-intel
+            platform: macos
+            arch: amd64
+          - runner: windows-latest
+            platform: windows
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out the exact main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source identity
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+          git merge-base --is-ancestor "$SOURCE_REVISION" origin/main
+          test -z "$(git status --porcelain)"
+
+      - name: Set up repository-pinned Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.16.0'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the Mac renderer
+        if: matrix.platform == 'macos'
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build and verify native Mac archive and DMG
+        if: matrix.platform == 'macos'
+        env:
+          NATIVE_ARCH: ${{ matrix.arch }}
+        run: |
+          bash scripts/release-desktop-darwin.sh "$PREVIEW_VERSION" "$SOURCE_REVISION" "$NATIVE_ARCH"
+          python3 scripts/package-desktop-dmg.py "$PREVIEW_VERSION" "$SOURCE_REVISION" "$NATIVE_ARCH"
+
+      - name: Launch the packaged Mac application and check its window
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          mkdir -p build/preview-evidence
+          cat > "$RUNNER_TEMP/uc-window-check.swift" <<'SWIFT'
+          import Cocoa
+          import CoreGraphics
+          import Foundation
+          let owner = Int32(CommandLine.arguments[1])!
+          let rows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+          let windows = rows.filter {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == owner &&
+            ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
+          }
+          guard let window = windows.first(where: {
+            guard let bounds = $0[kCGWindowBounds as String] as? [String: Any],
+                  let width = bounds["Width"] as? NSNumber,
+                  let height = bounds["Height"] as? NSNumber else { return false }
+            return width.doubleValue >= 480 && height.doubleValue >= 600
+          }) else { exit(2) }
+          let data = try JSONSerialization.data(withJSONObject: window, options: [.sortedKeys])
+          print(String(data: data, encoding: .utf8)!)
+          SWIFT
+          swiftc "$RUNNER_TEMP/uc-window-check.swift" -o "$RUNNER_TEMP/uc-window-check"
+          app="$(pwd)/build/desktop/TraverseBoard.app/Contents/MacOS/cyberagent-desktop"
+          export CYBERAGENT_HOME="$RUNNER_TEMP/uc-main-preview-home"
+          mkdir -p "$CYBERAGENT_HOME"
+          "$app" > build/preview-evidence/native-startup.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            kill -0 "$app_pid" || { cat build/preview-evidence/native-startup.log; exit 1; }
+            if "$RUNNER_TEMP/uc-window-check" "$app_pid" > build/preview-evidence/native-window.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          python3 - <<'PY'
+          import json, os, pathlib
+          source = json.loads(pathlib.Path("build/desktop/release-metadata.json").read_text())
+          report = {
+              "source_revision": os.environ["SOURCE_REVISION"],
+              "binary_sha256": source["sha256"],
+              "native_process_running": True,
+              "native_window_created": True,
+              "full_product_acceptance": False,
+          }
+          pathlib.Path("build/preview-evidence/native-launch.json").write_text(json.dumps(report, indent=2) + "\n")
+          PY
+
+      - name: Prepare the fixed Windows Go installation
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          PINNED_GO_VERSION: ${{ steps.go.outputs.go-version }}
+        run: ./scripts/prepare-windows-fixed-go.ps1 -ExpectedGoVersion $env:PINNED_GO_VERSION
+
+      - name: Build and verify the Windows preview
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          TRAVERSE_BOARD_LOCAL_SANDBOX_TEST_HOST_PREP: '1'
+        run: |
+          ./scripts/build-desktop.ps1 -Version $env:PREVIEW_VERSION -VerifyReproducible
+          go run ./cmd/releasegen --out build/desktop --version $env:PREVIEW_VERSION --tags desktop,production,wv2runtime.error
+          if ($LASTEXITCODE -ne 0) { throw "Preview SBOM generation failed" }
+          ./scripts/stage-direct-exe.ps1 -Channel prerelease -ExpectedVersion $env:PREVIEW_VERSION -ExpectedRevision $env:SOURCE_REVISION
+          ./scripts/stage-direct-exe.ps1 -VerifyOnly -ExpectedVersion $env:PREVIEW_VERSION -ExpectedRevision $env:SOURCE_REVISION
+          New-Item -ItemType Directory -Path build/preview-evidence -Force | Out-Null
+          ./scripts/smoke-desktop-operator-preview.ps1 -BinaryPath build/desktop/TraverseBoard.exe |
+            Tee-Object -FilePath build/preview-evidence/native-launch.txt
+          $metadata = Get-Content -LiteralPath build/desktop/release-metadata.json -Raw | ConvertFrom-Json
+          if ($metadata.modified -or $metadata.target_arch -cne "amd64" -or $metadata.target_os -cne "windows") {
+            throw "Preview source or native architecture does not match"
+          }
+          New-Item -ItemType Directory -Path build/windows-preview -Force | Out-Null
+          Copy-Item -LiteralPath build/desktop/TraverseBoard.direct.exe -Destination build/windows-preview/TraverseBoard.exe
+          foreach ($name in @("release-metadata.json", "direct-exe-signing.json", "SHA256SUMS", "sbom.json", "NOTICE", "LOCAL-TEST-GUIDE.txt", "windows-compatibility.json")) {
+            Copy-Item -LiteralPath (Join-Path build/desktop $name) -Destination build/windows-preview
+          }
+
+      - name: Record the preview source and build
+        shell: pwsh
+        env:
+          PREVIEW_PLATFORM: ${{ matrix.platform }}
+          PREVIEW_ARCH: ${{ matrix.arch }}
+          WORKFLOW_REVISION: ${{ github.sha }}
+        run: |
+          New-Item -ItemType Directory -Path build/preview-evidence -Force | Out-Null
+          [ordered]@{
+            version = $env:PREVIEW_VERSION
+            source_revision = $env:SOURCE_REVISION
+            platform = $env:PREVIEW_PLATFORM
+            architecture = $env:PREVIEW_ARCH
+            workflow_revision = $env:WORKFLOW_REVISION
+            build_url = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            signing = $(if ($env:PREVIEW_PLATFORM -eq "macos") { "ad-hoc; not notarized" } else { "unsigned" })
+            preview_only = $true
+            release_gate_completed = $false
+          } | ConvertTo-Json | Set-Content -LiteralPath build/preview-evidence/preview-source.json -Encoding utf8
+
+      - name: Upload the preview and verification records
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Universal-Code-preview-${{ matrix.platform }}-${{ matrix.arch }}-28a8a4f5
+          path: |
+            build/windows-preview/*
+            build/macos-public/*
+            build/macos-dmg/*
+            build/preview-evidence/*
+          if-no-files-found: error
+          retention-days: 30
