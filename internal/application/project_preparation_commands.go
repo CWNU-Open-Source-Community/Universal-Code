@@ -161,6 +161,9 @@ func prepareYarnPreparationSpec(plan projectprep.Plan, adapter commandruntimeada
 const cargoLocalTestReason = "Windows Local 当前缺少完整 Rust 编译与链接能力；请选择现有 Docker 环境运行测试。Local 仍可准备离线依赖缓存。"
 
 func prepareCargoPreparationSpec(plan projectprep.Plan, adapter commandruntimeadapter.Identity, workspaceRoot string, testing bool) (runner.CommandRuntimeSpec, error) {
+	if !plan.Ready || plan.Version != projectprep.ProtocolVersion || len(plan.Fingerprint) != 64 {
+		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "dependency preparation plan is unavailable")
+	}
 	if adapter.Kind != commandruntimeadapter.KindSandboxedWorkspace && !(testing && adapter.Kind == commandruntimeadapter.KindHostUnsandboxed) {
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodePolicyDenied, "Cargo preparation requires the selected sandbox runtime")
 	}

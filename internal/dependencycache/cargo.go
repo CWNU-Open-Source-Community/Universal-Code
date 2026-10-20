@@ -29,6 +29,9 @@ func resetCargoVendor(ctx context.Context, root *os.Root, plan projectprep.Plan,
 	if plan.Ecosystem != "rust" {
 		return nil
 	}
+	if err := validateCargoPlan(plan); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -43,6 +46,9 @@ func resetCargoVendor(ctx context.Context, root *os.Root, plan projectprep.Plan,
 }
 
 func validateCargoPlan(plan projectprep.Plan) error {
+	if plan.Ecosystem == "rust" && (!plan.Ready || plan.Version != projectprep.ProtocolVersion || len(plan.Fingerprint) != 64) {
+		return errors.New("reviewed Cargo preparation plan is unavailable")
+	}
 	for _, pkg := range plan.Packages {
 		if (plan.Ecosystem == "rust") != (pkg.Kind == projectprep.KindCargoCrate) {
 			return errors.New("Cargo preparation and artifact kinds do not match")
@@ -157,13 +163,17 @@ func stageCargoCrate(ctx context.Context, root *os.Root, target string, pkg proj
 	if err != nil {
 		return 0, err
 	}
+	if int64(len(metadata)) > remaining-expanded {
+		return 0, errors.New("Cargo crate checksum metadata exceeds the preparation limit")
+	}
+	expanded += int64(len(metadata))
 	if err := check(ctx); err != nil {
 		return 0, err
 	}
 	if err := writeAtomic(root, path.Join(directory, ".cargo-checksum.json"), metadata, 0600); err != nil {
 		return 0, err
 	}
-	return expanded + int64(len(metadata)), nil
+	return expanded, nil
 }
 
 func cargoArchiveComponent(value string) bool {

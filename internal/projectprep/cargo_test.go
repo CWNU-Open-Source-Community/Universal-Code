@@ -2,6 +2,7 @@ package projectprep_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,5 +69,33 @@ func TestCargoPreparationRejectsUnboundSourcesAndPaths(t *testing.T) {
 	cancel()
 	if _, err := projectprep.Detect(ctx, t.TempDir(), "."); err != context.Canceled {
 		t.Fatalf("cancel=%v", err)
+	}
+}
+
+func TestCargoPreparationMetadataFitsPublicFileLimit(t *testing.T) {
+	for _, configurationFiles := range []int{3, 4} {
+		t.Run(fmt.Sprintf("%d configurations", configurationFiles), func(t *testing.T) {
+			files := map[string]string{"repo/Cargo.toml": "[workspace]\nmembers=['crates/*']\n"}
+			lock := "version=4\n"
+			for i := 0; i < 59; i++ {
+				name := fmt.Sprintf("member%d", i)
+				files["repo/crates/"+name+"/Cargo.toml"] = fmt.Sprintf("[package]\nname=%q\nversion='0.1.0'\n", name)
+				lock += fmt.Sprintf("[[package]]\nname=%q\nversion='0.1.0'\n", name)
+			}
+			files["repo/Cargo.lock"] = lock
+			for _, name := range []string{"repo/.cargo/config", "repo/.cargo/config.toml", ".cargo/config", ".cargo/config.toml"}[:configurationFiles] {
+				files[name] = "[net]\noffline=true\n"
+			}
+			plan, err := projectprep.Detect(t.Context(), fixture(t, files), "repo")
+			if err != nil || len(plan.Lockfiles) != 63 || plan.Manifest.Path != "repo/Cargo.toml" {
+				t.Fatalf("public Cargo metadata %+v %v", plan, err)
+			}
+			if configurationFiles == 3 && !plan.Ready {
+				t.Fatalf("maximum valid Cargo metadata was rejected: %+v", plan.Issues)
+			}
+			if configurationFiles == 4 && (plan.Ready || !strings.Contains(strings.Join(plan.Issues, " "), "64 bound files")) {
+				t.Fatalf("oversized Cargo metadata lost its issue: %+v", plan)
+			}
+		})
 	}
 }

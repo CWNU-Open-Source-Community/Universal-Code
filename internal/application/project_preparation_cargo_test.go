@@ -60,3 +60,41 @@ func TestDetectedCargoActionPurposeBindsReplayIdentity(t *testing.T) {
 		t.Fatal("different Cargo request borrowed the receipt")
 	}
 }
+
+func TestCargoPreparationRejectsUnreviewedPlansAndMissingLock(t *testing.T) {
+	adapter := commandruntimeadapter.SandboxedWorkspace(CommandRuntimeDockerSandboxBackend, "fixture", "generation")
+	valid := projectprep.Plan{Ready: true, Version: projectprep.ProtocolVersion, Fingerprint: strings.Repeat("a", 64), Target: ".", Ecosystem: "rust"}
+	for _, scenario := range []struct {
+		name string
+		edit func(*projectprep.Plan)
+	}{
+		{"unready", func(plan *projectprep.Plan) { plan.Ready = false }},
+		{"missing version", func(plan *projectprep.Plan) { plan.Version = "" }},
+		{"missing fingerprint", func(plan *projectprep.Plan) { plan.Fingerprint = "" }},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			plan := valid
+			scenario.edit(&plan)
+			for _, testing := range []bool{false, true} {
+				if _, err := prepareCargoPreparationSpec(plan, adapter, t.TempDir(), testing); err == nil {
+					t.Fatal("unreviewed Cargo plan constructed a command")
+				}
+			}
+		})
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Cargo.toml"), []byte("[package]\nname='app'\nversion='0.1.0'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := projectprep.Detect(t.Context(), root, ".")
+	if err != nil || plan.Ready || plan.Test.ID != "test.rust" {
+		t.Fatalf("missing-lock plan %+v %v", plan, err)
+	}
+	if _, err := PrepareProjectPreparationTestCommand(plan, adapter, root); err == nil {
+		t.Fatal("detected test intent accepted a missing Cargo.lock")
+	}
+	run := domain.Run{Config: pinActionConfig(projectconfig.Effective{Protocol: projectconfig.ProtocolVersion})}
+	if _, err := PrepareProjectCommandForAdapter(run, "test", ".", adapter, root); err == nil {
+		t.Fatal("unconfigured Cargo action bypassed its missing lock")
+	}
+}

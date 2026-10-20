@@ -288,6 +288,7 @@ func detectCargo(plan Plan, reader fileReader, files map[string]sourceFile) Plan
 	}
 	if len(plan.Lockfiles) > 63 {
 		issue("Cargo preparation supports at most 64 bound files")
+		plan.Lockfiles = plan.Lockfiles[:63]
 	}
 	return plan
 }

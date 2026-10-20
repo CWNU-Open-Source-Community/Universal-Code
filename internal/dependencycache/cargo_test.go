@@ -97,7 +97,7 @@ func TestCargoStagingRechecksAuthorityAndClearsOldSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	plan := projectprep.Plan{Ecosystem: "rust", Target: "."}
+	plan := projectprep.Plan{Ecosystem: "rust", Target: ".", Ready: true, Version: projectprep.ProtocolVersion, Fingerprint: strings.Repeat("a", 64)}
 	old := projectprep.CargoVendorDirectory(".") + "/old/source.rs"
 	if err := writeAtomic(root, old, []byte("old"), 0600); err != nil {
 		t.Fatal(err)
@@ -119,5 +119,72 @@ func TestCargoStagingRechecksAuthorityAndClearsOldSources(t *testing.T) {
 	pkg := projectprep.Package{ID: "fixture@1.0.0", Kind: projectprep.KindCargoCrate, ModulePath: "fixture", Version: "1.0.0"}
 	if _, err := stageCargoCrate(t.Context(), root, ".", pkg, body, MaxPreparationBytes, func(context.Context) error { return context.Canceled }); !errors.Is(err, context.Canceled) {
 		t.Fatal("cancelled Cargo staging wrote files", err)
+	}
+}
+
+func TestCargoVendorRejectsUnreviewedPlansBeforeReset(t *testing.T) {
+	valid := projectprep.Plan{Ecosystem: "rust", Target: ".", Ready: true, Version: projectprep.ProtocolVersion, Fingerprint: strings.Repeat("a", 64)}
+	for _, scenario := range []struct {
+		name string
+		edit func(*projectprep.Plan)
+	}{
+		{"unready", func(plan *projectprep.Plan) { plan.Ready = false }},
+		{"missing version", func(plan *projectprep.Plan) { plan.Version = "" }},
+		{"missing fingerprint", func(plan *projectprep.Plan) { plan.Fingerprint = "" }},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			root, err := os.OpenRoot(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			old := projectprep.CargoVendorDirectory(".") + "/old/source.rs"
+			if err := writeAtomic(root, old, []byte("old"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			plan := valid
+			scenario.edit(&plan)
+			if err := resetCargoVendor(t.Context(), root, plan, func(context.Context) error { return nil }); err == nil {
+				t.Fatal("unreviewed Cargo plan reset the vendor directory")
+			}
+			if _, err := root.Stat(old); err != nil {
+				t.Fatal("rejected Cargo plan removed existing sources", err)
+			}
+		})
+	}
+}
+
+func TestCargoChecksumMetadataIsBudgetedBeforeWrite(t *testing.T) {
+	body := cargoTestArchive(t)
+	sum := sha256.Sum256(body)
+	pkg := projectprep.Package{ID: "fixture@1.0.0", Kind: projectprep.KindCargoCrate, ModulePath: "fixture", Version: "1.0.0", Integrity: hex.EncodeToString(sum[:])}
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	check := func(context.Context) error { return nil }
+	expanded, err := stageCargoCrate(t.Context(), root, ".", pkg, body, MaxPreparationBytes, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, remaining := range []int64{expanded - 1, expanded} {
+		limited, err := os.OpenRoot(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer limited.Close()
+		written, err := stageCargoCrate(t.Context(), limited, ".", pkg, body, remaining, check)
+		metadata := cargoCrateDirectory(".", pkg) + "/.cargo-checksum.json"
+		if remaining < expanded {
+			if err == nil || !strings.Contains(err.Error(), "limit") {
+				t.Fatalf("metadata exceeded budget: written=%d err=%v", written, err)
+			}
+			if _, err := limited.Lstat(metadata); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("over-budget checksum metadata was written", err)
+			}
+		} else if err != nil || written != expanded {
+			t.Fatalf("exact metadata budget rejected: written=%d want=%d err=%v", written, expanded, err)
+		}
 	}
 }
