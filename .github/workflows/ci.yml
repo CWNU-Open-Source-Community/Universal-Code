@@ -481,6 +481,25 @@ jobs:
         run: go test -v -tags keychainintegration -count=1 -timeout=90s ./internal/credential
       - name: Verify POSIX command runtime transport
         run: go test -v -count=1 ./internal/runner -run '^TestCommandRuntimePlatform(ShellSmoke|CancelReapsOwnedProcessTree)$'
+      - name: Verify signed Chrome native startup and lifecycle on macOS
+        env:
+          CGO_ENABLED: '1'
+          TRAVERSE_TEST_DARWIN_CHROME: '1'
+          TRAVERSE_DARWIN_CHROME_EVIDENCE: ${{ github.workspace }}/build/darwin-chrome-evidence
+        run: |
+          mkdir -p "$TRAVERSE_DARWIN_CHROME_EVIDENCE"
+          sw_vers > "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
+          uname -m >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
+          git rev-parse HEAD >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
+          go test -v -count=1 -timeout=4m ./internal/browserruntime -run '^TestDarwinChromeNativeBindingAndLifecycle$'
+      - name: Upload native Chrome experiment and actual browser PNGs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: darwin-chrome-native-${{ github.sha }}
+          path: build/darwin-chrome-evidence/
+          if-no-files-found: error
+          retention-days: 14
       - name: Verify dependency cache roots on macOS
         run: go test -count=1 ./internal/dependencycache
       - name: Verify desktop boundaries without packaging
