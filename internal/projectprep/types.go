@@ -22,6 +22,7 @@ const (
 	PNPMVersion          = "10.28.1"
 	KindGoMod            = "go_mod"
 	KindGoZip            = "go_zip"
+	KindPythonWheel      = "python_wheel"
 )
 
 type File struct {
@@ -59,6 +60,7 @@ type Plan struct {
 	Sources          []string  `json:"sources"`
 	Packages         []Package `json:"-"`
 	PNPMSeedLock     []byte    `json:"-"`
+	PythonSeed       []byte    `json:"-"`
 	Install          Command   `json:"install"`
 	Test             Command   `json:"test"`
 	Ready            bool      `json:"ready"`
@@ -81,6 +83,15 @@ func YarnMirrorDirectory(target string) string {
 	return path.Join(StageDirectory(target), "yarn-mirror")
 }
 func YarnRCPath(target string) string { return path.Join(StageDirectory(target), "yarnrc") }
+func PythonWheelDirectory(target string) string {
+	return path.Join(StageDirectory(target), "python-wheels")
+}
+func PythonPlanFile(target string) string {
+	return path.Join(StageDirectory(target), "python-plan.json")
+}
+func PythonSiteDirectory(target string) string {
+	return path.Join(StageDirectory(target), "python-site")
+}
 func PNPMTarballFile(id string) string {
 	sum := sha256.Sum256([]byte(id))
 	return hex.EncodeToString(sum[:]) + ".tgz"
@@ -92,7 +103,8 @@ func (p *Plan) seal() {
 		Ecosystem        string
 		RequestedVersion string
 		Packages         []Package
-	}{p.Ecosystem, p.RequestedVersion, p.Packages})
+		PythonSeed       []byte `json:",omitempty"`
+	}{p.Ecosystem, p.RequestedVersion, p.Packages, p.PythonSeed})
 	cacheSum := sha256.Sum256(cache)
 	p.CacheKey = hex.EncodeToString(cacheSum[:])
 	// Packages are private in the HTTP projection, but are part of the exact
@@ -101,7 +113,8 @@ func (p *Plan) seal() {
 		Plan         Plan
 		Packages     []Package
 		PNPMSeedLock []byte
-	}{*p, p.Packages, p.PNPMSeedLock})
+		PythonSeed   []byte `json:",omitempty"`
+	}{*p, p.Packages, p.PNPMSeedLock, p.PythonSeed})
 	sum := sha256.Sum256(encoded)
 	p.Fingerprint = hex.EncodeToString(sum[:])
 }
