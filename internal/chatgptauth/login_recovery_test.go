@@ -6,6 +6,7 @@ package chatgptauth
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -82,21 +83,40 @@ func TestLoginAcceptsMatchingStateDenial(t *testing.T) {
 	f := fixture(t)
 	previous := openBrowser
 	defer func() { openBrowser = previous }()
+	response := make(chan error, 1)
 	openBrowser = func(_ context.Context, local string) error {
 		q, err := localAuthorization(local)
 		if err != nil {
-			return err
+			response <- err
+			return nil
 		}
 		r, err := http.Get(q.Get("redirect_uri") + "?" + url.Values{"state": {q.Get("state")}, "error": {"access_denied"}}.Encode())
 		if err != nil {
 			return err
 		}
-		return r.Body.Close()
+		defer r.Body.Close()
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			response <- readErr
+		} else if r.StatusCode != http.StatusBadRequest || string(body) != "Sign-in could not be verified.\n" {
+			response <- fmt.Errorf("incomplete denial response: %d %q", r.StatusCode, body)
+		} else {
+			response <- nil
+		}
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := f.client.Login(ctx, testStore(t), "", false, browserReady(t, ctx))
 	if err == nil || err.Error() != "ChatGPT authorization was declined" || f.calls.Load() != 0 {
 		t.Fatal("matching denial was not consumed", err)
+	}
+	select {
+	case responseErr := <-response:
+		if responseErr != nil {
+			t.Fatal("browser did not receive the denial response:", responseErr)
+		}
+	case <-ctx.Done():
+		t.Fatal("browser denial response did not finish:", ctx.Err())
 	}
 }
