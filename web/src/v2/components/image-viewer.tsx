@@ -1,11 +1,18 @@
-import { useLocale , type LocaleText } from "../../lib/locale";
+import { useLocale, type LocaleText } from "../../lib/locale";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Download, Maximize2, Minus, Plus, X } from "lucide-react";
 import type { WorkspaceImageAttachment } from "../../api/image-attachments";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 
-async function clipboardPNG(blob: Blob, image: WorkspaceImageAttachment, t: LocaleText): Promise<Blob> {
+type PreviewImage = Pick<WorkspaceImageAttachment, "name" | "mime_type" | "width" | "height">;
+export async function copyImageToClipboard(blob: Blob, image: PreviewImage, t: LocaleText): Promise<void> {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error(t("当前浏览器不支持复制图片，请下载原图。", "This browser cannot copy images. Download the original."));
+  const png = clipboardPNG(blob, image, t);
+  void png.catch(() => {});
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}
+async function clipboardPNG(blob: Blob, image: PreviewImage, t: LocaleText): Promise<Blob> {
   // Reuse the authenticated, hash-verified bytes. Fetching the display's blob:
   // URL is unnecessary and disallowed by the page's connect-src policy.
   if (blob.type !== image.mime_type) throw new Error(t("原图格式与保存记录不一致。", "The original image format does not match its saved record."));
@@ -27,7 +34,7 @@ async function clipboardPNG(blob: Blob, image: WorkspaceImageAttachment, t: Loca
 
 /** Presents the already verified original Blob URL; zoom never rewrites pixels. */
 export function V2ImageViewer({ image, url, blob, onClose, returnFocusRef }: {
-  image: WorkspaceImageAttachment;
+  image: PreviewImage;
   url: string;
   blob: Blob;
   onClose: () => void;
@@ -71,11 +78,7 @@ export function V2ImageViewer({ image, url, blob, onClose, returnFocusRef }: {
     }
     setCopying(true);
     try {
-      const png = clipboardPNG(blob, image, t);
-      // Retain the click's activation while PNG conversion resolves. Handle an
-      // early permission rejection without leaving a rejected conversion promise.
-      void png.catch(() => {});
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      await copyImageToClipboard(blob, image, t);
       setCopied(true);
     } catch (failure) {
       setCopyError(failure instanceof DOMException && failure.name === "NotAllowedError"

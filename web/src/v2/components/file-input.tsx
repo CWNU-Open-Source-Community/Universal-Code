@@ -1,7 +1,9 @@
 import { useEffect, useId, useMemo, useReducer, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, File, LoaderCircle, X } from "lucide-react";
+import { Copy, Download, File, LoaderCircle, MoreHorizontal, X } from "lucide-react";
+import { nativeResourcesAvailable, resourceAction } from "../../lib/chat-resources";
+import { fileMenuItems, ResourceMenu, type MenuPosition } from "./resource-menu";
 import type { APIClient } from "../../api/client";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { useLocale } from "../../lib/locale";
@@ -64,6 +66,9 @@ function AttachmentCard({ client, file, onRemove, onRestore, locked }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(false);
+  const [menu, setMenu] = useState<MenuPosition | null>(null);
+  const [copied, setCopied] = useState(false);
+  const reference = { workspace_id: file.workspace_id, attachment_id: file.id };
   const previewTrigger = useRef<HTMLButtonElement>(null);
   const canPreview = /^text\/(plain|markdown)(?:;|$)/i.test(file.mime_type);
   const download = async () => {
@@ -78,7 +83,16 @@ function AttachmentCard({ client, file, onRemove, onRestore, locked }: {
     } catch (failure) { setError(failure instanceof Error ? failure.message : t("文件下载失败", "File download failed")); }
     finally { setBusy(false); }
   };
-  return <div className="v2-file-attachment">
+  const native = nativeResourcesAvailable();
+  const copy = async () => {
+    setError(""); setCopied(false); setBusy(true);
+    try { await resourceAction(reference, "copy_file"); setCopied(true); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "复制文件失败"); }
+    finally { setBusy(false); }
+  };
+  return <div className="v2-file-attachment" onContextMenu={native ? (event) => {
+    event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget });
+  } : undefined}>
     <File size={20} aria-hidden="true" />
     <div className="v2-file-attachment-info">{canPreview
       ? <button className="v2-file-attachment-preview" type="button" ref={previewTrigger}
@@ -87,10 +101,17 @@ function AttachmentCard({ client, file, onRemove, onRestore, locked }: {
       <small className="v2-file-attachment-size">{bytesLabel(file.byte_size)}</small>
       {locked && <small>{t("随原消息提交", "Included in the original message")}</small>}
       {error && <small role="alert">{error}</small>}
+      {copied && <small role="status">已复制文件，可粘贴到输入框</small>}
     </div>
+    {native && <button type="button" className="v2-composer-icon" aria-label={`复制文件 ${file.name}`} title="复制文件" disabled={busy} onClick={() => void copy()}><Copy size={16} /></button>}
     <button type="button" className="v2-composer-icon" aria-label={t(`下载文件 ${file.name}`, `Download file ${file.name}`)} disabled={busy} onClick={() => void download()}>
       {busy ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}</button>
     {onRemove && <button type="button" className="v2-composer-icon" aria-label={t(`移除文件 ${file.name}`, `Remove file ${file.name}`)} disabled={locked} onClick={onRemove}><X size={16} /></button>}
+    {native && <button type="button" className="v2-composer-icon" aria-label={`文件操作 ${file.name}`} aria-haspopup="menu" onClick={(event) => {
+      const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right - 248, y: rect.bottom, trigger: event.currentTarget });
+    }}><MoreHorizontal size={16} /></button>}
+    {menu && <ResourceMenu position={menu} items={fileMenuItems(reference, () => canPreview ? setPreview(true) : resourceAction(reference, "open"))}
+      onClose={() => setMenu(null)} onResult={(message, failed) => { if (failed) setError(message); else if (message === "已复制文件") setCopied(true); }} />}
     {preview && <TextAttachmentPreview client={client} file={file} onClose={() => setPreview(false)}
       onRestore={locked ? undefined : onRestore} returnFocusRef={previewTrigger} />}
   </div>;

@@ -1,10 +1,11 @@
 import { useLocale } from "../../lib/locale";
 import { useEffect, useMemo, useReducer, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImagePlus, LoaderCircle, X } from "lucide-react";
+import { Copy, Download, ImagePlus, LoaderCircle, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import { acceptedImageTypes, maximumImageBytes, maximumImages, type WorkspaceImageAttachment } from "../../api/image-attachments";
-import { V2ImageViewer } from "./image-viewer";
+import { copyImageToClipboard, V2ImageViewer } from "./image-viewer";
+import { ResourceMenu, type MenuPosition } from "./resource-menu";
 import { useV2DraftDocument } from "../draft-context";
 import type { DraftCapture } from "../draft-document";
 import "./image-input.css";
@@ -31,6 +32,8 @@ function ImagePreview({ client, image, onRemove, locked }: {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState<MenuPosition | null>(null);
+  const [notice, setNotice] = useState("");
   const trigger = useRef<HTMLButtonElement>(null);
   const close = () => setOpen(false);
   useEffect(() => {
@@ -45,15 +48,30 @@ function ImagePreview({ client, image, onRemove, locked }: {
   }, [client, image.id, image.sha256, image.workspace_id, retry]);
   const name = image.name || t("截图", "Screenshot");
   const url = original?.url;
-  return <div className="v2-image-item">
+  const menuItems = original ? [
+    { label: t("打开图片", "Open image"), action: () => setOpen(true) },
+    { label: t("复制图片", "Copy image"), icon: <Copy />, action: () => copyImageToClipboard(original.blob, image, t) },
+    { label: t("图片另存为…", "Save image as…"), icon: <Download />, action: () => {
+      const a = document.createElement("a"); a.href = original.url; a.download = name; document.body.append(a); a.click(); a.remove();
+    } },
+  ] : [];
+  return <div className="v2-image-item" onContextMenu={original ? (event) => {
+    event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, trigger: trigger.current! });
+  } : undefined}>
     <button className="v2-image-thumb" type="button" disabled={!url} ref={trigger} onClick={() => setOpen(true)}
-      aria-label={t(`预览图片 ${name}`, `Preview image ${name}`)} title={`${name} · ${image.width} × ${image.height}`}>
+      aria-label={t(`预览图片 ${name}`, `Preview image ${name}`)} title={`${name} · ${image.width} × ${image.height}`} onKeyDown={(event) => {
+        if (original && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) {
+          event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom, trigger: event.currentTarget });
+        }
+      }}>
       {url ? <img src={url} alt={name} /> : error ? <span>{t("读取失败", "Could not load")}</span> : <LoaderCircle className="spin" size={18} />}
     </button>
     <span className="v2-image-caption" title={name}>{name}</span>
     {onRemove && <button className="v2-image-remove" type="button" aria-label={t(`移除图片 ${name}`, `Remove image ${name}`)} disabled={locked}
       onClick={onRemove}><X size={14} aria-hidden="true" /></button>}
     {locked && <small>{t("随原消息提交", "Submitting with original message")}</small>}
+    {notice && <small role="status">{notice}</small>}
+    {menu && <ResourceMenu position={menu} items={menuItems} onClose={() => setMenu(null)} onResult={(message, failed) => { if (failed) setError(message); else setNotice(message); }} />}
     {error && <button className="v2-image-retry" title={error} type="button" onClick={() => setRetry((value) => value + 1)}>{t("重新读取图片", "Reload image")}</button>}
     {open && original && <V2ImageViewer image={image} url={original.url} blob={original.blob} onClose={close} returnFocusRef={trigger} />}
   </div>;
