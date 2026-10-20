@@ -37,6 +37,18 @@ go test ./internal/dependencycache -run '^TestPythonNativeOfflinePreparation$' -
 - A production Docker adapter test with controlled Docker transports and real Git/SQLite completed a detected Python Job, read it back and replayed it after lock deletion without a second dispatch. This verifies routing and receipts; it does not establish container execution or isolation.
 - The production Go API binary built successfully. The frontend source and API schema are unchanged.
 
+### CI regression follow-up
+
+The [Go checks job for `fcf32923`](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39368078729/job/118449875919) failed only in the `test.python` and `test.pytest` cases of `TestNativeLanguageProjectTestsUseSelectedToolchainAndPinnedConfiguration`. Its fixture selected a `tests` subdirectory without creating it. Python lock inspection correctly rejected the absent target directory. The fixture now creates that directory and retains the existing executable, arguments, pinned configuration, excluded-path and escaping-path assertions.
+
+The original failure was reproduced locally before the fixture change. The following focused checks then passed on Windows with Go 1.26.9:
+
+```text
+go test ./internal/application -run '^(TestNativeLanguageProjectTests|TestProjectPreparationPythonCommandBoundary|TestProjectActionsDetectedPythonJobReadAndColdReplay)' -count=1 -v
+```
+
+This includes the native toolchain cases, missing-toolchain behavior, Python command boundaries, and the detected Python Job read/cold replay. The original CI run also passed `internal/dependencycache`, `internal/projectprep`, protocol registry and Surface registry checks.
+
 Container execution and the pinned image's actual pip version remain unverified here: `docker version` reported that `dockerDesktopLinuxEngine` was absent. The installer explicitly rejects pip versions below 25.3. Python preparation currently selects Docker Engine; Local and SBX installation are rejected. It retains the selected image's existing workspace write limits. Source builds, local/VCS/editable packages and selectable extras/groups are outside the supported lock subset.
 
 The task-private environment key binds the reviewed seed and the selected interpreter build, marker environment and complete compatible wheel tags. Installation evaluates conditions and checks wheel identity, size and digest before publishing that directory. Test actions verify the same seed and current manifest/lock contents before using it. No new database migration or parallel preparation receipt is introduced.

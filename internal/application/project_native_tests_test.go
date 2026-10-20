@@ -20,6 +20,9 @@ func TestNativeLanguageProjectTestsUseSelectedToolchainAndPinnedConfiguration(t 
 	if err := os.Mkdir(filepath.Join(root, ".prayu"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(root, "tests"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	toolchain := t.TempDir()
 	pythonName, suffix := "python3", ""
 	if runtime.GOOS == "windows" {
