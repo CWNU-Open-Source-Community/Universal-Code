@@ -1,176 +1,23 @@
+import { ActivityClient } from "./client/domains/activity";
 import { ApprovalsClient } from "./client/domains/approvals";
+import { DeliveryClient } from "./client/domains/delivery";
+import { EvidenceClient } from "./client/domains/evidence";
+import { ExtensionsClient } from "./client/domains/extensions";
+import { FileEditsClient } from "./client/domains/file-edits";
 import { ModelsClient } from "./client/domains/models";
+import { PlansClient } from "./client/domains/plans";
+import { ProjectsClient } from "./client/domains/projects";
+import { RepositoryClient } from "./client/domains/repository";
+import { RunsClient } from "./client/domains/runs";
+import { RuntimeClient } from "./client/domains/runtime";
+import { SchedulingClient } from "./client/domains/scheduling";
 import { SessionsClient } from "./client/domains/sessions";
+import { SkillsClient } from "./client/domains/skills";
+import { UIEvidenceClient } from "./client/domains/ui-evidence";
+import { VerificationClient } from "./client/domains/verification";
 import { WorkspacesClient } from "./client/domains/workspaces";
-import { APIRequestError, normalizeBaseURL, parseResponsePage } from "./client/protocol";
-import { parseThreadActivityArtifact, parseThreadActivityDetail } from "./client/responses/activity";
-import { parseFullCDPSessionControl } from "./client/responses/browser";
-import {
-  batchValidationKinds,
-  isBatchPath,
-  parseBatchDeliveries,
-  parseBatchDeliveryCancel,
-  parseBatchDeliveryMergeControl,
-  parseBatchDeliveryReconcile,
-  parseBatchDeliveryReviewControl,
-  parseBatchDeliverySnapshot,
-  parseBatchWorkbench,
-} from "./client/responses/delivery";
-import { parseDiagnosticBundle } from "./client/responses/diagnostics";
-import { parseEvidenceAttachment, parseEvidenceInventory } from "./client/responses/evidence";
-import {
-  parseCodeIntelConfiguration,
-  parseCodeIntelConfigurationTest,
-  parseCodeIntelInventory,
-  parseExtensionInventory,
-  parseExtensionMCPServer,
-  parseExtensionPlugin,
-  parseHookDiagnostics,
-  parseMCPRegistration,
-  parsePluginHistory,
-  parsePluginImport,
-  parsePluginPublisher,
-  pluginCapabilities,
-  strictCodeIntelIdentity,
-  validCanonicalBase64,
-} from "./client/responses/extensions";
-import {
-  parseFileEditApply,
-  parseFileEditChangeSet,
-  parseFileEditPreview,
-  parseFileEditProposal,
-  parseFileEditProposalRecovery,
-  parseFileEditProposalSource,
-  parseFileEditQueue,
-  parseFileEditRevertProposal,
-  parseFileEditReview,
-} from "./client/responses/file-edits";
-import { parseCodeHandoff, parseCodeHandoffExport } from "./client/responses/handoffs";
-import { parseOperationReceiptHistory, parseOperatorActionCenter } from "./client/responses/operations";
-import {
-  normalizeRequestedNetworkAuthority,
-  normalizeRequestedWebAccess,
-  parseRunNetworkAuthorityControl,
-  parseRunWebAccessControl,
-} from "./client/responses/permissions";
-import {
-  parsePlanDeliveryTransition,
-  parsePlanDirectionControl,
-  parsePlanModeTransition,
-  validPlanWorkItemResult,
-  validatePlanWorkItemRequest,
-} from "./client/responses/plans";
-import {
-  parseRepositoryCommitComparison,
-  parseRepositoryCommitDetail,
-  parseRepositoryCommitFilePreview,
-  parseRepositoryDiff,
-  parseRepositoryFileHistory,
-  parseRepositoryHistory,
-  parseRepositoryState,
-} from "./client/responses/repository";
-import {
-  parseChildTaskProposal,
-  parseChildTaskProposals,
-  parseEventPoll,
-  parseFanoutExecution,
-  parseFanoutExecutions,
-  parseRunCreationControl,
-  parseRunExecutionControl,
-  parseRunLifecycleControl,
-  parseStreamFrame,
-} from "./client/responses/runs";
-import {
-  parseEmbeddedAnalyzerExecution,
-  parseRunCapabilityReadiness,
-  parseRuntimeCapabilities,
-  parseSafeWebReadiness,
-  parseStandardCodePreset,
-} from "./client/responses/runtime";
-import {
-  parseRunWakeControl,
-  parseRunWakeExecution,
-  parseRunWakeState,
-  parseScheduledJobControl,
-  parseScheduledJobDetail,
-  parseScheduledJobList,
-} from "./client/responses/scheduling";
-import {
-  assertSkillSelectionChoice,
-  assertSkillSelectionReceipt,
-  parseSkillCatalogPublisher,
-  parseSkillPackageInstall,
-  parseSkillPackageInventory,
-  parseSkillPackageRemoval,
-} from "./client/responses/skills";
-import { parseUIEvidenceAttempt, parseUIEvidenceBundle } from "./client/responses/ui-evidence";
-import {
-  parseVerificationAssociation,
-  parseVerificationEvidenceInventory,
-  parseVerificationEvidenceItem,
-  parseVerificationPlan,
-  parseVerificationPlanCoverage,
-  parseVerificationPlanInventory,
-  parseVerificationPlanItemCoverage,
-  parseVerificationSnapshotExport,
-  parseVerificationSnapshotReceipt,
-  parseVerificationSnapshotReceiptInventory,
-  parseVerificationSnapshotReceiptReview,
-  parseVerificationSnapshotReceiptReviewInventory,
-  validVerificationText,
-} from "./client/responses/verification";
+import { APIRequestError, normalizeBaseURL } from "./client/protocol";
 import { APITransport } from "./client/transport";
-import {
-  boundedIdentity,
-  boundedStringArray,
-  boundedText,
-  hasExactKeys,
-  hasRequiredOnlyKeys,
-  isRecord,
-  isSHA256,
-  safeBoundedCount,
-  safePositiveInteger,
-  validDate,
-  validWorkspaceRelativePath,
-} from "./client/validation";
-import {
-  isGitAdvancedExecuteResult,
-  isGitAdvancedProjection,
-  isGitAdvancedReviewResult,
-  validGitAdvancedSpec,
-} from "./git-advanced";
-import {
-  parseGitHubDeviceAuthorization,
-  parseGitHubDevicePoll,
-  parseGitHubEvidence,
-  parseGitHubFetch,
-  parseGitHubProjection,
-  parseGitHubQualification,
-  parseGitHubReviewConfigure,
-  parseGitHubReviewConnections,
-  parseGitHubReviewCredential,
-  parseGitHubWriteExecute,
-  parseGitHubWriteReview,
-} from "./github-review";
-import { validMCPConnectionConfig } from "./mcp-config";
-import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
-import { parseProjectActionResult, parseProjectActions } from "./project-actions";
-import {
-  normalizePreparationTarget,
-  parseProjectPreparation,
-  parseProjectPreparationOperation,
-  validPreparationTarget,
-  validProjectPreparationRequest,
-} from "./project-preparation";
-import {
-  parseSandboxEnvironment,
-  sandboxSettingsMatch,
-  validSandboxEnvironmentRequest,
-} from "./sandbox-environment";
-import { consumeSSE } from "./sse";
-import { parseStandardCodeDelivery } from "./standard-code-delivery";
-import { normalizedTaskBudget, parseTaskConfiguration } from "./task-configuration";
-import { parseTaskSkillCandidates } from "./task-skill-candidates";
 import { WorkflowClient } from "./workflows";
 import type {
   ChatGPTAccountRequestView,
@@ -454,10 +301,24 @@ export { parseProjectlessDirectory } from "./client/responses/workspaces";
 // every domain shares this instance's transport and capability decisions.
 export class APIClient implements ClientFeatures {
   private readonly transport: APITransport;
-  private readonly approvals: ApprovalsClient;
-  private readonly models: ModelsClient;
-  private readonly sessions: SessionsClient;
-  private readonly workspaces: WorkspacesClient;
+  private readonly activityClient: ActivityClient;
+  private readonly approvalsClient: ApprovalsClient;
+  private readonly deliveryClient: DeliveryClient;
+  private readonly evidenceClient: EvidenceClient;
+  private readonly extensionsClient: ExtensionsClient;
+  private readonly fileEditsClient: FileEditsClient;
+  private readonly modelsClient: ModelsClient;
+  private readonly plansClient: PlansClient;
+  private readonly projectsClient: ProjectsClient;
+  private readonly repositoryClient: RepositoryClient;
+  private readonly runsClient: RunsClient;
+  private readonly runtimeClient: RuntimeClient;
+  private readonly schedulingClient: SchedulingClient;
+  private readonly sessionsClient: SessionsClient;
+  private readonly skillsClient: SkillsClient;
+  private readonly uiEvidenceClient: UIEvidenceClient;
+  private readonly verificationClient: VerificationClient;
+  private readonly workspacesClient: WorkspacesClient;
 
   readonly baseURL: string;
 
@@ -631,266 +492,160 @@ export class APIClient implements ClientFeatures {
         : !this.hasRunExecution ? "run_execution_disabled"
           : !this.hasBrowserCDPPermissionControl ? "browser_cdp_control_disabled" : null;
     this.transport = new APITransport(token, this.baseURL, controlToken, this);
-    this.approvals = new ApprovalsClient(this.transport, this);
-    this.models = new ModelsClient(this.transport, this);
-    this.sessions = new SessionsClient(this.transport, this);
-    this.workspaces = new WorkspacesClient(this.transport, this);
+    this.activityClient = new ActivityClient(this.transport, this);
+    this.approvalsClient = new ApprovalsClient(this.transport, this);
+    this.deliveryClient = new DeliveryClient(this.transport, this);
+    this.evidenceClient = new EvidenceClient(this.transport, this);
+    this.extensionsClient = new ExtensionsClient(this.transport, this);
+    this.fileEditsClient = new FileEditsClient(this.transport, this);
+    this.modelsClient = new ModelsClient(this.transport, this);
+    this.plansClient = new PlansClient(this.transport, this);
+    this.projectsClient = new ProjectsClient(this.transport, this);
+    this.repositoryClient = new RepositoryClient(this.transport, this);
+    this.runsClient = new RunsClient(this.transport, this);
+    this.runtimeClient = new RuntimeClient(this.transport, this);
+    this.schedulingClient = new SchedulingClient(this.transport, this);
+    this.sessionsClient = new SessionsClient(this.transport, this);
+    this.skillsClient = new SkillsClient(this.transport, this);
+    this.uiEvidenceClient = new UIEvidenceClient(this.transport, this);
+    this.verificationClient = new VerificationClient(this.transport, this);
+    this.workspacesClient = new WorkspacesClient(this.transport, this);
   }
 
-  async health(signal?: AbortSignal): Promise<HealthView> {
-    return this.get<HealthView>("/health", {}, signal);
+  health(signal?: AbortSignal): Promise<HealthView> {
+    return this.runtimeClient.health(signal);
   }
 
-  async runtimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilitiesView> {
-    return parseRuntimeCapabilities(await this.get<unknown>("/capabilities", {}, signal));
+  runtimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilitiesView> {
+    return this.runtimeClient.runtimeCapabilities(signal);
   }
 
   createProjectlessWorkspace(idempotencyKey: string, signal?: AbortSignal): Promise<ProjectlessWorkspaceView> {
-    return this.workspaces.createProjectlessWorkspace(idempotencyKey, signal);
+    return this.workspacesClient.createProjectlessWorkspace(idempotencyKey, signal);
   }
 
   getProjectlessDirectory(signal?: AbortSignal): Promise<ProjectlessDirectory> {
-    return this.workspaces.getProjectlessDirectory(signal);
+    return this.workspacesClient.getProjectlessDirectory(signal);
   }
 
   setProjectlessDirectory(directoryPath: string, signal?: AbortSignal): Promise<ProjectlessDirectory> {
-    return this.workspaces.setProjectlessDirectory(directoryPath, signal);
+    return this.workspacesClient.setProjectlessDirectory(directoryPath, signal);
   }
 
   getWorkspaceProject(id: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
-    return this.workspaces.getWorkspaceProject(id, signal);
+    return this.workspacesClient.getWorkspaceProject(id, signal);
   }
 
   renameWorkspace(id: string, name: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
-    return this.workspaces.renameWorkspace(id, name, signal);
+    return this.workspacesClient.renameWorkspace(id, name, signal);
   }
 
   renameThread(id: string, title: string, signal?: AbortSignal): Promise<ThreadView> {
-    return this.sessions.renameThread(id, title, signal);
+    return this.sessionsClient.renameThread(id, title, signal);
   }
 
   pinThread(id: string, pinned: boolean, signal?: AbortSignal): Promise<ThreadView> {
-    return this.sessions.pinThread(id, pinned, signal);
+    return this.sessionsClient.pinThread(id, pinned, signal);
   }
 
   importWorkspace(directoryPath: string, signal?: AbortSignal, name?: string): Promise<WorkspaceImportView> {
-    return this.workspaces.importWorkspace(directoryPath, signal, name);
+    return this.workspacesClient.importWorkspace(directoryPath, signal, name);
   }
 
-  async runCapabilityReadiness(runID: string,
+  runCapabilityReadiness(runID: string,
     signal?: AbortSignal): Promise<RunCapabilityReadinessView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseRunCapabilityReadiness(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/capability-readiness`, {}, signal), runID);
+    return this.runtimeClient.runCapabilityReadiness(runID, signal);
   }
 
   getThreadCommandServicePolicy(threadID: string, signal?: AbortSignal) {
-    return this.sessions.getThreadCommandServicePolicy(threadID, signal);
+    return this.sessionsClient.getThreadCommandServicePolicy(threadID, signal);
   }
 
   setThreadCommandServicePolicy(threadID: string, body: ThreadCommandServicePolicyRequest, signal?: AbortSignal) {
-    return this.sessions.setThreadCommandServicePolicy(threadID, body, signal);
+    return this.sessionsClient.setThreadCommandServicePolicy(threadID, body, signal);
   }
 
   listThreadApplicationServices(threadID: string, signal?: AbortSignal, limit = 20) {
-    return this.sessions.listThreadApplicationServices(threadID, signal, limit);
+    return this.sessionsClient.listThreadApplicationServices(threadID, signal, limit);
   }
 
   getThreadApplicationService(threadID: string, jobID: string, signal?: AbortSignal) {
-    return this.sessions.getThreadApplicationService(threadID, jobID, signal);
+    return this.sessionsClient.getThreadApplicationService(threadID, jobID, signal);
   }
 
   stopThreadApplicationService(threadID: string, runID: string, jobID: string, signal?: AbortSignal) {
-    return this.sessions.stopThreadApplicationService(threadID, runID, jobID, signal);
+    return this.sessionsClient.stopThreadApplicationService(threadID, runID, jobID, signal);
   }
 
-  async getFullCDPSession(runID: string,
+  getFullCDPSession(runID: string,
     signal?: AbortSignal): Promise<FullCDPSessionControlView> {
-    if (!this.hasFullCDPSessionControl || !boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("Full CDP production session capability and a normalized Run are required");
-    }
-    return parseFullCDPSessionControl(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/full-cdp-session`, {}, signal), runID);
+    return this.runtimeClient.getFullCDPSession(runID, signal);
   }
 
-  async openFullCDPSession(runID: string, body: FullCDPSessionOpenRequestView,
+  openFullCDPSession(runID: string, body: FullCDPSessionOpenRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<FullCDPSessionControlView> {
-    if (!this.hasFullCDPSessionControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      body.version !== "full_cdp_session.v1" || body.confirm_full_cdp !== true ||
-      !safePositiveInteger(body.expected_execution_permission_revision) ||
-      !safePositiveInteger(body.expected_browser_cdp_permission_revision) ||
-      !["chrome", "edge"].includes(body.browser.product) ||
-      !["stable", "beta", "dev", "canary"].includes(body.browser.channel) ||
-      typeof body.target !== "string" || body.target.trim() !== body.target ||
-      body.target.length === 0 || body.target.length > 2_048) {
-      throw new Error("A confirmed, revision-bound Full CDP session request is required");
-    }
-    return parseFullCDPSessionControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/full-cdp-session`, body, idempotencyKey, signal), runID);
+    return this.runtimeClient.openFullCDPSession(runID, body, idempotencyKey, signal);
   }
 
-  async closeFullCDPSession(runID: string, body: FullCDPSessionCloseRequestView,
+  closeFullCDPSession(runID: string, body: FullCDPSessionCloseRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<FullCDPSessionControlView> {
-    if (!this.hasFullCDPSessionControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      body.version !== "full_cdp_session_close.v1" ||
-      !boundedIdentity(body.expected_session_id)) {
-      throw new Error("An exact Full CDP session cleanup request is required");
-    }
-    return parseFullCDPSessionControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/full-cdp-session/close`, body,
-      idempotencyKey, signal), runID);
+    return this.runtimeClient.closeFullCDPSession(runID, body, idempotencyKey, signal);
   }
 
-  async configureStandardCode(runID: string,
+  configureStandardCode(runID: string,
     action: "configure" | "pause_and_configure",
     body: StandardCodePresetControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<StandardCodePresetControlView> {
-    if (!this.hasStandardCodePreset) {
-      throw new Error("Standard Code preset capability is required for this operation");
-    }
-    if (!boundedIdentity(runID) || runID.trim() !== runID ||
-      body.version !== "standard_code_preset.v1" ||
-      !["auto", "local", "docker", "sbx"].includes(body.backend_intent) ||
-      body.workspace_id !== undefined || body.goal !== undefined ||
-      body.confirm_workspace_trust !== (body.expected_trust_digest !== undefined) ||
-      (body.expected_trust_digest !== undefined && !isSHA256(body.expected_trust_digest))) {
-      throw new Error("A valid existing-Run Standard Code preset request is required");
-    }
-    const suffix = action === "pause_and_configure"
-      ? "/standard-code/pause-and-configure" : "/standard-code/preset";
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}${suffix}`, body, idempotencyKey, signal);
-    const parsed = parseStandardCodePreset(result, action);
-    if (parsed.backend_intent !== body.backend_intent) {
-      throw new APIRequestError("Standard Code response changed the requested backend", "INVALID_RESPONSE", 502);
-    }
-    return parsed;
+    return this.runtimeClient.configureStandardCode(runID, action, body, idempotencyKey, signal);
   }
 
-  async createStandardCode(body: StandardCodePresetControlRequestView,
+  createStandardCode(body: StandardCodePresetControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<StandardCodePresetControlView> {
-    if (!this.hasStandardCodePreset) {
-      throw new Error("Standard Code preset capability is required for this operation");
-    }
-    const workspaceID = boundedIdentity(body.workspace_id);
-    const goal = body.goal;
-    if (body.version !== "standard_code_preset.v1" ||
-      !["auto", "local", "docker", "sbx"].includes(body.backend_intent) ||
-      workspaceID !== body.workspace_id || typeof goal !== "string" ||
-      goal.trim() !== goal || goal.length === 0 || goal.includes("\0") ||
-      new TextEncoder().encode(goal).byteLength > 4096 ||
-      body.confirm_workspace_trust !== (body.expected_trust_digest !== undefined) ||
-      (body.expected_trust_digest !== undefined && !isSHA256(body.expected_trust_digest))) {
-      throw new Error("A normalized Workspace, goal, and trust intent are required for Standard Code");
-    }
-    const result = parseStandardCodePreset(await this.sendControl<unknown>(
-      "/standard-code/preset", body, idempotencyKey, signal), "configure");
-    if (result.workspace_id !== workspaceID ||
-      result.backend_intent !== body.backend_intent) {
-      throw new APIRequestError("Standard Code preset response changed the requested target",
-        "INVALID_RESPONSE", 502);
-    }
-    return result;
+    return this.runtimeClient.createStandardCode(body, idempotencyKey, signal);
   }
 
-  async codeIntelInventory(workspaceID = "", signal?: AbortSignal):
+  codeIntelInventory(workspaceID = "", signal?: AbortSignal):
     Promise<CodeIntelInventoryView> {
-    if (workspaceID !== "" && (!strictCodeIntelIdentity(workspaceID) ||
-      workspaceID.trim() !== workspaceID)) {
-      throw new Error("A normalized Workspace identity is required");
-    }
-    return parseCodeIntelInventory(await this.get<unknown>(
-      "/code-intel", { workspace_id: workspaceID || undefined }, signal,
-    ));
+    return this.extensionsClient.codeIntelInventory(workspaceID, signal);
   }
 
-  async gitAdvancedProjection(runID: string,
+  gitAdvancedProjection(runID: string,
     signal?: AbortSignal): Promise<GitAdvancedProjectionView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/git-advanced`, { limit: 100 }, signal,
-    );
-    if (!isGitAdvancedProjection(value, runID)) {
-      throw new APIRequestError("Git advanced projection is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value;
+    return this.repositoryClient.gitAdvancedProjection(runID, signal);
   }
 
-  async discoverGitAdvancedHunks(runID: string, spec: GitAdvancedSpecView,
+  discoverGitAdvancedHunks(runID: string, spec: GitAdvancedSpecView,
     signal?: AbortSignal): Promise<GitAdvancedReviewResultView> {
-    if (!this.hasGitAdvancedControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      !validGitAdvancedSpec(spec) || !["hunk_stage", "hunk_unstage", "hunk_revert"]
-        .includes(spec.operation) || (spec.hunk_ids?.length ?? 0) !== 0) {
-      throw new Error("Git advanced hunk discovery requires an enabled capability and closed hunk spec");
-    }
-    const value = await this.sendReadRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/git-advanced/discover-hunks`, { spec }, signal,
-    );
-    if (!isGitAdvancedReviewResult(value, runID, true)) {
-      throw new APIRequestError("Git advanced hunk discovery is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value;
+    return this.repositoryClient.discoverGitAdvancedHunks(runID, spec, signal);
   }
 
-  async reviewGitAdvanced(runID: string, body: {
+  reviewGitAdvanced(runID: string, body: {
     operation_key: string;
     scope: GitAdvancedScopeView;
     spec: GitAdvancedSpecView;
   }, signal?: AbortSignal): Promise<GitAdvancedReviewResultView> {
-    if (!this.hasGitAdvancedControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedText(body.operation_key, 256) || body.operation_key.length < 16 ||
-      !isSHA256(body.scope.capability_generation) || !safePositiveInteger(body.scope.lease_generation) ||
-      !validGitAdvancedSpec(body.spec)) {
-      throw new Error("Git advanced review requires exact capability, lease, and operation inputs");
-    }
-    const value = await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/git-advanced/review`, body, signal,
-    );
-    if (!isGitAdvancedReviewResult(value, runID, false)) {
-      throw new APIRequestError("Git advanced review is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value;
+    return this.repositoryClient.reviewGitAdvanced(runID, body, signal);
   }
 
-  async executeGitAdvanced(runID: string, body: {
+  executeGitAdvanced(runID: string, body: {
     operation_id: string;
     approval_id: string;
     scope: GitAdvancedScopeView;
   }, signal?: AbortSignal): Promise<GitAdvancedExecuteResultView> {
-    if (!this.hasGitAdvancedControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedIdentity(body.operation_id) || !boundedIdentity(body.approval_id) ||
-      !isSHA256(body.scope.capability_generation) || !safePositiveInteger(body.scope.lease_generation)) {
-      throw new Error("Git advanced execution requires exact approved operation authority");
-    }
-    const value = await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/git-advanced/execute`, body, signal,
-    );
-    if (!isGitAdvancedExecuteResult(value, body.operation_id)) {
-      throw new APIRequestError("Git advanced execution result is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value;
+    return this.repositoryClient.executeGitAdvanced(runID, body, signal);
   }
 
-  async githubReviewConnections(enabledOnly = false,
+  githubReviewConnections(enabledOnly = false,
     signal?: AbortSignal): Promise<GitHubReviewCredentialView[]> {
-    return parseGitHubReviewConnections(await this.get<unknown>(
-      "/github-review/connections", { enabled_only: enabledOnly ? "true" : undefined }, signal,
-    ));
+    return this.repositoryClient.githubReviewConnections(enabledOnly, signal);
   }
 
-  async githubReviewCredential(connectionID: string,
+  githubReviewCredential(connectionID: string,
     signal?: AbortSignal): Promise<GitHubReviewCredentialView> {
-    if (!boundedIdentity(connectionID)) throw new Error("A normalized GitHub connection is required");
-    return parseGitHubReviewCredential(await this.get<unknown>(
-      `/github-review/connections/${encodeURIComponent(connectionID)}`, {}, signal,
-    ));
+    return this.repositoryClient.githubReviewCredential(connectionID, signal);
   }
 
-  async configureGitHubReview(body: {
+  configureGitHubReview(body: {
     connection_id?: string;
     repository: { host: "github.com"; owner: string; name: string; full_name: string; private: boolean };
     credential: { name: string; kind: "github_app_device" | "oauth_user" | "fine_grained_pat" };
@@ -900,1305 +655,572 @@ export class APIClient implements ClientFeatures {
     enabled: boolean;
     expected_generation: number;
   }, signal?: AbortSignal): Promise<GitHubReviewConfigureResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(body.repository.owner) ||
-      !boundedIdentity(body.repository.name) || body.repository.full_name !==
-      `${body.repository.owner}/${body.repository.name}` || !boundedIdentity(body.credential.name) ||
-      typeof body.write_enabled !== "boolean" || !Number.isSafeInteger(body.expected_generation) ||
-      body.expected_generation < 0) {
-      throw new Error("A bounded GitHub repository configuration is required");
-    }
-    return parseGitHubReviewConfigure(await this.sendControlRequest<unknown>(
-      "/github-review/connections", body, signal,
-    ));
+    return this.repositoryClient.configureGitHubReview(body, signal);
   }
 
-  async beginGitHubReviewDeviceFlow(connectionID: string,
+  beginGitHubReviewDeviceFlow(connectionID: string,
     signal?: AbortSignal): Promise<GitHubReviewDeviceAuthorizationView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(connectionID)) {
-      throw new Error("GitHub review control and a connection are required");
-    }
-    return parseGitHubDeviceAuthorization(await this.sendControlRequest<unknown>(
-      `/github-review/connections/${encodeURIComponent(connectionID)}/device`, {}, signal,
-    ));
+    return this.repositoryClient.beginGitHubReviewDeviceFlow(connectionID, signal);
   }
 
-  async pollGitHubReviewDeviceFlow(connectionID: string, sessionID: string,
+  pollGitHubReviewDeviceFlow(connectionID: string, sessionID: string,
     signal?: AbortSignal): Promise<GitHubReviewDevicePollResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(connectionID) ||
-      !boundedIdentity(sessionID)) throw new Error("A GitHub Device Flow session is required");
-    return parseGitHubDevicePoll(await this.sendControlRequest<unknown>(
-      `/github-review/connections/${encodeURIComponent(connectionID)}/device-poll`,
-      { session_id: sessionID }, signal,
-    ));
+    return this.repositoryClient.pollGitHubReviewDeviceFlow(connectionID, sessionID, signal);
   }
 
-  async disconnectGitHubReview(connectionID: string,
+  disconnectGitHubReview(connectionID: string,
     signal?: AbortSignal): Promise<GitHubReviewCredentialView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(connectionID)) {
-      throw new Error("GitHub review control and a connection are required");
-    }
-    return parseGitHubReviewCredential(await this.sendControlRequest<unknown>(
-      `/github-review/connections/${encodeURIComponent(connectionID)}/disconnect`, {}, signal,
-    ));
+    return this.repositoryClient.disconnectGitHubReview(connectionID, signal);
   }
 
-  async qualifyGitHubReview(connectionID: string, pullRequest: number,
+  qualifyGitHubReview(connectionID: string, pullRequest: number,
     signal?: AbortSignal): Promise<GitHubReviewQualificationResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(connectionID) ||
-      !Number.isSafeInteger(pullRequest) || pullRequest < 1) throw new Error("A valid PR is required");
-    return parseGitHubQualification(await this.sendControlRequest<unknown>(
-      `/github-review/connections/${encodeURIComponent(connectionID)}/qualify`,
-      { pull_request: pullRequest }, signal,
-    ));
+    return this.repositoryClient.qualifyGitHubReview(connectionID, pullRequest, signal);
   }
 
-  async fetchGitHubReview(connectionID: string, pullRequest: number,
+  fetchGitHubReview(connectionID: string, pullRequest: number,
     signal?: AbortSignal): Promise<GitHubReviewFetchResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(connectionID) ||
-      !Number.isSafeInteger(pullRequest) || pullRequest < 1) throw new Error("A valid PR is required");
-    return parseGitHubFetch(await this.sendControlRequest<unknown>(
-      `/github-review/connections/${encodeURIComponent(connectionID)}/fetch`,
-      { pull_request: pullRequest }, signal,
-    ));
+    return this.repositoryClient.fetchGitHubReview(connectionID, pullRequest, signal);
   }
 
-  async githubReviewProjection(runID: string, connectionID: string, pullRequest = 0,
+  githubReviewProjection(runID: string, connectionID: string, pullRequest = 0,
     signal?: AbortSignal): Promise<GitHubReviewProjectionView> {
-    if (!boundedIdentity(runID) || !boundedIdentity(connectionID) ||
-      !Number.isSafeInteger(pullRequest) || pullRequest < 0) throw new Error("Invalid GitHub projection scope");
-    return parseGitHubProjection(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/github-review`, {
-        connection_id: connectionID, pull_request: pullRequest || undefined, limit: 100,
-      }, signal,
-    ), runID);
+    return this.repositoryClient.githubReviewProjection(runID, connectionID, pullRequest, signal);
   }
 
-  async buildGitHubReviewEvidence(runID: string, snapshotID: string,
+  buildGitHubReviewEvidence(runID: string, snapshotID: string,
     signal?: AbortSignal): Promise<GitHubReviewEvidenceResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(runID) || !boundedIdentity(snapshotID)) {
-      throw new Error("A Run and immutable GitHub snapshot are required");
-    }
-    return parseGitHubEvidence(await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/github-review/evidence`,
-      { snapshot_id: snapshotID }, signal,
-    ));
+    return this.repositoryClient.buildGitHubReviewEvidence(runID, snapshotID, signal);
   }
 
-  async reviewGitHubWrite(runID: string, body: { connection_id: string; snapshot_id: string;
+  reviewGitHubWrite(runID: string, body: { connection_id: string; snapshot_id: string;
     operation_key: string; spec: GitHubReviewWriteSpecView },
   signal?: AbortSignal): Promise<GitHubReviewWriteReviewResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(runID) ||
-      !boundedIdentity(body.connection_id) || !boundedIdentity(body.snapshot_id) ||
-      !boundedIdentity(body.operation_key)) throw new Error("An exact GitHub write preview is required");
-    return parseGitHubWriteReview(await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/github-review/review`, body, signal,
-    ));
+    return this.repositoryClient.reviewGitHubWrite(runID, body, signal);
   }
 
-  async executeGitHubWrite(runID: string, operationID: string, approvalID: string,
+  executeGitHubWrite(runID: string, operationID: string, approvalID: string,
     signal?: AbortSignal): Promise<GitHubReviewWriteExecuteResultView> {
-    if (!this.hasGitHubReviewControl || !boundedIdentity(runID) ||
-      !boundedIdentity(operationID) || !boundedIdentity(approvalID)) {
-      throw new Error("An approved GitHub write operation is required");
-    }
-    return parseGitHubWriteExecute(await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/github-review/execute`,
-      { operation_id: operationID, approval_id: approvalID }, signal,
-    ));
+    return this.repositoryClient.executeGitHubWrite(runID, operationID, approvalID, signal);
   }
 
-  async extensionInventory(runID = "", signal?: AbortSignal, workspaceID = ""): Promise<ExtensionInventoryView> {
-    if (runID !== "" && (!boundedIdentity(runID) || runID.trim() !== runID)) {
-      throw new Error("A normalized Run identity is required");
-    }
-    if (workspaceID !== "" && (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID)) {
-      throw new Error("A normalized Workspace identity is required");
-    }
-    const inventory = parseExtensionInventory(await this.get<unknown>(
-      "/extensions", { run_id: runID || undefined, workspace_id: workspaceID || undefined }, signal,
-    ));
-    if ((runID && inventory.run_id !== runID) || (workspaceID && inventory.workspace_id !== workspaceID) ||
-      (runID && inventory.mcp_calls.some((call) => call.run_id !== runID)) ||
-      (!runID && inventory.mcp_calls.length > 0) ||
-      (workspaceID && inventory.mcp_servers.some((server) => server.workspace_id !== workspaceID))) {
-      throw new APIRequestError("Extension inventory scope does not match the request", "INVALID_RESPONSE", 502);
-    }
-    return inventory;
+  extensionInventory(runID = "", signal?: AbortSignal, workspaceID = ""): Promise<ExtensionInventoryView> {
+    return this.extensionsClient.extensionInventory(runID, signal, workspaceID);
   }
 
-  async registerMCPServer(body: ExtensionMCPRegistrationRequestView,
+  registerMCPServer(body: ExtensionMCPRegistrationRequestView,
     signal?: AbortSignal): Promise<ExtensionMCPRegistrationView> {
-    const descriptor = body.descriptor;
-    if (!this.hasExtensionControl || body.version !== "extension-control.v1" ||
-      !isRecord(descriptor) || !["mcp-client.v1", "mcp-client.v3"].includes(descriptor.protocol_version) ||
-      !validMCPConnectionConfig(descriptor) ||
-      !boundedIdentity(descriptor.id) || !boundedIdentity(descriptor.workspace_id) ||
-      !boundedText(descriptor.name, 256) || !boundedText(descriptor.target, 4_096) ||
-      !["stdio", "streamable_http", "sse", "websocket"].includes(String(descriptor.transport)) ||
-      !["workspace", "run"].includes(String(descriptor.scope)) ||
-      (descriptor.scope === "run" && !boundedIdentity(descriptor.run_id)) ||
-      (descriptor.scope === "workspace" && descriptor.run_id !== undefined && descriptor.run_id !== "") ||
-      !boundedStringArray(descriptor.declared_capabilities, 3, 32) ||
-      !safePositiveInteger(descriptor.call_timeout_ms) || descriptor.call_timeout_ms < 100 ||
-      descriptor.call_timeout_ms > 300_000 || !safePositiveInteger(descriptor.max_result_bytes) ||
-      descriptor.max_result_bytes > 131_072) {
-      throw new Error("A bounded MCP descriptor and extension control are required");
-    }
-    return parseMCPRegistration(await this.sendControlRequest<unknown>("/extensions/mcp", body, signal), body);
+    return this.extensionsClient.registerMCPServer(body, signal);
   }
 
-  async mcpCredentialStatus(binding: MCPCredentialBindingView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
-    if (!validMCPCredentialBinding(binding)) throw new Error("An exact HTTPS MCP credential binding is required");
-    const value = await this.get<unknown>(`/extensions/mcp/${encodeURIComponent(binding.server_id)}/credential`, {
-      workspace_id: binding.workspace_id, run_id: binding.run_id,
-      expected_descriptor_fingerprint: binding.expected_descriptor_fingerprint, target: binding.target, credential_ref: binding.credential_ref,
-    }, signal);
-    try { return parseMCPCredentialStatus(value, binding); }
-    catch { throw new APIRequestError("MCP credential status violated its metadata or binding contract", "INVALID_RESPONSE", 502); }
+  mcpCredentialStatus(binding: MCPCredentialBindingView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
+    return this.extensionsClient.mcpCredentialStatus(binding, signal);
   }
 
-  async changeMCPCredential(body: MCPCredentialRequestView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
-    if (!this.hasExtensionControl || body.version !== "mcp-credential.v1" || !validMCPCredentialBinding(body.binding) ||
-      body.confirm !== true || !isSHA256(body.expected_reference_fingerprint) ||
-      (body.action !== "set" && body.action !== "delete") ||
-      (body.action === "set" && !validMCPBearerSecret(body.secret ?? "")) || (body.action === "delete" && !!body.secret)) {
-      throw new Error("An exact MCP binding, explicit credential action and confirmation are required");
-    }
-    const value = await this.sendControlRequest<unknown>(`/extensions/mcp/${encodeURIComponent(body.binding.server_id)}/credential`, body, signal);
-    try {
-      const status = parseMCPCredentialStatus(value, body.binding);
-      if (!status.store_available || status.endpoint_conflict || status.configured !== (body.action === "set") ||
-        status.reference_fingerprint !== body.expected_reference_fingerprint) throw new Error("Unverified mutation outcome");
-      return status;
-    }
-    catch { throw new APIRequestError("MCP credential change returned invalid presence metadata; refresh before retrying", "INVALID_RESPONSE", 502); }
+  changeMCPCredential(body: MCPCredentialRequestView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
+    return this.extensionsClient.changeMCPCredential(body, signal);
   }
 
-  async changeMCPOAuth(body: MCPCredentialRequestView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
-    if (!this.hasExtensionControl || body.version !== "mcp-credential.v1" || !validMCPCredentialBinding(body.binding) ||
-      !body.confirm || !isSHA256(body.expected_reference_fingerprint) || body.secret ||
-      !["oauth-discover", "oauth-start", "oauth-cancel"].includes(body.action)) throw new Error("An exact MCP OAuth binding and confirmation are required");
-    if (body.oauth_client_id_mode !== undefined &&
-      (body.action !== "oauth-start" || !["auto", "dynamic", "pre_registered", "metadata_url"].includes(body.oauth_client_id_mode))) throw new Error("Invalid OAuth client ID mode");
-    if (body.oauth_callback_port !== undefined && (body.action !== "oauth-start" || !Number.isInteger(body.oauth_callback_port) || body.oauth_callback_port < 0 || body.oauth_callback_port > 65535)) throw new Error("Invalid OAuth callback port");
-    if (body.oauth_client_secret !== undefined && (body.action !== "oauth-start" || !body.oauth_client_id || !["auto", "pre_registered"].includes(body.oauth_client_id_mode ?? "pre_registered") || !body.oauth_client_secret || body.oauth_client_secret.length > 1024 || /[\r\n\0]/u.test(body.oauth_client_secret))) throw new Error("Invalid OAuth client secret configuration");
-    if (body.action === "oauth-start" && body.oauth_client_id_mode === "metadata_url") {
-      const url = new URL(body.oauth_client_id ?? "");
-      if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash || url.pathname === "/" ||
-        (body.oauth_client_id?.length ?? 0) > 256) throw new Error("A hosted HTTPS client metadata document URL is required");
-    }
-    const value=await this.sendControlRequest<unknown>(`/extensions/mcp/${encodeURIComponent(body.binding.server_id)}/credential`,body,signal);
-    return parseMCPCredentialStatus(value,body.binding);
+  changeMCPOAuth(body: MCPCredentialRequestView, signal?: AbortSignal): Promise<MCPCredentialStatusView> {
+    return this.extensionsClient.changeMCPOAuth(body, signal);
   }
 
-  async importPluginPackage(body: ExtensionPluginImportRequestView,
+  importPluginPackage(body: ExtensionPluginImportRequestView,
     signal?: AbortSignal): Promise<ExtensionPluginImportView> {
-    if (!this.hasExtensionControl || body.version !== "extension-control.v1") {
-      throw new Error("Plugin import control is required");
-    }
-    if (body.source) {
-      const source = body.source;
-      const url = new URL(source.url);
-      if (body.archive_base64 || url.protocol !== "https:" || !url.hostname || url.username || url.password ||
-        url.search || url.hash || source.url.length > 4096 ||
-        (source.kind !== "https" && source.kind !== "git") ||
-        (source.kind === "https" && (!isSHA256(body.archive_sha256) || source.commit || source.archive_path)) ||
-        (source.kind === "git" && (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(source.commit ?? "") ||
-          (body.archive_sha256 !== undefined && !isSHA256(body.archive_sha256)) ||
-          (source.archive_path !== undefined && (!/^(?!\/)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[^\\:\0]+\.zip$/u.test(source.archive_path) || source.archive_path.length > 512))))) {
-        throw new Error("A credential-free HTTPS URL with an exact SHA-256 or Git commit is required");
-      }
-    } else if (!isSHA256(body.archive_sha256) || !validCanonicalBase64(body.archive_base64, 4 * 1_024 * 1_024)) {
-      throw new Error("A bounded Plugin ZIP and exact SHA-256 are required");
-    }
-    return parsePluginImport(await this.sendControlRequest<unknown>("/extensions/plugins/import", body, signal), body);
+    return this.extensionsClient.importPluginPackage(body, signal);
   }
 
-  async stageCodeIntelConfiguration(body: CodeIntelConfigurationRequestView,
+  stageCodeIntelConfiguration(body: CodeIntelConfigurationRequestView,
     signal?: AbortSignal): Promise<CodeIntelConfigurationView> {
-    if (!this.hasExtensionControl || body.version !== "code-intel-configuration.v1" ||
-      !strictCodeIntelIdentity(body.server_id) || !strictCodeIntelIdentity(body.workspace_id) ||
-      !isSHA256(body.executable_sha256) || !boundedText(body.executable, 4096) ||
-      !boundedStringArray(body.arguments, 64, 4096) || !safePositiveInteger(body.request_timeout_ms)) {
-      throw new Error("A pinned language-server descriptor and extension control are required");
-    }
-    const configuration = parseCodeIntelConfiguration(await this.sendControlRequest<unknown>("/code-intel/configurations", body, signal));
-    if (configuration.server_id !== body.server_id || configuration.workspace_id !== body.workspace_id ||
-      configuration.executable_sha256 !== body.executable_sha256) {
-      throw new APIRequestError("Code intelligence configuration binding is invalid", "INVALID_RESPONSE", 502);
-    }
-    return configuration;
+    return this.extensionsClient.stageCodeIntelConfiguration(body, signal);
   }
 
-  async reviewCodeIntelConfiguration(serverID: string, body: CodeIntelConfigurationReviewRequestView,
+  reviewCodeIntelConfiguration(serverID: string, body: CodeIntelConfigurationReviewRequestView,
     signal?: AbortSignal): Promise<CodeIntelConfigurationView> {
-    if (!this.hasExtensionControl || !strictCodeIntelIdentity(serverID) ||
-      body.version !== "code-intel-configuration.v1" || !strictCodeIntelIdentity(body.workspace_id) ||
-      !isSHA256(body.expected_descriptor_fingerprint)) throw new Error("An exact language-server review is required");
-    const configuration = parseCodeIntelConfiguration(await this.sendControlRequest<unknown>(
-      `/code-intel/configurations/${encodeURIComponent(serverID)}/review`, body, signal));
-    if (configuration.server_id !== serverID || configuration.workspace_id !== body.workspace_id ||
-      configuration.review_state !== "reviewed") {
-      throw new APIRequestError("Code intelligence review binding is invalid", "INVALID_RESPONSE", 502);
-    }
-    return configuration;
+    return this.extensionsClient.reviewCodeIntelConfiguration(serverID, body, signal);
   }
 
-  async testCodeIntelConfiguration(serverID: string, body: CodeIntelConfigurationTestRequestView,
+  testCodeIntelConfiguration(serverID: string, body: CodeIntelConfigurationTestRequestView,
     signal?: AbortSignal): Promise<CodeIntelConfigurationTestView> {
-    if (!this.hasExtensionControl || !strictCodeIntelIdentity(serverID) ||
-      body.version !== "code-intel-configuration.v1" || !strictCodeIntelIdentity(body.workspace_id) ||
-      !isSHA256(body.expected_descriptor_fingerprint) || !["code_document_symbols", "code_workspace_symbols"].includes(body.tool) ||
-      (body.tool === "code_document_symbols" && (!validWorkspaceRelativePath(body.path) || body.path === ".")) ||
-      (body.query !== undefined && body.query !== "" && !boundedText(body.query, 4096))) throw new Error("An exact readonly language-server test is required");
-    return parseCodeIntelConfigurationTest(await this.sendControlRequest<unknown>(
-      `/code-intel/configurations/${encodeURIComponent(serverID)}/test`, body, signal), serverID, body);
+    return this.extensionsClient.testCodeIntelConfiguration(serverID, body, signal);
   }
 
-  async reviewMCPServer(serverID: string, body: ExtensionMCPReviewRequestView,
+  reviewMCPServer(serverID: string, body: ExtensionMCPReviewRequestView,
     signal?: AbortSignal): Promise<ExtensionMCPServerView> {
-    if (!this.hasExtensionControl || !boundedIdentity(serverID) ||
-      body.version !== "extension-control.v1" || !isSHA256(body.expected_descriptor_fingerprint) ||
-      (body.expected_capability_fingerprint !== undefined &&
-        !isSHA256(body.expected_capability_fingerprint))) {
-      throw new Error("An exact MCP review request and extension control are required");
-    }
-    return parseExtensionMCPServer(await this.sendControlRequest<unknown>(
-      `/extensions/mcp/${encodeURIComponent(serverID)}/review`, body, signal,
-    ));
+    return this.extensionsClient.reviewMCPServer(serverID, body, signal);
   }
 
-  async refreshMCPServer(serverID: string,
+  refreshMCPServer(serverID: string,
     signal?: AbortSignal): Promise<ExtensionMCPServerView> {
-    if (!this.hasExtensionControl || !boundedIdentity(serverID)) {
-      throw new Error("A normalized MCP server and extension control are required");
-    }
-    return parseExtensionMCPServer(await this.sendControlRequest<unknown>(
-      `/extensions/mcp/${encodeURIComponent(serverID)}/refresh`,
-      { version: "extension-control.v1" }, signal,
-    ));
+    return this.extensionsClient.refreshMCPServer(serverID, signal);
   }
 
-  async reviewPluginInstallation(installationID: string,
+  reviewPluginInstallation(installationID: string,
     body: ExtensionPluginReviewRequestView,
     signal?: AbortSignal): Promise<ExtensionPluginInstallationView> {
-    if (!this.hasExtensionControl || !boundedIdentity(installationID) ||
-      body.version !== "extension-control.v1" ||
-      !isSHA256(body.expected_package_fingerprint) ||
-      !safePositiveInteger(body.expected_generation)) {
-      throw new Error("An exact Plugin review request and extension control are required");
-    }
-    return parseExtensionPlugin(await this.sendControlRequest<unknown>(
-      `/extensions/plugins/${encodeURIComponent(installationID)}/review`, body, signal,
-    ));
+    return this.extensionsClient.reviewPluginInstallation(installationID, body, signal);
   }
 
-  async pluginHistory(installationID: string, signal?: AbortSignal): Promise<PluginHistoryView> {
-    if (!boundedIdentity(installationID)) throw new Error("A Plugin installation identity is required");
-    return parsePluginHistory(await this.get<unknown>(`/extensions/plugins/${encodeURIComponent(installationID)}/history`, {}, signal), installationID);
+  pluginHistory(installationID: string, signal?: AbortSignal): Promise<PluginHistoryView> {
+    return this.extensionsClient.pluginHistory(installationID, signal);
   }
 
-  async rollbackPluginInstallation(installationID: string, body: PluginRollbackRequestView, signal?: AbortSignal): Promise<PluginRollbackView> {
-    if (!this.hasExtensionControl || !boundedIdentity(installationID) || !boundedIdentity(body.target_installation_id) || body.target_installation_id === installationID ||
-      body.version !== "plugin-lifecycle.v1" || !isSHA256(body.expected_current_fingerprint) || !isSHA256(body.expected_target_fingerprint) ||
-      !safePositiveInteger(body.expected_current_generation) || !safePositiveInteger(body.expected_target_generation) || typeof body.confirm_untrusted !== "boolean" ||
-      !boundedStringArray(body.capabilities, 4, 32) || body.capabilities.length === 0 || new Set(body.capabilities).size !== body.capabilities.length ||
-      body.capabilities.some((capability) => !pluginCapabilities.includes(capability))) throw new Error("Exact Plugin version bindings and selected capabilities are required");
-    const value = await this.sendControlRequest<unknown>(`/extensions/plugins/${encodeURIComponent(installationID)}/rollback`, body, signal);
-    if (!hasExactKeys(value, ["protocol_version", "current", "target"]) || value.protocol_version !== "plugin-lifecycle.v1") throw new APIRequestError("Plugin rollback projection is invalid", "INVALID_RESPONSE", 502);
-    const current = parseExtensionPlugin(value.current), target = parseExtensionPlugin(value.target);
-    if (current.id !== installationID || target.id !== body.target_installation_id || current.manifest.id !== target.manifest.id ||
-      current.protocol_version !== target.protocol_version || (current.snapshot?.surface ?? "") !== (target.snapshot?.surface ?? "") ||
-      current.package_fingerprint !== body.expected_current_fingerprint || target.package_fingerprint !== body.expected_target_fingerprint ||
-      current.generation !== body.expected_current_generation + 1 || target.generation !== body.expected_target_generation + 1 ||
-      current.state !== "rolled_back" || current.enabled_capabilities.length !== 0 || target.state !== "enabled" ||
-      [...target.enabled_capabilities].sort().join(",") !== [...body.capabilities].sort().join(",")) throw new APIRequestError("Plugin rollback result differs from its version bindings", "INVALID_RESPONSE", 502);
-    return { protocol_version: "plugin-lifecycle.v1", current, target };
+  rollbackPluginInstallation(installationID: string, body: PluginRollbackRequestView, signal?: AbortSignal): Promise<PluginRollbackView> {
+    return this.extensionsClient.rollbackPluginInstallation(installationID, body, signal);
   }
 
-  async revokePluginPublisher(installationID: string, body: PluginPublisherRevocationRequestView, signal?: AbortSignal): Promise<PluginPublisherRevocationView> {
-    if (!this.hasExtensionControl || !boundedIdentity(installationID) || body.version !== "plugin-lifecycle.v1" || body.confirm !== true ||
-      !isSHA256(body.expected_publisher_fingerprint) || !safePositiveInteger(body.expected_publisher_generation)) throw new Error("An exact publisher trust binding and confirmation are required");
-    const value = await this.sendControlRequest<unknown>(`/extensions/plugins/${encodeURIComponent(installationID)}/publisher-revocation`, body, signal);
-    if (!hasExactKeys(value, ["protocol_version", "installation_id", "publisher"]) || value.protocol_version !== "plugin-lifecycle.v1" || value.installation_id !== installationID) throw new APIRequestError("Publisher revocation projection is invalid", "INVALID_RESPONSE", 502);
-    const publisher = parsePluginPublisher(value.publisher);
-    if (publisher.fingerprint !== body.expected_publisher_fingerprint || publisher.generation !== body.expected_publisher_generation + 1 || publisher.state !== "revoked") throw new APIRequestError("Publisher revocation binding is invalid", "INVALID_RESPONSE", 502);
-    return { ...value, publisher } as PluginPublisherRevocationView;
+  revokePluginPublisher(installationID: string, body: PluginPublisherRevocationRequestView, signal?: AbortSignal): Promise<PluginPublisherRevocationView> {
+    return this.extensionsClient.revokePluginPublisher(installationID, body, signal);
   }
 
-  async trustPluginPublisher(installationID: string,
+  trustPluginPublisher(installationID: string,
     body: PluginPublisherTrustRequestView, signal?: AbortSignal,
   ): Promise<PluginPublisherTrustResponseView> {
-    if (!this.hasExtensionControl || !boundedIdentity(installationID) ||
-      body.version !== "plugin-lifecycle.v1" || body.confirm !== true ||
-      !isSHA256(body.expected_publisher_fingerprint) ||
-      !safeBoundedCount(body.expected_publisher_generation, Number.MAX_SAFE_INTEGER)) {
-      throw new Error("An exact publisher trust binding and confirmation are required");
-    }
-    const value = await this.sendControlRequest<unknown>(
-      `/extensions/plugins/${encodeURIComponent(installationID)}/publisher-trust`, body, signal);
-    if (!hasExactKeys(value, ["protocol_version", "installation_id", "publisher"]) ||
-      value.protocol_version !== "plugin-lifecycle.v1" || value.installation_id !== installationID) {
-      throw new APIRequestError("Publisher trust projection is invalid", "INVALID_RESPONSE", 502);
-    }
-    const publisher = parsePluginPublisher(value.publisher);
-    if (publisher.fingerprint !== body.expected_publisher_fingerprint ||
-      publisher.generation !== body.expected_publisher_generation + 1 ||
-      publisher.state !== "trusted") {
-      throw new APIRequestError("Publisher trust binding is invalid", "INVALID_RESPONSE", 502);
-    }
-    return { ...value, publisher } as PluginPublisherTrustResponseView;
+    return this.extensionsClient.trustPluginPublisher(installationID, body, signal);
   }
 
-  async hookDiagnostics(runID = "", workspaceID = "", signal?: AbortSignal): Promise<HookDiagnosticsView> {
-    if ((runID && !boundedIdentity(runID)) || (workspaceID && !boundedIdentity(workspaceID))) throw new Error("An exact Hook diagnostic scope is required");
-    return parseHookDiagnostics(await this.get<unknown>("/extensions/hooks", { run_id: runID || undefined, workspace_id: workspaceID || undefined }, signal), runID, workspaceID);
+  hookDiagnostics(runID = "", workspaceID = "", signal?: AbortSignal): Promise<HookDiagnosticsView> {
+    return this.extensionsClient.hookDiagnostics(runID, workspaceID, signal);
   }
 
-  async safeWebReadiness(product: string, signal?: AbortSignal): Promise<BrowserSafeWebReadiness> {
-    return parseSafeWebReadiness(await this.get<unknown>("/browser/safe-web-readiness",
-      { product }, signal));
+  safeWebReadiness(product: string, signal?: AbortSignal): Promise<BrowserSafeWebReadiness> {
+    return this.runtimeClient.safeWebReadiness(product, signal);
   }
 
-  async uiEvidence(runID: string, signal?: AbortSignal): Promise<UIEvidenceAttempt[]> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/ui-evidence`, { limit: 100 }, signal);
-    if (!Array.isArray(value) || value.length > 500) {
-      throw new APIRequestError("UI evidence list is invalid", "INVALID_RESPONSE", 502);
-    }
-    const attempts = value.map((entry) => parseUIEvidenceAttempt(entry, runID));
-    if (new Set(attempts.map((entry) => entry.manifest.attempt_id)).size !== attempts.length) {
-      throw new APIRequestError("UI evidence list contains duplicate attempts", "INVALID_RESPONSE", 502);
-    }
-    return attempts;
+  uiEvidence(runID: string, signal?: AbortSignal): Promise<UIEvidenceAttempt[]> {
+    return this.uiEvidenceClient.uiEvidence(runID, signal);
   }
 
-  async uiEvidenceBundle(attemptID: string, signal?: AbortSignal): Promise<UIEvidenceBundle> {
-    if (!boundedIdentity(attemptID) || attemptID.trim() !== attemptID) {
-      throw new Error("A normalized UI evidence attempt identity is required");
-    }
-    return parseUIEvidenceBundle(await this.get<unknown>(
-      `/ui-evidence/${encodeURIComponent(attemptID)}`, {}, signal), attemptID);
+  uiEvidenceBundle(attemptID: string, signal?: AbortSignal): Promise<UIEvidenceBundle> {
+    return this.uiEvidenceClient.uiEvidenceBundle(attemptID, signal);
   }
 
-  async startUIEvidence(runID: string, body: UIEvidenceStartView,
+  startUIEvidence(runID: string, body: UIEvidenceStartView,
     signal?: AbortSignal): Promise<UIEvidenceAttempt> {
-    if (!this.hasUIEvidence || !boundedIdentity(runID) || runID.trim() !== runID ||
-      typeof body.operation_key !== "string" || body.operation_key.trim() !== body.operation_key ||
-      body.operation_key.length < 1) {
-      throw new Error("UI evidence control, a normalized Run, and an operation key are required");
-    }
-    return parseUIEvidenceAttempt(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/ui-evidence`, body, body.operation_key, signal), runID);
+    return this.uiEvidenceClient.startUIEvidence(runID, body, signal);
   }
 
-  async cancelUIEvidence(attemptID: string, signal?: AbortSignal): Promise<UIEvidenceAttempt> {
-    if (!this.hasUIEvidence || !boundedIdentity(attemptID) || attemptID.trim() !== attemptID) {
-      throw new Error("UI evidence control and a normalized attempt identity are required");
-    }
-    return parseUIEvidenceAttempt(await this.sendControl<unknown>(
-      `/ui-evidence/${encodeURIComponent(attemptID)}/cancel`, { confirm: true },
-      `ui-evidence-cancel-${attemptID}`, signal));
+  cancelUIEvidence(attemptID: string, signal?: AbortSignal): Promise<UIEvidenceAttempt> {
+    return this.uiEvidenceClient.cancelUIEvidence(attemptID, signal);
   }
 
-  async downloadUIEvidenceArtifact(attemptID: string, metadata: UIEvidenceArtifactMetadata,
+  downloadUIEvidenceArtifact(attemptID: string, metadata: UIEvidenceArtifactMetadata,
     signal?: AbortSignal): Promise<Blob> {
-    if (!boundedIdentity(attemptID) || attemptID !== metadata.attempt_id ||
-      !boundedIdentity(metadata.id) || !isSHA256(metadata.sha256) || metadata.untrusted !== true) {
-      throw new Error("Exact untrusted UI evidence artifact metadata is required");
-    }
-    const response = await fetch(this.url(`/ui-evidence/${encodeURIComponent(attemptID)}/artifacts/` +
-      encodeURIComponent(metadata.id)), {
-      method: "GET",
-      headers: { ...this.headers(), Accept: metadata.mime },
-      signal,
-      cache: "no-store",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    if (!response.ok) throw await this.responseError(response);
-    if (response.headers.get("content-type") !== metadata.mime ||
-      response.headers.get("etag") !== `"${metadata.sha256}"` ||
-      response.headers.get("x-cyberagent-content-sha256") !== metadata.sha256 ||
-      response.headers.get("x-cyberagent-evidence-untrusted") !== "true") {
-      throw new APIRequestError("UI evidence artifact headers are invalid", "INVALID_RESPONSE",
-        response.status, response.headers.get("x-request-id") || "");
-    }
-    const declaredLength = response.headers.get("content-length");
-    if (declaredLength !== null && Number(declaredLength) !== metadata.bytes) {
-      throw new APIRequestError("UI evidence artifact byte count changed", "INVALID_RESPONSE", 502);
-    }
-    if (!response.body) {
-      throw new APIRequestError("UI evidence artifact body is unavailable", "INVALID_RESPONSE", 502);
-    }
-    const bytes = new Uint8Array(metadata.bytes);
-    const reader = response.body.getReader();
-    let offset = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (offset + value.byteLength > bytes.byteLength) {
-          await reader.cancel();
-          throw new APIRequestError("UI evidence artifact exceeded its sealed byte count",
-            "INVALID_RESPONSE", 502);
-        }
-        bytes.set(value, offset);
-        offset += value.byteLength;
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    if (offset !== metadata.bytes) {
-      throw new APIRequestError("UI evidence artifact byte count changed", "INVALID_RESPONSE", 502);
-    }
-    const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
-    const digestHex = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    if (digestHex !== metadata.sha256) {
-      throw new APIRequestError("UI evidence artifact digest verification failed", "INVALID_RESPONSE", 502);
-    }
-    return new Blob([bytes], { type: metadata.mime });
+    return this.uiEvidenceClient.downloadUIEvidenceArtifact(attemptID, metadata, signal);
   }
 
   uploadWorkspaceFile(workspaceID: string, file: File, operationKey: string,
     signal?: AbortSignal): Promise<WorkspaceFileAttachment> {
-    return this.workspaces.uploadWorkspaceFile(workspaceID, file, operationKey, signal);
+    return this.workspacesClient.uploadWorkspaceFile(workspaceID, file, operationKey, signal);
   }
 
   inspectWorkspaceFileUpload(workspaceID: string, operationKey: string, signal?: AbortSignal):
     Promise<{ state: "not_received" | "stored"; attachment?: WorkspaceFileAttachment }> {
-    return this.workspaces.inspectWorkspaceFileUpload(workspaceID, operationKey, signal);
+    return this.workspacesClient.inspectWorkspaceFileUpload(workspaceID, operationKey, signal);
   }
 
   downloadWorkspaceFile(metadata: WorkspaceFileAttachment, signal?: AbortSignal): Promise<Blob> {
-    return this.workspaces.downloadWorkspaceFile(metadata, signal);
+    return this.workspacesClient.downloadWorkspaceFile(metadata, signal);
   }
 
   uploadWorkspaceImage(workspaceID: string, file: File, operationKey: string,
     signal?: AbortSignal): Promise<WorkspaceImageAttachment> {
-    return this.workspaces.uploadWorkspaceImage(workspaceID, file, operationKey, signal);
+    return this.workspacesClient.uploadWorkspaceImage(workspaceID, file, operationKey, signal);
   }
 
   downloadWorkspaceImage(metadata: WorkspaceImageAttachment, signal?: AbortSignal): Promise<Blob> {
-    return this.workspaces.downloadWorkspaceImage(metadata, signal);
+    return this.workspacesClient.downloadWorkspaceImage(metadata, signal);
   }
 
   downloadVerifiedImage(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
     signal?: AbortSignal): Promise<Blob> {
-    return this.workspaces.downloadVerifiedImage(path, metadata, signal);
+    return this.workspacesClient.downloadVerifiedImage(path, metadata, signal);
   }
 
   modelAvailability(signal?: AbortSignal): Promise<ModelAvailabilityView> {
-    return this.models.modelAvailability(signal);
+    return this.modelsClient.modelAvailability(signal);
   }
 
-  async getArtifact(artifactID: string, signal?: AbortSignal): Promise<ArtifactView> {
-    const normalized = boundedIdentity(artifactID);
-    if (!normalized || normalized !== artifactID) {
-      throw new Error("A normalized artifact identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/artifacts/${encodeURIComponent(artifactID)}`, {}, signal,
-    );
-    if (!isRecord(value) || value.id !== artifactID || !boundedIdentity(value.run_id)) {
-      throw new APIRequestError("Artifact response is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as ArtifactView;
+  getArtifact(artifactID: string, signal?: AbortSignal): Promise<ArtifactView> {
+    return this.evidenceClient.getArtifact(artifactID, signal);
   }
 
-  async getNote(noteID: string, signal?: AbortSignal): Promise<NoteView> {
-    const normalized = boundedIdentity(noteID);
-    if (!normalized || normalized !== noteID) {
-      throw new Error("A normalized note identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/notes/${encodeURIComponent(noteID)}`, {}, signal,
-    );
-    if (!isRecord(value) || value.id !== noteID || !boundedIdentity(value.run_id)) {
-      throw new APIRequestError("Note response is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as NoteView;
+  getNote(noteID: string, signal?: AbortSignal): Promise<NoteView> {
+    return this.evidenceClient.getNote(noteID, signal);
   }
 
-  async getWorkItem(workItemID: string, signal?: AbortSignal): Promise<WorkItemView> {
-    const normalized = boundedIdentity(workItemID);
-    if (!normalized || normalized !== workItemID) {
-      throw new Error("A normalized Plan item identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/work-items/${encodeURIComponent(workItemID)}`, {}, signal,
-    );
-    if (!isRecord(value) || value.id !== workItemID || !boundedIdentity(value.run_id)) {
-      throw new APIRequestError("Plan item response is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as WorkItemView;
+  getWorkItem(workItemID: string, signal?: AbortSignal): Promise<WorkItemView> {
+    return this.evidenceClient.getWorkItem(workItemID, signal);
   }
 
-  async getRunExternalSkills(runID: string,
+  getRunExternalSkills(runID: string,
     signal?: AbortSignal): Promise<ExternalSkillProjectionView> {
-    const normalized = boundedIdentity(runID);
-    if (!normalized || normalized !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/external-skills`, {}, signal,
-    );
-    if (!isRecord(value) || value.run_id !== runID ||
-      value.protocol_version !== "external_skill_projection.v1") {
-      throw new APIRequestError("External skill projection response is invalid",
-        "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as ExternalSkillProjectionView;
+    return this.skillsClient.getRunExternalSkills(runID, signal);
   }
 
   workspaceExplore(workspaceID: string, path = ".",
     signal?: AbortSignal): Promise<WorkspaceExplorerView> {
-    return this.workspaces.workspaceExplore(workspaceID, path, signal);
+    return this.workspacesClient.workspaceExplore(workspaceID, path, signal);
   }
 
   workspaceSearch(workspaceID: string, query: string,
     signal?: AbortSignal): Promise<WorkspaceSearchView> {
-    return this.workspaces.workspaceSearch(workspaceID, query, signal);
+    return this.workspacesClient.workspaceSearch(workspaceID, query, signal);
   }
 
-  async repositoryState(workspaceID: string,
+  repositoryState(workspaceID: string,
     signal?: AbortSignal): Promise<RepositoryStateView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID) {
-      throw new Error("A normalized Workspace identity is required");
-    }
-    return parseRepositoryState(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-state`, {}, signal,
-    ), workspaceID);
+    return this.repositoryClient.repositoryState(workspaceID, signal);
   }
 
-  async repositoryDiff(workspaceID: string,
+  repositoryDiff(workspaceID: string,
     signal?: AbortSignal): Promise<RepositoryDiffView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID) {
-      throw new Error("A normalized Workspace identity is required");
-    }
-    return parseRepositoryDiff(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-diff`, {}, signal,
-    ), workspaceID);
+    return this.repositoryClient.repositoryDiff(workspaceID, signal);
   }
 
-  async repositoryHistory(workspaceID: string,
+  repositoryHistory(workspaceID: string,
     signal?: AbortSignal): Promise<RepositoryHistoryView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID) {
-      throw new Error("A normalized Workspace identity is required");
-    }
-    return parseRepositoryHistory(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-history`, {}, signal,
-    ), workspaceID);
+    return this.repositoryClient.repositoryHistory(workspaceID, signal);
   }
 
-  async repositoryCommit(workspaceID: string, objectID: string,
+  repositoryCommit(workspaceID: string, objectID: string,
     signal?: AbortSignal): Promise<RepositoryCommitDetailView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID ||
-      !/^[0-9a-f]{40}$/u.test(objectID)) {
-      throw new Error("A normalized Workspace identity and exact commit object are required");
-    }
-    return parseRepositoryCommitDetail(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-commits/${objectID}`, {}, signal,
-    ), workspaceID, objectID);
+    return this.repositoryClient.repositoryCommit(workspaceID, objectID, signal);
   }
 
-  async repositoryCommitComparison(workspaceID: string, baseObjectID: string,
+  repositoryCommitComparison(workspaceID: string, baseObjectID: string,
     headObjectID: string, signal?: AbortSignal): Promise<RepositoryCommitComparisonView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID ||
-      !/^[0-9a-f]{40}$/u.test(baseObjectID) || !/^[0-9a-f]{40}$/u.test(headObjectID)) {
-      throw new Error("Normalized Workspace and exact commit identities are required");
-    }
-    return parseRepositoryCommitComparison(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-commit-comparison`,
-      { base_object_id: baseObjectID, head_object_id: headObjectID }, signal,
-    ), workspaceID, baseObjectID, headObjectID);
+    return this.repositoryClient.repositoryCommitComparison(workspaceID, baseObjectID, headObjectID, signal);
   }
 
-  async repositoryFileHistory(workspaceID: string, path: string,
+  repositoryFileHistory(workspaceID: string, path: string,
     signal?: AbortSignal): Promise<RepositoryFileHistoryView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID ||
-      !validWorkspaceRelativePath(path) || path === ".") {
-      throw new Error("A normalized Workspace identity and canonical file path are required");
-    }
-    return parseRepositoryFileHistory(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-file-history`, { path }, signal,
-    ), workspaceID, path);
+    return this.repositoryClient.repositoryFileHistory(workspaceID, path, signal);
   }
 
-  async repositoryCommitFilePreview(workspaceID: string, objectID: string, path: string,
+  repositoryCommitFilePreview(workspaceID: string, objectID: string, path: string,
     signal?: AbortSignal): Promise<RepositoryCommitFilePreviewView> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID ||
-      !/^[0-9a-f]{40}$/u.test(objectID) || !validWorkspaceRelativePath(path) || path === ".") {
-      throw new Error("A normalized Workspace, exact commit object, and canonical file path are required");
-    }
-    return parseRepositoryCommitFilePreview(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-commits/${objectID}/file-preview`,
-      { path }, signal,
-    ), workspaceID, objectID, path);
+    return this.repositoryClient.repositoryCommitFilePreview(workspaceID, objectID, path, signal);
   }
 
-  async operationReceiptHistory(runID = "",
+  operationReceiptHistory(runID = "",
     signal?: AbortSignal): Promise<OperationReceiptHistoryView> {
-    if (runID !== "" && (!boundedIdentity(runID) || runID.trim() !== runID)) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseOperationReceiptHistory(await this.get<unknown>(
-      "/operation-receipts", { run_id: runID || undefined, limit: 100 }, signal,
-    ), runID);
+    return this.evidenceClient.operationReceiptHistory(runID, signal);
   }
 
-  async operatorActionCenter(runID: string,
+  operatorActionCenter(runID: string,
     signal?: AbortSignal): Promise<OperatorActionCenterView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseOperatorActionCenter(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/operator-actions`, {}, signal,
-    ), runID);
+    return this.evidenceClient.operatorActionCenter(runID, signal);
   }
 
-  async evidenceInventory(runID: string,
+  evidenceInventory(runID: string,
     signal?: AbortSignal): Promise<EvidenceInventoryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseEvidenceInventory(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/evidence-attachments`, {}, signal,
-    ), runID);
+    return this.evidenceClient.evidenceInventory(runID, signal);
   }
 
-  async verificationEvidence(runID: string,
+  verificationEvidence(runID: string,
     signal?: AbortSignal): Promise<VerificationEvidenceInventoryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseVerificationEvidenceInventory(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-evidence`, {}, signal,
-    ), runID);
+    return this.verificationClient.verificationEvidence(runID, signal);
   }
 
-  async recordVerificationEvidence(runID: string, body: VerificationEvidenceRequestView,
+  recordVerificationEvidence(runID: string, body: VerificationEvidenceRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<VerificationEvidenceControlView> {
-    if (!this.hasVerificationEvidence || !boundedIdentity(runID) ||
-      body.version !== "operator_verification_evidence.v1" ||
-      !["pass", "fail", "unknown"].includes(body.outcome) ||
-      !validVerificationText(body.title, 160, false) ||
-      !validVerificationText(body.summary, 2048, true)) {
-      throw new Error("Verification evidence capability and a bounded observation are required");
-    }
-    return parseVerificationEvidenceItem(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-evidence`, body, idempotencyKey, signal,
-    ), runID, "", "", true);
+    return this.verificationClient.recordVerificationEvidence(runID, body, idempotencyKey, signal);
   }
 
-  async verificationPlans(runID: string,
+  verificationPlans(runID: string,
     signal?: AbortSignal): Promise<VerificationPlanInventoryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseVerificationPlanInventory(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-plan`, {}, signal,
-    ), runID);
+    return this.verificationClient.verificationPlans(runID, signal);
   }
 
-  async recordVerificationPlan(runID: string, body: VerificationPlanRequestView,
+  recordVerificationPlan(runID: string, body: VerificationPlanRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<VerificationPlanControlView> {
-    if (!this.hasVerificationEvidence || !boundedIdentity(runID) ||
-      body.version !== "operator_verification_plan.v1" ||
-      !validVerificationText(body.title, 160, false) ||
-      !validVerificationText(body.summary, 2048, true) || !Array.isArray(body.items) ||
-      body.items.length < 1 || body.items.length > 32 || body.items.some((item) =>
-        !validVerificationText(item.title, 160, false) ||
-        !validVerificationText(item.expected_observation, 1024, true))) {
-      throw new Error("Verification capability and a bounded operator checklist are required");
-    }
-    return parseVerificationPlan(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-plan`, body,
-      idempotencyKey, signal), runID, "", "", true);
+    return this.verificationClient.recordVerificationPlan(runID, body, idempotencyKey, signal);
   }
 
-  async verificationPlanCoverage(runID: string,
+  verificationPlanCoverage(runID: string,
     signal?: AbortSignal): Promise<VerificationPlanCoverageInventoryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseVerificationPlanCoverage(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-plan-coverage`, {}, signal,
-    ), runID);
+    return this.verificationClient.verificationPlanCoverage(runID, signal);
   }
 
-  async verificationPlanItemCoverage(runID: string, planID: string, ordinal: number,
+  verificationPlanItemCoverage(runID: string, planID: string, ordinal: number,
     signal?: AbortSignal): Promise<VerificationPlanItemCoverageDetailView> {
-    return (await this.verificationPlanItemCoveragePage(runID, planID, ordinal, "", 50,
-      signal)).detail;
+    return this.verificationClient.verificationPlanItemCoverage(runID, planID, ordinal, signal);
   }
 
-  async verificationPlanItemCoveragePage(runID: string, planID: string, ordinal: number,
+  verificationPlanItemCoveragePage(runID: string, planID: string, ordinal: number,
     cursor = "", limit = 50,
     signal?: AbortSignal): Promise<VerificationPlanItemCoveragePage> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID || !boundedIdentity(planID) ||
-      planID.trim() !== planID || !safePositiveInteger(ordinal) || ordinal > 32 ||
-      !safePositiveInteger(limit) || limit > 100 || typeof cursor !== "string" ||
-      cursor.length > 512 || cursor.trim() !== cursor) {
-      throw new Error("Normalized Run, plan, and item identities are required");
-    }
-    const envelope = await this.request<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-plan-coverage/` +
-        `${encodeURIComponent(planID)}/items/${ordinal}`,
-      { limit: limit === 50 ? undefined : limit, cursor: cursor || undefined }, signal);
-    if (!envelope.page) {
-      throw new APIRequestError("Verification coverage page metadata is missing",
-        "INVALID_RESPONSE", 502, envelope.request_id);
-    }
-    const page = parseResponsePage(envelope.page, limit);
-    return { detail: parseVerificationPlanItemCoverage(envelope.data, runID, planID, ordinal,
-      page, cursor === ""), page, requestID: envelope.request_id };
+    return this.verificationClient.verificationPlanItemCoveragePage(runID, planID, ordinal, cursor, limit, signal);
   }
 
-  async verificationPlanItemSnapshotExport(runID: string, planID: string, ordinal: number,
+  verificationPlanItemSnapshotExport(runID: string, planID: string, ordinal: number,
     format: "json" | "markdown", signal?: AbortSignal): Promise<VerificationSnapshotExportView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID || !boundedIdentity(planID) ||
-      planID.trim() !== planID || !safePositiveInteger(ordinal) || ordinal > 32 ||
-      !["json", "markdown"].includes(format)) {
-      throw new Error("Normalized Run, plan, item, and snapshot format are required");
-    }
-    return parseVerificationSnapshotExport(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-plan-coverage/` +
-        `${encodeURIComponent(planID)}/items/${ordinal}/snapshot-export`, { format }, signal,
-    ), runID, planID, ordinal, format);
+    return this.verificationClient.verificationPlanItemSnapshotExport(runID, planID, ordinal, format, signal);
   }
 
-  async verificationSnapshotReceipts(runID: string,
+  verificationSnapshotReceipts(runID: string,
     signal?: AbortSignal): Promise<VerificationSnapshotReceiptInventoryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseVerificationSnapshotReceiptInventory(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-snapshot-receipts`, {}, signal,
-    ), runID);
+    return this.verificationClient.verificationSnapshotReceipts(runID, signal);
   }
 
-  async recordVerificationSnapshotReceipt(runID: string,
+  recordVerificationSnapshotReceipt(runID: string,
     body: VerificationSnapshotReceiptRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<VerificationSnapshotReceiptControlView> {
-    if (!this.hasVerificationEvidence || !boundedIdentity(runID) ||
-      body.version !== "operator_verification_plan_item_snapshot_receipt.v1" ||
-      !boundedIdentity(body.plan_id) || !safePositiveInteger(body.plan_item_ordinal) ||
-      body.plan_item_ordinal > 32 || !["json", "markdown"].includes(body.format) ||
-      !safeBoundedCount(body.snapshot_high_water_event_sequence, Number.MAX_SAFE_INTEGER) ||
-      !isSHA256(body.content_sha256) || body.confirm_metadata_snapshot !== true) {
-      throw new Error("Verification capability and an exact confirmed snapshot digest are required");
-    }
-    return parseVerificationSnapshotReceipt(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-snapshot-receipts`, body,
-      idempotencyKey, signal), runID, "", "", true);
+    return this.verificationClient.recordVerificationSnapshotReceipt(runID, body, idempotencyKey, signal);
   }
 
-  async verificationSnapshotReceiptReviews(runID: string,
+  verificationSnapshotReceiptReviews(runID: string,
     signal?: AbortSignal): Promise<VerificationSnapshotReceiptReviewInventoryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseVerificationSnapshotReceiptReviewInventory(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-snapshot-receipt-reviews`, {}, signal,
-    ), runID);
+    return this.verificationClient.verificationSnapshotReceiptReviews(runID, signal);
   }
 
-  async recordVerificationSnapshotReceiptReview(runID: string,
+  recordVerificationSnapshotReceiptReview(runID: string,
     body: VerificationSnapshotReceiptReviewRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<VerificationSnapshotReceiptReviewControlView> {
-    if (!this.hasVerificationEvidence || !boundedIdentity(runID) ||
-      body.version !== "operator_verification_plan_item_snapshot_receipt_review.v1" ||
-      !boundedIdentity(body.receipt_id) || !isSHA256(body.receipt_content_sha256) ||
-      !safePositiveInteger(body.receipt_event_sequence) ||
-      !["metadata_confirmed", "metadata_disputed"].includes(body.decision) ||
-      body.confirm_non_authorizing_review !== true) {
-      throw new Error("Verification capability and an exact non-authorizing review are required");
-    }
-    return parseVerificationSnapshotReceiptReview(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-snapshot-receipt-reviews`, body,
-      idempotencyKey, signal), runID, "", "", true);
+    return this.verificationClient.recordVerificationSnapshotReceiptReview(runID, body, idempotencyKey, signal);
   }
 
-  async associateVerificationEvidence(runID: string, body: VerificationAssociationRequestView,
+  associateVerificationEvidence(runID: string, body: VerificationAssociationRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<VerificationAssociationControlView> {
-    if (!this.hasVerificationEvidence || !boundedIdentity(runID) ||
-      body.version !== "operator_verification_plan_evidence_association.v1" ||
-      !boundedIdentity(body.plan_id) || !safePositiveInteger(body.plan_item_ordinal) ||
-      body.plan_item_ordinal > 32 || !boundedIdentity(body.evidence_id)) {
-      throw new Error("Verification capability and exact plan/evidence identities are required");
-    }
-    return parseVerificationAssociation(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/verification-plan-associations`, body,
-      idempotencyKey, signal), runID, true);
+    return this.verificationClient.associateVerificationEvidence(runID, body, idempotencyKey, signal);
   }
 
-  async codeHandoff(runID: string, signal?: AbortSignal): Promise<CodeHandoffView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseCodeHandoff(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/code-handoff`, {}, signal,
-    ), runID);
+  codeHandoff(runID: string, signal?: AbortSignal): Promise<CodeHandoffView> {
+    return this.deliveryClient.codeHandoff(runID, signal);
   }
 
-  async standardCodeDelivery(runID: string,
+  standardCodeDelivery(runID: string,
     signal?: AbortSignal): Promise<StandardCodeDeliveryView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseStandardCodeDelivery(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/standard-code-delivery`, {}, signal,
-    ), runID);
+    return this.deliveryClient.standardCodeDelivery(runID, signal);
   }
 
-  async recordStandardCodeDelivery(runID: string, body: StandardCodeDeliveryRecordRequestView,
+  recordStandardCodeDelivery(runID: string, body: StandardCodeDeliveryRecordRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<StandardCodeDeliveryRecordResultView> {
-    if (!this.hasWorkspaceCheckpointControl || !boundedIdentity(runID) ||
-      runID.trim() !== runID || typeof body.operation_key !== "string" ||
-      body.operation_key.trim() !== body.operation_key || body.operation_key.length === 0 ||
-      !Array.isArray(body.verification_job_ids) || !Array.isArray(body.uncovered_items)) {
-      throw new Error("Standard Code delivery control and a bounded exact intent are required");
-    }
-    const value = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/standard-code-delivery`, body, idempotencyKey, signal);
-    if (!isRecord(value) || !hasExactKeys(value, ["replayed", "report"]) ||
-      typeof value.replayed !== "boolean") {
-      throw new APIRequestError("Invalid Standard Code delivery record response",
-        "INVALID_RESPONSE", 502);
-    }
-    return { replayed: value.replayed,
-      report: parseStandardCodeDelivery(value.report, runID) };
+    return this.deliveryClient.recordStandardCodeDelivery(runID, body, idempotencyKey, signal);
   }
 
-  async codeHandoffExport(runID: string, format: "json" | "markdown",
+  codeHandoffExport(runID: string, format: "json" | "markdown",
     signal?: AbortSignal): Promise<CodeHandoffExportView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID ||
-      !["json", "markdown"].includes(format)) {
-      throw new Error("A normalized Run identity and supported handoff format are required");
-    }
-    return parseCodeHandoffExport(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/code-handoff/export`, { format }, signal,
-    ), runID, format);
+    return this.deliveryClient.codeHandoffExport(runID, format, signal);
   }
 
-  async attachEvidence(runID: string, body: EvidenceAttachmentRequestView,
+  attachEvidence(runID: string, body: EvidenceAttachmentRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<EvidenceAttachmentView> {
-    if (!this.hasEvidenceAttachment || !boundedIdentity(runID) ||
-      body.version !== "session_evidence_attachment.v1" ||
-      body.source_kind !== "workspace_file" || !validWorkspaceRelativePath(body.source_ref) ||
-      !isSHA256(body.content_sha256)) {
-      throw new Error("Evidence attachment capability and exact Workspace provenance are required");
-    }
-    return parseEvidenceAttachment(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/evidence-attachments`, body, idempotencyKey, signal,
-    ), runID, body);
+    return this.evidenceClient.attachEvidence(runID, body, idempotencyKey, signal);
   }
 
   selectModelRoute(route: string, body: ModelRouteControlRequestView,
     signal?: AbortSignal): Promise<ModelAvailabilityView["routes"][number]> {
-    return this.models.selectModelRoute(route, body, signal);
+    return this.modelsClient.selectModelRoute(route, body, signal);
   }
 
   availableModelRoutes(signal?: AbortSignal): Promise<AvailableModelRouteCollectionView> {
-    return this.models.availableModelRoutes(signal);
+    return this.modelsClient.availableModelRoutes(signal);
   }
 
   threadModelRoute(threadID: string, signal?: AbortSignal): Promise<ThreadModelRouteView> {
-    return this.models.threadModelRoute(threadID, signal);
+    return this.modelsClient.threadModelRoute(threadID, signal);
   }
 
   providerSearchReadiness(threadID: string,
     signal?: AbortSignal): Promise<ProviderSearchReadinessView> {
-    return this.models.providerSearchReadiness(threadID, signal);
+    return this.modelsClient.providerSearchReadiness(threadID, signal);
   }
 
   diagnoseThreadSearch(threadID: string, body: SearchDiagnosticsRequestView,
     signal?: AbortSignal): Promise<SearchDiagnosticsView> {
-    return this.models.diagnoseThreadSearch(threadID, body, signal);
+    return this.modelsClient.diagnoseThreadSearch(threadID, body, signal);
   }
 
   selectThreadModelRoute(threadID: string, body: ThreadModelRouteControlRequestView,
     signal?: AbortSignal): Promise<ThreadModelRouteView> {
-    return this.models.selectThreadModelRoute(threadID, body, signal);
+    return this.modelsClient.selectThreadModelRoute(threadID, body, signal);
   }
 
   diagnoseProvider(body: ProviderDiagnosticRequestView,
     signal?: AbortSignal): Promise<ProviderDiagnosticView> {
-    return this.models.diagnoseProvider(body, signal);
+    return this.modelsClient.diagnoseProvider(body, signal);
   }
 
   qualifyModelHarness(body: ModelHarnessQualificationRequestView,
     signal?: AbortSignal): Promise<ModelHarnessQualificationView> {
-    return this.models.qualifyModelHarness(body, signal);
+    return this.modelsClient.qualifyModelHarness(body, signal);
   }
 
   chatGPTAuthStatus(signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.models.chatGPTAuthStatus(signal);
+    return this.modelsClient.chatGPTAuthStatus(signal);
   }
 
   startChatGPTLogin(body: ChatGPTLoginRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.models.startChatGPTLogin(body, signal);
+    return this.modelsClient.startChatGPTLogin(body, signal);
   }
 
   cancelChatGPTLogin(body: ChatGPTCancelRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.models.cancelChatGPTLogin(body, signal);
+    return this.modelsClient.cancelChatGPTLogin(body, signal);
   }
 
   logoutChatGPTAccount(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.models.logoutChatGPTAccount(body, signal);
+    return this.modelsClient.logoutChatGPTAccount(body, signal);
   }
 
   refreshChatGPTModels(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.models.refreshChatGPTModels(body, signal);
+    return this.modelsClient.refreshChatGPTModels(body, signal);
   }
 
   openChatGPTUsage(body: ChatGPTAuthRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.models.openChatGPTUsage(body, signal);
+    return this.modelsClient.openChatGPTUsage(body, signal);
   }
 
   providerDefinitions(signal?: AbortSignal): Promise<ProviderDefinitionCollectionView> {
-    return this.models.providerDefinitions(signal);
+    return this.modelsClient.providerDefinitions(signal);
   }
 
   discoverProviderModels(body: ProviderModelDiscoveryRequestView,
     signal?: AbortSignal): Promise<ProviderModelDiscoveryView> {
-    return this.models.discoverProviderModels(body, signal);
+    return this.modelsClient.discoverProviderModels(body, signal);
   }
 
   upsertProviderDefinition(provider: string, body: ProviderDefinitionUpsertRequestView,
     signal?: AbortSignal): Promise<ProviderDefinitionMutationView> {
-    return this.models.upsertProviderDefinition(provider, body, signal);
+    return this.modelsClient.upsertProviderDefinition(provider, body, signal);
   }
 
   deleteProviderDefinition(provider: string, body: ProviderDefinitionDeleteRequestView,
     signal?: AbortSignal): Promise<ProviderDefinitionMutationView> {
-    return this.models.deleteProviderDefinition(provider, body, signal);
+    return this.modelsClient.deleteProviderDefinition(provider, body, signal);
   }
 
   providerCredentialStatuses(signal?: AbortSignal): Promise<ProviderCredentialListView> {
-    return this.models.providerCredentialStatuses(signal);
+    return this.modelsClient.providerCredentialStatuses(signal);
   }
 
   changeProviderCredential(provider: string, body: ProviderCredentialRequestView,
     signal?: AbortSignal): Promise<ProviderCredentialStatusView> {
-    return this.models.changeProviderCredential(provider, body, signal);
+    return this.modelsClient.changeProviderCredential(provider, body, signal);
   }
 
-  async fileEditQueue(runID: string, signal?: AbortSignal): Promise<FileEditQueueView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseFileEditQueue(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edits`, {}, signal,
-    ), runID);
+  fileEditQueue(runID: string, signal?: AbortSignal): Promise<FileEditQueueView> {
+    return this.fileEditsClient.fileEditQueue(runID, signal);
   }
 
-  async fileEdit(runID: string, editID: string,
+  fileEdit(runID: string, editID: string,
     signal?: AbortSignal): Promise<FileEditPreviewView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedIdentity(editID) || editID.trim() !== editID) {
-      throw new Error("Normalized Run and file edit identities are required");
-    }
-    const edit = parseFileEditPreview(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edits/${encodeURIComponent(editID)}`,
-      {}, signal,
-    ));
-    if (edit.id !== editID) {
-      throw new APIRequestError("File edit preview returned the wrong identity",
-        "INVALID_RESPONSE", 502);
-    }
-    return edit;
+    return this.fileEditsClient.fileEdit(runID, editID, signal);
   }
 
-  async fileEditChangeSet(runID: string,
+  fileEditChangeSet(runID: string,
     signal?: AbortSignal): Promise<FileEditChangeSetView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseFileEditChangeSet(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edit-change-set`, {}, signal,
-    ), runID);
+    return this.fileEditsClient.fileEditChangeSet(runID, signal);
   }
 
-  async issueFileEditProposalSource(runID: string, path: string,
+  issueFileEditProposalSource(runID: string, path: string,
     signal?: AbortSignal): Promise<FileEditProposalSourceView> {
-    if (!this.hasFileEditProposals || !boundedIdentity(runID) ||
-      !validWorkspaceRelativePath(path)) {
-      throw new Error("File edit proposal capability and a Go-issued path are required");
-    }
-    return parseFileEditProposalSource(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edit-proposal-source`, { path }, signal,
-    ), runID, path);
+    return this.fileEditsClient.issueFileEditProposalSource(runID, path, signal);
   }
 
-  async reissueFileEditProposalSource(runID: string, path: string, expectedSHA256: string,
+  reissueFileEditProposalSource(runID: string, path: string, expectedSHA256: string,
     signal?: AbortSignal): Promise<FileEditProposalSourceView> {
-    if (!this.hasFileEditProposals || !boundedIdentity(runID) ||
-      !validWorkspaceRelativePath(path) || !isSHA256(expectedSHA256)) {
-      throw new Error("An exact previously issued file digest is required");
-    }
-    return parseFileEditProposalSource(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edit-proposal-source`,
-      { path, expected_sha256: expectedSHA256 }, signal,
-    ), runID, path);
+    return this.fileEditsClient.reissueFileEditProposalSource(runID, path, expectedSHA256, signal);
   }
 
-  async recoverFileEditProposal(runID: string, editID: string,
+  recoverFileEditProposal(runID: string, editID: string,
     signal?: AbortSignal): Promise<FileEditProposalRecoveryView> {
-    if (!this.hasFileEditProposals || !boundedIdentity(runID) || !boundedIdentity(editID)) {
-      throw new Error("File edit recovery requires exact Run and proposal identities");
-    }
-    return parseFileEditProposalRecovery(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edit-proposal-recovery/${encodeURIComponent(editID)}`,
-      {}, signal,
-    ), runID, editID);
+    return this.fileEditsClient.recoverFileEditProposal(runID, editID, signal);
   }
 
-  async createFileEditProposal(runID: string, body: FileEditProposalRequestView,
+  createFileEditProposal(runID: string, body: FileEditProposalRequestView,
     signal?: AbortSignal): Promise<FileEditProposalView> {
-    if (!this.hasFileEditProposals || !boundedIdentity(runID) ||
-      body.version !== "file_edit_proposal.v1" ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(body.source_handle) ||
-      typeof body.proposed_text !== "string" ||
-      new TextEncoder().encode(body.proposed_text).length > 256 * 1024) {
-      throw new Error("A bounded Go-issued file edit proposal is required");
-    }
-    return parseFileEditProposal(await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edit-proposals`, body, signal,
-    ), runID);
+    return this.fileEditsClient.createFileEditProposal(runID, body, signal);
   }
 
-  async reviewFileEdit(runID: string, editID: string, body: FileEditReviewRequestView,
+  reviewFileEdit(runID: string, editID: string, body: FileEditReviewRequestView,
     signal?: AbortSignal): Promise<FileEditReviewView> {
-    if (!this.hasFileEditReview || !boundedIdentity(runID) || !boundedIdentity(editID)) {
-      throw new Error("File edit review capability and normalized identities are required");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edits/${encodeURIComponent(editID)}/review`,
-      body, signal,
-    );
-    return parseFileEditReview(result, runID, editID, body);
+    return this.fileEditsClient.reviewFileEdit(runID, editID, body, signal);
   }
 
-  async applyFileEdit(runID: string, editID: string, body: FileEditApplyRequestView,
+  applyFileEdit(runID: string, editID: string, body: FileEditApplyRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<FileEditApplyView> {
-    if (!this.hasFileEditApply || !boundedIdentity(runID) || !boundedIdentity(editID)) {
-      throw new Error("File edit apply capability and normalized identities are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edits/${encodeURIComponent(editID)}/apply`,
-      body, idempotencyKey, signal,
-    );
-    return parseFileEditApply(result, runID, editID);
+    return this.fileEditsClient.applyFileEdit(runID, editID, body, idempotencyKey, signal);
   }
 
-  async runWakeState(runID: string, signal?: AbortSignal): Promise<RunWakeStateView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseRunWakeState(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/wake-intent`, {}, signal,
-    ), runID);
+  runWakeState(runID: string, signal?: AbortSignal): Promise<RunWakeStateView> {
+    return this.schedulingClient.runWakeState(runID, signal);
   }
 
-  async scheduleRunWake(runID: string, body: RunWakeScheduleRequestView,
+  scheduleRunWake(runID: string, body: RunWakeScheduleRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<RunWakeControlView> {
-    if (!this.hasRunWakeControl) {
-      throw new Error("Run wake control capability is required");
-    }
-    return parseRunWakeControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/wake-intent`, body, idempotencyKey, signal,
-    ), runID, "schedule");
+    return this.schedulingClient.scheduleRunWake(runID, body, idempotencyKey, signal);
   }
 
-  async cancelRunWake(runID: string, body: RunWakeCancelRequestView,
+  cancelRunWake(runID: string, body: RunWakeCancelRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<RunWakeControlView> {
-    if (!this.hasRunWakeControl) {
-      throw new Error("Run wake control capability is required");
-    }
-    return parseRunWakeControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/wake-intent/cancel`, body, idempotencyKey, signal,
-    ), runID, "cancel");
+    return this.schedulingClient.cancelRunWake(runID, body, idempotencyKey, signal);
   }
 
-  async consumeRunWake(runID: string, body: RunWakeExecutionRequestView,
+  consumeRunWake(runID: string, body: RunWakeExecutionRequestView,
     signal?: AbortSignal): Promise<RunWakeExecutionView> {
-    if (!this.hasRunWakeExecution || !boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("Foreground Run wake capability and a normalized Run are required");
-    }
-    return parseRunWakeExecution(await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/wake-intent/consume`, body, signal,
-    ), runID);
+    return this.schedulingClient.consumeRunWake(runID, body, signal);
   }
 
-  async listScheduledJobs(runID = "", limit = 50,
+  listScheduledJobs(runID = "", limit = 50,
     signal?: AbortSignal, cursor = ""): Promise<ScheduledJobListView & { page: Page }> {
-    if ((runID !== "" && boundedIdentity(runID) !== runID) ||
-      !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
-      throw new Error("A normalized Run identity and a schedule limit between 1 and 100 are required");
-    }
-    const envelope = await this.request<unknown>("/scheduled-jobs", {
-      run_id: runID || undefined, limit, cursor: cursor || undefined,
-    }, signal);
-    return { ...parseScheduledJobList(envelope.data), page: parseResponsePage(envelope.page, limit) };
+    return this.schedulingClient.listScheduledJobs(runID, limit, signal, cursor);
   }
 
-  async getScheduledJob(jobID: string, signal?: AbortSignal): Promise<ScheduledJobDetailView> {
-    if (boundedIdentity(jobID) !== jobID) {
-      throw new Error("A normalized scheduled job identity is required");
-    }
-    return parseScheduledJobDetail(await this.get<unknown>(
-      `/scheduled-jobs/${encodeURIComponent(jobID)}`,
-      { round_limit: 20, notification_limit: 20 }, signal,
-    ), jobID);
+  getScheduledJob(jobID: string, signal?: AbortSignal): Promise<ScheduledJobDetailView> {
+    return this.schedulingClient.getScheduledJob(jobID, signal);
   }
 
-  async createScheduledJob(runID: string, body: ScheduledJobCreateRequestView,
+  createScheduledJob(runID: string, body: ScheduledJobCreateRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ScheduledJobControlView> {
-    if (!this.hasScheduledJobControl || boundedIdentity(runID) !== runID ||
-      body.version !== "scheduled-job.v1") {
-      throw new Error("Scheduled job control and a normalized Run identity are required");
-    }
-    return parseScheduledJobControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/scheduled-jobs`, body, idempotencyKey, signal,
-    ), runID, "", "create");
+    return this.schedulingClient.createScheduledJob(runID, body, idempotencyKey, signal);
   }
 
-  async transitionScheduledJob(runID: string, jobID: string,
+  transitionScheduledJob(runID: string, jobID: string,
     action: "pause" | "resume" | "cancel", body: ScheduledJobTransitionRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ScheduledJobControlView> {
-    if (!this.hasScheduledJobControl || boundedIdentity(runID) !== runID ||
-      boundedIdentity(jobID) !== jobID || body.version !== "scheduled-job-control.v1" ||
-      !Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1) {
-      throw new Error("Scheduled job control, normalized identities, and a revision are required");
-    }
-    return parseScheduledJobControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/scheduled-jobs/${encodeURIComponent(jobID)}/${action}`,
-      body, idempotencyKey, signal,
-    ), runID, jobID, action);
+    return this.schedulingClient.transitionScheduledJob(runID, jobID, action, body, idempotencyKey, signal);
   }
 
-  async enableScheduledJobObservation(runID: string, jobID: string,
+  enableScheduledJobObservation(runID: string, jobID: string,
     body: ScheduledJobObservationRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ScheduledJobControlView> {
-    if (!this.hasScheduledJobControl || boundedIdentity(runID) !== runID ||
-      boundedIdentity(jobID) !== jobID || body.version !== "scheduled-job-control.v1" ||
-      body.observation_consent_version !== 1 || !safePositiveInteger(body.expected_revision)) {
-      throw new Error("Scheduled observation requires exact identities, a revision, and consent");
-    }
-    const result = parseScheduledJobControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/scheduled-jobs/${encodeURIComponent(jobID)}/enable-observation`,
-      body, idempotencyKey, signal,
-    ), runID, jobID, "enable-observation");
-    if (result.job.observation_consent_version !== 1) {
-      throw new APIRequestError("Scheduled observation consent was not confirmed", "INVALID_RESPONSE", 502);
-    }
-    return result;
+    return this.schedulingClient.enableScheduledJobObservation(runID, jobID, body, idempotencyKey, signal);
   }
 
-  async diagnosticBundle(runID: string, signal?: AbortSignal): Promise<DiagnosticBundleView> {
-    if (boundedIdentity(runID) !== runID) {
-      throw new Error("A normalized Run identity is required for diagnostic export");
-    }
-    return parseDiagnosticBundle(await this.get<unknown>("/diagnostic-bundle", {
-      run_id: runID, limit: 100,
-    }, signal), runID);
+  diagnosticBundle(runID: string, signal?: AbortSignal): Promise<DiagnosticBundleView> {
+    return this.runtimeClient.diagnosticBundle(runID, signal);
   }
 
-  async installSkillPackage(body: SkillPackageInstallRequestView,
+  installSkillPackage(body: SkillPackageInstallRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<SkillPackageInstallResult> {
-    if (!this.hasSkillInstallation || body.confirm_untrusted !== true) {
-      throw new Error("Explicit untrusted Skill installation capability is required");
-    }
-    return parseSkillPackageInstall(await this.sendControl<unknown>(
-      "/skills/packages/install", body, idempotencyKey, signal,
-    ), body);
+    return this.skillsClient.installSkillPackage(body, idempotencyKey, signal);
   }
 
-  async listSkillCatalogPublishers(signal?: AbortSignal): Promise<SkillCatalogPublishersView> {
-    const value = await this.get<unknown>("/skills/catalog/publishers", {}, signal);
-    if (!hasExactKeys(value, ["protocol_version", "publishers", "control_enabled"]) ||
-      value.protocol_version !== "skill-catalog-control.v1" || typeof value.control_enabled !== "boolean" || !Array.isArray(value.publishers)) {
-      throw new APIRequestError("Skill Catalog inventory is invalid", "INVALID_RESPONSE", 502);
-    }
-    const publishers = value.publishers.map(parseSkillCatalogPublisher);
-    if (new Set(publishers.map((item) => item.fingerprint)).size !== publishers.length) {
-      throw new APIRequestError("Skill Catalog identities are duplicated", "INVALID_RESPONSE", 502);
-    }
-    return { protocol_version: "skill-catalog-control.v1", publishers, control_enabled: value.control_enabled };
+  listSkillCatalogPublishers(signal?: AbortSignal): Promise<SkillCatalogPublishersView> {
+    return this.skillsClient.listSkillCatalogPublishers(signal);
   }
 
-  async controlSkillCatalogPublisher(body: SkillCatalogPublisherControlRequestView,
+  controlSkillCatalogPublisher(body: SkillCatalogPublisherControlRequestView,
     signal?: AbortSignal): Promise<SkillCatalogPublisherView> {
-    if (!this.hasSkillInstallation || body.version !== "skill-catalog-control.v1" || !body.confirm ||
-      !isSHA256(body.fingerprint) || typeof body.expected_updated_at !== "string" ||
-      (body.expected_updated_at !== "" && !validDate(body.expected_updated_at)) ||
-      !["trust", "revoke"].includes(body.action) ||
-      (body.action === "trust" && (!boundedText(body.name, 96) || !validCanonicalBase64(body.public_key, 32))) ||
-      (body.action === "revoke" && (!body.expected_updated_at || body.name !== undefined || body.public_key !== undefined || body.team !== undefined))) {
-      throw new Error("A confirmed Skill Catalog identity and observed version are required");
-    }
-    const publisher = parseSkillCatalogPublisher(await this.sendControlRequest<unknown>("/skills/catalog/publishers", body, signal));
-    if (publisher.fingerprint !== body.fingerprint || publisher.trust_class !== (body.action === "trust" ? "trusted" : "revoked") ||
-      publisher.updated_at === body.expected_updated_at || (body.action === "trust" && publisher.public_key !== body.public_key)) {
-      throw new APIRequestError("Skill Catalog change is unverified; refresh before retrying", "INVALID_RESPONSE", 502);
-    }
-    return publisher;
+    return this.skillsClient.controlSkillCatalogPublisher(body, signal);
   }
 
-  async listSkillPackages(filters: { surface?: string; profile?: string;
+  listSkillPackages(filters: { surface?: string; profile?: string;
     includeRemoved?: boolean } = {}, signal?: AbortSignal): Promise<SkillPackageInventoryView> {
-    const query: Record<string, QueryValue> = {};
-    if (filters.surface !== undefined) {
-      const surface = boundedIdentity(filters.surface);
-      if (!surface) throw new Error("A bounded Skill inventory surface is required");
-      query.surface = surface;
-    }
-    if (filters.profile !== undefined) {
-      const profile = boundedIdentity(filters.profile);
-      if (!profile) throw new Error("A bounded Skill inventory Profile is required");
-      query.profile = profile;
-    }
-    if (filters.includeRemoved !== undefined) {
-      query.include_removed = filters.includeRemoved;
-    }
-    return parseSkillPackageInventory(await this.get<unknown>(
-      "/skills/packages", query, signal,
-    ));
+    return this.skillsClient.listSkillPackages(filters, signal);
   }
 
-  async removeSkillPackage(body: SkillPackageRemoveRequestView,
+  removeSkillPackage(body: SkillPackageRemoveRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<SkillPackageRemovalView> {
-    if (!this.hasSkillInstallation || body.confirm_remove !== true ||
-      body.protocol_version !== "skill_package_removal_request.v1") {
-      throw new Error("Explicit Skill package removal confirmation is required");
-    }
-    return parseSkillPackageRemoval(await this.sendControl<unknown>(
-      "/skills/packages/remove", body, idempotencyKey, signal,
-    ), body);
+    return this.skillsClient.removeSkillPackage(body, idempotencyKey, signal);
   }
 
-  async executeEmbeddedAnalyzer(runID: string,
+  executeEmbeddedAnalyzer(runID: string,
     body: EmbeddedAnalyzerExecutionRequestView, signal?: AbortSignal,
   ): Promise<EmbeddedAnalyzerExecutionControlView> {
-    if (!this.hasEmbeddedAnalyzerExecution) {
-      throw new Error("Embedded analyzer execution capability is required");
-    }
-    const normalizedRunID = boundedIdentity(runID);
-    if (!normalizedRunID || normalizedRunID !== runID ||
-      body.version !== "embedded_analyzer_operator_request.v1" ||
-      body.confirmation !== "RUN-EMBEDDED-ANALYZER" ||
-      ((body.text ?? "") === "") === ((body.file ?? "").trim() === "")) {
-      throw new Error("A normalized Run and one explicitly confirmed analyzer input are required");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/analyzer-executions`, body, signal,
-    );
-    return parseEmbeddedAnalyzerExecution(result, runID);
+    return this.runtimeClient.executeEmbeddedAnalyzer(runID, body, signal);
   }
 
   get<T>(path: string, query: Record<string, QueryValue> = {}, signal?: AbortSignal): Promise<T> {
@@ -2214,15 +1236,9 @@ export class APIClient implements ClientFeatures {
     return this.transport.getPage<T>(path, query, cursor, signal);
   }
 
-  async respondMCPInput(runID: string, inputID: string,
+  respondMCPInput(runID: string, inputID: string,
     body: { version: "mcp-input.v1"; action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }): Promise<{ accepted: boolean }> {
-    if (!this.hasExtensionControl || !boundedIdentity(runID) || !boundedIdentity(inputID) ||
-      body.version !== "mcp-input.v1" || !["accept", "decline", "cancel"].includes(body.action)) {
-      throw new Error("An active MCP request and extension control capability are required");
-    }
-    // The live broker consumes an answer once. It is not a durable command and
-    // must not carry a replay key or be retried automatically.
-    return this.sendControlRequest(`/runs/${encodeURIComponent(runID)}/mcp-inputs/${encodeURIComponent(inputID)}`, body);
+    return this.extensionsClient.respondMCPInput(runID, inputID, body);
   }
 
   postControl<T>(
@@ -2242,814 +1258,413 @@ export class APIClient implements ClientFeatures {
     return this.transport.deleteControl<T>(path, body, signal);
   }
 
-  async listProjectActions(runID: string, target: string | AbortSignal = ".", signal?: AbortSignal): Promise<import("./types").ProjectActionsView> {
-    const directory = typeof target === "string" ? target || "." : ".";
-    const requestSignal = typeof target === "string" ? signal : target;
-    if (!boundedIdentity(runID) || !validPreparationTarget(directory)) throw new Error("An exact Run and relative project directory are required");
-    const normalizedTarget = normalizePreparationTarget(directory);
-    return parseProjectActions(await this.get<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-actions", normalizedTarget === "." ? {} : { target: normalizedTarget }, requestSignal), runID, normalizedTarget);
+  listProjectActions(runID: string, target: string | AbortSignal = ".", signal?: AbortSignal): Promise<import("./types").ProjectActionsView> {
+    return this.projectsClient.listProjectActions(runID, target, signal);
   }
 
-  async getProjectPreparation(runID: string, target = ".", signal?: AbortSignal): Promise<ProjectPreparationView> {
-    if (!boundedIdentity(runID) || !validPreparationTarget(target)) throw new Error("An exact Run and relative project directory are required");
-    const normalizedTarget = normalizePreparationTarget(target);
-    return parseProjectPreparation(await this.get<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-preparation", { target: normalizedTarget }, signal), runID, normalizedTarget);
+  getProjectPreparation(runID: string, target = ".", signal?: AbortSignal): Promise<ProjectPreparationView> {
+    return this.projectsClient.getProjectPreparation(runID, target, signal);
   }
 
-  async prepareProject(runID: string, body: ProjectPreparationRequest, operationKey: string): Promise<ProjectPreparationView> {
-    if (!this.hasControl || !this.hasRunExecution) throw new Error("Project preparation requires execution control");
-    if (!boundedIdentity(runID) || !boundedIdentity(operationKey) || !validProjectPreparationRequest(body))
-      throw new Error("An exact reviewed project preparation request is required");
-    const result = parseProjectPreparation(await this.sendControlRequest<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-preparation", body, undefined, operationKey), runID, body.target);
-    if (!result.latest) throw new APIRequestError("项目准备响应没有执行记录。", "INVALID_RESPONSE", 502);
-    return result;
+  prepareProject(runID: string, body: ProjectPreparationRequest, operationKey: string): Promise<ProjectPreparationView> {
+    return this.projectsClient.prepareProject(runID, body, operationKey);
   }
 
-  async getProjectPreparationOperation(runID: string, operationID: string, signal?: AbortSignal): Promise<ProjectPreparationOperation> {
-    if (!boundedIdentity(runID) || !boundedIdentity(operationID)) throw new Error("An exact Run and preparation operation are required");
-    return parseProjectPreparationOperation(await this.get<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-preparation/operations/" + encodeURIComponent(operationID), {}, signal), runID, operationID);
+  getProjectPreparationOperation(runID: string, operationID: string, signal?: AbortSignal): Promise<ProjectPreparationOperation> {
+    return this.projectsClient.getProjectPreparationOperation(runID, operationID, signal);
   }
 
-  async cancelProjectPreparation(runID: string, operationID: string, operationKey: string): Promise<ProjectPreparationOperation> {
-    if (!this.hasControl || !this.hasRunExecution) throw new Error("Project preparation requires execution control");
-    if (!boundedIdentity(runID) || !boundedIdentity(operationID) || !boundedIdentity(operationKey))
-      throw new Error("An exact Run and preparation operation are required");
-    return parseProjectPreparationOperation(await this.sendControlRequest<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-preparation/operations/" + encodeURIComponent(operationID) + "/cancel",
-      { version: "project-preparation.v1" }, undefined, operationKey), runID, operationID);
+  cancelProjectPreparation(runID: string, operationID: string, operationKey: string): Promise<ProjectPreparationOperation> {
+    return this.projectsClient.cancelProjectPreparation(runID, operationID, operationKey);
   }
 
-  async runProjectAction(runID: string, slot: ProjectActionSlot, target: string, operationKey: string): Promise<import("./types").ProjectActionResultView> {
-    if (!this.hasControl || !this.hasRunExecution) throw new Error("Project actions require execution control");
-    if (!boundedIdentity(runID) || !boundedIdentity(operationKey) || !["test", "format"].includes(slot) ||
-      target.length > 4096 || /[\u0000-\u001f\u007f]/u.test(target)) throw new Error("Invalid project action");
-    return parseProjectActionResult(await this.sendControlRequest<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-actions/" + slot,
-      { version: "project-actions.v1", target, confirm_execution: true }, undefined, operationKey), runID, slot);
+  runProjectAction(runID: string, slot: ProjectActionSlot, target: string, operationKey: string): Promise<import("./types").ProjectActionResultView> {
+    return this.projectsClient.runProjectAction(runID, slot, target, operationKey);
   }
 
-  async getProjectActionJob(runID: string, jobID: string, signal?: AbortSignal): Promise<import("./types").ProjectActionResultView> {
-    if (!boundedIdentity(runID) || !boundedIdentity(jobID)) throw new Error("An exact Run and Job are required");
-    return parseProjectActionResult(await this.get<unknown>(
-      "/runs/" + encodeURIComponent(runID) + "/project-actions/jobs/" + encodeURIComponent(jobID), {}, signal), runID, undefined, jobID);
+  getProjectActionJob(runID: string, jobID: string, signal?: AbortSignal): Promise<import("./types").ProjectActionResultView> {
+    return this.projectsClient.getProjectActionJob(runID, jobID, signal);
   }
 
-  async listTaskSkillCandidates(scope: TaskSkillCandidateScope,
+  listTaskSkillCandidates(scope: TaskSkillCandidateScope,
     signal?: AbortSignal): Promise<import("./types").TaskSkillCandidatesView> {
-    if (!boundedIdentity(scope.workspace_id) || scope.workspace_id.trim() !== scope.workspace_id ||
-      !["code", "cyber"].includes(scope.surface) || !["plan", "deliver"].includes(scope.phase) ||
-      !["code", "learn", "review", "script"].includes(scope.profile)) {
-      throw new Error("An exact workspace and task mode are required");
-    }
-    return parseTaskSkillCandidates(await this.get<unknown>("/task-configuration/skills", scope, signal), scope);
+    return this.projectsClient.listTaskSkillCandidates(scope, signal);
   }
 
-  async previewTaskConfiguration(body: import("./types").TaskConfigurationRequest,
+  previewTaskConfiguration(body: import("./types").TaskConfigurationRequest,
     signal?: AbortSignal): Promise<import("./types").TaskConfigurationView> {
-    if (!boundedIdentity(body.workspace_id) || body.workspace_id.trim() !== body.workspace_id ||
-      (body.profile !== undefined && !["code", "learn", "review", "script"].includes(body.profile))) throw new Error("A normalized workspace and profile are required");
-    normalizedTaskBudget(body.budget);
-    return parseTaskConfiguration(await this.sendReadRequest<unknown>("/task-configuration/preview", body, signal), body.workspace_id, body.profile ?? "code");
+    return this.projectsClient.previewTaskConfiguration(body, signal);
   }
 
-  async getRunTaskConfiguration(runID: string, signal?: AbortSignal): Promise<import("./types").TaskConfigurationView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) throw new Error("A normalized Run identity is required");
-    return parseTaskConfiguration(await this.get<unknown>(`/runs/${encodeURIComponent(runID)}/task-configuration`, {}, signal), undefined, undefined, "snapshot");
+  getRunTaskConfiguration(runID: string, signal?: AbortSignal): Promise<import("./types").TaskConfigurationView> {
+    return this.projectsClient.getRunTaskConfiguration(runID, signal);
   }
 
-  async selectProjectSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
-    if (!this.hasThreadControl) throw new Error("Exact project Skill references and task control are required");
-    assertSkillSelectionChoice(runID, choice, "project");
-    const value = await this.sendControl<unknown>(`/runs/${encodeURIComponent(runID)}/project-skills/select`,
-      { refs: choice.refs, confirm_untrusted_context: choice.confirmUntrustedContext }, idempotencyKey, signal);
-    assertSkillSelectionReceipt(value, runID, choice.refs, "Project");
+  selectProjectSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
+    return this.projectsClient.selectProjectSkills(runID, choice, idempotencyKey, signal);
   }
 
-  async selectInstalledSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
-    if (!this.hasThreadControl) throw new Error("Exact installed Skill references and task control are required");
-    assertSkillSelectionChoice(runID, choice, "installed");
-    const value = await this.sendControl<unknown>(`/runs/${encodeURIComponent(runID)}/external-skills/select`,
-      { refs: choice.refs, confirm_untrusted_context: choice.confirmUntrustedContext }, idempotencyKey, signal);
-    assertSkillSelectionReceipt(value, runID, choice.refs, "Installed");
+  selectInstalledSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
+    return this.projectsClient.selectInstalledSkills(runID, choice, idempotencyKey, signal);
   }
 
-  async createRun(body: RunCreationControlRequestView, idempotencyKey: string,
+  createRun(body: RunCreationControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<RunCreationControlView> {
-    if (!this.hasRunCreation) {
-      throw new Error("Run creation capability is required for this operation");
-    }
-    normalizedTaskBudget(body.budget);
-    normalizeRequestedNetworkAuthority(body);
-    normalizeRequestedWebAccess(body);
-    const result = await this.sendControl<unknown>("/runs", body, idempotencyKey, signal);
-    return parseRunCreationControl(result, body);
+    return this.runsClient.createRun(body, idempotencyKey, signal);
   }
 
   createThread(body: ThreadCreationControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadCreationControlView> {
-    return this.sessions.createThread(body, idempotencyKey, signal);
+    return this.sessionsClient.createThread(body, idempotencyKey, signal);
   }
 
   submitThreadMessage(threadID: string, body: ThreadMessageControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ThreadMessageControlView> {
-    return this.sessions.submitThreadMessage(threadID, body, idempotencyKey, signal);
+    return this.sessionsClient.submitThreadMessage(threadID, body, idempotencyKey, signal);
   }
 
-  async threadActivityDetail(threadID: string, activityRef: string,
+  threadActivityDetail(threadID: string, activityRef: string,
     signal?: AbortSignal): Promise<ThreadActivityDetailView> {
-    if (boundedIdentity(threadID) !== threadID || boundedIdentity(activityRef) !== activityRef) {
-      throw new Error("Normalized Thread and activity identities are required");
-    }
-    return parseThreadActivityDetail(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/activities/${encodeURIComponent(activityRef)}`,
-      {}, signal), threadID, activityRef);
+    return this.activityClient.threadActivityDetail(threadID, activityRef, signal);
   }
 
-  async threadActivityArtifact(threadID: string, activityRef: string, artifactRef: string,
+  threadActivityArtifact(threadID: string, activityRef: string, artifactRef: string,
     signal?: AbortSignal): Promise<ThreadActivityArtifactView> {
-    if (boundedIdentity(threadID) !== threadID || boundedIdentity(activityRef) !== activityRef ||
-      boundedIdentity(artifactRef) !== artifactRef) {
-      throw new Error("Normalized Thread activity artifact identities are required");
-    }
-    const value = parseThreadActivityArtifact(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/activities/${encodeURIComponent(activityRef)}` +
-      `/artifacts/${encodeURIComponent(artifactRef)}`, {}, signal), activityRef, artifactRef);
-    const digest = new Uint8Array(await globalThis.crypto.subtle.digest(
-      "SHA-256", new TextEncoder().encode(value.content)));
-    const digestHex = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    if (digestHex !== value.sha256) {
-      throw new APIRequestError("Thread activity artifact digest verification failed",
-        "INVALID_RESPONSE", 502);
-    }
-    return value;
+    return this.activityClient.threadActivityArtifact(threadID, activityRef, artifactRef, signal);
   }
 
-  async setRunWebAccess(runID: string,
+  setRunWebAccess(runID: string,
     body: RunWebAccessControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<RunWebAccessControlView> {
-    if (!this.hasControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      body.version !== "run_web_access_control.v1" ||
-      !safePositiveInteger(body.expected_mode_revision) ||
-      (body.reason !== undefined && body.reason !== "" && (!boundedText(body.reason, 1_024) ||
-        /[\u0000-\u001f\u007f]/u.test(body.reason)))) {
-      throw new Error("请选择当前任务的网页访问方式后重试。");
-    }
-    const selection = normalizeRequestedWebAccess(body);
-    if (selection === null) throw new Error("请选择网页访问方式。");
-    const request = { ...body, web_access_mode: selection.mode, web_allowed_targets: selection.targets };
-    return parseRunWebAccessControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/web-access`, request, idempotencyKey, signal), runID, request);
+    return this.runsClient.setRunWebAccess(runID, body, idempotencyKey, signal);
   }
 
-  async expandRunNetworkAuthority(runID: string,
+  expandRunNetworkAuthority(runID: string,
     body: RunNetworkAuthorityControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<RunNetworkAuthorityControlView> {
-    if (!this.hasControl || !boundedIdentity(runID) || runID.trim() !== runID ||
-      body.version !== "run_network_authority_control.v1" ||
-      !safePositiveInteger(body.expected_mode_revision) ||
-      (body.reason !== undefined && body.reason !== "" && (!boundedText(body.reason, 1_024) ||
-        /[\u0000-\u001f\u007f]/u.test(body.reason)))) {
-      throw new Error("A revision-bound exact Run network authority request is required");
-    }
-    normalizeRequestedNetworkAuthority({ network_mode: "allowlist",
-      allowed_targets: body.add_allowed_targets });
-    return parseRunNetworkAuthorityControl(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/network-authority`, body,
-      idempotencyKey, signal), runID, body);
+    return this.runsClient.expandRunNetworkAuthority(runID, body, idempotencyKey, signal);
   }
 
   threadExecution(threadID: string, signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
-    return this.sessions.threadExecution(threadID, signal);
+    return this.sessionsClient.threadExecution(threadID, signal);
   }
 
   threadChanges(threadID: string, runID: string, sourceEventID: string,
     signal?: AbortSignal): Promise<ThreadChangeSummary> {
-    return this.sessions.threadChanges(threadID, runID, sourceEventID, signal);
+    return this.sessionsClient.threadChanges(threadID, runID, sourceEventID, signal);
   }
 
   undoThreadChanges(threadID: string, runID: string, sourceEventID: string,
     confirm: boolean, signal?: AbortSignal): Promise<ThreadChangeUndo> {
-    return this.sessions.undoThreadChanges(threadID, runID, sourceEventID, confirm, signal);
+    return this.sessionsClient.undoThreadChanges(threadID, runID, sourceEventID, confirm, signal);
   }
 
   inspectThreadCreationRequest(workspaceID: string, operationKey: string,
     signal?: AbortSignal): Promise<unknown> {
-    return this.sessions.inspectThreadCreationRequest(workspaceID, operationKey, signal);
+    return this.sessionsClient.inspectThreadCreationRequest(workspaceID, operationKey, signal);
   }
 
   inspectThreadTurnRequest(threadID: string, operationKey: string,
     signal?: AbortSignal): Promise<unknown> {
-    return this.sessions.inspectThreadTurnRequest(threadID, operationKey, signal);
+    return this.sessionsClient.inspectThreadTurnRequest(threadID, operationKey, signal);
   }
 
   inspectThreadPlanRequest(threadID: string, runID: string, action: "enter_plan" | "enter_deliver" | "confirm",
     operationKey: string, signal?: AbortSignal): Promise<unknown> {
-    return this.sessions.inspectThreadPlanRequest(threadID, runID, action, operationKey, signal);
+    return this.sessionsClient.inspectThreadPlanRequest(threadID, runID, action, operationKey, signal);
   }
 
-  async createFileEditRevertProposal(runID: string, sourceEditID: string,
+  createFileEditRevertProposal(runID: string, sourceEditID: string,
     idempotencyKey: string, signal?: AbortSignal): Promise<FileEditRevertProposalView> {
-    if (!this.hasFileEditReview || !boundedIdentity(runID) || !boundedIdentity(sourceEditID) ||
-      runID.trim() !== runID || sourceEditID.trim() !== sourceEditID) {
-      throw new Error("File edit review authority and normalized source identities are required");
-    }
-    return parseFileEditRevertProposal(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/file-edits/${encodeURIComponent(sourceEditID)}/revert-proposal`,
-      { version: "file_edit_proposal.v1" }, idempotencyKey, signal,
-    ), runID, sourceEditID);
+    return this.fileEditsClient.createFileEditRevertProposal(runID, sourceEditID, idempotencyKey, signal);
   }
 
   interruptThread(threadID: string, executionID: string, idempotencyKey: string,
     signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
-    return this.sessions.interruptThread(threadID, executionID, idempotencyKey, signal);
+    return this.sessionsClient.interruptThread(threadID, executionID, idempotencyKey, signal);
   }
 
   submitThreadTurn(threadID: string, body: ThreadTurnControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ThreadMessageControlView> {
-    return this.sessions.submitThreadTurn(threadID, body, idempotencyKey, signal);
+    return this.sessionsClient.submitThreadTurn(threadID, body, idempotencyKey, signal);
   }
 
   recoverThreadRun(threadID: string, body: ThreadRunRecoveryControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ThreadRunRecoveryControlView> {
-    return this.sessions.recoverThreadRun(threadID, body, idempotencyKey, signal);
+    return this.sessionsClient.recoverThreadRun(threadID, body, idempotencyKey, signal);
   }
 
   getThreadExecutionPermission(threadID: string,
     signal?: AbortSignal): Promise<ThreadExecutionPermissionControlView> {
-    return this.sessions.getThreadExecutionPermission(threadID, signal);
+    return this.sessionsClient.getThreadExecutionPermission(threadID, signal);
   }
 
   changeThreadExecutionPermission(threadID: string,
     body: ThreadExecutionPermissionControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadExecutionPermissionControlView> {
-    return this.sessions.changeThreadExecutionPermission(threadID, body, idempotencyKey, signal);
+    return this.sessionsClient.changeThreadExecutionPermission(threadID, body, idempotencyKey, signal);
   }
 
   moveThreadToProject(threadID: string, projectWorkspaceID: string, expectedVersion: number,
     idempotencyKey: string, signal?: AbortSignal): Promise<{ thread: ThreadView; replayed: boolean }> {
-    return this.sessions.moveThreadToProject(threadID, projectWorkspaceID, expectedVersion, idempotencyKey, signal);
+    return this.sessionsClient.moveThreadToProject(threadID, projectWorkspaceID, expectedVersion, idempotencyKey, signal);
   }
 
   transitionThread(threadID: string, action: "archive" | "restore" | "delete",
     body: ThreadLifecycleControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadLifecycleControlView> {
-    return this.sessions.transitionThread(threadID, action, body, idempotencyKey, signal);
+    return this.sessionsClient.transitionThread(threadID, action, body, idempotencyKey, signal);
   }
 
   submitSessionMessage(sessionID: string, body: SessionMessageControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<SessionMessageControlView> {
-    return this.sessions.submitSessionMessage(sessionID, body, idempotencyKey, signal);
+    return this.sessionsClient.submitSessionMessage(sessionID, body, idempotencyKey, signal);
   }
 
   inspectSessionMessageOperation(sessionID: string, operationKey: string,
     signal?: AbortSignal): Promise<unknown> {
-    return this.sessions.inspectSessionMessageOperation(sessionID, operationKey, signal);
+    return this.sessionsClient.inspectSessionMessageOperation(sessionID, operationKey, signal);
   }
 
   archiveSession(sessionID: string, body: SessionArchiveControlRequestView,
     signal?: AbortSignal): Promise<SessionArchiveControlView> {
-    return this.sessions.archiveSession(sessionID, body, signal);
+    return this.sessionsClient.archiveSession(sessionID, body, signal);
   }
 
   cancelSessionSteering(sessionID: string, messageID: string,
     body: SessionSteeringCancellationRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<SessionSteeringCancellationView> {
-    return this.sessions.cancelSessionSteering(sessionID, messageID, body, idempotencyKey, signal);
+    return this.sessionsClient.cancelSessionSteering(sessionID, messageID, body, idempotencyKey, signal);
   }
 
-  async controlRunLifecycle(runID: string, body: RunLifecycleControlRequestView,
+  controlRunLifecycle(runID: string, body: RunLifecycleControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<RunLifecycleControlView> {
-    if (!this.hasRunLifecycle) {
-      throw new Error("Run lifecycle capability is required for this operation");
-    }
-    const normalizedRunID = boundedIdentity(runID);
-    if (!normalizedRunID || normalizedRunID !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/lifecycle`, body, idempotencyKey, signal,
-    );
-    return parseRunLifecycleControl(result, runID, body);
+    return this.runsClient.controlRunLifecycle(runID, body, idempotencyKey, signal);
   }
 
-  async executeRun(runID: string, body: RunExecutionControlRequestView,
+  executeRun(runID: string, body: RunExecutionControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<RunExecutionControlView> {
-    if (!this.hasRunExecution) {
-      throw new Error("Run execution capability is required for this operation");
-    }
-    const normalizedRunID = boundedIdentity(runID);
-    if (!normalizedRunID || normalizedRunID !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/execute`, body, idempotencyKey, signal,
-    );
-    return parseRunExecutionControl(result, runID, body);
+    return this.runsClient.executeRun(runID, body, idempotencyKey, signal);
   }
 
   getPublicModelStream(runID: string,
     signal?: AbortSignal): Promise<PublicModelStreamSnapshot> {
-    return this.models.getPublicModelStream(runID, signal);
+    return this.modelsClient.getPublicModelStream(runID, signal);
   }
 
   pollPublicModelStream(runID: string,
     signal?: AbortSignal): Promise<PublicModelStreamSnapshot | null> {
-    return this.models.pollPublicModelStream(runID, signal);
+    return this.modelsClient.pollPublicModelStream(runID, signal);
   }
 
   cancelModelCall(runID: string, body: ModelCancellationRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ModelCancellationView> {
-    return this.models.cancelModelCall(runID, body, idempotencyKey, signal);
+    return this.modelsClient.cancelModelCall(runID, body, idempotencyKey, signal);
   }
 
   cancelSpecialistModelCall(runID: string, agentID: string,
     body: ModelCancellationRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<SpecialistModelCancellationView> {
-    return this.models.cancelSpecialistModelCall(runID, agentID, body, idempotencyKey, signal);
+    return this.modelsClient.cancelSpecialistModelCall(runID, agentID, body, idempotencyKey, signal);
   }
 
-  async getRunFanoutExecutions(runID: string, planID: string,
+  getRunFanoutExecutions(runID: string, planID: string,
     signal?: AbortSignal): Promise<FanoutExecutionsListView> {
-    if (!boundedIdentity(runID) || !boundedIdentity(planID)) {
-      throw new Error("Normalized Run and Fan-out plan identities are required");
-    }
-    const result = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/fanout-executions?plan_id=${encodeURIComponent(planID)}`,
-      {}, signal,
-    );
-    return parseFanoutExecutions(result, runID, planID);
+    return this.runsClient.getRunFanoutExecutions(runID, planID, signal);
   }
 
-  async cancelRunFanoutExecution(runID: string, executionID: string,
+  cancelRunFanoutExecution(runID: string, executionID: string,
     body: FanoutExecutionCancelRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<FanoutExecutionView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (!boundedIdentity(runID) || !boundedIdentity(executionID) ||
-      body.version !== "readonly_fanout_cancel.v1" || body.confirm_cancel !== true) {
-      throw new Error("Normalized Run/execution identities and explicit confirmation are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/fanout-executions/${encodeURIComponent(executionID)}/cancel`,
-      body, idempotencyKey, signal,
-    );
-    return parseFanoutExecution(result);
+    return this.runsClient.cancelRunFanoutExecution(runID, executionID, body, idempotencyKey, signal);
   }
 
   get workflows(): WorkflowClient {
     return new WorkflowClient({
       get: (path, signal) => this.get<unknown>(path, {}, signal),
-      post: (path, body, key, signal) => this.sendControl<unknown>(path, body, key, signal),
+      post: (path, body, key, signal) => this.transport.sendControl<unknown>(path, body, key, signal),
     });
   }
 
-  async getRunChildTaskProposals(runID: string,
+  getRunChildTaskProposals(runID: string,
     signal?: AbortSignal): Promise<ChildTaskProposalsListView> {
-    if (!boundedIdentity(runID)) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/child-task-proposals`, {}, signal,
-    );
-    return parseChildTaskProposals(result, runID);
+    return this.runsClient.getRunChildTaskProposals(runID, signal);
   }
 
-  async reviewRunChildTaskProposal(runID: string, proposalID: string,
+  reviewRunChildTaskProposal(runID: string, proposalID: string,
     body: ChildTaskReviewRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ChildTaskProposalView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (!boundedIdentity(runID) || !boundedIdentity(proposalID) ||
-      body.version !== "child_task_review.v1" || body.confirm_review !== true ||
-      (body.action !== "approve" && body.action !== "deny")) {
-      throw new Error("A normalized proposal and explicit confirmed review are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/child-task-proposals/${encodeURIComponent(proposalID)}/review`,
-      body, idempotencyKey, signal,
-    );
-    return parseChildTaskProposal(result, runID);
+    return this.runsClient.reviewRunChildTaskProposal(runID, proposalID, body, idempotencyKey, signal);
   }
 
-  async admitRunChildTaskProposal(runID: string, proposalID: string,
+  admitRunChildTaskProposal(runID: string, proposalID: string,
     body: ChildTaskAdmitRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ChildTaskProposalView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (!boundedIdentity(runID) || !boundedIdentity(proposalID) ||
-      body.version !== "child_task_admit.v1" || body.confirm_admit !== true) {
-      throw new Error("A normalized proposal and explicit confirmed admission are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/child-task-proposals/${encodeURIComponent(proposalID)}/admit`,
-      body, idempotencyKey, signal,
-    );
-    return parseChildTaskProposal(result, runID);
+    return this.runsClient.admitRunChildTaskProposal(runID, proposalID, body, idempotencyKey, signal);
   }
 
-  async getRunBatchDeliveries(runID: string,
+  getRunBatchDeliveries(runID: string,
     signal?: AbortSignal): Promise<BatchDeliveriesListView> {
-    if (!boundedIdentity(runID)) {
-      throw new Error("A normalized Run identity is required");
-    }
-    return parseBatchDeliveries(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries`, {}, signal,
-    ), runID);
+    return this.deliveryClient.getRunBatchDeliveries(runID, signal);
   }
 
-  async getRunBatchDelivery(runID: string, planID: string,
+  getRunBatchDelivery(runID: string, planID: string,
     signal?: AbortSignal): Promise<BatchDeliverySnapshotView> {
-    if (!boundedIdentity(runID) || !boundedIdentity(planID)) {
-      throw new Error("Normalized Run and batch delivery identities are required");
-    }
-    return parseBatchDeliverySnapshot(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}`,
-      {}, signal,
-    ), runID, planID);
+    return this.deliveryClient.getRunBatchDelivery(runID, planID, signal);
   }
 
-  async getBatchWorkbench(runID: string, planID: string, signal?: AbortSignal): Promise<BatchWorkbenchView> {
-    if (!boundedIdentity(runID) || !boundedIdentity(planID)) throw new Error("Normalized Run and batch identities are required");
-    return parseBatchWorkbench(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}/workbench`, {}, signal), runID, planID);
+  getBatchWorkbench(runID: string, planID: string, signal?: AbortSignal): Promise<BatchWorkbenchView> {
+    return this.deliveryClient.getBatchWorkbench(runID, planID, signal);
   }
 
-  async prepareBatchWorkbench(runID: string, body: BatchWorkbenchPrepareRequestView,
+  prepareBatchWorkbench(runID: string, body: BatchWorkbenchPrepareRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<BatchWorkbenchView> {
-    if (new TextEncoder().encode(idempotencyKey).byteLength > 224) throw new Error("Batch workbench operation key is too long");
-    this.requireBatchDeliveryControl(runID, body.proposal_id);
-    if (body.version !== "batch-delivery-workbench.v1" || !body.confirm || !Array.isArray(body.tasks) ||
-      body.tasks.length < 1 || body.tasks.length > 2 || body.tasks.some((task, index) =>
-        task.ordinal !== index + 1 || !Array.isArray(task.ownership_hints) || task.ownership_hints.length < 1 ||
-        task.ownership_hints.length > 32 || task.ownership_hints.some((hint) => !isBatchPath(hint.path) ||
-          (hint.kind !== "file" && hint.kind !== "directory")) || !Array.isArray(task.validations) ||
-        task.validations.length < 1 || task.validations.length > 16 || !task.validations.some((test) => test.kind === "git_diff_check") ||
-        task.validations.some((test) => !boundedIdentity(test.id) || !batchValidationKinds.includes(test.kind) || !isBatchPath(test.scope)))) {
-      throw new Error("Confirmed ownership and validations for the admitted task set are required");
-    }
-    const value = await this.sendControl<unknown>(`/runs/${encodeURIComponent(runID)}/batch-deliveries/prepare-workbench`, body, idempotencyKey, signal);
-    return parseBatchWorkbench(value, runID);
+    return this.deliveryClient.prepareBatchWorkbench(runID, body, idempotencyKey, signal);
   }
 
-  async recoverBatchWorkbenchOwner(runID: string, planID: string, ordinal: number,
+  recoverBatchWorkbenchOwner(runID: string, planID: string, ordinal: number,
     body: BatchWorkbenchOwnerRequestView, idempotencyKey: string, signal?: AbortSignal): Promise<BatchWorkbenchView> {
-    if (new TextEncoder().encode(idempotencyKey).byteLength > 224) throw new Error("Batch workbench operation key is too long");
-    this.requireBatchDeliveryControl(runID, planID, ordinal);
-    if (body.version !== "batch-delivery-workbench.v1" || !body.confirm || !safePositiveInteger(body.expected_generation) ||
-      body.expected_generation >= 8 || typeof body.retry !== "boolean") throw new Error("Confirmed current owner generation is required");
-    return parseBatchWorkbench(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}/children/${ordinal}/workbench-owner`,
-      body, idempotencyKey, signal), runID, planID);
+    return this.deliveryClient.recoverBatchWorkbenchOwner(runID, planID, ordinal, body, idempotencyKey, signal);
   }
 
-  async executeBatchWorkbenchChild(runID: string, planID: string, ordinal: number,
+  executeBatchWorkbenchChild(runID: string, planID: string, ordinal: number,
     body: BatchWorkbenchExecuteRequestView, idempotencyKey: string, signal?: AbortSignal): Promise<BatchWorkbenchView> {
-    if (new TextEncoder().encode(idempotencyKey).byteLength > 224) throw new Error("Batch workbench operation key is too long");
-    this.requireBatchDeliveryControl(runID, planID, ordinal);
-    if (body.version !== "batch-delivery-workbench.v1" || !body.confirm || !safePositiveInteger(body.expected_generation) ||
-      body.expected_generation > 8) throw new Error("Confirmed current child generation is required");
-    return parseBatchWorkbench(await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}/children/${ordinal}/workbench-execute`,
-      body, idempotencyKey, signal), runID, planID);
+    return this.deliveryClient.executeBatchWorkbenchChild(runID, planID, ordinal, body, idempotencyKey, signal);
   }
 
-  async reviewRunBatchDeliveryChild(runID: string, planID: string, ordinal: number,
+  reviewRunBatchDeliveryChild(runID: string, planID: string, ordinal: number,
     body: BatchDeliveryReviewRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<BatchDeliveryReviewControlView> {
-    this.requireBatchDeliveryControl(runID, planID, ordinal);
-    if (body.version !== "batch_delivery_review_control.v1" ||
-      !safePositiveInteger(body.generation) || !boundedText(body.reviewer, 256) ||
-      !boundedText(body.summary, 4096) ||
-      (body.verdict !== "accepted" && body.verdict !== "changes_requested") ||
-      !body.full_diff_reviewed || !body.call_chain_reviewed || !body.tests_reviewed) {
-      throw new Error("A complete independent batch delivery review is required");
-    }
-    const value = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}` +
-        `/children/${ordinal}/review`, body, idempotencyKey, signal,
-    );
-    return parseBatchDeliveryReviewControl(value, planID, ordinal);
+    return this.deliveryClient.reviewRunBatchDeliveryChild(runID, planID, ordinal, body, idempotencyKey, signal);
   }
 
-  async mergeRunBatchDelivery(runID: string, planID: string,
+  mergeRunBatchDelivery(runID: string, planID: string,
     body: BatchDeliveryMergeRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<BatchDeliveryMergeControlView> {
-    this.requireBatchDeliveryControl(runID, planID);
-    if (body.version !== "batch_delivery_merge.v1" || body.confirm !== true ||
-      !Array.isArray(body.ordered_ordinals) || body.ordered_ordinals.length < 1 ||
-      body.ordered_ordinals.length > 2 ||
-      body.ordered_ordinals.some((ordinal) => !safePositiveInteger(ordinal))) {
-      throw new Error("A bounded confirmed batch delivery merge order is required");
-    }
-    const value = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}/merge`,
-      body, idempotencyKey, signal,
-    );
-    return parseBatchDeliveryMergeControl(value, planID);
+    return this.deliveryClient.mergeRunBatchDelivery(runID, planID, body, idempotencyKey, signal);
   }
 
-  async cancelRunBatchDelivery(runID: string, planID: string,
+  cancelRunBatchDelivery(runID: string, planID: string,
     body: BatchDeliveryCancelRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<BatchDeliveryCancelView> {
-    this.requireBatchDeliveryControl(runID, planID);
-    if (body.version !== "batch_delivery_cancel.v1" || body.confirm !== true ||
-      !boundedText(body.reason, 4096)) {
-      throw new Error("A bounded confirmed batch delivery cancellation is required");
-    }
-    const value = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}/cancel`,
-      body, idempotencyKey, signal,
-    );
-    return parseBatchDeliveryCancel(value, runID, planID);
+    return this.deliveryClient.cancelRunBatchDelivery(runID, planID, body, idempotencyKey, signal);
   }
 
-  async reconcileRunBatchDelivery(runID: string, planID: string,
+  reconcileRunBatchDelivery(runID: string, planID: string,
     body: BatchDeliveryReconcileRequestView,
     signal?: AbortSignal): Promise<BatchDeliveryReconcileView> {
-    this.requireBatchDeliveryControl(runID, planID);
-    if (body.version !== "batch_delivery_reconcile.v1" || body.confirm !== true) {
-      throw new Error("Explicit batch delivery reconciliation confirmation is required");
-    }
-    const value = await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/batch-deliveries/${encodeURIComponent(planID)}/reconcile`,
-      body, signal,
-    );
-    return parseBatchDeliveryReconcile(value, planID);
-  }
-
-  private requireBatchDeliveryControl(runID: string, planID: string, ordinal = 1): void {
-    if (!this.hasBatchDeliveryControl) {
-      throw new Error("Batch delivery control capability is required for this operation");
-    }
-    if (!boundedIdentity(runID) || !boundedIdentity(planID) ||
-      !safePositiveInteger(ordinal) || ordinal > 2) {
-      throw new Error("Normalized Run, batch delivery, and child identities are required");
-    }
+    return this.deliveryClient.reconcileRunBatchDelivery(runID, planID, body, signal);
   }
 
   listPriceSnapshots(signal?: AbortSignal): Promise<PriceSnapshotListView> {
-    return this.models.listPriceSnapshots(signal);
+    return this.modelsClient.listPriceSnapshots(signal);
   }
 
   importPriceSnapshot(body: PriceSnapshotImportRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<PriceSnapshotImportView> {
-    return this.models.importPriceSnapshot(body, idempotencyKey, signal);
+    return this.modelsClient.importPriceSnapshot(body, idempotencyKey, signal);
   }
 
-  async getSandboxEnvironment(signal?: AbortSignal): Promise<SandboxEnvironmentView> {
-    const value = await this.get<unknown>("/sandbox/environment", {}, signal);
-    try { return parseSandboxEnvironment(value); }
-    catch { throw new APIRequestError("Sandbox environment response is invalid", "INVALID_RESPONSE", 502); }
+  getSandboxEnvironment(signal?: AbortSignal): Promise<SandboxEnvironmentView> {
+    return this.runtimeClient.getSandboxEnvironment(signal);
   }
 
-  async saveSandboxEnvironment(body: SandboxEnvironmentControlRequestView, signal?: AbortSignal): Promise<SandboxEnvironmentView> {
-    if (!this.hasControl || !validSandboxEnvironmentRequest(body)) throw new Error("Complete sandbox settings and their current revision are required");
-    const value = await this.sendControlRequest<unknown>("/sandbox/environment", body, signal, "", "PUT");
-    let result: SandboxEnvironmentView;
-    try { result = parseSandboxEnvironment(value); }
-    catch { throw new APIRequestError("Sandbox environment response is invalid", "INVALID_RESPONSE", 502); }
-    if (!sandboxSettingsMatch(result.settings, body.settings) || result.revision !== body.expected_revision + 1) {
-      throw new APIRequestError("Sandbox settings receipt changed the saved request", "INVALID_RESPONSE", 502);
-    }
-    return result;
+  saveSandboxEnvironment(body: SandboxEnvironmentControlRequestView, signal?: AbortSignal): Promise<SandboxEnvironmentView> {
+    return this.runtimeClient.saveSandboxEnvironment(body, signal);
   }
 
-  async getDockerEnvironment(signal?: AbortSignal): Promise<DockerEnvironmentView> {
-    const value = await this.get<unknown>("/sandbox/docker/environment", {}, signal);
-    if (!hasRequiredOnlyKeys(value, ["protocol_version", "feature_enabled", "image_configured", "restart_required"],
-      ["image_digest", "readiness"]) || value.protocol_version !== "docker_environment.v1" ||
-      typeof value.feature_enabled !== "boolean" || typeof value.image_configured !== "boolean" ||
-      typeof value.restart_required !== "boolean" ||
-      (value.image_configured ? typeof value.image_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(value.image_digest) : value.image_digest !== undefined) ||
-      (value.readiness !== undefined && (!hasRequiredOnlyKeys(value.readiness,
-        ["protocol_version", "status", "ready", "feature_enabled", "reason_code", "remediation_code", "checked_at", "expires_at", "endpoint_class", "endpoint_fingerprint", "daemon_reachable", "image_inspected", "image_profile_safe", "readiness_fingerprint"], ["network_mode"]) ||
-        value.readiness.protocol_version !== "sandbox.readiness.v1" ||
-        !["ready", "disabled", "unavailable"].includes(String(value.readiness.status)) ||
-        value.readiness.ready !== (value.readiness.status === "ready") ||
-        value.readiness.feature_enabled !== value.feature_enabled ||
-        !validDate(value.readiness.checked_at) || !validDate(value.readiness.expires_at) ||
-        Date.parse(String(value.readiness.expires_at)) - Date.parse(String(value.readiness.checked_at)) !== 30_000 ||
-        !["local_unix", "local_npipe"].includes(String(value.readiness.endpoint_class)) ||
-        !isSHA256(value.readiness.endpoint_fingerprint) || !isSHA256(value.readiness.readiness_fingerprint) ||
-        (value.readiness.network_mode !== undefined && value.readiness.network_mode !== "disabled") ||
-        (value.readiness.ready && (!value.image_configured || value.readiness.daemon_reachable !== true || value.readiness.image_inspected !== true || value.readiness.image_profile_safe !== true || value.readiness.network_mode !== "disabled")) ||
-        ["daemon_reachable", "image_inspected", "image_profile_safe"].some((key) => typeof (value.readiness as Record<string, unknown>)[key] !== "boolean") ||
-        typeof value.readiness.reason_code !== "string" || typeof value.readiness.remediation_code !== "string"))) {
-      throw new APIRequestError("Docker environment response is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as DockerEnvironmentView;
+  getDockerEnvironment(signal?: AbortSignal): Promise<DockerEnvironmentView> {
+    return this.runtimeClient.getDockerEnvironment(signal);
   }
 
-  async getDockerSandboxStatus(admissionID: string,
+  getDockerSandboxStatus(admissionID: string,
     signal?: AbortSignal): Promise<DockerSandboxStatusView> {
-    const result = await this.get<unknown>("/sandbox/docker/status", { admission_id: admissionID }, signal);
-    if (!isRecord(result) || !boundedIdentity(String(result.admission_id))) {
-      throw new APIRequestError("Docker sandbox status is invalid", "INVALID_RESPONSE", 502);
-    }
-    return result as unknown as DockerSandboxStatusView;
+    return this.runtimeClient.getDockerSandboxStatus(admissionID, signal);
   }
 
-  async admitDockerSandbox(body: DockerSandboxAdmissionRequestView, idempotencyKey: string,
+  admitDockerSandbox(body: DockerSandboxAdmissionRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<DockerSandboxAdmissionView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (!boundedIdentity(body.plan_id) || !boundedIdentity(body.requested_by) ||
-      !isRecord(body.manifest)) {
-      throw new Error("A plan identity, requester, and manifest object are required");
-    }
-    const result = await this.sendControl<unknown>("/sandbox/docker/admissions", body, idempotencyKey, signal);
-    if (!isRecord(result) || typeof result.allowed !== "boolean") {
-      throw new APIRequestError("Docker sandbox admission is invalid", "INVALID_RESPONSE", 502);
-    }
-    return result as unknown as DockerSandboxAdmissionView;
+    return this.runtimeClient.admitDockerSandbox(body, idempotencyKey, signal);
   }
 
-  async startDockerSandbox(body: DockerSandboxStartRequestView, idempotencyKey: string,
+  startDockerSandbox(body: DockerSandboxStartRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<DockerSandboxStatusView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (!boundedIdentity(body.admission_id) || !boundedIdentity(body.requested_by)) {
-      throw new Error("An admission identity and requester are required");
-    }
-    const result = await this.sendControl<unknown>("/sandbox/docker/starts", body, idempotencyKey, signal);
-    return result as unknown as DockerSandboxStatusView;
+    return this.runtimeClient.startDockerSandbox(body, idempotencyKey, signal);
   }
 
-  async cancelDockerSandbox(body: DockerSandboxCancelRequestView, idempotencyKey: string,
+  cancelDockerSandbox(body: DockerSandboxCancelRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<DockerSandboxCancellationView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (!boundedIdentity(body.admission_id) || !boundedIdentity(body.requested_by)) {
-      throw new Error("An admission identity and requester are required");
-    }
-    const result = await this.sendControl<unknown>("/sandbox/docker/cancellations", body, idempotencyKey, signal);
-    return result as unknown as DockerSandboxCancellationView;
+    return this.runtimeClient.cancelDockerSandbox(body, idempotencyKey, signal);
   }
 
-  async selectPlanDirection(runID: string, body: PlanDirectionControlRequestView,
+  selectPlanDirection(runID: string, body: PlanDirectionControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<PlanDirectionControlView> {
-    if (!this.hasPlanDelivery) {
-      throw new Error("Plan/Delivery control capability is required for this operation");
-    }
-    if (!boundedIdentity(runID) || runID.trim() !== runID || !safePositiveInteger(body.direction) ||
-      body.direction > 3 || !boundedIdentity(body.proposal_id) || body.version !== "plan_delivery_control.v1" ||
-      !hasRequiredOnlyKeys(body, ["version", "proposal_id", "direction"], ["manual_acceptance"]) ||
-      (body.manual_acceptance !== undefined && body.manual_acceptance !== "required" && body.manual_acceptance !== "on_demand")) {
-      throw new Error("A normalized Run, proposal, and direction are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/plan/direction`, body, idempotencyKey, signal,
-    );
-    return parsePlanDirectionControl(result, runID, body);
+    return this.plansClient.selectPlanDirection(runID, body, idempotencyKey, signal);
   }
 
-  async enterPlanMode(runID: string, body: PlanModeTransitionControlRequestView,
+  enterPlanMode(runID: string, body: PlanModeTransitionControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<PlanModeTransitionControlView> {
-    if (!this.hasPlanDelivery) {
-      throw new Error("Plan/Delivery control capability is required for this operation");
-    }
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/plan/enter`, body, idempotencyKey, signal,
-    );
-    return parsePlanModeTransition(result, runID);
+    return this.plansClient.enterPlanMode(runID, body, idempotencyKey, signal);
   }
 
-  async enterPlanDelivery(runID: string, body: PlanDeliveryTransitionControlRequestView,
+  enterPlanDelivery(runID: string, body: PlanDeliveryTransitionControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<PlanDeliveryTransitionControlView> {
-    if (!this.hasPlanDelivery) {
-      throw new Error("Plan/Delivery control capability is required for this operation");
-    }
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/plan/deliver`, body, idempotencyKey, signal,
-    );
-    return parsePlanDeliveryTransition(result, runID);
+    return this.plansClient.enterPlanDelivery(runID, body, idempotencyKey, signal);
   }
 
-  async controlPlanDeliveryWorkItem(runID: string, workItemID: string, action: "start" | "complete",
+  controlPlanDeliveryWorkItem(runID: string, workItemID: string, action: "start" | "complete",
     body: PlanDeliveryWorkItemControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<PlanDeliveryWorkItemControlView> {
-    validatePlanWorkItemRequest(this.hasPlanDelivery, runID, workItemID, body);
-    if ((action !== "start" && action !== "complete") ||
-      !hasExactKeys(body, ["version", "expected_work_item_version"])) {
-      throw new Error("An exact Plan item transition is required");
-    }
-    const value = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/plan/work-items/${encodeURIComponent(workItemID)}/${action}`,
-      body, idempotencyKey, signal);
-    if (!validPlanWorkItemResult(value, runID, workItemID) ||
-      !hasExactKeys(value, ["version", "run_id", "work_item_id", "applied_status", "applied_version",
-        "current_work_item", "replayed", "execution_started", "model_called", "tool_called", "capability_grant"]) ||
-      value.work_item_id !== workItemID || value.applied_status !== (action === "start" ? "in_progress" : "completed") ||
-      value.applied_version !== body.expected_work_item_version + 1 ||
-      value.current_work_item.version < value.applied_version) {
-      throw new APIRequestError("Plan item result does not match the submitted operation", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as PlanDeliveryWorkItemControlView;
+    return this.plansClient.controlPlanDeliveryWorkItem(runID, workItemID, action, body, idempotencyKey, signal);
   }
 
-  async recordPlanDeliveryCheckpoint(runID: string, workItemID: string,
+  recordPlanDeliveryCheckpoint(runID: string, workItemID: string,
     body: PlanDeliveryCheckpointControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<PlanDeliveryCheckpointControlView> {
-    validatePlanWorkItemRequest(this.hasPlanDelivery, runID, workItemID, body);
-    if (!hasRequiredOnlyKeys(body, ["version", "expected_work_item_version", "focused_verification",
-      "diff_audit", "security_audit", "handoff_summary"], ["functional_verification", "robustness_audit"]) ||
-      ![body.focused_verification, body.diff_audit, body.security_audit].every((text) => boundedText(text, 1_024)) ||
-      !boundedText(body.handoff_summary, 2_048) ||
-      [body.functional_verification, body.robustness_audit].some((text) => text !== undefined && !boundedText(text, 1_024))) {
-      throw new Error("Bounded manual verification evidence and a handoff summary are required");
-    }
-    const value = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/plan/work-items/${encodeURIComponent(workItemID)}/checkpoint`,
-      body, idempotencyKey, signal);
-    if (!validPlanWorkItemResult(value, runID, workItemID) ||
-      !hasExactKeys(value, ["version", "run_id", "checkpoint", "note", "current_work_item", "replayed",
-        "execution_started", "model_called", "tool_called", "capability_grant"]) ||
-      !isRecord(value.checkpoint) || !boundedIdentity(value.checkpoint.id) ||
-      value.checkpoint.work_item_id !== workItemID ||
-      value.checkpoint.work_item_version !== body.expected_work_item_version ||
-      typeof value.checkpoint.gate_ready !== "boolean" || typeof value.checkpoint.full_gate_required !== "boolean" ||
-      !safePositiveInteger(value.checkpoint.mode_revision) || !safePositiveInteger(value.checkpoint.module_ordinal) ||
-      !safePositiveInteger(value.checkpoint.module_count) ||
-      value.checkpoint.module_ordinal > value.checkpoint.module_count || !validDate(value.checkpoint.created_at) ||
-      !isRecord(value.note) || !boundedIdentity(value.note.id) || value.note.run_id !== runID ||
-      value.note.id !== value.checkpoint.handoff_note_id || typeof value.note.content !== "string") {
-      throw new APIRequestError("Manual checkpoint result does not match the submitted operation", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as PlanDeliveryCheckpointControlView;
+    return this.plansClient.recordPlanDeliveryCheckpoint(runID, workItemID, body, idempotencyKey, signal);
   }
 
   approvalPreview(runID: string, approvalID: string,
     signal?: AbortSignal): Promise<ApprovalPreviewView> {
-    return this.approvals.approvalPreview(runID, approvalID, signal);
+    return this.approvalsClient.approvalPreview(runID, approvalID, signal);
   }
 
   approvalQueue(runID: string, signal?: AbortSignal): Promise<ApprovalQueueView> {
-    return this.approvals.approvalQueue(runID, signal);
+    return this.approvalsClient.approvalQueue(runID, signal);
   }
 
   controlledCommandProposals(runID: string,
     signal?: AbortSignal): Promise<PageResult<ControlledCommandProposalView>> {
-    return this.approvals.controlledCommandProposals(runID, signal);
+    return this.approvalsClient.controlledCommandProposals(runID, signal);
   }
 
   controlledCommandProposal(runID: string, proposalID: string,
     signal?: AbortSignal): Promise<ControlledCommandProposalView> {
-    return this.approvals.controlledCommandProposal(runID, proposalID, signal);
+    return this.approvalsClient.controlledCommandProposal(runID, proposalID, signal);
   }
 
   hostCommandProposals(runID: string,
     signal?: AbortSignal): Promise<PageResult<HostCommandProposalView>> {
-    return this.approvals.hostCommandProposals(runID, signal);
+    return this.approvalsClient.hostCommandProposals(runID, signal);
   }
 
   hostCommandProposal(runID: string, proposalID: string,
     signal?: AbortSignal): Promise<HostCommandProposalView> {
-    return this.approvals.hostCommandProposal(runID, proposalID, signal);
+    return this.approvalsClient.hostCommandProposal(runID, proposalID, signal);
   }
 
   resumeHostCommandProposal(runID: string, proposalID: string,
     signal?: AbortSignal): Promise<HostCommandProposalView> {
-    return this.approvals.resumeHostCommandProposal(runID, proposalID, signal);
+    return this.approvalsClient.resumeHostCommandProposal(runID, proposalID, signal);
   }
 
   decideApproval(runID: string, approvalID: string,
     body: ApprovalDecisionControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ApprovalDecisionControlView> {
-    return this.approvals.decideApproval(runID, approvalID, body, idempotencyKey, signal);
+    return this.approvalsClient.decideApproval(runID, approvalID, body, idempotencyKey, signal);
   }
 
-  private sendControl<T>(path: string, body: unknown, idempotencyKey: string,
-    signal?: AbortSignal): Promise<T> {
-    return this.transport.sendControl<T>(path, body, idempotencyKey, signal);
-  }
-
-  private sendReadRequest<T>(path: string, body: unknown,
-    signal?: AbortSignal): Promise<T> {
-    return this.transport.sendReadRequest<T>(path, body, signal);
-  }
-
-  private sendControlRequest<T>(path: string, body: unknown, signal?: AbortSignal,
-    idempotencyKey = "", method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "POST"): Promise<T> {
-    return this.transport.sendControlRequest<T>(path, body, signal, idempotencyKey, method);
-  }
-
-  async streamRunEvents(
+  streamRunEvents(
     runID: string,
     options: {
       cursor?: string;
@@ -3058,74 +1673,15 @@ export class APIClient implements ClientFeatures {
       onFrame: (frame: RunEventStreamView) => void;
     },
   ): Promise<void> {
-    const headers = this.headers();
-    headers.Accept = "text/event-stream";
-    if (options.cursor) {
-      headers["Last-Event-ID"] = options.cursor;
-    }
-    const response = await fetch(this.url(`/runs/${encodeURIComponent(runID)}/events/stream`), {
-      method: "GET",
-      headers,
-      signal: options.signal,
-      cache: "no-store",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    if (!response.ok) {
-      throw await this.responseError(response);
-    }
-    if (!response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream") || !response.body) {
-      throw new APIRequestError("API returned an invalid event stream", "INVALID_RESPONSE", response.status,
-        response.headers.get("x-request-id") || "");
-    }
-    if (!options.signal.aborted) options.onOpen?.();
-    await consumeSSE(response.body, (message) => {
-      if (message.event !== "run.event") {
-        return;
-      }
-      const frame = parseStreamFrame(JSON.parse(message.data) as unknown, runID);
-      if (message.id === "" || message.id !== frame.cursor) {
-        throw new Error("SSE id does not match the frame cursor");
-      }
-      options.onFrame(frame);
-    });
+    return this.runsClient.streamRunEvents(runID, options);
   }
 
-  async pollRunEvents(
+  pollRunEvents(
     runID: string,
     cursor = "",
     limit = 100,
     signal?: AbortSignal,
   ): Promise<RunEventPollView> {
-    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
-      throw new Error("Event poll limit must be between 1 and 100");
-    }
-    const envelope = await this.request<unknown>(
-      `/runs/${encodeURIComponent(runID)}/events/poll`,
-      { cursor: cursor || undefined, limit },
-      signal,
-    );
-    return parseEventPoll(envelope.data, runID, envelope.request_id);
-  }
-
-  private request<T>(
-    path: string,
-    query: Record<string, QueryValue>,
-    signal?: AbortSignal,
-    observationKey?: string,
-  ): Promise<SuccessEnvelope<T>> {
-    return this.transport.request<T>(path, query, signal, observationKey);
-  }
-
-  private responseError(response: Response): Promise<APIRequestError> {
-    return this.transport.responseError(response);
-  }
-
-  private headers(): Record<string, string> {
-    return this.transport.headers();
-  }
-
-  private url(path: string, query: Record<string, QueryValue> = {}): string {
-    return this.transport.url(path, query);
+    return this.runsClient.pollRunEvents(runID, cursor, limit, signal);
   }
 }
