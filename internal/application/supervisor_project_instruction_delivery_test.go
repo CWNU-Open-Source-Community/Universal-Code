@@ -100,6 +100,38 @@ func TestSupervisorProjectInstructionDeliveryPreservesRequiredOutboundContentUnd
 	}
 }
 
+func TestSupervisorProjectInstructionDeliverySupportsNativeInstructionPaths(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "native-instructions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	run, snapshot := newDeliveryTestRun(t, st, t.TempDir(), ".", map[string]string{
+		"AGENTS.md":          "SUPERSEDED_AGENT_RULE",
+		"AGENTS.override.md": "REQUIRED_AGENT_OVERRIDE",
+		".claude/CLAUDE.md":  "REQUIRED_CLAUDE_DIRECTORY_RULE",
+	}, map[string]projectconfig.InstructionRequirement{
+		"AGENTS.override.md": projectconfig.InstructionMandatory,
+		".claude/CLAUDE.md":  projectconfig.InstructionMandatory,
+	}, false)
+	provider := &scriptedToolProvider{responses: []*llm.ChatResponse{
+		textResponse(rootActionResponse(domain.RootActionContinue, "native project guidance delivered", "", "")),
+	}}
+	if _, err := newToolLoopSupervisor(st, provider).Step(t.Context(), run.ID); err != nil {
+		t.Fatal(err)
+	}
+	requests := provider.Requests()
+	if len(requests) != 1 || len(snapshot.Sources) != 2 {
+		t.Fatalf("unexpected native instruction delivery: requests=%d sources=%+v", len(requests), snapshot.Sources)
+	}
+	assertRequiredDeliveryRequest(t, requests[0], snapshot)
+	for _, message := range requests[0].Messages {
+		if strings.Contains(message.Content, "SUPERSEDED_AGENT_RULE") {
+			t.Fatal("same-directory AGENTS.md was delivered despite the override")
+		}
+	}
+}
+
 func TestSupervisorProjectInstructionDeliveryOmitsLargeEscapedExcludedSource(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "excluded-escaped-bound.db"))
 	if err != nil {
