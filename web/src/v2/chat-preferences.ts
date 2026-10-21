@@ -12,6 +12,7 @@ export const shortcutCommands = [
   { id: "settings", zh: "打开设置", en: "Open settings", binding: "Mod+," },
   { id: "sidebar", zh: "展开／收起侧栏", en: "Toggle sidebar", binding: "Mod+B" },
   { id: "composer", zh: "聚焦输入框", en: "Focus composer", binding: "Mod+Shift+I" },
+  { id: "modelPicker", zh: "打开模型选择器", en: "Open model picker", binding: "Mod+Shift+M" },
 ] as const;
 export type ShortcutCommand = typeof shortcutCommands[number]["id"];
 export interface ChatPreferences { send: SendPreference; shortcuts: Partial<Record<ShortcutCommand, string>> }
@@ -73,7 +74,7 @@ export function validShortcut(binding: string, command?: ShortcutCommand) {
     "Mod+Shift+V", "Mod+Shift+T", "Mod+Shift+N", "Mod+Shift+W", "Mod+Shift+R"].includes(binding);
 }
 
-export function useChatShortcuts(actions: Record<ShortcutCommand, () => void | boolean>) {
+export function useChatShortcuts(actions: Partial<Record<ShortcutCommand, () => void | boolean>>) {
   const preferences = useChatPreferences();
   const latest = useRef({ actions, preferences });
   latest.current = { actions, preferences };
@@ -86,12 +87,15 @@ export function useChatShortcuts(actions: Record<ShortcutCommand, () => void | b
       if (!binding) return;
       const command = shortcutCommands.find(({ id }) => shortcutBinding(latest.current.preferences, id) === binding);
       if (!command) return;
+      const action = latest.current.actions[command.id];
+      if (!action) return;
       const chatNavigation = command.id === "previousChat" || command.id === "nextChat";
-      if ((command.id === "findInChat" || chatNavigation) && event.target instanceof Element &&
+      const contextualMenu = chatNavigation || command.id === "modelPicker";
+      if ((command.id === "findInChat" || contextualMenu) && event.target instanceof Element &&
         event.target.closest(".monaco-editor, .xterm")) return;
-      if (chatNavigation && document.querySelector('[role="dialog"], [role="menu"], [role="listbox"], .v2-project-section-menu[open]')) return;
+      if (contextualMenu && document.querySelector('[role="dialog"], [role="menu"], [role="listbox"], .v2-project-section-menu[open]')) return;
       // A contextual action may leave the native shortcut available outside its surface.
-      if (latest.current.actions[command.id]() !== false) event.preventDefault();
+      if (action() !== false) event.preventDefault();
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
