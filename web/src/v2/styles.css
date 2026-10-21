@@ -403,6 +403,7 @@
   transition: opacity 140ms var(--prayu-ease-out), transform 140ms var(--prayu-ease-out), visibility 140ms;
   visibility: hidden;
 }
+.v2-user-actions .v2-assistant-action-tooltip { left: auto; right: 0; }
 .v2-assistant-action-btn:focus-visible > .v2-assistant-action-tooltip { opacity: 1; transform: translateY(0); visibility: visible; }
 @media (hover: hover) {
   .v2-assistant-action-btn:hover > .v2-assistant-action-tooltip { opacity: 1; transform: translateY(0); visibility: visible; }
