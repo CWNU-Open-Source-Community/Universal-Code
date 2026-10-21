@@ -12,12 +12,12 @@
 
 | 工具 | 推荐版本 | 来源与用途 |
 | :--- | :--- | :--- |
-| **Go** | 1.26+ | 核心控制平面、CLI、TUI、HTTP API 与 SQLite 状态机 |
-| **Node.js** | 24+ | 前端管理界面（`web/` 目录下的 React 18 + Vite） |
+| **Go** | 遵循 [go.mod](go.mod)，当前 1.26.9 | 核心控制平面、CLI、TUI、HTTP API 与 SQLite 状态机 |
+| **Node.js** | 24+ | 前端管理界面（`web/` 目录下的 React 19 + Vite） |
 | **Git** | 2.41+ | 源码版本管理 |
 | **Rust** *(可选)* | 1.97.1+ | 仅在修改或验证 `analyzers/` 目录下的 WASI 代码分析器时需要 |
 
-> **提示**：普通的前后端功能开发不需要真实云端模型凭据；未配置外部模型时，系统将自动使用内置的 Mock Provider 供本地联调。
+> **提示**：启动 API、连接界面和运行离线测试不需要云端模型凭据。真实模型对话需要另行配置模型；测试中的 Mock Provider 不代表已验证真实模型调用。
 
 ---
 
@@ -35,42 +35,63 @@ cd web
 npm ci
 cd ..
 
-# 校验并同步 Go 模块依赖
+# 下载并校验锁定的 Go 模块依赖（verify 本身不会下载缺失模块）
+go mod download
 go mod verify
 ```
 
-### 2. 启动前端热重载开发服务器
+### 2. 在终端 A 启动 Go 后端
 
-在 `web` 目录下运行：
+以下命令均从仓库根目录执行。两个 Token 必须不同，且各为 **32–512 字节**、不含空白。使用已安装的 Node.js 分别生成 32 个随机字节，编码后各为 64 字节的十六进制文本。每次执行都会生成新值。
 
+Linux / macOS（Bash）：
+
+<!-- dev-backend:bash -->
 ```bash
-cd web
-npm run dev
-# 默认开发地址为 http://127.0.0.1:5173
-```
-
-前端开发服务器已配置自动反向代理，会自动将 `/api` 请求转发到本地运行的 Go 后端服务（默认目标为 `http://127.0.0.1:8765`）。
-
-### 3. 运行 Go 后端 API 服务
-
-在仓库根目录下运行：
-
-```bash
+export CYBERAGENT_API_TOKEN="$(node -p "require('node:crypto').randomBytes(32).toString('hex')")"
+export CYBERAGENT_API_CONTROL_TOKEN="$(node -p "require('node:crypto').randomBytes(32).toString('hex')")"
+export CYBERAGENT_HOME="${CYBERAGENT_HOME:-$PWD/.cyberagent-workbench/dev}"
+node -e "console.log('Read token: ' + process.env.CYBERAGENT_API_TOKEN); console.log('Control token: ' + process.env.CYBERAGENT_API_CONTROL_TOKEN)"
 go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765
 ```
 
-如需配置只读访问 Token 或控制 Token，可在启动前注入环境变量：
-```bash
-# Windows PowerShell
-$env:CYBERAGENT_API_TOKEN = "local-read-token"
-$env:CYBERAGENT_API_CONTROL_TOKEN = "local-control-token"
+Windows（PowerShell）：
 
-# Linux / macOS
-export CYBERAGENT_API_TOKEN="local-read-token"
-export CYBERAGENT_API_CONTROL_TOKEN="local-control-token"
+<!-- dev-backend:powershell -->
+```powershell
+$env:CYBERAGENT_API_TOKEN = node -p "require('node:crypto').randomBytes(32).toString('hex')"
+$env:CYBERAGENT_API_CONTROL_TOKEN = node -p "require('node:crypto').randomBytes(32).toString('hex')"
+if (-not $env:CYBERAGENT_HOME) { $env:CYBERAGENT_HOME = Join-Path (Get-Location).Path '.cyberagent-workbench/dev' }
+node -e "console.log('Read token: ' + process.env.CYBERAGENT_API_TOKEN); console.log('Control token: ' + process.env.CYBERAGENT_API_CONTROL_TOKEN)"
+go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765
 ```
 
-### 4. 运行桌面版客户端
+首次编译可能需要数分钟。看到 `api_url: http://127.0.0.1:8765/api/v1` 后保持终端运行。未另设 `CYBERAGENT_HOME` 时，开发数据保存在已被 Git 忽略的 `.cyberagent-workbench/dev`，不使用桌面应用的数据目录。上面打印的令牌仅用于下一步本机连接，请勿提交或粘贴到 Issue、截图、日志附件中。
+
+### 3. 在终端 B 启动前端并连接
+
+新开终端，从同一仓库根目录执行（Bash / PowerShell 均可）：
+
+<!-- dev-frontend -->
+```sh
+cd web
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+1. 打开 **http://127.0.0.1:5173**，在“查看令牌 / Read access token”中填入终端 A 打印的 `Read token`。
+2. 如需创建任务或操作，再在“操作令牌 / Control access token”中填入 `Control token`，点击“连接 / Connect”。不要将 Token 写入 URL、前端 `.env` 或源码。
+3. 成功后进入工作台；浏览器网络面板中的 `/api/v1/health` 和 `/api/v1/capabilities` 应返回 200。前端通过同源 `/api` 代理到 `http://127.0.0.1:8765`，浏览器无需直接访问后端端口。
+4. 在两个终端分别按 `Ctrl+C` 停止服务。重新生成 Token 后需要重新连接；开发数据会保留。
+
+端口占用时先停止旧的开发进程。`--strictPort` 可防止前端悄悄改用其他端口。若自行更改后端端口，须在启动 Vite 的终端设置 `CYBERAGENT_API_TARGET` 为对应的 loopback URL。
+
+该命令用于基本界面/API 联调。工作区导入、模型凭据写入、后台执行等功能还需要对应的显式启动开关；控制 Token 本身不会开启全部能力。按需查阅 `go run ./cmd/cyberagent api serve --help` 和[使用指南](docs/usage.md)。
+
+CI 会直接提取上述代码块，在 Linux/Bash 与 Windows/PowerShell 上启动真实 Go API、Vite 和 Chromium，验证令牌、代理与连接页。依赖准备完成后，本地可运行 `cd web`、`npx playwright install chromium`，回到根目录运行 `node scripts/check-contributor-startup.mjs`。
+
+### 4. 可选：运行原生桌面客户端
+
+这是独立的开发入口，使用内嵌前后端；完成上面的浏览器联调不需要构建桌面应用。
 
 - **Windows 桌面端 (需要 Edge WebView2 Runtime)**：
   ```powershell
@@ -87,6 +108,19 @@ export CYBERAGENT_API_CONTROL_TOKEN="local-control-token"
   ```
 
 ---
+
+## 发行下载入口维护
+
+准备发布时，同步 `README.md`、`README.en.md`、`docs/windows-release.md`、`docs/macos-release.md` 中 `public-downloads` 标记内的版本、日期、下载与启动说明，再运行：
+
+```sh
+python -B scripts/check-download-docs.py
+python -B -m unittest discover -s scripts -p test_download_docs.py -v
+```
+
+每个入口必须使用同一个明确的 Release tag；`/releases/latest` 不包含预发布，不能作为预览版入口。Windows 链接指向 `TraverseBoard.exe`，Mac 按 `macos-arm64` / `macos-amd64` 选择 DMG。Release 页负责展示包含源码 revision 的完整文件名，避免在源码文档中预先引用该提交自身的 hash。
+
+发布 tag 时，Desktop release 工作流会要求四份文档的版本等于待发布版本；上传 Draft 资产后，还会确认 EXE、校验和及两个架构的 DMG 均已上传、非空，且 DMG 文件名绑定本次版本与源码 revision。任何入口或资产不一致都会阻止公开发布。Actions 测试候选另列，保留其登录与过期说明。
 
 ## OpenAPI 契约与 DTO 代码生成
 
