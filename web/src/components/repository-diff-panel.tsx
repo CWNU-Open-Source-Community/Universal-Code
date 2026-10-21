@@ -3,7 +3,7 @@ import { ChevronRight, FileDiff, RefreshCw } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
-import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
+import { EmptyState, ErrorState, LoadingState, StatusBadge, StatusLabel } from "./common";
 import "./repository-diff-panel.css";
 
 export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
@@ -12,6 +12,8 @@ export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
   onRequestChange?: (path: string, baseHead: string) => void;
 }) {
   const { t } = useLocale();
+  const changeStatusLabel = (status: string) => status === "copied" ? t("复制", "copied") :
+    <StatusLabel status={status === "conflicted" ? "conflict" : status} />;
   const query = useQuery({
     queryKey: ["workspace", workspaceID, "repository-diff"],
     queryFn: ({ signal }) => client.repositoryDiff(workspaceID, signal),
@@ -49,7 +51,12 @@ export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
                 <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
                 <span className="repository-diff-file-heading">
                   <code title={item.path}>{item.path}</code>
-                  <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>
+                  {item.staging !== "unmodified" && item.staging !== "untracked" &&
+                    <span>{t("暂存区：", "Index: ")}{changeStatusLabel(item.staging)}</span>}
+                  {item.worktree !== "unmodified" && item.worktree !== "untracked" &&
+                    <span>{t("工作区：", "Working tree: ")}{changeStatusLabel(item.worktree)}</span>}
+                  {(item.staging === "untracked" || item.worktree === "untracked") && <StatusLabel status="untracked" />}
+                  {item.content_state === "text" && <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>}
                   {item.redacted && <StatusBadge status="redacted" />}
                   <StatusBadge status={item.content_state} />
                 </span>
