@@ -4712,6 +4712,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/reply-updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe new saved public replies across conversations
+         * @description Read-only incremental observation of saved public assistant message identities in active and archived conversations. Omitting cursor establishes the current baseline with no historical items. Subsequent requests scan at most limit source events in global save order; an empty items array can still have has_more=true. Continue using data.cursor until has_more=false, then retain that cursor for the next poll. Cursor scope includes the exact data_store_id. Persist returned message identities before the cursor; an error returns no partial cursor. Replaying a cursor preserves message identities. Separate saved messages with equal text remain separate updates. Excludes deleted conversations, copied branch history, users, tools, hidden/internal events and provisional streaming bytes. No message body or private event payload is returned.
+         */
+        get: operations["listThreadReplyUpdates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/search": {
         parameters: {
             query?: never;
@@ -15234,6 +15254,26 @@ export interface components {
             thread_id: string;
             /** @enum {string} */
             version: "thread_queued_messages.v1";
+        };
+        ThreadReplyUpdateView: {
+            /** Format: date-time */
+            created_at: string;
+            message_id: string;
+            /** Format: int64 */
+            run_ordinal: number;
+            /** Format: int64 */
+            sequence: number;
+            thread_id: string;
+            /** @enum {string} */
+            thread_status: "active" | "archived";
+        };
+        ThreadReplyUpdatesView: {
+            cursor: string;
+            data_store_id: string;
+            has_more: boolean;
+            items: components["schemas"]["ThreadReplyUpdateView"][];
+            /** @enum {string} */
+            version: "thread_reply_updates.v1";
         };
         ThreadRequestObservationView: {
             error_code?: string;
@@ -28254,6 +28294,44 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listThreadReplyUpdates: {
+        parameters: {
+            query?: {
+                /** @description Maximum source events scanned, including filtered events; not a requested number of visible replies */
+                limit?: number;
+                /** @description Opaque cursor from data.cursor, bound to the exact data store; omit only to establish a new baseline */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadReplyUpdatesView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];

@@ -82,7 +82,8 @@
         "operator_action_item.v1",
         "run-event-poll.v1",
         "run-events.v1",
-        "run_activity.v1"
+        "run_activity.v1",
+        "thread_reply_updates.v1"
       ],
       "retired_identifiers": []
     },
