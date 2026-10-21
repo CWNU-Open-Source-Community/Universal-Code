@@ -5,7 +5,7 @@ import { Copy, Download, Maximize2, Minus, Plus, X } from "lucide-react";
 import type { WorkspaceImageAttachment } from "../../api/image-attachments";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 
-type PreviewImage = Pick<WorkspaceImageAttachment, "name" | "mime_type" | "width" | "height">;
+type PreviewImage = Pick<WorkspaceImageAttachment, "name" | "width" | "height"> & { mime_type: WorkspaceImageAttachment["mime_type"] | "image/gif" };
 export async function copyImageToClipboard(blob: Blob, image: PreviewImage, t: LocaleText): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error(t("当前浏览器不支持复制图片，请下载原图。", "This browser cannot copy images. Download the original."));
   const png = clipboardPNG(blob, image, t);
