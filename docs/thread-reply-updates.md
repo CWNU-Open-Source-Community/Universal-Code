@@ -59,3 +59,28 @@ The response uses the normal `api.v1` envelope. Its `data` has this shape:
 The OpenAPI document and generated TypeScript schema define the exact field
 bounds. This endpoint supplies observations; the frontend owns the local read
 position and explicit manual-unread preference.
+
+## Local unread markers
+
+The sidebar marks conversations with new saved replies and offers **Mark as
+read** / **Mark as unread** in each conversation's menu. The cursor, pending
+message identities, and manual preference are saved together in the existing
+recovery namespace for the browser origin, API URL, and data-store identity.
+Polling follows empty continuation pages and retries the unchanged checkpoint
+after a request failure. A failed local write leaves the previous complete
+checkpoint available after reload.
+
+Automatic reading requires the conversation's latest view, a visible and focused
+window, and a scroll position at the bottom. Saved-message history, inspectors,
+an open narrow-screen sidebar, and covered conversation content do not acknowledge
+replies. Visible saved assistant identities are acknowledged directly. On entering
+the latest view, the client first catches up the reply feed, freezes the pending
+identities, and requests a fresh transcript head. Only a successful read rendered
+in the same reading context acknowledges that frozen range, including older
+pending messages outside the latest window. Replies arriving during the request
+remain pending until observed or included in a later confirmed range.
+
+A manual unread marker survives polling, automatic reading, and reload. Explicitly
+opening the conversation from the sidebar, including clicking the current row
+again, clears that manual preference. **Mark as read** clears both the manual
+marker and currently known pending replies.

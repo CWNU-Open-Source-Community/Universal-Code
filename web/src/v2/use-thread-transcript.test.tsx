@@ -414,6 +414,27 @@ it("does not swallow terminal demand arriving during an older head observation",
   view.unmount(); fixture.queries.clear();
 });
 
+it("rejects strict read confirmation when the demanded fresh head fails, retaining the saved transcript", async () => {
+  const fixture = setup(200);
+  const view = renderHook(() => useV2ThreadTranscript(fixture.client, "thread-a"), { wrapper: fixture.wrapper });
+  await waitFor(() => expect(view.result.current.items).toHaveLength(100));
+  const originalHead = deferred<PageResult<ThreadTranscriptItemView>>();
+  fixture.getPage.mockReturnValueOnce(originalHead.promise).mockRejectedValueOnce(new Error("fresh head failed"));
+  let first!: Promise<void>;
+  let strict!: Promise<void>;
+  act(() => {
+    first = view.result.current.refetch();
+    strict = view.result.current.refetch({ refreshMutable: true, throwOnError: true });
+  });
+  const rejected = expect(strict).rejects.toThrow("fresh head failed");
+  await act(async () => {
+    originalHead.resolve(page(Array.from({ length: 100 }, (_, index) => item(index + 101)), "before-101"));
+    await first; await rejected;
+  });
+  expect(view.result.current.items).toHaveLength(100);
+  view.unmount(); fixture.queries.clear();
+});
+
 it("records terminal demand during the initial pending read while preserving the loading state", async () => {
   const fixture = setup(200);
   const initial = deferred<PageResult<ThreadTranscriptItemView>>();

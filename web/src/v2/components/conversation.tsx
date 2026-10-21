@@ -11,6 +11,8 @@ import { usePublicModelStream } from "../../hooks/use-public-model-stream";
 import { useRunEventStream } from "../../hooks/use-run-event-stream";
 import { prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
 import { useV2ThreadTranscript } from "../use-thread-transcript";
+import { useV2ReplyReading } from "../use-reply-reading";
+import type { V2ReplyReading } from "../use-thread-unread";
 import { useV2SavedMessage } from "../use-saved-message";
 import { V2Narrative } from "./narrative";
 import { V2LazySurface } from "./lazy-surface";
@@ -332,7 +334,8 @@ export function V2TerminalDrawer({
 
 export function V2Conversation({ client, threadID, workspaces, onArchive, onManageModels, messageID = "", onExitMessage,
   onOpenInspector, draft: legacyDraft, onDraftChange: legacyDraftChange, view = "conversation", onOpenTool, onOpenInspectorHome, onOpenWorktree, onExitInspector,
-  reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated, onOpenThread }: {
+  reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated, onOpenThread,
+  replyReading, readRequest = 0, readingEnabled = true }: {
   client: APIClient;
   threadID: string;
   messageID?: string;
@@ -353,6 +356,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   reviewMemoryRef?: RefObject<TaskReviewToolMemory>;
   onBranchCreated?: (thread: ThreadView) => void;
   onOpenThread?: (threadID: string) => void;
+  replyReading?: V2ReplyReading;
+  readRequest?: number;
+  readingEnabled?: boolean;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -770,6 +776,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setComposerFocusRequest(null);
     olderScrollAnchorRef.current = null;
   }, [threadID, view]);
+  const reportReplyReading = useV2ReplyReading({ threadID, request: readRequest, reading: replyReading,
+    readable: readingEnabled && view === "conversation" && !messageID && activePane === null,
+    ready: detailQuery.isSuccess && !latestTranscriptQuery.isLoading && !latestTranscriptQuery.isError,
+    content: visibleNarrative, scroll: scrollRef,
+    following: () => readingThreadRef.current === threadID && followLatestRef.current && olderScrollAnchorRef.current === null,
+    refresh: refreshTranscript });
   useEffect(() => {
     if (!reviewEntry || reviewEntry.threadID !== threadID) return;
     setReviewFileTarget(undefined);
@@ -1094,6 +1106,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       followLatestRef.current = following;
       if (following) setHasNewContent(false);
       queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following });
+      reportReplyReading();
     }}>
       <div className="v2-conversation-content">
         {messageID && <p className="v2-notice v2-message-location" role="status">
@@ -1170,6 +1183,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       followLatestRef.current = true;
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       setHasNewContent(false);
+      reportReplyReading();
     }} type="button">{t("有新内容 · 回到最新", "New content · Jump to latest")}</button>}
     <div className="v2-composer-dock">
       {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">

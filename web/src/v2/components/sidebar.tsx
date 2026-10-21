@@ -39,6 +39,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   searchCurrentThread = false, onSearchCurrentThreadChange,
   projectAction, onNewInProject, onEditProject, client, onMoveThread, movingThreadID = "", moveError = "",
   executionFilter = "", onExecutionFilterChange,
+  unreadThreadIDs, onReadStateChange,
   visible = true,
   hasMore = false, truncated = false, loading = false, loadingMore = false, loadFailed = false,
   loadMoreFailed = false, refreshing = false, onLoadMore, onRefresh, onRetry }: {
@@ -73,6 +74,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   moveError?: string;
   executionFilter?: "" | "running" | "waiting_approval";
   onExecutionFilterChange?: (value: "" | "running" | "waiting_approval") => void;
+  unreadThreadIDs?: ReadonlySet<string>;
+  onReadStateChange?: (threadID: string, read: boolean) => void;
   visible?: boolean;
   hasMore?: boolean; truncated?: boolean; loading?: boolean; loadingMore?: boolean; loadFailed?: boolean;
   loadMoreFailed?: boolean; refreshing?: boolean;
@@ -128,8 +131,9 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     const canMove = Boolean(onMoveThread && !movingThreadID && thread.project_assignment_version &&
       thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(execution.state));
     const statusID = `v2-thread-state-${thread.id}`;
+    const unread = unreadThreadIDs?.has(thread.id) === true;
     return <div className={`v2-thread-row-shell${selectedThreadID === thread.id ? " is-selected" : ""}`} key={thread.id}>
-      <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={statusID}
+      <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={`${statusID}${unread ? ` unread-${thread.id}` : ""}`}
         className={`v2-thread-row${onMoveThread ? " has-project-control" : ""}`} onClick={() => onSelectThread(thread.id)} type="button"
         draggable={canMove} onDragStart={(event) => {
           if (!canMove) { event.preventDefault(); return; }
@@ -137,15 +141,17 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           event.dataTransfer.effectAllowed = "move"; setDraggingThreadID(thread.id); setProjectsExpanded(true);
         }} onDragEnd={() => { setDraggingThreadID(""); setDropProjectID(null); }}>
         <span className="v2-thread-title">{thread.title}</span>
+        {unread && <span className="v2-thread-unread" aria-hidden="true" />}
         <span aria-hidden="true" className={`v2-thread-state state-${execution.state}`} title={execution.description}>
           <i /><span className="v2-thread-state-description">{execution.label}</span></span>
       </button>
       <span className="v2-thread-state-description" id={statusID}>{execution.description}</span>
+      {unread && <span className="v2-thread-state-description" id={`unread-${thread.id}`}>{t("未读", "Unread")}</span>}
       {onMoveThread && <button aria-label={t(`移动 ${thread.title} 到项目`, `Move ${thread.title} to project`)}
         className="v2-thread-more v2-thread-move" disabled={!canMove} title={canMove ? t("移动到项目，也可拖动聊天", "Move to a project, or drag the chat")
           : t("当前任务暂不可移动，请等待执行或待处理消息结束", "Wait for execution and pending messages to finish before moving")}
         onClick={() => setProjectCandidate(thread)} type="button"><FolderInput aria-hidden="true" size={15} /></button>}
-      <ThreadActions thread={thread} client={client} onArchive={onArchive} />
+      <ThreadActions thread={thread} client={client} onArchive={onArchive} unread={unread} onReadStateChange={onReadStateChange} />
     </div>;
   };
 
