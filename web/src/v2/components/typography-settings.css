@@ -1,0 +1,14 @@
+.v2-typography-settings label { font-weight: 600; }
+.v2-typography-control { width: 210px; }
+.v2-typography-settings .v2-typography-control { flex-wrap: nowrap; }
+.v2-typography-control input { accent-color: var(--v2-accent); min-width: 0; width: 100%; }
+.v2-typography-control output { flex: 0 0 42px; font-size: 12px; font-variant-numeric: tabular-nums; text-align: end; }
+.v2-typography-preview { margin-top: 18px; overflow-wrap: anywhere; }
+.v2-typography-preview p { font-size: var(--prayu-message-size, 14px); line-height: 1.625; margin: 0 0 12px; }
+.v2-typography-preview pre { background: var(--v2-control); border-radius: 10px; font-family: var(--prayu-font-mono); font-size: var(--prayu-code-size); line-height: var(--prayu-code-leading); margin: 0; overflow: auto; padding: 12px; }
+.v2-typography-preview code { font-size: inherit; }
+@media (max-width: 600px) {
+  .v2-typography-settings .v2-setting-row { align-items: stretch; flex-direction: column; gap: 10px; }
+  .v2-typography-settings .v2-setting-value { max-width: 100%; }
+  .v2-typography-control { width: 100%; }
+}

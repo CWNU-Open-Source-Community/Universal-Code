@@ -34,6 +34,7 @@ import { V2ExecutionSettings } from "./execution-settings";
 import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2ProjectlessDirectorySettings } from "./projectless-directory-settings";
 import { V2WebAccessSettings } from "./web-access-settings";
+import { TypographySettingsPanel } from "./typography-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
@@ -302,7 +303,8 @@ function AppearanceSettings() {
           <button className="v2-setting-link" disabled={isDefaultGlass} onClick={resetGlass} type="button">{t("还原默认值", "Reset to defaults")}</button>
         </SettingRow>
       </div>
-    </section>}</>;
+    </section>}
+    <TypographySettingsPanel /></>;
 }
 
 function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraft = false,
