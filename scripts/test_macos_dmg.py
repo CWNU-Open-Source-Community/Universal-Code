@@ -137,6 +137,51 @@ class MacDMGTest(unittest.TestCase):
                 self.assertEqual(run.call_args_list[1].args[0],
                                  [dmg.HDIUTIL, "detach", "-force", str(self.root / "mounted")])
 
+    def test_busy_create_retries_after_removing_partial_image(self):
+        calls = 0
+        image = self.root / "private.dmg"
+
+        def busy_once(command, **kwargs):
+            nonlocal calls
+            calls += 1
+            self.assertEqual(command[:2], [dmg.HDIUTIL, "create"])
+            self.assertFalse(image.exists())
+            if calls == 1:
+                image.write_bytes(b"incomplete")
+                kwargs["stdout"].write("hdiutil: create failed - Resource busy\n")
+                return subprocess.CompletedProcess(command, 1)
+            image.write_bytes(b"disk-image-fixture")
+            return subprocess.CompletedProcess(command, 0)
+
+        with mock.patch.object(dmg.time, "sleep") as sleep, \
+                mock.patch.object(dmg.subprocess, "run", side_effect=busy_once):
+            dmg.create_image(self.payload, image, "Preview")
+        self.assertEqual(calls, 2)
+        sleep.assert_called_once_with(2)
+        self.assertEqual(image.read_bytes(), b"disk-image-fixture")
+
+    def test_create_stops_on_permanent_error_or_exhausted_busy_retries(self):
+        for diagnostic, expected_attempts in (("Permission denied", 1), ("Resource busy", 3)):
+            with self.subTest(diagnostic=diagnostic):
+                def fail_create(command, **kwargs):
+                    kwargs["stdout"].write("hdiutil: create failed - " + diagnostic + "\n")
+                    return subprocess.CompletedProcess(command, 1)
+
+                with mock.patch.object(dmg.time, "sleep") as sleep, \
+                        mock.patch.object(dmg.subprocess, "run", side_effect=fail_create) as run:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        dmg.create_image(self.payload, self.root / "private.dmg", "Preview")
+                self.assertEqual(run.call_count, expected_attempts)
+                self.assertEqual(sleep.call_count, expected_attempts - 1)
+
+    def test_timed_out_create_is_not_retried(self):
+        with mock.patch.object(dmg.time, "sleep") as sleep, \
+                mock.patch.object(dmg.subprocess, "run", side_effect=subprocess.TimeoutExpired([], 600)) as run:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                dmg.create_image(self.payload, self.root / "private.dmg", "Preview")
+        sleep.assert_not_called()
+        self.assertEqual(run.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 
 # Importing the ZIP verifier must not add scripts/__pycache__ to an otherwise
@@ -60,6 +61,31 @@ def detach(mountpoint):
     release.require(result.returncode == 0, "could not detach the temporary DMG mount")
 
 
+def create_image(stage, image, volume):
+    command = [HDIUTIL, "create", "-srcfolder", str(stage), "-volname", volume,
+               "-fs", "HFS+", "-format", "UDZO", str(image)]
+    for attempt in range(3):
+        # hdiutil create reports EBUSY as exit 1, shared with permanent errors.
+        # Keep its diagnostic and retry only the explicit transient failure.
+        # Use a file, not a pipe inherited by diskimages-helper.
+        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as log:
+            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
+                                    env=dict(os.environ, LC_ALL="C"), timeout=600)
+            log.seek(0)
+            diagnostic = log.read()
+        print(diagnostic, end="", flush=True)
+        if result.returncode == 0:
+            return
+        if result.returncode != 1 or "Resource busy" not in diagnostic or attempt == 2:
+            result.check_returncode()
+        # This image is inside this invocation's private staging directory;
+        # a failed attempt may leave a partial file that cannot be reused.
+        image.unlink(missing_ok=True)
+        delay = 2 ** (attempt + 1)
+        print("macos_dmg: resource busy; retrying creation in %ss" % delay, flush=True)
+        time.sleep(delay)
+
+
 def package(version, revision, arch, source, output):
     release.require(sys.platform == "darwin", "DMG packaging requires macOS")
     source = source.resolve()
@@ -90,9 +116,7 @@ def package(version, revision, arch, source, output):
         subprocess.run(["/usr/bin/ditto", "-x", "-k", str(source / archive_name), str(stage)], check=True)
         verify_payload(stage, manifest["files"], exact=True)
         (stage / "Applications").symlink_to("/Applications")
-        subprocess.run([HDIUTIL, "create", "-srcfolder", str(stage), "-volname",
-                        "Universal-Code " + version + " " + arch, "-fs", "HFS+",
-                        "-format", "UDZO", str(temporary_image)], check=True, timeout=600)
+        create_image(stage, temporary_image, "Universal-Code " + version + " " + arch)
         subprocess.run([HDIUTIL, "verify", str(temporary_image)], check=True, timeout=120)
         attached = subprocess.run([HDIUTIL, "attach", "-readonly", "-nobrowse", "-noautoopen",
                                    "-mountpoint", str(mountpoint), "-plist", str(temporary_image)],
