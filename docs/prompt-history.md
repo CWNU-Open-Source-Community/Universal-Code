@@ -25,3 +25,34 @@
 - `npm test -- src/v2/use-prompt-history.test.tsx src/v2/components/composer-history.test.tsx src/v2/components/markdown-input.test.tsx src/v2/components/composer.test.tsx src/v2/components/composer-attachment-settlement.test.tsx`：46 个测试通过。覆盖跨页顺序、长正文、公开消息过滤、分页/正文失败、延迟请求保护、富文本与纯文本、IME、选区、正文光标、手工编辑、附件/引用及现有发送行为。
 - `npm run build`：通过。
 - `go build -o output/playwright/prompt-history/cyberagent-after.exe ./cmd/cyberagent`：通过，用于真实 API 页面验证。
+
+## 与项目路径补全和 Esc 停止的组合验证
+
+在原输入历史提交 `c2b6200e` 中合入路径补全提交 `8e5de069` 后，两个编辑器都先让路径候选处理按键，再处理输入历史，最后处理发送。合并只涉及 `composer.tsx` 和 `markdown-input.tsx` 的真实冲突。
+
+组合回归先复现了富文本问题：回填含 `@R` 的历史正文时，`setContent` 的选区回调早于正文身份更新，生成的候选持有旧正文，随后 Enter 被草稿校验拒绝。恢复外部草稿期间现在复用 `replacing` 标记抑制该回调；用户后续移动光标或编辑时按当前正文生成候选。
+
+2026-10-22，Windows Chrome 155，1280 × 900。使用本树生产构建、生产 API、SQLite 和 `cmd/workbenchjourney` 离线提供者。实际发送 `JOURNEY_READ: 请读取 README @R`，服务返回 HTTP 202，工具读取真实 README 并保存回复；随后在两种编辑模式中从空输入按 ↑ 回填这条消息。原四张前后截图保持原样，本次追加以下组合截图：
+
+| 行为 | 真实截图 |
+| --- | --- |
+| 纯文本从空输入回填历史 | [回填](images/prompt-history/combined-plain-history.png) |
+| 纯文本候选 ↑↓ / Enter 加入真实 README 引用 | [选择文件](images/prompt-history/combined-plain-selection.png) |
+| 富文本从空输入回填历史 | [回填](images/prompt-history/combined-rich-history.png) |
+| 富文本候选 ↑↓ / Enter 加入真实 README 引用 | [选择文件](images/prompt-history/combined-rich-selection.png) |
+| Esc 关闭候选、保留原草稿 | [关闭列表](images/prompt-history/combined-escape-closes-list.png) |
+| 运行中 Esc 停止并保留草稿 | [执行已停止](images/prompt-history/combined-escape-stops-run.png) |
+
+富文本候选操作前后正文分别为 `JOURNEY_READ: 请读取 README @R` 与 `JOURNEY_READ: 请读取 README @README.md `；↑↓ 没有改变正文，候选操作期间新增历史正文请求为 0。选择文件后出现真实引用芯片，没有提交新消息。
+
+关闭候选时记录到 0 个 POST 请求，草稿仍为 `关闭候选后保留草稿 @R`。另一次真实运行中按 Esc 后，`POST /threads/{id}/interrupt` 返回 HTTP 202、状态 `stopping`，后续真实执行查询返回 HTTP 200、状态 `idle`；草稿仍为 `停止后保留的草稿`。
+
+生产页面沿用原有限制：模型正在执行时禁止新增项目文件引用，因此运行中的停止按钮与路径候选不会同时可用。浏览器分别验证上述两个真实状态；两种编辑模式的 Composer 集成测试验证“第一次 Esc 关闭列表、第二次 Esc 调用停止”，且引用和草稿不变。未修改执行期文件引用限制。
+
+组合检查通过：以下 8 个测试文件共 87 项、`npm run build` 和 `git diff --check`。生产 bundle 摘要为 `b63d9a403439ff619ec436d02e96ff555a12d93af61c76f7481a5fe95971c710`。浏览器覆盖 Windows Chrome，未运行原生打包窗口。
+
+```sh
+cd web
+npx vitest run src/v2/use-prompt-history.test.tsx src/v2/components/composer-history.test.tsx src/v2/components/markdown-input.test.tsx src/v2/components/file-path-mention.test.ts src/v2/components/file-path-suggestions.test.tsx src/v2/components/composer-stop-shortcut.test.tsx src/v2/components/file-context.test.tsx src/v2/draft-context.test.tsx
+npm run build
+```

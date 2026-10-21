@@ -155,6 +155,33 @@ it.each([false, true])("moves the text draft while retaining a late file referen
 });
 
 describe("V2Workbench inspector navigation", () => {
+  it("keeps a restored manual unread marker until an explicit sidebar click, including the current chat", async () => {
+    const scope = `ds1_${"9".repeat(64)}`;
+    useConnectionStore.getState().setHealth({ status: "ok", api_version: "api.v1", app_version: "fixture", schema_version: 216, data_store_id: scope });
+    const key = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${scope}:reply-read-state`;
+    localStorage.setItem(key, JSON.stringify({ version: "v2_recovery.v1", value: { cursor: "known-feed", threads: {
+      [createdThread.id]: { pending: [], seen: [], manualUnread: true },
+    } } }));
+    window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
+    const client = Object.assign(navigationClient(), { baseURL: "/api/v1" });
+    vi.mocked(client.get).mockResolvedValue({ version: "thread_reply_updates.v1", data_store_id: scope, cursor: "known-feed", has_more: false, items: [] });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const row = await screen.findByRole("button", { name: createdThread.title });
+    await waitFor(() => expect(client.get).toHaveBeenCalledWith("/threads/reply-updates", { limit: 100, cursor: "known-feed" }, expect.any(AbortSignal)));
+    expect(row).toHaveAccessibleDescription(expect.stringContaining("未读"));
+    const user = userEvent.setup();
+    await user.click(row);
+    expect(row).not.toHaveAccessibleDescription(expect.stringContaining("未读"));
+    expect(window.location.hash).toBe(`#/threads/${createdThread.id}`);
+    await user.click(screen.getByRole("button", { name: "First turn 聊天选项" }));
+    await user.click(screen.getByRole("menuitem", { name: "标为未读" }));
+    expect(row).toHaveAccessibleDescription(expect.stringContaining("未读"));
+    await user.click(row);
+    expect(row).not.toHaveAccessibleDescription(expect.stringContaining("未读"));
+    expectNoNavigationWrites(client);
+  });
+
   it("offers the new branch without replacing a chat selected while branching", async () => {
     const otherThread = { ...createdThread, id: "thread-other", title: "Other conversation" };
     const branched = { ...createdThread, id: "thread-branch", title: "Branched conversation" };
@@ -270,13 +297,20 @@ describe("V2Workbench inspector navigation", () => {
     expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
 
+    const resizeHandle = screen.getByRole("separator", { name: "调整侧栏宽度" });
+    resizeHandle.focus();
+    fireEvent.keyDown(resizeHandle, { key: "ArrowRight" });
+    expect(resizeHandle).toHaveAttribute("aria-valuenow", "311");
     act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
     expect(screen.queryByRole("navigation", { name: "对话导航" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveFocus();
+    expect(screen.queryByRole("separator", { name: "调整侧栏宽度" })).not.toBeInTheDocument();
 
     act(() => { narrowListener?.({ matches: false } as MediaQueryListEvent); });
     expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("separator", { name: "调整侧栏宽度" })).toHaveAttribute("aria-valuenow", "311");
 
     screen.getByRole("button", { name: "新对话" }).focus();
     act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
