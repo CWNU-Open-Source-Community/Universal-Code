@@ -181,7 +181,10 @@ func LaunchAgentBrowser(ctx context.Context, request AgentBrowserStartRequest) (
 		return nil, err
 	}
 	go owned.monitor()
-	if err := r.connect(ctx, filepath.Join(profile.path, "Data")); err != nil {
+	// Native Chrome startup can exceed the Windows 30s connection budget on
+	// macOS. Keep the supervisor's 3m launch bound; a shorter caller deadline
+	// or runtime cancellation still stops endpoint discovery immediately.
+	if err := r.connect(ctx, filepath.Join(profile.path, "Data"), 3*time.Minute); err != nil {
 		return nil, err
 	}
 	handlers, err := darwinChromeCrashpad(profile.path)
