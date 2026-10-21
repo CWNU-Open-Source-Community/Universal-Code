@@ -37,3 +37,9 @@ identities outside the latest window, empty feed continuation pages, persistence
 failure, and data-store changes. Focus/visibility cancellation is covered by
 these tests. Headless Chrome kept both tabs focused and visible, so tab switching
 was not used as evidence for actual window-focus changes.
+
+Final integration also includes the sidebar-width and notification changes from
+its PR base. The focused combined suite passed 93 tests across seven files and
+the production build passed. A navigation-acceptance regression ensures an
+unaccepted file-editor leave request does not clear the target chat's manual
+unread state; explicitly reopening the current route still acknowledges it.

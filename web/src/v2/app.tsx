@@ -541,10 +541,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const closeNavigationSidebar = () => {
     if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarVisible(false);
   };
-  const openConversation = (threadID: string) => {
+  const openConversation = (threadID: string, onAccepted?: () => void) => {
     setBackgroundCreations((current) => current.filter((thread) => thread.id !== threadID));
     updateModelSetupToken("");
-    navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) });
+    navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) }, false, onAccepted);
     closeNavigationSidebar();
   };
   const startNew = (destination?: string) => {
@@ -661,19 +661,18 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             setSearchOpen(open);
             setSearchCurrentThread(false);
             if (!open) { setThreadSearch(""); setSearchComposing(false); }
-          }} onSelectThread={(id) => {
+          }} onSelectThread={(id) => openConversation(id, () => {
             unread.open(id);
             setReadRequest((current) => ({ threadID: id, revision: current.revision + 1 }));
-            openConversation(id);
-          }} searchOpen={searchOpen}
+          })} searchOpen={searchOpen}
           unreadThreadIDs={unread.unreadThreadIDs} onReadStateChange={unread.setRead}
           search={threadSearch} appliedSearch={appliedThreadSearch} searchPending={searchPending}
           searchTooLong={searchTooLong}
           searchResults={searchResults} includeArchived={includeArchivedSearch} onIncludeArchivedChange={setIncludeArchivedSearch}
           searchCurrentThread={Boolean(searchThreadID)} onSearchCurrentThreadChange={setSearchCurrentThread}
           onSelectSearchResult={(result) => {
-            unread.open(result.thread_id);
-            navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) });
+            navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) },
+              false, () => unread.open(result.thread_id));
             closeNavigationSidebar();
           }}
           onSearchChange={(value) => { setThreadSearch(value); if (!value) setSearchComposing(false); }}
@@ -840,7 +839,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     {persistenceWarning && <div className="v2-toast" role={recovery ? "alert" : "status"}>{persistenceWarning}</div>}
     {unread.error && <div className="v2-toast" role="status">
       {t("未读回复暂未同步，已有标记会保留。", "Unread replies could not be refreshed. Existing markers have been kept.")}
-      <button type="button" onClick={() => void unread.retry()}>{t("重试", "Retry")}</button>
+      <button className="v2-retry-action" type="button" onClick={() => void unread.retry()}>{t("重试", "Retry")}</button>
     </div>}
     <V2ConfirmDialog busy={archiveMutation.isPending} confirmLabel={t("归档", "Archive")} description={t("此对话会从侧栏隐藏，但消息、执行记录和审计证据都会保留。你可以随时从设置中恢复。", "This conversation will be hidden from the sidebar. Messages, execution records, and audit evidence will be kept. You can restore it in Settings at any time.")}
       onCancel={() => setArchiveCandidate(null)} onConfirm={() => archiveCandidate && archiveMutation.mutate(archiveCandidate)}
