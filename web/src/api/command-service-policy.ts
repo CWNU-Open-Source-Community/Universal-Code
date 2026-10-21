@@ -1,4 +1,4 @@
-import { APIRequestError } from "./client";
+import { APIRequestError } from "./client/protocol";
 import { applicationServiceIdentity } from "./application-services";
 
 export const commandServicePolicyVersion = "thread_command_service_policy.v1";

@@ -1,4 +1,5 @@
-import { APIRequestError, type APIClient } from "./client";
+import { APIRequestError } from "./client/protocol";
+import { type APIClient } from "./client";
 import { validFileAttachments, type WorkspaceFileAttachment } from "./file-attachments";
 import { validImageAttachments, type WorkspaceImageAttachment } from "./image-attachments";
 
