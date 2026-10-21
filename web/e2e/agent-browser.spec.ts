@@ -55,7 +55,8 @@ test("native Agent Browser uses the production API and visible workbench", async
   } else {
     await expect.poll(async () => {
       const status = await readStatus();
-      return status.state === "failed" || status.last_action === "browser_screenshot";
+      return status.state === "failed" || status.unavailable_code === "run_unavailable"
+        || status.last_action === "browser_screenshot";
     }, { timeout: nativeMac ? 240_000 : 60_000 }).toBe(true);
     expect(await readStatus(), "browser journey must reach screenshot capture")
       .toMatchObject({ last_action: "browser_screenshot" });

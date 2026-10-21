@@ -153,14 +153,14 @@ func launchPEAgentBrowser(ctx context.Context, request AgentBrowserStartRequest)
 		return nil, err
 	}
 	r.process = &BrowserProcess{spec: spec, platform: platform}
-	if err := r.connect(ctx, profile.path); err != nil {
+	if err := r.connect(ctx, profile.path, 30*time.Second); err != nil {
 		return nil, err
 	}
 	return r, nil
 }
 
-func (r *AgentBrowserRuntime) connect(ctx context.Context, profilePath string) error {
-	startCtx, startCancel := context.WithTimeout(ctx, 30*time.Second)
+func (r *AgentBrowserRuntime) connect(ctx context.Context, profilePath string, startupTimeout time.Duration) error {
+	startCtx, startCancel := context.WithTimeout(ctx, startupTimeout)
 	defer startCancel()
 	stopLife := context.AfterFunc(r.life, startCancel)
 	defer stopLife()
