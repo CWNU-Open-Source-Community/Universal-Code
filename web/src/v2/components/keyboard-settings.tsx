@@ -17,6 +17,7 @@ export function V2KeyboardSettings() {
   return <>
     <h1>{t("快捷键", "Keyboard shortcuts")}</h1>
     <p className="v2-settings-lead">{t("搜索操作，或录制组合键。点击快捷键即可修改；修改后立即生效。", "Find an action or record a key combination. Click a shortcut to change it; changes take effect immediately.")}</p>
+    <p className="v2-settings-lead">{t("上一／下一聊天按侧栏已加载的可见顺序切换，到达边缘时停止。可先展开项目或加载更早聊天。", "Previous and next chat follow the loaded, visible sidebar order and stop at its edges. Expand a project or load earlier chats to include them.")}</p>
     <div className="v2-shortcut-search">
       <Search size={16} aria-hidden="true" />
       <input aria-label={t("搜索快捷键", "Search shortcuts")} placeholder={t("搜索操作或快捷键…", "Search actions or shortcuts…")}

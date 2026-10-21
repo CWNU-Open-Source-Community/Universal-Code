@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
@@ -32,7 +32,7 @@ function executionStatus(thread: ThreadView, readFailed: boolean, t: (chinese: s
 }
 
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
-  onNewConversation, onOpenModels, onSelectThread, onOpenSettings, onArchive,
+  onNewConversation, onOpenModels, onSelectThread, onVisibleChatOrder, onOpenSettings, onArchive,
   onOpenInspector, inspectorActive = false, onOpenConnections,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
@@ -51,6 +51,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onNewConversation: () => void;
   onOpenModels: () => void;
   onSelectThread: (threadID: string) => void;
+  onVisibleChatOrder?: (threadIDs: readonly string[]) => void;
   onOpenSettings: () => void;
   onArchive: (thread: ThreadView) => void;
   onOpenInspector?: () => void;
@@ -126,7 +127,12 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
   }, [workspaces]);
 
+  // Collect the rows actually rendered below, including pin and collapse order.
+  // Publish after commit so abandoned renders cannot change keyboard navigation.
+  const visibleChatOrder: string[] = [];
+  useLayoutEffect(() => { onVisibleChatOrder?.(searchOpen ? [] : visibleChatOrder); });
   const renderThread = (thread: ThreadView) => {
+    visibleChatOrder.push(thread.id);
     const execution = executionStatus(thread, loadFailed || Boolean(thread.pinned && pinsQuery.isError), t);
     const canMove = Boolean(onMoveThread && !movingThreadID && thread.project_assignment_version &&
       thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(execution.state));
