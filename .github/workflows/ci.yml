@@ -293,7 +293,8 @@ jobs:
   go:
     name: Go control plane
     needs: [classify, go-checks, store-tests, go-race, go-audit]
-    if: ${{ always() }}
+    # Report failed checks, but release the concurrency slot when superseded.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected Go gate
@@ -979,7 +980,7 @@ jobs:
   full-ci:
     name: Full CI verification
     needs: [classify, go, code-intel-lsp, web, rust, desktop-macos, desktop, ui-evidence-windows]
-    if: ${{ always() && needs.classify.outputs.full == 'true' }}
+    if: ${{ !cancelled() && needs.classify.outputs.full == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Require the complete integration and platform matrix
