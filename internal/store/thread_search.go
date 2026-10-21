@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"regexp"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/threadtranscript"
 )
@@ -177,6 +179,27 @@ func (s *SQLiteStore) GetThreadSearchMessage(ctx context.Context, threadID, mess
 	items, err := s.threadSearchCandidates(ctx, "", true, time.Time{}, "", threadID, messageID, 1)
 	if err != nil {
 		return domain.ThreadSearchMatch{}, err
+	}
+	// Public progress and replies inherited by a branch are commentary events,
+	// not session messages. Resolve their full body through the same public
+	// projection and redaction below without broadening search candidates.
+	if len(items) == 0 {
+		item := domain.ThreadSearchMatch{ID: messageID, MessageID: messageID, ThreadID: threadID, Role: "assistant"}
+		var created string
+		err := s.db.QueryRowContext(ctx, `SELECT thread.title, thread.status, thread.workspace_id,
+		 COALESCE(json_extract(event.payload_json,'$.text'),''), event.created_at, binding.ordinal, event.sequence
+		 FROM threads thread JOIN thread_runs binding ON binding.thread_id=thread.id
+		 JOIN run_events event ON event.run_id=binding.run_id
+		 WHERE thread.id=? AND thread.status IN ('active','archived') AND event.event_id=? AND event.type=?`,
+			threadID, messageID, events.ModelPublicCommentaryEvent).Scan(&item.ThreadTitle, &item.ThreadStatus,
+			&item.WorkspaceID, &item.Content, &created, &item.RunOrdinal, &item.Sequence)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return domain.ThreadSearchMatch{}, err
+		}
+		if err == nil {
+			item.CreatedAt = parseTS(created)
+			items = append(items, item)
+		}
 	}
 	if len(items) > 0 {
 		item := items[0]

@@ -2,7 +2,7 @@ import { localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -56,6 +56,7 @@ import { UserTerminalPanel } from "../../components/user-terminal-panel";
 import { desktopUserTerminalEnabled, closeDesktopUserTerminal } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { V2IdentityDisclosure } from "./identity-disclosure";
+import { V2ThreadExport } from "./thread-export";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
@@ -378,6 +379,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const [checking, setChecking] = useState<string[]>([]);
   const [observations, setObservations] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+  const [exportThreadID, setExportThreadID] = useState<string | null>(null);
+  useEffect(() => setExportThreadID(null), [threadID]);
   const [activePane, setSelectedPane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
   const [roomForDock, setRoomForDock] = useState(false);
   const [compactPaneOpen, setCompactPaneOpen] = useState(false);
@@ -983,6 +986,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             onArchive(detail.thread);
           }} ref={firstMenuItemRef} role="menuitem" type="button">
             <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
+          <button onClick={() => { setMenuOpen(false); setExportThreadID(threadID); }} role="menuitem" type="button">
+            <Download aria-hidden="true" size={15} />{t("导出对话", "Export conversation")}</button>
           <button className="v2-task-compact-action" onClick={() => {
             setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
             reviewReturnFocus.current = menuTriggerRef.current; setReviewOpen(true);
@@ -1232,5 +1237,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {companion}
     </div>}
     </div>
+    {exportThreadID === threadID && <V2ThreadExport key={threadID} client={client} threadID={threadID} title={detail.thread.title}
+      returnFocusRef={menuTriggerRef} onClose={() => setExportThreadID(null)} />}
   </section>;
 }

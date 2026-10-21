@@ -26,6 +26,7 @@ vi.mock("../../hooks/use-public-model-stream", () => ({
 }));
 
 vi.mock("../projection/narrative", () => ({
+  projectThreadNarrative: () => [],
   prepareThreadNarrative: (items: ThreadTranscriptItemView[]) => ({ entries: items.map((item) => ({
     id: item.id,
     kind: item.source === "operator" ? "user" : "assistant",
@@ -216,6 +217,19 @@ function queueSnapshot(runID = "run-thread-a", sessionID = "sess-thread-a") {
 }
 
 describe("V2Conversation", () => {
+  it("opens export from the conversation menu with read access and closes it when changing chats", async () => {
+    const ui = renderConversation(baseClient({ hasThreadControl: false }));
+    const trigger = await screen.findByRole("button", { name: "对话操作" });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "导出对话" }));
+    expect(await screen.findByRole("dialog", { name: "导出对话" })).toBeVisible();
+    ui.rerenderThread("thread-b");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "导出对话" })).not.toBeInTheDocument());
+    ui.rerenderThread("thread-a");
+    await screen.findByText("Title thread-a");
+    expect(screen.queryByRole("dialog", { name: "导出对话" })).not.toBeInTheDocument();
+  });
+
   it("loads and focuses the complete saved message window in an archived chat without submitting or restoring it", async () => {
     const content = "An old full answer beyond the transcript preview.";
     const getPage = vi.fn((_path: string, _query: unknown, cursor = "") => Promise.resolve(cursor
