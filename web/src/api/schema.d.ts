@@ -14256,7 +14256,7 @@ export interface components {
             /** Format: int32 */
             exit_code?: number;
             /** @enum {string} */
-            network: "disabled";
+            network: "disabled" | "host";
             /** @enum {string} */
             status: "pending" | "completed" | "denied" | "failed" | "prepared" | "running" | "stopping" | "completed" | "failed" | "timed_out" | "cancelled" | "killed" | "interrupted";
             stderr_preview: string;
