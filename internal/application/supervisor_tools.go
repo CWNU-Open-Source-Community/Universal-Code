@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -1347,11 +1348,22 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 }
 
 func supervisorToolExecutionTimeout(name toolgateway.ToolName) time.Duration {
+	return supervisorToolExecutionTimeoutForPlatform(name, runtime.GOOS)
+}
+
+func supervisorToolExecutionTimeoutForPlatform(name toolgateway.ToolName, goos string) time.Duration {
 	if name == "mcp_tool_call" {
 		return mcp.InvocationTimeout + time.Minute
 	}
 	if name == toolgateway.WebSearchTool || name == toolgateway.SourceSearchTool {
 		return supervisorWebSearchToolCallTimeout
+	}
+	if name == toolgateway.BrowserNavigateTool && goos == "darwin" {
+		// First navigation verifies Chrome's full signature before launch. Cold
+		// Intel macOS runners can spend over a minute in that native check.
+		// Keep the launch budget bounded; the caller's deadline and cancellation
+		// still apply through context.WithTimeout at the dispatch boundary.
+		return 3 * time.Minute
 	}
 	return supervisorToolCallTimeout
 }
