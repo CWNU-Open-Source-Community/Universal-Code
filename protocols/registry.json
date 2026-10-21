@@ -1317,7 +1317,9 @@
         "prayu.run-navigation.v1",
         "universal-code.batch-workbench.v1",
         "universal-code.chat-preferences.v1",
+        "universal-code.sidebar-width.v1",
         "universal-code.specialist-continuation.v1",
+        "universal-code.turn-notifications.v1",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [
