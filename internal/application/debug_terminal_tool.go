@@ -32,6 +32,10 @@ func (e *DebugTerminalToolExecutor) ExecuteDebugTerminal(
 			apperror.CodeFailedPrecondition,
 			"debug terminal Agent-input runtime is unavailable")
 	}
+	if err := input.Validate(); err != nil {
+		return toolgateway.DebugTerminalExecutionResult{}, apperror.Wrap(
+			apperror.CodeInvalidArgument, "debug terminal input is invalid", err)
+	}
 	binding, found, err := e.controller.Active(ctx, scope.RunID)
 	if err != nil {
 		return toolgateway.DebugTerminalExecutionResult{}, err
@@ -45,13 +49,17 @@ func (e *DebugTerminalToolExecutor) ExecuteDebugTerminal(
 	inputSubmitted := false
 	bytesWritten := 0
 	replayed := false
-	if input.Action == toolgateway.DebugTerminalActionWrite {
-		written, err := e.controller.Write(ctx,
-			WriteDebugTerminalAgentInputRequest{
-				ProtocolVersion: DebugTerminalAgentInputProtocolVersion,
-				BindingID:       binding.ID, OperationKey: scope.OperationKey,
-				Data: []byte(input.Command + "\r"),
-			})
+	if input.Action == toolgateway.DebugTerminalActionWrite ||
+		input.Action == toolgateway.DebugTerminalActionInterrupt {
+		request := WriteDebugTerminalAgentInputRequest{
+			ProtocolVersion: DebugTerminalAgentInputProtocolVersion,
+			BindingID:       binding.ID, OperationKey: scope.OperationKey,
+			Interrupt: input.Action == toolgateway.DebugTerminalActionInterrupt,
+		}
+		if !request.Interrupt {
+			request.Data = []byte(input.Command + "\r")
+		}
+		written, err := e.controller.Write(ctx, request)
 		if err != nil {
 			return toolgateway.DebugTerminalExecutionResult{}, err
 		}
