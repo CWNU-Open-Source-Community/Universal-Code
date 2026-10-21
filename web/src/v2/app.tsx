@@ -16,6 +16,7 @@ import { V2SidebarLayout } from "./components/sidebar-layout";
 import { V2Titlebar } from "./components/titlebar";
 import { useV2Client } from "./client-session";
 import { v2QueryKeys } from "./query-keys";
+import { useV2ThreadUnread } from "./use-thread-unread";
 import { registerV2RecoveredTurn, useV2RestoreTurns, useV2ThreadTurn, v2TurnFailed } from "./use-thread-turn";
 import { ProjectDialog, V2WorkspaceStart } from "./components/workspace-start";
 import { useV2Navigation, type V2RunPane } from "./navigation";
@@ -258,6 +259,9 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   useV2RestoreTurns();
   const recovery = useV2RecoveryStore();
   const persistenceWarning = useV2PersistenceWarning();
+  const scopeID = useConnectionStore((state) => state.health?.data_store_id);
+  const unread = useV2ThreadUnread(client, scopeID);
+  const [readRequest, setReadRequest] = useState({ threadID: "", revision: 0 });
   useEffect(() => {
     document.documentElement.dataset.prayuDensity = readDensity();
   }, []);
@@ -657,12 +661,18 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             setSearchOpen(open);
             setSearchCurrentThread(false);
             if (!open) { setThreadSearch(""); setSearchComposing(false); }
-          }} onSelectThread={openConversation} searchOpen={searchOpen}
+          }} onSelectThread={(id) => {
+            unread.open(id);
+            setReadRequest((current) => ({ threadID: id, revision: current.revision + 1 }));
+            openConversation(id);
+          }} searchOpen={searchOpen}
+          unreadThreadIDs={unread.unreadThreadIDs} onReadStateChange={unread.setRead}
           search={threadSearch} appliedSearch={appliedThreadSearch} searchPending={searchPending}
           searchTooLong={searchTooLong}
           searchResults={searchResults} includeArchived={includeArchivedSearch} onIncludeArchivedChange={setIncludeArchivedSearch}
           searchCurrentThread={Boolean(searchThreadID)} onSearchCurrentThreadChange={setSearchCurrentThread}
           onSelectSearchResult={(result) => {
+            unread.open(result.thread_id);
             navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) });
             closeNavigationSidebar();
           }}
@@ -790,6 +800,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               type="button">{t("加载更多项目", "Load more projects")}</button>}
             workspaceID={workspaceID} workspaces={workspaces} />
           : <V2Conversation client={client} onArchive={setArchiveCandidate}
+            replyReading={unread.reading} readRequest={readRequest.threadID === selectedThreadID ? readRequest.revision : 0}
+            readingEnabled={!(narrowLayout && sidebarVisible) && !archiveCandidate && !editingProject && !moveMutation.isPending}
             onOpenThread={openConversation}
             onBranchCreated={(thread) => {
               if (routeRef.current === route) openConversation(thread.id);
@@ -826,6 +838,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       <button className="v2-retry-action" onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">{t("重试加载", "Retry loading")}</button>
     </div>}
     {persistenceWarning && <div className="v2-toast" role={recovery ? "alert" : "status"}>{persistenceWarning}</div>}
+    {unread.error && <div className="v2-toast" role="status">
+      {t("未读回复暂未同步，已有标记会保留。", "Unread replies could not be refreshed. Existing markers have been kept.")}
+      <button type="button" onClick={() => void unread.retry()}>{t("重试", "Retry")}</button>
+    </div>}
     <V2ConfirmDialog busy={archiveMutation.isPending} confirmLabel={t("归档", "Archive")} description={t("此对话会从侧栏隐藏，但消息、执行记录和审计证据都会保留。你可以随时从设置中恢复。", "This conversation will be hidden from the sidebar. Messages, execution records, and audit evidence will be kept. You can restore it in Settings at any time.")}
       onCancel={() => setArchiveCandidate(null)} onConfirm={() => archiveCandidate && archiveMutation.mutate(archiveCandidate)}
       open={Boolean(archiveCandidate)} title={t("归档这个对话？", "Archive this conversation?")} />
