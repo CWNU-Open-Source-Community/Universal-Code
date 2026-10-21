@@ -1996,8 +1996,11 @@ hooks:
 
 ## Durable Context Continuity / 持久上下文连续性
 
-Schema v114 adds hierarchical `AGENTS.md`/`CLAUDE.md`/`.prayu` instruction discovery,
-operator-explicit user/project memory, and a browsable Session checkpoint/Fork/Resume tree.
+Project instruction discovery (schema v114) selects non-empty `AGENTS.override.md`
+ahead of same-directory `AGENTS.md`, falling back when the override is absent, empty,
+or explicitly ignored. It also reads `CLAUDE.md`, `.claude/CLAUDE.md`, and `.prayu`
+guidance; superseded sources remain explained in `ignored`. The same context layer
+provides operator-explicit user/project memory and a browsable Session checkpoint/Fork/Resume tree.
 项目指令在 Run 创建时固定；磁盘漂移只有在显示 diff 并以旧 fingerprint 显式确认后才会
 追加新 revision。长期记忆由操作者确认写入，支持编辑、禁用、保留期、导出和不可恢复的
 物理删除。Schema v198 从带来源的决策/总结笔记生成待确认经验：在 **Context → 当前项目
