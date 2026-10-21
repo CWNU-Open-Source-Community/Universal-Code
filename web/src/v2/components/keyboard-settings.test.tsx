@@ -4,8 +4,8 @@ import { V2KeyboardSettings } from "./keyboard-settings";
 import { chatPreferencesKey, saveChatPreferences, useChatShortcuts } from "../chat-preferences";
 
 afterEach(() => localStorage.removeItem(chatPreferencesKey));
-function Commands({ search }: { search: () => void }) {
-  useChatShortcuts({ search, newChat: vi.fn(), settings: vi.fn(), sidebar: vi.fn(), composer: vi.fn() });
+function Commands({ search, findInChat = vi.fn() }: { search: () => void; findInChat?: () => void | boolean }) {
+  useChatShortcuts({ search, findInChat, newChat: vi.fn(), settings: vi.fn(), sidebar: vi.fn(), composer: vi.fn() });
   return <V2KeyboardSettings />;
 }
 
@@ -55,4 +55,31 @@ it("rejects editing and duplicate bindings, and ignores IME, repeats and modal d
   act(() => saveChatPreferences({ shortcuts: { search: "Mod+J" } }));
   fireEvent.keyDown(window, { key: "j", code: "KeyJ", metaKey: true });
   expect(search).toHaveBeenCalledOnce();
+});
+
+it("persists the current-chat find binding and yields to native find outside its context or in editors", () => {
+  const findInChat = vi.fn<() => boolean>().mockReturnValue(false);
+  const view = render(<Commands search={vi.fn()} findInChat={findInChat} />);
+  const unavailable = new KeyboardEvent("keydown", { key: "f", code: "KeyF", ctrlKey: true, cancelable: true });
+  fireEvent(window, unavailable);
+  expect(unavailable.defaultPrevented).toBe(false);
+  findInChat.mockReturnValue(true);
+  const available = new KeyboardEvent("keydown", { key: "f", code: "KeyF", metaKey: true, cancelable: true });
+  fireEvent(window, available);
+  expect(available.defaultPrevented).toBe(true);
+  for (const className of ["monaco-editor", "xterm"]) {
+    const editor = document.createElement("input"); editor.className = className; document.body.append(editor);
+    fireEvent.keyDown(editor, { key: "f", code: "KeyF", ctrlKey: true });
+    editor.remove();
+  }
+  expect(findInChat).toHaveBeenCalledTimes(2);
+  const record = screen.getByRole("button", { name: "Change shortcut for Find in current chat" });
+  fireEvent.click(record);
+  fireEvent.keyDown(record, { key: "f", code: "KeyF", ctrlKey: true });
+  expect(localStorage.getItem(chatPreferencesKey)).toContain('"findInChat":"Mod+F"');
+  view.unmount();
+  render(<Commands search={vi.fn()} findInChat={findInChat} />);
+  expect(screen.getByRole("button", { name: "Change shortcut for Find in current chat" })).toHaveTextContent("Ctrl+F");
+  fireEvent.keyDown(window, { key: "f", code: "KeyF", ctrlKey: true });
+  expect(findInChat).toHaveBeenCalledTimes(3);
 });

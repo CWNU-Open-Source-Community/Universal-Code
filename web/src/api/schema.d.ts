@@ -4721,7 +4721,7 @@ export interface paths {
         };
         /**
          * Search saved conversation titles and public message bodies
-         * @description Searches complete saved user and assistant text, including compacted history, before pagination. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query and archive filter.
+         * @description Searches complete saved user and assistant text, including compacted history, public model progress and inherited branch replies, before pagination. With thread_id, searches only message bodies in that exact conversation; otherwise also searches conversation titles. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query, Thread and archive filter.
          */
         get: operations["searchSavedThreadMessages"];
         put?: never;
@@ -28269,6 +28269,8 @@ export interface operations {
                 /** @description Opaque cursor bound to this route and exact filter set */
                 cursor?: string;
                 q: string;
+                /** @description Search saved public message bodies in this exact conversation */
+                thread_id?: string;
                 /** @description Include archived conversations */
                 include_archived?: boolean;
             };

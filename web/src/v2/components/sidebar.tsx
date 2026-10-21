@@ -36,6 +36,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onOpenInspector, inspectorActive = false, onOpenConnections,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
+  searchCurrentThread = false, onSearchCurrentThreadChange,
   projectAction, onNewInProject, onEditProject, client, onMoveThread, movingThreadID = "", moveError = "",
   executionFilter = "", onExecutionFilterChange,
   visible = true,
@@ -61,6 +62,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   includeArchived?: boolean;
   onIncludeArchivedChange?: (value: boolean) => void;
   onSelectSearchResult?: (result: ThreadSearchResultView) => void;
+  searchCurrentThread?: boolean;
+  onSearchCurrentThreadChange?: (value: boolean) => void;
   projectAction?: ReactNode;
   onNewInProject?: (projectID: string) => void;
   onEditProject?: (workspace: WorkspaceView) => void;
@@ -172,11 +175,19 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
         onCompositionEnd={(event) => {
           onSearchChange?.(event.currentTarget.value);
           onSearchCompositionChange?.(false);
-        }} placeholder={t("搜索标题与消息正文…", "Search titles and message text…")} type="search" value={search} />
+        }} placeholder={searchCurrentThread ? t("搜索当前聊天的消息…", "Search messages in this chat…")
+          : t("搜索标题与消息正文…", "Search titles and message text…")} type="search" value={search} />
       {search && <button aria-label={t("清除对话搜索", "Clear conversation search")} onClick={() => onSearchChange?.("")} type="button">
         <X aria-hidden="true" size={14} /></button>}</div>}
-    {searchOpen && <><p className="v2-history-scope" id="v2-thread-search-scope">{t("搜索全部已保存的对话标题与用户、助手正文。英文字母忽略大小写，其他文字按原文匹配。",
-      "Search all saved conversation titles and user or assistant text. English letters are case-insensitive; other text matches exactly.")}</p>
+    {searchOpen && <>{onSearchCurrentThreadChange && <div className="v2-search-scope" role="group" aria-label={t("搜索范围", "Search scope")}>
+      <button type="button" aria-pressed={!searchCurrentThread} onClick={() => onSearchCurrentThreadChange(false)}>{t("所有聊天", "All chats")}</button>
+      <button type="button" aria-pressed={searchCurrentThread} disabled={!selectedThreadID}
+        onClick={() => onSearchCurrentThreadChange(true)}>{t("当前聊天", "Current chat")}</button>
+    </div>}<p className="v2-history-scope" id="v2-thread-search-scope">{searchCurrentThread
+      ? t("搜索当前聊天全部已保存的用户、助手正文，包括尚未加载的历史。英文字母忽略大小写，其他文字按原文匹配。",
+        "Search all saved user or assistant text in this chat, including history not loaded yet. English letters are case-insensitive; other text matches exactly.")
+      : t("搜索全部已保存的对话标题与用户、助手正文。英文字母忽略大小写，其他文字按原文匹配。",
+        "Search all saved conversation titles and user or assistant text. English letters are case-insensitive; other text matches exactly.")}</p>
       <label className="v2-search-archived"><input type="checkbox" checked={includeArchived}
         onChange={(event) => onIncludeArchivedChange?.(event.target.checked)} />{t("包含已归档对话", "Include archived conversations")}</label></>}
     {searchTooLong && <p className="v2-history-scope" id="v2-thread-search-error" role="alert">{t("搜索最多支持 256 个字符，请缩短搜索词。", "Searches support up to 256 characters. Shorten your search.")}</p>}
@@ -189,7 +200,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
             ? searching ? t("结果达到读取上限，请缩小搜索范围。", "The result limit was reached. Narrow your search.") : t("结果达到读取上限，请用搜索查找更早记录。", "The result limit was reached. Use search to find earlier records.")
             : hasMore ? searching ? t("还有更多匹配结果。", "More matches are available.") : t("还有更早记录。", "Earlier records are available.") : searching ? t("全部匹配结果已加载。", "All matches are loaded.") : t("当前列表已加载完毕。", "The current list is fully loaded.")}`}</p>
       {!searchPending && !loading && !loadFailed && !truncated && resultCount === 0 && (searching || workspaces.length === 0 && !projectAction) && <div className="v2-sidebar-empty"><MessagesSquare aria-hidden="true" size={16} />
-        {searching ? t("没有匹配的标题或消息", "No matching titles or messages") : t("暂无对话", "No conversations yet")}</div>}
+        {searching ? searchCurrentThread ? t("当前聊天没有匹配的消息", "No matching messages in this chat")
+          : t("没有匹配的标题或消息", "No matching titles or messages") : t("暂无对话", "No conversations yet")}</div>}
       {!searchPending && searching && <div className="v2-message-search-results">{searchResults.map((result) =>
         <button className="v2-message-search-result" key={result.id} type="button" aria-label={result.thread_title}
           aria-describedby={`search-result-${result.id}`}
