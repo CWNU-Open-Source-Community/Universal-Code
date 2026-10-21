@@ -270,13 +270,20 @@ describe("V2Workbench inspector navigation", () => {
     expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
 
+    const resizeHandle = screen.getByRole("separator", { name: "调整侧栏宽度" });
+    resizeHandle.focus();
+    fireEvent.keyDown(resizeHandle, { key: "ArrowRight" });
+    expect(resizeHandle).toHaveAttribute("aria-valuenow", "311");
     act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
     expect(screen.queryByRole("navigation", { name: "对话导航" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveFocus();
+    expect(screen.queryByRole("separator", { name: "调整侧栏宽度" })).not.toBeInTheDocument();
 
     act(() => { narrowListener?.({ matches: false } as MediaQueryListEvent); });
     expect(screen.getByRole("navigation", { name: "对话导航" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("separator", { name: "调整侧栏宽度" })).toHaveAttribute("aria-valuenow", "311");
 
     screen.getByRole("button", { name: "新对话" }).focus();
     act(() => { narrowListener?.({ matches: true } as MediaQueryListEvent); });
