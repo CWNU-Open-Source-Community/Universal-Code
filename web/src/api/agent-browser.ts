@@ -1,4 +1,5 @@
-import { APIRequestError, type APIClient } from "./client";
+import { APIRequestError } from "./client/protocol";
+import { type APIClient } from "./client";
 
 export const agentBrowserStatusVersion = "agent_browser_status.v1";
 export const agentBrowserCloseVersion = "agent_browser_close.v1";

@@ -1,4 +1,4 @@
-import { APIRequestError } from "./client";
+import { APIRequestError } from "./client/protocol";
 import type { ProjectActionJobView } from "./types";
 
 export interface ProjectPreparationPlan {

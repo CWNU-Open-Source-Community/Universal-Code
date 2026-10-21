@@ -1,4 +1,5 @@
-import { APIRequestError, type APIClient } from "./client";
+import { APIRequestError } from "./client/protocol";
+import { type APIClient } from "./client";
 import type { components } from "./schema";
 
 export const PROJECT_HOOKS_VERSION = "project-hooks.v1";

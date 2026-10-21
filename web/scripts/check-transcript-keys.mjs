@@ -1,4 +1,4 @@
-// Guards the strict transcript parser in src/api/client.ts against schema
+// Guards the strict transcript parser in src/api/client/responses/transcripts.ts against schema
 // drift: when docs/openapi.json adds or removes a ThreadTranscriptItemView
 // key, the generated schema changes but the hand-written allowlists do not,
 // and transcripts silently fail validation in production while mock-based
@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const schema = readFileSync(join(root, "src/api/schema.d.ts"), "utf8");
-const client = readFileSync(join(root, "src/api/client.ts"), "utf8");
+const client = readFileSync(join(root, "src/api/client/responses/transcripts.ts"), "utf8");
 
 function schemaKeys() {
   const start = schema.indexOf("ThreadTranscriptItemView: {");
@@ -35,7 +35,7 @@ function schemaKeys() {
 
 function clientKeys() {
   const start = client.indexOf("function parseThreadTranscriptItem");
-  if (start < 0) throw new Error("parseThreadTranscriptItem not found in client.ts");
+  if (start < 0) throw new Error("parseThreadTranscriptItem not found in client/responses/transcripts.ts");
   const body = client.slice(start, start + 2_000);
   const match = body.match(/const required = \[([^\]]*)\];\s*const optional = \[([^\]]*)\];/u);
   if (!match) throw new Error("required/optional allowlists not found in parseThreadTranscriptItem");
@@ -61,7 +61,7 @@ for (const key of actual.optional) if (expected.required.includes(key)) problems
 if (problems.length > 0) {
   console.error("ThreadTranscriptItemView 校验名单与 schema.d.ts 不一致：");
   for (const problem of problems) console.error(`  - ${problem}`);
-  console.error("请同步 src/api/client.ts 中 parseThreadTranscriptItem 的 required/optional 名单。");
+  console.error("请同步 src/api/client/responses/transcripts.ts 中 parseThreadTranscriptItem 的 required/optional 名单。");
   process.exit(1);
 }
 console.log(`ThreadTranscriptItemView keys OK: ${expected.required.length} required, ${expected.optional.length} optional.`);
