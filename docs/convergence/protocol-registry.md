@@ -804,6 +804,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `universal-code.chat-preferences.v1`
 - `universal-code.sidebar-width.v1`
 - `universal-code.specialist-continuation.v1`
+- `universal-code.turn-notifications.v1`
 - `v2_file_upload.v1`
 
 </details>
