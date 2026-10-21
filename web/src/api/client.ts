@@ -5,13 +5,7 @@ import {
   parseThreadApplicationServices,
 } from "./application-services";
 import { chatGPTAuthProtocol, parseChatGPTAuthStatus, validChatGPTIdentity } from "./chatgpt-auth";
-import {
-  APIRequestError,
-  isErrorEnvelope,
-  isSuccessEnvelope,
-  normalizeBaseURL,
-  parseResponsePage,
-} from "./client/protocol";
+import { APIRequestError, normalizeBaseURL, parseResponsePage } from "./client/protocol";
 import { parseThreadActivityArtifact, parseThreadActivityDetail } from "./client/responses/activity";
 import {
   parseApprovalDecision,
@@ -156,7 +150,6 @@ import {
   parseSkillPackageInventory,
   parseSkillPackageRemoval,
 } from "./client/responses/skills";
-import { parseThreadTranscriptItems } from "./client/responses/transcripts";
 import { parseUIEvidenceAttempt, parseUIEvidenceBundle } from "./client/responses/ui-evidence";
 import {
   parseVerificationAssociation,
@@ -180,6 +173,7 @@ import {
   parseWorkspaceProject,
   parseWorkspaceSearch,
 } from "./client/responses/workspaces";
+import { APITransport } from "./client/transport";
 import {
   boundedIdentity,
   boundedStringArray,
@@ -242,7 +236,7 @@ import type {
   ChatGPTCancelRequestView,
   ChatGPTLoginRequestView,
 } from "./chatgpt-auth";
-import type { ClientCapabilities } from "./client/capabilities";
+import type { ClientCapabilities, ClientFeatures } from "./client/capabilities";
 import type { QueryValue } from "./client/protocol";
 import type { ThreadCommandServicePolicyRequest } from "./command-service-policy";
 import type { WorkspaceFileAttachment } from "./file-attachments";
@@ -513,55 +507,98 @@ export { canonicalExactNetworkTarget } from "./client/responses/permissions";
 export { parsePluginSkillInstall } from "./client/responses/skills";
 export { parseProjectlessDirectory } from "./client/responses/workspaces";
 
-export class APIClient {
+export class APIClient implements ClientFeatures {
+  private readonly transport: APITransport;
+
   readonly baseURL: string;
+
   readonly hasControl: boolean;
+
   readonly hasWorkspaceImport: boolean;
+
   readonly hasProjectlessWorkspaces: boolean;
+
   readonly hasExecutionPermissionControl: boolean;
+
   readonly hasBrowserCDPPermissionControl: boolean;
+
   readonly hasFullCDPDebug: boolean;
+
   readonly hasFullCDPSessionControl: boolean;
+
   readonly hasRunCreation: boolean;
+
   readonly hasStandardCodePreset: boolean;
+
   readonly hasSessionMessages: boolean;
+
   readonly hasThreadControl: boolean;
+
   readonly hasSessionSteeringControl: boolean;
+
   readonly hasRunLifecycle: boolean;
+
   readonly hasRunExecution: boolean;
+
   readonly hasThreadExecutionRead: boolean;
+
   readonly hasPlanDelivery: boolean;
+
   readonly hasApprovalControl: boolean;
+
   readonly hasModelControl: boolean;
+
   readonly hasProviderDefinitions: boolean;
+
   readonly hasProviderCredentials: boolean;
+
   readonly hasChatGPTAuth: boolean;
+
   readonly hasFileEditReview: boolean;
+
   readonly hasFileEditProposals: boolean;
+
   readonly hasFileEditApply: boolean;
+
   readonly hasRunWakeControl: boolean;
+
   readonly hasRunWakeExecution: boolean;
+
   readonly hasRunWakeWorker: boolean;
+
   readonly hasScheduledJobControl: boolean;
+
   readonly hasScheduledJobWorker: boolean;
+
   readonly hasSkillInstallation: boolean;
+
   readonly hasEvidenceAttachment: boolean;
+
   readonly hasVerificationEvidence: boolean;
+
   readonly hasEmbeddedAnalyzerExecution: boolean;
+
   readonly hasWorkspaceCheckpointControl: boolean;
+
   readonly hasGitAdvancedControl: boolean;
+
   readonly hasGitHubReviewControl: boolean;
+
   readonly hasBatchDeliveryControl: boolean;
+
   readonly hasBatchDeliveryHostValidation: boolean;
+
   readonly hasExtensionControl: boolean;
+
   readonly hasUIEvidence: boolean;
+
   readonly uiEvidenceUnavailableReason: "missing_control_credential" | "ui_evidence_disabled" |
     "run_execution_disabled" | "browser_cdp_control_disabled" | null;
 
   constructor(
-    private readonly token: string,
+    token: string,
     baseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1",
-    private readonly controlToken = "",
+    controlToken = "",
     capabilities: ClientCapabilities = {},
   ) {
     if (token.trim() === "") {
@@ -644,6 +681,8 @@ export class APIClient {
       : !(capabilities.uiEvidenceControlEnabled ?? false) ? "ui_evidence_disabled"
         : !this.hasRunExecution ? "run_execution_disabled"
           : !this.hasBrowserCDPPermissionControl ? "browser_cdp_control_disabled" : null;
+    this.transport = new APITransport(token, this.baseURL, controlToken, this);
+
   }
 
   async health(signal?: AbortSignal): Promise<HealthView> {
@@ -1524,8 +1563,6 @@ export class APIClient {
       `${encodeURIComponent(metadata.id)}/content`, metadata, signal);
   }
 
-  // Both user attachments and live previews are fetched with the read token.
-  // Object URLs are created only after the declared size and digest match.
   async downloadVerifiedImage(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
     signal?: AbortSignal): Promise<Blob> {
     if (!acceptedImageTypes.includes(metadata.mime_type) || !isSHA256(metadata.sha256) ||
@@ -2523,26 +2560,17 @@ export class APIClient {
     return parseEmbeddedAnalyzerExecution(result, runID);
   }
 
-  async get<T>(path: string, query: Record<string, QueryValue> = {}, signal?: AbortSignal): Promise<T> {
-    const envelope = await this.request<T>(path, query, signal);
-    return envelope.data;
+  get<T>(path: string, query: Record<string, QueryValue> = {}, signal?: AbortSignal): Promise<T> {
+    return this.transport.get<T>(path, query, signal);
   }
 
-  async getPage<T>(
+  getPage<T>(
     path: string,
     query: Record<string, QueryValue> = {},
     cursor = "",
     signal?: AbortSignal,
   ): Promise<PageResult<T>> {
-    const envelope = await this.request<T[]>(path, { ...query, cursor: cursor || undefined }, signal);
-    if (!envelope.page || !Array.isArray(envelope.data)) {
-      throw new APIRequestError("API collection response omitted pagination metadata", "INVALID_RESPONSE", 502,
-        envelope.request_id);
-    }
-    const items = /^\/threads\/[^/]+\/transcript$/u.test(path)
-      ? parseThreadTranscriptItems(envelope.data as unknown[]) as T[]
-      : envelope.data;
-    return { items, page: envelope.page, requestID: envelope.request_id };
+    return this.transport.getPage<T>(path, query, cursor, signal);
   }
 
   async respondMCPInput(runID: string, inputID: string,
@@ -2556,30 +2584,21 @@ export class APIClient {
     return this.sendControlRequest(`/runs/${encodeURIComponent(runID)}/mcp-inputs/${encodeURIComponent(inputID)}`, body);
   }
 
-  async postControl<T>(
+  postControl<T>(
     path: string,
     body: unknown,
     idempotencyKey: string,
     signal?: AbortSignal,
   ): Promise<T> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    return this.sendControl<T>(path, body, idempotencyKey, signal);
+    return this.transport.postControl<T>(path, body, idempotencyKey, signal);
   }
 
-  async patchControl<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    return this.sendControlRequest<T>(path, body, signal, "", "PATCH");
+  patchControl<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    return this.transport.patchControl<T>(path, body, signal);
   }
 
-  async deleteControl<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    return this.sendControlRequest<T>(path, body, signal, "", "DELETE");
+  deleteControl<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    return this.transport.deleteControl<T>(path, body, signal);
   }
 
   async listProjectActions(runID: string, target: string | AbortSignal = ".", signal?: AbortSignal): Promise<import("./types").ProjectActionsView> {
@@ -2669,8 +2688,6 @@ export class APIClient {
     assertSkillSelectionReceipt(value, runID, choice.refs, "Project");
   }
 
-  // selectInstalledSkills names already installed Skills for one exact Run without
-  // the pinned-project admission; every other server-side rule is the same.
   async selectInstalledSkills(runID: string, choice: import("./project-skills").ProjectSkillChoice, idempotencyKey: string, signal?: AbortSignal): Promise<void> {
     if (!this.hasThreadControl) throw new Error("Exact installed Skill references and task control are required");
     assertSkillSelectionChoice(runID, choice, "installed");
@@ -3148,6 +3165,7 @@ export class APIClient {
     );
     return parseFanoutExecution(result);
   }
+
   get workflows(): WorkflowClient {
     return new WorkflowClient({
       get: (path, signal) => this.get<unknown>(path, {}, signal),
@@ -3340,6 +3358,7 @@ export class APIClient {
       throw new Error("Normalized Run, batch delivery, and child identities are required");
     }
   }
+
   async listPriceSnapshots(signal?: AbortSignal): Promise<PriceSnapshotListView> {
     const result = await this.get<unknown>("/models/prices", {}, signal);
     return parsePriceSnapshots(result);
@@ -3450,6 +3469,7 @@ export class APIClient {
     const result = await this.sendControl<unknown>("/sandbox/docker/cancellations", body, idempotencyKey, signal);
     return result as unknown as DockerSandboxCancellationView;
   }
+
   async selectPlanDirection(runID: string, body: PlanDirectionControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<PlanDirectionControlView> {
     if (!this.hasPlanDelivery) {
@@ -3687,77 +3707,19 @@ export class APIClient {
     return parseApprovalDecision(result, runID, approvalID, body);
   }
 
-  private async sendControl<T>(path: string, body: unknown, idempotencyKey: string,
+  private sendControl<T>(path: string, body: unknown, idempotencyKey: string,
     signal?: AbortSignal): Promise<T> {
-    if (idempotencyKey.trim() !== idempotencyKey || idempotencyKey.length < 16) {
-      throw new Error("A normalized idempotency key is required");
-    }
-    return this.sendControlRequest<T>(path, body, signal, idempotencyKey);
+    return this.transport.sendControl<T>(path, body, idempotencyKey, signal);
   }
 
-  private async sendReadRequest<T>(path: string, body: unknown,
+  private sendReadRequest<T>(path: string, body: unknown,
     signal?: AbortSignal): Promise<T> {
-    const response = await fetch(this.url(path), {
-      method: "POST",
-      headers: { ...this.headers(), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-      cache: "no-store",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    const payload = await this.readJSON(response);
-    if (!response.ok) {
-      if (isErrorEnvelope(payload)) {
-        throw new APIRequestError(payload.error.message, payload.error.code, response.status,
-          payload.request_id);
-      }
-      throw new APIRequestError("Universal Code read request failed", "INVALID_RESPONSE", response.status,
-        response.headers.get("x-request-id") || "");
-    }
-    if (!isSuccessEnvelope<T>(payload)) {
-      throw new APIRequestError("Universal Code API returned an invalid read envelope", "INVALID_RESPONSE",
-        response.status, response.headers.get("x-request-id") || "");
-    }
-    return payload.data;
+    return this.transport.sendReadRequest<T>(path, body, signal);
   }
 
-  private async sendControlRequest<T>(path: string, body: unknown, signal?: AbortSignal,
+  private sendControlRequest<T>(path: string, body: unknown, signal?: AbortSignal,
     idempotencyKey = "", method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "POST"): Promise<T> {
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      Authorization: `Bearer ${this.controlToken}`,
-      "Content-Type": "application/json",
-    };
-    if (idempotencyKey) {
-      headers["Idempotency-Key"] = idempotencyKey;
-    }
-    const response = await fetch(this.url(path), {
-      method,
-      headers,
-      body: method === "GET" ? undefined : JSON.stringify(body),
-      signal,
-      cache: "no-store",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    const payload = await this.readJSON(response);
-    if (!response.ok) {
-      if (isErrorEnvelope(payload)) {
-        throw new APIRequestError(payload.error.message, payload.error.code, response.status, payload.request_id,
-          payload.error.message_queued === false ? false : undefined,
-          payload.error.operation_key_invalidated === true ? true : undefined,
-          payload.error.turn_failed === true ? true : undefined, payload.error.turn_failure,
-          payload.error.revision_unchanged);
-      }
-      throw new APIRequestError("Universal Code control request failed", "INVALID_RESPONSE", response.status,
-        response.headers.get("x-request-id") || "");
-    }
-    if (!isSuccessEnvelope<T>(payload)) {
-      throw new APIRequestError("Universal Code API returned an invalid control envelope", "INVALID_RESPONSE",
-        response.status, response.headers.get("x-request-id") || "");
-    }
-    return payload.data;
+    return this.transport.sendControlRequest<T>(path, body, signal, idempotencyKey, method);
   }
 
   async streamRunEvents(
@@ -3819,76 +3781,24 @@ export class APIClient {
     return parseEventPoll(envelope.data, runID, envelope.request_id);
   }
 
-  private async request<T>(
+  private request<T>(
     path: string,
     query: Record<string, QueryValue>,
     signal?: AbortSignal,
     observationKey?: string,
   ): Promise<SuccessEnvelope<T>> {
-    if (observationKey !== undefined && (observationKey.length < 16 || observationKey.length > 256 ||
-      /[\s\u0000-\u001f\u007f]/u.test(observationKey))) {
-      throw new Error("A normalized original operation key is required");
-    }
-    const response = await fetch(this.url(path, query), {
-      method: "GET",
-      headers: { ...this.headers(), ...(observationKey === undefined ? {} : { "Idempotency-Key": observationKey }) },
-      signal,
-      cache: "no-store",
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-    });
-    const payload = await this.readJSON(response);
-    if (!response.ok) {
-      if (isErrorEnvelope(payload)) {
-        throw new APIRequestError(payload.error.message, payload.error.code, response.status, payload.request_id);
-      }
-      throw new APIRequestError("Universal Code API request failed", "INVALID_RESPONSE", response.status,
-        response.headers.get("x-request-id") || "");
-    }
-    if (!isSuccessEnvelope<T>(payload)) {
-      throw new APIRequestError("Universal Code API returned an invalid envelope", "INVALID_RESPONSE", response.status,
-        response.headers.get("x-request-id") || "");
-    }
-    return payload;
+    return this.transport.request<T>(path, query, signal, observationKey);
   }
 
-  private async responseError(response: Response): Promise<APIRequestError> {
-    const payload = await this.readJSON(response);
-    if (isErrorEnvelope(payload)) {
-      return new APIRequestError(payload.error.message, payload.error.code, response.status, payload.request_id);
-    }
-    return new APIRequestError("Universal Code API request failed", "INVALID_RESPONSE", response.status,
-      response.headers.get("x-request-id") || "");
-  }
-
-  private async readJSON(response: Response): Promise<unknown> {
-    try {
-      return await response.json() as unknown;
-    } catch {
-      return null;
-    }
+  private responseError(response: Response): Promise<APIRequestError> {
+    return this.transport.responseError(response);
   }
 
   private headers(): Record<string, string> {
-    return {
-      Accept: "application/json",
-      Authorization: `Bearer ${this.token}`,
-    };
+    return this.transport.headers();
   }
 
   private url(path: string, query: Record<string, QueryValue> = {}): string {
-    if (!path.startsWith("/") || path.startsWith("//")) {
-      throw new Error("API path must be relative to the configured base path");
-    }
-    const url = new URL(`${this.baseURL}${path}`, window.location.origin);
-    if (!url.pathname.startsWith(`${this.baseURL}/`)) {
-      throw new Error("API path escaped the configured base path");
-    }
-    for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined && value !== "") {
-        url.searchParams.set(key, String(value));
-      }
-    }
-    return `${url.pathname}${url.search}`;
+    return this.transport.url(path, query);
   }
 }

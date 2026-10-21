@@ -107,3 +107,49 @@ export function clientCapabilitiesFromRuntime(value: RuntimeCapabilitiesView): C
     codeIntelEnabled: value.code_intel_enabled,
   };
 }
+
+// Feature decisions are computed once by APIClient and shared by its domain clients.
+export interface ClientFeatures {
+  readonly hasControl: boolean;
+  readonly hasWorkspaceImport: boolean;
+  readonly hasProjectlessWorkspaces: boolean;
+  readonly hasExecutionPermissionControl: boolean;
+  readonly hasBrowserCDPPermissionControl: boolean;
+  readonly hasFullCDPDebug: boolean;
+  readonly hasFullCDPSessionControl: boolean;
+  readonly hasRunCreation: boolean;
+  readonly hasStandardCodePreset: boolean;
+  readonly hasSessionMessages: boolean;
+  readonly hasThreadControl: boolean;
+  readonly hasSessionSteeringControl: boolean;
+  readonly hasRunLifecycle: boolean;
+  readonly hasRunExecution: boolean;
+  readonly hasThreadExecutionRead: boolean;
+  readonly hasPlanDelivery: boolean;
+  readonly hasApprovalControl: boolean;
+  readonly hasModelControl: boolean;
+  readonly hasProviderDefinitions: boolean;
+  readonly hasProviderCredentials: boolean;
+  readonly hasChatGPTAuth: boolean;
+  readonly hasFileEditReview: boolean;
+  readonly hasFileEditProposals: boolean;
+  readonly hasFileEditApply: boolean;
+  readonly hasRunWakeControl: boolean;
+  readonly hasRunWakeExecution: boolean;
+  readonly hasRunWakeWorker: boolean;
+  readonly hasScheduledJobControl: boolean;
+  readonly hasScheduledJobWorker: boolean;
+  readonly hasSkillInstallation: boolean;
+  readonly hasEvidenceAttachment: boolean;
+  readonly hasVerificationEvidence: boolean;
+  readonly hasEmbeddedAnalyzerExecution: boolean;
+  readonly hasWorkspaceCheckpointControl: boolean;
+  readonly hasGitAdvancedControl: boolean;
+  readonly hasGitHubReviewControl: boolean;
+  readonly hasBatchDeliveryControl: boolean;
+  readonly hasBatchDeliveryHostValidation: boolean;
+  readonly hasExtensionControl: boolean;
+  readonly hasUIEvidence: boolean;
+  readonly uiEvidenceUnavailableReason: "missing_control_credential" | "ui_evidence_disabled" |
+    "run_execution_disabled" | "browser_cdp_control_disabled" | null;
+}
