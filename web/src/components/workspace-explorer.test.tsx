@@ -81,6 +81,30 @@ describe("WorkspaceExplorer", () => {
     expect(line2).toHaveClass("is-highlighted");
   });
 
+  it.each(["button", "Enter"])("retries a failed search with the unchanged query using %s", async (submit) => {
+    const client = searchableClient();
+    client.workspaceSearch.mockRejectedValueOnce(new Error("Search temporarily unavailable"));
+    const user = userEvent.setup();
+    renderExplorer(client);
+
+    await searchFor(user, "automated");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Search temporarily unavailable");
+    expect(client.workspaceSearch).toHaveBeenCalledTimes(1);
+    const input = screen.getByLabelText("Search Workspace evidence");
+    if (submit === "Enter") {
+      await user.click(input);
+      await user.keyboard("{Enter}");
+    } else {
+      await user.click(screen.getByRole("button", { name: "Search Workspace" }));
+    }
+
+    expect(await screen.findByRole("button", { name: /README.md.*line 2/ })).toBeInTheDocument();
+    expect(input).toHaveValue("automated");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(client.workspaceSearch).toHaveBeenCalledTimes(2);
+    expect(client.workspaceSearch).toHaveBeenLastCalledWith("workspace-1", "automated", expect.any(AbortSignal));
+  });
+
   it("warns when requested line exceeds the visible lines", async () => {
     const workspaceExplore = vi.fn().mockResolvedValue(fileSnapshot());
     const client = { workspaceExplore } as unknown as APIClient;
