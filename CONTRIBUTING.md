@@ -12,8 +12,8 @@
 
 | 工具 | 推荐版本 | 来源与用途 |
 | :--- | :--- | :--- |
-| **Go** | 1.26+ | 核心控制平面、CLI、TUI、HTTP API 与 SQLite 状态机 |
-| **Node.js** | 24+ | 前端管理界面（`web/` 目录下的 React 18 + Vite） |
+| **Go** | 遵循 [go.mod](go.mod)，当前 1.26.10 | 核心控制平面、CLI、TUI、HTTP API 与 SQLite 状态机 |
+| **Node.js** | 24+ | 前端管理界面（`web/` 目录下的 React 19 + Vite） |
 | **Git** | 2.41+ | 源码版本管理 |
 | **Rust** *(可选)* | 1.97.1+ | 仅在修改或验证 `analyzers/` 目录下的 WASI 代码分析器时需要 |
 

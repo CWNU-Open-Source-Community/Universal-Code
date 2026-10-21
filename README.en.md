@@ -52,7 +52,7 @@ Packages retain their historical filenames; the product name shown in the applic
 
 ### Option 2: Build from Source
 
-Install **Go as pinned in [go.mod](go.mod), currently 1.26.9**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
+Install **Go as pinned in [go.mod](go.mod), currently 1.26.10**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
 
 ```bash
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
