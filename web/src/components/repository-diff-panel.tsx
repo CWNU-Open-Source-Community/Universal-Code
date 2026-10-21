@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { FileDiff, RefreshCw } from "lucide-react";
+import { ChevronRight, FileDiff, RefreshCw } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
+import "./repository-diff-panel.css";
 
 export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
   client: APIClient;
@@ -42,18 +43,25 @@ export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
       </div>
       {query.data.items.length === 0 ? <EmptyState>{t("工作树干净", "Working tree is clean")}</EmptyState> :
         <div className="repository-diff-list">
-          {query.data.items.map((item) => <article key={item.path}>
-            <header>
-              <code>{item.path}</code>
-              <span>{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>
-              {item.redacted && <StatusBadge status="redacted" />}
-              <StatusBadge status={item.content_state} />
-              {onRequestChange && <button className="compact-command" type="button"
-                onClick={() => onRequestChange(item.path, query.data!.base_head)}>
-                {t("引用此差异请求修改", "Request changes to this diff")}</button>}
-            </header>
-            {item.patch ? <pre>{item.patch}</pre> :
-              <div className="repository-diff-omitted">{item.content_state}</div>}
+          {query.data.items.map((item) => <article key={`${workspaceID}:${item.path}`}>
+            <details className="repository-diff-file" open>
+              <summary>
+                <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
+                <span className="repository-diff-file-heading">
+                  <code title={item.path}>{item.path}</code>
+                  <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>
+                  {item.redacted && <StatusBadge status="redacted" />}
+                  <StatusBadge status={item.content_state} />
+                </span>
+              </summary>
+              {onRequestChange && <div className="repository-diff-file-actions">
+                <button className="compact-command" type="button"
+                  onClick={() => onRequestChange(item.path, query.data!.base_head)}>
+                  {t("引用此差异请求修改", "Request changes to this diff")}</button>
+              </div>}
+              {item.patch ? <pre>{item.patch}</pre> :
+                <div className="repository-diff-omitted">{item.content_state}</div>}
+            </details>
           </article>)}
         </div>}
     </>}
