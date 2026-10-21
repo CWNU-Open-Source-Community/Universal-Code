@@ -21,6 +21,8 @@ on:
       # Product/dependency changes are checked by central CI. PR packaging
       # validates changes to the release machinery and distribution inputs.
       - '.github/workflows/release-desktop.yml'
+      - 'scripts/check-download-docs.py'
+      - 'scripts/test_download_docs.py'
       - 'cmd/packagede2e/**'
       - 'cmd/producte2e/**'
       - 'cmd/releasegate/**'
@@ -141,6 +143,19 @@ jobs:
           "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "phase=$phase" >> $env:GITHUB_OUTPUT
           "signing_prepare=$($signingPrepare.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Check public download documentation before release work
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          $arguments = @('-B', 'scripts/check-download-docs.py')
+          if ($env:EVENT_NAME -ceq 'push') { $arguments += @('--version', $env:RELEASE_VERSION) }
+          python @arguments
+          if ($LASTEXITCODE -ne 0) { throw "Update both READMEs and platform download guides before publishing" }
+          python -B -m unittest discover -s scripts -p test_download_docs.py -v
+          if ($LASTEXITCODE -ne 0) { throw "Download documentation regression checks failed" }
 
       - name: Require successful full central CI for the exact release revision
         if: ${{ github.event_name != 'pull_request' }}
@@ -1067,6 +1082,15 @@ jobs:
             if ($env:IS_PRERELEASE -ceq 'false') { $verify += '--require-release-ready' }
             python @verify
             if ($LASTEXITCODE -ne 0) { throw "Mac archive verification failed: $arch" }
+            $dmgDirectory = "build/macos-dmg/$arch"
+            gh run download $env:GITHUB_RUN_ID --repo $env:GITHUB_REPOSITORY `
+              --name "TraverseBoard-macos-dmg-$arch-$env:RELEASE_REVISION" --dir $dmgDirectory
+            if ($LASTEXITCODE -ne 0) { throw "Exact Mac DMG download failed: $arch" }
+            $dmgName = "TraverseBoard-$env:RELEASE_VERSION-macos-$arch-$($env:RELEASE_REVISION.Substring(0,12))-preview.dmg"
+            $dmgPath = Join-Path $dmgDirectory $dmgName
+            $expectedChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $dmgPath).Hash.ToLowerInvariant() + "  " + $dmgName
+            $checksum = [System.IO.File]::ReadAllText("$dmgPath.sha256").TrimEnd([char[]]"`r`n")
+            if ($checksum -cne $expectedChecksum) { throw "Mac DMG checksum differs: $arch" }
           }
 
       - name: Download stable Store submission from this run
@@ -1276,7 +1300,7 @@ jobs:
           $assets = @(
             "build/public/TraverseBoard.exe",
             "build/desktop/direct-exe-signing.json",
-            "build/desktop/SHA256SUMS",
+            "build/public/SHA256SUMS",
             "build/desktop/release-metadata.json",
             "build/desktop/windows-compatibility.json",
             "build/desktop/standard-code-packaged-e2e.json",
@@ -1308,11 +1332,20 @@ jobs:
             $assets += Join-Path build/attestations $bundleName
           }
           $macRevision = '${{ needs.portable-zip.outputs.revision }}'
+          $publicChecksums = [System.IO.File]::ReadAllText('build/desktop/SHA256SUMS').TrimEnd([char[]]"`r`n")
           foreach ($arch in @('arm64', 'amd64')) {
             $stem = "TraverseBoard-$env:RELEASE_VERSION-macos-$arch-$($macRevision.Substring(0,12))-preview"
             foreach ($extension in @('.zip', '.manifest.json', '.sha256')) {
               $assets += "build/macos/$arch/$stem$extension"
             }
+            $assets += "build/macos-dmg/$arch/$stem.dmg", "build/macos-dmg/$arch/$stem.dmg.sha256"
+            $publicChecksums += "`n" + [System.IO.File]::ReadAllText("build/macos-dmg/$arch/$stem.dmg.sha256").TrimEnd([char[]]"`r`n")
+          }
+          [System.IO.File]::WriteAllText('build/public/SHA256SUMS', $publicChecksums + "`n", [System.Text.UTF8Encoding]::new($false))
+          if ($stable) {
+            # Stable Windows evidence binds the original checksum file bytes.
+            # Mac images also carry their own .dmg.sha256 sidecars.
+            Copy-Item -LiteralPath build/desktop/SHA256SUMS -Destination build/public/SHA256SUMS -Force
           }
           foreach ($asset in $assets) {
             if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
@@ -1408,6 +1441,15 @@ jobs:
               $missing.Count -ne 0) {
             throw "Published release asset inventory differs from the exact public allowlist"
           }
+          # Validate documented links against the uploaded draft before making
+          # it public. Missing EXE/checksums/either DMG keeps the release private.
+          $releaseJSON = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "Download entry point asset readback failed" }
+          [System.IO.File]::WriteAllText('build/public/download-release.json', ($releaseJSON | Out-String), [System.Text.UTF8Encoding]::new($false))
+          python -B scripts/check-download-docs.py `
+            --version $env:RELEASE_VERSION --revision $macRevision `
+            --release-json build/public/download-release.json --allow-draft
+          if ($LASTEXITCODE -ne 0) { throw "Public download entry points do not match the release assets" }
           $publish = @(
             "release", "edit", $env:RELEASE_VERSION,
             "--repo", $env:GITHUB_REPOSITORY,

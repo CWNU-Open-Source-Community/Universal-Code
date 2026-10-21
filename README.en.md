@@ -42,17 +42,23 @@
 
 ### Option 1: Download Pre-built Binaries
 
-| OS | Instructions |
-| :--- | :--- |
-| **Windows 10/11** | Get the current Actions test package and launch steps from the [Windows download guide](docs/windows-release.md). The executable is named `TraverseBoard.exe`; double-click it to launch. Edge WebView2 Runtime is required. The newest public Release remains the [older preview from 2026-09-05](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview). |
-| **macOS (Apple Silicon / Intel)** | Get the Actions preview ZIP for your architecture from the [macOS download guide](docs/macos-release.md), unpack it, and open `TraverseBoard.app`. It is ad-hoc signed and unnotarized. Public Releases do not yet contain Mac packages. |
+<!-- public-downloads:start -->
+Current public preview: [**v1.0.0-preview.20261020**](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020), published on 2026-10-20.
 
-Use the [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) as the ongoing candidate entry point. Actions downloads require a GitHub login and expire. Each platform guide records the candidate version, source revision, and expiry date.
+| OS | Download and launch |
+| :--- | :--- |
+| **Windows x64** | Download [TraverseBoard.exe](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/TraverseBoard.exe) and double-click it. Edge WebView2 Runtime is required. See the [Windows download guide](docs/windows-release.md). |
+| **macOS Apple Silicon / Intel** | In [Release Assets](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020), choose the `.dmg` containing `macos-arm64` (Apple Silicon) or `macos-amd64` (Intel), then drag `TraverseBoard.app` into Applications. See the [macOS download guide](docs/macos-release.md). |
+
+Public Release downloads require no GitHub login and are not subject to Actions artifact retention limits. Verify downloads against [SHA256SUMS](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/SHA256SUMS) on the same release. The Windows EXE is unsigned; Mac apps are ad-hoc signed and unnotarized, so the OS may block the first launch. This is a preview; see the release notes for verified scope and known issues.
+<!-- public-downloads:end -->
+
+For test candidates newer than the public preview, use the [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) and check the version and source revision. Actions downloads require a GitHub login and expire.
 Packages retain their historical filenames; the product name shown in the application is Universal-Code.
 
 ### Option 2: Build from Source
 
-Install **Go as pinned in [go.mod](go.mod), currently 1.26.9**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
+Install **Go as pinned in [go.mod](go.mod), currently 1.26.10**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
 
 ```bash
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git

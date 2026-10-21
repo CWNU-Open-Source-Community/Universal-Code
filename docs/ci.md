@@ -30,11 +30,11 @@ successful aggregate result. Unclassified build inputs select full checks.
 
 ## Go security baseline
 
-The supported build toolchain is Go **1.26.9**, pinned by `go.mod`. Both central
+The supported build toolchain is Go **1.26.10**, pinned by `go.mod`. Both central
 CI and release builders read that exact version with `go-version-file`.
 This avoids selecting an older patch while the setup-go version catalog lags
 behind a new Go security release. Local desktop builders require the same
-version; set `GOTOOLCHAIN=go1.26.9` when another Go toolchain is installed.
+version; set `GOTOOLCHAIN=go1.26.10` when another Go toolchain is installed.
 The module's minimum version alone cannot exclude vulnerable newer release
 branches, such as Go 1.27.0 and 1.27.1; a larger version is not security evidence.
 The Windows fixed-toolchain fixture must match the exact version selected by
