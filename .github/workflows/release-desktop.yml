@@ -21,10 +21,6 @@ on:
       # Product/dependency changes are checked by central CI. PR packaging
       # validates changes to the release machinery and distribution inputs.
       - '.github/workflows/release-desktop.yml'
-      - 'README.md'
-      - 'README.en.md'
-      - 'docs/windows-release.md'
-      - 'docs/macos-release.md'
       - 'scripts/check-download-docs.py'
       - 'scripts/test_download_docs.py'
       - 'cmd/packagede2e/**'
