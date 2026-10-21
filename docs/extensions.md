@@ -105,10 +105,11 @@ Supervisor 首次最多展示 32 条已安装 Skill 摘要。更多摘要通过 
 组件与内容版本的绑定；停用、撤销或版本改变后，旧选择不能恢复权限。手动选择沿用每任务
 最多 4 项、合计最多 4096 Token 的边界，超出预算会拒绝而不会截断正文。
 
-网页的“Skill 包”入口目前上传版本化 ZIP，新导入内容在扩展页审查与启用；历史 Skill
-登记列表用于兼容旧安装和移除。原生目录可通过上述 `skill import-dir` 导入后，在任务
-设置中手动选择。网页直接导入原生目录、URL/Git 导入和旧 Skill Catalog 发布者信任的
-GUI 入口仍由 #334 跟踪。
+网页支持安装版本化 Skill ZIP，并上传原生 `SKILL.md` 目录；原生目录暂存后，
+在扩展页审查与启用。
+Plugin 来源导入支持 URL/Git，由对应后端 capability 控制；高级设置提供旧 Skill Catalog
+发布者信任管理。历史 Skill 登记列表保留旧安装和移除操作。具体步骤见
+[使用指南](usage.md)。
 
 同一来源的新 revision 使用新的 operation key 导入。如果旧 revision 仍启用，命令会报告 `another plugin version is enabled`；此时新 revision 已保留为 `approved`，旧 revision 继续启用。通过 `plugin list`、`plugin show` 核对两者的来源和 revision，并从各自最新输出取得 ID、`package_fingerprint` 与 `generation`，然后显式切换：
 

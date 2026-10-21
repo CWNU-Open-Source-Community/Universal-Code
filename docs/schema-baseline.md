@@ -1,6 +1,6 @@
 # SQLite clean-install baseline / SQLite 全新安装基线
 
-Traverse Board keeps two database initialization paths:
+Universal-Code keeps two database initialization paths:
 
 - a generated consolidated schema baseline for a database that is proven empty; and
 - the complete, append-only migration history for every existing or uncertain database.
@@ -40,13 +40,15 @@ transaction commit identifies completion. A statement error, cancellation, disk-
 condition, or process exit therefore leaves either the complete latest database or
 no baseline schema; it cannot leave a partial baseline marked as current.
 
-The current v136 artifact contains 360 tables, 245 explicit indexes, 912 triggers,
-and 2 views. Clean install has no application seed rows; the 136 canonical migration
-ledger rows are the only generated data.
+The current version and fingerprints are recorded in
+[`clean_install_baseline_generated.go`](../internal/store/clean_install_baseline_generated.go)
+and checked against `LatestSchemaVersion` in
+[`migrations.go`](../internal/store/migrations.go). Clean install has no application
+seed rows; the canonical migration ledger rows are the only generated data.
 
 ## Backup and restore / 备份与恢复
 
-Before launching a newer binary against a non-empty profile, stop all Traverse Board
+Before launching a newer binary against a non-empty profile, stop all Universal-Code
 Desktop, CLI, and API processes and make an offline copy of `cyberagent.db`. Keep any
 remaining SQLite journal/WAL sidecar files with the diagnostic copy. A filesystem copy
 while a writer is active is not a supported backup.
@@ -58,9 +60,9 @@ that selects safe readers and migrations.
 
 ## Binary rollback boundary / 旧二进制回滚边界
 
-A baseline-created v136 database has the same schema objects and canonical migration
-ledger as a v1-to-v136 historical creation. A pre-baseline binary that already knows
-the identical v1-to-v136 plan can therefore open it. A binary whose
+A baseline-created database has the same schema objects and canonical migration
+ledger as historical creation through the same version. A binary that knows
+the identical migration plan can therefore open it. A binary whose
 `LatestSchemaVersion` is below the database version cannot open it and is not made safe
 by this baseline. Use the offline pre-upgrade backup for that downgrade; do not delete
 newer ledger rows.
@@ -75,8 +77,8 @@ install safely returns to historical replay.
 2. Fix the underlying storage condition (free space, permissions, device health), then
    restart. A rolled-back empty database is eligible for a fresh atomic attempt.
 3. If a deterministic baseline defect affects a genuinely empty new profile, use the
-   last known-good binary that already supports schema v136. That binary retains the
-   historical creation path and produces the same latest schema.
+   known-good binary that supports the target schema and retains the historical
+   creation path. It must produce the same target schema.
 4. If the database contains any user object or durable data, do not try to make it
    appear empty. Diagnose the historical migration error or restore the offline backup.
 5. Preserve the failing copy for diagnosis. Unknown migration history intentionally

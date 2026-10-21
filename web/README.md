@@ -1,12 +1,12 @@
 # Universal-Code Web Console
 
-本目录包含 **Universal-Code** 的前端桌面与 Web 用户界面，基于 React 18、TypeScript 与 Vite 构建。
+本目录包含 **Universal-Code** 的前端桌面与 Web 用户界面，基于 React 19、TypeScript 与 Vite 构建。
 
 ---
 
 ## 技术栈 (Tech Stack)
 
-- **核心框架**：React 18 + TypeScript + Vite
+- **核心框架**：React 19 + TypeScript + Vite
 - **代码与 Diff 编辑器**：Monaco Editor (本地离线打包，支持按需加载与 Proposal 恢复)
 - **视觉与样式系统**：纯 CSS 苹果液态玻璃（Apple Liquid Glass Acrylic）+ Tailwind CSS 工具类
 - **测试框架**：Vitest + React Testing Library
@@ -46,7 +46,7 @@ cd ..
 go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765 --ui-dir web/dist
 ```
 
-访问 `http://127.0.0.1:8765` 即可使用。如配置了 API Token，需在首次加载时输入对应凭证。
+访问 `http://127.0.0.1:8765`，首次连接时输入后端打印的临时只读 token，或 `CYBERAGENT_API_TOKEN` 配置的 token。控制操作还需 control token 与对应 capability，见 [HTTP API](../docs/http-api.md)。
 
 ---
 
@@ -57,9 +57,9 @@ go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765 --ui-dir web/dist
 | **会话舞台 (Stage)** | `src/v2/components/conversation.tsx` | 连续任务对话流、消息卡片、工具调用状态呈现与响应流式打字机。 |
 | **伴侣停靠坞 (Companion Dock)** | `src/v2/styles.css` (`.v2-companion-dock`) | 智能对齐右侧的工作流面板，支持检查点、代码审查与工具箱原生平移停靠。 |
 | **任务输入舱 (Composer)** | `src/v2/components/composer.tsx` | 任务指令输入、文件/图片附件上传、模型选择器与权限档位切换。 |
-| **代码 Diff 与编辑** | `src/components/unified-diff.tsx` / `monaco/` | 逐行差异对比、待审提案（Proposal）接受/驳回与本地 Monaco 编辑。 |
-| **网络检索存证** | `src/components/safe-markdown.tsx` / `evidence/` | 网页快照渲染、GitHub/HN/RSS 来源标注与点击溯源。 |
-| **系统设置与外观** | `src/v2/components/provider-settings.tsx` | 多模型凭据配置、系统/浅色/深色/雾透磨砂玻璃外观实时切换。 |
+| **代码 Diff 与编辑** | `src/components/unified-diff.ts` / `src/lib/monaco-local.ts` | 逐行差异对比、待审提案（Proposal）接受/驳回与本地 Monaco 编辑。 |
+| **网页证据来源** | `src/components/thread-transcript.tsx` / `src/v2/components/activity-detail.tsx` | 展示网页来源、URL、获取时间、摘要标识以及可引用、部分内容和过期状态。 |
+| **系统设置与外观** | `src/v2/components/settings.tsx` / `src/v2/components/provider-settings.tsx` | 多模型凭据配置、系统/浅色/深色/雾透磨砂玻璃外观实时切换。 |
 
 ---
 
@@ -99,15 +99,14 @@ web/
 
 ## 纯 CSS 视觉与设计规范 (Design Language)
 
-- **纯 CSS 物理光学折射**：采用由 GreyD097 纯 CSS 方案启发的双向对角内阴影 (`inset 1.5px -1.5px` 与 `inset -1.5px 1.5px`)，在按钮和面板边缘模拟凸透镜全反射效果。
-- **环境底光网格**：注入多点离散光场 (`--prayu-ambient-radial`) 搭配 `backdrop-filter: blur(34px) saturate(190%) contrast(102%)`，确保在深色模式下呈现透亮亚克力质感，杜绝普通黑底导致的色彩发灰坍塌。
-- **极致渲染性能**：绝不使用高开销的 SVG 滤镜（`feTurbulence`）或全屏 WebGL Canvas，确保承载数千行代码与终端滚动输出时维持 120fps 丝滑帧率。
+- **主题样式**：使用 CSS 渐变、半透明背景、`backdrop-filter` 和边缘阴影呈现各主题的视觉效果，修改应限定在对应主题内。
+- **实际页面验证**：检查文字清晰度、长内容滚动、窄屏布局和交互状态；性能结论应记录测量环境与结果。
 
 ---
 
 ## English Overview
 
-Universal-Code Web Console is the desktop and web operator interface for Universal-Code, built with **React 18**, **TypeScript**, and **Vite**.
+Universal-Code Web Console is the desktop and web operator interface for Universal-Code, built with **React 19**, **TypeScript**, and **Vite**.
 
 ### Quick Start
 1. Run backend: `go run ./cmd/cyberagent api serve --listen 127.0.0.1:8765`
@@ -117,4 +116,4 @@ Universal-Code Web Console is the desktop and web operator interface for Univers
 ### Key Features
 - **Fluid Companion Dock**: A docked assistant panel alongside the main conversation stage without overlapping content.
 - **Monaco Diff Viewer**: Line-by-line inspection and auditable rollback.
-- **Pure CSS Apple Liquid Glass**: Acrylic blur and specular rim sheen with zero WebGL/SVG performance overhead.
+- **CSS Themes**: Translucent surfaces, backdrop blur, gradients, and edge shadows.

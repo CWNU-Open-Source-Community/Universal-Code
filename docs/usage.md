@@ -636,26 +636,26 @@ cyberagent skill candidate reject <candidate-id> --candidate-fingerprint <sha256
 cyberagent skill candidate import <candidate-id> --candidate-fingerprint <sha256> --operation-key <stable-key> --confirm-untrusted-skill
 ```
 
-The embedded read-only `skill.v1` Registry exposes twelve bounded workflows: the `code`, `review`, `learn`, `script`, and `plan-delivery` foundations plus `doctor`, `debug`, `run-verify`, `focused-checks`, `simplify`, `security-review`, and `run-skill-generator`. Each current manifest declares a compatibility tuple: `profiles` identifies the work intent (`code|review|learn|script`), `surfaces` the product execution surface (`code|cyber`), `phases` the active Run phase (`plan|deliver`), and `roles` the receiving Agent (`root|specialist`). All four dimensions must match before content is delivered.
+The embedded read-only `skill.v1` Registry currently exposes fourteen workflows.
+The maintained catalog and invocation rules are in [Built-in skills](builtin-skills.md);
+exact current versions are defined by the [embedded manifests](../internal/skills/builtins/).
+Each manifest declares compatible `profiles`, `surfaces`, `phases`, and receiving
+`roles`. All four dimensions must match before content is delivered.
 
-Invocation policy is separate from delivery compatibility. `user_invocable` permits an operator-origin selection; `model_invocable` permits a future controlled model-origin selector to propose the Skill but does not itself auto-select anything; `explicit_only` requires the operator to name and pin the Skill and therefore requires `user_invocable=true` and `model_invocable=false`. These fields never grant tools, network, files, processes, Provider access, or a new model-selection capability. The current product selection path remains operator-only.
+Invocation policy is separate from delivery compatibility. `user_invocable` permits
+operator selection; `model_invocable` permits compatible model-origin reads through
+`skill_read`. `explicit_only` requires operator selection, with `user_invocable=true`
+and `model_invocable=false`. The three explicit workflows are `plan-delivery`,
+`loop-monitor`, and `run-skill-generator`. Existing operator-pinned versions take
+precedence. Reading a skill does not grant tools, network, files, processes, Provider
+access, or approval authority.
 
-| Built-in | Version | Profiles | Surfaces | Phases | Roles | Invocation |
-| --- | --- | --- | --- | --- | --- | --- |
-| `code` | 1.2.0 | code | code | plan, deliver | root, specialist | user + model eligible |
-| `review` | 1.5.0 | code, review | code | plan, deliver | root, specialist | user + model eligible |
-| `learn` | 1.2.0 | learn | code | plan, deliver | root, specialist | user + model eligible |
-| `script` | 1.2.0 | script | code, cyber | plan, deliver | root, specialist | user + model eligible |
-| `plan-delivery` | 1.2.0 | all | code, cyber | plan, deliver | root | explicit user only |
-| `doctor` | 1.0.0 | all | code, cyber | plan | root | user + model eligible |
-| `debug` | 1.0.0 | all | code, cyber | plan, deliver | root | user + model eligible |
-| `run-verify` | 1.1.0 | code, script | code, cyber | deliver | root | user + model eligible |
-| `focused-checks` | 1.1.0 | code, review, script | code, cyber | deliver | root | user + model eligible |
-| `simplify` | 1.0.0 | code | code | deliver | root | user + model eligible |
-| `security-review` | 1.0.0 | code, review, script | code, cyber | plan, deliver | root | user + model eligible |
-| `run-skill-generator` | 1.0.0 | code | code | deliver | root | explicit user only |
-
-`doctor` reports provider, harness, workspace, sandbox, network-scope, tool, and Skill compatibility without repairing it. `debug` builds a bounded evidence timeline and permits repair only in Deliver. `run-verify@1.1.0` requires an exact `ui-evidence.v1` source/recipe/runtime binding, real interaction assertions, content-addressed artifact inventory, cleanup receipt, focused-check mapping, and a PR-ready verification receipt; `not_run` and missing matrix cells must remain explicit non-passes. It does not grant browser, process, network, Profile, or credential authority, and on Cyber remains restricted by guidance to an admitted local sandbox. `review@1.5.0` and `focused-checks@1.2.0` consume current `code-intel-lsp.v1` plus GitHub PR/CI evidence when available, preserve source and freshness bindings, and keep partial, stale, unavailable, or not-run evidence explicit instead of treating it as proof. `simplify` requires call-site evidence before deletion, and `security-review` remains read-only unless a separate Deliver authorization exists.
+`doctor` provides read-only Plan diagnostics. `debug` diagnoses reproducible faults
+and permits repair only in Deliver;
+`run-verify` verifies actual program behavior, and `focused-checks` selects tests by
+change and risk. `run-verify` treats `ui-evidence.v1` as an optional operator workflow,
+not a requirement for every task. `simplify` requires call-site evidence before
+deletion, and `security-review` remains read-only unless separate Deliver authorization exists.
 
 `run-skill-generator` does not create a trusted Skill. When it is explicitly selected and actually delivered to a Code/Deliver root turn, Go exposes `skill_candidate_propose`; otherwise the tool is omitted and forged calls are rejected. A successful call stores at most 4096 bytes of validated, secret-screened Markdown as an inert `proposed` candidate bound to the real tool invocation, Run/Session/Workspace/root, deterministic package, and exact fingerprints. The ordinary tool result and candidate list never expose the body; `skill candidate show --show-content` uses explicit untrusted-content delimiters for human inspection.
 
@@ -1940,8 +1940,9 @@ These test actions do not install packages or enable network access. Missing
 tools or dependencies produce an unavailable action or the actual failed Job.
 The current SBX template does not support these Python/Rust presets.
 
-The same panel can detect npm and Go tests from project files when no test action
-is pinned. Use **Prepare project** first to review the lockfile, authorize exact
+The same panel can detect supported project tests when no test action is pinned;
+see the current support table in [Project preparation](project-preparation.md).
+Use **Prepare project** first to review the lockfile, authorize exact
 package sources, and install dependencies offline in the selected sandbox.
 Downloads, install scripts, cache reuse, cancellation, and interrupted requests
 are described in [Prepare project dependencies](project-preparation.md).
