@@ -109,6 +109,25 @@ it("does not offer an original preview when screenshot verification fails", asyn
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
+it("can reload the same screenshot after a failed download without issuing browser actions", async () => {
+  const download = vi.fn<APIClient["downloadVerifiedImage"]>()
+    .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce(new Blob(["verified PNG"], { type: "image/png" }));
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: download } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByRole("alert")).toHaveTextContent("无法验证当前页面截图");
+  fireEvent.click(screen.getByRole("button", { name: "重新读取截图" }));
+  const trigger = await decodeScreenshot();
+  expect(trigger).toBeEnabled();
+  expect(download).toHaveBeenCalledTimes(2);
+  expect(download.mock.calls[1].slice(0, 2)).toEqual(download.mock.calls[0].slice(0, 2));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(client.postControl).not.toHaveBeenCalled();
+});
+
 it("reports an undecodable screenshot without enabling its original preview", async () => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
     downloadVerifiedImage: vi.fn(async () => new Blob(["broken PNG"], { type: "image/png" })) } as unknown as APIClient;

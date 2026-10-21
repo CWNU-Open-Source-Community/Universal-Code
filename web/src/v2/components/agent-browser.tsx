@@ -58,6 +58,8 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
   const key = agentBrowserQueryKey(client.baseURL, runID);
   const [message, setMessage] = useState("");
   const [image, setImage] = useState<{ binding: string; url: string; blob: Blob }>();
+  const [failedImageBinding, setFailedImageBinding] = useState("");
+  const [imageRetry, setImageRetry] = useState(0);
   const status = useQuery({ queryKey: key, queryFn: ({ signal }) => readAgentBrowser(client, runID, signal), retry: false,
     refetchOnMount: "always", refetchInterval: (query) => running && !query.state.error ? 3000 : false });
   const current = status.data;
@@ -77,14 +79,15 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     ? `${runID}\0${current.session_id}\0${current.screenshot.locator}\0${current.screenshot.sha256}` : "";
   useEffect(() => {
     setImage(undefined);
+    setFailedImageBinding("");
     if (!current?.screenshot || !current.session_id || !imageBinding) return;
     const abort = new AbortController(); let objectURL = "";
     void client.downloadVerifiedImage(screenshotPath(runID, current), current.screenshot, abort.signal).then((blob) => {
       if (abort.signal.aborted) return;
       objectURL = URL.createObjectURL(blob); setImage({ binding: imageBinding, url: objectURL, blob });
-    }).catch(() => { if (!abort.signal.aborted) setMessage(t("无法验证当前页面截图，请重新读取状态。", "The current screenshot could not be verified. Refresh the browser status.")); });
+    }).catch(() => { if (!abort.signal.aborted) setFailedImageBinding(imageBinding); });
     return () => { abort.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
-  }, [client, imageBinding, runID]);
+  }, [client, imageBinding, runID, imageRetry]);
 
   if (status.isError && agentBrowserAPIAbsent(status.error)) return null;
   if (status.isPending) return null;
@@ -112,6 +115,10 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     {image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
       name={`agent-browser-${current.screenshot!.sha256.slice(0, 12)}.png`}
       alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
+    {failedImageBinding && failedImageBinding === imageBinding && <p role="alert">
+      {t("无法验证当前页面截图。", "The current screenshot could not be verified.")}{" "}
+      <button type="button" onClick={() => setImageRetry((attempt) => attempt + 1)}>{t("重新读取截图", "Reload screenshot")}</button>
+    </p>}
     {(current.last_action || current.updated_at || current.failure_code) && <details><summary>{t("最近状态", "Latest status")}</summary>
       {current.last_action && <p>{t("最近动作：", "Last action: ")}{actionText(current.last_action, t)}</p>}
       <p>{t("更新时间：", "Updated: ")}{new Date(current.updated_at).toLocaleTimeString(locale)}</p>
