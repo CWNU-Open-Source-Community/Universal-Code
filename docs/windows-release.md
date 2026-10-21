@@ -25,7 +25,7 @@ For newer test candidates, select a successful Desktop release run and check its
 
 ### 从源码构建与启动 / Build and launch from source
 
-在仓库根目录使用 PowerShell、[go.mod](../go.mod) 固定的 Go（当前 1.26.9）与 Node.js 24（CI 为 24.16.0）：
+在仓库根目录使用 PowerShell、[go.mod](../go.mod) 固定的 Go（当前 1.26.10）与 Node.js 24（CI 为 24.16.0）：
 
 ```powershell
 .\scripts\build-desktop.ps1 -Version v1.0.0-dev

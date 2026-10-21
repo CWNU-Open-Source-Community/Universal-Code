@@ -36,7 +36,7 @@ For newer candidates, use a successful Desktop release run for the matching arch
 
 ## 构建与核验
 
-本机源码构建需要 Xcode Command Line Tools、[go.mod](../go.mod) 固定的 Go（当前 1.26.9）、Node.js 24（CI 为 24.16.0）和 CGO。在仓库根目录运行：
+本机源码构建需要 Xcode Command Line Tools、[go.mod](../go.mod) 固定的 Go（当前 1.26.10）、Node.js 24（CI 为 24.16.0）和 CGO。在仓库根目录运行：
 
 ```sh
 CGO_ENABLED=1 bash scripts/build-desktop-darwin.sh -Version v1.0.0-dev
