@@ -9,36 +9,58 @@ import { Slice } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import "./markdown-input.css";
 import { sendsOnEnter, useChatPreferences } from "../chat-preferences";
+import type { HistoryDirection } from "../use-prompt-history";
 
 export const composerPlainTextKey = "universal-code.composer-plain-text";
 export function readComposerPlainText(): boolean {
   try { return localStorage.getItem(composerPlainTextKey) === "true"; } catch { return false; }
 }
 
-export interface MarkdownInputHandle { focus(): void }
+export interface MarkdownInputHandle { focus(): void; atHistoryBoundary(direction: HistoryDirection): boolean }
 
 // The durable draft remains Markdown. The editor document and undo history are
 // local to this draft scope; merely mounting or switching views never rewrites it.
 export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, label, placeholder,
-  disabled, inputRef }: {
+  disabled, inputRef, onHistoryNavigate, onHistoryCancel }: {
   value: string; onChange: (value: string) => void; onSubmit: () => void;
   plainText: boolean; scope: string; label: string; placeholder: string;
   disabled: boolean; inputRef: Ref<MarkdownInputHandle>;
+  onHistoryNavigate?: (direction: HistoryDirection) => boolean;
+  onHistoryCancel?: () => void;
 }) {
   const { send } = useChatPreferences();
   const mount = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const editor = useRef<Editor | null>(null);
-  const latest = useRef({ value, onChange, onSubmit, disabled, label, placeholder, send });
-  latest.current = { value, onChange, onSubmit, disabled, label, placeholder, send };
+  const latest = useRef({ value, onChange, onSubmit, disabled, label, placeholder, send, onHistoryNavigate, onHistoryCancel });
+  latest.current = { value, onChange, onSubmit, disabled, label, placeholder, send, onHistoryNavigate, onHistoryCancel };
   const representedValue = useRef(value);
   const restoreFocus = useRef(false);
+  const composing = useRef(false);
+  const atHistoryBoundary = (direction: HistoryDirection) => {
+    if (latest.current.disabled || composing.current) return false;
+    const input = textarea.current;
+    if (input) return document.activeElement === input && input.selectionStart === input.selectionEnd &&
+      input.selectionStart === (direction === "older" ? 0 : input.value.length);
+    const view = editor.current?.view;
+    if (!view?.hasFocus() || view.composing) return false;
+    const { selection, doc } = view.state;
+    return selection instanceof TextSelection && selection.empty && selection.from ===
+      (direction === "older" ? TextSelection.atStart(doc).from : TextSelection.atEnd(doc).from);
+  };
+  const historyKey = (event: globalThis.KeyboardEvent) => {
+    if (event.isComposing || event.keyCode === 229 || composing.current || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+    const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
+    if (!direction || !atHistoryBoundary(direction) || !latest.current.onHistoryNavigate?.(direction)) return false;
+    event.preventDefault(); return true;
+  };
 
   useImperativeHandle(inputRef, () => ({ focus: () => {
     if (textarea.current) textarea.current.focus(); else editor.current?.view.focus();
-  } }), []);
+  }, atHistoryBoundary }), []);
 
   useLayoutEffect(() => {
+    composing.current = false;
     if (plainText || !mount.current) return;
     representedValue.current = latest.current.value;
     let plainPaste = false;
@@ -53,9 +75,13 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
       editorProps: {
         attributes: { role: "textbox", "aria-multiline": "true", "aria-label": latest.current.label,
           "data-placeholder": latest.current.placeholder, class: "v2-markdown-input", dir: "auto" },
+        handleDOMEvents: {
+          compositionstart() { latest.current.onHistoryCancel?.(); return false; },
+        },
         handleKeyDown(view, event) {
           plainPaste = event.shiftKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
           if (event.isComposing || view.composing || event.keyCode === 229) return false;
+          if (historyKey(event)) return true;
           if (event.key !== "Enter" || event.shiftKey || event.altKey) return false;
           const { $from } = view.state.selection;
           const fence = $from.parent.type.name === "paragraph" && /^```([\w+-]*)$/.exec($from.parent.textContent);
@@ -130,9 +156,13 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
     }
   }, [value, disabled, label, placeholder, plainText, scope]);
 
+  const compositionStart = () => { composing.current = true; latest.current.onHistoryCancel?.(); };
+  const compositionEnd = () => { composing.current = false; };
   return plainText ? <textarea aria-label={label} disabled={disabled} ref={textarea} rows={1}
+    onCompositionStart={compositionStart} onCompositionEnd={compositionEnd}
     placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)}
     onKeyDown={(event) => {
+      if (historyKey(event.nativeEvent)) return;
       if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229 &&
         sendsOnEnter(send, value, event.ctrlKey || event.metaKey)) {
         event.preventDefault(); onSubmit();
