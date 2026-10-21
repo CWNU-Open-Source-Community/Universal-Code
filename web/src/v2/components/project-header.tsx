@@ -1,12 +1,35 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Folder, FolderOpen, MessageCircle, MoreHorizontal, Settings, SquarePen } from "lucide-react";
+import { Check, ChevronRight, Copy, Folder, FolderOpen, MessageCircle, MoreHorizontal, Settings, SquarePen } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { WorkspaceView } from "../../api/types";
 import { useLocale } from "../../lib/locale";
 
 export const projectDetailsKey = (id: string) => ["v2", "workspace-project", id] as const;
+
+function ProjectDirectoryCopy({ path }: { path: string }) {
+  const { t } = useLocale();
+  const [state, setState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  const copy = async () => {
+    if (state === "copying") return;
+    setState("copying");
+    try {
+      await navigator.clipboard.writeText(path);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  };
+  return <button className="v2-project-card-edit" aria-label={t("复制项目目录", "Copy project directory")}
+    aria-disabled={state === "copying"} onClick={() => void copy()} type="button">
+    {state === "copied" ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}
+    <span role="status" aria-live="polite">{state === "copying" ? t("正在复制…", "Copying…")
+      : state === "copied" ? t("已复制项目目录", "Project directory copied")
+        : state === "failed" ? t("复制失败，请重试", "Copy failed. Try again")
+          : t("复制项目目录", "Copy project directory")}</span>
+  </button>;
+}
 
 export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat, onEdit, client }: {
   workspace: WorkspaceView; label: string; expanded: boolean; onToggle: () => void;
@@ -87,6 +110,7 @@ export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat,
       </> : <p>{!client?.hasControl ? t("连接操作令牌后可查看项目详情。", "Connect with a control token to view project details.")
         : details.isError ? t("项目信息读取失败。", "Could not load project details.") : t("正在读取项目信息…", "Loading project details…")}
         {details.isError && <button onClick={() => void details.refetch()} type="button">{t("重试", "Retry")}</button>}</p>}
+      {details.data?.directory_path && <ProjectDirectoryCopy key={`${workspace.id}:${details.data.directory_path}`} path={details.data.directory_path} />}
       {onEdit && <button className="v2-project-card-edit" ref={edit} onClick={() => {
         clearTimer(); setOpen(false); more.current?.focus(); onEdit(details.data ?? workspace);
       }} type="button"><Settings aria-hidden="true" size={16} />{t("编辑项目", "Edit project")}</button>}
