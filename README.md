@@ -52,7 +52,7 @@
 
 ### 方式二：从源码构建运行
 
-安装 **Go（版本遵循 [go.mod](go.mod)，当前为 1.26.9）** 与 **Node.js 24**（CI 使用 24.16.0），然后克隆仓库：
+安装 **Go（版本遵循 [go.mod](go.mod)，当前为 1.26.10）** 与 **Node.js 24**（CI 使用 24.16.0），然后克隆仓库：
 
 ```bash
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git

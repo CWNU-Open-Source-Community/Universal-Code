@@ -307,9 +307,22 @@ func TestAgentBrowserRealCancelDoesNotWaitForAuthorityLookup(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Cancel waited behind authority callback")
 	}
+	// Done ends the first cleanup attempt; a transient native process
+	// observation failure can leave cleanup retryable. Verify completion while
+	// the authority callback is still blocked, before releasing it on return.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := r.Snapshot(ctx); !errors.Is(err, ErrAgentBrowserClosed) {
+		t.Fatalf("cancelled session accepted action: %v", err)
+	}
+	result, err := r.Close(ctx)
+	if err != nil || !result.ProcessesStopped() || !result.ProfileRemoved || result.CleanupPending {
+		t.Fatalf("cleanup while authority callback blocked: %+v %v", result, err)
+	}
 	if status := r.Status(); status.State != "closed" {
 		t.Fatalf("cleanup incomplete: %+v", status)
 	}
+	t.Logf("owned cleanup while authority callback blocked: %+v", result)
 }
 
 func agentBrowserWaitSnapshot(t *testing.T, r *AgentBrowserRuntime, predicate func(AgentBrowserSnapshot) bool) AgentBrowserSnapshot {

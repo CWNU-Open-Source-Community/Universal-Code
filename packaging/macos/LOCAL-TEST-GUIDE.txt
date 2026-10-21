@@ -30,7 +30,7 @@ Start-Prayu-Operator-Preview.command 只是同一默认入口的兼容快捷方�
 
 Node 版本不符时脚本会在前端检查前明确报错；如果 web/dist 已经构建好，
 也可以用 -SkipFrontend 跳过前端步骤。构建还需要 Xcode 命令行工具
-（codesign）和 Go 1.26.9。
+（codesign）和 Go 1.26.10。
 
 首次接入真实模型
 ----------------
@@ -127,7 +127,7 @@ then run:
 
 A mismatched Node version fails fast before the frontend checks; use
 -SkipFrontend when web/dist is already built. Building also requires the
-Xcode command line tools (codesign) and Go 1.26.9.
+Xcode command line tools (codesign) and Go 1.26.10.
 
 Connect a real model
 --------------------
