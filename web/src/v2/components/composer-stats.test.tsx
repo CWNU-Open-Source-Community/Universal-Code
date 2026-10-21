@@ -40,6 +40,21 @@ it("keeps historical unknown timing and missing cache detail distinct from measu
   expect(screen.getByText("0%")).toBeInTheDocument();
 });
 
+it("updates the open context explanation from an estimate to reported input and back for the next request", async () => {
+  const user = userEvent.setup();
+  const value = statistics();
+  const view = show(value);
+  await user.click(screen.getByTitle(/最近一次模型请求估算/));
+  expect(screen.getByRole("note")).toHaveTextContent("估算 6,000 / 100,000 Token（应用规划窗口）");
+  view.rerender(<LocaleProvider><V2ComposerStats statistics={{ ...value,
+    context: { ...value.context!, input_tokens: 4_000, estimated: false } }} /></LocaleProvider>);
+  expect(screen.getByTitle(/报告输入 4,000/)).toHaveTextContent("4%");
+  expect(screen.getByRole("note")).toHaveTextContent("报告输入 4,000 / 100,000 Token（应用规划窗口）。输入含缓存，不含输出。");
+  view.rerender(<LocaleProvider><V2ComposerStats statistics={value} /></LocaleProvider>);
+  expect(screen.getByRole("note")).toHaveTextContent("估算 6,000 / 100,000");
+  expect(screen.getByRole("note")).not.toHaveTextContent("报告输入");
+});
+
 it("does not round a partial cache hit to 100% and bounds the context ring", () => {
   show({ ...statistics(), cache_read_tokens: 1_999_200,
     context: { input_tokens: 120_000, window_tokens: 100_000, estimated: true, window_source: "provider_config" } });

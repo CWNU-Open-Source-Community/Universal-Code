@@ -17,7 +17,8 @@ type ThreadStatistics struct {
 	Context            *ThreadContextUsage `json:"context,omitempty"`
 }
 
-// ThreadContextUsage is the most recent root request's saved window estimate.
+// ThreadContextUsage pairs the most recent root request's saved application
+// window with its reported input usage, or its estimate until usage is known.
 type ThreadContextUsage struct {
 	InputTokens  int64  `json:"input_tokens"`
 	WindowTokens int64  `json:"window_tokens"`
