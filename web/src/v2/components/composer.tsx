@@ -8,7 +8,7 @@ import type { WorkspaceView } from "../../api/types";
 import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-control";
 import { V2PermissionControl } from "./permission-control";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
-import { V2FileContext, useV2FileReferences, type V2FileReference } from "./file-context";
+import { V2FileContext, useV2FileReferences, withV2FileReference, type V2FileReference } from "./file-context";
 import { useV2ThreadSubmissions, V2SubmissionError, v2TurnOutcomeKnown, type V2TurnInput } from "../use-thread-turn";
 import { useV2PersistenceWarning, useV2RecoveryStore } from "../recovery-storage";
 import { acceptedImageTypes, imageIdentities, maximumImages, type WorkspaceImageAttachment } from "../../api/image-attachments";
@@ -402,6 +402,22 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         onChange={references.update} workspaceID={workspaceID} />}
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
         onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
+        filePaths={workspaceID && client.hasEvidenceAttachment && !attachmentsDisabled && !fileReferenceUnavailableReason &&
+          !managedDraft?.state.conflict && !managedDraft?.state.error ? { client, workspaceID, onAttach: (file, next, expected) => {
+            const limitMessage = t("最多引用 4 个文件，请先移除一个引用。", "You can reference up to 4 files. Remove a reference first.");
+            const changed = () => new Error(t("草稿已变化，请重新选择文件。", "The draft changed. Choose the file again."));
+            if (currentContentRef.current !== expected) throw changed();
+            if (managedDraft) {
+              const current = managedDraft.document.read(managedDraft.scope);
+              if (current.snapshot.text !== expected || current.conflict || current.error) throw changed();
+              managedDraft.document.update(managedDraft.scope, (snapshot) => ({ ...snapshot, text: next,
+                files: withV2FileReference(snapshot.files, file, limitMessage) }), current.ref);
+            } else {
+              const files = withV2FileReference(references.files, file, limitMessage);
+              references.update(() => files); setContent(next, expected);
+            }
+            setError(null);
+          } } : undefined}
         placeholder={inputPlaceholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
       {byteLength >= 4096 && <div className="v2-composer-text-attachment">
         <span className={byteLength > maximumContentBytes ? "is-over-limit" : undefined}>
