@@ -89,9 +89,9 @@ export function useV2Navigation() {
     window.addEventListener("hashchange", sync);
     return () => { window.removeEventListener("popstate", sync); window.removeEventListener("hashchange", sync); };
   }, [leave]);
-  const navigate = useCallback((route: V2Route, replace = false) => {
+  const navigate = useCallback((route: V2Route, replace = false, onAccepted?: () => void) => {
     const hash = routeHash(route);
-    if (hash === window.location.hash) return;
+    if (hash === window.location.hash) { onAccepted?.(); return; }
     leave(() => {
       const index = historyIndex() + (replace ? 0 : 1);
       const state = { ...window.history.state, v2NavigationIndex: index };
@@ -100,6 +100,7 @@ export function useV2Navigation() {
       else window.history.pushState(state, "", url);
       accepted.current = { url: window.location.href, index, state };
       setLocation({ route, index });
+      onAccepted?.();
     });
   }, [leave]);
   const back = () => {

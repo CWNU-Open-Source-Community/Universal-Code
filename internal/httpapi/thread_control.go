@@ -118,6 +118,9 @@ func (a *API) routeThreads(request *http.Request, segments []string) (any, *Page
 	case 1:
 		return a.threads(request)
 	case 2:
+		if segments[1] == "reply-updates" {
+			return a.threadReplyUpdates(request)
+		}
 		if segments[1] == "search" {
 			return a.searchThreadMessages(request)
 		}

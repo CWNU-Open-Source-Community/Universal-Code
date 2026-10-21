@@ -24,6 +24,11 @@
 .v2-project-card { background: var(--prayu-surface-solid); border: 1px solid var(--v2-border-strong); border-radius: 14px; box-shadow: 0 8px 28px rgb(0 0 0 / 12%); box-sizing: border-box; color: var(--v2-ink); font: 13px/1.6 var(--prayu-font-ui); max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; position: fixed; width: min(350px, calc(100vw - 24px)); z-index: 200; }
 .v2-project-card > strong, .v2-project-card > p { align-items: flex-start; display: flex; gap: 10px; margin: 0; padding: 5px 2px; overflow-wrap: anywhere; }
 .v2-project-card > strong { font-size: 15px; font-weight: 600; }
+.v2-project-card > strong > span { flex: 1; min-width: 0; }
+.v2-project-pin { align-items: center; background: transparent; border: 0; border-radius: 6px; color: var(--v2-muted); cursor: pointer; display: inline-flex; flex: 0 0 28px; height: 28px; justify-content: center; margin-top: -2px; padding: 0; }
+.v2-project-pin:hover, .v2-project-pin[aria-pressed="true"] { background: var(--v2-control-hover); color: var(--v2-ink); }
+.v2-project-pin:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
+.v2-project-pin-marker { color: var(--v2-muted); }
 .v2-project-card svg { flex-shrink: 0; margin-top: 3px; }
 .v2-project-card > p svg { color: var(--v2-muted); }
 .v2-project-card > .v2-project-card-path { border-top: 1px solid var(--v2-border); margin-top: 7px; padding-block: 12px; }

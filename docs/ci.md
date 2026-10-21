@@ -56,6 +56,34 @@ changing the schedule. Go 1.26 requires macOS 12+, so native build flags, bundle
 metadata and package verification use that same minimum; the earlier macOS 11
 declaration was already inconsistent with Go 1.25's supported platforms.
 
+## October 2026 runtime security updates
+
+CI and desktop release jobs use Node.js **24.22.1**. Local frontend builds should
+use the same version. The [October 21 Node security release](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)
+fixes TLS/DNS validation, Brotli decoding, and other runtime issues, and updates
+certificate trust. Updating npm packages alone does not update the Node executable.
+
+Before downloading pinned Rust toolchains, CI and release jobs run
+`rustup self update`. Local builders should also update rustup to **1.29.2 or
+newer** before installing toolchains or targets; [rustup 1.29.2](https://blog.rust-lang.org/2026/10/20/Rustup-1.29.2/)
+updates certificate verification dependencies for the eMudhra/emSign incident.
+The analyzer compiler remains pinned to Rust 1.97.1 so the embedded WASI build
+continues to use its established reproducible toolchain.
+
+The [Python security announcement](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)
+requires pip **26.2.2**, certifi **2026.10.19**, and uv **0.13.4** or newer where
+those tools perform HTTPS requests. Update existing virtual environments as well
+as base installations and rebuild container images with updated CA certificates.
+UC's project-preparation pip path uses local wheel URLs, `--no-index`,
+`--no-deps`, `--require-hashes`, and `--disable-pip-version-check`; downloads go
+through the Go dependency broker. Its pip >=25.3 requirement describes offline
+lockfile compatibility, not a safe version for general network use. The Python
+3.9 CI job remains an offline macOS archive compatibility test.
+
+Updating build configuration does not replace installed application binaries,
+user-managed interpreters, or existing sandbox images. Go-built releases must
+be rebuilt with the fixed toolchain; image owners must supply refreshed digests.
+
 ## Go impact selection
 
 `scripts/ci/run_go_checks.py` uses `go list -json ./...` to identify package
