@@ -6,7 +6,10 @@ import { APIClient } from "../../api/client";
 import type { ThreadChangeSummary } from "../../api/thread-changes";
 import { V2Narrative } from "./narrative";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function changes(overrides: Partial<ThreadChangeSummary> = {}): ThreadChangeSummary {
   return { version: "thread_change_summary.v1", thread_id: "thread-1", run_id: "run-1", source_event_id: "first-reply",
@@ -17,8 +20,15 @@ function changes(overrides: Partial<ThreadChangeSummary> = {}): ThreadChangeSumm
     })), ...overrides };
 }
 
-function show(get: ReturnType<typeof vi.fn>) {
-  const client = { get, threadChanges: APIClient.prototype.threadChanges } as unknown as APIClient;
+function show(get: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>) {
+  const client = new APIClient("read-token");
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit) => {
+    const url = new URL(input, window.location.origin);
+    const data = await get(url.pathname.replace(/^\/api\/v1/u, ""),
+      Object.fromEntries(url.searchParams), init.signal);
+    return new Response(JSON.stringify({ version: "api.v1", request_id: "turn-changes", data }),
+      { headers: { "Content-Type": "application/json" } });
+  }));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}>
     <V2Narrative client={client} threadID="thread-1" entries={[{ id: "first-reply", branchSourceID: "last-reply", changeSourceID: "first-reply",

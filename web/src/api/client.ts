@@ -1,18 +1,9 @@
-import {
-  applicationServiceIdentity,
-  parseThreadApplicationService,
-  parseThreadApplicationServiceStop,
-  parseThreadApplicationServices,
-} from "./application-services";
-import { chatGPTAuthProtocol, parseChatGPTAuthStatus, validChatGPTIdentity } from "./chatgpt-auth";
+import { ApprovalsClient } from "./client/domains/approvals";
+import { ModelsClient } from "./client/domains/models";
+import { SessionsClient } from "./client/domains/sessions";
+import { WorkspacesClient } from "./client/domains/workspaces";
 import { APIRequestError, normalizeBaseURL, parseResponsePage } from "./client/protocol";
 import { parseThreadActivityArtifact, parseThreadActivityDetail } from "./client/responses/activity";
-import {
-  parseApprovalDecision,
-  parseApprovalQueue,
-  parseControlledCommandProposal,
-  parseHostCommandProposal,
-} from "./client/responses/approvals";
 import { parseFullCDPSessionControl } from "./client/responses/browser";
 import {
   batchValidationKinds,
@@ -55,32 +46,6 @@ import {
   parseFileEditReview,
 } from "./client/responses/file-edits";
 import { parseCodeHandoff, parseCodeHandoffExport } from "./client/responses/handoffs";
-import {
-  parseModelCancellation,
-  parsePublicModelStream,
-  parsePublicModelStreamPoll,
-  parseSpecialistModelCancellation,
-} from "./client/responses/model-streams";
-import {
-  parseAvailableModelRouteCollection,
-  parseModelAvailability,
-  parseModelHarnessQualification,
-  parseModelRouteControl,
-  parsePriceSnapshotImport,
-  parsePriceSnapshots,
-  parseProviderCredentialList,
-  parseProviderCredentialStatus,
-  parseProviderDefinition,
-  parseProviderDefinitionCollection,
-  parseProviderDefinitionMutation,
-  parseProviderDiagnostic,
-  parseProviderSearchReadiness,
-  parseSearchDiagnostics,
-  parseThreadModelRoute,
-  validCustomProviderID,
-  validProviderAdvancedConfig,
-  validProviderCredentialName,
-} from "./client/responses/models";
 import { parseOperationReceiptHistory, parseOperatorActionCenter } from "./client/responses/operations";
 import {
   normalizeRequestedNetworkAuthority,
@@ -131,18 +96,6 @@ import {
   parseScheduledJobList,
 } from "./client/responses/scheduling";
 import {
-  parseSessionArchiveControl,
-  parseSessionMessageControl,
-  parseSessionSteeringCancellation,
-  parseThreadApprovalPreference,
-  parseThreadCreationControl,
-  parseThreadExecution,
-  parseThreadLifecycleControl,
-  parseThreadMessageControl,
-  parseThreadRunRecoveryControl,
-  parseThreadView,
-} from "./client/responses/sessions";
-import {
   assertSkillSelectionChoice,
   assertSkillSelectionReceipt,
   parseSkillCatalogPublisher,
@@ -166,13 +119,6 @@ import {
   parseVerificationSnapshotReceiptReviewInventory,
   validVerificationText,
 } from "./client/responses/verification";
-import {
-  normalizeWorkspaceName,
-  parseProjectlessDirectory,
-  parseWorkspaceExplorer,
-  parseWorkspaceProject,
-  parseWorkspaceSearch,
-} from "./client/responses/workspaces";
 import { APITransport } from "./client/transport";
 import {
   boundedIdentity,
@@ -187,8 +133,6 @@ import {
   validDate,
   validWorkspaceRelativePath,
 } from "./client/validation";
-import { parseThreadCommandServicePolicy, validCommandServicePolicyRequest } from "./command-service-policy";
-import { maximumFileBytes, validFileAttachment } from "./file-attachments";
 import {
   isGitAdvancedExecuteResult,
   isGitAdvancedProjection,
@@ -208,7 +152,6 @@ import {
   parseGitHubWriteExecute,
   parseGitHubWriteReview,
 } from "./github-review";
-import { acceptedImageTypes, maximumImageBytes, validImageAttachment } from "./image-attachments";
 import { validMCPConnectionConfig } from "./mcp-config";
 import { parseMCPCredentialStatus, validMCPBearerSecret, validMCPCredentialBinding } from "./mcp-credentials";
 import { parseProjectActionResult, parseProjectActions } from "./project-actions";
@@ -507,8 +450,14 @@ export { canonicalExactNetworkTarget } from "./client/responses/permissions";
 export { parsePluginSkillInstall } from "./client/responses/skills";
 export { parseProjectlessDirectory } from "./client/responses/workspaces";
 
+// Stable entry point for components. Domain clients own operations and response validation;
+// every domain shares this instance's transport and capability decisions.
 export class APIClient implements ClientFeatures {
   private readonly transport: APITransport;
+  private readonly approvals: ApprovalsClient;
+  private readonly models: ModelsClient;
+  private readonly sessions: SessionsClient;
+  private readonly workspaces: WorkspacesClient;
 
   readonly baseURL: string;
 
@@ -682,7 +631,10 @@ export class APIClient implements ClientFeatures {
         : !this.hasRunExecution ? "run_execution_disabled"
           : !this.hasBrowserCDPPermissionControl ? "browser_cdp_control_disabled" : null;
     this.transport = new APITransport(token, this.baseURL, controlToken, this);
-
+    this.approvals = new ApprovalsClient(this.transport, this);
+    this.models = new ModelsClient(this.transport, this);
+    this.sessions = new SessionsClient(this.transport, this);
+    this.workspaces = new WorkspacesClient(this.transport, this);
   }
 
   async health(signal?: AbortSignal): Promise<HealthView> {
@@ -693,97 +645,36 @@ export class APIClient implements ClientFeatures {
     return parseRuntimeCapabilities(await this.get<unknown>("/capabilities", {}, signal));
   }
 
-  async createProjectlessWorkspace(idempotencyKey: string, signal?: AbortSignal): Promise<ProjectlessWorkspaceView> {
-    if (!this.hasProjectlessWorkspaces) throw new Error("Projectless conversations are unavailable");
-    const value = await this.sendControl<unknown>("/workspaces/projectless", {
-      version: "projectless_workspace.v1",
-    }, idempotencyKey, signal);
-    if (!hasExactKeys(value, ["version", "workspace", "replayed"]) ||
-      value.version !== "projectless_workspace.v1" || typeof value.replayed !== "boolean" ||
-      !hasExactKeys(value.workspace, ["id", "name", "created_at"]) ||
-      !boundedIdentity(value.workspace.id) || !boundedText(value.workspace.name, 128) ||
-      !validDate(value.workspace.created_at)) {
-      throw new APIRequestError("Projectless workspace response is invalid", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as ProjectlessWorkspaceView;
+  createProjectlessWorkspace(idempotencyKey: string, signal?: AbortSignal): Promise<ProjectlessWorkspaceView> {
+    return this.workspaces.createProjectlessWorkspace(idempotencyKey, signal);
   }
 
-  async getProjectlessDirectory(signal?: AbortSignal): Promise<ProjectlessDirectory> {
-    if (!this.hasProjectlessWorkspaces) throw new Error("Projectless conversations are unavailable");
-    return parseProjectlessDirectory(await this.sendControlRequest<unknown>(
-      "/settings/projectless-directory", undefined, signal, "", "GET"));
+  getProjectlessDirectory(signal?: AbortSignal): Promise<ProjectlessDirectory> {
+    return this.workspaces.getProjectlessDirectory(signal);
   }
 
-  async setProjectlessDirectory(directoryPath: string, signal?: AbortSignal): Promise<ProjectlessDirectory> {
-    if (!this.hasProjectlessWorkspaces || !this.hasWorkspaceImport || !directoryPath.trim()) {
-      throw new Error("Choose a directory with workspace import enabled");
-    }
-    return parseProjectlessDirectory(await this.sendControlRequest<unknown>("/settings/projectless-directory", {
-      version: "projectless_directory.v1", directory_path: directoryPath, confirmed: true,
-    }, signal, "", "PUT"));
+  setProjectlessDirectory(directoryPath: string, signal?: AbortSignal): Promise<ProjectlessDirectory> {
+    return this.workspaces.setProjectlessDirectory(directoryPath, signal);
   }
 
-  async getWorkspaceProject(id: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
-    if (!boundedIdentity(id)) throw new Error("A project identity is required");
-    return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/project`, undefined, signal, "", "GET"), id);
+  getWorkspaceProject(id: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
+    return this.workspaces.getWorkspaceProject(id, signal);
   }
 
-  async renameWorkspace(id: string, name: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
-    if (!boundedIdentity(id)) throw new Error("A project identity is required");
-    return parseWorkspaceProject(await this.sendControlRequest<unknown>(`/workspaces/${encodeURIComponent(id)}/name`, { name: normalizeWorkspaceName(name) }, signal, "", "PUT"), id);
+  renameWorkspace(id: string, name: string, signal?: AbortSignal): Promise<WorkspaceProjectView> {
+    return this.workspaces.renameWorkspace(id, name, signal);
   }
 
-  async renameThread(id: string, title: string, signal?: AbortSignal): Promise<ThreadView> {
-    if (!boundedIdentity(id) || !boundedText(title.trim(), 4096) || /[\p{Cc}]/u.test(title)) {
-      throw new Error("A conversation identity and a title of 1–4096 characters without control characters are required");
-    }
-    return parseThreadView(await this.sendControlRequest<unknown>(`/threads/${encodeURIComponent(id)}/name`, { title: title.trim() }, signal, "", "PUT"), id);
+  renameThread(id: string, title: string, signal?: AbortSignal): Promise<ThreadView> {
+    return this.sessions.renameThread(id, title, signal);
   }
 
-  async pinThread(id: string, pinned: boolean, signal?: AbortSignal): Promise<ThreadView> {
-    if (!boundedIdentity(id) || typeof pinned !== "boolean") throw new Error("A conversation identity and pinned state are required");
-    return parseThreadView(await this.sendControlRequest<unknown>(`/threads/${encodeURIComponent(id)}/pin`, { pinned }, signal, "", "PUT"), id);
+  pinThread(id: string, pinned: boolean, signal?: AbortSignal): Promise<ThreadView> {
+    return this.sessions.pinThread(id, pinned, signal);
   }
 
-  async importWorkspace(directoryPath: string, signal?: AbortSignal, name?: string): Promise<WorkspaceImportView> {
-    if (!this.hasWorkspaceImport) {
-      throw new APIRequestError("Workspace import is unavailable for this connection",
-        "PERMISSION_DENIED", 403);
-    }
-    if (typeof directoryPath !== "string" || !directoryPath.trim() ||
-      /[\u0000-\u001f\u007f]/u.test(directoryPath) ||
-      new TextEncoder().encode(directoryPath).length > 4_096) {
-      throw new APIRequestError("A valid project directory is required", "INVALID_ARGUMENT", 400);
-    }
-    if (name !== undefined) name = normalizeWorkspaceName(name);
-    try {
-      const value = await this.sendControlRequest<unknown>("/workspaces/import", {
-        version: "workspace_import.v1", directory_path: directoryPath, confirmed: true, ...(name !== undefined ? { name } : {}),
-      }, signal);
-      if (!hasExactKeys(value, ["protocol_version", "workspace",
-        "directory_content_modified", "agent_authority_granted"]) ||
-        value.protocol_version !== "workspace_import.v1" ||
-        value.directory_content_modified !== false || value.agent_authority_granted !== false ||
-        !hasExactKeys(value.workspace, ["id", "name", "created_at"]) ||
-        typeof value.workspace.id !== "string" ||
-        !/^[A-Za-z0-9_.-]{1,256}$/u.test(value.workspace.id) ||
-        !boundedText(value.workspace.name, 128) ||
-        /[\u0000-\u001f\u007f]/u.test(value.workspace.name) ||
-        !validDate(value.workspace.created_at)) {
-        throw new APIRequestError("Workspace import response is invalid", "INVALID_RESPONSE", 502);
-      }
-      return value as unknown as WorkspaceImportView;
-    } catch (error) {
-      // Transport and server messages may contain the submitted host path.
-      // Keep bounded machine status for recovery while discarding raw details.
-      if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        throw new DOMException("Workspace import was cancelled", "AbortError");
-      }
-      const code = error instanceof APIRequestError && /^[A-Z_]{1,64}$/u.test(error.code)
-        ? error.code : "UNAVAILABLE";
-      throw new APIRequestError("Unable to import the project. Check the directory and try again.",
-        code, error instanceof APIRequestError ? error.status : 0);
-    }
+  importWorkspace(directoryPath: string, signal?: AbortSignal, name?: string): Promise<WorkspaceImportView> {
+    return this.workspaces.importWorkspace(directoryPath, signal, name);
   }
 
   async runCapabilityReadiness(runID: string,
@@ -795,49 +686,24 @@ export class APIClient implements ClientFeatures {
       `/runs/${encodeURIComponent(runID)}/capability-readiness`, {}, signal), runID);
   }
 
-  async getThreadCommandServicePolicy(threadID: string, signal?: AbortSignal) {
-    if (!applicationServiceIdentity(threadID)) throw new Error("An exact Thread is required for development service settings");
-    return parseThreadCommandServicePolicy(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/command-service-policy`, {}, signal), threadID);
+  getThreadCommandServicePolicy(threadID: string, signal?: AbortSignal) {
+    return this.sessions.getThreadCommandServicePolicy(threadID, signal);
   }
 
-  async setThreadCommandServicePolicy(threadID: string, body: ThreadCommandServicePolicyRequest, signal?: AbortSignal) {
-    if (!this.hasExecutionPermissionControl || !applicationServiceIdentity(threadID) || !validCommandServicePolicyRequest(body)) {
-      throw new Error("Development service settings require execution permission control access, an exact Thread and its current revision");
-    }
-    const result = parseThreadCommandServicePolicy(await this.sendControlRequest<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/command-service-policy`, body, signal, "", "PUT"), threadID);
-    if (result.policy !== body.policy || result.revision < body.expected_revision) {
-      throw new APIRequestError("开发服务设置返回的策略或版本与本次保存不符，请重新读取。", "INVALID_RESPONSE", 502);
-    }
-    return result;
+  setThreadCommandServicePolicy(threadID: string, body: ThreadCommandServicePolicyRequest, signal?: AbortSignal) {
+    return this.sessions.setThreadCommandServicePolicy(threadID, body, signal);
   }
 
-  async listThreadApplicationServices(threadID: string, signal?: AbortSignal, limit = 20) {
-    if (!applicationServiceIdentity(threadID) || !Number.isInteger(limit) || limit < 1 || limit > 50) {
-      throw new Error("A valid Thread and bounded application service limit are required");
-    }
-    return parseThreadApplicationServices(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/application-services`, { limit }, signal), threadID);
+  listThreadApplicationServices(threadID: string, signal?: AbortSignal, limit = 20) {
+    return this.sessions.listThreadApplicationServices(threadID, signal, limit);
   }
 
-  async getThreadApplicationService(threadID: string, jobID: string, signal?: AbortSignal) {
-    if (!applicationServiceIdentity(threadID) || !applicationServiceIdentity(jobID)) {
-      throw new Error("An exact Thread and application Job are required");
-    }
-    return parseThreadApplicationService(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/application-services/${encodeURIComponent(jobID)}`, {}, signal), threadID, jobID);
+  getThreadApplicationService(threadID: string, jobID: string, signal?: AbortSignal) {
+    return this.sessions.getThreadApplicationService(threadID, jobID, signal);
   }
 
-  async stopThreadApplicationService(threadID: string, runID: string, jobID: string, signal?: AbortSignal) {
-    if (!this.hasRunExecution || !applicationServiceIdentity(threadID) || !applicationServiceIdentity(runID) ||
-      !applicationServiceIdentity(jobID)) {
-      throw new Error("Application service cleanup requires control access and an exact Thread, Run and Job");
-    }
-    return parseThreadApplicationServiceStop(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/application-services/${encodeURIComponent(jobID)}/stop`,
-      { version: "thread_application_services.v1", expected_run_id: runID },
-      `application-stop-${jobID}`, signal), threadID, runID, jobID);
+  stopThreadApplicationService(threadID: string, runID: string, jobID: string, signal?: AbortSignal) {
+    return this.sessions.stopThreadApplicationService(threadID, runID, jobID, signal);
   }
 
   async getFullCDPSession(runID: string,
@@ -1497,113 +1363,36 @@ export class APIClient implements ClientFeatures {
     return new Blob([bytes], { type: metadata.mime });
   }
 
-  async uploadWorkspaceFile(workspaceID: string, file: File, operationKey: string,
+  uploadWorkspaceFile(workspaceID: string, file: File, operationKey: string,
     signal?: AbortSignal): Promise<WorkspaceFileAttachment> {
-    if (!boundedIdentity(workspaceID) || file.size > maximumFileBytes) throw new Error("每个文件不能超过 5 MiB。");
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = "";
-    for (let start = 0; start < bytes.length; start += 8192) binary += String.fromCharCode(...bytes.subarray(start, start + 8192));
-    const name = [...file.name.replace(/[\u0000-\u001f\u007f/\\]/gu, "_")].slice(0, 160).join("") || "附件";
-    const result = await this.postControl<{ attachment: unknown }>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/file-attachments`, {
-        version: "workspace_file_upload.v1", name, mime_type: file.type || "application/octet-stream", data_base64: btoa(binary),
-      }, operationKey, signal);
-    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    if (!validFileAttachment(result?.attachment) || result.attachment.workspace_id !== workspaceID ||
-        result.attachment.sha256 !== digest || result.attachment.byte_size !== bytes.length || result.attachment.name !== name) {
-      throw new APIRequestError("文件上传结果与原文件不一致，原请求标识已保留。", "INVALID_RESPONSE", 502);
-    }
-    return result.attachment;
+    return this.workspaces.uploadWorkspaceFile(workspaceID, file, operationKey, signal);
   }
 
-  async inspectWorkspaceFileUpload(workspaceID: string, operationKey: string, signal?: AbortSignal):
+  inspectWorkspaceFileUpload(workspaceID: string, operationKey: string, signal?: AbortSignal):
     Promise<{ state: "not_received" | "stored"; attachment?: WorkspaceFileAttachment }> {
-    if (!boundedIdentity(workspaceID) || !boundedIdentity(operationKey)) throw new Error("文件上传请求标识无效。");
-    const value = (await this.request<unknown>(`/workspaces/${encodeURIComponent(workspaceID)}/file-attachments/request`,
-      {}, signal, operationKey)).data;
-    if (!isRecord(value) || !["not_received", "stored"].includes(String(value.state)) ||
-        (value.state === "stored" && (!validFileAttachment(value.attachment) || value.attachment.workspace_id !== workspaceID)) ||
-        (value.state === "not_received" && value.attachment !== undefined)) {
-      throw new APIRequestError("文件上传状态无法核对，原请求已保留。", "INVALID_RESPONSE", 502);
-    }
-    return value as { state: "not_received" | "stored"; attachment?: WorkspaceFileAttachment };
+    return this.workspaces.inspectWorkspaceFileUpload(workspaceID, operationKey, signal);
   }
 
-  async downloadWorkspaceFile(metadata: WorkspaceFileAttachment, signal?: AbortSignal): Promise<Blob> {
-    if (!validFileAttachment(metadata)) throw new Error("文件引用无效，无法下载。");
-    return this.downloadVerifiedAttachment(`/workspaces/${encodeURIComponent(metadata.workspace_id)}/file-attachments/` +
-      `${encodeURIComponent(metadata.id)}/content`, { ...metadata, mime_type: "application/octet-stream" }, signal);
+  downloadWorkspaceFile(metadata: WorkspaceFileAttachment, signal?: AbortSignal): Promise<Blob> {
+    return this.workspaces.downloadWorkspaceFile(metadata, signal);
   }
 
-  async uploadWorkspaceImage(workspaceID: string, file: File, operationKey: string,
+  uploadWorkspaceImage(workspaceID: string, file: File, operationKey: string,
     signal?: AbortSignal): Promise<WorkspaceImageAttachment> {
-    if (!boundedIdentity(workspaceID) || !acceptedImageTypes.includes(file.type) ||
-      file.size < 1 || file.size > maximumImageBytes) throw new Error("请选择不超过 5 MiB 的 PNG、JPEG 或 WebP 图片。");
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = "";
-    for (let start = 0; start < bytes.length; start += 8192) binary += String.fromCharCode(...bytes.subarray(start, start + 8192));
-    const result = await this.postControl<{ image: unknown }>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/image-attachments`, {
-        version: "workspace_image_upload.v1", name: [...file.name.replace(/[\u0000-\u001f\u007f/\\]/gu, "_")].slice(0, 160).join(""), mime_type: file.type,
-        data_base64: btoa(binary),
-      }, operationKey, signal);
-    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    if (!validImageAttachment(result?.image) || result.image.workspace_id !== workspaceID ||
-      result.image.sha256 !== digest || result.image.byte_size !== bytes.length || result.image.mime_type !== file.type) {
-      throw new APIRequestError("图片上传结果与原图不一致，请重新选择。", "INVALID_RESPONSE", 502);
-    }
-    return result.image;
+    return this.workspaces.uploadWorkspaceImage(workspaceID, file, operationKey, signal);
   }
 
-  async downloadWorkspaceImage(metadata: WorkspaceImageAttachment, signal?: AbortSignal): Promise<Blob> {
-    if (!validImageAttachment(metadata)) throw new Error("图片引用无效，无法预览。");
-    return this.downloadVerifiedImage(`/workspaces/${encodeURIComponent(metadata.workspace_id)}/image-attachments/` +
-      `${encodeURIComponent(metadata.id)}/content`, metadata, signal);
+  downloadWorkspaceImage(metadata: WorkspaceImageAttachment, signal?: AbortSignal): Promise<Blob> {
+    return this.workspaces.downloadWorkspaceImage(metadata, signal);
   }
 
-  async downloadVerifiedImage(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
+  downloadVerifiedImage(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
     signal?: AbortSignal): Promise<Blob> {
-    if (!acceptedImageTypes.includes(metadata.mime_type) || !isSHA256(metadata.sha256) ||
-      !Number.isSafeInteger(metadata.byte_size) || metadata.byte_size < 1 || metadata.byte_size > 20 * 1024 * 1024) {
-      throw new Error("图片元信息无效。");
-    }
-    return this.downloadVerifiedAttachment(path, metadata, signal);
+    return this.workspaces.downloadVerifiedImage(path, metadata, signal);
   }
 
-  private async downloadVerifiedAttachment(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
-    signal?: AbortSignal): Promise<Blob> {
-    const response = await fetch(this.url(path), { method: "GET", headers: { ...this.headers(), Accept: metadata.mime_type },
-      signal, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
-    if (!response.ok) throw await this.responseError(response);
-    if (response.headers.get("content-type") !== metadata.mime_type ||
-      response.headers.get("etag") !== `"${metadata.sha256}"` ||
-      response.headers.get("x-cyberagent-content-sha256") !== metadata.sha256 ||
-      response.headers.get("content-length") !== String(metadata.byte_size) || (!response.body && metadata.byte_size !== 0)) {
-      throw new APIRequestError("附件内容已变化或无法验证，请重新读取。", "INVALID_RESPONSE", 502);
-    }
-    const bytes = new Uint8Array(metadata.byte_size);
-    const reader = response.body?.getReader();
-    let offset = 0;
-    try {
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (offset + value.byteLength > bytes.byteLength) { await reader.cancel(); throw new Error("附件大小超出已验证范围。"); }
-        bytes.set(value, offset);
-        offset += value.byteLength;
-      }
-    } finally { reader?.releaseLock(); }
-    const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    if (offset !== bytes.length || sha256 !== metadata.sha256) throw new Error("附件内容验证失败，请重新读取。");
-    return new Blob([bytes], { type: metadata.mime_type });
-  }
-
-  async modelAvailability(signal?: AbortSignal): Promise<ModelAvailabilityView> {
-    const value = await this.get<unknown>("/models", {}, signal);
-    return parseModelAvailability(value);
+  modelAvailability(signal?: AbortSignal): Promise<ModelAvailabilityView> {
+    return this.models.modelAvailability(signal);
   }
 
   async getArtifact(artifactID: string, signal?: AbortSignal): Promise<ArtifactView> {
@@ -1665,25 +1454,14 @@ export class APIClient implements ClientFeatures {
     return value as unknown as ExternalSkillProjectionView;
   }
 
-  async workspaceExplore(workspaceID: string, path = ".",
+  workspaceExplore(workspaceID: string, path = ".",
     signal?: AbortSignal): Promise<WorkspaceExplorerView> {
-    if (!boundedIdentity(workspaceID) || !validWorkspaceRelativePath(path)) {
-      throw new Error("A normalized Workspace identity and Go-issued relative path are required");
-    }
-    return parseWorkspaceExplorer(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/explore`, { path }, signal,
-    ), workspaceID, path);
+    return this.workspaces.workspaceExplore(workspaceID, path, signal);
   }
 
-  async workspaceSearch(workspaceID: string, query: string,
+  workspaceSearch(workspaceID: string, query: string,
     signal?: AbortSignal): Promise<WorkspaceSearchView> {
-    if (!boundedIdentity(workspaceID) || !boundedText(query, 128) ||
-      /[\u0000-\u001f\u007f]/u.test(query)) {
-      throw new Error("A normalized Workspace identity and bounded query are required");
-    }
-    return parseWorkspaceSearch(await this.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/search`, { query }, signal,
-    ), workspaceID);
+    return this.workspaces.workspaceSearch(workspaceID, query, signal);
   }
 
   async repositoryState(workspaceID: string,
@@ -2020,231 +1798,94 @@ export class APIClient implements ClientFeatures {
     ), runID, body);
   }
 
-  async selectModelRoute(route: string, body: ModelRouteControlRequestView,
+  selectModelRoute(route: string, body: ModelRouteControlRequestView,
     signal?: AbortSignal): Promise<ModelAvailabilityView["routes"][number]> {
-    if (!this.hasModelControl || !boundedIdentity(route) || route.trim() !== route) {
-      throw new Error("Model control capability and a normalized route are required");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      `/models/routes/${encodeURIComponent(route)}`, body, signal,
-    );
-    return parseModelRouteControl(result, route, body);
+    return this.models.selectModelRoute(route, body, signal);
   }
 
-  async availableModelRoutes(signal?: AbortSignal): Promise<AvailableModelRouteCollectionView> {
-    if (!this.hasModelControl) {
-      throw new Error("Model control capability is required to list selectable routes");
-    }
-    return parseAvailableModelRouteCollection(await this.get<unknown>(
-      "/models/routes/available", {}, signal));
+  availableModelRoutes(signal?: AbortSignal): Promise<AvailableModelRouteCollectionView> {
+    return this.models.availableModelRoutes(signal);
   }
 
-  async threadModelRoute(threadID: string, signal?: AbortSignal): Promise<ThreadModelRouteView> {
-    if (!this.hasModelControl || !boundedIdentity(threadID) || threadID.trim() !== threadID) {
-      throw new Error("Model control capability and a normalized Thread are required");
-    }
-    return parseThreadModelRoute(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/model-route`, {}, signal), threadID);
+  threadModelRoute(threadID: string, signal?: AbortSignal): Promise<ThreadModelRouteView> {
+    return this.models.threadModelRoute(threadID, signal);
   }
 
-  async providerSearchReadiness(threadID: string,
+  providerSearchReadiness(threadID: string,
     signal?: AbortSignal): Promise<ProviderSearchReadinessView> {
-    if (!boundedIdentity(threadID) || threadID.trim() !== threadID) {
-      throw new Error("A normalized Thread is required to read search readiness");
-    }
-    return parseProviderSearchReadiness(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/search-readiness`, {}, signal), threadID);
+    return this.models.providerSearchReadiness(threadID, signal);
   }
 
-  async diagnoseThreadSearch(threadID: string, body: SearchDiagnosticsRequestView,
+  diagnoseThreadSearch(threadID: string, body: SearchDiagnosticsRequestView,
     signal?: AbortSignal): Promise<SearchDiagnosticsView> {
-    if (!this.hasControl || !boundedIdentity(threadID) || threadID.trim() !== threadID ||
-      body.version !== "search_diagnostics.v1" || body.confirm !== true) {
-      throw new Error("Explicit confirmation and a normalized Thread are required for search diagnostics");
-    }
-    return parseSearchDiagnostics(await this.sendControlRequest<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/search-diagnostics`, body, signal), threadID);
+    return this.models.diagnoseThreadSearch(threadID, body, signal);
   }
 
-  async selectThreadModelRoute(threadID: string, body: ThreadModelRouteControlRequestView,
+  selectThreadModelRoute(threadID: string, body: ThreadModelRouteControlRequestView,
     signal?: AbortSignal): Promise<ThreadModelRouteView> {
-    const select = body.action === "select";
-    const reset = body.action === "reset";
-    if (!this.hasModelControl || !boundedIdentity(threadID) || threadID.trim() !== threadID ||
-      body.version !== "thread_model_route_control.v1" || (!select && !reset) ||
-      !boundedIdentity(body.operation_key) || !boundedIdentity(body.requested_by) ||
-      (select && (!boundedIdentity(body.provider) || !boundedIdentity(body.model))) ||
-      (reset && (body.provider !== undefined || body.model !== undefined))) {
-      throw new Error("A normalized, exact Thread model route intent is required");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/model-route`, body, signal, "", "PUT");
-    return parseThreadModelRoute(result, threadID, body);
+    return this.models.selectThreadModelRoute(threadID, body, signal);
   }
 
-  async diagnoseProvider(body: ProviderDiagnosticRequestView,
+  diagnoseProvider(body: ProviderDiagnosticRequestView,
     signal?: AbortSignal): Promise<ProviderDiagnosticView> {
-    if (!this.hasModelControl || body.confirm_diagnostic !== true) {
-      throw new Error("Explicit Provider diagnostic confirmation is required");
-    }
-    const result = await this.sendControlRequest<unknown>("/models/diagnostics", body, signal);
-    return parseProviderDiagnostic(result, body);
+    return this.models.diagnoseProvider(body, signal);
   }
 
-  async qualifyModelHarness(body: ModelHarnessQualificationRequestView,
+  qualifyModelHarness(body: ModelHarnessQualificationRequestView,
     signal?: AbortSignal): Promise<ModelHarnessQualificationView> {
-    if (!this.hasModelControl || body.confirm_qualification !== true) {
-      throw new Error("Explicit model Harness qualification confirmation is required");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      "/models/harness-qualifications", body, signal,
-    );
-    return parseModelHarnessQualification(result, body);
+    return this.models.qualifyModelHarness(body, signal);
   }
 
-  async chatGPTAuthStatus(signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    if (!this.hasChatGPTAuth) {
-      throw new APIRequestError("ChatGPT 账户登录当前未启用。", "PERMISSION_DENIED", 403);
-    }
-    return this.parseChatGPTStatus(await this.get<unknown>("/models/chatgpt", {}, signal));
+  chatGPTAuthStatus(signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.models.chatGPTAuthStatus(signal);
   }
 
-  async startChatGPTLogin(body: ChatGPTLoginRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.chatGPTAuthAction("login", body, signal);
+  startChatGPTLogin(body: ChatGPTLoginRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.models.startChatGPTLogin(body, signal);
   }
 
-  async cancelChatGPTLogin(body: ChatGPTCancelRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.chatGPTAuthAction("cancel", body, signal);
+  cancelChatGPTLogin(body: ChatGPTCancelRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.models.cancelChatGPTLogin(body, signal);
   }
 
-  async logoutChatGPTAccount(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.chatGPTAuthAction("logout", body, signal);
+  logoutChatGPTAccount(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.models.logoutChatGPTAccount(body, signal);
   }
 
-  async refreshChatGPTModels(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.chatGPTAuthAction("models", body, signal);
+  refreshChatGPTModels(body: ChatGPTAccountRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.models.refreshChatGPTModels(body, signal);
   }
 
-  async openChatGPTUsage(body: ChatGPTAuthRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    return this.chatGPTAuthAction("usage", body, signal);
+  openChatGPTUsage(body: ChatGPTAuthRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
+    return this.models.openChatGPTUsage(body, signal);
   }
 
-  private parseChatGPTStatus(value: unknown): ChatGPTAuthStatusView {
-    try { return parseChatGPTAuthStatus(value); }
-    catch { throw new APIRequestError("ChatGPT 账户状态无效，请重新读取。", "INVALID_RESPONSE", 502); }
+  providerDefinitions(signal?: AbortSignal): Promise<ProviderDefinitionCollectionView> {
+    return this.models.providerDefinitions(signal);
   }
 
-  private async chatGPTAuthAction(action: "login" | "cancel" | "logout" | "models" | "usage",
-    body: ChatGPTAuthRequestView, signal?: AbortSignal): Promise<ChatGPTAuthStatusView> {
-    if (!this.hasChatGPTAuth) {
-      throw new APIRequestError("ChatGPT 账户登录当前未启用。", "PERMISSION_DENIED", 403);
-    }
-    const request = body as unknown;
-    const identity = action === "cancel" ? "attempt_id" : "account_id";
-    const requiresIdentity = action === "cancel" || action === "logout" || action === "models";
-    const allowed = action === "usage" ? ["version", "confirm"] : ["version", "confirm", identity];
-    if (!isRecord(request) || request.version !== chatGPTAuthProtocol || request.confirm !== true ||
-      Object.keys(request).some((key) => !allowed.includes(key)) ||
-      (requiresIdentity && !validChatGPTIdentity(request[identity])) ||
-      (action === "login" && request.account_id !== undefined && !validChatGPTIdentity(request.account_id))) {
-      throw new APIRequestError("ChatGPT 账户操作需要有效身份与明确确认。", "INVALID_ARGUMENT", 400);
-    }
-    return this.parseChatGPTStatus(await this.sendControlRequest<unknown>(`/models/chatgpt/${action}`, body, signal));
-  }
-
-  async providerDefinitions(signal?: AbortSignal): Promise<ProviderDefinitionCollectionView> {
-    if (!this.hasProviderDefinitions) {
-      throw new Error("Custom Provider definition capability is required");
-    }
-    return parseProviderDefinitionCollection(await this.get<unknown>(
-      "/models/provider-definitions", {}, signal));
-  }
-
-  async discoverProviderModels(body: ProviderModelDiscoveryRequestView,
+  discoverProviderModels(body: ProviderModelDiscoveryRequestView,
     signal?: AbortSignal): Promise<ProviderModelDiscoveryView> {
-    if (!this.hasProviderDefinitions || body.version !== "provider_model_discovery.v1" ||
-      body.confirm_discovery !== true || !validCustomProviderID(body.provider_id) ||
-      typeof body.endpoint_url !== "string" || !body.endpoint_url || body.endpoint_url.length > 2048 ||
-      !["openai_chat_completions", "openai_responses", "anthropic_messages"].includes(body.transport) ||
-      !validProviderAdvancedConfig(body.advanced_config) ||
-      (body.secret !== undefined && (typeof body.secret !== "string" || body.secret.length < 8 ||
-        body.secret.length > 2560 || /\s/.test(body.secret))) ||
-      (body.expected_definition_revision !== undefined && !safePositiveInteger(body.expected_definition_revision))) {
-      throw new Error("Confirmed model discovery capability and a valid draft are required");
-    }
-    const value = await this.sendControlRequest<unknown>("/models/model-discovery", body, signal);
-    const safeText = (text: unknown, limit: number): text is string => typeof text === "string" &&
-      text.length <= limit && text.trim() === text && !/[\x00-\x1f\x7f]/.test(text) &&
-      (!body.secret || !text.includes(body.secret));
-    if (!hasExactKeys(value, ["version", "source", "models", "truncated"]) ||
-      value.version !== "provider_model_discovery.v1" || value.source !== "provider_api" ||
-      typeof value.truncated !== "boolean" || !Array.isArray(value.models) || value.models.length > 512 ||
-      value.models.some((model: unknown) => !isRecord(model) ||
-        Object.keys(model).some((key) => !["id", "display_name", "input_token_limit", "output_token_limit"].includes(key)) ||
-        !boundedIdentity(model.id) || !safeText(model.id, 256) ||
-        (model.display_name !== undefined && !safeText(model.display_name, 256)) ||
-        (model.input_token_limit !== undefined && (!safePositiveInteger(model.input_token_limit) || Number(model.input_token_limit) > 2_097_152)) ||
-        (model.output_token_limit !== undefined && (!safePositiveInteger(model.output_token_limit) || Number(model.output_token_limit) > 1_000_000))) ||
-      new Set(value.models.map((m: { id: unknown }) => m.id)).size !== value.models.length) {
-      throw new APIRequestError("Provider model discovery returned an invalid catalog", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as ProviderModelDiscoveryView;
+    return this.models.discoverProviderModels(body, signal);
   }
 
-  async upsertProviderDefinition(provider: string, body: ProviderDefinitionUpsertRequestView,
+  upsertProviderDefinition(provider: string, body: ProviderDefinitionUpsertRequestView,
     signal?: AbortSignal): Promise<ProviderDefinitionMutationView> {
-    if (!this.hasProviderDefinitions || !validCustomProviderID(provider) ||
-      body.version !== "provider_definition_control.v1" || body.confirm !== true ||
-      body.definition.id !== provider) {
-      throw new Error("Confirmed custom Provider definition capability is required");
-    }
-    parseProviderDefinition(body.definition);
-    return parseProviderDefinitionMutation(await this.sendControlRequest<unknown>(
-      `/models/provider-definitions/${encodeURIComponent(provider)}`, body, signal,
-    ), provider, false);
+    return this.models.upsertProviderDefinition(provider, body, signal);
   }
 
-  async deleteProviderDefinition(provider: string, body: ProviderDefinitionDeleteRequestView,
+  deleteProviderDefinition(provider: string, body: ProviderDefinitionDeleteRequestView,
     signal?: AbortSignal): Promise<ProviderDefinitionMutationView> {
-    if (!this.hasProviderDefinitions || !validCustomProviderID(provider) ||
-      body.version !== "provider_definition_control.v1" || body.confirm !== true ||
-      !safeBoundedCount(body.expected_collection_revision, Number.MAX_SAFE_INTEGER) ||
-      !safePositiveInteger(body.expected_definition_revision)) {
-      throw new Error("Confirmed custom Provider deletion capability is required");
-    }
-    return parseProviderDefinitionMutation(await this.sendControlRequest<unknown>(
-      `/models/provider-definitions/${encodeURIComponent(provider)}/delete`, body, signal,
-    ), provider, true);
+    return this.models.deleteProviderDefinition(provider, body, signal);
   }
 
-  async providerCredentialStatuses(signal?: AbortSignal): Promise<ProviderCredentialListView> {
-    if (!this.hasProviderCredentials) {
-      throw new Error("Provider credential capability is required");
-    }
-    return parseProviderCredentialList(await this.get<unknown>("/models/credentials", {}, signal));
+  providerCredentialStatuses(signal?: AbortSignal): Promise<ProviderCredentialListView> {
+    return this.models.providerCredentialStatuses(signal);
   }
 
-  async changeProviderCredential(provider: string, body: ProviderCredentialRequestView,
+  changeProviderCredential(provider: string, body: ProviderCredentialRequestView,
     signal?: AbortSignal): Promise<ProviderCredentialStatusView> {
-    if (!this.hasProviderCredentials ||
-      !validProviderCredentialName(provider) ||
-      body.version !== "provider_credential.v1" || body.confirm !== true ||
-      (body.action === "set" ? typeof body.secret !== "string" || body.secret.length < 8 :
-        body.action !== "delete" || body.secret !== "")) {
-      throw new Error("Confirmed Provider credential capability is required");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      `/models/credentials/${encodeURIComponent(provider)}`, body, signal,
-    );
-    const status = parseProviderCredentialStatus(result, provider);
-    const applied = status.registry_reloaded && !status.restart_required &&
-      status.registry_generation > 0;
-    const deferred = !status.registry_reloaded && status.restart_required;
-    if (status.configured !== (body.action === "set") || (!applied && !deferred)) {
-      throw new APIRequestError("Provider credential change returned the wrong status",
-        "INVALID_RESPONSE", 502);
-    }
-    return status;
+    return this.models.changeProviderCredential(provider, body, signal);
   }
 
   async fileEditQueue(runID: string, signal?: AbortSignal): Promise<FileEditQueueView> {
@@ -2708,32 +2349,14 @@ export class APIClient implements ClientFeatures {
     return parseRunCreationControl(result, body);
   }
 
-  async createThread(body: ThreadCreationControlRequestView, idempotencyKey: string,
+  createThread(body: ThreadCreationControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadCreationControlView> {
-    const routePairPresent = body.provider !== undefined && body.model !== undefined;
-    const routePairAbsent = body.provider === undefined && body.model === undefined;
-    if (!this.hasThreadControl || !this.hasRunCreation || !this.hasSessionMessages ||
-      body.version !== "thread_creation.v1" || (!routePairPresent && !routePairAbsent) ||
-      (routePairPresent && (!boundedIdentity(body.provider) || !boundedIdentity(body.model) ||
-        body.provider!.includes("/") || body.model!.includes("/")))) {
-      throw new Error("Thread creation capability and a normalized Provider/model pair are required");
-    }
-    normalizedTaskBudget(body.budget);
-    normalizeRequestedNetworkAuthority(body);
-    normalizeRequestedWebAccess(body);
-    return parseThreadCreationControl(await this.sendControl<unknown>("/threads", body,
-      idempotencyKey, signal), body);
+    return this.sessions.createThread(body, idempotencyKey, signal);
   }
 
-  async submitThreadMessage(threadID: string, body: ThreadMessageControlRequestView,
+  submitThreadMessage(threadID: string, body: ThreadMessageControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ThreadMessageControlView> {
-    if (!this.hasThreadControl || !this.hasSessionMessages || !boundedIdentity(threadID) ||
-      threadID.trim() !== threadID || body.version !== "thread_message_submission.v1") {
-      throw new Error("Thread message capability and a normalized Thread are required");
-    }
-    return parseThreadMessageControl(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/messages`, body, idempotencyKey, signal,
-    ), threadID);
+    return this.sessions.submitThreadMessage(threadID, body, idempotencyKey, signal);
   }
 
   async threadActivityDetail(threadID: string, activityRef: string,
@@ -2799,64 +2422,33 @@ export class APIClient implements ClientFeatures {
       idempotencyKey, signal), runID, body);
   }
 
-  async threadExecution(threadID: string, signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
-    return parseThreadExecution(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/execution`, {}, signal), threadID);
+  threadExecution(threadID: string, signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
+    return this.sessions.threadExecution(threadID, signal);
   }
 
-  async threadChanges(threadID: string, runID: string, sourceEventID: string,
+  threadChanges(threadID: string, runID: string, sourceEventID: string,
     signal?: AbortSignal): Promise<ThreadChangeSummary> {
-    const value = await this.get<ThreadChangeSummary>(`/threads/${encodeURIComponent(threadID)}/changes`,
-      { source_event_id: sourceEventID }, signal);
-    if (value.version !== "thread_change_summary.v1" || value.thread_id !== threadID ||
-      value.run_id !== runID || value.source_event_id !== sourceEventID) {
-      throw new Error("The change summary does not match this reply.");
-    }
-    return value;
+    return this.sessions.threadChanges(threadID, runID, sourceEventID, signal);
   }
 
-  async undoThreadChanges(threadID: string, runID: string, sourceEventID: string,
+  undoThreadChanges(threadID: string, runID: string, sourceEventID: string,
     confirm: boolean, signal?: AbortSignal): Promise<ThreadChangeUndo> {
-    if (!this.hasWorkspaceCheckpointControl || !boundedIdentity(threadID) ||
-      !boundedIdentity(runID) || !boundedIdentity(sourceEventID)) {
-      throw new Error("Workspace restore authority and an exact reply are required.");
-    }
-    const value = await this.sendControl<ThreadChangeUndo>(`/threads/${encodeURIComponent(threadID)}/changes/undo`,
-      { version: "thread_change_undo.v1", source_event_id: sourceEventID, confirm },
-      `thread-change-undo-${sourceEventID}`, signal);
-    if (value.version !== "thread_change_undo.v1" || value.thread_id !== threadID ||
-      value.run_id !== runID || value.source_event_id !== sourceEventID ||
-      !["available", "unavailable", "conflict", "applying", "completed", "partial"].includes(value.state) ||
-      !Array.isArray(value.conflicts) || !Array.isArray(value.restored_paths) || !Array.isArray(value.remaining_paths)) {
-      throw new Error("The undo result does not match this reply.");
-    }
-    return value;
+    return this.sessions.undoThreadChanges(threadID, runID, sourceEventID, confirm, signal);
   }
 
-  async inspectThreadCreationRequest(workspaceID: string, operationKey: string,
+  inspectThreadCreationRequest(workspaceID: string, operationKey: string,
     signal?: AbortSignal): Promise<unknown> {
-    if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID) {
-      throw new Error("A normalized workspace is required");
-    }
-    return (await this.request<unknown>("/threads/creation-request", { workspace_id: workspaceID },
-      signal, operationKey)).data;
+    return this.sessions.inspectThreadCreationRequest(workspaceID, operationKey, signal);
   }
 
-  async inspectThreadTurnRequest(threadID: string, operationKey: string,
+  inspectThreadTurnRequest(threadID: string, operationKey: string,
     signal?: AbortSignal): Promise<unknown> {
-    if (!boundedIdentity(threadID) || threadID.trim() !== threadID) {
-      throw new Error("A normalized Thread is required");
-    }
-    return (await this.request<unknown>(`/threads/${encodeURIComponent(threadID)}/turn-request`, {},
-      signal, operationKey)).data;
+    return this.sessions.inspectThreadTurnRequest(threadID, operationKey, signal);
   }
 
-  async inspectThreadPlanRequest(threadID: string, runID: string, action: "enter_plan" | "enter_deliver" | "confirm",
+  inspectThreadPlanRequest(threadID: string, runID: string, action: "enter_plan" | "enter_deliver" | "confirm",
     operationKey: string, signal?: AbortSignal): Promise<unknown> {
-    if (!boundedIdentity(threadID) || threadID.trim() !== threadID ||
-      !boundedIdentity(runID) || runID.trim() !== runID) throw new Error("A normalized Thread and Run are required");
-    return (await this.request<unknown>(`/threads/${encodeURIComponent(threadID)}/plan`,
-      { run_id: runID, action }, signal, operationKey)).data;
+    return this.sessions.inspectThreadPlanRequest(threadID, runID, action, operationKey, signal);
   }
 
   async createFileEditRevertProposal(runID: string, sourceEditID: string,
@@ -2871,176 +2463,62 @@ export class APIClient implements ClientFeatures {
     ), runID, sourceEditID);
   }
 
-  async interruptThread(threadID: string, executionID: string, idempotencyKey: string,
+  interruptThread(threadID: string, executionID: string, idempotencyKey: string,
     signal?: AbortSignal): Promise<import("./types").ThreadExecutionView> {
-    if (!this.hasThreadControl || !this.hasRunExecution || !boundedIdentity(threadID) ||
-      !boundedIdentity(executionID)) throw new Error("A current controllable Thread execution is required");
-    return parseThreadExecution(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/interrupt`, {
-        version: "thread_execution.v1", execution_id: executionID,
-      }, idempotencyKey, signal), threadID);
+    return this.sessions.interruptThread(threadID, executionID, idempotencyKey, signal);
   }
 
-  async submitThreadTurn(threadID: string, body: ThreadTurnControlRequestView,
+  submitThreadTurn(threadID: string, body: ThreadTurnControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ThreadMessageControlView> {
-    if (!this.hasThreadControl || !this.hasSessionMessages || !boundedIdentity(threadID) ||
-      threadID.trim() !== threadID || body.version !== "thread_message_submission.v1") {
-      throw new Error("Thread turn capability and a normalized Thread are required");
-    }
-    if (body.files !== undefined && (!this.hasEvidenceAttachment || !Array.isArray(body.files) ||
-      body.files.length > 4 || new Set(body.files.map((file) => file?.path)).size !== body.files.length ||
-      body.files.some((file) => !hasExactKeys(file, ["source_kind", "path", "expected_sha256"]) ||
-        file.source_kind !== "workspace_file" || file.path === "." || !validWorkspaceRelativePath(file.path) ||
-        !isSHA256(file.expected_sha256)))) {
-      throw new Error("最多引用 4 个不同的项目文件；请重新选择有效文件后重试。");
-    }
-    if (body.attachments !== undefined && (!Array.isArray(body.attachments) || body.attachments.length > 4 ||
-        new Set(body.attachments.map((file) => file?.id)).size !== body.attachments.length ||
-        body.attachments.some((file) => !hasExactKeys(file, ["id", "workspace_id", "sha256", "byte_size"]) ||
-          !boundedIdentity(file.id) || !boundedIdentity(file.workspace_id) || !isSHA256(file.sha256) ||
-          !Number.isSafeInteger(file.byte_size) || file.byte_size < 0 || file.byte_size > maximumFileBytes))) {
-      throw new Error("文件附件身份无效，请重新核对已保存的文件。");
-    }
-    try {
-      return parseThreadMessageControl(await this.sendControl<unknown>(
-        `/threads/${encodeURIComponent(threadID)}/turns`, body, idempotencyKey, signal,
-      ), threadID, true);
-    } catch (error) {
-      if (error instanceof APIRequestError && error.turnFailure && error.turnFailure.thread_id !== threadID) {
-        throw new APIRequestError("Thread failure response belongs to another conversation", "INVALID_RESPONSE", 502);
-      }
-      throw error;
-    }
+    return this.sessions.submitThreadTurn(threadID, body, idempotencyKey, signal);
   }
 
-  async recoverThreadRun(threadID: string, body: ThreadRunRecoveryControlRequestView,
+  recoverThreadRun(threadID: string, body: ThreadRunRecoveryControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ThreadRunRecoveryControlView> {
-    if (!this.hasThreadControl || !this.hasSessionMessages || !boundedIdentity(threadID) ||
-      threadID.trim() !== threadID || body.version !== "thread_run_recovery.v1" ||
-      !boundedIdentity(body.run_id) || !boundedIdentity(body.handoff_operation_id)) {
-      throw new Error("Thread recovery capability and exact failed boundary identities are required");
-    }
-    return parseThreadRunRecoveryControl(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/recovery`, body, idempotencyKey, signal,
-    ), threadID, body);
+    return this.sessions.recoverThreadRun(threadID, body, idempotencyKey, signal);
   }
 
-  async getThreadExecutionPermission(threadID: string,
+  getThreadExecutionPermission(threadID: string,
     signal?: AbortSignal): Promise<ThreadExecutionPermissionControlView> {
-    if (!boundedIdentity(threadID) || threadID.trim() !== threadID) {
-      throw new Error("A normalized Thread is required");
-    }
-    return parseThreadApprovalPreference(await this.get<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/execution-permission`, {}, signal), threadID);
+    return this.sessions.getThreadExecutionPermission(threadID, signal);
   }
 
-  async changeThreadExecutionPermission(threadID: string,
+  changeThreadExecutionPermission(threadID: string,
     body: ThreadExecutionPermissionControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadExecutionPermissionControlView> {
-    if (!this.hasExecutionPermissionControl || !boundedIdentity(threadID) ||
-      threadID.trim() !== threadID) {
-      throw new Error("Thread execution permission capability is required");
-    }
-    if (!["ask", "auto", "full"].includes(body.mode) ||
-      body.confirm_full !== (body.mode === "full") ||
-      Object.keys(body).some((key) => !["mode", "confirm_full", "reason"].includes(key))) {
-      throw new Error("An exact ask/auto/full selection and explicit Full confirmation are required");
-    }
-    return parseThreadApprovalPreference(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/execution-permission`, body,
-      idempotencyKey, signal), threadID);
+    return this.sessions.changeThreadExecutionPermission(threadID, body, idempotencyKey, signal);
   }
 
-  async moveThreadToProject(threadID: string, projectWorkspaceID: string, expectedVersion: number,
+  moveThreadToProject(threadID: string, projectWorkspaceID: string, expectedVersion: number,
     idempotencyKey: string, signal?: AbortSignal): Promise<{ thread: ThreadView; replayed: boolean }> {
-    if (!this.hasThreadControl || !boundedIdentity(threadID) ||
-      (projectWorkspaceID !== "" && !boundedIdentity(projectWorkspaceID)) || !safePositiveInteger(expectedVersion)) {
-      throw new Error("A conversation, project and current project assignment version are required");
-    }
-    const result = await this.sendControl<unknown>(`/threads/${encodeURIComponent(threadID)}/project`, {
-      version: "thread_project_move.v1", project_workspace_id: projectWorkspaceID,
-      expected_version: expectedVersion,
-    }, idempotencyKey, signal);
-    if (!hasExactKeys(result, ["version", "thread", "replayed"]) ||
-      result.version !== "thread_project_move.v1" || typeof result.replayed !== "boolean") {
-      throw new APIRequestError("Project move response is invalid", "INVALID_RESPONSE", 502);
-    }
-    const thread = parseThreadView(result.thread, threadID);
-    if ((!result.replayed && thread.project_workspace_id !== projectWorkspaceID) ||
-      !safePositiveInteger(thread.project_assignment_version) || thread.project_assignment_version <= expectedVersion) {
-      throw new APIRequestError("Project move response does not match the requested destination", "INVALID_RESPONSE", 502);
-    }
-    return { thread, replayed: result.replayed };
+    return this.sessions.moveThreadToProject(threadID, projectWorkspaceID, expectedVersion, idempotencyKey, signal);
   }
 
-  async transitionThread(threadID: string, action: "archive" | "restore" | "delete",
+  transitionThread(threadID: string, action: "archive" | "restore" | "delete",
     body: ThreadLifecycleControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ThreadLifecycleControlView> {
-    if (!this.hasThreadControl || !this.hasSessionMessages ||
-      !boundedIdentity(threadID) || threadID.trim() !== threadID ||
-      body.version !== "thread_lifecycle.v1" || !Number.isSafeInteger(body.expected_version) ||
-      body.expected_version < 1) {
-      throw new Error("Thread lifecycle capability and a current Thread version are required");
-    }
-    return parseThreadLifecycleControl(await this.sendControl<unknown>(
-      `/threads/${encodeURIComponent(threadID)}/${action}`, body, idempotencyKey, signal,
-    ), threadID, action, body.expected_version);
+    return this.sessions.transitionThread(threadID, action, body, idempotencyKey, signal);
   }
 
-  async submitSessionMessage(sessionID: string, body: SessionMessageControlRequestView,
+  submitSessionMessage(sessionID: string, body: SessionMessageControlRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<SessionMessageControlView> {
-    if (!this.hasSessionMessages) {
-      throw new Error("Run messaging capability is required for this operation");
-    }
-    const normalizedSessionID = boundedIdentity(sessionID);
-    if (!normalizedSessionID || normalizedSessionID !== sessionID) {
-      throw new Error("A normalized Run-local Session identity is required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/sessions/${encodeURIComponent(sessionID)}/messages`, body, idempotencyKey, signal,
-    );
-    return parseSessionMessageControl(result, sessionID);
+    return this.sessions.submitSessionMessage(sessionID, body, idempotencyKey, signal);
   }
 
-  async inspectSessionMessageOperation(sessionID: string, operationKey: string,
+  inspectSessionMessageOperation(sessionID: string, operationKey: string,
     signal?: AbortSignal): Promise<unknown> {
-    if (!this.hasSessionMessages || !boundedIdentity(sessionID) || sessionID.trim() !== sessionID ||
-      operationKey.length < 16 || operationKey.length > 256 || /[\s\u0000-\u001f\u007f]/u.test(operationKey)) {
-      throw new Error("A Run-local Session and normalized original operation key are required");
-    }
-    return (await this.request<unknown>(
-      `/sessions/${encodeURIComponent(sessionID)}/messages/operations/${encodeURIComponent(operationKey)}`,
-      {}, signal)).data;
+    return this.sessions.inspectSessionMessageOperation(sessionID, operationKey, signal);
   }
 
-  async archiveSession(sessionID: string, body: SessionArchiveControlRequestView,
+  archiveSession(sessionID: string, body: SessionArchiveControlRequestView,
     signal?: AbortSignal): Promise<SessionArchiveControlView> {
-    if (!this.hasSessionMessages || !boundedIdentity(sessionID) || sessionID.trim() !== sessionID ||
-      body.version !== "session_archive.v1" || body.confirm !== true) {
-      throw new Error("Confirmed Run-local Session archive capability and identity are required");
-    }
-    return parseSessionArchiveControl(await this.sendControlRequest<unknown>(
-      `/sessions/${encodeURIComponent(sessionID)}/archive`, body, signal,
-    ), sessionID);
+    return this.sessions.archiveSession(sessionID, body, signal);
   }
 
-  async cancelSessionSteering(sessionID: string, messageID: string,
+  cancelSessionSteering(sessionID: string, messageID: string,
     body: SessionSteeringCancellationRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<SessionSteeringCancellationView> {
-    if (!this.hasSessionSteeringControl) {
-      throw new Error("Run-local Session steering cancellation capability is required for this operation");
-    }
-    const normalizedSessionID = boundedIdentity(sessionID);
-    const normalizedMessageID = boundedIdentity(messageID);
-    if (!normalizedSessionID || normalizedSessionID !== sessionID ||
-      !normalizedMessageID || normalizedMessageID !== messageID) {
-      throw new Error("Normalized Run-local Session and steering identities are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/sessions/${encodeURIComponent(sessionID)}/messages/${encodeURIComponent(messageID)}/cancel`,
-      body, idempotencyKey, signal,
-    );
-    return parseSessionSteeringCancellation(result, sessionID, messageID);
+    return this.sessions.cancelSessionSteering(sessionID, messageID, body, idempotencyKey, signal);
   }
 
   async controlRunLifecycle(runID: string, body: RunLifecycleControlRequestView,
@@ -3073,68 +2551,25 @@ export class APIClient implements ClientFeatures {
     return parseRunExecutionControl(result, runID, body);
   }
 
-  async getPublicModelStream(runID: string,
+  getPublicModelStream(runID: string,
     signal?: AbortSignal): Promise<PublicModelStreamSnapshot> {
-    const normalizedRunID = boundedIdentity(runID);
-    if (!normalizedRunID || normalizedRunID !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/active-call`, {}, signal,
-    );
-    return parsePublicModelStream(result, runID);
+    return this.models.getPublicModelStream(runID, signal);
   }
 
-  async pollPublicModelStream(runID: string,
+  pollPublicModelStream(runID: string,
     signal?: AbortSignal): Promise<PublicModelStreamSnapshot | null> {
-    const normalizedRunID = boundedIdentity(runID);
-    if (!normalizedRunID || normalizedRunID !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const result = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/active-call/poll`, {}, signal,
-    );
-    return parsePublicModelStreamPoll(result, runID);
+    return this.models.pollPublicModelStream(runID, signal);
   }
 
-  async cancelModelCall(runID: string, body: ModelCancellationRequestView,
+  cancelModelCall(runID: string, body: ModelCancellationRequestView,
     idempotencyKey: string, signal?: AbortSignal): Promise<ModelCancellationView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    const normalizedRunID = boundedIdentity(runID);
-    if (!normalizedRunID || normalizedRunID !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    if (!boundedIdentity(body.attempt_id) || !safePositiveInteger(body.model_attempt)) {
-      throw new Error("A bound attempt identity and model attempt are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/active-call/cancel`, body, idempotencyKey, signal,
-    );
-    return parseModelCancellation(result, runID, body);
+    return this.models.cancelModelCall(runID, body, idempotencyKey, signal);
   }
 
-  async cancelSpecialistModelCall(runID: string, agentID: string,
+  cancelSpecialistModelCall(runID: string, agentID: string,
     body: ModelCancellationRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<SpecialistModelCancellationView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    const normalizedRunID = boundedIdentity(runID);
-    const normalizedAgentID = boundedIdentity(agentID);
-    if (!normalizedRunID || normalizedRunID !== runID ||
-      !normalizedAgentID || normalizedAgentID !== agentID) {
-      throw new Error("Normalized Run and Agent identities are required");
-    }
-    if (!boundedIdentity(body.attempt_id) || !safePositiveInteger(body.model_attempt)) {
-      throw new Error("A bound attempt identity and model attempt are required");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/agents/${encodeURIComponent(agentID)}/active-call/cancel`,
-      body, idempotencyKey, signal,
-    );
-    return parseSpecialistModelCancellation(result, runID, agentID, body);
+    return this.models.cancelSpecialistModelCall(runID, agentID, body, idempotencyKey, signal);
   }
 
   async getRunFanoutExecutions(runID: string, planID: string,
@@ -3359,22 +2794,13 @@ export class APIClient implements ClientFeatures {
     }
   }
 
-  async listPriceSnapshots(signal?: AbortSignal): Promise<PriceSnapshotListView> {
-    const result = await this.get<unknown>("/models/prices", {}, signal);
-    return parsePriceSnapshots(result);
+  listPriceSnapshots(signal?: AbortSignal): Promise<PriceSnapshotListView> {
+    return this.models.listPriceSnapshots(signal);
   }
 
-  async importPriceSnapshot(body: PriceSnapshotImportRequestView, idempotencyKey: string,
+  importPriceSnapshot(body: PriceSnapshotImportRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<PriceSnapshotImportView> {
-    if (!this.hasControl) {
-      throw new Error("A control bearer token is required for this operation");
-    }
-    if (body.version !== "price_snapshot.v1" || !body.document ||
-      body.document.length > 64 * 1024) {
-      throw new Error("A bounded price_snapshot.v1 document is required");
-    }
-    const result = await this.sendControl<unknown>("/models/prices", body, idempotencyKey, signal);
-    return parsePriceSnapshotImport(result);
+    return this.models.importPriceSnapshot(body, idempotencyKey, signal);
   }
 
   async getSandboxEnvironment(signal?: AbortSignal): Promise<SandboxEnvironmentView> {
@@ -3568,143 +2994,44 @@ export class APIClient implements ClientFeatures {
     return value as unknown as PlanDeliveryCheckpointControlView;
   }
 
-  async approvalPreview(runID: string, approvalID: string,
+  approvalPreview(runID: string, approvalID: string,
     signal?: AbortSignal): Promise<ApprovalPreviewView> {
-    if (!boundedIdentity(runID) || !boundedIdentity(approvalID)) {
-      throw new Error("A Run and exact approval identity are required");
-    }
-    const value = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/approvals/${encodeURIComponent(approvalID)}/preview`, {}, signal);
-    if (!hasExactKeys(value, ["protocol_version", "run_id", "approval_id", "proposal_id",
-      "tool_name", "workspace_id", "effect", "working_directory", "fields", "source_current",
-      "redacted", "truncated"]) || value.protocol_version !== "approval_queue.v1" ||
-      value.run_id !== runID || value.approval_id !== approvalID ||
-      !boundedIdentity(value.proposal_id) || !boundedText(value.tool_name, 128) ||
-      (value.workspace_id !== "" && !boundedIdentity(value.workspace_id)) ||
-      !["dry_run", "record_git_approval", "file_review_required", "fetch_public_https", "browser_sensitive_action", "mcp_server_and_tool", "computer_use_app", "command_process", "unavailable"]
-        .includes(String(value.effect)) || typeof value.working_directory !== "string" ||
-      !["", "."].includes(value.working_directory) ||
-      typeof value.source_current !== "boolean" || typeof value.redacted !== "boolean" ||
-      typeof value.truncated !== "boolean" || (value.truncated && value.source_current) ||
-      (value.effect === "unavailable" && value.source_current) ||
-      !Array.isArray(value.fields) || value.fields.length > 8 ||
-      !value.fields.every((field) => hasExactKeys(field, ["name", "value"]) &&
-        boundedText(field.name, 64) && typeof field.value === "string" &&
-        [...field.value].length <= 8192 && !field.value.includes("\u0000"))) {
-      throw new APIRequestError("Approval preview violated its exact binding", "INVALID_RESPONSE", 502);
-    }
-    const effects: Record<string, string> = { shell: "dry_run", script_process: "dry_run",
-      "git.advanced": "record_git_approval", replace_file: "file_review_required",
-      create_file: "file_review_required", move_file: "file_review_required", delete_file: "file_review_required",
-      web_fetch: "fetch_public_https", agent_browser_sensitive: "browser_sensitive_action", mcp_tool_call: "mcp_server_and_tool", command_runtime: "command_process" };
-    if (value.effect !== (effects[value.tool_name] ?? "unavailable") &&
-      !(value.tool_name === "mcp_tool_call" && value.effect === "computer_use_app")) {
-      throw new APIRequestError("Approval preview returned a different effect", "INVALID_RESPONSE", 502);
-    }
-    return value as unknown as ApprovalPreviewView;
+    return this.approvals.approvalPreview(runID, approvalID, signal);
   }
 
-  async approvalQueue(runID: string, signal?: AbortSignal): Promise<ApprovalQueueView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("A normalized Run identity is required");
-    }
-    const value = await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/approvals`, {}, signal,
-    );
-    return parseApprovalQueue(value, runID);
+  approvalQueue(runID: string, signal?: AbortSignal): Promise<ApprovalQueueView> {
+    return this.approvals.approvalQueue(runID, signal);
   }
 
-  async controlledCommandProposals(runID: string,
+  controlledCommandProposals(runID: string,
     signal?: AbortSignal): Promise<PageResult<ControlledCommandProposalView>> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("Controlled command proposal capability and normalized Run are required");
-    }
-    const page = await this.getPage<unknown>(
-      `/runs/${encodeURIComponent(runID)}/command-proposals`, { limit: 100 }, "", signal,
-    );
-    return {
-      ...page,
-      items: page.items.map((item) => parseControlledCommandProposal(item, runID)),
-    };
+    return this.approvals.controlledCommandProposals(runID, signal);
   }
 
-  async controlledCommandProposal(runID: string, proposalID: string,
+  controlledCommandProposal(runID: string, proposalID: string,
     signal?: AbortSignal): Promise<ControlledCommandProposalView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedIdentity(proposalID) || proposalID.trim() !== proposalID) {
-      throw new Error("Controlled command proposal capability and normalized identities are required");
-    }
-    return parseControlledCommandProposal(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/command-proposals/${encodeURIComponent(proposalID)}`,
-      {}, signal,
-    ), runID, proposalID);
+    return this.approvals.controlledCommandProposal(runID, proposalID, signal);
   }
 
-  async hostCommandProposals(runID: string,
+  hostCommandProposals(runID: string,
     signal?: AbortSignal): Promise<PageResult<HostCommandProposalView>> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID) {
-      throw new Error("Host command proposal capability and normalized Run are required");
-    }
-    const page = await this.getPage<unknown>(
-      `/runs/${encodeURIComponent(runID)}/host-command-proposals`, { limit: 100 }, "", signal,
-    );
-    return {
-      ...page,
-      items: page.items.map((item) => parseHostCommandProposal(item, runID)),
-    };
+    return this.approvals.hostCommandProposals(runID, signal);
   }
 
-  async hostCommandProposal(runID: string, proposalID: string,
+  hostCommandProposal(runID: string, proposalID: string,
     signal?: AbortSignal): Promise<HostCommandProposalView> {
-    if (!boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedIdentity(proposalID) || proposalID.trim() !== proposalID) {
-      throw new Error("Host command proposal capability and normalized identities are required");
-    }
-    return parseHostCommandProposal(await this.get<unknown>(
-      `/runs/${encodeURIComponent(runID)}/host-command-proposals/${encodeURIComponent(proposalID)}`,
-      {}, signal,
-    ), runID, proposalID);
+    return this.approvals.hostCommandProposal(runID, proposalID, signal);
   }
 
-  async resumeHostCommandProposal(runID: string, proposalID: string,
+  resumeHostCommandProposal(runID: string, proposalID: string,
     signal?: AbortSignal): Promise<HostCommandProposalView> {
-    if (!this.hasRunExecution ||
-      !boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedIdentity(proposalID) || proposalID.trim() !== proposalID) {
-      throw new Error("Historical command continuation requires current control and exact identities");
-    }
-    const result = await this.sendControlRequest<unknown>(
-      `/runs/${encodeURIComponent(runID)}/host-command-proposals/${encodeURIComponent(proposalID)}/resume`,
-      undefined, signal,
-    );
-    return parseHostCommandProposal(result, runID, proposalID);
+    return this.approvals.resumeHostCommandProposal(runID, proposalID, signal);
   }
 
-  async decideApproval(runID: string, approvalID: string,
+  decideApproval(runID: string, approvalID: string,
     body: ApprovalDecisionControlRequestView, idempotencyKey: string,
     signal?: AbortSignal): Promise<ApprovalDecisionControlView> {
-    if (!this.hasApprovalControl) {
-      throw new Error("Approval control capability is required for this operation");
-    }
-    if (!boundedIdentity(runID) || runID.trim() !== runID ||
-      !boundedIdentity(approvalID) || approvalID.trim() !== approvalID ||
-      body.version !== "approval_control.v1" ||
-      !["approve_once", "approve_for_thread", "approve_for_run", "approve_for_run_app", "deny"].includes(body.action) ||
-      (body.action !== "deny" && body.action !== "approve_for_run" && body.reason !== undefined) ||
-      (body.reason !== undefined && (!boundedText(body.reason, 2_048) ||
-        body.reason.trim() !== body.reason || /[\u0000-\u001f\u007f]/u.test(body.reason)))) {
-      throw new Error("Normalized Run and approval identities are required");
-    }
-    if (body.action === "approve_for_run" ?
-      !safePositiveInteger(body.grant_ttl_seconds) || body.grant_ttl_seconds > 900 || !safePositiveInteger(body.grant_max_uses) || body.grant_max_uses > 8
-      : body.grant_ttl_seconds !== undefined || body.grant_max_uses !== undefined) {
-      throw new Error("Bounded Run approval requires explicit limits: 1..900 seconds and 1..8 uses");
-    }
-    const result = await this.sendControl<unknown>(
-      `/runs/${encodeURIComponent(runID)}/approvals/${encodeURIComponent(approvalID)}/decision`,
-      body, idempotencyKey, signal,
-    );
-    return parseApprovalDecision(result, runID, approvalID, body);
+    return this.approvals.decideApproval(runID, approvalID, body, idempotencyKey, signal);
   }
 
   private sendControl<T>(path: string, body: unknown, idempotencyKey: string,
