@@ -15,6 +15,9 @@
 .v2-agent-browser-page a { display:block; max-width:100%; color:var(--v2-accent); text-decoration:underline; text-underline-offset:3px; }
 .v2-agent-browser-page a svg { display:inline; margin-left:5px; vertical-align:middle; }
 .v2-agent-browser img { display:block; width:100%; height:auto; max-height:320px; object-fit:contain; border:1px solid var(--v2-border); border-radius:8px; background:var(--prayu-surface-solid); }
+.v2-agent-browser .v2-agent-browser-screenshot { position:relative; display:block; width:100%; min-width:0; padding:0; border:0; cursor:zoom-in; }
+.v2-agent-browser-screenshot span { position:absolute; right:8px; top:8px; display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border:1px solid var(--v2-border); border-radius:6px; background:var(--prayu-surface-solid); }
+.v2-agent-browser .v2-agent-browser-screenshot:disabled { cursor:default; }
 .v2-agent-browser details { min-width:0; }
 .v2-agent-browser summary { cursor:pointer; color:var(--v2-muted); }
 .v2-agent-browser details p { margin-top:7px; }

@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../../lib/locale";
-import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { V2AgentBrowser } from "./agent-browser";
@@ -41,6 +41,81 @@ it("uses a read-only GET and renders only a verified screenshot", async () => {
     status().screenshot, expect.any(AbortSignal));
   expect(screen.getByText(/浏览器在后台运行/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /打开/ })).not.toBeInTheDocument();
+});
+
+async function decodeScreenshot() {
+  const image = await screen.findByRole("img", { name: "Agent 浏览器页面：Report run-browser" });
+  Object.defineProperties(image, { naturalWidth: { value: 1600 }, naturalHeight: { value: 900 } });
+  fireEvent.load(image);
+  return screen.getByRole("button", { name: "查看浏览器截图原图" });
+}
+
+it("opens the decoded screenshot at its original dimensions and reuses verified bytes for copy and download", async () => {
+  const png = new Blob(["verified PNG"], { type: "image/png" });
+  const items: Record<string, Blob | Promise<Blob>>[] = [];
+  vi.stubGlobal("ClipboardItem", class { constructor(data: Record<string, Blob | Promise<Blob>>) { items.push(data); } });
+  const write = vi.fn(async () => {});
+  vi.stubGlobal("navigator", Object.create(navigator, { clipboard: { value: { write } } }));
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => png) } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByRole("button", { name: "查看浏览器截图原图" })).toBeDisabled();
+  const trigger = await decodeScreenshot();
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog", { name: "图片预览 agent-browser-aaaaaaaaaaaa.png" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "100%" }));
+  expect(within(dialog).getByRole("img")).toHaveStyle({ width: "1600px", height: "900px" });
+  const download = within(dialog).getByRole("link", { name: "下载原图 agent-browser-aaaaaaaaaaaa.png" });
+  expect(download).toHaveAttribute("href", "blob:agent-browser");
+  expect(download).toHaveAttribute("download", "agent-browser-aaaaaaaaaaaa.png");
+  expect(write).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "复制图片" }));
+  expect(await screen.findByText("已复制图片")).toBeInTheDocument();
+  expect(await items[0]["image/png"]).toBe(png);
+  expect(client.downloadVerifiedImage).toHaveBeenCalledTimes(1);
+  expect(client.postControl).not.toHaveBeenCalled();
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
+
+it.each(["screenshot", "session", "run"])("closes an original preview when the %s changes", async (change) => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient;
+  const view = draw(client);
+  fireEvent.click(await decodeScreenshot());
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  vi.mocked(client.downloadVerifiedImage).mockImplementationOnce(() => new Promise<Blob>(() => {}));
+  if (change === "run") {
+    vi.mocked(client.get).mockResolvedValue(status("run-new", "agent-browser-new"));
+    view.rerender(<QueryClientProvider client={view.queries}><V2AgentBrowser client={client} runID="run-new" running={false} /></QueryClientProvider>);
+  } else {
+    const next = change === "session" ? status("run-browser", "agent-browser-new")
+      : { ...status(), screenshot: { ...status().screenshot, sha256: "b".repeat(64) } };
+    await act(async () => { view.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"), next); });
+  }
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:agent-browser");
+});
+
+it("does not offer an original preview when screenshot verification fails", async () => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => { throw new Error("hash mismatch"); }) } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByRole("alert")).toHaveTextContent("无法验证当前页面截图");
+  expect(screen.queryByRole("button", { name: "查看浏览器截图原图" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("reports an undecodable screenshot without enabling its original preview", async () => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["broken PNG"], { type: "image/png" })) } as unknown as APIClient;
+  draw(client);
+  fireEvent.error(await screen.findByRole("img", { name: "Agent 浏览器页面：Report run-browser" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("无法显示当前页面截图");
+  expect(screen.getByRole("button", { name: "查看浏览器截图原图" })).toBeDisabled();
 });
 
 it("closes the exact observed session once and distinguishes the Run", async () => {
