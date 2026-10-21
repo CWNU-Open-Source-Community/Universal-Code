@@ -911,23 +911,46 @@ func dialRestrictedCDP(ctx context.Context, endpoint *url.URL) (*websocket.Conn,
 		return nil, ErrBrowserRuntimeBoundary
 	}
 	expectedAddress := endpoint.Host
+	// Production callers already bound startup to the session/authority
+	// deadline. Do not shorten a cold browser's handshake to the operation
+	// budget; callers without a deadline still get the usual five-second cap.
+	if _, bounded := ctx.Deadline(); !bounded {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, RestrictedCDPOperationTimeout)
+		defer cancel()
+	}
+	var stopHandshakeCancel func() bool
 	dialer := websocket.Dialer{
-		HandshakeTimeout: RestrictedCDPOperationTimeout,
 		NetDialContext: func(ctx context.Context, network string,
 			address string,
 		) (net.Conn, error) {
 			if network != "tcp" || address != expectedAddress {
 				return nil, ErrBrowserRuntimeBoundary
 			}
-			return (&net.Dialer{}).DialContext(ctx, network, address)
+			connection, err := (&net.Dialer{}).DialContext(ctx, network, address)
+			if err == nil {
+				// Gorilla applies the deadline to the HTTP upgrade, but context
+				// cancellation alone does not interrupt that socket read.
+				stopHandshakeCancel = context.AfterFunc(ctx, func() { _ = connection.Close() })
+			}
+			return connection, err
 		},
 	}
 	connection, response, err := dialer.DialContext(ctx, endpoint.String(), nil)
+	if stopHandshakeCancel != nil {
+		stopHandshakeCancel()
+	}
+	if ctx.Err() != nil {
+		if connection != nil {
+			_ = connection.Close()
+		}
+		err = ctx.Err()
+	}
 	if err != nil {
 		if response != nil && response.Body != nil {
 			_ = response.Body.Close()
 		}
-		return nil, errors.New("connect to restricted chromium DevTools endpoint failed")
+		return nil, fmt.Errorf("connect to restricted chromium DevTools endpoint failed: %w", err)
 	}
 	remote, ok := connection.UnderlyingConn().RemoteAddr().(*net.TCPAddr)
 	if !ok || remote == nil || !remote.IP.IsLoopback() ||
