@@ -36,10 +36,15 @@
 .v2-task-delivery summary { cursor: pointer; }
 .v2-task-delivery pre { font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .v2-delivery-diff { margin-top: 10px; min-width: 0; border: 1px solid var(--v2-border); border-radius: 8px; overflow: hidden; }
+.v2-diff-toolbar { display: flex; justify-content: flex-end; padding: 6px 10px; border-bottom: 1px solid var(--v2-border); }
+.v2-diff-toolbar button[aria-pressed="true"] { border-color: var(--v2-accent); background: var(--v2-control-hover); }
 .v2-delivery-diff section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px; background: var(--v2-control-hover); overflow-wrap: anywhere; }
 .v2-delivery-diff-lines { overflow-x: auto; }
 .v2-diff-line { display: flex; align-items: stretch; min-width: max-content; font: 13px/1.65 var(--font-mono, monospace); }
 .v2-diff-line code { white-space: pre; padding-right: 12px; }
+.v2-delivery-diff.is-wrapped .v2-diff-line { min-width: 0; }
+.v2-delivery-diff.is-wrapped .v2-diff-line code { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-delivery-diff.is-wrapped .v2-diff-line-ref { align-items: start; }
 .v2-diff-line.add { background: color-mix(in srgb, var(--prayu-diff-add) 12%, transparent); }
 .v2-diff-line.remove { background: color-mix(in srgb, var(--prayu-diff-delete) 12%, transparent); }
 .v2-task-delivery .v2-diff-line-ref { display: inline-grid; grid-template-columns: 36px 36px; flex-shrink: 0; border: 0; border-right: 1px solid var(--v2-border); border-radius: 0; background: transparent; padding: 0 4px; margin-right: 8px; min-height: 24px; font: inherit; color: var(--v2-muted); text-align: right; }
