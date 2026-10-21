@@ -12,6 +12,7 @@ import { V2ConfirmDialog } from "./components/dialog";
 import { V2LazySurface } from "./components/lazy-surface";
 import { V2NetworkScopeControl, type V2NetworkMode } from "./components/network-scope-control";
 import { V2SettingsSidebar, V2Sidebar, type V2SettingsSection } from "./components/sidebar";
+import { V2SidebarLayout } from "./components/sidebar-layout";
 import { V2Titlebar } from "./components/titlebar";
 import { useV2Client } from "./client-session";
 import { v2QueryKeys } from "./query-keys";
@@ -633,9 +634,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       onToggleSidebar={() => setSidebarVisible(!sidebarVisible)} sidebarVisible={sidebarVisible} sidebarToggleRef={sidebarToggle} />
     <button aria-label={t("关闭侧栏", "Close sidebar")} className="v2-sidebar-backdrop" aria-hidden={!sidebarVisible} inert={!sidebarVisible}
       onClick={() => setSidebarVisible(false)} type="button" />
-    <div className="v2-shell-body">
-      <div className="v2-sidebar-slot" ref={sidebarSlot} aria-hidden={!sidebarVisible} inert={!sidebarVisible}>
-      {surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
+    <V2SidebarLayout sidebarRef={sidebarSlot} visible={sidebarVisible} narrow={narrowLayout}
+      sidebar={surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
         onSelect={setSettingsSection} section={settingsSection} /> : <V2Sidebar
           onArchive={setArchiveCandidate} onNewConversation={() => startNew()} onOpenModels={() => openModels(newConversation)}
           onNewInProject={(id) => startNew(id)} client={client}
@@ -675,8 +675,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           refreshing={sidebarQuery.isFetching && !sidebarQuery.isLoading && !sidebarQuery.isFetchingNextPage}
           onRetry={() => void (sidebarQuery.isFetchNextPageError ? sidebarQuery.fetchNextPage() : sidebarQuery.refetch())}
           onLoadMore={() => void sidebarQuery.fetchNextPage()} onRefresh={() => void sidebarQuery.refetch()}
-          selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}
-      </div>
+          selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}>
       {editingProject && <ProjectDialog client={client} workspace={editingProject} onClose={() => setEditingProject(null)}
         onSaved={(workspace) => setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace])} />}
       <div className="v2-product-surface" inert={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}
@@ -813,7 +812,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}
             threadID={selectedThreadID} workspaces={workspaces} />}
       </div>
-    </div>
+    </V2SidebarLayout>
     {backgroundCreations.length > 0 && <div className="v2-toast" role="status">
       {backgroundCreations.map((thread) => <div key={thread.id}>
         {t("对话已创建：", "Conversation created: ")}{thread.title}
