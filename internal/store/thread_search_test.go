@@ -46,6 +46,12 @@ func TestSavedPublicCommentaryRetainsFullBodyAndVisibility(t *testing.T) {
 		if err != nil || got.Content != full || got.Role != "assistant" {
 			t.Fatalf("full public reply: %+v %v", got, err)
 		}
+		for _, scope := range []string{"", threadID} {
+			matches, err := st.SearchThreadMessages(t.Context(), "commentary needle", scope, false, time.Time{}, "", 10)
+			if err != nil || len(matches) != 1 || matches[0].ID != eventID || matches[0].Content != full || matches[0].Role != "assistant" {
+				t.Fatalf("full %s commentary search: %+v %v", source, matches, err)
+			}
+		}
 		if _, err := st.GetThreadSearchMessage(t.Context(), threadID+"-other", eventID); err == nil {
 			t.Fatal("cross-thread commentary was readable")
 		}
@@ -57,11 +63,21 @@ func TestSavedPublicCommentaryRetainsFullBodyAndVisibility(t *testing.T) {
 		if err != nil || strings.Contains(got.Content, "CommentarySecret") {
 			t.Fatalf("commentary redaction: %+v %v", got, err)
 		}
-		if _, err := st.db.Exec(`UPDATE run_events SET type='model.started' WHERE event_id=?`, eventID); err != nil {
+		for _, scope := range []string{"", threadID} {
+			matches, err := st.SearchThreadMessages(t.Context(), "CommentarySecret", scope, false, time.Time{}, "", 10)
+			if err != nil || len(matches) != 0 {
+				t.Fatalf("secret commentary search: %+v %v", matches, err)
+			}
+		}
+		if _, err := st.db.Exec(`UPDATE run_events SET type='model.started',payload_json='{"text":"internal commentary needle"}' WHERE event_id=?`, eventID); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := st.GetThreadSearchMessage(t.Context(), threadID, eventID); err == nil {
 			t.Fatal("internal event was readable as a public message")
+		}
+		matches, err := st.SearchThreadMessages(t.Context(), "commentary needle", threadID, false, time.Time{}, "", 10)
+		if err != nil || len(matches) != 0 {
+			t.Fatalf("internal commentary was searchable: %+v %v", matches, err)
 		}
 	}
 }
@@ -103,11 +119,15 @@ func TestThreadSearchRedactsHistoricalCandidatesBeforeMatchingAndSurvivesRestart
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	items, err := st.SearchThreadMessages(t.Context(), "Needle", false, time.Time{}, "", 2)
+	items, err := st.SearchThreadMessages(t.Context(), "Needle", "", false, time.Time{}, "", 2)
 	if err != nil || len(items) != 1 || items[0].Content != "visible Needle answer" {
 		t.Fatalf("redacted candidate affected matches: %#v %v", items, err)
 	}
-	more, err := st.SearchThreadMessages(t.Context(), "Needle", false, items[0].CreatedAt, items[0].ID, 2)
+	scoped, err := st.SearchThreadMessages(t.Context(), "Needle", domain.InitialThreadID(run.ID), false, time.Time{}, "", 2)
+	if err != nil || len(scoped) != 1 || scoped[0].ID != items[0].ID {
+		t.Fatalf("current-chat search bypassed historical redaction: %#v %v", scoped, err)
+	}
+	more, err := st.SearchThreadMessages(t.Context(), "Needle", "", false, items[0].CreatedAt, items[0].ID, 2)
 	if err != nil || len(more) != 0 {
 		t.Fatalf("filtered result affected pagination: %#v %v", more, err)
 	}
@@ -149,7 +169,7 @@ func TestThreadSearchUserMockTextAndExactTimestampPagination(t *testing.T) {
 	var before time.Time
 	beforeID := ""
 	for _, expected := range []string{ids[2], ids[1], ids[0]} {
-		items, err := st.SearchThreadMessages(t.Context(), "checkout", false, before, beforeID, 1)
+		items, err := st.SearchThreadMessages(t.Context(), "checkout", "", false, before, beforeID, 1)
 		if err != nil || len(items) != 1 || items[0].ID != expected {
 			t.Fatalf("timestamp page: %#v %v; want %s", items, err, expected)
 		}
@@ -161,7 +181,7 @@ func TestThreadSearchUserMockTextAndExactTimestampPagination(t *testing.T) {
 		}
 		before, beforeID = items[0].CreatedAt, items[0].ID
 	}
-	items, err := st.SearchThreadMessages(t.Context(), "checkout", false, before, beforeID, 1)
+	items, err := st.SearchThreadMessages(t.Context(), "checkout", "", false, before, beforeID, 1)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("unexpected extra matches: %#v %v", items, err)
 	}

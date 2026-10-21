@@ -53,7 +53,7 @@ export function V2KeyboardSettings() {
               if (event.key === "Backspace" || event.key === "Delete") { save({ ...preferences.shortcuts, [command.id]: "" }); return; }
               const next = eventShortcut(event.nativeEvent);
               if (!next) return;
-              if (!validShortcut(next)) { setError(t("此组合键保留给系统、浏览器或文本编辑，请换一个。", "This shortcut is reserved for the system, browser or text editing. Choose another.")); return; }
+              if (!validShortcut(next, command.id)) { setError(t("此组合键保留给系统、浏览器或文本编辑，请换一个。", "This shortcut is reserved for the system, browser or text editing. Choose another.")); return; }
               const conflict = shortcutCommands.find(({ id }) => id !== command.id && shortcutBinding(preferences, id) === next);
               if (conflict) { setError(t(`已用于「${conflict.zh}」，请先修改或清除该快捷键。`, `Already used by “${conflict.en}”. Change or clear that shortcut first.`)); return; }
               save({ ...preferences.shortcuts, [command.id]: next });
