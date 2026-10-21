@@ -100,6 +100,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const nativeClipboard = useNativeClipboard({ workspaceID, threadID, disabled: attachmentsDisabled,
     captureImport: captureNativeImport, onImported: (incomingImages, incomingFiles) => captureNativeImport()(incomingImages, incomingFiles) });
   const pasteGesture = useRef<{ handled: boolean; plain: boolean } | null>(null);
+  const composing = useRef(false);
   const attachmentPicker = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
@@ -173,7 +174,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     });
   }, [confirmedSubmission, threadID, workspaceID, submissions, error?.reason, error?.inputFingerprint]);
   const inputRef = useRef<MarkdownInputHandle>(null);
-  const composing = useRef(false);
   const normalized = content.trim();
   const [editorExpanded, setEditorExpanded] = useState(false);
   const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
