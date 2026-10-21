@@ -661,6 +661,34 @@ describe("V2Conversation", () => {
     expect(view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!.scrollTop).toBe(180);
   });
 
+  it("offers a return to the latest message while reading a completed chat without new content", async () => {
+    const view = renderConversation(baseClient());
+    await screen.findByText("Title thread-a");
+    await waitFor(() => expect(view.queryClient.getQueryState(v2QueryKeys.transcript("thread-a"))?.status).toBe("success"));
+    const scroller = view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+    let top = 1500;
+    Object.defineProperties(scroller, { scrollHeight: { value: 2000, configurable: true },
+      clientHeight: { value: 500, configurable: true },
+      scrollTop: { get: () => top, set: (value: number) => { top = Math.min(value, 1500); }, configurable: true } });
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    scroller.scrollTop = 180;
+    fireEvent.scroll(scroller);
+    const jump = screen.getByRole("button", { name: "回到最新" });
+    expect(screen.queryByRole("button", { name: "有新内容 · 回到最新" })).not.toBeInTheDocument();
+    expect(scroller.scrollTop).toBe(180);
+    await userEvent.click(jump);
+    expect(scroller.scrollTop).toBe(1500);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 1500, following: true });
+    scroller.scrollTop = 120;
+    fireEvent.scroll(scroller);
+    expect(screen.getByRole("button", { name: "回到最新" })).toBeInTheDocument();
+    scroller.scrollTop = 1500;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+  });
+
   it("follows viewport and card size changes without moving a reader looking at history", async () => {
     const resize = new Map<Element, () => void>();
     vi.stubGlobal("ResizeObserver", class {
