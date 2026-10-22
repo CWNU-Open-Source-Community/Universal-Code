@@ -234,9 +234,14 @@ func containsUserAgentToken(value, expected string) bool {
 	return false
 }
 
-type desktopBindingError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+func formatDesktopBindingError(err error) any {
+	// Wails constructs Error(message.error), so an object loses its message.
+	// Use the normalized public Message field without falling back to causes.
+	var normalized *apperror.Error
+	if errors.As(apperror.Normalize(err), &normalized) && normalized != nil && strings.TrimSpace(normalized.Message) != "" {
+		return normalized.Message
+	}
+	return "Desktop operation failed"
 }
 
 func main() {
@@ -917,11 +922,8 @@ func runDesktop(config desktopOptions) error {
 			UniqueId:               desktopSingleInstanceID,
 			OnSecondInstanceLaunch: secondInstanceHandler(lifecycle),
 		},
-		Debug: options.Debug{OpenInspectorOnStartup: false},
-		ErrorFormatter: func(err error) any {
-			normalized := apperror.Normalize(err)
-			return desktopBindingError{Code: string(apperror.CodeOf(normalized)), Message: normalized.Error()}
-		},
+		Debug:          options.Debug{OpenInspectorOnStartup: false},
+		ErrorFormatter: formatDesktopBindingError,
 	}
 	applyDesktopPlatformOptions(appOptions)
 	return wails.Run(appOptions)

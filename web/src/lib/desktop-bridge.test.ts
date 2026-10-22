@@ -119,6 +119,16 @@ describe("desktop native bridge", () => {
     delete window.go;
   });
 
+  it("uses only the public message from native errors", async () => {
+    const { desktopErrorMessage } = await import("./desktop-bridge");
+    const message = "File actions support files up to 5 MiB";
+    expect(desktopErrorMessage(new Error(message))).toBe(message);
+    expect(desktopErrorMessage({ code: "RESOURCE_EXHAUSTED", message, cause: "private cause", stack: "private stack" })).toBe(message);
+    for (const value of [{ code: "INTERNAL", cause: "private cause" }, { message: { detail: "private detail" } }, { message: "  ", stack: "private stack" }]) {
+      expect(desktopErrorMessage(value)).toBe("Desktop operation failed");
+    }
+  });
+
   it("saves only the confirmed verification choices and restarts through a separate fixed request", async () => {
     const initial = verificationView();
     const saved = verificationView(true);
