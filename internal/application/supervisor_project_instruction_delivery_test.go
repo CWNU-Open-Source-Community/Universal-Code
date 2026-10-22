@@ -132,6 +132,42 @@ func TestSupervisorProjectInstructionDeliverySupportsNativeInstructionPaths(t *t
 	}
 }
 
+func TestSupervisorProjectInstructionDeliveryWithClaudeDirectoryTarget(t *testing.T) {
+	for _, target := range []string{".claude/CLAUDE.md", ".claude/rules/nested/file.go"} {
+		t.Run(target, func(t *testing.T) {
+			st, err := store.Open(filepath.Join(t.TempDir(), "claude-target.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			run, snapshot := newDeliveryTestRun(t, st, t.TempDir(), target, map[string]string{
+				".claude/CLAUDE.md":            "REQUIRED_CLAUDE_CONTAINING_SCOPE",
+				".claude/rules/nested/file.go": "package fixture\n",
+			}, map[string]projectconfig.InstructionRequirement{
+				".claude/CLAUDE.md": projectconfig.InstructionMandatory,
+			}, false)
+			if len(snapshot.Sources) != 1 || snapshot.Sources[0].Scope != "" || snapshot.Sources[0].Depth != 0 {
+				t.Fatalf("hidden instruction lost its containing scope: %+v", snapshot.Sources)
+			}
+			inspection, err := application.NewProjectInstructionService(st).Inspect(t.Context(), run.ID, "")
+			if err != nil || inspection.Stale || inspection.Live.Fingerprint != snapshot.Fingerprint {
+				t.Fatalf("pinned hidden target could not be inspected: %+v err=%v", inspection, err)
+			}
+			provider := &scriptedToolProvider{responses: []*llm.ChatResponse{
+				textResponse(rootActionResponse(domain.RootActionContinue, "hidden target guidance delivered", "", "")),
+			}}
+			if _, err := newToolLoopSupervisor(st, provider).Step(t.Context(), run.ID); err != nil {
+				t.Fatal(err)
+			}
+			requests := provider.Requests()
+			if len(requests) != 1 {
+				t.Fatalf("provider requests=%d want=1", len(requests))
+			}
+			assertRequiredDeliveryRequest(t, requests[0], snapshot)
+		})
+	}
+}
+
 func TestSupervisorProjectInstructionDeliveryOmitsLargeEscapedExcludedSource(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "excluded-escaped-bound.db"))
 	if err != nil {

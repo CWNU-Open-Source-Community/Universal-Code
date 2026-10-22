@@ -172,6 +172,7 @@ func DiscoverInstructions(ctx context.Context, workspaceRoot, targetPath string)
 		snapshot.Ignored = append(snapshot.Ignored, *ignoreRecord)
 	}
 	totalBytes := 0
+	seenCandidates := make(map[string]struct{})
 	for depth, directory := range directories {
 		if err := ctx.Err(); err != nil {
 			return InstructionSnapshot{}, err
@@ -187,6 +188,13 @@ func DiscoverInstructions(ctx context.Context, workspaceRoot, targetPath string)
 				return InstructionSnapshot{}, errors.New("project instruction candidate escapes the workspace boundary")
 			}
 			relative = canonicalInstructionPath(relative)
+			// Hidden guidance can be encountered again as a direct file when
+			// the target enters its directory. Keep its first containing scope,
+			// and count or explain the same canonical path only once.
+			if _, seen := seenCandidates[relative]; seen {
+				continue
+			}
+			seenCandidates[relative] = struct{}{}
 			if candidate.kind == "agents" && agentsOverride != "" {
 				if _, err := os.Lstat(candidate.path); err == nil {
 					snapshot.Ignored = append(snapshot.Ignored, IgnoredInstruction{
