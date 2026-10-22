@@ -125,6 +125,43 @@ it.each(["inspector", "conversation"] as const)("collects two inline comments in
   expectNoWrites();
 });
 
+it.each(["inspector", "conversation"] as const)("quotes the viewed worktree's source into the %s draft and returns without sending", async (view) => {
+  const { container, client, expectNoWrites } = setup(view);
+  client.fileEditChangeSet = vi.fn().mockResolvedValue({ workspace_id: "isolated-worktree" });
+  client.workspaceExplore = vi.fn().mockResolvedValue({ protocol_version: "workspace_explorer.v1", workspace_id: "isolated-worktree",
+    path: "src/example.ts", kind: "file", entries: [], content: "first line\n  selected source\nlast line", returned_bytes: 41,
+    total_bytes: 41, truncated: false, redaction_count: 0, root_path_exposed: false,
+    provenance: { version: "context_provenance.v1", source_kind: "workspace_file", source_ref: "src/example.ts",
+      content_sha256: "c".repeat(64), instruction_authorized: false } });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "工作区文件" }));
+  const dialog = await screen.findByRole("dialog", { name: "工作区文件" });
+  await within(dialog).findByText("selected source");
+  for (const line of [2, 3]) {
+    act(() => {
+      const range = document.createRange();
+      range.selectNodeContents(dialog.querySelector(`[data-line="${line}"] .explorer-line-content`)!.firstChild!);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    await user.click(within(dialog).getByRole("button", { name: "引用选中行" }));
+    expect(dialog).toBeVisible();
+    expect(within(within(dialog).getByRole("region", { name: "引用文件片段" })).getByRole("status")).toHaveTextContent("尚未发送");
+  }
+  const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
+  expect(editor.value.startsWith(`${originalDraft}\n\n`)).toBe(true);
+  for (const part of ["任务：thread-a", "来源工作区：isolated-worktree", "来源执行：run-thread-a", "c".repeat(64),
+    "预览第 2–2 行", "预览第 3–3 行", "  selected source", "last line"]) expect(editor.value).toContain(part);
+  expect(editor.value).not.toContain("workspace-source");
+  expect(client.workspaceExplore).toHaveBeenCalledWith("isolated-worktree", ".", expect.any(AbortSignal));
+  await user.click(within(dialog).getByRole("button", { name: "返回聊天草稿" }));
+  await waitFor(() => expect(editor).toHaveFocus());
+  expect(editor).toBeVisible();
+  expect(dialog).not.toBeInTheDocument();
+  expectNoWrites();
+});
+
 it.each(["inspector", "conversation"] as const)("reveals the %s draft when requesting an application startup, without starting or sending", async (view) => {
   const { container, client, expectNoWrites } = setup(view);
   const user = userEvent.setup();

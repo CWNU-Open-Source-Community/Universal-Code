@@ -1,0 +1,25 @@
+{
+  "base_commit": "2ce3c07702d033d29765c9c68211083e368a25d3",
+  "browser": "154.0.8037.57",
+  "platform": "Linux Chromium",
+  "same_persisted_fixture": true,
+  "thread_id": "thread-run-20261022041942-843e91dede57",
+  "run_id": "run-20261022041942-843e91dede57",
+  "workspace_id": "ws-import-60a04e86f5b6494720b6ec47",
+  "source": "export const retries = 3;\nexport const timeoutMs = 1000;\n\nexport async function loadSettings(url: string) {\n  const response = await fetch(url);\n  if (!response.ok) {\n    throw new Error(`Request failed: ${response.status}`);\n  }\n  return response.json();\n}",
+  "displayed_sha256": "7377af2feb8a91569876bf86c7405e334569581721b6847989676ddb7b9ad291",
+  "native_mouse_selection": "4–8",
+  "reverse_selection": "1–2",
+  "keyboard_quote": true,
+  "excerpts_in_reloaded_draft": 3,
+  "returned_to_draft": true,
+  "navigation_discarded_selection": true,
+  "narrow": {
+    "viewport": 390,
+    "pageWidth": 390,
+    "left": 19,
+    "right": 372
+  },
+  "api_writes": [],
+  "uncaught_browser_errors": []
+}
