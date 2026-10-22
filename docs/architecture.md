@@ -1416,8 +1416,10 @@ The separate Debug path starts with a user-owned terminal. Desktop can request a
 15-second-to-15-minute process-local input lease, but the bearer never crosses the
 Go boundary. Only a root Code/Deliver Supervisor with the current Debug permission
 and installed runtime adapter sees `debug_terminal`. Schema v113 admits that tool to
-the durable Supervisor call ledger with a data-preserving table migration. Each write rechecks all durable
-bindings and Shell Policy; each read is cursor-addressed, bounded, and clamped to the
+the durable Supervisor call ledger with a data-preserving table migration. Each input rechecks all durable
+bindings and host Policy; command writes also pass Shell Policy. The fixed `interrupt`
+action sends only Ctrl+C through the same lease, audit, deduplication and native authorization.
+Each read is cursor-addressed, bounded, and clamped to the
 output watermark captured when the lease was granted. Canonical model commands and
 sanitized, explicitly untrusted post-grant results are durable Supervisor evidence, while user input,
 raw PTY bytes, process environment, root paths, and bearer tokens stay in memory. A
