@@ -1,0 +1,7 @@
+.v2-task-delivery .v2-diff-comment-trigger { flex: 0 0 24px; align-self: start; min-height: 24px; padding: 0; margin-right: 6px; border-radius: 3px; font: inherit; }
+.v2-diff-comment { box-sizing: border-box; position: sticky; left: 0; width: 100%; padding: 12px; border-block: 1px solid var(--v2-border); background: var(--v2-control-hover); overflow-wrap: anywhere; }
+.v2-diff-comment label { display: block; margin-bottom: 6px; font-weight: 600; }
+.v2-diff-comment textarea { box-sizing: border-box; display: block; width: 100%; min-height: 80px; resize: vertical; padding: 8px; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-control); color: var(--v2-ink); font: inherit; }
+.v2-diff-comment > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.v2-diff-comment span { color: var(--v2-muted); font-size: 12px; }
+.v2-review-comment-status p { flex: 1 1 240px; margin: 0; font-size: 13px; }

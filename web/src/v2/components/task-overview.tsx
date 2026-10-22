@@ -7,6 +7,7 @@ import type { RunDetailView } from "../../api/types";
 import { ErrorState, LoadingState, StatusBadge } from "../../components/common";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { PlanDeliveryPanel } from "../../components/run-workspace";
+import type { ReviewCommentResult } from "../review-comment-draft";
 import { ReviewDiff } from "./review-diff";
 import "./task-delivery.css";
 
@@ -24,8 +25,9 @@ export function isCheckFailed(outcome: string): boolean {
   return normalized === "fail" || normalized === "failed" || normalized === "failure" || normalized === "error";
 }
 
-export function TaskOverview({ client, threadID, onFeedback, onGit, onPullRequest, onChecks, onReviewFile, currentRunDetail }: {
+export function TaskOverview({ client, threadID, onFeedback, onAddComment, onGit, onPullRequest, onChecks, onReviewFile, currentRunDetail }: {
   client: APIClient; threadID: string; onFeedback: (context: string) => void; onGit?: () => void;
+  onAddComment?: (context: string) => ReviewCommentResult;
   onPullRequest?: () => void; onChecks?: () => void;
   onReviewFile?: (target: FileEditReviewTarget) => void;
   currentRunDetail?: RunDetailView;
@@ -94,10 +96,10 @@ export function TaskOverview({ client, threadID, onFeedback, onGit, onPullReques
       {!review.unapplied_changes.length && <p>{t("没有已记录的待应用提案。", "No recorded proposals awaiting application.")}</p>}
       {[...review.unapplied_changes].sort((left, right) => Number(right.run_id === review.current_run_id) - Number(left.run_id === review.current_run_id))
         .map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at}
-          onFeedback={feedback} onReviewFile={onReviewFile} currentRunID={review.current_run_id} />)}
+          onFeedback={feedback} onAddComment={onAddComment} onReviewFile={onReviewFile} currentRunID={review.current_run_id} />)}
       <h3>{t("已应用的编辑 ", "Applied edits")}<span>({review.applied_changes.length})</span></h3>
       {!review.applied_changes.length && <p>{t("尚无已记录的应用编辑。工作目录的其他改动可在提交页面核对。", "No recorded applied edits. Check other working directory changes on the commit page.")}</p>}
-      {review.applied_changes.map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at} onFeedback={feedback} />)}
+      {review.applied_changes.map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at} onFeedback={feedback} onAddComment={onAddComment} />)}
       </section><section aria-label={t("任务检查", "Task checks")}>
       <h3>{t("检查结果 ", "Check results")}<span>({review.checks.length})</span></h3>
       {!review.checks.length && <p>{t("尚无已记录的检查结果。", "No recorded check results.")}</p>}
@@ -131,8 +133,9 @@ function CheckCard({ check, observedAt, isFetching, onFeedback }: {
     <button type="button" onClick={() => onFeedback(t(`检查：${check.title}\n结果：${check.outcome}\n版本状态：${check.revision_state}\n来源执行：${check.run_id}\n记录：${check.id}\n绑定版本：${check.recorded_revision_sha256 || t("未保存", "Not saved")}\n读取时间：${observedAt}`, `Check: ${check.title}\nResult: ${check.outcome}\nRevision status: ${check.revision_state}\nSource run: ${check.run_id}\nRecord: ${check.id}\nRecorded revision: ${check.recorded_revision_sha256 || t("未保存", "Not saved")}\nRead at: ${observedAt}`))}>{t("引用检查并继续修复", "Quote check and continue fixing")}</button>
   </article>;
 }
-function TaskChange({ change, observedAt, onFeedback, onReviewFile, currentRunID }: {
+function TaskChange({ change, observedAt, onFeedback, onAddComment, onReviewFile, currentRunID }: {
   change: ThreadReviewChange; observedAt: string; onFeedback: (context: string) => void;
+  onAddComment?: (context: string) => ReviewCommentResult;
   onReviewFile?: (target: FileEditReviewTarget) => void; currentRunID?: string;
 }) {
   const { t } = useLocale();
@@ -147,7 +150,7 @@ function TaskChange({ change, observedAt, onFeedback, onReviewFile, currentRunID
     <button type="button" onClick={() => onFeedback(source)}>{t("引用文件", "Quote file")}</button></header>
     <details><summary>{t("查看这次编辑的差异", "View this edit's diff")}</summary>
       {(change.diff_truncated || change.redacted) && <p>{t("此差异", "This diff is ")}{change.diff_truncated ? t("已截断", "Truncated") : ""}{change.redacted ? t("已脱敏", "Redacted") : ""}{t("，只引用可见内容。", "; only visible content is quoted.")}</p>}
-      {change.diff ? <ReviewDiff patch={change.diff} source={source} onFeedback={onFeedback} /> : <p>{t("未保存可显示的文本差异。", "No displayable text diff was saved.")}</p>}
+      {change.diff ? <ReviewDiff patch={change.diff} source={source} onFeedback={onFeedback} onAddComment={onAddComment} /> : <p>{t("未保存可显示的文本差异。", "No displayable text diff was saved.")}</p>}
       <details><summary>{t("编辑来源", "Edit source")}</summary><pre>{source}</pre></details>
     </details></article>;
 }

@@ -1,11 +1,81 @@
 import type { ReactElement } from "react";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../../lib/locale";
-import { render as renderComponent, screen, within } from "@testing-library/react";
+import { fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parseReviewDiff, ReviewDiff } from "./review-diff";
 
 const patch = "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -7,3 +9,3 @@ result\n unchanged\n-old value\n+new value\n last\n\\ No newline at end of file";
+
+it("adds multiline inline feedback with the original source and restores keyboard focus without quoting", async () => {
+  const add = vi.fn().mockReturnValue("added"), quote = vi.fn();
+  render(<ReviewDiff patch={patch} source="edit identity and hashes" onFeedback={quote} onAddComment={add} />);
+  const user = userEvent.setup();
+  const trigger = screen.getByRole("button", { name: "评论旧第 8 行" });
+  await user.click(trigger);
+  const input = screen.getByRole("textbox", { name: "旧第 8 行的意见" });
+  expect(input).toHaveFocus();
+  expect(screen.getByRole("button", { name: "加入聊天草稿" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "评论新第 10 行" })).toBeDisabled();
+  await user.type(input, "Keep the guard.{Enter}Explain why.");
+  expect(add).not.toHaveBeenCalled();
+  await user.keyboard("{Control>}{Enter}{/Control}");
+  expect(add).toHaveBeenCalledOnce();
+  expect(add).toHaveBeenCalledWith(expect.stringContaining("edit identity and hashes\n旧文件路径：a/src/app.ts\n新文件路径：b/src/app.ts"));
+  expect(add).toHaveBeenCalledWith(expect.stringContaining("旧文件第 8 行：\n-old value"));
+  expect(add).toHaveBeenCalledWith(expect.stringContaining("要求：Keep the guard.\nExplain why."));
+  expect(quote).not.toHaveBeenCalled();
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  await waitFor(() => expect(trigger).toHaveFocus());
+});
+
+it("keeps a blocked comment, ignores IME submission and cancels without bubbling Escape", async () => {
+  const add = vi.fn().mockReturnValue("blocked"), key = vi.fn();
+  render(<div onKeyDown={key}><ReviewDiff patch={patch} source="source" onAddComment={add} /></div>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "评论新第 10 行" }));
+  const input = screen.getByRole("textbox");
+  await user.type(input, "保留意见");
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true, isComposing: true });
+  fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+  fireEvent.keyDown(input, { key: "Escape", keyCode: 229 });
+  expect(input).toBeInTheDocument();
+  expect(input).toHaveValue("保留意见");
+  expect(add).not.toHaveBeenCalled();
+  await user.keyboard("{Meta>}{Enter}{/Meta}");
+  expect(screen.getByRole("alert")).toHaveTextContent("此处输入仍保留");
+  expect(input).toHaveValue("保留意见");
+  key.mockClear();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(key).not.toHaveBeenCalled();
+});
+
+it("retains the original source when a refreshed patch replaces or removes the selected hunk", async () => {
+  const add = vi.fn().mockReturnValue("added");
+  const { rerender } = render(<ReviewDiff patch={patch} source="original edit hash" onAddComment={add} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "评论新第 10 行" }));
+  await user.type(screen.getByRole("textbox"), "Use an explicit default");
+  rerender(<ReviewDiff patch="Binary files differ" source="new edit hash" onAddComment={add} />);
+  expect(screen.getByRole("status")).toHaveTextContent("仍引用开始输入时的版本");
+  expect(screen.getByRole("textbox")).toHaveValue("Use an explicit default");
+  await user.click(screen.getByRole("button", { name: "加入聊天草稿" }));
+  expect(add).toHaveBeenCalledWith(expect.stringContaining("original edit hash"));
+  expect(add).toHaveBeenCalledWith(expect.stringContaining("新文件第 10 行：\n+new value"));
+  expect(add.mock.calls[0][0]).not.toContain("new edit hash");
+});
+
+it("offers English inline comments only on actual diff lines", async () => {
+  localStorage.setItem("prayu.locale.v1", "en-US");
+  const add = vi.fn().mockReturnValue("added");
+  renderComponent(<LocaleProvider><ReviewDiff patch={patch} source="source" onAddComment={add} /></LocaleProvider>);
+  expect(screen.getAllByRole("button", { name: /^Comment on/ })).toHaveLength(4);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Comment on new line 10" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Please simplify" } });
+  await userEvent.setup().click(screen.getByRole("button", { name: "Add to chat draft" }));
+  expect(add).toHaveBeenCalledWith(expect.stringContaining("New file, line 10:\n+new value"));
+});
 
 it("toggles wrapping with the keyboard without changing source text, line references or excerpts", async () => {
   const feedback = vi.fn();
