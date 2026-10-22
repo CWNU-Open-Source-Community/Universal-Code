@@ -157,7 +157,7 @@ The production React bundle is built by Vite but hosted only when Go receives an
 
 ## Core Domain
 
-`Run` is a domain aggregate, not a programming language, operating-system process, or replacement for Go/TypeScript/Rust. Go creates and owns Run lifecycle state; TypeScript may display and control it through Go APIs. Rust never owns a Run. The current analyzer fixture has no Run field or product bridge; a future Go adapter may bind a validated analyzer operation to a Run outside the Rust wire contract.
+`Run` is a domain aggregate, not a programming language, operating-system process, or replacement for Go/TypeScript/Rust. Go creates and owns Run lifecycle state; TypeScript may display and control it through Go APIs. Rust never owns a Run. Go application services bind the fixed embedded digest analyzer to a Run and commit its execution evidence. The Rust wire contract remains free of Run identity and authority. See the [Analyzer README](../analyzers/README.md) for the current execution boundary.
 
 Budget, events, sandbox sessions, and reports are Run-scoped rather than embedded into one large object. Their modules remain independent and persist references by `run_id`; `AgentRunner` coordinates their lifecycle.
 
@@ -1041,7 +1041,7 @@ internal/store/             SQLite stores and migrations
 internal/session/           Compatibility conversation service
 internal/tui/               Bubble Tea adapter
 internal/httpapi/           Loopback-only read/control API, OpenAPI contract, and bounded Run-event SSE
-internal/analyzer/          Go-owned analyzer protocol, validation, and future bridge boundary
+internal/analyzer/          Go-owned analyzer protocol, validation, and embedded WASI execution boundary
 ```
 
 Packages split when a concrete implementation establishes different ownership. New tools and integrations reuse these services and add focused behavior tests for their contracts.
@@ -1333,6 +1333,9 @@ subprocess, filesystem write, network, Docker, or Runner starter is introduced. 
 records these bounds.
 
 ## Go-Owned Analyzer Protocol And Rust Fixture
+
+The following P10-A/B sections record the initial implementation stages. For the
+current product execution path, see the [Analyzer README](../analyzers/README.md).
 
 P10-A1 establishes `internal/analyzer` as a pure Go protocol owner rather than a process
 launcher. `analyzer_protocol.v1` accepts one canonical inline Base64 payload plus explicit

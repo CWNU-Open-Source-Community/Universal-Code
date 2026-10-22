@@ -16,7 +16,7 @@
     <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blueviolet?style=flat-square">
     <img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white">
     <img alt="Node" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
-    <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black">
+    <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black">
     <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square"></a>
   </p>
   <p>
@@ -31,10 +31,10 @@
 ## Highlights
 
 - **Built for Local Repositories**: Read, inspect, and edit local codebases with built-in line-by-line diff inspection and auditable checkpoints (Rewind).
-- **Transparent Permission Control**: Choose between read-only analysis, approval-gated runs, and automated Full Access. High-risk actions (file deletion, unlisted commands) always require manual confirmation.
+- **Transparent Permission Control**: Ask / Auto / Full authorization allows, requests approval for, or denies operations according to current permissions, verified effects, and safety policy. Full requires explicit activation in the current process.
 - **Ready for Any Model**: Native support for OpenAI, Anthropic Claude, DeepSeek, Kimi, local Ollama models, and custom OpenAI-compatible endpoints with on-the-fly model switching. Also supports quick browser-based ChatGPT account sign-in.
 - **Traceable Web Research**: Prioritizes provider-hosted native search, fetches GitHub Issues/PRs, Hacker News, and RSS/Atom feeds, and keeps source snapshots and citations.
-- **Modern Liquid Glass Aesthetic**: Crafted with pure CSS optical refraction (macOS / VisionOS acrylic style), supporting Dark, Light, and Mist frosted themes at a responsive 120fps.
+- **Switchable Interface Themes**: Dark, Light, and Mist themes use CSS blur, translucent backgrounds, gradients, and edge shadows for a glass-like appearance.
 
 ---
 
@@ -52,7 +52,7 @@ Packages retain their historical filenames; the product name shown in the applic
 
 ### Option 2: Build from Source
 
-Install **Go as pinned in [go.mod](go.mod), currently 1.26.9**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
+Install **Go as pinned in [go.mod](go.mod), currently 1.26.10**, and **Node.js 24** (CI uses 24.16.0), then clone the repository:
 
 ```bash
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
@@ -110,6 +110,7 @@ Switch between **System, Light, Dark, and Mist** under **Settings → Appearance
 | :--- | :--- | :--- |
 | **User Guide** | [Usage Guide](docs/usage.md) | Client walkthrough, CLI commands, and typical workflows |
 | **Web Research** | [Search & Citations](docs/web-evidence.md) | Search setup, snapshot storage, URL provenance, and diagnostics |
+| **Chat Resources** | [Links, Files & Clipboard](docs/chat-resource-interactions.md) | Link previews, resource context menus, and file/image copy and paste |
 | **Code Auditing** | [Workspace Checkpoints](docs/workspace-checkpoints.md) | Line-by-line diff review, snapshots, and safe Rewind |
 | **Extensions** | [Extensions & MCP](docs/extensions.md) | Integrating Model Context Protocol (MCP) and custom skills |
 | **Code Intelligence** | [LSP Support](docs/code-intelligence.md) | Symbol jump, type inference, and repository index |

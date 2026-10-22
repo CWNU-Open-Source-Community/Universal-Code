@@ -62,7 +62,7 @@ Schema v115 introduces `agent-code-tools.v1`, allowing the root Supervisor to co
 
 | Mode | Available tools |
 |---|---|
-| Code / Plan / root | `workspace_list`, `workspace_read`, `workspace_glob`, and `workspace_grep` |
+| Code / Plan / root | `workspace_list`, `workspace_read`, `workspace_glob`, and `workspace_grep`; `github_review_evidence_list/read` when current-Run GitHub evidence is available |
 | Code / Deliver / root with Code or Script Profile | The read tools plus `workspace_change`, `workspace_apply`, and `workspace_delete` |
 | Code / Deliver / root with Review or Learn Profile | Read tools only |
 | Cyber Surface or Specialist | No `agent-code-tools.v1` tools are advertised; the capability snapshot records the refusal reason |

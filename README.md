@@ -16,7 +16,7 @@
     <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blueviolet?style=flat-square">
     <img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white">
     <img alt="Node" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
-    <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black">
+    <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black">
     <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square"></a>
   </p>
   <p>
@@ -31,10 +31,10 @@
 ## 核心特性
 
 - **深度聚焦本地项目**：直接阅读、分析与修改本地代码库，内置 Diff 逐行审阅与可信撤销（Rewind / Checkpoints）能力。
-- **透明可控的安全策略**：支持只读分析、交互审批（Approval Mode）与全自动（Full Access）权限分级，高危操作（文件删除、非白名单命令）严格阻断并要求人工确认。
+- **透明可控的安全策略**：采用 Ask / Auto / Full 分级授权；操作按当前权限、实际影响和安全策略自动执行、请求审批或拒绝，Full 须在当前进程显式激活。
 - **主流模型即开即用**：原生接入 OpenAI、Anthropic Claude、DeepSeek、Kimi、Ollama 本地模型与任何兼容 OpenAI 的第三方 API，支持单会话内即时热切，并支持通过系统浏览器快速完成 ChatGPT 账户授权登录。
 - **真实来源的网络检索**：优先调用供应商原生搜索，支持直接抓取 GitHub PR/Issue、Hacker News 与 RSS/Atom 资讯，自动附带快照存证与引用出处。
-- **现代苹果液态玻璃美学**：采用纯 CSS 物理折射模型（macOS / VisionOS 亚克力液态玻璃风格），提供深色、浅色与雾透磨砂质感，兼具 120fps 极速渲染。
+- **可切换的界面主题**：提供深色、浅色与雾透主题，使用 CSS 模糊、半透明背景、渐变和边缘阴影呈现玻璃质感。
 
 ---
 
@@ -52,7 +52,7 @@
 
 ### 方式二：从源码构建运行
 
-安装 **Go（版本遵循 [go.mod](go.mod)，当前为 1.26.9）** 与 **Node.js 24**（CI 使用 24.16.0），然后克隆仓库：
+安装 **Go（版本遵循 [go.mod](go.mod)，当前为 1.26.10）** 与 **Node.js 24**（CI 使用 24.16.0），然后克隆仓库：
 
 ```bash
 git clone https://github.com/CWNU-Open-Source-Community/Universal-Code.git
