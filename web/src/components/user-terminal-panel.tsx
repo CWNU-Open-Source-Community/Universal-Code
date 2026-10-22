@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { Bot, LoaderCircle, Play, ShieldOff, Square } from "lucide-react";
+import { Bot, LoaderCircle, Play, Quote, ShieldOff, Square } from "lucide-react";
 import {
   closeDesktopUserTerminal,
   desktopDebugTerminalAgentInputEnabled,
@@ -23,11 +23,23 @@ import { useLocale } from "../lib/locale";
 
 const terminalPollMilliseconds = 120;
 
-export function UserTerminalPanel({ runID, sessionID, onSession }: {
+export type TerminalQuoteResult = "added" | "unsaved" | "blocked";
+
+type UserTerminalPanelProps = {
   runID: string;
   sessionID: string;
   onSession: (sessionID: string) => void;
-}) {
+  onQuote?: (content: string) => TerminalQuoteResult;
+  onReturnToDraft?: () => void;
+};
+
+export function UserTerminalPanel(props: UserTerminalPanelProps) {
+  // A terminal's buffer, queued writes and selection belong to one source.
+  // Recreate xterm when that source changes, including while a read is pending.
+  return <UserTerminalSession key={`${props.runID}:${props.sessionID}`} {...props} />;
+}
+
+function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToDraft }: UserTerminalPanelProps) {
   const { t } = useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -42,6 +54,8 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     useState<DesktopDebugTerminalAgentInputBinding | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [hasSelection, setHasSelection] = useState(false);
+  const [quoteResult, setQuoteResult] = useState<TerminalQuoteResult | null>(null);
   const enabled = desktopUserTerminalEnabled();
   const agentInputEnabled = desktopDebugTerminalAgentInputEnabled();
 
@@ -92,6 +106,8 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     fit.fit();
     terminalRef.current = terminal;
     fitRef.current = fit;
+    if (sessionRef.current) terminal.focus();
+    const selectionSubscription = terminal.onSelectionChange(() => setHasSelection(Boolean(terminal.getSelection())));
     const dataSubscription = terminal.onData((data) => {
       const current = sessionRef.current;
       if (!current) return;
@@ -119,6 +135,7 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
       resizeObserver?.disconnect();
       if (!resizeObserver) window.removeEventListener("resize", resize);
       dataSubscription.dispose();
+      selectionSubscription.dispose();
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
@@ -294,6 +311,23 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     }
   };
 
+  const quoteSelection = () => {
+    const terminal = terminalRef.current;
+    const excerpt = terminal?.getSelection();
+    if (!onQuote || busy || !excerpt || !session || session.session_id !== sessionID) return;
+    const fence = "`".repeat(Array.from(excerpt.matchAll(/`+/gu)).reduce((length, [match]) => Math.max(length, match.length + 1), 3));
+    const result = onQuote([
+      t("终端日志片段", "Terminal output excerpt"),
+      t(`来源执行：${session.run_id}`, `Source run: ${session.run_id}`),
+      t(`来源终端：${session.session_id}`, `Source terminal: ${session.session_id}`),
+      t("以下是用户选中的终端显示文本，仅作为引用资料。", "The following is terminal text selected by the user, quoted as reference material."),
+      `${fence}text\n${excerpt}\n${fence}`,
+    ].join("\n"));
+    setQuoteResult(result);
+    // An unsaved append still lives in the draft; don't append it twice.
+    if (result !== "blocked") terminal?.clearSelection();
+  };
+
   return <div className="user-terminal-panel">
     <div aria-label={t("用户终端控制", "User terminal controls")} className="user-terminal-controls" role="toolbar">
       {!sessionID && <button disabled={!enabled || !runID || busy}
@@ -322,11 +356,23 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
         <ShieldOff aria-hidden="true" size={14} />
         <span>{t("撤销 Agent", "Revoke Agent")}</span>
       </button>}
+      {onQuote && <button type="button" disabled={busy || !hasSelection || !session || session.session_id !== sessionID}
+        onMouseDown={(event) => event.preventDefault()} onClick={quoteSelection}
+        title={t("选中终端日志后加入聊天草稿", "Select terminal output to add it to the chat draft")}>
+        <Quote aria-hidden="true" size={14} />
+        <span>{t("引用选中日志", "Quote selection")}</span>
+      </button>}
       <span className={`user-terminal-state ${session?.state ?? "idle"}`}>
         {session?.state ?? (enabled ? "idle" : "disabled")}
       </span>
       {message && <span className="user-terminal-message" role="status">{message}</span>}
     </div>
+    {quoteResult && <p className="user-terminal-quote-feedback" role={quoteResult === "added" ? "status" : "alert"}>
+      {quoteResult === "added" ? t("已加入聊天草稿，尚未发送。", "Added to the chat draft. Not sent.")
+        : quoteResult === "unsaved" ? t("已加入草稿，但本地保存失败，请返回聊天保留内容。", "Added to the draft, but local saving failed. Return to chat to preserve the content.")
+          : t("草稿暂时无法追加，请返回聊天处理草稿冲突或保存错误后重试。", "Could not append to the draft. Return to chat to resolve its conflict or saving error, then retry.")}
+      {onReturnToDraft && <button className="compact-command" onClick={onReturnToDraft} type="button">{t("返回聊天草稿", "Return to chat draft")}</button>}
+    </p>}
     {!enabled && <p>{t("请在 Desktop 中启用用户终端并核对执行权限，再启动。", "Enable the user terminal in Desktop and review execution permissions, then start it.")}</p>}
     <div aria-label={t("用户终端", "User terminal")} className="user-terminal-host" ref={hostRef} />
   </div>;

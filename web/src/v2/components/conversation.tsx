@@ -53,7 +53,7 @@ import { V2ThreadRunRecovery } from "./thread-run-recovery";
 import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
 import { WorkspaceExplorer } from "../../components/workspace-explorer";
 import { useFileEditLeave } from "../../components/file-edit-drafts";
-import { UserTerminalPanel } from "../../components/user-terminal-panel";
+import { UserTerminalPanel, type TerminalQuoteResult } from "../../components/user-terminal-panel";
 import { desktopUserTerminalEnabled, closeDesktopUserTerminal } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { V2IdentityDisclosure } from "./identity-disclosure";
@@ -226,6 +226,8 @@ export function V2TerminalDrawer({
   threadTitle,
   workspaceName,
   onSession,
+  onQuote,
+  onReturnToDraft,
   onClose,
   returnFocusRef,
   docked = false,
@@ -235,6 +237,8 @@ export function V2TerminalDrawer({
   threadTitle: string;
   workspaceName: string;
   onSession: (sessionID: string) => void;
+  onQuote?: (content: string) => TerminalQuoteResult;
+  onReturnToDraft?: () => void;
   onClose: () => void;
   returnFocusRef: RefObject<HTMLElement | null>;
   docked?: boolean;
@@ -320,7 +324,8 @@ export function V2TerminalDrawer({
         )}
         <div className="v2-terminal-drawer-body">
           {terminalAvailable ? (
-            <UserTerminalPanel runID={runID} sessionID={sessionID} onSession={onSession} />
+            <UserTerminalPanel runID={runID} sessionID={sessionID} onSession={onSession}
+              onQuote={onQuote} onReturnToDraft={onReturnToDraft} />
           ) : (
             <div className="v2-terminal-disabled-notice" role="status">
               <SquareTerminal aria-hidden="true" size={24} />
@@ -975,9 +980,11 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         if (fileReturnFocus.current?.isConnected) fileReturnFocus.current.focus();
         else fileTrigger.current?.focus();
       }} returnFocusRef={fileReturnFocus} />}
-    {activePane === "terminal" && <V2TerminalDrawer runID={currentRun.id} sessionID={currentTerminalSessionID}
+    {activePane === "terminal" && <V2TerminalDrawer key={threadID} runID={currentRun.id} sessionID={currentTerminalSessionID}
       threadTitle={detail.thread.title} workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
       onSession={handleTerminalSessionChange} docked={companionDocked}
+      onQuote={onDraftChange ? (content) => addReviewComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`) : undefined}
+      onReturnToDraft={() => { setActivePane(null); appendDraftAndReveal(""); }}
       onClose={() => {
         setTerminalDrawerOpen(false);
         if (terminalReturnFocus.current?.isConnected) terminalReturnFocus.current.focus();
