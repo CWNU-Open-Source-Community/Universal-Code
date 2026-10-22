@@ -131,7 +131,7 @@ func TestChatResourceLargeFilePathActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := ChatResourceRequest{Version: ChatResourceVersion, WorkspaceID: workspace.ID, Path: "./large.bin"}
-	for _, action := range []string{"copy_path", "reveal", "open_with"} {
+	for _, action := range []string{"copy_path", "reveal", "open_with", "open"} {
 		t.Run(action, func(t *testing.T) {
 			ref.Action = action
 			before := len(host.actions)
@@ -145,14 +145,14 @@ func TestChatResourceLargeFilePathActions(t *testing.T) {
 			}
 		})
 	}
-	for _, action := range []string{"", "copy_path", "reveal", "open_with"} {
+	for _, action := range []string{"", "copy_path", "reveal", "open_with", "open"} {
 		ref.Action = action
 		if _, err := b.ReadChatResource(ref); apperror.CodeOf(err) != apperror.CodeResourceExhausted {
 			t.Fatalf("read with action %q bypassed file size limit: %v", action, err)
 		}
 	}
 	before := len(host.actions)
-	for _, action := range []string{"copy_content", "copy_file", "save_as", "open"} {
+	for _, action := range []string{"copy_content", "copy_file", "save_as"} {
 		ref.Action = action
 		if _, err := b.ChatResourceAction(ref); apperror.CodeOf(err) != apperror.CodeResourceExhausted {
 			t.Fatalf("%s bypassed file size limit: %v", action, err)
@@ -202,7 +202,7 @@ func TestChatResourcesReadStoredAttachmentAndGeneratedFile(t *testing.T) {
 	if err != nil || read.DataBase64 != base64.StdEncoding.EncodeToString(input.files[0].Data) {
 		t.Fatalf("read attachment: %#v %v", read, err)
 	}
-	for _, action := range []string{"copy_file", "open_with", "save_as"} {
+	for _, action := range []string{"copy_file", "open_with", "open", "save_as"} {
 		ref.Action = action
 		if _, err := b.ChatResourceAction(ref); err != nil {
 			t.Fatalf("attachment %s: %v", action, err)
@@ -264,7 +264,7 @@ func TestChatResourcesReadStoredAttachmentAndGeneratedFile(t *testing.T) {
 	if err != nil || read.DataBase64 != base64.StdEncoding.EncodeToString([]byte("generated result")) {
 		t.Fatalf("historical file after project move: %#v %v", read, err)
 	}
-	for _, action := range []string{"copy_path", "reveal", "open_with"} {
+	for _, action := range []string{"copy_path", "reveal", "open_with", "open"} {
 		ref.Action = action
 		if _, err := b.ChatResourceAction(ref); err != nil {
 			t.Fatalf("historical path action %s after project move: %v", action, err)
@@ -279,7 +279,7 @@ func TestChatResourcesReadStoredAttachmentAndGeneratedFile(t *testing.T) {
 		t.Fatal("unrelated workspace accepted for historical run")
 	}
 	before := len(host.actions)
-	for _, action := range []string{"copy_path", "reveal", "open_with"} {
+	for _, action := range []string{"copy_path", "reveal", "open_with", "open"} {
 		ref.Action = action
 		if _, err := b.ChatResourceAction(ref); apperror.CodeOf(err) != apperror.CodeConflict {
 			t.Fatalf("%s accepted unrelated workspace for historical run: %v", action, err)

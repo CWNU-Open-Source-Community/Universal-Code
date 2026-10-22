@@ -128,7 +128,7 @@ func (b *DesktopBridge) ChatResourceAction(r ChatResourceRequest) (string, error
 	}
 	// These workspace actions pass only the verified path to the native host.
 	// Attachments and actions that export bytes still require the bounded read.
-	pathOnly := r.Path != "" && (r.Action == "copy_path" || r.Action == "reveal" || r.Action == "open_with")
+	pathOnly := r.Path != "" && (r.Action == "copy_path" || r.Action == "reveal" || r.Action == "open_with" || r.Action == "open")
 	resource, err := b.readChatResource(r, !pathOnly)
 	if err != nil {
 		return "", err
