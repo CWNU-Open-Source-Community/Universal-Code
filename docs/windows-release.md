@@ -30,7 +30,7 @@ If this artifact has expired, select a newer successful [Desktop release run](ht
 
 ### 从源码构建与启动 / Build and launch from source
 
-在仓库根目录使用 PowerShell、[go.mod](../go.mod) 固定的 Go（当前 1.26.10）与 Node.js 24（CI 为 24.16.0）：
+在仓库根目录使用 PowerShell、[go.mod](../go.mod) 固定的 Go（当前 1.26.10）与 Node.js 24（CI 为 24.22.1）：
 
 ```powershell
 .\scripts\build-desktop.ps1 -Version v1.0.0-dev
