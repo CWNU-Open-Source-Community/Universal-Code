@@ -37,6 +37,7 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
   const runRef = useRef(runID);
   const mountedRef = useRef(true);
   const cursorRef = useRef(0);
+  const replayingRef = useRef(false);
   const writeQueueRef = useRef(Promise.resolve());
   const [session, setSession] = useState<DesktopTerminalSession | null>(null);
   const [agentBinding, setAgentBinding] =
@@ -59,7 +60,17 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     };
   }, []);
 
+  const handleTerminalData = useEffectEvent((data: string) => {
+    if (session?.state !== "running" || session.session_id !== sessionID) return;
+    const current = sessionID;
+    writeQueueRef.current = writeQueueRef.current
+      .then(() => writeDesktopUserTerminal(current, data))
+      .then(() => undefined)
+      .catch((error) => setMessage(desktopErrorMessage(error)));
+  });
+
   const resizeTerminal = useEffectEvent(() => {
+    if (replayingRef.current) return;
     fitRef.current?.fit();
     const terminal = terminalRef.current;
     if (terminal && session?.state === "running" && session.session_id === sessionID &&
@@ -103,12 +114,7 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     terminalRef.current = terminal;
     fitRef.current = fit;
     const dataSubscription = terminal.onData((data) => {
-      const current = sessionRef.current;
-      if (!current) return;
-      writeQueueRef.current = writeQueueRef.current
-        .then(() => writeDesktopUserTerminal(current, data))
-        .then(() => undefined)
-        .catch((error) => setMessage(desktopErrorMessage(error)));
+      handleTerminalData(data);
     });
     const ResizeObserverType = window.ResizeObserver;
     const resizeObserver = ResizeObserverType ? new ResizeObserverType(resizeTerminal) : null;
@@ -132,20 +138,29 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     if (session?.state === "running") resizeTerminal();
   }, [session?.session_id, session?.state, sessionID]);
 
-  const writePage = useCallback((encoded: string) => {
+  const writePage = useCallback(async (encoded: string) => {
     const binary = window.atob(encoded);
     const bytes = Uint8Array.from(binary, (current) => current.charCodeAt(0));
-    terminalRef.current?.write(bytes);
+    const terminal = terminalRef.current;
+    if (terminal) await new Promise<void>((resolve) => terminal.write(bytes, resolve));
   }, []);
 
   useEffect(() => {
     if (!sessionID || !enabled) {
+      replayingRef.current = false;
       setSession(null);
       cursorRef.current = 0;
       return;
     }
     let cancelled = false;
     let timer = 0;
+    let replayEndCursor = 0;
+    replayingRef.current = true;
+    const finishReplay = () => {
+      if (!replayingRef.current) return;
+      replayingRef.current = false;
+      resizeTerminal();
+    };
     const poll = async () => {
       try {
         const page = await readDesktopUserTerminal(sessionID, cursorRef.current);
@@ -154,9 +169,11 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
           terminalRef.current?.clear();
         }
         if (page.data_bytes > 0) {
-          writePage(page.data_base64);
+          await writePage(page.data_base64);
         }
+        if (cancelled) return;
         cursorRef.current = page.next_cursor;
+        if (cursorRef.current >= replayEndCursor) finishReplay();
         const current = await getDesktopUserTerminal(sessionID);
         if (cancelled) return;
         setSession(current);
@@ -165,22 +182,31 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
           timer = window.setTimeout(() => void poll(), terminalPollMilliseconds);
         }
       } catch (error) {
-        if (!cancelled) setMessage(desktopErrorMessage(error));
+        if (!cancelled) {
+          finishReplay();
+          setMessage(desktopErrorMessage(error));
+        }
       }
     };
     void getDesktopUserTerminal(sessionID).then((current) => {
       if (cancelled) return;
       setSession(current);
       cursorRef.current = current.output_base_cursor;
+      replayEndCursor = current.output_next_cursor;
+      // Cursor-position escapes must replay at the backend's dimensions, even while the drawer animates.
+      terminalRef.current?.resize(current.columns, current.rows);
+      if (cursorRef.current >= replayEndCursor) finishReplay();
       void poll();
     }).catch((error) => {
       if (!cancelled) {
+        finishReplay();
         onSession("");
         setMessage(desktopErrorMessage(error));
       }
     });
     return () => {
       cancelled = true;
+      replayingRef.current = false;
       window.clearTimeout(timer);
     };
   }, [enabled, onSession, sessionID, writePage]);
