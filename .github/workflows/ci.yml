@@ -123,7 +123,7 @@ jobs:
           PY
       - name: Set up Node for native package preparation verification
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
       - name: Prepare integrity-pinned package preparation fixtures
@@ -283,7 +283,7 @@ jobs:
           --output-dir "$RUNNER_TEMP/store-shard-${{ matrix.shard }}"
       - name: Upload Store shard evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: store-shard-${{ matrix.shard }}
           path: ${{ runner.temp }}/store-shard-${{ matrix.shard }}/
@@ -334,7 +334,7 @@ jobs:
           go-version-file: go.mod
           check-latest: true
           cache: true
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
       - name: Install reviewed real language servers
@@ -383,7 +383,7 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
           cache: npm
@@ -416,7 +416,7 @@ jobs:
         run: npm run test:journeys
       - name: Upload workbench journey results
         if: ${{ !cancelled() && needs.classify.outputs.journeys == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workbench-journeys
           path: output/playwright/workbench-journeys
@@ -499,7 +499,7 @@ jobs:
           sha256sum "$EMBEDDED_WASI_FIXTURE"
       - name: Preserve a mismatched rebuilt WASI module
         if: failure() && steps.verify-wasi.outcome == 'failure'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rebuilt-wasi-fixture
           path: analyzers/target/wasm32-wasip1/release/cyberagent-analyzer-fixture.wasm
@@ -547,7 +547,7 @@ jobs:
             arm64:arm64:arm64|x86_64:amd64:amd64) ;;
             *) echo "Runner, Go and expected native architectures differ" >&2; exit 1 ;;
           esac
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
           cache: npm
@@ -592,7 +592,7 @@ jobs:
         run: bash scripts/ci/verify-macos-agent-browser-ui.sh 3341c0e3a35b9f84a38b913465c0252e10f95649
       - name: Upload native Chrome experiment and actual browser PNGs
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: darwin-chrome-native-${{ github.sha }}
           path: build/darwin-chrome-evidence/
@@ -617,7 +617,7 @@ jobs:
         run: python3 scripts/package-desktop-dmg.py "v1.0.0-ci.$GITHUB_RUN_ID" "$GITHUB_SHA" "$RELEASE_ARCH"
       - name: Upload downloadable macOS preview
         if: ${{ needs.classify.outputs.packaging == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: TraverseBoard-macos-preview-${{ matrix.arch }}
           path: build/macos-public/*
@@ -625,7 +625,7 @@ jobs:
           retention-days: 30
       - name: Upload macOS preview disk image
         if: ${{ needs.classify.outputs.packaging == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: TraverseBoard-macos-dmg-preview-${{ matrix.arch }}
           path: build/macos-dmg/*
@@ -658,7 +658,7 @@ jobs:
           ./scripts/tests/prepare-windows-fixed-go.tests.ps1
           ./scripts/tests/desktop-toolchain.tests.ps1
           ./scripts/prepare-windows-fixed-go.ps1 -ExpectedGoVersion $env:TRAVERSE_CI_GO_VERSION
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
           cache: npm
@@ -974,7 +974,7 @@ jobs:
           }
       - name: Upload real Edge UI evidence receipt
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ui-evidence-edge-smoke
           path: ${{ runner.temp }}/ui-evidence-smoke
