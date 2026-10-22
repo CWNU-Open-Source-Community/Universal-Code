@@ -13,6 +13,67 @@ function page(items: ThreadTranscriptItemView[], next_cursor = ""): PageResult<T
 }
 const clientOf = (getPage: unknown, get: unknown) => ({ getPage, get }) as APIClient;
 
+it.each(["operator", "model"])("preserves saved %s whitespace and indented code in Markdown and text", async (source) => {
+  const body = "\n    const first = 1;\n    const second = 2;  \n\n";
+  const entry = item("saved", 1, source);
+  const result = await readThreadExport(clientOf(vi.fn(async () => page([entry])),
+    vi.fn(async () => ({ message_id: entry.id, content: body }))), "thread-1", new AbortController().signal, t);
+  expect(result).toHaveLength(1);
+  expect(result[0].text).toBe(body);
+  const role = source === "operator" ? "User" : "Assistant";
+  expect(formatThreadExport("Code", result, "markdown", t)).toBe(`# Code\n\n## ${role}\n\n${body}\n`);
+  expect(formatThreadExport("Code", result, "text", t)).toBe(`Code\n\n${role}\n\n${body}\n`);
+});
+
+it("preserves each assistant part and paragraph join while suppressing a repeated combined ending", async () => {
+  const first = "    const first = 1;\n    const second = 2;\n";
+  const second = "\n\treturn first + second;  \n";
+  const repeated = `${first.trim()}\n\n${second.trim()}\n\n`;
+  const bodies: Record<string, string> = { first, second, repeated, next: "\n    newRun();\n" };
+  const entries = [item("first", 1, "model"), item("second", 2, "model"), item("repeated", 3, "model"),
+    item("next", 4, "model", { run_id: "run-2", run_ordinal: 2 })];
+  const result = await readThreadExport(clientOf(vi.fn(async () => page(entries)), vi.fn(async (path: string) => {
+    const id = path.split("/").at(-1)!;
+    return { message_id: id, content: bodies[id] };
+  })), "thread-1", new AbortController().signal, t);
+  expect(result).toHaveLength(2);
+  expect(result[0]).toMatchObject({ text: `${first}\n\n${second}`, messageIDs: ["first", "second", "repeated"], branchSourceID: "repeated" });
+  expect(result[1]).toMatchObject({ text: bodies.next, runId: "run-2" });
+  for (const format of ["markdown", "text"] as const) {
+    const prefix = format === "markdown" ? "# " : "";
+    const role = format === "markdown" ? "## Assistant" : "Assistant";
+    expect(formatThreadExport("Code", result, format, t))
+      .toBe(`${prefix}Code\n\n${role}\n\n${first}\n\n${second}\n\n---\n\n${role}\n\n${bodies.next}\n`);
+  }
+});
+
+it("keeps the first saved body's whitespace when a duplicate ending differs only in whitespace", async () => {
+  const first = "    done();  \n";
+  const entries = [item("first", 1, "model"), item("repeated", 2, "model")];
+  const result = await readThreadExport(clientOf(vi.fn(async () => page(entries)), vi.fn(async (path: string) => {
+    const id = path.split("/").at(-1)!;
+    return { message_id: id, content: id === "first" ? first : "\n\ndone();\n" };
+  })), "thread-1", new AbortController().signal, t);
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({ text: first, messageIDs: ["first", "repeated"], branchSourceID: "repeated" });
+});
+
+it("rechecks full-body visibility without removing ordinary user text that resembles a model placeholder", async () => {
+  const bodies: Record<string, string> = {
+    user: "  Mock response is the bug I want fixed.\n",
+    synthetic: "\n  Continue mission at turn 2 using only the structured tools offered by Go when needed: hidden\n",
+    internal: "  Mock response: hidden model placeholder\n",
+  };
+  const entries = [item("user", 1), item("synthetic", 2), item("internal", 3, "model")];
+  const result = await readThreadExport(clientOf(vi.fn(async () => page(entries)), vi.fn(async (path: string) => {
+    const id = path.split("/").at(-1)!;
+    return { message_id: id, content: bodies[id] };
+  })), "thread-1", new AbortController().signal, t);
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({ id: "user", text: bodies.user });
+  expect(formatThreadExport("Visibility", result, "markdown", t)).not.toContain("hidden");
+});
+
 it("reads all pages across runs and full long bodies, in order, while excluding internal and provisional rows", async () => {
   const full = "原始内容\n" + "完整长文。".repeat(2500) + "\n```ts\nconst keep = '<raw>';\n```";
   const original = item("old-user", 1);
