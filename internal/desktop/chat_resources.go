@@ -50,6 +50,7 @@ type ChatResourceView struct {
 
 type ChatResourceReader interface {
 	ReadChatResource(context.Context, ChatResourceRequest) (ChatResource, error)
+	ResolveChatResourcePath(context.Context, ChatResourceRequest) (ChatResource, error)
 }
 type ChatResourceHost interface {
 	OpenURL(context.Context, string) error
@@ -108,7 +109,7 @@ func OpenNativeChatURL(raw string) error {
 }
 
 func (b *DesktopBridge) ReadChatResource(r ChatResourceRequest) (ChatResourceView, error) {
-	resource, err := b.readChatResource(r)
+	resource, err := b.readChatResource(r, true)
 	if err != nil {
 		return ChatResourceView{}, err
 	}
@@ -125,7 +126,10 @@ func (b *DesktopBridge) ChatResourceAction(r ChatResourceRequest) (string, error
 	if b == nil || b.resourceHost == nil {
 		return "", apperror.New(apperror.CodeUnavailable, "Native file actions are unavailable")
 	}
-	resource, err := b.readChatResource(r)
+	// These workspace actions pass only the verified path to the native host.
+	// Attachments and actions that export bytes still require the bounded read.
+	pathOnly := r.Path != "" && (r.Action == "copy_path" || r.Action == "reveal" || r.Action == "open_with")
+	resource, err := b.readChatResource(r, !pathOnly)
 	if err != nil {
 		return "", err
 	}
@@ -139,7 +143,7 @@ func (b *DesktopBridge) ChatResourceAction(r ChatResourceRequest) (string, error
 	return b.resourceHost.FileAction(ctx, r.Action, resource)
 }
 
-func (b *DesktopBridge) readChatResource(r ChatResourceRequest) (ChatResource, error) {
+func (b *DesktopBridge) readChatResource(r ChatResourceRequest, includeContent bool) (ChatResource, error) {
 	if b == nil || b.resourceReader == nil {
 		return ChatResource{}, apperror.New(apperror.CodeUnavailable, "File actions are unavailable")
 	}
@@ -150,10 +154,21 @@ func (b *DesktopBridge) readChatResource(r ChatResourceRequest) (ChatResource, e
 	if err != nil {
 		return ChatResource{}, err
 	}
+	if !includeContent {
+		return b.resourceReader.ResolveChatResourcePath(ctx, r)
+	}
 	return b.resourceReader.ReadChatResource(ctx, r)
 }
 
 func (c *ControlPlane) ReadChatResource(ctx context.Context, r ChatResourceRequest) (ChatResource, error) {
+	return c.readChatResource(ctx, r, true)
+}
+
+func (c *ControlPlane) ResolveChatResourcePath(ctx context.Context, r ChatResourceRequest) (ChatResource, error) {
+	return c.readChatResource(ctx, r, false)
+}
+
+func (c *ControlPlane) readChatResource(ctx context.Context, r ChatResourceRequest, includeContent bool) (ChatResource, error) {
 	if c == nil || c.stateStore == nil || !validChatResourceRequest(r) {
 		return ChatResource{}, apperror.New(apperror.CodeInvalidArgument, "Invalid file reference")
 	}
@@ -195,10 +210,10 @@ func (c *ControlPlane) ReadChatResource(ctx context.Context, r ChatResourceReque
 		}
 		workspace.RootPath = files.Workspace.RootPath
 	}
-	return readWorkspaceChatResource(workspace.RootPath, r.Path)
+	return readWorkspaceChatResource(workspace.RootPath, r.Path, includeContent)
 }
 
-func readWorkspaceChatResource(rootPath, requested string) (ChatResource, error) {
+func readWorkspaceChatResource(rootPath, requested string, includeContent bool) (ChatResource, error) {
 	if len(requested) > 4096 || !utf8.ValidString(requested) || strings.IndexFunc(requested, unicode.IsControl) >= 0 {
 		return ChatResource{}, apperror.New(apperror.CodeInvalidArgument, "Invalid file path")
 	}
@@ -228,6 +243,10 @@ func readWorkspaceChatResource(rootPath, requested string) (ChatResource, error)
 	if err != nil || !before.Mode().IsRegular() {
 		return ChatResource{}, apperror.New(apperror.CodeInvalidArgument, "Select a regular file")
 	}
+	resource := ChatResource{Name: filepath.Base(path), Path: filepath.Join(rootPath, path), RelativePath: filepath.ToSlash(filepath.Clean(path))}
+	if !includeContent {
+		return resource, nil
+	}
 	if before.Size() > MaxClipboardFileBytes {
 		return ChatResource{}, apperror.New(apperror.CodeResourceExhausted, "File actions support files up to 5 MiB")
 	}
@@ -243,5 +262,6 @@ func readWorkspaceChatResource(rootPath, requested string) (ChatResource, error)
 	if media == "" {
 		media = http.DetectContentType(data)
 	}
-	return ChatResource{Name: filepath.Base(path), Path: filepath.Join(rootPath, path), RelativePath: filepath.ToSlash(filepath.Clean(path)), MIMEType: media, Data: data}, nil
+	resource.MIMEType, resource.Data = media, data
+	return resource, nil
 }
