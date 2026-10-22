@@ -1,3 +1,6 @@
+.v2-typography-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 17px; }
+.v2-typography-heading h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+.v2-typography-heading .v2-setting-value { margin-left: auto; max-width: 100%; }
 .v2-typography-settings label { font-weight: 600; }
 .v2-typography-control { width: 210px; }
 .v2-typography-settings .v2-typography-control { flex-wrap: nowrap; }
