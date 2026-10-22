@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { setDesktopWindowTheme } from "./desktop-window";
+import { applyTypography, readTypography } from "./typography";
 
 export type PrayuTheme = "light" | "dark" | "glass";
 export type PrayuThemePreference = PrayuTheme | "system";
@@ -171,5 +172,6 @@ export function applyPrayuTheme(theme: PrayuThemePreference, persist = true): vo
 
 export function initializePrayuAppearance(): void {
   applyPrayuTheme(readPrayuThemePreference(), false);
+  applyTypography(readTypography());
 }
 
