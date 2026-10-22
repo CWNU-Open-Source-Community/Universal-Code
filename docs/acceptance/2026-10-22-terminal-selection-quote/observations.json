@@ -1,0 +1,83 @@
+{
+  "base_commit": "6a9a4c6edd31f9a7d23205532c5a0562eb603d2c",
+  "implementation_tree": "f4194ee040973ab149506bec64c6a86948f3ed05",
+  "platform": "Linux Chromium with real Go DesktopBridge/SQLite/Bash PTY; temporary Wails transport adapter",
+  "browser": "154.0.8037.57",
+  "same_control_plane_database_and_fixtures": true,
+  "different_pty_before_after": true,
+  "native_mouse_selection": true,
+  "reverse_selection": true,
+  "keyboard_quote": true,
+  "ansi_not_in_draft": true,
+  "unicode_and_soft_wrap_preserved": true,
+  "nested_markdown_fence_preserved": true,
+  "unselected_sentinel_excluded": true,
+  "source_ids_verified": true,
+  "exited_terminal_quote": true,
+  "quote_action_terminal_input_or_lease_changes": 0,
+  "excerpts_in_reloaded_draft": 4,
+  "other_thread_draft_unchanged": true,
+  "reopening_discards_selection": true,
+  "returned_to_actual_draft": true,
+  "narrow": {
+    "viewport": 390,
+    "pageWidth": 390,
+    "left": 207.890625,
+    "right": 302.890625
+  },
+  "api_writes": [],
+  "uncaught_browser_errors": [],
+  "terminal_backend": "posix-bash-pty-user-v1",
+  "agent_grant_calls": 0,
+  "native_windows_macos_tested": false,
+  "theme": "dark",
+  "known_baseline_limitation": "Go style-src self blocks xterm generated style elements; theme/cursor/selection painting is not claimed as passing. No CSP bypass used.",
+  "baseline_csp_style_console_rejections": 26,
+  "candidate_csp_style_console_rejections": 272,
+  "baseline_resource_failures": [
+    {
+      "path": "/api/v1/runs/run-20261022074113-7f952873d838/agent-browser",
+      "status": 404
+    }
+  ],
+  "resource_failures": [
+    {
+      "path": "/api/v1/runs/run-20261022074113-7f952873d838/agent-browser",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/runs/run-20261022074113-7f952873d838/agent-browser",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/runs/run-20261022074113-fec03b2902fb/agent-browser",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/runs/run-20261022074113-7f952873d838/agent-browser",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/runs/run-20261022074113-7f952873d838/agent-browser",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/runs/run-20261022074113-fec03b2902fb/agent-browser",
+      "status": 404
+    }
+  ],
+  "other_console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "light_theme_new_button": {
+    "foreground": "rgb(237, 237, 237)",
+    "background": "rgb(34, 34, 34)",
+    "contrast_ratio": 13.589751571996217,
+    "returned_to_draft": true
+  }
+}
