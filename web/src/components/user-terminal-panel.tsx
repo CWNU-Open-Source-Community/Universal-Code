@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -20,6 +20,7 @@ import {
   type DesktopTerminalSession,
 } from "../lib/desktop-bridge";
 import { useLocale } from "../lib/locale";
+import { openUserTerminal } from "../lib/open-user-terminal";
 
 const terminalPollMilliseconds = 120;
 
@@ -58,6 +59,16 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     };
   }, []);
 
+  const resizeTerminal = useEffectEvent(() => {
+    fitRef.current?.fit();
+    const terminal = terminalRef.current;
+    if (terminal && session?.state === "running" && session.session_id === sessionID &&
+      terminal.cols >= 20 && terminal.rows >= 5) {
+      void resizeDesktopUserTerminal(sessionID, terminal.cols, terminal.rows)
+        .catch((error) => setMessage(desktopErrorMessage(error)));
+    }
+  });
+
   useEffect(() => {
     if (!hostRef.current) return;
     const terminal = new Terminal({
@@ -88,8 +99,7 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
-    terminal.open(hostRef.current);
-    fit.fit();
+    openUserTerminal(terminal, fit, hostRef.current);
     terminalRef.current = terminal;
     fitRef.current = fit;
     const dataSubscription = terminal.onData((data) => {
@@ -100,30 +110,27 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
         .then(() => undefined)
         .catch((error) => setMessage(desktopErrorMessage(error)));
     });
-    const resize = () => {
-      fit.fit();
-      const current = sessionRef.current;
-      if (current && terminal.cols >= 20 && terminal.rows >= 5) {
-        void resizeDesktopUserTerminal(current, terminal.cols, terminal.rows)
-          .catch((error) => setMessage(desktopErrorMessage(error)));
-      }
-    };
     const ResizeObserverType = window.ResizeObserver;
-    const resizeObserver = ResizeObserverType ? new ResizeObserverType(resize) : null;
+    const resizeObserver = ResizeObserverType ? new ResizeObserverType(resizeTerminal) : null;
     if (resizeObserver) {
       resizeObserver.observe(hostRef.current);
     } else {
-      window.addEventListener("resize", resize);
+      window.addEventListener("resize", resizeTerminal);
     }
     return () => {
       resizeObserver?.disconnect();
-      if (!resizeObserver) window.removeEventListener("resize", resize);
+      if (!resizeObserver) window.removeEventListener("resize", resizeTerminal);
       dataSubscription.dispose();
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    // The first ResizeObserver callback may precede the session lookup on reopen.
+    if (session?.state === "running") resizeTerminal();
+  }, [session?.session_id, session?.state, sessionID]);
 
   const writePage = useCallback((encoded: string) => {
     const binary = window.atob(encoded);
@@ -153,7 +160,8 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
         const current = await getDesktopUserTerminal(sessionID);
         if (cancelled) return;
         setSession(current);
-        if (current.state === "running") {
+        // An exited session can still have unread pages in its retained output.
+        if (current.state === "running" || cursorRef.current < current.output_next_cursor) {
           timer = window.setTimeout(() => void poll(), terminalPollMilliseconds);
         }
       } catch (error) {

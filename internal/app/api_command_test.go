@@ -411,7 +411,8 @@ func TestAPIServeCLIHostsImmutableWebUIWithoutWeakeningAPI(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(uiDirectory, "assets"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	indexBody := []byte(`<!doctype html><script type="module" src="/assets/index-AbCd1234.js"></script>`)
+	indexBody := []byte(`<!doctype html><head><meta name="uc-style-nonce" nonce="__UC_STYLE_NONCE__" /></head>` +
+		`<script type="module" src="/assets/index-AbCd1234.js"></script>`)
 	assetBody := []byte(`document.body.dataset.ready = "yes";`)
 	if err := os.WriteFile(filepath.Join(uiDirectory, "index.html"), indexBody, 0o600); err != nil {
 		t.Fatal(err)
@@ -454,8 +455,15 @@ func TestAPIServeCLIHostsImmutableWebUIWithoutWeakeningAPI(t *testing.T) {
 	}
 	servedIndex, readErr := io.ReadAll(uiResponse.Body)
 	_ = uiResponse.Body.Close()
-	if readErr != nil || uiResponse.StatusCode != http.StatusOK || !bytes.Equal(servedIndex, indexBody) ||
-		strings.Contains(uiResponse.Header.Get("Content-Security-Policy"), "unsafe-inline") ||
+	_, nonceSuffix, foundNonce := strings.Cut(string(servedIndex), `nonce="`)
+	nonce, _, closedNonce := strings.Cut(nonceSuffix, `"`)
+	csp := uiResponse.Header.Get("Content-Security-Policy")
+	if readErr != nil || uiResponse.StatusCode != http.StatusOK || !foundNonce || !closedNonce || len(nonce) != 44 ||
+		!bytes.Equal(servedIndex, bytes.ReplaceAll(indexBody, []byte("__UC_STYLE_NONCE__"), []byte(nonce))) ||
+		!strings.Contains(csp, "script-src 'self';") ||
+		!strings.Contains(csp, "style-src 'self' 'nonce-"+nonce+"';") ||
+		!strings.Contains(csp, "style-src-attr 'unsafe-inline';") || strings.Contains(csp, "unsafe-eval") ||
+		uiResponse.Header.Get("Cache-Control") != "no-store" || uiResponse.Header.Get("ETag") != "" ||
 		uiResponse.Header.Get("X-CyberAgent-UI-Version") != "web-ui.v1" {
 		t.Fatalf("unexpected hosted UI response: status=%d headers=%#v body=%q err=%v",
 			uiResponse.StatusCode, uiResponse.Header, servedIndex, readErr)

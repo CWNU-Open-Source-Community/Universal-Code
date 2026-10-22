@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -92,6 +93,75 @@ func TestBundleSPAFallbackAndUnknownAssetsFailClosed(t *testing.T) {
 				t.Fatalf("status=%d want=%d body=%q", response.Code, current.status, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestBundleStyleNonceRendersIndexWithoutReusingCachedHTML(t *testing.T) {
+	const indexBody = `<!doctype html><head><meta name="uc-style-nonce" nonce="__UC_STYLE_NONCE__" /></head>` +
+		`<script type="module" src="/assets/index-AbCd1234.js"></script>`
+	bundle, err := LoadEmbeddedFS(fstest.MapFS{
+		"dist/index.html":               &fstest.MapFile{Data: []byte(indexBody)},
+		"dist/assets/index-AbCd1234.js": &fstest.MapFile{Data: []byte(testScriptBody)},
+	}, "dist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := bundle.Digest()
+	static := requestBundle(t, bundle, http.MethodGet, "/", "", "")
+	for _, requestPath := range []string{"/", "/legacy/threads/thread-1"} {
+		for _, nonce := range []string{"first-request-nonce", "second-request-nonce"} {
+			response := requestBundleWithStyleNonce(t, bundle, http.MethodGet, requestPath,
+				"text/html", static.Header().Get("ETag"), nonce)
+			wantBody := strings.ReplaceAll(indexBody, "__UC_STYLE_NONCE__", nonce)
+			if response.Code != http.StatusOK || response.Body.String() != wantBody ||
+				response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("ETag") != "" ||
+				response.Header().Get("Content-Length") != strconv.Itoa(len(wantBody)) {
+				t.Fatalf("nonce index reused a cached document or malformed its body: status=%d headers=%#v body=%q",
+					response.Code, response.Header(), response.Body.String())
+			}
+			head := requestBundleWithStyleNonce(t, bundle, http.MethodHead, requestPath,
+				"text/html", static.Header().Get("ETag"), nonce)
+			if head.Code != http.StatusOK || head.Body.Len() != 0 ||
+				head.Header().Get("Content-Length") != response.Header().Get("Content-Length") ||
+				head.Header().Get("Cache-Control") != "no-store" || head.Header().Get("ETag") != "" {
+				t.Fatalf("unexpected nonce HEAD: status=%d headers=%#v body=%q", head.Code, head.Header(), head.Body.String())
+			}
+		}
+	}
+	unchanged := requestBundle(t, bundle, http.MethodGet, "/", "", "")
+	if unchanged.Body.String() != indexBody || unchanged.Header().Get("ETag") != static.Header().Get("ETag") ||
+		bundle.Digest() != digest {
+		t.Fatal("per-request nonce mutated the frozen index or its digest")
+	}
+	conditional := requestBundle(t, bundle, http.MethodGet, "/", "", static.Header().Get("ETag"))
+	if conditional.Code != http.StatusNotModified {
+		t.Fatalf("plain index conditional response changed: status=%d", conditional.Code)
+	}
+
+	assetPath := "/assets/index-AbCd1234.js"
+	asset := requestBundleWithStyleNonce(t, bundle, http.MethodGet, assetPath, "", "", "request-nonce")
+	if asset.Code != http.StatusOK || asset.Body.String() != testScriptBody ||
+		asset.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" || asset.Header().Get("ETag") == "" {
+		t.Fatalf("nonce changed immutable asset response: status=%d headers=%#v body=%q", asset.Code, asset.Header(), asset.Body.String())
+	}
+	notModified := requestBundleWithStyleNonce(t, bundle, http.MethodGet, assetPath, "",
+		asset.Header().Get("ETag"), "another-request-nonce")
+	if notModified.Code != http.StatusNotModified || notModified.Body.Len() != 0 {
+		t.Fatalf("nonce changed conditional asset response: status=%d body=%q", notModified.Code, notModified.Body.String())
+	}
+}
+
+func TestBundleStyleNonceSupportsIndexWithoutPlaceholder(t *testing.T) {
+	bundle, err := LoadDirectory(writeTestBundle(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	static := requestBundle(t, bundle, http.MethodGet, "/", "", "")
+	response := requestBundleWithStyleNonce(t, bundle, http.MethodGet, "/", "", static.Header().Get("ETag"), "request-nonce")
+	if response.Code != http.StatusOK || response.Body.String() != testIndexBody ||
+		response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("ETag") != "" ||
+		response.Header().Get("Content-Length") != strconv.Itoa(len(testIndexBody)) {
+		t.Fatalf("legacy nonce index changed or was cached: status=%d headers=%#v body=%q", response.Code, response.Header(), response.Body.String())
 	}
 }
 
@@ -397,6 +467,22 @@ func requestBundle(t *testing.T, bundle *Bundle, method string, requestPath stri
 	}
 	response := httptest.NewRecorder()
 	bundle.ServeHTTP(response, request)
+	return response
+}
+
+func requestBundleWithStyleNonce(t *testing.T, bundle *Bundle, method string, requestPath string,
+	accept string, etag string, nonce string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(method, "http://127.0.0.1"+requestPath, nil)
+	if accept != "" {
+		request.Header.Set("Accept", accept)
+	}
+	if etag != "" {
+		request.Header.Set("If-None-Match", etag)
+	}
+	response := httptest.NewRecorder()
+	bundle.ServeHTTPWithStyleNonce(response, request, nonce)
 	return response
 }
 

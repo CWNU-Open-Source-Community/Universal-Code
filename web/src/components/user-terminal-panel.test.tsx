@@ -1,14 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, vi } from "vitest";
 import { UserTerminalPanel } from "./user-terminal-panel";
 
 const terminalMocks = vi.hoisted(() => ({
   agentEnabled: false,
   close: vi.fn(async () => undefined),
+  fit: vi.fn(),
   get: vi.fn(),
   getAgent: vi.fn(),
   grantAgent: vi.fn(),
+  output: vi.fn(),
   read: vi.fn(),
+  resize: vi.fn(async () => undefined),
   revokeAgent: vi.fn(async () => undefined),
   start: vi.fn(),
 }));
@@ -17,22 +20,24 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 120;
     rows = 32;
+    element = document.createElement("div");
     loadAddon() {}
-    open() {}
+    open(host: HTMLElement) { host.appendChild(this.element); terminalMocks.output = this.write; }
     onData() {
       return { dispose() {} };
     }
     clear() {}
     dispose() {}
     focus() {}
+    resize() {}
     reset() {}
-    write() {}
+    write = vi.fn();
   },
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
-    fit() {}
+    fit = terminalMocks.fit;
   },
 }));
 
@@ -45,7 +50,7 @@ vi.mock("../lib/desktop-bridge", () => ({
   getDesktopDebugTerminalAgentInput: terminalMocks.getAgent,
   grantDesktopDebugTerminalAgentInput: terminalMocks.grantAgent,
   readDesktopUserTerminal: terminalMocks.read,
-  resizeDesktopUserTerminal: vi.fn(async () => undefined),
+  resizeDesktopUserTerminal: terminalMocks.resize,
   revokeDesktopDebugTerminalAgentInput: terminalMocks.revokeAgent,
   startDesktopUserTerminal: terminalMocks.start,
   writeDesktopUserTerminal: vi.fn(async () => ({
@@ -56,7 +61,16 @@ vi.mock("../lib/desktop-bridge", () => ({
 }));
 
 describe("UserTerminalPanel", () => {
+  let notifyResize: () => void;
+
   beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = () => callback([], this as unknown as ResizeObserver);
+      }
+      observe() {}
+      disconnect() {}
+    });
     terminalMocks.agentEnabled = false;
     vi.clearAllMocks();
   });
@@ -101,6 +115,118 @@ describe("UserTerminalPanel", () => {
       expect(terminalMocks.close).toHaveBeenCalledWith("terminal-stale");
     });
     expect(onSession).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("fits a reopened terminal without resizing an unknown or exited backend session", async () => {
+    let completeGet: (value: unknown) => void = () => {};
+    const exited = {
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      output_base_cursor: 0, output_next_cursor: 0,
+    };
+    terminalMocks.get.mockReset().mockResolvedValue(exited)
+      .mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    terminalMocks.read.mockReset().mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false });
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    const initialFits = terminalMocks.fit.mock.calls.length;
+    act(() => notifyResize());
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits + 1);
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+
+    await act(async () => { completeGet(exited); });
+    act(() => notifyResize());
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits + 2);
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("syncs dimensions once a reopened session is confirmed running and keeps session IDs isolated", async () => {
+    vi.useFakeTimers();
+    const running = (session_id: string) => ({
+      session_id, run_id: "run-1", state: "running", output_base_cursor: 0, output_next_cursor: 0,
+    });
+    let completeGet: (value: unknown) => void = () => {};
+    terminalMocks.get.mockReset().mockResolvedValue(running("terminal-first"))
+      .mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    terminalMocks.read.mockReset().mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false });
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-first" onSession={onSession} />);
+    act(() => notifyResize());
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    await act(async () => { completeGet(running("terminal-first")); });
+    // No further container resize is needed after the asynchronous session lookup.
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.resize).toHaveBeenLastCalledWith("terminal-first", 120, 32);
+
+    terminalMocks.get.mockResolvedValue(running("terminal-next"))
+      .mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    view.rerender(<UserTerminalPanel runID="run-1" sessionID="terminal-next" onSession={onSession} />);
+    act(() => notifyResize());
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(1);
+
+    await act(async () => { completeGet(running("terminal-next")); });
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.resize).toHaveBeenLastCalledWith("terminal-next", 120, 32);
+    act(() => notifyResize());
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(3);
+  });
+
+  it("drains all retained output after exit, then stops polling", async () => {
+    vi.useFakeTimers();
+    const baseCursor = 123;
+    const firstPage = "x".repeat(65536);
+    const finalPage = "\r\nFINAL_BUILD_RESULT\r\n";
+    const output = firstPage + finalPage;
+    terminalMocks.get.mockReset().mockResolvedValue({
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      output_base_cursor: baseCursor, output_next_cursor: baseCursor + output.length,
+    });
+    terminalMocks.read.mockReset().mockImplementation(async (_sessionID: string, cursor: number) => {
+      const data = output.slice(cursor - baseCursor, cursor - baseCursor + 65536);
+      return { data_bytes: data.length, data_base64: btoa(data), next_cursor: cursor + data.length, dropped: false };
+    });
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    await act(async () => {});
+    expect(terminalMocks.read).toHaveBeenNthCalledWith(1, "terminal-exited", baseCursor);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(terminalMocks.read).toHaveBeenNthCalledWith(2, "terminal-exited", baseCursor + firstPage.length);
+    const writtenPages = terminalMocks.output.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
+    expect(writtenPages).toEqual([firstPage, finalPage]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.output).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards a retained output page that resolves after unmount", async () => {
+    vi.useFakeTimers();
+    let completeRead: (value: unknown) => void = () => {};
+    terminalMocks.get.mockReset().mockResolvedValue({
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      output_base_cursor: 0, output_next_cursor: 65540,
+    });
+    terminalMocks.read.mockReset()
+      .mockResolvedValueOnce({ data_bytes: 65536, data_base64: btoa("x".repeat(65536)), next_cursor: 65536, dropped: false })
+      .mockReturnValueOnce(new Promise((resolve) => { completeRead = resolve; }));
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.output).toHaveBeenCalledTimes(1);
+    const getCount = terminalMocks.get.mock.calls.length;
+
+    view.unmount();
+    await act(async () => {
+      completeRead({ data_bytes: 4, data_base64: btoa("late"), next_cursor: 65540, dropped: false });
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(terminalMocks.output).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.get).toHaveBeenCalledTimes(getCount);
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
   });
 
   it("requires a visible confirmation before granting bounded Agent input", async () => {
