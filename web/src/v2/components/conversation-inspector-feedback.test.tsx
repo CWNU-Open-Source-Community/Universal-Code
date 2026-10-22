@@ -88,6 +88,43 @@ it.each(["inspector", "conversation"] as const)("appends exact review context an
   expectNoWrites();
 });
 
+it.each(["inspector", "conversation"] as const)("collects two inline comments in the %s draft while keeping review open, then returns without sending", async (view) => {
+  const { container, expectNoWrites } = setup(view);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "审阅改动" }));
+  const dialog = await screen.findByRole("dialog", { name: "审阅任务改动" });
+  await user.click(await within(dialog).findByText("查看这次编辑的差异"));
+  await user.click(within(dialog).getByRole("button", { name: "评论旧第 1 行" }));
+  const composing = within(dialog).getByRole("textbox");
+  fireEvent.change(composing, { target: { value: "正在输入的中文意见" } });
+  fireEvent.keyDown(composing, { key: "Escape", isComposing: true });
+  expect(dialog).toBeVisible();
+  expect(composing).toHaveValue("正在输入的中文意见");
+  await user.keyboard("{Escape}");
+  expect(dialog).toBeVisible();
+  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+  for (const [side, message] of [["旧", "保留旧逻辑的边界检查"], ["新", "增加空输入处理"]]) {
+    await user.click(within(dialog).getByRole("button", { name: `评论${side}第 1 行` }));
+    await user.type(within(dialog).getByRole("textbox"), message);
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("尚未发送");
+  }
+  const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
+  expect(editor.value.startsWith(`${originalDraft}\n\n`)).toBe(true);
+  for (const part of ["保留旧逻辑的边界检查", "增加空输入处理", "任务：thread-a", "编辑记录：edit-original", "b".repeat(64)]) expect(editor.value).toContain(part);
+  expect(editor.value.match(/审阅意见：/gu)).toHaveLength(2);
+  expectNoWrites();
+  await user.click(within(dialog).getByRole("button", { name: "返回聊天草稿" }));
+  await waitFor(() => expect(editor).toHaveFocus());
+  expect(editor).toBeVisible();
+  expect(dialog).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "切到另一个任务" }));
+  await screen.findByText("Task thread-b");
+  expect(container.querySelector(".v2-shared-composer textarea")).toHaveValue("另一个任务的草稿");
+  expectNoWrites();
+});
+
 it.each(["inspector", "conversation"] as const)("reveals the %s draft when requesting an application startup, without starting or sending", async (view) => {
   const { container, client, expectNoWrites } = setup(view);
   const user = userEvent.setup();
