@@ -1043,6 +1043,15 @@ describe("desktop native bridge", () => {
       .resolves.toMatchObject({ data_base64: "b2s=", data_bytes: 2 });
     await expect(module.writeDesktopUserTerminal(session.session_id, "ok"))
       .resolves.toMatchObject({ bytes_written: 2 });
+    const maximumPaste = "中".repeat(5461) + "a";
+    write.mockResolvedValueOnce({
+      protocol_version: "desktop_user_terminal.v1", session_id: session.session_id, bytes_written: 16 * 1024,
+    });
+    await expect(module.writeDesktopUserTerminal(session.session_id, maximumPaste))
+      .resolves.toMatchObject({ bytes_written: 16 * 1024 });
+    await expect(module.writeDesktopUserTerminal(session.session_id, maximumPaste + "a"))
+      .rejects.toThrow("input was rejected");
+    expect(write).toHaveBeenCalledTimes(2);
     await expect(module.resizeDesktopUserTerminal(session.session_id, 100, 30))
       .resolves.toBeUndefined();
     await expect(module.closeDesktopUserTerminal(session.session_id))
