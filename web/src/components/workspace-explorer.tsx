@@ -6,10 +6,11 @@ import type { WorkspaceExplorerView, WorkspaceSearchView } from "../api/types";
 import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
+import { WorkspaceFileQuote, type WorkspaceQuoteResult } from "./workspace-file-quote";
 import { FileProposalEditor } from "./file-proposal-editor";
 import { useFileEditLeave } from "./file-edit-drafts";
 
-export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath = ".", initialLine, onSelectReference, onPathChange }: {
+export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath = ".", initialLine, onSelectReference, onPathChange, onQuote, onReturnToDraft }: {
   client: APIClient;
   workspaceID: string;
   runID?: string;
@@ -17,12 +18,15 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   initialLine?: number;
   onSelectReference?: (file: WorkspaceExplorerView) => void;
   onPathChange?: (path: string) => void;
+  onQuote?: (content: string) => WorkspaceQuoteResult;
+  onReturnToDraft?: () => void;
 }) {
   const { t } = useLocale();
   const leave = useFileEditLeave();
   const [path, setPath] = useState(initialPath);
   const [highlightLine, setHighlightLine] = useState<number | undefined>(initialLine);
   const highlightedLineRef = useRef<HTMLDivElement>(null);
+  const explorerRef = useRef<HTMLElement>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const operationKeys = useRef(new Map<string, string>());
@@ -106,7 +110,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   </section>;
   const snapshot = query.data;
 
-  return <section className="workspace-explorer" aria-label={t("工作区文件", "Workspace files")}>
+  return <section className="workspace-explorer" aria-label={t("工作区文件", "Workspace files")} ref={explorerRef}>
     <header className="explorer-toolbar">
       <button aria-label={t("打开上级目录", "Open parent directory")} className="icon-button"
         disabled={path === "." || query.isFetching} onClick={() => navigate(parent)}
@@ -172,6 +176,10 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
           </div>;
         })}
       </div>}
+    {snapshot.kind === "file" && onQuote && proposalSource.data?.path !== snapshot.path &&
+      <WorkspaceFileQuote key={JSON.stringify([workspaceID, runID, snapshot.path, snapshot.provenance.content_sha256])}
+        rootRef={explorerRef} snapshot={snapshot} runID={runID} disabled={query.isFetching}
+        onQuote={onQuote} onReturnToDraft={onReturnToDraft} />}
     {proposalSource.data && proposalSource.data.path === snapshot.path ?
       <FileProposalEditor client={client} onClose={() => proposalSource.reset()}
         runID={runID} source={proposalSource.data} /> :
