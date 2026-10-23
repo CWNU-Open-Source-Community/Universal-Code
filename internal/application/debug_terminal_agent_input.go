@@ -110,6 +110,8 @@ type WriteDebugTerminalAgentInputRequest struct {
 	BindingID       string
 	OperationKey    string
 	Data            []byte
+	// Interrupt selects a fixed Ctrl+C frame and requires Data to be empty.
+	Interrupt bool
 }
 
 type ReadDebugTerminalAgentOutputRequest struct {
@@ -433,9 +435,15 @@ func (s *DebugTerminalAgentInputService) Write(
 	if err := s.revalidateBinding(ctx, entry); err != nil {
 		return DebugTerminalAgentInputWriteResult{}, err
 	}
-	policyDecision := s.checker.CheckToolCall(tools.Call{
+	policyCall := tools.Call{
 		Name: "shell", Args: map[string]string{"command": command},
-	})
+	}
+	if normalized.Interrupt {
+		policyCall = tools.Call{
+			Name: "debug_terminal", Args: map[string]string{"action": "interrupt"},
+		}
+	}
+	policyDecision := s.checker.CheckToolCall(policyCall)
 	if !policyDecision.Allowed || policyDecision.NeedsApproval {
 		return DebugTerminalAgentInputWriteResult{}, apperror.New(
 			apperror.CodePolicyDenied, policyDecision.Reason)
@@ -939,6 +947,14 @@ func normalizeDebugTerminalWrite(
 		}
 	}
 	request.OperationKey = operationKey
+	if request.Interrupt {
+		if len(request.Data) != 0 {
+			return WriteDebugTerminalAgentInputRequest{}, "", errors.New(
+				"debug terminal interrupt cannot include input data")
+		}
+		request.Data = []byte{0x03}
+		return request, "", nil
+	}
 	if len(request.Data) == 0 ||
 		len(request.Data) > terminalruntime.MaxTerminalInputBytes ||
 		!utf8.Valid(request.Data) {

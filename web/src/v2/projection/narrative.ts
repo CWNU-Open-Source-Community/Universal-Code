@@ -52,6 +52,10 @@ export type NarrativeEntry =
       id: string;
       kind: "assistant";
       messageIDs?: string[];
+      // Text contributors exclude repeated endings; messageIDs still retains
+      // every source identity for navigation and branching. Export uses these
+      // contributors to recover the original saved text without display trims.
+      textMessageIDs?: string[];
       text: string;
       runId?: string;
       branchSourceID?: string;
@@ -328,13 +332,17 @@ export function projectThreadNarrative(
         // A Supervisor may emit the same final answer again while closing its
         // synthetic continuation turn. Keep distinct progress updates, but do
         // not show an identical durable answer twice in the conversation.
-        if (previous.text !== text) previous.text = `${previous.text}\n\n${text}`;
+        if (previous.text !== text) {
+          previous.text = `${previous.text}\n\n${text}`;
+          previous.textMessageIDs = [...(previous.textMessageIDs ?? [previous.id]), item.id];
+        }
         previous.messageIDs = [...(previous.messageIDs ?? [previous.id]), item.id];
         previous.branchSourceID = branchSourceID;
         previous.changeSourceID ??= changeSourceID;
       } else {
         result.push({ id: item.id, kind: "assistant", text,
           messageIDs: [item.id],
+          textMessageIDs: [item.id],
           runId: item.run_id,
           branchSourceID,
           changeSourceID,

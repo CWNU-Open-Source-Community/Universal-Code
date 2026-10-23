@@ -67,6 +67,19 @@ func (r usageReceipt) monetaryIdentity() (string, int64) {
 // or acquiring a writer lock. Terminal receipts alone contribute tokens, so
 // checkpoints, started events, and monetary ledgers cannot double count usage.
 func (s *SQLiteStore) GetUsageStatistics(ctx context.Context, period string, utcOffsetMinutes int, now time.Time) (domain.UsageStatistics, error) {
+	return s.getUsageStatistics(ctx, "", period, utcOffsetMinutes, now)
+}
+
+// GetThreadUsageStatistics includes every Run bound to the selected Thread,
+// using the same receipt and settlement rules as application-wide usage.
+func (s *SQLiteStore) GetThreadUsageStatistics(ctx context.Context, threadID, period string, utcOffsetMinutes int, now time.Time) (domain.UsageStatistics, error) {
+	if threadID == "" {
+		return domain.UsageStatistics{}, apperror.New(apperror.CodeInvalidArgument, "usage Thread identity is required")
+	}
+	return s.getUsageStatistics(ctx, threadID, period, utcOffsetMinutes, now)
+}
+
+func (s *SQLiteStore) getUsageStatistics(ctx context.Context, threadID, period string, utcOffsetMinutes int, now time.Time) (domain.UsageStatistics, error) {
 	if period == "" {
 		period = "30d"
 	}
@@ -91,7 +104,15 @@ func (s *SQLiteStore) GetUsageStatistics(ctx context.Context, period string, utc
 		return result, err
 	}
 	defer finish()
-	rows, err := tx.QueryContext(ctx, `SELECT e.run_id,e.sequence,e.source,e.type,COALESCE(e.subject_id,''),e.created_at,e.payload_json,
+	var scopeArgs []any
+	if threadID != "" {
+		var exists int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM threads WHERE id=? AND status<>?`, threadID, domain.ThreadDeleted).Scan(&exists); err != nil {
+			return result, err
+		}
+		scopeArgs = append(scopeArgs, threadID)
+	}
+	receiptQuery := `SELECT e.run_id,e.sequence,e.source,e.type,COALESCE(e.subject_id,''),e.created_at,e.payload_json,
 		COALESCE(t.id,''),COALESCE(t.title,''),COALESCE(c.id,0),
 		CASE WHEN f.usage_recorded=1 THEN f.input_tokens END,
 		CASE WHEN f.usage_recorded=1 THEN f.output_tokens END,
@@ -102,10 +123,13 @@ func (s *SQLiteStore) GetUsageStatistics(ctx context.Context, period string, utc
 		LEFT JOIN readonly_fanout_model_calls f ON e.source='readonly_fanout' AND f.run_id=e.run_id
 		AND f.execution_id=json_extract(e.payload_json,'$.execution_id') AND f.shard_ordinal=json_extract(e.payload_json,'$.shard')
 		AND f.attempt_number=json_extract(e.payload_json,'$.attempt') AND f.provider=json_extract(e.payload_json,'$.provider') AND f.model=json_extract(e.payload_json,'$.model')
-		WHERE (e.source IN ('model_gateway','specialist_model_gateway') AND e.type IN ('model.started','model.completed','model.failed'))
+		WHERE ((e.source IN ('model_gateway','specialist_model_gateway') AND e.type IN ('model.started','model.completed','model.failed'))
 		OR (e.source='thread_context_compaction' AND e.type IN ('context_compaction.model_completed','context_compaction.model_failed'))
-		OR (e.source='readonly_fanout' AND e.type IN ('readonly_fanout.shard_completed','readonly_fanout.shard_failed','readonly_fanout.shard_cancelled'))
-		ORDER BY e.run_id,e.sequence`)
+		OR (e.source='readonly_fanout' AND e.type IN ('readonly_fanout.shard_completed','readonly_fanout.shard_failed','readonly_fanout.shard_cancelled')))`
+	if threadID != "" {
+		receiptQuery += ` AND binding.thread_id=?`
+	}
+	rows, err := tx.QueryContext(ctx, receiptQuery+` ORDER BY e.run_id,e.sequence`, scopeArgs...)
 	if err != nil {
 		return result, err
 	}
@@ -180,11 +204,15 @@ func (s *SQLiteStore) GetUsageStatistics(ctx context.Context, period string, utc
 	// Cost is independently dated by the actual reservation settlement. The
 	// settled amount can contain a conservative reservation estimate, so only
 	// a priced settlement's actual_micros is a known cost.
-	rows, err = tx.QueryContext(ctx, `SELECT r.run_id,r.scope,r.attempt_number,r.provider,r.model,r.created_at,r.settled_at,r.settled_micros,
+	costQuery := `SELECT r.run_id,r.scope,r.attempt_number,r.provider,r.model,r.created_at,r.settled_at,r.settled_micros,
 		COALESCE((SELECT MIN(sequence) FROM run_events WHERE run_id=r.run_id AND source='monetary_budget' AND type='monetary.budget_reserved' AND subject_id=r.id),0),
 		COALESCE(e.payload_json,'{}') FROM run_monetary_reservations r
 		LEFT JOIN run_events e ON e.run_id=r.run_id AND e.sequence=(SELECT MIN(sequence) FROM run_events WHERE run_id=r.run_id AND source='monetary_budget' AND type='monetary.budget_settled' AND subject_id=r.id)
-		WHERE r.status='settled' ORDER BY r.run_id,r.scope,r.attempt_number`)
+		WHERE r.status='settled'`
+	if threadID != "" {
+		costQuery += ` AND EXISTS (SELECT 1 FROM thread_runs binding WHERE binding.run_id=r.run_id AND binding.thread_id=?)`
+	}
+	rows, err = tx.QueryContext(ctx, costQuery+` ORDER BY r.run_id,r.scope,r.attempt_number`, scopeArgs...)
 	if err != nil {
 		return result, err
 	}

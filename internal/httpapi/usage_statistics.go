@@ -14,7 +14,7 @@ import (
 func (a *API) usageStatistics(request *http.Request) (any, *Page, error) {
 	values := request.URL.Query()
 	for name, items := range values {
-		if (name != "period" && name != "utc_offset_minutes") || len(items) != 1 || items[0] == "" {
+		if (name != "period" && name != "utc_offset_minutes" && name != "thread_id") || len(items) != 1 || items[0] == "" {
 			return nil, nil, apperror.New(apperror.CodeInvalidArgument, "usage query parameter is invalid")
 		}
 	}
@@ -33,13 +33,28 @@ func (a *API) usageStatistics(request *http.Request) (any, *Page, error) {
 			return nil, nil, apperror.New(apperror.CodeInvalidArgument, "usage UTC offset must be an integer between -840 and 840")
 		}
 	}
-	source, ok := a.store.(interface {
-		GetUsageStatistics(context.Context, string, int, time.Time) (domain.UsageStatistics, error)
-	})
-	if !ok {
-		return nil, nil, apperror.New(apperror.CodeFailedPrecondition, "usage statistics are unavailable")
+	var result domain.UsageStatistics
+	var err error
+	if threadID := values.Get("thread_id"); threadID != "" {
+		if err := validateIdentity(threadID, "usage Thread identity"); err != nil {
+			return nil, nil, err
+		}
+		source, ok := a.store.(interface {
+			GetThreadUsageStatistics(context.Context, string, string, int, time.Time) (domain.UsageStatistics, error)
+		})
+		if !ok {
+			return nil, nil, apperror.New(apperror.CodeFailedPrecondition, "Thread usage statistics are unavailable")
+		}
+		result, err = source.GetThreadUsageStatistics(request.Context(), threadID, period, offset, time.Now().UTC())
+	} else {
+		source, ok := a.store.(interface {
+			GetUsageStatistics(context.Context, string, int, time.Time) (domain.UsageStatistics, error)
+		})
+		if !ok {
+			return nil, nil, apperror.New(apperror.CodeFailedPrecondition, "usage statistics are unavailable")
+		}
+		result, err = source.GetUsageStatistics(request.Context(), period, offset, time.Now().UTC())
 	}
-	result, err := source.GetUsageStatistics(request.Context(), period, offset, time.Now().UTC())
 	if err != nil {
 		return nil, nil, err
 	}
