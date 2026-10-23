@@ -350,6 +350,14 @@
   margin-top: 8px;
 }
 
+.v2-message-time {
+  color: var(--v2-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: 6px;
+  white-space: nowrap;
+}
+
 .v2-shell .v2-assistant-action-btn {
   align-items: center;
   background: transparent;
