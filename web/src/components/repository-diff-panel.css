@@ -1,0 +1,35 @@
+.repository-diff-file > summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  cursor: pointer;
+  list-style: none;
+  font-size: 10px;
+}
+
+.repository-diff-file > summary::-webkit-details-marker { display: none; }
+.repository-diff-chevron { flex-shrink: 0; color: var(--muted); }
+.repository-diff-file[open] > summary > .repository-diff-chevron { transform: rotate(90deg); }
+
+.repository-diff-file-heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.repository-diff-file-heading code {
+  min-width: 0;
+  flex: 1 1 180px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository-diff-file-counts { color: var(--muted); }
+.repository-diff-file-actions { display: flex; justify-content: flex-end; padding-bottom: 8px; }
