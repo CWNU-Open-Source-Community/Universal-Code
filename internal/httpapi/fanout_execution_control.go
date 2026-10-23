@@ -17,10 +17,12 @@ const (
 )
 
 // FanoutExecutionController is the bounded read/list + cancel surface for
-// read-only fan-out executions.
+// read-only fan-out executions. Cancellation carries the addressable Run so the
+// Go service can reject a foreign binding before it writes; the list is plan
+// keyed, so the route verifies every returned execution against its own Run.
 type FanoutExecutionController interface {
 	ListReadOnlyFanoutExecutions(context.Context, string, int) ([]domain.ReadOnlyFanoutExecution, error)
-	CancelReadOnlyFanoutExecution(context.Context, string, string, string) (domain.ReadOnlyFanoutExecution, error)
+	CancelReadOnlyFanoutExecution(context.Context, string, string, string, string) (domain.ReadOnlyFanoutExecution, error)
 }
 
 // FanoutExecutionCancelRequestView is the explicit-confirmation control body.
@@ -65,6 +67,13 @@ func (a *API) listFanoutExecutions(request *http.Request, runID string) (any, *P
 	view := FanoutExecutionsListView{ProtocolVersion: FanoutExecutionsListProtocolVersion,
 		PlanID: planID, Items: make([]FanoutExecutionView, 0, len(executions))}
 	for _, execution := range executions {
+		// The collection is addressable only through its own Run; plan_id alone
+		// must not surface another Run's shard history. An absent plan keeps its
+		// existing empty projection, so this cannot become an existence oracle.
+		if execution.RunID != runID {
+			return nil, nil, apperror.New(apperror.CodeNotFound,
+				"fan-out execution list belongs to another run")
+		}
 		view.Items = append(view.Items, fanoutExecutionFullView(execution))
 	}
 	return view, nil, nil
@@ -145,7 +154,7 @@ func (a *API) serveFanoutExecutionCancel(writer http.ResponseWriter, request *ht
 		return
 	}
 	execution, err := a.fanoutExecutionController.CancelReadOnlyFanoutExecution(
-		request.Context(), executionID, "web_operator", requestID)
+		request.Context(), runID, executionID, "web_operator", requestID)
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
 		return
