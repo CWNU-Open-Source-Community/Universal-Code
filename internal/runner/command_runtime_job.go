@@ -1809,6 +1809,7 @@ func (r *commandRuntimeRing) read(cursor uint64,
 			copyFrame.Cursor += uint64(cut)
 		}
 		data := []byte(copyFrame.Text)
+		bounded := false
 		if len(data) > remaining {
 			data = data[:remaining]
 			for len(data) > 0 && !utf8.Valid(data) {
@@ -1816,6 +1817,7 @@ func (r *commandRuntimeRing) read(cursor uint64,
 			}
 			copyFrame.Text = string(data)
 			copyFrame.NextCursor = copyFrame.Cursor + uint64(len(data))
+			bounded = true
 		}
 		if copyFrame.Text == "" {
 			break
@@ -1825,6 +1827,13 @@ func (r *commandRuntimeRing) read(cursor uint64,
 		remaining -= used
 		page.NextCursor = copyFrame.NextCursor
 		cursor = copyFrame.NextCursor
+		// A byte bound that backs off inside a multi-byte rune leaves the rest of
+		// this frame retained. The next frame starts past that residue, so the page
+		// must stop here: continuing would publish a NextCursor over bytes it never
+		// delivered and the resume cursor would silently drop them.
+		if bounded {
+			break
+		}
 	}
 	return page
 }
