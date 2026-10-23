@@ -19,8 +19,9 @@ import (
 )
 
 // ImportPriceSnapshot atomically replaces the active operator price table.
-// Importing the exact same content again is an idempotent replay; a changed
-// document with the same fingerprint is impossible by construction.
+// Importing the exact same content again is an idempotent replay. The content
+// fingerprint does not bind the validity window, so a fingerprint match with a
+// different window is rejected rather than silently keeping the earlier one.
 func (s *SQLiteStore) ImportPriceSnapshot(ctx context.Context,
 	snapshot pricing.Snapshot,
 ) (pricing.Snapshot, bool, error) {
@@ -51,6 +52,18 @@ func (s *SQLiteStore) ImportPriceSnapshot(ctx context.Context,
 			&existing.importedBy, &existing.importedAt, &existing.validFrom, &existing.validUntil,
 			&existing.fingerprint, &existing.entries)
 	if err == nil {
+		existingFrom, parseErr := parseMonetaryStoreTime(existing.validFrom)
+		if parseErr != nil {
+			return pricing.Snapshot{}, false, parseErr
+		}
+		existingUntil, parseErr := parseMonetaryStoreTime(existing.validUntil)
+		if parseErr != nil {
+			return pricing.Snapshot{}, false, parseErr
+		}
+		if !existingFrom.Equal(snapshot.ValidFrom) || !existingUntil.Equal(snapshot.ValidUntil) {
+			return pricing.Snapshot{}, false, apperror.New(apperror.CodeConflict,
+				"price snapshot fingerprint matches a different validity window; import a new snapshot id")
+		}
 		if err := tx.Commit(); err != nil {
 			return pricing.Snapshot{}, false, err
 		}

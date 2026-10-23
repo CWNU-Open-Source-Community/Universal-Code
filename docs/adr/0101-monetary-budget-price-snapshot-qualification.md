@@ -45,7 +45,8 @@ open 的预留做对账（settle 完成、release 失败、无活动价格时按
 closed schema、未知字段拒绝、RFC3339 有效期必须覆盖导入时刻且最长一年、
 entry 上限 512、文档上限 64 KiB、每 provider/model 唯一、内容哈希指纹强制
 重算校验。同内容导入幂等回放（返回 `replayed=true`）；新导入原子轮换为唯一
-active 快照。导入只存在于 Go 控制面（HTTP `POST /api/v1/models/prices` 与
+active 快照。指纹不绑定 RFC3339 有效期窗口；同一 ID 与条目仅更换窗口的导入
+会被拒绝并要求新的快照 ID。导入只存在于 Go 控制面（HTTP `POST /api/v1/models/prices` 与
 `provider price-import`），Provider 响应、README、Skill 与仓库文件都无法触达。
 
 ### 4. 失败关闭的金额闸门
