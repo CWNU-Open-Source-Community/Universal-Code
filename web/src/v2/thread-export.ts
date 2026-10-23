@@ -82,6 +82,7 @@ export function formatThreadExport(title: string, messages: ExportMessage[], for
 }
 
 export function threadExportFilename(title: string, format: ThreadExportFormat): string {
-  const name = title.replace(/[\\/:*?"<>|\u0000-\u001f]/gu, "_").trim().replace(/[. ]+$/u, "").slice(0, 100);
+  const clean = title.replace(/[\\/:*?"<>|\u0000-\u001f]/gu, "_").trim().replace(/[. ]+$/u, "");
+  const name = [...clean].slice(0, 100).join("").replace(/[. ]+$/u, "");
   return `conversation-${name || "export"}.${format === "markdown" ? "md" : "txt"}`;
 }
