@@ -442,10 +442,26 @@ func outcomeAuthorizedBySessionGrant(outcome Outcome, operationErr error) (Outco
 	return validateOutcome(outcome, operationErr)
 }
 
+// reviewApprovalBlocked asks the current Policy about a proposal that is about to
+// be approved. ApprovalControlService.recheckApprovalSource treats this recheck as
+// mandatory for the two dry-run tools that support approve-once, so a proposal that
+// was allowed when it was created must not reach the approved state once Policy
+// denies it.
+func (g *Gateway) reviewApprovalBlocked(name ToolName, arguments map[string]string) (bool, policy.Decision) {
+	decision := g.checker.CheckToolCall(tools.Call{Name: string(name), Args: cloneArguments(arguments)})
+	return !decision.Allowed, decision
+}
+
 func (g *Gateway) reviewShell(ctx context.Context, request ReviewRequest) (Outcome, error) {
 	before, err := g.legacyTools.Get(ctx, request.ProposalID)
 	if err != nil {
 		return Outcome{}, err
+	}
+	shellArguments := map[string]string{"command": before.Command}
+	if request.Action == ReviewApprove {
+		if blocked, decision := g.reviewApprovalBlocked(ShellTool, shellArguments); blocked {
+			return Outcome{}, fmt.Errorf("shell proposal denied by current policy: %s", decision.Reason)
+		}
 	}
 	reason := request.Reason
 	if request.Action == ReviewDeny && reason == "" {
@@ -466,7 +482,7 @@ func (g *Gateway) reviewShell(ctx context.Context, request ReviewRequest) (Outco
 		after = before
 	}
 	call := ToolCall{
-		Name: ShellTool, Arguments: map[string]string{"command": before.Command},
+		Name: ShellTool, Arguments: shellArguments,
 		RunID: record.RunID, SessionID: before.SessionID, WorkspaceID: before.WorkspaceID, RequestedBy: "approval_service",
 	}
 	return g.outcomeFromToolRun(ctx, call, after, err)
@@ -513,6 +529,16 @@ func (g *Gateway) reviewScriptProcess(ctx context.Context, request ReviewRequest
 	before, err := g.scriptProcesses.Get(ctx, request.ProposalID)
 	if err != nil {
 		return Outcome{}, err
+	}
+	if request.Action == ReviewApprove {
+		payload, err := scriptprocess.EncodeProposal(before.Proposal())
+		if err != nil {
+			return Outcome{}, fmt.Errorf("script process approval proposal is invalid: %w", err)
+		}
+		arguments := map[string]string{"proposal": payload}
+		if blocked, decision := g.reviewApprovalBlocked(ScriptProcessTool, arguments); blocked {
+			return Outcome{}, fmt.Errorf("script process proposal denied by current policy: %s", decision.Reason)
+		}
 	}
 	reason := request.Reason
 	if request.Action == ReviewDeny && reason == "" {
