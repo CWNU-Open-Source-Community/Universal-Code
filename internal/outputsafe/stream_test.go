@@ -31,6 +31,20 @@ func TestSanitizeRemovesC1UnicodeControlsAndRedactsSecrets(t *testing.T) {
 	}
 }
 
+func TestSanitizeWithRedactionSeparatesRedactionFromControlStripping(t *testing.T) {
+	secret := []byte("before\u009b31mafter token=secret-value-1234567890")
+	got, redacted := SanitizeWithRedaction(secret)
+	if !redacted || got != Sanitize(secret) {
+		t.Fatalf("redaction was not reported apart from stripping: %q %v", got, redacted)
+	}
+	// Removing control characters shortens the text but is not a secret redaction.
+	plain := []byte("before\u009b31mafter\u009dtitle")
+	got, redacted = SanitizeWithRedaction(plain)
+	if redacted || got != Sanitize(plain) {
+		t.Fatalf("control stripping must not report redaction: %q %v", got, redacted)
+	}
+}
+
 func TestRedactingStreamCarriesSecretAndPrivateKeyStateAcrossChunks(t *testing.T) {
 	stream := &RedactingStream{}
 	parts := []string{

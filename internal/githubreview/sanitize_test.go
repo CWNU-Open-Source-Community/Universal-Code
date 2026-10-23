@@ -23,6 +23,27 @@ func TestSanitizeRemoteTextMakesRemoteSyntaxInertAndBounded(t *testing.T) {
 	}
 }
 
+func TestSanitizeRemoteTextRedactedFlagTracksSecretRedaction(t *testing.T) {
+	token := "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	for _, test := range []struct {
+		name     string
+		value    string
+		redacted bool
+	}{
+		{name: "token only", value: token, redacted: true},
+		{name: "inert link", value: "see [docs](https://example.com/doc)", redacted: false},
+		{name: "oversized plain text", value: strings.Repeat("a", 200), redacted: false},
+	} {
+		evidence := SanitizeRemoteText(test.value, 100)
+		if evidence.Redacted != test.redacted {
+			t.Errorf("%s: Redacted=%v, want %v (%#v)", test.name, evidence.Redacted, test.redacted, evidence)
+		}
+	}
+	if evidence := SanitizeRemoteText(token, 100); !strings.Contains(evidence.Text, "[REDACTED:github-token]") {
+		t.Fatalf("token evidence lost its redaction marker: %#v", evidence)
+	}
+}
+
 func TestSanitizeRemoteTextPreservesUTF8Boundary(t *testing.T) {
 	evidence := SanitizeRemoteText(strings.Repeat("界", 10), 10)
 	if !evidence.Truncated || !strings.HasPrefix(strings.Repeat("界", 10), evidence.Text) ||

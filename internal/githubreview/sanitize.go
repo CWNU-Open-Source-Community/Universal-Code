@@ -27,7 +27,7 @@ func SanitizeRemoteText(value string, limit int) TextEvidence {
 		limit = MaxTextBytes
 	}
 	originalBytes := len([]byte(value))
-	clean := outputsafe.Sanitize([]byte(value))
+	clean, inputRedacted := outputsafe.SanitizeWithRedaction([]byte(value))
 	clean = remoteImage.ReplaceAllString(clean, "[remote image omitted]")
 	clean = remoteLink.ReplaceAllString(clean, "$1 [remote link omitted]")
 	clean = remoteHTMLTag.ReplaceAllString(clean, "[remote HTML omitted]")
@@ -37,7 +37,8 @@ func SanitizeRemoteText(value string, limit int) TextEvidence {
 	clean = strings.TrimSpace(clean)
 	clean, truncated := truncateUTF8Bytes(clean, limit)
 	redacted := redact.String(clean)
-	if redacted != clean {
+	lateRedacted := redacted != clean
+	if lateRedacted {
 		clean = redacted
 	}
 	// A redaction marker can grow the text. Re-apply the hard byte boundary.
@@ -46,7 +47,7 @@ func SanitizeRemoteText(value string, limit int) TextEvidence {
 	sum := Fingerprint("remote-text", clean)
 	return TextEvidence{Text: clean, SHA256: sum, OriginalBytes: originalBytes,
 		StoredBytes: len([]byte(clean)), Truncated: truncated,
-		Redacted: redacted != outputsafe.Sanitize([]byte(value)), Untrusted: true}
+		Redacted: inputRedacted || lateRedacted, Untrusted: true}
 }
 
 func EmptyTextEvidence() TextEvidence {
