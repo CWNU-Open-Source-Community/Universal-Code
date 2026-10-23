@@ -242,6 +242,12 @@ export function V2TerminalDrawer({
   const terminalAvailable = desktopUserTerminalEnabled();
   const [terminating, setTerminating] = useState(false);
   const [terminationError, setTerminationError] = useState<string | null>(null);
+  const sessionRef = useRef(sessionID);
+  // A close that settles after the drawer bound a replacement session must not clear it,
+  // so the mirror updates during commit rather than after paint.
+  useLayoutEffect(() => {
+    sessionRef.current = sessionID;
+  }, [sessionID]);
 
   const handleTerminate = async () => {
     if (!sessionID || terminating) return;
@@ -250,7 +256,7 @@ export function V2TerminalDrawer({
     setTerminationError(null);
     try {
       await closeDesktopUserTerminal(closingSessionID);
-      if (sessionID === closingSessionID) {
+      if (sessionRef.current === closingSessionID) {
         onSession("");
       }
     } catch (err) {
