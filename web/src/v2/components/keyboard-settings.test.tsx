@@ -4,8 +4,10 @@ import { V2KeyboardSettings } from "./keyboard-settings";
 import { chatPreferencesKey, saveChatPreferences, useChatShortcuts } from "../chat-preferences";
 
 afterEach(() => localStorage.removeItem(chatPreferencesKey));
-function Commands({ search, findInChat = vi.fn() }: { search: () => void; findInChat?: () => void | boolean }) {
-  useChatShortcuts({ search, findInChat, newChat: vi.fn(), settings: vi.fn(), sidebar: vi.fn(), composer: vi.fn() });
+function Commands({ search, findInChat = vi.fn(), previousChat = vi.fn(), nextChat = vi.fn(), settings = vi.fn() }: {
+  search: () => void; findInChat?: () => void | boolean; previousChat?: () => void | boolean; nextChat?: () => void | boolean; settings?: () => void;
+}) {
+  useChatShortcuts({ search, findInChat, previousChat, nextChat, newChat: vi.fn(), settings, sidebar: vi.fn(), composer: vi.fn() });
   return <V2KeyboardSettings />;
 }
 
@@ -82,4 +84,78 @@ it("persists the current-chat find binding and yields to native find outside its
   expect(screen.getByRole("button", { name: "Change shortcut for Find in current chat" })).toHaveTextContent("Ctrl+F");
   fireEvent.keyDown(window, { key: "f", code: "KeyF", ctrlKey: true });
   expect(findInChat).toHaveBeenCalledTimes(3);
+});
+
+it("uses physical bracket keys with Ctrl or Meta and preserves a remapped chat shortcut", () => {
+  const previousChat = vi.fn();
+  const nextChat = vi.fn<() => boolean>().mockReturnValue(true);
+  const view = render(<Commands search={vi.fn()} previousChat={previousChat} nextChat={nextChat} />);
+  fireEvent.keyDown(window, { key: "{", code: "BracketLeft", ctrlKey: true, shiftKey: true });
+  fireEvent.keyDown(window, { key: "}", code: "BracketRight", metaKey: true, shiftKey: true });
+  expect(previousChat).toHaveBeenCalledOnce();
+  expect(nextChat).toHaveBeenCalledOnce();
+
+  const record = screen.getByRole("button", { name: "Change shortcut for Next chat" });
+  fireEvent.click(record);
+  fireEvent.keyDown(record, { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true });
+  expect(localStorage.getItem(chatPreferencesKey)).toContain('"nextChat":"Mod+Shift+]"');
+  expect(nextChat).toHaveBeenCalledOnce();
+  fireEvent.click(record);
+  fireEvent.keyDown(record, { key: "u", code: "KeyU", ctrlKey: true, shiftKey: true });
+  view.unmount();
+  render(<Commands search={vi.fn()} nextChat={nextChat} />);
+  expect(screen.getByRole("button", { name: "Change shortcut for Next chat" })).toHaveTextContent("Ctrl+Shift+U");
+  fireEvent.keyDown(window, { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true });
+  expect(nextChat).toHaveBeenCalledOnce();
+  fireEvent.keyDown(window, { key: "u", code: "KeyU", ctrlKey: true, shiftKey: true });
+  expect(nextChat).toHaveBeenCalledTimes(2);
+
+  nextChat.mockReturnValue(false);
+  const unavailable = new KeyboardEvent("keydown", { key: "u", code: "KeyU", ctrlKey: true, shiftKey: true, cancelable: true });
+  fireEvent(window, unavailable);
+  expect(unavailable.defaultPrevented).toBe(false);
+});
+
+it("does not switch chats from editors, terminals, popovers, IME or repeated keys", () => {
+  const nextChat = vi.fn();
+  render(<Commands search={vi.fn()} nextChat={nextChat} />);
+  const key = { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true };
+  for (const className of ["monaco-editor", "xterm"]) {
+    const editor = document.createElement("input"); editor.className = className; document.body.append(editor);
+    fireEvent.keyDown(editor, key);
+    editor.remove();
+  }
+  for (const role of ["dialog", "menu", "listbox"]) {
+    const popup = document.createElement("div"); popup.setAttribute("role", role); document.body.append(popup);
+    fireEvent.keyDown(window, key);
+    popup.remove();
+  }
+  const projectMenu = document.createElement("details");
+  projectMenu.className = "v2-project-section-menu"; projectMenu.open = true; document.body.append(projectMenu);
+  fireEvent.keyDown(window, key);
+  projectMenu.remove();
+  fireEvent.keyDown(window, { ...key, isComposing: true });
+  fireEvent.keyDown(window, { ...key, keyCode: 229 });
+  fireEvent.keyDown(window, { ...key, repeat: true });
+  expect(nextChat).not.toHaveBeenCalled();
+  // Expanded message details are content, not a navigation-blocking popup.
+  const details = document.createElement("details"); details.open = true; document.body.append(details);
+  fireEvent.keyDown(window, key);
+  details.remove();
+  expect(nextChat).toHaveBeenCalledOnce();
+});
+
+it("keeps an existing custom bracket binding when new navigation defaults are introduced", () => {
+  saveChatPreferences({ shortcuts: { settings: "Mod+Shift+]" } });
+  const settings = vi.fn();
+  const nextChat = vi.fn();
+  render(<Commands search={vi.fn()} settings={settings} nextChat={nextChat} />);
+  expect(screen.getByRole("button", { name: "Change shortcut for Next chat" })).toHaveTextContent("Unassigned");
+  fireEvent.keyDown(window, { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true });
+  expect(settings).toHaveBeenCalledOnce();
+  expect(nextChat).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Reset all shortcuts" }));
+  expect(screen.getByRole("button", { name: "Change shortcut for Next chat" })).toHaveTextContent("Ctrl+Shift+]");
+  fireEvent.keyDown(window, { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true });
+  expect(nextChat).toHaveBeenCalledOnce();
 });
