@@ -113,6 +113,12 @@ it("merges duplicate public assistant endings and labels pending and withdrawn i
   expect(filename).not.toMatch(/[\\/:*?"<>|\u0000-\u001f]/u);
 });
 
+it("truncates export filenames without splitting Unicode or ending in separators", () => {
+  const prefix = "a".repeat(99);
+  expect(threadExportFilename(`${prefix}😀suffix`, "markdown")).toBe(`conversation-${prefix}😀.md`);
+  expect(threadExportFilename(`${prefix} tail`, "text")).toBe(`conversation-${prefix}.txt`);
+});
+
 it("rejects missing full bodies instead of returning partial history", async () => {
   const get = vi.fn(async (path: string) => {
     if (path.endsWith("second")) throw new Error("body unavailable");
