@@ -234,6 +234,21 @@ func TestMonetaryPriceImportIsIdempotentAndRotates(t *testing.T) {
 	if err != nil || !found || active.ID != "test-prices-v2" {
 		t.Fatalf("active snapshot did not rotate: %#v %t %v", active, found, err)
 	}
+
+	extended := snapshot
+	extended.ValidUntil = snapshot.ValidUntil.Add(time.Hour)
+	extended.Fingerprint = pricing.Fingerprint(extended)
+	if extended.Fingerprint != snapshot.Fingerprint {
+		t.Fatal("test fixture unexpectedly changed the fingerprint")
+	}
+	if _, replayed, err := st.ImportPriceSnapshot(ctx, extended); apperror.CodeOf(err) != apperror.CodeConflict || replayed {
+		t.Fatalf("changed validity window was accepted: replayed=%t err=%v", replayed, err)
+	}
+	active, found, err = st.ActivePriceSnapshot(ctx)
+	if err != nil || !found || !active.ValidUntil.Equal(second.ValidUntil) ||
+		active.Fingerprint != second.Fingerprint {
+		t.Fatalf("rejected replay mutated the active snapshot: %#v %t %v", active, found, err)
+	}
 }
 
 func TestMonetaryReservationsReleaseOnTerminalRun(t *testing.T) {
