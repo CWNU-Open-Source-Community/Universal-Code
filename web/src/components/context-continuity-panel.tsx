@@ -521,7 +521,9 @@ function ProjectInstructionsSection({ client, query, refreshing, refreshError, o
 }
 
 function retentionTimestamp(value: string): string | undefined {
-  return value ? new Date(`${value}T23:59:59.000Z`).toISOString() : undefined;
+  if (!value) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
 }
 
 function memoryReferenceList(value: string): string[] {
