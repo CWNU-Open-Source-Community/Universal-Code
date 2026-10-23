@@ -3551,7 +3551,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadActivityToolDetailView.agent_role":                  {string(domain.AgentRoleRoot), string(domain.AgentRoleSpecialist), "unknown"},
 	"ThreadActivityToolDetailView.status":                      {string(domain.SupervisorToolPending), string(domain.SupervisorToolCompleted), string(domain.SupervisorToolDenied), string(domain.SupervisorToolFailed)},
 	"ThreadActivityCommandDetailView.execution_environment":    {"Workspace Sandbox", "Host · Full Access", "Legacy execution boundary"},
-	"ThreadActivityCommandDetailView.network":                  {"disabled"},
+	"ThreadActivityCommandDetailView.network":                  {"disabled", "host"},
 	"ThreadActivityCommandDetailView.status":                   {string(domain.SupervisorToolPending), string(domain.SupervisorToolCompleted), string(domain.SupervisorToolDenied), string(domain.SupervisorToolFailed), string(runner.CommandRuntimeJobPrepared), string(runner.CommandRuntimeJobRunning), string(runner.CommandRuntimeJobStopping), string(runner.CommandRuntimeJobCompleted), string(runner.CommandRuntimeJobFailed), string(runner.CommandRuntimeJobTimedOut), string(runner.CommandRuntimeJobCancelled), string(runner.CommandRuntimeJobKilled), string(runner.CommandRuntimeJobInterrupted)},
 	"IndexView.api_version":                                    {Version},
 	"ProjectActionsView.protocol_version":                      {application.ProjectActionsProtocolVersion},
