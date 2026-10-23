@@ -199,7 +199,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
       scope_id: scopeID,
     }),
     onSuccess: (value) => downloadJSON(
-      `prayu-${memoryScope}-memory-${new Date().toISOString().slice(0, 10)}.json`, value),
+      `prayu-${value.scope}-memory-${new Date().toISOString().slice(0, 10)}.json`, value),
   });
 
   const treeNodes = treeQuery.data?.nodes ?? [];
