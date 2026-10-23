@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useLocale, type LocaleText } from "../../lib/locale";
 export interface ReviewDiffLine { text: string; oldLine?: number; newLine?: number; kind: "context" | "add" | "remove" | "meta" }
 export interface ReviewDiffHunk { header: string; lines: ReviewDiffLine[]; oldPath?: string; newPath?: string; preamble: string }
@@ -55,9 +56,12 @@ export function ReviewDiff({ patch, source, onFeedback }: {
   patch: string; source: string; onFeedback?: (context: string) => void;
 }) {
   const { t } = useLocale();
-  const parsed = parseReviewDiff(patch);
+  const [wrapLines, setWrapLines] = useState(false);
+  const parsed = useMemo(() => parseReviewDiff(patch), [patch]);
   if (!parsed.hunks.length) return <pre className="v2-delivery-patch">{patch}</pre>;
-  return <div className="v2-delivery-diff">
+  return <div className={`v2-delivery-diff${wrapLines ? " is-wrapped" : ""}`}>
+    <div className="v2-diff-toolbar"><button type="button" aria-pressed={wrapLines}
+      onClick={() => setWrapLines((value) => !value)}>{t("长行换行", "Wrap long lines")}</button></div>
     {parsed.hunks.map((hunk, ordinal) => <section key={ordinal} aria-label={t(`差异片段 ${ordinal + 1}`, `Diff hunk ${ordinal + 1}`)}>
       {hunk.preamble && <pre>{hunk.preamble}</pre>}
       <header><code>{hunk.header}</code>{onFeedback && <button type="button" onClick={() => onFeedback(
