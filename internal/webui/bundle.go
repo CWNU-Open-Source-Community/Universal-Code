@@ -1,10 +1,12 @@
 package webui
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"mime"
@@ -291,6 +293,16 @@ func LoadEmbeddedFS(source fs.FS, root string) (*Bundle, error) {
 }
 
 func (b *Bundle) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	b.serveHTTP(writer, request, "")
+}
+
+// ServeHTTPWithStyleNonce renders the index with the request's CSP style nonce.
+// Hashed assets and the frozen bundle remain unchanged.
+func (b *Bundle) ServeHTTPWithStyleNonce(writer http.ResponseWriter, request *http.Request, nonce string) {
+	b.serveHTTP(writer, request, nonce)
+}
+
+func (b *Bundle) serveHTTP(writer http.ResponseWriter, request *http.Request, styleNonce string) {
 	if b == nil || request == nil || request.URL == nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -301,7 +313,7 @@ func (b *Bundle) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if request.URL.Path == "/" {
-		serveAsset(writer, request, b.index)
+		serveIndex(writer, request, b.index, styleNonce)
 		return
 	}
 	if current, ok := b.assets[request.URL.Path]; ok {
@@ -313,7 +325,7 @@ func (b *Bundle) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		http.NotFound(writer, request)
 		return
 	}
-	serveAsset(writer, request, b.index)
+	serveIndex(writer, request, b.index, styleNonce)
 }
 
 func (b *Bundle) Source() string {
@@ -457,6 +469,24 @@ func serveAsset(writer http.ResponseWriter, request *http.Request, current asset
 	writer.WriteHeader(http.StatusOK)
 	if request.Method == http.MethodGet {
 		_, _ = writer.Write(current.body)
+	}
+}
+
+func serveIndex(writer http.ResponseWriter, request *http.Request, current asset, styleNonce string) {
+	if styleNonce == "" {
+		serveAsset(writer, request, current)
+		return
+	}
+	body := bytes.ReplaceAll(current.body, []byte("__UC_STYLE_NONCE__"), []byte(html.EscapeString(styleNonce)))
+	header := writer.Header()
+	header.Set("Content-Type", current.contentType)
+	header.Set("Content-Length", strconv.Itoa(len(body)))
+	header.Set("Cache-Control", "no-store")
+	header.Del("ETag")
+	// A 304 could pair a fresh CSP nonce with an older document's meta element.
+	writer.WriteHeader(http.StatusOK)
+	if request.Method == http.MethodGet {
+		_, _ = writer.Write(body)
 	}
 }
 
