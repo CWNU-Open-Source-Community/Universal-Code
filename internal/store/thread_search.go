@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"regexp"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
-	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/threadtranscript"
 )
@@ -39,10 +37,17 @@ const threadSearchCandidates = `WITH candidates AS (
 	 (json_extract(event.payload_json,'$.role')='user' AND json_extract(event.payload_json,'$.source_kind')='operator_message') OR
 	 (json_extract(event.payload_json,'$.role')='assistant' AND json_extract(event.payload_json,'$.source_kind')='model_response')))
 	 OR (event.type='operator.steering_queued' AND steering.status IN ('pending','cancelled','committed'))
+	UNION ALL
+	SELECT event.event_id, thread.id, thread.title, thread.status,
+	 thread.workspace_id, event.event_id, 'assistant',
+	 COALESCE(json_extract(event.payload_json,'$.text'),''), event.created_at, binding.ordinal, event.sequence
+	FROM threads thread JOIN thread_runs binding ON binding.thread_id=thread.id
+	JOIN run_events event ON event.run_id=binding.run_id
+	WHERE event.type='model.public_commentary'
 ) SELECT id, thread_id, title, status, workspace_id, message_id, role,
  content, created_at, ordinal, sequence FROM candidates WHERE status IN ('active'`
 
-func (s *SQLiteStore) SearchThreadMessages(ctx context.Context, query string, includeArchived bool,
+func (s *SQLiteStore) SearchThreadMessages(ctx context.Context, query, threadID string, includeArchived bool,
 	before time.Time, beforeID string, limit int,
 ) ([]domain.ThreadSearchMatch, error) {
 	if err := validateStoreCreationPage(before, beforeID, limit); err != nil {
@@ -57,7 +62,7 @@ func (s *SQLiteStore) SearchThreadMessages(ctx context.Context, query string, in
 	}
 	items := make([]domain.ThreadSearchMatch, 0, limit)
 	for len(items) < limit {
-		batch, err := s.threadSearchCandidates(ctx, query, includeArchived, before, beforeID, "", "", 100)
+		batch, err := s.threadSearchCandidates(ctx, query, includeArchived, before, beforeID, threadID, "", 100)
 		if err != nil {
 			return nil, err
 		}
@@ -117,8 +122,12 @@ func (s *SQLiteStore) threadSearchCandidates(ctx context.Context, query string, 
 		args = append(args, query)
 	}
 	if threadID != "" {
-		sql += ` AND thread_id=? AND message_id=?`
-		args = append(args, threadID, messageID)
+		sql += ` AND thread_id=? AND message_id<>''`
+		args = append(args, threadID)
+	}
+	if messageID != "" {
+		sql += ` AND message_id=?`
+		args = append(args, messageID)
 	}
 	if !before.IsZero() {
 		key := creationTimestampKeySQL("created_at")
@@ -179,27 +188,6 @@ func (s *SQLiteStore) GetThreadSearchMessage(ctx context.Context, threadID, mess
 	items, err := s.threadSearchCandidates(ctx, "", true, time.Time{}, "", threadID, messageID, 1)
 	if err != nil {
 		return domain.ThreadSearchMatch{}, err
-	}
-	// Public progress and replies inherited by a branch are commentary events,
-	// not session messages. Resolve their full body through the same public
-	// projection and redaction below without broadening search candidates.
-	if len(items) == 0 {
-		item := domain.ThreadSearchMatch{ID: messageID, MessageID: messageID, ThreadID: threadID, Role: "assistant"}
-		var created string
-		err := s.db.QueryRowContext(ctx, `SELECT thread.title, thread.status, thread.workspace_id,
-		 COALESCE(json_extract(event.payload_json,'$.text'),''), event.created_at, binding.ordinal, event.sequence
-		 FROM threads thread JOIN thread_runs binding ON binding.thread_id=thread.id
-		 JOIN run_events event ON event.run_id=binding.run_id
-		 WHERE thread.id=? AND thread.status IN ('active','archived') AND event.event_id=? AND event.type=?`,
-			threadID, messageID, events.ModelPublicCommentaryEvent).Scan(&item.ThreadTitle, &item.ThreadStatus,
-			&item.WorkspaceID, &item.Content, &created, &item.RunOrdinal, &item.Sequence)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return domain.ThreadSearchMatch{}, err
-		}
-		if err == nil {
-			item.CreatedAt = parseTS(created)
-			items = append(items, item)
-		}
 	}
 	if len(items) > 0 {
 		item := items[0]

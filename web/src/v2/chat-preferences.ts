@@ -6,6 +6,7 @@ export type SendPreference = "enter" | "multiline" | "modifier";
 export const shortcutCommands = [
   { id: "newChat", zh: "新对话", en: "New chat", binding: "Mod+Shift+O" },
   { id: "search", zh: "搜索聊天", en: "Search chats", binding: "Mod+K" },
+  { id: "findInChat", zh: "在当前聊天中查找", en: "Find in current chat", binding: "Mod+F" },
   { id: "settings", zh: "打开设置", en: "Open settings", binding: "Mod+," },
   { id: "sidebar", zh: "展开／收起侧栏", en: "Toggle sidebar", binding: "Mod+B" },
   { id: "composer", zh: "聚焦输入框", en: "Focus composer", binding: "Mod+Shift+I" },
@@ -26,7 +27,7 @@ function parse(raw: string | null): ChatPreferences {
     const shortcuts: ChatPreferences["shortcuts"] = {};
     for (const { id } of shortcutCommands) {
       const binding = value.shortcuts?.[id];
-      if (binding === "" || (typeof binding === "string" && validShortcut(binding))) shortcuts[id] = binding;
+      if (binding === "" || (typeof binding === "string" && validShortcut(binding, id))) shortcuts[id] = binding;
     }
     return { send: ["enter", "multiline", "modifier"].includes(value.send) ? value.send : "enter", shortcuts };
   } catch { return defaults; }
@@ -57,7 +58,8 @@ export function eventShortcut(event: Pick<KeyboardEvent, "key" | "code" | "ctrlK
   if (!/^[A-Z0-9,./;[\]\\'=-]$/u.test(key)) return "";
   return ["Mod", ...(event.altKey ? ["Alt"] : []), ...(event.shiftKey ? ["Shift"] : []), key].join("+");
 }
-export function validShortcut(binding: string) {
+export function validShortcut(binding: string, command?: ShortcutCommand) {
+  if (binding === "Mod+F" && command === "findInChat") return true;
   if (!/^Mod\+(?:Alt\+)?(?:Shift\+)?[A-Z0-9,./;[\]\\'=-]$/u.test(binding)) return false;
   // Keep native editing, browser/window controls and zoom available.
   return !["Mod+A", "Mod+C", "Mod+V", "Mod+X", "Mod+Z", "Mod+Y", "Mod+S", "Mod+F", "Mod+L",
@@ -65,7 +67,7 @@ export function validShortcut(binding: string) {
     "Mod+Shift+V", "Mod+Shift+T", "Mod+Shift+N", "Mod+Shift+W", "Mod+Shift+R"].includes(binding);
 }
 
-export function useChatShortcuts(actions: Record<ShortcutCommand, () => void>) {
+export function useChatShortcuts(actions: Record<ShortcutCommand, () => void | boolean>) {
   const preferences = useChatPreferences();
   const latest = useRef({ actions, preferences });
   latest.current = { actions, preferences };
@@ -78,8 +80,9 @@ export function useChatShortcuts(actions: Record<ShortcutCommand, () => void>) {
       if (!binding) return;
       const command = shortcutCommands.find(({ id }) => shortcutBinding(latest.current.preferences, id) === binding);
       if (!command) return;
-      event.preventDefault();
-      latest.current.actions[command.id]();
+      if (command.id === "findInChat" && event.target instanceof Element && event.target.closest(".monaco-editor, .xterm")) return;
+      // A contextual action may leave the native shortcut available outside its surface.
+      if (latest.current.actions[command.id]() !== false) event.preventDefault();
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);

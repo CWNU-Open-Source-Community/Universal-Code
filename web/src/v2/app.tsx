@@ -309,9 +309,23 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     return () => media.removeListener?.(onChange);
   }, []);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  useEffect(() => {
+    if (!searchFocusRequest || !searchOpen || !sidebarVisible) return;
+    // The drawer's visibility transition starts after the DOM commit.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const input = sidebarSlot.current?.querySelector<HTMLInputElement>(".v2-sidebar-search input");
+        input?.focus(); input?.select();
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocusRequest, searchOpen, sidebarVisible]);
   const [threadSearch, setThreadSearch] = useState("");
   const [appliedThreadSearch, setAppliedThreadSearch] = useState("");
   const [includeArchivedSearch, setIncludeArchivedSearch] = useState(false);
+  const [searchCurrentThread, setSearchCurrentThread] = useState(false);
+  const searchThreadID = searchCurrentThread ? selectedThreadID : "";
   const [searchComposing, setSearchComposing] = useState(false);
   const normalizedThreadSearch = threadSearch.trim();
   const searchTooLong = Array.from(normalizedThreadSearch).length > 256;
@@ -399,9 +413,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       (query.state.data?.pages.length ?? 1) === 1 ? 15_000 : false,
   });
   const messageSearchQuery = useInfiniteQuery({
-    queryKey: ["v2", "threads", "active", "messages", { q: appliedThreadSearch, include_archived: includeArchivedSearch }],
+    queryKey: ["v2", "threads", "active", "messages", { q: appliedThreadSearch, include_archived: includeArchivedSearch, thread_id: searchThreadID }],
     queryFn: ({ signal, pageParam }) => client.getPage<ThreadSearchResultView>("/threads/search",
-      { q: appliedThreadSearch, include_archived: includeArchivedSearch, limit: 50 }, pageParam, signal),
+      { q: appliedThreadSearch, include_archived: includeArchivedSearch, limit: 50,
+        ...(searchThreadID ? { thread_id: searchThreadID } : {}) }, pageParam, signal),
     initialPageParam: "", getNextPageParam: (last) => last.page.next_cursor || undefined,
     enabled: Boolean(appliedThreadSearch) && !searchPending && !searchTooLong,
     refetchInterval: (query) => sidebarVisible && surface === "conversation" && !searchPending &&
@@ -594,9 +609,18 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     closeNavigationSidebar();
   };
 
+  const openSearch = (currentThread: boolean) => {
+    if (currentThread && (!selectedThreadID || surface !== "conversation" || route.tool || view !== "conversation")) return false;
+    if (surface === "settings") returnFromSettings();
+    setSearchCurrentThread(currentThread);
+    setSidebarVisible(true);
+    setSearchOpen(true);
+    setSearchFocusRequest((request) => request + 1);
+  };
   useChatShortcuts({
     newChat: () => startNew(),
-    search: () => { if (surface === "settings") returnFromSettings(); setSidebarVisible(true); setSearchOpen(true); },
+    search: () => openSearch(false),
+    findInChat: () => openSearch(true),
     settings: openSettings,
     sidebar: () => setSidebarVisible(!sidebarVisible),
     composer: () => {
@@ -631,11 +655,13 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           inspectorActive={view === "inspector"}
           onSearchOpen={(open) => {
             setSearchOpen(open);
+            setSearchCurrentThread(false);
             if (!open) { setThreadSearch(""); setSearchComposing(false); }
           }} onSelectThread={openConversation} searchOpen={searchOpen}
           search={threadSearch} appliedSearch={appliedThreadSearch} searchPending={searchPending}
           searchTooLong={searchTooLong}
           searchResults={searchResults} includeArchived={includeArchivedSearch} onIncludeArchivedChange={setIncludeArchivedSearch}
+          searchCurrentThread={Boolean(searchThreadID)} onSearchCurrentThreadChange={setSearchCurrentThread}
           onSelectSearchResult={(result) => {
             navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) });
             closeNavigationSidebar();
