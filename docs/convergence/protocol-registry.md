@@ -7,7 +7,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 | Family | Class | Owner | Active IDs | Persisted/exported |
 | --- | --- | --- | ---: | --- |
-| [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 5 | true |
+| [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 6 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
@@ -66,13 +66,14 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `activity-event-projection-reader` (`v1`, active) at `internal/runactivity`
 
-<details><summary>5 active identifiers</summary>
+<details><summary>6 active identifiers</summary>
 
 - `operator_action_center.v1`
 - `operator_action_item.v1`
 - `run-event-poll.v1`
 - `run-events.v1`
 - `run_activity.v1`
+- `thread_reply_updates.v1`
 
 </details>
 
