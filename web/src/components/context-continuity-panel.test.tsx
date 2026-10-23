@@ -57,6 +57,45 @@ describe("ContextContinuityPanel", () => {
     ));
   });
 
+  it("names a memory export after the scope captured when it started", async () => {
+    const user = userEvent.setup();
+    const exported = { protocol_version: "context_memory_export.v1", scope: "project",
+      scope_id: "workspace-1", exported_at: "2026-08-19T00:00:00Z", items: [],
+      capability_grant: false };
+    let resolveExport: (value: typeof exported) => void = () => undefined;
+    const pendingExport = new Promise<typeof exported>((resolve) => { resolveExport = resolve; });
+    const get = vi.fn().mockImplementation((path: string) => {
+      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+      if (path === "/memories/export") return pendingExport;
+      if (path === "/memories") return Promise.resolve([memoryView()]);
+      if (path === "/memory-candidates") return Promise.resolve([]);
+      if (path.includes("/tree")) return Promise.resolve(sessionTree());
+      return Promise.reject(new Error(`unexpected read ${path}`));
+    });
+    const createObjectURL = vi.fn().mockReturnValue("blob:memory-export");
+    vi.stubGlobal("URL", { ...URL,
+      createObjectURL, revokeObjectURL: vi.fn() });
+    let downloaded = "";
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      function (this: HTMLAnchorElement) { downloaded = this.download; });
+    try {
+      renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
+        deleteControl: vi.fn() } as unknown as APIClient);
+
+      await user.click(await screen.findByRole("button", { name: "Export" }));
+      await waitFor(() => expect(get).toHaveBeenCalledWith("/memories/export",
+        expect.objectContaining({ scope: "project", scope_id: "workspace-1" })));
+      await user.selectOptions(screen.getByLabelText("Memory scope"), "user");
+      resolveExport(exported);
+      await waitFor(() => expect(downloaded)
+        .toMatch(/^prayu-project-memory-\d{4}-\d{2}-\d{2}\.json$/));
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+    } finally {
+      click.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps mutation controls disabled on a read-only connection", async () => {
     renderPanel({ hasControl: false,
       get: vi.fn().mockImplementation((path: string) => path.includes("project-instructions")
