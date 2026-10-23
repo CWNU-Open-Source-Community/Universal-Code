@@ -30,6 +30,7 @@ import { V2ProviderSettings } from "./provider-settings";
 import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { saveChatPreferences, useChatPreferences, type SendPreference } from "../chat-preferences";
 import { V2KeyboardSettings } from "./keyboard-settings";
+import { V2NotificationSettings } from "./notification-settings";
 import { V2ExecutionSettings } from "./execution-settings";
 import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2ProjectlessDirectorySettings } from "./projectless-directory-settings";
@@ -193,6 +194,7 @@ function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
       </div>
     </section>
     <V2ProjectlessDirectorySettings client={client} />
+    <V2NotificationSettings />
   </>;
 }
 
