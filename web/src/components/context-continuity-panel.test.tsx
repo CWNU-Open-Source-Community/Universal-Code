@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import { ContextContinuityPanel } from "./context-continuity-panel";
@@ -80,6 +80,26 @@ describe("ContextContinuityPanel", () => {
       expect.objectContaining({ title: "Release checklist", content: "Check the release notes.",
         retention_until: new Date(2030, 1, 28, 23, 59, 59, 999).toISOString() }),
       expect.stringMatching(/^web-memory-create-/)));
+  });
+
+  it("opens the memory editor on the retained local calendar day", async () => {
+    const user = userEvent.setup();
+    // Local midnight makes the UTC date differ from the local day in non-UTC time zones.
+    const retentionUntil = new Date(2030, 2, 15, 0, 30).toISOString();
+    const get = vi.fn().mockImplementation((path: string) => {
+      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+      if (path === "/memories") return Promise.resolve([{ ...memoryView(), retention_until: retentionUntil }]);
+      if (path === "/memory-candidates") return Promise.resolve([]);
+      if (path.includes("/tree")) return Promise.resolve(sessionTree());
+      return Promise.reject(new Error(`unexpected read ${path}`));
+    });
+    renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
+      deleteControl: vi.fn() } as unknown as APIClient);
+
+    await screen.findByText("Test convention");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const article = screen.getByText("Test convention").closest("article");
+    expect(within(article as HTMLElement).getByLabelText("Retain until")).toHaveValue("2030-03-15");
   });
 
   it("keeps mutation controls disabled on a read-only connection", async () => {

@@ -338,7 +338,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
                         setEditingMemoryID(memory.id);
                         setEditDraft({ title: memory.title, content: memory.content,
                           sourceRef: memory.source_ref ?? "", references: memory.references.join("\n"),
-                          retention: memory.retention_until?.slice(0, 10) ?? "",
+                          retention: retentionDateValue(memory.retention_until),
                           redactSensitive: memory.redacted });
                       }} type="button">{t("编辑", "Edit")}</button>
                       <button className="compact-command" disabled={!client.hasControl || updateMemory.isPending}
@@ -523,6 +523,15 @@ function retentionTimestamp(value: string): string | undefined {
   if (!value) return undefined;
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
+}
+
+function retentionDateValue(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function memoryReferenceList(value: string): string[] {
