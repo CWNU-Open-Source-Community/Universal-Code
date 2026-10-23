@@ -81,8 +81,25 @@ function MarkdownCodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreE
 
 type BranchReply = (sourceEventID: string, operationKey: string) => Promise<void>;
 
-function AssistantMessageActions({ text, branchSourceID, onBranch, user = false, onCompose, loadText }: {
+const messageTimeFormats = Object.fromEntries((["zh-CN", "en-US"] as const).map((locale) => [locale, {
+  short: new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+  full: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "long" }),
+}]));
+
+function MessageTime({ createdAt }: { createdAt: string }) {
+  const { locale, t } = useLocale();
+  if (!createdAt) return null;
+  const date = new Date(createdAt);
+  if (!Number.isFinite(date.getTime())) return null;
+  const formats = messageTimeFormats[locale];
+  const full = formats.full.format(date);
+  return <time className="v2-message-time" dateTime={date.toISOString()} title={full}
+    aria-label={t("消息时间：", "Message time: ") + full}>{formats.short.format(date)}</time>;
+}
+
+function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, user = false, onCompose, loadText }: {
   text: string;
+  createdAt: string;
   branchSourceID?: string;
   onBranch?: BranchReply;
   user?: boolean;
@@ -177,6 +194,7 @@ function AssistantMessageActions({ text, branchSourceID, onBranch, user = false,
       {branching ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <Split size={16} aria-hidden="true" />}
       <span className="v2-assistant-action-tooltip" aria-hidden="true">{branchLabel}</span>
     </button>
+    <MessageTime createdAt={createdAt} />
   </div>{branchError && <p className="v2-assistant-action-error" role="alert">{branchError}</p>}</>;
 }
 
@@ -244,7 +262,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
       {entry.deliveryMode === "steer" && entry.status !== "cancelled" && entry.status !== "pending" &&
         <small className="v2-message-status">{t("已加入当前任务", "Added to current task")}</small>}
       {entry.provisional && !entry.status && <small className="v2-message-status">{t("正在发送…", "Sending…")}</small>}</div>
-    {!entry.provisional && entry.status !== "pending" && <AssistantMessageActions user text={entry.text}
+    {!entry.provisional && entry.status !== "pending" && <AssistantMessageActions user text={entry.text} createdAt={entry.createdAt}
       branchSourceID={entry.branchSourceID} onBranch={onBranch} onCompose={onCompose} loadText={async () => {
         const saved = await client.get<ThreadSavedMessageView>(`/threads/${encodeURIComponent(threadID)}/messages/${encodeURIComponent(entry.id)}`);
         if (saved.message_id !== entry.id || typeof saved.content !== "string") throw new Error(t("完整消息身份不匹配，请重新读取。", "The saved message identity did not match. Reload and try again."));
@@ -256,7 +274,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
     {!entry.provisional && entry.changeSourceID && entry.runId && typeof client.threadChanges === "function" &&
       <V2TurnChanges client={client} threadID={threadID} runID={entry.runId} sourceEventID={entry.changeSourceID} />}
-    {!entry.provisional && <AssistantMessageActions text={entry.text} branchSourceID={entry.branchSourceID} onBranch={onBranch} onCompose={onCompose} />}
+    {!entry.provisional && <AssistantMessageActions text={entry.text} createdAt={entry.createdAt} branchSourceID={entry.branchSourceID} onBranch={onBranch} onCompose={onCompose} />}
   </li>;
   if (entry.kind === "activity") return <li className="v2-activity-turn">
     <V2ActivityGroup client={client} entry={entry} threadID={threadID} /></li>;
