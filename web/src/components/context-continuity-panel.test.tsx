@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import { ContextContinuityPanel } from "./context-continuity-panel";
@@ -55,6 +55,31 @@ describe("ContextContinuityPanel", () => {
       "/runs/run-1/continuity-checkpoints",
       { title: "", summary: "" }, expect.stringMatching(/^web-continuity-checkpoint-/),
     ));
+  });
+
+  it("retains memory through the end of the selected local calendar day", async () => {
+    const user = userEvent.setup();
+    const get = vi.fn().mockImplementation((path: string) => {
+      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+      if (path === "/memories") return Promise.resolve([memoryView()]);
+      if (path === "/memory-candidates") return Promise.resolve([]);
+      if (path.includes("/tree")) return Promise.resolve(sessionTree());
+      return Promise.reject(new Error(`unexpected read ${path}`));
+    });
+    const postControl = vi.fn().mockResolvedValue(memoryView());
+    renderPanel({ hasControl: true, get, postControl, patchControl: vi.fn(),
+      deleteControl: vi.fn() } as unknown as APIClient);
+
+    await screen.findByText("Test convention");
+    await user.type(screen.getByLabelText("Memory title"), "Release checklist");
+    await user.type(screen.getByLabelText("Memory content"), "Check the release notes.");
+    fireEvent.change(screen.getByLabelText("Retain until"), { target: { value: "2030-02-28" } });
+    await user.click(screen.getByRole("button", { name: "Create memory" }));
+
+    await waitFor(() => expect(postControl).toHaveBeenCalledWith("/memories",
+      expect.objectContaining({ title: "Release checklist", content: "Check the release notes.",
+        retention_until: new Date(2030, 1, 28, 23, 59, 59, 999).toISOString() }),
+      expect.stringMatching(/^web-memory-create-/)));
   });
 
   it("keeps mutation controls disabled on a read-only connection", async () => {
