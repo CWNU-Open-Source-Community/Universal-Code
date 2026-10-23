@@ -1,0 +1,34 @@
+[
+  {
+    "width": 600,
+    "before": {
+      "clientWidth": 401,
+      "scrollWidth": 2570,
+      "scrollLeft": 400,
+      "overflowX": "auto"
+    },
+    "after": {
+      "codeLeft": 1200,
+      "chatLeft": 0,
+      "chatWidth": 600,
+      "chatScrollWidth": 600,
+      "fullCodePreserved": true
+    }
+  },
+  {
+    "width": 390,
+    "before": {
+      "clientWidth": 237,
+      "scrollWidth": 2570,
+      "scrollLeft": 1200,
+      "overflowX": "auto"
+    },
+    "after": {
+      "codeLeft": 2000,
+      "chatLeft": 0,
+      "chatWidth": 390,
+      "chatScrollWidth": 390,
+      "fullCodePreserved": true
+    }
+  }
+]

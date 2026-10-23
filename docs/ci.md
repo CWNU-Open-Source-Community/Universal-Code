@@ -19,6 +19,13 @@ run; releases require that result for their exact source commit.
 | Go module dependencies, CI machinery or unclassified inputs | Full checks | Only if release tooling also changes |
 | Nightly or manual CI | Full checks, platform matrix, packaging and Go vulnerability audit | Version tags / manual releases still use the release workflow |
 
+PNG, JPEG and WebP screenshots under `docs/acceptance/`, `docs/evidence/` and
+`docs/images/` count as documentation. Adding before/after screenshots to a
+frontend PR keeps its frontend and workbench-journey checks without starting
+unrelated backend/platform checks. Runtime images under `assets/branding/`,
+`web/` or Go package test data retain their existing checks. Other files in
+the evidence directories still use the normal classification rules.
+
 The selection rules live in `scripts/ci/classify_changes.py`. Main uses the push
 before/after commits, so merging a frontend change does not rerun the entire
 backend matrix. Nightly CI runs at 19:23 UTC (03:23 Asia/Hong_Kong). The Actions

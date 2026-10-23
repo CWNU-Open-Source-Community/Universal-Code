@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/tools"
 )
 
 type debugTerminalExecutorStub struct {
@@ -21,13 +22,19 @@ func (s *debugTerminalExecutorStub) ExecuteDebugTerminal(_ context.Context,
 	s.calls++
 	s.scope = scope
 	s.input = input
+	bytesWritten := 0
+	if input.Action == DebugTerminalActionWrite {
+		bytesWritten = len([]byte(input.Command + "\r"))
+	} else if input.Action == DebugTerminalActionInterrupt {
+		bytesWritten = 1
+	}
 	return DebugTerminalExecutionResult{
 		BindingID:         "terminal-input-binding-1",
 		TerminalSessionID: "user-terminal-1", Backend: "windows-conpty-user-v1",
 		BaseCursor: 4, NextCursor: 11,
 		Output: []byte("\x1b[31mgo1.25\x1b[0m\r\n"), State: "running",
-		InputSubmitted: input.Action == DebugTerminalActionWrite,
-		BytesWritten:   len([]byte(input.Command + "\r")),
+		InputSubmitted: input.Action != DebugTerminalActionRead,
+		BytesWritten:   bytesWritten,
 	}, nil
 }
 
@@ -37,7 +44,17 @@ func TestDebugTerminalPayloadIsStrictAndCanonical(t *testing.T) {
 	if err != nil || input.Command != "go version" || !json.Valid(canonical) {
 		t.Fatalf("valid Debug terminal payload failed: %s err=%v", canonical, err)
 	}
+	interrupt := json.RawMessage(`{"version":"debug_terminal.v1","action":"interrupt","max_bytes":4096,"wait_milliseconds":0}`)
+	input, canonical, err = normalizeDebugTerminalPayload(interrupt)
+	if err != nil || input.Action != DebugTerminalActionInterrupt || string(canonical) != string(interrupt) {
+		t.Fatalf("valid interrupt payload failed: %s err=%v", canonical, err)
+	}
 	for _, invalid := range []json.RawMessage{
+		json.RawMessage(`{"version":"debug_terminal.v1","action":"interrupt","command":"whoami","max_bytes":4096,"wait_milliseconds":0}`),
+		json.RawMessage(`{"version":"debug_terminal.v1","action":"interrupt","command":null,"max_bytes":4096,"wait_milliseconds":0}`),
+		json.RawMessage(`{"version":"debug_terminal.v1","action":"interrupt","cursor":0,"max_bytes":4096,"wait_milliseconds":0}`),
+		json.RawMessage(`{"version":"debug_terminal.v1","action":"interrupt","data":"\u0003","max_bytes":4096,"wait_milliseconds":0}`),
+		json.RawMessage(`{"version":"debug_terminal.v1","action":"write","command":"\u0003","max_bytes":4096,"wait_milliseconds":0}`),
 		json.RawMessage(`{"version":"debug_terminal.v1","action":"write","command":"go version\nwhoami","max_bytes":4096,"wait_milliseconds":0}`),
 		json.RawMessage(`{"version":"debug_terminal.v1","action":"write","command":"go version","cursor":0,"max_bytes":4096,"wait_milliseconds":0}`),
 		json.RawMessage(`{"version":"debug_terminal.v1","action":"read","command":"whoami","max_bytes":4096,"wait_milliseconds":0}`),
@@ -124,5 +141,51 @@ func TestDebugTerminalGatewayDeniesDangerousAndApprovalCommands(t *testing.T) {
 	}
 	if executor.calls != 0 {
 		t.Fatalf("denied Debug terminal commands reached executor %d times", executor.calls)
+	}
+}
+
+type debugTerminalInterruptChecker struct {
+	policy.Checker
+	decision policy.Decision
+}
+
+func (p debugTerminalInterruptChecker) CheckToolCall(call tools.Call) policy.Decision {
+	if call.Name == string(DebugTerminalTool) && call.Args["action"] == DebugTerminalActionInterrupt {
+		return p.decision
+	}
+	return p.Checker.CheckToolCall(call)
+}
+
+func TestDebugTerminalGatewayInterruptHonorsPolicy(t *testing.T) {
+	for _, scenario := range []string{"allow", "deny", "review"} {
+		t.Run(scenario, func(t *testing.T) {
+			executor := &debugTerminalExecutorStub{}
+			gateway := New(newTrackedStructuredStore(), debugTerminalInterruptChecker{
+				Checker: policy.NewDefaultChecker(), decision: policy.Decision{
+					Allowed: scenario != "deny", NeedsApproval: scenario == "review", Reason: "interrupt host rule",
+				},
+			}).WithDebugTerminalExecutor(executor)
+			outcome, err := gateway.Invoke(t.Context(), ToolCall{
+				Name:         DebugTerminalTool,
+				Payload:      json.RawMessage(`{"version":"debug_terminal.v1","action":"interrupt","max_bytes":4096,"wait_milliseconds":0}`),
+				OperationKey: "debug-terminal-interrupt", RunID: "run-1", AgentID: "agent-20260818123456-abcdef012345",
+				SessionID: "session-1", WorkspaceID: "workspace-1", LeaseID: "run-lease-1", LeaseGeneration: 1,
+				RequestedBy: "run_supervisor",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario != "allow" {
+				if executor.calls != 0 || outcome.Decision.Allowed || outcome.Result.Status != StatusDenied {
+					t.Fatalf("denied interrupt reached executor: %+v", outcome)
+				}
+				return
+			}
+			if executor.calls != 1 || executor.input.Action != DebugTerminalActionInterrupt ||
+				executor.scope.LeaseID != "run-lease-1" || outcome.Result.Metadata["bytes_written"] != "1" ||
+				outcome.Result.Metadata["command_persisted"] != "false" {
+				t.Fatalf("unexpected interrupt outcome: %+v", outcome)
+			}
+		})
 	}
 }
