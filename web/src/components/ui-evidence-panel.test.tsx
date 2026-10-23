@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../api/client";
 import type { UIEvidenceArtifactMetadata, UIEvidenceAttempt, UIEvidenceStartView } from "../api/types";
+import { downloadBlob } from "../lib/download";
 import { UIEvidencePanel } from "./ui-evidence-panel";
 import { V2RecoveryProvider } from "../v2/recovery-storage";
 import { uiEvidenceIntentKey } from "./ui-evidence-recovery";
@@ -10,6 +11,7 @@ import { uiEvidenceIntentKey } from "./ui-evidence-recovery";
 vi.mock("../lib/locale", () => ({
   useLocale: () => ({ t: (chinese: string) => chinese }),
 }));
+vi.mock("../lib/download", () => ({ downloadBlob: vi.fn() }));
 
 function attempt(status: "not_run" | "passed", id: string): UIEvidenceAttempt {
   const started = status === "passed" ? { started_at: "2026-08-20T00:00:01Z",
@@ -91,6 +93,21 @@ describe("UIEvidencePanel", () => {
       expect(downloadUIEvidenceArtifact).toHaveBeenLastCalledWith("attempt-image", artifact);
       view.unmount(); expect(revokeObjectURL).toHaveBeenCalledWith("blob:verified-image");
     } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("downloads a verified artifact through the shared Blob lifecycle", async () => {
+    const passed = attempt("passed", "attempt-download");
+    const artifact = { id: "artifact-download", attempt_id: "attempt-download", kind: "screenshot", mime: "image/png", bytes: 10,
+      sha256: "a".repeat(64), step_id: "navigate", created_at: "2026-08-20T00:00:02Z", retention_policy: "run_history", redacted: false } as UIEvidenceArtifactMetadata;
+    const content = new Blob(["png"], { type: "image/png" });
+    const downloadUIEvidenceArtifact = vi.fn().mockResolvedValue(content);
+    renderPanel({ hasUIEvidence: false, uiEvidence: vi.fn().mockResolvedValue([passed]),
+      uiEvidenceBundle: vi.fn().mockResolvedValue({ attempt: passed, artifacts: [artifact], steps: [] }),
+      downloadUIEvidenceArtifact } as unknown as APIClient);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "下载检查记录 artifact-download" }));
+    await waitFor(() => expect(downloadUIEvidenceArtifact).toHaveBeenCalledWith("attempt-download", artifact));
+    expect(vi.mocked(downloadBlob)).toHaveBeenCalledWith("untrusted-screenshot-artifact-download.png", content);
   });
 
   async function prepare(user: ReturnType<typeof userEvent.setup>) {

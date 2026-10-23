@@ -14,6 +14,7 @@ import type {
   UIEvidenceAttempt,
   UIEvidenceStartView,
 } from "../api/types";
+import { downloadBlob } from "../lib/download";
 import { formatBytes, formatDate, shortID } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
@@ -122,13 +123,7 @@ export function UIEvidencePanel({ client, runID, threadID }: {
     setLocalError("");
     try {
       const content = await client.downloadUIEvidenceArtifact(artifact.attempt_id, artifact);
-      const objectURL = URL.createObjectURL(content);
-      const anchor = document.createElement("a");
-      anchor.href = objectURL;
-      anchor.download = artifactFilename(artifact);
-      anchor.rel = "noopener";
-      anchor.click();
-      URL.revokeObjectURL(objectURL);
+      downloadBlob(artifactFilename(artifact), content);
     } catch (caught) {
       setLocalError(humanError(caught));
     }

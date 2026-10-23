@@ -4,6 +4,7 @@ import { CalendarClock, Download, LoaderCircle, Pause, Play, Plus, RefreshCw, Sq
 import type { APIClient } from "../api/client";
 import type { ScheduledJobCreateRequestView, ScheduledJobObservationRequestView, ScheduledJobView, ThreadDetailView, ThreadView } from "../api/types";
 import { readThreadReview } from "../api/task-delivery";
+import { downloadTextFile } from "../lib/download";
 import { useLocale } from "../lib/locale";
 import { AutomationPRFollowup } from "./automation-pr-followup";
 import "./scheduled-tasks-workspace.css";
@@ -25,12 +26,8 @@ function formatTime(value: string | undefined, locale: string): string {
   return value ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
 }
 function downloadBundle(runID: string, value: unknown): void {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "cyberagent-diagnostics-" + runID + ".json";
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile("cyberagent-diagnostics-" + runID + ".json", "application/json",
+    JSON.stringify(value, null, 2));
 }
 
 export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThreadID = "" }: {
