@@ -68431,7 +68431,8 @@
           },
           "network": {
             "enum": [
-              "disabled"
+              "disabled",
+              "host"
             ],
             "type": "string"
           },
