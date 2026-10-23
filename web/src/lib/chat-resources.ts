@@ -76,11 +76,12 @@ export function parseProjectFileLink(href: string): FileLinkTarget | null {
   if (/^file:/iu.test(raw)) {
     if (!/^file:\/\/\//iu.test(raw)) return null;
     raw = raw.slice(7).replace(/^\/([a-z]:)/iu, "$1");
-  } else if (/^[a-z][a-z\d+.-]*:/iu.test(raw) && !/^[a-z]:[\\/]/iu.test(raw) && !/^.+\.\w+:\d+(?::\d+)?$/u.test(raw)) return null;
+  }
   let line: number | undefined;
   const location = /(?:#L|:)(\d+)(?::\d+)?(?:-L?\d+)?$/iu.exec(raw);
   if (location) { line = Number(location[1]); raw = raw.slice(0, location.index); }
   if (line !== undefined && (!Number.isSafeInteger(line) || line < 1)) return null;
+  if (/^[a-z][a-z\d+.-]*:/iu.test(raw) && !/^[a-z]:[\\/]/iu.test(raw)) return null;
   raw = raw.replace(/\\/gu, "/").replace(/^(\.\/)+/u, "");
   if (!raw || raw === "." || raw.split("/").includes("..") || /[?#]/u.test(raw)) return null;
   return { path: raw, line };

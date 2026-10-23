@@ -163,6 +163,13 @@ it("rejects executable URL schemes and preserves absolute local paths for native
   expect(parseProjectFileLink("vscode://open-file")).toBeNull();
 });
 
+it("keeps web links with line suffixes out of workspace file parsing", () => {
+  expect(parseProjectFileLink("https://example.com/report.md:12")).toBeNull();
+  expect(parseProjectFileLink("mailto:user@example.com:12")).toBeNull();
+  expect(parseProjectFileLink("src/report.md:12")).toEqual({ path: "src/report.md", line: 12 });
+  expect(parseProjectFileLink("C:/project/report.md:12")).toEqual({ path: "C:/project/report.md", line: 12 });
+});
+
 function render(ui: ReactElement, options?: RenderOptions) {
  localStorage.setItem("prayu.locale.v1", "zh-CN");
  const Wrapper=options?.wrapper;
