@@ -137,12 +137,13 @@ func (s *SQLiteStore) ListThreadsByCreationPage(ctx context.Context, filter doma
 		query += ` AND pinned = ?`
 		args = append(args, *filter.Pinned)
 	}
+	createdKey := creationTimestampKeySQL("threads.created_at")
 	if !beforeCreatedAt.IsZero() {
-		query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
-		anchor := ts(beforeCreatedAt)
+		query += ` AND (` + createdKey + ` < ? OR (` + createdKey + ` = ? AND id < ?))`
+		anchor := creationTimestampKey(beforeCreatedAt)
 		args = append(args, anchor, anchor, beforeID)
 	}
-	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	query += ` ORDER BY ` + createdKey + ` DESC, id DESC LIMIT ?`
 	args = append(args, filter.Limit)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
