@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
+import { FileEditDraftProvider, useFileEditLeaveEntry } from "./file-edit-drafts";
 import { WorkspaceExplorer } from "./workspace-explorer";
 
 describe("WorkspaceExplorer", () => {
@@ -91,7 +93,137 @@ describe("WorkspaceExplorer", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/out of loaded range|超出当前显示范围/);
   });
+
+  it.each([
+    { name: "without a parent callback", mirrored: false, initialPath: ".", initialLine: undefined },
+    { name: "when the parent mirrors a new path", mirrored: true, initialPath: ".", initialLine: undefined },
+    { name: "when the parent clears the same file's citation line", mirrored: true, initialPath: "README.md", initialLine: 1 },
+  ])("opens a search result at its matching line $name", async ({ mirrored, initialPath, initialLine }) => {
+    const client = searchableClient();
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(<QueryClientProvider client={queryClient}>
+      {mirrored ? <MirroredExplorer client={client} initialPath={initialPath} initialLine={initialLine} /> :
+        <WorkspaceExplorer client={client} workspaceID="workspace-1" />}
+    </QueryClientProvider>);
+
+    await searchFor(user, "automated");
+    await user.click(await screen.findByRole("button", { name: /README.md.*line 2/ }));
+
+    expect(await screen.findByText("Positioned at line 2")).toBeInTheDocument();
+    expect(view.container.querySelector('[data-line="2"]')).toHaveClass("is-highlighted");
+    expect(client.workspaceExplore).toHaveBeenLastCalledWith("workspace-1", "README.md", expect.any(AbortSignal));
+  });
+
+  it("clears a previous hit for filename results and ordinary directory navigation", async () => {
+    const client = searchableClient();
+    const user = userEvent.setup();
+    const view = renderExplorer(client);
+    await searchFor(user, "automated");
+    await user.click(await screen.findByRole("button", { name: /README.md.*line 2/ }));
+    expect(await screen.findByText("Positioned at line 2")).toBeInTheDocument();
+
+    client.workspaceSearch.mockResolvedValueOnce(searchSnapshot(0));
+    await searchFor(user, "readme");
+    await user.click(await screen.findByRole("button", { name: /README.md.*filename/ }));
+    expect(view.container.querySelector(".is-highlighted")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Positioned at line/)).not.toBeInTheDocument();
+
+    await searchFor(user, "automated");
+    await user.click(await screen.findByRole("button", { name: /README.md.*line 2/ }));
+    expect(await screen.findByText("Positioned at line 2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open parent directory" }));
+    await user.click(screen.getByRole("button", { name: "Close search results" }));
+    await user.click(await screen.findByRole("button", { name: /README.md/ }));
+    expect(view.container.querySelector(".is-highlighted")).not.toBeInTheDocument();
+  });
+
+  it("scrolls back to the matching line when the same result is selected again", async () => {
+    const client = searchableClient();
+    const user = userEvent.setup();
+    const view = renderExplorer(client);
+    await searchFor(user, "automated");
+    await user.click(await screen.findByRole("button", { name: /README.md.*line 2/ }));
+    expect(await screen.findByText("Positioned at line 2")).toBeInTheDocument();
+    const line = view.container.querySelector('[data-line="2"]')!;
+    const scroll = vi.fn();
+    Object.defineProperty(line, "scrollIntoView", { value: scroll });
+    await user.click(screen.getByRole("button", { name: /README.md.*line 2/ }));
+    expect(scroll).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+  });
+
+  it("honors a later external location and resets the hit when the workspace or run changes", async () => {
+    const client = searchableClient();
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const explorer = (workspaceID: string, runID: string, initialLine?: number) =>
+      <QueryClientProvider client={queryClient}><WorkspaceExplorer client={client}
+        workspaceID={workspaceID} runID={runID} initialPath="README.md" initialLine={initialLine} /></QueryClientProvider>;
+    const view = render(explorer("workspace-1", "run-1"));
+    await searchFor(user, "automated");
+    await user.click(await screen.findByRole("button", { name: /README.md.*line 2/ }));
+    expect(await screen.findByText("Positioned at line 2")).toBeInTheDocument();
+    view.rerender(explorer("workspace-1", "run-1", 1));
+    expect(await screen.findByText("Positioned at line 1")).toBeInTheDocument();
+    view.rerender(explorer("workspace-2", "run-2"));
+    await waitFor(() => expect(client.workspaceExplore).toHaveBeenLastCalledWith("workspace-2", "README.md", expect.any(AbortSignal)));
+    expect(view.container.querySelector(".is-highlighted")).not.toBeInTheDocument();
+  });
+
+  it("changes neither file nor line until unsaved edits allow the search navigation", async () => {
+    const client = searchableClient();
+    client.workspaceSearch.mockResolvedValue(searchSnapshot(2, "notes.txt"));
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><FileEditDraftProvider>
+      <UnsavedFile />
+      <WorkspaceExplorer client={client} workspaceID="workspace-1" initialPath="README.md" initialLine={1} />
+    </FileEditDraftProvider></QueryClientProvider>);
+    await searchFor(user, "automated");
+    await user.click(await screen.findByRole("button", { name: /notes.txt.*line 2/ }));
+    await user.click(screen.getByRole("button", { name: "Continue editing" }));
+    expect(screen.getByText("Positioned at line 1")).toBeInTheDocument();
+    expect(client.workspaceExplore).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: /notes.txt.*line 2/ }));
+    await user.click(screen.getByRole("button", { name: "Keep draft" }));
+    expect(await screen.findByText("Positioned at line 2")).toBeInTheDocument();
+    expect(client.workspaceExplore).toHaveBeenLastCalledWith("workspace-1", "notes.txt", expect.any(AbortSignal));
+  });
 });
+
+function MirroredExplorer({ client, initialPath, initialLine }: {
+  client: APIClient; initialPath: string; initialLine?: number;
+}) {
+  const [location, setLocation] = useState({ path: initialPath, line: initialLine });
+  return <WorkspaceExplorer client={client} workspaceID="workspace-1" initialPath={location.path}
+    initialLine={location.line} onPathChange={(path) => setLocation({ path, line: undefined })} />;
+}
+
+function UnsavedFile() {
+  useFileEditLeaveEntry({ path: "README.md", dirty: true, busy: false, canSave: false,
+    save: async () => {}, keep: () => {}, discard: () => {} });
+  return null;
+}
+
+function searchableClient() {
+  return Object.assign({} as APIClient, {
+    workspaceExplore: vi.fn(async (_workspaceID: string, path = ".") => path === "." ? directorySnapshot() :
+      { ...fileSnapshot(), path }),
+    workspaceSearch: vi.fn().mockResolvedValue(searchSnapshot()),
+  });
+}
+
+function searchSnapshot(line = 2, path = "README.md") {
+  return { results: [{ path, line, match_kind: line ? "content" : "filename", snippet: "",
+    content_truncated: false, provenance: fileSnapshot().provenance }], truncated: false };
+}
+
+async function searchFor(user: ReturnType<typeof userEvent.setup>, query: string) {
+  const input = await screen.findByLabelText("Search Workspace evidence");
+  await user.clear(input);
+  await user.type(input, query);
+  await user.click(screen.getByRole("button", { name: "Search Workspace" }));
+}
 
 function directorySnapshot() {
   return {
