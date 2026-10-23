@@ -1381,9 +1381,10 @@ describe("V2Conversation", () => {
     );
 
     resolveClose();
-    await waitFor(() => {
-      expect(onSession).not.toHaveBeenCalledWith("");
-    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+    expect(onSession).not.toHaveBeenCalledWith("");
+    expect(screen.getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-new");
   });
 
   it("keeps terminal session bindings across conversation-page unmounts", async () => {
