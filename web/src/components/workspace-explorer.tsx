@@ -86,7 +86,11 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     event.preventDefault();
     const normalized = searchInput.trim();
     if (normalized && normalized === searchInput && normalized.length <= 128) {
-      setSearchQuery(normalized);
+      if (normalized === searchQuery && search.isError) {
+        void search.refetch();
+      } else {
+        setSearchQuery(normalized);
+      }
     }
   };
 
