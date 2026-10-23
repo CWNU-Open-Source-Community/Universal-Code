@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -9,8 +10,61 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/session"
 )
+
+func TestSavedPublicCommentaryRetainsFullBodyAndVisibility(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "public-commentary.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{
+		Goal: "public commentary export", Profile: "review", Interactive: true, Budget: domain.Budget{MaxTurns: 8}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := domain.InitialThreadID(run.ID)
+	full := strings.Repeat("完整公开说明。", 1000) + " commentary needle"
+	for _, source := range []string{"model", "thread_branch"} {
+		message, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, "assistant", "placeholder"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var eventID string
+		if err := st.db.QueryRow(`SELECT event_id FROM run_events WHERE run_id=? AND type='session.message_created' AND subject_id=?`,
+			run.ID, strconv.FormatInt(message.ID, 10)).Scan(&eventID); err != nil {
+			t.Fatal(err)
+		}
+		payload, _ := json.Marshal(map[string]string{"text": full, "source_event_id": "original-reply"})
+		if _, err := st.db.Exec(`UPDATE run_events SET type=?,source=?,payload_json=? WHERE event_id=?`,
+			events.ModelPublicCommentaryEvent, source, string(payload), eventID); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.GetThreadSearchMessage(t.Context(), threadID, eventID)
+		if err != nil || got.Content != full || got.Role != "assistant" {
+			t.Fatalf("full public reply: %+v %v", got, err)
+		}
+		if _, err := st.GetThreadSearchMessage(t.Context(), threadID+"-other", eventID); err == nil {
+			t.Fatal("cross-thread commentary was readable")
+		}
+		payload, _ = json.Marshal(map[string]string{"text": "api_key=sk-CommentarySecret12345678901234567890"})
+		if _, err := st.db.Exec(`UPDATE run_events SET payload_json=? WHERE event_id=?`, string(payload), eventID); err != nil {
+			t.Fatal(err)
+		}
+		got, err = st.GetThreadSearchMessage(t.Context(), threadID, eventID)
+		if err != nil || strings.Contains(got.Content, "CommentarySecret") {
+			t.Fatalf("commentary redaction: %+v %v", got, err)
+		}
+		if _, err := st.db.Exec(`UPDATE run_events SET type='model.started' WHERE event_id=?`, eventID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.GetThreadSearchMessage(t.Context(), threadID, eventID); err == nil {
+			t.Fatal("internal event was readable as a public message")
+		}
+	}
+}
 
 func TestThreadSearchRedactsHistoricalCandidatesBeforeMatchingAndSurvivesRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "saved-search.db")
