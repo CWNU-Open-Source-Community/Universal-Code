@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { APIRequestError, type APIClient } from "../../api/client";
@@ -100,6 +100,24 @@ it("keeps Escape working after confirming the folder with Enter", async () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
   expect(importer).not.toHaveBeenCalled();
+});
+
+it("keeps the path editor open while an IME candidate is still composing", async () => {
+  const importer = vi.fn();
+  const onSelect = show({ hasWorkspaceImport: true, importWorkspace: importer });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "接入项目" }));
+  await user.click(screen.getByRole("button", { name: "添加" }));
+  const path = screen.getByRole("textbox", { name: "项目文件夹路径" });
+  await user.type(path, "D:\\文档");
+  fireEvent.keyDown(path, { key: "Enter", isComposing: true });
+  fireEvent.keyDown(path, { key: "Enter", keyCode: 229 });
+  expect(path).toHaveValue("D:\\文档");
+  expect(screen.getByRole("textbox", { name: "项目名称" })).toHaveValue("");
+  fireEvent.keyDown(path, { key: "Enter" });
+  expect(screen.queryByRole("textbox", { name: "项目文件夹路径" })).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "项目名称" })).toHaveValue("文档");
+  expect(onSelect).not.toHaveBeenCalled();
 });
 
 it("selects a native directory without registering a project on cancel", async () => {
