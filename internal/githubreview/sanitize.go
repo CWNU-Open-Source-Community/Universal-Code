@@ -43,7 +43,7 @@ func SanitizeRemoteText(value string, limit int) TextEvidence {
 	}
 	// A redaction marker can grow the text. Re-apply the hard byte boundary.
 	clean, secondTruncation := truncateUTF8Bytes(clean, limit)
-	truncated = truncated || secondTruncation || originalBytes > len([]byte(clean))
+	truncated = truncated || secondTruncation
 	sum := Fingerprint("remote-text", clean)
 	return TextEvidence{Text: clean, SHA256: sum, OriginalBytes: originalBytes,
 		StoredBytes: len([]byte(clean)), Truncated: truncated,
