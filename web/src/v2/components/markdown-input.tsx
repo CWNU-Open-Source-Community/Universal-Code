@@ -9,6 +9,7 @@ import { Slice } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import "./markdown-input.css";
 import { sendsOnEnter, useChatPreferences } from "../chat-preferences";
+import type { HistoryDirection } from "../use-prompt-history";
 import type { APIClient } from "../../api/client";
 import type { WorkspaceExplorerView } from "../../api/types";
 import { completedFilePath, filePathMention, plainFilePathMention } from "./file-path-mention";
@@ -19,15 +20,17 @@ export function readComposerPlainText(): boolean {
   try { return localStorage.getItem(composerPlainTextKey) === "true"; } catch { return false; }
 }
 
-export interface MarkdownInputHandle { focus(): void }
+export interface MarkdownInputHandle { focus(): void; atHistoryBoundary(direction: HistoryDirection): boolean }
 
 // The durable draft remains Markdown. The editor document and undo history are
 // local to this draft scope; merely mounting or switching views never rewrites it.
 export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, label, placeholder,
-  disabled, inputRef, filePaths }: {
+  disabled, inputRef, filePaths, onHistoryNavigate, onHistoryCancel }: {
   value: string; onChange: (value: string) => void; onSubmit: () => void;
   plainText: boolean; scope: string; label: string; placeholder: string;
   disabled: boolean; inputRef: Ref<MarkdownInputHandle>;
+  onHistoryNavigate?: (direction: HistoryDirection) => boolean;
+  onHistoryCancel?: () => void;
   filePaths?: { client: APIClient; workspaceID: string;
     onAttach: (file: WorkspaceExplorerView, next: string, expected: string) => void };
 }) {
@@ -35,8 +38,8 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
   const mount = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const editor = useRef<Editor | null>(null);
-  const latest = useRef({ value, onChange, onSubmit, disabled, label, placeholder, send, filePaths });
-  latest.current = { value, onChange, onSubmit, disabled, label, placeholder, send, filePaths };
+  const latest = useRef({ value, onChange, onSubmit, disabled, label, placeholder, send, filePaths, onHistoryNavigate, onHistoryCancel });
+  latest.current = { value, onChange, onSubmit, disabled, label, placeholder, send, filePaths, onHistoryNavigate, onHistoryCancel };
   const representedValue = useRef(value);
   const restoreFocus = useRef(false);
   const [target, setTarget] = useState<FilePathTarget | null>(null);
@@ -46,6 +49,23 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
   const listID = useId();
   const [activeOption, setActiveOption] = useState<string>();
   const composing = useRef(false);
+  const atHistoryBoundary = (direction: HistoryDirection) => {
+    if (latest.current.disabled || composing.current) return false;
+    const input = textarea.current;
+    if (input) return document.activeElement === input && input.selectionStart === input.selectionEnd &&
+      input.selectionStart === (direction === "older" ? 0 : input.value.length);
+    const view = editor.current?.view;
+    if (!view?.hasFocus() || view.composing) return false;
+    const { selection, doc } = view.state;
+    return selection instanceof TextSelection && selection.empty && selection.from ===
+      (direction === "older" ? TextSelection.atStart(doc).from : TextSelection.atEnd(doc).from);
+  };
+  const historyKey = (event: globalThis.KeyboardEvent) => {
+    if (event.isComposing || event.keyCode === 229 || composing.current || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+    const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
+    if (!direction || !atHistoryBoundary(direction) || !latest.current.onHistoryNavigate?.(direction)) return false;
+    event.preventDefault(); return true;
+  };
   const replacing = useRef(false);
   const pendingCaret = useRef<{ value: string; at: number; directory: boolean } | null>(null);
   const closePaths = () => { targetRef.current = null; setTarget(null); setActiveOption(undefined); };
@@ -114,9 +134,10 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
 
   useImperativeHandle(inputRef, () => ({ focus: () => {
     if (textarea.current) textarea.current.focus(); else editor.current?.view.focus();
-  } }), []);
+  }, atHistoryBoundary }), []);
 
   useLayoutEffect(() => {
+    composing.current = false;
     if (plainText || !mount.current) return;
     representedValue.current = latest.current.value;
     let plainPaste = false;
@@ -132,7 +153,7 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
         attributes: { role: "textbox", "aria-multiline": "true", "aria-label": latest.current.label,
           "data-placeholder": latest.current.placeholder, class: "v2-markdown-input", dir: "auto" },
         handleDOMEvents: {
-          compositionstart() { composing.current = true; closePaths(); return false; },
+          compositionstart() { composing.current = true; latest.current.onHistoryCancel?.(); closePaths(); return false; },
           compositionend() { composing.current = false; return false; },
           blur() { dismissPaths(); return false; },
         },
@@ -141,6 +162,7 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
           if (event.isComposing || view.composing || event.keyCode === 229) return false;
           // Candidate navigation precedes both sending and prompt-history keys.
           if (suggestions.current?.keyDown(event)) return true;
+          if (historyKey(event)) return true;
           if (event.key !== "Enter" || event.shiftKey || event.altKey) return false;
           const { $from } = view.state.selection;
           const fence = $from.parent.type.name === "paragraph" && /^```([\w+-]*)$/.exec($from.parent.textContent);
@@ -202,6 +224,7 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
         closePaths();
         // An external change is a restored/cleared draft, not a user edit.
         // Reset history so Undo cannot resurrect a sent message or another task.
+        replacing.current = true;
         instance.commands.setContent(value, { contentType: "markdown", emitUpdate: false });
         const doc = instance.state.doc;
         instance.view.updateState(EditorState.create({
@@ -209,6 +232,7 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
           selection: TextSelection.atEnd(doc),
         }));
         representedValue.current = value;
+        replacing.current = false;
       }
     }
     if (textarea.current) {
@@ -238,10 +262,11 @@ export function MarkdownInput({ value, onChange, onSubmit, plainText, scope, lab
   return <div className="v2-file-path-input">{plainText ? <textarea aria-label={label} disabled={disabled} ref={textarea} rows={1}
     placeholder={placeholder} value={value} onChange={(event) => { onChange(event.target.value); readPlainPaths(event.currentTarget); }}
     onSelect={(event) => readPlainPaths(event.currentTarget)} onBlur={dismissPaths}
-    onCompositionStart={() => { composing.current = true; closePaths(); }}
+    onCompositionStart={() => { composing.current = true; latest.current.onHistoryCancel?.(); closePaths(); }}
     onCompositionEnd={(event) => { composing.current = false; readPlainPaths(event.currentTarget); }}
     onKeyDown={(event) => {
       if (!composing.current && suggestions.current?.keyDown(event.nativeEvent)) return;
+      if (historyKey(event.nativeEvent)) return;
       if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229 &&
         sendsOnEnter(send, value, event.ctrlKey || event.metaKey)) {
         event.preventDefault(); onSubmit();
