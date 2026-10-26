@@ -63,8 +63,8 @@ scrollable. The preamble's `---` and `+++` are the original old/new file markers
 
 ## Checks
 
-- 45 tests passed in `review-diff.test.tsx`, `task-overview.test.tsx` and
-  `task-git.test.tsx`. Coverage includes keyboard toggling, per-file state,
+- 50 tests passed in `review-diff.test.tsx`, `task-overview.test.tsx`,
+  `task-git.test.tsx` and `task-review-file-target.test.tsx`. Coverage includes keyboard toggling, per-file state,
   original line/quote contents, and reviewing a historical proposal with its
   original Run/Workspace/edit identities.
 - `npm run build` passed, including TypeScript checking. Vite retained its
