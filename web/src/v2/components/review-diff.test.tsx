@@ -16,6 +16,9 @@ it("toggles wrapping with the keyboard without changing source text, line refere
   const toggle = screen.getByRole("button", { name: "长行换行" });
   const diff = container.querySelector(".v2-delivery-diff")!;
   const text = container.querySelector(".v2-diff-line.add code")!;
+  expect(toggle.closest("header")).toContainElement(screen.getByRole("button", { name: "引用此片段" }));
+  expect(toggle).toHaveAttribute("title", "长行换行");
+  expect(toggle).toHaveTextContent("");
   expect(toggle).toHaveAttribute("aria-pressed", "false");
   expect(diff).not.toHaveClass("is-wrapped");
   await user.click(screen.getByRole("button", { name: "引用旧第 7 行" }));
@@ -93,6 +96,7 @@ it("keeps each file boundary and cites only the selected file's hunk", async () 
   expect(parsed.hunks[1]).toMatchObject({ oldPath: "a/src/other.ts", newPath: "b/src/other.ts" });
   expect(parsed.hunks[2]).toMatchObject({ oldPath: "a/src/other.ts", newPath: "b/src/other.ts" });
   render(<ReviewDiff patch={multi} source="Git preview exact-fingerprint" onFeedback={feedback} />);
+  expect(screen.getAllByRole("button", { name: "长行换行" })).toHaveLength(1);
   const selected = within(screen.getByRole("region", { name: "差异片段 2" }));
   await userEvent.setup().click(selected.getByRole("button", { name: "引用此片段" }));
   expect(feedback).toHaveBeenLastCalledWith(expect.stringContaining("旧文件路径：a/src/other.ts\n新文件路径：b/src/other.ts"));
