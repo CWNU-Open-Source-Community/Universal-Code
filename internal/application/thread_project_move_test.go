@@ -167,7 +167,7 @@ func TestThreadProjectMoveHistoryBranchAndUndoStayAtSource(t *testing.T) {
 	if err != nil || len(page.Records) == 0 {
 		t.Fatalf("history=%+v %v", page, err)
 	}
-	matches, err := st.SearchThreadMessages(t.Context(), "SOURCE_HISTORY_CANARY", false, time.Time{}, "", 20)
+	matches, err := st.SearchThreadMessages(t.Context(), "SOURCE_HISTORY_CANARY", "", false, time.Time{}, "", 20)
 	if err != nil || len(matches) != 1 || matches[0].ThreadID != moved.Thread.ID {
 		t.Fatalf("saved search=%+v %v", matches, err)
 	}

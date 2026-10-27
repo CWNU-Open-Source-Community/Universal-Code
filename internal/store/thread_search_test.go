@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -9,8 +10,77 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/session"
 )
+
+func TestSavedPublicCommentaryRetainsFullBodyAndVisibility(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "public-commentary.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{
+		Goal: "public commentary export", Profile: "review", Interactive: true, Budget: domain.Budget{MaxTurns: 8}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := domain.InitialThreadID(run.ID)
+	full := strings.Repeat("完整公开说明。", 1000) + " commentary needle"
+	for _, source := range []string{"model", "thread_branch"} {
+		message, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, "assistant", "placeholder"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var eventID string
+		if err := st.db.QueryRow(`SELECT event_id FROM run_events WHERE run_id=? AND type='session.message_created' AND subject_id=?`,
+			run.ID, strconv.FormatInt(message.ID, 10)).Scan(&eventID); err != nil {
+			t.Fatal(err)
+		}
+		payload, _ := json.Marshal(map[string]string{"text": full, "source_event_id": "original-reply"})
+		if _, err := st.db.Exec(`UPDATE run_events SET type=?,source=?,payload_json=? WHERE event_id=?`,
+			events.ModelPublicCommentaryEvent, source, string(payload), eventID); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.GetThreadSearchMessage(t.Context(), threadID, eventID)
+		if err != nil || got.Content != full || got.Role != "assistant" {
+			t.Fatalf("full public reply: %+v %v", got, err)
+		}
+		for _, scope := range []string{"", threadID} {
+			matches, err := st.SearchThreadMessages(t.Context(), "commentary needle", scope, false, time.Time{}, "", 10)
+			if err != nil || len(matches) != 1 || matches[0].ID != eventID || matches[0].Content != full || matches[0].Role != "assistant" {
+				t.Fatalf("full %s commentary search: %+v %v", source, matches, err)
+			}
+		}
+		if _, err := st.GetThreadSearchMessage(t.Context(), threadID+"-other", eventID); err == nil {
+			t.Fatal("cross-thread commentary was readable")
+		}
+		payload, _ = json.Marshal(map[string]string{"text": "api_key=sk-CommentarySecret12345678901234567890"})
+		if _, err := st.db.Exec(`UPDATE run_events SET payload_json=? WHERE event_id=?`, string(payload), eventID); err != nil {
+			t.Fatal(err)
+		}
+		got, err = st.GetThreadSearchMessage(t.Context(), threadID, eventID)
+		if err != nil || strings.Contains(got.Content, "CommentarySecret") {
+			t.Fatalf("commentary redaction: %+v %v", got, err)
+		}
+		for _, scope := range []string{"", threadID} {
+			matches, err := st.SearchThreadMessages(t.Context(), "CommentarySecret", scope, false, time.Time{}, "", 10)
+			if err != nil || len(matches) != 0 {
+				t.Fatalf("secret commentary search: %+v %v", matches, err)
+			}
+		}
+		if _, err := st.db.Exec(`UPDATE run_events SET type='model.started',payload_json='{"text":"internal commentary needle"}' WHERE event_id=?`, eventID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.GetThreadSearchMessage(t.Context(), threadID, eventID); err == nil {
+			t.Fatal("internal event was readable as a public message")
+		}
+		matches, err := st.SearchThreadMessages(t.Context(), "commentary needle", threadID, false, time.Time{}, "", 10)
+		if err != nil || len(matches) != 0 {
+			t.Fatalf("internal commentary was searchable: %+v %v", matches, err)
+		}
+	}
+}
 
 func TestThreadSearchRedactsHistoricalCandidatesBeforeMatchingAndSurvivesRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "saved-search.db")
@@ -49,11 +119,15 @@ func TestThreadSearchRedactsHistoricalCandidatesBeforeMatchingAndSurvivesRestart
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	items, err := st.SearchThreadMessages(t.Context(), "Needle", false, time.Time{}, "", 2)
+	items, err := st.SearchThreadMessages(t.Context(), "Needle", "", false, time.Time{}, "", 2)
 	if err != nil || len(items) != 1 || items[0].Content != "visible Needle answer" {
 		t.Fatalf("redacted candidate affected matches: %#v %v", items, err)
 	}
-	more, err := st.SearchThreadMessages(t.Context(), "Needle", false, items[0].CreatedAt, items[0].ID, 2)
+	scoped, err := st.SearchThreadMessages(t.Context(), "Needle", domain.InitialThreadID(run.ID), false, time.Time{}, "", 2)
+	if err != nil || len(scoped) != 1 || scoped[0].ID != items[0].ID {
+		t.Fatalf("current-chat search bypassed historical redaction: %#v %v", scoped, err)
+	}
+	more, err := st.SearchThreadMessages(t.Context(), "Needle", "", false, items[0].CreatedAt, items[0].ID, 2)
 	if err != nil || len(more) != 0 {
 		t.Fatalf("filtered result affected pagination: %#v %v", more, err)
 	}
@@ -95,7 +169,7 @@ func TestThreadSearchUserMockTextAndExactTimestampPagination(t *testing.T) {
 	var before time.Time
 	beforeID := ""
 	for _, expected := range []string{ids[2], ids[1], ids[0]} {
-		items, err := st.SearchThreadMessages(t.Context(), "checkout", false, before, beforeID, 1)
+		items, err := st.SearchThreadMessages(t.Context(), "checkout", "", false, before, beforeID, 1)
 		if err != nil || len(items) != 1 || items[0].ID != expected {
 			t.Fatalf("timestamp page: %#v %v; want %s", items, err, expected)
 		}
@@ -107,7 +181,7 @@ func TestThreadSearchUserMockTextAndExactTimestampPagination(t *testing.T) {
 		}
 		before, beforeID = items[0].CreatedAt, items[0].ID
 	}
-	items, err := st.SearchThreadMessages(t.Context(), "checkout", false, before, beforeID, 1)
+	items, err := st.SearchThreadMessages(t.Context(), "checkout", "", false, before, beforeID, 1)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("unexpected extra matches: %#v %v", items, err)
 	}
