@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { components } from "../../api/schema";
@@ -27,7 +27,7 @@ const data: UsageStatistics = {
 beforeEach(() => localStorage.setItem("prayu.locale.v1", "en-US"));
 afterEach(() => { localStorage.removeItem("prayu.locale.v1"); vi.restoreAllMocks(); });
 
-function setup(get = vi.fn().mockResolvedValue(data), integrated = false) {
+function setup(get = vi.fn().mockResolvedValue(data), integrated = false, threadID = "") {
   const onOpenThread = vi.fn();
   const client = { get } as unknown as APIClient;
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -36,9 +36,9 @@ function setup(get = vi.fn().mockResolvedValue(data), integrated = false) {
     return <button type="button" onClick={() => setLocale("zh-CN")}>Switch language</button>;
   }
   render(<LocaleProvider><QueryClientProvider client={queries}><LocaleSwitch />{integrated
-    ? <V2Settings client={client} section="usage" onOpenThread={onOpenThread} threadID="" workspaces={[]}
+    ? <V2Settings client={client} section="usage" onOpenThread={onOpenThread} threadID={threadID} workspaces={[]}
       onOpenInspector={vi.fn()} onSelectSection={vi.fn()} />
-    : <UsageSettings client={client} onOpenThread={onOpenThread} />}
+    : <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />}
   </QueryClientProvider></LocaleProvider>);
   return { get, onOpenThread };
 }
@@ -51,8 +51,59 @@ it("mounts Usage in Settings, counts cache inside input, and opens the selected 
   expect(screen.getByText(/2 \/ 4 calls reported cache details/)).toHaveTextContent("Calls without token usage: 1.");
   expect(screen.getByText("1 calls have no conversation and are included in totals.")).toBeInTheDocument();
   expect(get).toHaveBeenCalledWith("/usage", { period: "30d", utc_offset_minutes: -new Date().getTimezoneOffset() }, expect.any(AbortSignal));
+  expect(screen.getByRole("button", { name: "All chats" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Current chat" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "Open conversation: 修复设置布局" }));
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith("thread-a");
+});
+
+it("passes the current chat through Settings and keeps period and scope independent", async () => {
+  const { get } = setup(undefined, true, "thread-a");
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith("/usage", {
+    period: "30d", utc_offset_minutes: -new Date().getTimezoneOffset(), thread_id: "thread-a",
+  }, expect.any(AbortSignal)));
+  await userEvent.click(screen.getByRole("button", { name: "All time" }));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith("/usage", {
+    period: "all", utc_offset_minutes: -new Date().getTimezoneOffset(), thread_id: "thread-a",
+  }, expect.any(AbortSignal)));
+  await userEvent.click(screen.getByRole("button", { name: "All chats" }));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith("/usage", {
+    period: "all", utc_offset_minutes: -new Date().getTimezoneOffset(),
+  }, expect.any(AbortSignal)));
+  expect(screen.getByRole("button", { name: "All time" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("isolates in-flight chat responses and returns to global usage when no chat is open", async () => {
+  let resolveA!: (value: UsageStatistics) => void;
+  let resolveB!: (value: UsageStatistics) => void;
+  const pendingA = new Promise<UsageStatistics>((resolve) => { resolveA = resolve; });
+  const pendingB = new Promise<UsageStatistics>((resolve) => { resolveB = resolve; });
+  const get = vi.fn((_path: string, params: { thread_id?: string }, _signal?: AbortSignal) =>
+    params.thread_id === "thread-a" ? pendingA : params.thread_id === "thread-b" ? pendingB : Promise.resolve(data));
+  const client = { get } as unknown as APIClient;
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (threadID: string) => <LocaleProvider><QueryClientProvider client={queries}>
+    <UsageSettings client={client} threadID={threadID} />
+  </QueryClientProvider></LocaleProvider>;
+  const rendered = render(view("thread-a"));
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Current chat" }));
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("region", { name: "Usage overview" })).not.toBeInTheDocument();
+  rendered.rerender(view("thread-b"));
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+  expect(get.mock.calls[1][2]?.aborted).toBe(true);
+  await act(async () => resolveB({ ...data, totals: { ...totals, total_tokens: 2400 } }));
+  expect(within(await screen.findByRole("region", { name: "Usage overview" })).getByText("2,400")).toBeInTheDocument();
+  await act(async () => resolveA({ ...data, totals: { ...totals, total_tokens: 1200 } }));
+  expect(within(screen.getByRole("region", { name: "Usage overview" })).getByText("2,400")).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Usage overview" })).queryByText("1,200")).not.toBeInTheDocument();
+  rendered.rerender(view(""));
+  expect(screen.getByRole("button", { name: "Current chat" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "All chats" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(await screen.findByRole("region", { name: "Usage overview" })).getByText("1,500")).toBeInTheDocument();
 });
 
 it("fetches the selected period and translates the entire dashboard without changing user titles", async () => {

@@ -193,9 +193,9 @@ func serveModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	if block.Type == "journey_browser_hold" {
-		// Keep the actual run active after its completed browser tools while the
-		// operator captures the production card and stops the browser through UI.
+	if block.Type == "journey_browser_hold" || block.Type == "journey_stop_hold" {
+		// Keep the actual run active so journeys can exercise production stopping,
+		// including after completed browser tools have rendered their cards.
 		// Global teardown cancels the request; the provider timeout is also bounded.
 		<-r.Context().Done()
 		return
@@ -277,6 +277,9 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	}
 	if strings.Contains(history, "JOURNEY_BROWSER:") {
 		return nextBrowserJourneyResponse(request, results, tool, text)
+	}
+	if strings.Contains(history, "JOURNEY_STOP:") {
+		return contentBlock{Type: "journey_stop_hold"}, nil
 	}
 	if strings.Contains(history, "JOURNEY_CONTEXT:") {
 		if strings.Contains(history, "JOURNEY_PIN_QUESTION_SHOWN") {

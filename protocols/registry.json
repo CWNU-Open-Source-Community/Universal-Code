@@ -82,7 +82,8 @@
         "operator_action_item.v1",
         "run-event-poll.v1",
         "run-events.v1",
-        "run_activity.v1"
+        "run_activity.v1",
+        "thread_reply_updates.v1"
       ],
       "retired_identifiers": []
     },
@@ -1316,7 +1317,9 @@
         "prayu.run-navigation.v1",
         "universal-code.batch-workbench.v1",
         "universal-code.chat-preferences.v1",
+        "universal-code.sidebar-width.v1",
         "universal-code.specialist-continuation.v1",
+        "universal-code.turn-notifications.v1",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [
