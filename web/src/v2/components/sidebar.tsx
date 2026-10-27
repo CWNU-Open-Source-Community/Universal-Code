@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
@@ -32,12 +32,14 @@ function executionStatus(thread: ThreadView, readFailed: boolean, t: (chinese: s
 }
 
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
-  onNewConversation, onOpenModels, onSelectThread, onOpenSettings, onArchive,
+  onNewConversation, onOpenModels, onSelectThread, onVisibleChatOrder, onOpenSettings, onArchive,
   onOpenInspector, inspectorActive = false, onOpenConnections,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
+  searchCurrentThread = false, onSearchCurrentThreadChange,
   projectAction, onNewInProject, onEditProject, client, onMoveThread, movingThreadID = "", moveError = "",
   executionFilter = "", onExecutionFilterChange,
+  unreadThreadIDs, onReadStateChange,
   visible = true,
   hasMore = false, truncated = false, loading = false, loadingMore = false, loadFailed = false,
   loadMoreFailed = false, refreshing = false, onLoadMore, onRefresh, onRetry }: {
@@ -49,6 +51,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onNewConversation: () => void;
   onOpenModels: () => void;
   onSelectThread: (threadID: string) => void;
+  onVisibleChatOrder?: (threadIDs: readonly string[]) => void;
   onOpenSettings: () => void;
   onArchive: (thread: ThreadView) => void;
   onOpenInspector?: () => void;
@@ -61,6 +64,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   includeArchived?: boolean;
   onIncludeArchivedChange?: (value: boolean) => void;
   onSelectSearchResult?: (result: ThreadSearchResultView) => void;
+  searchCurrentThread?: boolean;
+  onSearchCurrentThreadChange?: (value: boolean) => void;
   projectAction?: ReactNode;
   onNewInProject?: (projectID: string) => void;
   onEditProject?: (workspace: WorkspaceView) => void;
@@ -70,6 +75,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   moveError?: string;
   executionFilter?: "" | "running" | "waiting_approval";
   onExecutionFilterChange?: (value: "" | "running" | "waiting_approval") => void;
+  unreadThreadIDs?: ReadonlySet<string>;
+  onReadStateChange?: (threadID: string, read: boolean) => void;
   visible?: boolean;
   hasMore?: boolean; truncated?: boolean; loading?: boolean; loadingMore?: boolean; loadFailed?: boolean;
   loadMoreFailed?: boolean; refreshing?: boolean;
@@ -120,13 +127,19 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
   }, [workspaces]);
 
+  // Collect the rows actually rendered below, including pin and collapse order.
+  // Publish after commit so abandoned renders cannot change keyboard navigation.
+  const visibleChatOrder: string[] = [];
+  useLayoutEffect(() => { onVisibleChatOrder?.(searchOpen ? [] : visibleChatOrder); });
   const renderThread = (thread: ThreadView) => {
+    visibleChatOrder.push(thread.id);
     const execution = executionStatus(thread, loadFailed || Boolean(thread.pinned && pinsQuery.isError), t);
     const canMove = Boolean(onMoveThread && !movingThreadID && thread.project_assignment_version &&
       thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(execution.state));
     const statusID = `v2-thread-state-${thread.id}`;
+    const unread = unreadThreadIDs?.has(thread.id) === true;
     return <div className={`v2-thread-row-shell${selectedThreadID === thread.id ? " is-selected" : ""}`} key={thread.id}>
-      <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={statusID}
+      <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={`${statusID}${unread ? ` unread-${thread.id}` : ""}`}
         className={`v2-thread-row${onMoveThread ? " has-project-control" : ""}`} onClick={() => onSelectThread(thread.id)} type="button"
         draggable={canMove} onDragStart={(event) => {
           if (!canMove) { event.preventDefault(); return; }
@@ -134,15 +147,17 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           event.dataTransfer.effectAllowed = "move"; setDraggingThreadID(thread.id); setProjectsExpanded(true);
         }} onDragEnd={() => { setDraggingThreadID(""); setDropProjectID(null); }}>
         <span className="v2-thread-title">{thread.title}</span>
+        {unread && <span className="v2-thread-unread" aria-hidden="true" />}
         <span aria-hidden="true" className={`v2-thread-state state-${execution.state}`} title={execution.description}>
           <i /><span className="v2-thread-state-description">{execution.label}</span></span>
       </button>
       <span className="v2-thread-state-description" id={statusID}>{execution.description}</span>
+      {unread && <span className="v2-thread-state-description" id={`unread-${thread.id}`}>{t("未读", "Unread")}</span>}
       {onMoveThread && <button aria-label={t(`移动 ${thread.title} 到项目`, `Move ${thread.title} to project`)}
         className="v2-thread-more v2-thread-move" disabled={!canMove} title={canMove ? t("移动到项目，也可拖动聊天", "Move to a project, or drag the chat")
           : t("当前任务暂不可移动，请等待执行或待处理消息结束", "Wait for execution and pending messages to finish before moving")}
         onClick={() => setProjectCandidate(thread)} type="button"><FolderInput aria-hidden="true" size={15} /></button>}
-      <ThreadActions thread={thread} client={client} onArchive={onArchive} />
+      <ThreadActions thread={thread} client={client} onArchive={onArchive} unread={unread} onReadStateChange={onReadStateChange} />
     </div>;
   };
 
@@ -172,11 +187,19 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
         onCompositionEnd={(event) => {
           onSearchChange?.(event.currentTarget.value);
           onSearchCompositionChange?.(false);
-        }} placeholder={t("搜索标题与消息正文…", "Search titles and message text…")} type="search" value={search} />
+        }} placeholder={searchCurrentThread ? t("搜索当前聊天的消息…", "Search messages in this chat…")
+          : t("搜索标题与消息正文…", "Search titles and message text…")} type="search" value={search} />
       {search && <button aria-label={t("清除对话搜索", "Clear conversation search")} onClick={() => onSearchChange?.("")} type="button">
         <X aria-hidden="true" size={14} /></button>}</div>}
-    {searchOpen && <><p className="v2-history-scope" id="v2-thread-search-scope">{t("搜索全部已保存的对话标题与用户、助手正文。英文字母忽略大小写，其他文字按原文匹配。",
-      "Search all saved conversation titles and user or assistant text. English letters are case-insensitive; other text matches exactly.")}</p>
+    {searchOpen && <>{onSearchCurrentThreadChange && <div className="v2-search-scope" role="group" aria-label={t("搜索范围", "Search scope")}>
+      <button type="button" aria-pressed={!searchCurrentThread} onClick={() => onSearchCurrentThreadChange(false)}>{t("所有聊天", "All chats")}</button>
+      <button type="button" aria-pressed={searchCurrentThread} disabled={!selectedThreadID}
+        onClick={() => onSearchCurrentThreadChange(true)}>{t("当前聊天", "Current chat")}</button>
+    </div>}<p className="v2-history-scope" id="v2-thread-search-scope">{searchCurrentThread
+      ? t("搜索当前聊天全部已保存的用户、助手正文，包括尚未加载的历史。英文字母忽略大小写，其他文字按原文匹配。",
+        "Search all saved user or assistant text in this chat, including history not loaded yet. English letters are case-insensitive; other text matches exactly.")
+      : t("搜索全部已保存的对话标题与用户、助手正文。英文字母忽略大小写，其他文字按原文匹配。",
+        "Search all saved conversation titles and user or assistant text. English letters are case-insensitive; other text matches exactly.")}</p>
       <label className="v2-search-archived"><input type="checkbox" checked={includeArchived}
         onChange={(event) => onIncludeArchivedChange?.(event.target.checked)} />{t("包含已归档对话", "Include archived conversations")}</label></>}
     {searchTooLong && <p className="v2-history-scope" id="v2-thread-search-error" role="alert">{t("搜索最多支持 256 个字符，请缩短搜索词。", "Searches support up to 256 characters. Shorten your search.")}</p>}
@@ -189,7 +212,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
             ? searching ? t("结果达到读取上限，请缩小搜索范围。", "The result limit was reached. Narrow your search.") : t("结果达到读取上限，请用搜索查找更早记录。", "The result limit was reached. Use search to find earlier records.")
             : hasMore ? searching ? t("还有更多匹配结果。", "More matches are available.") : t("还有更早记录。", "Earlier records are available.") : searching ? t("全部匹配结果已加载。", "All matches are loaded.") : t("当前列表已加载完毕。", "The current list is fully loaded.")}`}</p>
       {!searchPending && !loading && !loadFailed && !truncated && resultCount === 0 && (searching || workspaces.length === 0 && !projectAction) && <div className="v2-sidebar-empty"><MessagesSquare aria-hidden="true" size={16} />
-        {searching ? t("没有匹配的标题或消息", "No matching titles or messages") : t("暂无对话", "No conversations yet")}</div>}
+        {searching ? searchCurrentThread ? t("当前聊天没有匹配的消息", "No matching messages in this chat")
+          : t("没有匹配的标题或消息", "No matching titles or messages") : t("暂无对话", "No conversations yet")}</div>}
       {!searchPending && searching && <div className="v2-message-search-results">{searchResults.map((result) =>
         <button className="v2-message-search-result" key={result.id} type="button" aria-label={result.thread_title}
           aria-describedby={`search-result-${result.id}`}

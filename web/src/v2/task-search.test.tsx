@@ -32,9 +32,10 @@ function deferred<T>() {
   const promise = new Promise<T>((fulfill, fail) => { resolve = fulfill; reject = fail; });
   return { promise, resolve, reject };
 }
-function start(getThreads: (query: { q?: string; include_archived?: boolean }, cursor: string, signal: AbortSignal) => unknown) {
+type SearchQuery = { q?: string; include_archived?: boolean; thread_id?: string };
+function start(getThreads: (query: SearchQuery, cursor: string, signal: AbortSignal) => unknown) {
   window.history.replaceState({}, "", `#/threads/${current.id}`);
-  const getPage = vi.fn(async (path: string, query: { q?: string; include_archived?: boolean; pinned?: boolean }, cursor: string, signal: AbortSignal) => {
+  const getPage = vi.fn(async (path: string, query: SearchQuery & { pinned?: boolean }, cursor: string, signal: AbortSignal) => {
     if (path === "/workspaces") return page([workspace]);
     if (path === "/threads" && query.pinned) return page([]);
     const result = await getThreads(query, cursor, signal) as ReturnType<typeof page>;
@@ -68,12 +69,113 @@ afterEach(() => {
   clients.splice(0).forEach((client) => client.clear());
   useConnectionStore.getState().disconnect();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   window.history.replaceState({}, "", "/");
   window.localStorage.clear();
 });
 
 describe("V2 saved conversation search", () => {
+  it("limits search to the current chat and locates an older saved message without changing the draft", async () => {
+    const result: ThreadSearchResultView = { id: "current-old-message", message_id: "current-old-message", thread_id: current.id,
+      thread_title: current.title, workspace_id: workspace.id, thread_status: "active", role: "assistant",
+      snippet: "The earlier run saved the needle here.", created_at: "2026-10-01T04:00:00Z" };
+    const other = { ...current, id: "other-chat", title: "Other matching chat" };
+    const { client, listCalls } = start((query) => page(query.q ? query.thread_id ? [result] : [other] : [current]));
+    const input = await openSearch();
+    fireEvent.change(screen.getByRole("textbox", { name: "当前任务草稿" }), { target: { value: "未发送的草稿" } });
+    fireEvent.change(input, { target: { value: "needle" } });
+    await screen.findByRole("button", { name: other.title });
+    await userEvent.click(screen.getByRole("button", { name: "当前聊天" }));
+    await screen.findByRole("button", { name: current.title });
+    expect(screen.queryByRole("button", { name: other.title })).not.toBeInTheDocument();
+    expect(input).toHaveAccessibleDescription(/包括尚未加载的历史/);
+    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", {
+      q: "needle", include_archived: false, thread_id: current.id, limit: 50 }, ""]);
+    await userEvent.click(screen.getByRole("checkbox", { name: "包含已归档对话" }));
+    await waitFor(() => expect(listCalls().at(-1)?.[1]).toMatchObject({ thread_id: current.id, include_archived: true }));
+    await userEvent.click(await screen.findByRole("button", { name: current.title }));
+    expect(window.location.hash).toBe(`#/threads/${current.id}/messages/${result.message_id}`);
+    expect(screen.getByTestId("search-current-task")).toHaveAttribute("data-message-id", result.message_id);
+    expect(screen.getByRole("textbox", { name: "当前任务草稿" })).toHaveValue("未发送的草稿");
+    for (const method of [client.createThread, client.submitThreadTurn, client.executeRun, client.transitionThread]) expect(method).not.toHaveBeenCalled();
+  });
+
+  it("isolates late search and load-more responses when changing the scope or current chat", async () => {
+    const global = deferred<ReturnType<typeof page>>();
+    const older = deferred<ReturnType<typeof page>>();
+    const other = { ...current, id: "other-chat", title: "Other chat result" };
+    const late = { ...current, id: "late-page", title: "Late result from previous chat" };
+    const { listCalls } = start((query, cursor) => !query.q ? page([current, other]) : !query.thread_id ? global.promise
+      : query.thread_id === current.id ? cursor ? older.promise : page([current], "older-current") : page([other]));
+    const input = await openSearch();
+    fireEvent.change(input, { target: { value: "needle" } });
+    await waitFor(() => expect(listCalls()).toHaveLength(2));
+    await userEvent.click(screen.getByRole("button", { name: "当前聊天" }));
+    await screen.findByRole("button", { name: current.title });
+    expect(listCalls()[1][3].aborted).toBe(true);
+    await act(async () => { global.resolve(page([other])); });
+    expect(screen.queryByRole("button", { name: other.title })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "加载更多匹配记录" }));
+    await screen.findByRole("button", { name: "正在加载更多匹配记录…" });
+    act(() => { window.location.hash = `#/threads/${other.id}`; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    await screen.findByRole("button", { name: other.title });
+    expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", {
+      q: "needle", include_archived: false, thread_id: other.id, limit: 50 }, ""]);
+    expect(listCalls().find((call) => call[2] === "older-current")?.[3].aborted).toBe(true);
+    await act(async () => { older.resolve(page([late])); });
+    expect(screen.queryByRole("button", { name: late.title })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: current.title })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "加载更多匹配记录" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "所有聊天" }));
+    await waitFor(() => expect(listCalls().at(-1)?.[1]).not.toHaveProperty("thread_id"));
+    expect(listCalls().at(-1)?.[2]).toBe("");
+  });
+
+  it("opens current-chat search with Ctrl or Cmd F, retains global search, and leaves native find available without a chat", async () => {
+    const { listCalls } = start(() => page([current]));
+    await screen.findByRole("button", { name: current.title });
+    fireEvent.keyDown(window, { key: "f", code: "KeyF", ctrlKey: true });
+    const input = await screen.findByRole("searchbox", { name: "搜索对话" });
+    expect(screen.getByRole("button", { name: "当前聊天" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.change(input, { target: { value: "needle" } });
+    await waitFor(() => expect(listCalls().at(-1)?.[1]).toHaveProperty("thread_id", current.id));
+    fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true });
+    await waitFor(() => expect(listCalls().at(-1)?.[1]).not.toHaveProperty("thread_id"));
+    expect(screen.getByRole("button", { name: "所有聊天" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "f", code: "KeyF", metaKey: true });
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(screen.getByRole("button", { name: "当前聊天" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "新对话" }));
+    const nativeFind = new KeyboardEvent("keydown", { key: "f", code: "KeyF", ctrlKey: true, cancelable: true });
+    fireEvent(window, nativeFind);
+    expect(nativeFind.defaultPrevented).toBe(false);
+    expect(screen.getByRole("button", { name: "当前聊天" })).toBeDisabled();
+  });
+
+  it("focuses the saved query after reopening an inert narrow sidebar", async () => {
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: query === "(max-width: 720px)", media: query,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    start(() => page([current]));
+    await screen.findByTestId("search-current-task");
+    fireEvent.keyDown(window, { key: "f", code: "KeyF", ctrlKey: true });
+    const input = await screen.findByRole("searchbox", { name: "搜索对话" });
+    fireEvent.change(input, { target: { value: "needle" } });
+    await userEvent.click(screen.getByRole("button", { name: "关闭侧栏" }));
+    expect(input.closest(".v2-sidebar-slot")).toHaveAttribute("inert");
+    const focus = vi.spyOn(input, "focus").mockImplementation(() => {
+      expect(input.closest(".v2-sidebar-slot")).not.toHaveAttribute("inert");
+      HTMLElement.prototype.focus.call(input);
+    });
+    fireEvent.keyDown(window, { key: "f", code: "KeyF", ctrlKey: true });
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(focus).toHaveBeenCalled();
+    expect(input).toHaveValue("needle");
+    expect(screen.getByRole("button", { name: "当前聊天" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("shows saved message snippets and time, restarts archive pagination, and opens the exact archived message without a write", async () => {
     const result: ThreadSearchResultView = { id: "older-message", message_id: "older-message", thread_id: "archived-thread",
       thread_title: "Archived conversation", workspace_id: workspace.id, thread_status: "archived", role: "assistant",
@@ -313,8 +415,8 @@ describe("V2 saved conversation search", () => {
   it("invalidates every active title query through the existing list prefix while preserving archive caches", async () => {
     const { queryClient } = start(() => page([current]));
     await screen.findByRole("button", { name: current.title });
-    const activeAlpha = ["v2", "threads", "active", "messages", { q: "alpha", include_archived: false }];
-    const activeBeta = ["v2", "threads", "active", "messages", { q: "beta", include_archived: false }];
+    const activeAlpha = ["v2", "threads", "active", "messages", { q: "alpha", include_archived: false, thread_id: "" }];
+    const activeBeta = ["v2", "threads", "active", "messages", { q: "beta", include_archived: false, thread_id: current.id }];
     const archived = v2QueryKeys.threads("archived");
     queryClient.setQueryData(activeAlpha, { pages: [page([current])], pageParams: [""] });
     queryClient.setQueryData(activeBeta, { pages: [page([current])], pageParams: [""] });

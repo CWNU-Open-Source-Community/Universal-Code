@@ -38,6 +38,34 @@ class ClassifyPathsTests(unittest.TestCase):
         )
         self.assertEqual(selected, {"backend", "store", "journeys"})
 
+    def test_documentation_screenshots_do_not_expand_frontend_checks(self):
+        for directory in ("docs/acceptance", "docs/evidence", "docs/images"):
+            for suffix in (".png", ".jpg", ".jpeg", ".webp", ".PNG"):
+                screenshot = f"{directory}/browser-viewer/before{suffix}".encode()
+                with self.subTest(screenshot=screenshot):
+                    self.assertEqual(self.enabled([screenshot]), set())
+                    for paths in ([screenshot, b"web/src/v2/components/agent-browser.tsx"],
+                                  [b"web/src/v2/components/agent-browser.tsx", screenshot]):
+                        self.assertEqual(self.enabled(paths), {"web", "journeys"})
+
+    def test_screenshot_documentation_keeps_other_input_checks(self):
+        screenshot = b"docs/acceptance/browser-viewer/after.png"
+        for paths, affected in (
+                ([b"assets/branding/traverse-board-mark.png"], ()),
+                ([b"web/public/traverse-board-favicon-32.png"], ()),
+                ([b"internal/workspace/testdata/reference.png"], ("project/internal/workspace",)),
+                ([b"internal/domain/run.go"], ("project/internal/domain", "project/internal/store")),
+                ([b"docs/openapi.json"], ()),
+                ([b"go.mod"], ()),
+                ([b"scripts/ci/classify_changes.py"], ())):
+            with self.subTest(paths=paths):
+                self.assertEqual(self.enabled([screenshot, *paths], affected), self.enabled(paths, affected))
+        for path in (b"docs/acceptance/verify.py", b"docs/evidence/trace.json",
+                     b"docs/images/browser.svg", b"docs/images/browser.png.sh",
+                     b"docs/acceptance-runtime/before.png", b"unknown-assets/before.png"):
+            with self.subTest(path=path):
+                self.assertEqual(self.enabled([path, screenshot]), set(CHECKS))
+
     def test_product_journeys_follow_backend_consumers_without_native_matrix(self):
         checks = self.enabled([b"internal/llm/model_catalog.go"],
                               ["project/internal/llm", "project/internal/application"])
