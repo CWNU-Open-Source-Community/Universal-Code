@@ -27635,11 +27635,101 @@
         "x-cyberagent-read-only": true
       }
     },
+    "/api/v1/threads/reply-updates": {
+      "get": {
+        "operationId": "listThreadReplyUpdates",
+        "summary": "Observe new saved public replies across conversations",
+        "description": "Read-only incremental observation of saved public assistant message identities in active and archived conversations. Omitting cursor establishes the current baseline with no historical items. Subsequent requests scan at most limit source events in global save order; an empty items array can still have has_more=true. Continue using data.cursor until has_more=false, then retain that cursor for the next poll. Cursor scope includes the exact data_store_id. Persist returned message identities before the cursor; an error returns no partial cursor. Replaying a cursor preserves message identities. Separate saved messages with equal text remain separate updates. Excludes deleted conversations, copied branch history, users, tools, hidden/internal events and provisional streaming bytes. No message body or private event payload is returned.",
+        "tags": [
+          "Threads"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum source events scanned, including filtered events; not a requested number of visible replies",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from data.cursor, bound to the exact data store; omit only to establish a new baseline",
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ThreadReplyUpdatesView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
     "/api/v1/threads/search": {
       "get": {
         "operationId": "searchSavedThreadMessages",
         "summary": "Search saved conversation titles and public message bodies",
-        "description": "Searches complete saved user and assistant text, including compacted history, before pagination. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query and archive filter.",
+        "description": "Searches complete saved user and assistant text, including compacted history, public model progress and inherited branch replies, before pagination. With thread_id, searches only message bodies in that exact conversation; otherwise also searches conversation titles. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query, Thread and archive filter.",
         "tags": [
           "Threads"
         ],
@@ -27670,6 +27760,16 @@
             "in": "query",
             "description": "",
             "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "query",
+            "description": "Search saved public message bodies in this exact conversation",
             "schema": {
               "maxLength": 256,
               "minLength": 1,
@@ -34669,6 +34769,16 @@
               "minimum": -840,
               "type": "integer"
             }
+          },
+          {
+            "name": "thread_id",
+            "in": "query",
+            "description": "Optional exact Thread identity. Restricts all receipt, cost, model, day and activity statistics to every Run bound to this Thread. Omit for application-wide usage. Active and archived Threads are supported; missing or deleted Threads return NOT_FOUND.",
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -34710,6 +34820,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "414": {
             "$ref": "#/components/responses/RequestTooLarge"
@@ -68318,7 +68431,8 @@
           },
           "network": {
             "enum": [
-              "disabled"
+              "disabled",
+              "host"
             ],
             "type": "string"
           },
@@ -72442,6 +72556,91 @@
           "prepared",
           "items",
           "capability_grant"
+        ],
+        "type": "object"
+      },
+      "ThreadReplyUpdateView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "message_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "run_ordinal": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "thread_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "thread_status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_id",
+          "message_id",
+          "thread_status",
+          "run_ordinal",
+          "sequence",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ThreadReplyUpdatesView": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "data_store_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^ds1_[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadReplyUpdateView"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "version": {
+            "enum": [
+              "thread_reply_updates.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "data_store_id",
+          "cursor",
+          "has_more",
+          "items"
         ],
         "type": "object"
       },

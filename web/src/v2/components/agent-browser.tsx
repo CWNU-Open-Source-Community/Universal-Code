@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Maximize2, RefreshCw, X } from "lucide-react";
 import { useLocale, type LocaleText } from "../../lib/locale";
 import type { APIClient } from "../../api/client";
 import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser, type AgentBrowserStatus } from "../../api/agent-browser";
+import { V2ImageViewer } from "./image-viewer";
+import "./image-input.css";
 import "./agent-browser.css";
 
 export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
@@ -55,7 +57,9 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
   const queries = useQueryClient();
   const key = agentBrowserQueryKey(client.baseURL, runID);
   const [message, setMessage] = useState("");
-  const [image, setImage] = useState<{ binding: string; url: string }>();
+  const [image, setImage] = useState<{ binding: string; url: string; blob: Blob }>();
+  const [failedImageBinding, setFailedImageBinding] = useState("");
+  const [imageRetry, setImageRetry] = useState(0);
   const status = useQuery({ queryKey: key, queryFn: ({ signal }) => readAgentBrowser(client, runID, signal), retry: false,
     refetchOnMount: "always", refetchInterval: (query) => running && !query.state.error ? 3000 : false });
   const current = status.data;
@@ -75,14 +79,15 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     ? `${runID}\0${current.session_id}\0${current.screenshot.locator}\0${current.screenshot.sha256}` : "";
   useEffect(() => {
     setImage(undefined);
+    setFailedImageBinding("");
     if (!current?.screenshot || !current.session_id || !imageBinding) return;
     const abort = new AbortController(); let objectURL = "";
     void client.downloadVerifiedImage(screenshotPath(runID, current), current.screenshot, abort.signal).then((blob) => {
       if (abort.signal.aborted) return;
-      objectURL = URL.createObjectURL(blob); setImage({ binding: imageBinding, url: objectURL });
-    }).catch(() => { if (!abort.signal.aborted) setMessage(t("无法验证当前页面截图，请重新读取状态。", "The current screenshot could not be verified. Refresh the browser status.")); });
+      objectURL = URL.createObjectURL(blob); setImage({ binding: imageBinding, url: objectURL, blob });
+    }).catch(() => { if (!abort.signal.aborted) setFailedImageBinding(imageBinding); });
     return () => { abort.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
-  }, [client, imageBinding, runID]);
+  }, [client, imageBinding, runID, imageRetry]);
 
   if (status.isError && agentBrowserAPIAbsent(status.error)) return null;
   if (status.isPending) return null;
@@ -107,7 +112,13 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
       {current.title && <strong>{current.title}</strong>}
       {current.url && <a href={current.url} target="_blank" rel="noreferrer">{current.url}<ExternalLink size={14} /></a>}
     </div>}
-    {image?.binding === imageBinding && <img src={image.url} alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
+    {image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
+      name={`agent-browser-${current.screenshot!.sha256.slice(0, 12)}.png`}
+      alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
+    {failedImageBinding && failedImageBinding === imageBinding && <p role="alert">
+      {t("无法验证当前页面截图。", "The current screenshot could not be verified.")}{" "}
+      <button type="button" onClick={() => setImageRetry((attempt) => attempt + 1)}>{t("重新读取截图", "Reload screenshot")}</button>
+    </p>}
     {(current.last_action || current.updated_at || current.failure_code) && <details><summary>{t("最近状态", "Latest status")}</summary>
       {current.last_action && <p>{t("最近动作：", "Last action: ")}{actionText(current.last_action, t)}</p>}
       <p>{t("更新时间：", "Updated: ")}{new Date(current.updated_at).toLocaleTimeString(locale)}</p>
@@ -117,4 +128,26 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     {message && <p role="alert">{message}</p>}
     </div>
   </section>;
+}
+
+function BrowserScreenshot({ url, blob, name, alt }: { url: string; blob: Blob; name: string; alt: string }) {
+  const { t } = useLocale();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>();
+  const [failed, setFailed] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  return <>
+    <button ref={trigger} type="button" className="v2-agent-browser-screenshot" disabled={!dimensions || failed}
+      aria-label={t("查看浏览器截图原图", "View original browser screenshot")} onClick={() => setViewing(true)}>
+      <img src={url} alt={alt} onLoad={({ currentTarget }) => {
+        if (currentTarget.naturalWidth > 0 && currentTarget.naturalHeight > 0) {
+          setDimensions({ width: currentTarget.naturalWidth, height: currentTarget.naturalHeight });
+        }
+      }} onError={() => { setFailed(true); setViewing(false); }} />
+      <span><Maximize2 size={14} aria-hidden="true" />{t("查看原图", "View original")}</span>
+    </button>
+    {failed && <p role="alert">{t("无法显示当前页面截图，请让 Agent 重新截图。", "The current screenshot could not be displayed. Ask the agent to capture it again.")}</p>}
+    {viewing && dimensions && <V2ImageViewer image={{ name, mime_type: "image/png", ...dimensions }}
+      url={url} blob={blob} onClose={() => setViewing(false)} returnFocusRef={trigger} />}
+  </>;
 }

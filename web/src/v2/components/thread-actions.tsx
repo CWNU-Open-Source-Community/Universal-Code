@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
+import { Archive, Mail, MailOpen, MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ThreadView } from "../../api/types";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
@@ -9,8 +9,10 @@ import { useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
 import "./chat-sidebar.css";
 
-export function ThreadActions({ thread, client, onArchive }: {
+export function ThreadActions({ thread, client, onArchive, unread = false, onReadStateChange }: {
   thread: ThreadView; client?: APIClient; onArchive: (thread: ThreadView) => void;
+  unread?: boolean;
+  onReadStateChange?: (threadID: string, read: boolean) => void;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -77,6 +79,9 @@ export function ThreadActions({ thread, client, onArchive }: {
           {thread.pinned ? t("取消置顶", "Unpin") : t("置顶聊天", "Pin chat")}</button>
         <button role="menuitem" type="button" onClick={() => { close(); setRenaming(true); }}><Pencil aria-hidden="true" size={15} />{t("重命名", "Rename")}</button>
       </>}
+      {onReadStateChange && <button role="menuitem" type="button" onClick={() => { close(); onReadStateChange(thread.id, unread); }}>
+        {unread ? <MailOpen aria-hidden="true" size={15} /> : <Mail aria-hidden="true" size={15} />}
+        {unread ? t("标为已读", "Mark as read") : t("标为未读", "Mark as unread")}</button>}
       <button role="menuitem" type="button" aria-label={t(`归档 ${thread.title}`, `Archive ${thread.title}`)} onClick={() => { close(); onArchive(thread); }}>
         <Archive aria-hidden="true" size={15} />{t("归档聊天", "Archive chat")}</button>
     </div>, document.body)}
