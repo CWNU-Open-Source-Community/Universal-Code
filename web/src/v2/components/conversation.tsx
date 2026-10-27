@@ -98,6 +98,8 @@ export function V2FileDrawer({
   initialPath = ".",
   initialLine,
   onPathChange,
+  onQuote,
+  onReturnToDraft,
   onClose: close,
   returnFocusRef,
   docked = false,
@@ -109,6 +111,8 @@ export function V2FileDrawer({
   initialPath?: string;
   initialLine?: number;
   onPathChange?: (path: string) => void;
+  onQuote?: (content: string) => ReviewCommentResult;
+  onReturnToDraft?: () => void;
   onClose: () => void;
   returnFocusRef: RefObject<HTMLElement | null>;
   docked?: boolean;
@@ -206,6 +210,8 @@ export function V2FileDrawer({
               initialPath={initialPath}
               initialLine={initialLine}
               onPathChange={onPathChange}
+              onQuote={onQuote}
+              onReturnToDraft={onReturnToDraft}
             />
           )}
         </div>
@@ -973,11 +979,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
   const companionDocked = view === "conversation" && !compactPaneOpen;
   const companion = <>
-    {activePane === "files" && <V2FileDrawer client={client} threadID={threadID}
+    {activePane === "files" && <V2FileDrawer key={threadID} client={client} threadID={threadID}
       workspaceID={detail.thread.workspace_id ?? ""}
       runID={fileDrawerState.runID || currentRun.id} initialPath={fileDrawerState.path}
       initialLine={fileDrawerState.line} docked={companionDocked}
       onPathChange={(path) => setFileDrawerState((current) => ({ ...current, path, line: undefined }))}
+      onQuote={onDraftChange ? (content) => addReviewComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`) : undefined}
+      onReturnToDraft={() => { setActivePane(null); appendDraftAndReveal(""); }}
       onClose={() => {
         setActivePane(null);
         if (fileReturnFocus.current?.isConnected) fileReturnFocus.current.focus();
