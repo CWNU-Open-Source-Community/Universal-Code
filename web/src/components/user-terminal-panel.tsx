@@ -230,7 +230,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
         if (cancelled) return;
         setSession(current);
         // An exited session can still have unread pages in its retained output.
-        if (current.state === "running" || cursorRef.current < current.output_next_cursor) {
+        if (current.state === "starting" || current.state === "running" || cursorRef.current < current.output_next_cursor) {
           timer = window.setTimeout(() => void poll(), terminalPollMilliseconds);
         }
       } catch (error) {
@@ -406,10 +406,10 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
         <span>{t("启动", "Start")}</span>
       </button>}
       {sessionID && <button disabled={busy} onClick={() => void stop()}
-        title={t("关闭终端", "Close terminal")} type="button">
+        title={t("结束此终端及其后台进程", "End this terminal and its background processes")} type="button">
         {busy ? <LoaderCircle aria-hidden="true" className="spin" size={14} /> :
           <Square aria-hidden="true" size={13} />}
-        <span>{t("关闭", "Close")}</span>
+        <span>{t("结束终端", "End terminal")}</span>
       </button>}
       {sessionID && session?.state === "running" && !agentBinding && <button
         disabled={busy || !agentInputEnabled} onClick={() => void grantAgentInput()}
@@ -431,8 +431,14 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
         <Quote aria-hidden="true" size={14} />
         <span>{t("引用选中日志", "Quote selection")}</span>
       </button>}
-      <span className={`user-terminal-state ${session?.state ?? "idle"}`}>
-        {session?.state ?? (enabled ? "idle" : "disabled")}
+      <span className={`user-terminal-state ${session?.state ?? "idle"}`}
+        title={t("这是终端进程的状态，不代表 Agent 或某条命令正在执行。", "This describes the shell process, not Agent activity or whether a command is executing.")}>
+        {!enabled ? t("未启用", "Unavailable") : !session ? t("未启动", "Not started")
+          : session.state === "running" ? t("终端已连接", "Terminal connected")
+            : session.state === "starting" ? t("正在启动", "Starting")
+              : session.state === "exited" ? t("进程已退出", "Process exited")
+                : session.state === "closed" ? t("终端已结束", "Terminal ended")
+                  : t("终端出错", "Terminal failed")}
       </span>
       {message && <span className="user-terminal-message" role="status">{message}</span>}
     </div>

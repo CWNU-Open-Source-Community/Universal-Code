@@ -227,7 +227,10 @@
   display: flex;
   gap: 8px;
   margin-left: auto;
+  flex-shrink: 0;
 }
+
+.v2-terminal-drawer-heading { min-width: 0; }
 
 .v2-terminal-action-btn {
   align-items: center;
@@ -241,6 +244,8 @@
   gap: 6px;
   height: 30px;
   padding: 0 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .v2-terminal-action-btn:hover,
@@ -2176,9 +2181,9 @@
   padding: 0;
   width: 390px;
 }
-.v2-inspector-drawer > header { align-items: center; border-bottom: 1px solid var(--v2-border); display: flex; height: 52px; justify-content: space-between; padding: 0 13px 0 17px; }
-.v2-inspector-drawer > header div { align-items: center; display: flex; gap: 8px; }
-.v2-inspector-drawer > header button { background: transparent; border: 0; border-radius: 8px; height: 30px; width: 30px; }
+.v2-inspector-drawer > header:not(.v2-terminal-drawer-header) { align-items: center; border-bottom: 1px solid var(--v2-border); display: flex; height: 52px; justify-content: space-between; padding: 0 13px 0 17px; }
+.v2-inspector-drawer > header:not(.v2-terminal-drawer-header) div { align-items: center; display: flex; gap: 8px; }
+.v2-inspector-drawer > header:not(.v2-terminal-drawer-header) button { background: transparent; border: 0; border-radius: 8px; height: 30px; width: 30px; }
 .v2-inspector-drawer > p { color: var(--v2-muted); padding: 20px; }
 .v2-inspector-facts { display: grid; gap: 16px; padding: 20px; }
 .v2-inspector-facts label { color: var(--v2-muted); display: grid; font-size: 11px; gap: 5px; text-transform: uppercase; }

@@ -443,6 +443,28 @@ describe("UserTerminalPanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent("failed");
   });
 
+  it("shows shell state separately and keeps a terminal attached when ending it fails", async () => {
+    terminalMocks.get.mockResolvedValue({ session_id: "terminal-end", run_id: "run-1", state: "running", output_base_cursor: 0 });
+    terminalMocks.close.mockRejectedValueOnce(new Error("Process busy"));
+    const onSession = vi.fn();
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-end" onSession={onSession} />);
+    expect(await screen.findByText("Terminal connected")).toHaveAttribute("title", expect.stringContaining("not Agent activity"));
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Process busy");
+    expect(onSession).not.toHaveBeenCalled();
+  });
+
+  it("does not clear a replacement session after an earlier end completes", async () => {
+    let complete!: () => void;
+    terminalMocks.close.mockReturnValueOnce(new Promise<undefined>((resolve) => { complete = () => resolve(undefined); }));
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-old" onSession={onSession} />);
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    view.rerender(<UserTerminalPanel runID="run-1" sessionID="terminal-new" onSession={onSession} />);
+    await act(async () => { complete(); });
+    expect(onSession).not.toHaveBeenCalled();
+  });
+
   it("requires a visible confirmation before granting bounded Agent input", async () => {
     terminalMocks.agentEnabled = true;
     terminalMocks.getAgent.mockRejectedValueOnce(new Error("no active binding"));
