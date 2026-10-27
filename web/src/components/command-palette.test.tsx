@@ -26,4 +26,21 @@ describe("CommandPalette", () => {
     expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
   });
+
+  it("does not run a command when Enter only commits an IME candidate", async () => {
+    const openFiles = vi.fn();
+    const user = userEvent.setup();
+    render(<CommandPalette commands={[
+      { id: "files", label: "Open Files", group: "Navigate", run: openFiles },
+    ]} />);
+    fireEvent.keyDown(window, { ctrlKey: true, key: "k" });
+    const input = screen.getByRole("searchbox", { name: "Find a command" });
+    await user.type(input, "files");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+    expect(openFiles).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(openFiles).toHaveBeenCalledTimes(1);
+  });
 });

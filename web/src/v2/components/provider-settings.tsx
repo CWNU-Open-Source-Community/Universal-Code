@@ -1189,10 +1189,9 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
           <div className="v2-provider-model-add is-wide"><label>{t("手动添加模型", "Add model manually")}<input autoComplete="off"
             onChange={(event) => setManualModel(event.target.value)} placeholder={t("输入完整模型名称", "Enter the full model name")} spellCheck={false} value={manualModel}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                if (manualModel.trim() && mergeModels(normalizeModels(manualModel))) setManualModel("");
-              }
+              if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
+              event.preventDefault();
+              if (manualModel.trim() && mergeModels(normalizeModels(manualModel))) setManualModel("");
             }} /></label><button disabled={!manualModel.trim() || busy}
             onClick={() => { if (mergeModels(normalizeModels(manualModel))) setManualModel(""); }} type="button">
             <Plus aria-hidden="true" size={14} />{t("添加模型", "Add model")}</button></div>
