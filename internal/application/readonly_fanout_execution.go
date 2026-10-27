@@ -911,16 +911,21 @@ func (s *ReadOnlyFanoutExecutionService) ListReadOnlyFanoutExecutions(ctx contex
 // under a fresh lease fence: unfinished shards are cancelled and the execution
 // is finalized, preserving completion when all shard results were saved.
 // Terminal executions return their stored state, keeping the endpoint idempotent.
+// The caller's Run is part of the request identity: an execution whose stored
+// binding names another Run is rejected before anything is recovered or written,
+// so a cross-Run cancellation cannot both mutate and report NotFound.
 func (s *ReadOnlyFanoutExecutionService) CancelReadOnlyFanoutExecution(ctx context.Context,
-	executionID, requestedBy, operationKey string,
+	runID, executionID, requestedBy, operationKey string,
 ) (domain.ReadOnlyFanoutExecution, error) {
 	if s == nil || s.store == nil {
 		return domain.ReadOnlyFanoutExecution{}, apperror.New(
 			apperror.CodeFailedPrecondition,
 			"read-only fan-out execution dependencies are required")
 	}
+	runID = strings.TrimSpace(runID)
 	executionID = strings.TrimSpace(executionID)
-	if !domain.ValidAgentID(executionID) || strings.TrimSpace(operationKey) == "" ||
+	if !domain.ValidAgentID(runID) || !domain.ValidAgentID(executionID) ||
+		strings.TrimSpace(operationKey) == "" ||
 		strings.TrimSpace(requestedBy) == "" {
 		return domain.ReadOnlyFanoutExecution{}, apperror.New(
 			apperror.CodeInvalidArgument,
@@ -930,12 +935,16 @@ func (s *ReadOnlyFanoutExecutionService) CancelReadOnlyFanoutExecution(ctx conte
 	if err != nil {
 		return domain.ReadOnlyFanoutExecution{}, apperror.Normalize(err)
 	}
-	if execution.Status.Terminal() {
-		return execution, nil
-	}
 	plan, err := s.store.GetReadOnlyFanoutPlan(ctx, execution.PlanID)
 	if err != nil {
 		return domain.ReadOnlyFanoutExecution{}, apperror.Normalize(err)
+	}
+	if execution.RunID != runID || plan.RunID != runID {
+		return domain.ReadOnlyFanoutExecution{}, apperror.New(apperror.CodeNotFound,
+			"read-only fan-out execution is not part of the run")
+	}
+	if execution.Status.Terminal() {
+		return execution, nil
 	}
 	run, _, linkedSession, workspace, err := s.loadExecutionBinding(ctx, plan)
 	if err != nil {
