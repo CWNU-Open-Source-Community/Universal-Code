@@ -6,7 +6,77 @@ import { LocaleProvider } from "../lib/locale";
 import { RepositoryDiffPanel } from "./repository-diff-panel";
 
 describe("RepositoryDiffPanel", () => {
+  it("pages without accumulating patches, retries failures, and resets when the workspace changes", async () => {
+    const user = userEvent.setup();
+    const first = { available: true, base_head: "head", returned_count: 1, total_patch_bytes: 10,
+      next_after: "a.txt", omitted_count: 1, redaction_count: 0,
+      items: [{ path: "a.txt", staging: "unmodified", worktree: "modified", content_state: "text", patch: "+first", added_lines: 1,
+        deleted_lines: 0, statistics_complete: true }] };
+    const second = { ...first, next_after: "", omitted_count: 0,
+      items: [{ ...first.items[0], path: "b.txt", patch: "+last" }] };
+    const repositoryDiff = vi.fn().mockResolvedValueOnce(first).mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(first).mockResolvedValueOnce(second).mockResolvedValue(first);
+    const client = { repositoryDiff } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const view = render(<QueryClientProvider client={queryClient}>
+      <RepositoryDiffPanel client={client} workspaceID="first-workspace" />
+    </QueryClientProvider>);
+    await screen.findByText("a.txt");
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByText(/offline/);
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
+    await screen.findByText("a.txt");
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByText("b.txt");
+    expect(screen.queryByText("a.txt")).not.toBeInTheDocument();
+    expect(repositoryDiff).toHaveBeenCalledWith("first-workspace", expect.any(AbortSignal), "a.txt");
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Refresh repository diff" }));
+    await screen.findByText("a.txt");
+    expect(repositoryDiff).toHaveBeenLastCalledWith("first-workspace", expect.any(AbortSignal), "");
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh repository diff" })).toHaveAttribute("title", "After working-tree changes, refresh from the first page");
+    view.rerender(<QueryClientProvider client={queryClient}>
+      <RepositoryDiffPanel client={client} workspaceID="second-workspace" />
+    </QueryClientProvider>);
+    await screen.findByText("a.txt");
+    expect(repositoryDiff).toHaveBeenLastCalledWith("second-workspace", expect.any(AbortSignal), "");
+  });
+
+  it("distinguishes full counts on a truncated preview from unavailable counts", async () => {
+    const client = { repositoryDiff: vi.fn().mockResolvedValue({ available: true, base_head: "head",
+      returned_count: 2, total_patch_bytes: 100, omitted_count: 0, redaction_count: 0,
+      items: [{ path: "big.txt", staging: "unmodified", worktree: "modified", content_state: "text", patch: "-old\n", added_lines: 20000,
+        deleted_lines: 20000, statistics_complete: true, truncated: true },
+      { path: "complex.txt", staging: "unmodified", worktree: "modified", content_state: "computation_limited", patch: "", added_lines: 0,
+        deleted_lines: 0, statistics_complete: false }] }) } as unknown as APIClient;
+    render(<QueryClientProvider client={new QueryClient()}>
+      <RepositoryDiffPanel client={client} workspaceID="stats" />
+    </QueryClientProvider>);
+    expect(await screen.findByText("20000 added / 20000 deleted")).toBeVisible();
+    expect(screen.getByTitle("Counts include all changes in this file")).toBeVisible();
+    expect(screen.getByText("Computation limited; line counts unavailable")).toBeVisible();
+    expect(screen.queryByText("0 added / 0 deleted")).not.toBeInTheDocument();
+  });
   afterEach(() => localStorage.removeItem("prayu.locale.v1"));
+
+  it.each([
+    { locale: "en-US", label: "Sensitive changes hidden" },
+    { locale: "zh-CN", label: "敏感变更已隐藏" },
+  ])("shows a hidden sensitive change without invented patch lines in $locale", async ({ locale, label }) => {
+    localStorage.setItem("prayu.locale.v1", locale);
+    const client = { repositoryDiff: vi.fn().mockResolvedValue({ available: true, base_head: "head",
+      returned_count: 1, total_patch_bytes: 0, redaction_count: 2, omitted_count: 0,
+      items: [{ path: "secret.txt", staging: "unmodified", worktree: "modified", content_state: "text",
+        patch: "", added_lines: 0, deleted_lines: 0, statistics_complete: false, redacted: true }] }) } as unknown as APIClient;
+    render(<LocaleProvider><QueryClientProvider client={new QueryClient()}>
+      <RepositoryDiffPanel client={client} workspaceID="hidden" />
+    </QueryClientProvider></LocaleProvider>);
+    const row = (await screen.findByText("secret.txt")).closest("article")!;
+    expect(within(row).getAllByText(label)).toHaveLength(1);
+    expect(row.querySelector("details, pre, .repository-diff-file-counts")).toBeNull();
+    expect(row).not.toHaveTextContent(/No text changes|无文本差异|@@/);
+  });
 
   it("renders only the bounded redacted patch projection", async () => {
     const repositoryDiff = vi.fn().mockResolvedValue({
@@ -146,7 +216,7 @@ describe("RepositoryDiffPanel", () => {
       available: true, base_head: "base-head", returned_count: 1, truncated: true,
       total_patch_bytes: 32, omitted_count: 0, redaction_count: 0,
       items: [{ path: "conflicted.ts", staging: "conflicted", worktree: "conflicted",
-        content_state: "text", added_lines: 4, deleted_lines: 2, truncated: true,
+        content_state: "text", added_lines: 4, deleted_lines: 2, truncated: true, statistics_complete: true,
         patch: "@@ diff truncated by repository_diff.v1 @@\n" }],
     });
     const client = { repositoryDiff } as unknown as APIClient;

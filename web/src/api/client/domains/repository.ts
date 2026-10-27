@@ -280,12 +280,15 @@ export class RepositoryClient {
   }
 
   async repositoryDiff(workspaceID: string,
-    signal?: AbortSignal): Promise<RepositoryDiffView> {
+    signal?: AbortSignal, after = ""): Promise<RepositoryDiffView> {
     if (!boundedIdentity(workspaceID) || workspaceID.trim() !== workspaceID) {
       throw new Error("A normalized Workspace identity is required");
     }
+    if (after && (!validWorkspaceRelativePath(after) || after === ".")) {
+      throw new Error("A canonical diff page path is required");
+    }
     return parseRepositoryDiff(await this.transport.get<unknown>(
-      `/workspaces/${encodeURIComponent(workspaceID)}/repository-diff`, {}, signal,
+      `/workspaces/${encodeURIComponent(workspaceID)}/repository-diff`, after ? { after } : {}, signal,
     ), workspaceID);
   }
 

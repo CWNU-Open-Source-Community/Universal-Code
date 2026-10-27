@@ -36825,6 +36825,16 @@
               "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
               "type": "string"
             }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Last path from next_after; pagination reads the live worktree. Refresh from the first page after edits.",
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -59274,7 +59284,8 @@
               "binary_or_unsupported",
               "size_limited",
               "linked",
-              "unavailable"
+              "unavailable",
+              "computation_limited"
             ],
             "type": "string"
           },
@@ -59284,12 +59295,12 @@
             "type": "integer"
           },
           "patch": {
-            "maxLength": 65536,
+            "maxLength": 262144,
             "type": "string"
           },
           "patch_bytes": {
             "format": "int32",
-            "maximum": 65536,
+            "maximum": 262144,
             "minimum": 0,
             "type": "integer"
           },
@@ -59313,6 +59324,9 @@
             ],
             "type": "string"
           },
+          "statistics_complete": {
+            "type": "boolean"
+          },
           "truncated": {
             "type": "boolean"
           },
@@ -59331,6 +59345,7 @@
           }
         },
         "required": [
+          "statistics_complete",
           "path",
           "staging",
           "worktree",
@@ -59383,6 +59398,10 @@
           "network_used": {
             "type": "boolean"
           },
+          "next_after": {
+            "maxLength": 512,
+            "type": "string"
+          },
           "omitted_count": {
             "format": "int32",
             "minimum": 0,
@@ -59425,7 +59444,7 @@
           },
           "total_patch_bytes": {
             "format": "int32",
-            "maximum": 524288,
+            "maximum": 2097152,
             "minimum": 0,
             "type": "integer"
           },
@@ -59439,6 +59458,7 @@
           }
         },
         "required": [
+          "next_after",
           "protocol_version",
           "workspace_id",
           "kind",

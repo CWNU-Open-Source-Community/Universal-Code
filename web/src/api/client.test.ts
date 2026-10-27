@@ -3734,10 +3734,10 @@ describe("APIClient", () => {
     const patch = "--- a/src/main.go\n+++ b/src/main.go\n@@ -1 +1 @@\n-old\n+new\n";
     const patchBytes = new TextEncoder().encode(patch).length;
     const diff = { protocol_version: "repository_diff.v1", workspace_id: "workspace-1",
-      kind: "git", available: true, base_head: "1234567890ab",
+      kind: "git", available: true, base_head: "1234567890ab", next_after: "",
       items: [{ path: "src/main.go", staging: "unmodified", worktree: "modified",
         content_state: "text", patch, patch_bytes: patchBytes, added_lines: 1,
-        deleted_lines: 1, redacted: false, truncated: false }],
+        deleted_lines: 1, redacted: false, truncated: false, statistics_complete: true }],
       returned_count: 1, omitted_count: 0, redaction_count: 0,
       total_patch_bytes: patchBytes, truncated: false, read_only: true,
       instruction_authorized: false, mutation_supported: false, authority_granted: false,

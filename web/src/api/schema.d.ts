@@ -11975,7 +11975,7 @@ export interface components {
             /** Format: int32 */
             added_lines: number;
             /** @enum {string} */
-            content_state: "text" | "binary_or_unsupported" | "size_limited" | "linked" | "unavailable";
+            content_state: "text" | "binary_or_unsupported" | "size_limited" | "linked" | "unavailable" | "computation_limited";
             /** Format: int32 */
             deleted_lines: number;
             patch: string;
@@ -11985,6 +11985,7 @@ export interface components {
             redacted: boolean;
             /** @enum {string} */
             staging: "unmodified" | "untracked" | "modified" | "added" | "deleted" | "renamed" | "copied" | "conflicted";
+            statistics_complete: boolean;
             truncated: boolean;
             /** @enum {string} */
             worktree: "unmodified" | "untracked" | "modified" | "added" | "deleted" | "renamed" | "copied" | "conflicted";
@@ -12000,6 +12001,7 @@ export interface components {
             kind: "none" | "git";
             mutation_supported: boolean;
             network_used: boolean;
+            next_after: string;
             /** Format: int32 */
             omitted_count: number;
             patch_content_included: boolean;
@@ -32020,7 +32022,10 @@ export interface operations {
     };
     getWorkspaceRepositoryDiff: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Last path from next_after; pagination reads the live worktree. Refresh from the first page after edits. */
+                after?: string;
+            };
             header?: never;
             path: {
                 /** @description Workspace identity */

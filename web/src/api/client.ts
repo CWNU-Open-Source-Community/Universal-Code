@@ -874,8 +874,8 @@ export class APIClient implements ClientFeatures {
   }
 
   repositoryDiff(workspaceID: string,
-    signal?: AbortSignal): Promise<RepositoryDiffView> {
-    return this.repositoryClient.repositoryDiff(workspaceID, signal);
+    signal?: AbortSignal, after = ""): Promise<RepositoryDiffView> {
+    return this.repositoryClient.repositoryDiff(workspaceID, signal, after);
   }
 
   repositoryHistory(workspaceID: string,
