@@ -119,5 +119,7 @@ describe("prompt command library", () => {
     expect(expandPromptCommand("Plain body.", "extra context")).toBe("Plain body.\n\nextra context");
     expect(expandPromptCommand("Plain body.", "")).toBe("Plain body.");
     expect(expandPromptCommand("Needs $ARGUMENTS here.", "")).toBe("Needs  here.");
+    // Operator input containing replacement patterns must survive verbatim.
+    expect(expandPromptCommand("Review $ARGUMENTS.", "a $& b $$ c")).toBe("Review a $& b $$ c.");
   });
 });

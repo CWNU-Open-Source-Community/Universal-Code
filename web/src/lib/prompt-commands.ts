@@ -173,7 +173,7 @@ function validateInput(store: PromptCommandStore, input: PromptCommandInput,
   excludeID?: string,
 ): void {
   if (!validName(input.name)) {
-    throw promptCommandError(reservedPromptCommandNames.has(input.name) ? "reserved_name" : "invalid_name");
+    throw promptCommandError("invalid_name");
   }
   if (reservedPromptCommandNames.has(input.name)) throw promptCommandError("reserved_name");
   if (store.commands.some((command) => command.name === input.name && command.id !== excludeID)) {
@@ -233,6 +233,6 @@ export function deletePromptCommand(storage: Storage | undefined, id: string): v
 // command name; a body without the placeholder receives the arguments as an
 // appended paragraph, so neither path silently drops operator input.
 export function expandPromptCommand(body: string, args: string): string {
-  if (body.includes("$ARGUMENTS")) return body.replaceAll("$ARGUMENTS", args);
+  if (body.includes("$ARGUMENTS")) return body.replaceAll("$ARGUMENTS", () => args);
   return args ? `${body}\n\n${args}` : body;
 }

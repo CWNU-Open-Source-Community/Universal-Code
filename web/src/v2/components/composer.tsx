@@ -9,7 +9,7 @@ import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-con
 import { V2PermissionControl } from "./permission-control";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
 import { V2PromptCommandMenu } from "./prompt-command-menu";
-import { expandPromptCommand } from "../../lib/prompt-commands";
+import { expandPromptCommand, readPromptCommands, sortedPromptCommands } from "../../lib/prompt-commands";
 import { V2FileContext, useV2FileReferences, withV2FileReference, type V2FileReference } from "./file-context";
 import { useV2ThreadSubmissions, V2SubmissionError, v2TurnOutcomeKnown, type V2TurnInput } from "../use-thread-turn";
 import { useV2PersistenceWarning, useV2RecoveryStore } from "../recovery-storage";
@@ -107,23 +107,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const attachmentPicker = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
-  // The "/" command menu opens while the whole draft is one slash token and
-  // closes as soon as the operator types beyond it. Selection only ever fills
-  // the draft; it cannot send or execute anything by itself.
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const slashStorage = useRef<Storage | undefined>(typeof window === "undefined" ? undefined : window.localStorage);
-  useEffect(() => { if (disabled) setSlashQuery(null); }, [disabled]);
-  // Pointer dismissal is owned here: a pointerdown outside this form closes
-  // the menu, while typing into the textarea (which also dispatches
-  // pointerdown) keeps it open.
-  useEffect(() => {
-    if (slashQuery === null) return;
-    const outside = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest("form")) setSlashQuery(null);
-    };
-    window.addEventListener("pointerdown", outside);
-    return () => window.removeEventListener("pointerdown", outside);
-  }, [slashQuery]);
   const importStatus = useMemo(() => ({ busy: false, error: "", textNotice: "" }), [workspaceID, threadID]);
   const [, refreshImport] = useState(0);
   const addFiles = async (input: File[]) => {
@@ -163,6 +147,16 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   };
   const currentContentRef = useRef(content);
   currentContentRef.current = content;
+  // The "/" command menu is derived purely from the draft: it stays open while
+  // the draft is one slash token (optionally followed by arguments) and closes
+  // as soon as the draft stops matching. Selection only ever fills the draft;
+  // it cannot send or execute anything by itself.
+  const [slash, setSlash] = useState<{ name: string; args: string } | null>(null);
+  useEffect(() => {
+    const match = /^\/([a-z][a-z0-9-]*)(?:\s([\s\S]*))?$/u.exec(content);
+    setSlash(match ? { name: match[1], args: match[2] ?? "" } : null);
+  }, [content]);
+  useEffect(() => { if (disabled) setSlash(null); }, [disabled]);
   // Keep the input mounted while the initial project loads, but scope local
   // submission bookkeeping so a late response cannot affect another draft.
   const pendingFiles = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
@@ -178,7 +172,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   } | null>(null);
   useEffect(() => setError(null), [scope]);
   useEffect(() => setMCPPicker(null), [scope]);
-  useEffect(() => setSlashQuery(null), [scope]);
   useEffect(() => { if (creatingLocalChat) { setMCPPicker(null); setReferencePickerOpen(false); } }, [creatingLocalChat]);
   useEffect(() => { if (disabled || fileReferenceUnavailableReason) setMCPPicker(null); }, [disabled, fileReferenceUnavailableReason]);
   useEffect(() => {
@@ -258,7 +251,23 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     // A descendant portal can contain its own form (settings or file search).
     if (event && event.target !== event.currentTarget) return;
     if (!ready) return;
-    if (slashQuery !== null) return;
+    if (slash !== null) {
+      // Enter inserts the exact or uniquely matching command instead of
+      // sending a bare slash token. Without a confident target the draft is
+      // sent as an ordinary operator message and the menu only hints that
+      // nothing matched; either way Enter always does something sensible.
+      const commands = sortedPromptCommands(readPromptCommands(slashStorage.current));
+      const exact = commands.find((command) => command.name === slash.name);
+      const candidates = commands.filter((command) => command.name.startsWith(slash.name));
+      const target = exact ?? (candidates.length === 1 ? candidates[0] : null);
+      if (target) {
+        setContent(expandPromptCommand(target.body, slash.args));
+        setSlash(null);
+        setError(null);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return;
+      }
+    }
     promptHistory.cancel();
     const submittedFiles = references.files;
     const submittedImages = images.images;
@@ -428,17 +437,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         ]} unavailableReason={fileReferenceUnavailableReason} open={referencePickerOpen}
         onOpenChange={setReferencePickerOpen} returnFocusRef={addTriggerRef}
         onChange={references.update} workspaceID={workspaceID} />}
-      {slashQuery !== null && !disabled && <V2PromptCommandMenu storage={slashStorage.current} query={slashQuery}
-        onDismiss={() => setSlashQuery(null)}
+      {slash !== null && !disabled && <V2PromptCommandMenu storage={slashStorage.current} slash={slash}
         onSelect={(expanded) => {
-          setSlashQuery(null);
+          setSlash(null);
           setContent(expanded);
           setError(null);
           requestAnimationFrame(() => inputRef.current?.focus());
         }} />}
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
-        onChange={(next) => { promptHistory.cancel(); setContent(next); setError(null);
-          setSlashQuery(/^\/([a-z][a-z0-9-]*)?$/u.test(next) ? next.slice(1) : null); }} onSubmit={() => void submit()}
+        onChange={(next) => { promptHistory.cancel(); setContent(next); setError(null); }} onSubmit={() => void submit()}
         onHistoryNavigate={promptHistory.navigate} onHistoryCancel={promptHistory.cancel}
         filePaths={workspaceID && client.hasEvidenceAttachment && !attachmentsDisabled && !fileReferenceUnavailableReason &&
           !managedDraft?.state.conflict && !managedDraft?.state.error ? { client, workspaceID, onAttach: (file, next, expected) => {

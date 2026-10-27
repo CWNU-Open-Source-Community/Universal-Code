@@ -251,7 +251,7 @@ function render(ui: ReactElement, options?: RenderOptions) {
   return renderComponent(ui, { wrapper: LocaleProvider, ...options });
 }
 
-it("offers the “/” command menu, blocks send while it is open and inserts the body on selection", async () => {
+it("offers the “/” command menu: Enter inserts the exact match, arguments reach $ARGUMENTS, unmatched sends stay blocked", async () => {
   localStorage.setItem("universal-code.composer-plain-text", "true");
   localStorage.setItem("universal-code.prompt-commands.v1", JSON.stringify({ version: 1, commands: [
     { id: "cmd-1", name: "release-check", title: "Release checklist", body: "Check $ARGUMENTS against the notes.",
@@ -262,22 +262,27 @@ it("offers the “/” command menu, blocks send while it is open and inserts th
   const input = screen.getByRole("textbox", { name: "开始新对话" });
   const user = userEvent.setup();
 
-  await user.type(input, "/rel");
+  await user.type(input, "/rel src/main.ts");
   const menu = screen.getByRole("menu", { name: "自定义指令" });
-  expect(menu).toBeInTheDocument();
   expect(screen.getByRole("menuitem", { name: /release-check/ })).toBeInTheDocument();
 
-  // A still-open menu must not let Enter send the bare slash token.
-  await user.type(input, "{enter}");
-  expect(onSubmit).not.toHaveBeenCalled();
-
+  // Click inserts with the typed arguments.
   await user.click(screen.getByRole("menuitem", { name: /release-check/ }));
   await waitFor(() => expect(menu).not.toBeInTheDocument());
-  expect(input).toHaveValue("Check  against the notes.");
+  expect(input).toHaveValue("Check src/main.ts against the notes.");
 
-  // Typing beyond a bare token closes the menu and lets the message send normally.
-  await user.type(input, "/nowhere ");
-  expect(screen.queryByRole("menu", { name: "自定义指令" })).not.toBeInTheDocument();
+  // Enter on an exact name match inserts instead of sending a bare token.
+  await user.clear(input);
+  await user.type(input, "/release-check");
   await user.type(input, "{enter}");
-  await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+  await waitFor(() => expect(input).toHaveValue("Check  against the notes."));
+  expect(onSubmit).not.toHaveBeenCalled();
+
+  // Without a confident match, Enter sends the draft as ordinary text and the
+  // menu only hints that nothing matched.
+  await user.clear(input);
+  await user.type(input, "/nowhere");
+  expect(screen.getByText("没有匹配的指令。")).toBeInTheDocument();
+  await user.type(input, "{enter}");
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("/nowhere"));
 });

@@ -10,18 +10,17 @@ import { createPromptCommand, deletePromptCommand, expandPromptCommand,
 // operator's own stored commands. Selection only ever inserts text into the
 // composer draft: the operator reviews and sends it themselves, so the menu
 // cannot bypass any policy, tool, or permission surface.
-export function V2PromptCommandMenu({ storage, query, onSelect, onDismiss }: {
+export function V2PromptCommandMenu({ storage, slash, onSelect }: {
   storage: Storage | undefined;
-  query: string;
+  slash: { name: string; args: string };
   onSelect: (expanded: string) => void;
-  onDismiss: () => void;
 }) {
   const { t } = useLocale();
   const [managing, setManaging] = useState(false);
   const [revision, setRevision] = useState(0);
   const id = useId();
   const commands = useMemo(() => sortedPromptCommands(readPromptCommands(storage)), [storage, revision]);
-  const matches = useMemo(() => commands.filter((command) => command.name.startsWith(query)), [commands, query]);
+  const matches = useMemo(() => commands.filter((command) => command.name.startsWith(slash.name)), [commands, slash.name]);
   // Type-ahead surface: focus stays in the composer textarea while the menu is
   // open (selection is pointer-driven), so keystrokes are never stolen. Outside
   // dismissal is owned by the composer form, not this menu.
@@ -33,11 +32,11 @@ export function V2PromptCommandMenu({ storage, query, onSelect, onDismiss }: {
   }
   return <div aria-label={t("自定义指令", "Custom commands")} className="v2-prompt-command-menu" id={id} role="menu">
     {matches.length === 0 && <p className="v2-prompt-command-empty" role="status">
-      {query ? t("没有匹配的指令。", "No matching commands.") : t("指令库还是空的。", "The command library is empty.")}
+      {slash.name ? t("没有匹配的指令。", "No matching commands.") : t("指令库还是空的。", "The command library is empty.")}
     </p>}
     {matches.map((command) => <button className="v2-prompt-command-item" data-command={command.name} key={command.id}
       onMouseDown={(event) => event.preventDefault()} role="menuitem" tabIndex={-1} type="button"
-      onClick={() => onSelect(expandPromptCommand(command.body, ""))}>
+      onClick={() => onSelect(expandPromptCommand(command.body, slash.args))}>
       <SquareSlash aria-hidden="true" size={14} />
       <span><strong>/{command.name}</strong>{command.title && <small>{command.title}</small>}</span>
     </button>)}
@@ -47,11 +46,6 @@ export function V2PromptCommandMenu({ storage, query, onSelect, onDismiss }: {
         onClick={() => setManaging(true)}>
         <Settings2 aria-hidden="true" size={14} />
         <span>{t("管理指令库…", "Manage commands…")}</span>
-      </button>
-      <button aria-label={t("关闭指令菜单", "Close the command menu")} className="v2-prompt-command-manage"
-        onMouseDown={(event) => event.preventDefault()} role="menuitem" tabIndex={-1} type="button"
-        onClick={onDismiss}>
-        {t("关闭", "Close")}
       </button>
     </div>
   </div>;
@@ -101,6 +95,7 @@ function V2PromptCommandManager({ storage, onClose }: {
     }
   };
   return <div className="v2-prompt-command-overlay" role="presentation"
+    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div aria-label={t("管理自定义指令", "Manage custom commands")} className="v2-prompt-command-manager" role="dialog" aria-modal="true">
       <header><strong>{t("管理自定义指令", "Manage custom commands")}</strong>
@@ -110,7 +105,7 @@ function V2PromptCommandManager({ storage, onClose }: {
       </p>
       <form className="v2-prompt-command-form" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <div className="v2-prompt-command-row">
-          <label>/ <input aria-label={t("指令名", "Command name")} maxLength={32} onChange={(event) =>
+          <label>/ <input aria-label={t("指令名", "Command name")} autoFocus maxLength={32} onChange={(event) =>
             setForm((current) => ({ ...current, name: event.target.value }))} placeholder="release-check"
             value={form.name} /></label>
           <label><span className="sr-only">{t("标题", "Title")}</span>

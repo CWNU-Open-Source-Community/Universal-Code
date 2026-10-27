@@ -30,8 +30,7 @@ describe("V2PromptCommandMenu", () => {
       body: "Check $ARGUMENTS against the notes." });
     createPromptCommand(localStorageStub, { name: "audit", title: "Audit", body: "Audit the module." });
     const onSelect = vi.fn();
-    const onDismiss = vi.fn();
-    renderMenu({ storage: localStorageStub, query: "rel", onSelect, onDismiss });
+    renderMenu({ storage: localStorageStub, slash: { name: "rel", args: "" }, onSelect });
 
     const menu = screen.getByRole("menu", { name: "自定义指令" });
     expect(menu).toBeInTheDocument();
@@ -40,12 +39,11 @@ describe("V2PromptCommandMenu", () => {
 
     await userEvent.setup().click(screen.getByRole("menuitem", { name: /release-check/ }));
     expect(onSelect).toHaveBeenCalledWith("Check  against the notes.");
-    expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it("reports an empty library and opens the manager from the menu", async () => {
     const onSelect = vi.fn();
-    renderMenu({ storage: localStorageStub, query: "", onSelect: onSelect, onDismiss: vi.fn() });
+    renderMenu({ storage: localStorageStub, slash: { name: "", args: "" }, onSelect: onSelect });
     expect(screen.getByText("指令库还是空的。")).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("menuitem", { name: "管理指令库…" }));
     expect(screen.getByRole("dialog", { name: "管理自定义指令" })).toBeInTheDocument();
@@ -54,7 +52,7 @@ describe("V2PromptCommandMenu", () => {
   it("creates, edits and deletes commands through the manager dialog", async () => {
     const user = userEvent.setup();
     const created = createPromptCommand(localStorageStub, { name: "audit", title: "Audit", body: "Audit the module." });
-    renderMenu({ storage: localStorageStub, query: "", onSelect: vi.fn(), onDismiss: vi.fn() });
+    renderMenu({ storage: localStorageStub, slash: { name: "", args: "" }, onSelect: vi.fn() });
     await user.click(screen.getByRole("menuitem", { name: "管理指令库…" }));
 
     await user.type(screen.getByRole("textbox", { name: "指令名" }), "release-check");
@@ -84,11 +82,12 @@ describe("V2PromptCommandMenu", () => {
     expect(created.id).toBeTypeOf("string");
   });
 
-  it("closes through its own close button without submitting anything", async () => {
-    const onDismiss = vi.fn();
-    createPromptCommand(localStorageStub, { name: "audit", title: "", body: "Body." });
-    renderMenu({ storage: localStorageStub, query: "", onSelect: vi.fn(), onDismiss });
-    await userEvent.setup().click(screen.getByRole("menuitem", { name: "关闭指令菜单" }));
-    expect(onDismiss).toHaveBeenCalled();
+  it("passes typed arguments through to the expansion", async () => {
+    const onSelect = vi.fn();
+    createPromptCommand(localStorageStub, { name: "release-check", title: "",
+      body: "Check $ARGUMENTS against the notes." });
+    renderMenu({ storage: localStorageStub, slash: { name: "release-check", args: "src/main.ts" }, onSelect });
+    await userEvent.setup().click(screen.getByRole("menuitem", { name: /release-check/ }));
+    expect(onSelect).toHaveBeenCalledWith("Check src/main.ts against the notes.");
   });
 });

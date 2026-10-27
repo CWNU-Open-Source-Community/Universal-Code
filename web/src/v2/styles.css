@@ -2830,7 +2830,7 @@
 .v2-prompt-command-item small, .v2-prompt-command-list small { color:var(--v2-muted); font-size:12px; overflow-wrap:anywhere; }
 .v2-prompt-command-menu-footer { display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid var(--v2-border); margin-top:4px; padding-top:4px; }
 .v2-prompt-command-empty { margin:0; padding:6px 8px; color:var(--v2-muted); font-size:12px; }
-.v2-prompt-command-overlay { position:fixed; inset:0; z-index:70; display:grid; place-items:center; background:rgba(0,0,0,.45); padding:16px; }
+.v2-prompt-command-overlay { position:fixed; inset:0; z-index:70; display:grid; place-items:center; background:rgb(15 20 26 / 26%); padding:16px; }
 .v2-prompt-command-manager { display:grid; gap:10px; width:min(560px, 100%); max-height:min(80vh, 640px); overflow:auto; padding:16px; border:1px solid var(--v2-border); border-radius:12px; background:var(--prayu-surface-solid); font-size:13px; }
 .v2-prompt-command-manager header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .v2-prompt-command-manager header button { border:0; background:transparent; color:var(--v2-muted); cursor:pointer; font-size:14px; }
@@ -2838,7 +2838,7 @@
 .v2-prompt-command-form { display:grid; gap:8px; }
 .v2-prompt-command-row { display:flex; gap:8px; flex-wrap:wrap; }
 .v2-prompt-command-form input, .v2-prompt-command-form textarea { flex:1; min-width:0; padding:6px 8px; border:1px solid var(--v2-border); border-radius:8px; background:transparent; color:inherit; font:inherit; }
-.v2-prompt-command-form textarea { font-family:ui-monospace, monospace; }
+.v2-prompt-command-form textarea { font-family:var(--v2-mono); }
 .v2-prompt-command-form button { padding:6px 10px; border:1px solid var(--v2-border); border-radius:8px; background:transparent; color:inherit; cursor:pointer; font:inherit; }
 .v2-prompt-command-list { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
 .v2-prompt-command-list li { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border:1px solid var(--v2-border); border-radius:8px; }
