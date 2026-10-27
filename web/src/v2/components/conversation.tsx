@@ -513,6 +513,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [threadID, messageID, returnToLatestMessage]);
   const scrollSizeRef = useRef<{ content: number; viewport: number } | null>(null);
   const [hasNewContent, setHasNewContent] = useState(false);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const optimistic = useMemo(() => submissions.filter(({ pending }) => pending).map(({ input }) => ({
     id: input.operationKey, text: input.content, images: input.images, attachments: input.attachments, createdAt: input.createdAt,
   })), [submissions]);
@@ -658,6 +659,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       element.scrollTop = saved && !saved.following ? saved.top : element.scrollHeight;
       scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       setHasNewContent(false);
+      setAwayFromLatest(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
       return;
     }
     const anchor = olderScrollAnchorRef.current;
@@ -707,6 +709,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       if (readingThreadRef.current === threadID && followLatestRef.current &&
         olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
       scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
+      setAwayFromLatest(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
     });
     observer.observe(element);
     observer.observe(content);
@@ -1135,6 +1138,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       const following = element.scrollHeight - element.clientHeight - element.scrollTop <= 48;
       followLatestRef.current = following;
+      setAwayFromLatest(!following);
       if (following) setHasNewContent(false);
       queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following });
       reportReplyReading();
@@ -1210,12 +1214,16 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         </div>}
       </div>
     </div>
-    {view === "conversation" && hasNewContent && <button className="v2-jump-latest" onClick={() => {
+    {view === "conversation" && !messageID && awayFromLatest && <button className="v2-jump-latest" onClick={() => {
       followLatestRef.current = true;
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        queryClient.setQueryData(["v2", "reading", threadID], { top: scrollRef.current.scrollTop, following: true });
+      }
+      setAwayFromLatest(false);
       setHasNewContent(false);
       reportReplyReading();
-    }} type="button">{t("有新内容 · 回到最新", "New content · Jump to latest")}</button>}
+    }} type="button">{hasNewContent ? t("有新内容 · 回到最新", "New content · Jump to latest") : t("回到最新", "Jump to latest")}</button>}
     <div className="v2-composer-dock">
       {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />
