@@ -15,7 +15,7 @@ type TranscriptHead = TranscriptData & {
   settledRuns?: string[];
 };
 type TranscriptOptions = { refetchInterval?: number | false };
-type TranscriptRefetchOptions = { refreshMutable?: boolean };
+type TranscriptRefetchOptions = { refreshMutable?: boolean; throwOnError?: boolean };
 type Observation = { cursor: string; page: TranscriptPage };
 
 const identity = (item: ThreadTranscriptItemView) => item.id || `${item.run_id}:${item.sequence}:${item.canonical_id}`;
@@ -303,10 +303,10 @@ export function useV2ThreadTranscript(client: APIClient, threadID: string, { ref
     return mergedPages(data?.pages ?? []).filter((item) => !suppressed.has(identity(item)));
   }, [data?.pages, head.data?.suppressedIDs]);
   const hasNextPage = older.data ? older.hasNextPage : Boolean(head.data?.pages.at(-1)?.page.next_cursor);
-  const refetch = useCallback(({ refreshMutable = false }: TranscriptRefetchOptions = {}) => {
+  const refetch = useCallback(({ refreshMutable = false, throwOnError = false }: TranscriptRefetchOptions = {}) => {
     const target = v2QueryKeys.transcript(threadID);
     if (refreshMutable) queryClient.setQueryData<number>([...target, "sync-demand"], (current) => (current ?? 0) + 1);
-    return queryClient.refetchQueries({ queryKey: target, exact: true }, { cancelRefetch: false });
+    return queryClient.refetchQueries({ queryKey: target, exact: true }, { cancelRefetch: false, throwOnError });
   }, [queryClient, threadID]);
   return {
     data, items,

@@ -7,7 +7,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 | Family | Class | Owner | Active IDs | Persisted/exported |
 | --- | --- | --- | ---: | --- |
-| [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 5 | true |
+| [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 6 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
@@ -21,7 +21,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 20 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 22 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
@@ -66,13 +66,14 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `activity-event-projection-reader` (`v1`, active) at `internal/runactivity`
 
-<details><summary>5 active identifiers</summary>
+<details><summary>6 active identifiers</summary>
 
 - `operator_action_center.v1`
 - `operator_action_item.v1`
 - `run-event-poll.v1`
 - `run-events.v1`
 - `run_activity.v1`
+- `thread_reply_updates.v1`
 
 </details>
 
@@ -782,7 +783,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
 
-<details><summary>20 active identifiers</summary>
+<details><summary>22 active identifiers</summary>
 
 - `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
@@ -802,7 +803,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `prayu.run-navigation.v1`
 - `universal-code.batch-workbench.v1`
 - `universal-code.chat-preferences.v1`
+- `universal-code.sidebar-width.v1`
 - `universal-code.specialist-continuation.v1`
+- `universal-code.turn-notifications.v1`
 - `v2_file_upload.v1`
 
 </details>
