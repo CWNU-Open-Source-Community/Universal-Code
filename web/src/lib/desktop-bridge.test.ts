@@ -1072,6 +1072,15 @@ describe("desktop native bridge", () => {
     });
     await expect(module.readDesktopUserTerminal(session.session_id, 0))
       .rejects.toThrow("output was rejected");
+    for (const state of ["starting", "closed"]) {
+      get.mockResolvedValueOnce({ ...session, state });
+      await expect(module.getDesktopUserTerminal(session.session_id)).resolves.toMatchObject({ state });
+      read.mockResolvedValueOnce({ protocol_version: "desktop_user_terminal.v1", session_id: session.session_id,
+        base_cursor: 0, next_cursor: 0, data_base64: "", data_bytes: 0, dropped: false, state });
+      await expect(module.readDesktopUserTerminal(session.session_id, 0)).resolves.toMatchObject({ state });
+    }
+    get.mockResolvedValueOnce({ ...session, state: "invented" });
+    await expect(module.getDesktopUserTerminal(session.session_id)).rejects.toThrow("rejected");
   });
 
   it("grants only a bounded process-local Full terminal Agent-input lease", async () => {

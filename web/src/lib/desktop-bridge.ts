@@ -181,7 +181,7 @@ export interface DesktopTerminalSession {
   protocol_version: typeof desktopUserTerminalProtocol;
   session_id: string;
   run_id: string;
-  state: "running" | "exited" | "failed";
+  state: "starting" | "running" | "exited" | "closed" | "failed";
   backend: string;
   columns: number;
   rows: number;
@@ -205,7 +205,7 @@ export interface DesktopTerminalOutput {
   data_base64: string;
   data_bytes: number;
   dropped: boolean;
-  state: "running" | "exited" | "failed";
+  state: "starting" | "running" | "exited" | "closed" | "failed";
 }
 
 export interface DesktopTerminalWriteResult {
@@ -1307,7 +1307,7 @@ function validTerminalSession(value: unknown,
   return value.protocol_version === desktopUserTerminalProtocol &&
     validWorkspaceID(value.session_id) && validWorkspaceID(value.run_id) &&
     (runID === undefined || value.run_id === runID) &&
-    (value.state === "running" || value.state === "exited" || value.state === "failed") &&
+    (value.state === "starting" || value.state === "running" || value.state === "exited" || value.state === "closed" || value.state === "failed") &&
     boundedText(value.backend, 1, 64) && validTerminalSize(value.columns, value.rows) &&
     safeCount(value.output_base_cursor) && safeCount(value.output_next_cursor) &&
     value.output_next_cursor >= value.output_base_cursor &&
@@ -1327,7 +1327,7 @@ function validTerminalOutput(value: unknown,
     safeCount(value.data_bytes) && value.data_bytes <= 65536 &&
     validBase64Payload(value.data_base64, value.data_bytes) &&
     typeof value.dropped === "boolean" &&
-    (value.state === "running" || value.state === "exited" || value.state === "failed");
+    (value.state === "starting" || value.state === "running" || value.state === "exited" || value.state === "closed" || value.state === "failed");
 }
 
 function validBase64Payload(value: unknown, expectedBytes: number): boolean {

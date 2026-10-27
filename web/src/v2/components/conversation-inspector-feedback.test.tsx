@@ -15,6 +15,16 @@ vi.mock("../../hooks/use-public-model-stream", () => ({ usePublicModelStream: ()
 vi.mock("./permission-control", () => ({ V2PermissionControl: () => null }));
 vi.mock("./run-network-authority-control", () => ({ V2RunNetworkAuthorityControl: () => null }));
 vi.mock("./model-route-control", () => ({ V2ModelRouteControl: () => null }));
+vi.mock("../../lib/desktop-bridge", async (original) => ({
+  ...await original<typeof import("../../lib/desktop-bridge")>(),
+  desktopUserTerminalEnabled: () => true,
+}));
+vi.mock("../../components/user-terminal-panel", () => ({
+  UserTerminalPanel: ({ onQuote, onReturnToDraft }: { onQuote?: (text: string) => string; onReturnToDraft?: () => void }) => <div>
+    <button onClick={() => onQuote?.("来源执行：source-run\n来源终端：terminal-source\n```text\n  failed build\n```")}>引用选中日志</button>
+    <button onClick={onReturnToDraft}>返回聊天草稿</button>
+  </div>,
+}));
 
 const originalDraft = "  保留我的原草稿。\n";
 const when = "2026-09-11T00:00:00Z";
@@ -159,6 +169,28 @@ it.each(["inspector", "conversation"] as const)("quotes the viewed worktree's so
   await waitFor(() => expect(editor).toHaveFocus());
   expect(editor).toBeVisible();
   expect(dialog).not.toBeInTheDocument();
+  expectNoWrites();
+});
+
+it.each(["inspector", "conversation"] as const)("collects terminal excerpts in the %s draft, then returns without sending or changing the next task's draft", async (view) => {
+  const { container, expectNoWrites } = setup(view);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "终端" }));
+  const dialog = await screen.findByRole("dialog", { name: "任务终端" });
+  for (let count = 0; count < 2; count++) await user.click(within(dialog).getByRole("button", { name: "引用选中日志" }));
+  const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
+  expect(dialog).toBeVisible();
+  expect(editor.value.startsWith(`${originalDraft}\n\n`)).toBe(true);
+  expect(editor.value.match(/来源终端：terminal-source/gu)).toHaveLength(2);
+  expect(editor.value).toContain("任务：thread-a\n来源执行：source-run");
+  expect(editor.value).toContain("\n  failed build\n");
+  await user.click(within(dialog).getByRole("button", { name: "返回聊天草稿" }));
+  await waitFor(() => expect(editor).toHaveFocus());
+  expect(editor).toBeVisible();
+  expect(dialog).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "切到另一个任务" }));
+  await screen.findByText("Task thread-b");
+  expect(container.querySelector(".v2-shared-composer textarea")).toHaveValue("另一个任务的草稿");
   expectNoWrites();
 });
 

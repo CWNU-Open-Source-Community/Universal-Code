@@ -38,7 +38,7 @@ export function projectAgentActivity(input: ActivityInput, t: LocaleText = (chin
   if (execution?.state !== "running") {
     if (input.reconciling) return { label: t("正在核对提交", "Checking submission") };
     if (input.submitting) return { label: t("正在发送消息", "Sending message") };
-    if (!input.executionReadable) return { label: t("活动状态未提供", "Activity status unavailable") };
+    if (!input.executionReadable) return { label: t("当前连接不支持读取 Agent 状态", "This connection cannot read Agent status") };
     if (!execution) return { label: t("正在同步状态", "Syncing status") };
     if (input.runStatus === "failed") return { label: t("本轮未完成", "This turn did not finish"), attention: true };
     // Confirmed idle wins over a cached live snapshot, including after cancellation.

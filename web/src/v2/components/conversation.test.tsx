@@ -1367,76 +1367,18 @@ describe("V2Conversation", () => {
     expect(termTrigger).toHaveFocus();
   });
 
-  it("protects terminal termination against errors and surfaces error notice", async () => {
-    vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
-    const closeSpy = vi.spyOn(desktopBridge, "closeDesktopUserTerminal").mockRejectedValue(new Error("Process busy"));
-    const onSession = vi.fn();
-    const trigger = { current: document.createElement("button") };
-    const user = userEvent.setup();
-
-    render(
-      <V2TerminalDrawer
-        runID="run-term"
-        sessionID="sess-active"
-        threadTitle="Thread Term"
-        workspaceName="Workspace Term"
-        onSession={onSession}
-        onClose={vi.fn()}
-        returnFocusRef={trigger}
-      />
-    );
-
-    const termBtn = screen.getByRole("button", { name: "终止终端进程" });
-    await user.click(termBtn);
-
-    expect(closeSpy).toHaveBeenCalledWith("sess-active");
-    expect(onSession).not.toHaveBeenCalledWith("");
-    expect(await screen.findByRole("alert")).toHaveTextContent("终止终端失败：Process busy");
+  it("has one collapse control and a compact workspace heading", () => {
+    const onClose = vi.fn();
+    render(<V2TerminalDrawer runID="run-term" sessionID="sess-active"
+      threadTitle="Very long task title" workspaceName="Very long workspace directory"
+      onSession={vi.fn()} onClose={onClose} returnFocusRef={{ current: null }} />);
+    expect(screen.getByRole("heading", { name: "终端" })).toHaveAttribute("title", "Very long task title");
+    expect(screen.getByText("Very long workspace directory")).toHaveAttribute("title", "Very long workspace directory");
+    fireEvent.click(screen.getByRole("button", { name: "收起终端" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "关闭终端面板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "终止终端进程" })).not.toBeInTheDocument();
   });
-
-  it("does not clear a replacement session if earlier termination settled late", async () => {
-    vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
-    let resolveClose!: () => void;
-    vi.spyOn(desktopBridge, "closeDesktopUserTerminal").mockImplementation(
-      () => new Promise((resolve) => { resolveClose = resolve; })
-    );
-    const onSession = vi.fn();
-    const trigger = { current: document.createElement("button") };
-    const user = userEvent.setup();
-
-    const { rerender } = render(
-      <V2TerminalDrawer
-        runID="run-term"
-        sessionID="sess-old"
-        threadTitle="Thread Term"
-        workspaceName="Workspace Term"
-        onSession={onSession}
-        onClose={vi.fn()}
-        returnFocusRef={trigger}
-      />
-    );
-
-    const termBtn = screen.getByRole("button", { name: "终止终端进程" });
-    await user.click(termBtn);
-
-    rerender(
-      <V2TerminalDrawer
-        runID="run-term"
-        sessionID="sess-new"
-        threadTitle="Thread Term"
-        workspaceName="Workspace Term"
-        onSession={onSession}
-        onClose={vi.fn()}
-        returnFocusRef={trigger}
-      />
-    );
-
-    resolveClose();
-    await waitFor(() => {
-      expect(onSession).not.toHaveBeenCalledWith("");
-    });
-  });
-
   it("keeps terminal session bindings across conversation-page unmounts", async () => {
     vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
     const client = baseClient();

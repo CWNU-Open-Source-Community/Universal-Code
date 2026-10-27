@@ -2,7 +2,7 @@ import { localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, Square, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -55,8 +55,8 @@ import { V2ThreadRunRecovery } from "./thread-run-recovery";
 import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
 import { WorkspaceExplorer } from "../../components/workspace-explorer";
 import { useFileEditLeave } from "../../components/file-edit-drafts";
-import { UserTerminalPanel } from "../../components/user-terminal-panel";
-import { desktopUserTerminalEnabled, closeDesktopUserTerminal } from "../../lib/desktop-bridge";
+import { UserTerminalPanel, type TerminalQuoteResult } from "../../components/user-terminal-panel";
+import { desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { V2IdentityDisclosure } from "./identity-disclosure";
 import { V2ThreadExport } from "./thread-export";
@@ -229,6 +229,8 @@ export function V2TerminalDrawer({
   threadTitle,
   workspaceName,
   onSession,
+  onQuote,
+  onReturnToDraft,
   onClose,
   returnFocusRef,
   docked = false,
@@ -238,6 +240,8 @@ export function V2TerminalDrawer({
   threadTitle: string;
   workspaceName: string;
   onSession: (sessionID: string) => void;
+  onQuote?: (content: string) => TerminalQuoteResult;
+  onReturnToDraft?: () => void;
   onClose: () => void;
   returnFocusRef: RefObject<HTMLElement | null>;
   docked?: boolean;
@@ -250,25 +254,6 @@ export function V2TerminalDrawer({
     returnFocusRef,
   });
   const terminalAvailable = desktopUserTerminalEnabled();
-  const [terminating, setTerminating] = useState(false);
-  const [terminationError, setTerminationError] = useState<string | null>(null);
-
-  const handleTerminate = async () => {
-    if (!sessionID || terminating) return;
-    const closingSessionID = sessionID;
-    setTerminating(true);
-    setTerminationError(null);
-    try {
-      await closeDesktopUserTerminal(closingSessionID);
-      if (sessionID === closingSessionID) {
-        onSession("");
-      }
-    } catch (err) {
-      setTerminationError(err instanceof Error ? err.message : t("终止终端失败", "Could not terminate the terminal"));
-    } finally {
-      setTerminating(false);
-    }
-  };
 
   const content = (
       <section
@@ -280,50 +265,32 @@ export function V2TerminalDrawer({
         role={docked ? "complementary" : "dialog"}
         tabIndex={-1}
       >
-        <header>
+        <header className="v2-terminal-drawer-header">
           <div className="v2-terminal-drawer-title">
             <SquareTerminal aria-hidden="true" size={17} />
-            <strong>{t("任务终端 · ", "Task terminal · ")}{threadTitle}</strong>
-            <small title={t("工作区目录", "Workspace directory")}>{workspaceName}</small>
+            <div className="v2-terminal-drawer-heading">
+              <h3 title={threadTitle}>{t("终端", "Terminal")}</h3>
+              <p title={workspaceName}>{workspaceName}</p>
+            </div>
           </div>
           <div className="v2-terminal-header-actions">
             <button
               aria-label={t("收起终端", "Collapse terminal")}
               className="v2-terminal-action-btn"
               onClick={onClose}
+              ref={closeButton}
               title={t("收起终端（后台进程保持运行）", "Collapse terminal (background processes keep running)")}
               type="button"
             >
               <ChevronDown aria-hidden="true" size={14} />
               <span>{t("收起", "Collapse")}</span>
             </button>
-            {sessionID && (
-              <button
-                aria-label={t("终止终端进程", "Terminate terminal process")}
-                className="v2-terminal-action-btn danger"
-                disabled={terminating}
-                onClick={() => void handleTerminate()}
-                title={t("结束终端（终止当前进程）", "End terminal (terminate the current process)")}
-                type="button"
-              >
-                <Square aria-hidden="true" size={12} />
-                <span>{terminating ? t("正在终止…", "Terminating…") : t("终止", "Terminate")}</span>
-              </button>
-            )}
-            <button aria-label={t("关闭终端面板", "Close terminal panel")} onClick={onClose} ref={closeButton} type="button">
-              <X aria-hidden="true" size={18} />
-            </button>
           </div>
         </header>
-        {terminationError && (
-          <div className="v2-terminal-error-notice" role="alert">
-            <span>{t("终止终端失败：", "Failed to terminate terminal: ")}{terminationError}</span>
-            <button onClick={() => setTerminationError(null)} type="button">{t("关闭提示", "Dismiss")}</button>
-          </div>
-        )}
         <div className="v2-terminal-drawer-body">
           {terminalAvailable ? (
-            <UserTerminalPanel runID={runID} sessionID={sessionID} onSession={onSession} />
+            <UserTerminalPanel runID={runID} sessionID={sessionID} onSession={onSession}
+              onQuote={onQuote} onReturnToDraft={onReturnToDraft} />
           ) : (
             <div className="v2-terminal-disabled-notice" role="status">
               <SquareTerminal aria-hidden="true" size={24} />
@@ -991,9 +958,11 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         if (fileReturnFocus.current?.isConnected) fileReturnFocus.current.focus();
         else fileTrigger.current?.focus();
       }} returnFocusRef={fileReturnFocus} />}
-    {activePane === "terminal" && <V2TerminalDrawer runID={currentRun.id} sessionID={currentTerminalSessionID}
+    {activePane === "terminal" && <V2TerminalDrawer key={threadID} runID={currentRun.id} sessionID={currentTerminalSessionID}
       threadTitle={detail.thread.title} workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
       onSession={handleTerminalSessionChange} docked={companionDocked}
+      onQuote={onDraftChange ? (content) => addReviewComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`) : undefined}
+      onReturnToDraft={() => { setActivePane(null); appendDraftAndReveal(""); }}
       onClose={() => {
         setTerminalDrawerOpen(false);
         if (terminalReturnFocus.current?.isConnected) terminalReturnFocus.current.focus();

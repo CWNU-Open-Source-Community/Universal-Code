@@ -1984,14 +1984,17 @@ body { background: transparent; }
 .user-terminal-panel {
   min-height: 0;
   flex: 1;
-  display: grid;
-  grid-template-rows: 30px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--prayu-terminal-bg);
 }
 .user-terminal-controls {
   min-width: 0;
+  min-height: 30px;
+  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 3px 9px;
@@ -2000,7 +2003,8 @@ body { background: transparent; }
   background: var(--prayu-terminal-control);
   border-color: var(--prayu-terminal-border);
 }
-.user-terminal-controls button {
+.user-terminal-controls button,
+.user-terminal-quote-feedback button {
   height: 24px;
   display: inline-flex;
   align-items: center;
@@ -2010,19 +2014,31 @@ body { background: transparent; }
   border-radius: 5px;
   color: var(--prayu-terminal-text);
   background: var(--prayu-terminal-control);
-  font-size: 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
   border-color: var(--prayu-terminal-border);
 }
-.user-terminal-controls button:hover:not(:disabled) {
+.user-terminal-controls button:hover:not(:disabled),
+.user-terminal-quote-feedback button:hover:not(:disabled) {
   border-color: var(--prayu-terminal-text);
   background: var(--prayu-terminal-control-hover);
 }
 .user-terminal-controls button:disabled { opacity: .45; }
+.user-terminal-quote-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 9px;
+  color: var(--prayu-terminal-text);
+  font-size: 11px;
+}
 .user-terminal-state {
   flex: 0 0 auto;
   color: var(--prayu-terminal-muted);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 .user-terminal-state.running { color: var(--prayu-terminal-text); }
 .user-terminal-state.failed { color: var(--prayu-danger-on-dark); }
@@ -2035,6 +2051,7 @@ body { background: transparent; }
   white-space: nowrap;
 }
 .user-terminal-host {
+  flex: 1;
   min-width: 0;
   min-height: 0;
   padding: 6px 8px;
