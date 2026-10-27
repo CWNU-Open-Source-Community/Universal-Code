@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, FileDiff, RefreshCw } from "lucide-react";
+import { ChevronRight, FileDiff, Quote, RefreshCw } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
@@ -14,6 +14,16 @@ export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
   const { t } = useLocale();
   const changeStatusLabel = (status: string) => status === "copied" ? t("复制", "copied") :
     <StatusLabel status={status === "conflicted" ? "conflict" : status} />;
+  const previewReason = (state: string) => {
+    switch (state) {
+      case "binary_or_unsupported": return t("二进制或不支持文本预览", "Binary or unsupported text format");
+      case "size_limited": return t("文件超出预览上限", "File exceeds preview limit");
+      case "linked": return t("链接文件不提供预览", "Linked file preview unavailable");
+      case "unavailable": return t("文件内容不可用", "File content unavailable");
+      case "text": return t("无文本差异", "No text changes");
+      default: return t("暂无差异预览", "Diff preview unavailable");
+    }
+  };
   const query = useQuery({
     queryKey: ["workspace", workspaceID, "repository-diff"],
     queryFn: ({ signal }) => client.repositoryDiff(workspaceID, signal),
@@ -45,12 +55,10 @@ export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
       </div>
       {query.data.items.length === 0 ? <EmptyState>{t("工作树干净", "Working tree is clean")}</EmptyState> :
         <div className="repository-diff-list">
-          {query.data.items.map((item) => <article key={`${workspaceID}:${item.path}`}>
-            <details className="repository-diff-file" open>
-              <summary>
-                <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
-                <span className="repository-diff-file-heading">
-                  <code title={item.path}>{item.path}</code>
+          {query.data.items.map((item) => {
+            const heading = <span className="repository-diff-file-heading">
+                <code title={item.path}>{item.path}</code>
+                <span className="repository-diff-file-meta">
                   {item.staging !== "unmodified" && item.staging !== "untracked" &&
                     <span>{t("暂存区：", "Index: ")}{changeStatusLabel(item.staging)}</span>}
                   {item.worktree !== "unmodified" && item.worktree !== "untracked" &&
@@ -58,18 +66,24 @@ export function RepositoryDiffPanel({ client, workspaceID, onRequestChange }: {
                   {(item.staging === "untracked" || item.worktree === "untracked") && <StatusLabel status="untracked" />}
                   {item.content_state === "text" && <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>}
                   {item.redacted && <StatusBadge status="redacted" />}
-                  <StatusBadge status={item.content_state} />
+                  {!item.patch && <span>{previewReason(item.content_state)}</span>}
+                  {item.patch && item.truncated && <span>{t("预览已截断", "Preview truncated")}</span>}
                 </span>
-              </summary>
-              {onRequestChange && <div className="repository-diff-file-actions">
-                <button className="compact-command" type="button"
+              </span>;
+            return <article className={onRequestChange ? "repository-diff-item has-action" : "repository-diff-item"} key={`${workspaceID}:${item.path}`}>
+              {item.patch ? <details className="repository-diff-file" open>
+                <summary>
+                  <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
+                  {heading}
+                </summary>
+                <pre>{item.patch}</pre>
+              </details> : <div className="repository-diff-file-row">{heading}</div>}
+              {onRequestChange && <button className="repository-diff-quote" type="button"
+                  aria-label={t(`引用 ${item.path}`, `Quote ${item.path}`)} title={t("引用到对话", "Quote in chat")}
                   onClick={() => onRequestChange(item.path, query.data!.base_head)}>
-                  {t("引用此差异请求修改", "Request changes to this diff")}</button>
-              </div>}
-              {item.patch ? <pre>{item.patch}</pre> :
-                <div className="repository-diff-omitted">{item.content_state}</div>}
-            </details>
-          </article>)}
+                  <Quote aria-hidden="true" size={15} /></button>}
+            </article>;
+          })}
         </div>}
     </>}
   </section>;

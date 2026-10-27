@@ -68,7 +68,7 @@ describe("RepositoryDiffPanel", () => {
     await waitFor(() => expect(queryClient.getQueryData(["workspace", "workspace-1", "repository-diff"]))
       .toMatchObject({ base_head: "refreshed-head" }));
     expect(firstFile).not.toHaveAttribute("open");
-    await user.click(within(secondFile).getByRole("button", { name: "Request changes to this diff" }));
+    await user.click(screen.getByRole("button", { name: "Quote src/second.ts" }));
     expect(onRequestChange).toHaveBeenLastCalledWith("src/second.ts", "refreshed-head");
     expect(secondFile).toHaveAttribute("open");
 
@@ -76,13 +76,14 @@ describe("RepositoryDiffPanel", () => {
     await user.click(firstSummary);
     expect(secondFile).not.toHaveAttribute("open");
     expect(within(firstFile).getByText("+change in src/first.ts")).toBeVisible();
-    await user.click(within(firstFile).getByRole("button", { name: "Request changes to this diff" }));
+    await user.click(screen.getByRole("button", { name: "Quote src/first.ts" }));
     expect(onRequestChange).toHaveBeenLastCalledWith("src/first.ts", "refreshed-head");
     expect(firstFile).toHaveAttribute("open");
   });
 
-  it("keeps file status visible when an omitted patch is collapsed", async () => {
+  it("shows one readable reason and still quotes a file without an empty disclosure", async () => {
     const user = userEvent.setup();
+    const onRequestChange = vi.fn();
     const repositoryDiff = vi.fn().mockResolvedValue({
       available: true, base_head: "base-head", returned_count: 1,
       total_patch_bytes: 0, omitted_count: 0, redaction_count: 0,
@@ -92,15 +93,14 @@ describe("RepositoryDiffPanel", () => {
     const client = { repositoryDiff } as unknown as APIClient;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}>
-      <RepositoryDiffPanel client={client} workspaceID="workspace-1" />
+      <RepositoryDiffPanel client={client} workspaceID="workspace-1" onRequestChange={onRequestChange} />
     </QueryClientProvider>);
-    const summary = (await screen.findByText("assets/image.png")).closest("summary")!;
-    const omitted = summary.parentElement!.querySelector(".repository-diff-omitted")!;
-    await user.click(summary);
-    expect(within(summary).getByText("binary or unsupported")).toBeVisible();
-    expect(omitted).not.toBeVisible();
-    await user.click(summary);
-    expect(omitted).toBeVisible();
+    const item = (await screen.findByText("assets/image.png")).closest("article")!;
+    expect(item.querySelector("details")).toBeNull();
+    expect(within(item).getAllByText("Binary or unsupported text format")).toHaveLength(1);
+    expect(item).not.toHaveTextContent("binary_or_unsupported");
+    await user.click(within(item).getByRole("button", { name: "Quote assets/image.png" }));
+    expect(onRequestChange).toHaveBeenCalledWith("assets/image.png", "base-head");
   });
 
   it.each([
@@ -126,18 +126,18 @@ describe("RepositoryDiffPanel", () => {
     const { container } = render(<LocaleProvider><QueryClientProvider client={queryClient}>
       <RepositoryDiffPanel client={client} workspaceID="workspace-1" />
     </QueryClientProvider></LocaleProvider>);
-    const alpha = (await screen.findByText("alpha.bin")).closest("summary")!;
+    const alpha = (await screen.findByText("alpha.bin")).closest("article")!;
     expect(alpha).toHaveTextContent(modified);
-    expect(screen.getByText("bravo.bin").closest("summary")).toHaveTextContent(deleted);
-    const stagedSummary = screen.getByText("staged.bin").closest("summary")!;
+    expect(screen.getByText("bravo.bin").closest("article")).toHaveTextContent(deleted);
+    const stagedSummary = screen.getByText("staged.bin").closest("article")!;
     expect(stagedSummary).toHaveTextContent(staged);
     expect(stagedSummary).toHaveTextContent(modified);
-    expect(within(screen.getByText("new.bin").closest("summary")!).getAllByText(untracked)).toHaveLength(1);
-    expect(screen.getByText("renamed.bin").closest("summary")).toHaveTextContent(renamed);
-    expect(screen.getByText("copied.bin").closest("summary")).toHaveTextContent(copied);
+    expect(within(screen.getByText("new.bin").closest("article")!).getAllByText(untracked)).toHaveLength(1);
+    expect(screen.getByText("renamed.bin").closest("article")).toHaveTextContent(renamed);
+    expect(screen.getByText("copied.bin").closest("article")).toHaveTextContent(copied);
     expect(container.querySelector(".repository-diff-file-counts")).not.toBeInTheDocument();
-    await userEvent.setup().click(alpha);
-    expect(alpha).toHaveTextContent(modified);
+    expect(container.querySelector("details")).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/binary_or_unsupported|size_limited|BINARY OR UNSUPPORTED/);
   });
 
   it("preserves text statistics and truncation while showing conflict states", async () => {
