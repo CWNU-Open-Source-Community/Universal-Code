@@ -153,6 +153,20 @@ it("supports keyboard file menus and propagates native failures instead of claim
   expect(screen.queryByText("已复制文件")).not.toBeInTheDocument();
 });
 
+it("shows the native size-limit message when copying file contents fails", async () => {
+  const bridge = native();
+  const message = "File actions support files up to 5 MiB";
+  // Wails converts the formatter's JSON string into Error(message.error).
+  bridge.ChatResourceAction.mockRejectedValueOnce(new Error(message));
+  messages("[large.bin](large.bin)");
+  fireEvent.contextMenu(screen.getAllByRole("link", { name: "large.bin" })[0]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "复制文件内容" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(bridge.ChatResourceAction).toHaveBeenCalledWith(expect.objectContaining({ path: "large.bin", action: "copy_content" }));
+  expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+  expect(screen.queryByText("已复制文件内容")).not.toBeInTheDocument();
+});
+
 it("keeps the selected link action focused while the assistant continues streaming", () => {
   native();
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
