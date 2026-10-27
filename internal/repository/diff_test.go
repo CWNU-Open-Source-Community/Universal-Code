@@ -118,7 +118,7 @@ func TestInspectDiffDoesNotDiscoverParentRepository(t *testing.T) {
 }
 
 func TestBoundPatchCountsTheTruncationMarkerInsideTheLimit(t *testing.T) {
-	patch, truncated := boundPatch(strings.Repeat("+bounded line\n", 10000),
+	patch, truncated := boundPatch(strings.Repeat("+bounded line\n", 30000),
 		MaxDiffPatchBytes)
 	if !truncated || len([]byte(patch)) > MaxDiffPatchBytes ||
 		!strings.HasSuffix(patch, "@@ diff truncated by repository_diff.v1 @@\n") {
@@ -133,7 +133,7 @@ func TestInspectDiffPromotesItemTruncationToProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "large-diff.txt")
-	if err := os.WriteFile(path, []byte(strings.Repeat("old line\n", 6000)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(strings.Repeat("old line\n", 20000)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	worktree, err := repo.Worktree()
@@ -148,7 +148,7 @@ func TestInspectDiffPromotesItemTruncationToProjection(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(strings.Repeat("new line\n", 6000)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(strings.Repeat("new line\n", 20000)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

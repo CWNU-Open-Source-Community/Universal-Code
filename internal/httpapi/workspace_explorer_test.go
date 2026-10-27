@@ -148,6 +148,16 @@ func TestWorkspaceRepositoryStateHTTPIsReadOnlyAndRootBound(t *testing.T) {
 	diffQuery := performSessionMessageRequest(t, api, http.MethodGet,
 		diffPath+"?refresh=true", testAccessToken, "", "", nil)
 	assertAPIError(t, diffQuery, http.StatusBadRequest, "INVALID_ARGUMENT")
+	for _, query := range []string{"?after=../outside", "?after=a&after=b", "?after="} {
+		response := performSessionMessageRequest(t, api, http.MethodGet, diffPath+query, testAccessToken, "", "", nil)
+		assertAPIError(t, response, http.StatusBadRequest, "INVALID_ARGUMENT")
+	}
+	lastPage := performSessionMessageRequest(t, api, http.MethodGet,
+		diffPath+"?after=untracked.txt", testAccessToken, "", "", nil)
+	if lastPage.Code != http.StatusOK || !strings.Contains(lastPage.Body.String(), `"returned_count":0`) ||
+		!strings.Contains(lastPage.Body.String(), `"next_after":""`) {
+		t.Fatalf("after path not applied: %d %s", lastPage.Code, lastPage.Body.String())
+	}
 
 	historyPath := "/api/v1/workspaces/" + registered.ID + "/repository-history"
 	history := performSessionMessageRequest(t, api, http.MethodGet, historyPath,

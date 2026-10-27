@@ -33,3 +33,5 @@
 
 .repository-diff-file-counts { color: var(--muted); }
 .repository-diff-file-actions { display: flex; justify-content: flex-end; padding-bottom: 8px; }
+.repository-diff-notice { color: var(--muted); font-size: 12px; margin: 8px 0; }
+.repository-diff-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; font-size: 12px; }

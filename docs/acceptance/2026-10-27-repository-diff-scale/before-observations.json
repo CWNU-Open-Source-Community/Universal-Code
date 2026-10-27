@@ -1,0 +1,34 @@
+{
+  "mode": "before",
+  "elapsed_ms": 96.65549999999985,
+  "source_bytes": 2150000,
+  "returned": 50,
+  "omitted": 8,
+  "total_patch_bytes": 7944,
+  "items": [
+    {
+      "path": "engine.txt",
+      "content_state": "size_limited",
+      "added_lines": 0,
+      "deleted_lines": 0,
+      "patch_bytes": 0,
+      "truncated": false
+    },
+    {
+      "path": "small.ts",
+      "content_state": "text",
+      "added_lines": 81,
+      "deleted_lines": 81,
+      "patch_bytes": 4748,
+      "truncated": false
+    },
+    {
+      "path": "truncated.txt",
+      "content_state": "size_limited",
+      "added_lines": 0,
+      "deleted_lines": 0,
+      "patch_bytes": 0,
+      "truncated": false
+    }
+  ]
+}

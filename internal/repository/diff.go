@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
-	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/workspace"
 
@@ -20,29 +20,31 @@ import (
 )
 
 const (
-	DiffProtocolVersion = "repository_diff.v1"
-	MaxDiffItems        = 50
-	MaxDiffFileBytes    = workspace.MaxExplorerReadBytes
-	MaxDiffPatchBytes   = 64 * 1024
-	MaxDiffTotalBytes   = 512 * 1024
-	DiffContentText     = "text"
-	DiffContentBinary   = "binary_or_unsupported"
-	DiffContentTooLarge = "size_limited"
-	DiffContentLinked   = "linked"
-	DiffContentMissing  = "unavailable"
+	DiffProtocolVersion       = "repository_diff.v1"
+	MaxDiffItems              = 50
+	MaxDiffFileBytes          = 4 * 1024 * 1024
+	MaxDiffPatchBytes         = 256 * 1024
+	MaxDiffTotalBytes         = 2 * 1024 * 1024
+	DiffContentText           = "text"
+	DiffContentBinary         = "binary_or_unsupported"
+	DiffContentTooLarge       = "size_limited"
+	DiffContentLinked         = "linked"
+	DiffContentMissing        = "unavailable"
+	DiffContentComputeLimited = "computation_limited"
 )
 
 type DiffItem struct {
-	Path         string `json:"path"`
-	Staging      string `json:"staging"`
-	Worktree     string `json:"worktree"`
-	ContentState string `json:"content_state"`
-	Patch        string `json:"patch"`
-	PatchBytes   int    `json:"patch_bytes"`
-	AddedLines   int    `json:"added_lines"`
-	DeletedLines int    `json:"deleted_lines"`
-	Redacted     bool   `json:"redacted"`
-	Truncated    bool   `json:"truncated"`
+	Path               string `json:"path"`
+	Staging            string `json:"staging"`
+	Worktree           string `json:"worktree"`
+	ContentState       string `json:"content_state"`
+	Patch              string `json:"patch"`
+	PatchBytes         int    `json:"patch_bytes"`
+	AddedLines         int    `json:"added_lines"`
+	DeletedLines       int    `json:"deleted_lines"`
+	Redacted           bool   `json:"redacted"`
+	Truncated          bool   `json:"truncated"`
+	StatisticsComplete bool   `json:"statistics_complete"`
 }
 
 type Diff struct {
@@ -51,6 +53,7 @@ type Diff struct {
 	Kind                  string     `json:"kind"`
 	Available             bool       `json:"available"`
 	BaseHead              string     `json:"base_head"`
+	NextAfter             string     `json:"next_after"`
 	Items                 []DiffItem `json:"items"`
 	ReturnedCount         int        `json:"returned_count"`
 	OmittedCount          int        `json:"omitted_count"`
@@ -70,10 +73,22 @@ type Diff struct {
 	HooksExecuted         bool       `json:"hooks_executed"`
 }
 
-func InspectDiff(ctx context.Context, root string, workspaceID string) (Diff, error) {
+type DiffOptions struct{ After string }
+
+func InspectDiff(ctx context.Context, root string, workspaceID string, options ...DiffOptions) (Diff, error) {
+	after := ""
+	if len(options) > 0 {
+		after = options[0].After
+	}
+	if after != "" {
+		canonical, _, ok := safePath(after)
+		if !ok || canonical != after {
+			return Diff{}, apperror.New(apperror.CodeInvalidArgument, "invalid diff page path")
+		}
+	}
 	base := Diff{ProtocolVersion: DiffProtocolVersion, WorkspaceID: workspaceID,
 		Kind: "none", Items: []DiffItem{}, ReadOnly: true}
-	state, err := Inspect(ctx, root, workspaceID)
+	state, err := inspectChanges(ctx, root, workspaceID, MaxStatusEntries)
 	if err != nil {
 		return Diff{}, err
 	}
@@ -102,23 +117,36 @@ func InspectDiff(ctx context.Context, root string, workspaceID string) (Diff, er
 	}
 
 	candidates := state.Changes
-	if len(candidates) > MaxDiffItems {
-		base.OmittedCount += len(candidates) - MaxDiffItems
-		candidates = candidates[:MaxDiffItems]
-		base.Truncated = true
+	for len(candidates) > 0 && candidates[0].Path <= after {
+		candidates = candidates[1:]
 	}
+	// Work is bounded per page, independently of preview bytes. The next page
+	// starts after the last returned path, so budget exhaustion loses no files.
+	pageContext, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	for index, change := range candidates {
 		if err := ctx.Err(); err != nil {
 			return Diff{}, err
 		}
-		item, redactions, err := buildDiffItem(ctx, headTree, resolvedRoot,
+		if len(base.Items) >= MaxDiffItems || (len(base.Items) > 0 &&
+			(pageContext.Err() != nil || base.TotalPatchBytes+MaxDiffPatchBytes > MaxDiffTotalBytes)) {
+			base.OmittedCount = len(candidates) - index
+			base.NextAfter = base.Items[len(base.Items)-1].Path
+			break
+		}
+		item, redactions, err := buildDiffItem(pageContext, headTree, resolvedRoot,
 			workspaceID, change)
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			item = DiffItem{Path: change.Path, Staging: change.Staging, Worktree: change.Worktree,
+				ContentState: DiffContentComputeLimited}
+			err = nil
+		}
 		if err != nil {
 			return Diff{}, err
 		}
-		if base.TotalPatchBytes+item.PatchBytes > MaxDiffTotalBytes {
-			base.OmittedCount += len(candidates) - index
-			base.Truncated = true
+		if item.ContentState == DiffContentComputeLimited && pageContext.Err() != nil && len(base.Items) > 0 {
+			base.OmittedCount = len(candidates) - index
+			base.NextAfter = base.Items[len(base.Items)-1].Path
 			break
 		}
 		base.RedactionCount += redactions
@@ -169,14 +197,18 @@ func buildDiffItem(ctx context.Context, tree *object.Tree, root string,
 	if item.ContentState != DiffContentText {
 		return item, redactions, nil
 	}
-	patch := fileedit.UnifiedDiff(change.Path, oldText, newText)
+	edits, complete := lineEdits(ctx, oldText, newText)
+	if !complete {
+		item.ContentState = DiffContentComputeLimited
+		return item, redactions, nil
+	}
+	item.StatisticsComplete = !item.Redacted
+	item.Patch, item.AddedLines, item.DeletedLines, item.Truncated = renderLinePatch(change.Path, edits, MaxDiffPatchBytes)
 	if item.Redacted && oldText == newText {
-		patch = fmt.Sprintf("--- a/%s\n+++ b/%s\n@@ -1,1 +1,1 @@\n-[sensitive change omitted]\n+[sensitive change omitted]\n",
+		item.Patch = fmt.Sprintf("--- a/%s\n+++ b/%s\n@@ -1,1 +1,1 @@\n-[sensitive change omitted]\n+[sensitive change omitted]\n",
 			change.Path, change.Path)
 	}
-	item.Patch, item.Truncated = boundPatch(patch, MaxDiffPatchBytes)
 	item.PatchBytes = len([]byte(item.Patch))
-	item.AddedLines, item.DeletedLines = diffLineCounts(item.Patch)
 	return item, redactions, nil
 }
 
@@ -228,7 +260,7 @@ func readHeadText(ctx context.Context, tree *object.Tree,
 func readWorkspaceText(root string, workspaceID string,
 	path string,
 ) (string, string, int, bool) {
-	snapshot, err := workspace.Explore(root, workspaceID, path)
+	data, tooLarge, err := workspace.ReadReviewFile(root, path, MaxDiffFileBytes)
 	if err != nil {
 		switch apperror.CodeOf(apperror.Normalize(err)) {
 		case apperror.CodeNotFound:
@@ -239,16 +271,14 @@ func readWorkspaceText(root string, workspaceID string,
 			return "", DiffContentBinary, 0, false
 		}
 	}
-	if snapshot.Kind != "file" || snapshot.Truncated || snapshot.TotalBytes > MaxDiffFileBytes {
-		return "", DiffContentTooLarge, snapshot.RedactionCount,
-			snapshot.RedactionCount > 0
+	if tooLarge {
+		return "", DiffContentTooLarge, 0, false
 	}
-	if !safeDiffText([]byte(snapshot.Content)) {
-		return "", DiffContentBinary, snapshot.RedactionCount,
-			snapshot.RedactionCount > 0
+	if !safeDiffText(data) {
+		return "", DiffContentBinary, 0, false
 	}
-	return snapshot.Content, "present", snapshot.RedactionCount,
-		snapshot.RedactionCount > 0
+	projection := redact.Text(string(data))
+	return projection.Text, "present", diffFindingCount(projection.Findings), projection.Text != string(data)
 }
 
 func combinedContentState(oldState string, newState string) string {
@@ -303,19 +333,6 @@ func boundPatch(value string, limit int) (string, bool) {
 		data = data[:last+1]
 	}
 	return string(data) + marker, true
-}
-
-func diffLineCounts(patch string) (int, int) {
-	added, deleted := 0, 0
-	for _, line := range strings.Split(patch, "\n") {
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			added++
-		}
-		if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
-			deleted++
-		}
-	}
-	return added, deleted
 }
 
 func diffFindingCount(values []redact.Finding) int {

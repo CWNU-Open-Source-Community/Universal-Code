@@ -216,19 +216,21 @@ type RepositoryStateView struct {
 }
 
 type RepositoryDiffItemView struct {
-	Path         string `json:"path"`
-	Staging      string `json:"staging"`
-	Worktree     string `json:"worktree"`
-	ContentState string `json:"content_state"`
-	Patch        string `json:"patch"`
-	PatchBytes   int    `json:"patch_bytes"`
-	AddedLines   int    `json:"added_lines"`
-	DeletedLines int    `json:"deleted_lines"`
-	Redacted     bool   `json:"redacted"`
-	Truncated    bool   `json:"truncated"`
+	StatisticsComplete bool   `json:"statistics_complete"`
+	Path               string `json:"path"`
+	Staging            string `json:"staging"`
+	Worktree           string `json:"worktree"`
+	ContentState       string `json:"content_state"`
+	Patch              string `json:"patch"`
+	PatchBytes         int    `json:"patch_bytes"`
+	AddedLines         int    `json:"added_lines"`
+	DeletedLines       int    `json:"deleted_lines"`
+	Redacted           bool   `json:"redacted"`
+	Truncated          bool   `json:"truncated"`
 }
 
 type RepositoryDiffView struct {
+	NextAfter             string                   `json:"next_after"`
 	ProtocolVersion       string                   `json:"protocol_version"`
 	WorkspaceID           string                   `json:"workspace_id"`
 	Kind                  string                   `json:"kind"`
