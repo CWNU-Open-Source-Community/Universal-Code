@@ -1225,6 +1225,7 @@ type ThreadTranscriptItemView struct {
 	InstructionAuthorized bool                             `json:"instruction_authorized"`
 	AttemptID             string                           `json:"attempt_id,omitempty"`
 	ModelAttempt          int                              `json:"model_attempt,omitempty"`
+	Model                 string                           `json:"model,omitempty"`
 	ToolRound             int                              `json:"tool_round,omitempty"`
 	ToolName              string                           `json:"tool_name,omitempty"`
 	StreamResponseID      string                           `json:"stream_response_id,omitempty"`
@@ -1991,7 +1992,7 @@ func threadTranscriptItemView(value threadtranscript.Item) ThreadTranscriptItemV
 		Kind: string(value.Kind), Source: string(value.Source), Title: value.Title,
 		Detail: value.Detail, Status: value.Status, Verifiable: value.Verifiable,
 		InstructionAuthorized: value.InstructionAuthorized, AttemptID: value.AttemptID,
-		ModelAttempt: value.ModelAttempt, ToolRound: value.ToolRound,
+		ModelAttempt: value.ModelAttempt, Model: value.Model, ToolRound: value.ToolRound,
 		ToolName: value.ToolName, StreamResponseID: value.StreamResponseID,
 		StreamItemID: value.StreamItemID, StreamCallID: value.StreamCallID,
 		DurableCallID: value.DurableCallID, SourceRef: value.SourceRef,

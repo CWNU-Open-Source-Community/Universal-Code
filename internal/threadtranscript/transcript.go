@@ -92,6 +92,7 @@ type Item struct {
 	InstructionAuthorized bool
 	AttemptID             string
 	ModelAttempt          int
+	Model                 string
 	ToolRound             int
 	ToolName              string
 	StreamResponseID      string
@@ -401,7 +402,7 @@ func projectActivity(source Source, projected runactivity.Item) Item {
 		Source: projected.Source, Title: projected.Title, Detail: projected.Detail,
 		Status: projected.Status, Verifiable: projected.Verifiable,
 		InstructionAuthorized: projected.InstructionAuthorized,
-		AttemptID:             projected.AttemptID, ModelAttempt: projected.ModelAttempt,
+		AttemptID:             projected.AttemptID, ModelAttempt: projected.ModelAttempt, Model: projected.Model,
 		ToolRound: projected.ToolRound, Durable: true, CreatedAt: projected.CreatedAt,
 	}
 	if (source.Event.Type == events.ThreadTurnFailedEvent && source.Event.Source == "thread_turn") ||

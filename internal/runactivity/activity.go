@@ -60,6 +60,7 @@ type Item struct {
 	InstructionAuthorized bool
 	AttemptID             string
 	ModelAttempt          int
+	Model                 string
 	ToolRound             int
 	CreatedAt             time.Time
 }
@@ -118,6 +119,7 @@ func projectEvent(event events.Event) (Item, bool) {
 	case events.ModelStartedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型调用开始", "running"
 		base.Detail = modelIdentity(event.PayloadJSON)
+		base.Model = modelIdentity(event.PayloadJSON)
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "正在整理上下文"
 		}
@@ -131,6 +133,7 @@ func projectEvent(event events.Event) (Item, bool) {
 	case events.ModelCompletedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型响应完成", "completed"
 		base.Detail = completedModelDetail(event.PayloadJSON)
+		base.Model = modelIdentity(event.PayloadJSON)
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "上下文整理调用已结束"
 		}

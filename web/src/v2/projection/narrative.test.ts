@@ -595,3 +595,24 @@ it("localizes generated activity labels while preserving original messages, comm
     snapshot: snapshot({ text: "", items: [{ id: "tool-1", type: "tool_call", tool_name: "command_runtime", status: "running", argument_bytes: 12, durable: false, provisional: true, response_id: "response-1" }] }) });
   expect(live[0]).toMatchObject({ kind: "activity", title: "Run command", detail: "Preparing tool request · 12 bytes" });
 });
+
+it("attributes a durable assistant reply to the model recorded for its attempt", () => {
+  const transcript: ThreadTranscriptActivityItem[] = [
+    item({ id: "call-1", canonical_id: "call-1", sequence: 1, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-7", model: "anthropic / test-model",
+      title: "模型调用开始", detail: "anthropic / test-model", status: "running" }),
+    item({ id: "reply-1", canonical_id: "reply-1", sequence: 2, source: "model", kind: "model_update",
+      activity_type: "message", attempt_id: "attempt-7", title: "更新", detail: "我会先检查相关实现。" }),
+  ];
+  const projected = projectThreadNarrative(transcript);
+  expect(projected.filter((entry) => entry.kind === "assistant"))
+    .toEqual([expect.objectContaining({ model: "anthropic / test-model" })]);
+
+  // A reply from another attempt keeps its own attribution, including none.
+  const mixed = projectThreadNarrative([...transcript, item({
+    id: "reply-2", canonical_id: "reply-2", sequence: 3, source: "model", kind: "model_update",
+    activity_type: "message", attempt_id: "attempt-9", title: "更新", detail: "第二条。", run_id: "run-2",
+    run_ordinal: 2 })]);
+  expect(mixed.at(-1)).toMatchObject({ kind: "assistant" });
+  expect(mixed.at(-1)).not.toHaveProperty("model");
+});

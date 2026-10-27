@@ -60,6 +60,10 @@ export type NarrativeEntry =
       runId?: string;
       branchSourceID?: string;
       changeSourceID?: string;
+      // Which provider/model produced this reply, joined from the attempt's
+      // model-call record. Mid-thread model switching (#470) makes the
+      // attribution otherwise ambiguous.
+      model?: string;
       createdAt: string;
       provisional: boolean;
     }
@@ -213,6 +217,15 @@ export function projectThreadNarrative(
 ): NarrativeEntry[] {
   const result: NarrativeEntry[] = [];
   const noticeEvents = new Set<string>();
+  // Durable model-call records carry the provider/model identity per attempt;
+  // index them once so assistant replies can attribute themselves (the
+  // operator may switch models mid-thread, so the run's route is not enough).
+  const modelByAttempt = new Map<string, string>();
+  for (const item of transcript) {
+    if (item.model && item.attempt_id && !modelByAttempt.has(item.attempt_id)) {
+      modelByAttempt.set(item.attempt_id, item.model);
+    }
+  }
   type ActivityEntry = Extract<NarrativeEntry, { kind: "activity" }>;
   type ActivityLeaf = ActivityEntry["items"][number];
   const canonicalActivities = new Map<string, {
@@ -327,6 +340,7 @@ export function projectThreadNarrative(
       const branchSourceID = item.source === "model" && item.kind === "model_update" && item.durable && !item.provisional
         ? item.id : undefined;
       const changeSourceID = item.source_ref?.startsWith("branch-assistant:") ? undefined : branchSourceID;
+      const model = item.attempt_id ? modelByAttempt.get(item.attempt_id) : undefined;
       const previous = result.at(-1);
       if (previous?.kind === "assistant" && !previous.provisional && !item.provisional && previous.runId === item.run_id) {
         // A Supervisor may emit the same final answer again while closing its
@@ -346,6 +360,7 @@ export function projectThreadNarrative(
           runId: item.run_id,
           branchSourceID,
           changeSourceID,
+          ...(model ? { model } : {}),
           createdAt: item.created_at, provisional: item.provisional });
       }
       continue;
