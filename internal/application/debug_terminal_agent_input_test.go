@@ -649,6 +649,12 @@ func TestDebugTerminalAgentInputRevokesOnWorkspaceRootDrift(t *testing.T) {
 func newDebugTerminalAgentFixture(t *testing.T,
 	failWrite bool,
 ) debugTerminalAgentFixture {
+	return newDebugTerminalAgentFixtureWithManager(t, failWrite, false)
+}
+
+func newDebugTerminalAgentFixtureWithManager(t *testing.T,
+	failWrite, native bool,
+) debugTerminalAgentFixture {
 	t.Helper()
 	ctx := context.Background()
 	state, err := store.Open(filepath.Join(t.TempDir(), "debug-terminal.db"))
@@ -715,7 +721,12 @@ func newDebugTerminalAgentFixture(t *testing.T,
 	}
 	broker := executionauth.NewTerminalInputBroker()
 	backend := &debugTerminalBackendStub{}
-	manager, err := terminalruntime.NewManager(backend, broker)
+	var manager *terminalruntime.Manager
+	if native {
+		manager, err = terminalruntime.NewPlatformManager(broker)
+	} else {
+		manager, err = terminalruntime.NewManager(backend, broker)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,7 +774,9 @@ func newDebugTerminalAgentFixture(t *testing.T,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	backend.process.failWrite = failWrite
+	if backend.process != nil {
+		backend.process.failWrite = failWrite
+	}
 	bridge, err := terminalruntime.NewAgentInputBridge(manager, broker)
 	if err != nil {
 		t.Fatal(err)

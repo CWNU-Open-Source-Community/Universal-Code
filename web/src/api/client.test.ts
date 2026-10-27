@@ -1912,15 +1912,15 @@ describe("APIClient", () => {
       .rejects.toThrow("transcript provenance is invalid");
   });
 
-  it("lazily reads only the strict safe Thread command activity projection", async () => {
+  it.each(["disabled", "host"])("lazily reads the strict Thread command activity projection (%s network)", async (network) => {
     const detail = {
       version: "thread_activity_detail.v2", activity_ref: "call-command-1",
       run_id: "run-created", tools: [{ name: "command_runtime", label: "运行命令",
         agent_id: "agent-root", agent_role: "root", agent_label: "Root Agent", status: "completed",
         started_at: "2026-08-24T00:01:00Z", completed_at: "2026-08-24T00:01:02Z",
         duration_milliseconds: 2_000, detail: { kind: "command", command: { commands: [{ command: "pnpm test session",
-          working_directory: "packages/core", execution_environment: "Workspace Sandbox",
-           network: "disabled", status: "completed", exit_code: 0,
+          working_directory: "packages/core", execution_environment: network === "host" ? "Host · Full Access" : "Workspace Sandbox",
+           network, status: "completed", exit_code: 0,
            duration_milliseconds: 2_000, stdout_preview: "42 tests passed",
            stderr_preview: "", truncated: false, artifacts: [] }] } } }],
     };
@@ -1931,12 +1931,20 @@ describe("APIClient", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         version: "api.v1", request_id: "req-activity-detail-forged",
         data: { ...detail, tools: [{ ...detail.tools[0], environment: { API_KEY: "secret" } }] },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        version: "api.v1", request_id: "req-activity-detail-unknown-network",
+        data: { ...detail, tools: [{ ...detail.tools[0], detail: { kind: "command", command: {
+          commands: [{ ...detail.tools[0].detail.command.commands[0], network: "allowlist" }],
+        } } }] },
       }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new APIClient("read-secret", "/api/v1", "control-secret");
 
     await expect(client.threadActivityDetail("thread-created", "call-command-1"))
       .resolves.toEqual(detail);
+    await expect(client.threadActivityDetail("thread-created", "call-command-1"))
+      .rejects.toThrow("tool detail is invalid");
     await expect(client.threadActivityDetail("thread-created", "call-command-1"))
       .rejects.toThrow("tool detail is invalid");
     expect(fetchMock.mock.calls[0]?.[0])

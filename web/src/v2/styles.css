@@ -50,6 +50,11 @@
 .v2-shell .v2-retry-action:hover:not(:disabled) { background: var(--v2-control-hover); }
 .v2-shell .v2-retry-action:disabled { cursor: wait; opacity: .5; }
 .v2-search-archived { display: flex; gap: 6px; align-items: center; margin: 4px 14px 8px; color: var(--v2-muted); font-size: 11px; }
+.v2-search-scope { display: flex; gap: 4px; margin: 4px 14px; }
+.v2-search-scope button { flex: 1; padding: 5px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--v2-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.v2-search-scope button[aria-pressed="true"] { background: var(--v2-control); border-color: var(--v2-border); color: var(--v2-ink); }
+.v2-search-scope button:hover:not(:disabled) { background: var(--v2-control-hover); }
+.v2-search-scope button:disabled { cursor: default; opacity: .5; }
 .v2-message-search-results { display: grid; gap: 4px; padding: 0 8px; }
 .v2-message-search-result { display: grid; gap: 5px; min-width: 0; width: 100%; padding: 10px 8px; border: 1px solid transparent; border-radius: 6px; text-align: left; background: transparent; color: var(--v2-ink); font: inherit; cursor: pointer; }
 .v2-message-search-result:hover, .v2-message-search-result:focus-visible { background: var(--v2-control-hover); border-color: var(--v2-border); }
@@ -350,6 +355,14 @@
   margin-top: 8px;
 }
 
+.v2-message-time {
+  color: var(--v2-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: 6px;
+  white-space: nowrap;
+}
+
 .v2-shell .v2-assistant-action-btn {
   align-items: center;
   background: transparent;
@@ -395,6 +408,7 @@
   transition: opacity 140ms var(--prayu-ease-out), transform 140ms var(--prayu-ease-out), visibility 140ms;
   visibility: hidden;
 }
+.v2-user-actions .v2-assistant-action-tooltip { left: auto; right: 0; }
 .v2-assistant-action-btn:focus-visible > .v2-assistant-action-tooltip { opacity: 1; transform: translateY(0); visibility: visible; }
 @media (hover: hover) {
   .v2-assistant-action-btn:hover > .v2-assistant-action-tooltip { opacity: 1; transform: translateY(0); visibility: visible; }

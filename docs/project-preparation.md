@@ -79,6 +79,8 @@ editable 安装，以及 requirements/Poetry/uv 专有锁文件需要先导出�
 声明的 wheel 字节数也会核对。安装使用本地文件、`--no-index --no-deps
 --require-hashes --only-binary=:all: --target`，不执行源码构建。
 
+通用联网使用的 pip、证书包及既有镜像应按[运行时安全更新](ci.md#october-2026-runtime-security-updates)升级；下述版本是离线安装的兼容性下限。
+
 此入口当前使用 Standard Code Docker Engine。镜像需已包含 pip >=25.3；
 旧版本在安装记录中给出明确错误。依赖只写入任务的 `.traverse-preparation`
 私有目录，安装成功后才发布；解释器、兼容标签、环境或锁文件变化后需要
