@@ -33,7 +33,7 @@ function ImagePreview({ client, image, onRemove, locked }: {
   const [retry, setRetry] = useState(0);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState({ message: "", error: false });
   const trigger = useRef<HTMLButtonElement>(null);
   const close = () => setOpen(false);
   useEffect(() => {
@@ -70,8 +70,8 @@ function ImagePreview({ client, image, onRemove, locked }: {
     {onRemove && <button className="v2-image-remove" type="button" aria-label={t(`移除图片 ${name}`, `Remove image ${name}`)} disabled={locked}
       onClick={onRemove}><X size={14} aria-hidden="true" /></button>}
     {locked && <small>{t("随原消息提交", "Submitting with original message")}</small>}
-    {notice && <small role="status">{notice}</small>}
-    {menu && <ResourceMenu position={menu} items={menuItems} onClose={() => setMenu(null)} onResult={(message, failed) => { if (failed) setError(message); else setNotice(message); }} />}
+    {notice.message && <small className="v2-image-notice" role={notice.error ? "alert" : "status"}>{notice.message}</small>}
+    {menu && <ResourceMenu position={menu} items={menuItems} onClose={() => setMenu(null)} onResult={(message, error = false) => setNotice({ message, error })} />}
     {error && <button className="v2-image-retry" title={error} type="button" onClick={() => setRetry((value) => value + 1)}>{t("重新读取图片", "Reload image")}</button>}
     {open && original && <V2ImageViewer image={image} url={original.url} blob={original.blob} onClose={close} returnFocusRef={trigger} />}
   </div>;
