@@ -769,8 +769,11 @@ Model projection is separate from persistence. Trusted operator, model, and Go-c
 This design contains authority rather than attempting to classify every malicious sentence. A README can still contain false or contradictory facts, and a model can still reason badly about them, but document text cannot acquire Go capabilities or silently become system/assistant history. Policy, scope, approvals, budgets, leases, and Tool Gateway remain authoritative even if a model follows an indirect injection semantically.
 
 Schema v114 extends that boundary with three deliberately non-authorizing context layers.
-`project_instruction_snapshot.v1` discovers bounded root-to-target `AGENTS.md`,
-`CLAUDE.md`, and `.prayu` guidance, records path/hash/scope/trust/applicability and
+`project_instruction_snapshot.v1` discovers bounded root-to-target guidance, selecting
+non-empty `AGENTS.override.md` ahead of same-directory `AGENTS.md`, with fallback when
+the override is absent, empty, or explicitly ignored. It also reads `CLAUDE.md`,
+`.claude/CLAUDE.md`, and `.prayu` guidance, explains superseded sources in `ignored`,
+records path/hash/scope/trust/applicability and
 why-effective metadata, and pins the full fingerprint to the Run. Live file drift is
 read-only until an operator confirms a diff bound to both the old pinned fingerprint and the
 reviewed live fingerprint, then appends a new

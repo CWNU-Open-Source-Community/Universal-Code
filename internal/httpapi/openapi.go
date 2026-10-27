@@ -1072,12 +1072,23 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 						"minLength": domain.MinAgentOperationKeyBytes,
 						"maxLength": domain.MaxAgentOperationKeyBytes, "pattern": `^\S+$`}},
 			}},
+		{Path: ThreadReplyUpdatesPath, OperationID: "listThreadReplyUpdates",
+			Summary: "Observe new saved public replies across conversations", Tag: "Threads",
+			Description: "Read-only incremental observation of saved public assistant message identities in active and archived conversations. Omitting cursor establishes the current baseline with no historical items. Subsequent requests scan at most limit source events in global save order; an empty items array can still have has_more=true. Continue using data.cursor until has_more=false, then retain that cursor for the next poll. Cursor scope includes the exact data_store_id. Persist returned message identities before the cursor; an error returns no partial cursor. Replaying a cursor preserves message identities. Separate saved messages with equal text remain separate updates. Excludes deleted conversations, copied branch history, users, tools, hidden/internal events and provisional streaming bytes. No message body or private event payload is returned.",
+			DataType:    reflect.TypeOf(ThreadReplyUpdatesView{}),
+			Parameters: []openAPIParameter{
+				{Name: "limit", In: "query", Description: "Maximum source events scanned, including filtered events; not a requested number of visible replies",
+					Schema: map[string]any{"type": "integer", "minimum": 1, "maximum": MaxPageLimit, "default": DefaultPageLimit}},
+				{Name: "cursor", In: "query", Description: "Opaque cursor from data.cursor, bound to the exact data store; omit only to establish a new baseline",
+					Schema: map[string]any{"type": "string", "minLength": 1, "maxLength": MaxCursorBytes}},
+			}},
 		{Path: "/api/v1/threads/search", OperationID: "searchSavedThreadMessages",
 			Summary: "Search saved conversation titles and public message bodies", Tag: "Threads",
-			Description: "Searches complete saved user and assistant text, including compacted history, before pagination. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query and archive filter.",
+			Description: "Searches complete saved user and assistant text, including compacted history, public model progress and inherited branch replies, before pagination. With thread_id, searches only message bodies in that exact conversation; otherwise also searches conversation titles. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query, Thread and archive filter.",
 			DataType:    reflect.TypeOf(ThreadSearchResultView{}), Collection: true, Paginated: true,
 			Parameters: append(paginationParameters(),
 				openAPIParameter{Name: "q", In: "query", Required: true, Schema: map[string]any{"type": "string", "minLength": 1, "maxLength": 256}},
+				openAPIParameter{Name: "thread_id", In: "query", Description: "Search saved public message bodies in this exact conversation", Schema: map[string]any{"type": "string", "minLength": 1, "maxLength": 256}},
 				booleanQueryParameter("include_archived", "Include archived conversations"))},
 		{Path: "/api/v1/threads/{thread_id}/messages/{message_id}", OperationID: "getSavedThreadMessage",
 			Summary: "Locate a saved public message in its conversation", Tag: "Threads",
@@ -2341,9 +2352,10 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			NotFound: true, Parameters: append([]openAPIParameter{runID}, paginationParameters()...)},
 		{Path: "/api/v1/usage", OperationID: "getUsageStatistics", Summary: "Inspect local application usage", Tag: "System",
 			Description: "Aggregates this application's durable model terminal receipts across root agents, specialists, context compaction, and read-only fan-out; failed sent calls count and not-sent receipts are excluded. Tokens, model groups, recent Threads, sparse days, and untracked_calls use terminal receipt time. Cache tokens are input subsets; usage_reported_calls and cache_usage_reported_calls identify missing coverage. Missing provider/model identities remain empty strings. Costs use reservation settled_at independently of receipt time: known_cost_micros sums only actual priced USD settlements, unpriced_calls counts unknown-cost settlements, and untracked_calls counts receipts without a matched settlement. Reservation estimates never become known cost. Calendar dates use a fixed UTC offset; 30d includes today and the preceding 29 dates, all starts at the earliest receipt or settlement, and empty history starts today. The sparse activity_days always cover the last 182 calendar dates including today, independently of period. Collections are sorted deterministically; recent_sessions includes at most eight Threads with selected-period receipts and uses their latest receipt as last_activity_at. Unbound historical Runs contribute to totals and unassigned_calls.",
-			DataType:    reflect.TypeOf(domain.UsageStatistics{}), Parameters: []openAPIParameter{
+			DataType:    reflect.TypeOf(domain.UsageStatistics{}), NotFound: true, Parameters: []openAPIParameter{
 				{Name: "period", In: "query", Description: "Calendar reporting period", Schema: map[string]any{"type": "string", "enum": []string{"today", "30d", "all"}, "default": "30d"}},
 				{Name: "utc_offset_minutes", In: "query", Description: "Fixed UTC offset in minutes, without daylight-saving transitions", Schema: map[string]any{"type": "integer", "minimum": -840, "maximum": 840, "default": 0}},
+				{Name: "thread_id", In: "query", Description: "Optional exact Thread identity. Restricts all receipt, cost, model, day and activity statistics to every Run bound to this Thread. Omit for application-wide usage. Active and archived Threads are supported; missing or deleted Threads return NOT_FOUND.", Schema: map[string]any{"type": "string", "minLength": 1, "maxLength": 256}},
 			}},
 		{Path: "/api/v1/sessions", OperationID: "listSessions", Summary: "List Sessions", Tag: "Sessions",
 			Description: "Returns a bounded creation-ordered keyset page of persisted Sessions. Updates and later Sessions cannot shift continuation pages.", DataType: reflect.TypeOf(SessionView{}),
@@ -2870,6 +2882,19 @@ func jsonField(field reflect.StructField) (string, bool, bool) {
 }
 
 func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[string]any) {
+	if typeName == "ThreadReplyUpdatesView" {
+		switch fieldName {
+		case "data_store_id":
+			schema["pattern"], schema["minLength"], schema["maxLength"] = "^ds1_[0-9a-f]{64}$", 68, 68
+		case "cursor":
+			schema["minLength"], schema["maxLength"] = 1, MaxCursorBytes
+		case "items":
+			schema["maxItems"] = MaxPageLimit
+		}
+	}
+	if typeName == "ThreadReplyUpdateView" && (fieldName == "run_ordinal" || fieldName == "sequence") {
+		schema["minimum"] = 1
+	}
 	if typeName == "MemoryCandidate" && fieldName == "fingerprint" ||
 		typeName == "MemoryCandidateSource" && fieldName == "completion_fingerprint" ||
 		(typeName == "memoryCandidateConfirmRequestView" || typeName == "memoryCandidateRejectRequestView") && fieldName == "expected_fingerprint" {
@@ -3488,6 +3513,8 @@ var openAPIFieldEnums = map[string][]string{
 	"RunActivityView.version":                    {runactivity.ProtocolVersion},
 	"RunActivityItemView.kind":                   {string(runactivity.KindHarnessStatus), string(runactivity.KindModelUpdate), string(runactivity.KindOperatorInput), string(runactivity.KindModelCall), string(runactivity.KindToolCall), string(runactivity.KindApproval), string(runactivity.KindFileChange), string(runactivity.KindPlan), string(runactivity.KindDependency), string(runactivity.KindBrowser)},
 	"RunActivityItemView.source":                 {string(runactivity.SourceHarness), string(runactivity.SourceModel), string(runactivity.SourceOperator)},
+	"ThreadReplyUpdatesView.version":             {ThreadReplyUpdatesVersion},
+	"ThreadReplyUpdateView.thread_status":        {"active", "archived"},
 	"ThreadTranscriptItemView.version":           {threadtranscript.ProtocolVersion},
 	"ThreadTranscriptItemView.activity_type":     {string(threadtranscript.TypeMessage), string(threadtranscript.TypeSearch), string(threadtranscript.TypeRead), string(threadtranscript.TypeEdit), string(threadtranscript.TypeExecute), string(threadtranscript.TypeVerify), string(threadtranscript.TypeApproval), string(threadtranscript.TypeCheckpoint), string(threadtranscript.TypeDelivery)},
 	"ThreadTranscriptItemView.stage":             {string(threadtranscript.StageStarted), string(threadtranscript.StageArgumentsReady), string(threadtranscript.StageRunning), string(threadtranscript.StageResult), string(threadtranscript.StageBlocked)},
@@ -3525,7 +3552,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ThreadActivityToolDetailView.agent_role":                  {string(domain.AgentRoleRoot), string(domain.AgentRoleSpecialist), "unknown"},
 	"ThreadActivityToolDetailView.status":                      {string(domain.SupervisorToolPending), string(domain.SupervisorToolCompleted), string(domain.SupervisorToolDenied), string(domain.SupervisorToolFailed)},
 	"ThreadActivityCommandDetailView.execution_environment":    {"Workspace Sandbox", "Host · Full Access", "Legacy execution boundary"},
-	"ThreadActivityCommandDetailView.network":                  {"disabled"},
+	"ThreadActivityCommandDetailView.network":                  {"disabled", "host"},
 	"ThreadActivityCommandDetailView.status":                   {string(domain.SupervisorToolPending), string(domain.SupervisorToolCompleted), string(domain.SupervisorToolDenied), string(domain.SupervisorToolFailed), string(runner.CommandRuntimeJobPrepared), string(runner.CommandRuntimeJobRunning), string(runner.CommandRuntimeJobStopping), string(runner.CommandRuntimeJobCompleted), string(runner.CommandRuntimeJobFailed), string(runner.CommandRuntimeJobTimedOut), string(runner.CommandRuntimeJobCancelled), string(runner.CommandRuntimeJobKilled), string(runner.CommandRuntimeJobInterrupted)},
 	"IndexView.api_version":                                    {Version},
 	"ProjectActionsView.protocol_version":                      {application.ProjectActionsProtocolVersion},

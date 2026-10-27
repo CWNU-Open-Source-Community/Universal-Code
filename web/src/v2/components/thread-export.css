@@ -1,0 +1,9 @@
+.v2-thread-export-body { display: grid; gap: 16px; padding: 20px; }
+.v2-thread-export-body p { color: var(--v2-muted); font-size: 13px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.v2-thread-export-body p[role="alert"] { color: var(--v2-danger); }
+.v2-thread-export-body label { display: grid; gap: 8px; }
+.v2-thread-export-body select { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; color: var(--v2-ink); font: inherit; min-height: 36px; min-width: 0; padding: 7px 10px; width: 100%; }
+.v2-thread-export-body button { justify-self: start; }
+.v2-thread-export footer { flex-wrap: wrap; }
+.v2-thread-export button { align-items: center; display: inline-flex; gap: 6px; justify-content: center; }
+.v2-thread-export { max-height: calc(100dvh - 32px); overflow-y: auto; }
