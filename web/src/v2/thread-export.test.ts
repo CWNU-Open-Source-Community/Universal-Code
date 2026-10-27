@@ -119,6 +119,13 @@ it("truncates export filenames without splitting Unicode or ending in separators
   expect(threadExportFilename(`${prefix} tail`, "text")).toBe(`conversation-${prefix}.txt`);
 });
 
+it("keeps ZWJ emoji families whole when truncating export filenames", () => {
+  const family = "👨‍👩‍👧‍👦";
+  const prefix = "a".repeat(99);
+  expect(threadExportFilename(`${prefix}${family}tail`, "markdown")).toBe(`conversation-${prefix}${family}.md`);
+  expect(threadExportFilename(`${prefix}a${family}`, "text")).toBe(`conversation-${prefix}a.txt`);
+});
+
 it("rejects missing full bodies instead of returning partial history", async () => {
   const get = vi.fn(async (path: string) => {
     if (path.endsWith("second")) throw new Error("body unavailable");
