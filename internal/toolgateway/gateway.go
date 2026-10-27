@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/artifact"
 	"cyberagent-workbench/internal/fileedit"
@@ -460,7 +461,8 @@ func (g *Gateway) reviewShell(ctx context.Context, request ReviewRequest) (Outco
 	shellArguments := map[string]string{"command": before.Command}
 	if request.Action == ReviewApprove {
 		if blocked, decision := g.reviewApprovalBlocked(ShellTool, shellArguments); blocked {
-			return Outcome{}, fmt.Errorf("shell proposal denied by current policy: %s", decision.Reason)
+			return Outcome{}, apperror.New(apperror.CodePolicyDenied,
+				fmt.Sprintf("shell proposal denied by current policy: %s", decision.Reason))
 		}
 	}
 	reason := request.Reason
@@ -537,7 +539,8 @@ func (g *Gateway) reviewScriptProcess(ctx context.Context, request ReviewRequest
 		}
 		arguments := map[string]string{"proposal": payload}
 		if blocked, decision := g.reviewApprovalBlocked(ScriptProcessTool, arguments); blocked {
-			return Outcome{}, fmt.Errorf("script process proposal denied by current policy: %s", decision.Reason)
+			return Outcome{}, apperror.New(apperror.CodePolicyDenied,
+				fmt.Sprintf("script process proposal denied by current policy: %s", decision.Reason))
 		}
 	}
 	reason := request.Reason

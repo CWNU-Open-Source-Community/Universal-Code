@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/artifact"
 	"cyberagent-workbench/internal/fileedit"
@@ -503,6 +504,38 @@ func TestGatewayReviewApprovalRechecksCurrentPolicy(t *testing.T) {
 	record, err := store.GetApprovalByProposal(ctx, proposalID)
 	if err == nil && record.Status != approval.StatusPending {
 		t.Fatalf("approval ledger recorded %s for a command current policy denies: %#v", record.Status, record)
+	}
+}
+
+func TestGatewayScriptProcessReviewApprovalRechecksCurrentPolicy(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	checker := &reviewPolicyFlipChecker{}
+	gateway := New(store, checker)
+	outcome, err := gateway.ProposeScriptProcess(ctx, ToolCall{
+		Name: ScriptProcessTool, RunID: "run-recheck-script", SessionID: "sess-recheck-script",
+		WorkspaceID: "ws-recheck", WorkspaceRoot: t.TempDir(), RequestedBy: "root",
+	}, ScriptProcessProposal{Executable: "python", Arguments: []string{"scripts/noop.py"}})
+	if err != nil || outcome.Proposal == nil || outcome.Proposal.Status != StatusProposed {
+		t.Fatalf("script process proposal was not created: %#v err=%v", outcome, err)
+	}
+	proposalID := outcome.Proposal.ID
+	checker.deny = true
+	if _, err := gateway.Review(ctx, ReviewRequest{
+		Action: ReviewApprove, Tool: ScriptProcessTool, ProposalID: proposalID,
+		ReviewedBy: "operator", IdempotencyKey: "policy-flipped-before-script-review",
+	}); apperror.CodeOf(err) != apperror.CodePolicyDenied {
+		t.Fatalf("script process review did not report POLICY_DENIED: %v", err)
+	}
+	process, err := store.GetScriptProcess(ctx, proposalID)
+	if err != nil || process.Status != scriptprocess.StatusProposed {
+		t.Fatalf("script process left the proposed state without a policy recheck: %#v err=%v", process, err)
+	}
+	// The review must not reach the ledger at all: no decision record, and never
+	// an approved one. An absent record is the fixed behaviour.
+	record, err := store.GetApprovalByProposal(ctx, proposalID)
+	if err == nil && record.Status != approval.StatusPending {
+		t.Fatalf("approval ledger recorded %s for a script process current policy denies: %#v", record.Status, record)
 	}
 }
 
