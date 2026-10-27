@@ -3,7 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import type { ScheduledJobCreateRequestView, ScheduledJobView, ThreadView } from "../api/types";
+import { downloadTextFile } from "../lib/download";
 import { ScheduledTasksWorkspace } from "./scheduled-tasks-workspace";
+
+vi.mock("../lib/download", () => ({ downloadTextFile: vi.fn() }));
 
 describe("ScheduledTasksWorkspace", () => {
   it("creates only a bounded read-only schedule and uses a memory-only operation key", async () => {
@@ -45,9 +48,6 @@ describe("ScheduledTasksWorkspace", () => {
       execution_started: false, authority_bypass: false, job: { ...job, status: "paused" },
     });
     const diagnosticBundle = vi.fn().mockResolvedValue({ protocol_version: "diagnostic-bundle.v1" });
-    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn().mockReturnValue("blob:test"),
-      revokeObjectURL: vi.fn() });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     renderWorkspace({
       hasScheduledJobControl: true, hasScheduledJobWorker: false,
       listScheduledJobs: vi.fn().mockResolvedValue({ protocol_version: "scheduled-job.v1", items: [job] }),
@@ -63,9 +63,9 @@ describe("ScheduledTasksWorkspace", () => {
       { version: "scheduled-job-control.v1", expected_revision: 4 }, expect.any(String)));
     await user.click(await screen.findByRole("button", { name: "Export diagnostics" }));
     await waitFor(() => expect(diagnosticBundle).toHaveBeenCalledWith("run-1"));
-    expect(click).toHaveBeenCalled();
-    click.mockRestore();
-    vi.unstubAllGlobals();
+    expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
+      "cyberagent-diagnostics-run-1.json", "application/json",
+      JSON.stringify({ protocol_version: "diagnostic-bundle.v1" }, null, 2));
   });
 
   it("reuses the exact create request after a lost response and starts a new intent only after editing", async () => {

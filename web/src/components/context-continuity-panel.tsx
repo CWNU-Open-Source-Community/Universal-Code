@@ -21,6 +21,7 @@ import type {
   SessionTreeNodeView,
   SessionTreeView,
 } from "../api/types";
+import { downloadTextFile } from "../lib/download";
 import { formatDate, shortID } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { v2QueryKeys } from "../v2/query-keys";
@@ -550,14 +551,7 @@ function continuityDepths(nodes: SessionTreeNodeView[]): Map<string, number> {
 }
 
 function downloadJSON(filename: string, value: unknown): void {
-  const url = URL.createObjectURL(new Blob([`${JSON.stringify(value, null, 2)}\n`], {
-    type: "application/json",
-  }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(filename, "application/json", `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function humanError(value: unknown): string {

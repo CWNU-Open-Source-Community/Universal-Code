@@ -2,7 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
+import { downloadTextFile } from "../lib/download";
 import { ContextContinuityPanel } from "./context-continuity-panel";
+
+vi.mock("../lib/download", () => ({ downloadTextFile: vi.fn() }));
 
 describe("ContextContinuityPanel", () => {
   it("explains pinned sources, manages explicit memory, and exposes non-authorizing branches", async () => {
@@ -55,6 +58,28 @@ describe("ContextContinuityPanel", () => {
       "/runs/run-1/continuity-checkpoints",
       { title: "", summary: "" }, expect.stringMatching(/^web-continuity-checkpoint-/),
     ));
+  });
+
+  it("exports the scoped memory snapshot through the shared text download", async () => {
+    const user = userEvent.setup();
+    const exported = { protocol_version: "context_memory_export.v1", scope: "project",
+      scope_id: "workspace-1", exported_at: "2026-08-19T00:00:00Z", items: [],
+      capability_grant: false };
+    const get = vi.fn().mockImplementation((path: string) => {
+      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+      if (path === "/memories/export") return Promise.resolve(exported);
+      if (path === "/memories") return Promise.resolve([memoryView()]);
+      if (path === "/memory-candidates") return Promise.resolve([]);
+      if (path.includes("/tree")) return Promise.resolve(sessionTree());
+      return Promise.reject(new Error(`unexpected read ${path}`));
+    });
+    renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
+      deleteControl: vi.fn() } as unknown as APIClient);
+
+    await user.click(await screen.findByRole("button", { name: "Export" }));
+    await waitFor(() => expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
+      expect.stringMatching(/^prayu-project-memory-\d{4}-\d{2}-\d{2}\.json$/),
+      "application/json", `${JSON.stringify(exported, null, 2)}\n`));
   });
 
   it("keeps mutation controls disabled on a read-only connection", async () => {
