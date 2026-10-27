@@ -125,7 +125,7 @@ jobs:
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: '24.22.1'
       - name: Prepare integrity-pinned package preparation fixtures
         if: ${{ contains(fromJSON(needs.classify.outputs.go_plan).test, 'cyberagent-workbench/internal/dependencycache') }}
         run: |
@@ -293,7 +293,8 @@ jobs:
   go:
     name: Go control plane
     needs: [classify, go-checks, store-tests, go-race, go-audit]
-    if: ${{ always() }}
+    # Report failed checks, but release the concurrency slot when superseded.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected Go gate
@@ -335,7 +336,7 @@ jobs:
           cache: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: '24.22.1'
       - name: Install reviewed real language servers
         shell: pwsh
         run: |
@@ -384,7 +385,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
@@ -452,6 +453,8 @@ jobs:
           cache: true
       - name: Report Go toolchain
         run: go version
+      - name: Update rustup certificate trust
+        run: rustup self update
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
       - run: cargo fmt --all -- --check
@@ -546,7 +549,7 @@ jobs:
           esac
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Build embedded renderer
@@ -657,9 +660,11 @@ jobs:
           ./scripts/prepare-windows-fixed-go.ps1 -ExpectedGoVersion $env:TRAVERSE_CI_GO_VERSION
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Update rustup certificate trust
+        run: rustup self update
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal
       - name: Build deterministic Rust fixture
@@ -979,7 +984,7 @@ jobs:
   full-ci:
     name: Full CI verification
     needs: [classify, go, code-intel-lsp, web, rust, desktop-macos, desktop, ui-evidence-windows]
-    if: ${{ always() && needs.classify.outputs.full == 'true' }}
+    if: ${{ !cancelled() && needs.classify.outputs.full == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Require the complete integration and platform matrix

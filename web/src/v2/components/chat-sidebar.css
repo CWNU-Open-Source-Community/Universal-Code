@@ -12,3 +12,5 @@
 .v2-chat-rename-field { display: grid; gap: 9px; padding: 20px; }
 .v2-chat-rename-field input { box-sizing: border-box; width: 100%; }
 .v2-chat-action-error { color: var(--v2-danger); font-size: 12px; margin: 8px 12px; overflow-wrap: anywhere; }
+.v2-thread-unread { background: var(--prayu-focus); border-radius: 50%; height: 6px; inset-inline-start: 19px; position: absolute; top: 14px; width: 6px; }
+.v2-chat-pins .v2-thread-unread, .v2-thread-group.is-local .v2-thread-unread { inset-inline-start: 1px; }
