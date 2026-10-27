@@ -24,6 +24,8 @@ import { useLocale } from "../lib/locale";
 import { openUserTerminal } from "../lib/open-user-terminal";
 import { readDesktopClipboardText, writeDesktopClipboardText } from "../lib/desktop-text-clipboard";
 import { createTerminalClipboardKeyHandler } from "../lib/terminal-clipboard";
+import { desktopTerminalSettingsAvailable, getDesktopTerminalSettings, terminalSettingsChanged,
+  type TerminalSettingsView } from "../lib/desktop-terminal-settings";
 
 const terminalPollMilliseconds = 120;
 
@@ -61,8 +63,28 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
   const [message, setMessage] = useState("");
   const [hasSelection, setHasSelection] = useState(false);
   const [quoteResult, setQuoteResult] = useState<TerminalQuoteResult | null>(null);
+  const settingsAvailable = desktopTerminalSettingsAvailable();
+  const [preferences, setPreferences] = useState<TerminalSettingsView | null>(null);
+  const [settingsError, setSettingsError] = useState("");
+  const bindingEpoch = useRef(0);
+  const mode = settingsAvailable ? preferences?.settings.agent_control : "manual";
+  const ttl = preferences?.settings.manual_ttl_seconds ?? 300;
+  const duration = ttl % 60 === 0 ? `${ttl / 60}m` : `${ttl}s`;
   const enabled = desktopUserTerminalEnabled();
   const agentInputEnabled = desktopDebugTerminalAgentInputEnabled();
+
+  useEffect(() => {
+    if (!settingsAvailable) return;
+    let cancelled = false;
+    const refresh = () => void getDesktopTerminalSettings().then((view) => {
+      if (!cancelled) { setPreferences(view); setSettingsError(""); }
+    }).catch((error) => {
+      if (!cancelled) { setPreferences(null); setSettingsError(desktopErrorMessage(error)); }
+    });
+    refresh();
+    window.addEventListener(terminalSettingsChanged, refresh);
+    return () => { cancelled = true; window.removeEventListener(terminalSettingsChanged, refresh); };
+  }, [settingsAvailable]);
 
   useEffect(() => {
     sessionRef.current = sessionID;
@@ -264,20 +286,25 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
   }, [enabled, onSession, sessionID, writePage]);
 
   useEffect(() => {
-    if (!runID || !sessionID || !agentInputEnabled) {
+    if (!runID || !sessionID || !agentInputEnabled || !mode || mode === "disabled") {
       setAgentBinding(null);
       return;
     }
     let cancelled = false;
-    void getDesktopDebugTerminalAgentInput(runID).then((binding) => {
-      if (!cancelled && binding.terminal_session_id === sessionID) {
-        setAgentBinding(binding);
+    let timer = 0;
+    const refresh = async () => {
+      const epoch = bindingEpoch.current;
+      try {
+        const binding = await getDesktopDebugTerminalAgentInput(runID);
+        if (!cancelled && epoch === bindingEpoch.current) setAgentBinding(binding.terminal_session_id === sessionID ? binding : null);
+      } catch {
+        if (!cancelled && epoch === bindingEpoch.current) setAgentBinding(null);
       }
-    }).catch(() => {
-      if (!cancelled) setAgentBinding(null);
-    });
-    return () => { cancelled = true; };
-  }, [agentInputEnabled, runID, sessionID]);
+      if (!cancelled && settingsAvailable) timer = window.setTimeout(refresh, 3000);
+    };
+    void refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [agentInputEnabled, runID, sessionID, mode, settingsAvailable, preferences?.revision]);
 
   useEffect(() => {
     if (!agentBinding) return;
@@ -345,14 +372,15 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
   };
 
   const grantAgentInput = async () => {
-    if (!agentInputEnabled || !runID || !sessionID) return;
-    if (!globalThis.confirm(
-      t("允许 Agent 在未来 5 分钟向此终端提交命令？命令经过策略检查后，可访问当前用户的本机文件与网络、启动后台进程。命令文本和脱敏后的有界结果会保存到执行记录；凭据请通过专用设置管理。", "Allow the Agent to submit commands to this terminal for 5 minutes? After policy checks, commands can access the current user's host files and network and start background processes. Command text and bounded, redacted results are saved in execution records; manage credentials in dedicated settings."),
+    if (!agentInputEnabled || !runID || !sessionID || !mode || mode === "disabled") return;
+    if (mode === "manual" && !globalThis.confirm(
+      t(`允许 Agent 在未来 ${ttl} 秒内读取此终端输出并提交命令？命令经过策略检查后，可访问当前用户的本机文件与网络、启动后台进程。命令文本和脱敏后的有界结果会保存到执行记录；凭据请通过专用设置管理。`, `Allow the Agent to read output and submit commands to this terminal for ${ttl} seconds? After policy checks, commands can access the current user's host files and network and start background processes. Command text and bounded, redacted results are saved in execution records; manage credentials in dedicated settings.`),
     )) return;
+    bindingEpoch.current++;
     setBusy(true);
     setMessage("");
     try {
-      const binding = await grantDesktopDebugTerminalAgentInput(runID, sessionID, 300);
+      const binding = await grantDesktopDebugTerminalAgentInput(runID, sessionID, ttl);
       if (!mountedRef.current || runRef.current !== runID ||
         sessionRef.current !== sessionID) {
         await revokeDesktopDebugTerminalAgentInput(binding.binding_id).catch(() => undefined);
@@ -362,12 +390,14 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
     } catch (error) {
       if (mountedRef.current) setMessage(desktopErrorMessage(error));
     } finally {
+      bindingEpoch.current++;
       if (mountedRef.current) setBusy(false);
     }
   };
 
   const revokeAgentInput = async () => {
     if (!agentBinding) return;
+    bindingEpoch.current++;
     setBusy(true);
     setMessage("");
     try {
@@ -376,6 +406,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
     } catch (error) {
       if (mountedRef.current) setMessage(desktopErrorMessage(error));
     } finally {
+      bindingEpoch.current++;
       if (mountedRef.current) setBusy(false);
     }
   };
@@ -411,19 +442,19 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
           <Square aria-hidden="true" size={13} />}
         <span>{t("结束终端", "End terminal")}</span>
       </button>}
-      {sessionID && session?.state === "running" && !agentBinding && <button
-        disabled={busy || !agentInputEnabled} onClick={() => void grantAgentInput()}
-        title={t("限时授权：本机文件、网络和后台进程；命令与脱敏结果保存到执行记录", "Temporary access: host files, network, and background processes; commands and redacted results are saved in execution records")}
+      {sessionID && session?.state === "running" && mode !== "disabled" && !agentBinding && <button
+        disabled={busy || !agentInputEnabled || !mode} onClick={() => void grantAgentInput()}
+        title={mode === "full" ? t("按终端设置恢复 Agent 控制；任务须具备完全访问权限", "Resume Agent control using terminal settings; the task must have Full access") : t("限时授权：本机文件、网络和后台进程；命令与脱敏结果保存到执行记录", "Temporary access: host files, network, and background processes; commands and redacted results are saved in execution records")}
         type="button">
         <Bot aria-hidden="true" size={14} />
-        <span>{t("允许 Agent · 5m", "Allow Agent · 5m")}</span>
+        <span>{mode === "full" ? t("允许 Agent 控制", "Allow Agent control") : t(`允许 Agent · ${duration}`, `Allow Agent · ${duration}`)}</span>
       </button>}
       {sessionID && agentBinding && <button className="agent-input-active"
         disabled={busy} onClick={() => void revokeAgentInput()}
-        title={t(`Agent 输入有效至 ${new Date(agentBinding.expires_at).toLocaleTimeString()}`, `Agent input allowed until ${new Date(agentBinding.expires_at).toLocaleTimeString()}`)}
+        title={mode === "full" ? t("停止 Agent 对此终端的读取与输入，手动操作仍可用", "Stop Agent reads and input for this terminal; manual use remains available") : t(`Agent 输入有效至 ${new Date(agentBinding.expires_at).toLocaleTimeString()}`, `Agent input allowed until ${new Date(agentBinding.expires_at).toLocaleTimeString()}`)}
         type="button">
         <ShieldOff aria-hidden="true" size={14} />
-        <span>{t("撤销 Agent", "Revoke Agent")}</span>
+        <span>{mode === "full" ? t("停止 Agent 控制", "Stop Agent control") : t("撤销 Agent", "Revoke Agent")}</span>
       </button>}
       {onQuote && <button type="button" disabled={busy || !hasSelection || !session || session.session_id !== sessionID}
         onMouseDown={(event) => event.preventDefault()} onClick={quoteSelection}
@@ -440,6 +471,9 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
                 : session.state === "closed" ? t("终端已结束", "Terminal ended")
                   : t("终端出错", "Terminal failed")}
       </span>
+      {mode === "disabled" && <span className="user-terminal-state">{t("Agent 控制已禁用", "Agent control disabled")}</span>}
+      {session?.shell && <span className="user-terminal-state" title={`${session.shell.path}\n${t("可执行文件版本", "Executable version")}: ${session.shell.version || "—"}`}>{session.shell.name}</span>}
+      {settingsError && <span className="user-terminal-message" role="alert">{t("终端设置读取失败：", "Could not read terminal settings: ")}{settingsError}</span>}
       {message && <span className="user-terminal-message" role="status">{message}</span>}
     </div>
     {quoteResult && <p className="user-terminal-quote-feedback" role={quoteResult === "added" ? "status" : "alert"}>

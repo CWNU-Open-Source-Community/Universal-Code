@@ -1233,6 +1233,32 @@
       "retired_identifiers": []
     },
     {
+      "id": "desktop-terminal-settings",
+      "class": "internal-durable",
+      "owner": "Desktop terminal maintainers",
+      "source_of_truth": ["internal/application", "internal/desktop"],
+      "writers": [
+        { "id": "desktop-terminal-settings-writer", "source": "internal/application", "versions": [1], "mode": "write-current" }
+      ],
+      "readers": [
+        { "id": "desktop-terminal-settings-reader", "source": "internal/application", "versions": [1], "status": "active" },
+        { "id": "desktop-terminal-settings-ui-reader", "source": "web/src/lib", "versions": [1], "status": "active" }
+      ],
+      "persisted_or_exported": true,
+      "persistence_boundary": "Native confirmation saves revision-bound shared-terminal consent, manual duration and a fixed shell identifier in the application home.",
+      "compatibility_rule": "Default manual consent and automatic trusted shell selection. Saved full consent can renew process-local terminal leases only while the current Run has active Full permission. No Run authority, lease token or arbitrary executable path is persisted. Unknown fields, revisions and invalid preferences fail closed.",
+      "retirement_gate": {
+        "mode": "migration-or-retention",
+        "requirements": [
+          "ADR-backed retirement decision and rollback path",
+          "Old-version fixtures remain until every supported source is migrated or retained",
+          "Reader history is append-only; retirement requires migration or retention evidence"
+        ]
+      },
+      "active_identifiers": ["desktop_terminal_settings.v1"],
+      "retired_identifiers": []
+    },
+    {
       "id": "desktop-verification-settings",
       "class": "internal-durable",
       "owner": "Desktop verification settings maintainers",

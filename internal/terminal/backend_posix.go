@@ -24,6 +24,7 @@ const posixTerminalCloseGrace = 250 * time.Millisecond
 type posixBackend struct{}
 
 type posixProcess struct {
+	shell     ShellInfo
 	mu        sync.Mutex
 	closeOnce sync.Once
 	pty       *os.File
@@ -61,13 +62,13 @@ func (posixBackend) Start(ctx context.Context,
 	if err != nil || !root.IsDir() || root.Mode()&os.ModeSymlink != 0 {
 		return nil, ErrTerminalBoundary
 	}
-	shell, err := trustedPOSIXBashPath()
+	shell, err := resolveTerminalShell(request.ShellID)
 	if err != nil {
 		return nil, err
 	}
 	// The terminal is process-local but persistent. The caller's start context
 	// authorizes creation only; Manager.Close owns the later lifetime.
-	command := exec.Command(shell,
+	command := exec.Command(shell.Path,
 		"--noprofile", "--norc", "+m", "-i")
 	command.Dir = request.WorkspaceRoot
 	command.Env = posixTerminalEnvironment()
@@ -81,11 +82,14 @@ func (posixBackend) Start(ctx context.Context,
 		return nil, errors.Join(ErrTerminalUnavailable, err)
 	}
 	process := &posixProcess{
-		pty: terminalFile, process: command.Process, done: make(chan struct{}),
+		shell: shell,
+		pty:   terminalFile, process: command.Process, done: make(chan struct{}),
 	}
 	go process.await(command)
 	return process, nil
 }
+
+func (p *posixProcess) ShellInfo() ShellInfo { return p.shell }
 
 func (p *posixProcess) Boundary() ProcessBoundary {
 	return ProcessBoundary{

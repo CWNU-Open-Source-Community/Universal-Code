@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"crypto/sha256"
+	"cyberagent-workbench/internal/application"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -72,23 +73,24 @@ type DesktopTerminalCloseRequest struct {
 }
 
 type DesktopTerminalSession struct {
-	ProtocolVersion       string `json:"protocol_version"`
-	SessionID             string `json:"session_id"`
-	RunID                 string `json:"run_id"`
-	State                 string `json:"state"`
-	Backend               string `json:"backend"`
-	Columns               int    `json:"columns"`
-	Rows                  int    `json:"rows"`
-	OutputBaseCursor      uint64 `json:"output_base_cursor"`
-	OutputNextCursor      uint64 `json:"output_next_cursor"`
-	ExitCode              int    `json:"exit_code"`
-	UserOwned             bool   `json:"user_owned"`
-	AgentInputDefault     bool   `json:"agent_input_default"`
-	JobAssignedAtCreation bool   `json:"job_assigned_at_creation"`
-	KillOnJobClose        bool   `json:"kill_on_job_close"`
-	Persistent            bool   `json:"persistent"`
-	ProcessLocal          bool   `json:"process_local"`
-	RawOutputPersisted    bool   `json:"raw_output_persisted"`
+	Shell                 *terminalruntime.ShellInfo `json:"shell,omitempty"`
+	ProtocolVersion       string                     `json:"protocol_version"`
+	SessionID             string                     `json:"session_id"`
+	RunID                 string                     `json:"run_id"`
+	State                 string                     `json:"state"`
+	Backend               string                     `json:"backend"`
+	Columns               int                        `json:"columns"`
+	Rows                  int                        `json:"rows"`
+	OutputBaseCursor      uint64                     `json:"output_base_cursor"`
+	OutputNextCursor      uint64                     `json:"output_next_cursor"`
+	ExitCode              int                        `json:"exit_code"`
+	UserOwned             bool                       `json:"user_owned"`
+	AgentInputDefault     bool                       `json:"agent_input_default"`
+	JobAssignedAtCreation bool                       `json:"job_assigned_at_creation"`
+	KillOnJobClose        bool                       `json:"kill_on_job_close"`
+	Persistent            bool                       `json:"persistent"`
+	ProcessLocal          bool                       `json:"process_local"`
+	RawOutputPersisted    bool                       `json:"raw_output_persisted"`
 }
 
 type DesktopTerminalOutput struct {
@@ -111,6 +113,7 @@ type DesktopTerminalWriteResult struct {
 // desktopUserTerminalService keeps all path and durable state lookups in Go.
 // Its Wails projection accepts only Run/session IDs and user keystrokes.
 type desktopUserTerminalService struct {
+	settings     application.DesktopTerminalSettingsReader
 	store        *store.SQLiteStore
 	manager      *terminalruntime.Manager
 	capabilities domain.ExecutionPermissionRuntimeCapabilities
@@ -183,8 +186,17 @@ func (s *desktopUserTerminalService) Start(ctx context.Context,
 			EffectsVerified: false,
 		}, nil
 	})
+	shellID := "auto"
+	if s.settings != nil {
+		preferences, err := s.settings.Load(ctx)
+		if err != nil {
+			return DesktopTerminalSession{}, err
+		}
+		shellID = preferences.Settings.DefaultShell
+	}
 	session, err := s.manager.Start(ctx, terminalruntime.StartRequest{
-		ID: sessionID, Scope: binding.Scope, WorkspaceRoot: binding.Root,
+		ShellID: shellID,
+		ID:      sessionID, Scope: binding.Scope, WorkspaceRoot: binding.Root,
 		Interaction: binding.Interaction, CurrentProfile: binding.Profile,
 		CurrentPermission: binding.Permission, Authorizer: authorizer,
 		Columns: request.Columns, Rows: request.Rows,
@@ -408,6 +420,7 @@ func projectDesktopTerminalSession(
 	session terminalruntime.Session,
 ) DesktopTerminalSession {
 	return DesktopTerminalSession{
+		Shell:           session.Shell,
 		ProtocolVersion: DesktopUserTerminalProtocolVersion,
 		SessionID:       session.ID, RunID: session.Scope.RunID,
 		State: string(session.State), Backend: session.Backend,

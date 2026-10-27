@@ -41,6 +41,9 @@ func resolveCommandRuntimeShell(profile CommandRuntimeProfile) (string, error) {
 		if configured := os.Getenv("CYBERAGENT_POWERSHELL_PATH"); configured != "" {
 			return resolveCommandRuntimeConfiguredPowerShell(configured)
 		}
+		if executable, err := os.Executable(); err == nil {
+			candidates = append(candidates, filepath.Join(filepath.Dir(executable), "runtimes", "powershell7", "pwsh.exe"))
+		}
 		for _, root := range controlledKnownFolders(windows.FOLDERID_ProgramFiles,
 			windows.FOLDERID_ProgramFilesX64, windows.FOLDERID_ProgramFilesX86) {
 			candidates = append(candidates, filepath.Join(root, "PowerShell", "7", "pwsh.exe"))

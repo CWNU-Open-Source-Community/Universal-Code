@@ -15,6 +15,7 @@ import (
 
 	"cyberagent-workbench/internal/app"
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/computeruse"
 	"cyberagent-workbench/internal/desktop"
@@ -609,6 +610,16 @@ func runDesktop(config desktopOptions) error {
 	if err != nil {
 		return err
 	}
+	var terminalSettingsStore application.DesktopTerminalSettingsStore
+	if config.riskProfileRestart {
+		terminalSettingsStore, err = application.NewFileDesktopTerminalSettingsStore(homePath)
+		if err != nil {
+			return err
+		}
+		if _, err = terminalSettingsStore.Load(context.Background()); err != nil {
+			return err
+		}
+	}
 	config, environmentSettings, err := loadDesktopSandboxSettings(context.Background(), config, homePath)
 	if err != nil {
 		return err
@@ -716,7 +727,8 @@ func runDesktop(config desktopOptions) error {
 		}
 	}
 	controlPlane, err := desktop.OpenControlPlane(desktop.ControlPlaneConfig{
-		DatabasePath: databasePath, HomePath: homePath, ReadToken: readToken,
+		TerminalSettingsStore: terminalSettingsStore,
+		DatabasePath:          databasePath, HomePath: homePath, ReadToken: readToken,
 		ControlToken:          controlToken,
 		ComputerUseExecutable: computerUseExecutable,
 		RunControlEnabled:     config.profileControl, RunCreationEnabled: config.runCreation,
@@ -810,6 +822,13 @@ func runDesktop(config desktopOptions) error {
 	commandRuntimeAdapterInstalled, commandRuntimeAdapterReady :=
 		controlPlane.CommandRuntimeProcessStatus()
 	bridge, err := desktop.NewDesktopBridge(desktop.DesktopBridgeConfig{
+		TerminalSettingsStore: terminalSettingsStore,
+		TerminalSettingsConfirmer: func() desktop.DesktopTerminalSettingsConfirmer {
+			if terminalSettingsStore == nil {
+				return nil
+			}
+			return nativeTerminalSettingsConfirmer{}
+		}(),
 		ContextProvider: lifecycle.Context, FilePicker: nativeSkillPackagePicker{},
 		ReadToken: readToken, ControlToken: controlToken, APIVersion: httpapi.Version,
 		RunControlEnabled: config.profileControl, RunCreationEnabled: config.runCreation,

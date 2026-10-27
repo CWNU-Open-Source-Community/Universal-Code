@@ -3,6 +3,7 @@ param(
     [string]$OutputDirectory = "build/desktop",
     [string]$Version = "v1.0.0",
     [switch]$SkipFrontend,
+    [switch]$BundlePowerShell7,
     [switch]$VerifyReproducible
 )
 
@@ -274,3 +275,8 @@ Write-Output "desktop_installer_included: false"
 Write-Output "desktop_registry_writes: false"
 Write-Output "desktop_profile_control_default: true"
 Write-Output "desktop_safe_view_flag: --safe-view"
+
+if ($BundlePowerShell7) {
+    & (Join-Path $PSScriptRoot "prepare-powershell-runtime.ps1") -OutputDirectory $OutputDirectory
+    Write-Output "desktop_powershell_runtime: runtimes/powershell7 (keep this directory beside the EXE)"
+}

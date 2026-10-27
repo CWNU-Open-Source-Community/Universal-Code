@@ -289,7 +289,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
 }
 
 const settingsGroups: Array<{ label: [string, string]; items: Array<{
-  id: V2SettingsSection; label: [string, string]; icon: typeof Settings;
+  id: V2SettingsSection; label: [string, string]; icon: typeof Settings; keywords?: string;
 }> }> = [
   { label: ["应用", "Application"], items: [
     { id: "general", label: ["常规", "General"], icon: Settings },
@@ -304,7 +304,7 @@ const settingsGroups: Array<{ label: [string, string]; items: Array<{
     { id: "models", label: ["模型", "Models"], icon: Cpu },
     { id: "extensions", label: ["扩展与代码智能", "Extensions and code intelligence"], icon: PlugZap },
     { id: "skills", label: ["Skill 包", "Skill packages"], icon: PackageSearch },
-    { id: "environment", label: ["执行环境", "Execution environment"], icon: Box },
+    { id: "environment", label: ["执行环境", "Execution environment"], icon: Box, keywords: "终端 terminal shell powershell pwsh cmd 授权" },
   ] },
   { label: ["任务与观察", "Tasks and observation"], items: [
     { id: "task-configuration", label: ["任务预算与项目配置", "Task budget and project configuration"], icon: Settings },
@@ -329,7 +329,7 @@ export function V2SettingsSidebar({ section, onBack, onSelect }: {
         placeholder={t("搜索设置…", "Search settings…")} type="search" value={search} /></label>
     <nav aria-label={t("设置分类", "Settings categories")} className="v2-settings-nav">
       {settingsGroups.map((group) => {
-        const items = group.items.filter((item) => !normalized || t(...item.label).toLocaleLowerCase().includes(normalized));
+        const items = group.items.filter((item) => !normalized || `${t(...item.label)} ${item.keywords ?? ""}`.toLocaleLowerCase().includes(normalized));
         if (!items.length) return null;
         return <section key={group.label[0]}><h2>{t(...group.label)}</h2>{items.map(({ id, label, icon: Icon }) => {
           const active = section === id || section === "advanced-models" && id === "models" ||
