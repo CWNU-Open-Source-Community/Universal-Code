@@ -15,6 +15,7 @@ import * as desktopBridge from "../../lib/desktop-bridge";
 import { V2Conversation, V2FileDrawer, V2TerminalDrawer, parseProjectFileLink } from "./conversation";
 
 const composerFiles = vi.hoisted(() => ({ current: undefined as V2FileReference[] | undefined }));
+const composerStop = vi.hoisted(() => ({ current: undefined as (() => boolean) | undefined }));
 const streams = vi.hoisted(() => ({ events: "live", model: "waiting" }));
 
 vi.mock("../../hooks/use-run-event-stream", () => ({
@@ -26,6 +27,7 @@ vi.mock("../../hooks/use-public-model-stream", () => ({
 }));
 
 vi.mock("../projection/narrative", () => ({
+  projectThreadNarrative: () => [],
   prepareThreadNarrative: (items: ThreadTranscriptItemView[]) => ({ entries: items.map((item) => ({
     id: item.id,
     kind: item.source === "operator" ? "user" : "assistant",
@@ -42,15 +44,16 @@ vi.mock("../projection/narrative", () => ({
 }));
 
 vi.mock("./composer", () => ({
-  V2Composer: ({ disabled, onSubmit, threadID, fileReferenceUnavailableReason }: {
+  V2Composer: ({ disabled, onSubmit, onStop, threadID, fileReferenceUnavailableReason }: {
     disabled: boolean;
     onSubmit: (content: string, files?: V2FileReference[]) => Promise<void>;
+    onStop?: () => boolean;
     threadID: string;
     fileReferenceUnavailableReason?: string;
-  }) => <button data-file-reference-unavailable={fileReferenceUnavailableReason}
+  }) => { composerStop.current = onStop; return <button data-file-reference-unavailable={fileReferenceUnavailableReason}
     disabled={disabled} onClick={() => void onSubmit(`pending-${threadID}`, composerFiles.current).catch(() => undefined)} type="button">
     发送 {threadID}
-  </button>,
+  </button>; },
 }));
 
 vi.mock("../../components/user-terminal-panel", () => ({
@@ -63,7 +66,7 @@ vi.mock("../../components/user-terminal-panel", () => ({
   </div>,
 }));
 
-afterEach(() => { cleanup(); composerFiles.current = undefined; streams.events = "live"; streams.model = "waiting"; });
+afterEach(() => { cleanup(); composerFiles.current = undefined; composerStop.current = undefined; streams.events = "live"; streams.model = "waiting"; });
 
 const workspaces = [{ id: "workspace-1", name: "Workspace 1" }] as WorkspaceView[];
 
@@ -216,6 +219,19 @@ function queueSnapshot(runID = "run-thread-a", sessionID = "sess-thread-a") {
 }
 
 describe("V2Conversation", () => {
+  it("opens export from the conversation menu with read access and closes it when changing chats", async () => {
+    const ui = renderConversation(baseClient({ hasThreadControl: false }));
+    const trigger = await screen.findByRole("button", { name: "对话操作" });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "导出对话" }));
+    expect(await screen.findByRole("dialog", { name: "导出对话" })).toBeVisible();
+    ui.rerenderThread("thread-b");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "导出对话" })).not.toBeInTheDocument());
+    ui.rerenderThread("thread-a");
+    await screen.findByText("Title thread-a");
+    expect(screen.queryByRole("dialog", { name: "导出对话" })).not.toBeInTheDocument();
+  });
+
   it("loads and focuses the complete saved message window in an archived chat without submitting or restoring it", async () => {
     const content = "An old full answer beyond the transcript preview.";
     const getPage = vi.fn((_path: string, _query: unknown, cursor = "") => Promise.resolve(cursor
@@ -623,6 +639,41 @@ describe("V2Conversation", () => {
     });
     await waitFor(() => expect(screen.queryByRole("button", { name: "正在停止" })).not.toBeInTheDocument());
     expect(screen.queryByText("正在工作")).not.toBeInTheDocument();
+  });
+
+  it("routes the composer stop action through the existing authorized button and pending state", async () => {
+    const execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
+      execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false };
+    const pending = deferred<ThreadExecutionView>();
+    const interruptThread = vi.fn(() => pending.promise);
+    const threadExecution = vi.fn().mockResolvedValue(execution);
+    const view = renderConversation(baseClient({ hasRunExecution: true, hasThreadExecutionRead: true,
+      threadExecution, interruptThread }));
+    const button = await screen.findByRole("button", { name: "停止当前执行" });
+    expect(button).toHaveAttribute("aria-keyshortcuts", "Escape");
+    expect(button).toHaveAttribute("title", expect.stringContaining("输入框内 Esc"));
+    act(() => expect(composerStop.current?.()).toBe(true));
+    await waitFor(() => expect(interruptThread).toHaveBeenCalledWith("thread-a", "execution-a", "v2-thread-stop-execution-a"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "正在停止" })).toBeDisabled());
+    act(() => expect(composerStop.current?.()).toBe(false));
+    threadExecution.mockResolvedValue({ ...execution, state: "stopping" });
+    await act(async () => pending.resolve({ ...execution, state: "stopping" }));
+    act(() => expect(composerStop.current?.()).toBe(false));
+    threadExecution.mockResolvedValue({ ...execution, state: "idle" });
+    await act(async () => view.queryClient.invalidateQueries({ queryKey: v2QueryKeys.execution("thread-a") }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "正在停止" })).not.toBeInTheDocument());
+    act(() => expect(composerStop.current?.()).toBe(false));
+    expect(interruptThread).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer a composer stop action when execution permission is missing", async () => {
+    const interruptThread = vi.fn();
+    renderConversation(baseClient({ hasRunExecution: false, hasThreadExecutionRead: true, interruptThread,
+      threadExecution: vi.fn().mockResolvedValue({ version: "thread_execution.v1", thread_id: "thread-a",
+        execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false }) }));
+    await screen.findByText("正在工作");
+    act(() => expect(composerStop.current?.()).toBe(false));
+    expect(interruptThread).not.toHaveBeenCalled();
   });
 
   it("keeps the reader's scroll position when new content arrives and restores it on return", async () => {

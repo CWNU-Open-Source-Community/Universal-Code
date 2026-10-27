@@ -1,4 +1,5 @@
-import { Fragment, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useId, useMemo, useRef, useState, type Ref } from "react";
+import { WrapText } from "lucide-react";
 import type { ReviewCommentResult } from "../review-comment-draft";
 import "./review-diff-comment.css";
 import { useLocale, type LocaleText } from "../../lib/locale";
@@ -61,22 +62,31 @@ function lineContext(source: string, hunk: ReviewDiffHunk, line: ReviewDiffLine,
 
 interface CommentTarget { patch: string; hunk: number; line: number; context: string; label: string; text: string }
 
-export function ReviewDiff({ patch, source, onFeedback, onAddComment }: {
+export function DiffWrapButton({ wrapLines, onToggle, buttonRef }: { wrapLines: boolean; onToggle: () => void; buttonRef?: Ref<HTMLButtonElement> }) {
+  const { t } = useLocale();
+  return <button ref={buttonRef} className="v2-diff-wrap-toggle" type="button" aria-pressed={wrapLines}
+    aria-label={t("长行换行", "Wrap long lines")} title={t("长行换行", "Wrap long lines")}
+    onClick={onToggle}><WrapText size={16} aria-hidden="true" /></button>;
+}
+
+export function ReviewDiff({ patch, source, onFeedback, onAddComment, wrapLines: controlledWrapLines }: {
   patch: string; source: string; onFeedback?: (context: string) => void;
-  onAddComment?: (context: string) => ReviewCommentResult;
+  onAddComment?: (context: string) => ReviewCommentResult; wrapLines?: boolean;
 }) {
   const { t } = useLocale();
-  const [wrapLines, setWrapLines] = useState(false);
+  const [localWrapLines, setLocalWrapLines] = useState(false);
+  const wrapLines = controlledWrapLines ?? localWrapLines;
   const [comment, setComment] = useState<CommentTarget | null>(null);
   const [text, setText] = useState("");
   const [blocked, setBlocked] = useState(false);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const toolbar = useRef<HTMLButtonElement | null>(null);
+  const container = useRef<HTMLDivElement | null>(null);
   const inputID = useId();
   const parsed = useMemo(() => parseReviewDiff(patch), [patch]);
   const closeComment = () => {
     setComment(null); setText(""); setBlocked(false);
-    requestAnimationFrame(() => (trigger.current?.isConnected ? trigger.current : toolbar.current)?.focus());
+    requestAnimationFrame(() => (trigger.current?.isConnected ? trigger.current : toolbar.current ?? container.current)?.focus());
   };
   const addComment = () => {
     if (!comment || !text.trim() || !onAddComment) return;
@@ -106,14 +116,15 @@ export function ReviewDiff({ patch, source, onFeedback, onAddComment }: {
       <span>{t("Ctrl / ⌘ + Enter 加入；返回聊天后发送", "Ctrl / ⌘ + Enter to add; send from chat")}</span></div>
   </div>;
   if (!parsed.hunks.length) return <>{editor}<pre className="v2-delivery-patch">{patch}</pre></>;
-  return <div className={`v2-delivery-diff${wrapLines ? " is-wrapped" : ""}`}>
+  return <div ref={container} tabIndex={-1} className={`v2-delivery-diff${wrapLines ? " is-wrapped" : ""}`}>
     {comment && comment.patch !== patch && editor}
-    <div className="v2-diff-toolbar"><button type="button" aria-pressed={wrapLines} ref={toolbar}
-      onClick={() => setWrapLines((value) => !value)}>{t("长行换行", "Wrap long lines")}</button></div>
     {parsed.hunks.map((hunk, ordinal) => <section key={ordinal} aria-label={t(`差异片段 ${ordinal + 1}`, `Diff hunk ${ordinal + 1}`)}>
       {hunk.preamble && <pre>{hunk.preamble}</pre>}
-      <header><code>{hunk.header}</code>{onFeedback && <button type="button" onClick={() => onFeedback(
-        t(`${source}\n${fileContext(hunk, t)}\n差异片段：${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`, `${source}\n${fileContext(hunk, t)}\nDiff hunk: ${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`))}>{t("引用此片段", "Quote this excerpt")}</button>}</header>
+      <header><code>{hunk.header}</code><div className="v2-diff-hunk-actions">
+        {ordinal === 0 && controlledWrapLines === undefined && <DiffWrapButton wrapLines={wrapLines}
+          buttonRef={toolbar} onToggle={() => setLocalWrapLines((value) => !value)} />}
+        {onFeedback && <button type="button" onClick={() => onFeedback(
+        t(`${source}\n${fileContext(hunk, t)}\n差异片段：${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`, `${source}\n${fileContext(hunk, t)}\nDiff hunk: ${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`))}>{t("引用此片段", "Quote this excerpt")}</button>}</div></header>
       <div className="v2-delivery-diff-lines">{hunk.lines.map((line, index) => <Fragment key={index}>
         <div className={`v2-diff-line ${line.kind}`}>
           {onFeedback && line.kind !== "meta" ? <button type="button" className="v2-diff-line-ref"

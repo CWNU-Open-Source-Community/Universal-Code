@@ -199,10 +199,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up pinned Node 24.16.0
+      - name: Set up pinned Node 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24.16.0'
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -218,6 +218,8 @@ jobs:
         working-directory: web
         run: npm ci --ignore-scripts
 
+      - name: Update rustup certificate trust
+        run: rustup self update
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal
 
@@ -258,10 +260,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Set up pinned Node 24.16.0
+      - name: Set up pinned Node 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24.16.0'
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Build embedded renderer
@@ -337,13 +339,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up pinned Node 24.16.0
+      - name: Set up pinned Node 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24.16.0'
+          node-version: '24.22.1'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Update rustup certificate trust
+        run: rustup self update
       - name: Install pinned Rust toolchain for the fixture oracle
         shell: pwsh
         run: rustup toolchain install 1.97.1 --profile minimal

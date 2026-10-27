@@ -80,8 +80,7 @@ it("takes each default overview proposal straight to its own run and edit withou
   render(provider(<V2TaskReview client={api as unknown as APIClient} detail={detail()} working={false}
     onClose={vi.fn()} onRequestChange={vi.fn()} returnFocusRef={createRef()} />));
   const user = userEvent.setup();
-  await screen.findByText("当前执行的提案");
-  const actions = screen.getAllByRole("button", { name: "查看并审阅" });
+  const actions = await screen.findAllByRole("button", { name: "查看并审阅" });
   expect(within(actions[0].closest("article")!).getByText("run-current.txt")).toBeInTheDocument();
   await user.click(actions[0]);
   expect(await screen.findByRole("complementary", { name: "审阅 run-current.txt" })).toBeInTheDocument();

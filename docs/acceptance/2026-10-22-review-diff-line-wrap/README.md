@@ -1,5 +1,9 @@
 # Review Diff long-line wrapping
 
+The current compact file-header controls and preserved horizontal scrolling are
+documented in the [2026-10-26 follow-up](../2026-10-26-review-diff-toolbar/README.md).
+The captures below record the original implementation.
+
 The review Diff now has a Chinese/English **Wrap long lines** toggle. It starts off and changes only the display; source text and old/new line references retain their original values.
 
 Screenshots were captured in Microsoft Edge using the production UI and the production Go API from `cmd/workbenchjourney`. A disposable Git repository and a pending `settings.ts` edit were created through the real workspace, thread, lifecycle and file-proposal APIs. Both captures use the same persisted edit, original/proposed hashes and raw patch. The before bundle was built from `fc0935d6fc03ca7abccbd148ce52d26c2bc154f8`; the after bundle includes this change. The provider is the existing offline journey provider; this flow does not request model inference.
