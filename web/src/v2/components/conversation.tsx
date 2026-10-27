@@ -1,12 +1,11 @@
 import { localUIMessage } from "../../lib/local-ui-message";
-import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
-import { readThreadReview } from "../../api/task-delivery";
 import { usePublicModelStream } from "../../hooks/use-public-model-stream";
 import { useRunEventStream } from "../../hooks/use-run-event-stream";
 import { prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
@@ -53,42 +52,28 @@ import { V2ApprovalCards } from "./approval-cards";
 import { V2Composer } from "./composer";
 import { V2ThreadRunRecovery } from "./thread-run-recovery";
 import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
-import { WorkspaceExplorer } from "../../components/workspace-explorer";
 import { useFileEditLeave } from "../../components/file-edit-drafts";
 import { UserTerminalPanel, type TerminalQuoteResult } from "../../components/user-terminal-panel";
 import { desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
-import { V2IdentityDisclosure } from "./identity-disclosure";
+import { eventShortcut, shortcutLabel, useChatPreferences } from "../chat-preferences";
+import {
+  collapseWorkspacePanel,
+  focusWorkspaceFiles,
+  focusWorkspaceSingletonTab,
+  openWorkspaceFile,
+  setWorkspaceFullView,
+  toggleWorkspaceFiles,
+  toggleWorkspaceFullView,
+  toggleWorkspaceSingletonTab,
+  useThreadWorkspaceState,
+} from "../workspace-tabs";
+import { V2FileWorkspaceContent, V2WorkspaceDock } from "./workspace-dock";
 import { V2ThreadExport } from "./thread-export";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
-const V2TaskReview = lazy(() => import("./task-review").then((module) => ({ default: module.V2TaskReview })));
 const V2Inspector = lazy(() => import("./inspector").then((module) => ({ default: module.V2Inspector })));
-const V2ApplicationPreview = lazy(() => import("./application-preview").then((module) => ({ default: module.V2ApplicationPreview })));
-
-const threadTerminalSessions = new Map<string, string>();
-const terminalListeners = new Set<() => void>();
-
-function getThreadTerminalSession(threadID: string): string {
-  return threadTerminalSessions.get(threadID) ?? "";
-}
-
-function setThreadTerminalSession(threadID: string, sessionID: string) {
-  if (sessionID) {
-    threadTerminalSessions.set(threadID, sessionID);
-  } else {
-    threadTerminalSessions.delete(threadID);
-  }
-  terminalListeners.forEach((l) => l());
-}
-
-function subscribeTerminalSessions(listener: () => void) {
-  terminalListeners.add(listener);
-  return () => {
-    terminalListeners.delete(listener);
-  };
-}
 
 export function V2FileDrawer({
   client,
@@ -127,45 +112,6 @@ export function V2FileDrawer({
     returnFocusRef,
   });
 
-  const workspaceQuery = useQuery({
-    queryKey: ["v2", "file-drawer-workspace", runID, defaultWorkspaceID, threadID],
-    queryFn: async ({ signal }) => {
-      if (!runID) return defaultWorkspaceID;
-      if (typeof client.fileEditChangeSet === "function") {
-        try {
-          const changeSet = await client.fileEditChangeSet(runID, signal);
-          if (changeSet?.workspace_id) return changeSet.workspace_id;
-        } catch (error) {
-          if (signal.aborted) throw error;
-          // The task review can still confirm this exact Run's workspace.
-        }
-      }
-      if (threadID && typeof client.get === "function") {
-        const review = await readThreadReview(client, threadID, signal);
-        const runMatch = review.runs?.find((r) => r.run_id === runID);
-        if (runMatch) {
-          if (runMatch.workspace_id) return runMatch.workspace_id;
-          // A recorded Run with no workspace has an unavailable target;
-          // neither the current target nor the source can replace it.
-          throw new Error(t("此执行的文件目录当前不可用。", "The file directory for this run is currently unavailable."));
-        }
-        if (review.current_run_id === runID && review.target?.state === "available" && review.target.workspace_id) {
-          return review.target.workspace_id;
-        }
-        const changeMatch = [...(review.applied_changes ?? []), ...(review.unapplied_changes ?? [])].find(
-          (c) => c.run_id === runID && c.workspace_id
-        );
-        if (changeMatch?.workspace_id) return changeMatch.workspace_id;
-      }
-      throw new Error(t("尚未找到此执行的文件目录绑定。", "No file directory binding was found for this run."));
-    },
-    enabled: Boolean(runID || defaultWorkspaceID),
-    staleTime: 30_000,
-    retry: false,
-  });
-
-  const resolvedWorkspaceID = workspaceQuery.data ?? "";
-
   const content = (
       <section
         aria-label={t("工作区文件", "Workspace files")}
@@ -185,36 +131,17 @@ export function V2FileDrawer({
             <X aria-hidden="true" size={18} />
           </button>
         </header>
-        {runID && <div className="v2-file-drawer-context">
-          <p>{t("查看此执行绑定目录中的文件。", "View files in the directory bound to this run.")}</p>
-          <V2IdentityDisclosure identity={runID} identityLabel={t("执行 ID", "Run ID")} summary={t("执行信息", "Run details")} />
-        </div>}
-        <div className="v2-file-drawer-body">
-          {workspaceQuery.isLoading ? (
-            <div className="v2-file-drawer-loading" role="status">
-              <LoaderCircle className="spin" size={20} />
-              <span>{t("正在确认工作区…", "Confirming workspace…")}</span>
-            </div>
-          ) : workspaceQuery.isError ? (
-            <div className="v2-notice" role="alert">
-              <p>{t("无法确认此执行的工作区，文件目录可能已清理或暂时无法读取。请重试确认后查看文件。", "The workspace for this run could not be confirmed. Its directory may have been cleaned up or may be temporarily unavailable. Retry before viewing files.")}</p>
-              <button className="compact-command" disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()} type="button">
-                {t("重试工作区确认", "Retry workspace check")}
-              </button>
-            </div>
-          ) : (
-            <WorkspaceExplorer
-              client={client}
-              workspaceID={resolvedWorkspaceID}
-              runID={runID}
-              initialPath={initialPath}
-              initialLine={initialLine}
-              onPathChange={onPathChange}
-              onQuote={onQuote}
-              onReturnToDraft={onReturnToDraft}
-            />
-          )}
-        </div>
+        <V2FileWorkspaceContent
+          client={client}
+          threadID={threadID}
+          workspaceID={defaultWorkspaceID}
+          runID={runID}
+          initialPath={initialPath}
+          initialLine={initialLine}
+          onPathChange={onPathChange}
+          onQuote={onQuote}
+          onReturnToDraft={onReturnToDraft}
+        />
       </section>
   );
   return docked ? content : createPortal(
@@ -361,26 +288,25 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportThreadID, setExportThreadID] = useState<string | null>(null);
   useEffect(() => setExportThreadID(null), [threadID]);
-  const [activePane, setSelectedPane] = useState<"review" | "preview" | "context" | "files" | "terminal" | null>(null);
+  const workspaceState = useThreadWorkspaceState(threadID);
+  const activeWorkspaceTab = workspaceState.tabs.find((tab) => tab.id === workspaceState.activeTabID)
+    ?? workspaceState.tabs.at(-1)
+    ?? null;
+  const chatPreferences = useChatPreferences();
+  const fullViewShortcut = Object.values(chatPreferences.shortcuts).includes("Mod+Shift+F") ? "" : "Mod+Shift+F";
+  const fullViewShortcutLabel = fullViewShortcut ? shortcutLabel(fullViewShortcut) : "";
+  const [contextOpen, setContextOpen] = useState(false);
   const [roomForDock, setRoomForDock] = useState(false);
   const [compactPaneOpen, setCompactPaneOpen] = useState(false);
+  const [dockResizing, setDockResizing] = useState(false);
+  const [liveDockWidth, setLiveDockWidth] = useState<number | null>(null);
   const docked = view === "conversation" && roomForDock;
-  const setActivePane = useCallback((pane: typeof activePane) => {
-    setSelectedPane(pane);
-    setCompactPaneOpen(pane !== null && !docked);
-  }, [docked]);
+  const hasWorkspaceTabs = activeWorkspaceTab !== null;
+  const dockVisible = docked && hasWorkspaceTabs && workspaceState.open;
+  const modalVisible = !docked && hasWorkspaceTabs && compactPaneOpen;
+  const workspaceVisible = dockVisible || modalVisible;
+  const stageFullView = dockVisible && workspaceState.fullView;
   const leaveFileEdit = useFileEditLeave();
-  const setPaneOpen = (pane: NonNullable<typeof activePane>, open: boolean) =>
-    (open || activePane === pane) && leaveFileEdit(() => setActivePane(open ? pane : null));
-  const reviewOpen = activePane === "review";
-  const previewOpen = activePane === "preview";
-  const contextOpen = activePane === "context";
-  const filesOpen = activePane === "files" && (docked || compactPaneOpen);
-  const terminalDrawerOpen = activePane === "terminal" && (docked || compactPaneOpen);
-  const setReviewOpen = (open: boolean) => setPaneOpen("review", open);
-  const setPreviewOpen = (open: boolean) => setPaneOpen("preview", open);
-  const setContextOpen = (open: boolean) => setPaneOpen("context", open);
-  const setTerminalDrawerOpen = (open: boolean) => setPaneOpen("terminal", open);
   const [reviewFileTarget, setReviewFileTarget] = useState<FileEditReviewTarget | undefined>();
   const [reviewToolTarget, setReviewToolTarget] = useState<{ runID: string; tool: "github-review" }>();
   const reviewReturnFocus = useRef<HTMLButtonElement | null>(null);
@@ -389,29 +315,52 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const previewTrigger = useRef<HTMLButtonElement>(null);
   const [inspectorComposerOpen, setInspectorComposerOpen] = useState(false);
   const composerContainerRef = useRef<HTMLDivElement>(null);
+  const mainColumnRef = useRef<HTMLDivElement>(null);
   const [composerFocusRequest, setComposerFocusRequest] = useState<{ threadID: string } | null>(null);
   const [confirmedSubmission, setConfirmedSubmission] = useState<V2TurnInput | null>(null);
   const reviewTrigger = useRef<HTMLButtonElement>(null);
-  const [fileDrawerState, setFileDrawerState] = useState<{
-    path: string;
-    line?: number;
-    runID?: string;
-  }>({ path: "." });
   const fileTrigger = useRef<HTMLButtonElement>(null);
   const fileReturnFocus = useRef<HTMLElement | null>(null);
-
   const terminalTrigger = useRef<HTMLButtonElement>(null);
   const terminalReturnFocus = useRef<HTMLElement | null>(null);
   const terminalAvailable = desktopUserTerminalEnabled();
+  const currentRunIDRef = useRef("");
 
-  const currentTerminalSessionID = useSyncExternalStore(
-    subscribeTerminalSessions,
-    () => getThreadTerminalSession(threadID),
-    () => ""
-  );
-  const handleTerminalSessionChange = useCallback((newSessionID: string) => {
-    setThreadTerminalSession(threadID, newSessionID);
-  }, [threadID]);
+  const openSingletonSurface = useCallback((kind: "terminal" | "preview" | "review") => {
+    setContextOpen(false);
+    const perform = () => {
+      focusWorkspaceSingletonTab(threadID, kind);
+      if (!docked) setCompactPaneOpen(true);
+    };
+    if (workspaceVisible && activeWorkspaceTab?.kind === "file") {
+      leaveFileEdit(perform);
+      return;
+    }
+    perform();
+  }, [activeWorkspaceTab?.kind, docked, leaveFileEdit, threadID, workspaceVisible]);
+
+  const toggleSingletonSurface = useCallback((kind: "terminal" | "preview" | "review") => {
+    setContextOpen(false);
+    if (docked) {
+      if (workspaceVisible && activeWorkspaceTab?.kind === "file") {
+        leaveFileEdit(() => toggleWorkspaceSingletonTab(threadID, kind));
+        return;
+      }
+      toggleWorkspaceSingletonTab(threadID, kind);
+      return;
+    }
+    if (modalVisible && activeWorkspaceTab?.kind === kind) {
+      leaveFileEdit(() => {
+        setCompactPaneOpen(false);
+        collapseWorkspacePanel(threadID);
+      });
+      return;
+    }
+    leaveFileEdit(() => {
+      focusWorkspaceSingletonTab(threadID, kind);
+      setCompactPaneOpen(true);
+    });
+  }, [activeWorkspaceTab?.kind, docked, leaveFileEdit, modalVisible, threadID, workspaceVisible]);
 
   const openFile = useCallback(({
     path,
@@ -424,12 +373,18 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     runID?: string;
     triggerElement?: HTMLElement | null;
   }) => {
-    leaveFileEdit(() => {
+    setContextOpen(false);
+    const perform = () => {
       fileReturnFocus.current = triggerElement ?? fileTrigger.current;
-      setActivePane("files");
-      setFileDrawerState({ path, line, runID });
-    });
-  }, [leaveFileEdit, setActivePane]);
+      openWorkspaceFile(threadID, { path, line, runID }, currentRunIDRef.current || undefined);
+      if (!docked) setCompactPaneOpen(true);
+    };
+    if (workspaceVisible && activeWorkspaceTab?.kind === "file") {
+      leaveFileEdit(perform);
+      return;
+    }
+    perform();
+  }, [activeWorkspaceTab?.kind, docked, leaveFileEdit, threadID, workspaceVisible]);
   const turn = useV2ThreadTurn(client);
   const submissions = useV2ThreadSubmissions(threadID);
   const submitTrackedTurn = async (input: V2TurnInput) => {
@@ -522,6 +477,22 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
   const contextFocusTarget = { get current() { return workflowFocusTarget(contextReturnFocus.current); } };
   const reviewFocusTarget = { get current() { return workflowFocusTarget(reviewReturnFocus.current); } };
+  const workspaceFocusTarget: RefObject<HTMLElement | null> = {
+    get current() {
+      switch (activeWorkspaceTab?.kind) {
+        case "file":
+          return fileReturnFocus.current?.isConnected ? fileReturnFocus.current : fileTrigger.current;
+        case "terminal":
+          return terminalReturnFocus.current?.isConnected ? terminalReturnFocus.current : terminalTrigger.current;
+        case "preview":
+          return previewTrigger.current;
+        case "review":
+          return workflowFocusTarget(reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current);
+        default:
+          return fileTrigger.current;
+      }
+    },
+  };
   const menuRef = useRef<HTMLDivElement>(null);
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const olderScrollAnchorRef = useRef<{ threadID: string; height: number; top: number; pages: number;
@@ -744,15 +715,17 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
 
   useEffect(() => {
     setMenuOpen(false);
-    setActivePane(null);
+    setContextOpen(false);
+    setCompactPaneOpen(false);
+    setDockResizing(false);
+    setLiveDockWidth(null);
     setReviewFileTarget(undefined);
     setReviewToolTarget(undefined);
-    setFileDrawerState({ path: ".", line: undefined, runID: undefined });
     setComposerFocusRequest(null);
     olderScrollAnchorRef.current = null;
   }, [threadID, view]);
   const reportReplyReading = useV2ReplyReading({ threadID, request: readRequest, reading: replyReading,
-    readable: readingEnabled && view === "conversation" && !messageID && activePane === null,
+    readable: readingEnabled && view === "conversation" && !messageID && !contextOpen && !modalVisible && !stageFullView,
     ready: detailQuery.isSuccess && !latestTranscriptQuery.isLoading && !latestTranscriptQuery.isError,
     content: visibleNarrative, scroll: scrollRef,
     following: () => readingThreadRef.current === threadID && followLatestRef.current && olderScrollAnchorRef.current === null,
@@ -762,12 +735,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setReviewFileTarget(undefined);
     setReviewToolTarget({ runID: reviewEntry.runID, tool: "github-review" });
     reviewReturnFocus.current = reviewTrigger.current;
-    setActivePane("review");
+    openSingletonSurface("review");
     onReviewEntryHandled?.(reviewEntry.requestID);
-  }, [reviewEntry?.requestID, threadID]);
+  }, [openSingletonSurface, reviewEntry?.requestID, threadID]);
   useEffect(() => {
-    if (!composerFocusRequest || composerFocusRequest.threadID !== threadID || reviewOpen || previewOpen || contextOpen ||
-      filesOpen || terminalDrawerOpen ||
+    if (!composerFocusRequest || composerFocusRequest.threadID !== threadID ||
+      contextOpen || modalVisible || stageFullView ||
       (view === "inspector" && !inspectorComposerOpen)) return;
     const frame = requestAnimationFrame(() => {
       const container = composerContainerRef.current;
@@ -780,7 +753,25 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       setComposerFocusRequest((current) => current === composerFocusRequest ? null : current);
     });
     return () => cancelAnimationFrame(frame);
-  }, [composerFocusRequest, threadID, activePane, view, inspectorComposerOpen]);
+  }, [composerFocusRequest, threadID, contextOpen, modalVisible, stageFullView, view, inspectorComposerOpen]);
+  useEffect(() => {
+    if (!docked || !dockVisible || !fullViewShortcut) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (eventShortcut(event) !== fullViewShortcut) return;
+      event.preventDefault();
+      toggleWorkspaceFullView(threadID);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [docked, dockVisible, fullViewShortcut, threadID]);
+  useEffect(() => {
+    if (!stageFullView) return;
+    if (mainColumnRef.current?.contains(document.activeElement)) {
+      workbenchSlot.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+    }
+  }, [stageFullView]);
   useEffect(() => {
     if (!menuOpen) return;
     firstMenuItemRef.current?.focus();
@@ -812,7 +803,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const measure = () => {
       const fits = (shell ?? container).clientWidth > (shell?.classList.contains("has-sidebar") ? 960 : 720);
       if (!fits && workbenchSlot.current?.contains(document.activeElement)) {
-        (workbenchSlot.current.querySelector(".v2-file-drawer") ? fileTrigger : terminalTrigger).current?.focus();
+        workspaceFocusTarget.current?.focus();
       }
       setRoomForDock(fits);
     };
@@ -835,6 +826,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       ? localUIMessage(detailQuery.error.message, t) : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
   const detail = detailQuery.data;
   const currentRun = detail.active_run ?? detail.last_run;
+  currentRunIDRef.current = currentRun.id;
   const workspace = workspaces.find(({ id }) => id === detail.thread.workspace_id);
   const runActive = executionQuery.data ? executionQuery.data.state !== "idle"
     : Boolean(detail.active_run && ["preparing", "running"].includes(detail.active_run.status));
@@ -932,7 +924,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const appendDraftAndReveal = (content: string) => {
     if (content) onDraftChange?.(draft?.trim() ? `${draft}\n\n${content}` : content);
     if (view === "inspector") setInspectorComposerOpen(true);
-    setReviewOpen(false); setPreviewOpen(false); setContextOpen(false);
+    setContextOpen(false);
+    if (!docked) {
+      setCompactPaneOpen(false);
+      collapseWorkspacePanel(threadID);
+    } else if (workspaceState.fullView) {
+      setWorkspaceFullView(threadID, false);
+    }
     setComposerFocusRequest({ threadID });
   };
   const addReviewComment = (content: string): ReviewCommentResult => {
@@ -944,32 +942,64 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     composeTarget.current = { ...current, draft: next };
     return "added";
   };
-  const companionDocked = view === "conversation" && !compactPaneOpen;
-  const companion = <>
-    {activePane === "files" && <V2FileDrawer key={threadID} client={client} threadID={threadID}
-      workspaceID={detail.thread.workspace_id ?? ""}
-      runID={fileDrawerState.runID || currentRun.id} initialPath={fileDrawerState.path}
-      initialLine={fileDrawerState.line} docked={companionDocked}
-      onPathChange={(path) => setFileDrawerState((current) => ({ ...current, path, line: undefined }))}
-      onQuote={onDraftChange ? (content) => addReviewComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`) : undefined}
-      onReturnToDraft={() => { setActivePane(null); appendDraftAndReveal(""); }}
-      onClose={() => {
-        setActivePane(null);
-        if (fileReturnFocus.current?.isConnected) fileReturnFocus.current.focus();
-        else fileTrigger.current?.focus();
-      }} returnFocusRef={fileReturnFocus} />}
-    {activePane === "terminal" && <V2TerminalDrawer key={threadID} runID={currentRun.id} sessionID={currentTerminalSessionID}
-      threadTitle={detail.thread.title} workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
-      onSession={handleTerminalSessionChange} docked={companionDocked}
-      onQuote={onDraftChange ? (content) => addReviewComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`) : undefined}
-      onReturnToDraft={() => { setActivePane(null); appendDraftAndReveal(""); }}
-      onClose={() => {
-        setTerminalDrawerOpen(false);
-        if (terminalReturnFocus.current?.isConnected) terminalReturnFocus.current.focus();
-        else terminalTrigger.current?.focus();
-      }} returnFocusRef={terminalReturnFocus} />}
-  </>;
+  const handleCollapseWorkspace = () => {
+    const focusInsideDock = Boolean(workbenchSlot.current?.contains(document.activeElement));
+    setCompactPaneOpen(false);
+    collapseWorkspacePanel(threadID);
+    if (docked && focusInsideDock) {
+      // Full view makes the whole chat column inert, including its header.
+      // Restore focus after React has made that column interactive again.
+      requestAnimationFrame(() => workspaceFocusTarget.current?.focus());
+    }
+  };
+  const handlePreviewStartRequest = () => {
+    if (!onDraftChange) return;
+    const previousRequest = previewRequest.data;
+    const request = previousRequest && ["draft", "rejected"].includes(previousRequest.phase)
+      ? previousRequest.request : applicationPreviewStartRequest(t);
+    if (!draft?.includes(request)) appendDraftAndReveal(request);
+    else appendDraftAndReveal("");
+    queryClient.setQueryData<ApplicationPreviewRequest>(applicationPreviewRequestKey(threadID), {
+      request, phase: "draft",
+    });
+  };
+  const effectiveDockWidth = liveDockWidth ?? workspaceState.width;
+  const renderWorkspaceDock = (isDocked: boolean, isVisible: boolean) => (
+    <V2WorkspaceDock
+      canQuote={Boolean(onDraftChange)}
+      canRequestPreviewStart={Boolean(onDraftChange)}
+      client={client}
+      currentRunID={currentRun.id}
+      detail={detail}
+      docked={isDocked}
+      fullViewShortcutLabel={fullViewShortcutLabel}
+      key={threadID}
+      onAddComment={onDraftChange ? addReviewComment : undefined}
+      onCollapse={handleCollapseWorkspace}
+      onOpenWorktree={onOpenWorktree}
+      onRequestChange={appendDraftAndReveal}
+      onRequestPreviewStart={handlePreviewStartRequest}
+      onResizeStateChange={(resizing, width) => {
+        setDockResizing(resizing);
+        setLiveDockWidth(width);
+      }}
+      onReturnToDraft={() => appendDraftAndReveal("")}
+      onToggleFullView={() => toggleWorkspaceFullView(threadID)}
+      panelVisible={isVisible}
+      previewStartRequest={previewRequest.data}
+      returnFocusRef={workspaceFocusTarget}
+      reviewFileTarget={reviewFileTarget}
+      reviewMemoryRef={reviewMemoryRef}
+      reviewToolTarget={reviewToolTarget}
+      state={workspaceState}
+      threadID={threadID}
+      working={working}
+      workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
+    />
+  );
   return <section className={`v2-conversation${view === "inspector" ? " is-inspector" : ""}`} ref={conversationRef}>
+    <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
+    <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
     <header className="v2-conversation-header">
       <div><Folder aria-hidden="true" size={17} /><strong>{detail.thread.title}</strong></div>
       <div className="v2-header-actions">
@@ -990,7 +1020,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             <Download aria-hidden="true" size={15} />{t("导出对话", "Export conversation")}</button>
           <button className="v2-task-compact-action" onClick={() => {
             setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
-            reviewReturnFocus.current = menuTriggerRef.current; setReviewOpen(true);
+            reviewReturnFocus.current = menuTriggerRef.current; openSingletonSurface("review");
           }} role="menuitem" type="button"><FileDiff aria-hidden="true" size={15} />{t("审阅改动", "Review changes")}</button>
           <button className="v2-task-compact-action" onClick={() => {
             setMenuOpen(false); contextReturnFocus.current = menuTriggerRef.current; setContextOpen(true);
@@ -1006,28 +1036,75 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
-        <button aria-pressed={view === "conversation" && activePane === null} disabled={view === "inspector" && !onExitInspector}
-          onClick={() => leaveFileEdit(() => { setActivePane(null); onExitInspector?.(); })} title={t("对话", "Conversation")} type="button"><MessagesSquare size={16} aria-hidden="true" /><span className="v2-task-nav-label">{t("对话", "Conversation")}</span></button>
-        <button aria-label={t("工作区文件", "Workspace files")} aria-pressed={filesOpen} onClick={() => {
-          if (filesOpen) { leaveFileEdit(() => setActivePane(null)); return; }
+        <button aria-pressed={view === "conversation" && !workspaceVisible && !contextOpen} disabled={view === "inspector" && !onExitInspector}
+          onClick={() => {
+            const showConversation = () => {
+              setContextOpen(false);
+              setCompactPaneOpen(false);
+              collapseWorkspacePanel(threadID);
+              onExitInspector?.();
+            };
+            if (modalVisible || (workspaceVisible && activeWorkspaceTab?.kind === "file")) leaveFileEdit(showConversation);
+            else showConversation();
+          }} title={t("对话", "Conversation")} type="button"><MessagesSquare size={16} aria-hidden="true" /><span className="v2-task-nav-label">{t("对话", "Conversation")}</span></button>
+        <button aria-label={t("工作区文件", "Workspace files")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "file"} onClick={() => {
+          setContextOpen(false);
           fileReturnFocus.current = fileTrigger.current;
-          if (activePane !== "files") setFileDrawerState({ path: ".", line: undefined, runID: currentRun.id });
-          setActivePane("files");
+          if (docked) {
+            if (workspaceVisible && activeWorkspaceTab?.kind === "file") {
+              leaveFileEdit(() => toggleWorkspaceFiles(threadID, currentRun.id));
+              return;
+            }
+            toggleWorkspaceFiles(threadID, currentRun.id);
+            return;
+          }
+          if (modalVisible && activeWorkspaceTab?.kind === "file") {
+            leaveFileEdit(() => {
+              setCompactPaneOpen(false);
+              collapseWorkspacePanel(threadID);
+            });
+            return;
+          }
+          focusWorkspaceFiles(threadID, currentRun.id);
+          setCompactPaneOpen(true);
         }} ref={fileTrigger} title={t("工作区文件", "Workspace files")} type="button"><FolderTree aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("文件", "Files")}</span></button>
-        <button aria-label={t("终端", "Terminal")} aria-pressed={terminalDrawerOpen} title={terminalAvailable ? t("打开任务终端", "Open task terminal") : t("桌面终端仅在桌面端可用", "The terminal is available in the desktop app")} onClick={() => {
-          terminalReturnFocus.current = terminalTrigger.current; setTerminalDrawerOpen(!terminalDrawerOpen);
+        <button aria-label={t("终端", "Terminal")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "terminal"} title={terminalAvailable ? t("打开任务终端", "Open task terminal") : t("桌面终端仅在桌面端可用", "The terminal is available in the desktop app")} onClick={() => {
+          terminalReturnFocus.current = terminalTrigger.current;
+          toggleSingletonSurface("terminal");
         }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("终端", "Terminal")}</span></button>
-        <button aria-label={t("应用预览", "App preview")} aria-pressed={previewOpen} onClick={() => setPreviewOpen(true)}
+        <button aria-label={t("应用预览", "App preview")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "preview"} onClick={() => toggleSingletonSurface("preview")}
           ref={previewTrigger} title={t("应用预览", "App preview")} type="button"><PanelTop aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("应用预览", "App preview")}</span></button>
       </div>
       <div className="v2-task-workflows" role="group" aria-label={t("任务流程", "Task workflow")}>
-        <button aria-label={t("审阅改动", "Review changes")} aria-pressed={reviewOpen} onClick={() => {
-          setReviewFileTarget(undefined); setReviewToolTarget(undefined); reviewReturnFocus.current = reviewTrigger.current; setReviewOpen(true);
+        <button aria-label={t("审阅改动", "Review changes")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "review"} onClick={() => {
+          setReviewFileTarget(undefined);
+          setReviewToolTarget(undefined);
+          reviewReturnFocus.current = reviewTrigger.current;
+          toggleSingletonSurface("review");
         }} ref={reviewTrigger} title={t("改动与交付", "Changes and delivery")} type="button"><FileDiff aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("改动与交付", "Changes and delivery")}</span></button>
-        <button aria-label={t("查看上下文", "View context")} aria-pressed={contextOpen} onClick={() => { contextReturnFocus.current = contextTrigger.current; setContextOpen(true); }}
+        <button aria-label={t("查看上下文", "View context")} aria-pressed={contextOpen} onClick={() => {
+          contextReturnFocus.current = contextTrigger.current;
+          if (!docked && modalVisible) {
+            leaveFileEdit(() => {
+              setCompactPaneOpen(false);
+              setContextOpen((open) => !open);
+            });
+            return;
+          }
+          setContextOpen((open) => !open);
+        }}
           ref={contextTrigger} title={t("上下文与恢复", "Context and recovery")} type="button"><BookOpen aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("上下文与恢复", "Context and recovery")}</span></button>
-        <button aria-pressed={view === "inspector" && activePane === null}
-          onClick={(event) => { const trigger = event.currentTarget; leaveFileEdit(() => { setActivePane(null); onOpenInspector(trigger); }); }} title={t("观察执行", "Observe execution")} type="button">
+        <button aria-pressed={view === "inspector" && !modalVisible && !contextOpen}
+          onClick={(event) => {
+            const trigger = event.currentTarget;
+            const enterInspector = () => {
+              setContextOpen(false);
+              setCompactPaneOpen(false);
+              onOpenInspector(trigger);
+            };
+            if (modalVisible) leaveFileEdit(enterInspector);
+            else enterInspector();
+          }} title={t("观察执行", "Observe execution")} type="button">
           <Microscope aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("观察执行", "Observe execution")}</span></button>
       </div>
     </nav>
@@ -1040,40 +1117,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         <button onClick={() => onOpenTool("schedule", currentRun.id)} type="button">{t("自动化", "Automations")}</button>
       </>}
     </nav>}
-    {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}
-      onReply={replyToPinProposal}
-      onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
-      onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
-      onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextFocusTarget} />}
-    {compactPaneOpen && companion}
-    {previewOpen && <V2LazySurface loadingText={t("正在加载应用预览…", "Loading app preview…")} errorLabel={t("应用预览", "App preview")} resetKey={threadID}
-      onDismiss={() => { setPreviewOpen(false); previewTrigger.current?.focus(); }}>
-      <V2ApplicationPreview key={threadID} client={client} runID={currentRun.id} threadID={threadID}
-      startRequest={previewRequest.data} canRequestStart={Boolean(onDraftChange)}
-      onClose={() => setPreviewOpen(false)} returnFocusRef={previewTrigger} onRequestStart={() => {
-        if (!onDraftChange) return;
-        const previousRequest = previewRequest.data;
-        const request = previousRequest && ["draft", "rejected"].includes(previousRequest.phase)
-          ? previousRequest.request : applicationPreviewStartRequest(t);
-        if (!draft?.includes(request)) appendDraftAndReveal(request);
-        else appendDraftAndReveal("");
-        queryClient.setQueryData<ApplicationPreviewRequest>(applicationPreviewRequestKey(threadID), {
-          request, phase: "draft",
-        });
-      }} />
-    </V2LazySurface>}
-    {reviewOpen && <V2LazySurface loadingText={t("正在加载改动审阅…", "Loading change review…")} errorLabel={t("改动审阅", "Change review")} resetKey={threadID}
-      onDismiss={() => { setReviewOpen(false); workflowFocusTarget(reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current)?.focus(); }}>
-      <V2TaskReview key={threadID} client={client} detail={detail} working={working}
-      onOpenWorktree={onOpenWorktree}
-      initialFileTarget={reviewFileTarget}
-      initialToolTarget={reviewToolTarget} toolMemoryRef={reviewMemoryRef}
-      onClose={() => {
-        if (!reviewReturnFocus.current?.isConnected) reviewReturnFocus.current = reviewTrigger.current;
-        setReviewOpen(false);
-      }} returnFocusRef={reviewFocusTarget} onRequestChange={appendDraftAndReveal} onAddComment={onDraftChange ? addReviewComment : undefined} /></V2LazySurface>}
-    <div className="v2-conversation-stage">
-    <div className="v2-conversation-main-column">
     {view === "inspector" && !transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载 Inspector…", "Loading Inspector…")}
       errorLabel="Inspector" resetKey={threadID} onDismiss={onExitInspector}><V2Inspector client={client} key={threadID}
       detail={detail} threadID={threadID} durableItems={transcriptItems}
@@ -1159,7 +1202,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {detail.active_run && <MCPInputCards client={client} runID={currentRun.id} />}
         {detail.active_run && <V2ApprovalCards client={client}
           runID={currentRun.id} threadID={threadID} onReviewFile={(target, trigger) => {
-            reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); setReviewOpen(true);
+            reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); openSingletonSurface("review");
           }} />}
         {detail.active_run && <div className="v2-command-approvals">
           <ControlledCommandProposalPanel client={client} runID={currentRun.id} threadID={threadID} />
@@ -1182,7 +1225,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {applicationPreviewRequestCopy(previewRequest.data, !previewServices.isError && Boolean(previewRequest.data.runID &&
           previewRequest.data.messageID && previewServices.data?.services.some((service) =>
             service.run_id === previewRequest.data?.runID && service.source_message_id === previewRequest.data?.messageID)), t)}
-        <button onClick={() => setPreviewOpen(true)} type="button">{t("查看应用服务", "View app services")}</button>
+        <button onClick={() => openSingletonSurface("preview")} type="button">{t("查看应用服务", "View app services")}</button>
       </p>}
       {managedDraft && <V2DraftConflict key={threadID} client={client} workspaceID={detail.thread.workspace_id ?? ""}
         state={managedDraft.state} onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
@@ -1203,7 +1246,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {view === "conversation" && <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive}
         onDismiss={() => setComposerFocusRequest({ threadID })} />}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
-        paused={working || activePane !== null || menuOpen || view !== "conversation"} onReply={replyToPinProposal}
+        paused={working || contextOpen || modalVisible || stageFullView || menuOpen || view !== "conversation"} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
       <div className="v2-queue-composer-stack">
       {queueBinding && <V2QueuedMessages client={client} {...queueBinding} running={working || runActive}
@@ -1240,11 +1283,24 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     </div>
     </div>
-    {view === "conversation" && !compactPaneOpen && <div className={`v2-workbench-slot${docked && (filesOpen || terminalDrawerOpen) ? " is-open" : ""}`}
-      ref={workbenchSlot} aria-hidden={!docked || !(filesOpen || terminalDrawerOpen)} inert={!docked || !(filesOpen || terminalDrawerOpen)}>
-      {companion}
+    {view === "conversation" && !modalVisible && <div
+      aria-hidden={!dockVisible}
+      className={`v2-workbench-slot${dockVisible ? " is-open" : ""}`}
+      data-resizing={dockResizing ? "true" : undefined}
+      id={`v2-workbench-slot-${threadID.replace(/[^a-zA-Z0-9_-]/gu, "-")}`}
+      inert={!dockVisible}
+      ref={workbenchSlot}
+      style={{ "--v2-workbench-width": `${effectiveDockWidth}px` } as CSSProperties}
+    >
+      {hasWorkspaceTabs && renderWorkspaceDock(true, dockVisible)}
     </div>}
     </div>
+    {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}
+      onReply={replyToPinProposal}
+      onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
+      onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
+      onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextFocusTarget} />}
+    {modalVisible && renderWorkspaceDock(false, true)}
     {exportThreadID === threadID && <V2ThreadExport key={threadID} client={client} threadID={threadID} title={detail.thread.title}
       returnFocusRef={menuTriggerRef} onClose={() => setExportThreadID(null)} />}
   </section>;

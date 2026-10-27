@@ -43,7 +43,7 @@ interface ReportAttempt {
 const reportIntentKey = (runID: string) => ["run", runID, "standard-code-delivery-intent"] as const;
 
 export function V2TaskReview({ client, detail, working, onClose, onRequestChange, onAddComment, returnFocusRef, onOpenWorktree, initialFileTarget,
-  initialToolTarget, toolMemoryRef }: {
+  initialToolTarget, toolMemoryRef, embedded = false }: {
   client: APIClient; detail: ThreadDetailView; working: boolean;
   onClose: () => void; onRequestChange: (context: string) => void;
   onAddComment?: (context: string) => ReviewCommentResult;
@@ -52,6 +52,7 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
   initialFileTarget?: FileEditReviewTarget;
   initialToolTarget?: { runID: string; tool: "github-review" };
   toolMemoryRef?: RefObject<TaskReviewToolMemory>;
+  embedded?: boolean;
 }) {
   const { t } = useLocale();
   const [commentResult, setCommentResult] = useState<ReviewCommentResult | null>(null);
@@ -93,6 +94,11 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
     setSelectedRunID(initialFileTarget.runID); setFileTarget(initialFileTarget);
     setTab("files"); setShowHistory(true);
   }, [initialFileTarget?.runID, initialFileTarget?.editID, initialFileTarget?.workspaceID]);
+  useEffect(() => {
+    if (!initialToolTarget) return;
+    setSelectedRunID(initialToolTarget.runID); setFileTarget(undefined);
+    setTab("tools"); setShowHistory(false);
+  }, [initialToolTarget?.runID, initialToolTarget?.tool]);
   const navigation = useRef<HTMLDivElement>(null);
   const selectTab = (value: ReviewTab, focusNavigation = false) => {
     setTab(value); setFilePath(null);
@@ -101,8 +107,8 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
   };
   const [filePath, setFilePath] = useState<{ path: string; workspaceID: string } | null>(null);
   const close = useRef<HTMLButtonElement>(null);
-  const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, close,
-    { isolateBackground: true, returnFocusRef });
+  const dialog = useModalFocusTrap<HTMLElement>(!embedded, onClose, false, close,
+    { isolateBackground: !embedded, trapFocus: !embedded, returnFocusRef });
   const keys = useRef(new Map<string, string>());
   const selectedRun = detail.runs.find(({ run }) => run.id === selectedRunID)?.run
     ?? (selectedRunID === currentRun.id ? currentRun : undefined);
@@ -195,12 +201,9 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
   };
   const requestChange = (context: string) => onRequestChange(
     t(`请调整以下审阅对象：\n${context}\n执行记录：${reviewedRunID}\n具体要求：`, `Update the following reviewed item:\n${context}\nRun: ${reviewedRunID}\nRequirements:`));
-  return createPortal(<div className="v2-inspector-backdrop" role="presentation"
-    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section aria-label={t("审阅任务改动", "Review task changes")} aria-modal="true" className="v2-inspector-drawer v2-review-drawer"
-      ref={dialog} role="dialog" tabIndex={-1}>
-      <header><div className="v2-review-title"><strong>{t("审阅与交付", "Review and delivery")}</strong><span title={detail.thread.title}>{detail.thread.title}</span></div>
-        <button aria-label={t("关闭任务审阅", "Close task review")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={18} /></button></header>
+  const reviewInner = <>
+      {!embedded && <header><div className="v2-review-title"><strong>{t("审阅与交付", "Review and delivery")}</strong><span title={detail.thread.title}>{detail.thread.title}</span></div>
+        <button aria-label={t("关闭任务审阅", "Close task review")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={18} /></button></header>}
       <div className="v2-review-navigation" ref={navigation}>
         <div className="v2-review-main-nav">
           <div aria-label={t("交付流程", "Delivery workflow")} role="group">{primaryTabs.map(({ value, label, icon: Icon }) => <button
@@ -330,6 +333,13 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
         <button onClick={onAddComment ? () => onRequestChange("") : onClose} type="button">
           {onAddComment ? t("返回聊天草稿", "Return to chat draft") : t("返回对话", "Back to conversation")}</button>
       </footer>
+  </>;
+  if (embedded) return <div className="v2-review-drawer is-embedded">{reviewInner}</div>;
+  return createPortal(<div className="v2-inspector-backdrop" role="presentation"
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section aria-label={t("审阅任务改动", "Review task changes")} aria-modal="true" className="v2-inspector-drawer v2-review-drawer"
+      ref={dialog} role="dialog" tabIndex={-1}>
+      {reviewInner}
     </section>
   </div>, document.body);
 }

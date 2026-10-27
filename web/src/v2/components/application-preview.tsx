@@ -13,15 +13,16 @@ import { ThreadActivityToolDetailPanel } from "./activity-detail";
 import { applicationPreviewRequestCopy, applicationServicesQueryKey, type ApplicationPreviewRequest } from "../application-preview-request";
 import "./application-preview.css";
 
-export function V2ApplicationPreview({ client, runID, threadID, onClose, returnFocusRef, onRequestStart, startRequest, canRequestStart = true }: {
+export function V2ApplicationPreview({ client, runID, threadID, onClose, returnFocusRef, onRequestStart, startRequest, canRequestStart = true, embedded = false }: {
   client: APIClient; runID: string; threadID: string; onClose: () => void;
   returnFocusRef: RefObject<HTMLElement | null>; onRequestStart: () => void;
   startRequest?: ApplicationPreviewRequest | null; canRequestStart?: boolean;
+  embedded?: boolean;
 }) {
   const { t } = useLocale();
   const queries = useQueryClient();
   const closeButton = useRef<HTMLButtonElement>(null);
-  const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, closeButton, { isolateBackground: true, returnFocusRef });
+  const dialog = useModalFocusTrap<HTMLElement>(!embedded, onClose, false, closeButton, { isolateBackground: !embedded, trapFocus: !embedded, returnFocusRef });
   const [selectedJobID, setSelectedJobID] = useState<string | null>(null);
   const stopping = useRef(false);
   const servicesReadable = typeof client.listThreadApplicationServices === "function";
@@ -54,9 +55,8 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
     stop.mutate({ sourceRunID: source.run_id, jobID: source.job_id });
   };
   const browserRunID = source?.run_id ?? runID;
-  return createPortal(<div className="v2-preview-overlay">
-    <section className="v2-app-preview" ref={dialog} role="dialog" aria-modal="true" aria-label={t("应用预览", "App preview")}>
-      <header><h2>{t("应用预览", "App preview")}</h2><button aria-label={t("收起应用预览", "Close app preview")} type="button" ref={closeButton} onClick={onClose}><X size={20} /></button></header>
+  const previewBody = <>
+      {!embedded && <header><h2>{t("应用预览", "App preview")}</h2><button aria-label={t("收起应用预览", "Close app preview")} type="button" ref={closeButton} onClick={onClose}><X size={20} /></button></header>}
       <section className="v2-preview-services" aria-label={t("应用后台服务", "App background services")}>
         <h3>{t("项目命令与后台服务", "Project commands and background services")}</h3>
         <p className="v2-preview-help">{t("先把启动要求放回草稿，确认发送后在这里查看服务状态、启动输出和页面预览。", "Add the startup request to your draft and send it after review. Then view service status, startup output and page previews here.")}</p>
@@ -104,6 +104,11 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
       {(!selectedJobID || selected) && <V2PreviewBrowser key={JSON.stringify([browserRunID, source?.job_id ?? "manual"])} client={client} runID={browserRunID} threadID={threadID}
         currentRunID={runID} sourceService={source} sourceReadable={serviceReadable}
         candidates={serviceReadable ? serviceDetail.data?.candidate_urls : undefined} />}
+  </>;
+  if (embedded) return <div className="v2-app-preview is-embedded">{previewBody}</div>;
+  return createPortal(<div className="v2-preview-overlay">
+    <section className="v2-app-preview" ref={dialog} role="dialog" aria-modal="true" aria-label={t("应用预览", "App preview")}>
+      {previewBody}
     </section>
   </div>, document.body);
 }

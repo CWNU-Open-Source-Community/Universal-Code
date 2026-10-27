@@ -1,9 +1,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
-import { UserTerminalPanel } from "./user-terminal-panel";
+import { applyPrayuTheme } from "../lib/appearance";
+import { UserTerminalPanel, terminalXtermTheme } from "./user-terminal-panel";
 
 const terminalMocks = vi.hoisted(() => ({
-  instances: [] as Array<{ select: (text: string) => void; disposed: boolean; selectionDisposed: boolean; write: (data: Uint8Array) => void }>,
+  instances: [] as Array<{
+    options: Record<string, unknown>;
+    select: (text: string) => void;
+    disposed: boolean;
+    selectionDisposed: boolean;
+    write: (data: Uint8Array) => void;
+  }>,
   agentEnabled: false,
   settingsAvailable: false,
   settings: vi.fn(),
@@ -28,11 +35,15 @@ const terminalMocks = vi.hoisted(() => ({
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
+    options: Record<string, unknown>;
     selected = "";
     changed = () => {};
     disposed = false;
     selectionDisposed = false;
-    constructor() { terminalMocks.instances.push(this); }
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = options;
+      terminalMocks.instances.push(this);
+    }
     select(text: string) { this.selected = text; this.changed(); }
     getSelection() { return this.selected; }
     clearSelection() { this.select(""); }
@@ -674,5 +685,89 @@ describe("UserTerminalPanel", () => {
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(onQuote).not.toHaveBeenCalled();
+  });
+
+  it("syncs xterm theme options with light, glass, and dark application themes", async () => {
+    try {
+      applyPrayuTheme("light");
+      render(<UserTerminalPanel runID="run-1" sessionID="" onSession={vi.fn()} />);
+      expect(terminalMocks.instances[0].options.theme).toEqual(terminalXtermTheme("light"));
+
+      act(() => {
+        applyPrayuTheme("glass");
+      });
+      await waitFor(() => {
+        expect(terminalMocks.instances[0].options.theme).toEqual(terminalXtermTheme("glass"));
+      });
+
+      act(() => {
+        applyPrayuTheme("dark");
+      });
+      await waitFor(() => {
+        expect(terminalMocks.instances[0].options.theme).toEqual(terminalXtermTheme("dark"));
+      });
+    } finally {
+      cleanup();
+      applyPrayuTheme("light");
+    }
+  });
+
+  it("allows Ctrl+Shift+F and Cmd+Shift+F full-view shortcuts to bubble past xterm", async () => {
+    await renderClipboardTerminal();
+    expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "f", code: "KeyF", metaKey: true, shiftKey: true }))).toBe(false);
+    expect(terminalMocks.clipboardRead).not.toHaveBeenCalled();
+    expect(terminalMocks.clipboardWrite).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+  });
+
+  it("offers explicit Restart without auto-running old commands when recovering an ended or restarted terminal", async () => {
+    terminalMocks.start.mockResolvedValueOnce({
+      protocol_version: "desktop_user_terminal.v1",
+      session_id: "terminal-restarted",
+      run_id: "run-1",
+      state: "running",
+      columns: 120,
+      rows: 32,
+      output_base_cursor: 0,
+      output_next_cursor: 0,
+      shell: { id: "pwsh", name: "PowerShell 7", path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe", version: "7.4.6" },
+    });
+    const onSession = vi.fn();
+    const onShellChange = vi.fn();
+    const view = render(
+      <UserTerminalPanel
+        onSession={onSession}
+        onShellChange={onShellChange}
+        recoverable
+        runID="run-1"
+        sessionID=""
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+    expect(screen.getByText("Previous session ended · commands are not rerun")).toBeInTheDocument();
+    const restartBtn = screen.getByRole("button", { name: "Restart" });
+    expect(terminalMocks.start).not.toHaveBeenCalled();
+
+    fireEvent.click(restartBtn);
+    await waitFor(() => {
+      expect(terminalMocks.start).toHaveBeenCalledWith("run-1", 120, 32, false);
+      expect(onSession).toHaveBeenCalledWith("terminal-restarted");
+      expect(onShellChange).toHaveBeenCalledWith("PowerShell 7");
+    });
+
+    terminalMocks.get.mockResolvedValueOnce({
+      session_id: "terminal-exited-2",
+      run_id: "run-1",
+      state: "exited",
+      columns: 120,
+      rows: 32,
+      output_base_cursor: 0,
+      output_next_cursor: 0,
+    });
+    view.rerender(<UserTerminalPanel onSession={onSession} recoverable runID="run-1" sessionID="terminal-exited-2" />);
+    expect(await screen.findByText("Process exited")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
   });
 });

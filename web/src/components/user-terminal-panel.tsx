@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { Bot, LoaderCircle, Play, Quote, ShieldOff, Square } from "lucide-react";
+import { Bot, LoaderCircle, Play, Quote, RotateCcw, ShieldOff, Square } from "lucide-react";
 import {
   closeDesktopUserTerminal,
   desktopDebugTerminalAgentInputEnabled,
@@ -20,6 +20,7 @@ import {
   type DesktopDebugTerminalAgentInputBinding,
   type DesktopTerminalSession,
 } from "../lib/desktop-bridge";
+import { usePrayuTheme, type PrayuTheme } from "../lib/appearance";
 import { useLocale } from "../lib/locale";
 import { openUserTerminal } from "../lib/open-user-terminal";
 import { readDesktopClipboardText, writeDesktopClipboardText } from "../lib/desktop-text-clipboard";
@@ -31,12 +32,91 @@ const terminalPollMilliseconds = 120;
 
 export type TerminalQuoteResult = "added" | "unsaved" | "blocked";
 
+export function terminalXtermTheme(theme: PrayuTheme): ITheme {
+  if (theme === "light") {
+    return {
+      background: "#ffffff",
+      foreground: "#202020",
+      cursor: "#202020",
+      cursorAccent: "#ffffff",
+      selectionBackground: "#20202024",
+      black: "#202020",
+      red: "#b42318",
+      green: "#166534",
+      yellow: "#854d0e",
+      blue: "#1d4ed8",
+      magenta: "#7e22ce",
+      cyan: "#0e7490",
+      white: "#4b5563",
+      brightBlack: "#595959",
+      brightRed: "#c81e1e",
+      brightGreen: "#15803d",
+      brightYellow: "#92400e",
+      brightBlue: "#1e40af",
+      brightMagenta: "#86198f",
+      brightCyan: "#155e75",
+      brightWhite: "#111827",
+    };
+  }
+  if (theme === "glass") {
+    return {
+      background: "#eff1f5",
+      foreground: "#30363d",
+      cursor: "#30363d",
+      cursorAccent: "#eff1f5",
+      selectionBackground: "#30363d26",
+      black: "#30363d",
+      red: "#d20f39",
+      green: "#166534",
+      yellow: "#854d0e",
+      blue: "#1e66f5",
+      magenta: "#8839ef",
+      cyan: "#179299",
+      white: "#5c5f77",
+      brightBlack: "#697078",
+      brightRed: "#b91c1c",
+      brightGreen: "#15803d",
+      brightYellow: "#92400e",
+      brightBlue: "#1d4ed8",
+      brightMagenta: "#7e22ce",
+      brightCyan: "#0e7490",
+      brightWhite: "#1f2328",
+    };
+  }
+  return {
+    background: "#181818",
+    foreground: "#ededed",
+    cursor: "#ededed",
+    cursorAccent: "#181818",
+    selectionBackground: "#ffffff38",
+    black: "#181818",
+    red: "#ef6b5d",
+    green: "#8fbf71",
+    yellow: "#e2b45f",
+    blue: "#78a9d4",
+    magenta: "#c792b6",
+    cyan: "#74b6b0",
+    white: "#ededed",
+    brightBlack: "#8a8a8a",
+    brightRed: "#f4877c",
+    brightGreen: "#a7d08c",
+    brightYellow: "#ecc87d",
+    brightBlue: "#94bee3",
+    brightMagenta: "#d7a9c8",
+    brightCyan: "#90cac4",
+    brightWhite: "#ffffff",
+  };
+}
+
 type UserTerminalPanelProps = {
   runID: string;
   sessionID: string;
   onSession: (sessionID: string) => void;
   onQuote?: (content: string) => TerminalQuoteResult;
   onReturnToDraft?: () => void;
+  recoverable?: boolean;
+  active?: boolean;
+  onShellChange?: (shellName: string) => void;
 };
 
 export function UserTerminalPanel(props: UserTerminalPanelProps) {
@@ -45,8 +125,10 @@ export function UserTerminalPanel(props: UserTerminalPanelProps) {
   return <UserTerminalSession key={`${props.runID}:${props.sessionID}`} {...props} />;
 }
 
-function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToDraft }: UserTerminalPanelProps) {
+function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToDraft,
+  recoverable = false, active = true, onShellChange }: UserTerminalPanelProps) {
   const { t } = useLocale();
+  const theme = usePrayuTheme();
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -128,7 +210,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
   });
 
   const resizeTerminal = useEffectEvent(() => {
-    if (replayingRef.current) return;
+    if (!active || replayingRef.current) return;
     fitRef.current?.fit();
     const terminal = terminalRef.current;
     if (terminal && session?.state === "running" && session.session_id === sessionID &&
@@ -149,34 +231,20 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
       fontSize: 13,
       lineHeight: 1.18,
       scrollback: 5000,
-      // Keep the terminal canvas neutral; ANSI colors preserve command-output meaning.
-      theme: {
-        background: "#181818",
-        foreground: "#ededed",
-        cursor: "#ededed",
-        cursorAccent: "#181818",
-        selectionBackground: "#ffffff38",
-        black: "#181818",
-        red: "#ef6b5d",
-        green: "#8fbf71",
-        yellow: "#e2b45f",
-        blue: "#78a9d4",
-        magenta: "#c792b6",
-        cyan: "#74b6b0",
-        white: "#ededed",
-      },
+      // Follow the active application theme while keeping ANSI semantic contrast.
+      theme: terminalXtermTheme(theme),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     openUserTerminal(terminal, fit, hostRef.current);
     terminalRef.current = terminal;
     fitRef.current = fit;
-    if (sessionRef.current) terminal.focus();
+    if (sessionRef.current && active) terminal.focus();
     const selectionSubscription = terminal.onSelectionChange(() => setHasSelection(Boolean(terminal.getSelection())));
     let platform: "windows" | "macos" | "other" = "other";
     if (desktopIsMacPlatform()) platform = "macos";
     else if (/win/iu.test(navigator.platform)) platform = "windows";
-    terminal.attachCustomKeyEventHandler(createTerminalClipboardKeyHandler({
+    const clipboardKeyHandler = createTerminalClipboardKeyHandler({
       platform,
       clipboard: {
         readText: () => { setMessage(""); return readDesktopClipboardText(); },
@@ -185,7 +253,14 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
       getSelection: () => terminal.getSelection(),
       capturePaste,
       onError: reportClipboardError,
-    }));
+    });
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type === "keydown" && (event.ctrlKey || event.metaKey) && event.shiftKey &&
+        !event.altKey && (event.code === "KeyF" || event.key.toLowerCase() === "f")) {
+        return false;
+      }
+      return clipboardKeyHandler(event);
+    });
     const dataSubscription = terminal.onData((data) => {
       handleTerminalData(data);
     });
@@ -206,6 +281,29 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
       fitRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    const nextTheme = terminalXtermTheme(theme);
+    if (terminal.options) terminal.options.theme = nextTheme;
+    else (terminal as { options?: { theme?: ITheme } }).options = { theme: nextTheme };
+  }, [theme]);
+
+  const previousActive = useRef(active);
+  useEffect(() => {
+    const becameActive = !previousActive.current && active;
+    previousActive.current = active;
+    if (becameActive) resizeTerminal();
+  }, [active]);
+
+  const notifyShellChange = useEffectEvent((shellName: string) => {
+    onShellChange?.(shellName);
+  });
+
+  useEffect(() => {
+    if (session?.shell?.name) notifyShellChange(session.shell.name);
+  }, [session?.shell?.name]);
 
   useEffect(() => {
     // The first ResizeObserver callback may precede the session lookup on reopen.
@@ -428,13 +526,24 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
     if (result !== "blocked") terminal?.clearSelection();
   };
 
+  const sessionEnded = Boolean(session && (session.state === "exited" || session.state === "closed" || session.state === "failed"));
+  const showRestart = (!sessionID && recoverable) || (Boolean(sessionID) && sessionEnded);
+
   return <div className="user-terminal-panel">
     <div aria-label={t("用户终端控制", "User terminal controls")} className="user-terminal-controls" role="toolbar">
-      {!sessionID && <button disabled={!enabled || !runID || busy}
+      {!sessionID && !recoverable && <button disabled={!enabled || !runID || busy}
         onClick={() => void start()} title={t("启动 Debug 终端", "Start debug terminal")} type="button">
         {busy ? <LoaderCircle aria-hidden="true" className="spin" size={14} /> :
           <Play aria-hidden="true" size={14} />}
         <span>{t("启动", "Start")}</span>
+      </button>}
+      {showRestart && <button disabled={!enabled || !runID || busy}
+        onClick={() => void start()}
+        title={t("在当前工作目录重新启动新终端（不自动重跑旧命令）", "Restart a new terminal in this workspace directory (does not rerun old commands)")}
+        type="button">
+        {busy ? <LoaderCircle aria-hidden="true" className="spin" size={14} /> :
+          <RotateCcw aria-hidden="true" size={14} />}
+        <span>{t("重新启动", "Restart")}</span>
       </button>}
       {sessionID && <button disabled={busy} onClick={() => void stop()}
         title={t("结束此终端及其后台进程", "End this terminal and its background processes")} type="button">
@@ -464,7 +573,8 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
       </button>}
       <span className={`user-terminal-state ${session?.state ?? "idle"}`}
         title={t("这是终端进程的状态，不代表 Agent 或某条命令正在执行。", "This describes the shell process, not Agent activity or whether a command is executing.")}>
-        {!enabled ? t("未启用", "Unavailable") : !session ? t("未启动", "Not started")
+        {!enabled ? t("未启用", "Unavailable") : !session
+          ? recoverable ? t("上次会话已结束 · 不自动重跑旧命令", "Previous session ended · commands are not rerun") : t("未启动", "Not started")
           : session.state === "running" ? t("终端已连接", "Terminal connected")
             : session.state === "starting" ? t("正在启动", "Starting")
               : session.state === "exited" ? t("进程已退出", "Process exited")
