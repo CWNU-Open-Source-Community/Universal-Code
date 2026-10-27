@@ -29,14 +29,16 @@ canonical repository URLs while preserving compatibility identifiers.
 尺寸为 1254×1254，保留原始白色圆角承托；SHA-256 为
 `a97e71e5f373d5d48ce24e39360cd390be2beabfe731037ac114ec38f12407d6`。
 
-Web、Windows 与 macOS 资产只允许从该母版进行确定性的缩放、圆角透明遮罩和容器
-格式转换，不得用字母 `T`、旧 `P` 标志或生成式重绘替代。小尺寸界面使用图形标志
+Web、Windows 与 macOS 资产从母版中心的 60% 区域进行确定性裁切，再缩放、添加圆角
+透明遮罩并转换容器格式。这样去掉展示留白，让图形主体占图标约 75%，在 16px、32px
+任务栏与 favicon 中保持可辨认；母版本身不变。不得用字母 `T`、旧 `P` 标志或生成式重绘替代。小尺寸界面使用图形标志
 本身，并由周围的可访问名称提供完整产品名。运行
 `pwsh ./scripts/generate-brand-assets.ps1` 可一次重建所有受版本控制的平台派生件。
 
 The maintainer-supplied glass globe, terminal prompt, and segmented navy ring are the official Universal-Code icon.
-Platform assets are deterministic resize, rounded-alpha-mask, and container derivatives of
-the exact supplied master above; generative redraws and letter placeholders are not canonical.
+Platform assets use a centered crop of the middle 60% of the exact supplied master, followed
+by resizing, rounded-alpha masking, and container conversion. The mark occupies about 75%
+of the output while the master remains unchanged; generative redraws and letter placeholders are not canonical.
 
 | Surface | Derived assets |
 |---|---|
