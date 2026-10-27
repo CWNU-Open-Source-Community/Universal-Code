@@ -18,6 +18,11 @@ Read complete regular files up to 4 MiB per side for repository review, independ
 of the unchanged 64 KiB explorer preview. Reuse canonical relative-path validation,
 reject linked paths, confine the open with `os.Root`, and check the opened file's
 identity. Both sides are UTF-8 checked and secret-redacted before comparison.
+Ordinary read failures and detected identity/size/mtime changes return `unavailable`,
+without a patch or complete statistics. A path missing after a status scan is a
+deletion only if the scan also reported it deleted; a reappearing deletion is
+likewise unavailable until refreshed. These checks detect inconsistencies rather
+than providing a filesystem snapshot.
 
 Use a line-based Myers edit script with common-prefix/suffix trimming and a linear
 disjoint-line-set fast path. Bound each side to 100,000 lines, search distance to
@@ -31,6 +36,8 @@ and proper missing-final-newline markers. Keep only 256 KiB of preview per file,
 including its truncation marker. `statistics_complete=true` means the counts cover
 the whole unredacted edit script, even when the preview is truncated. Redacted files
 do not claim complete original-content counts; the UI labels them accordingly.
+When redaction leaves both sides identical, return an empty patch and show
+“Sensitive changes hidden”, rather than manufacturing hunk positions.
 
 Return at most 50 items and 2 MiB of patch text per page. A cooperative three-second
 page computation budget starts after repository status/HEAD inspection; it is not
@@ -60,5 +67,8 @@ computation limits, cancellation, redaction beyond the old 64 KiB boundary, and
 canonical/linked-path rejection. HTTP/OpenAPI/client tests cover the new fields and
 page parameter; UI tests cover navigation, failure recovery, workspace changes,
 and complete versus unavailable statistics.
+Deterministic filesystem tests also cover removal, rename, replacement and
+reappearance between inspection and reading, insertion on either side of a page
+cursor, deletion/rename between pages, and recovery by refreshing from page one.
 
 See [real before/after captures and measurements](../acceptance/2026-10-27-repository-diff-scale/README.md).

@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -191,6 +190,15 @@ func buildDiffItem(ctx context.Context, tree *object.Tree, root string,
 	}
 	newText, newState, newRedactions, newRedacted := readWorkspaceText(root,
 		workspaceID, change.Path)
+	// A missing file is a deletion only when the status scan also saw it absent.
+	// Do not turn a path that disappeared (or reappeared) after that scan into a
+	// complete diff with contradictory operation labels.
+	expectedMissing := change.Worktree == "deleted" ||
+		(change.Staging == "deleted" && change.Worktree == "unmodified")
+	if (newState == "missing") != expectedMissing &&
+		(newState == "missing" || newState == "present") {
+		newState = DiffContentMissing
+	}
 	item.Redacted = oldRedacted || newRedacted
 	redactions := oldRedactions + newRedactions
 	item.ContentState = combinedContentState(oldState, newState)
@@ -204,10 +212,6 @@ func buildDiffItem(ctx context.Context, tree *object.Tree, root string,
 	}
 	item.StatisticsComplete = !item.Redacted
 	item.Patch, item.AddedLines, item.DeletedLines, item.Truncated = renderLinePatch(change.Path, edits, MaxDiffPatchBytes)
-	if item.Redacted && oldText == newText {
-		item.Patch = fmt.Sprintf("--- a/%s\n+++ b/%s\n@@ -1,1 +1,1 @@\n-[sensitive change omitted]\n+[sensitive change omitted]\n",
-			change.Path, change.Path)
-	}
 	item.PatchBytes = len([]byte(item.Patch))
 	return item, redactions, nil
 }
@@ -268,7 +272,7 @@ func readWorkspaceText(root string, workspaceID string,
 		case apperror.CodePolicyDenied:
 			return "", DiffContentLinked, 0, false
 		default:
-			return "", DiffContentBinary, 0, false
+			return "", DiffContentMissing, 0, false
 		}
 	}
 	if tooLarge {
@@ -282,6 +286,9 @@ func readWorkspaceText(root string, workspaceID string,
 }
 
 func combinedContentState(oldState string, newState string) string {
+	if oldState == DiffContentMissing || newState == DiffContentMissing {
+		return DiffContentMissing
+	}
 	for _, state := range []string{oldState, newState} {
 		if state == DiffContentLinked {
 			return DiffContentLinked

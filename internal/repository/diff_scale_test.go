@@ -86,7 +86,8 @@ func TestLargeDiffRedactsBeyondOldExplorerLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	item := got.Items[0]
-	if !item.Redacted || item.StatisticsComplete || strings.Contains(item.Patch, "sk-") || !strings.Contains(item.Patch, "sensitive change omitted") {
+	if !item.Redacted || item.StatisticsComplete || item.Patch != "" || item.PatchBytes != 0 ||
+		item.AddedLines != 0 || item.DeletedLines != 0 || item.ContentState != DiffContentText {
 		t.Fatalf("secret projection incorrect: %+v", item)
 	}
 }

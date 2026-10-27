@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"cyberagent-workbench/internal/apperror"
 )
 
 func TestReadReviewFileKeepsIndependentBoundAndPathChecks(t *testing.T) {
@@ -39,5 +41,33 @@ func TestReadReviewFileKeepsIndependentBoundAndPathChecks(t *testing.T) {
 	}
 	if _, _, err := ReadReviewFile(root, "linked/secret.txt", 1024); err == nil {
 		t.Fatal("followed parent symlink")
+	}
+}
+
+func TestReadReviewFileRejectsReplacementAfterValidation(t *testing.T) {
+	for _, mutation := range []string{"replace", "rewrite"} {
+		t.Run(mutation, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "sample.txt")
+			if err := os.WriteFile(path, []byte("first\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, expected, err := resolveExplorerTarget(root, "sample.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mutation == "replace" {
+				if err := os.Rename(path, filepath.Join(root, "original.txt")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(path, []byte("replacement content\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			data, large, err := readReviewTarget(root, "sample.txt", 1024, expected)
+			if apperror.CodeOf(err) != apperror.CodeConflict || large || len(data) != 0 {
+				t.Fatalf("returned changed file: bytes=%d large=%v err=%v", len(data), large, err)
+			}
+		})
 	}
 }

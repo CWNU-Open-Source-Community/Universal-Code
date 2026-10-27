@@ -197,7 +197,7 @@ it("preserves an unknown report through modal closure and a different execution'
   expect(recordStandardCodeDelivery.mock.calls[2]).toEqual(originalSecond);
   await waitFor(() => expect(screen.queryByRole("button", { name: "确认上次报告" })).not.toBeInTheDocument());
   expect(queryClient.getQueryData(["run", "run-2", "standard-code-delivery-intent"])).toBeNull();
-  expect(screen.getByRole("combobox", { name: "选择审阅的执行记录" })).toHaveValue("run-2");
+  expect(screen.queryByRole("combobox", { name: "选择审阅的执行记录" })).not.toBeInTheDocument();
   expect(await screen.findByText("报告已过期，当前版本未验证")).toBeInTheDocument();
 });
 

@@ -84,6 +84,37 @@ func TestSQLiteThreadSearchFiltersBeforeLimitAndPreservesCreationKeyset(t *testi
 	}
 }
 
+func TestSQLiteThreadListOrdersExactSecondTimestampsChronologically(t *testing.T) {
+	st := openWorkItemTestStore(t)
+	ctx := t.Context()
+	base := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
+	seed := &threadSearchCreationStore{SQLiteStore: st, createdAt: base}
+	runs := application.NewRunService(seed)
+	threadIDs := make([]string, 0, 3)
+	for index, offset := range []time.Duration{0, 100 * time.Millisecond, 110 * time.Millisecond} {
+		seed.createdAt = base.Add(offset)
+		_, run, err := runs.Create(ctx, application.CreateRunRequest{
+			Goal: fmt.Sprintf("creation order %d", index), Profile: "review", ModelRoute: "review"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		threadIDs = append(threadIDs, domain.InitialThreadID(run.ID))
+	}
+	var before time.Time
+	beforeID := ""
+	for _, expected := range []string{threadIDs[2], threadIDs[1], threadIDs[0]} {
+		items, err := st.ListThreadsByCreationPage(ctx, domain.ThreadFilter{Limit: 1}, before, beforeID)
+		if err != nil || len(items) != 1 || items[0].ID != expected {
+			t.Fatalf("creation order page: %#v %v; want %s", items, err, expected)
+		}
+		before, beforeID = items[0].CreatedAt, items[0].ID
+	}
+	items, err := st.ListThreadsByCreationPage(ctx, domain.ThreadFilter{Limit: 1}, before, beforeID)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("unexpected extra threads: %#v %v", items, err)
+	}
+}
+
 func TestSQLiteThreadExecutionFactsKeepExpiredLeaseAndUnfinishedRequestsUncertain(t *testing.T) {
 	st := openWorkItemTestStore(t)
 	ctx := t.Context()

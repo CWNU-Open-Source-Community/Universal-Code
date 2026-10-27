@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { ChevronRight, FileDiff, RefreshCw } from "lucide-react";
+import { ChevronRight, FileDiff, Quote, RefreshCw } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
-import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
+import { EmptyState, ErrorState, LoadingState, StatusBadge, StatusLabel } from "./common";
 import "./repository-diff-panel.css";
 
 type RepositoryDiffPanelProps = {
@@ -21,6 +21,19 @@ function RepositoryDiffPages({ client, workspaceID, onRequestChange }: Repositor
   const { t } = useLocale();
   const [pages, setPages] = useState([""]);
   const after = pages[pages.length - 1];
+  const changeStatusLabel = (status: string) => status === "copied" ? t("复制", "copied") :
+    <StatusLabel status={status === "conflicted" ? "conflict" : status} />;
+  const previewReason = (state: string) => {
+    switch (state) {
+      case "binary_or_unsupported": return t("二进制或不支持文本预览", "Binary or unsupported text format");
+      case "size_limited": return t("文件超出预览上限", "File exceeds preview limit");
+      case "computation_limited": return t("计算受限，行数未统计", "Computation limited; line counts unavailable");
+      case "linked": return t("链接文件不提供预览", "Linked file preview unavailable");
+      case "unavailable": return t("文件内容不可用", "File content unavailable");
+      case "text": return t("无文本差异", "No text changes");
+      default: return t("暂无差异预览", "Diff preview unavailable");
+    }
+  };
   const query = useQuery({
     queryKey: ["workspace", workspaceID, "repository-diff", ...(after ? [after] : [])],
     queryFn: ({ signal }) => client.repositoryDiff(workspaceID, signal, after),
@@ -38,7 +51,7 @@ function RepositoryDiffPages({ client, workspaceID, onRequestChange }: Repositor
             if (after) setPages([""]);
             else void query.refetch();
           }}
-          title={t("刷新", "Refresh")} type="button">
+          title={t("工作树变化后，从第一页刷新", "After working-tree changes, refresh from the first page")} type="button">
           <RefreshCw aria-hidden="true" className={query.isFetching ? "spin" : ""} size={15} />
         </button>
       </div>
@@ -56,37 +69,35 @@ function RepositoryDiffPages({ client, workspaceID, onRequestChange }: Repositor
       </div>
       {query.data.items.length === 0 ? <EmptyState>{after ? t("本页没有剩余文件，请刷新查看最新变更", "No remaining files on this page. Refresh to see current changes.") : t("工作树干净", "Working tree is clean")}</EmptyState> :
         <div className="repository-diff-list">
-          {query.data.items.map((item) => <article key={`${workspaceID}:${item.path}`}>
-            <details className="repository-diff-file" open>
-              <summary>
-                <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
-                <span className="repository-diff-file-heading">
-                  <code title={item.path}>{item.path}</code>
-                  <span className="repository-diff-file-counts">{item.statistics_complete ?
-                    t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`) :
-                    item.redacted ? t("已脱敏，原文行数未统计", "Redacted; original line counts unavailable") :
-                      t("行数未统计", "Line counts unavailable")}</span>
-                  {item.redacted && <StatusBadge status="redacted" />}
-                  <StatusBadge status={item.content_state} label={item.content_state === "computation_limited" ? t("计算受限", "Computation limited") : undefined} />
+          {query.data.items.map((item) => {
+            const heading = <span className="repository-diff-file-heading">
+                <code title={item.path}>{item.path}</code>
+                <span className="repository-diff-file-meta">
+                  {item.staging !== "unmodified" && item.staging !== "untracked" &&
+                    <span>{t("暂存区：", "Index: ")}{changeStatusLabel(item.staging)}</span>}
+                  {item.worktree !== "unmodified" && item.worktree !== "untracked" &&
+                    <span>{t("工作区：", "Working tree: ")}{changeStatusLabel(item.worktree)}</span>}
+                  {(item.staging === "untracked" || item.worktree === "untracked") && <StatusLabel status="untracked" />}
+                  {item.statistics_complete && <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>}
+                  {item.redacted && <span>{item.patch ? t("已脱敏，原文行数未统计", "Redacted; original line counts unavailable") : t("敏感变更已隐藏", "Sensitive changes hidden")}</span>}
+                  {!item.patch && !(item.redacted && item.content_state === "text") && <span>{previewReason(item.content_state)}</span>}
+                  {item.patch && item.truncated && <span title={item.statistics_complete ? t("行数包含该文件全部变更", "Counts include all changes in this file") : undefined}>{t("预览已截断", "Preview truncated")}</span>}
                 </span>
-              </summary>
-              {onRequestChange && <div className="repository-diff-file-actions">
-                <button className="compact-command" type="button"
+              </span>;
+            return <article className={onRequestChange ? "repository-diff-item has-action" : "repository-diff-item"} key={`${workspaceID}:${item.path}`}>
+              {item.patch ? <details className="repository-diff-file" open>
+                <summary>
+                  <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
+                  {heading}
+                </summary>
+                <pre>{item.patch}</pre>
+              </details> : <div className="repository-diff-file-row">{heading}</div>}
+              {onRequestChange && <button className="repository-diff-quote" type="button"
+                  aria-label={t(`引用 ${item.path}`, `Quote ${item.path}`)} title={t("引用到对话", "Quote in chat")}
                   onClick={() => onRequestChange(item.path, query.data!.base_head)}>
-                  {t("引用此差异请求修改", "Request changes to this diff")}</button>
-              </div>}
-              {item.truncated && <p className="repository-diff-notice">
-                {item.statistics_complete ? t("仅展示部分差异；上方行数包含该文件全部变更。", "Partial preview; counts above include all changes in this file.") :
-                  t("仅展示部分差异。", "Partial diff preview.")}
-              </p>}
-              {item.patch ? <pre>{item.patch}</pre> :
-                <div className="repository-diff-omitted">{
-                  item.content_state === "size_limited" ? t("文件超过 4 MiB，未生成文本差异。", "File exceeds 4 MiB; text diff unavailable.") :
-                  item.content_state === "computation_limited" ? t("变更过于复杂或行数过多，超出计算预算；未生成完整差异和统计。", "Diff exceeds the computation or line budget; complete diff and counts unavailable.") :
-                  item.content_state === "text" ? t("没有可展示的文本差异", "No text differences to display") : item.content_state
-                }</div>}
-            </details>
-          </article>)}
+                  <Quote aria-hidden="true" size={15} /></button>}
+            </article>;
+          })}
         </div>}
     </>}
     {(pages.length > 1 || query.data?.next_after) && <nav className="repository-diff-pagination" aria-label={t("差异分页", "Diff pages")}>
