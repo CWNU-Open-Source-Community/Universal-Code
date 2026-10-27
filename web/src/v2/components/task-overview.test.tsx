@@ -43,8 +43,6 @@ it("shows cross-Run applied history separately and keeps unbound checks from pro
   expect(screen.getByText("未绑定代码版本")).toHaveClass("unbound");
   expect(screen.queryByText("适用于当前版本")).not.toBeInTheDocument();
   expect(screen.getByText("检查记录未绑定代码版本。请对当前代码重新运行检查，再确认结果。")).toBeInTheDocument();
-  expect(screen.getByText("此后已有修改")).toBeInTheDocument();
-  expect(screen.getByText("当前文件不存在")).toBeInTheDocument();
   const old = screen.getByText("src/app.ts").closest("article")!;
   await userEvent.setup().click(within(old).getByRole("button", { name: "引用文件" }));
   expect(feedback).toHaveBeenCalledWith(expect.stringContaining("来源执行：old-run"));
@@ -77,13 +75,43 @@ it("labels cached results as unconfirmed after a failed refresh", async () => {
   expect(screen.queryByText("适用于当前版本")).not.toBeInTheDocument();
 });
 
-it("does not describe an unapplied proposal as a later modification or an applied edit", async () => {
+it("groups unapplied proposals without repeated status descriptions", async () => {
   setup(review({ applied_changes: [], unapplied_changes: [change({ path: "changed-proposal.txt", status: "proposed", current_match: "changed" }),
     change({ edit_id: "same-content", path: "same-proposal.txt", status: "approved", current_match: "matches" })] }));
-  await screen.findByText("当前内容尚不同于提案");
-  expect(screen.getByText("当前内容与提案相同，仍以应用记录为准")).toBeInTheDocument();
+  await screen.findByText("changed-proposal.txt");
+  expect(screen.getByText("same-proposal.txt")).toBeInTheDocument();
+  expect(screen.queryByText("当前内容尚不同于提案")).not.toBeInTheDocument();
+  expect(screen.queryByText("当前内容与提案相同，仍以应用记录为准")).not.toBeInTheDocument();
   expect(screen.queryByText("此后已有修改")).not.toBeInTheDocument();
   expect(screen.getByText(/尚无已记录的应用编辑/)).toBeInTheDocument();
+});
+
+it("keeps wrapping beside file review actions and scopes it to the selected file", async () => {
+  const onReviewFile = vi.fn();
+  const value = review({ applied_changes: [], unapplied_changes: [change({ edit_id: "old-pending", status: "proposed" }),
+    change({ run_id: "new-run", edit_id: "current-pending", path: "current.ts", status: "proposed" })] });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <TaskOverview client={{ get: vi.fn().mockResolvedValue(value) } as unknown as APIClient}
+      threadID="task" onFeedback={vi.fn()} onReviewFile={onReviewFile} />
+  </QueryClientProvider>);
+  const old = (await screen.findByText("src/app.ts")).closest("article")!;
+  const current = screen.getByText("current.ts").closest("article")!;
+  const toggle = within(old).getByRole("button", { name: "长行换行" });
+  expect(toggle.closest("header")).toContainElement(within(old).getByRole("button", { name: "查看并审阅" }));
+  expect(toggle.closest("header")).toContainElement(within(old).getByRole("button", { name: "引用文件" }));
+  const user = userEvent.setup();
+  await user.click(toggle);
+  await user.click(within(old).getByText("查看这次编辑的差异"));
+  await user.click(within(current).getByText("查看这次编辑的差异"));
+  expect(old.querySelector(".v2-delivery-diff")).toHaveClass("is-wrapped");
+  expect(current.querySelector(".v2-delivery-diff")).not.toHaveClass("is-wrapped");
+  expect(within(old).getAllByRole("button", { name: "长行换行" })).toHaveLength(1);
+  await user.click(toggle);
+  expect(old.querySelector(".v2-delivery-diff")).not.toHaveClass("is-wrapped");
+  await user.click(within(old).getByRole("button", { name: "查看并审阅" }));
+  expect(onReviewFile).toHaveBeenCalledWith({ runID: "old-run", editID: "old-pending", workspaceID: "physical-workspace" });
+  expect(screen.queryByText("当前执行的提案")).not.toBeInTheDocument();
+  expect(screen.queryByText("历史执行的提案")).not.toBeInTheDocument();
 });
 
 it("surfaces delivery actions and distinguishes current run checks from historical checks", async () => {

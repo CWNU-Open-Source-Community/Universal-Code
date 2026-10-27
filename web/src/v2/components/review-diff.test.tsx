@@ -7,6 +7,52 @@ import { parseReviewDiff, ReviewDiff } from "./review-diff";
 
 const patch = "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -7,3 +9,3 @@ result\n unchanged\n-old value\n+new value\n last\n\\ No newline at end of file";
 
+it("toggles wrapping with the keyboard without changing source text, line references or excerpts", async () => {
+  const feedback = vi.fn();
+  const longLine = `+\tconst endpoint = "https://example.test/${"long-path/".repeat(30)}";  `;
+  const longPatch = `--- a/src/app.ts\n+++ b/src/app.ts\n@@ -7 +9 @@\n-old value\n${longLine}`;
+  const { container } = render(<ReviewDiff patch={longPatch} source="exact source" onFeedback={feedback} />);
+  const user = userEvent.setup();
+  const toggle = screen.getByRole("button", { name: "长行换行" });
+  const diff = container.querySelector(".v2-delivery-diff")!;
+  const text = container.querySelector(".v2-diff-line.add code")!;
+  expect(toggle.closest("header")).toContainElement(screen.getByRole("button", { name: "引用此片段" }));
+  expect(toggle).toHaveAttribute("title", "长行换行");
+  expect(toggle).toHaveTextContent("");
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(diff).not.toHaveClass("is-wrapped");
+  await user.click(screen.getByRole("button", { name: "引用旧第 7 行" }));
+  await user.click(screen.getByRole("button", { name: "引用新第 9 行" }));
+  await user.click(screen.getByRole("button", { name: "引用此片段" }));
+  const originalQuotes = feedback.mock.calls.map(([value]) => value);
+  expect(originalQuotes[1]).toContain(`新文件第 9 行：\n${longLine}\n`);
+  expect(originalQuotes[2]).toContain(`@@ -7 +9 @@\n-old value\n${longLine}`);
+  feedback.mockClear();
+  toggle.focus();
+  await user.keyboard(" ");
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(diff).toHaveClass("is-wrapped");
+  expect(text.textContent).toBe(longLine);
+  await user.click(screen.getByRole("button", { name: "引用旧第 7 行" }));
+  await user.click(screen.getByRole("button", { name: "引用新第 9 行" }));
+  await user.click(screen.getByRole("button", { name: "引用此片段" }));
+  expect(feedback.mock.calls.map(([value]) => value)).toEqual(originalQuotes);
+  toggle.focus();
+  await user.keyboard("{Enter}");
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(diff).not.toHaveClass("is-wrapped");
+  expect(text.textContent).toBe(longLine);
+});
+
+it("offers the English wrap control without a feedback callback", async () => {
+  localStorage.setItem("prayu.locale.v1", "en-US");
+  renderComponent(<LocaleProvider><ReviewDiff patch={patch} source="read-only diff" /></LocaleProvider>);
+  const toggle = screen.getByRole("button", { name: "Wrap long lines" });
+  await userEvent.setup().click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByRole("button", { name: /Quote/ })).not.toBeInTheDocument();
+});
+
 it("keeps original and proposed line numbers separate when citing an older diff", async () => {
   const feedback = vi.fn();
   const source = "来源执行：old-run\n编辑记录：old-edit\n原版本：old-sha\n提案版本：proposed-sha\n当前观测版本：later-sha";
@@ -50,6 +96,7 @@ it("keeps each file boundary and cites only the selected file's hunk", async () 
   expect(parsed.hunks[1]).toMatchObject({ oldPath: "a/src/other.ts", newPath: "b/src/other.ts" });
   expect(parsed.hunks[2]).toMatchObject({ oldPath: "a/src/other.ts", newPath: "b/src/other.ts" });
   render(<ReviewDiff patch={multi} source="Git preview exact-fingerprint" onFeedback={feedback} />);
+  expect(screen.getAllByRole("button", { name: "长行换行" })).toHaveLength(1);
   const selected = within(screen.getByRole("region", { name: "差异片段 2" }));
   await userEvent.setup().click(selected.getByRole("button", { name: "引用此片段" }));
   expect(feedback).toHaveBeenLastCalledWith(expect.stringContaining("旧文件路径：a/src/other.ts\n新文件路径：b/src/other.ts"));

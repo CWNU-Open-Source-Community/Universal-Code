@@ -32,14 +32,24 @@
 .v2-delivery-freshness.current { color: var(--prayu-success); }
 .v2-delivery-freshness.stale { color: var(--prayu-warning); }
 .v2-delivery-change strong { overflow-wrap: anywhere; }
+.v2-delivery-change-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.v2-delivery-change-actions > button { white-space: nowrap; }
 .v2-delivery-change > details { margin-top: 10px; }
 .v2-task-delivery summary { cursor: pointer; }
 .v2-task-delivery pre { font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .v2-delivery-diff { margin-top: 10px; min-width: 0; border: 1px solid var(--v2-border); border-radius: 8px; overflow: hidden; }
 .v2-delivery-diff section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px; background: var(--v2-control-hover); overflow-wrap: anywhere; }
+.v2-delivery-diff section > header > code { min-width: 0; }
+.v2-diff-hunk-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.v2-diff-hunk-actions > button { white-space: nowrap; }
+.v2-task-delivery .v2-diff-wrap-toggle { justify-content: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border-color: transparent; background: transparent; color: var(--v2-muted); }
+.v2-task-delivery .v2-diff-wrap-toggle[aria-pressed="true"] { color: var(--v2-accent); background: var(--v2-control); }
 .v2-delivery-diff-lines { overflow-x: auto; }
 .v2-diff-line { display: flex; align-items: stretch; min-width: max-content; font: 13px/1.65 var(--font-mono, monospace); }
 .v2-diff-line code { white-space: pre; padding-right: 12px; }
+.v2-delivery-diff.is-wrapped .v2-diff-line { min-width: 0; }
+.v2-delivery-diff.is-wrapped .v2-diff-line code { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-delivery-diff.is-wrapped .v2-diff-line-ref { align-items: start; }
 .v2-diff-line.add { background: color-mix(in srgb, var(--prayu-diff-add) 12%, transparent); }
 .v2-diff-line.remove { background: color-mix(in srgb, var(--prayu-diff-delete) 12%, transparent); }
 .v2-task-delivery .v2-diff-line-ref { display: inline-grid; grid-template-columns: 36px 36px; flex-shrink: 0; border: 0; border-right: 1px solid var(--v2-border); border-radius: 0; background: transparent; padding: 0 4px; margin-right: 8px; min-height: 24px; font: inherit; color: var(--v2-muted); text-align: right; }

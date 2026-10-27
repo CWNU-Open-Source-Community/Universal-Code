@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+import { WrapText } from "lucide-react";
 import { useLocale, type LocaleText } from "../../lib/locale";
 export interface ReviewDiffLine { text: string; oldLine?: number; newLine?: number; kind: "context" | "add" | "remove" | "meta" }
 export interface ReviewDiffHunk { header: string; lines: ReviewDiffLine[]; oldPath?: string; newPath?: string; preamble: string }
@@ -51,17 +53,30 @@ function fileContext(hunk: ReviewDiffHunk, t: LocaleText): string {
   return t(`旧文件路径：${hunk.oldPath ?? t("未提供", "Not provided")}\n新文件路径：${hunk.newPath ?? t("未提供", "Not provided")}`, `Old file path: ${hunk.oldPath ?? t("未提供", "Not provided")}\nNew file path: ${hunk.newPath ?? t("未提供", "Not provided")}`);
 }
 
-export function ReviewDiff({ patch, source, onFeedback }: {
-  patch: string; source: string; onFeedback?: (context: string) => void;
+export function DiffWrapButton({ wrapLines, onToggle }: { wrapLines: boolean; onToggle: () => void }) {
+  const { t } = useLocale();
+  return <button className="v2-diff-wrap-toggle" type="button" aria-pressed={wrapLines}
+    aria-label={t("长行换行", "Wrap long lines")} title={t("长行换行", "Wrap long lines")}
+    onClick={onToggle}><WrapText size={16} aria-hidden="true" /></button>;
+}
+
+export function ReviewDiff({ patch, source, onFeedback, wrapLines: controlledWrapLines }: {
+  patch: string; source: string; onFeedback?: (context: string) => void; wrapLines?: boolean;
 }) {
   const { t } = useLocale();
-  const parsed = parseReviewDiff(patch);
+  const [localWrapLines, setLocalWrapLines] = useState(false);
+  const wrapLines = controlledWrapLines ?? localWrapLines;
+  const parsed = useMemo(() => parseReviewDiff(patch), [patch]);
   if (!parsed.hunks.length) return <pre className="v2-delivery-patch">{patch}</pre>;
-  return <div className="v2-delivery-diff">
+  return <div className={`v2-delivery-diff${wrapLines ? " is-wrapped" : ""}`}>
     {parsed.hunks.map((hunk, ordinal) => <section key={ordinal} aria-label={t(`差异片段 ${ordinal + 1}`, `Diff hunk ${ordinal + 1}`)}>
       {hunk.preamble && <pre>{hunk.preamble}</pre>}
-      <header><code>{hunk.header}</code>{onFeedback && <button type="button" onClick={() => onFeedback(
-        t(`${source}\n${fileContext(hunk, t)}\n差异片段：${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`, `${source}\n${fileContext(hunk, t)}\nDiff hunk: ${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`))}>{t("引用此片段", "Quote this excerpt")}</button>}</header>
+      <header><code>{hunk.header}</code><div className="v2-diff-hunk-actions">
+        {ordinal === 0 && controlledWrapLines === undefined && <DiffWrapButton wrapLines={wrapLines}
+          onToggle={() => setLocalWrapLines((value) => !value)} />}
+        {onFeedback && <button type="button" onClick={() => onFeedback(
+        t(`${source}\n${fileContext(hunk, t)}\n差异片段：${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`, `${source}\n${fileContext(hunk, t)}\nDiff hunk: ${hunk.header}\n${hunk.lines.slice(0, 60).map((line) => line.text).join("\n")}${hunk.lines.length > 60 ? t("\n（摘录前60行）", "\n(first 60 lines)") : ""}`))}>{t("引用此片段", "Quote this excerpt")}</button>}
+      </div></header>
       <div className="v2-delivery-diff-lines">{hunk.lines.map((line, index) => <div className={`v2-diff-line ${line.kind}`} key={index}>
         {onFeedback && line.kind !== "meta" ? <button type="button" className="v2-diff-line-ref"
           aria-label={t(`引用${line.kind === "remove" ? t("旧", "Old") : t("新", "New")}第 ${line.newLine ?? line.oldLine} 行`, `Quote ${line.kind === "remove" ? "old" : "new"} line ${line.newLine ?? line.oldLine}`)}
