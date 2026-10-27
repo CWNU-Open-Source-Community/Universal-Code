@@ -86,7 +86,7 @@ it.each(["inspector", "conversation"] as const)("appends exact review context an
   if (view === "inspector") expect(editor).not.toBeVisible();
   await user.click(screen.getByRole("button", { name: "审阅改动" }));
   const dialog = await screen.findByRole("dialog", { name: "审阅任务改动" }, { timeout: 5_000 });
-  await user.click(await within(dialog).findByRole("button", { name: "引用文件" }));
+  await user.click(await within(dialog).findByRole("button", { name: "引用文件" }, { timeout: 5_000 }));
   await waitFor(() => expect(editor).toHaveFocus());
   expect(editor).toBeVisible();
   expect(screen.queryByRole("dialog", { name: "审阅任务改动" })).not.toBeInTheDocument();

@@ -2041,11 +2041,11 @@ body { background: transparent; }
   font-size: 11px;
 }
 .user-terminal-state.running { color: var(--prayu-terminal-text); }
-.user-terminal-state.failed { color: var(--prayu-danger-on-dark); }
+.user-terminal-state.failed { color: var(--prayu-danger); }
 .user-terminal-message {
   min-width: 0;
   overflow: hidden;
-  color: var(--prayu-danger-on-dark);
+  color: var(--prayu-danger);
   font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2616,6 +2616,12 @@ body { background: transparent; }
   --prayu-diff-delete: var(--prayu-danger);
   --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
   --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-terminal-bg: #ffffff;
+  --prayu-terminal-control: #f7f7f8;
+  --prayu-terminal-control-hover: #ececef;
+  --prayu-terminal-text: #202020;
+  --prayu-terminal-muted: #616161;
+  --prayu-terminal-border: rgb(0 0 0 / 12%);
 }
 
 [data-prayu-theme="glass"] {
@@ -2672,6 +2678,12 @@ body { background: transparent; }
   --prayu-diff-delete: var(--prayu-danger);
   --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
   --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-terminal-bg: #eff1f5;
+  --prayu-terminal-control: rgb(38 49 72 / 6%);
+  --prayu-terminal-control-hover: rgb(38 49 72 / 10%);
+  --prayu-terminal-text: #30363d;
+  --prayu-terminal-muted: #697078;
+  --prayu-terminal-border: var(--dsh-glass-rim-soft);
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
@@ -4790,7 +4802,7 @@ samp {
 
 .user-terminal-state.failed,
 .user-terminal-message {
-  color: var(--prayu-danger-on-dark);
+  color: var(--prayu-danger);
 }
 
 .context-meter > i {

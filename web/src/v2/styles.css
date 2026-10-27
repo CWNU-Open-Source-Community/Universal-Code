@@ -810,10 +810,18 @@
 .v2-conversation-main-column { display: flex; flex-direction: column; flex: 1; min-width: min(100%, 320px); min-height: 0; }
 .v2-conversation-main-column > .v2-conversation-scroll { flex: 1; min-height: 0; }
 .v2-conversation-main-column > .v2-composer-dock { flex-shrink: 0; }
-.v2-workbench-slot { flex: 0 1 0px; min-width: 0; overflow: hidden; visibility: hidden; transition: flex-basis 500ms var(--v2-pane-ease), visibility 500ms; }
-.v2-workbench-slot.is-open { flex-basis: clamp(340px, 32%, 420px); visibility: visible; }
+.v2-workbench-slot { display: flex; flex: 0 1 0px; min-width: 0; overflow: hidden; visibility: hidden; transition: flex-basis 420ms var(--v2-pane-ease), visibility 420ms; }
+.v2-workbench-slot.is-open { flex-basis: clamp(340px, var(--v2-workbench-width, 440px), calc(100% - 340px)); visibility: visible; }
 .v2-workbench-slot > .v2-inspector-drawer.is-docked { width: clamp(340px, 32cqw, 420px); transform: translateX(100%); transition: transform 500ms var(--v2-pane-ease); }
 .v2-workbench-slot.is-open > .v2-inspector-drawer.is-docked { transform: translateX(0); }
+.v2-workbench-slot > .v2-workspace-dock.is-docked { width: 100%; min-width: 340px; transform: translateX(100%); transition: transform 420ms var(--v2-pane-ease); }
+.v2-workbench-slot.is-open > .v2-workspace-dock.is-docked { transform: translateX(0); }
+.v2-workbench-slot[data-resizing="true"],
+.v2-workbench-slot[data-resizing="true"] > .v2-workspace-dock.is-docked { transition: none; }
+.v2-conversation-stage:has(> .v2-workbench-slot[data-resizing="true"]) { cursor: col-resize; user-select: none; }
+.v2-conversation-stage.is-full-view > .v2-conversation-main-column { flex: 0 0 0px; min-width: 0; max-width: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.v2-conversation-stage.is-full-view > .v2-workbench-slot.is-open { flex: 1 1 100%; flex-basis: 100%; max-width: 100%; }
+.v2-conversation-stage.is-full-view > .v2-workbench-slot.is-open > .v2-workspace-dock.is-docked { min-width: 0; }
 .v2-inspector-drawer.is-docked {
   position: relative;
   flex: 0 0 clamp(340px, 32%, 420px);
@@ -2535,6 +2543,7 @@
 .v2-run-network-popover,
 .v2-dialog,
 .v2-inspector-drawer,
+.v2-workspace-dock,
 .v2-high-risk-dialog { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--prayu-surface-solid); }
   .v2-high-risk-overlay { backdrop-filter: none; background: rgb(24 24 24 / 42%); }
   .v2-sidebar { background: var(--prayu-surface-solid); }
@@ -2548,6 +2557,7 @@
   .v2-shell,
 .v2-sidebar,
 .v2-product-surface,
+.v2-workspace-dock,
 .v2-composer-surface,
 .v2-run-recovery,
 .v2-high-risk-dialog,

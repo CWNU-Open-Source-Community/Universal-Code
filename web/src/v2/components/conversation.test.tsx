@@ -1141,7 +1141,7 @@ describe("V2Conversation", () => {
       const dock = await screen.findByRole("complementary", { name: "工作区文件" });
       expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
       expect(dock).not.toHaveAttribute("aria-modal");
-      within(dock).getByRole("button", { name: "关闭文件面板" }).focus();
+      within(dock).getAllByRole("tab")[0].focus();
       await user.tab({ shift: true });
       expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
       expect(await within(dock).findByText("export const value = 1;")).toBeInTheDocument();
@@ -1405,6 +1405,101 @@ describe("V2Conversation", () => {
     expect(await screen.findByRole("dialog", { name: "任务终端" })).toBeInTheDocument();
     const panel = screen.getByTestId("user-terminal-panel");
     expect(panel).toHaveAttribute("data-session-id", "sess-created");
+  });
+
+  it("maintains multi-file and terminal tabs, preserves file paths across top-bar switches, and toggles full view", async () => {
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("v2-shell") ? 1360 : this.classList.contains("v2-conversation") ? 1060 : 1060;
+    });
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+    vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
+    try {
+      const user = userEvent.setup();
+      const client = baseClient({
+        fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }),
+        getPage: vi.fn(() => Promise.resolve(page([
+          transcriptItem("multi-link", "对照 [src/index.ts](src/index.ts) 与 [README.md](README.md)", 1),
+        ]))) as unknown as APIClient["getPage"],
+      });
+      const directory = await client.workspaceExplore("workspace-1", ".");
+      vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => {
+        if (path === "src/index.ts") {
+          return { ...directory, path, kind: "file", entries: [], content: "export const indexValue = 1;" };
+        }
+        if (path === "README.md") {
+          return { ...directory, path, kind: "file", entries: [], content: "# Project Overview" };
+        }
+        return directory;
+      });
+
+      const view = renderConversation(client, "thread-a");
+      view.container.classList.add("v2-shell", "has-sidebar");
+
+      await user.click(await screen.findByRole("link", { name: "index.ts" }));
+      const dock = await screen.findByRole("complementary", { name: "工作区文件" });
+      expect(await within(dock).findByText("export const indexValue = 1;")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("link", { name: "README.md" }));
+      expect(await within(dock).findByText("# Project Overview")).toBeInTheDocument();
+      const tabsAfterFiles = within(dock).getAllByRole("tab");
+      expect(tabsAfterFiles.map((tab) => tab.textContent)).toEqual(["index.ts", "README.md"]);
+
+      // Switch to index.ts via tab click, then switch to Terminal via top header, then back to top Files button.
+      await user.click(within(dock).getByRole("tab", { name: "index.ts" }));
+      expect(within(dock).getByText("export const indexValue = 1;")).toBeVisible();
+
+      const headerNav = screen.getByRole("navigation", { name: "任务工作区" });
+      await user.click(within(headerNav).getByRole("button", { name: "终端" }));
+      expect(screen.getByRole("complementary", { name: "任务终端" })).toBe(dock);
+      const terminalPanel = within(dock).getByTestId("user-terminal-panel");
+      await user.click(within(terminalPanel).getByRole("button", { name: "Mock Start Session" }));
+      expect(terminalPanel).toHaveAttribute("data-session-id", "sess-created");
+
+      // Top "工作区文件" restores the last active file tab (index.ts) without resetting to root "."
+      vi.mocked(client.workspaceExplore).mockClear();
+      await user.click(within(headerNav).getByRole("button", { name: "工作区文件" }));
+      expect(screen.getByRole("complementary", { name: "工作区文件" })).toBe(dock);
+      expect(within(dock).getByRole("tab", { name: "index.ts" })).toHaveAttribute("aria-selected", "true");
+      expect(within(dock).getByText("export const indexValue = 1;")).toBeVisible();
+      expect(client.workspaceExplore).not.toHaveBeenCalledWith("workspace-1", ".", expect.anything());
+      // Terminal tab panel stays mounted while hidden.
+      expect(within(dock).getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-created");
+
+      // Toggle Full View via button and via Ctrl+Shift+F shortcut without unmounting tabs.
+      const stage = view.container.querySelector(".v2-conversation-stage")!;
+      expect(stage).not.toHaveClass("is-full-view");
+      await user.click(within(dock).getByRole("button", { name: "进入完整视图" }));
+      expect(stage).toHaveClass("is-full-view");
+      expect(within(dock).getByRole("button", { name: "退出完整视图" })).toHaveAttribute("aria-pressed", "true");
+
+      fireEvent.keyDown(window, { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true });
+      expect(stage).not.toHaveClass("is-full-view");
+      expect(within(dock).getByRole("button", { name: "进入完整视图" })).toHaveAttribute("aria-pressed", "false");
+
+      // Closing the terminal tab keeps terminalSessionID alive for reattachment when reopened.
+      await user.click(within(dock).getByRole("button", { name: "关闭标签 终端" }));
+      expect(within(dock).queryByRole("tab", { name: "终端" })).not.toBeInTheDocument();
+      await user.click(within(headerNav).getByRole("button", { name: "终端" }));
+      expect(within(dock).getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-created");
+
+      // Per-chat workspace memory isolates thread-b and restores thread-a on return.
+      view.rerenderThread("thread-b");
+      await screen.findByText("Title thread-b");
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+
+      view.rerenderThread("thread-a");
+      await screen.findByText("Title thread-a");
+      const restoredDock = await screen.findByRole("complementary", { name: "任务终端" });
+      expect(within(restoredDock).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["index.ts", "README.md", "终端"]);
+      expect(within(restoredDock).getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-created");
+    } finally {
+      cleanup();
+      clientWidth.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });
 

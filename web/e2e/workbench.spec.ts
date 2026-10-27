@@ -124,7 +124,7 @@ async function openFiles(page: Page) {
 
 async function editReadme(page: Page) {
   const files = page.locator(".v2-file-drawer");
-  await files.getByRole("button", { name: /^README\.md/u }).click();
+  await files.getByRole("tab", { name: /^README\.md/u }).or(files.getByRole("button", { name: /^README\.md/u })).first().click();
   await files.getByRole("button", { name: "编辑提案", exact: true }).click();
   const editor = page.getByRole("region", { name: "编辑 README.md 的提案", exact: true });
   await expect(editor.locator(".monaco-editor")).toBeVisible();
