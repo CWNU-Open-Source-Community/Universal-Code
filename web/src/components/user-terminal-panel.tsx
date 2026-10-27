@@ -448,6 +448,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
 
   const stop = async () => {
     if (!sessionID) return;
+    const closingSessionID = sessionID;
     setBusy(true);
     setMessage("");
     try {
@@ -455,8 +456,11 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
         await revokeDesktopDebugTerminalAgentInput(agentBinding.binding_id)
           .catch(() => undefined);
       }
-      await closeDesktopUserTerminal(sessionID);
+      await closeDesktopUserTerminal(closingSessionID);
       if (!mountedRef.current) return;
+      // A close that settles after the panel bound a replacement session must
+      // not clear the new binding (same guard as grantAgentInput).
+      if (sessionRef.current !== closingSessionID) return;
       onSession("");
       setSession(null);
       setAgentBinding(null);

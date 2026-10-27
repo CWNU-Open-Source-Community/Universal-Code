@@ -770,4 +770,31 @@ describe("UserTerminalPanel", () => {
     expect(await screen.findByText("Process exited")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
   });
+
+  it("keeps a replacement session when an earlier close settles late", async () => {
+    terminalMocks.get.mockImplementation(async (id: string) => ({
+      session_id: id, run_id: "run-1", state: "running", columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: 0,
+    }));
+    let resolveClose: () => void = () => undefined;
+    terminalMocks.close.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      resolveClose = () => resolve(undefined);
+    }));
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="sess-old" onSession={onSession} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    await waitFor(() => expect(terminalMocks.close).toHaveBeenCalledWith("sess-old"));
+
+    // The operator binds a replacement session while the old close is still in
+    // flight; the late close response must not wipe the new binding.
+    view.rerender(<UserTerminalPanel runID="run-1" sessionID="sess-new" onSession={onSession} />);
+    await act(async () => {});
+    resolveClose();
+    await act(async () => {});
+
+    expect(onSession).not.toHaveBeenCalledWith("");
+    expect(onSession).not.toHaveBeenCalledWith(expect.stringContaining("sess-old"));
+  });
 });
