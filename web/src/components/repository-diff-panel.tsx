@@ -4,6 +4,7 @@ import { ChevronRight, FileDiff, Quote, RefreshCw } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { formatBytes } from "../lib/format";
 import { useLocale } from "../lib/locale";
+import { parseReviewDiff } from "../lib/review-diff";
 import { EmptyState, ErrorState, LoadingState, StatusBadge, StatusLabel } from "./common";
 import "./repository-diff-panel.css";
 
@@ -15,6 +16,26 @@ type RepositoryDiffPanelProps = {
 
 export function RepositoryDiffPanel(props: RepositoryDiffPanelProps) {
   return <RepositoryDiffPages key={props.workspaceID} {...props} />;
+}
+
+function RepositoryDiffPatch({ patch }: { patch: string }) {
+  const parsed = parseReviewDiff(patch);
+  if (!parsed.hunks.length) return <pre>{patch}</pre>;
+  return <div className="repository-diff-hunks">
+    {parsed.hunks.map((hunk, hunkIndex) => <div className="repository-diff-hunk" key={hunkIndex}>
+      {hunk.preamble && <div className="repository-diff-preamble"><code>{hunk.preamble}</code></div>}
+      <div className="repository-diff-hunk-heading"><code>{hunk.header}</code></div>
+      <div className="repository-diff-lines">
+        {hunk.lines.map((line, lineIndex) => <div className={`repository-diff-line is-${line.kind}`} key={lineIndex}>
+          <span className="repository-diff-marker" aria-hidden={line.kind === "meta" ? true : undefined}>
+            {line.kind === "meta" ? "" : line.text.slice(0, 1)}
+          </span>
+          <code>{line.kind === "meta" ? line.text : line.text.slice(1) || " "}</code>
+        </div>)}
+      </div>
+    </div>)}
+    {parsed.trailing && <div className="repository-diff-preamble"><code>{parsed.trailing}</code></div>}
+  </div>;
 }
 
 function RepositoryDiffPages({ client, workspaceID, onRequestChange }: RepositoryDiffPanelProps) {
@@ -90,7 +111,7 @@ function RepositoryDiffPages({ client, workspaceID, onRequestChange }: Repositor
                   <ChevronRight aria-hidden="true" className="repository-diff-chevron" size={14} />
                   {heading}
                 </summary>
-                <pre>{item.patch}</pre>
+                <RepositoryDiffPatch patch={item.patch} />
               </details> : <div className="repository-diff-file-row">{heading}</div>}
               {onRequestChange && <button className="repository-diff-quote" type="button"
                   aria-label={t(`引用 ${item.path}`, `Quote ${item.path}`)} title={t("引用到对话", "Quote in chat")}

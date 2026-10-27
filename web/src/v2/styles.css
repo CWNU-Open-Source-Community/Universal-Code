@@ -1281,10 +1281,10 @@
   user-select: none;
 }
 .v2-unified-diff-marker { color: var(--v2-muted); text-align: center; user-select: none; }
-.v2-unified-diff-line.is-add { background: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid)); }
-.v2-unified-diff-line.is-delete { background: color-mix(in srgb, var(--prayu-diff-delete) 12%, var(--prayu-surface-solid)); }
-.v2-unified-diff-line.is-add .v2-unified-diff-marker { color: var(--prayu-diff-add); }
-.v2-unified-diff-line.is-delete .v2-unified-diff-marker { color: var(--prayu-diff-delete); }
+.v2-unified-diff-line.is-add { background: var(--prayu-diff-add-soft); }
+.v2-unified-diff-line.is-delete { background: var(--prayu-diff-delete-soft); }
+.v2-unified-diff-line.is-add .v2-unified-diff-marker { color: color-mix(in srgb, var(--prayu-diff-add) 72%, var(--prayu-text)); }
+.v2-unified-diff-line.is-delete .v2-unified-diff-marker { color: color-mix(in srgb, var(--prayu-diff-delete) 72%, var(--prayu-text)); }
 .v2-unified-diff-line.is-hunk { background: var(--v2-control); color: var(--v2-ink); }
 .v2-unified-diff-line.is-hunk > code,
 .v2-unified-diff-line.is-meta > code { grid-column: 2 / -1; }

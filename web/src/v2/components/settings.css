@@ -753,3 +753,34 @@
 .v2-chatgpt-spinner { animation: v2-chatgpt-spin 1s linear infinite; }
 @keyframes v2-chatgpt-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .v2-chatgpt-spinner { animation: none; } }
+
+.v2-review-color-control {
+  align-items: center;
+  background: var(--v2-control);
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 9px 4px 5px;
+}
+.v2-review-color-control input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  height: 24px;
+  padding: 0;
+  width: 30px;
+}
+.v2-review-color-control input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.v2-review-color-control input[type="color"]::-webkit-color-swatch { border: 1px solid var(--v2-border); border-radius: 5px; }
+.v2-review-color-control input[type="color"]::-moz-color-swatch { border: 1px solid var(--v2-border); border-radius: 5px; }
+.v2-review-color-control code { color: var(--v2-ink); font: 12px var(--prayu-font-mono, monospace); }
+@media (pointer: coarse) {
+  .v2-review-color-control { min-height: 44px; }
+  .v2-review-color-control input[type="color"] { height: 32px; }
+}

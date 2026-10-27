@@ -3,12 +3,16 @@ import {
   applyPrayuGlassSettings,
   applyPrayuTheme,
   defaultPrayuGlassSettings,
+  defaultPrayuReviewColors,
   initializePrayuAppearance,
   prayuGlassPresets,
   readPrayuGlassSettings,
+  readPrayuReviewColors,
   readPrayuTheme,
   readPrayuThemePreference,
   resetPrayuGlassSettings,
+  resetPrayuReviewColors,
+  savePrayuReviewColors,
   usePrayuTheme,
 } from "./appearance";
 
@@ -22,6 +26,8 @@ describe("Prayu appearance", () => {
     document.documentElement.style.removeProperty("--prayu-glass-frost");
     document.documentElement.style.removeProperty("--prayu-glass-brightness-white");
     document.documentElement.style.removeProperty("--prayu-glass-glow");
+    document.documentElement.style.removeProperty("--prayu-diff-add");
+    document.documentElement.style.removeProperty("--prayu-diff-delete");
   });
 
   afterEach(() => {
@@ -131,6 +137,64 @@ describe("Prayu appearance", () => {
     expect(() => applyPrayuGlassSettings({ blur: 12, frost: 45 })).not.toThrow();
     expect(document.documentElement.dataset.prayuTheme).toBe("glass");
     expect(document.documentElement.style.getPropertyValue("--prayu-glass-blur")).toBe("12px");
+    expect(() => savePrayuReviewColors("glass", { add: "#66ccff" })).not.toThrow();
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#66ccff");
+  });
+
+  it("applies and remembers review colors per theme", () => {
+    applyPrayuTheme("dark");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#7ee787");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-delete")).toBe("#ffa198");
+
+    const saved = savePrayuReviewColors("dark", { add: "#66CCFF" });
+    expect(saved).toEqual({ add: "#66ccff", remove: "#ffa198" });
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#66ccff");
+    expect(JSON.parse(window.localStorage.getItem("prayu.reviewColors") ?? "{}")).toEqual({
+      dark: { add: "#66ccff", remove: "#ffa198" },
+    });
+
+    applyPrayuTheme("light");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#1a7f37");
+    applyPrayuTheme("dark");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#66ccff");
+
+    const reset = resetPrayuReviewColors("dark");
+    expect(reset).toEqual({ add: "#7ee787", remove: "#ffa198" });
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#7ee787");
+    expect(window.localStorage.getItem("prayu.reviewColors")).toBeNull();
+  });
+
+  it("normalizes stored review colors and ignores unusable values", () => {
+    window.localStorage.setItem("prayu.reviewColors", JSON.stringify({
+      light: { add: "#ABCDEF", remove: "red" },
+      dark: "not-an-object",
+      glass: { add: 42, remove: "#112233" },
+    }));
+    const colors = readPrayuReviewColors();
+    expect(colors.light).toEqual({ add: "#abcdef", remove: "#cf222e" });
+    expect(colors.dark).toEqual({ add: "#7ee787", remove: "#ffa198" });
+    expect(colors.glass).toEqual({ add: "#3e7659", remove: "#112233" });
+
+    applyPrayuTheme("dark");
+    expect(savePrayuReviewColors("dark", { add: "invalid", remove: "#445566" }))
+      .toEqual({ add: "#7ee787", remove: "#445566" });
+
+    window.localStorage.setItem("prayu.reviewColors", "{");
+    expect(readPrayuReviewColors()).toEqual(defaultPrayuReviewColors);
+  });
+
+  it("switches review colors when the system theme changes", async () => {
+    const media = Object.assign(new EventTarget(), { matches: true });
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
+    savePrayuReviewColors("light", { add: "#123456" });
+    applyPrayuTheme("system");
+    expect(document.documentElement.dataset.prayuTheme).toBe("light");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#123456");
+
+    media.matches = false;
+    await act(async () => { media.dispatchEvent(new Event("change")); });
+    expect(document.documentElement.dataset.prayuTheme).toBe("dark");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#7ee787");
   });
 });
 
