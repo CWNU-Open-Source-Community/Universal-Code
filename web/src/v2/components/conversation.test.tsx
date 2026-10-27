@@ -988,7 +988,7 @@ describe("V2Conversation", () => {
       view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"),
         { ...execution, state: "idle", execution_id: undefined });
     });
-    expect(screen.getByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
+    expect(await screen.findByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
       expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
