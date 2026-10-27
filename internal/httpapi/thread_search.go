@@ -15,7 +15,7 @@ import (
 )
 
 type threadSearchStore interface {
-	SearchThreadMessages(context.Context, string, bool, time.Time, string, int) ([]domain.ThreadSearchMatch, error)
+	SearchThreadMessages(context.Context, string, string, bool, time.Time, string, int) ([]domain.ThreadSearchMatch, error)
 	GetThreadSearchMessage(context.Context, string, string) (domain.ThreadSearchMatch, error)
 }
 
@@ -39,7 +39,7 @@ type ThreadSavedMessageView struct {
 
 func (a *API) searchThreadMessages(request *http.Request) (any, *Page, error) {
 	values := request.URL.Query()
-	if err := validateSingleQueryValues(values, "q", "include_archived", "limit", "cursor"); err != nil {
+	if err := validateSingleQueryValues(values, "q", "thread_id", "include_archived", "limit", "cursor"); err != nil {
 		return nil, nil, err
 	}
 	for key, entries := range values {
@@ -52,6 +52,12 @@ func (a *API) searchThreadMessages(request *http.Request) (any, *Page, error) {
 		return nil, nil, apperror.New(apperror.CodeInvalidArgument, "Search requires between 1 and 256 characters")
 	}
 	values.Set("q", query)
+	threadID := values.Get("thread_id")
+	if _, scoped := values["thread_id"]; scoped {
+		if err := validateIdentity(threadID, "search Thread identity"); err != nil {
+			return nil, nil, err
+		}
+	}
 	includeArchived := false
 	if raw, exists := singleQueryValue(values, "include_archived"); exists {
 		includeArchived, err = strconv.ParseBool(raw)
@@ -68,7 +74,7 @@ func (a *API) searchThreadMessages(request *http.Request) (any, *Page, error) {
 	if !ok {
 		return nil, nil, apperror.New(apperror.CodeNotFound, "Saved message search is unavailable")
 	}
-	items, err := reader.SearchThreadMessages(request.Context(), query, includeArchived,
+	items, err := reader.SearchThreadMessages(request.Context(), query, threadID, includeArchived,
 		pageRequest.Anchor.BeforeCreatedAt, pageRequest.Anchor.BeforeID, stableListStoreLimit(pageRequest))
 	if err != nil {
 		return nil, nil, err

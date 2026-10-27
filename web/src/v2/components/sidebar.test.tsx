@@ -29,6 +29,20 @@ const thread: ThreadView = {
   updated_at: "2026-08-29T00:00:00Z",
 };
 
+it("shows the same accessible unread marker for pinned and ordinary chats alongside execution status", () => {
+  const pinned = { ...thread, id: "pinned-chat", title: "Pinned result", pinned: true, execution_state: "completed" as const };
+  render(<V2Sidebar threads={[thread, pinned]} workspaces={[workspace]} selectedThreadID={thread.id}
+    searchOpen={false} onSearchOpen={vi.fn()} onNewConversation={vi.fn()} onOpenModels={vi.fn()}
+    onSelectThread={vi.fn()} onOpenSettings={vi.fn()} onArchive={vi.fn()}
+    unreadThreadIDs={new Set([thread.id, pinned.id])} onReadStateChange={vi.fn()} />);
+  for (const item of [thread, pinned]) {
+    const row = screen.getByRole("button", { name: item.title });
+    expect(row).toHaveAccessibleDescription(expect.stringContaining("未读"));
+    expect(row.querySelector(".v2-thread-unread")).toBeInTheDocument();
+  }
+  expect(screen.getByRole("button", { name: pinned.title })).toHaveAccessibleDescription("已完成 未读");
+});
+
 describe("sidebar project moves", () => {
   const destination = { ...workspace, id: "workspace-2", name: "Empty project" };
   const movable: ThreadView = { ...thread, project_workspace_id: workspace.id,
@@ -37,6 +51,23 @@ describe("sidebar project moves", () => {
     onOpenSettings: vi.fn(), onSearchOpen: vi.fn(), onSelectThread: vi.fn(),
     searchOpen: false, selectedThreadID: thread.id, workspaces: [workspace, destination],
     onNewInProject: vi.fn() };
+
+  it("reports only rendered chats in pinned, project and local order as groups collapse", async () => {
+    const onVisibleChatOrder = vi.fn();
+    const pinned = { ...movable, id: "pinned", title: "Pinned", pinned: true };
+    const second = { ...movable, id: "second-project", title: "Second project chat", project_workspace_id: destination.id };
+    const local = { ...movable, id: "local", title: "Local chat", project_workspace_id: "" };
+    const user = userEvent.setup();
+    render(<V2Sidebar {...props} threads={[local, second, movable, pinned]} onVisibleChatOrder={onVisibleChatOrder} />);
+    expect(onVisibleChatOrder).toHaveBeenLastCalledWith([pinned.id, movable.id, second.id, local.id]);
+    await user.click(screen.getByRole("button", { name: workspace.name }));
+    expect(onVisibleChatOrder).toHaveBeenLastCalledWith([pinned.id, second.id, local.id]);
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    expect(onVisibleChatOrder).toHaveBeenLastCalledWith([pinned.id, local.id]);
+    await user.click(screen.getByRole("button", { name: "项目" }));
+    await user.click(screen.getByRole("button", { name: workspace.name }));
+    expect(onVisibleChatOrder).toHaveBeenLastCalledWith([pinned.id, movable.id, second.id, local.id]);
+  });
 
   it("collapses projects without hiding local chats and can expand all projects again", async () => {
     const user = userEvent.setup();
