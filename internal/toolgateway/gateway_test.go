@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/artifact"
 	"cyberagent-workbench/internal/fileedit"
@@ -19,6 +20,7 @@ import (
 	"cyberagent-workbench/internal/scriptprocess"
 	"cyberagent-workbench/internal/toolbudget"
 	"cyberagent-workbench/internal/toolrun"
+	"cyberagent-workbench/internal/tools"
 )
 
 type memoryStore struct {
@@ -456,6 +458,84 @@ func TestGatewayProtectedDeleteCannotBeApproved(t *testing.T) {
 	}
 	if persisted.Status != toolrun.StatusDenied || persisted.Stdout != "" || persisted.ExitCode != 0 {
 		t.Fatalf("denied protected deletion acquired an execution result: %#v", persisted)
+	}
+}
+
+// reviewPolicyFlipChecker delegates to the default checker until the operator
+// flips it, modelling a Policy that changed between proposal and review.
+type reviewPolicyFlipChecker struct {
+	policy.DefaultChecker
+	deny bool
+}
+
+func (c *reviewPolicyFlipChecker) CheckToolCall(call tools.Call) policy.Decision {
+	if c.deny {
+		return policy.Decision{Allowed: false, Reason: "current policy denies this command", Risk: "critical"}
+	}
+	return c.DefaultChecker.CheckToolCall(call)
+}
+
+func TestGatewayReviewApprovalRechecksCurrentPolicy(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	checker := &reviewPolicyFlipChecker{}
+	gateway := New(store, checker)
+	outcome, err := gateway.Invoke(ctx, ToolCall{
+		Name: ShellTool, SessionID: "sess-recheck", WorkspaceID: "ws-recheck",
+		Arguments: map[string]string{"command": "echo recheck"}, RequestedBy: "root",
+	})
+	if err != nil || outcome.Proposal == nil || outcome.Proposal.Status != StatusProposed {
+		t.Fatalf("shell proposal was not created: %#v err=%v", outcome, err)
+	}
+	proposalID := outcome.Proposal.ID
+	checker.deny = true
+	if reviewed, err := gateway.Review(ctx, ReviewRequest{
+		Action: ReviewApprove, Tool: ShellTool, ProposalID: proposalID,
+		ReviewedBy: "operator", IdempotencyKey: "policy-flipped-before-review",
+	}); err == nil {
+		t.Fatalf("review approved a proposal the current policy denies: %#v", reviewed)
+	}
+	persisted, err := store.GetToolRun(ctx, proposalID)
+	if err != nil || persisted.Status != toolrun.StatusProposed {
+		t.Fatalf("tool run left the proposed state without a policy recheck: %#v err=%v", persisted, err)
+	}
+	// The review must not reach the ledger at all: no decision record, and never
+	// an approved one. An absent record is the fixed behaviour.
+	record, err := store.GetApprovalByProposal(ctx, proposalID)
+	if err == nil && record.Status != approval.StatusPending {
+		t.Fatalf("approval ledger recorded %s for a command current policy denies: %#v", record.Status, record)
+	}
+}
+
+func TestGatewayScriptProcessReviewApprovalRechecksCurrentPolicy(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	checker := &reviewPolicyFlipChecker{}
+	gateway := New(store, checker)
+	outcome, err := gateway.ProposeScriptProcess(ctx, ToolCall{
+		Name: ScriptProcessTool, RunID: "run-recheck-script", SessionID: "sess-recheck-script",
+		WorkspaceID: "ws-recheck", WorkspaceRoot: t.TempDir(), RequestedBy: "root",
+	}, ScriptProcessProposal{Executable: "python", Arguments: []string{"scripts/noop.py"}})
+	if err != nil || outcome.Proposal == nil || outcome.Proposal.Status != StatusProposed {
+		t.Fatalf("script process proposal was not created: %#v err=%v", outcome, err)
+	}
+	proposalID := outcome.Proposal.ID
+	checker.deny = true
+	if _, err := gateway.Review(ctx, ReviewRequest{
+		Action: ReviewApprove, Tool: ScriptProcessTool, ProposalID: proposalID,
+		ReviewedBy: "operator", IdempotencyKey: "policy-flipped-before-script-review",
+	}); apperror.CodeOf(err) != apperror.CodePolicyDenied {
+		t.Fatalf("script process review did not report POLICY_DENIED: %v", err)
+	}
+	process, err := store.GetScriptProcess(ctx, proposalID)
+	if err != nil || process.Status != scriptprocess.StatusProposed {
+		t.Fatalf("script process left the proposed state without a policy recheck: %#v err=%v", process, err)
+	}
+	// The review must not reach the ledger at all: no decision record, and never
+	// an approved one. An absent record is the fixed behaviour.
+	record, err := store.GetApprovalByProposal(ctx, proposalID)
+	if err == nil && record.Status != approval.StatusPending {
+		t.Fatalf("approval ledger recorded %s for a script process current policy denies: %#v", record.Status, record)
 	}
 }
 
