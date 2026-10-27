@@ -7,6 +7,7 @@ import {
   closeDesktopUserTerminal,
   desktopDebugTerminalAgentInputEnabled,
   desktopErrorMessage,
+  desktopIsMacPlatform,
   desktopUserTerminalEnabled,
   getDesktopDebugTerminalAgentInput,
   getDesktopUserTerminal,
@@ -21,6 +22,8 @@ import {
 } from "../lib/desktop-bridge";
 import { useLocale } from "../lib/locale";
 import { openUserTerminal } from "../lib/open-user-terminal";
+import { readDesktopClipboardText, writeDesktopClipboardText } from "../lib/desktop-text-clipboard";
+import { createTerminalClipboardKeyHandler } from "../lib/terminal-clipboard";
 
 const terminalPollMilliseconds = 120;
 
@@ -69,6 +72,25 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
       .catch((error) => setMessage(desktopErrorMessage(error)));
   });
 
+  const pasteIntoSession = useEffectEvent((terminal: Terminal, sourceRunID: string, sourceSessionID: string, text: string) => {
+    if (!mountedRef.current || terminalRef.current !== terminal || runID !== sourceRunID ||
+        sessionID !== sourceSessionID || session?.state !== "running" || session.session_id !== sourceSessionID) return;
+    terminal.paste(text);
+  });
+
+  const capturePaste = useEffectEvent(() => {
+    const terminal = terminalRef.current;
+    if (!terminal || session?.state !== "running" || session.session_id !== sessionID) return null;
+    const sourceRunID = runID;
+    const sourceSessionID = sessionID;
+    return (text: string) => pasteIntoSession(terminal, sourceRunID, sourceSessionID, text);
+  });
+
+  const reportClipboardError = useEffectEvent((action: "copy" | "paste", error: unknown) => {
+    if (!mountedRef.current) return;
+    setMessage(`${action === "copy" ? t("复制失败", "Copy failed") : t("粘贴失败", "Paste failed")}: ${desktopErrorMessage(error)}`);
+  });
+
   const resizeTerminal = useEffectEvent(() => {
     if (replayingRef.current) return;
     fitRef.current?.fit();
@@ -113,6 +135,19 @@ export function UserTerminalPanel({ runID, sessionID, onSession }: {
     openUserTerminal(terminal, fit, hostRef.current);
     terminalRef.current = terminal;
     fitRef.current = fit;
+    let platform: "windows" | "macos" | "other" = "other";
+    if (desktopIsMacPlatform()) platform = "macos";
+    else if (/win/iu.test(navigator.platform)) platform = "windows";
+    terminal.attachCustomKeyEventHandler(createTerminalClipboardKeyHandler({
+      platform,
+      clipboard: {
+        readText: () => { setMessage(""); return readDesktopClipboardText(); },
+        writeText: (text) => { setMessage(""); return writeDesktopClipboardText(text); },
+      },
+      getSelection: () => terminal.getSelection(),
+      capturePaste,
+      onError: reportClipboardError,
+    }));
     const dataSubscription = terminal.onData((data) => {
       handleTerminalData(data);
     });

@@ -5,11 +5,16 @@ import { UserTerminalPanel } from "./user-terminal-panel";
 const terminalMocks = vi.hoisted(() => ({
   agentEnabled: false,
   close: vi.fn(async () => undefined),
+  clipboardRead: vi.fn(async () => ""),
+  clipboardWrite: vi.fn(async (_text: string) => undefined),
   emitData: (_data: string) => {},
   fit: vi.fn(),
   get: vi.fn(),
   getAgent: vi.fn(),
   grantAgent: vi.fn(),
+  key: (_event: KeyboardEvent): boolean => true,
+  selection: "",
+  paste: vi.fn(),
   output: vi.fn(),
   read: vi.fn(),
   resize: vi.fn(async () => undefined),
@@ -35,6 +40,9 @@ vi.mock("@xterm/xterm", () => ({
       terminalMocks.emitData = callback;
       return { dispose() {} };
     }
+    attachCustomKeyEventHandler(callback: (event: KeyboardEvent) => boolean) { terminalMocks.key = callback; }
+    getSelection() { return terminalMocks.selection; }
+    paste(text: string) { terminalMocks.paste(text); terminalMocks.emitData(text); }
     clear() {}
     dispose() {}
     focus() {}
@@ -54,6 +62,7 @@ vi.mock("../lib/desktop-bridge", () => ({
   closeDesktopUserTerminal: terminalMocks.close,
   desktopDebugTerminalAgentInputEnabled: () => terminalMocks.agentEnabled,
   desktopErrorMessage: (value: unknown) => String(value),
+  desktopIsMacPlatform: () => false,
   desktopUserTerminalEnabled: () => true,
   getDesktopUserTerminal: terminalMocks.get,
   getDesktopDebugTerminalAgentInput: terminalMocks.getAgent,
@@ -63,6 +72,11 @@ vi.mock("../lib/desktop-bridge", () => ({
   revokeDesktopDebugTerminalAgentInput: terminalMocks.revokeAgent,
   startDesktopUserTerminal: terminalMocks.start,
   writeDesktopUserTerminal: terminalMocks.write,
+}));
+
+vi.mock("../lib/desktop-text-clipboard", () => ({
+  readDesktopClipboardText: terminalMocks.clipboardRead,
+  writeDesktopClipboardText: terminalMocks.clipboardWrite,
 }));
 
 describe("UserTerminalPanel", () => {
@@ -77,6 +91,10 @@ describe("UserTerminalPanel", () => {
       disconnect() {}
     });
     terminalMocks.fit.mockReset();
+    terminalMocks.selection = "";
+    terminalMocks.clipboardRead.mockReset().mockResolvedValue("");
+    terminalMocks.clipboardWrite.mockReset().mockResolvedValue(undefined);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     terminalMocks.agentEnabled = false;
     vi.clearAllMocks();
   });
@@ -127,6 +145,96 @@ describe("UserTerminalPanel", () => {
     cleanup();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const runningClipboardSession = (session_id = "terminal-clipboard", run_id = "run-1") => ({
+    session_id, run_id, state: "running", columns: 120, rows: 32, output_base_cursor: 0, output_next_cursor: 0,
+  });
+
+  async function renderClipboardTerminal() {
+    vi.useFakeTimers();
+    terminalMocks.get.mockReset().mockResolvedValue(runningClipboardSession());
+    terminalMocks.read.mockReset().mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false });
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-clipboard" onSession={onSession} />);
+    await act(async () => {});
+    return { view, onSession };
+  }
+
+  it("copies selected output without writing to the terminal and pastes through xterm", async () => {
+    await renderClipboardTerminal();
+    terminalMocks.selection = "  selected output ";
+    terminalMocks.clipboardRead.mockResolvedValue("  中文\nnext ");
+    await act(async () => {
+      expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(false);
+    });
+    expect(terminalMocks.clipboardWrite).toHaveBeenCalledExactlyOnceWith("  selected output ");
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+    await act(async () => {
+      expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+    });
+    expect(terminalMocks.paste).toHaveBeenCalledExactlyOnceWith("  中文\nnext ");
+    expect(terminalMocks.write).toHaveBeenCalledExactlyOnceWith("terminal-clipboard", "  中文\nnext ");
+  });
+
+  it("shows clipboard read and write failures without forwarding their keys", async () => {
+    await renderClipboardTerminal();
+    terminalMocks.selection = "output";
+    terminalMocks.clipboardWrite.mockRejectedValueOnce(new Error("copy denied"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Copy failed: Error: copy denied");
+    terminalMocks.clipboardRead.mockRejectedValueOnce(new Error("paste denied"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Paste failed: Error: paste denied");
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+    expect(terminalMocks.paste).not.toHaveBeenCalled();
+  });
+
+  it("can copy retained output after exit while refusing a paste", async () => {
+    await renderClipboardTerminal();
+    terminalMocks.get.mockResolvedValue({ ...runningClipboardSession(), state: "exited" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    terminalMocks.selection = "final output";
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true })); });
+    expect(terminalMocks.clipboardWrite).toHaveBeenCalledExactlyOnceWith("final output");
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Paste failed: Error: The terminal is not running");
+    expect(terminalMocks.clipboardRead).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+  });
+
+  it("shows rejected terminal input without truncating or retrying a paste", async () => {
+    await renderClipboardTerminal();
+    const text = "中".repeat(5462);
+    terminalMocks.clipboardRead.mockResolvedValueOnce(text);
+    terminalMocks.write.mockRejectedValueOnce(new Error("Desktop terminal input was rejected"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Desktop terminal input was rejected");
+    expect(terminalMocks.paste).toHaveBeenCalledExactlyOnceWith(text);
+    expect(terminalMocks.write).toHaveBeenCalledExactlyOnceWith("terminal-clipboard", text);
+  });
+
+  it.each(["session", "run", "exit", "unmount"])("drops an asynchronous paste after %s changes", async (change) => {
+    const { view, onSession } = await renderClipboardTerminal();
+    let finishRead: (value: string) => void = () => {};
+    terminalMocks.clipboardRead.mockReturnValueOnce(new Promise((resolve) => { finishRead = resolve; }));
+    act(() => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    if (change === "unmount") {
+      view.unmount();
+    } else if (change === "exit") {
+      terminalMocks.get.mockResolvedValue({ ...runningClipboardSession(), state: "exited" });
+      await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    } else {
+      const sessionID = change === "session" ? "terminal-next" : "terminal-clipboard";
+      const runID = change === "run" ? "run-next" : "run-1";
+      terminalMocks.get.mockResolvedValue(runningClipboardSession(sessionID, runID));
+      view.rerender(<UserTerminalPanel runID={runID} sessionID={sessionID} onSession={onSession} />);
+      await act(async () => {});
+    }
+    await act(async () => { finishRead("stale paste"); });
+    expect(terminalMocks.paste).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
   });
 
   it("fits unknown or exited sessions without resizing or answering replayed terminal queries", async () => {
