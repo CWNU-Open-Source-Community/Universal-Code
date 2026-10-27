@@ -917,7 +917,7 @@
 .v2-conversation-scroll { min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-color: rgb(79 79 79 / 18%) transparent; scrollbar-width: thin; }
 .v2-conversation-content { margin: 0 auto; max-width: var(--v2-content-width); padding: 28px 0 38px; width: calc(100% - 40px); }
 .v2-narrative {
-  --prayu-prose-size: 14px;
+  --prayu-prose-size: var(--prayu-message-size, 14px);
   --prayu-prose-leading: 1.625;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -927,6 +927,7 @@
   padding: 0;
 }
 .v2-narrative > li { min-width: 0; }
+.v2-narrative .v2-markdown-code-header { font-size: 14px; }
 .v2-user-turn { display: flex; flex-direction: column; align-items: flex-end; }
 .v2-message-status { color: var(--v2-muted); display: block; font-size: 11px; margin-top: 6px; }
 .v2-user-turn > div {
@@ -995,7 +996,7 @@
 :is(.v2-assistant-turn, .v2-user-markdown) li + li { margin-top: .35em; }
 :is(.v2-assistant-turn, .v2-user-markdown) li > p { margin-block: .35em; }
 :is(.v2-assistant-turn, .v2-user-markdown) blockquote { border-inline-start: 2px solid var(--v2-border-strong); color: var(--v2-muted); margin: 1em 0; padding-inline-start: 1em; }
-:is(.v2-assistant-turn, .v2-user-markdown) table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; line-height: 1.6; }
+:is(.v2-assistant-turn, .v2-user-markdown) table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: calc(var(--prayu-prose-size) - 1px); font-variant-numeric: tabular-nums; line-height: 1.6; }
 :is(.v2-assistant-turn, .v2-user-markdown) :is(th, td) { border-bottom: 1px solid var(--v2-border); padding: 9px 12px; text-align: start; vertical-align: top; }
 :is(.v2-assistant-turn, .v2-user-markdown) th { font-size: inherit; font-weight: var(--prayu-weight-heading); letter-spacing: 0; text-transform: none; }
 :is(.v2-assistant-turn, .v2-user-markdown) pre {

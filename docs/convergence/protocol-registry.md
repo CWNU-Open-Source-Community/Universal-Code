@@ -822,6 +822,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_workspace_launcher_list.v1`
 - `desktop_workspace_open.v1`
 - `prayu.run-navigation.v1`
+- `prayu.typography.v1`
 - `universal-code.batch-workbench.v1`
 - `universal-code.chat-preferences.v1`
 - `universal-code.sidebar-width.v1`
