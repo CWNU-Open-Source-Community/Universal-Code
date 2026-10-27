@@ -224,13 +224,30 @@ func TestMonetaryPriceImportIsIdempotentAndRotates(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list failed: %#v %v", list, err)
 	}
+
+	extended := snapshot
+	extended.ValidUntil = snapshot.ValidUntil.Add(time.Hour)
+	extended.Fingerprint = pricing.Fingerprint(extended)
+	if extended.Fingerprint != snapshot.Fingerprint {
+		t.Fatal("test fixture unexpectedly changed the fingerprint")
+	}
+	if _, replayed, err := st.ImportPriceSnapshot(ctx, extended); apperror.CodeOf(err) != apperror.CodeConflict || replayed {
+		t.Fatalf("changed validity window was accepted: replayed=%t err=%v", replayed, err)
+	}
+	active, found, err := st.ActivePriceSnapshot(ctx)
+	if err != nil || !found || active.ID != snapshot.ID ||
+		!active.ValidUntil.Equal(snapshot.ValidUntil) ||
+		active.Fingerprint != snapshot.Fingerprint {
+		t.Fatalf("rejected replay mutated the active snapshot: %#v %t %v", active, found, err)
+	}
+
 	second := snapshot
 	second.ID = "test-prices-v2"
 	second.Fingerprint = pricing.Fingerprint(second)
 	if _, _, err := st.ImportPriceSnapshot(ctx, second); err != nil {
 		t.Fatal(err)
 	}
-	active, found, err := st.ActivePriceSnapshot(ctx)
+	active, found, err = st.ActivePriceSnapshot(ctx)
 	if err != nil || !found || active.ID != "test-prices-v2" {
 		t.Fatalf("active snapshot did not rotate: %#v %t %v", active, found, err)
 	}
