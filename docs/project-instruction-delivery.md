@@ -9,6 +9,16 @@ sources. A required root or nested `AGENTS.md` is sent in full, with its origina
 source, scope, precedence and hashes. The application does not interpret natural
 language to find critical clauses, infer overrides or grant execution authority.
 
+Discovery checks each directory from the Workspace root to the target. A non-empty
+`AGENTS.override.md` replaces that directory's `AGENTS.md`; an absent, empty or
+explicitly ignored override falls back to `AGENTS.md`. Other invalid override
+files fail discovery. Superseded and skipped sources remain visible in the
+discovery explanation. `CLAUDE.md` and `.claude/CLAUDE.md` are both included,
+followed by `.prayu` instructions and rules. The hidden Claude file has the scope
+of its containing project directory. All selected sources retain the existing
+path, size, UTF-8, redaction and workflow-only authority checks. New discovery
+results still require the existing confirmed refresh to replace a pinned Run.
+
 ## Confirm a source classification
 
 Read `GET /api/v1/runs/{run_id}/project-instructions` first. Its `pinned` snapshot

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -8,10 +10,128 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/llm"
 )
+
+func TestThreadUsageStatisticsAcrossRunsFiltersReceiptsAndCosts(t *testing.T) {
+	st := openWorkItemTestStore(t)
+	ctx := t.Context()
+	runs := application.NewRunService(st)
+	create := func(goal string) domain.Run {
+		t.Helper()
+		_, run, err := runs.Create(ctx, application.CreateRunRequest{Goal: goal, Profile: "review", Interactive: true, Budget: domain.Budget{MaxTurns: 10}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run
+	}
+	first, other := create("usage A"), create("usage B")
+	if _, err := runs.Start(ctx, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.Fail(ctx, first.ID, "continue usage fixture"); err != nil {
+		t.Fatal(err)
+	}
+	threadID := domain.InitialThreadID(first.ID)
+	next, err := application.NewThreadService(st).Submit(ctx, application.SubmitThreadMessageRequest{
+		Version: domain.ThreadMessageProtocolVersion, ThreadID: threadID, Content: "next usage Run",
+		OperationKey: "usage-successor-0001", RequestedBy: "test_operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := st.ListThreadRuns(ctx, threadID)
+	if err != nil || len(bindings) != 2 || bindings[1].RunID != next.Run.ID || bindings[1].PredecessorRunID != first.ID {
+		t.Fatalf("real Thread continuation did not bind both Runs: %+v %v", bindings, err)
+	}
+	now := time.Now().UTC()
+	old := now.AddDate(0, 0, -40)
+	const key = int64(1<<61 + 1)
+	for _, check := range []struct {
+		run                   domain.Run
+		source, kind, subject string
+		tokens                int
+		at                    time.Time
+	}{
+		{first, "model_gateway", events.ModelCompletedEvent, "first", 12, old},
+		{next.Run, "model_gateway", events.ModelFailedEvent, "next", 24, now},
+		{next.Run, "specialist_model_gateway", events.ModelCompletedEvent, "child", 3, now},
+		{next.Run, "thread_context_compaction", "context_compaction.model_completed", "compact", 4, now},
+		{next.Run, "readonly_fanout", events.ReadOnlyFanoutShardCompletedEvent, "fanout", 5, now},
+		{other, "model_gateway", events.ModelCompletedEvent, "other-root", 1000, now},
+		{other, "specialist_model_gateway", events.ModelCompletedEvent, "other-child", 1000, now},
+		{other, "thread_context_compaction", "context_compaction.model_completed", "other-compact", 1000, now},
+		{other, "readonly_fanout", events.ReadOnlyFanoutShardCompletedEvent, "other-fanout", 1000, now},
+	} {
+		usageTestEvent(t, st, check.run, check.source, check.kind, check.subject, check.at, map[string]any{
+			"provider": "p", "model": "m", "monetary_attempt_number": key, "execution_id": "fanout", "shard": 1, "attempt": 1,
+			"usage": llm.Usage{InputTokens: check.tokens, TotalTokens: check.tokens, CacheReadTokens: 1, CacheUsageReported: true},
+		})
+	}
+	usageTestReservation(t, st, first, "first-cost", domain.MonetaryScopeRoot, key, old, old, 10, domain.MonetaryPricingPriced)
+	usageTestReservation(t, st, next.Run, "next-cost", domain.MonetaryScopeRoot, key, now, now, 900, domain.MonetaryPricingUsageUnknown)
+	usageTestReservation(t, st, next.Run, "child-cost", domain.MonetaryScopeSpecialist, key, now, now, 20, domain.MonetaryPricingPriced)
+	usageTestReservation(t, st, other, "other-cost", domain.MonetaryScopeRoot, key, now, now, 800, domain.MonetaryPricingPriced)
+	usageTestReservation(t, st, other, "other-child-cost", domain.MonetaryScopeSpecialist, key, now, now, 900, domain.MonetaryPricingUsageUnknown)
+	for _, check := range []struct {
+		period                      string
+		calls, tokens, cost, priced int64
+	}{
+		{"all", 5, 48, 30, 2}, {"30d", 4, 36, 20, 1},
+	} {
+		got, err := st.GetThreadUsageStatistics(ctx, threadID, check.period, 0, now)
+		if err != nil || got.Totals.Calls != check.calls || got.Totals.TotalTokens != check.tokens || got.Totals.CacheReadTokens != check.calls ||
+			got.Cost.KnownCostMicros != check.cost || got.Cost.PricedCalls != check.priced || got.Cost.UnpricedCalls != 1 || got.Cost.UntrackedCalls != 2 {
+			t.Fatalf("scoped %s totals/cost changed or leaked: %+v %v", check.period, got, err)
+		}
+		if got.UnassignedCalls != 0 || len(got.Models) != 1 || got.Models[0].Usage != got.Totals ||
+			len(got.RecentSessions) != 1 || got.RecentSessions[0].ThreadID != threadID || got.RecentSessions[0].Usage != got.Totals {
+			t.Fatalf("scoped breakdown leaked another Thread: %+v", got)
+		}
+		var daily, activity int64
+		for _, day := range got.Days {
+			daily += day.Usage.TotalTokens
+		}
+		for _, day := range got.ActivityDays {
+			activity += day.TotalTokens
+		}
+		if daily != check.tokens || activity != 48 {
+			t.Fatalf("day or independent activity range leaked: days=%d activity=%d", daily, activity)
+		}
+	}
+	global, err := st.GetUsageStatistics(ctx, "all", 0, now)
+	if err != nil || global.Totals.TotalTokens != 4048 || global.Cost.KnownCostMicros != 830 || global.Cost.UnpricedCalls != 2 || len(global.RecentSessions) != 2 {
+		t.Fatalf("original global call changed: %+v %v", global, err)
+	}
+	otherStats, err := st.GetThreadUsageStatistics(ctx, domain.InitialThreadID(other.ID), "all", 0, now)
+	if err != nil || otherStats.Totals.TotalTokens != 4000 || otherStats.Cost.KnownCostMicros != 800 || otherStats.Cost.UnpricedCalls != 1 {
+		t.Fatalf("other scope reused first Thread: %+v %v", otherStats, err)
+	}
+	thread, err := st.GetThread(ctx, threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := application.NewThreadService(st).Transition(ctx, threadID, domain.ThreadArchive, thread.Version, "test_operator", "usage-archive-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.GetThreadUsageStatistics(ctx, threadID, "all", 0, now); err != nil || got.Totals.TotalTokens != 48 {
+		t.Fatalf("archived usage lost: %+v %v", got, err)
+	}
+	if _, err := application.NewThreadService(st).Transition(ctx, threadID, domain.ThreadDelete, archived.Version, "test_operator", "usage-delete-0001"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{threadID, "missing-thread"} {
+		if _, err := st.GetThreadUsageStatistics(ctx, id, "all", 0, now); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("missing/deleted Thread became usage: %q %v", id, err)
+		}
+	}
+	if _, err := st.GetThreadUsageStatistics(ctx, "", "all", 0, now); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
+		t.Fatalf("empty Thread became global usage: %v", err)
+	}
+}
 
 func usageTestEvent(t *testing.T, st *SQLiteStore, run domain.Run, source, kind, subject string, at time.Time, payload map[string]any) {
 	t.Helper()
@@ -181,7 +301,7 @@ func TestUsageStatisticsCostsUseSettlementDatesAndActualPrices(t *testing.T) {
 }
 
 func TestUsageStatisticsEmptyReadOnlyAndValidation(t *testing.T) {
-	st, _ := newMonetaryTestStore(t)
+	st, run := newMonetaryTestStore(t)
 	st.db.SetMaxOpenConns(1)
 	var before, after int64
 	if err := st.db.QueryRow(`SELECT total_changes()`).Scan(&before); err != nil {
@@ -195,6 +315,10 @@ func TestUsageStatisticsEmptyReadOnlyAndValidation(t *testing.T) {
 		result, err := st.GetUsageStatistics(t.Context(), period, -300, now)
 		if err != nil || result.Totals.Calls != 0 || result.Models == nil || result.Days == nil || result.ActivityDays == nil || result.RecentSessions == nil {
 			t.Fatalf("empty read-only usage: %+v %v", result, err)
+		}
+		result, err = st.GetThreadUsageStatistics(t.Context(), domain.InitialThreadID(run.ID), period, -300, now)
+		if err != nil || result.Totals.Calls != 0 || result.Models == nil || result.Days == nil || result.ActivityDays == nil || result.RecentSessions == nil {
+			t.Fatalf("empty read-only Thread usage: %+v %v", result, err)
 		}
 	}
 	if err := st.db.QueryRow(`SELECT total_changes()`).Scan(&after); err != nil || after != before {

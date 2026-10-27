@@ -34769,6 +34769,16 @@
               "minimum": -840,
               "type": "integer"
             }
+          },
+          {
+            "name": "thread_id",
+            "in": "query",
+            "description": "Optional exact Thread identity. Restricts all receipt, cost, model, day and activity statistics to every Run bound to this Thread. Omit for application-wide usage. Active and archived Threads are supported; missing or deleted Threads return NOT_FOUND.",
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -34810,6 +34820,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "414": {
             "$ref": "#/components/responses/RequestTooLarge"
@@ -68418,7 +68431,8 @@
           },
           "network": {
             "enum": [
-              "disabled"
+              "disabled",
+              "host"
             ],
             "type": "string"
           },

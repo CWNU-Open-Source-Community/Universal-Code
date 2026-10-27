@@ -70,19 +70,21 @@ Tool、Network、Secret、Debug、Plugin、Hook、MCP、审批、Credential、�
 
 发现器只在已注册 Workspace 边界内读取：
 
-- 每一级目录中的 `AGENTS.md` 与 `CLAUDE.md`；
+- 每一级目录中优先读取非空 `AGENTS.override.md`；缺失、空白或显式忽略时回退到同目录 `AGENTS.md`；
+- 每一级目录中的 `CLAUDE.md` 与 `.claude/CLAUDE.md`，后者使用所在项目目录的 scope；
 - 每一级目录中的 `.prayu/instructions.md`；
 - 每一级目录下 `.prayu/rules/**/*.md` 的稳定字典序集合；
 - Workspace 根的 `.prayu/instructions.ignore`，用于排除规范的相对路径 glob。
 
 顺序从 Workspace 根到目标所在目录，越近的目录优先级越高；同一级依次为
-`AGENTS.md`、`CLAUDE.md`、针路簿 instructions、排序后的 rules。每个 source 保存相对
+所选 AGENTS 文件、`CLAUDE.md`、`.claude/CLAUDE.md`、针路簿 instructions、排序后的 rules。每个 source 保存相对
 path、content SHA-256、scope、depth、precedence、加载时间、trust、适用 target、
-`why_effective`、脱敏状态和全部 false 的授权字段。冲突保留双方并解释最近目录获胜，
-不会静默删除低优先级来源。
+`why_effective`、脱敏状态和全部 false 的授权字段。跨目录冲突保留双方并解释最近目录获胜；
+同目录被覆盖的 `AGENTS.md` 记录在 `ignored` 中，说明对应的 `AGENTS.override.md` 来源。
 
 边界为最多 64 个文件、单文件 64 KiB、总计 256 KiB、目标/规则深度 32、ignore
-16 KiB/128 条。绝对路径、`..` 逃逸、NUL、无效 UTF-8、空文件、特殊文件、symlink、
+16 KiB/128 条。空白 `AGENTS.override.md` 记录跳过原因后回退；其他空文件仍被拒绝。
+绝对路径、`..` 逃逸、NUL、无效 UTF-8、特殊文件、symlink、
 junction/reparse、并发修改、超限和非法 ignore 均 fail closed。Windows 使用大小写不敏感
 的规范路径比较；Linux/macOS 保留大小写语义。内容在 hash 和交付前经过 Secret 脱敏。
 
@@ -255,14 +257,18 @@ leases, execution profiles, or policy overrides.
 
 ### Hierarchical discovery and immutable Run snapshots
 
-Within the exact registered Workspace, Traverse Board discovers `AGENTS.md`, `CLAUDE.md`,
-`.prayu/instructions.md`, and sorted `.prayu/rules/**/*.md` from root to the target directory.
+Within the exact registered Workspace, Traverse Board selects a non-empty `AGENTS.override.md`
+or falls back to `AGENTS.md` when the override is absent, empty, or explicitly ignored. It also
+discovers `CLAUDE.md`, `.claude/CLAUDE.md`, `.prayu/instructions.md`, and sorted
+`.prayu/rules/**/*.md` from root to the target directory, in that order at each level.
+The hidden Claude file uses the scope of its containing project directory.
 Nearer directories have higher precedence. Each source retains its canonical relative path,
 content digest, scope, depth, precedence, load time, trust class, target applicability,
-why-effective explanation, redaction state, and an all-false authority projection. Conflicts remain
-visible rather than silently dropping the lower source.
+why-effective explanation, redaction state, and an all-false authority projection. Cross-directory
+conflicts retain both sources. A superseded same-directory `AGENTS.md` appears in `ignored`
+with its overriding source identified. Empty overrides also retain a skip explanation.
 
-Discovery fails closed on escapes, invalid UTF-8/NUL, special files, symlinks/reparse points,
+Discovery fails closed on other empty sources, escapes, invalid UTF-8/NUL, special files, symlinks/reparse points,
 concurrent modification, malformed ignore rules, or the 64-file/64-KiB-each/256-KiB-total/32-depth
 bounds. Run creation pins the complete snapshot and fingerprint. Later disk drift produces an
 explainable diff but cannot change an active Run; an operator must confirm against the exact prior

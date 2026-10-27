@@ -79,4 +79,28 @@ func TestRunPinsProjectInstructionsUntilConfirmedRefresh(t *testing.T) {
 	if err != nil || len(history) != 2 || history[0].Revision != 2 || history[1].Revision != 1 {
 		t.Fatalf("history=%#v err=%v", history, err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.override.md"), []byte("run override checks\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := application.NewProjectInstructionService(state)
+	preview, err := service.Inspect(ctx, run.ID, ".")
+	if err != nil || !preview.Stale || len(preview.Live.Sources) != 1 ||
+		preview.Live.Sources[0].Content != "run override checks\n" ||
+		preview.Pinned.Snapshot.Fingerprint != live.Fingerprint ||
+		len(preview.Diff.Added) != 1 || len(preview.Diff.Removed) != 1 {
+		t.Fatalf("override did not produce a source replacement preview: %+v err=%v", preview, err)
+	}
+	unconfirmed, err := service.Refresh(ctx, run.ID, ".", live.Fingerprint,
+		preview.Live.Fingerprint, "desktop_operator", false)
+	if err != nil || unconfirmed.RefreshConfirmed || unconfirmed.Pinned.Revision != 2 ||
+		unconfirmed.Pinned.Snapshot.Sources[0].Content != "run all tests\n" {
+		t.Fatalf("override bypassed confirmed refresh: %+v err=%v", unconfirmed, err)
+	}
+	confirmed, err := service.Refresh(ctx, run.ID, ".", live.Fingerprint,
+		preview.Live.Fingerprint, "desktop_operator", true)
+	if err != nil || !confirmed.RefreshConfirmed || confirmed.Pinned.Revision != 3 ||
+		confirmed.Pinned.Snapshot.Fingerprint != preview.Live.Fingerprint ||
+		confirmed.Pinned.Snapshot.Sources[0].Content != "run override checks\n" {
+		t.Fatalf("confirmed override was not pinned: %+v err=%v", confirmed, err)
+	}
 }

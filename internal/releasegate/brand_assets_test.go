@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"image"
 	"image/color"
 	"image/png"
 	"io"
@@ -19,7 +20,7 @@ const approvedBrandMasterSHA256 = "a97e71e5f373d5d48ce24e39360cd390be2beabfe7310
 
 // Generated from the approved globe-and-terminal master, including both COFF
 // resources with the shared PerMonitorV2/asInvoker manifest.
-const approvedBrandDerivativeSetSHA256 = "98e5cc53e87c82c0b6557608b6a40cac40046bf91223c42d8d2af1803806068c"
+const approvedBrandDerivativeSetSHA256 = "4db9b74f26d493f64af2b6e21b39db10cdbe08fa935122eebba489f23106206f"
 
 func TestApprovedBrandMasterAndPlatformAssetsStaySynchronized(t *testing.T) {
 	t.Parallel()
@@ -165,6 +166,42 @@ func TestWindowsIconContainerAndExecutableResourcesStaySynchronized(t *testing.T
 				t.Fatalf("%s does not embed ICO entry %d (%dpx)", current.path, index, wantSize)
 			}
 		}
+	}
+}
+
+func TestSmallPlatformIconsKeepReadableArtwork(t *testing.T) {
+	t.Parallel()
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, relative := range []string{
+		"web/public/traverse-board-favicon-32.png",
+		"packaging/windows/Assets/Square44x44Logo.targetsize-16.png",
+		"packaging/windows/Assets/Square44x44Logo.targetsize-32.png",
+		"packaging/windows/Assets/Square44x44Logo.png",
+	} {
+		t.Run(relative, func(t *testing.T) {
+			bitmap, err := png.Decode(bytes.NewReader(readTestFile(t, filepath.Join(root, relative))))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The approved artwork has a navy ring. Its visible bounds measure
+			// legibility independently of the white tile and transparent corners.
+			var artwork image.Rectangle
+			for y := bitmap.Bounds().Min.Y; y < bitmap.Bounds().Max.Y; y++ {
+				for x := bitmap.Bounds().Min.X; x < bitmap.Bounds().Max.X; x++ {
+					pixel := color.NRGBAModel.Convert(bitmap.At(x, y)).(color.NRGBA)
+					if pixel.A >= 240 && pixel.R < 96 && pixel.G < 112 && pixel.B < 144 {
+						artwork = artwork.Union(image.Rect(x, y, x+1, y+1))
+					}
+				}
+			}
+			size := bitmap.Bounds().Dx()
+			// Round to whole pixels: 70% of a 16px icon is 11.2px.
+			minimum, maximum := size*70/100, (size*85+99)/100
+			if artwork.Dx() < minimum || artwork.Dy() < minimum ||
+				artwork.Dx() > maximum || artwork.Dy() > maximum {
+				t.Fatalf("visible artwork is %dx%d inside %dpx icon; want 70–85%% occupancy", artwork.Dx(), artwork.Dy(), size)
+			}
+		})
 	}
 }
 
