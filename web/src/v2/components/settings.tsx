@@ -45,6 +45,7 @@ import "./settings.css";
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
 const SandboxEnvironmentPanel = lazy(() => import("../../components/sandbox-environment-panel").then((module) => ({ default: module.SandboxEnvironmentPanel })));
 const VerificationSettingsPanel = lazy(() => import("../../components/verification-settings-panel").then((module) => ({ default: module.VerificationSettingsPanel })));
+const TerminalSettingsPanel = lazy(() => import("../../components/terminal-settings-panel").then((module) => ({ default: module.TerminalSettingsPanel })));
 const UsageSettings = lazy(() => import("./usage-settings").then((module) => ({ default: module.UsageSettings })));
 
 function SettingRow({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
@@ -504,9 +505,9 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
         <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />
       </Suspense>}
-      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("检测用户安装，保存下次启动配置，再回到任务选择编码环境。", "Detect installed environments, save settings for the next startup, then return to your task to choose a coding environment.")}</p>
+      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("管理执行环境、内置终端与验证功能。各项设置下方会说明生效时间。", "Manage execution environments, the integrated terminal, and verification features. Each setting explains when it takes effect.")}</p>
         <Suspense fallback={<p role="status">{t("正在加载执行环境设置…", "Loading execution environment settings…")}</p>}><SandboxEnvironmentPanel client={client} />
-          <VerificationSettingsPanel client={client} /></Suspense></>}
+          <TerminalSettingsPanel /><VerificationSettingsPanel client={client} /></Suspense></>}
       {section === "connections" && <ConnectionsSettings client={client} threadID={threadID} sourceRunID={sourceRunID}
         onOpenGithubReview={onOpenGithubReview} onOpenTask={onOpenTask} onSelect={onSelectSection} />}
       {section === "task-configuration" && <Suspense fallback={<p role="status">{t("正在加载任务配置…", "Loading task configuration…")}</p>}>

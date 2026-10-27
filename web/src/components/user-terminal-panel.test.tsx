@@ -5,6 +5,8 @@ import { UserTerminalPanel } from "./user-terminal-panel";
 const terminalMocks = vi.hoisted(() => ({
   instances: [] as Array<{ select: (text: string) => void; disposed: boolean; selectionDisposed: boolean; write: (data: Uint8Array) => void }>,
   agentEnabled: false,
+  settingsAvailable: false,
+  settings: vi.fn(),
   close: vi.fn(async () => undefined),
   clipboardRead: vi.fn(async () => ""),
   clipboardWrite: vi.fn(async (_text: string) => undefined),
@@ -90,6 +92,12 @@ vi.mock("../lib/desktop-text-clipboard", () => ({
   writeDesktopClipboardText: terminalMocks.clipboardWrite,
 }));
 
+vi.mock("../lib/desktop-terminal-settings", () => ({
+  desktopTerminalSettingsAvailable: () => terminalMocks.settingsAvailable,
+  getDesktopTerminalSettings: terminalMocks.settings,
+  terminalSettingsChanged: "uc-terminal-settings-changed",
+}));
+
 describe("UserTerminalPanel", () => {
   let notifyResize: () => void;
 
@@ -106,6 +114,8 @@ describe("UserTerminalPanel", () => {
     terminalMocks.clipboardWrite.mockReset().mockResolvedValue(undefined);
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     terminalMocks.agentEnabled = false;
+    terminalMocks.settingsAvailable = false;
+    terminalMocks.settings.mockReset();
     vi.clearAllMocks();
     terminalMocks.instances = [];
     terminalMocks.get.mockImplementation(async (id: string) => ({ session_id: id, run_id: "source-run", state: "exited", output_base_cursor: 0 }));
@@ -525,6 +535,58 @@ describe("UserTerminalPanel", () => {
       expect(terminalMocks.revokeAgent).toHaveBeenCalledWith(binding.binding_id);
     });
     confirm.mockRestore();
+  });
+
+  it("uses persisted full consent without another dialog and reflects disabled settings", async () => {
+    terminalMocks.agentEnabled = true;
+    terminalMocks.settingsAvailable = true;
+    const preferences = { revision: 1, settings: { agent_control: "full", manual_ttl_seconds: 60, default_shell: "cmd" } };
+    terminalMocks.settings.mockResolvedValue(preferences);
+    terminalMocks.getAgent.mockRejectedValue(new Error("no active binding"));
+    terminalMocks.get.mockResolvedValue({ session_id: "terminal-1", run_id: "run-1", state: "running", output_base_cursor: 0,
+      shell: { id: "cmd", name: "CMD", path: "C:\\Windows\\System32\\cmd.exe", version: "10.0", available: true } });
+    terminalMocks.read.mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false, state: "running" });
+    terminalMocks.grantAgent.mockResolvedValue({ binding_id: "binding-full", terminal_session_id: "terminal-1", expires_at: new Date(Date.now() + 900_000).toISOString() });
+    const confirm = vi.spyOn(globalThis, "confirm");
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Allow Agent control" }));
+    await screen.findByRole("button", { name: "Stop Agent control" });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByText("CMD")).toHaveAttribute("title", expect.stringContaining("cmd.exe"));
+    fireEvent.click(screen.getByRole("button", { name: "Stop Agent control" }));
+    await waitFor(() => expect(terminalMocks.revokeAgent).toHaveBeenCalledWith("binding-full"));
+    terminalMocks.settings.mockResolvedValue({ ...preferences, revision: 2, settings: { ...preferences.settings, agent_control: "disabled" } });
+    act(() => window.dispatchEvent(new Event("uc-terminal-settings-changed")));
+    await screen.findByText("Agent control disabled");
+    expect(screen.queryByRole("button", { name: "Allow Agent control" })).not.toBeInTheDocument();
+    act(() => terminalMocks.emitData("echo manual\r"));
+    await waitFor(() => expect(terminalMocks.write).toHaveBeenCalledWith("terminal-1", "echo manual\r"));
+    confirm.mockRestore();
+  });
+
+  it("keeps a completed grant when an overlapping status read returns late", async () => {
+    terminalMocks.agentEnabled = true;
+    terminalMocks.settingsAvailable = true;
+    terminalMocks.settings.mockResolvedValue({ settings: { agent_control: "full", manual_ttl_seconds: 300 } });
+    terminalMocks.getAgent.mockRejectedValue(new Error("no binding"));
+    terminalMocks.get.mockResolvedValue({ session_id: "terminal-1", run_id: "run-1", state: "running", output_base_cursor: 0 });
+    terminalMocks.read.mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false, state: "running" });
+    vi.useFakeTimers();
+    try {
+      await act(async () => { render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={vi.fn()} />); });
+      let completeGrant!: (value: unknown) => void;
+      let rejectRead!: (error: Error) => void;
+      terminalMocks.grantAgent.mockReturnValueOnce(new Promise((resolve) => { completeGrant = resolve; }));
+      terminalMocks.getAgent.mockReturnValueOnce(new Promise((_, reject) => { rejectRead = reject; }));
+      fireEvent.click(screen.getByRole("button", { name: "Allow Agent control" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      await act(async () => { completeGrant({ binding_id: "new-binding", terminal_session_id: "terminal-1", expires_at: new Date(Date.now() + 900_000).toISOString() }); });
+      await act(async () => { rejectRead(new Error("old no-binding response")); });
+      expect(screen.getByRole("button", { name: "Stop Agent control" })).toBeEnabled();
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
   });
 
   it("quotes only the current selection with its actual source, preserving whitespace and Markdown fences", async () => {

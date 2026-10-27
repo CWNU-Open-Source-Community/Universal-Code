@@ -125,8 +125,8 @@ func (p *testSkillPackagePicker) OpenSkillPackage(ctx context.Context) (string, 
 func TestDesktopBridgeBindsOnlyReviewedMethods(t *testing.T) {
 	typ := reflect.TypeFor[*DesktopBridge]()
 	want := []string{
-		"Bootstrap", "ChatResourceAction", "ChooseProjectlessDirectory", "CloseUserTerminal", "ConfirmVerificationSettings", "CreateWorkspace", "GetDebugTerminalAgentInput",
-		"GetUserTerminal", "GetVerificationSettings", "GrantDebugTerminalAgentInput",
+		"Bootstrap", "ChatResourceAction", "ChooseProjectlessDirectory", "CloseUserTerminal", "ConfirmTerminalSettings", "ConfirmVerificationSettings", "CreateWorkspace", "GetDebugTerminalAgentInput",
+		"GetTerminalSettings", "GetUserTerminal", "GetVerificationSettings", "GrantDebugTerminalAgentInput",
 		"ImportWorkspace", "InspectClipboardFiles", "InstallSkillPackage",
 		"ListSkillPackages", "OpenExternalURL", "OpenWorkspace", "PasteClipboardFiles", "PreviewExternalURL", "PreviewSkillPackage",
 		"ReadChatResource", "ReadUserTerminal", "RemoveSkillPackage", "ResizeUserTerminal",

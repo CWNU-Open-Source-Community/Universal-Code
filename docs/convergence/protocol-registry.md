@@ -20,6 +20,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 117 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
+| [desktop-terminal-settings](#desktop-terminal-settings) | `internal-durable` | Desktop terminal maintainers | 1 | true |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
 | [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 22 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
@@ -746,6 +747,26 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 - `desktop_risk_restart.ready.v1`
 - `desktop_sandbox_restart.v1`
+
+</details>
+
+### desktop-terminal-settings
+
+- Class: `internal-durable`
+- Owner: Desktop terminal maintainers
+- Source of truth: `internal/application`, `internal/desktop`
+- Persistence/export boundary: Native confirmation saves revision-bound shared-terminal consent, manual duration and a fixed shell identifier in the application home.
+- Compatibility rule: Default manual consent and automatic trusted shell selection. Saved full consent can renew process-local terminal leases only while the current Run has active Full permission. No Run authority, lease token or arbitrary executable path is persisted. Unknown fields, revisions and invalid preferences fail closed.
+- Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
+- Writers:
+  - `desktop-terminal-settings-writer` (`v1`, write-current) at `internal/application`
+- Readers:
+  - `desktop-terminal-settings-reader` (`v1`, active) at `internal/application`
+  - `desktop-terminal-settings-ui-reader` (`v1`, active) at `web/src/lib`
+
+<details><summary>1 active identifiers</summary>
+
+- `desktop_terminal_settings.v1`
 
 </details>
 
