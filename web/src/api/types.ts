@@ -115,6 +115,8 @@ export type ThreadMessageView = components["schemas"]["ThreadMessageView"];
 export type ThreadTranscriptItemView = components["schemas"]["ThreadTranscriptItemView"];
 export type ThreadSearchResultView = components["schemas"]["ThreadSearchResultView"];
 export type ThreadSavedMessageView = components["schemas"]["ThreadSavedMessageView"];
+export type ThreadReplyUpdateView = components["schemas"]["ThreadReplyUpdateView"];
+export type ThreadReplyUpdatesView = components["schemas"]["ThreadReplyUpdatesView"];
 export type ThreadActivityTypedDetailView =
   components["schemas"]["ThreadActivityTypedDetailView"];
 export type ThreadActivityKind = ThreadActivityTypedDetailView["kind"];
