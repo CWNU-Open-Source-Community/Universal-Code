@@ -8,7 +8,7 @@ import type { WorkspaceView } from "../../api/types";
 import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-control";
 import { V2PermissionControl } from "./permission-control";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
-import { V2FileContext, useV2FileReferences, type V2FileReference } from "./file-context";
+import { V2FileContext, useV2FileReferences, withV2FileReference, type V2FileReference } from "./file-context";
 import { useV2ThreadSubmissions, V2SubmissionError, v2TurnOutcomeKnown, type V2TurnInput } from "../use-thread-turn";
 import { useV2PersistenceWarning, useV2RecoveryStore } from "../recovery-storage";
 import { acceptedImageTypes, imageIdentities, maximumImages, type WorkspaceImageAttachment } from "../../api/image-attachments";
@@ -25,6 +25,7 @@ import { maximumMCPReferences, mcpReferenceIdentities, type MCPDraftReference } 
 import { V2MCPReferenceChips, V2MCPReferencePicker, useV2MCPReferences } from "./mcp-reference-picker";
 import { MarkdownInput, composerPlainTextKey, readComposerPlainText, type MarkdownInputHandle } from "./markdown-input";
 import { v2AttachmentImportKey } from "../attachment-keys";
+import { usePromptHistory } from "../use-prompt-history";
 
 const maximumContentBytes = 16 * 1024;
 
@@ -174,6 +175,11 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     });
   }, [confirmedSubmission, threadID, workspaceID, submissions, error?.reason, error?.inputFingerprint]);
   const inputRef = useRef<MarkdownInputHandle>(null);
+  const promptHistory = usePromptHistory({ client, threadID, scope, value: content,
+    blocked: Boolean(disabled || submitting || references.files.length || mcp.references.length || images.images.length ||
+      images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending ||
+      nativeClipboard.busy || importStatus.busy || managedDraft?.state.conflict || managedDraft?.state.error),
+    apply: setContent, atBoundary: (direction) => inputRef.current?.atHistoryBoundary(direction) ?? false });
   const normalized = content.trim();
   const [editorExpanded, setEditorExpanded] = useState(false);
   const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
@@ -232,6 +238,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     // A descendant portal can contain its own form (settings or file search).
     if (event && event.target !== event.currentTarget) return;
     if (!ready) return;
+    promptHistory.cancel();
     const submittedFiles = references.files;
     const submittedImages = images.images;
     const submittedAttachments = attachments.attachments;
@@ -401,7 +408,24 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         onOpenChange={setReferencePickerOpen} returnFocusRef={addTriggerRef}
         onChange={references.update} workspaceID={workspaceID} />}
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
-        onChange={(next) => { setContent(next); setError(null); }} onSubmit={() => void submit()}
+        onChange={(next) => { promptHistory.cancel(); setContent(next); setError(null); }} onSubmit={() => void submit()}
+        onHistoryNavigate={promptHistory.navigate} onHistoryCancel={promptHistory.cancel}
+        filePaths={workspaceID && client.hasEvidenceAttachment && !attachmentsDisabled && !fileReferenceUnavailableReason &&
+          !managedDraft?.state.conflict && !managedDraft?.state.error ? { client, workspaceID, onAttach: (file, next, expected) => {
+            const limitMessage = t("最多引用 4 个文件，请先移除一个引用。", "You can reference up to 4 files. Remove a reference first.");
+            const changed = () => new Error(t("草稿已变化，请重新选择文件。", "The draft changed. Choose the file again."));
+            if (currentContentRef.current !== expected) throw changed();
+            if (managedDraft) {
+              const current = managedDraft.document.read(managedDraft.scope);
+              if (current.snapshot.text !== expected || current.conflict || current.error) throw changed();
+              managedDraft.document.update(managedDraft.scope, (snapshot) => ({ ...snapshot, text: next,
+                files: withV2FileReference(snapshot.files, file, limitMessage) }), current.ref);
+            } else {
+              const files = withV2FileReference(references.files, file, limitMessage);
+              references.update(() => files); setContent(next, expected);
+            }
+            setError(null);
+          } } : undefined}
         placeholder={inputPlaceholder} inputRef={inputRef} value={content} scope={scope} plainText={plainText} />
       {byteLength >= 4096 && <div className="v2-composer-text-attachment">
         <span className={byteLength > maximumContentBytes ? "is-over-limit" : undefined}>
@@ -447,6 +471,8 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         </div>
       </div>
     </div>
+    {promptHistory.notice && <p className={promptHistory.notice.error ? "v2-composer-error" : "v2-composer-caption"}
+      role={promptHistory.notice.error ? "alert" : "status"}>{promptHistory.notice.text}</p>}
     {workspaceID && references.files.length > 0 && fileReferenceUnavailableReason &&
       <p className="v2-composer-caption" role="status">{fileReferenceUnavailableReason}
         {t(" 已选引用与草稿会保留；先移除项目文件引用，即可发送补充文字和上传附件。", " Your references and draft are kept. Remove project file references to send text and uploaded attachments.")}</p>}
