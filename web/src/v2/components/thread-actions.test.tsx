@@ -8,16 +8,31 @@ import { ThreadActions } from "./thread-actions";
 
 const thread = { id: "thread-sidebar", title: "Review result" } as ThreadView;
 
-function show(client: Partial<APIClient>) {
+function show(client: Partial<APIClient>, unread = false, onReadStateChange?: (id: string, read: boolean) => void) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidation = vi.spyOn(queryClient, "invalidateQueries");
   render(<QueryClientProvider client={queryClient}><LocaleProvider>
-    <ThreadActions thread={thread} client={{ hasControl: true, ...client } as APIClient} onArchive={vi.fn()} />
+    <ThreadActions thread={thread} client={{ hasControl: true, ...client } as APIClient} onArchive={vi.fn()}
+      unread={unread} onReadStateChange={onReadStateChange} />
   </LocaleProvider></QueryClientProvider>);
   return invalidation;
 }
 
 beforeEach(() => localStorage.setItem("prayu.locale.v1", "en-US"));
+
+it.each([false, true])("allows read-only connections to mark a chat read=%s with the keyboard", async (unread) => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  show({ hasControl: false }, unread, change);
+  const trigger = screen.getByRole("button", { name: "Review result chat options" });
+  await user.click(trigger);
+  const label = unread ? "Mark as read" : "Mark as unread";
+  expect(screen.getByRole("menuitem", { name: label })).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(change).toHaveBeenCalledWith(thread.id, unread);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
 
 it("pins the exact chat and refreshes pinned history and current details", async () => {
   const user = userEvent.setup();

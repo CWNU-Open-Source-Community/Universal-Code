@@ -9,6 +9,27 @@ const markdown = vi.hoisted(() => vi.fn(({ children }: { children: string }) => 
 vi.mock("react-markdown", () => ({ default: markdown }));
 afterEach(() => { cleanup(); markdown.mockClear(); });
 
+it("shows stored message times with a full local date and timezone, without replacing missing timestamps", () => {
+  const createdAt = "2026-10-21T09:16:43Z";
+  const entries: NarrativeEntry[] = [
+    { id: "user", kind: "user", text: "Request", createdAt, provisional: false },
+    { id: "reply", kind: "assistant", text: "Reply", createdAt, provisional: false },
+    { id: "missing", kind: "assistant", text: "Older reply", createdAt: "", provisional: false },
+    { id: "invalid", kind: "assistant", text: "Invalid time", createdAt: "invalid", provisional: false },
+    { id: "live", kind: "assistant", text: "Streaming", createdAt, provisional: true },
+  ];
+  const { container } = render(<V2Narrative client={{} as APIClient} entries={entries} threadID="thread" />);
+  const times = container.querySelectorAll("time");
+  expect(times).toHaveLength(2);
+  for (const time of times) {
+    expect(time).toHaveAttribute("datetime", "2026-10-21T09:16:43.000Z");
+    expect(time.textContent).toMatch(/^\d{2}:\d{2}$/u);
+    expect(time.title).toContain("2026");
+    expect(time.title).toContain("43");
+    expect(time).toHaveAccessibleName("Message time: " + time.title);
+  }
+});
+
 it("copies and reuses processed user text, quotes only the selection, and branches from that input", async () => {
   const user = userEvent.setup();
   const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
