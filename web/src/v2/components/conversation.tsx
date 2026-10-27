@@ -44,6 +44,7 @@ import { useV2ThreadSubmissions, useV2ThreadTurn, V2SubmissionError, V2Recovered
 import { inspectV2SteeringRequest, inspectV2TurnRequest } from "../recovery-api";
 import { useV2RecoveryStore } from "../recovery-storage";
 import { settleRecoveryTurn } from "../recovery-session";
+import { appendReviewComment, type ReviewCommentResult } from "../review-comment-draft";
 import { assertV2DraftVersion, useV2DraftDocument } from "../draft-context";
 import type { V2DraftVersion } from "../draft-version";
 import { V2DraftConflict } from "./draft-conflict";
@@ -961,6 +962,15 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setReviewOpen(false); setPreviewOpen(false); setContextOpen(false);
     setComposerFocusRequest({ threadID });
   };
+  const addReviewComment = (content: string): ReviewCommentResult => {
+    if (managedDraft) return appendReviewComment(managedDraft, content);
+    const current = composeTarget.current;
+    if (!current.onDraftChange) return "blocked";
+    const next = current.draft ? `${current.draft}\n\n${content}` : content;
+    current.onDraftChange(next, current.draft);
+    composeTarget.current = { ...current, draft: next };
+    return "added";
+  };
   const companionDocked = view === "conversation" && !compactPaneOpen;
   const companion = <>
     {activePane === "files" && <V2FileDrawer client={client} threadID={threadID}
@@ -1077,14 +1087,14 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     </V2LazySurface>}
     {reviewOpen && <V2LazySurface loadingText={t("正在加载改动审阅…", "Loading change review…")} errorLabel={t("改动审阅", "Change review")} resetKey={threadID}
       onDismiss={() => { setReviewOpen(false); workflowFocusTarget(reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current)?.focus(); }}>
-      <V2TaskReview client={client} detail={detail} working={working}
+      <V2TaskReview key={threadID} client={client} detail={detail} working={working}
       onOpenWorktree={onOpenWorktree}
       initialFileTarget={reviewFileTarget}
       initialToolTarget={reviewToolTarget} toolMemoryRef={reviewMemoryRef}
       onClose={() => {
         if (!reviewReturnFocus.current?.isConnected) reviewReturnFocus.current = reviewTrigger.current;
         setReviewOpen(false);
-      }} returnFocusRef={reviewFocusTarget} onRequestChange={appendDraftAndReveal} /></V2LazySurface>}
+      }} returnFocusRef={reviewFocusTarget} onRequestChange={appendDraftAndReveal} onAddComment={onDraftChange ? addReviewComment : undefined} /></V2LazySurface>}
     <div className="v2-conversation-stage">
     <div className="v2-conversation-main-column">
     {view === "inspector" && !transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载 Inspector…", "Loading Inspector…")}

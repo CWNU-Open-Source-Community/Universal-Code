@@ -6,6 +6,7 @@ import type { WorkspaceView } from "../../api/types";
 import { executeThreadGit, observeThreadGit, previewThreadGit, readThreadGit, type ThreadGitPreview, type ThreadGitResult, type ThreadGitSpec } from "../../api/task-delivery";
 import { ErrorState, LoadingState, StatusLabel } from "../../components/common";
 import { useV2PersistentState, useV2RecoveryStore } from "../recovery-storage";
+import type { ReviewCommentResult } from "../review-comment-draft";
 import { ReviewDiff } from "./review-diff";
 import { taskReviewKey } from "./task-overview";
 import { gitFormRepositoryID, gitFormRevision, useGitFormState } from "./git-form-state";
@@ -22,8 +23,9 @@ const validAttempt = (value: unknown, threadID: string): value is GitAttempt => 
   "operation" in value && typeof value.operation === "string" && Object.hasOwn(operationLabels((chinese) => chinese), value.operation));
 export const taskGitKey = (threadID: string) => ["thread", threadID, "git"] as const;
 
-export function TaskGit({ client, threadID, working, onFeedback, onPullRequest, onOpenWorktree }: {
+export function TaskGit({ client, threadID, working, onFeedback, onAddComment, onPullRequest, onOpenWorktree }: {
   client: APIClient; threadID: string; working: boolean; onFeedback: (context: string) => void; onPullRequest: () => void;
+  onAddComment?: (context: string) => ReviewCommentResult;
   onOpenWorktree?: (workspace: WorkspaceView) => void;
 }) {
   const { t } = useLocale();
@@ -288,7 +290,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onPullRequest, 
           {preview.target_commit_oid && <div><dt>{t("完整目标提交", "Full target commit")}</dt><dd>{preview.target_commit_oid}</dd></div>}
           <div><dt>{t("预览指纹", "Preview fingerprint")}</dt><dd>{preview.preview_fingerprint}</dd></div>
         </dl></details>
-        {preview.diff && <ReviewDiff patch={preview.diff} source={t(`Git 预览：${preview.preview_fingerprint}\n分支：${preview.branch}\n提交：${preview.head_oid}\n目录：${preview.repository_root}`, `Git preview: ${preview.preview_fingerprint}\nBranch: ${preview.branch}\nCommit: ${preview.head_oid}\nDirectory: ${preview.repository_root}`)} onFeedback={onFeedback} />}
+        {preview.diff && <ReviewDiff patch={preview.diff} source={t(`Git 预览：${preview.preview_fingerprint}\n分支：${preview.branch}\n提交：${preview.head_oid}\n目录：${preview.repository_root}`, `Git preview: ${preview.preview_fingerprint}\nBranch: ${preview.branch}\nCommit: ${preview.head_oid}\nDirectory: ${preview.repository_root}`)} onFeedback={onFeedback} onAddComment={onAddComment} />}
         {!preview.can_execute && <p role="alert">{preview.blocked_reason || t("此预览当前不能执行。", "This preview cannot currently be executed.")}</p>}
         {preview.spec.operation === "commit" && <p>{t("本次提交会跳过本地 hooks，生成无签名提交。请确认这种提交方式符合项目要求。", "This commit skips local hooks and is unsigned. Confirm this meets project requirements.")}</p>}
         <p>{t("确认后仅执行这份预览；内容或分支变化时需要重新预览。", "Confirmation executes only this preview. Content or branch changes require a new preview.")}</p>

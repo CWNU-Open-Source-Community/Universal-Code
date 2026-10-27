@@ -88,11 +88,12 @@ it("groups unapplied proposals without repeated status descriptions", async () =
 
 it("keeps wrapping beside file review actions and scopes it to the selected file", async () => {
   const onReviewFile = vi.fn();
+  const onAddComment = vi.fn().mockReturnValue("added");
   const value = review({ applied_changes: [], unapplied_changes: [change({ edit_id: "old-pending", status: "proposed" }),
     change({ run_id: "new-run", edit_id: "current-pending", path: "current.ts", status: "proposed" })] });
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <TaskOverview client={{ get: vi.fn().mockResolvedValue(value) } as unknown as APIClient}
-      threadID="task" onFeedback={vi.fn()} onReviewFile={onReviewFile} />
+      threadID="task" onFeedback={vi.fn()} onReviewFile={onReviewFile} onAddComment={onAddComment} />
   </QueryClientProvider>);
   const old = (await screen.findByText("src/app.ts")).closest("article")!;
   const current = screen.getByText("current.ts").closest("article")!;
@@ -106,8 +107,14 @@ it("keeps wrapping beside file review actions and scopes it to the selected file
   expect(old.querySelector(".v2-delivery-diff")).toHaveClass("is-wrapped");
   expect(current.querySelector(".v2-delivery-diff")).not.toHaveClass("is-wrapped");
   expect(within(old).getAllByRole("button", { name: "长行换行" })).toHaveLength(1);
+  await user.click(within(old).getAllByRole("button", { name: /^评论/ })[0]);
+  await user.type(within(old).getByRole("textbox"), "Preserve this guard");
   await user.click(toggle);
   expect(old.querySelector(".v2-delivery-diff")).not.toHaveClass("is-wrapped");
+  expect(within(old).getByRole("textbox")).toHaveValue("Preserve this guard");
+  await user.click(within(old).getByRole("button", { name: "加入聊天草稿" }));
+  expect(onAddComment).toHaveBeenCalledWith(expect.stringContaining("要求：Preserve this guard"));
+  expect(onAddComment).toHaveBeenCalledWith(expect.stringContaining("编辑记录：old-pending"));
   await user.click(within(old).getByRole("button", { name: "查看并审阅" }));
   expect(onReviewFile).toHaveBeenCalledWith({ runID: "old-run", editID: "old-pending", workspaceID: "physical-workspace" });
   expect(screen.queryByText("当前执行的提案")).not.toBeInTheDocument();

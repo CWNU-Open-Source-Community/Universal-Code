@@ -23,6 +23,7 @@ import { TaskPullRequest } from "./task-pull-request";
 import { ProjectChecks } from "./project-checks";
 import { TaskReviewTools, type TaskReviewToolMemory, type TaskReviewToolReviews } from "./task-review-tools";
 import type { WorkspaceView } from "../../api/types";
+import type { ReviewCommentResult } from "../review-comment-draft";
 import "./task-review.css";
 
 type ReviewTab = "overview" | "git" | "pr" | "tools" | "files" | "checks" | "records" | "restore" | "evidence";
@@ -41,10 +42,11 @@ interface ReportAttempt {
 }
 const reportIntentKey = (runID: string) => ["run", runID, "standard-code-delivery-intent"] as const;
 
-export function V2TaskReview({ client, detail, working, onClose, onRequestChange, returnFocusRef, onOpenWorktree, initialFileTarget,
+export function V2TaskReview({ client, detail, working, onClose, onRequestChange, onAddComment, returnFocusRef, onOpenWorktree, initialFileTarget,
   initialToolTarget, toolMemoryRef }: {
   client: APIClient; detail: ThreadDetailView; working: boolean;
   onClose: () => void; onRequestChange: (context: string) => void;
+  onAddComment?: (context: string) => ReviewCommentResult;
   returnFocusRef: RefObject<HTMLElement | null>;
   onOpenWorktree?: (workspace: WorkspaceView) => void;
   initialFileTarget?: FileEditReviewTarget;
@@ -52,6 +54,12 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
   toolMemoryRef?: RefObject<TaskReviewToolMemory>;
 }) {
   const { t } = useLocale();
+  const [commentResult, setCommentResult] = useState<ReviewCommentResult | null>(null);
+  const addComment = onAddComment ? (context: string) => {
+    const result = onAddComment(t(`任务：${detail.thread.id}\n${context}`, `Task: ${detail.thread.id}\n${context}`));
+    setCommentResult(result);
+    return result;
+  } : undefined;
   const historyTabs: [ReviewTab, string][] = [["files", t("编辑明细", "Edit details")],
   ["records", t("执行记录", "Execution records")], ["evidence", t("参考资料", "References")], ["restore", t("撤销与恢复", "Undo and recovery")]];
   const primaryTabs = [{ value: "overview", label: t("查看改动", "View changes"), icon: FileDiff },
@@ -218,12 +226,12 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
         {!["overview", "git", "pr"].includes(tab) && <div className="v2-review-history-heading">
           <button onClick={() => selectTab("overview", true)} type="button"><ArrowLeft size={14} aria-hidden="true" />{t("返回任务改动", "Back to task changes")}</button>
           <h2>{primaryTabs.find((item) => item.value === tab)?.label ?? historyTabs.find(([value]) => value === tab)?.[1]}</h2></div>}
-        {tab === "overview" && <TaskOverview client={client} threadID={detail.thread.id} onFeedback={onRequestChange}
+        {tab === "overview" && <TaskOverview client={client} threadID={detail.thread.id} onFeedback={onRequestChange} onAddComment={addComment}
           onReviewFile={reviewFile} onGit={() => selectTab("git", true)}
           onPullRequest={() => selectTab("pr", true)}
           onChecks={() => selectTab("checks", true)}
           currentRunDetail={currentPlanQuery.data} />}
-        {tab === "git" && <TaskGit client={client} threadID={detail.thread.id} working={working} onFeedback={onRequestChange} onPullRequest={() => selectTab("pr", true)} onOpenWorktree={onOpenWorktree} />}
+        {tab === "git" && <TaskGit client={client} threadID={detail.thread.id} working={working} onFeedback={onRequestChange} onAddComment={addComment} onPullRequest={() => selectTab("pr", true)} onOpenWorktree={onOpenWorktree} />}
         {tab === "pr" && <TaskPullRequest client={client} threadID={detail.thread.id} working={working} onFeedback={onRequestChange} onGit={() => selectTab("git", true)} />}
         {!["overview", "git", "pr"].includes(tab) && !selectedRun && <p role="alert">{t("无法找到目标执行记录 ", "Could not find the target execution record ")}{selectedRunID}{t("，尚未打开审阅工具。请刷新任务后重试，或明确选择另一次执行。", ". Review tools have not opened. Refresh the task and retry, or select another run.")}</p>}
         {tab === "tools" && selectedRun && <TaskReviewTools client={client} runID={reviewedRunID}
@@ -314,8 +322,14 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
             runID={reviewedRunID} runStatus={selectedRun.status} />
         </>}
       </div>
-      <footer><span>{t("关闭面板会保留当前改动。", "Closing this panel preserves current changes.")}</span>
-        <button onClick={onClose} type="button">{t("返回对话", "Back to conversation")}</button></footer>
+      <footer className={onAddComment ? "v2-review-comment-status" : undefined}>
+        {onAddComment ? <p role={commentResult === "unsaved" ? "alert" : "status"}>{commentResult === "unsaved"
+          ? t("意见已加入本窗口草稿，但保存或版本有问题。请返回草稿处理，暂勿刷新或退出。", "Comment added in this window, but the draft has a storage or version issue. Return to the draft before reloading or leaving.")
+          : commentResult === "added" ? t("意见已加入聊天草稿，尚未发送。可继续评论其他行。", "Comment added to the chat draft, not sent. You can comment on more lines.")
+          : t("点击差异行旁的 + 写意见，加入聊天草稿后再发送。", "Use + beside a diff line to add feedback to your chat draft, then send from chat.")}</p> : <span>{t("关闭面板会保留当前改动。", "Closing this panel preserves current changes.")}</span>}
+        <button onClick={onAddComment ? () => onRequestChange("") : onClose} type="button">
+          {onAddComment ? t("返回聊天草稿", "Return to chat draft") : t("返回对话", "Back to conversation")}</button>
+      </footer>
     </section>
   </div>, document.body);
 }
