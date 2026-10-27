@@ -1097,7 +1097,7 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	uiRequest := a.uiHandler != nil && request != nil && request.URL != nil &&
 		!reservedAPIPath(request.URL.Path)
 	if uiRequest {
-		setUISecurityHeaders(tracked.Header(), requestID)
+		setUISecurityHeaders(tracked.Header(), requestID, "")
 	} else {
 		setSecurityHeaders(tracked.Header(), requestID)
 	}
@@ -1122,7 +1122,7 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if uiRequest {
-		a.serveUI(tracked, request)
+		a.serveUI(tracked, request, requestID)
 		return
 	}
 	if request.URL.Path == TaskSkillCandidatesPath {
@@ -1632,7 +1632,7 @@ func reservedAPIPath(value string) bool {
 	return value == "/api" || strings.HasPrefix(value, "/api/")
 }
 
-func (a *API) serveUI(writer http.ResponseWriter, request *http.Request) {
+func (a *API) serveUI(writer http.ResponseWriter, request *http.Request, requestID string) {
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		writeUIError(writer, request,
@@ -1653,6 +1653,20 @@ func (a *API) serveUI(writer http.ResponseWriter, request *http.Request) {
 	if len(request.Header.Values("Authorization")) != 0 {
 		writeUIError(writer, request,
 			apperror.New(apperror.CodeInvalidArgument, "Web UI asset requests cannot contain authorization"), 0)
+		return
+	}
+	if handler, ok := a.uiHandler.(interface {
+		ServeHTTPWithStyleNonce(http.ResponseWriter, *http.Request, string)
+	}); ok {
+		var raw [32]byte
+		if _, err := rand.Read(raw[:]); err != nil {
+			writeUIError(writer, request,
+				apperror.New(apperror.CodeInternal, "internal server error"), 0)
+			return
+		}
+		nonce := base64.StdEncoding.EncodeToString(raw[:])
+		setUISecurityHeaders(writer.Header(), requestID, nonce)
+		handler.ServeHTTPWithStyleNonce(writer, request, nonce)
 		return
 	}
 	a.uiHandler.ServeHTTP(writer, request)
@@ -1722,11 +1736,16 @@ func setSecurityHeaders(header http.Header, requestID string) {
 	header.Set("X-Request-ID", requestID)
 }
 
-func setUISecurityHeaders(header http.Header, requestID string) {
+func setUISecurityHeaders(header http.Header, requestID string, styleNonce string) {
+	styleSource := "'self'"
+	if styleNonce != "" {
+		styleSource += " 'nonce-" + styleNonce + "'"
+	}
 	header.Set("Cache-Control", "no-store")
 	header.Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; connect-src 'self'; "+
 		"font-src 'self'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; "+
-		"manifest-src 'self'; media-src data:; object-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self'")
+		"manifest-src 'self'; media-src data:; object-src 'none'; script-src 'self'; style-src "+styleSource+
+		"; style-src-attr 'unsafe-inline'; worker-src 'self'")
 	header.Set("Cross-Origin-Opener-Policy", "same-origin")
 	header.Set("Cross-Origin-Resource-Policy", "same-origin")
 	header.Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()")
