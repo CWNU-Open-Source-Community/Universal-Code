@@ -947,7 +947,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setCompactPaneOpen(false);
     collapseWorkspacePanel(threadID);
     if (docked && focusInsideDock) {
-      workspaceFocusTarget.current?.focus();
+      // Full view makes the whole chat column inert, including its header.
+      // Restore focus after React has made that column interactive again.
+      requestAnimationFrame(() => workspaceFocusTarget.current?.focus());
     }
   };
   const handlePreviewStartRequest = () => {
@@ -996,6 +998,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     />
   );
   return <section className={`v2-conversation${view === "inspector" ? " is-inspector" : ""}`} ref={conversationRef}>
+    <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
+    <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
     <header className="v2-conversation-header">
       <div><Folder aria-hidden="true" size={17} /><strong>{detail.thread.title}</strong></div>
       <div className="v2-header-actions">
@@ -1113,14 +1117,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         <button onClick={() => onOpenTool("schedule", currentRun.id)} type="button">{t("自动化", "Automations")}</button>
       </>}
     </nav>}
-    {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}
-      onReply={replyToPinProposal}
-      onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
-      onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
-      onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextFocusTarget} />}
-    {modalVisible && renderWorkspaceDock(false, true)}
-    <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
-    <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
     {view === "inspector" && !transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载 Inspector…", "Loading Inspector…")}
       errorLabel="Inspector" resetKey={threadID} onDismiss={onExitInspector}><V2Inspector client={client} key={threadID}
       detail={detail} threadID={threadID} durableItems={transcriptItems}
@@ -1299,6 +1295,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {hasWorkspaceTabs && renderWorkspaceDock(true, dockVisible)}
     </div>}
     </div>
+    {contextOpen && <V2ThreadContext client={client} threadID={threadID} detail={detail}
+      onReply={replyToPinProposal}
+      onOpenRecovery={onOpenTool ? (pane) => { setContextOpen(false); onOpenTool("run", currentRun.id, pane); } : undefined}
+      onOpenSession={onOpenTool && currentRun.session_id ? () => { setContextOpen(false); onOpenTool("session", currentRun.session_id); } : undefined}
+      onClose={() => setContextOpen(false)} onRequestChange={appendDraftAndReveal} returnFocusRef={contextFocusTarget} />}
+    {modalVisible && renderWorkspaceDock(false, true)}
     {exportThreadID === threadID && <V2ThreadExport key={threadID} client={client} threadID={threadID} title={detail.thread.title}
       returnFocusRef={menuTriggerRef} onClose={() => setExportThreadID(null)} />}
   </section>;

@@ -1470,14 +1470,29 @@ describe("V2Conversation", () => {
 
       // Toggle Full View via button and via Ctrl+Shift+F shortcut without unmounting tabs.
       const stage = view.container.querySelector(".v2-conversation-stage")!;
+      const chatColumn = stage.querySelector(".v2-conversation-main-column")!;
+      expect(headerNav.closest(".v2-conversation-main-column")).toBe(chatColumn);
+      expect(dock.parentElement?.parentElement).toBe(stage);
+      expect(chatColumn).not.toContainElement(dock);
       expect(stage).not.toHaveClass("is-full-view");
       await user.click(within(dock).getByRole("button", { name: "进入完整视图" }));
       expect(stage).toHaveClass("is-full-view");
+      expect(headerNav.closest("[inert]")).toBe(chatColumn);
+      expect(screen.queryByRole("navigation", { name: "任务工作区" })).not.toBeInTheDocument();
       expect(within(dock).getByRole("button", { name: "退出完整视图" })).toHaveAttribute("aria-pressed", "true");
 
       fireEvent.keyDown(window, { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true });
       expect(stage).not.toHaveClass("is-full-view");
+      expect(screen.getByRole("navigation", { name: "任务工作区" })).toBe(headerNav);
       expect(within(dock).getByRole("button", { name: "进入完整视图" })).toHaveAttribute("aria-pressed", "false");
+
+      // Collapsing full view restores the header before returning keyboard focus.
+      await user.click(within(dock).getByRole("button", { name: "进入完整视图" }));
+      await user.click(within(dock).getByRole("button", { name: "关闭文件面板" }));
+      await waitFor(() => expect(within(headerNav).getByRole("button", { name: "工作区文件" })).toHaveFocus());
+      await user.click(within(headerNav).getByRole("button", { name: "工作区文件" }));
+      expect(stage).toHaveClass("is-full-view");
+      await user.click(within(dock).getByRole("button", { name: "退出完整视图" }));
 
       // Closing the terminal tab keeps terminalSessionID alive for reattachment when reopened.
       await user.click(within(dock).getByRole("button", { name: "关闭标签 终端" }));

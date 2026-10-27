@@ -805,9 +805,10 @@
   min-height: 0;
   min-width: 0;
 }
-.v2-conversation { grid-template-rows: auto minmax(0, 1fr); }
+.v2-conversation { grid-template-rows: minmax(0, 1fr); }
 .v2-conversation-stage { display: flex; min-width: 0; min-height: 0; }
-.v2-conversation-main-column { display: flex; flex-direction: column; flex: 1; min-width: min(100%, 320px); min-height: 0; }
+.v2-conversation-main-column { container: conversation / inline-size; display: flex; flex-direction: column; flex: 1; min-width: min(100%, 320px); min-height: 0; }
+.v2-conversation-main-column > .v2-conversation-header { flex-shrink: 0; }
 .v2-conversation-main-column > .v2-conversation-scroll { flex: 1; min-height: 0; }
 .v2-conversation-main-column > .v2-composer-dock { flex-shrink: 0; }
 .v2-workbench-slot { display: flex; flex: 0 1 0px; min-width: 0; overflow: hidden; visibility: hidden; transition: flex-basis 420ms var(--v2-pane-ease), visibility 420ms; }

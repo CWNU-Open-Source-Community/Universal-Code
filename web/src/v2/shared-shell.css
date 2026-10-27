@@ -24,8 +24,8 @@
 .v2-conversation.is-inspector { display: flex; flex-direction: column; }
 .v2-conversation.is-inspector .v2-conversation-stage,
 .v2-conversation.is-inspector .v2-conversation-main-column { display: contents; }
-.v2-conversation.is-inspector > .v2-conversation-header { flex-shrink: 0; }
-.v2-conversation.is-inspector > .v2-inspector-advanced { flex-shrink: 0; }
+.v2-conversation.is-inspector .v2-conversation-header { flex-shrink: 0; }
+.v2-conversation.is-inspector .v2-inspector-advanced { flex-shrink: 0; }
 .v2-inspector-home-utilities { display: flex; flex-wrap: wrap; gap: 8px; }
 .v2-conversation.is-inspector .v2-conversation-scroll { flex: 0 1 auto; max-height: 22%; }
 .v2-conversation.is-inspector .v2-conversation-content { padding-top: 0; padding-bottom: 0; }
