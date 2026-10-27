@@ -37,10 +37,17 @@ const threadSearchCandidates = `WITH candidates AS (
 	 (json_extract(event.payload_json,'$.role')='user' AND json_extract(event.payload_json,'$.source_kind')='operator_message') OR
 	 (json_extract(event.payload_json,'$.role')='assistant' AND json_extract(event.payload_json,'$.source_kind')='model_response')))
 	 OR (event.type='operator.steering_queued' AND steering.status IN ('pending','cancelled','committed'))
+	UNION ALL
+	SELECT event.event_id, thread.id, thread.title, thread.status,
+	 thread.workspace_id, event.event_id, 'assistant',
+	 COALESCE(json_extract(event.payload_json,'$.text'),''), event.created_at, binding.ordinal, event.sequence
+	FROM threads thread JOIN thread_runs binding ON binding.thread_id=thread.id
+	JOIN run_events event ON event.run_id=binding.run_id
+	WHERE event.type='model.public_commentary'
 ) SELECT id, thread_id, title, status, workspace_id, message_id, role,
  content, created_at, ordinal, sequence FROM candidates WHERE status IN ('active'`
 
-func (s *SQLiteStore) SearchThreadMessages(ctx context.Context, query string, includeArchived bool,
+func (s *SQLiteStore) SearchThreadMessages(ctx context.Context, query, threadID string, includeArchived bool,
 	before time.Time, beforeID string, limit int,
 ) ([]domain.ThreadSearchMatch, error) {
 	if err := validateStoreCreationPage(before, beforeID, limit); err != nil {
@@ -55,7 +62,7 @@ func (s *SQLiteStore) SearchThreadMessages(ctx context.Context, query string, in
 	}
 	items := make([]domain.ThreadSearchMatch, 0, limit)
 	for len(items) < limit {
-		batch, err := s.threadSearchCandidates(ctx, query, includeArchived, before, beforeID, "", "", 100)
+		batch, err := s.threadSearchCandidates(ctx, query, includeArchived, before, beforeID, threadID, "", 100)
 		if err != nil {
 			return nil, err
 		}
@@ -115,8 +122,12 @@ func (s *SQLiteStore) threadSearchCandidates(ctx context.Context, query string, 
 		args = append(args, query)
 	}
 	if threadID != "" {
-		sql += ` AND thread_id=? AND message_id=?`
-		args = append(args, threadID, messageID)
+		sql += ` AND thread_id=? AND message_id<>''`
+		args = append(args, threadID)
+	}
+	if messageID != "" {
+		sql += ` AND message_id=?`
+		args = append(args, messageID)
 	}
 	if !before.IsZero() {
 		key := creationTimestampKeySQL("created_at")

@@ -4712,6 +4712,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/threads/reply-updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe new saved public replies across conversations
+         * @description Read-only incremental observation of saved public assistant message identities in active and archived conversations. Omitting cursor establishes the current baseline with no historical items. Subsequent requests scan at most limit source events in global save order; an empty items array can still have has_more=true. Continue using data.cursor until has_more=false, then retain that cursor for the next poll. Cursor scope includes the exact data_store_id. Persist returned message identities before the cursor; an error returns no partial cursor. Replaying a cursor preserves message identities. Separate saved messages with equal text remain separate updates. Excludes deleted conversations, copied branch history, users, tools, hidden/internal events and provisional streaming bytes. No message body or private event payload is returned.
+         */
+        get: operations["listThreadReplyUpdates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/threads/search": {
         parameters: {
             query?: never;
@@ -4721,7 +4741,7 @@ export interface paths {
         };
         /**
          * Search saved conversation titles and public message bodies
-         * @description Searches complete saved user and assistant text, including compacted history, before pagination. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query and archive filter.
+         * @description Searches complete saved user and assistant text, including compacted history, public model progress and inherited branch replies, before pagination. With thread_id, searches only message bodies in that exact conversation; otherwise also searches conversation titles. Uses literal ASCII case-insensitive substrings, with exact matching for other Unicode. Redacts and checks the existing public transcript projection before returning a match. Excludes deleted conversations, tools, peer messages and internal events. Defaults to active conversations; include_archived also includes read-only archived history. Results use creation-time and identity cursors scoped to the normalized query, Thread and archive filter.
          */
         get: operations["searchSavedThreadMessages"];
         put?: never;
@@ -14236,7 +14256,7 @@ export interface components {
             /** Format: int32 */
             exit_code?: number;
             /** @enum {string} */
-            network: "disabled";
+            network: "disabled" | "host";
             /** @enum {string} */
             status: "pending" | "completed" | "denied" | "failed" | "prepared" | "running" | "stopping" | "completed" | "failed" | "timed_out" | "cancelled" | "killed" | "interrupted";
             stderr_preview: string;
@@ -15234,6 +15254,26 @@ export interface components {
             thread_id: string;
             /** @enum {string} */
             version: "thread_queued_messages.v1";
+        };
+        ThreadReplyUpdateView: {
+            /** Format: date-time */
+            created_at: string;
+            message_id: string;
+            /** Format: int64 */
+            run_ordinal: number;
+            /** Format: int64 */
+            sequence: number;
+            thread_id: string;
+            /** @enum {string} */
+            thread_status: "active" | "archived";
+        };
+        ThreadReplyUpdatesView: {
+            cursor: string;
+            data_store_id: string;
+            has_more: boolean;
+            items: components["schemas"]["ThreadReplyUpdateView"][];
+            /** @enum {string} */
+            version: "thread_reply_updates.v1";
         };
         ThreadRequestObservationView: {
             error_code?: string;
@@ -28261,6 +28301,44 @@ export interface operations {
             504: components["responses"]["GatewayTimeout"];
         };
     };
+    listThreadReplyUpdates: {
+        parameters: {
+            query?: {
+                /** @description Maximum source events scanned, including filtered events; not a requested number of visible replies */
+                limit?: number;
+                /** @description Opaque cursor from data.cursor, bound to the exact data store; omit only to establish a new baseline */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ThreadReplyUpdatesView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
     searchSavedThreadMessages: {
         parameters: {
             query: {
@@ -28269,6 +28347,8 @@ export interface operations {
                 /** @description Opaque cursor bound to this route and exact filter set */
                 cursor?: string;
                 q: string;
+                /** @description Search saved public message bodies in this exact conversation */
+                thread_id?: string;
                 /** @description Include archived conversations */
                 include_archived?: boolean;
             };
@@ -31095,6 +31175,8 @@ export interface operations {
                 period?: "today" | "30d" | "all";
                 /** @description Fixed UTC offset in minutes, without daylight-saving transitions */
                 utc_offset_minutes?: number;
+                /** @description Optional exact Thread identity. Restricts all receipt, cost, model, day and activity statistics to every Run bound to this Thread. Omit for application-wide usage. Active and archived Threads are supported; missing or deleted Threads return NOT_FOUND. */
+                thread_id?: string;
             };
             header?: never;
             path?: never;
@@ -31119,6 +31201,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];

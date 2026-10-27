@@ -34,7 +34,7 @@ const (
 	MaxInstructionIgnorePatterns       = 128
 )
 
-var instructionFileNames = []string{"AGENTS.md", "CLAUDE.md"}
+var errEmptyInstruction = errors.New("instruction source cannot be empty after normalization")
 
 // InstructionAuthority is deliberately incapable of representing a grant.
 // Project-owned text can suggest workflow, formatting, and validation only.
@@ -172,6 +172,7 @@ func DiscoverInstructions(ctx context.Context, workspaceRoot, targetPath string)
 		snapshot.Ignored = append(snapshot.Ignored, *ignoreRecord)
 	}
 	totalBytes := 0
+	seenCandidates := make(map[string]struct{})
 	for depth, directory := range directories {
 		if err := ctx.Err(); err != nil {
 			return InstructionSnapshot{}, err
@@ -180,12 +181,30 @@ func DiscoverInstructions(ctx context.Context, workspaceRoot, targetPath string)
 		if err != nil {
 			return InstructionSnapshot{}, err
 		}
+		agentsOverride := ""
 		for _, candidate := range candidates {
 			relative, err := filepath.Rel(root, candidate.path)
 			if err != nil || escapesInstructionRoot(relative) {
 				return InstructionSnapshot{}, errors.New("project instruction candidate escapes the workspace boundary")
 			}
 			relative = canonicalInstructionPath(relative)
+			// Hidden guidance can be encountered again as a direct file when
+			// the target enters its directory. Keep its first containing scope,
+			// and count or explain the same canonical path only once.
+			if _, seen := seenCandidates[relative]; seen {
+				continue
+			}
+			seenCandidates[relative] = struct{}{}
+			if candidate.kind == "agents" && agentsOverride != "" {
+				if _, err := os.Lstat(candidate.path); err == nil {
+					snapshot.Ignored = append(snapshot.Ignored, IgnoredInstruction{
+						Path: relative, Reason: "superseded by " + agentsOverride,
+					})
+				} else if !errors.Is(err, fs.ErrNotExist) {
+					return InstructionSnapshot{}, fmt.Errorf("project instruction %s: %w", relative, err)
+				}
+				continue
+			}
 			if ignoredInstructionPath(relative, patterns) {
 				snapshot.Ignored = append(snapshot.Ignored, IgnoredInstruction{
 					Path: relative, Reason: "matched .prayu/instructions.ignore",
@@ -193,11 +212,20 @@ func DiscoverInstructions(ctx context.Context, workspaceRoot, targetPath string)
 				continue
 			}
 			content, digest, redacted, found, err := readStableInstruction(ctx, candidate.path)
+			if candidate.agentsOverride && errors.Is(err, errEmptyInstruction) {
+				snapshot.Ignored = append(snapshot.Ignored, IgnoredInstruction{
+					Path: relative, Reason: "empty AGENTS.override.md; falling back to AGENTS.md",
+				})
+				continue
+			}
 			if err != nil {
 				return InstructionSnapshot{}, fmt.Errorf("project instruction %s: %w", relative, err)
 			}
 			if !found {
 				continue
+			}
+			if candidate.agentsOverride {
+				agentsOverride = relative
 			}
 			if len(snapshot.Sources) >= MaxInstructionFiles {
 				return InstructionSnapshot{}, fmt.Errorf("project instruction count exceeds %d", MaxInstructionFiles)
@@ -331,8 +359,9 @@ func DiffInstructionSnapshots(before, after InstructionSnapshot) InstructionSnap
 }
 
 type instructionCandidate struct {
-	path string
-	kind string
+	path           string
+	kind           string
+	agentsOverride bool
 }
 
 func instructionBoundary(workspaceRoot, targetPath string) (string, string, string, string, error) {
@@ -439,11 +468,25 @@ func instructionDirectories(root, targetDir string) ([]string, error) {
 }
 
 func instructionCandidates(directory, root string) ([]instructionCandidate, error) {
-	candidates := make([]instructionCandidate, 0, 4)
-	for _, name := range instructionFileNames {
+	candidates := []instructionCandidate{
+		{path: filepath.Join(directory, "AGENTS.override.md"), kind: "agents", agentsOverride: true},
+		{path: filepath.Join(directory, "AGENTS.md"), kind: "agents"},
+		{path: filepath.Join(directory, "CLAUDE.md"), kind: "claude"},
+	}
+	claudeDir := filepath.Join(directory, ".claude")
+	if info, err := os.Lstat(claudeDir); err == nil {
+		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
+			return nil, errors.New("project instruction .claude path must be a real directory")
+		}
+		resolved, err := filepath.EvalSymlinks(claudeDir)
+		if err != nil || !sameInstructionPath(claudeDir, resolved) {
+			return nil, errors.New("project instruction .claude path cannot contain symlink or junction indirection")
+		}
 		candidates = append(candidates, instructionCandidate{
-			path: filepath.Join(directory, name), kind: strings.TrimSuffix(strings.ToLower(name), ".md"),
+			path: filepath.Join(claudeDir, "CLAUDE.md"), kind: "claude",
 		})
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
 	}
 	prayuDir := filepath.Join(directory, ConfigDirName)
 	if info, err := os.Lstat(prayuDir); err == nil {
@@ -529,7 +572,7 @@ func readStableInstruction(ctx context.Context, filename string) (string, string
 	if before.Mode()&fs.ModeSymlink != 0 || !before.Mode().IsRegular() {
 		return "", "", false, false, errors.New("instruction source must be a regular file without symlink or junction indirection")
 	}
-	if before.Size() <= 0 || before.Size() > MaxInstructionFileBytes {
+	if before.Size() > MaxInstructionFileBytes {
 		return "", "", false, false, fmt.Errorf("instruction source must contain between 1 and %d bytes", MaxInstructionFileBytes)
 	}
 	read := func() ([]byte, error) {
@@ -554,12 +597,12 @@ func readStableInstruction(ctx context.Context, filename string) (string, string
 	if err != nil || !stableInstructionBytes(first, second) {
 		return "", "", false, false, errors.New("instruction source changed concurrently")
 	}
-	if len(first) == 0 || len(first) > MaxInstructionFileBytes || !utf8.Valid(first) || bytes.IndexByte(first, 0) >= 0 {
+	if len(first) > MaxInstructionFileBytes || !utf8.Valid(first) || bytes.IndexByte(first, 0) >= 0 {
 		return "", "", false, false, errors.New("instruction source must be bounded UTF-8 without NUL bytes")
 	}
 	content := normalizeInstructionContent(string(first))
 	if content == "" {
-		return "", "", false, false, errors.New("instruction source cannot be empty after normalization")
+		return "", "", false, false, errEmptyInstruction
 	}
 	safe := redact.String(content)
 	redacted := safe != content

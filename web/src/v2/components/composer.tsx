@@ -34,7 +34,7 @@ export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
   projectID, allowProjectless = false,
   placeholder, newThreadControls, threadControls, runActive = false, onManageModels,
-  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, draft, onDraftChange,
+  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
   client: APIClient;
   threadID: string;
@@ -54,6 +54,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   onPendingModelRouteChange?: (route: V2PendingModelRoute | null) => void;
   onWorkspaceChange: (workspaceID: string) => void;
   onSubmit: (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => Promise<V2ComposerSubmitResult>;
+  onStop?: () => boolean;
   draft?: string;
   onDraftChange?: (content: string, expected?: string) => void;
   fileReferenceUnavailableReason?: string;
@@ -99,6 +100,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const nativeClipboard = useNativeClipboard({ workspaceID, threadID, disabled: attachmentsDisabled,
     captureImport: captureNativeImport, onImported: (incomingImages, incomingFiles) => captureNativeImport()(incomingImages, incomingFiles) });
   const pasteGesture = useRef<{ handled: boolean; plain: boolean } | null>(null);
+  const composing = useRef(false);
   const attachmentPicker = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
@@ -299,6 +301,18 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       }, 0);
     }
   };
+  const stopFromInput = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== "Escape" || event.defaultPrevented || event.repeat || disabled || !onStop ||
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || composing.current ||
+      event.nativeEvent.isComposing || event.keyCode === 229) return;
+    const target = event.target;
+    // React portals also propagate through this form. Only the message editor
+    // may interrupt; menus and dialogs retain their own Escape behavior.
+    if (!(target instanceof Element) || !event.currentTarget.contains(target) || target.closest("[inert]") ||
+      !target.closest('textarea, .v2-markdown-input[contenteditable="true"]') ||
+      document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+    if (onStop()) { event.preventDefault(); event.stopPropagation(); }
+  };
 
   const toggleEditorMode = (trigger: HTMLElement | null) => {
     const next = !plainText;
@@ -339,7 +353,12 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     icon: <SquarePen aria-hidden="true" size={18} />, disabled, onSelect: () => toggleEditorMode(addTriggerRef.current) });
 
   return <form className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
-    onSubmit={(event) => void submit(event)} onKeyDownCapture={onKeyDown} onPasteCapture={(event) => {
+    onSubmit={(event) => void submit(event)} onKeyDownCapture={(event) => {
+      // A running turn takes precedence over Tiptap's native Escape binding.
+      stopFromInput(event); onKeyDown(event);
+    }}
+    onCompositionStartCapture={() => { composing.current = true; }}
+    onCompositionEndCapture={() => { composing.current = false; }} onPasteCapture={(event) => {
     if (pasteGesture.current?.plain) return;
     const files = clipboardFiles(event.clipboardData);
     if (files.length) {

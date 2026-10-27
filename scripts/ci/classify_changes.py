@@ -16,6 +16,8 @@ _COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 CHECKS = ("full", "backend", "store", "web", "journeys", "lsp", "rust", "native",
           "ui", "race", "audit", "packaging")
 _FULL_PATHS = {"go.mod", "go.sum", ".github/workflows/ci.yml"}
+_DOCUMENTATION_IMAGE_PREFIXES = ("docs/acceptance/", "docs/evidence/", "docs/images/")
+_DOCUMENTATION_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 _PACKAGING_PREFIXES = (
     "packaging/", "assets/branding/", "scripts/build-desktop",
     "scripts/release-desktop", "scripts/package-", "scripts/verify-",
@@ -84,8 +86,11 @@ def classify_paths(paths: Sequence[bytes], affected: Sequence[str] = ()) -> dict
                               "scripts/tests/prepare-windows-fixed-go")):
             checks["native"] = True
         elif (path.endswith(".md") or path.startswith("docs/convergence/")
+              or (path.startswith(_DOCUMENTATION_IMAGE_PREFIXES)
+                  and path.lower().endswith(_DOCUMENTATION_IMAGE_SUFFIXES))
               or path in {".gitignore", ".gitattributes", "LICENSE", "LICENSE.md"}
               or path.startswith((".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE"))):
+            # Acceptance screenshots are documentation, not runtime assets.
             # Generated registry/inventory and documentation contracts are
             # checked in the always-on Go checks job.
             pass
