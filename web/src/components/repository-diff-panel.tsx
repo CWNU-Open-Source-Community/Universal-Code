@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronRight, FileDiff, Quote, RefreshCw } from "lucide-react";
 import type { APIClient } from "../api/client";
 import { formatBytes } from "../lib/format";
@@ -19,7 +19,7 @@ export function RepositoryDiffPanel(props: RepositoryDiffPanelProps) {
 }
 
 function RepositoryDiffPatch({ patch }: { patch: string }) {
-  const parsed = parseReviewDiff(patch);
+  const parsed = useMemo(() => parseReviewDiff(patch), [patch]);
   if (!parsed.hunks.length) return <pre>{patch}</pre>;
   return <div className="repository-diff-hunks">
     {parsed.hunks.map((hunk, hunkIndex) => <div className="repository-diff-hunk" key={hunkIndex}>

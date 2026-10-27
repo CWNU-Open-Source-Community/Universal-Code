@@ -2753,6 +2753,7 @@ body { background: transparent; }
     --prayu-danger-soft: Canvas;
     --prayu-success: CanvasText;
     --prayu-warning: CanvasText;
+    /* Inline user review colors must not win over forced-colors. */
     --prayu-diff-add: CanvasText !important;
     --prayu-diff-delete: CanvasText !important;
     --prayu-diff-add-strength: 0% !important;

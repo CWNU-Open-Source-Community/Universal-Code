@@ -261,8 +261,11 @@ function AppearanceSettings() {
   const resetReviewColors = () => {
     setReviewColors(resetPrayuReviewColors(appliedTheme));
   };
-  const appliedThemeLabel = appliedTheme === "light" ? t("浅色", "Light") :
-    appliedTheme === "dark" ? t("深色", "Dark") : t("雾透", "Mist");
+  const appliedThemeLabel = {
+    light: t("浅色", "Light"),
+    dark: t("深色", "Dark"),
+    glass: t("雾透", "Mist"),
+  }[appliedTheme];
   const isDefaultReviewColors =
     reviewColors.add === defaultPrayuReviewColors[appliedTheme].add &&
     reviewColors.remove === defaultPrayuReviewColors[appliedTheme].remove;
