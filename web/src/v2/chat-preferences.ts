@@ -7,6 +7,8 @@ export const shortcutCommands = [
   { id: "newChat", zh: "新对话", en: "New chat", binding: "Mod+Shift+O" },
   { id: "search", zh: "搜索聊天", en: "Search chats", binding: "Mod+K" },
   { id: "findInChat", zh: "在当前聊天中查找", en: "Find in current chat", binding: "Mod+F" },
+  { id: "previousChat", zh: "上一聊天", en: "Previous chat", binding: "Mod+Shift+[" },
+  { id: "nextChat", zh: "下一聊天", en: "Next chat", binding: "Mod+Shift+]" },
   { id: "settings", zh: "打开设置", en: "Open settings", binding: "Mod+," },
   { id: "sidebar", zh: "展开／收起侧栏", en: "Toggle sidebar", binding: "Mod+B" },
   { id: "composer", zh: "聚焦输入框", en: "Focus composer", binding: "Mod+Shift+I" },
@@ -46,7 +48,10 @@ export function sendsOnEnter(mode: SendPreference, text: string, modified: boole
   return modified || (!structured && mode !== "modifier" && (mode !== "multiline" || !text.includes("\n")));
 }
 export function shortcutBinding(preferences: ChatPreferences, id: ShortcutCommand) {
-  return preferences.shortcuts[id] ?? shortcutCommands.find((command) => command.id === id)!.binding;
+  if (preferences.shortcuts[id] !== undefined) return preferences.shortcuts[id];
+  const binding = shortcutCommands.find((command) => command.id === id)!.binding;
+  // A newly introduced default must not take over an existing custom binding.
+  return Object.values(preferences.shortcuts).includes(binding) ? "" : binding;
 }
 export function shortcutLabel(binding: string) {
   return binding.replace("Mod", /Mac|iPhone|iPad/u.test(navigator.platform) ? "⌘" : "Ctrl");
@@ -54,7 +59,8 @@ export function shortcutLabel(binding: string) {
 export function eventShortcut(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): string {
   if ((!event.ctrlKey && !event.metaKey) || (event.ctrlKey && event.metaKey)) return "";
   const key = /^Key[A-Z]$/u.test(event.code) ? event.code.slice(3)
-    : /^Digit\d$/u.test(event.code) ? event.code.slice(5) : event.key.toUpperCase();
+    : /^Digit\d$/u.test(event.code) ? event.code.slice(5)
+      : event.code === "BracketLeft" ? "[" : event.code === "BracketRight" ? "]" : event.key.toUpperCase();
   if (!/^[A-Z0-9,./;[\]\\'=-]$/u.test(key)) return "";
   return ["Mod", ...(event.altKey ? ["Alt"] : []), ...(event.shiftKey ? ["Shift"] : []), key].join("+");
 }
@@ -80,7 +86,10 @@ export function useChatShortcuts(actions: Record<ShortcutCommand, () => void | b
       if (!binding) return;
       const command = shortcutCommands.find(({ id }) => shortcutBinding(latest.current.preferences, id) === binding);
       if (!command) return;
-      if (command.id === "findInChat" && event.target instanceof Element && event.target.closest(".monaco-editor, .xterm")) return;
+      const chatNavigation = command.id === "previousChat" || command.id === "nextChat";
+      if ((command.id === "findInChat" || chatNavigation) && event.target instanceof Element &&
+        event.target.closest(".monaco-editor, .xterm")) return;
+      if (chatNavigation && document.querySelector('[role="dialog"], [role="menu"], [role="listbox"], .v2-project-section-menu[open]')) return;
       // A contextual action may leave the native shortcut available outside its surface.
       if (latest.current.actions[command.id]() !== false) event.preventDefault();
     };

@@ -537,6 +537,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     }
   }, [submissions]);
   const executionQuery = useV2ThreadExecution(client, threadID);
+  const stopButtonRef = useRef<HTMLButtonElement>(null);
   const conversationRef = useRef<HTMLElement>(null);
   const workbenchSlot = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -989,7 +990,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       <div><Folder aria-hidden="true" size={17} /><strong>{detail.thread.title}</strong></div>
       <div className="v2-header-actions">
         <V2ThreadExecutionControl client={client} execution={executionQuery.data}
-          threadID={threadID} />
+          threadID={threadID} stopButtonRef={stopButtonRef} />
         <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
           onClick={() => setMenuOpen((value) => !value)} ref={menuTriggerRef} type="button">
           <CircleEllipsis aria-hidden="true" size={18} />
@@ -1237,6 +1238,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         submitDisabled={reconciling || executionQuery.data?.state === "stopping" ||
           executionQuery.data?.state === "stop_failed"}
         draft={draft} onDraftChange={onDraftChange}
+        onStop={() => {
+          const button = stopButtonRef.current;
+          if (!button || button.disabled) return false;
+          button.click();
+          return true;
+        }}
         threadControls={(hasUnsentDraft) => <V2ThreadPlanControl client={client} threadID={threadID} runID={currentRun.id}
           active={detail.thread.status === "active"} working={working || turnSubmitting || reconciling}
           hasUnsentDraft={hasUnsentDraft}

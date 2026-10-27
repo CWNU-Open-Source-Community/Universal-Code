@@ -314,6 +314,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     return () => media.removeListener?.(onChange);
   }, []);
   const [searchOpen, setSearchOpen] = useState(false);
+  const visibleChatOrder = useRef<readonly string[]>([]);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   useEffect(() => {
     if (!searchFocusRequest || !searchOpen || !sidebarVisible) return;
@@ -547,6 +548,17 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) }, false, onAccepted);
     closeNavigationSidebar();
   };
+  const openSidebarConversation = (threadID: string) => openConversation(threadID, () => {
+    unread.open(threadID);
+    setReadRequest((current) => ({ threadID, revision: current.revision + 1 }));
+  });
+  const openAdjacentChat = (direction: -1 | 1) => {
+    if (!selectedThreadID || surface !== "conversation" || view !== "conversation" || route.tool || searchOpen) return false;
+    const index = visibleChatOrder.current.indexOf(selectedThreadID);
+    const next = index < 0 ? undefined : visibleChatOrder.current[index + direction];
+    if (next) openSidebarConversation(next);
+    // At an edge, consume the shortcut without wrapping or leaving this chat.
+  };
   const startNew = (destination?: string) => {
     updateModelSetupToken("");
     const currentThread = queryClient.getQueryData<ThreadDetailView>(
@@ -626,6 +638,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     newChat: () => startNew(),
     search: () => openSearch(false),
     findInChat: () => openSearch(true),
+    previousChat: () => openAdjacentChat(-1),
+    nextChat: () => openAdjacentChat(1),
     settings: openSettings,
     sidebar: () => setSidebarVisible(!sidebarVisible),
     composer: () => {
@@ -661,10 +675,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             setSearchOpen(open);
             setSearchCurrentThread(false);
             if (!open) { setThreadSearch(""); setSearchComposing(false); }
-          }} onSelectThread={(id) => openConversation(id, () => {
-            unread.open(id);
-            setReadRequest((current) => ({ threadID: id, revision: current.revision + 1 }));
-          })} searchOpen={searchOpen}
+          }} onSelectThread={openSidebarConversation} searchOpen={searchOpen}
+          onVisibleChatOrder={(ids) => { visibleChatOrder.current = ids; }}
           unreadThreadIDs={unread.unreadThreadIDs} onReadStateChange={unread.setRead}
           search={threadSearch} appliedSearch={appliedThreadSearch} searchPending={searchPending}
           searchTooLong={searchTooLong}
