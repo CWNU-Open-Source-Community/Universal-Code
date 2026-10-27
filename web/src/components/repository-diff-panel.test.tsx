@@ -2,9 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
+import { LocaleProvider } from "../lib/locale";
 import { RepositoryDiffPanel } from "./repository-diff-panel";
 
 describe("RepositoryDiffPanel", () => {
+  afterEach(() => localStorage.removeItem("prayu.locale.v1"));
+
   it("renders only the bounded redacted patch projection", async () => {
     const repositoryDiff = vi.fn().mockResolvedValue({
       protocol_version: "repository_diff.v1", workspace_id: "workspace-1",
@@ -35,7 +38,7 @@ describe("RepositoryDiffPanel", () => {
       available: true, base_head: "first-head", returned_count: 2,
       total_patch_bytes: 48, omitted_count: 0, redaction_count: 0,
       items: ["src/first.ts", "src/second.ts"].map((path) => ({
-        path, content_state: "text", added_lines: 1, deleted_lines: 0,
+        path, staging: "unmodified", worktree: "modified", content_state: "text", added_lines: 1, deleted_lines: 0,
         patch: `+change in ${path}\n`,
       })),
     };
@@ -65,7 +68,7 @@ describe("RepositoryDiffPanel", () => {
     await waitFor(() => expect(queryClient.getQueryData(["workspace", "workspace-1", "repository-diff"]))
       .toMatchObject({ base_head: "refreshed-head" }));
     expect(firstFile).not.toHaveAttribute("open");
-    await user.click(within(secondFile).getByRole("button", { name: "Request changes to this diff" }));
+    await user.click(screen.getByRole("button", { name: "Quote src/second.ts" }));
     expect(onRequestChange).toHaveBeenLastCalledWith("src/second.ts", "refreshed-head");
     expect(secondFile).toHaveAttribute("open");
 
@@ -73,29 +76,89 @@ describe("RepositoryDiffPanel", () => {
     await user.click(firstSummary);
     expect(secondFile).not.toHaveAttribute("open");
     expect(within(firstFile).getByText("+change in src/first.ts")).toBeVisible();
-    await user.click(within(firstFile).getByRole("button", { name: "Request changes to this diff" }));
+    await user.click(screen.getByRole("button", { name: "Quote src/first.ts" }));
     expect(onRequestChange).toHaveBeenLastCalledWith("src/first.ts", "refreshed-head");
     expect(firstFile).toHaveAttribute("open");
   });
 
-  it("keeps file status visible when an omitted patch is collapsed", async () => {
+  it("shows one readable reason and still quotes a file without an empty disclosure", async () => {
     const user = userEvent.setup();
+    const onRequestChange = vi.fn();
     const repositoryDiff = vi.fn().mockResolvedValue({
       available: true, base_head: "base-head", returned_count: 1,
       total_patch_bytes: 0, omitted_count: 0, redaction_count: 0,
-      items: [{ path: "assets/image.png", content_state: "binary", added_lines: 0, deleted_lines: 0 }],
+      items: [{ path: "assets/image.png", staging: "unmodified", worktree: "modified",
+        content_state: "binary_or_unsupported", added_lines: 0, deleted_lines: 0 }],
     });
     const client = { repositoryDiff } as unknown as APIClient;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}>
-      <RepositoryDiffPanel client={client} workspaceID="workspace-1" />
+      <RepositoryDiffPanel client={client} workspaceID="workspace-1" onRequestChange={onRequestChange} />
     </QueryClientProvider>);
-    const summary = (await screen.findByText("assets/image.png")).closest("summary")!;
-    const omitted = summary.parentElement!.querySelector(".repository-diff-omitted")!;
-    await user.click(summary);
-    expect(within(summary).getByText("binary")).toBeVisible();
-    expect(omitted).not.toBeVisible();
-    await user.click(summary);
-    expect(omitted).toBeVisible();
+    const item = (await screen.findByText("assets/image.png")).closest("article")!;
+    expect(item.querySelector("details")).toBeNull();
+    expect(within(item).getAllByText("Binary or unsupported text format")).toHaveLength(1);
+    expect(item).not.toHaveTextContent("binary_or_unsupported");
+    await user.click(within(item).getByRole("button", { name: "Quote assets/image.png" }));
+    expect(onRequestChange).toHaveBeenCalledWith("assets/image.png", "base-head");
+  });
+
+  it.each([
+    { locale: "en-US", modified: "Working tree: modified", deleted: "Working tree: deleted", staged: "Index: added", untracked: "untracked", renamed: "Index: renamed", copied: "Index: copied" },
+    { locale: "zh-CN", modified: "工作区：修改", deleted: "工作区：删除", staged: "暂存区：新增", untracked: "未跟踪", renamed: "暂存区：重命名", copied: "暂存区：复制" },
+  ])("shows non-text change types without zero line statistics in $locale", async ({ locale, modified, deleted, staged, untracked, renamed, copied }) => {
+    localStorage.setItem("prayu.locale.v1", locale);
+    const repositoryDiff = vi.fn().mockResolvedValue({
+      available: true, base_head: "base-head", returned_count: 7,
+      total_patch_bytes: 0, omitted_count: 0, redaction_count: 0,
+      items: [
+        { path: "alpha.bin", staging: "unmodified", worktree: "modified" },
+        { path: "bravo.bin", staging: "unmodified", worktree: "deleted" },
+        { path: "staged.bin", staging: "added", worktree: "modified" },
+        { path: "new.bin", staging: "untracked", worktree: "untracked" },
+        { path: "renamed.bin", staging: "renamed", worktree: "unmodified" },
+        { path: "copied.bin", staging: "copied", worktree: "unmodified" },
+        { path: "large.txt", staging: "unmodified", worktree: "modified", content_state: "size_limited" },
+      ].map((item) => ({ content_state: "binary_or_unsupported", added_lines: 0, deleted_lines: 0, ...item })),
+    });
+    const client = { repositoryDiff } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<LocaleProvider><QueryClientProvider client={queryClient}>
+      <RepositoryDiffPanel client={client} workspaceID="workspace-1" />
+    </QueryClientProvider></LocaleProvider>);
+    const alpha = (await screen.findByText("alpha.bin")).closest("article")!;
+    expect(alpha).toHaveTextContent(modified);
+    expect(screen.getByText("bravo.bin").closest("article")).toHaveTextContent(deleted);
+    const stagedSummary = screen.getByText("staged.bin").closest("article")!;
+    expect(stagedSummary).toHaveTextContent(staged);
+    expect(stagedSummary).toHaveTextContent(modified);
+    expect(within(screen.getByText("new.bin").closest("article")!).getAllByText(untracked)).toHaveLength(1);
+    expect(screen.getByText("renamed.bin").closest("article")).toHaveTextContent(renamed);
+    expect(screen.getByText("copied.bin").closest("article")).toHaveTextContent(copied);
+    expect(container.querySelector(".repository-diff-file-counts")).not.toBeInTheDocument();
+    expect(container.querySelector("details")).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/binary_or_unsupported|size_limited|BINARY OR UNSUPPORTED/);
+  });
+
+  it("preserves text statistics and truncation while showing conflict states", async () => {
+    localStorage.setItem("prayu.locale.v1", "zh-CN");
+    const repositoryDiff = vi.fn().mockResolvedValue({
+      available: true, base_head: "base-head", returned_count: 1, truncated: true,
+      total_patch_bytes: 32, omitted_count: 0, redaction_count: 0,
+      items: [{ path: "conflicted.ts", staging: "conflicted", worktree: "conflicted",
+        content_state: "text", added_lines: 4, deleted_lines: 2, truncated: true,
+        patch: "@@ diff truncated by repository_diff.v1 @@\n" }],
+    });
+    const client = { repositoryDiff } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<LocaleProvider><QueryClientProvider client={queryClient}>
+      <RepositoryDiffPanel client={client} workspaceID="workspace-1" />
+    </QueryClientProvider></LocaleProvider>);
+    const summary = (await screen.findByText("conflicted.ts")).closest("summary")!;
+    expect(summary).toHaveTextContent("暂存区：有冲突");
+    expect(summary).toHaveTextContent("工作区：有冲突");
+    expect(summary).toHaveTextContent("4 行新增 / 2 行删除");
+    expect(screen.getByText("已截断")).toBeVisible();
+    expect(screen.getByText("@@ diff truncated by repository_diff.v1 @@")).toBeVisible();
   });
 });

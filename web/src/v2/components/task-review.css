@@ -11,7 +11,8 @@
 .v2-review-navigation > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-review-main-nav { align-items: center; justify-content: space-between; }
 .v2-review-main-nav > div { display: flex; flex-wrap: wrap; gap: 6px; }
-.v2-review-main-nav button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.v2-review-main-nav button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; flex-shrink: 0; }
+.v2-review-main-nav button > svg { flex-shrink: 0; }
 .v2-review-history-nav { padding-top: 10px; border-top: 1px solid var(--v2-border); }
 .v2-review-history-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 18px; }
 .v2-review-history-heading h2 { font-size: 17px; margin: 0; }
@@ -24,7 +25,10 @@
 .v2-review-main-nav > div button[aria-pressed="true"] { background: color-mix(in srgb, var(--v2-accent) 9%, var(--v2-control)); }
 .v2-review-main-nav > .v2-review-history-toggle { border-color: transparent; background: transparent; color: var(--v2-muted); }
 .v2-review-navigation label { display: flex; gap: 10px; align-items: center; min-width: 0; }
-.v2-review-navigation select { min-width: 0; max-width: 100%; flex: 1; padding: 5px; }
+.v2-review-run-picker { position: relative; justify-self: start; max-width: 100%; }
+.v2-review-run-picker select { appearance: none; min-width: 0; max-width: 100%; min-height: 32px; padding: 5px 30px 5px 10px; font: inherit; color: inherit; background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 7px; cursor: pointer; }
+.v2-review-run-picker > svg { position: absolute; right: 9px; pointer-events: none; color: var(--v2-muted); }
+.v2-review-run-picker select:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
 .v2-review-body { min-height: 0; flex: 1; overflow: auto; padding: 16px 20px; }
 .v2-review-body > p,
 .v2-review-body p { font-size: 12px; line-height: 1.65; }
@@ -48,7 +52,7 @@
   .v2-review-body { padding: 12px; }
   .v2-review-main-nav { gap: 10px; }
   .v2-review-main-nav > div { width: 100%; }
-  .v2-review-main-nav > div > button { flex: 1; padding-inline: 7px; }
+  .v2-review-main-nav > div > button { flex: 0 0 auto; padding-inline: 9px; }
   .v2-review-tool-picker { grid-template-columns: minmax(0, 1fr); }
   .v2-review-body .file-review-workspace.is-reviewing,
 .v2-review-body .checkpoint-layout,

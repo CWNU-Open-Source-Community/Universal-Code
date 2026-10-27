@@ -213,14 +213,14 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
           {historyTabs.map(([value, label]) => <button aria-pressed={tab === value} data-review-tab={value} key={value}
             onClick={() => selectTab(value)} type="button">{label}</button>)}
         </div>}
-        {!["overview", "git", "pr"].includes(tab) && <label>{t("执行记录范围 ", "Execution record scope")}<select aria-label={t("选择审阅的执行记录", "Choose a run to review")} onChange={(event) => {
+        {!["overview", "git", "pr"].includes(tab) && (detail.runs.length > 1 || !selectedRun || detail.runs.some(({ run }) => run.id !== currentRun.id)) && <label className="v2-review-run-picker"><select aria-label={t("选择审阅的执行记录", "Choose a run to review")} onChange={(event) => {
           setSelectedRunID(event.target.value); setFileTarget(undefined); setFilePath(null); lifecycle.reset(); report.reset();
         }} value={reviewedRunID}>
           {!selectedRun && <option value={selectedRunID}>{t("目标执行记录尚未找到", "Target execution record not found")}</option>}
           {detail.runs.map(({ ordinal, run }) => <option key={run.id} value={run.id}>
             {run.id === currentRun.id ? t("当前", "Current") : t("历史", "Past")} {t(" · 第 ", " · Run ")}{ordinal} {t(" 次执行", " runs")}</option>)}
           {!detail.runs.some(({ run }) => run.id === currentRun.id) && <option value={currentRun.id}>{t("当前执行", "Current run")}</option>}
-        </select></label>}
+        </select><ChevronDown aria-hidden="true" size={14} /></label>}
       </div>
       <div className="v2-review-body" key={`${reviewedRunID}:${tab}`}>
         {!["overview", "git", "pr"].includes(tab) && <div className="v2-review-history-heading">

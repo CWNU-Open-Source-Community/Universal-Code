@@ -1,35 +1,41 @@
-.repository-diff-file > summary {
+.repository-diff-item { position: relative; }
+.repository-diff-file > summary,
+.repository-diff-file-row {
   min-height: 42px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding: 7px 0;
+  padding: 10px 0;
   cursor: pointer;
   list-style: none;
-  font-size: 10px;
+  font-size: 12px;
 }
+.repository-diff-file-row { padding-left: 22px; cursor: default; }
+.repository-diff-item.has-action :is(.repository-diff-file > summary, .repository-diff-file-row) { padding-right: 34px; }
 
 .repository-diff-file > summary::-webkit-details-marker { display: none; }
-.repository-diff-chevron { flex-shrink: 0; color: var(--muted); }
+.repository-diff-chevron { flex-shrink: 0; color: var(--muted); margin-top: 3px; }
 .repository-diff-file[open] > summary > .repository-diff-chevron { transform: rotate(90deg); }
 
 .repository-diff-file-heading {
   min-width: 0;
   flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
+  display: grid;
+  gap: 4px;
+  line-height: 1.5;
 }
 
 .repository-diff-file-heading code {
   min-width: 0;
-  flex: 1 1 180px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .repository-diff-file-counts { color: var(--muted); }
-.repository-diff-file-actions { display: flex; justify-content: flex-end; padding-bottom: 8px; }
+.repository-diff-file-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; }
+.repository-diff-file-meta > span { white-space: normal; }
+.repository-diff-quote { position: absolute; top: 7px; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.repository-diff-quote:hover { background: var(--prayu-control); color: var(--prayu-text); }
+.repository-diff-quote:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
