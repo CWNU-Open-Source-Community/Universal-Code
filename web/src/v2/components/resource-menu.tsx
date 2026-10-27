@@ -1,5 +1,5 @@
 import { useLocale, type LocaleText } from "../../lib/locale";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Download, File, FolderOpen, SquareArrowOutUpRight } from "lucide-react";
 import { resourceAction, type ChatResourceRef } from "../../lib/chat-resources";
@@ -25,17 +25,19 @@ export function ResourceMenu({ position, items, onClose, onResult }: {
   const { t } = useLocale();
   const menu = useRef<HTMLDivElement>(null);
   const [point, setPoint] = useState({ x: position.x, y: position.y });
+  const dismiss = useEffectEvent(onClose);
   useLayoutEffect(() => {
     const element = menu.current; if (!element) return;
     const rect = element.getBoundingClientRect();
     setPoint({ x: Math.max(8, Math.min(position.x, window.innerWidth - rect.width - 8)), y: Math.max(8, Math.min(position.y, window.innerHeight - rect.height - 8)) });
     element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-    const outside = (event: PointerEvent) => { if (!element.contains(event.target as Node)) onClose(); };
-    const close = () => onClose();
+    const outside = (event: PointerEvent) => { if (!element.contains(event.target as Node)) dismiss(); };
+    const close = () => dismiss();
     document.addEventListener("pointerdown", outside, true);
     window.addEventListener("resize", close);
     return () => { document.removeEventListener("pointerdown", outside, true); window.removeEventListener("resize", close); };
-  }, [position, onClose]);
+    // Streaming updates change callbacks without opening a new menu.
+  }, [position]);
   const close = () => { onClose(); if (position.trigger.isConnected) position.trigger.focus(); };
   return createPortal(<div className="v2-resource-menu" role="menu" aria-label={t("资源操作", "Resource actions")} ref={menu} style={{ left: point.x, top: point.y }}
     onKeyDown={(event) => {

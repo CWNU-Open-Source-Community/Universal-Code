@@ -175,6 +175,9 @@ Ctrl+Shift+V（macOS 为 Cmd+Shift+V）按纯文本粘贴，保留 Markdown 标�
 围栏块中；块顶部显示“文本”和复制按钮，复制内容不包含围栏。代码围栏显示语言名称。
 普通段落保留整条回复的复制入口。
 
+已保存的用户消息和助手回复在操作图标旁显示本地时间。悬停时间可查看完整日期、秒和时区；
+屏幕阅读器可读取同样的信息。仍在发送或生成的消息、没有有效原始时间的历史记录不显示时间。
+
 聊天正文使用 14 px 字号、1.625 倍行高和正常字距，代码块保持 13 px。
 已完成的段落采用智能换行，标题均衡换行，长标识符在空间不足时折行。
 实时回复的新片段以 150 ms 的轻微模糊淡入显示，不额外等待或延迟输出；历史消息和
@@ -2009,8 +2012,11 @@ hooks:
 
 ## Durable Context Continuity / 持久上下文连续性
 
-Schema v114 adds hierarchical `AGENTS.md`/`CLAUDE.md`/`.prayu` instruction discovery,
-operator-explicit user/project memory, and a browsable Session checkpoint/Fork/Resume tree.
+Project instruction discovery (schema v114) selects non-empty `AGENTS.override.md`
+ahead of same-directory `AGENTS.md`, falling back when the override is absent, empty,
+or explicitly ignored. It also reads `CLAUDE.md`, `.claude/CLAUDE.md`, and `.prayu`
+guidance; superseded sources remain explained in `ignored`. The same context layer
+provides operator-explicit user/project memory and a browsable Session checkpoint/Fork/Resume tree.
 项目指令在 Run 创建时固定；磁盘漂移只有在显示 diff 并以旧 fingerprint 显式确认后才会
 追加新 revision。长期记忆由操作者确认写入，支持编辑、禁用、保留期、导出和不可恢复的
 物理删除。Schema v198 从带来源的决策/总结笔记生成待确认经验：在 **Context → 当前项目
@@ -2145,7 +2151,9 @@ The persistent Debug terminal is user-owned by default and default-off at proces
   --enable-user-terminal
 ```
 
-Windows uses PowerShell in a ConPTY assigned to a creation-time kill-on-close Job Object. macOS uses Bash with `--noprofile --norc` in a PTY and an owned process group. Ordinary POSIX background jobs share that group, but a command that deliberately creates a new session/daemon can escape group cleanup; The Debug interaction is a host terminal, not a permission tier or containment boundary. Each Run may have one active process-local terminal and one active Agent-input binding; the binding lasts 15 seconds to 15 minutes, is capped and immediately revocable, and is invalid after restart. The model tool is advertised only to the root Supervisor in Code/Deliver with modern Full, current process activation, the Debug interaction and a live terminal-input lease. It supports one complete policy-checked command line or one bounded cursor read; commands that Policy classifies as denied or requiring separate per-command approval do not reach the PTY. Grant records the current output watermark, and every later read is clamped to it, so pre-grant user scrollback cannot enter model context. Output pages are at most 64 KiB, explicitly marked untrusted, stripped of terminal controls, repaired to UTF-8, and secret-redacted.
+Windows uses PowerShell in a ConPTY assigned to a creation-time kill-on-close Job Object. macOS uses Bash with `--noprofile --norc` in a PTY and an owned process group. Ordinary POSIX background jobs share that group, but a command that deliberately creates a new session/daemon can escape group cleanup; The Debug interaction is a host terminal, not a permission tier or containment boundary. Each Run may have one active process-local terminal and one active Agent-input binding; the binding lasts 15 seconds to 15 minutes, is capped and immediately revocable, and is invalid after restart. The model tool is advertised only to the root Supervisor in Code/Deliver with modern Full, current process activation, the Debug interaction and a live terminal-input lease. It supports one complete policy-checked command line, one bounded cursor read, or `action: "interrupt"` to send Ctrl+C to the foreground program. Commands that Policy classifies as denied or requiring separate per-command approval do not reach the PTY. Grant records the current output watermark, and every later read is clamped to it, so pre-grant user scrollback cannot enter model context. Output pages are at most 64 KiB, explicitly marked untrusted, stripped of terminal controls, repaired to UTF-8, and secret-redacted.
+
+Interrupt accepts no command or cursor and sends exactly one `0x03` byte without a newline. It uses the same live input lease, Run/Workspace binding, host Policy checks, operation-key deduplication, audit, and native authorization as command input. It leaves the persistent shell available when the foreground program handles Ctrl+C; a successful tool result confirms the byte was submitted, so read subsequent output to verify the program stopped. Ambiguous writes are never automatically retried.
 
 The canonical model command and sanitized bounded post-grant result are stored in the resumable Supervisor tool transcript. Schema v113 transactionally widens that durable call ledger for `debug_terminal` while preserving earlier calls. The process-local binding also pins the exact mode revision and a canonical Workspace-root digest; a Plan round trip or Workspace re-registration invalidates it instead of reviving authority. The bearer, user keystrokes, raw PTY stream, pre-grant scrollback, root path, environment, and process identity are not persisted. Schema v108 defines a `terminal_sessions` metadata ledger contract, but the current Desktop lifecycle remains process-local and does not use that table to restore a process or authority; no database row can revive a terminal or lease. Agent-input grant/write/revoke events store only bounded identities, sizes, and digests.
 

@@ -94,7 +94,7 @@ export function validThreadActivityCommand(value: unknown): boolean {
     validThreadActivityString(value.command, 4_096) &&
     validThreadActivityString(value.working_directory, 1_024) &&
     threadActivityEnvironments.includes(String(value.execution_environment)) &&
-    value.network === "disabled" &&
+    (value.network === "disabled" || value.network === "host") &&
     threadActivityCommandStatuses.includes(String(value.status)) &&
     (value.exit_code === undefined ||
       (typeof value.exit_code === "number" && Number.isSafeInteger(value.exit_code))) &&

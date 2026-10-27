@@ -60,7 +60,7 @@ export function V2ThreadExport({ client, threadID, title, onClose, returnFocusRe
       <header><span><Download size={17} aria-hidden="true" /></span><h2 id={titleID}>{t("导出对话", "Export conversation")}</h2>
         <button type="button" aria-label={t("关闭导出窗口", "Close export")} ref={close} onClick={onClose}><X size={16} aria-hidden="true" /></button></header>
       <div className="v2-thread-export-body">
-        <p>{t("保存已发送的用户消息和助手回复，保留原文与代码。附件列出文件名。", "Save sent user messages and assistant replies, preserving the original text and code. Attachments are listed by name.")}</p>
+        <p>{t("附件仅保留文件名。", "Attachments include filenames only.")}</p>
         <label>{t("文件格式", "File format")}<select value={format} onChange={(event) => { setFormat(event.target.value as ThreadExportFormat); setNotice(""); }}>
           <option value="markdown">Markdown (.md)</option><option value="text">{t("文本 (.txt)", "Text (.txt)")}</option>
         </select></label>
