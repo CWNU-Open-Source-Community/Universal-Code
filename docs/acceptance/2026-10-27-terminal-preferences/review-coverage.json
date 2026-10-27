@@ -1,0 +1,150 @@
+{
+  "source_commit": "d2a9395d114c4533097dc3843ecb99a396af4694",
+  "base_commit": "542dac6832fe43314f8726ff6b39e5645c0d2a6f",
+  "total_files": 28,
+  "reviewed_files": 28,
+  "skipped_files": 0,
+  "coverage_rate": 100,
+  "files": [
+    {
+      "path": "cmd/cyberagent-desktop/main.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "cmd/cyberagent-desktop/terminal_settings.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/application/desktop_terminal_settings.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/application/terminal_preferences.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/desktop/bridge.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/desktop/control_plane.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/desktop/terminal_settings.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/desktop/user_terminal.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/runner/command_runtime_windows.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/backend_posix.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/backend_windows.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/session.go",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/shell.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/shell_other.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/shell_posix.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/shell_version_windows.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "internal/terminal/shell_windows.go",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "protocols/registry.json",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "scripts/build-desktop.ps1",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "scripts/prepare-powershell-runtime.ps1",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/components/terminal-settings-panel.css",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/components/terminal-settings-panel.tsx",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/components/user-terminal-panel.tsx",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/lib/desktop-bridge.ts",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/lib/desktop-terminal-settings.ts",
+      "status": "added",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/v2/components/settings.tsx",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/v2/components/sidebar.tsx",
+      "status": "modified",
+      "review": "reviewed"
+    },
+    {
+      "path": "web/src/v2/navigation.ts",
+      "status": "modified",
+      "review": "reviewed"
+    }
+  ]
+}
