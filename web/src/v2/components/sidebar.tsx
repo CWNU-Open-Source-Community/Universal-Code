@@ -8,7 +8,12 @@ import { useLocale } from "../../lib/locale";
 import { ThreadProjectDialog, threadProjectID } from "./thread-project-dialog";
 import { ProjectHeader } from "./project-header";
 import { ThreadActions } from "./thread-actions";
+import { useV2PersistentState } from "../recovery-storage";
 import "./project-sidebar.css";
+
+function projectPinIDs(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
+}
 
 export type V2SettingsSection = "general" | "permissions" | "appearance" | "voice" |
   "models" | "plugins" | "browser" | "hooks" | "git" | "environment" |
@@ -89,6 +94,12 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   const [projectCandidate, setProjectCandidate] = useState<ThreadView | null>(null);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
+  const [savedProjectPins, setProjectPins] = useV2PersistentState<unknown>("pinned-projects", []);
+  const pinnedProjects = useMemo(() => new Set(projectPinIDs(savedProjectPins)), [savedProjectPins]);
+  const toggleProjectPin = (id: string) => setProjectPins((previous: unknown) => {
+    const ids = projectPinIDs(previous);
+    return ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id];
+  });
   const pinsQuery = useInfiniteQuery({
     queryKey: ["v2", "threads", "active", "pinned", executionFilter],
     queryFn: ({ signal, pageParam }) => client!.getPage<ThreadView>("/threads", {
@@ -119,8 +130,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     if (draggingThreadID && !result.has("")) result.set("", []);
     const order = new Map(workspaces.map((workspace, index) => [workspace.id, index]));
     return [...result.entries()].sort(([a], [b]) => a === "" ? 1 : b === "" ? -1
-      : (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
-  }, [threads, workspaces, onNewInProject, draggingThreadID, executionFilter, pinnedIDs]);
+      : Number(pinnedProjects.has(b)) - Number(pinnedProjects.has(a)) || (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
+  }, [threads, workspaces, onNewInProject, draggingThreadID, executionFilter, pinnedIDs, pinnedProjects]);
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>();
     for (const { name } of workspaces) counts.set(name, (counts.get(name) ?? 0) + 1);
@@ -261,6 +272,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
             event.preventDefault(); setDropProjectID(null); setDraggingThreadID(""); onMoveThread?.(draggedThread, workspaceID);
           }}>
         {workspaceID ? <ProjectHeader workspace={workspace} label={label} client={client} expanded={expanded}
+          pinned={pinnedProjects.has(workspaceID)} onTogglePin={() => toggleProjectPin(workspaceID)}
           onToggle={() => setCollapsedProjects((previous) => { const next = new Set(previous); if (next.has(workspaceID)) next.delete(workspaceID); else next.add(workspaceID); return next; })}
           onNewChat={onNewInProject ? () => onNewInProject(workspaceID) : undefined} onEdit={onEditProject} />
           : <header className="v2-local-heading"><span>{label}</span>
