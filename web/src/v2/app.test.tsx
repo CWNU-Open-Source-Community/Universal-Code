@@ -12,6 +12,7 @@ import { LocaleProvider, useLocale } from "../lib/locale";
 import { V2Workbench } from "./app";
 import * as desktopBridge from "../lib/desktop-bridge";
 import { v2FileReferenceKey } from "./components/file-context";
+import { useFileEditLeaveEntry } from "../components/file-edit-drafts";
 
 function render(ui: ReactElement) {
   return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
@@ -22,7 +23,7 @@ function LocaleSwitch() {
   return <button onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")} type="button">Switch test language</button>;
 }
 
-const branchNavigation = vi.hoisted(() => ({ complete: undefined as ((thread: ThreadView) => void) | undefined }));
+const branchNavigation = vi.hoisted(() => ({ complete: undefined as ((thread: ThreadView) => void) | undefined, dirtyFile: false }));
 
 vi.mock("./components/conversation", () => ({
   V2Conversation: ({ threadID, view = "conversation", draft, onDraftChange, reviewEntry, onBranchCreated }: {
@@ -34,6 +35,8 @@ vi.mock("./components/conversation", () => ({
     onBranchCreated?: (thread: ThreadView) => void;
   }) => {
     branchNavigation.complete = onBranchCreated;
+    useFileEditLeaveEntry({ path: "README.md", dirty: branchNavigation.dirtyFile, busy: false, canSave: false,
+      save: async () => undefined, keep: () => { branchNavigation.dirtyFile = false; }, discard: vi.fn() });
     return (
     <div data-testid="v2-conversation" data-view={view}>{threadID}
       <textarea aria-label="任务草稿 fixture" value={draft} onChange={(event) => onDraftChange(event.target.value)} />
@@ -88,6 +91,7 @@ const readyModelCatalog = () => vi.fn().mockResolvedValue(selectableModelCatalog
 
 afterEach(() => {
   branchNavigation.complete = undefined;
+  branchNavigation.dirtyFile = false;
   cleanup();
   useConnectionStore.getState().disconnect();
   vi.restoreAllMocks();
@@ -110,6 +114,95 @@ function expectNoNavigationWrites(client: APIClient) {
     expect(call).not.toHaveBeenCalled();
   }
 }
+
+describe("V2Workbench adjacent chat navigation", () => {
+  it.each([false, true])("preserves drafts, clears unread only after an accepted switch and stops at edges (unsaved file: %s)", async (dirtyFile) => {
+    branchNavigation.dirtyFile = dirtyFile;
+    const other = { ...createdThread, id: "thread-next", title: "Next conversation" };
+    const scope = `ds1_${"7".repeat(64)}`;
+    useConnectionStore.getState().setHealth({ status: "ok", api_version: "api.v1", app_version: "fixture", schema_version: 216, data_store_id: scope });
+    const storageKey = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${scope}:reply-read-state`;
+    localStorage.setItem(storageKey, JSON.stringify({ version: "v2_recovery.v1", value: { cursor: "known-feed", threads: {
+      [other.id]: { pending: [], seen: [], manualUnread: true },
+    } } }));
+    window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
+    const client = Object.assign(navigationClient(), { baseURL: "/api/v1" });
+    vi.mocked(client.getPage).mockImplementation(async (path: string) => ({
+      items: path === "/workspaces" ? [workspace] : [createdThread, other], page: { limit: 100 }, requestID: path,
+    }) as never);
+    vi.mocked(client.get).mockResolvedValue({ version: "thread_reply_updates.v1", data_store_id: scope, cursor: "known-feed", has_more: false, items: [] });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const nextRow = await screen.findByRole("button", { name: other.title });
+    expect(nextRow).toHaveAccessibleDescription(expect.stringContaining("未读"));
+    const press = (direction: "Left" | "Right") => {
+      const event = new KeyboardEvent("keydown", { key: direction === "Left" ? "{" : "}", code: `Bracket${direction}`, ctrlKey: true, shiftKey: true, cancelable: true });
+      fireEvent(window, event);
+      expect(event.defaultPrevented).toBe(true);
+    };
+    const draft = () => screen.getByRole("textbox", { name: "任务草稿 fixture" });
+    fireEvent.change(draft(), { target: { value: "Draft for the first chat" } });
+    press("Left");
+    expect(window.location.hash).toBe(`#/threads/${createdThread.id}`);
+    press("Right");
+    if (dirtyFile) {
+      expect(window.location.hash).toBe(`#/threads/${createdThread.id}`);
+      expect(nextRow).toHaveAccessibleDescription(expect.stringContaining("未读"));
+      fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+      expect(window.location.hash).toBe(`#/threads/${createdThread.id}`);
+      expect(nextRow).toHaveAccessibleDescription(expect.stringContaining("未读"));
+      press("Right");
+      await userEvent.click(screen.getByRole("button", { name: "保留草稿" }));
+      await waitFor(() => expect(window.location.hash).toBe(`#/threads/${other.id}`));
+    }
+    expect(window.location.hash).toBe(`#/threads/${other.id}`);
+    expect(nextRow).not.toHaveAccessibleDescription(expect.stringContaining("未读"));
+    expect(draft()).toHaveValue("");
+    fireEvent.change(draft(), { target: { value: "Draft for the next chat" } });
+    press("Right");
+    expect(window.location.hash).toBe(`#/threads/${other.id}`);
+    press("Left");
+    expect(draft()).toHaveValue("Draft for the first chat");
+    press("Right");
+    expect(draft()).toHaveValue("Draft for the next chat");
+    expectNoNavigationWrites(client);
+  });
+
+  it("keeps search, settings, inspector and a new chat in place", async () => {
+    await import("./components/settings");
+    window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
+    const client = navigationClient();
+    vi.mocked(client.getPage).mockImplementation(async (path: string) => ({
+      items: path === "/workspaces" ? [workspace] : [createdThread, { ...createdThread, id: "thread-next", title: "Next conversation" }],
+      page: { limit: 100 }, requestID: path,
+    }) as never);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    await screen.findByRole("button", { name: "Next conversation" });
+    const stays = () => {
+      const before = window.location.hash;
+      const event = new KeyboardEvent("keydown", { key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true, cancelable: true });
+      fireEvent(window, event);
+      expect(window.location.hash).toBe(before);
+      expect(event.defaultPrevented).toBe(false);
+    };
+    fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true });
+    expect(screen.getByRole("searchbox", { name: "搜索对话" })).toBeInTheDocument();
+    stays();
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
+    await screen.findByRole("heading", { name: "常规", level: 1 });
+    stays();
+    fireEvent.click(screen.getByRole("button", { name: "返回应用" }));
+    fireEvent.click(screen.getByRole("button", { name: "观察与记录" }));
+    expect(window.location.hash).toContain("/inspector");
+    stays();
+    fireEvent.keyDown(window, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
+    expect(window.location.hash).toBe("#/new");
+    stays();
+    expectNoNavigationWrites(client);
+  });
+});
 
 it.each([false, true])("moves the text draft while retaining a late file reference: %s", async (lateUpload) => {
   const storeID = `ds1_${"d".repeat(64)}`;

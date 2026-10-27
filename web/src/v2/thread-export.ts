@@ -37,6 +37,7 @@ export async function readThreadExport(client: Pick<APIClient, "get" | "getPage"
     entry.kind === "user" ? [entry.id] : entry.kind === "assistant" ? entry.messageIDs ?? [entry.id] : []));
   const messages = ordered.filter((item) => visible.has(item.id));
   const complete: ThreadTranscriptItemView[] = [];
+  const savedBodies = new Map<string, string>();
   for (let offset = 0; offset < messages.length; offset += 4) {
     signal.throwIfAborted();
     complete.push(...await Promise.all(messages.slice(offset, offset + 4).map(async (item) => {
@@ -44,12 +45,24 @@ export async function readThreadExport(client: Pick<APIClient, "get" | "getPage"
       if (saved.message_id !== item.id || typeof saved.content !== "string") {
         throw new Error(t("完整消息身份不匹配，请重新导出。", "A saved message did not match the conversation. Try exporting again."));
       }
+      savedBodies.set(item.id, saved.content);
       return { ...item, detail: saved.content };
     })));
   }
   signal.throwIfAborted();
+  const savedText = (id: string) => {
+    const text = savedBodies.get(id);
+    if (text === undefined) throw new Error(t("完整消息身份不匹配，请重新导出。", "A saved message did not match the conversation. Try exporting again."));
+    return text;
+  };
+  // Keep visibility, grouping and duplicate-ending decisions in the shared
+  // projection. Its display text is trimmed, so reconstruct only the export
+  // from contributing saved bodies with the same paragraph separator.
   return projectThreadNarrative(complete).filter((entry): entry is ExportMessage =>
-    entry.kind === "user" || entry.kind === "assistant");
+    entry.kind === "user" || entry.kind === "assistant").map((entry) => ({ ...entry,
+      text: entry.kind === "user" ? savedText(entry.id)
+        : (entry.textMessageIDs ?? [entry.id]).map(savedText).join("\n\n"),
+    }));
 }
 
 export function formatThreadExport(title: string, messages: ExportMessage[], format: ThreadExportFormat, t: LocaleText): string {
