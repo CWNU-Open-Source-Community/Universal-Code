@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -7,6 +7,7 @@ import {
   closeDesktopUserTerminal,
   desktopDebugTerminalAgentInputEnabled,
   desktopErrorMessage,
+  desktopIsMacPlatform,
   desktopUserTerminalEnabled,
   getDesktopDebugTerminalAgentInput,
   getDesktopUserTerminal,
@@ -20,6 +21,9 @@ import {
   type DesktopTerminalSession,
 } from "../lib/desktop-bridge";
 import { useLocale } from "../lib/locale";
+import { openUserTerminal } from "../lib/open-user-terminal";
+import { readDesktopClipboardText, writeDesktopClipboardText } from "../lib/desktop-text-clipboard";
+import { createTerminalClipboardKeyHandler } from "../lib/terminal-clipboard";
 
 const terminalPollMilliseconds = 120;
 
@@ -48,6 +52,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
   const runRef = useRef(runID);
   const mountedRef = useRef(true);
   const cursorRef = useRef(0);
+  const replayingRef = useRef(false);
   const writeQueueRef = useRef(Promise.resolve());
   const [session, setSession] = useState<DesktopTerminalSession | null>(null);
   const [agentBinding, setAgentBinding] =
@@ -71,6 +76,45 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
       mountedRef.current = false;
     };
   }, []);
+
+  const handleTerminalData = useEffectEvent((data: string) => {
+    if (session?.state !== "running" || session.session_id !== sessionID) return;
+    const current = sessionID;
+    writeQueueRef.current = writeQueueRef.current
+      .then(() => writeDesktopUserTerminal(current, data))
+      .then(() => undefined)
+      .catch((error) => setMessage(desktopErrorMessage(error)));
+  });
+
+  const pasteIntoSession = useEffectEvent((terminal: Terminal, sourceRunID: string, sourceSessionID: string, text: string) => {
+    if (!mountedRef.current || terminalRef.current !== terminal || runID !== sourceRunID ||
+        sessionID !== sourceSessionID || session?.state !== "running" || session.session_id !== sourceSessionID) return;
+    terminal.paste(text);
+  });
+
+  const capturePaste = useEffectEvent(() => {
+    const terminal = terminalRef.current;
+    if (!terminal || session?.state !== "running" || session.session_id !== sessionID) return null;
+    const sourceRunID = runID;
+    const sourceSessionID = sessionID;
+    return (text: string) => pasteIntoSession(terminal, sourceRunID, sourceSessionID, text);
+  });
+
+  const reportClipboardError = useEffectEvent((action: "copy" | "paste", error: unknown) => {
+    if (!mountedRef.current) return;
+    setMessage(`${action === "copy" ? t("复制失败", "Copy failed") : t("粘贴失败", "Paste failed")}: ${desktopErrorMessage(error)}`);
+  });
+
+  const resizeTerminal = useEffectEvent(() => {
+    if (replayingRef.current) return;
+    fitRef.current?.fit();
+    const terminal = terminalRef.current;
+    if (terminal && session?.state === "running" && session.session_id === sessionID &&
+      terminal.cols >= 20 && terminal.rows >= 5) {
+      void resizeDesktopUserTerminal(sessionID, terminal.cols, terminal.rows)
+        .catch((error) => setMessage(desktopErrorMessage(error)));
+    }
+  });
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -102,38 +146,37 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
-    terminal.open(hostRef.current);
-    fit.fit();
+    openUserTerminal(terminal, fit, hostRef.current);
     terminalRef.current = terminal;
     fitRef.current = fit;
     if (sessionRef.current) terminal.focus();
     const selectionSubscription = terminal.onSelectionChange(() => setHasSelection(Boolean(terminal.getSelection())));
+    let platform: "windows" | "macos" | "other" = "other";
+    if (desktopIsMacPlatform()) platform = "macos";
+    else if (/win/iu.test(navigator.platform)) platform = "windows";
+    terminal.attachCustomKeyEventHandler(createTerminalClipboardKeyHandler({
+      platform,
+      clipboard: {
+        readText: () => { setMessage(""); return readDesktopClipboardText(); },
+        writeText: (text) => { setMessage(""); return writeDesktopClipboardText(text); },
+      },
+      getSelection: () => terminal.getSelection(),
+      capturePaste,
+      onError: reportClipboardError,
+    }));
     const dataSubscription = terminal.onData((data) => {
-      const current = sessionRef.current;
-      if (!current) return;
-      writeQueueRef.current = writeQueueRef.current
-        .then(() => writeDesktopUserTerminal(current, data))
-        .then(() => undefined)
-        .catch((error) => setMessage(desktopErrorMessage(error)));
+      handleTerminalData(data);
     });
-    const resize = () => {
-      fit.fit();
-      const current = sessionRef.current;
-      if (current && terminal.cols >= 20 && terminal.rows >= 5) {
-        void resizeDesktopUserTerminal(current, terminal.cols, terminal.rows)
-          .catch((error) => setMessage(desktopErrorMessage(error)));
-      }
-    };
     const ResizeObserverType = window.ResizeObserver;
-    const resizeObserver = ResizeObserverType ? new ResizeObserverType(resize) : null;
+    const resizeObserver = ResizeObserverType ? new ResizeObserverType(resizeTerminal) : null;
     if (resizeObserver) {
       resizeObserver.observe(hostRef.current);
     } else {
-      window.addEventListener("resize", resize);
+      window.addEventListener("resize", resizeTerminal);
     }
     return () => {
       resizeObserver?.disconnect();
-      if (!resizeObserver) window.removeEventListener("resize", resize);
+      if (!resizeObserver) window.removeEventListener("resize", resizeTerminal);
       dataSubscription.dispose();
       selectionSubscription.dispose();
       terminal.dispose();
@@ -142,20 +185,34 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
     };
   }, []);
 
-  const writePage = useCallback((encoded: string) => {
+  useEffect(() => {
+    // The first ResizeObserver callback may precede the session lookup on reopen.
+    if (session?.state === "running") resizeTerminal();
+  }, [session?.session_id, session?.state, sessionID]);
+
+  const writePage = useCallback(async (encoded: string) => {
     const binary = window.atob(encoded);
     const bytes = Uint8Array.from(binary, (current) => current.charCodeAt(0));
-    terminalRef.current?.write(bytes);
+    const terminal = terminalRef.current;
+    if (terminal) await new Promise<void>((resolve) => terminal.write(bytes, resolve));
   }, []);
 
   useEffect(() => {
     if (!sessionID || !enabled) {
+      replayingRef.current = false;
       setSession(null);
       cursorRef.current = 0;
       return;
     }
     let cancelled = false;
     let timer = 0;
+    let replayEndCursor = 0;
+    replayingRef.current = true;
+    const finishReplay = () => {
+      if (!replayingRef.current) return;
+      replayingRef.current = false;
+      resizeTerminal();
+    };
     const poll = async () => {
       try {
         const page = await readDesktopUserTerminal(sessionID, cursorRef.current);
@@ -164,32 +221,44 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
           terminalRef.current?.clear();
         }
         if (page.data_bytes > 0) {
-          writePage(page.data_base64);
+          await writePage(page.data_base64);
         }
+        if (cancelled) return;
         cursorRef.current = page.next_cursor;
+        if (cursorRef.current >= replayEndCursor) finishReplay();
         const current = await getDesktopUserTerminal(sessionID);
         if (cancelled) return;
         setSession(current);
-        if (current.state === "running") {
+        // An exited session can still have unread pages in its retained output.
+        if (current.state === "running" || cursorRef.current < current.output_next_cursor) {
           timer = window.setTimeout(() => void poll(), terminalPollMilliseconds);
         }
       } catch (error) {
-        if (!cancelled) setMessage(desktopErrorMessage(error));
+        if (!cancelled) {
+          finishReplay();
+          setMessage(desktopErrorMessage(error));
+        }
       }
     };
     void getDesktopUserTerminal(sessionID).then((current) => {
       if (cancelled) return;
       setSession(current);
       cursorRef.current = current.output_base_cursor;
+      replayEndCursor = current.output_next_cursor;
+      // Cursor-position escapes must replay at the backend's dimensions, even while the drawer animates.
+      terminalRef.current?.resize(current.columns, current.rows);
+      if (cursorRef.current >= replayEndCursor) finishReplay();
       void poll();
     }).catch((error) => {
       if (!cancelled) {
+        finishReplay();
         onSession("");
         setMessage(desktopErrorMessage(error));
       }
     });
     return () => {
       cancelled = true;
+      replayingRef.current = false;
       window.clearTimeout(timer);
     };
   }, [enabled, onSession, sessionID, writePage]);
