@@ -189,6 +189,8 @@ func TestOpenAPIDocumentIsDeterministicCapabilitySeparatedAndSecretFree(t *testi
 	}
 	assertOpenAPISchemaOptional(t, document.Components.Schemas,
 		"ThreadTranscriptItemView", "activity_detail_ref")
+	assertOpenAPIEnum(t, document.Components.Schemas, "ThreadActivityCommandDetailView", "network",
+		[]string{string(runner.CommandRuntimeNetworkDisabled), string(runner.CommandRuntimeNetworkHost)})
 	for _, field := range []string{"pid", "process_id", "executable", "executable_path",
 		"profile", "profile_path", "devtools_endpoint", "websocket_url", "token",
 		"execution_fence", "authorization_fingerprint"} {

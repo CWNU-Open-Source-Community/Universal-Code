@@ -1,4 +1,5 @@
 import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Ref } from "react";
 import { LoaderCircle, Square } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { ThreadExecutionView } from "../../api/types";
@@ -16,10 +17,11 @@ export function useV2ThreadExecution(client: APIClient, threadID: string) {
   });
 }
 
-export function V2ThreadExecutionControl({ client, threadID, execution }: {
+export function V2ThreadExecutionControl({ client, threadID, execution, stopButtonRef }: {
   client: APIClient;
   threadID: string;
   execution: ThreadExecutionView | undefined;
+  stopButtonRef?: Ref<HTMLButtonElement>;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -36,11 +38,14 @@ export function V2ThreadExecutionControl({ client, threadID, execution }: {
   return <>
     {execution && execution.state !== "idle" && client.hasThreadControl && client.hasRunExecution &&
       <button aria-label={stopping ? t("正在停止", "Stopping") : execution.state === "stop_failed" ? t("重试停止", "Retry stop") : t("停止当前执行", "Stop current run")} className="v2-stop-button"
+        ref={stopButtonRef} aria-keyshortcuts={stopButtonRef && !stopping ? "Escape" : undefined}
         disabled={stopping} onClick={() => execution.execution_id && stop.mutate({ threadID,
           executionID: execution.execution_id })}
-        title={t("停止当前执行；已完成的修改和已受理的补充要求会保留", "Stop this run; completed changes and accepted instructions are kept")} type="button">
+        title={stopButtonRef ? t("停止当前执行（输入框内 Esc）；已完成的修改和已受理的补充要求会保留", "Stop this run (Esc in the message input); completed changes and accepted instructions are kept")
+          : t("停止当前执行；已完成的修改和已受理的补充要求会保留", "Stop this run; completed changes and accepted instructions are kept")} type="button">
         {stopping ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
           : <Square aria-hidden="true" size={13} />} {stopping ? t("正在停止…", "Stopping…") : execution.state === "stop_failed" ? t("重试停止", "Retry stop") : t("停止", "Stop")}
+        {stopButtonRef && !stopping && <kbd aria-hidden="true">Esc</kbd>}
       </button>}
     {stop.isError && <span role="alert">{t("停止请求未确认，请刷新执行状态后重试。", "The stop request is unconfirmed. Refresh execution status before retrying.")}</span>}
   </>;

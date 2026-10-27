@@ -12,6 +12,8 @@ import { fileAttachmentIdentities, validFileAttachments, type WorkspaceFileAttac
 import { v2AttachmentReferenceKey } from "./attachment-keys";
 import { mcpReferenceIdentities, validMCPReferences, type MCPDraftReference } from "../api/mcp-references";
 import { v2MCPReferenceKey } from "./components/mcp-reference-picker";
+import { notifyTurnReply } from "./turn-notifications";
+import { useConnectionStore } from "../state/connection";
 
 export interface V2TurnInput {
   threadID: string;
@@ -101,6 +103,7 @@ export function useV2ThreadTurn(client: APIClient) {
     // server owns deduplication; a known failed turn is never executed again.
     retry: (failureCount, error) => failureCount < 1 && !v2TurnOutcomeKnown(error),
     retryDelay: 400,
+    onMutate: () => useConnectionStore.getState(),
     mutationFn: async (input: V2TurnInput) => {
       if (input.attachments !== undefined && !validFileAttachments(input.attachments, input.workspaceID)) {
         throw new Error("文件附件的项目或保存身份无效，未发送消息。");
@@ -137,7 +140,8 @@ export function useV2ThreadTurn(client: APIClient) {
         ...(input.mcpReferences?.length ? { mcp_references: mcpReferenceIdentities(input.mcpReferences) } : {}),
       }, input.operationKey);
     },
-    onSuccess: (_data, input) => {
+    onSuccess: (data, input, connection) => {
+      notifyTurnReply(data, connection);
       try { settleRecoveryTurn(recovery, input, true); } catch { /* Keep the journal until a later read confirms it. */ }
       // Versioned drafts are consumed by their exact branch/ref in settlement.
       // Keep identity-based cache cleanup only for legacy journal entries.
