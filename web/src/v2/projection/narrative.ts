@@ -353,6 +353,9 @@ export function projectThreadNarrative(
         previous.messageIDs = [...(previous.messageIDs ?? [previous.id]), item.id];
         previous.branchSourceID = branchSourceID;
         previous.changeSourceID ??= changeSourceID;
+        // First-seen attribution wins for a repeated Supervisor closing reply,
+        // but a reply that never had one adopts its later sibling's model.
+        previous.model ??= model;
       } else {
         result.push({ id: item.id, kind: "assistant", text,
           messageIDs: [item.id],

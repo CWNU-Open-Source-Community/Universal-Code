@@ -217,6 +217,9 @@ func Build(threadID string, source []Source) ([]Item, error) {
 		return nil, fmt.Errorf("thread transcript accepts at most %d source records", MaxSourceRecords)
 	}
 	ordered := append([]Source(nil), source...)
+	// The run's latest model-call attempt, so a durable reply projected from a
+	// SessionMessageEvent can inherit the model identity of the call it closed.
+	attemptByRun := map[string]string{}
 	slices.SortFunc(ordered, func(left, right Source) int {
 		if order := cmp.Compare(left.Ordinal, right.Ordinal); order != 0 {
 			return order
@@ -263,7 +266,18 @@ func Build(threadID string, source []Source) ([]Item, error) {
 			return nil, err
 		}
 		for _, projected := range projection.Items {
-			items = append(items, projectActivity(record, projected))
+			item := projectActivity(record, projected)
+			// The final durable reply is a SessionMessageEvent without attempt
+			// identity; inherit the run's latest model-call attempt so the web
+			// narrative can attribute the reply to its producing model.
+			if projected.AttemptID != "" && projected.Kind == runactivity.KindModelCall {
+				attemptByRun[record.RunID] = projected.AttemptID
+			}
+			if item.AttemptID == "" && item.Kind == runactivity.KindModelUpdate &&
+				item.Source == runactivity.SourceModel {
+				item.AttemptID = attemptByRun[record.RunID]
+			}
+			items = append(items, item)
 		}
 	}
 	return items, nil

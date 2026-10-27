@@ -9,6 +9,47 @@ import (
 	"cyberagent-workbench/internal/events"
 )
 
+func TestBuildAttributesDurableReplyWithLatestModelCallAttempt(t *testing.T) {
+	now := time.Date(2026, 10, 28, 1, 0, 0, 0, time.UTC)
+	source := []Source{
+		eventSource("run-1", 1, 1, events.ModelStartedEvent,
+			`{"provider":"anthropic","model":"test-model","attempt_id":"attempt-7"}`, now),
+		eventSource("run-1", 1, 2, events.ModelCompletedEvent,
+			`{"provider":"anthropic","model":"test-model","attempt_id":"attempt-7","elapsed_millis":1200,"usage":{"total_tokens":42}}`, now.Add(time.Second)),
+		eventSource("run-1", 1, 3, events.SessionMessageEvent,
+			`{"role":"assistant","content":"public answer","source_kind":"model_response","instruction_authorized":false}`, now.Add(2*time.Second)),
+		eventSource("run-1", 1, 4, events.ModelPublicCommentaryEvent,
+			`{"text":"检查中","attempt_id":"attempt-7"}`, now.Add(3*time.Second)),
+	}
+	items, err := Build("thread-1", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var call, reply, commentary *Item
+	for index := range items {
+		switch items[index].ID {
+		case "event-run-1-model.started":
+			call = &items[index]
+		case "event-run-1-session.message_created":
+			reply = &items[index]
+		case "event-run-1-model.public_commentary":
+			commentary = &items[index]
+		}
+	}
+	if call == nil || reply == nil || commentary == nil {
+		t.Fatalf("expected call, reply and commentary items: %#v", items)
+	}
+	if call.Model != "anthropic / test-model" || call.AttemptID != "attempt-7" {
+		t.Fatalf("model call lost its identity or attempt: %#v", call)
+	}
+	if reply.AttemptID != "attempt-7" {
+		t.Fatalf("durable reply did not inherit the call attempt: %#v", reply)
+	}
+	if commentary.AttemptID != "attempt-7" {
+		t.Fatalf("commentary lost its attempt: %#v", commentary)
+	}
+}
+
 func TestBuildOrdersRunBoundariesMessagesAndStructuredToolStages(t *testing.T) {
 	now := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
 	batch, _ := json.Marshal(map[string]any{
