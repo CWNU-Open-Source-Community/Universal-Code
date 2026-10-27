@@ -7519,6 +7519,71 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/runs/{run_id}/agent-browser/screencast": {
+      "get": {
+        "operationId": "streamRunAgentBrowserScreencast",
+        "summary": "Stream the Agent browser live view",
+        "description": "Streams the Run's active Agent browser session as a bounded Server-Sent Event live view (JPEG frames, server-capped rate, single viewer, never persisted). This is operator visibility only: it launches nothing, grants no execution or CDP authority, and never replaces the hashed screenshot evidence chain.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded Server-Sent Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBrowserScreencastFrameView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true,
+        "x-cyberagent-streaming": true
+      }
+    },
     "/api/v1/runs/{run_id}/agent-browser/screenshot": {
       "get": {
         "operationId": "readRunAgentBrowserScreenshot",
@@ -37422,6 +37487,58 @@
         "required": [
           "version",
           "session_id"
+        ],
+        "type": "object"
+      },
+      "AgentBrowserScreencastFrameView": {
+        "additionalProperties": false,
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "data": {
+            "type": "string"
+          },
+          "generation": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "height": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "session_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "width": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "run_id",
+          "session_id",
+          "generation",
+          "media_type",
+          "width",
+          "height",
+          "data",
+          "captured_at"
         ],
         "type": "object"
       },

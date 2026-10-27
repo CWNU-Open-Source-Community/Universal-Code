@@ -35,6 +35,7 @@ type AgentBrowserRuntime struct {
 	loading                                   bool
 	epoch                                     uint64
 	refs                                      map[string]agentBrowserRef
+	screencast                                *agentBrowserScreencastPump
 }
 
 func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
@@ -145,6 +146,9 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		}
 	case "DOM.documentUpdated":
 		r.invalidateLocked()
+	case "Page.screencastFrame":
+		r.deliverScreencastLocked(event)
+		return
 	case "Page.javascriptDialogOpening":
 		r.state = "waiting_user"
 		r.invalidateLocked()

@@ -96,7 +96,7 @@ it.each(["screenshot", "session", "run"])("closes an original preview when the %
     await act(async () => { view.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"), next); });
   }
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: /Agent 浏览器页面/ })).not.toBeInTheDocument();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:agent-browser");
 });
 
@@ -192,7 +192,7 @@ it("keeps a newer same-Run session when an old close finishes", async () => {
   await act(async () => { page.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"),
     { ...status("run-browser", "agent-browser-new"), title: "New document", state: "loading", screenshot: undefined }); });
   await screen.findByText("New document");
-  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: /Agent 浏览器页面/ })).not.toBeInTheDocument();
   await act(async () => { finish({ ...status(), state: "closed", screenshot: undefined }); });
   expect(screen.getByText("New document")).toBeInTheDocument();
   expect(screen.getByText("正在加载网页…")).toBeInTheDocument();
@@ -241,7 +241,7 @@ it("keeps a dismissed notice hidden across refreshes and shows a new browser ses
 });
 
 it.each([
-  [{ state: "waiting_user" }, "网页需要人工处理"],
+  [{ state: "waiting_user" }, "网页需要人工处理；当前版本暂不支持人工接管"],
   [{ state: "ready", failure_code: "action_failed" }, "最近一次页面操作失败，请让 Agent 重新读取页面后再试。"],
 ])("dismisses routine activity without stopping it and resurfaces for %o", async (attention, text) => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
@@ -282,3 +282,30 @@ function render(ui: ReactElement, options?: RenderOptions) {
   const Wrapper = options?.wrapper;
   return renderComponent(ui, {...options, wrapper: ({children}) => <LocaleProvider>{Wrapper ? <Wrapper>{children}</Wrapper> : children}</LocaleProvider>});
 }
+
+it("streams the live view for the active headless session", async () => {
+  vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 1280, height: 900, close: vi.fn() })));
+  const stream = vi.fn(async (_runID: string, options: { onOpen?: () => void; onFrame: (frame: unknown) => void }) => {
+    options.onOpen?.();
+    options.onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
+      generation: 1, media_type: "image/jpeg", width: 1280, height: 900, data: btoa("frame"),
+      captured_at: "2026-10-28T00:00:00Z" });
+  });
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn(), streamAgentBrowserScreencast: stream } as unknown as APIClient;
+  draw(client);
+  const canvas = await screen.findByRole("img", { name: "Agent 浏览器实时画面" });
+  expect(canvas).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText(/实时画面（直播流不保存/)).toBeInTheDocument());
+  expect(stream).toHaveBeenCalledWith("run-browser", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  expect(createImageBitmap).toHaveBeenCalled();
+});
+
+it("falls back to screenshots when the live stream is unavailable", async () => {
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn(),
+    streamAgentBrowserScreencast: vi.fn(async () => { throw new TypeError("stream down"); }) } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByText("实时画面暂不可用，已回退到截图。")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Agent 浏览器实时画面" })).not.toHaveClass("is-live");
+});

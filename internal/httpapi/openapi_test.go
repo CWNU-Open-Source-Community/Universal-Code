@@ -557,11 +557,14 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 		capture: application.FullCDPPreviewCapture{View: previewView, PNG: imageBytes},
 	}
 	fixture.api.fullCDPSessionControlEnabled = true
-	fixture.api.agentBrowserController = &agentBrowserHTTPStub{png: imageBytes, digest: imageReceipt.SHA256,
-		view: application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
-			SessionID: "agent-browser-openapi", Generation: 1, State: "ready", Headless: true,
-			UpdatedAt: time.Now().UTC(), ArtifactLocator: "openapi-browser.png", ScreenshotSHA256: imageReceipt.SHA256,
-			ScreenshotBytes: len(imageBytes), Capabilities: application.AgentBrowserCapabilities{Available: true}}}
+	browserStub := &agentBrowserScreencastStub{}
+	browserStub.png = imageBytes
+	browserStub.digest = imageReceipt.SHA256
+	browserStub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "agent-browser-openapi", Generation: 1, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), ArtifactLocator: "openapi-browser.png", ScreenshotSHA256: imageReceipt.SHA256,
+		ScreenshotBytes: len(imageBytes), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	fixture.api.agentBrowserController = browserStub
 	fixture.api.gitAdvancedController = &gitAdvancedControllerStub{}
 	fixture.api.gitAdvancedControlEnabled = true
 	fixture.api.githubReviewController = &githubReviewControllerStub{}
@@ -2216,7 +2219,16 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				}
 			}
 			contentType := response.Header().Get("Content-Type")
-			if spec.Streaming {
+			if spec.OperationID == "streamRunAgentBrowserScreencast" {
+				// Live-view frames are run-bound JPEG projections, not run-event
+				// envelopes, so the generic SSE decoder cannot parse them.
+				body := response.Body.String()
+				if !strings.HasPrefix(contentType, "text/event-stream") ||
+					strings.Count(body, "event: agent_browser.frame") != 1 ||
+					strings.Contains(body, "event: agent_browser.closed") {
+					t.Fatalf("Agent browser live view response is invalid: content-type=%q body=%s", contentType, body)
+				}
+			} else if spec.Streaming {
 				streamEvents := parseSSEEvents(t, response.Body.Bytes())
 				if !strings.HasPrefix(contentType, "text/event-stream") || len(streamEvents) != 1 {
 					t.Fatalf("SSE response is invalid: content-type=%q body=%s", contentType, response.Body.String())

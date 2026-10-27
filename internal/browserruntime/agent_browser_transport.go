@@ -77,6 +77,10 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Runtime.callFunctionOn": true, "Runtime.releaseObjectGroup": true, "Accessibility.getFullAXTree": true,
 	"Input.dispatchMouseEvent": true, "Input.dispatchKeyEvent": true, "Input.insertText": true,
 	"Emulation.setDeviceMetricsOverride": true,
+	// Operator live view only: start/stop toggle the renderer's frame tap and
+	// the ack is pure flow control. None of them navigates, evaluates, or reads
+	// anything the agent could not already capture as hashed screenshot evidence.
+	"Page.startScreencast": true, "Page.stopScreencast": true, "Page.screencastFrameAck": true,
 }
 
 func (c *agentBrowserCDP) call(ctx context.Context, session, method string, params any, out any) error {

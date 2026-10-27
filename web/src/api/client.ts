@@ -17,6 +17,8 @@ import { UIEvidenceClient } from "./client/domains/ui-evidence";
 import { VerificationClient } from "./client/domains/verification";
 import { WorkspacesClient } from "./client/domains/workspaces";
 import { APIRequestError, normalizeBaseURL } from "./client/protocol";
+import { consumeSSE, type SSEMessage } from "./sse";
+import { parseAgentBrowserScreencastFrame, type AgentBrowserScreencastFrame } from "./agent-browser";
 import { APITransport } from "./client/transport";
 import { WorkflowClient } from "./workflows";
 import type {
@@ -1674,6 +1676,42 @@ export class APIClient implements ClientFeatures {
     },
   ): Promise<void> {
     return this.runsClient.streamRunEvents(runID, options);
+  }
+
+  streamAgentBrowserScreencast(
+    runID: string,
+    options: {
+      signal: AbortSignal;
+      onOpen?: () => void;
+      onFrame: (frame: AgentBrowserScreencastFrame) => void;
+    },
+  ): Promise<void> {
+    const headers = this.transport.headers();
+    headers.Accept = "text/event-stream";
+    return this.rawEventStream(`/runs/${encodeURIComponent(runID)}/agent-browser/screencast`, headers,
+      options.signal, options.onOpen, async (message) => {
+        if (message.event !== "agent_browser.frame") {
+          return;
+        }
+        options.onFrame(parseAgentBrowserScreencastFrame(JSON.parse(message.data) as unknown, runID));
+      });
+  }
+
+  private async rawEventStream(path: string, headers: Record<string, string>, signal: AbortSignal,
+    onOpen: (() => void) | undefined, onMessage: (message: SSEMessage) => Promise<void> | void,
+  ): Promise<void> {
+    const response = await fetch(this.transport.url(path), {
+      method: "GET", headers, signal, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer",
+    });
+    if (!response.ok) {
+      throw await this.transport.responseError(response);
+    }
+    if (!response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream") || !response.body) {
+      throw new APIRequestError("API returned an invalid event stream", "INVALID_RESPONSE", response.status,
+        response.headers.get("x-request-id") || "");
+    }
+    if (!signal.aborted) onOpen?.();
+    await consumeSSE(response.body, onMessage);
   }
 
   pollRunEvents(

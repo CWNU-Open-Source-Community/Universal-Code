@@ -1394,6 +1394,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/agent-browser/screencast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the Agent browser live view
+         * @description Streams the Run's active Agent browser session as a bounded Server-Sent Event live view (JPEG frames, server-capped rate, single viewer, never persisted). This is operator visibility only: it launches nothing, grants no execution or CDP authority, and never replaces the hashed screenshot evidence chain.
+         */
+        get: operations["streamRunAgentBrowserScreencast"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/agent-browser/screenshot": {
         parameters: {
             query?: never;
@@ -6442,6 +6462,21 @@ export interface components {
             session_id: string;
             /** @enum {string} */
             version: "agent_browser_close.v1";
+        };
+        AgentBrowserScreencastFrameView: {
+            /** Format: date-time */
+            captured_at: string;
+            data: string;
+            /** Format: int64 */
+            generation: number;
+            /** Format: int32 */
+            height: number;
+            media_type: string;
+            run_id: string;
+            session_id: string;
+            version: string;
+            /** Format: int32 */
+            width: number;
         };
         AgentBrowserScreenshotView: {
             /** Format: int32 */
@@ -20357,6 +20392,38 @@ export interface operations {
             413: components["responses"]["RequestEntityTooLarge"];
             414: components["responses"]["RequestTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    streamRunAgentBrowserScreencast: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded Server-Sent Event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["AgentBrowserScreencastFrameView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];
