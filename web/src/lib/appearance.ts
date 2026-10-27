@@ -3,6 +3,11 @@ import { setDesktopWindowTheme } from "./desktop-window";
 
 export type PrayuTheme = "light" | "dark" | "glass";
 export type PrayuThemePreference = PrayuTheme | "system";
+
+export interface PrayuReviewColors {
+  add: string;
+  remove: string;
+}
 export type PrayuGlassMode = "mica" | "compat";
 export type PrayuGlassPreset = "clear" | "standard" | "frosted";
 
@@ -16,6 +21,7 @@ export interface PrayuGlassSettings {
 
 const themeStorageKey = "prayu.theme";
 const glassStorageKey = "prayu.glass";
+const reviewColorStorageKey = "prayu.reviewColors";
 let stopWatchingSystemTheme: (() => void) | undefined;
 
 export const defaultPrayuGlassSettings: Readonly<PrayuGlassSettings> = Object.freeze({
@@ -24,6 +30,12 @@ export const defaultPrayuGlassSettings: Readonly<PrayuGlassSettings> = Object.fr
   frost: 20,
   brightness: 50,
   glow: false,
+});
+
+export const defaultPrayuReviewColors: Readonly<Record<PrayuTheme, Readonly<PrayuReviewColors>>> = Object.freeze({
+  light: Object.freeze({ add: "#1a7f37", remove: "#cf222e" }),
+  dark: Object.freeze({ add: "#7ee787", remove: "#ffa198" }),
+  glass: Object.freeze({ add: "#3e7659", remove: "#955151" }),
 });
 
 export const prayuGlassPresets: Readonly<
@@ -114,6 +126,89 @@ export function resetPrayuGlassSettings(persist = true): PrayuGlassSettings {
   return normalized;
 }
 
+type PrayuReviewColorOverrides = Partial<Record<PrayuTheme, Partial<PrayuReviewColors>>>;
+
+function normalizePrayuReviewColor(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.toLowerCase();
+  return /^#[0-9a-f]{6}$/u.test(normalized) ? normalized : fallback;
+}
+
+function normalizePrayuReviewColors(
+  input: Partial<PrayuReviewColors> | null | undefined,
+  fallback: Readonly<PrayuReviewColors>,
+): PrayuReviewColors {
+  return {
+    add: normalizePrayuReviewColor(input?.add, fallback.add),
+    remove: normalizePrayuReviewColor(input?.remove, fallback.remove),
+  };
+}
+
+function readPrayuReviewColorOverrides(): PrayuReviewColorOverrides {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(reviewColorStorageKey);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as PrayuReviewColorOverrides
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistPrayuReviewColorOverrides(overrides: PrayuReviewColorOverrides): void {
+  try {
+    if (Object.keys(overrides).length === 0) window.localStorage.removeItem(reviewColorStorageKey);
+    else window.localStorage.setItem(reviewColorStorageKey, JSON.stringify(overrides));
+  } catch {
+    // Display preferences must never block the workbench.
+  }
+}
+
+export function readPrayuReviewColors(): Record<PrayuTheme, PrayuReviewColors> {
+  const overrides = readPrayuReviewColorOverrides();
+  return {
+    light: normalizePrayuReviewColors(overrides.light, defaultPrayuReviewColors.light),
+    dark: normalizePrayuReviewColors(overrides.dark, defaultPrayuReviewColors.dark),
+    glass: normalizePrayuReviewColors(overrides.glass, defaultPrayuReviewColors.glass),
+  };
+}
+
+function readActiveReviewTheme(): PrayuTheme {
+  const applied = document.documentElement.dataset.prayuTheme;
+  if (applied === "light" || applied === "dark" || applied === "glass") return applied;
+  return readPrayuTheme();
+}
+
+function syncReviewColorVariables(
+  theme: PrayuTheme,
+  colors: Readonly<PrayuReviewColors> = readPrayuReviewColors()[theme],
+): void {
+  document.documentElement.style.setProperty("--prayu-diff-add", colors.add);
+  document.documentElement.style.setProperty("--prayu-diff-delete", colors.remove);
+}
+
+export function savePrayuReviewColors(theme: PrayuTheme, input: Partial<PrayuReviewColors>): PrayuReviewColors {
+  const current = readPrayuReviewColors();
+  const next = normalizePrayuReviewColors({ ...current[theme], ...input }, current[theme]);
+  const overrides = readPrayuReviewColorOverrides();
+  overrides[theme] = next;
+  persistPrayuReviewColorOverrides(overrides);
+  if (readActiveReviewTheme() === theme) syncReviewColorVariables(theme, next);
+  return next;
+}
+
+export function resetPrayuReviewColors(theme: PrayuTheme): PrayuReviewColors {
+  const overrides = readPrayuReviewColorOverrides();
+  delete overrides[theme];
+  persistPrayuReviewColorOverrides(overrides);
+  const colors = { ...defaultPrayuReviewColors[theme] };
+  if (readActiveReviewTheme() === theme) syncReviewColorVariables(theme, colors);
+  return colors;
+}
+
 export function readPrayuThemePreference(): PrayuThemePreference {
   if (typeof window === "undefined") return "system";
   try {
@@ -154,6 +249,7 @@ export function applyPrayuTheme(theme: PrayuThemePreference, persist = true): vo
     document.documentElement.dataset.prayuTheme = resolved;
     document.documentElement.style.colorScheme = resolved === "dark" ? "dark" : "light";
     setDesktopWindowTheme(resolved);
+    syncReviewColorVariables(resolved);
   };
   syncTheme();
   syncGlassVariables(readPrayuGlassSettings());

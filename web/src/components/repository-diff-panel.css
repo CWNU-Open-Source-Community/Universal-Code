@@ -40,3 +40,37 @@
 .repository-diff-quote { position: absolute; top: 7px; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
 .repository-diff-quote:hover { background: var(--prayu-control); color: var(--prayu-text); }
 .repository-diff-quote:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.repository-diff-hunks {
+  margin: 0 0 12px;
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--prayu-surface-solid);
+  color: var(--prayu-text);
+  font: 11px/1.6 var(--prayu-font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+}
+.repository-diff-hunk { min-width: max-content; }
+.repository-diff-hunk + .repository-diff-hunk { border-top: 1px solid var(--border); }
+.repository-diff-preamble { padding: 6px 12px; border-bottom: 1px solid var(--border); color: var(--muted); white-space: pre; }
+.repository-diff-preamble code { font: inherit; }
+.repository-diff-hunk-heading { padding: 4px 12px; border-bottom: 1px solid var(--border); background: var(--prayu-control); color: var(--muted); white-space: pre; }
+.repository-diff-hunk-heading code { font: inherit; }
+.repository-diff-line {
+  display: flex;
+  align-items: stretch;
+  min-width: 100%;
+  width: max-content;
+  padding: 0 12px 0 9px;
+  border-left: 3px solid transparent;
+  white-space: pre;
+}
+.repository-diff-marker { flex: none; width: 14px; color: var(--muted); text-align: center; user-select: none; }
+.repository-diff-line code { flex: 1; min-width: 0; color: inherit; font: inherit; white-space: pre; }
+.repository-diff-line.is-add { background: var(--prayu-diff-add-soft); border-left-color: var(--prayu-diff-add); }
+.repository-diff-line.is-remove { background: var(--prayu-diff-delete-soft); border-left-color: var(--prayu-diff-delete); }
+.repository-diff-line.is-add .repository-diff-marker { color: color-mix(in srgb, var(--prayu-diff-add) 72%, var(--prayu-text)); }
+.repository-diff-line.is-remove .repository-diff-marker { color: color-mix(in srgb, var(--prayu-diff-delete) 72%, var(--prayu-text)); }
+.repository-diff-line.is-meta { color: var(--muted); }
+.workbench-sidecar .repository-diff-hunks { max-height: 260px; font-size: 9px; }

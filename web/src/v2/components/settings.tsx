@@ -8,12 +8,18 @@ import {
   applyPrayuGlassSettings,
   applyPrayuTheme,
   defaultPrayuGlassSettings,
+  defaultPrayuReviewColors,
   prayuGlassPresets,
   readPrayuGlassSettings,
+  readPrayuReviewColors,
   readPrayuThemePreference,
   resetPrayuGlassSettings,
+  resetPrayuReviewColors,
+  savePrayuReviewColors,
+  usePrayuTheme,
   type PrayuGlassPreset,
   type PrayuGlassSettings,
+  type PrayuReviewColors,
   type PrayuThemePreference,
 } from "../../lib/appearance";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
@@ -218,6 +224,11 @@ function AppearanceSettings() {
   const { t } = useLocale();
   const [theme, setTheme] = useState<PrayuThemePreference>(() => readPrayuThemePreference());
   const [glass, setGlass] = useState<PrayuGlassSettings>(() => readPrayuGlassSettings());
+  const appliedTheme = usePrayuTheme();
+  const [reviewColors, setReviewColors] = useState<PrayuReviewColors>(() => readPrayuReviewColors()[appliedTheme]);
+  useEffect(() => {
+    setReviewColors(readPrayuReviewColors()[appliedTheme]);
+  }, [appliedTheme]);
   const select = (next: PrayuThemePreference) => {
     setTheme(next);
     applyPrayuTheme(next);
@@ -244,6 +255,20 @@ function AppearanceSettings() {
     glass.frost === defaultPrayuGlassSettings.frost &&
     glass.brightness === defaultPrayuGlassSettings.brightness &&
     glass.glow === defaultPrayuGlassSettings.glow;
+  const updateReviewColor = (key: "add" | "remove", value: string) => {
+    setReviewColors(savePrayuReviewColors(appliedTheme, key === "add" ? { add: value } : { remove: value }));
+  };
+  const resetReviewColors = () => {
+    setReviewColors(resetPrayuReviewColors(appliedTheme));
+  };
+  const appliedThemeLabel = {
+    light: t("浅色", "Light"),
+    dark: t("深色", "Dark"),
+    glass: t("雾透", "Mist"),
+  }[appliedTheme];
+  const isDefaultReviewColors =
+    reviewColors.add === defaultPrayuReviewColors[appliedTheme].add &&
+    reviewColors.remove === defaultPrayuReviewColors[appliedTheme].remove;
   return <><h1>{t("外观", "Appearance")}</h1><section className="v2-settings-section"><h2>{t("主题与材质", "Theme & materials")}</h2>
     <div className="v2-settings-card v2-appearance-card">
       <div className="v2-theme-options" role="group" aria-label={t("应用主题", "App theme")}>
@@ -257,6 +282,28 @@ function AppearanceSettings() {
         </button>)}</div>
       <p>{t("系统模式随设备设置切换浅色与深色。雾透采用灰蓝透色与轻盈的磨砂质感；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "System follows your device’s light or dark appearance. Mist combines a muted blue-gray tint with light frosted glass; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
     </div></section>
+    <section className="v2-settings-section" aria-label={t("审阅配色", "Review colors")}>
+      <h2>{t("审阅配色", "Review colors")}</h2>
+      <div className="v2-settings-card">
+        <SettingRow detail={t(`新增行与 + 符号按当前${appliedThemeLabel}主题调和；修改立即生效。`, `Added lines and the + marker follow the current ${appliedThemeLabel.toLowerCase()} theme; changes apply immediately.`)} title={t("新增色", "Added color")}>
+          <label className="v2-review-color-control">
+            <input type="color" aria-label={t("新增色", "Added color")} value={reviewColors.add}
+              onChange={(event) => updateReviewColor("add", event.currentTarget.value)} />
+            <code>{reviewColors.add.toUpperCase()}</code>
+          </label>
+        </SettingRow>
+        <SettingRow detail={t(`删除行与 − 符号按当前${appliedThemeLabel}主题调和；修改立即生效。`, `Removed lines and the − marker follow the current ${appliedThemeLabel.toLowerCase()} theme; changes apply immediately.`)} title={t("删除色", "Removed color")}>
+          <label className="v2-review-color-control">
+            <input type="color" aria-label={t("删除色", "Removed color")} value={reviewColors.remove}
+              onChange={(event) => updateReviewColor("remove", event.currentTarget.value)} />
+            <code>{reviewColors.remove.toUpperCase()}</code>
+          </label>
+        </SettingRow>
+        <SettingRow detail={t("配色按浅色、深色与雾透分别保存；切换主题后自动载入对应颜色。", "Colors are saved separately for Light, Dark, and Mist, and load with the active theme.")} title={t("配色默认值", "Color defaults")}>
+          <button className="v2-setting-link" disabled={isDefaultReviewColors} onClick={resetReviewColors} type="button">{t("恢复默认", "Reset to defaults")}</button>
+        </SettingRow>
+      </div>
+    </section>
     {theme === "glass" && <section className="v2-settings-section" aria-label={t("雾透玻璃参数", "Mist glass tuning")}>
       <h2>{t("雾透材质", "Mist material")}</h2>
       <div className="v2-settings-card v2-glass-settings-card">

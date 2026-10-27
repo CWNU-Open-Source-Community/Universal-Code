@@ -343,6 +343,9 @@ describe("V2 appearance and mist glass controls", () => {
   afterEach(() => {
     window.localStorage.removeItem("prayu.theme");
     window.localStorage.removeItem("prayu.glass");
+    window.localStorage.removeItem("prayu.reviewColors");
+    document.documentElement.style.removeProperty("--prayu-diff-add");
+    document.documentElement.style.removeProperty("--prayu-diff-delete");
   });
 
   it("reveals glass tuning controls when glass theme is selected and syncs CSS variables", async () => {
@@ -396,6 +399,43 @@ describe("V2 appearance and mist glass controls", () => {
     expect(document.documentElement.style.getPropertyValue("--prayu-glass-brightness-white")).toBe("0");
     expect(document.documentElement.style.getPropertyValue("--prayu-glass-glow")).toBe("0");
     expect(resetButton).toBeDisabled();
+  });
+
+  it("edits review colors per theme and restores the theme default", async () => {
+    window.localStorage.setItem("prayu.theme", "light");
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={new QueryClient()}>
+      <V2Settings client={{} as APIClient} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+        section="appearance" threadID="" workspaces={[]} />
+    </QueryClientProvider>);
+
+    const themeGroup = screen.getByRole("group", { name: "应用主题" });
+    await user.click(within(themeGroup).getByRole("button", { name: "深色" }));
+    const added = screen.getByLabelText("新增色");
+    const removed = screen.getByLabelText("删除色");
+    await waitFor(() => expect(added).toHaveValue("#7ee787"));
+    expect(removed).toHaveValue("#ffa198");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#7ee787");
+
+    fireEvent.change(added, { target: { value: "#66ccff" } });
+    expect(added).toHaveValue("#66ccff");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#66ccff");
+    expect(JSON.parse(window.localStorage.getItem("prayu.reviewColors") ?? "{}")).toEqual({
+      dark: { add: "#66ccff", remove: "#ffa198" },
+    });
+
+    await user.click(within(themeGroup).getByRole("button", { name: "浅色" }));
+    await waitFor(() => expect(screen.getByLabelText("新增色")).toHaveValue("#1a7f37"));
+    await user.click(within(themeGroup).getByRole("button", { name: "深色" }));
+    await waitFor(() => expect(screen.getByLabelText("新增色")).toHaveValue("#66ccff"));
+
+    const reset = screen.getByRole("button", { name: "恢复默认" });
+    expect(reset).toBeEnabled();
+    await user.click(reset);
+    expect(screen.getByLabelText("新增色")).toHaveValue("#7ee787");
+    expect(document.documentElement.style.getPropertyValue("--prayu-diff-add")).toBe("#7ee787");
+    expect(window.localStorage.getItem("prayu.reviewColors")).toBeNull();
+    expect(reset).toBeDisabled();
   });
 });
 

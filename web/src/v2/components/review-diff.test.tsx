@@ -3,7 +3,8 @@ import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../../lib/locale";
 import { fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { parseReviewDiff, ReviewDiff } from "./review-diff";
+import { parseReviewDiff } from "../../lib/review-diff";
+import { ReviewDiff } from "./review-diff";
 
 const patch = "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -7,3 +9,3 @@ result\n unchanged\n-old value\n+new value\n last\n\\ No newline at end of file";
 

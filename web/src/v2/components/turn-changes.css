@@ -41,8 +41,8 @@
 .v2-change-diff-line { display: flex; width: max-content; min-width: 100%; }
 .v2-change-diff-line > span { flex: 0 0 44px; text-align: right; padding-right: 12px; color: var(--v2-muted); user-select: none; }
 .v2-change-diff-line code { white-space: pre; font: inherit; padding-right: 16px; }
-.v2-change-diff-line.is-add { background: color-mix(in srgb, var(--prayu-diff-add) 12%, transparent); }
-.v2-change-diff-line.is-delete { background: color-mix(in srgb, var(--prayu-diff-delete) 12%, transparent); }
+.v2-change-diff-line.is-add { background: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength, 14%), transparent); }
+.v2-change-diff-line.is-delete { background: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength, 12%), transparent); }
 .v2-change-diff-line.is-hunk, .v2-change-diff-line.is-meta { color: var(--v2-muted); }
 .v2-change-more-lines { margin: 12px 16px; padding: 6px 10px; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-control); }
 .v2-change-dialog > footer { padding: 9px 18px; color: var(--v2-muted); font-size: 12px; border-top: 1px solid var(--v2-border); }

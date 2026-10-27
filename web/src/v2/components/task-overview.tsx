@@ -9,7 +9,8 @@ import { ErrorState, LoadingState, StatusBadge } from "../../components/common";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { PlanDeliveryPanel } from "../../components/run-workspace";
 import type { ReviewCommentResult } from "../review-comment-draft";
-import { DiffWrapButton, parseReviewDiff, ReviewDiff } from "./review-diff";
+import { DiffWrapButton, ReviewDiff } from "./review-diff";
+import { parseReviewDiff } from "../../lib/review-diff";
 import "./task-delivery.css";
 
 

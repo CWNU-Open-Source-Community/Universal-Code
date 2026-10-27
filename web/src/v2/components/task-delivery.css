@@ -50,8 +50,8 @@
 .v2-delivery-diff.is-wrapped .v2-diff-line { min-width: 0; }
 .v2-delivery-diff.is-wrapped .v2-diff-line code { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-delivery-diff.is-wrapped .v2-diff-line-ref { align-items: start; }
-.v2-diff-line.add { background: color-mix(in srgb, var(--prayu-diff-add) 12%, transparent); }
-.v2-diff-line.remove { background: color-mix(in srgb, var(--prayu-diff-delete) 12%, transparent); }
+.v2-diff-line.add { background: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength, 14%), transparent); }
+.v2-diff-line.remove { background: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength, 12%), transparent); }
 .v2-task-delivery .v2-diff-line-ref { display: inline-grid; grid-template-columns: 36px 36px; flex-shrink: 0; border: 0; border-right: 1px solid var(--v2-border); border-radius: 0; background: transparent; padding: 0 4px; margin-right: 8px; min-height: 24px; font: inherit; color: var(--v2-muted); text-align: right; }
 .v2-task-delivery label { display: grid; gap: 6px; }
 .v2-task-delivery input, .v2-task-delivery select, .v2-task-delivery textarea { width: 100%; min-width: 0; padding: 8px 10px; font: inherit; }

@@ -231,4 +231,27 @@ describe("RepositoryDiffPanel", () => {
     expect(screen.getByText("已截断")).toBeVisible();
     expect(screen.getByText("@@ diff truncated by repository_diff.v1 @@")).toBeVisible();
   });
+
+  it("renders parsed working-tree hunks by line instead of one monochrome block", async () => {
+    const patch = "diff --git a/src/main.ts b/src/main.ts\nindex 1111111..2222222 100644\n--- a/src/main.ts\n+++ b/src/main.ts\n@@ -8,3 +8,3 @@\n const a = 1;\n-old value\n+new value\n const b = 2;\n\\ No newline at end of file\n";
+    const repositoryDiff = vi.fn().mockResolvedValue({ available: true, base_head: "head", returned_count: 1,
+      total_patch_bytes: patch.length, omitted_count: 0, redaction_count: 0,
+      items: [{ path: "src/main.ts", staging: "unmodified", worktree: "modified", content_state: "text",
+        patch, added_lines: 1, deleted_lines: 1, statistics_complete: true }] });
+    const client = { repositoryDiff } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={queryClient}>
+      <RepositoryDiffPanel client={client} workspaceID="workspace-1" />
+    </QueryClientProvider>);
+
+    const item = (await screen.findByText("src/main.ts")).closest("article")!;
+    expect(item.querySelector(".repository-diff-preamble")).toHaveTextContent("diff --git a/src/main.ts b/src/main.ts");
+    expect(item.querySelector(".repository-diff-hunk-heading")).toHaveTextContent("@@ -8,3 +8,3 @@");
+    expect(item.querySelector(".repository-diff-line.is-remove")).toHaveTextContent("-old value");
+    expect(item.querySelector(".repository-diff-line.is-add")).toHaveTextContent("+new value");
+    expect(item.querySelector(".repository-diff-line.is-context")).toHaveTextContent("const a = 1;");
+    expect(item.querySelector(".repository-diff-line.is-meta")).toHaveTextContent("No newline at end of file");
+    expect(item.querySelectorAll(".repository-diff-line")).toHaveLength(5);
+    expect(container.querySelector(".repository-diff-line")?.closest("pre")).toBeNull();
+  });
 });

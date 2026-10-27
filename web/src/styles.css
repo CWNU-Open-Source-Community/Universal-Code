@@ -572,8 +572,8 @@ td code { font-size: 11px; }
 .unified-diff-marker { color: var(--muted); text-align: center; user-select: none; }
 .unified-diff-line.is-add { background: var(--prayu-diff-add-soft); }
 .unified-diff-line.is-delete { background: var(--prayu-diff-delete-soft); }
-.unified-diff-line.is-add .unified-diff-marker { color: var(--prayu-diff-add); }
-.unified-diff-line.is-delete .unified-diff-marker { color: var(--prayu-diff-delete); }
+.unified-diff-line.is-add .unified-diff-marker { color: color-mix(in srgb, var(--prayu-diff-add) 72%, var(--prayu-text)); }
+.unified-diff-line.is-delete .unified-diff-marker { color: color-mix(in srgb, var(--prayu-diff-delete) 72%, var(--prayu-text)); }
 .unified-diff-line.is-hunk { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); color: var(--muted); }
 .unified-diff-line.is-hunk > code, .unified-diff-line.is-meta > code { grid-column: 2 / -1; }
 .unified-diff-line.is-hunk > span:not(.unified-diff-marker), .unified-diff-line.is-meta > span { display: none; }
@@ -2570,10 +2570,12 @@ body { background: transparent; }
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
   --prayu-success: var(--prayu-text);
   --prayu-warning: var(--prayu-text);
-  --prayu-diff-add: #9cd4ae;
-  --prayu-diff-delete: var(--prayu-danger);
-  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
-  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-diff-add: #7ee787;
+  --prayu-diff-delete: #ffa198;
+  --prayu-diff-add-strength: 20%;
+  --prayu-diff-delete-strength: 18%;
+  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength), var(--prayu-surface-solid));
+  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength), var(--prayu-surface-solid));
   --prayu-glass-fill: rgb(26 26 26 / 86%);
   --prayu-glass-fill-strong: rgb(30 30 30 / 96%);
   --prayu-glass-highlight: rgb(255 255 255 / 30%);
@@ -2607,15 +2609,17 @@ body { background: transparent; }
   --prayu-danger: #b42318;
   --prayu-success: var(--prayu-text);
   --prayu-warning: var(--prayu-text);
-  --prayu-diff-add: #18673c;
+  --prayu-diff-add: #1a7f37;
+  --prayu-diff-add-strength: 14%;
   --prayu-glass-fill: rgb(255 255 255 / 94%);
   --prayu-glass-fill-strong: rgb(255 255 255 / 98%);
   --prayu-glass-highlight: rgb(255 255 255 / 92%);
   --prayu-glass-shadow: rgb(0 0 0 / 18%);
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
-  --prayu-diff-delete: var(--prayu-danger);
-  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
-  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-diff-delete: #cf222e;
+  --prayu-diff-delete-strength: 12%;
+  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength), var(--prayu-surface-solid));
+  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength), var(--prayu-surface-solid));
   --prayu-terminal-bg: #ffffff;
   --prayu-terminal-control: #f7f7f8;
   --prayu-terminal-control-hover: #ececef;
@@ -2667,7 +2671,8 @@ body { background: transparent; }
   --prayu-danger-on-dark: #f38ba8;
   --prayu-success: #40a02b;
   --prayu-warning: #fe640b;
-  --prayu-diff-add: #40a02b;
+  --prayu-diff-add: #3e7659;
+  --prayu-diff-add-strength: 12%;
   --prayu-glass-fill: var(--dsh-glass-card);
   --prayu-glass-fill-strong: var(--dsh-glass-popover);
   --prayu-glass-highlight: rgb(255 255 255 / 42%);
@@ -2675,9 +2680,10 @@ body { background: transparent; }
   --prayu-elevation-panel: var(--dsh-glass-edge), var(--dsh-glass-drop);
   --prayu-elevation-floating: var(--dsh-glass-edge), var(--dsh-glass-input-shadow);
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
-  --prayu-diff-delete: var(--prayu-danger);
-  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
-  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-diff-delete: #955151;
+  --prayu-diff-delete-strength: 10%;
+  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength), var(--prayu-surface-solid));
+  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength), var(--prayu-surface-solid));
   --prayu-terminal-bg: #eff1f5;
   --prayu-terminal-control: rgb(38 49 72 / 6%);
   --prayu-terminal-control-hover: rgb(38 49 72 / 10%);
@@ -2747,10 +2753,13 @@ body { background: transparent; }
     --prayu-danger-soft: Canvas;
     --prayu-success: CanvasText;
     --prayu-warning: CanvasText;
-    --prayu-diff-add: CanvasText;
-    --prayu-diff-delete: CanvasText;
-    --prayu-diff-add-soft: Canvas;
-    --prayu-diff-delete-soft: Canvas;
+    /* Inline user review colors must not win over forced-colors. */
+    --prayu-diff-add: CanvasText !important;
+    --prayu-diff-delete: CanvasText !important;
+    --prayu-diff-add-strength: 0% !important;
+    --prayu-diff-delete-strength: 0% !important;
+    --prayu-diff-add-soft: Canvas !important;
+    --prayu-diff-delete-soft: Canvas !important;
     --prayu-glass-fill: Canvas;
     --prayu-glass-fill-strong: Canvas;
     --prayu-glass-highlight: transparent;
