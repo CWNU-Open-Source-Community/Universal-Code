@@ -567,6 +567,21 @@ describe("projectThreadNarrative", () => {
       changeSourceID: "part-1",
     }));
   });
+
+  it("keeps normalized display text and replay identities while identifying the contributing bodies", () => {
+    const projected = projectThreadNarrative([
+      item({ id: "part-1", sequence: 1, detail: "    first();\n" }),
+      item({ id: "part-2", sequence: 2, detail: "\n\tsecond();  \n" }),
+      item({ id: "ending", sequence: 3, detail: "\nfirst();\n\nsecond();\n" }),
+    ]);
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({
+      kind: "assistant", text: "first();\n\nsecond();",
+      messageIDs: ["part-1", "part-2", "ending"],
+      textMessageIDs: ["part-1", "part-2"],
+      branchSourceID: "ending", changeSourceID: "part-1",
+    });
+  });
 });
 
 it("localizes generated activity labels while preserving original messages, commands, and evidence", () => {

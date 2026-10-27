@@ -122,11 +122,14 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
   } });
   const phase = detail.data?.mode.phase;
   const proposal = detail.data?.plan_delivery?.proposal;
+  const selection = detail.data?.plan_delivery?.selection;
+  const confirmed = selection?.proposal_id === proposal?.id
+    ? proposal?.directions.find((direction) => direction.ordinal === selection?.direction_ordinal) : undefined;
   const latest = choice?.proposalID === proposal?.id ? proposal?.directions.find((item) => item.ordinal === choice?.direction) : undefined;
   const ready = available && active && !working && !mutation.isPending && !attempt && !damaged && !detail.isError && !detail.isPending;
   const show = () => {
     setOpen(true);
-    if (proposal?.directions.length === 1) setChoice({ proposalID: proposal.id, direction: proposal.directions[0].ordinal });
+    if (phase === "plan" && !confirmed && proposal?.directions.length === 1) setChoice({ proposalID: proposal.id, direction: proposal.directions[0].ordinal });
     else if (choice?.proposalID !== proposal?.id) setChoice(null);
     void detail.refetch();
   };
@@ -150,7 +153,7 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
     </div>
     {open && createPortal(<div className="v2-plan-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <section className="v2-thread-plan" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="v2-plan-title">
-        <header><h2 id="v2-plan-title">{phase === "plan" ? t("确认计划", "Confirm plan") : t("任务计划", "Task plan")}</h2>
+        <header><h2 id="v2-plan-title">{phase === "plan" && !confirmed ? t("确认计划", "Confirm plan") : t("任务计划", "Task plan")}</h2>
           <button type="button" ref={closeButton} aria-label={t("关闭计划", "Close plan")} onClick={() => setOpen(false)}><X size={18} /></button></header>
         <p className="v2-plan-help">{t("先规划时先分析和形成方案。确认后在同一对话执行；后续修改要求仍可直接发消息。", "Planning analyzes the task and proposes an approach. Confirm to execute in this conversation; send further messages to change requirements.")}</p>
         {detail.isPending && <p role="status">{t("正在读取计划…", "Loading plan…")}</p>}
@@ -169,10 +172,12 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
         </section>}
         {!attempt && shownObservation && <p role="status">{observationText(shownObservation, t)}</p>}
         {!detail.isError && proposal && <div className="v2-plan-directions">
-          {proposal.directions.map((direction) => <section key={`${proposal.id}:${direction.ordinal}`}>
-            <label className="v2-plan-choice"><input type="radio" name="plan-direction" checked={choice?.proposalID === proposal.id && choice.direction === direction.ordinal}
-              disabled={Boolean(attempt) || phase !== "plan"} onChange={() => setChoice({ proposalID: proposal.id, direction: direction.ordinal })} />
-              <strong>{direction.title}</strong></label>
+          {proposal.directions.map((direction) => <section key={`${proposal.id}:${direction.ordinal}`}
+            className={confirmed?.ordinal === direction.ordinal ? "is-confirmed" : undefined}>
+            <label className="v2-plan-choice"><input type="radio" name="plan-direction" checked={confirmed
+              ? confirmed.ordinal === direction.ordinal : phase === "plan" && choice?.proposalID === proposal.id && choice.direction === direction.ordinal}
+              disabled={Boolean(attempt) || phase !== "plan" || Boolean(confirmed)} onChange={() => setChoice({ proposalID: proposal.id, direction: direction.ordinal })} />
+              <strong>{direction.title}</strong>{" "}{confirmed?.ordinal === direction.ordinal && <span className="v2-plan-confirmed">{t("已确认", "Confirmed")}</span>}</label>
             <p>{direction.summary}</p>
             {direction.tradeoffs.length > 0 && <ul>{direction.tradeoffs.map((text, index) => <li key={index}>{text}</li>)}</ul>}
             <details><summary>{t(`查看步骤与验收标准（${direction.modules.length} 项）`, `View steps and acceptance criteria (${direction.modules.length})`)}</summary>
@@ -184,7 +189,7 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
         </div>}
         {!detail.isPending && !detail.isError && !proposal && <p>{phase === "plan" ? t("尚无可确认的计划。请在对话中提出需求或补充要求，等待计划形成。", "No plan is ready to confirm. Send your requirements in the conversation and wait for a plan.") : t("当前采用默认处理方式。需要先讨论方案时，可开启输入框旁的“计划模式”。", "The default work mode is active. Enable Plan mode beside the composer to discuss an approach first.")}</p>}
         {working && <p className="v2-plan-help">{t("Agent 仍在处理消息。可以直接在对话中补充要求，待本轮处理结束后确认最新计划。", "The agent is still processing messages. Add requirements in the conversation and confirm the latest plan after this turn ends.")}</p>}
-        {phase === "plan" && proposal && <>
+        {phase === "plan" && proposal && !confirmed && <>
           {hasUnsentDraft && <p role="status">{t("输入框中还有未发送内容。请先发送修改要求并等待计划更新，再确认执行。", "The composer contains an unsent draft. Send your changes and wait for the plan to update before confirming.")}</p>}
           {!latest && <p className="v2-plan-help">{t("请选择当前方案；计划更新后需要重新核对。", "Select an approach. Review it again if the plan changes.")}</p>}
           {latest && <details><summary>{t("确认时发送的消息", "Message sent on confirmation")}</summary><p>{confirmContent}</p></details>}

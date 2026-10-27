@@ -1,6 +1,22 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { loadEnv } from "vite";
+import { loadEnv, normalizePath, type Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+
+// npm overrides cannot replace Monaco's embedded copy. Redirect its sanitizer import
+// in both Vite and the separate dependency prebundler to the installed DOMPurify.
+const monacoSanitizer = normalizePath(fileURLToPath(import.meta.resolve("monaco-editor/base/browser/domSanitize.js")));
+const monacoDOMPurify: Plugin = {
+  name: "monaco-dompurify",
+  enforce: "pre",
+  async resolveId(source, importer) {
+    if (source === "./dompurify/dompurify.js" && importer && normalizePath(importer) === monacoSanitizer) {
+      const resolved = await this.resolve("dompurify", importer, { skipSelf: true });
+      if (!resolved) throw new Error("Cannot resolve installed DOMPurify for the Monaco sanitizer");
+      return resolved;
+    }
+  },
+};
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
@@ -19,7 +35,10 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
-    plugins: [react()],
+    plugins: [react(), monacoDOMPurify],
+    optimizeDeps: {
+      rolldownOptions: { plugins: [monacoDOMPurify] },
+    },
     server: {
       host: "127.0.0.1",
       port: 5173,
@@ -39,6 +58,7 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       include: ["src/**/*.{test,spec}.{ts,tsx}"],
+      server: { deps: { inline: ["monaco-editor"] } },
       environment: "jsdom",
       globals: true,
       setupFiles: "./src/test/setup.ts",

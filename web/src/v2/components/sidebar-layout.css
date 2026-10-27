@@ -1,0 +1,12 @@
+.v2-sidebar-layout > .v2-sidebar-slot { position: relative; }
+.v2-sidebar-layout[data-resizing="true"] { transition: none; cursor: col-resize; user-select: none; }
+.v2-sidebar-resize-handle { position: absolute; z-index: 30; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; user-select: none; }
+.v2-sidebar-resize-handle[hidden] { display: none; }
+.v2-shell .v2-sidebar-resize-handle:focus-visible { outline: none; }
+.v2-sidebar-resize-handle::after { content: ""; position: absolute; inset: 10px 3px; border-radius: 2px; background: transparent; transition: background 120ms ease; }
+.v2-sidebar-resize-handle:hover::after,
+.v2-sidebar-resize-handle:focus-visible::after,
+.v2-sidebar-layout[data-resizing="true"] .v2-sidebar-resize-handle::after { background: var(--v2-accent); }
+@media (max-width: 720px) {
+  .v2-sidebar-layout > .v2-sidebar-slot { position: absolute; }
+}

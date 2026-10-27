@@ -11,13 +11,17 @@ import "./usage-settings.css";
 type Period = "today" | "30d" | "all";
 type UsageStatistics = components["schemas"]["UsageStatistics"];
 
-export function UsageSettings({ client, onOpenThread }: { client: APIClient; onOpenThread?: (id: string) => void }) {
+export function UsageSettings({ client, threadID = "", onOpenThread }: { client: APIClient; threadID?: string; onOpenThread?: (id: string) => void }) {
   const { locale, t } = useLocale();
   const [period, setPeriod] = useState<Period>("30d");
+  const [currentChat, setCurrentChat] = useState(false);
+  const scopedThreadID = currentChat ? threadID : "";
   const utcOffsetMinutes = -new Date().getTimezoneOffset();
   const query = useQuery({
-    queryKey: v2QueryKeys.usage(period, utcOffsetMinutes),
-    queryFn: ({ signal }) => client.get<UsageStatistics>("/usage", { period, utc_offset_minutes: utcOffsetMinutes }, signal),
+    queryKey: v2QueryKeys.usage(period, utcOffsetMinutes, scopedThreadID),
+    queryFn: ({ signal }) => client.get<UsageStatistics>("/usage", {
+      period, utc_offset_minutes: utcOffsetMinutes, ...(scopedThreadID ? { thread_id: scopedThreadID } : {}),
+    }, signal),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -36,7 +40,13 @@ export function UsageSettings({ client, onOpenThread }: { client: APIClient; onO
 
   return <div className="v2-usage">
     <header className="v2-usage-heading"><div><h1>{t("用量统计", "Usage")}</h1>
-      <p>{t("Universal-Code 的模型调用与本地费用", "Model usage and local costs in Universal-Code")}</p></div>
+      <p>{scopedThreadID
+        ? t("当前聊天所有轮次的模型调用与本地费用", "Model usage and local costs in the current chat")
+        : t("Universal-Code 的模型调用与本地费用", "Model usage and local costs in Universal-Code")}</p></div>
+      <div className="v2-usage-controls"><div className="v2-setting-segmented" role="group" aria-label={t("统计聊天范围", "Usage scope")}>
+        <button type="button" aria-pressed={!scopedThreadID} onClick={() => setCurrentChat(false)}>{t("所有聊天", "All chats")}</button>
+        <button type="button" aria-pressed={!!scopedThreadID} disabled={!threadID} onClick={() => setCurrentChat(true)}>{t("当前聊天", "Current chat")}</button>
+      </div></div>
       <div className="v2-usage-controls"><div className="v2-setting-segmented" role="group" aria-label={t("统计时间范围", "Usage period")}>
         {([ ["today", t("今日", "Today")], ["30d", t("近 30 天", "30 days")], ["all", t("全部", "All time")] ] as const).map(([value, label]) =>
           <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)}>{label}</button>)}

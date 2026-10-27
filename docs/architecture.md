@@ -769,8 +769,11 @@ Model projection is separate from persistence. Trusted operator, model, and Go-c
 This design contains authority rather than attempting to classify every malicious sentence. A README can still contain false or contradictory facts, and a model can still reason badly about them, but document text cannot acquire Go capabilities or silently become system/assistant history. Policy, scope, approvals, budgets, leases, and Tool Gateway remain authoritative even if a model follows an indirect injection semantically.
 
 Schema v114 extends that boundary with three deliberately non-authorizing context layers.
-`project_instruction_snapshot.v1` discovers bounded root-to-target `AGENTS.md`,
-`CLAUDE.md`, and `.prayu` guidance, records path/hash/scope/trust/applicability and
+`project_instruction_snapshot.v1` discovers bounded root-to-target guidance, selecting
+non-empty `AGENTS.override.md` ahead of same-directory `AGENTS.md`, with fallback when
+the override is absent, empty, or explicitly ignored. It also reads `CLAUDE.md`,
+`.claude/CLAUDE.md`, and `.prayu` guidance, explains superseded sources in `ignored`,
+records path/hash/scope/trust/applicability and
 why-effective metadata, and pins the full fingerprint to the Run. Live file drift is
 read-only until an operator confirms a diff bound to both the old pinned fingerprint and the
 reviewed live fingerprint, then appends a new
@@ -1416,8 +1419,10 @@ The separate Debug path starts with a user-owned terminal. Desktop can request a
 15-second-to-15-minute process-local input lease, but the bearer never crosses the
 Go boundary. Only a root Code/Deliver Supervisor with the current Debug permission
 and installed runtime adapter sees `debug_terminal`. Schema v113 admits that tool to
-the durable Supervisor call ledger with a data-preserving table migration. Each write rechecks all durable
-bindings and Shell Policy; each read is cursor-addressed, bounded, and clamped to the
+the durable Supervisor call ledger with a data-preserving table migration. Each input rechecks all durable
+bindings and host Policy; command writes also pass Shell Policy. The fixed `interrupt`
+action sends only Ctrl+C through the same lease, audit, deduplication and native authorization.
+Each read is cursor-addressed, bounded, and clamped to the
 output watermark captured when the lease was granted. Canonical model commands and
 sanitized, explicitly untrusted post-grant results are durable Supervisor evidence, while user input,
 raw PTY bytes, process environment, root paths, and bearer tokens stay in memory. A

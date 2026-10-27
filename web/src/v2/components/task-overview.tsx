@@ -1,4 +1,5 @@
 import { useLocale } from "../../lib/locale";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, FolderOpen, GitBranch, GitPullRequest, RefreshCw, ShieldCheck } from "lucide-react";
 import type { APIClient } from "../../api/client";
@@ -8,7 +9,7 @@ import { ErrorState, LoadingState, StatusBadge } from "../../components/common";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { PlanDeliveryPanel } from "../../components/run-workspace";
 import type { ReviewCommentResult } from "../review-comment-draft";
-import { ReviewDiff } from "./review-diff";
+import { DiffWrapButton, parseReviewDiff, ReviewDiff } from "./review-diff";
 import "./task-delivery.css";
 
 
@@ -96,7 +97,7 @@ export function TaskOverview({ client, threadID, onFeedback, onAddComment, onGit
       {!review.unapplied_changes.length && <p>{t("没有已记录的待应用提案。", "No recorded proposals awaiting application.")}</p>}
       {[...review.unapplied_changes].sort((left, right) => Number(right.run_id === review.current_run_id) - Number(left.run_id === review.current_run_id))
         .map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at}
-          onFeedback={feedback} onAddComment={onAddComment} onReviewFile={onReviewFile} currentRunID={review.current_run_id} />)}
+          onFeedback={feedback} onAddComment={onAddComment} onReviewFile={onReviewFile} />)}
       <h3>{t("已应用的编辑 ", "Applied edits")}<span>({review.applied_changes.length})</span></h3>
       {!review.applied_changes.length && <p>{t("尚无已记录的应用编辑。工作目录的其他改动可在提交页面核对。", "No recorded applied edits. Check other working directory changes on the commit page.")}</p>}
       {review.applied_changes.map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at} onFeedback={feedback} onAddComment={onAddComment} />)}
@@ -133,24 +134,25 @@ function CheckCard({ check, observedAt, isFetching, onFeedback }: {
     <button type="button" onClick={() => onFeedback(t(`检查：${check.title}\n结果：${check.outcome}\n版本状态：${check.revision_state}\n来源执行：${check.run_id}\n记录：${check.id}\n绑定版本：${check.recorded_revision_sha256 || t("未保存", "Not saved")}\n读取时间：${observedAt}`, `Check: ${check.title}\nResult: ${check.outcome}\nRevision status: ${check.revision_state}\nSource run: ${check.run_id}\nRecord: ${check.id}\nRecorded revision: ${check.recorded_revision_sha256 || t("未保存", "Not saved")}\nRead at: ${observedAt}`))}>{t("引用检查并继续修复", "Quote check and continue fixing")}</button>
   </article>;
 }
-function TaskChange({ change, observedAt, onFeedback, onAddComment, onReviewFile, currentRunID }: {
+function TaskChange({ change, observedAt, onFeedback, onAddComment, onReviewFile }: {
   change: ThreadReviewChange; observedAt: string; onFeedback: (context: string) => void;
   onAddComment?: (context: string) => ReviewCommentResult;
-  onReviewFile?: (target: FileEditReviewTarget) => void; currentRunID?: string;
+  onReviewFile?: (target: FileEditReviewTarget) => void;
 }) {
   const { t } = useLocale();
-  const currentLabels: Record<string, string> = { matches: t("与此记录一致", "Matches this record"), changed: t("此后已有修改", "Changed since this record"), missing: t("当前文件不存在", "File currently missing"),
-  unavailable: t("无法核对当前文件", "Could not check current file"), other_target: t("属于其他执行目录", "Belongs to another execution directory") };
+  const [wrapLines, setWrapLines] = useState(false);
+  const canWrap = useMemo(() => Boolean(change.diff && parseReviewDiff(change.diff).hunks.length), [change.diff]);
   const source = t(`文件：${change.path}${change.destination_path ? ` → ${change.destination_path}` : ""}\n来源执行：${change.run_id}\n目录：${change.workspace_id}\n编辑记录：${change.edit_id}\n原版本：${change.original_sha256}\n提案版本：${change.proposed_sha256}\n当前观测版本：${change.current_sha256 || t("不可用", "Unavailable")}\n读取时间：${observedAt}`, `File: ${change.path}${change.destination_path ? ` → ${change.destination_path}` : ""}\nSource run: ${change.run_id}\nDirectory: ${change.workspace_id}\nEdit: ${change.edit_id}\nOriginal revision: ${change.original_sha256}\nProposed revision: ${change.proposed_sha256}\nCurrent revision: ${change.current_sha256 || t("不可用", "Unavailable")}\nRead at: ${observedAt}`);
   return <article className="v2-delivery-change"><header><strong>{change.path}{change.destination_path && ` → ${change.destination_path}`}</strong>
-    <StatusBadge status={change.status} /><span>{change.status !== "applied" && change.current_match === "changed" ? t("当前内容尚不同于提案", "Current content differs from the proposal") : change.status !== "applied" && change.current_match === "matches" ? t("当前内容与提案相同，仍以应用记录为准", "Current content matches the proposal; consult the application record") : currentLabels[change.current_match] ?? t("尚无法核对", "Cannot verify yet")}</span>
-    {onReviewFile && <><span>{change.run_id === currentRunID ? t("当前执行的提案", "Current run proposal") : t("历史执行的提案", "Past run proposal")}</span>
-      <button className="v2-delivery-primary" type="button" onClick={() => onReviewFile({ runID: change.run_id,
-        editID: change.edit_id, workspaceID: change.workspace_id })}>{t("查看并审阅", "View and review")}</button></>}
-    <button type="button" onClick={() => onFeedback(source)}>{t("引用文件", "Quote file")}</button></header>
+    <div className="v2-delivery-change-actions">
+      {canWrap && <DiffWrapButton wrapLines={wrapLines} onToggle={() => setWrapLines((value) => !value)} />}
+      {onReviewFile && <button className="v2-delivery-primary" type="button" onClick={() => onReviewFile({ runID: change.run_id,
+        editID: change.edit_id, workspaceID: change.workspace_id })}>{t("查看并审阅", "View and review")}</button>}
+      <button type="button" onClick={() => onFeedback(source)}>{t("引用文件", "Quote file")}</button>
+    </div></header>
     <details><summary>{t("查看这次编辑的差异", "View this edit's diff")}</summary>
       {(change.diff_truncated || change.redacted) && <p>{t("此差异", "This diff is ")}{change.diff_truncated ? t("已截断", "Truncated") : ""}{change.redacted ? t("已脱敏", "Redacted") : ""}{t("，只引用可见内容。", "; only visible content is quoted.")}</p>}
-      {change.diff ? <ReviewDiff patch={change.diff} source={source} onFeedback={onFeedback} onAddComment={onAddComment} /> : <p>{t("未保存可显示的文本差异。", "No displayable text diff was saved.")}</p>}
+      {change.diff ? <ReviewDiff patch={change.diff} source={source} onFeedback={onFeedback} wrapLines={wrapLines} onAddComment={onAddComment} /> : <p>{t("未保存可显示的文本差异。", "No displayable text diff was saved.")}</p>}
       <details><summary>{t("编辑来源", "Edit source")}</summary><pre>{source}</pre></details>
     </details></article>;
 }

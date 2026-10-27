@@ -12,9 +12,11 @@ import { V2ConfirmDialog } from "./components/dialog";
 import { V2LazySurface } from "./components/lazy-surface";
 import { V2NetworkScopeControl, type V2NetworkMode } from "./components/network-scope-control";
 import { V2SettingsSidebar, V2Sidebar, type V2SettingsSection } from "./components/sidebar";
+import { V2SidebarLayout } from "./components/sidebar-layout";
 import { V2Titlebar } from "./components/titlebar";
 import { useV2Client } from "./client-session";
 import { v2QueryKeys } from "./query-keys";
+import { useV2ThreadUnread } from "./use-thread-unread";
 import { registerV2RecoveredTurn, useV2RestoreTurns, useV2ThreadTurn, v2TurnFailed } from "./use-thread-turn";
 import { ProjectDialog, V2WorkspaceStart } from "./components/workspace-start";
 import { useV2Navigation, type V2RunPane } from "./navigation";
@@ -257,6 +259,9 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   useV2RestoreTurns();
   const recovery = useV2RecoveryStore();
   const persistenceWarning = useV2PersistenceWarning();
+  const scopeID = useConnectionStore((state) => state.health?.data_store_id);
+  const unread = useV2ThreadUnread(client, scopeID);
+  const [readRequest, setReadRequest] = useState({ threadID: "", revision: 0 });
   useEffect(() => {
     document.documentElement.dataset.prayuDensity = readDensity();
   }, []);
@@ -309,9 +314,24 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     return () => media.removeListener?.(onChange);
   }, []);
   const [searchOpen, setSearchOpen] = useState(false);
+  const visibleChatOrder = useRef<readonly string[]>([]);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  useEffect(() => {
+    if (!searchFocusRequest || !searchOpen || !sidebarVisible) return;
+    // The drawer's visibility transition starts after the DOM commit.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const input = sidebarSlot.current?.querySelector<HTMLInputElement>(".v2-sidebar-search input");
+        input?.focus(); input?.select();
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocusRequest, searchOpen, sidebarVisible]);
   const [threadSearch, setThreadSearch] = useState("");
   const [appliedThreadSearch, setAppliedThreadSearch] = useState("");
   const [includeArchivedSearch, setIncludeArchivedSearch] = useState(false);
+  const [searchCurrentThread, setSearchCurrentThread] = useState(false);
+  const searchThreadID = searchCurrentThread ? selectedThreadID : "";
   const [searchComposing, setSearchComposing] = useState(false);
   const normalizedThreadSearch = threadSearch.trim();
   const searchTooLong = Array.from(normalizedThreadSearch).length > 256;
@@ -399,9 +419,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       (query.state.data?.pages.length ?? 1) === 1 ? 15_000 : false,
   });
   const messageSearchQuery = useInfiniteQuery({
-    queryKey: ["v2", "threads", "active", "messages", { q: appliedThreadSearch, include_archived: includeArchivedSearch }],
+    queryKey: ["v2", "threads", "active", "messages", { q: appliedThreadSearch, include_archived: includeArchivedSearch, thread_id: searchThreadID }],
     queryFn: ({ signal, pageParam }) => client.getPage<ThreadSearchResultView>("/threads/search",
-      { q: appliedThreadSearch, include_archived: includeArchivedSearch, limit: 50 }, pageParam, signal),
+      { q: appliedThreadSearch, include_archived: includeArchivedSearch, limit: 50,
+        ...(searchThreadID ? { thread_id: searchThreadID } : {}) }, pageParam, signal),
     initialPageParam: "", getNextPageParam: (last) => last.page.next_cursor || undefined,
     enabled: Boolean(appliedThreadSearch) && !searchPending && !searchTooLong,
     refetchInterval: (query) => sidebarVisible && surface === "conversation" && !searchPending &&
@@ -521,11 +542,22 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const closeNavigationSidebar = () => {
     if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarVisible(false);
   };
-  const openConversation = (threadID: string) => {
+  const openConversation = (threadID: string, onAccepted?: () => void) => {
     setBackgroundCreations((current) => current.filter((thread) => thread.id !== threadID));
     updateModelSetupToken("");
-    navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) });
+    navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) }, false, onAccepted);
     closeNavigationSidebar();
+  };
+  const openSidebarConversation = (threadID: string) => openConversation(threadID, () => {
+    unread.open(threadID);
+    setReadRequest((current) => ({ threadID, revision: current.revision + 1 }));
+  });
+  const openAdjacentChat = (direction: -1 | 1) => {
+    if (!selectedThreadID || surface !== "conversation" || view !== "conversation" || route.tool || searchOpen) return false;
+    const index = visibleChatOrder.current.indexOf(selectedThreadID);
+    const next = index < 0 ? undefined : visibleChatOrder.current[index + direction];
+    if (next) openSidebarConversation(next);
+    // At an edge, consume the shortcut without wrapping or leaving this chat.
   };
   const startNew = (destination?: string) => {
     updateModelSetupToken("");
@@ -594,9 +626,20 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     closeNavigationSidebar();
   };
 
+  const openSearch = (currentThread: boolean) => {
+    if (currentThread && (!selectedThreadID || surface !== "conversation" || route.tool || view !== "conversation")) return false;
+    if (surface === "settings") returnFromSettings();
+    setSearchCurrentThread(currentThread);
+    setSidebarVisible(true);
+    setSearchOpen(true);
+    setSearchFocusRequest((request) => request + 1);
+  };
   useChatShortcuts({
     newChat: () => startNew(),
-    search: () => { if (surface === "settings") returnFromSettings(); setSidebarVisible(true); setSearchOpen(true); },
+    search: () => openSearch(false),
+    findInChat: () => openSearch(true),
+    previousChat: () => openAdjacentChat(-1),
+    nextChat: () => openAdjacentChat(1),
     settings: openSettings,
     sidebar: () => setSidebarVisible(!sidebarVisible),
     composer: () => {
@@ -609,9 +652,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       onToggleSidebar={() => setSidebarVisible(!sidebarVisible)} sidebarVisible={sidebarVisible} sidebarToggleRef={sidebarToggle} />
     <button aria-label={t("关闭侧栏", "Close sidebar")} className="v2-sidebar-backdrop" aria-hidden={!sidebarVisible} inert={!sidebarVisible}
       onClick={() => setSidebarVisible(false)} type="button" />
-    <div className="v2-shell-body">
-      <div className="v2-sidebar-slot" ref={sidebarSlot} aria-hidden={!sidebarVisible} inert={!sidebarVisible}>
-      {surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
+    <V2SidebarLayout sidebarRef={sidebarSlot} visible={sidebarVisible} narrow={narrowLayout}
+      sidebar={surface === "settings" ? <V2SettingsSidebar onBack={returnFromSettings}
         onSelect={setSettingsSection} section={settingsSection} /> : <V2Sidebar
           onArchive={setArchiveCandidate} onNewConversation={() => startNew()} onOpenModels={() => openModels(newConversation)}
           onNewInProject={(id) => startNew(id)} client={client}
@@ -631,13 +673,18 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           inspectorActive={view === "inspector"}
           onSearchOpen={(open) => {
             setSearchOpen(open);
+            setSearchCurrentThread(false);
             if (!open) { setThreadSearch(""); setSearchComposing(false); }
-          }} onSelectThread={openConversation} searchOpen={searchOpen}
+          }} onSelectThread={openSidebarConversation} searchOpen={searchOpen}
+          onVisibleChatOrder={(ids) => { visibleChatOrder.current = ids; }}
+          unreadThreadIDs={unread.unreadThreadIDs} onReadStateChange={unread.setRead}
           search={threadSearch} appliedSearch={appliedThreadSearch} searchPending={searchPending}
           searchTooLong={searchTooLong}
           searchResults={searchResults} includeArchived={includeArchivedSearch} onIncludeArchivedChange={setIncludeArchivedSearch}
+          searchCurrentThread={Boolean(searchThreadID)} onSearchCurrentThreadChange={setSearchCurrentThread}
           onSelectSearchResult={(result) => {
-            navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) });
+            navigate({ kind: "thread", threadID: result.thread_id, ...(result.message_id ? { messageID: result.message_id } : {}) },
+              false, () => unread.open(result.thread_id));
             closeNavigationSidebar();
           }}
           onSearchChange={(value) => { setThreadSearch(value); if (!value) setSearchComposing(false); }}
@@ -649,8 +696,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           refreshing={sidebarQuery.isFetching && !sidebarQuery.isLoading && !sidebarQuery.isFetchingNextPage}
           onRetry={() => void (sidebarQuery.isFetchNextPageError ? sidebarQuery.fetchNextPage() : sidebarQuery.refetch())}
           onLoadMore={() => void sidebarQuery.fetchNextPage()} onRefresh={() => void sidebarQuery.refetch()}
-          selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}
-      </div>
+          selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}>
       {editingProject && <ProjectDialog client={client} workspace={editingProject} onClose={() => setEditingProject(null)}
         onSaved={(workspace) => setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace])} />}
       <div className="v2-product-surface" inert={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}
@@ -765,6 +811,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               type="button">{t("加载更多项目", "Load more projects")}</button>}
             workspaceID={workspaceID} workspaces={workspaces} />
           : <V2Conversation client={client} onArchive={setArchiveCandidate}
+            replyReading={unread.reading} readRequest={readRequest.threadID === selectedThreadID ? readRequest.revision : 0}
+            readingEnabled={!(narrowLayout && sidebarVisible) && !archiveCandidate && !editingProject && !moveMutation.isPending}
             onOpenThread={openConversation}
             onBranchCreated={(thread) => {
               if (routeRef.current === route) openConversation(thread.id);
@@ -787,7 +835,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}
             threadID={selectedThreadID} workspaces={workspaces} />}
       </div>
-    </div>
+    </V2SidebarLayout>
     {backgroundCreations.length > 0 && <div className="v2-toast" role="status">
       {backgroundCreations.map((thread) => <div key={thread.id}>
         {t("对话已创建：", "Conversation created: ")}{thread.title}
@@ -801,6 +849,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       <button className="v2-retry-action" onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">{t("重试加载", "Retry loading")}</button>
     </div>}
     {persistenceWarning && <div className="v2-toast" role={recovery ? "alert" : "status"}>{persistenceWarning}</div>}
+    {unread.error && <div className="v2-toast" role="status">
+      {t("未读回复暂未同步，已有标记会保留。", "Unread replies could not be refreshed. Existing markers have been kept.")}
+      <button className="v2-retry-action" type="button" onClick={() => void unread.retry()}>{t("重试", "Retry")}</button>
+    </div>}
     <V2ConfirmDialog busy={archiveMutation.isPending} confirmLabel={t("归档", "Archive")} description={t("此对话会从侧栏隐藏，但消息、执行记录和审计证据都会保留。你可以随时从设置中恢复。", "This conversation will be hidden from the sidebar. Messages, execution records, and audit evidence will be kept. You can restore it in Settings at any time.")}
       onCancel={() => setArchiveCandidate(null)} onConfirm={() => archiveCandidate && archiveMutation.mutate(archiveCandidate)}
       open={Boolean(archiveCandidate)} title={t("归档这个对话？", "Archive this conversation?")} />
