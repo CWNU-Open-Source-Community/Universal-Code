@@ -9,6 +9,8 @@ import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { WorkspaceFileQuote, type WorkspaceQuoteResult } from "./workspace-file-quote";
 import { FileProposalEditor } from "./file-proposal-editor";
 import { useFileEditLeave } from "./file-edit-drafts";
+import { SafeMarkdown } from "./safe-markdown";
+import "./workspace-explorer.css";
 
 export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath = ".", initialLine, onSelectReference, onPathChange, onQuote, onReturnToDraft }: {
   client: APIClient;
@@ -23,16 +25,24 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
 }) {
   const { t } = useLocale();
   const leave = useFileEditLeave();
-  const [path, setPath] = useState(initialPath);
-  const [highlightLine, setHighlightLine] = useState<number | undefined>(initialLine);
+  const [location, setLocation] = useState({ path: initialPath, line: initialLine, view: "source" as "source" | "preview" });
+  const { path, line: highlightLine } = location;
   const highlightedLineRef = useRef<HTMLDivElement>(null);
   const explorerRef = useRef<HTMLElement>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const operationKeys = useRef(new Map<string, string>());
+  const reportedNavigation = useRef<{ workspaceID: string; runID: string; path: string } | undefined>(undefined);
   useEffect(() => {
-    setPath(initialPath);
-    setHighlightLine(initialLine);
+    const reported = reportedNavigation.current;
+    // Parents can mirror onPathChange while clearing the previous citation line.
+    // That acknowledgment must not replace the line selected by a search result.
+    const isNavigationEcho = reported?.workspaceID === workspaceID && reported.runID === runID &&
+      reported.path === initialPath && initialLine === undefined;
+    reportedNavigation.current = undefined;
+    if (!isNavigationEcho) {
+      setLocation({ path: initialPath, line: initialLine, view: "source" });
+    }
     setSearchInput("");
     setSearchQuery("");
     operationKeys.current.clear();
@@ -47,7 +57,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     if (highlightLine && highlightedLineRef.current) {
       highlightedLineRef.current.scrollIntoView?.({ block: "center", behavior: "smooth" });
     }
-  }, [highlightLine, path, query.data]);
+  }, [location, query.data]);
   const search = useQuery({
     queryKey: ["workspace", workspaceID, "search", searchQuery],
     queryFn: ({ signal }) => client.workspaceSearch(workspaceID, searchQuery, signal),
@@ -68,9 +78,11 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     mutationFn: (sourcePath: string) => client.issueFileEditProposalSource(runID, sourcePath),
   });
   const parent = useMemo(() => parentPath(path), [path]);
-  const navigate = (nextPath: string) => leave(() => {
+  const navigate = (nextPath: string, nextLine?: number) => leave(() => {
     proposalSource.reset();
-    setPath(nextPath);
+    setLocation({ path: nextPath, line: nextLine, view: "source" });
+    reportedNavigation.current = onPathChange && (nextPath !== initialPath || initialLine !== undefined)
+      ? { workspaceID, runID, path: nextPath } : undefined;
     onPathChange?.(nextPath);
   });
 
@@ -78,7 +90,11 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     event.preventDefault();
     const normalized = searchInput.trim();
     if (normalized && normalized === searchInput && normalized.length <= 128) {
-      setSearchQuery(normalized);
+      if (normalized === searchQuery && search.isError) {
+        void search.refetch();
+      } else {
+        setSearchQuery(normalized);
+      }
     }
   };
 
@@ -184,22 +200,32 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
       <FileProposalEditor client={client} onClose={() => proposalSource.reset()}
         runID={runID} source={proposalSource.data} /> :
     snapshot.kind === "file" && (() => {
+      const isMarkdown = /\.(md|markdown|mdown)$/iu.test(snapshot.path);
+      const showPreview = isMarkdown && location.view === "preview";
       const lines = snapshot.content.split("\n");
       const lineOutOfRange = highlightLine !== undefined && (highlightLine < 1 || highlightLine > lines.length);
       const lineHighlighted = highlightLine !== undefined && highlightLine >= 1 && highlightLine <= lines.length;
       return <div className="explorer-file">
-        <div>
+        <div className="explorer-file-summary">
+          {isMarkdown && <div className="explorer-view-switch" role="group" aria-label={t("文件视图", "File view")}>
+            <button aria-pressed={!showPreview} className="compact-command" type="button"
+              onClick={() => setLocation((current) => ({ ...current, view: "source" }))}>{t("源码", "Source")}</button>
+            <button aria-pressed={showPreview} className="compact-command" type="button"
+              onClick={() => setLocation((current) => ({ ...current, view: "preview" }))}>{t("预览", "Preview")}</button>
+          </div>}
           <span>{t(`已显示 ${formatBytes(snapshot.returned_bytes)}`, `${formatBytes(snapshot.returned_bytes)} shown`)}</span>
           <span>{t(`共 ${formatBytes(snapshot.total_bytes)}`, `${formatBytes(snapshot.total_bytes)} total`)}</span>
         </div>
-        {lineOutOfRange && <div className="explorer-line-warning" role="alert">
+        {!showPreview && lineOutOfRange && <div className="explorer-line-warning" role="alert">
           {t(`定位到第 ${highlightLine} 行失败：超出当前显示范围（已显示 ${lines.length} 行${snapshot.truncated ? "，文件已截断" : ""}）`,
             `Failed to position line ${highlightLine}: out of loaded range (${lines.length} lines shown${snapshot.truncated ? ", truncated" : ""})`)}
         </div>}
-        {lineHighlighted && <div className="explorer-line-notice" role="status">
+        {!showPreview && lineHighlighted && <div className="explorer-line-notice" role="status">
           {t(`已定位到第 ${highlightLine} 行`, `Positioned at line ${highlightLine}`)}
         </div>}
-        <div className="explorer-file-lines">
+        {showPreview ? <section className="explorer-markdown-preview" aria-label={t("Markdown 预览", "Markdown preview")}>
+          <SafeMarkdown>{snapshot.content}</SafeMarkdown>
+        </section> : <div className="explorer-file-lines">
           {lines.map((lineContent, index) => {
             const lineNum = index + 1;
             const isHighlight = lineNum === highlightLine;
@@ -209,7 +235,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
               <span className="explorer-line-content">{lineContent}</span>
             </div>;
           })}
-        </div>
+        </div>}
       </div>;
     })()}
   </section>;
@@ -222,7 +248,7 @@ function WorkspaceSearchResults({ client, runID, pending, query, onAttach, onCle
   query: UseQueryResult<WorkspaceSearchView, Error>;
   onAttach: (path: string, digest: string) => void;
   onClear: () => void;
-  onOpen: (path: string) => void;
+  onOpen: (path: string, line?: number) => void;
 }) {
   const { t } = useLocale();
   if (query.isLoading) return <LoadingState label={t("正在搜索工作区", "Searching Workspace")} />;
@@ -236,7 +262,7 @@ function WorkspaceSearchResults({ client, runID, pending, query, onAttach, onCle
     </header>
     {data.results.length === 0 && <EmptyState>{t("没有匹配的证据", "No matching evidence")}</EmptyState>}
     {data.results.map((result) => <div className="explorer-search-result" key={result.path}>
-      <button className="search-result-open" onClick={() => onOpen(result.path)} type="button">
+      <button className="search-result-open" onClick={() => onOpen(result.path, result.line > 0 ? result.line : undefined)} type="button">
         <File aria-hidden="true" size={15} />
         <span><strong>{result.path}</strong>
           <small>{result.line > 0 ? t(`第 ${result.line} 行`, `line ${result.line}`) : result.match_kind}</small>
