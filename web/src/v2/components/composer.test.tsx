@@ -250,3 +250,34 @@ function render(ui: ReactElement, options?: RenderOptions) {
   window.localStorage.setItem("prayu.locale.v1", "zh-CN");
   return renderComponent(ui, { wrapper: LocaleProvider, ...options });
 }
+
+it("offers the “/” command menu, blocks send while it is open and inserts the body on selection", async () => {
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+  localStorage.setItem("universal-code.prompt-commands.v1", JSON.stringify({ version: 1, commands: [
+    { id: "cmd-1", name: "release-check", title: "Release checklist", body: "Check $ARGUMENTS against the notes.",
+      created_at: "2026-10-28T00:00:00Z", updated_at: "2026-10-28T00:00:00Z" },
+  ] }));
+  const onSubmit = vi.fn(async () => undefined);
+  renderComposer(onSubmit);
+  const input = screen.getByRole("textbox", { name: "开始新对话" });
+  const user = userEvent.setup();
+
+  await user.type(input, "/rel");
+  const menu = screen.getByRole("menu", { name: "自定义指令" });
+  expect(menu).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: /release-check/ })).toBeInTheDocument();
+
+  // A still-open menu must not let Enter send the bare slash token.
+  await user.type(input, "{enter}");
+  expect(onSubmit).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("menuitem", { name: /release-check/ }));
+  await waitFor(() => expect(menu).not.toBeInTheDocument());
+  expect(input).toHaveValue("Check  against the notes.");
+
+  // Typing beyond a bare token closes the menu and lets the message send normally.
+  await user.type(input, "/nowhere ");
+  expect(screen.queryByRole("menu", { name: "自定义指令" })).not.toBeInTheDocument();
+  await user.type(input, "{enter}");
+  await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+});
