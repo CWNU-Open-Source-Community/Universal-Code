@@ -1,0 +1,34 @@
+.explorer-file > .explorer-file-summary {
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+
+.explorer-view-switch {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.explorer-view-switch .compact-command[aria-pressed="true"] {
+  background: var(--prayu-control);
+  color: var(--prayu-text);
+  font-weight: 600;
+}
+
+.explorer-markdown-preview {
+  max-height: calc(100vh - 280px);
+  min-height: 280px;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--prayu-surface-solid);
+  color: var(--prayu-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.explorer-markdown-preview .safe-markdown pre {
+  min-height: 0;
+  max-height: none;
+}

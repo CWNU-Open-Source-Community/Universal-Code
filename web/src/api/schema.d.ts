@@ -31175,6 +31175,8 @@ export interface operations {
                 period?: "today" | "30d" | "all";
                 /** @description Fixed UTC offset in minutes, without daylight-saving transitions */
                 utc_offset_minutes?: number;
+                /** @description Optional exact Thread identity. Restricts all receipt, cost, model, day and activity statistics to every Run bound to this Thread. Omit for application-wide usage. Active and archived Threads are supported; missing or deleted Threads return NOT_FOUND. */
+                thread_id?: string;
             };
             header?: never;
             path?: never;
@@ -31199,6 +31201,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
