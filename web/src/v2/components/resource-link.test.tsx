@@ -104,6 +104,30 @@ it("supports keyboard file menus and propagates native failures instead of claim
   expect(screen.queryByText("已复制文件")).not.toBeInTheDocument();
 });
 
+it("keeps the selected link action focused while the assistant continues streaming", () => {
+  native();
+  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const content = (suffix: string) => <QueryClientProvider client={query}>
+    <V2Narrative client={{} as APIClient} entries={[{
+      kind: "assistant", id: "answer", text: `[报告](report.md)\n\n${suffix}`,
+      createdAt: "", runId: "run", provisional: true,
+    }]} threadID="thread" workspaceID="workspace" />
+  </QueryClientProvider>;
+  const view = render(content("正在检查。"));
+  const link = screen.getByRole("link", { name: "报告" });
+  fireEvent.keyDown(link, { shiftKey: true, key: "F10" });
+  const first = screen.getByRole("menuitem", { name: "打开文件" });
+  expect(first).toHaveFocus();
+  fireEvent.keyDown(first, { key: "ArrowDown" });
+  const selected = screen.getByRole("menuitem", { name: "在资源管理器中显示" });
+  expect(selected).toHaveFocus();
+  view.rerender(content("正在检查。已读取项目说明。"));
+  expect(selected).toHaveFocus();
+  fireEvent.keyDown(selected, { key: "Escape" });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(link).toHaveFocus();
+});
+
 it("keeps a tall preview above its link in a short window so the link remains clickable", async () => {
   native(); vi.stubGlobal("innerHeight", 600);
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(518);

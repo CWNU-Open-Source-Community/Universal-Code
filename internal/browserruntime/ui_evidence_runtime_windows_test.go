@@ -143,14 +143,15 @@ func TestInstalledEdgeUIEvidenceHeadlessMatrixAndRegression(t *testing.T) {
 
 	endpoint := waitForUIEvidenceSmokeEndpoint(t, profilePath, process,
 		artifactDirectory)
-	connection, err := dialRestrictedCDP(t.Context(), endpoint)
+	// Connect and initialize under the same bounded startup deadline.
+	operationContext, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	connection, err := dialRestrictedCDP(operationContext, endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	client := &restrictedCDPClient{conn: connection, scope: scope,
 		maxRequests: 500, uiEvidence: true}
-	operationContext, cancel := context.WithTimeout(t.Context(), 45*time.Second)
-	defer cancel()
 	if err := client.initialize(operationContext); err != nil {
 		_ = connection.Close()
 		t.Fatalf("initialize real Edge restricted CDP: %v", err)

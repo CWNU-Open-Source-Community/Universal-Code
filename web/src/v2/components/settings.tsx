@@ -502,7 +502,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
       {section === "appearance" && <AppearanceSettings />}
       {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
-        <UsageSettings client={client} onOpenThread={onOpenThread} />
+        <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />
       </Suspense>}
       {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("检测用户安装，保存下次启动配置，再回到任务选择编码环境。", "Detect installed environments, save settings for the next startup, then return to your task to choose a coding environment.")}</p>
         <Suspense fallback={<p role="status">{t("正在加载执行环境设置…", "Loading execution environment settings…")}</p>}><SandboxEnvironmentPanel client={client} />

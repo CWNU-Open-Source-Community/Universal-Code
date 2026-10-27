@@ -22,6 +22,7 @@ const (
 	DebugTerminalProtocolVersion = "debug_terminal.v1"
 	DebugTerminalActionWrite     = "write"
 	DebugTerminalActionRead      = "read"
+	DebugTerminalActionInterrupt = "interrupt"
 	MaxDebugTerminalWaitMillis   = 5_000
 	MaxDebugTerminalOutputBytes  = 64 * 1024
 )
@@ -38,7 +39,8 @@ type DebugTerminalInput struct {
 func (i DebugTerminalInput) Validate() error {
 	if i.Version != DebugTerminalProtocolVersion ||
 		(i.Action != DebugTerminalActionWrite &&
-			i.Action != DebugTerminalActionRead) ||
+			i.Action != DebugTerminalActionRead &&
+			i.Action != DebugTerminalActionInterrupt) ||
 		i.MaxBytes < 1 || i.MaxBytes > MaxDebugTerminalOutputBytes ||
 		i.WaitMilliseconds < 0 ||
 		i.WaitMilliseconds > MaxDebugTerminalWaitMillis {
@@ -47,6 +49,12 @@ func (i DebugTerminalInput) Validate() error {
 	if i.Action == DebugTerminalActionRead {
 		if i.Command != "" {
 			return errors.New("debug terminal read cannot include a command")
+		}
+		return nil
+	}
+	if i.Action == DebugTerminalActionInterrupt {
+		if i.Command != "" || i.Cursor != 0 {
+			return errors.New("debug terminal interrupt cannot include a command or cursor")
 		}
 		return nil
 	}
@@ -143,8 +151,8 @@ type DebugTerminalExecutor interface {
 
 var debugTerminalDefinition = ToolDefinition{
 	Name: DebugTerminalTool, Class: ClassShell, Approval: ApprovalAutomatic,
-	Description: "Write one policy-checked command to, or read one bounded cursor page from, the current user-owned Debug terminal. Available only in Code/Deliver/Debug after the operator grants a short-lived Agent-input lease. Agent cursors address a separate sanitized stream; partial lines wait for a newline or EOF, and lines begun before the grant or command are omitted. A write submits the command to a persistent shell; the canonical command and sanitized bounded result become durable Supervisor evidence, output may be incomplete, and background processes may continue after this call. Never submit secrets.",
-	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","action","max_bytes","wait_milliseconds"],"properties":{"version":{"const":"debug_terminal.v1"},"action":{"enum":["write","read"]},"command":{"type":"string","minLength":1,"maxLength":16384},"cursor":{"type":"integer","minimum":0},"max_bytes":{"type":"integer","minimum":1,"maximum":65536},"wait_milliseconds":{"type":"integer","minimum":0,"maximum":5000}},"oneOf":[{"properties":{"action":{"const":"write"}},"required":["command"],"not":{"required":["cursor"]}},{"properties":{"action":{"const":"read"}},"not":{"required":["command"]}}]}`),
+	Description: "Write one policy-checked command to, read one bounded cursor page from, or send Ctrl+C to the current user-owned Debug terminal. Interrupt sends only Ctrl+C (no newline) to interrupt the foreground program while keeping the shell available; it does not guarantee the program exits. Available only in Code/Deliver/Debug after the operator grants a short-lived Agent-input lease. Agent cursors address a separate sanitized stream; partial lines wait for a newline or EOF, and lines begun before the grant or input are omitted. A write submits the command to a persistent shell; the canonical call and sanitized bounded result become durable Supervisor evidence, output may be incomplete, and background processes may continue after this call. Never submit secrets.",
+	InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","action","max_bytes","wait_milliseconds"],"properties":{"version":{"const":"debug_terminal.v1"},"action":{"enum":["write","read","interrupt"]},"command":{"type":"string","minLength":1,"maxLength":16384},"cursor":{"type":"integer","minimum":0},"max_bytes":{"type":"integer","minimum":1,"maximum":65536},"wait_milliseconds":{"type":"integer","minimum":0,"maximum":5000}},"oneOf":[{"properties":{"action":{"const":"write"}},"required":["command"],"not":{"required":["cursor"]}},{"properties":{"action":{"const":"read"}},"not":{"required":["command"]}},{"properties":{"action":{"const":"interrupt"}},"not":{"anyOf":[{"required":["command"]},{"required":["cursor"]}]}}]}`),
 }
 
 func normalizeDebugTerminalPayload(payload json.RawMessage) (
@@ -179,6 +187,11 @@ func normalizeDebugTerminalPayload(payload json.RawMessage) (
 			return DebugTerminalInput{}, nil,
 				errors.New("debug terminal read fields are invalid")
 		}
+	case DebugTerminalActionInterrupt:
+		if commandPresent || cursorPresent {
+			return DebugTerminalInput{}, nil,
+				errors.New("debug terminal interrupt fields are invalid")
+		}
 	}
 	if err := input.Validate(); err != nil {
 		return DebugTerminalInput{}, nil, err
@@ -212,6 +225,10 @@ func (g *Gateway) invokeDebugTerminal(ctx context.Context, call ToolCall) (
 	if input.Action == DebugTerminalActionWrite {
 		policyDecision = g.checker.CheckToolCall(tools.Call{
 			Name: string(ShellTool), Args: map[string]string{"command": input.Command},
+		})
+	} else if input.Action == DebugTerminalActionInterrupt {
+		policyDecision = g.checker.CheckToolCall(tools.Call{
+			Name: string(DebugTerminalTool), Args: map[string]string{"action": input.Action},
 		})
 	}
 	if !policyDecision.Allowed || policyDecision.NeedsApproval {
@@ -266,7 +283,7 @@ func (g *Gateway) invokeDebugTerminal(ctx context.Context, call ToolCall) (
 		"output_complete":            "false",
 		"lease_token_exposed":        "false",
 		"raw_output_persisted":       "false",
-		"command_persisted":          "true",
+		"command_persisted":          strconv.FormatBool(input.Action == DebugTerminalActionWrite),
 		"sanitized_output_persisted": "true",
 		"output_source":              "untrusted_debug_terminal",
 		"instruction_authorized":     "false",
