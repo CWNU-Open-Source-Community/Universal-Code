@@ -76,7 +76,17 @@ function New-PlatformIconBitmap {
         $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $clip = New-RoundedRectanglePath -Size $workingSize
         $graphics.SetClip($clip)
-        $graphics.DrawImage($Source, 0, 0, $workingSize, $workingSize)
+        # The master includes presentation padding: its navy mark occupies only
+        # 45% of the canvas. Use the central 60% for platform icons so the same
+        # artwork occupies about 75%, while keeping a clear inset on every side.
+        $sourceInset = [single]($Source.Width * 0.20)
+        $sourceBounds = [System.Drawing.RectangleF]::new(
+            $sourceInset, $sourceInset,
+            [single]($Source.Width - 2 * $sourceInset),
+            [single]($Source.Height - 2 * $sourceInset)
+        )
+        $targetBounds = [System.Drawing.RectangleF]::new(0, 0, $workingSize, $workingSize)
+        $graphics.DrawImage($Source, $targetBounds, $sourceBounds, [System.Drawing.GraphicsUnit]::Pixel)
     } finally {
         if ($null -ne $clip) {
             $clip.Dispose()
