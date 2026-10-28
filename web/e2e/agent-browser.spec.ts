@@ -39,7 +39,7 @@ test("native Agent Browser uses the production API and visible workbench", async
   await expect(dialog).toBeHidden();
   await page.getByRole("textbox", { name: "开始新对话" }).fill("JOURNEY_BROWSER_SETUP: Read README.md and wait for the operator to confirm browser access.");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
-  await expect(page.getByText(/JOURNEY_BROWSER_SETUP_READY/u)).toBeVisible();
+  await expect(page.getByText(/JOURNEY_BROWSER_SETUP_READY/u)).toBeVisible({ timeout: nativeMac ? 60_000 : 30_000 });
   await page.getByRole("button", { name: "请求批准", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "完全访问权限", exact: true }).click();
   await page.getByRole("button", { name: "确认启用", exact: true }).click();
