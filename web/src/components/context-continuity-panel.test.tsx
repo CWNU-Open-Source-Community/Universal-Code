@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../api/client";
 import { downloadTextFile } from "../lib/download";
@@ -80,6 +80,69 @@ describe("ContextContinuityPanel", () => {
     await waitFor(() => expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
       expect.stringMatching(/^prayu-project-memory-\d{4}-\d{2}-\d{2}\.json$/),
       "application/json", `${JSON.stringify(exported, null, 2)}\n`));
+  });
+
+  it.each([
+    ["Asia/Hong_Kong", "2030-02-28T15:59:59.999Z"],
+    ["America/Los_Angeles", "2030-03-01T07:59:59.999Z"],
+  ])("retains memory through the selected local day in %s", async (timezone, expected) => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = timezone;
+    try {
+      const user = userEvent.setup();
+      const get = vi.fn().mockImplementation((path: string) => {
+        if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+        if (path === "/memories") return Promise.resolve([memoryView()]);
+        if (path === "/memory-candidates") return Promise.resolve([]);
+        if (path.includes("/tree")) return Promise.resolve(sessionTree());
+        return Promise.reject(new Error(`unexpected read ${path}`));
+      });
+      const postControl = vi.fn().mockResolvedValue(memoryView());
+      renderPanel({ hasControl: true, get, postControl, patchControl: vi.fn(),
+        deleteControl: vi.fn() } as unknown as APIClient);
+
+      await screen.findByText("Test convention");
+      await user.type(screen.getByLabelText("Memory title"), "Release checklist");
+      await user.type(screen.getByLabelText("Memory content"), "Check the release notes.");
+      fireEvent.change(screen.getByLabelText("Retain until"), { target: { value: "2030-02-28" } });
+      await user.click(screen.getByRole("button", { name: "Create memory" }));
+
+      await waitFor(() => expect(postControl).toHaveBeenCalledWith("/memories",
+        expect.objectContaining({ title: "Release checklist", content: "Check the release notes.",
+          retention_until: expected }),
+        expect.stringMatching(/^web-memory-create-/)));
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
+  });
+
+  it.each([
+    ["Asia/Hong_Kong", "2030-03-14T16:30:00Z", "2030-03-15"],
+    ["America/Los_Angeles", "2030-03-15T06:30:00Z", "2030-03-14"],
+  ])("opens the editor on the retained local day in %s", async (timezone, retentionUntil, expected) => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = timezone;
+    try {
+      const user = userEvent.setup();
+      const get = vi.fn().mockImplementation((path: string) => {
+        if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+        if (path === "/memories") return Promise.resolve([{ ...memoryView(), retention_until: retentionUntil }]);
+        if (path === "/memory-candidates") return Promise.resolve([]);
+        if (path.includes("/tree")) return Promise.resolve(sessionTree());
+        return Promise.reject(new Error(`unexpected read ${path}`));
+      });
+      renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
+        deleteControl: vi.fn() } as unknown as APIClient);
+
+      await screen.findByText("Test convention");
+      await user.click(screen.getByRole("button", { name: "Edit" }));
+      const article = screen.getByText("Test convention").closest("article");
+      expect(within(article as HTMLElement).getByLabelText("Retain until")).toHaveValue(expected);
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
   });
 
   it("keeps mutation controls disabled on a read-only connection", async () => {
