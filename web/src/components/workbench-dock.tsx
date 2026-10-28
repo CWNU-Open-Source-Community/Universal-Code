@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   Bot,
@@ -96,6 +96,9 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
   const leaveFileEdit = useFileEditLeave();
   const [sidecarMenuOpen, setSidecarMenuOpen] = useState(false);
   const [terminalSessionID, setTerminalSessionID] = useState("");
+  const updateTerminalSession = useCallback((next: string, expected?: string) => {
+    setTerminalSessionID((current) => expected === undefined || current === expected ? next : current);
+  }, []);
   const context = useWorkbenchContext(client, resourceKind, runID, sessionID, threadID);
   const effectiveRunID = context.runID || runID;
   const terminalRunRef = useRef(effectiveRunID);
@@ -179,7 +182,7 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
           {summaryVisible && <WorkbenchSummary client={client} context={context} />}
         </div>
         {bottomVisible && <BottomPanel desktop={desktop} runID={effectiveRunID}
-          sessionID={terminalSessionID} onSession={setTerminalSessionID}
+          sessionID={terminalSessionID} onSession={updateTerminalSession}
           onClose={() => setBottomVisible(false)} />}
       </div>
       {sidecarVisible && <aside aria-label={t("右侧工具栏", "Side tools")} className="workbench-sidecar">
@@ -340,7 +343,7 @@ function BottomPanel({ desktop, runID, sessionID, onSession, onClose }: {
   desktop: boolean;
   runID: string;
   sessionID: string;
-  onSession: (sessionID: string) => void;
+  onSession: (sessionID: string, expectedSessionID?: string) => void;
   onClose: () => void;
 }) {
   const { t } = useLocale();

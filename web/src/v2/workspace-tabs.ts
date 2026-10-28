@@ -552,8 +552,9 @@ export function setWorkspaceWidth(threadID: string, width: number) {
   writeThreadWorkspaceState(threadID, (state) => (state.width === clamped ? state : { ...state, width: clamped }));
 }
 
-export function setWorkspaceTerminalSession(threadID: string, sessionID: string) {
+export function setWorkspaceTerminalSession(threadID: string, sessionID: string, expectedSessionID?: string) {
   writeThreadWorkspaceState(threadID, (state) => {
+    if (expectedSessionID !== undefined && state.terminalSessionID !== expectedSessionID) return state;
     const nextHad = Boolean(state.hadTerminalSession || sessionID);
     if (state.terminalSessionID === sessionID && state.hadTerminalSession === nextHad) return state;
     return {
