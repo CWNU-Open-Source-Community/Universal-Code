@@ -92,6 +92,7 @@ type Item struct {
 	InstructionAuthorized bool
 	AttemptID             string
 	ModelAttempt          int
+	Model                 string
 	ToolRound             int
 	ToolName              string
 	StreamResponseID      string
@@ -216,6 +217,14 @@ func Build(threadID string, source []Source) ([]Item, error) {
 		return nil, fmt.Errorf("thread transcript accepts at most %d source records", MaxSourceRecords)
 	}
 	ordered := append([]Source(nil), source...)
+	// The run's latest producing model call, so a durable reply projected from a
+	// SessionMessageEvent can inherit the model identity and attempt of the call it closed.
+	type producingModelCall struct {
+		attemptID    string
+		modelAttempt int
+		model        string
+	}
+	modelCallByRun := map[string]producingModelCall{}
 	slices.SortFunc(ordered, func(left, right Source) int {
 		if order := cmp.Compare(left.Ordinal, right.Ordinal); order != 0 {
 			return order
@@ -262,7 +271,47 @@ func Build(threadID string, source []Source) ([]Item, error) {
 			return nil, err
 		}
 		for _, projected := range projection.Items {
-			items = append(items, projectActivity(record, projected))
+			item := projectActivity(record, projected)
+			// The final durable reply is a SessionMessageEvent without attempt
+			// or model identity; inherit the run's latest producing model call so
+			// the web narrative attributes the reply to the exact model that generated it.
+			if projected.Kind == runactivity.KindModelCall {
+				call := modelCallByRun[record.RunID]
+				if projected.ModelAttempt != 0 && projected.ModelAttempt != call.modelAttempt {
+					call = producingModelCall{
+						attemptID:    projected.AttemptID,
+						modelAttempt: projected.ModelAttempt,
+						model:        projected.Model,
+					}
+				} else {
+					if projected.AttemptID != "" {
+						call.attemptID = projected.AttemptID
+					}
+					if projected.ModelAttempt != 0 {
+						call.modelAttempt = projected.ModelAttempt
+					}
+					if projected.Model != "" {
+						call.model = projected.Model
+					}
+				}
+				if call.attemptID != "" || call.model != "" {
+					modelCallByRun[record.RunID] = call
+				}
+			}
+			if item.Kind == runactivity.KindModelUpdate && item.Source == runactivity.SourceModel {
+				if call, ok := modelCallByRun[record.RunID]; ok {
+					if item.AttemptID == "" {
+						item.AttemptID = call.attemptID
+					}
+					if item.ModelAttempt == 0 {
+						item.ModelAttempt = call.modelAttempt
+					}
+					if item.Model == "" {
+						item.Model = call.model
+					}
+				}
+			}
+			items = append(items, item)
 		}
 	}
 	return items, nil
@@ -401,7 +450,7 @@ func projectActivity(source Source, projected runactivity.Item) Item {
 		Source: projected.Source, Title: projected.Title, Detail: projected.Detail,
 		Status: projected.Status, Verifiable: projected.Verifiable,
 		InstructionAuthorized: projected.InstructionAuthorized,
-		AttemptID:             projected.AttemptID, ModelAttempt: projected.ModelAttempt,
+		AttemptID:             projected.AttemptID, ModelAttempt: projected.ModelAttempt, Model: projected.Model,
 		ToolRound: projected.ToolRound, Durable: true, CreatedAt: projected.CreatedAt,
 	}
 	if (source.Event.Type == events.ThreadTurnFailedEvent && source.Event.Source == "thread_turn") ||

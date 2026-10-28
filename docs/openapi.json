@@ -73607,6 +73607,9 @@
             ],
             "type": "string"
           },
+          "model": {
+            "type": "string"
+          },
           "model_attempt": {
             "format": "int32",
             "type": "integer"

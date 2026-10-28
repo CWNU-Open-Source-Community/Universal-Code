@@ -15521,6 +15521,7 @@ export interface components {
             instruction_authorized: boolean;
             /** @enum {string} */
             kind: "harness_status" | "model_update" | "operator_input" | "model_call" | "tool_call" | "approval" | "file_change" | "plan" | "dependency" | "browser" | "peer_message";
+            model?: string;
             /** Format: int32 */
             model_attempt?: number;
             peer_message?: components["schemas"]["ThreadPeerMessage"];

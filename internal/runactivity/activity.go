@@ -60,6 +60,7 @@ type Item struct {
 	InstructionAuthorized bool
 	AttemptID             string
 	ModelAttempt          int
+	Model                 string
 	ToolRound             int
 	CreatedAt             time.Time
 }
@@ -117,7 +118,12 @@ func projectEvent(event events.Event) (Item, bool) {
 		return projectMessage(event, base)
 	case events.ModelStartedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型调用开始", "running"
-		base.Detail = modelIdentity(event.PayloadJSON)
+		identity := modelIdentity(event.PayloadJSON)
+		base.Detail = identity
+		base.Model = identity
+		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
+		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
+		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "正在整理上下文"
 		}
@@ -130,12 +136,24 @@ func projectEvent(event events.Event) (Item, bool) {
 		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 	case events.ModelCompletedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型响应完成", "completed"
-		base.Detail = completedModelDetail(event.PayloadJSON)
+		identity := modelIdentity(event.PayloadJSON)
+		base.Model = identity
+		base.Detail = completedModelDetail(event.PayloadJSON, identity)
+		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
+		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
+		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "上下文整理调用已结束"
 		}
 	case events.ModelFailedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型调用失败", "failed"
+		identity := modelIdentity(event.PayloadJSON)
+		if identity != "" {
+			base.Model = identity
+		}
+		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
+		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
+		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "上下文整理调用未完成"
 		}
@@ -865,8 +883,7 @@ func modelIdentity(payloadJSON string) string {
 	}
 }
 
-func completedModelDetail(payloadJSON string) string {
-	identity := modelIdentity(payloadJSON)
+func completedModelDetail(payloadJSON string, identity string) string {
 	elapsed := intField(payloadJSON, "elapsed_millis")
 	var usage struct {
 		TotalTokens int `json:"total_tokens"`

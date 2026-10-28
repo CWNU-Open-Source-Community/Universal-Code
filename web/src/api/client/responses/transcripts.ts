@@ -75,7 +75,7 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
     "run_ordinal", "sequence", "source", "stage", "title", "verifiable", "version"];
   const optional = ["activity_detail_ref", "activity_summary", "attempt_id", "boundary_reason", "detail",
     "detail_available", "delivery_mode", "durable_call_id", "promoted_to_message_id", "promoted_from_message_id",
-    "model_attempt", "position", "source_ref", "status", "stream_call_id", "stream_item_id",
+    "model", "model_attempt", "position", "source_ref", "status", "stream_call_id", "stream_item_id",
     "stream_response_id", "tool_name", "tool_round", "web_evidence", "images", "attachments", "peer_message"];
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, ...optional]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
@@ -103,7 +103,8 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
     value.detail.length === 0 || value.detail.length > 16_384 || value.detail.includes("\0")) ||
     value.position !== undefined && !safePositiveInteger(value.position) ||
     value.model_attempt !== undefined && !safePositiveInteger(value.model_attempt) ||
-    value.tool_round !== undefined && !safeBoundedCount(value.tool_round, 100)) {
+    value.tool_round !== undefined && !safeBoundedCount(value.tool_round, 100) ||
+    (value.model !== undefined && (typeof value.model !== "string" || !boundedText(value.model, 256)))) {
     throw new APIRequestError("Thread transcript metadata is invalid", "INVALID_RESPONSE", 502);
   }
   if ((value.sequence === 0) !== (value.boundary_reason !== undefined) ||

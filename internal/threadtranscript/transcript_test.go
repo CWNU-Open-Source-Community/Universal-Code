@@ -9,6 +9,138 @@ import (
 	"cyberagent-workbench/internal/events"
 )
 
+func TestBuildAttributesDurableReplyWithLatestModelCallAttempt(t *testing.T) {
+	now := time.Date(2026, 10, 28, 1, 0, 0, 0, time.UTC)
+	source := []Source{
+		eventSource("run-1", 1, 1, events.ModelStartedEvent,
+			`{"provider":"anthropic","model":"test-model","attempt_id":"attempt-7"}`, now),
+		eventSource("run-1", 1, 2, events.ModelCompletedEvent,
+			`{"provider":"anthropic","model":"test-model","attempt_id":"attempt-7","elapsed_millis":1200,"usage":{"total_tokens":42}}`, now.Add(time.Second)),
+		eventSource("run-1", 1, 3, events.SessionMessageEvent,
+			`{"role":"assistant","content":"public answer","source_kind":"model_response","instruction_authorized":false}`, now.Add(2*time.Second)),
+		eventSource("run-1", 1, 4, events.ModelPublicCommentaryEvent,
+			`{"text":"检查中","attempt_id":"attempt-7"}`, now.Add(3*time.Second)),
+	}
+	items, err := Build("thread-1", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var call, reply, commentary *Item
+	for index := range items {
+		switch items[index].ID {
+		case "event-run-1-model.started":
+			call = &items[index]
+		case "event-run-1-session.message_created":
+			reply = &items[index]
+		case "event-run-1-model.public_commentary":
+			commentary = &items[index]
+		}
+	}
+	if call == nil || reply == nil || commentary == nil {
+		t.Fatalf("expected call, reply and commentary items: %#v", items)
+	}
+	if call.Model != "anthropic / test-model" || call.AttemptID != "attempt-7" {
+		t.Fatalf("model call lost its identity or attempt: %#v", call)
+	}
+	if reply.AttemptID != "attempt-7" || reply.Model != "anthropic / test-model" {
+		t.Fatalf("durable reply did not inherit the call attempt or model: %#v", reply)
+	}
+	if commentary.AttemptID != "attempt-7" {
+		t.Fatalf("commentary lost its attempt: %#v", commentary)
+	}
+}
+
+func TestBuildAttributesDurableReplyWithMultipleModelAttempts(t *testing.T) {
+	now := time.Date(2026, 10, 28, 2, 0, 0, 0, time.UTC)
+	// Realistic supervisor event sequence:
+	// In the same supervisor turn (attempt_id: "attempt-1"), model_attempt=1 with Claude
+	// is attempted first and fails. The supervisor retries with model_attempt=2 with Gemini,
+	// which completes successfully and emits the final assistant reply.
+	source := []Source{
+		eventSource("run-1", 1, 1, events.ModelStartedEvent,
+			`{"provider":"anthropic","model":"claude-3-5-sonnet","attempt_id":"attempt-1","model_attempt":1}`, now),
+		eventSource("run-1", 1, 2, events.ModelFailedEvent,
+			`{"provider":"anthropic","model":"claude-3-5-sonnet","attempt_id":"attempt-1","model_attempt":1,"error":"rate_limited"}`, now.Add(time.Second)),
+		eventSource("run-1", 1, 3, events.ModelStartedEvent,
+			`{"provider":"google","model":"gemini-1.5-pro","attempt_id":"attempt-1","model_attempt":2}`, now.Add(2*time.Second)),
+		eventSource("run-1", 1, 4, events.ModelCompletedEvent,
+			`{"provider":"google","model":"gemini-1.5-pro","attempt_id":"attempt-1","model_attempt":2,"elapsed_millis":900,"usage":{"total_tokens":55}}`, now.Add(3*time.Second)),
+		eventSource("run-1", 1, 5, events.SessionMessageEvent,
+			`{"role":"assistant","content":"final answer from gemini","source_kind":"model_response","instruction_authorized":false}`, now.Add(4*time.Second)),
+		eventSource("run-1", 1, 6, events.ModelPublicCommentaryEvent,
+			`{"text":"已完成","attempt_id":"attempt-1"}`, now.Add(5*time.Second)),
+	}
+	items, err := Build("thread-1", source)
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+	var reply *Item
+	for index := range items {
+		if items[index].ID == "event-run-1-session.message_created" {
+			reply = &items[index]
+			break
+		}
+	}
+	if reply == nil {
+		t.Fatalf("expected session message item in items: %#v", items)
+	}
+	if reply.AttemptID != "attempt-1" {
+		t.Fatalf("expected AttemptID 'attempt-1', got %q", reply.AttemptID)
+	}
+	if reply.ModelAttempt != 2 {
+		t.Fatalf("expected ModelAttempt 2, got %d", reply.ModelAttempt)
+	}
+	if reply.Model != "google / gemini-1.5-pro" {
+		t.Fatalf("expected Model 'google / gemini-1.5-pro', got %q", reply.Model)
+	}
+}
+
+func TestBuildAttributesDurableRepliesAcrossMultipleTurns(t *testing.T) {
+	now := time.Date(2026, 10, 28, 3, 0, 0, 0, time.UTC)
+	// Multi-turn run sequence:
+	// Turn 1 (attempt-1): model_attempt 1 (Claude) fails, model_attempt 2 (Gemini) succeeds -> reply 1
+	// Turn 2 (attempt-2): model_attempt 1 (Claude) succeeds -> reply 2
+	source := []Source{
+		eventSource("run-1", 1, 1, events.ModelStartedEvent,
+			`{"provider":"anthropic","model":"claude-3-5-sonnet","attempt_id":"attempt-1","model_attempt":1}`, now),
+		eventSource("run-1", 1, 2, events.ModelFailedEvent,
+			`{"provider":"anthropic","model":"claude-3-5-sonnet","attempt_id":"attempt-1","model_attempt":1,"error":"timeout"}`, now.Add(time.Second)),
+		eventSource("run-1", 1, 3, events.ModelStartedEvent,
+			`{"provider":"google","model":"gemini-1.5-pro","attempt_id":"attempt-1","model_attempt":2}`, now.Add(2*time.Second)),
+		eventSource("run-1", 1, 4, events.ModelCompletedEvent,
+			`{"provider":"google","model":"gemini-1.5-pro","attempt_id":"attempt-1","model_attempt":2,"elapsed_millis":800}`, now.Add(3*time.Second)),
+		eventSource("run-1", 1, 5, events.SessionMessageEvent,
+			`{"role":"assistant","content":"turn 1 answer from gemini","source_kind":"model_response","instruction_authorized":false}`, now.Add(4*time.Second)),
+		eventSource("run-1", 1, 6, events.ModelStartedEvent,
+			`{"provider":"anthropic","model":"claude-3-5-sonnet","attempt_id":"attempt-2","model_attempt":1}`, now.Add(5*time.Second)),
+		eventSource("run-1", 1, 7, events.ModelCompletedEvent,
+			`{"provider":"anthropic","model":"claude-3-5-sonnet","attempt_id":"attempt-2","model_attempt":1,"elapsed_millis":1100}`, now.Add(6*time.Second)),
+		eventSource("run-1", 1, 8, events.SessionMessageEvent,
+			`{"role":"assistant","content":"turn 2 answer from claude","source_kind":"model_response","instruction_authorized":false}`, now.Add(7*time.Second)),
+	}
+	items, err := Build("thread-1", source)
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+	var replies []*Item
+	for index := range items {
+		if items[index].Kind == "model_update" && items[index].Source == "model" {
+			replies = append(replies, &items[index])
+		}
+	}
+	if len(replies) != 2 {
+		t.Fatalf("expected 2 assistant reply items, got %d: %#v", len(replies), items)
+	}
+	// Turn 1 reply
+	if replies[0].AttemptID != "attempt-1" || replies[0].ModelAttempt != 2 || replies[0].Model != "google / gemini-1.5-pro" {
+		t.Fatalf("turn 1 reply attribution mismatch: %#v", replies[0])
+	}
+	// Turn 2 reply
+	if replies[1].AttemptID != "attempt-2" || replies[1].ModelAttempt != 1 || replies[1].Model != "anthropic / claude-3-5-sonnet" {
+		t.Fatalf("turn 2 reply attribution mismatch: %#v", replies[1])
+	}
+}
+
 func TestBuildOrdersRunBoundariesMessagesAndStructuredToolStages(t *testing.T) {
 	now := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
 	batch, _ := json.Marshal(map[string]any{
