@@ -566,6 +566,46 @@ describe("V2ActivityGroup", () => {
       "thread-1", "command-1", "artifact-stdout-1", expect.any(AbortSignal));
   });
 
+  it.each([
+    ["en-US", "Read saved stdout", "Saved output could not be loaded.", "Retry output", "Hide stdout", "Showing saved content"],
+    ["zh-CN", "查看已保存标准输出", "已保存输出加载失败。", "重试输出", "收起标准输出", "展示已保存内容"],
+  ] as const)("uses %s for saved output controls, errors and retry results", async (locale, readLabel, errorLabel, retryLabel, hideLabel, savedLabel) => {
+    localStorage.setItem("prayu.locale.v1", locale);
+    const threadActivityArtifact = vi.fn().mockRejectedValueOnce(new Error("Temporary read failure"))
+      .mockResolvedValueOnce({
+        stream: "stdout", content: "Original saved output", size_bytes: 21, redacted: true, truncated: false,
+      });
+    const client = { threadActivityArtifact } as unknown as APIClient;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tool: ThreadActivityDetailView["tools"][number] = {
+      name: "command_runtime", label: "Run command", agent_id: "agent-root", agent_role: "root",
+      agent_label: "Root Agent", status: "completed", started_at: "2026-09-02T00:00:00Z",
+      completed_at: "2026-09-02T00:00:01Z", duration_milliseconds: 1_000,
+      detail: { kind: "command", command: { commands: [{
+        command: "check", working_directory: ".", execution_environment: "Host · Full Access", network: "disabled",
+        status: "completed", exit_code: 0, duration_milliseconds: 1_000,
+        stdout_preview: "Preview", stderr_preview: "", truncated: true,
+        artifacts: [{ artifact_ref: "artifact-stdout-1", stream: "stdout", mime: "text/plain; charset=utf-8",
+          size_bytes: 21, truncated: false }],
+      }] } },
+    };
+    const user = userEvent.setup();
+    renderComponent(<LocaleProvider><QueryClientProvider client={queryClient}>
+      <ThreadActivityToolDetailPanel activityRef="command-1" client={client} runID="run-1"
+        threadID="thread-1" tool={tool} />
+    </QueryClientProvider></LocaleProvider>);
+
+    expect(threadActivityArtifact).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: new RegExp(`^${readLabel}`, "u") }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(errorLabel);
+    await user.click(screen.getByRole("button", { name: retryLabel }));
+    expect(await screen.findByText("Original saved output")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: new RegExp(`^${hideLabel}`, "u") })).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(savedLabel, "u"))).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(threadActivityArtifact).toHaveBeenCalledTimes(2);
+  });
+
   it("loads an exact redacted file Diff only after the secondary disclosure is opened", async () => {
     const threadActivityDetail = vi.fn(() => Promise.resolve({
       version: "thread_activity_detail.v2" as const, activity_ref: "detail-file-edit",
