@@ -36,3 +36,18 @@
   失败回退、waiting_user 新文案）。
 - `npm run check:api`：`docs/openapi.json` 与 `web/src/api/schema.d.ts` 由
   `go run ./cmd/cyberagent api openapi` 重新生成并保持一致。
+
+## 复审修正
+
+- 协议登记：`agent_browser_screencast.v1` 进入 `http-openapi-contract`
+  （145 → 146），`docs/convergence/protocol-registry.md` 重新生成。
+- SSE 头顺序：先提交 `text/event-stream` 头再 Flush；旧顺序会让 net/http
+  在设置 Content-Type 前提交裸 200，客户端拒绝流并报 superfluous WriteHeader。
+- 写截止：每帧复用 `writeEventStreamFrame` 的 2s 写截止，避免全局 30s
+  `WriteTimeout` 截断健康直播。
+- pump 归属：停止时按 pump 身份关闭，迟到的旧 watcher 不再误关替换观看者的流。
+- 客户端：同步处理 SSE 帧，`agent_browser.closed` 与坏帧以错误结束并重连。
+- 验证：`go test -race ./internal/browserruntime -run Screencast`、
+  `go test -race ./internal/application -run 'TestAgentBrowserStreamScreencast'`、
+  `go test ./internal/httpapi ./internal/browserruntime`、
+  `vitest run src/api/client.test.ts src/v2/components/agent-browser.test.tsx`（249 项）。
