@@ -199,8 +199,11 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
       scope: memoryScope,
       scope_id: scopeID,
     }),
+    // The filename must follow the scope the server actually exported (the
+    // response), not the selector state at click time: the operator may switch
+    // scope while the export request is in flight.
     onSuccess: (value) => downloadJSON(
-      `prayu-${memoryScope}-memory-${new Date().toISOString().slice(0, 10)}.json`, value),
+      `prayu-${value.scope}-memory-${new Date().toISOString().slice(0, 10)}.json`, value),
   });
 
   const treeNodes = treeQuery.data?.nodes ?? [];
