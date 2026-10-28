@@ -82,49 +82,67 @@ describe("ContextContinuityPanel", () => {
       "application/json", `${JSON.stringify(exported, null, 2)}\n`));
   });
 
-  it("retains memory through the end of the selected local calendar day", async () => {
-    const user = userEvent.setup();
-    const get = vi.fn().mockImplementation((path: string) => {
-      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
-      if (path === "/memories") return Promise.resolve([memoryView()]);
-      if (path === "/memory-candidates") return Promise.resolve([]);
-      if (path.includes("/tree")) return Promise.resolve(sessionTree());
-      return Promise.reject(new Error(`unexpected read ${path}`));
-    });
-    const postControl = vi.fn().mockResolvedValue(memoryView());
-    renderPanel({ hasControl: true, get, postControl, patchControl: vi.fn(),
-      deleteControl: vi.fn() } as unknown as APIClient);
+  it.each([
+    ["Asia/Hong_Kong", "2030-02-28T15:59:59.999Z"],
+    ["America/Los_Angeles", "2030-03-01T07:59:59.999Z"],
+  ])("retains memory through the selected local day in %s", async (timezone, expected) => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = timezone;
+    try {
+      const user = userEvent.setup();
+      const get = vi.fn().mockImplementation((path: string) => {
+        if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+        if (path === "/memories") return Promise.resolve([memoryView()]);
+        if (path === "/memory-candidates") return Promise.resolve([]);
+        if (path.includes("/tree")) return Promise.resolve(sessionTree());
+        return Promise.reject(new Error(`unexpected read ${path}`));
+      });
+      const postControl = vi.fn().mockResolvedValue(memoryView());
+      renderPanel({ hasControl: true, get, postControl, patchControl: vi.fn(),
+        deleteControl: vi.fn() } as unknown as APIClient);
 
-    await screen.findByText("Test convention");
-    await user.type(screen.getByLabelText("Memory title"), "Release checklist");
-    await user.type(screen.getByLabelText("Memory content"), "Check the release notes.");
-    fireEvent.change(screen.getByLabelText("Retain until"), { target: { value: "2030-02-28" } });
-    await user.click(screen.getByRole("button", { name: "Create memory" }));
+      await screen.findByText("Test convention");
+      await user.type(screen.getByLabelText("Memory title"), "Release checklist");
+      await user.type(screen.getByLabelText("Memory content"), "Check the release notes.");
+      fireEvent.change(screen.getByLabelText("Retain until"), { target: { value: "2030-02-28" } });
+      await user.click(screen.getByRole("button", { name: "Create memory" }));
 
-    await waitFor(() => expect(postControl).toHaveBeenCalledWith("/memories",
-      expect.objectContaining({ title: "Release checklist", content: "Check the release notes.",
-        retention_until: new Date(2030, 1, 28, 23, 59, 59, 999).toISOString() }),
-      expect.stringMatching(/^web-memory-create-/)));
+      await waitFor(() => expect(postControl).toHaveBeenCalledWith("/memories",
+        expect.objectContaining({ title: "Release checklist", content: "Check the release notes.",
+          retention_until: expected }),
+        expect.stringMatching(/^web-memory-create-/)));
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
   });
 
-  it("opens the memory editor on the retained local calendar day", async () => {
-    const user = userEvent.setup();
-    // Local midnight makes the UTC date differ from the local day in non-UTC time zones.
-    const retentionUntil = new Date(2030, 2, 15, 0, 30).toISOString();
-    const get = vi.fn().mockImplementation((path: string) => {
-      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
-      if (path === "/memories") return Promise.resolve([{ ...memoryView(), retention_until: retentionUntil }]);
-      if (path === "/memory-candidates") return Promise.resolve([]);
-      if (path.includes("/tree")) return Promise.resolve(sessionTree());
-      return Promise.reject(new Error(`unexpected read ${path}`));
-    });
-    renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
-      deleteControl: vi.fn() } as unknown as APIClient);
+  it.each([
+    ["Asia/Hong_Kong", "2030-03-14T16:30:00Z", "2030-03-15"],
+    ["America/Los_Angeles", "2030-03-15T06:30:00Z", "2030-03-14"],
+  ])("opens the editor on the retained local day in %s", async (timezone, retentionUntil, expected) => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = timezone;
+    try {
+      const user = userEvent.setup();
+      const get = vi.fn().mockImplementation((path: string) => {
+        if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+        if (path === "/memories") return Promise.resolve([{ ...memoryView(), retention_until: retentionUntil }]);
+        if (path === "/memory-candidates") return Promise.resolve([]);
+        if (path.includes("/tree")) return Promise.resolve(sessionTree());
+        return Promise.reject(new Error(`unexpected read ${path}`));
+      });
+      renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
+        deleteControl: vi.fn() } as unknown as APIClient);
 
-    await screen.findByText("Test convention");
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    const article = screen.getByText("Test convention").closest("article");
-    expect(within(article as HTMLElement).getByLabelText("Retain until")).toHaveValue("2030-03-15");
+      await screen.findByText("Test convention");
+      await user.click(screen.getByRole("button", { name: "Edit" }));
+      const article = screen.getByText("Test convention").closest("article");
+      expect(within(article as HTMLElement).getByLabelText("Retain until")).toHaveValue(expected);
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
   });
 
   it("keeps mutation controls disabled on a read-only connection", async () => {
