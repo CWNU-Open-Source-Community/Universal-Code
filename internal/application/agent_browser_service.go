@@ -96,6 +96,9 @@ type agentBrowserSlot struct {
 	screenshotURL   string
 	titleEpoch      uint64
 	titleURL        string
+	// screencastViewer marks the single operator live-view attachment. It is a
+	// process-local visibility guard and grants no execution authority.
+	screencastViewer bool
 }
 type AgentBrowserService struct {
 	store     AgentBrowserStore

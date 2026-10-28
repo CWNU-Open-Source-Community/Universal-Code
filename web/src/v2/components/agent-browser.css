@@ -21,3 +21,7 @@
 .v2-agent-browser details { min-width:0; }
 .v2-agent-browser summary { cursor:pointer; color:var(--v2-muted); }
 .v2-agent-browser details p { margin-top:7px; }
+.v2-agent-browser-live { margin:0; min-width:0; display:grid; gap:4px; }
+.v2-agent-browser-live-canvas { display:block; width:100%; height:auto; max-height:320px; object-fit:contain; border:1px solid var(--v2-border); border-radius:8px; background:var(--prayu-surface-solid); opacity:.55; }
+.v2-agent-browser-live-canvas.is-live { opacity:1; }
+.v2-agent-browser-live figcaption { font-size:12px; line-height:1.5; color:var(--v2-muted); }

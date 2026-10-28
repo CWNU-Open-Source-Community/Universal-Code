@@ -109,3 +109,34 @@ export async function closeAgentBrowser(client: Pick<APIClient, "postControl">, 
 export function agentBrowserAPIAbsent(error: unknown): boolean {
   return error instanceof APIRequestError && error.status === 404;
 }
+
+export const agentBrowserScreencastVersion = "agent_browser_screencast.v1";
+
+const screencastBase64 = /^[A-Za-z0-9+/]+={0,2}$/u;
+const maxScreencastFrameData = 700 * 1024;
+
+export interface AgentBrowserScreencastFrame {
+  version: typeof agentBrowserScreencastVersion;
+  run_id: string;
+  session_id: string;
+  generation: number;
+  media_type: "image/jpeg";
+  width: number;
+  height: number;
+  data: string;
+  captured_at: string;
+}
+
+export function parseAgentBrowserScreencastFrame(value: unknown, runID: string): AgentBrowserScreencastFrame {
+  if (!record(value) || value.version !== agentBrowserScreencastVersion || value.run_id !== runID ||
+    !identity(value.session_id) || value.media_type !== "image/jpeg" ||
+    typeof value.data !== "string" || value.data.length === 0 || value.data.length > maxScreencastFrameData ||
+    !screencastBase64.test(value.data) ||
+    !Number.isSafeInteger(value.generation) || Number(value.generation) < 0 ||
+    !Number.isSafeInteger(value.width) || Number(value.width) < 0 || Number(value.width) > 4096 ||
+    !Number.isSafeInteger(value.height) || Number(value.height) < 0 || Number(value.height) > 4096 ||
+    typeof value.captured_at !== "string" || !Number.isFinite(Date.parse(value.captured_at))) {
+    throw new Error("Agent 浏览器实时画面帧无效。");
+  }
+  return value as unknown as AgentBrowserScreencastFrame;
+}

@@ -1507,6 +1507,12 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	if strings.HasSuffix(request.URL.Path, "/agent-browser/screencast") {
+		if runID, _, matched := matchAgentBrowserPath(strings.TrimSuffix(request.URL.Path, "/screencast")); matched {
+			a.serveAgentBrowserScreencast(tracked, request, requestID, runID)
+			return
+		}
+	}
 	if runID, closeSession, matched := matchAgentBrowserPath(request.URL.Path); matched {
 		a.serveAgentBrowser(tracked, request, requestID, runID, closeSession)
 		return
