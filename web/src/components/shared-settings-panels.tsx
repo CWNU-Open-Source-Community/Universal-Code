@@ -142,6 +142,11 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
       });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["extensions"] }),
+    onError: (_error, value) => {
+      if (value.kind === "refresh-mcp") {
+        return queryClient.invalidateQueries({ queryKey: ["extensions"] });
+      }
+    },
   });
   const qualificationOnly = codeIntel.data?.qualifications.filter((qualification) =>
     !codeIntel.data.servers.some((server) => server.workspace_id === qualification.workspace_id &&
