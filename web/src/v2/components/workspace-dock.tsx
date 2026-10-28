@@ -666,7 +666,8 @@ export function V2WorkspaceDock({
                     ? (content) => onAddComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`)
                     : undefined}
                   onReturnToDraft={onReturnToDraft}
-                  onSession={(sessionID) => setWorkspaceTerminalSession(threadID, sessionID)}
+                  onSession={(sessionID, expectedSessionID) =>
+                    setWorkspaceTerminalSession(threadID, sessionID, expectedSessionID)}
                   onShellChange={(shellName) => setWorkspaceTerminalShell(threadID, shellName)}
                   recoverable={state.hadTerminalSession}
                   runID={currentRunID}

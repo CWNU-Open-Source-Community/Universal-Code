@@ -1,6 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
 import { applyPrayuTheme } from "../lib/appearance";
+import { getThreadWorkspaceState, resetWorkspaceTabsMemoryCache, setWorkspaceTerminalSession,
+  useThreadWorkspaceState, workspaceTabsStorageKey } from "../v2/workspace-tabs";
 import { UserTerminalPanel, terminalXtermTheme } from "./user-terminal-panel";
 
 const terminalMocks = vi.hoisted(() => ({
@@ -770,4 +774,112 @@ describe("UserTerminalPanel", () => {
     expect(await screen.findByText("Process exited")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
   });
+
+  it("clears the current session after its close succeeds", async () => {
+    terminalMocks.close.mockResolvedValueOnce(undefined);
+    const onSession = vi.fn();
+    render(<UserTerminalPanel runID="run-1" sessionID="sess-current" onSession={onSession} />);
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    await waitFor(() => expect(onSession).toHaveBeenCalledExactlyOnceWith("", "sess-current"));
+    expect(terminalMocks.close).toHaveBeenCalledWith("sess-current");
+  });
+
+  it("keeps the replacement when the old close settles during its commit", async () => {
+    terminalMocks.get.mockImplementation(async (id: string) => ({
+      session_id: id, run_id: "run-1", state: "running", columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: 0,
+    }));
+    let resolveClose = () => {};
+    terminalMocks.close.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      resolveClose = () => resolve(undefined);
+    }));
+    let resolveCommit = () => {};
+    const committed = new Promise<void>((resolve) => { resolveCommit = resolve; });
+    const onSession = vi.fn();
+    function Probe({ sessionID }: { sessionID: string }) {
+      useLayoutEffect(() => {
+        if (sessionID === "sess-new") {
+          resolveClose();
+          resolveCommit();
+        }
+      }, [sessionID]);
+      return <UserTerminalPanel runID="run-1" sessionID={sessionID} onSession={onSession} />;
+    }
+
+    // RTL's rerender uses act(), which eagerly flushes passive cleanup and
+    // hides the gap between commit and that cleanup.
+    const reactEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    reactEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      root.render(<Probe sessionID="sess-old" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "End terminal" })).toBeEnabled());
+      screen.getByRole("button", { name: "End terminal" }).click();
+      await waitFor(() => expect(terminalMocks.close).toHaveBeenCalledWith("sess-old"));
+      root.render(<Probe sessionID="sess-new" />);
+      await committed;
+      await Promise.resolve();
+      expect(onSession).not.toHaveBeenCalled();
+    } finally {
+      root.unmount();
+      container.remove();
+      reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    }
+  });
+
+  it("does not clear a replacement already written to the workspace store", async () => {
+    const threadID = "terminal-close-race";
+    terminalMocks.get.mockImplementation(async (id: string) => ({
+      session_id: id, run_id: "run-1", state: "running", columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: 0,
+    }));
+    let resolveClose = () => {};
+    terminalMocks.close.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      resolveClose = () => resolve(undefined);
+    }));
+    const observed = vi.fn();
+    function Probe() {
+      const state = useThreadWorkspaceState(threadID);
+      return <UserTerminalPanel runID="run-1" sessionID={state.terminalSessionID}
+        onSession={(sessionID, expectedSessionID) => {
+          observed(sessionID, expectedSessionID);
+          setWorkspaceTerminalSession(threadID, sessionID, expectedSessionID);
+        }} />;
+    }
+    const reactEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    reactEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      setWorkspaceTerminalSession(threadID, "sess-old");
+      root.render(<Probe />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "End terminal" })).toBeEnabled());
+      screen.getByRole("button", { name: "End terminal" }).click();
+      await waitFor(() => expect(terminalMocks.close).toHaveBeenCalledWith("sess-old"));
+      resolveClose();
+      setWorkspaceTerminalSession(threadID, "sess-new");
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(getThreadWorkspaceState(threadID).terminalSessionID).toBe("sess-new");
+      expect(observed).toHaveBeenCalledWith("", "sess-old");
+      await waitFor(() => expect(terminalMocks.get).toHaveBeenCalledWith("sess-new"));
+      terminalMocks.close.mockResolvedValueOnce(undefined);
+      await waitFor(() => expect(screen.getByRole("button", { name: "End terminal" })).toBeEnabled());
+      screen.getByRole("button", { name: "End terminal" }).click();
+      await waitFor(() => expect(getThreadWorkspaceState(threadID).terminalSessionID).toBe(""));
+      expect(observed).toHaveBeenCalledWith("", "sess-new");
+    } finally {
+      root.unmount();
+      container.remove();
+      localStorage.removeItem(workspaceTabsStorageKey);
+      resetWorkspaceTabsMemoryCache();
+      reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    }
+  });
+
 });

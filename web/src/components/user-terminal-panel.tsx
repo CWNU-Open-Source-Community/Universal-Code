@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -111,7 +111,7 @@ export function terminalXtermTheme(theme: PrayuTheme): ITheme {
 type UserTerminalPanelProps = {
   runID: string;
   sessionID: string;
-  onSession: (sessionID: string) => void;
+  onSession: (sessionID: string, expectedSessionID?: string) => void;
   onQuote?: (content: string) => TerminalQuoteResult;
   onReturnToDraft?: () => void;
   recoverable?: boolean;
@@ -174,7 +174,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
 
   runRef.current = runID;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -457,7 +457,7 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
       }
       await closeDesktopUserTerminal(sessionID);
       if (!mountedRef.current) return;
-      onSession("");
+      onSession("", sessionID);
       setSession(null);
       setAgentBinding(null);
       sessionRef.current = "";
