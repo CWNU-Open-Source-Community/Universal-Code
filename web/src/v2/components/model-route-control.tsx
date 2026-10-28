@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
   LoaderCircle, RotateCcw, Settings } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
+import { useChatShortcuts } from "../chat-preferences";
 import type { AvailableModelRouteCollectionView, AvailableModelRouteView,
   ThreadModelRouteView } from "../../api/types";
 
@@ -130,6 +131,11 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
   const pendingFocusOriginRef = useRef<HTMLElement | null>(null);
   const routeKey = ["v2", "thread", threadID, "model-route"] as const;
   const catalogKey = ["v2", "models", "available-routes"] as const;
+
+  useChatShortcuts({ modelPicker: () => {
+    if (!routeControlAvailable) return false;
+    setLevel("models");
+  } });
 
   const closeMenu = () => {
     // Restore before removing the focused menu item. A later animation frame

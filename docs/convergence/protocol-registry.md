@@ -22,7 +22,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-terminal-settings](#desktop-terminal-settings) | `internal-durable` | Desktop terminal maintainers | 1 | true |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 23 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 24 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
@@ -804,7 +804,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
 
-<details><summary>23 active identifiers</summary>
+<details><summary>24 active identifiers</summary>
 
 - `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
@@ -822,6 +822,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_workspace_launcher_list.v1`
 - `desktop_workspace_open.v1`
 - `prayu.run-navigation.v1`
+- `prayu.typography.v1`
 - `universal-code.batch-workbench.v1`
 - `universal-code.chat-preferences.v1`
 - `universal-code.sidebar-width.v1`

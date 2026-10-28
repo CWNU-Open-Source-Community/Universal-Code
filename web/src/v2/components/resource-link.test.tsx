@@ -54,6 +54,55 @@ it("keeps root-level file:line links working under the desktop guard and resolve
   } finally { remove(); }
 });
 
+it.each([
+  ["click", "report.PDF"],
+  ["menu", "slides.pptx"],
+  ["click", "archive.zip"],
+  ["menu", "archive.7z"],
+])("opens %s %s in the native app without requiring preview bytes", async (entry, path) => {
+  const bridge = native();
+  bridge.ReadChatResource.mockRejectedValue(new Error("File actions support files up to 5 MiB"));
+  const open = messages(`[打开交付文件](${path})`);
+  const links = screen.getAllByRole("link", { name: "打开交付文件" });
+  for (const link of links) {
+    if (entry === "menu") {
+      fireEvent.contextMenu(link);
+      fireEvent.click(screen.getByRole("menuitem", { name: "打开文件" }));
+    } else fireEvent.click(link);
+  }
+  await waitFor(() => expect(bridge.ChatResourceAction).toHaveBeenCalledTimes(2));
+  expect(bridge.ChatResourceAction).toHaveBeenCalledWith({ version: "desktop_chat_resource.v1", workspace_id: "workspace", run_id: undefined, path, action: "open" });
+  expect(bridge.ChatResourceAction).toHaveBeenCalledWith({ version: "desktop_chat_resource.v1", workspace_id: "workspace", run_id: "historical-run", path, action: "open" });
+  expect(bridge.ReadChatResource).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it.each(["click", "menu"])("reports native document opening failures from %s without falling back to the text viewer", async (entry) => {
+  const bridge = native();
+  bridge.ChatResourceAction.mockRejectedValue(new Error("Could not launch PDF viewer"));
+  const open = messages("[报告](report.pdf)");
+  const link = screen.getAllByRole("link", { name: "报告" })[1];
+  if (entry === "menu") {
+    fireEvent.contextMenu(link);
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开文件" }));
+  } else fireEvent.click(link);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Could not launch PDF viewer");
+  expect(open).not.toHaveBeenCalled();
+  expect(bridge.ReadChatResource).not.toHaveBeenCalled();
+});
+
+it.each(["notes.txt", "result.png", "unknown.bin"])("retains bounded preview reads for %s", async (path) => {
+  const bridge = native();
+  bridge.ReadChatResource.mockRejectedValue(new Error("File actions support files up to 5 MiB"));
+  const open = messages(`[查看文件](${path})`);
+  fireEvent.click(screen.getAllByRole("link", { name: "查看文件" })[1]);
+  expect(await screen.findByRole("alert")).toHaveTextContent("File actions support files up to 5 MiB");
+  expect(bridge.ReadChatResource).toHaveBeenCalledWith({ version: "desktop_chat_resource.v1", workspace_id: "workspace", run_id: "historical-run", path });
+  expect(bridge.ChatResourceAction).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+});
+
 it("preserves descriptive Markdown labels and shortens bare URLs and inline file paths", () => {
   messages("[前端 CI 已通过](https://github.com/org/repo/pull/405)\n\nhttps://github.com/org/repo/pull/405\n\n`web/src/styles.css:598`\n\n`1.0`\n\n```sh\ncat web/src/styles.css\n```");
   expect(screen.getAllByRole("link", { name: "前端 CI 已通过" })).toHaveLength(2);
@@ -102,6 +151,20 @@ it("supports keyboard file menus and propagates native failures instead of claim
   expect(await screen.findByRole("alert")).toHaveTextContent("Clipboard busy");
   expect(bridge.ChatResourceAction).toHaveBeenCalledWith(expect.objectContaining({ workspace_id: "workspace", run_id: "historical-run", path: "report.md", action: "copy_file" }));
   expect(screen.queryByText("已复制文件")).not.toBeInTheDocument();
+});
+
+it("shows the native size-limit message when copying file contents fails", async () => {
+  const bridge = native();
+  const message = "File actions support files up to 5 MiB";
+  // Wails converts the formatter's JSON string into Error(message.error).
+  bridge.ChatResourceAction.mockRejectedValueOnce(new Error(message));
+  messages("[large.bin](large.bin)");
+  fireEvent.contextMenu(screen.getAllByRole("link", { name: "large.bin" })[0]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "复制文件内容" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(bridge.ChatResourceAction).toHaveBeenCalledWith(expect.objectContaining({ path: "large.bin", action: "copy_content" }));
+  expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+  expect(screen.queryByText("已复制文件内容")).not.toBeInTheDocument();
 });
 
 it("keeps the selected link action focused while the assistant continues streaming", () => {
