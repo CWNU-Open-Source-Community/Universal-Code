@@ -1346,11 +1346,6 @@ jobs:
             $publicChecksums += "`n" + [System.IO.File]::ReadAllText("build/macos-dmg/$arch/$stem.dmg.sha256").TrimEnd([char[]]"`r`n")
           }
           [System.IO.File]::WriteAllText('build/public/SHA256SUMS', $publicChecksums + "`n", [System.Text.UTF8Encoding]::new($false))
-          if ($stable) {
-            # Stable Windows evidence binds the original checksum file bytes.
-            # Mac images also carry their own .dmg.sha256 sidecars.
-            Copy-Item -LiteralPath build/desktop/SHA256SUMS -Destination build/public/SHA256SUMS -Force
-          }
           foreach ($asset in $assets) {
             if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
               throw "Release asset is missing: $asset"
