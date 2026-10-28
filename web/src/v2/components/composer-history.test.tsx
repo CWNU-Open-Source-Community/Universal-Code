@@ -87,7 +87,7 @@ it.each([true, false])("recalls complete saved prompts and restores the managed 
   selection("end"); key("ArrowDown");
   await waitFor(() => expect(screen.getByTestId("draft").textContent).toBe(newest));
   selection("end"); key("ArrowDown");
-  expect(screen.getByTestId("draft")).toBeEmptyDOMElement();
+  await waitFor(() => expect(screen.getByTestId("draft")).toBeEmptyDOMElement());
   expect(test.getPage).toHaveBeenCalledOnce(); expect(test.get).toHaveBeenCalledTimes(2);
   expect(test.submit).not.toHaveBeenCalled();
 });

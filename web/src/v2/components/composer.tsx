@@ -8,6 +8,8 @@ import type { WorkspaceView } from "../../api/types";
 import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-control";
 import { V2PermissionControl } from "./permission-control";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
+import { V2PromptCommandMenu } from "./prompt-command-menu";
+import { expandPromptCommand, getSafeLocalStorage, readPromptCommands, sortedPromptCommands } from "../../lib/prompt-commands";
 import { V2FileContext, useV2FileReferences, withV2FileReference, type V2FileReference } from "./file-context";
 import { useV2ThreadSubmissions, V2SubmissionError, v2TurnOutcomeKnown, type V2TurnInput } from "../use-thread-turn";
 import { useV2PersistenceWarning, useV2RecoveryStore } from "../recovery-storage";
@@ -105,6 +107,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const attachmentPicker = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
+  const slashStorage = useRef<Storage | undefined>(getSafeLocalStorage());
   const importStatus = useMemo(() => ({ busy: false, error: "", textNotice: "" }), [workspaceID, threadID]);
   const [, refreshImport] = useState(0);
   const addFiles = async (input: File[]) => {
@@ -144,6 +147,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   };
   const currentContentRef = useRef(content);
   currentContentRef.current = content;
+  // The "/" command menu is derived purely from the draft: it stays open while
+  // the draft is one slash token (optionally followed by arguments) and closes
+  // as soon as the draft stops matching. Selection only ever fills the draft;
+  // it cannot send or execute anything by itself.
+  const slash = useMemo(() => {
+    if (disabled) return null;
+    const match = /^\/(?:([a-z][a-z0-9-]*)(?:\s([\s\S]*))?)?$/u.exec(content);
+    return match ? { name: match[1] ?? "", args: match[2] ?? "" } : null;
+  }, [content, disabled]);
   // Keep the input mounted while the initial project loads, but scope local
   // submission bookkeeping so a late response cannot affect another draft.
   const pendingFiles = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
@@ -238,6 +250,22 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     // A descendant portal can contain its own form (settings or file search).
     if (event && event.target !== event.currentTarget) return;
     if (!ready) return;
+    if (slash !== null) {
+      // Enter inserts the exact or uniquely matching command instead of
+      // sending a bare slash token. Without a confident target the draft is
+      // sent as an ordinary operator message and the menu only hints that
+      // nothing matched; either way Enter always does something sensible.
+      const commands = sortedPromptCommands(readPromptCommands(slashStorage.current));
+      const exact = commands.find((command) => command.name === slash.name);
+      const candidates = commands.filter((command) => command.name.startsWith(slash.name));
+      const target = slash.name ? (exact ?? (candidates.length === 1 ? candidates[0] : null)) : null;
+      if (target) {
+        setContent(expandPromptCommand(target.body, slash.args));
+        setError(null);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return;
+      }
+    }
     promptHistory.cancel();
     const submittedFiles = references.files;
     const submittedImages = images.images;
@@ -407,6 +435,12 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         ]} unavailableReason={fileReferenceUnavailableReason} open={referencePickerOpen}
         onOpenChange={setReferencePickerOpen} returnFocusRef={addTriggerRef}
         onChange={references.update} workspaceID={workspaceID} />}
+      {slash !== null && !disabled && <V2PromptCommandMenu storage={slashStorage.current} slash={slash}
+        onSelect={(expanded) => {
+            setContent(expanded);
+          setError(null);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }} />}
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
         onChange={(next) => { promptHistory.cancel(); setContent(next); setError(null); }} onSubmit={() => void submit()}
         onHistoryNavigate={promptHistory.navigate} onHistoryCancel={promptHistory.cancel}
