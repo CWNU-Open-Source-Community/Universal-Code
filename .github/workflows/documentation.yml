@@ -1,0 +1,68 @@
+name: Documentation checks
+
+on:
+  pull_request:
+    paths:
+      - 'CONTRIBUTING.md'
+      - 'scripts/check-contributor-startup.mjs'
+      - '.github/workflows/documentation.yml'
+      - 'internal/app/api_command.go'
+      - 'internal/httpapi/server.go'
+      - 'web/src/components/connection-gate.tsx'
+      - 'web/vite.config.ts'
+      - 'web/package*.json'
+      - 'go.mod'
+      - 'go.sum'
+  push:
+    branches: [main]
+    paths:
+      - 'CONTRIBUTING.md'
+      - 'scripts/check-contributor-startup.mjs'
+      - '.github/workflows/documentation.yml'
+      - 'internal/app/api_command.go'
+      - 'internal/httpapi/server.go'
+      - 'web/src/components/connection-gate.tsx'
+      - 'web/vite.config.ts'
+      - 'web/package*.json'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup:
+    name: Contributor startup (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Follow the documented dependency preparation
+        run: |
+          go mod download
+          go mod verify
+          cd web
+          npm ci
+      - name: Install smoke-test browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Execute documented shell commands and connect in Chromium
+        run: node scripts/check-contributor-startup.mjs
