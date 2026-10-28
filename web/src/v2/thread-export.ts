@@ -81,7 +81,26 @@ export function formatThreadExport(title: string, messages: ExportMessage[], for
   return `${format === "markdown" ? "# " : ""}${heading}\n\n${sections.join("\n\n---\n\n")}\n`;
 }
 
+// Truncate by user-perceived character, not by code point: ZWJ emoji families,
+// skin-tone modifiers and combining marks each count as one grapheme, so the
+// bound can never split them into invalid or unrecognizable fragments. Runtimes
+// without Intl.Segmenter keep the code-point bound as a floor.
+function truncateExportTitleGraphemes(value: string, maxGraphemes: number): string {
+  if (typeof Intl === "undefined" || !("Segmenter" in Intl)) {
+    return [...value].slice(0, maxGraphemes).join("");
+  }
+  let name = "";
+  let count = 0;
+  for (const segment of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)) {
+    if (count >= maxGraphemes) break;
+    name += segment.segment;
+    count += 1;
+  }
+  return name;
+}
+
 export function threadExportFilename(title: string, format: ThreadExportFormat): string {
-  const name = title.replace(/[\\/:*?"<>|\u0000-\u001f]/gu, "_").trim().replace(/[. ]+$/u, "").slice(0, 100);
+  const clean = title.replace(/[\\/:*?"<>|\u0000-\u001f]/gu, "_").trim().replace(/[. ]+$/u, "");
+  const name = truncateExportTitleGraphemes(clean, 100).replace(/[. ]+$/u, "");
   return `conversation-${name || "export"}.${format === "markdown" ? "md" : "txt"}`;
 }
