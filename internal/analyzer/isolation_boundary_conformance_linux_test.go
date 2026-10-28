@@ -319,7 +319,7 @@ func installAnalyzerLandlockFilesystem(inputPath, stagingPath string) (int, erro
 	if abi >= 5 {
 		handled |= unix.LANDLOCK_ACCESS_FS_IOCTL_DEV
 	}
-	ruleset := unix.LandlockRulesetAttr{Access_fs: handled}
+	ruleset := unix.LandlockRulesetAttr{Handled_access_fs: handled}
 	rulesetRaw, _, errno := unix.Syscall6(unix.SYS_LANDLOCK_CREATE_RULESET,
 		uintptr(unsafe.Pointer(&ruleset)), unsafe.Sizeof(ruleset), 0, 0, 0, 0)
 	if errno != 0 {
