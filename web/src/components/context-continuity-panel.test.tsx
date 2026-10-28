@@ -8,6 +8,36 @@ import { ContextContinuityPanel } from "./context-continuity-panel";
 vi.mock("../lib/download", () => ({ downloadTextFile: vi.fn() }));
 
 describe("ContextContinuityPanel", () => {
+  it("names a memory export after the scope captured when it started", async () => {
+    const user = userEvent.setup();
+    const exported = { protocol_version: "context_memory_export.v1", scope: "project",
+      scope_id: "workspace-1", exported_at: "2026-08-19T00:00:00Z", items: [],
+      capability_grant: false };
+    let resolveExport: (value: typeof exported) => void = () => undefined;
+    const pendingExport = new Promise<typeof exported>((resolve) => { resolveExport = resolve; });
+    const get = vi.fn().mockImplementation((path: string) => {
+      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
+      if (path === "/memories/export") return pendingExport;
+      if (path === "/memories") return Promise.resolve([memoryView()]);
+      if (path === "/memory-candidates") return Promise.resolve([]);
+      if (path.includes("/tree")) return Promise.resolve(sessionTree());
+      return Promise.reject(new Error(`unexpected read ${path}`));
+    });
+    renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
+      deleteControl: vi.fn() } as unknown as APIClient);
+
+    await user.click(await screen.findByRole("button", { name: "Export" }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/memories/export",
+      expect.objectContaining({ scope: "project", scope_id: "workspace-1" })));
+    // The operator switches scope while the export request is in flight; the
+    // saved filename must still follow the scope the server actually returned.
+    await user.selectOptions(screen.getByLabelText("Memory scope"), "user");
+    resolveExport(exported);
+    await waitFor(() => expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
+      expect.stringMatching(/^prayu-project-memory-\d{4}-\d{2}-\d{2}\.json$/),
+      "application/json", `${JSON.stringify(exported, null, 2)}\n`));
+  });
+
   it("explains pinned sources, manages explicit memory, and exposes non-authorizing branches", async () => {
     const user = userEvent.setup();
     const instructionState = projectInstructionState();
@@ -77,36 +107,6 @@ describe("ContextContinuityPanel", () => {
       deleteControl: vi.fn() } as unknown as APIClient);
 
     await user.click(await screen.findByRole("button", { name: "Export" }));
-    await waitFor(() => expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
-      expect.stringMatching(/^prayu-project-memory-\d{4}-\d{2}-\d{2}\.json$/),
-      "application/json", `${JSON.stringify(exported, null, 2)}\n`));
-  });
-
-  it("names a memory export after the scope captured when it started", async () => {
-    const user = userEvent.setup();
-    const exported = { protocol_version: "context_memory_export.v1", scope: "project",
-      scope_id: "workspace-1", exported_at: "2026-08-19T00:00:00Z", items: [],
-      capability_grant: false };
-    let resolveExport: (value: typeof exported) => void = () => undefined;
-    const pendingExport = new Promise<typeof exported>((resolve) => { resolveExport = resolve; });
-    const get = vi.fn().mockImplementation((path: string) => {
-      if (path.includes("project-instructions")) return Promise.resolve(projectInstructionState());
-      if (path === "/memories/export") return pendingExport;
-      if (path === "/memories") return Promise.resolve([memoryView()]);
-      if (path === "/memory-candidates") return Promise.resolve([]);
-      if (path.includes("/tree")) return Promise.resolve(sessionTree());
-      return Promise.reject(new Error(`unexpected read ${path}`));
-    });
-    renderPanel({ hasControl: true, get, postControl: vi.fn(), patchControl: vi.fn(),
-      deleteControl: vi.fn() } as unknown as APIClient);
-
-    await user.click(await screen.findByRole("button", { name: "Export" }));
-    await waitFor(() => expect(get).toHaveBeenCalledWith("/memories/export",
-      expect.objectContaining({ scope: "project", scope_id: "workspace-1" })));
-    // The operator switches scope while the export request is in flight; the
-    // saved filename must still follow the scope the server actually returned.
-    await user.selectOptions(screen.getByLabelText("Memory scope"), "user");
-    resolveExport(exported);
     await waitFor(() => expect(vi.mocked(downloadTextFile)).toHaveBeenCalledWith(
       expect.stringMatching(/^prayu-project-memory-\d{4}-\d{2}-\d{2}\.json$/),
       "application/json", `${JSON.stringify(exported, null, 2)}\n`));
