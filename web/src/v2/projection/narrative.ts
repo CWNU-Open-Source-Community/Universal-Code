@@ -217,13 +217,23 @@ export function projectThreadNarrative(
 ): NarrativeEntry[] {
   const result: NarrativeEntry[] = [];
   const noticeEvents = new Set<string>();
-  // Durable model-call records carry the provider/model identity per attempt;
-  // index them once so assistant replies can attribute themselves (the
-  // operator may switch models mid-thread, so the run's route is not enough).
-  const modelByAttempt = new Map<string, string>();
+  // Durable model-call records carry provider/model identities.
+  // Index them by specific attempt (${attempt_id}:${model_attempt}) and by attempt_id.
+  // Fallback attribution by bare attempt_id is strictly guarded: it is only used
+  // if the attempt uniquely and unambiguously resolves to exactly one model identity.
+  const modelBySpecificAttempt = new Map<string, string>();
+  const modelsByAttempt = new Map<string, Set<string>>();
   for (const item of transcript) {
-    if (item.model && item.attempt_id && !modelByAttempt.has(item.attempt_id)) {
-      modelByAttempt.set(item.attempt_id, item.model);
+    if (item.model && item.attempt_id) {
+      if (item.model_attempt) {
+        modelBySpecificAttempt.set(`${item.attempt_id}:${item.model_attempt}`, item.model);
+      }
+      const existing = modelsByAttempt.get(item.attempt_id);
+      if (existing) {
+        existing.add(item.model);
+      } else {
+        modelsByAttempt.set(item.attempt_id, new Set([item.model]));
+      }
     }
   }
   type ActivityEntry = Extract<NarrativeEntry, { kind: "activity" }>;
@@ -340,7 +350,19 @@ export function projectThreadNarrative(
       const branchSourceID = item.source === "model" && item.kind === "model_update" && item.durable && !item.provisional
         ? item.id : undefined;
       const changeSourceID = item.source_ref?.startsWith("branch-assistant:") ? undefined : branchSourceID;
-      const model = item.attempt_id ? modelByAttempt.get(item.attempt_id) : undefined;
+      let model: string | undefined = item.model;
+      if (!model && item.attempt_id) {
+        if (item.model_attempt) {
+          model = modelBySpecificAttempt.get(`${item.attempt_id}:${item.model_attempt}`);
+        }
+        // Strict fallback: only attribute by bare attempt_id if the attempt's model identity is uniquely provable.
+        if (!model) {
+          const attemptModels = modelsByAttempt.get(item.attempt_id);
+          if (attemptModels && attemptModels.size === 1) {
+            model = attemptModels.values().next().value;
+          }
+        }
+      }
       const previous = result.at(-1);
       if (previous?.kind === "assistant" && !previous.provisional && !item.provisional && previous.runId === item.run_id) {
         // A Supervisor may emit the same final answer again while closing its

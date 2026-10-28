@@ -217,9 +217,14 @@ func Build(threadID string, source []Source) ([]Item, error) {
 		return nil, fmt.Errorf("thread transcript accepts at most %d source records", MaxSourceRecords)
 	}
 	ordered := append([]Source(nil), source...)
-	// The run's latest model-call attempt, so a durable reply projected from a
-	// SessionMessageEvent can inherit the model identity of the call it closed.
-	attemptByRun := map[string]string{}
+	// The run's latest producing model call, so a durable reply projected from a
+	// SessionMessageEvent can inherit the model identity and attempt of the call it closed.
+	type producingModelCall struct {
+		attemptID    string
+		modelAttempt int
+		model        string
+	}
+	modelCallByRun := map[string]producingModelCall{}
 	slices.SortFunc(ordered, func(left, right Source) int {
 		if order := cmp.Compare(left.Ordinal, right.Ordinal); order != 0 {
 			return order
@@ -268,14 +273,43 @@ func Build(threadID string, source []Source) ([]Item, error) {
 		for _, projected := range projection.Items {
 			item := projectActivity(record, projected)
 			// The final durable reply is a SessionMessageEvent without attempt
-			// identity; inherit the run's latest model-call attempt so the web
-			// narrative can attribute the reply to its producing model.
-			if projected.AttemptID != "" && projected.Kind == runactivity.KindModelCall {
-				attemptByRun[record.RunID] = projected.AttemptID
+			// or model identity; inherit the run's latest producing model call so
+			// the web narrative attributes the reply to the exact model that generated it.
+			if projected.Kind == runactivity.KindModelCall {
+				call := modelCallByRun[record.RunID]
+				if projected.ModelAttempt != 0 && projected.ModelAttempt != call.modelAttempt {
+					call = producingModelCall{
+						attemptID:    projected.AttemptID,
+						modelAttempt: projected.ModelAttempt,
+						model:        projected.Model,
+					}
+				} else {
+					if projected.AttemptID != "" {
+						call.attemptID = projected.AttemptID
+					}
+					if projected.ModelAttempt != 0 {
+						call.modelAttempt = projected.ModelAttempt
+					}
+					if projected.Model != "" {
+						call.model = projected.Model
+					}
+				}
+				if call.attemptID != "" || call.model != "" {
+					modelCallByRun[record.RunID] = call
+				}
 			}
-			if item.AttemptID == "" && item.Kind == runactivity.KindModelUpdate &&
-				item.Source == runactivity.SourceModel {
-				item.AttemptID = attemptByRun[record.RunID]
+			if item.Kind == runactivity.KindModelUpdate && item.Source == runactivity.SourceModel {
+				if call, ok := modelCallByRun[record.RunID]; ok {
+					if item.AttemptID == "" {
+						item.AttemptID = call.attemptID
+					}
+					if item.ModelAttempt == 0 {
+						item.ModelAttempt = call.modelAttempt
+					}
+					if item.Model == "" {
+						item.Model = call.model
+					}
+				}
 			}
 			items = append(items, item)
 		}

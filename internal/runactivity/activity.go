@@ -122,6 +122,8 @@ func projectEvent(event events.Event) (Item, bool) {
 		base.Detail = identity
 		base.Model = identity
 		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
+		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
+		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "正在整理上下文"
 		}
@@ -138,11 +140,20 @@ func projectEvent(event events.Event) (Item, bool) {
 		base.Model = identity
 		base.Detail = completedModelDetail(event.PayloadJSON, identity)
 		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
+		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
+		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "上下文整理调用已结束"
 		}
 	case events.ModelFailedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型调用失败", "failed"
+		identity := modelIdentity(event.PayloadJSON)
+		if identity != "" {
+			base.Model = identity
+		}
+		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
+		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
+		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 		if stringField(event.PayloadJSON, "purpose") == "context_compaction" {
 			base.Title = "上下文整理调用未完成"
 		}
