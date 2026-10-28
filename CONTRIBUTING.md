@@ -109,6 +109,19 @@ CI 会直接提取上述代码块，在 Linux/Bash 与 Windows/PowerShell 上启
 
 ---
 
+## 发行下载入口维护
+
+准备发布时，同步 `README.md`、`README.en.md`、`docs/windows-release.md`、`docs/macos-release.md` 中 `public-downloads` 标记内的版本、日期、下载与启动说明，再运行：
+
+```sh
+python -B scripts/check-download-docs.py
+python -B -m unittest discover -s scripts -p test_download_docs.py -v
+```
+
+每个入口必须使用同一个明确的 Release tag；`/releases/latest` 不包含预发布，不能作为预览版入口。Windows 链接指向 `TraverseBoard.exe`，Mac 按 `macos-arm64` / `macos-amd64` 选择 DMG。Release 页负责展示包含源码 revision 的完整文件名，避免在源码文档中预先引用该提交自身的 hash。
+
+发布 tag 时，Desktop release 工作流会要求四份文档的版本等于待发布版本；上传 Draft 资产后，还会确认 EXE、校验和及两个架构的 DMG 均已上传、非空，且 DMG 文件名绑定本次版本与源码 revision。任何入口或资产不一致都会阻止公开发布。Actions 测试候选另列，保留其登录与过期说明。
+
 ## OpenAPI 契约与 DTO 代码生成
 
 Universal-Code 以 **Go 结构体与路由定义作为 API 的唯一真相来源 (Single Source of Truth)**。
