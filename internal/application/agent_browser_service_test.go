@@ -116,14 +116,16 @@ func (s *agentBrowserTestStore) ListSupervisorToolRounds(_ context.Context, chec
 }
 
 type agentBrowserTestRuntime struct {
-	done       chan struct{}
-	cancelOnce sync.Once
-	status     browserruntime.AgentBrowserStatus
-	actions    []string
-	png        []byte
-	cancelled  bool
-	after      func()
-	block      bool
+	done              chan struct{}
+	cancelOnce        sync.Once
+	screencastOnce    sync.Once
+	screencastStarted chan struct{}
+	status            browserruntime.AgentBrowserStatus
+	actions           []string
+	png               []byte
+	cancelled         bool
+	after             func()
+	block             bool
 }
 
 func (r *agentBrowserTestRuntime) Navigate(ctx context.Context, url string) (browserruntime.AgentBrowserNavigation, error) {
@@ -177,6 +179,15 @@ func (r *agentBrowserTestRuntime) Close(context.Context) (browserruntime.AgentBr
 	return browserruntime.AgentBrowserCleanup{SessionID: r.status.SessionID, TreeReaped: true, ProfileRemoved: true}, nil
 }
 func (r *agentBrowserTestRuntime) Done() <-chan struct{} { return r.done }
+
+// StartScreencast returns an idle stream: the live view blocks on its request
+// context until the test cancels it, which is what the lifecycle test needs.
+func (r *agentBrowserTestRuntime) StartScreencast(context.Context) (browserruntime.AgentBrowserScreencastStream, error) {
+	if r.screencastStarted != nil {
+		r.screencastOnce.Do(func() { close(r.screencastStarted) })
+	}
+	return browserruntime.AgentBrowserScreencastStream{}, nil
+}
 
 func newAgentBrowserFixture(t *testing.T) (*AgentBrowserService, *agentBrowserTestStore, *agentBrowserTestRuntime, *AgentRunner, domain.SupervisorTurn) {
 	t.Helper()
