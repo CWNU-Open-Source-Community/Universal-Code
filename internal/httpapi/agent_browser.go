@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -312,18 +310,24 @@ func (a *API) serveAgentBrowserScreencast(w http.ResponseWriter, request *http.R
 		a.writeError(w, requestID, apperror.New(apperror.CodeFailedPrecondition, "Agent browser session is not available"), http.StatusConflict)
 		return
 	}
-	controller := http.NewResponseController(w)
-	if err := controller.Flush(); err != nil {
-		a.writeError(w, requestID, apperror.New(apperror.CodeInternal, "streaming is unsupported on this transport"), 0)
-		return
-	}
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+	// Headers must be committed before the first flush; probing with Flush first
+	// would send the response without its event-stream content type.
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		return
+	}
 
 	var writeMu sync.Mutex
-	flush := func() error { return controller.Flush() }
+	writeFrame := func(frame []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		// Every write re-arms a short deadline so the server's 30s write timeout
+		// cannot cut a healthy live view between heartbeats.
+		return writeEventStreamFrame(w, DefaultEventStreamWriteTimeout, frame)
+	}
 	emit := func(frame application.AgentBrowserScreencastFrameView) error {
 		view, err := publicAgentBrowserScreencastFrame(frame, runID)
 		if err != nil {
@@ -333,13 +337,8 @@ func (a *API) serveAgentBrowserScreencast(w http.ResponseWriter, request *http.R
 		if err != nil {
 			return err
 		}
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		if _, err := fmt.Fprintf(w, "event: agent_browser.frame\ndata: %s\n\n", data); err != nil {
-			return err
-		}
-		_ = flush()
-		return nil
+		payload := append([]byte("event: agent_browser.frame\ndata: "), data...)
+		return writeFrame(append(payload, '\n', '\n'))
 	}
 	done := make(chan error, 1)
 	go func() { done <- streamer.StreamScreencast(request.Context(), runID, emit) }()
@@ -352,17 +351,13 @@ func (a *API) serveAgentBrowserScreencast(w http.ResponseWriter, request *http.R
 				// A terminal but unclassified stream failure ends the SSE body
 				// without leaking backend internals; the client reconnects and
 				// re-reads the status projection.
-				writeMu.Lock()
-				_, _ = io.WriteString(w, "event: agent_browser.closed\ndata: {\"version\":\"agent_browser_screencast.v1\",\"reason\":\"ended\"}\n\n")
-				_ = flush()
-				writeMu.Unlock()
+				_ = writeFrame([]byte("event: agent_browser.closed\ndata: {\"version\":\"agent_browser_screencast.v1\",\"reason\":\"ended\"}\n\n"))
 			}
 			return
 		case <-heartbeat.C:
-			writeMu.Lock()
-			_, _ = io.WriteString(w, ": keepalive\n\n")
-			_ = flush()
-			writeMu.Unlock()
+			if err := writeFrame([]byte(": keepalive\n\n")); err != nil {
+				return
+			}
 		}
 	}
 }

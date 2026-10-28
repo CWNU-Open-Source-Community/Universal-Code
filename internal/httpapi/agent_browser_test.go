@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -203,6 +204,48 @@ func TestAgentBrowserScreencastStreamsRunBoundFrames(t *testing.T) {
 	}
 	if stub.streams != 1 || stub.lastRunID != fixture.run.ID {
 		t.Fatal("live view reached the controller with the wrong identity")
+	}
+}
+
+func TestAgentBrowserScreencastCommitsEventStreamHeaders(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserScreencastStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "browser-live-session", Generation: 3, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(api)
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodGet,
+		server.URL+"/api/v1/runs/"+fixture.run.ID+"/agent-browser/screencast", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Host = "127.0.0.1:8765"
+	request.Header.Set("Authorization", "Bearer "+testAccessToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A response recorder with a no-op Flush cannot observe that net/http
+	// commits headers at the first flush, before the handler sets Content-Type.
+	if response.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("live view headers were not committed as an event stream: %d %q", response.StatusCode,
+			response.Header.Get("Content-Type"))
+	}
+	if response.Header.Get("Cache-Control") != "no-store" ||
+		!strings.Contains(string(body), "event: agent_browser.frame") {
+		t.Fatalf("live view response lost caching or frame semantics: %q %s",
+			response.Header.Get("Cache-Control"), body)
 	}
 }
 
