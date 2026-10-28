@@ -1689,7 +1689,10 @@ export class APIClient implements ClientFeatures {
     const headers = this.transport.headers();
     headers.Accept = "text/event-stream";
     return this.rawEventStream(`/runs/${encodeURIComponent(runID)}/agent-browser/screencast`, headers,
-      options.signal, options.onOpen, async (message) => {
+      options.signal, options.onOpen, (message) => {
+        if (message.event === "agent_browser.closed") {
+          throw new APIRequestError("Agent browser live view closed", "STREAM_CLOSED", 200, "");
+        }
         if (message.event !== "agent_browser.frame") {
           return;
         }

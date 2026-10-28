@@ -132,7 +132,8 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
   </section>;
 }
 
-function BrowserScreenshot({ url, blob, name, alt }: { url: string; blob: Blob; name: string; alt: string }) {  const { t } = useLocale();
+function BrowserScreenshot({ url, blob, name, alt }: { url: string; blob: Blob; name: string; alt: string }) {
+  const { t } = useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>();
   const [failed, setFailed] = useState(false);
