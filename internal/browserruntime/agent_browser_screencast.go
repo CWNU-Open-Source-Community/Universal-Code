@@ -104,7 +104,9 @@ func (r *AgentBrowserRuntime) StartScreencast(ctx context.Context) (AgentBrowser
 		"everyNthFrame": agentBrowserScreencastEveryNthFrame}
 	if err := r.call(ctx, "Page.startScreencast", params, nil); err != nil {
 		r.mu.Lock()
-		r.screencast = nil
+		if r.screencast == pump {
+			r.screencast = nil
+		}
 		r.mu.Unlock()
 		return AgentBrowserScreencastStream{}, err
 	}
@@ -114,23 +116,26 @@ func (r *AgentBrowserRuntime) StartScreencast(ctx context.Context) (AgentBrowser
 		case <-r.done:
 		case <-pump.stopCh:
 		}
-		r.stopScreencastPump(false)
+		r.stopScreencastPump(pump, false)
 	}()
 	return AgentBrowserScreencastStream{frames: pump.frames, stop: func() {
-		r.stopScreencastPump(true)
+		r.stopScreencastPump(pump, true)
 	}}, nil
 }
 
-// stopScreencastPump tears the pump down exactly once. callCDP is false when
-// the session itself already ended; the browser-side tap dies with it.
-func (r *AgentBrowserRuntime) stopScreencastPump(callCDP bool) {
+// stopScreencastPump tears the pump down exactly once. Only the pump that is
+// still registered may be closed: a watcher unparked by an earlier Stop can
+// run after a replacement viewer attached, and it must not close that one.
+// callCDP is false when the session itself already ended; the browser-side tap
+// dies with it.
+func (r *AgentBrowserRuntime) stopScreencastPump(pump *agentBrowserScreencastPump, callCDP bool) {
 	r.mu.Lock()
-	pump := r.screencast
-	r.screencast = nil
-	r.mu.Unlock()
-	if pump == nil {
+	if pump == nil || r.screencast != pump {
+		r.mu.Unlock()
 		return
 	}
+	r.screencast = nil
+	r.mu.Unlock()
 	pump.stopOnce.Do(func() {
 		close(pump.stopCh)
 		close(pump.acks)

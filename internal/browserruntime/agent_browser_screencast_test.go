@@ -84,7 +84,7 @@ func (c *screencastTestConn) frame(sequence int, jpegBytes int) {
 		payload[index] = byte(sequence)
 	}
 	params, err := json.Marshal(map[string]any{"sessionId": "owned-session",
-		"data": base64.StdEncoding.EncodeToString(payload),
+		"data":     base64.StdEncoding.EncodeToString(payload),
 		"metadata": map[string]any{"deviceWidth": 1280, "deviceHeight": 900}})
 	if err != nil {
 		return
@@ -205,6 +205,40 @@ func TestAgentBrowserScreencastForwardsAckAndStops(t *testing.T) {
 	second, err := runtime.StartScreencast(context.Background())
 	if err != nil {
 		t.Fatalf("restart after stop failed: %v", err)
+	}
+	second.Stop()
+}
+
+func TestAgentBrowserScreencastStaleWatcherCannotCloseItsReplacement(t *testing.T) {
+	runtime, _ := newScreencastTestRuntime(t)
+	first, err := runtime.StartScreencast(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.mu.Lock()
+	stalePump := runtime.screencast
+	runtime.mu.Unlock()
+	first.Stop()
+
+	second, err := runtime.StartScreencast(context.Background())
+	if err != nil {
+		t.Fatalf("restart after stop failed: %v", err)
+	}
+	// The stopped viewer's watcher can unwind after the replacement attached;
+	// its cleanup must leave the new pump registered and open.
+	runtime.stopScreencastPump(stalePump, false)
+	runtime.mu.Lock()
+	current := runtime.screencast
+	runtime.mu.Unlock()
+	if current == nil || current == stalePump {
+		t.Fatal("a stale watcher tore down the replacement live view")
+	}
+	select {
+	case _, open := <-second.Frames():
+		if !open {
+			t.Fatal("replacement frame channel was closed by a stale watcher")
+		}
+	case <-time.After(50 * time.Millisecond):
 	}
 	second.Stop()
 }
