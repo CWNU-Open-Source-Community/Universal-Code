@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SquareSlash, Settings2, Trash2 } from "lucide-react";
 import { useLocale } from "../../lib/locale";
 import { createPromptCommand, deletePromptCommand, expandPromptCommand,
@@ -94,7 +95,7 @@ function V2PromptCommandManager({ storage, onClose }: {
       setError(failure instanceof PromptCommandError ? failure.message : promptCommandIssueText("storage_unavailable"));
     }
   };
-  return <div className="v2-prompt-command-overlay" role="presentation"
+  const overlay = <div className="v2-prompt-command-overlay" role="presentation"
     onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div aria-label={t("管理自定义指令", "Manage custom commands")} className="v2-prompt-command-manager" role="dialog" aria-modal="true">
@@ -138,4 +139,5 @@ function V2PromptCommandManager({ storage, onClose }: {
       </ul>
     </div>
   </div>;
+  return typeof document === "undefined" ? overlay : createPortal(overlay, document.body);
 }

@@ -278,6 +278,20 @@ it("offers the “/” command menu: Enter inserts the exact match, arguments re
   await waitFor(() => expect(input).toHaveValue("Check  against the notes."));
   expect(onSubmit).not.toHaveBeenCalled();
 
+  // A bare "/" opens the menu showing all available commands.
+  await user.clear(input);
+  await user.type(input, "/");
+  expect(screen.getByRole("menu", { name: "自定义指令" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: /release-check/ })).toBeInTheDocument();
+
+  // The command manager dialog escapes the composer form via createPortal.
+  await user.click(screen.getByRole("menuitem", { name: "管理指令库…" }));
+  const dialog = screen.getByRole("dialog", { name: "管理自定义指令" });
+  expect(dialog).toBeInTheDocument();
+  const composerForm = input.closest("form")!;
+  expect(composerForm.contains(dialog)).toBe(false);
+  await user.click(screen.getByRole("button", { name: "关闭" }));
+
   // Without a confident match, Enter sends the draft as ordinary text and the
   // menu only hints that nothing matched.
   await user.clear(input);

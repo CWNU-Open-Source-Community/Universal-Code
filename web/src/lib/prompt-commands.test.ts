@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPromptCommand, deletePromptCommand, expandPromptCommand,
-  maximumPromptCommandCount, promptCommandsStorageKey, promptCommandIssueText,
+  getSafeLocalStorage, maximumPromptCommandCount, promptCommandsStorageKey, promptCommandIssueText,
   PromptCommandError, readPromptCommands, reservedPromptCommandNames,
   sortedPromptCommands, updatePromptCommand } from "./prompt-commands";
 
@@ -121,5 +121,17 @@ describe("prompt command library", () => {
     expect(expandPromptCommand("Needs $ARGUMENTS here.", "")).toBe("Needs  here.");
     // Operator input containing replacement patterns must survive verbatim.
     expect(expandPromptCommand("Review $ARGUMENTS.", "a $& b $$ c")).toBe("Review a $& b $$ c.");
+  });
+
+  it("safely retrieves localStorage or returns undefined when inaccessible", () => {
+    expect(getSafeLocalStorage()).toBe(window.localStorage);
+    const spy = vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    });
+    try {
+      expect(getSafeLocalStorage()).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

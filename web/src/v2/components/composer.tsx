@@ -9,7 +9,7 @@ import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-con
 import { V2PermissionControl } from "./permission-control";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
 import { V2PromptCommandMenu } from "./prompt-command-menu";
-import { expandPromptCommand, readPromptCommands, sortedPromptCommands } from "../../lib/prompt-commands";
+import { expandPromptCommand, getSafeLocalStorage, readPromptCommands, sortedPromptCommands } from "../../lib/prompt-commands";
 import { V2FileContext, useV2FileReferences, withV2FileReference, type V2FileReference } from "./file-context";
 import { useV2ThreadSubmissions, V2SubmissionError, v2TurnOutcomeKnown, type V2TurnInput } from "../use-thread-turn";
 import { useV2PersistenceWarning, useV2RecoveryStore } from "../recovery-storage";
@@ -107,7 +107,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const attachmentPicker = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
-  const slashStorage = useRef<Storage | undefined>(typeof window === "undefined" ? undefined : window.localStorage);
+  const slashStorage = useRef<Storage | undefined>(getSafeLocalStorage());
   const importStatus = useMemo(() => ({ busy: false, error: "", textNotice: "" }), [workspaceID, threadID]);
   const [, refreshImport] = useState(0);
   const addFiles = async (input: File[]) => {
@@ -151,14 +151,10 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   // the draft is one slash token (optionally followed by arguments) and closes
   // as soon as the draft stops matching. Selection only ever fills the draft;
   // it cannot send or execute anything by itself.
-  // The "/" command menu is derived purely from the draft: it stays open while
-  // the draft is one slash token (optionally followed by arguments) and closes
-  // as soon as the draft stops matching. Selection only ever fills the draft;
-  // it cannot send or execute anything by itself.
   const slash = useMemo(() => {
     if (disabled) return null;
-    const match = /^\/([a-z][a-z0-9-]*)(?:\s([\s\S]*))?$/u.exec(content);
-    return match ? { name: match[1], args: match[2] ?? "" } : null;
+    const match = /^\/(?:([a-z][a-z0-9-]*)(?:\s([\s\S]*))?)?$/u.exec(content);
+    return match ? { name: match[1] ?? "", args: match[2] ?? "" } : null;
   }, [content, disabled]);
   // Keep the input mounted while the initial project loads, but scope local
   // submission bookkeeping so a late response cannot affect another draft.
@@ -262,7 +258,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       const commands = sortedPromptCommands(readPromptCommands(slashStorage.current));
       const exact = commands.find((command) => command.name === slash.name);
       const candidates = commands.filter((command) => command.name.startsWith(slash.name));
-      const target = exact ?? (candidates.length === 1 ? candidates[0] : null);
+      const target = slash.name ? (exact ?? (candidates.length === 1 ? candidates[0] : null)) : null;
       if (target) {
         setContent(expandPromptCommand(target.body, slash.args));
         setError(null);

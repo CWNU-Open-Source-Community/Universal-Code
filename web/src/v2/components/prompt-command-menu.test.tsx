@@ -90,4 +90,14 @@ describe("V2PromptCommandMenu", () => {
     await userEvent.setup().click(screen.getByRole("menuitem", { name: /release-check/ }));
     expect(onSelect).toHaveBeenCalledWith("Check src/main.ts against the notes.");
   });
+
+  it("survives undefined storage by reporting storage unavailable on mutations", async () => {
+    const user = userEvent.setup();
+    renderMenu({ storage: undefined, slash: { name: "", args: "" }, onSelect: vi.fn() });
+    await user.click(screen.getByRole("menuitem", { name: "管理指令库…" }));
+    await user.type(screen.getByRole("textbox", { name: "指令名" }), "test-cmd");
+    await user.type(screen.getByRole("textbox", { name: "指令内容" }), "Test body");
+    await user.click(screen.getByRole("button", { name: "新建指令" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("本机存储不可用，指令库无法保存。");
+  });
 });

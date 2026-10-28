@@ -8,6 +8,14 @@
 export const promptCommandsStorageKey = "universal-code.prompt-commands.v1";
 export const promptCommandsSchemaVersion = 1;
 
+export function getSafeLocalStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 export const maximumPromptCommandCount = 64;
 export const maximumPromptCommandBodyBytes = 16 * 1024;
 
