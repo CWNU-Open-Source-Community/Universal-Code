@@ -151,12 +151,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   // the draft is one slash token (optionally followed by arguments) and closes
   // as soon as the draft stops matching. Selection only ever fills the draft;
   // it cannot send or execute anything by itself.
-  const [slash, setSlash] = useState<{ name: string; args: string } | null>(null);
-  useEffect(() => {
+  // The "/" command menu is derived purely from the draft: it stays open while
+  // the draft is one slash token (optionally followed by arguments) and closes
+  // as soon as the draft stops matching. Selection only ever fills the draft;
+  // it cannot send or execute anything by itself.
+  const slash = useMemo(() => {
+    if (disabled) return null;
     const match = /^\/([a-z][a-z0-9-]*)(?:\s([\s\S]*))?$/u.exec(content);
-    setSlash(match ? { name: match[1], args: match[2] ?? "" } : null);
-  }, [content]);
-  useEffect(() => { if (disabled) setSlash(null); }, [disabled]);
+    return match ? { name: match[1], args: match[2] ?? "" } : null;
+  }, [content, disabled]);
   // Keep the input mounted while the initial project loads, but scope local
   // submission bookkeeping so a late response cannot affect another draft.
   const pendingFiles = useMemo(() => ({ current: new Map<string, string[]>() }), [workspaceID, threadID]);
@@ -262,7 +265,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       const target = exact ?? (candidates.length === 1 ? candidates[0] : null);
       if (target) {
         setContent(expandPromptCommand(target.body, slash.args));
-        setSlash(null);
         setError(null);
         requestAnimationFrame(() => inputRef.current?.focus());
         return;
@@ -439,8 +441,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         onChange={references.update} workspaceID={workspaceID} />}
       {slash !== null && !disabled && <V2PromptCommandMenu storage={slashStorage.current} slash={slash}
         onSelect={(expanded) => {
-          setSlash(null);
-          setContent(expanded);
+            setContent(expanded);
           setError(null);
           requestAnimationFrame(() => inputRef.current?.focus());
         }} />}
