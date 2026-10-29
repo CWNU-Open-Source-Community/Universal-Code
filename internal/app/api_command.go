@@ -81,6 +81,8 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		"enable the approval-gated GitHub Review Provider")
 	gitWorktreeRoot := fs.String("git-worktree-root", "",
 		"product-managed worktree root; defaults below CYBERAGENT_HOME")
+	browserHeaded := fs.Bool("browser-headed", false,
+		"run the agent browser as a visible takeover window (operator login and manual waiting_user handling; profile stays disposable). CYBERAGENT_BROWSER_HEADED=1|true also enables it")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{"listen": true, "ui-dir": true,
 		"enable-workspace-import":    false,
 		"code-intel-config":          true,
@@ -91,7 +93,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		"enable-danger-full-access": false, "enable-browser-cdp-control": false, "enable-full-cdp-debug": false,
 		"enable-docker-execution": false, "enable-batch-validation-execution": false,
 		"enable-git-advanced": false, "enable-github-review": false,
-		"git-worktree-root": true})); err != nil {
+		"git-worktree-root": true, "browser-headed": false})); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -456,7 +458,8 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	var agentBrowserController httpapi.AgentBrowserController
 	if controlToken != "" {
 		agentBrowser := application.NewAgentBrowserService(a.store, application.AgentBrowserOptions{
-			HomePath: a.home, Capabilities: permissionCapabilities, Headless: true, ServiceReadiness: commandRuntime,
+			HomePath: a.home, Capabilities: permissionCapabilities,
+			Headless: !(*browserHeaded || application.BrowserHeadedFromEnvironment()), ServiceReadiness: commandRuntime,
 		})
 		runtimeDependencies.AgentBrowser = agentBrowser
 		agentBrowserController = agentBrowser
@@ -859,8 +862,8 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		permissionCapabilities.OperatorApprovalEnabled,
 		permissionCapabilities.DangerFullAccessEnabled,
 		commandRuntime != nil)
-	fmt.Fprintf(a.out, "browser_cdp_permission_control_enabled: %t\nfull_cdp_debug_enabled: %t\n",
-		*browserCDPControl, browserCDPCapabilities.FullDebugEnabled)
+	fmt.Fprintf(a.out, "browser_cdp_permission_control_enabled: %t\nfull_cdp_debug_enabled: %t\nagent_browser_headed: %t\n",
+		*browserCDPControl, browserCDPCapabilities.FullDebugEnabled, *browserHeaded || application.BrowserHeadedFromEnvironment())
 	fmt.Fprintf(a.out, "docker_execution_enabled: %t\n", *dockerExecution)
 	fmt.Fprintf(a.out, "batch_delivery_host_validation_enabled: %t\n",
 		*batchValidationExecution)

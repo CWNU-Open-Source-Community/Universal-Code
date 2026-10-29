@@ -14,6 +14,8 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/toolgateway"
+	"os"
+	"strings"
 )
 
 type AgentBrowserStore interface {
@@ -503,4 +505,16 @@ func refreshBrowserModelTools(existing []llm.ToolSpec, c toolgateway.BrowserActi
 		}
 	}
 	return out
+}
+
+// BrowserHeadedFromEnvironment reports whether the operator requested the
+// takeover mode: the agent browser runs as a visible window on the operator's
+// desktop so a human can log in or handle waiting_user states manually. The
+// window shares the same disposable session profile, so login state persists
+// for the session and dies with the profile at cleanup; it grants no
+// additional authority to the agent. Opt-in via
+// CYBERAGENT_BROWSER_HEADED=1|true at the composition root.
+func BrowserHeadedFromEnvironment() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("CYBERAGENT_BROWSER_HEADED")))
+	return value == "1" || value == "true"
 }

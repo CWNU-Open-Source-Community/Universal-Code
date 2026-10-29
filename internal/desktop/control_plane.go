@@ -698,7 +698,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	if config.RunExecutionEnabled {
 		agentBrowser = application.NewAgentBrowserService(stateStore, application.AgentBrowserOptions{
 			HomePath: home, Capabilities: config.ExecutionPermissionCapabilities,
-			Headless: true, ServiceReadiness: commandRuntime})
+			Headless: !application.BrowserHeadedFromEnvironment(), ServiceReadiness: commandRuntime})
 		runtimeDependencies.AgentBrowser = agentBrowser
 		agentBrowserController = agentBrowser
 	}

@@ -198,3 +198,22 @@ func TestAgentBrowserDownloadListWithoutLiveSessionIsEmpty(t *testing.T) {
 		t.Fatalf("missing session downloads: %+v %v", listed, err)
 	}
 }
+
+func TestBrowserHeadedFromEnvironment(t *testing.T) {
+	t.Setenv("CYBERAGENT_BROWSER_HEADED", "")
+	if BrowserHeadedFromEnvironment() {
+		t.Fatal("empty environment must stay headless")
+	}
+	for _, value := range []string{"1", "true", "TRUE", " true "} {
+		t.Setenv("CYBERAGENT_BROWSER_HEADED", value)
+		if !BrowserHeadedFromEnvironment() {
+			t.Fatalf("headed value %q not honored", value)
+		}
+	}
+	for _, value := range []string{"0", "false", "yes", "on"} {
+		t.Setenv("CYBERAGENT_BROWSER_HEADED", value)
+		if BrowserHeadedFromEnvironment() {
+			t.Fatalf("non-opt-in value %q enabled headed mode", value)
+		}
+	}
+}
