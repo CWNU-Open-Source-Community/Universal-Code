@@ -98,3 +98,97 @@ func TestThreadCLIUsesStableIdentityAcrossRunSuccessionAndLifecycle(t *testing.T
 		t.Fatalf("lossless CLI export=%#v", bundle)
 	}
 }
+
+func TestThreadCLIRenameAndTitleSearch(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	created, stderr, code := executeTestCommand(t, "thread", "create",
+		"refactor parser module", "--profile", "review", "--max-turns", "4")
+	if code != 0 || stderr != "" {
+		t.Fatalf("create stdout=%s stderr=%s code=%d", created, stderr, code)
+	}
+	threadID := threadIDPattern.FindString(created)
+	if threadID == "" {
+		t.Fatalf("thread identity missing from %s", created)
+	}
+	renamed, stderr, code := executeTestCommand(t, "thread", "rename", threadID,
+		"Parser refactoring plan")
+	if code != 0 || stderr != "" || !strings.Contains(renamed, "title: Parser refactoring plan") {
+		t.Fatalf("rename stdout=%s stderr=%s code=%d", renamed, stderr, code)
+	}
+	shown, stderr, code := executeTestCommand(t, "thread", "show", threadID, "--json")
+	if code != 0 || stderr != "" || !strings.Contains(shown, "Parser refactoring plan") {
+		t.Fatalf("show stdout=%s stderr=%s code=%d", shown, stderr, code)
+	}
+	matched, stderr, code := executeTestCommand(t, "thread", "list", "--title-query",
+		"parser REFACTORING")
+	if code != 0 || stderr != "" || !strings.Contains(matched, threadID) {
+		t.Fatalf("title search stdout=%s stderr=%s code=%d", matched, stderr, code)
+	}
+	missed, stderr, code := executeTestCommand(t, "thread", "list", "--title-query",
+		"no such title anywhere")
+	if code != 0 || stderr != "" || !strings.Contains(missed, "no threads") {
+		t.Fatalf("empty title search stdout=%s stderr=%s code=%d", missed, stderr, code)
+	}
+	if _, stderr, code = executeTestCommand(t, "thread", "rename", threadID); code == 0 {
+		t.Fatalf("rename without a title must fail: stderr=%s", stderr)
+	}
+	if _, stderr, code = executeTestCommand(t, "thread", "rename", threadID, "bad\ntitle"); code == 0 {
+		t.Fatalf("rename with a control character must fail: stderr=%s", stderr)
+	}
+	if _, stderr, code = executeTestCommand(t, "thread", "rename",
+		"thread-run-000000000000-ffffffffffff", "unrelated"); code == 0 {
+		t.Fatalf("rename of a missing thread must fail: stderr=%s", stderr)
+	}
+}
+
+func TestThreadCLIPinAndPinnedFilter(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	first, stderr, code := executeTestCommand(t, "thread", "create",
+		"pinned CLI task", "--profile", "review", "--max-turns", "4")
+	if code != 0 || stderr != "" {
+		t.Fatalf("create first stdout=%s stderr=%s code=%d", first, stderr, code)
+	}
+	second, stderr, code := executeTestCommand(t, "thread", "create",
+		"background CLI task", "--profile", "review", "--max-turns", "4")
+	if code != 0 || stderr != "" {
+		t.Fatalf("create second stdout=%s stderr=%s code=%d", second, stderr, code)
+	}
+	pinnedID := threadIDPattern.FindString(first)
+	unpinnedID := threadIDPattern.FindString(second)
+	pinned, stderr, code := executeTestCommand(t, "thread", "pin", pinnedID)
+	if code != 0 || stderr != "" || !strings.Contains(pinned, "pinned: true") {
+		t.Fatalf("pin stdout=%s stderr=%s code=%d", pinned, stderr, code)
+	}
+	pinnedList, stderr, code := executeTestCommand(t, "thread", "list", "--pinned", "true",
+		"--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("pinned list stdout=%s stderr=%s code=%d", pinnedList, stderr, code)
+	}
+	var threads []domain.Thread
+	if err := json.Unmarshal([]byte(pinnedList), &threads); err != nil {
+		t.Fatal(err)
+	}
+	if len(threads) != 1 || threads[0].ID != pinnedID || !threads[0].Pinned {
+		t.Fatalf("pinned filter returned %+v", threads)
+	}
+	unpinnedList, stderr, code := executeTestCommand(t, "thread", "list", "--pinned", "false",
+		"--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("unpinned list stdout=%s stderr=%s code=%d", unpinnedList, stderr, code)
+	}
+	threads = nil
+	if err := json.Unmarshal([]byte(unpinnedList), &threads); err != nil {
+		t.Fatal(err)
+	}
+	if len(threads) != 1 || threads[0].ID != unpinnedID || threads[0].Pinned {
+		t.Fatalf("unpinned filter returned %+v", threads)
+	}
+	unpinned, stderr, code := executeTestCommand(t, "thread", "pin", pinnedID,
+		"--pinned", "false")
+	if code != 0 || stderr != "" || !strings.Contains(unpinned, "pinned: false") {
+		t.Fatalf("unpin stdout=%s stderr=%s code=%d", unpinned, stderr, code)
+	}
+	if _, stderr, code = executeTestCommand(t, "thread", "list", "--pinned", "maybe"); code == 0 {
+		t.Fatalf("invalid pinned filter must fail: stderr=%s", stderr)
+	}
+}
