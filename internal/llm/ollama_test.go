@@ -175,8 +175,8 @@ func TestOllamaProbeModelRecordsCapabilitiesAndContext(t *testing.T) {
 				"capabilities": []string{"completion", "tools"},
 				"model_info": map[string]any{
 					"general.architecture": "llama",
-					"llama.context_length":  8192.0,
-					"llama.block_count":     32.0,
+					"llama.context_length": 8192.0,
+					"llama.block_count":    32.0,
 				},
 			})
 			return
@@ -234,7 +234,7 @@ func TestOllamaChatResponseUsageAndToolCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, err := provider.Chat(context.Background(), ChatRequest{
-		Model: "tooler:latest",
+		Model:    "tooler:latest",
 		Messages: []Message{{Role: "user", Content: "list the workspace"}},
 	})
 	if err != nil {
@@ -273,7 +273,7 @@ func TestOllamaChatEstimatesUsageWhenCountsAreAbsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, err := provider.Chat(context.Background(), ChatRequest{
-		Model: "tooler:latest",
+		Model:    "tooler:latest",
 		Messages: []Message{{Role: "user", Content: "hello"}},
 	})
 	if err != nil {
@@ -294,7 +294,7 @@ func TestOllamaChatErrorsClassifyStably(t *testing.T) {
 		wantKind   Outcome
 	}{
 		{name: "model not found", statusCode: http.StatusNotFound,
-			body: ollamaJSON(map[string]any{"error": "model 'ghost:7b' not found, try pulling it first"}),
+			body:       ollamaJSON(map[string]any{"error": "model 'ghost:7b' not found, try pulling it first"}),
 			wantReason: ProviderFailureModelNotFound, wantKind: OutcomePermanent},
 		{name: "plain 404 stays protocol", statusCode: http.StatusNotFound,
 			body: `{}`, wantReason: ProviderFailureProtocolIncompatible, wantKind: OutcomePermanent},
@@ -313,7 +313,7 @@ func TestOllamaChatErrorsClassifyStably(t *testing.T) {
 			defer server.Close()
 			provider := newTestOllamaProvider(t, server)
 			_, err := provider.Chat(context.Background(), ChatRequest{
-				Model: "ghost:7b",
+				Model:    "ghost:7b",
 				Messages: []Message{{Role: "user", Content: "hello"}},
 			})
 			if err == nil {
@@ -373,7 +373,7 @@ func TestOllamaChatNoToolSafePath(t *testing.T) {
 		t.Fatal("tool schemas reached a no-tool model")
 	}
 	response, err := provider.Chat(context.Background(), ChatRequest{
-		Model: "plain:7b",
+		Model:    "plain:7b",
 		Messages: []Message{{Role: "user", Content: "hello"}},
 	})
 	if err != nil {
@@ -419,7 +419,7 @@ func TestOllamaStreamChatTextUsageAndToolCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	chunks, err := provider.StreamChat(context.Background(), ChatRequest{
-		Model: "tooler:latest",
+		Model:    "tooler:latest",
 		Messages: []Message{{Role: "user", Content: "hi"}},
 	})
 	if err != nil {
@@ -450,13 +450,13 @@ func TestOllamaStreamChatTextUsageAndToolCalls(t *testing.T) {
 func TestOllamaStreamProtocolAndCancellation(t *testing.T) {
 	t.Run("event after done is rejected", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/api/tags" {
-			_ = json.NewEncoder(writer).Encode(map[string]any{
-				"models": []map[string]any{{"name": "tooler:latest", "model": "tooler:latest",
-					"capabilities": []string{"completion", "tools"}}},
-			})
-			return
-		}
+			if request.URL.Path == "/api/tags" {
+				_ = json.NewEncoder(writer).Encode(map[string]any{
+					"models": []map[string]any{{"name": "tooler:latest", "model": "tooler:latest",
+						"capabilities": []string{"completion", "tools"}}},
+				})
+				return
+			}
 			for _, event := range []map[string]any{
 				{"model": "tooler:latest", "done": false,
 					"message": map[string]any{"role": "assistant", "content": "a"}},
@@ -473,7 +473,7 @@ func TestOllamaStreamProtocolAndCancellation(t *testing.T) {
 			t.Fatal(err)
 		}
 		chunks, err := provider.StreamChat(context.Background(), ChatRequest{
-			Model: "tooler:latest",
+			Model:    "tooler:latest",
 			Messages: []Message{{Role: "user", Content: "hi"}},
 		})
 		if err != nil {
@@ -491,13 +491,13 @@ func TestOllamaStreamProtocolAndCancellation(t *testing.T) {
 	})
 	t.Run("truncated stream is rejected", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/api/tags" {
-			_ = json.NewEncoder(writer).Encode(map[string]any{
-				"models": []map[string]any{{"name": "tooler:latest", "model": "tooler:latest",
-					"capabilities": []string{"completion", "tools"}}},
-			})
-			return
-		}
+			if request.URL.Path == "/api/tags" {
+				_ = json.NewEncoder(writer).Encode(map[string]any{
+					"models": []map[string]any{{"name": "tooler:latest", "model": "tooler:latest",
+						"capabilities": []string{"completion", "tools"}}},
+				})
+				return
+			}
 			_ = json.NewEncoder(writer).Encode(map[string]any{
 				"model": "tooler:latest", "done": false,
 				"message": map[string]any{"role": "assistant", "content": "partial"},
@@ -509,7 +509,7 @@ func TestOllamaStreamProtocolAndCancellation(t *testing.T) {
 			t.Fatal(err)
 		}
 		chunks, err := provider.StreamChat(context.Background(), ChatRequest{
-			Model: "tooler:latest",
+			Model:    "tooler:latest",
 			Messages: []Message{{Role: "user", Content: "hi"}},
 		})
 		if err != nil {
@@ -528,13 +528,13 @@ func TestOllamaStreamProtocolAndCancellation(t *testing.T) {
 	t.Run("cancellation stops the stream", func(t *testing.T) {
 		release := make(chan struct{})
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/api/tags" {
-			_ = json.NewEncoder(writer).Encode(map[string]any{
-				"models": []map[string]any{{"name": "tooler:latest", "model": "tooler:latest",
-					"capabilities": []string{"completion", "tools"}}},
-			})
-			return
-		}
+			if request.URL.Path == "/api/tags" {
+				_ = json.NewEncoder(writer).Encode(map[string]any{
+					"models": []map[string]any{{"name": "tooler:latest", "model": "tooler:latest",
+						"capabilities": []string{"completion", "tools"}}},
+				})
+				return
+			}
 			writer.Header().Set("Content-Type", "application/x-ndjson")
 			flusher, _ := writer.(http.Flusher)
 			for index := 0; index < 100; index++ {
@@ -555,7 +555,7 @@ func TestOllamaStreamProtocolAndCancellation(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		chunks, err := provider.StreamChat(ctx, ChatRequest{
-			Model: "tooler:latest",
+			Model:    "tooler:latest",
 			Messages: []Message{{Role: "user", Content: "hi"}},
 		})
 		if err != nil {
@@ -656,13 +656,13 @@ func TestOllamaModelNameNormalization(t *testing.T) {
 
 func TestOllamaContextLengthSelection(t *testing.T) {
 	modelInfo := map[string]any{
-		"general.architecture":       1, // ignored: wrong key
-		"llama.context_length":       4096.0,
-		"qwen2.context_length":       8192.0,
-		"broken.context_length":      -1.0,
-		"huge.context_length":        1 << 30,
-		"fractional.context_length":  4096.5,
-		"string.context_length":      "8192", // ignored: not a number
+		"general.architecture":      1, // ignored: wrong key
+		"llama.context_length":      4096.0,
+		"qwen2.context_length":      8192.0,
+		"broken.context_length":     -1.0,
+		"huge.context_length":       1 << 30,
+		"fractional.context_length": 4096.5,
+		"string.context_length":     "8192", // ignored: not a number
 	}
 	if got := ollamaContextLength(modelInfo); got != 8192 {
 		t.Fatalf("context length selection is wrong: %d", got)
@@ -670,4 +670,3 @@ func TestOllamaContextLengthSelection(t *testing.T) {
 }
 
 var _ = time.Second
-

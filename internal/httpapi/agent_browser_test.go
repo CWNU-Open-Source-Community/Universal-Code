@@ -16,6 +16,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/webevidence"
 )
 
@@ -126,6 +127,15 @@ type agentBrowserScreencastStub struct {
 	streams   int
 	lastRunID string
 	frames    []application.AgentBrowserScreencastFrameView
+}
+
+func (s *agentBrowserScreencastStub) BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error) {
+	return []browserruntime.AgentBrowserDownloadReceipt{}, nil
+}
+
+func (s *agentBrowserScreencastStub) ReleaseBrowserDownload(_ context.Context, runID, guid, _ string) (string, browserruntime.AgentBrowserDownloadReceipt, error) {
+	return "workspace:///.cyberagent-workbench/browser-artifacts/downloads/" + runID + "/" + guid,
+		browserruntime.AgentBrowserDownloadReceipt{GUID: guid, State: browserruntime.AgentBrowserDownloadCompleted}, nil
 }
 
 // flushableRecorder lets the SSE handler flush through httptest.ResponseRecorder.
@@ -262,5 +272,39 @@ func TestAgentBrowserScreencastUnavailableWithoutStreamer(t *testing.T) {
 	response := performRequest(t, api, http.MethodGet, path, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
 	if response.Code != http.StatusNotFound {
 		t.Fatal("live view offered without a streaming controller", response.Code)
+	}
+}
+
+func TestAgentBrowserDownloadListAndReleaseEndpoint(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserScreencastStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "browser-download-session", Generation: 1, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	listPath := "/api/v1/runs/" + fixture.run.ID + "/agent-browser/downloads"
+	releasePath := listPath + "/" + guid + "/release"
+
+	list := performRequest(t, api, http.MethodGet, listPath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("downloads list status=%d body=%s", list.Code, list.Body.String())
+	}
+
+	release := performControlPathRequest(t, api, releasePath, "release-agent-browser-download", strings.NewReader(`{"version":"agent_browser_download_release.v1","operator":"openapi-operator"}`))
+	if release.Code != http.StatusOK {
+		t.Fatalf("release status=%d body=%s", release.Code, release.Body.String())
+	}
+	if !strings.Contains(release.Body.String(), `"locator":"workspace:///.cyberagent-workbench/browser-artifacts/downloads/`) {
+		t.Fatalf("release body: %s", release.Body.String())
+	}
+
+	denied := performRequest(t, api, http.MethodPost, releasePath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000",
+		strings.NewReader(`{"version":"agent_browser_download_release.v1"}`))
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("release accepted a read token: %d", denied.Code)
 	}
 }

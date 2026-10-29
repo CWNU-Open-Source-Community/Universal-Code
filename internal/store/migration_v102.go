@@ -77,4 +77,3 @@ var childTaskStatements = []string{
 		CHECK(julianday(created_at) IS NOT NULL AND julianday(updated_at) IS NOT NULL)
 	) WITHOUT ROWID;`,
 }
-

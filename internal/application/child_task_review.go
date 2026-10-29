@@ -51,4 +51,3 @@ func (s *ChildTaskReviewService) Get(ctx context.Context, proposalID string,
 	proposal, found, err := s.store.GetChildTaskProposal(ctx, proposalID)
 	return proposal, found, apperror.Normalize(err)
 }
-

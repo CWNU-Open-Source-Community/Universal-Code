@@ -80,4 +80,3 @@ var monetaryBudgetStatements = []string{
 		CHECK(julianday(created_at) IS NOT NULL)
 	) WITHOUT ROWID;`,
 }
-

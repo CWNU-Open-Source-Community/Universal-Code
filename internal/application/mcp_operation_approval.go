@@ -35,15 +35,15 @@ type mcpApprovalStore interface {
 }
 
 type mcpApprovalSource struct {
-	worker     *domain.SpecialistToolCall
+	worker         *domain.SpecialistToolCall
 	actorSessionID string
-	call       domain.SupervisorToolCall
-	authority  mcp.SupervisorCallAuthority
-	payload    toolgateway.MCPToolCallPayload
-	permission domain.RunExecutionPermissionSnapshot
-	server     mcp.ServerRecord
-	run        domain.Run
-	started    bool
+	call           domain.SupervisorToolCall
+	authority      mcp.SupervisorCallAuthority
+	payload        toolgateway.MCPToolCallPayload
+	permission     domain.RunExecutionPermissionSnapshot
+	server         mcp.ServerRecord
+	run            domain.Run
+	started        bool
 }
 
 func mcpApprovalUnavailable(message string) error {

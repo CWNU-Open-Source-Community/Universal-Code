@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	FanoutExecutionsPathTemplate      = "/api/v1/runs/{run_id}/fanout-executions"
-	FanoutExecutionCancelPathTemplate = "/api/v1/runs/{run_id}/fanout-executions/{execution_id}/cancel"
+	FanoutExecutionsPathTemplate        = "/api/v1/runs/{run_id}/fanout-executions"
+	FanoutExecutionCancelPathTemplate   = "/api/v1/runs/{run_id}/fanout-executions/{execution_id}/cancel"
 	FanoutExecutionsListProtocolVersion = "readonly_fanout_executions.v1"
 )
 
@@ -186,4 +186,3 @@ func fanoutExecutionFullView(value domain.ReadOnlyFanoutExecution) FanoutExecuti
 	}
 	return view
 }
-
