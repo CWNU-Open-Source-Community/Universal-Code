@@ -189,7 +189,13 @@ func TestScaffoldProjectInstructionsEmptyDirectoryAndSymlinkMarker(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(withSymlink.Detected) != 2 || withSymlink.Detected[1].Path != "go.mod" {
+	symlinked := ""
+	for _, detection := range withSymlink.Detected {
+		if detection.Path == "go.mod" {
+			symlinked = detection.Path
+		}
+	}
+	if len(withSymlink.Detected) != 2 || symlinked == "" {
 		t.Fatalf("symlinked marker should still be reported without following it: %+v", withSymlink.Detected)
 	}
 }
