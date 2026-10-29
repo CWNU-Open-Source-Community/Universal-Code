@@ -226,8 +226,10 @@ func TestCheckBoundedConsumption(t *testing.T) {
 		{"explicitly revoked", func(_ *SessionGrant, _ *GrantConsumption, _ *Record, _ *GrantQuery, revoked *bool, _ *time.Time) {
 			*revoked = true
 		}},
-		{"consumption after expiry", func(g *SessionGrant, c *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, at *time.Time) {
-			*at = g.CreatedAt.Add(2 * time.Second)
+		{"grant expired at validation time", func(g *SessionGrant, _ *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, at *time.Time) {
+			*at = g.ExpiresAt.Add(time.Second)
+		}},
+		{"consumption after expiry", func(g *SessionGrant, c *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, _ *time.Time) {
 			c.CreatedAt = g.ExpiresAt.Add(time.Second)
 			c.Fingerprint = GrantConsumptionFingerprint(*c)
 		}},
@@ -295,6 +297,22 @@ func TestSessionGrantValidateBoundedMatrix(t *testing.T) {
 	t.Run("accepts a legacy grant", func(t *testing.T) {
 		if err := legacyGrantFixture().Validate(); err != nil {
 			t.Fatal(err)
+		}
+	})
+	t.Run("accepts max uses at the ceiling of eight", func(t *testing.T) {
+		grant := boundedGrantFixture()
+		grant.MaxUses = 8
+		grant.UsesRemaining = 8
+		if err := grant.Validate(); err != nil {
+			t.Fatalf("max uses at the ceiling was rejected: %v", err)
+		}
+	})
+	t.Run("accepts expiry at the fifteen minute ceiling", func(t *testing.T) {
+		grant := boundedGrantFixture()
+		at := grant.CreatedAt.Add(15 * time.Minute)
+		grant.ExpiresAt = &at
+		if err := grant.Validate(); err != nil {
+			t.Fatalf("expiry at the ceiling was rejected: %v", err)
 		}
 	})
 	rejections := []struct {
@@ -495,6 +513,33 @@ func TestGrantConsumptionValidate(t *testing.T) {
 	})
 }
 
+func TestGrantConsumptionFingerprintBindsEveryField(t *testing.T) {
+	grant := boundedGrantFixture()
+	record := approvedRecordFixture(grant)
+	base := grantConsumptionFixture(grant, record, 1)
+	baseFingerprint := GrantConsumptionFingerprint(base)
+	mutations := map[string]func(*GrantConsumption){
+		"id":                func(c *GrantConsumption) { c.ID = "consumption-other" },
+		"grant id":          func(c *GrantConsumption) { c.GrantID = "grant-other" },
+		"proposal id":       func(c *GrantConsumption) { c.ProposalID = "proposal-other" },
+		"approval id":       func(c *GrantConsumption) { c.ApprovalID = "approval-other" },
+		"run id":            func(c *GrantConsumption) { c.RunID = "run-other" },
+		"scope fingerprint": func(c *GrantConsumption) { c.ScopeFingerprint = Fingerprint("other-scope") },
+		"grant generation":  func(c *GrantConsumption) { c.GrantGeneration = 9 },
+		"use ordinal":       func(c *GrantConsumption) { c.UseOrdinal = 2 },
+		"created at":        func(c *GrantConsumption) { c.CreatedAt = c.CreatedAt.Add(time.Second) },
+	}
+	for name, mutate := range mutations {
+		t.Run("binds "+name, func(t *testing.T) {
+			changed := base
+			mutate(&changed)
+			if GrantConsumptionFingerprint(changed) == baseFingerprint {
+				t.Fatalf("consumption fingerprint ignored the %s", name)
+			}
+		})
+	}
+}
+
 func TestComputerUseAppScopeFingerprintAndActionClass(t *testing.T) {
 	scope := ComputerUseAppScope{
 		RunID: "run-test", SessionID: "session-test", WorkspaceID: "workspace-test",
@@ -513,6 +558,21 @@ func TestComputerUseAppScopeFingerprintAndActionClass(t *testing.T) {
 	changed.RunAuthorizationFence = 10
 	if scope.Fingerprint() == changed.Fingerprint() {
 		t.Fatal("scope fingerprint ignored the run authorization fence")
+	}
+	scopeDrifts := map[string]func(*ComputerUseAppScope){
+		"app id":                 func(s *ComputerUseAppScope) { s.AppID = "app-other" },
+		"server id":              func(s *ComputerUseAppScope) { s.ServerID = "server-other" },
+		"permission generation":  func(s *ComputerUseAppScope) { s.PermissionGeneration = 8 },
+		"descriptor fingerprint": func(s *ComputerUseAppScope) { s.DescriptorFingerprint = Fingerprint("other-descriptor") },
+	}
+	for name, mutate := range scopeDrifts {
+		t.Run("scope fingerprint binds "+name, func(t *testing.T) {
+			changed := scope
+			mutate(&changed)
+			if changed.Fingerprint() == scope.Fingerprint() {
+				t.Fatalf("scope fingerprint ignored the %s", name)
+			}
+		})
 	}
 	if !strings.HasPrefix(scope.GrantActionClass(), "computer_use_app:") ||
 		scope.GrantActionClass() != "computer_use_app:"+scope.Fingerprint() {
