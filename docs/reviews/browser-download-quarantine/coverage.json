@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "b58f8981db87dd983e221839283e43f145b92b03",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-download-quarantine/README.md",
+    "docs/reviews/browser-download-quarantine/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：下载隔离捕获实现、审计适配器接线、测试（含 opt-in 真浏览器 E2E）",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含终态迁移与路径安全专项"
+  ],
+  "summary": {
+    "total_git_changed_files": 8,
+    "review_scope_files": 6,
+    "ocr_selected_production": 5,
+    "manually_added_tests": 1,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/browserruntime/agent_browser_download.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_runtime.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_transport.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_types.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/profile_materializer.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}
