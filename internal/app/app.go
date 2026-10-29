@@ -384,7 +384,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent skill list|show|validate|package|import|installed|remove|candidate|candidates|select|selection|select-external|external-selection")
 	fmt.Fprintln(a.out, "  cyberagent context compact|show|instructions|memory")
 	fmt.Fprintln(a.out, "  cyberagent context memory create|list|show|edit|enable|disable|delete|export")
-	fmt.Fprintln(a.out, "  cyberagent thread create|list|show|send|history|archive|restore|delete|export")
+	fmt.Fprintln(a.out, "  cyberagent thread create|list|show|send|history|rename|pin|archive|restore|delete|export")
 	fmt.Fprintln(a.out, "  cyberagent session create|list|send|history|tree|checkpoint|fork|resume")
 	fmt.Fprintln(a.out, "  cyberagent tool schema|invoke|list|show|approve|deny")
 	fmt.Fprintln(a.out, "  cyberagent edit propose|list|show|review-approve|review-deny|approve|deny")
