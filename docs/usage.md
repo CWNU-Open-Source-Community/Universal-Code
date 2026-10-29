@@ -1017,7 +1017,9 @@ whole session, is invisible to the operator's personal browser, and is wiped wit
 profile at cleanup together with a cleanup receipt. The browser session has a
 runtime deadline (30 minutes by default): when it elapses the profile is wiped and
 the next navigation starts a fresh one, so complete manual logins within the
-session's lifetime.
+session's lifetime. Operators can raise it with
+`CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES` (5..1440 minutes, accepted at the same
+composition roots) — the quarantine, approvals, and cleanup receipts are unchanged.
 
 Enable it at the composition root with `CYBERAGENT_BROWSER_HEADED=1` (or `true`), or
 for the CLI API with `cyberagent api serve --browser-headed`. The mode changes process
@@ -1030,7 +1032,8 @@ and the approval rules are unchanged, and the agent gains no extra authority. Th
 桌面上，人工即可完成登录、2FA/OAuth 或对话框处理。登录态保存在会话的一次性 profile
 中：整个会话存续有效，与操作者个人浏览器完全隔离，cleanup 时随 profile 一起擦除并
 留有清理回执。浏览器会话有时长上限（默认 30 分钟 RuntimeDeadline），到期后 profile
-被擦除、下次导航开新 profile——需要更长登录窗口时请在会话内存续期内完成。在组合根设置 `CYBERAGENT_BROWSER_HEADED=1`（或 `true`）启用，CLI 亦可用
+被擦除、下次导航开新 profile；操作者可用 `CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES`
+（5..1440 分钟，在同一组组合根生效）上调——隔离区、审批与清理回执语义不变。在组合根设置 `CYBERAGENT_BROWSER_HEADED=1`（或 `true`）启用，CLI 亦可用
 `cyberagent api serve --browser-headed`。该模式只改变进程可见性：origin scope、请求级
 拦截、下载隔离与审批规则全部不变，agent 不获得任何额外权限。页面需要人工处理时，
 `waiting_user` 状态会指向本模式。

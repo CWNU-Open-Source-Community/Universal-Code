@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -459,7 +460,8 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	if controlToken != "" {
 		agentBrowser := application.NewAgentBrowserService(a.store, application.AgentBrowserOptions{
 			HomePath: a.home, Capabilities: permissionCapabilities,
-			Headless: !(*browserHeaded || application.BrowserHeadedFromEnvironment()), ServiceReadiness: commandRuntime,
+			Headless:        !(*browserHeaded || application.BrowserHeadedFromEnvironment()),
+			SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: commandRuntime,
 		})
 		runtimeDependencies.AgentBrowser = agentBrowser
 		agentBrowserController = agentBrowser
@@ -862,8 +864,12 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		permissionCapabilities.OperatorApprovalEnabled,
 		permissionCapabilities.DangerFullAccessEnabled,
 		commandRuntime != nil)
-	fmt.Fprintf(a.out, "browser_cdp_permission_control_enabled: %t\nfull_cdp_debug_enabled: %t\nagent_browser_headed: %t\n",
-		*browserCDPControl, browserCDPCapabilities.FullDebugEnabled, *browserHeaded || application.BrowserHeadedFromEnvironment())
+	lifetimeLabel := "default"
+	if sessionLifetime := application.BrowserSessionLifetimeFromEnvironment(); sessionLifetime > 0 {
+		lifetimeLabel = strconv.Itoa(int(sessionLifetime / time.Minute))
+	}
+	fmt.Fprintf(a.out, "browser_cdp_permission_control_enabled: %t\nfull_cdp_debug_enabled: %t\nagent_browser_headed: %t\nagent_browser_session_lifetime_minutes: %s\n",
+		*browserCDPControl, browserCDPCapabilities.FullDebugEnabled, *browserHeaded || application.BrowserHeadedFromEnvironment(), lifetimeLabel)
 	fmt.Fprintf(a.out, "docker_execution_enabled: %t\n", *dockerExecution)
 	fmt.Fprintf(a.out, "batch_delivery_host_validation_enabled: %t\n",
 		*batchValidationExecution)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -505,6 +506,21 @@ func refreshBrowserModelTools(existing []llm.ToolSpec, c toolgateway.BrowserActi
 		}
 	}
 	return out
+}
+
+// BrowserSessionLifetimeFromEnvironment reports the operator-selected browser
+// session lifetime in minutes (CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES).
+// Values outside 5..1440 (or a malformed value) return 0, which keeps the
+// composition default (30 minutes). Long lifetimes matter for the takeover
+// mode: the session profile, including manual login state, is wiped when the
+// runtime deadline elapses.
+func BrowserSessionLifetimeFromEnvironment() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES"))
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes < 5 || minutes > 1440 {
+		return 0
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 // BrowserHeadedFromEnvironment reports whether the operator requested the
