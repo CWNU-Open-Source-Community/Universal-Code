@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "b58f8981db87dd983e221839283e43f145b92b03",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-screencast-delivery-fix/README.md",
+    "docs/reviews/browser-screencast-delivery-fix/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：根因探针实证（wire/params/unmarshal 三层定位）、修复与 E2E 测试",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 ack token 三类类型的逐字节等价实证"
+  ],
+  "summary": {
+    "total_git_changed_files": 4,
+    "review_scope_files": 2,
+    "ocr_selected_production": 1,
+    "manually_added_tests": 1,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/browserruntime/agent_browser_screencast.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_screencast_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}
