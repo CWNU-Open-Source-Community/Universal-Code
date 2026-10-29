@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { APIClient } from "../api/client";
 import type { ThreadTranscriptItemView } from "../api/types";
 import { readPromptHistory, usePromptHistory } from "./use-prompt-history";
@@ -69,6 +69,52 @@ it.each(["edit", "scope", "attachment", "selection", "cancel"])("does not apply 
   await act(async () => finish({ message_id: "one", content: "Must not replace the draft" }));
   expect(ui.result.current.value).toBe(change === "edit" ? "手工编辑或引用的草稿" : "");
   expect(ui.result.current.history.notice).toBeNull();
+});
+
+it("keeps the session when a render's passive effect settles after the next step", async () => {
+  const get = vi.fn(async (path: string) => ({ message_id: path.split("/").at(-1),
+    content: path.endsWith("new") ? "Newest" : "Older" }));
+  const client = clientOf(vi.fn(async () => page([item("old", 1), item("new", 2)])), get);
+  const ui = renderHook(() => {
+    const [value, setValue] = useState("");
+    const history = usePromptHistory({ client, threadID: "a", scope: "a", blocked: false, value,
+      apply: (next, expected) => setValue((current) => current === expected ? next : current), atBoundary: () => true });
+    // The layout phase runs before passive effects: stepping forward here makes
+    // the older render's effect settle after the session already advanced.
+    useLayoutEffect(() => { if (value === "Older") history.navigate("newer"); }, [value]);
+    return { history, value };
+  });
+  act(() => { ui.result.current.history.navigate("older"); });
+  await waitFor(() => expect(ui.result.current.value).toBe("Newest"));
+  act(() => { ui.result.current.history.navigate("older"); });
+  await waitFor(() => expect(ui.result.current.value).toBe("Newest"));
+  act(() => { expect(ui.result.current.history.navigate("newer")).toBe(true); });
+  expect(ui.result.current.value).toBe("");
+});
+
+it("does not let a settled effect cancel the replacement session", async () => {
+  const get = vi.fn(async (path: string) => ({ message_id: path.split("/").at(-1),
+    content: path.endsWith("new") ? "Newest" : "Older" }));
+  const client = clientOf(vi.fn(async () => page([item("old", 1), item("new", 2)])), get);
+  const phase = { current: 0 };
+  const ui = renderHook(() => {
+    const [value, setValue] = useState("");
+    const history = usePromptHistory({ client, threadID: "a", scope: "a", blocked: false, value,
+      apply: (next, expected) => setValue((current) => current === expected ? next : current), atBoundary: () => true });
+    useLayoutEffect(() => {
+      if (value === "Older" && phase.current === 0) { phase.current = 1; setValue("typed"); }
+      else if (value === "typed" && phase.current === 1) { phase.current = 2; history.cancel(); setValue(""); }
+      else if (value === "" && phase.current === 2) { phase.current = 3; history.navigate("older"); }
+    }, [value]);
+    return { history, value };
+  });
+  act(() => { ui.result.current.history.navigate("older"); });
+  await waitFor(() => expect(ui.result.current.value).toBe("Newest"));
+  act(() => { ui.result.current.history.navigate("older"); });
+  await waitFor(() => expect(phase.current).toBe(3));
+  await waitFor(() => expect(ui.result.current.value).toBe("Newest"));
+  act(() => { expect(ui.result.current.history.navigate("newer")).toBe(true); });
+  expect(ui.result.current.value).toBe("");
 });
 
 it("keeps the draft after a failed read and retries without using preview text", async () => {

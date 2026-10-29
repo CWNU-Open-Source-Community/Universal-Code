@@ -54,13 +54,17 @@ export function usePromptHistory({ client, threadID, scope, value, blocked, appl
   const [notice, setNotice] = useState<{ owner: typeof owner; text: string; error?: boolean } | null>(null);
   const cancel = () => { owner.current?.abort.abort(); owner.current = null; setNotice(null); };
   useEffect(() => () => { owner.current?.abort.abort(); owner.current = null; }, [owner]);
-  // Compare with the expectation captured in this render. A passive effect can
-  // run after the next history step advanced the mutable session, and reading
-  // it then would misread a stale value as an operator edit.
-  const expecting = owner.current?.expected;
+  // Compare with the expectation captured in this render, and only cancel the
+  // session this render actually observed: a passive effect can run after the
+  // next history step advanced the mutable session, or after a replacement
+  // session was created, and reading either at effect time would misread a
+  // stale value as an operator edit.
+  const session = owner.current;
+  const expecting = session?.expected;
   useEffect(() => {
-    if (owner.current && (blocked || (expecting !== undefined && value !== expecting))) cancel();
-  }, [owner, blocked, value, expecting]);
+    if (!session || owner.current !== session) return;
+    if (blocked || value !== expecting) cancel();
+  }, [owner, session, blocked, value, expecting]);
 
   const navigate = (direction: HistoryDirection): boolean => {
     if (!threadID || blocked || !atBoundary(direction)) return false;
