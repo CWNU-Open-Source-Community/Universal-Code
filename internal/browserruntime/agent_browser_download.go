@@ -5,8 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
+)
+
+var (
+	// ErrAgentBrowserDownloadUnknown reports a GUID that never produced a
+	// completed, digested capture in this session.
+	ErrAgentBrowserDownloadUnknown = errors.New("agent browser download is unknown or not completed")
+	// ErrAgentBrowserDownloadGone reports a capture whose bytes are missing or
+	// no longer match the digested receipt; the receipt is never released with
+	// bytes it does not describe.
+	ErrAgentBrowserDownloadGone = errors.New("agent browser download capture is missing or changed")
 )
 
 // Downloads are bytes a page pushes at the browser while the agent navigates.
@@ -338,4 +350,44 @@ func boundedDownloadFilename(value string, limit int) string {
 		value = value[index+1:]
 	}
 	return boundedDownloadMetadata(value, limit)
+}
+
+// ReadDownload returns one completed capture's bytes and receipt. The bytes
+// live only inside the session quarantine and die with the profile, so a
+// release must happen while the session is open. The digest is recomputed from
+// the actual bytes before they are handed out.
+func (r *AgentBrowserRuntime) ReadDownload(ctx context.Context, guid string) ([]byte, AgentBrowserDownloadReceipt, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !validDownloadGUID(guid) {
+		return nil, AgentBrowserDownloadReceipt{}, ErrBrowserRuntimeBoundary
+	}
+	r.mu.Lock()
+	receipt := r.downloadReceiptLocked(guid)
+	if receipt == nil || receipt.State != AgentBrowserDownloadCompleted || receipt.SHA256 == "" {
+		r.mu.Unlock()
+		return nil, AgentBrowserDownloadReceipt{}, ErrAgentBrowserDownloadUnknown
+	}
+	downloadPath := r.downloadPath
+	out := *receipt
+	r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, AgentBrowserDownloadReceipt{}, err
+	}
+	if info, err := statAgentBrowserDownloadCapture(downloadPath, guid); err != nil ||
+		!info.Mode().IsRegular() || info.Size() > AgentBrowserMaxDownloadBytes {
+		return nil, AgentBrowserDownloadReceipt{}, ErrAgentBrowserDownloadGone
+	}
+	data, err := readAgentBrowserDownloadCapture(downloadPath, guid)
+	if err != nil {
+		// A failed read (including the cleanup race) must never carry the
+		// quarantine path out of this layer.
+		return nil, AgentBrowserDownloadReceipt{}, fmt.Errorf("%w", ErrAgentBrowserDownloadGone)
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != out.SHA256 {
+		return nil, AgentBrowserDownloadReceipt{}, ErrAgentBrowserDownloadGone
+	}
+	return data, out, nil
 }

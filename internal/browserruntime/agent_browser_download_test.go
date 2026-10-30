@@ -625,3 +625,48 @@ func TestAgentBrowserDownloadTotalBudgetDerivation(t *testing.T) {
 			AgentBrowserMaxDownloadTotalBytes)
 	}
 }
+
+func TestAgentBrowserReadDownloadVerifiesDigestAndLifetime(t *testing.T) {
+	r := downloadEventRuntime(t)
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	content := []byte("quarantined release probe")
+	if _, _, err := r.ReadDownload(context.Background(), guid); err == nil {
+		t.Fatal("unknown GUID released")
+	}
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + guid + `"}`)})
+	if _, _, err := r.ReadDownload(context.Background(), guid); err == nil {
+		t.Fatal("active download released")
+	}
+	if err := os.WriteFile(filepath.Join(r.downloadPath, guid), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(
+		`{"guid":"` + guid + `","state":"completed","receivedBytes":25}`)})
+	if receipt := waitDownloadState(t, r, guid, AgentBrowserDownloadCompleted); receipt.SHA256 == "" {
+		t.Fatalf("receipt: %+v", receipt)
+	}
+	data, receipt, err := r.ReadDownload(context.Background(), guid)
+	if err != nil || string(data) != string(content) || receipt.State != AgentBrowserDownloadCompleted {
+		t.Fatalf("read: %v %+v", err, receipt)
+	}
+	// Tampered bytes must never leave the quarantine.
+	if err := os.WriteFile(filepath.Join(r.downloadPath, guid), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.ReadDownload(context.Background(), guid); err == nil {
+		t.Fatal("tampered capture released")
+	}
+	// A capture that the session cleanup already removed reads as gone, not
+	// as a filesystem error carrying the quarantine path.
+	if err := os.Remove(filepath.Join(r.downloadPath, guid)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.ReadDownload(context.Background(), guid); !errors.Is(err, ErrAgentBrowserDownloadGone) {
+		t.Fatalf("missing capture: %v", err)
+	}
+	// A GUID that is not a canonical UUID never reaches the filesystem.
+	if _, _, err := r.ReadDownload(context.Background(), "0f1e2d3c4b5a464788790a1b2c3d4e5f0000"); err == nil {
+		t.Fatal("non-UUID GUID released")
+	}
+}

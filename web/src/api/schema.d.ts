@@ -1394,6 +1394,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/agent-browser/downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List quarantine receipts for Agent browser downloads
+         * @description Bounded, non-authorizing download receipts for the live session. Receipts never carry a filesystem path and bytes stay quarantined until an operator release.
+         */
+        get: operations["listRunAgentBrowserDownloads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/agent-browser/downloads/{download_guid}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release one quarantined Agent browser download into workspace artifacts
+         * @description Operator release is the recorded approval: the capture digest is recomputed before the bytes are copied beside a provenance sidecar. The GUID names the artifact; the page-controlled suggestion stays in metadata.
+         */
+        post: operations["releaseRunAgentBrowserDownload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/agent-browser/screencast": {
         parameters: {
             query?: never;
@@ -6462,6 +6502,32 @@ export interface components {
             session_id: string;
             /** @enum {string} */
             version: "agent_browser_close.v1";
+        };
+        AgentBrowserDownloadReleaseRequestView: {
+            operator?: string;
+            version: string;
+        };
+        AgentBrowserDownloadReleaseView: {
+            locator: string;
+            operator: string;
+            receipt: components["schemas"]["AgentBrowserDownloadView"];
+            /** Format: date-time */
+            released_at: string;
+            run_id: string;
+            version: string;
+        };
+        AgentBrowserDownloadView: {
+            /** Format: int64 */
+            bytes?: number;
+            guid: string;
+            sha256?: string;
+            /** Format: date-time */
+            started_at: string;
+            state: string;
+            suggested_filename?: string;
+            /** Format: date-time */
+            updated_at: string;
+            url?: string;
         };
         AgentBrowserScreencastFrameView: {
             /** Format: date-time */
@@ -20378,6 +20444,89 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AgentBrowserStatusView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    listRunAgentBrowserDownloads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AgentBrowserDownloadView"][];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    releaseRunAgentBrowserDownload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+                download_guid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentBrowserDownloadReleaseRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AgentBrowserDownloadReleaseView"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";

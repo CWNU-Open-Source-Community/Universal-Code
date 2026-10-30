@@ -1513,6 +1513,22 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	if strings.HasSuffix(request.URL.Path, "/agent-browser/downloads") {
+		if runID, _, matched := matchAgentBrowserPath(strings.TrimSuffix(request.URL.Path, "/downloads")); matched {
+			a.serveAgentBrowserDownloads(tracked, request, requestID, runID, "")
+			return
+		}
+	}
+	if strings.HasSuffix(request.URL.Path, "/release") && strings.Contains(request.URL.Path, "/agent-browser/downloads/") {
+		trimmed := strings.TrimSuffix(request.URL.Path, "/release")
+		if index := strings.LastIndex(trimmed, "/"); index >= 0 {
+			guid := trimmed[index+1:]
+			if runID, _, matched := matchAgentBrowserPath(strings.TrimSuffix(trimmed[:index], "/downloads")); matched {
+				a.serveAgentBrowserDownloads(tracked, request, requestID, runID, guid)
+				return
+			}
+		}
+	}
 	if runID, closeSession, matched := matchAgentBrowserPath(request.URL.Path); matched {
 		a.serveAgentBrowser(tracked, request, requestID, runID, closeSession)
 		return
@@ -1576,6 +1592,7 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		}
 	}
 	if !a.authorized(request, a.tokenHash) {
+
 		tracked.Header().Set("WWW-Authenticate", `Bearer realm="CyberAgent API"`)
 		a.writeError(tracked, requestID,
 			apperror.New(apperror.CodePolicyDenied, "valid bearer authorization is required"),

@@ -15,6 +15,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/redact"
 )
 
@@ -22,6 +23,8 @@ const AgentBrowserStatusPathTemplate = "/api/v1/runs/{run_id}/agent-browser"
 const AgentBrowserClosePathTemplate = AgentBrowserStatusPathTemplate + "/close"
 const AgentBrowserScreenshotPathTemplate = AgentBrowserStatusPathTemplate + "/screenshot"
 const AgentBrowserScreencastPathTemplate = AgentBrowserStatusPathTemplate + "/screencast"
+const AgentBrowserDownloadsPathTemplate = AgentBrowserStatusPathTemplate + "/downloads"
+const AgentBrowserDownloadReleasePathTemplate = AgentBrowserDownloadsPathTemplate + "/{download_guid}/release"
 
 const agentBrowserScreencastHeartbeat = 15 * time.Second
 
@@ -32,6 +35,52 @@ type AgentBrowserController interface {
 
 type agentBrowserScreenshotReader interface {
 	ReadScreenshot(context.Context, string, string, string) ([]byte, string, error)
+}
+
+type agentBrowserDownloadsController interface {
+	BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error)
+	ReleaseBrowserDownload(context.Context, string, string, application.AgentBrowserDownloadRelease) (string, browserruntime.AgentBrowserDownloadReceipt, error)
+}
+
+type AgentBrowserDownloadView struct {
+	GUID              string    `json:"guid"`
+	SuggestedFilename string    `json:"suggested_filename,omitempty"`
+	URL               string    `json:"url,omitempty"`
+	State             string    `json:"state"`
+	Bytes             int64     `json:"bytes,omitempty"`
+	SHA256            string    `json:"sha256,omitempty"`
+	StartedAt         time.Time `json:"started_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type AgentBrowserDownloadReleaseRequestView struct {
+	Version  string `json:"version"`
+	Operator string `json:"operator,omitempty"`
+}
+
+type AgentBrowserDownloadReleaseView struct {
+	Version    string                   `json:"version"`
+	RunID      string                   `json:"run_id"`
+	Locator    string                   `json:"locator"`
+	Receipt    AgentBrowserDownloadView `json:"receipt"`
+	Operator   string                   `json:"operator"`
+	ReleasedAt time.Time                `json:"released_at"`
+}
+
+// releaseOperator mirrors the application-side normalization so the response
+// always echoes the identity that was actually applied.
+func releaseOperator(operator string) string {
+	operator = strings.TrimSpace(operator)
+	if operator == "" {
+		return "httpapi_operator"
+	}
+	return operator
+}
+
+func publicAgentBrowserDownload(value browserruntime.AgentBrowserDownloadReceipt) AgentBrowserDownloadView {
+	return AgentBrowserDownloadView{GUID: value.GUID, SuggestedFilename: value.SuggestedFilename,
+		URL: value.URL, State: value.State, Bytes: value.Bytes, SHA256: value.SHA256,
+		StartedAt: value.StartedAt, UpdatedAt: value.UpdatedAt}
 }
 
 type AgentBrowserScreenshotView struct {
@@ -360,4 +409,86 @@ func (a *API) serveAgentBrowserScreencast(w http.ResponseWriter, request *http.R
 			}
 		}
 	}
+}
+
+func (a *API) serveAgentBrowserDownloads(writer http.ResponseWriter, request *http.Request, requestID, runID, releaseGUID string) {
+	if a.agentBrowserController == nil {
+		a.writeError(writer, requestID, apperror.New(apperror.CodeNotFound, "Agent browser is unavailable"), http.StatusNotFound)
+		return
+	}
+	// Mirrors the close surface: the bounded list reads with the API token,
+	// the operator release mutates with the control token.
+	method, token := http.MethodGet, a.tokenHash
+	if releaseGUID != "" {
+		method, token = http.MethodPost, a.controlTokenHash
+	}
+	if request.Method != method {
+		writer.Header().Set("Allow", method)
+		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "unsupported Agent browser downloads method"), http.StatusMethodNotAllowed)
+		return
+	}
+	if !a.authorized(request, token) {
+		a.writeError(writer, requestID, apperror.New(apperror.CodePolicyDenied, "valid bearer authorization is required"), http.StatusUnauthorized)
+		return
+	}
+	if err := validatePathIdentity(runID); err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	if err := rejectQuery(request.URL.Query()); err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	controller, ok := a.agentBrowserController.(agentBrowserDownloadsController)
+	if !ok {
+		a.writeError(writer, requestID, apperror.New(apperror.CodeUnavailable, "Agent browser downloads are unavailable"), http.StatusNotFound)
+		return
+	}
+	if releaseGUID == "" {
+		receipts, err := controller.BrowserDownloads(request.Context(), runID)
+		if err != nil {
+			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		views := make([]AgentBrowserDownloadView, 0, len(receipts))
+		for _, receipt := range receipts {
+			views = append(views, publicAgentBrowserDownload(receipt))
+		}
+		a.writeSuccess(writer, requestID, views, nil)
+		return
+	}
+	if err := validatePathIdentity(releaseGUID); err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	if err := validateJSONContentType(request.Header); err != nil {
+		a.writeError(writer, requestID, err, http.StatusUnsupportedMediaType)
+		return
+	}
+	var input AgentBrowserDownloadReleaseRequestView
+	if err := decodeFullCDPSessionRequest(request, "Agent browser download release", &input); err != nil {
+		a.writeFullCDPSessionRequestError(writer, requestID, err)
+		return
+	}
+	if input.Version != "agent_browser_download_release.v1" {
+		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "Agent browser download release requires the exact protocol version"), 0)
+		return
+	}
+	// The release surface is control-plane authorized and that authorization
+	// carries no human identity: the recorded principal is the authorizing
+	// credential class, decided here on the server side, while the request
+	// body only declares a display name. Neither value is derived from the
+	// control credential itself, so no token or token hash is ever persisted.
+	locator, receipt, err := controller.ReleaseBrowserDownload(request.Context(), runID, releaseGUID,
+		application.AgentBrowserDownloadRelease{
+			Principal: application.AgentBrowserDownloadReleasePrincipalControlPlane,
+			Operator:  input.Operator,
+		})
+	if err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	a.writeSuccess(writer, requestID, AgentBrowserDownloadReleaseView{Version: "agent_browser_download_release.v1", RunID: runID,
+		Locator: locator, Receipt: publicAgentBrowserDownload(receipt),
+		Operator: releaseOperator(input.Operator), ReleasedAt: time.Now().UTC()}, nil)
 }
