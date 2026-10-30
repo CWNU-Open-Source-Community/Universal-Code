@@ -82,6 +82,12 @@ path、content SHA-256、scope、depth、precedence、加载时间、trust、适
 `why_effective`、脱敏状态和全部 false 的授权字段。跨目录冲突保留双方并解释最近目录获胜；
 同目录被覆盖的 `AGENTS.md` 记录在 `ignored` 中，说明对应的 `AGENTS.override.md` 来源。
 
+尚无任何项目指令的新项目可用 `cyberagent context instructions scaffold` 离线引导：命令只检测
+目标目录根部的固定标识文件（`go.mod`、`package.json` 及锁文件、`Cargo.toml`、`pyproject.toml`、
+`.github/workflows`、`.prayu/config.yaml`、`CLAUDE.md` 等，不读取内容），渲染确定性的双语
+`AGENTS.md` 草稿并输出 SHA-256。写入模式在目标目录已存在 `AGENTS.md` 或 `AGENTS.override.md`
+（含空文件）时拒绝，绝不覆盖；`--print` 始终可预览。脚手架不调用模型、不联网、不授予任何权限。
+
 边界为最多 64 个文件、单文件 64 KiB、总计 256 KiB、目标/规则深度 32、ignore
 16 KiB/128 条。空白 `AGENTS.override.md` 记录跳过原因后回退；其他空文件仍被拒绝。
 绝对路径、`..` 逃逸、NUL、无效 UTF-8、特殊文件、symlink、
@@ -273,6 +279,15 @@ concurrent modification, malformed ignore rules, or the 64-file/64-KiB-each/256-
 bounds. Run creation pins the complete snapshot and fingerprint. Later disk drift produces an
 explainable diff but cannot change an active Run; an operator must confirm against the exact prior
 fingerprint and the reviewed live fingerprint to append a new immutable revision.
+
+A project without any instructions yet can bootstrap offline with
+`cyberagent context instructions scaffold`: it detects fixed root markers only (`go.mod`,
+`package.json` with its lockfiles, `Cargo.toml`, `pyproject.toml`, `.github/workflows`,
+`.prayu/config.yaml`, `CLAUDE.md`, and more — reading no file contents), renders a deterministic
+bilingual `AGENTS.md` draft, and reports its SHA-256. The writing mode refuses when the target
+directory already contains `AGENTS.md` or `AGENTS.override.md` (including empty files) and never
+overwrites; `--print` always previews. Scaffolding calls no model, touches no network, and grants
+no authority.
 
 ### Explicit memory and deletion
 

@@ -2032,6 +2032,38 @@ source explanations, drift, memory lifecycle, tree, and branch comparison. Compl
 limits, threat model, privacy deletion semantics, and English/Chinese guidance are in
 [Project Instructions, Long-Term Memory, And Session Continuity](context-continuity.md).
 
+### Scaffold project instructions / 项目指令脚手架
+
+New workspaces have no project instructions until someone writes them. `context instructions
+scaffold` bootstraps the standard `AGENTS.md` the same deterministic, offline way Claude Code
+`/init` and Codex `/init` onboard a project — without any model call:
+
+```powershell
+cyberagent context instructions scaffold --workspace demo --print
+cyberagent context instructions scaffold --workspace demo
+cyberagent context instructions scaffold --workspace demo --target src/ui
+```
+
+The scaffold detects root markers only (`go.mod`, `package.json` and its lockfiles, `Cargo.toml`,
+`pyproject.toml`, `.github/workflows`, `.prayu/config.yaml`, `CLAUDE.md`, and other fixed entries),
+renders a fixed bilingual draft, and prints its SHA-256. Detection reads no file contents, so
+secrets cannot reach the draft, and the render is byte-for-byte deterministic. `--print` previews
+without writing; `--json` emits the full machine-readable result including the draft content.
+
+A writing scaffold never overwrites: it refuses when the target directory already contains
+`AGENTS.md` or `AGENTS.override.md` — including an empty `AGENTS.md`, which discovery rejects —
+and a preview stays available in that case. Scaffolding grants nothing: the draft itself states
+that project instructions are untrusted workflow guidance under the Ask/Auto/Full rules. Run
+`cyberagent context instructions --workspace <name>` afterwards to verify discovery.
+
+新工作区在有人手写指令之前没有任何项目指令。`context instructions scaffold` 以与 Claude Code
+`/init`、Codex `/init` 一致的引导目标，用离线、确定性、不调用模型的方式生成标准 `AGENTS.md`：
+只检测目标目录根部的固定标识文件（不读取内容，因此秘密不会进入草稿），渲染固定双语模板并输出
+SHA-256。`--print` 只预览不写入；`--json` 返回含草稿正文的完整结果。写入模式绝不覆盖：目标目录
+已存在 `AGENTS.md` 或 `AGENTS.override.md`（包括会被发现流程拒绝的空 `AGENTS.md`）时拒绝执行，
+此时仍可用 `--print` 预览。脚手架不授予任何权限，草稿本身写明项目指令是 Ask/Auto/Full 规则下的
+untrusted 工作流建议。写入后可用 `cyberagent context instructions --workspace <name>` 复核发现结果。
+
 The project Context panel also reviews source-bound experience candidates. Pending candidates
 remain outside later tasks until the operator confirms them. Configured memory is distinct from
 actual delivery: `model.started` context audit records included memory versions/hashes and
