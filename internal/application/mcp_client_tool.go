@@ -78,7 +78,7 @@ func (e *MCPClientToolExecutor) ExecuteMCP(ctx context.Context,
 		CapabilityFingerprint: payload.CapabilityFingerprint,
 		Arguments:             payload.Arguments,
 		OperationID:           scope.InvocationID, Subject: subject, Authorizer: authorizer,
-		Workspace: owned,
+		Workspace:             owned,
 	})
 	if err != nil {
 		return toolgateway.MCPExecutionResult{}, err

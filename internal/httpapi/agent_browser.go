@@ -39,7 +39,7 @@ type agentBrowserScreenshotReader interface {
 
 type agentBrowserDownloadsController interface {
 	BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error)
-	ReleaseBrowserDownload(context.Context, string, string, string) (string, browserruntime.AgentBrowserDownloadReceipt, error)
+	ReleaseBrowserDownload(context.Context, string, string, application.AgentBrowserDownloadRelease) (string, browserruntime.AgentBrowserDownloadReceipt, error)
 }
 
 type AgentBrowserDownloadView struct {
@@ -474,7 +474,16 @@ func (a *API) serveAgentBrowserDownloads(writer http.ResponseWriter, request *ht
 		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "Agent browser download release requires the exact protocol version"), 0)
 		return
 	}
-	locator, receipt, err := controller.ReleaseBrowserDownload(request.Context(), runID, releaseGUID, input.Operator)
+	// The release surface is control-plane authorized and that authorization
+	// carries no human identity: the recorded principal is the authorizing
+	// credential class, decided here on the server side, while the request
+	// body only declares a display name. Neither value is derived from the
+	// control credential itself, so no token or token hash is ever persisted.
+	locator, receipt, err := controller.ReleaseBrowserDownload(request.Context(), runID, releaseGUID,
+		application.AgentBrowserDownloadRelease{
+			Principal: application.AgentBrowserDownloadReleasePrincipalControlPlane,
+			Operator:  input.Operator,
+		})
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)
 		return

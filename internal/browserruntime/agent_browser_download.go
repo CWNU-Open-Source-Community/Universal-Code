@@ -25,15 +25,31 @@ var (
 // Capture is deliberately narrow: Chromium names every file by its download
 // GUID inside the session's disposable profile tree (allowAndName), so a
 // Content-Disposition filename can never place or name a file; event-provided
-// paths are never trusted; the byte budget is enforced against the live
-// progress stream and oversized captures are dropped. The quarantine dies with
-// the profile at cleanup, receipts are bounded operator metadata, and nothing
-// in this layer releases bytes to the workspace or to a tool result.
+// paths are never trusted; a per-file cap and a session-wide byte budget are
+// both enforced against the live progress stream and oversized captures are
+// dropped. The quarantine dies with the profile at cleanup, receipts are
+// bounded operator metadata, and nothing in this layer releases bytes to the
+// workspace or to a tool result.
 const (
 	// AgentBrowserMaxDownloadBytes mirrors the builtin profile
 	// ProfileLimits.MaxDownloadBytes for the agent browser runtime, which does
 	// not carry a profile descriptor; a pinning test keeps the values equal.
 	AgentBrowserMaxDownloadBytes = 16 << 20
+	// AgentBrowserMaxDownloadTotalBytes bounds the bytes one session may keep
+	// in its download quarantine. The per-file cap alone does not bound the
+	// session: a page can complete many sub-cap downloads, so the quarantine
+	// needs its own ceiling.
+	//
+	// The value is an exact multiple of AgentBrowserMaxDownloadBytes
+	// (4 x 16 MiB = 64 MiB). It is derived, not mirrored: the builtin profile
+	// exposes only a per-file limit (ProfileLimits.MaxDownloadBytes) and no
+	// session-level download limit, so there is nothing to pin against here.
+	// The receipt table alone would allow 16 captures x 16 MiB = 256 MiB to
+	// sit in the session's temporary storage, which is exactly why the
+	// budget is a smaller multiple: it stays observable (a fifth maximum-size
+	// capture is refused) while still leaving room for several ordinary
+	// captures, and a single ordinary capture is never affected.
+	AgentBrowserMaxDownloadTotalBytes = 4 * AgentBrowserMaxDownloadBytes
 	// AgentBrowserMaxDownloadReceipts bounds the receipt list. Terminal
 	// receipts are evicted first; when every slot holds an active capture the
 	// new download is cancelled and left untracked instead of dropping
@@ -118,8 +134,12 @@ func (r *AgentBrowserRuntime) handleDownloadEventLocked(event cdpWireMessage) {
 			}
 			receipt.UpdatedAt = now
 			receipt.Bytes = params.ReceivedBytes
+			// The session budget is enforced against the same live progress
+			// stream as the per-file cap: a capture that would push the
+			// quarantine past its ceiling is refused fail-closed.
 			if params.ReceivedBytes > AgentBrowserMaxDownloadBytes ||
-				(params.TotalBytes > 0 && params.TotalBytes > AgentBrowserMaxDownloadBytes) {
+				(params.TotalBytes > 0 && params.TotalBytes > AgentBrowserMaxDownloadBytes) ||
+				r.downloadBytesLocked() > AgentBrowserMaxDownloadTotalBytes {
 				r.rejectDownloadLocked(params.GUID, now)
 			}
 		case "completed":
@@ -128,7 +148,8 @@ func (r *AgentBrowserRuntime) handleDownloadEventLocked(event cdpWireMessage) {
 			}
 			receipt.UpdatedAt = now
 			receipt.Bytes = params.ReceivedBytes
-			if params.ReceivedBytes > AgentBrowserMaxDownloadBytes {
+			if params.ReceivedBytes > AgentBrowserMaxDownloadBytes ||
+				r.downloadBytesLocked() > AgentBrowserMaxDownloadTotalBytes {
 				r.rejectDownloadLocked(params.GUID, now)
 				return
 			}
@@ -181,12 +202,19 @@ func (r *AgentBrowserRuntime) beginDownloadLocked(guid, url, suggestedFilename s
 	if len(r.downloadOrder) >= AgentBrowserMaxDownloadReceipts {
 		// Evict terminal receipts first; a full list of active captures fails
 		// closed for the new download instead of dropping active tracking.
+		// An evicted capture leaves the quarantine with its receipt: its file
+		// is removed best-effort and its bytes stop counting against the
+		// session budget, so the quarantine cannot grow without bound. An
+		// evicted capture can no longer be released through the downstream
+		// release flow (no receipt survives to name it), and its bytes die
+		// with the session profile.
 		kept := r.downloadOrder[:0]
 		for _, candidate := range r.downloadOrder {
 			if receipt := r.downloads[candidate]; receipt != nil && receipt.State == AgentBrowserDownloadActive {
 				kept = append(kept, candidate)
 				continue
 			}
+			r.removeDownloadCaptureLocked(candidate)
 			delete(r.downloads, candidate)
 		}
 		r.downloadOrder = kept
@@ -204,6 +232,34 @@ func (r *AgentBrowserRuntime) downloadReceiptLocked(guid string) *AgentBrowserDo
 	return r.downloads[guid]
 }
 
+// downloadBytesLocked sums the bytes the session quarantine is accounted
+// for. A tracked receipt may still own a file inside the quarantine (an
+// active capture is still growing, a cancelled one may have left a partial
+// file), so its bytes count until the receipt is evicted; a rejected capture
+// is excluded because rejection removes its file and discards the bytes. A
+// rejected capture whose removal failed on Windows leaves a residual file
+// that is not accounted for; it dies with the session profile at cleanup.
+func (r *AgentBrowserRuntime) downloadBytesLocked() int64 {
+	var total int64
+	for _, receipt := range r.downloads {
+		if receipt == nil || receipt.State == AgentBrowserDownloadRejected {
+			continue
+		}
+		total += receipt.Bytes
+	}
+	return total
+}
+
+// removeDownloadCaptureLocked best-effort removes one capture from the
+// quarantine. Chromium may still hold the capture handle on Windows, so a
+// residual file is acceptable and dies with the profile at cleanup.
+func (r *AgentBrowserRuntime) removeDownloadCaptureLocked(guid string) {
+	if r.downloadPath == "" {
+		return
+	}
+	_ = removeAgentBrowserDownloadCapture(r.downloadPath, guid)
+}
+
 // rejectDownloadLocked marks the capture over budget and best-effort removes
 // the bytes that already reached the quarantine; Chromium may still hold the
 // capture handle on Windows, so a residual file is acceptable and dies with
@@ -217,7 +273,7 @@ func (r *AgentBrowserRuntime) rejectDownloadLocked(guid string, now time.Time) {
 	}
 	receipt.State = AgentBrowserDownloadRejected
 	receipt.UpdatedAt = now
-	_ = removeAgentBrowserDownloadCapture(r.downloadPath, guid)
+	r.removeDownloadCaptureLocked(guid)
 	go r.cancelDownload(guid)
 }
 

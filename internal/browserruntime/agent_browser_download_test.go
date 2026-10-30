@@ -268,6 +268,193 @@ func TestAgentBrowserDownloadReceiptsAreBounded(t *testing.T) {
 	}
 }
 
+// writeDownloadCapture writes one GUID-named capture into the quarantine.
+func writeDownloadCapture(t *testing.T, r *AgentBrowserRuntime, guid string, size int) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(r.downloadPath, guid), make([]byte, size), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// downloadQuarantineBytes sums the bytes the quarantine directory holds.
+func downloadQuarantineBytes(t *testing.T, downloadPath string) int64 {
+	t.Helper()
+	entries, err := os.ReadDir(downloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
+// waitDownloadCanceled waits for the browser-side cancel of one GUID.
+func waitDownloadCanceled(t *testing.T, mu *sync.Mutex, canceled *[]string, guid string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		found := false
+		for _, entry := range *canceled {
+			if entry == guid {
+				found = true
+				break
+			}
+		}
+		mu.Unlock()
+		if found {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("download %s was not cancelled at the browser: %v", guid, *canceled)
+}
+
+// fillDownloadSessionBudget completes enough maximum-size captures to fill
+// the session download budget exactly.
+func fillDownloadSessionBudget(t *testing.T, r *AgentBrowserRuntime) {
+	t.Helper()
+	for index := 0; index < AgentBrowserMaxDownloadTotalBytes/AgentBrowserMaxDownloadBytes; index++ {
+		guid := fmt.Sprintf("00000000-0000-4000-8000-%012x", index)
+		writeDownloadCapture(t, r, guid, AgentBrowserMaxDownloadBytes)
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+			`{"guid":"` + guid + `"}`)})
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+			`{"guid":"%s","state":"completed","receivedBytes":%d}`, guid, AgentBrowserMaxDownloadBytes))})
+		waitDownloadState(t, r, guid, AgentBrowserDownloadCompleted)
+	}
+}
+
+// TestAgentBrowserDownloadSessionBudgetBoundsConsecutiveDownloads drives a
+// sequence of completed captures that fills the session budget and asserts
+// that the next download fails closed instead of growing the quarantine.
+func TestAgentBrowserDownloadSessionBudgetBoundsConsecutiveDownloads(t *testing.T) {
+	var mu sync.Mutex
+	var canceled []string
+	r := downloadTestRuntime(t, func(request cdpWireMessage) *cdpWireMessage {
+		if request.Method == "Browser.cancelDownload" {
+			var params struct {
+				GUID string `json:"guid"`
+			}
+			_ = json.Unmarshal(request.Params, &params)
+			mu.Lock()
+			canceled = append(canceled, params.GUID)
+			mu.Unlock()
+		}
+		return downloadTestReply(request)
+	}, nil)
+	r.session = "session-1"
+	r.browserContextID = "ctx-1"
+	r.downloadPath = t.TempDir()
+	r.downloads = map[string]*AgentBrowserDownloadReceipt{}
+	fillDownloadSessionBudget(t, r)
+	if held := downloadQuarantineBytes(t, r.downloadPath); held != AgentBrowserMaxDownloadTotalBytes {
+		t.Fatalf("quarantine holds %d bytes, expected the session budget %d",
+			held, AgentBrowserMaxDownloadTotalBytes)
+	}
+
+	// One more maximum-size capture would push the session past its budget.
+	over := "ffffffff-ffff-4fff-8fff-ffffffffffff"
+	writeDownloadCapture(t, r, over, AgentBrowserMaxDownloadBytes)
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + over + `"}`)})
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+		`{"guid":"%s","state":"inProgress","receivedBytes":%d}`, over, AgentBrowserMaxDownloadBytes))})
+	receipt := waitDownloadState(t, r, over, AgentBrowserDownloadRejected)
+	if receipt.Bytes != AgentBrowserMaxDownloadBytes {
+		t.Fatalf("rejected receipt mismatch: %+v", receipt)
+	}
+	if _, err := os.Stat(filepath.Join(r.downloadPath, over)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("over-budget capture survived in the quarantine: %v", err)
+	}
+	waitDownloadCanceled(t, &mu, &canceled, over)
+	if held := downloadQuarantineBytes(t, r.downloadPath); held > AgentBrowserMaxDownloadTotalBytes {
+		t.Fatalf("quarantine grew past the session budget: %d bytes", held)
+	}
+}
+
+// TestAgentBrowserDownloadExhaustedBudgetKeepsFailingClosed asserts that a
+// session whose budget is exhausted refuses every further download instead
+// of quietly accepting more bytes.
+func TestAgentBrowserDownloadExhaustedBudgetKeepsFailingClosed(t *testing.T) {
+	r := downloadEventRuntime(t)
+	fillDownloadSessionBudget(t, r)
+	for index := 0; index < 2; index++ {
+		guid := fmt.Sprintf("ffffffff-ffff-4fff-8fff-%012x", index)
+		writeDownloadCapture(t, r, guid, AgentBrowserMaxDownloadBytes)
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+			`{"guid":"` + guid + `"}`)})
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+			`{"guid":"%s","state":"inProgress","receivedBytes":%d}`, guid, AgentBrowserMaxDownloadBytes))})
+		waitDownloadState(t, r, guid, AgentBrowserDownloadRejected)
+		if _, err := os.Stat(filepath.Join(r.downloadPath, guid)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("rejected capture %s survived in the quarantine: %v", guid, err)
+		}
+	}
+	if held := downloadQuarantineBytes(t, r.downloadPath); held > AgentBrowserMaxDownloadTotalBytes {
+		t.Fatalf("quarantine grew past the session budget: %d bytes", held)
+	}
+}
+
+// TestAgentBrowserDownloadEvictionRemovesCaptureFromQuarantine asserts that an
+// evicted terminal receipt does not leave its capture behind in the
+// quarantine and that the session accepts new downloads again afterwards.
+func TestAgentBrowserDownloadEvictionRemovesCaptureFromQuarantine(t *testing.T) {
+	r := downloadEventRuntime(t)
+	guids := make([]string, 0, AgentBrowserMaxDownloadReceipts)
+	for index := 0; index < AgentBrowserMaxDownloadReceipts; index++ {
+		guid := fmt.Sprintf("00000000-0000-4000-8000-%012x", index)
+		writeDownloadCapture(t, r, guid, 64)
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+			`{"guid":"` + guid + `"}`)})
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+			`{"guid":"%s","state":"completed","receivedBytes":64}`, guid))})
+		waitDownloadState(t, r, guid, AgentBrowserDownloadCompleted)
+		guids = append(guids, guid)
+	}
+	if len(r.Status().Downloads) != AgentBrowserMaxDownloadReceipts {
+		t.Fatalf("unexpected receipt count: %d", len(r.Status().Downloads))
+	}
+
+	// The receipt table is full of terminal receipts, so the next download
+	// evicts them to free a slot.
+	extra := "ffffffff-ffff-4fff-8fff-ffffffffffff"
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + extra + `"}`)})
+	for _, guid := range guids {
+		if _, err := os.Stat(filepath.Join(r.downloadPath, guid)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("evicted capture %s survived in the quarantine: %v", guid, err)
+		}
+	}
+	status := r.Status()
+	if len(status.Downloads) != 1 || status.Downloads[0].GUID != extra {
+		t.Fatalf("eviction did not free the receipt slots: %+v", status.Downloads)
+	}
+	if receipt := waitDownloadState(t, r, extra, AgentBrowserDownloadActive); receipt.GUID != extra {
+		t.Fatalf("session refused a download after the eviction: %+v", receipt)
+	}
+	// The evicted bytes no longer count against the session budget.
+	r.mu.Lock()
+	accounted := r.downloadBytesLocked()
+	r.mu.Unlock()
+	if accounted != 0 {
+		t.Fatalf("evicted bytes still counted against the session budget: %d", accounted)
+	}
+	if held := downloadQuarantineBytes(t, r.downloadPath); held != 0 {
+		t.Fatalf("quarantine still holds %d bytes after the eviction", held)
+	}
+}
+
 func TestAgentBrowserDownloadSuggestedFilenameNeverBecomesAPath(t *testing.T) {
 	r := downloadEventRuntime(t)
 	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
@@ -424,6 +611,18 @@ func TestAgentBrowserDownloadBudgetMatchesBuiltinProfileLimits(t *testing.T) {
 	if safe.Limits.MaxDownloadBytes != AgentBrowserMaxDownloadBytes {
 		t.Fatalf("download budget drifted: runtime=%d profile=%d",
 			AgentBrowserMaxDownloadBytes, safe.Limits.MaxDownloadBytes)
+	}
+}
+
+// TestAgentBrowserDownloadTotalBudgetDerivation pins the derivation of the
+// session budget: the builtin profile exposes no session-level download
+// limit, so the total is derived as an exact multiple of the per-file cap
+// instead of being mirrored from the profile.
+func TestAgentBrowserDownloadTotalBudgetDerivation(t *testing.T) {
+	if AgentBrowserMaxDownloadTotalBytes <= 0 ||
+		AgentBrowserMaxDownloadTotalBytes%AgentBrowserMaxDownloadBytes != 0 {
+		t.Fatalf("session budget is not an exact multiple of the per-file cap: %d",
+			AgentBrowserMaxDownloadTotalBytes)
 	}
 }
 
