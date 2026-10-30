@@ -67,6 +67,7 @@ type agentBrowserRuntime interface {
 	Snapshot(context.Context) (browserruntime.AgentBrowserSnapshot, error)
 	Click(context.Context, string, string) (browserruntime.AgentBrowserInteraction, error)
 	Type(context.Context, string, string, string, bool) (browserruntime.AgentBrowserInteraction, error)
+	Upload(context.Context, string, string, string) (browserruntime.AgentBrowserInteraction, error)
 	Screenshot(context.Context) (browserruntime.AgentBrowserScreenshot, error)
 	Scroll(context.Context, float64, float64) (browserruntime.AgentBrowserInteraction, error)
 	Key(context.Context, string) (browserruntime.AgentBrowserInteraction, error)

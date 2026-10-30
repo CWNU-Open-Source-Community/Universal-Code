@@ -15,9 +15,9 @@ const MaxDurableDepth = 64
 var ErrDurableCycle = errors.New("durable wait dependency would create a cycle")
 
 var (
-	ErrDurableSelfLoop   = errors.New("durable wait dependency cannot target its own source")
-	ErrDurableDepth      = errors.New("durable wait chain exceeds the maximum depth")
-	ErrDurableCapacity   = errors.New("durable wait graph capacity exceeded")
+	ErrDurableSelfLoop    = errors.New("durable wait dependency cannot target its own source")
+	ErrDurableDepth       = errors.New("durable wait chain exceeds the maximum depth")
+	ErrDurableCapacity    = errors.New("durable wait graph capacity exceeded")
 	ErrDurableReverseWait = errors.New("lower runtime layer cannot durably wait on an Agent")
 )
 
@@ -205,4 +205,3 @@ func (d *DAG) longestOutgoing(node string, seen map[string]struct{}, depth int) 
 func trimID(value string) string {
 	return strings.TrimSpace(value)
 }
-

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"image/png"
 	"math"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -425,6 +426,33 @@ func (r *AgentBrowserRuntime) Type(ctx context.Context, snapshot, ref, text stri
 		return AgentBrowserInteraction{}, err
 	}
 	return r.interaction("type"), nil
+}
+
+// Upload attaches one operator-validated workspace file to a snapshot-resolved
+// file input. The runtime re-checks the element type from the observed
+// document; the absolute path itself was proven to live inside the workspace
+// by the application layer before dispatch.
+func (r *AgentBrowserRuntime) Upload(ctx context.Context, snapshot, ref, filePath string) (AgentBrowserInteraction, error) {
+	if !utf8.ValidString(filePath) || strings.ContainsRune(filePath, 0) || len(filePath) > 4096 || !filepath.IsAbs(filePath) {
+		return AgentBrowserInteraction{}, ErrBrowserRuntimeBoundary
+	}
+	op, end, err := r.begin(ctx)
+	if err != nil {
+		return AgentBrowserInteraction{}, err
+	}
+	defer end()
+	defer r.releaseObjects(op)
+	stored, node, err := r.reference(op, snapshot, ref)
+	if err != nil {
+		return AgentBrowserInteraction{}, err
+	}
+	if node.Tag != "input" || node.Type != "file" || node.Disabled {
+		return AgentBrowserInteraction{}, ErrAgentBrowserTargetChanged
+	}
+	if err = r.call(op, "DOM.setFileInputFiles", map[string]any{"files": []string{filePath}, "backendNodeId": stored.backend}, nil); err != nil {
+		return AgentBrowserInteraction{}, r.unknown(err)
+	}
+	return r.interaction("upload"), nil
 }
 
 func (r *AgentBrowserRuntime) focused(ctx context.Context, ref agentBrowserRef) error {

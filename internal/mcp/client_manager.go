@@ -460,7 +460,7 @@ type InvokeRequest struct {
 	OperationID string                          `json:"-"`
 	Subject     executionauth.SubjectRef        `json:"-"`
 	Authorizer  *executionauth.PolicyAuthorizer `json:"-"`
-	Workspace   *InvocationWorkspace          `json:"-"`
+	Workspace   *InvocationWorkspace            `json:"-"`
 }
 
 func (m *Manager) Invoke(ctx context.Context, request InvokeRequest) (result ClientCallResult,

@@ -161,6 +161,10 @@ func (r *agentBrowserTestRuntime) Scroll(context.Context, float64, float64) (bro
 	r.actions = append(r.actions, "scroll")
 	return browserruntime.AgentBrowserInteraction{Dispatched: true}, nil
 }
+func (r *agentBrowserTestRuntime) Upload(context.Context, string, string, string) (browserruntime.AgentBrowserInteraction, error) {
+	return browserruntime.AgentBrowserInteraction{}, nil
+}
+
 func (r *agentBrowserTestRuntime) Screenshot(context.Context) (browserruntime.AgentBrowserScreenshot, error) {
 	h := sha256.Sum256(r.png)
 	return browserruntime.AgentBrowserScreenshot{SessionID: r.status.SessionID, CanonicalURL: r.status.CanonicalURL, DocumentEpoch: r.status.DocumentEpoch, MediaType: "image/png", PNG: r.png, Bytes: len(r.png), SHA256: hex.EncodeToString(h[:])}, nil

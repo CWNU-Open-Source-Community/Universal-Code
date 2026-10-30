@@ -66,7 +66,8 @@ func BrowserActionToolNames() []ToolName {
 func IsBrowserActionTool(name ToolName) bool {
 	switch name {
 	case BrowserStatusTool, BrowserNavigateTool, BrowserSnapshotTool,
-		BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool:
+		BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool,
+		BrowserUploadTool:
 		return true
 	default:
 		return false

@@ -58,3 +58,37 @@ func TestAgentBrowserGatewayRoutesV2WithoutLegacyFallback(t *testing.T) {
 		t.Fatal("unknown protocol fell back")
 	}
 }
+
+func TestAgentBrowserUploadPayloadRequiresSensitiveIntentAndBoundedPath(t *testing.T) {
+	sensitive := `"sensitive_intent":{"version":"browser_sensitive_intent.v1","effect":"external_write","target":"https://example.com/upload","description":"Attach the operator-selected workspace report to the support form","document_epoch":7}`
+	valid := []string{
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs/report.pdf",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","target":{"name":"Upload report","role":"button"},"workspace_path":"docs/report.pdf",` + sensitive + `}`,
+	}
+	for _, raw := range valid {
+		if _, e := NormalizeAgentBrowserPayload(BrowserUploadTool, json.RawMessage(raw)); e != nil {
+			t.Fatalf("valid upload rejected: %v", e)
+		}
+	}
+	if _, ok := AgentBrowserToolDefinition(BrowserUploadTool); !ok {
+		t.Fatal("upload tool definition missing")
+	}
+	bad := []string{
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs/report.pdf"}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"C:/secrets/key.pem",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"../../secrets/key.pem",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"/etc/passwd",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs\\report.pdf",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs\u0000report.pdf",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs//report.pdf",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs/report.pdf","value":"x",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs/report.pdf","element_ref2":"x",` + sensitive + `}`,
+		`{"version":"browser_upload.v2","snapshot_id":"snap-1","element_ref":"ref-1","workspace_path":"docs/report.pdf","sensitive_intent":{"version":"browser_sensitive_intent.v1","effect":"external_delete","target":"https://example.com/upload","description":"wrong effect","document_epoch":7}}`,
+		`{"version":"browser_upload.v2","target":{"name":"Upload","role":"button"},"workspace_path":"docs/report.pdf",` + sensitive + `}`,
+	}
+	for _, raw := range bad {
+		if _, e := NormalizeAgentBrowserPayload(BrowserUploadTool, json.RawMessage(raw)); e == nil {
+			t.Fatalf("invalid upload accepted: %s", raw)
+		}
+	}
+}

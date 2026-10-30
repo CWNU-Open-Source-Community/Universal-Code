@@ -65,6 +65,10 @@ func (r *downloadReleaseTestRuntime) Type(context.Context, string, string, strin
 	return browserruntime.AgentBrowserInteraction{}, nil
 }
 
+func (r *downloadReleaseTestRuntime) Upload(context.Context, string, string, string) (browserruntime.AgentBrowserInteraction, error) {
+	return browserruntime.AgentBrowserInteraction{}, nil
+}
+
 func (r *downloadReleaseTestRuntime) Screenshot(context.Context) (browserruntime.AgentBrowserScreenshot, error) {
 	return browserruntime.AgentBrowserScreenshot{}, nil
 }
@@ -427,5 +431,52 @@ func TestBrowserSessionLifetimeFromEnvironment(t *testing.T) {
 		if got := BrowserSessionLifetimeFromEnvironment(); got != 0 {
 			t.Fatalf("out-of-range value %q must fall back to the default: %v", value, got)
 		}
+	}
+}
+
+func TestAgentBrowserUploadResolverContainment(t *testing.T) {
+	root := t.TempDir()
+	store := &downloadReleaseTestStore{
+		run:       domain.Run{ID: "run-upload"},
+		workspace: session.WorkspaceInfo{ID: "ws-upload", RootPath: root},
+	}
+	service := NewAgentBrowserService(store, AgentBrowserOptions{})
+	if err := os.WriteFile(filepath.Join(root, "report.txt"), []byte("upload payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "docs/../report.txt")
+	if err != nil || !filepath.IsAbs(resolved) {
+		t.Fatalf("regular file: %v %q", err, resolved)
+	}
+
+	for _, relative := range []string{"missing.txt", "docs", "", "../outside.txt", "report.txt/../../escape.txt", "report.txt/x"} {
+		if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", relative); err == nil {
+			t.Fatalf("upload path %q accepted", relative)
+		}
+	}
+	oversize := filepath.Join(root, "big.bin")
+	if err := os.WriteFile(oversize, make([]byte, AgentBrowserMaxUploadBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "big.bin"); err == nil {
+		t.Fatal("oversize upload accepted")
+	}
+	if err := os.WriteFile(filepath.Join(root, "empty.bin"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "empty.bin"); err == nil {
+		t.Fatal("empty upload accepted")
+	}
+	if err := os.WriteFile(filepath.Join(root, "escape.txt"), []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "escape.txt"), filepath.Join(root, "docs", "link.txt")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "docs/link.txt"); err == nil {
+		t.Fatal("symlinked escape accepted")
 	}
 }
