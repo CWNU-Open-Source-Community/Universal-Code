@@ -231,14 +231,29 @@ func TestFingerprintRefusesFilesSymlinksAndMissingRoots(t *testing.T) {
 	if err := os.WriteFile(file, []byte("data"), 0600); err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
-	link := filepath.Join(dir, "link")
-	if err := os.Symlink(dir, link); err != nil {
-		t.Skipf("symlinks are unavailable: %v", err)
-	}
 
-	for _, root := range []string{file, link, filepath.Join(dir, "missing")} {
-		if _, err := Fingerprint(root); err == nil {
-			t.Fatalf("fingerprint accepted %q", root)
+	// Each root kind is its own subtest: a host without symlink support must
+	// skip only the symlink case, never the file and missing-root refusals.
+	t.Run("regular file", func(t *testing.T) {
+		if _, err := Fingerprint(file); err == nil {
+			t.Fatalf("fingerprint accepted %q", file)
 		}
-	}
+	})
+
+	t.Run("missing root", func(t *testing.T) {
+		missing := filepath.Join(dir, "missing")
+		if _, err := Fingerprint(missing); err == nil {
+			t.Fatalf("fingerprint accepted %q", missing)
+		}
+	})
+
+	t.Run("symlinked root", func(t *testing.T) {
+		link := filepath.Join(dir, "link")
+		if err := os.Symlink(dir, link); err != nil {
+			t.Skipf("symlinks are unavailable: %v", err)
+		}
+		if _, err := Fingerprint(link); err == nil {
+			t.Fatalf("fingerprint accepted %q", link)
+		}
+	})
 }
