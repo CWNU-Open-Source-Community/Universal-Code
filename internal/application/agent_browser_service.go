@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/toolgateway"
+	"os"
+	"strings"
 )
 
 type AgentBrowserStore interface {
@@ -503,4 +506,31 @@ func refreshBrowserModelTools(existing []llm.ToolSpec, c toolgateway.BrowserActi
 		}
 	}
 	return out
+}
+
+// BrowserSessionLifetimeFromEnvironment reports the operator-selected browser
+// session lifetime in minutes (CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES).
+// Values outside 5..1440 (or a malformed value) return 0, which keeps the
+// composition default (30 minutes). Long lifetimes matter for the takeover
+// mode: the session profile, including manual login state, is wiped when the
+// runtime deadline elapses.
+func BrowserSessionLifetimeFromEnvironment() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES"))
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes < 5 || minutes > 1440 {
+		return 0
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// BrowserHeadedFromEnvironment reports whether the operator requested the
+// takeover mode: the agent browser runs as a visible window on the operator's
+// desktop so a human can log in or handle waiting_user states manually. The
+// window shares the same disposable session profile, so login state persists
+// for the session and dies with the profile at cleanup; it grants no
+// additional authority to the agent. Opt-in via
+// CYBERAGENT_BROWSER_HEADED=1|true at the composition root.
+func BrowserHeadedFromEnvironment() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("CYBERAGENT_BROWSER_HEADED")))
+	return value == "1" || value == "true"
 }

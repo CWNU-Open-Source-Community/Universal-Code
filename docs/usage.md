@@ -1006,6 +1006,39 @@ CLI errors keep their existing text and use stable exit codes documented in [err
 
 Supported profiles are `code`, `review`, `learn`, and `script`. New runs start with network access disabled. Budget flags reject negative values and include maximum turns, tokens, model cost, and wall-clock timeout.
 
+### Browser takeover and session login / 浏览器接管与会话登录
+
+By default the agent browser runs headless: the operator watches the live view and
+screenshots, and a `waiting_user` state can only be resolved by the agent. Takeover
+mode launches the same isolated, disposable browser as a **visible window** on the
+operator's desktop, so a human can log in, complete 2FA/OAuth, or handle dialogs
+manually. Login state lives in the session's disposable profile: it persists for the
+whole session, is invisible to the operator's personal browser, and is wiped with the
+profile at cleanup together with a cleanup receipt. The browser session has a
+runtime deadline (30 minutes by default): when it elapses the profile is wiped and
+the next navigation starts a fresh one, so complete manual logins within the
+session's lifetime. Operators can raise it with
+`CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES` (5..1440 minutes, accepted at the same
+composition roots) — the quarantine, approvals, and cleanup receipts are unchanged.
+
+Enable it at the composition root with `CYBERAGENT_BROWSER_HEADED=1` (or `true`), or
+for the CLI API with `cyberagent api serve --browser-headed`. The mode changes process
+visibility only: origin scope, request-level interception, the download quarantine,
+and the approval rules are unchanged, and the agent gains no extra authority. The
+`waiting_user` status points at this mode when a page needs manual attention.
+
+默认情况下 agent 浏览器以 headless 运行：操作者通过实时画面与截图观察，`waiting_user`
+只能交给 agent 处理。接管模式把同一个隔离、一次性的浏览器以**可见窗口**启动在操作者
+桌面上，人工即可完成登录、2FA/OAuth 或对话框处理。登录态保存在会话的一次性 profile
+中：整个会话存续有效，与操作者个人浏览器完全隔离，cleanup 时随 profile 一起擦除并
+留有清理回执。浏览器会话有时长上限（默认 30 分钟 RuntimeDeadline），到期后 profile
+被擦除、下次导航开新 profile；操作者可用 `CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES`
+（5..1440 分钟，在同一组组合根生效）上调——隔离区、审批与清理回执语义不变。在组合根设置 `CYBERAGENT_BROWSER_HEADED=1`（或 `true`）启用，CLI 亦可用
+`cyberagent api serve --browser-headed`。该模式只改变进程可见性：origin scope、请求级
+拦截、下载隔离与审批规则全部不变，agent 不获得任何额外权限。页面需要人工处理时，
+`waiting_user` 状态会指向本模式。
+
+
 ## Local HTTP API
 
 ```powershell

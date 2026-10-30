@@ -286,3 +286,39 @@ func TestAgentBrowserDownloadListWithoutLiveSessionIsEmpty(t *testing.T) {
 		t.Fatalf("missing session downloads: %+v %v", listed, err)
 	}
 }
+
+func TestBrowserHeadedFromEnvironment(t *testing.T) {
+	t.Setenv("CYBERAGENT_BROWSER_HEADED", "")
+	if BrowserHeadedFromEnvironment() {
+		t.Fatal("empty environment must stay headless")
+	}
+	for _, value := range []string{"1", "true", "TRUE", " true "} {
+		t.Setenv("CYBERAGENT_BROWSER_HEADED", value)
+		if !BrowserHeadedFromEnvironment() {
+			t.Fatalf("headed value %q not honored", value)
+		}
+	}
+	for _, value := range []string{"0", "false", "yes", "on"} {
+		t.Setenv("CYBERAGENT_BROWSER_HEADED", value)
+		if BrowserHeadedFromEnvironment() {
+			t.Fatalf("non-opt-in value %q enabled headed mode", value)
+		}
+	}
+}
+
+func TestBrowserSessionLifetimeFromEnvironment(t *testing.T) {
+	t.Setenv("CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES", "")
+	if got := BrowserSessionLifetimeFromEnvironment(); got != 0 {
+		t.Fatalf("unset environment must keep the default: %v", got)
+	}
+	t.Setenv("CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES", " 90 ")
+	if got := BrowserSessionLifetimeFromEnvironment(); got != 90*time.Minute {
+		t.Fatalf("90 minutes not honored: %v", got)
+	}
+	for _, value := range []string{"abc", "4", "1441", "-10"} {
+		t.Setenv("CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES", value)
+		if got := BrowserSessionLifetimeFromEnvironment(); got != 0 {
+			t.Fatalf("out-of-range value %q must fall back to the default: %v", value, got)
+		}
+	}
+}
