@@ -1149,3 +1149,32 @@ func (p agentBrowserProfile) verifyProof(path string) error {
 	}
 	return nil
 }
+
+// prepareAgentBrowserDownloadQuarantine creates the disposable download
+// directory inside the session profile tree. It is the only filesystem writer
+// for download captures, mirroring the profile lifecycle: the quarantine dies
+// with the profile during cleanup.
+func prepareAgentBrowserDownloadQuarantine(profilePath string) (string, error) {
+	downloadPath := filepath.Join(profilePath, "downloads")
+	if err := os.Mkdir(downloadPath, 0o700); err != nil {
+		return "", err
+	}
+	return downloadPath, nil
+}
+
+// removeAgentBrowserDownloadCapture deletes one GUID-named capture, used when
+// a download is rejected over the byte budget.
+func removeAgentBrowserDownloadCapture(downloadPath, guid string) error {
+	return os.Remove(filepath.Join(downloadPath, guid))
+}
+
+// statAgentBrowserDownloadCapture inspects the GUID-named capture without
+// following any event-provided path.
+func statAgentBrowserDownloadCapture(downloadPath, guid string) (os.FileInfo, error) {
+	return os.Lstat(filepath.Join(downloadPath, guid))
+}
+
+// readAgentBrowserDownloadCapture reads the GUID-named capture for digesting.
+func readAgentBrowserDownloadCapture(downloadPath, guid string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(downloadPath, guid))
+}
