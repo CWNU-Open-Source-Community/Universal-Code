@@ -1,9 +1,13 @@
 package projectconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -197,5 +201,115 @@ func TestScaffoldProjectInstructionsEmptyDirectoryAndSymlinkMarker(t *testing.T)
 	}
 	if len(withSymlink.Detected) != 2 || symlinked == "" {
 		t.Fatalf("symlinked marker should still be reported without following it: %+v", withSymlink.Detected)
+	}
+}
+
+// scaffoldRefusalMessage mirrors the stable refusal wording the scaffold must
+// keep for a target directory that already contains the named file.
+func scaffoldRefusalMessage(fileName, targetRelative string) string {
+	return fmt.Sprintf("%s already exists in %s; scaffolding never overwrites project files (--print renders a preview)", fileName, targetRelative)
+}
+
+func TestScaffoldProjectInstructionsNeverOverwritesExistingFiles(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing string
+		content  string
+	}{
+		{"agents exists", InstructionScaffoldFileName, "existing guidance\n"},
+		{"empty agents rejected by discovery", InstructionScaffoldFileName, ""},
+		{"override shadows draft", InstructionScaffoldOverrideFileName, "operator override\n"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeInstruction(t, root, testCase.existing, testCase.content)
+			result, err := ScaffoldProjectInstructions(t.Context(), root, ".", true)
+			if err == nil {
+				t.Fatalf("expected refusal, got %+v", result)
+			}
+			want := scaffoldRefusalMessage(testCase.existing, ".")
+			if err.Error() != want {
+				t.Fatalf("unexpected refusal:\n got: %v\nwant: %s", err, want)
+			}
+			unchanged, readErr := os.ReadFile(filepath.Join(root, testCase.existing))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(unchanged) != testCase.content {
+				t.Fatalf("existing file was modified: got %q want %q", string(unchanged), testCase.content)
+			}
+			if testCase.existing != InstructionScaffoldFileName {
+				if _, statErr := os.Lstat(filepath.Join(root, InstructionScaffoldFileName)); statErr == nil {
+					t.Fatal("refused scaffold must not write AGENTS.md")
+				}
+			}
+		})
+	}
+}
+
+func TestScaffoldProjectInstructionsConcurrentCreateWritesOnce(t *testing.T) {
+	root := t.TempDir()
+	const writers = 8
+	ctx := t.Context()
+	type outcome struct {
+		result InstructionScaffoldResult
+		err    error
+	}
+	outcomes := make([]outcome, writers)
+	gate := make(chan struct{})
+	var ready sync.WaitGroup
+	var done sync.WaitGroup
+	ready.Add(writers)
+	done.Add(writers)
+	for index := range writers {
+		go func(index int) {
+			defer done.Done()
+			ready.Done()
+			<-gate
+			result, err := ScaffoldProjectInstructions(ctx, root, ".", true)
+			outcomes[index] = outcome{result: result, err: err}
+		}(index)
+	}
+	// Every writer parks on the gate before any of them starts, so all of
+	// them contend for the same exclusive create. The outcome never depends
+	// on scheduling: the filesystem grants the exclusive create to exactly
+	// one writer and refuses the others.
+	ready.Wait()
+	close(gate)
+	done.Wait()
+
+	want := scaffoldRefusalMessage(InstructionScaffoldFileName, ".")
+	successes := 0
+	var written InstructionScaffoldResult
+	for index, outcome := range outcomes {
+		if outcome.err == nil {
+			successes++
+			written = outcome.result
+			continue
+		}
+		if outcome.err.Error() != want {
+			t.Fatalf("writer %d refused with an unexpected error:\n got: %v\nwant: %s", index, outcome.err, want)
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("expected exactly one successful scaffold, got %d", successes)
+	}
+	if !written.Written || written.Content == "" {
+		t.Fatalf("successful scaffold did not report a written draft: %+v", written)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(root, InstructionScaffoldFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk) == 0 {
+		t.Fatal("written scaffold must not be empty")
+	}
+	if string(onDisk) != written.Content {
+		t.Fatalf("written file differs from the successful scaffold content:\n got: %q\nwant: %q", string(onDisk), written.Content)
+	}
+	digest := sha256.Sum256(onDisk)
+	if hex.EncodeToString(digest[:]) != written.ContentSHA256 {
+		t.Fatalf("written file digest mismatch: got %s want %s", hex.EncodeToString(digest[:]), written.ContentSHA256)
 	}
 }

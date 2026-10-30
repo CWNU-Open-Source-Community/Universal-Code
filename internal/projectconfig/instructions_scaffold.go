@@ -57,8 +57,10 @@ type InstructionScaffoldResult struct {
 // The scaffold never overwrites: a writing scaffold refuses when
 // AGENTS.override.md or AGENTS.md already exists in the target directory,
 // including empty files, because an empty AGENTS.md is rejected by discovery
-// and an override would shadow a freshly written AGENTS.md entirely. A
-// preview scaffold (write=false) always renders without touching the disk.
+// and an override would shadow a freshly written AGENTS.md entirely. The
+// refusal is enforced by an exclusive create, so concurrent scaffolds cannot
+// truncate each other's AGENTS.md. A preview scaffold (write=false) always
+// renders without touching the disk.
 func ScaffoldProjectInstructions(ctx context.Context, workspaceRoot, targetPath string, write bool) (InstructionScaffoldResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -77,11 +79,13 @@ func ScaffoldProjectInstructions(ctx context.Context, workspaceRoot, targetPath 
 		return InstructionScaffoldResult{}, err
 	}
 	if write {
-		for _, existing := range []string{InstructionScaffoldOverrideFileName, InstructionScaffoldFileName} {
-			existingPath := filepath.Join(target, existing)
-			if _, statErr := os.Lstat(existingPath); statErr == nil {
-				return InstructionScaffoldResult{}, fmt.Errorf("%s already exists in %s; scaffolding never overwrites project files (--print renders a preview)", existing, targetRelative)
-			}
+		// An existing override shadows a freshly written AGENTS.md, so the
+		// scaffold refuses before rendering anything. The scaffold never
+		// creates the override itself, so this check needs no exclusive
+		// create; the AGENTS.md guard below is the exclusive create.
+		overridePath := filepath.Join(target, InstructionScaffoldOverrideFileName)
+		if _, statErr := os.Lstat(overridePath); statErr == nil {
+			return InstructionScaffoldResult{}, fmt.Errorf("%s already exists in %s; scaffolding never overwrites project files (--print renders a preview)", InstructionScaffoldOverrideFileName, targetRelative)
 		}
 	}
 	detected := detectScaffoldMarkers(target)
@@ -103,11 +107,45 @@ func ScaffoldProjectInstructions(ctx context.Context, workspaceRoot, targetPath 
 	if !write {
 		return result, nil
 	}
-	if err := os.WriteFile(filepath.Join(target, InstructionScaffoldFileName), []byte(content), 0o644); err != nil {
+	scaffoldPath := filepath.Join(target, InstructionScaffoldFileName)
+	if err := writeInstructionScaffoldFile(scaffoldPath, []byte(content)); err != nil {
+		if errors.Is(err, os.ErrExist) || scaffoldPathExists(scaffoldPath) {
+			return InstructionScaffoldResult{}, fmt.Errorf("%s already exists in %s; scaffolding never overwrites project files (--print renders a preview)", InstructionScaffoldFileName, targetRelative)
+		}
 		return InstructionScaffoldResult{}, fmt.Errorf("write scaffolded project instructions: %w", err)
 	}
 	result.Written = true
 	return result, nil
+}
+
+// writeInstructionScaffoldFile creates path exclusively and writes content.
+// O_EXCL makes the create atomic: the filesystem itself refuses to replace an
+// existing file, so concurrent scaffolds cannot truncate each other's
+// AGENTS.md. A failed write removes the partial file so no truncated draft is
+// left behind.
+func writeInstructionScaffoldFile(path string, content []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(content); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
+}
+
+// scaffoldPathExists reports whether path is present on disk. It backs the
+// refusal mapping for exclusive creates that fail while a concurrently created
+// file is still held open by another process.
+func scaffoldPathExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }
 
 // scaffoldMarkers is a fixed, ordered detection table; order is part of the
