@@ -229,8 +229,15 @@ func TestCheckBoundedConsumption(t *testing.T) {
 		{"grant expired at validation time", func(g *SessionGrant, _ *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, at *time.Time) {
 			*at = g.ExpiresAt.Add(time.Second)
 		}},
+		{"grant expires exactly at validation time", func(g *SessionGrant, _ *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, at *time.Time) {
+			*at = *g.ExpiresAt
+		}},
 		{"consumption after expiry", func(g *SessionGrant, c *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, _ *time.Time) {
 			c.CreatedAt = g.ExpiresAt.Add(time.Second)
+			c.Fingerprint = GrantConsumptionFingerprint(*c)
+		}},
+		{"consumption created exactly at expiry", func(g *SessionGrant, c *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, _ *time.Time) {
+			c.CreatedAt = *g.ExpiresAt
 			c.Fingerprint = GrantConsumptionFingerprint(*c)
 		}},
 		{"consumption before grant creation", func(g *SessionGrant, c *GrantConsumption, _ *Record, _ *GrantQuery, _ *bool, _ *time.Time) {
@@ -324,7 +331,7 @@ func TestSessionGrantValidateBoundedMatrix(t *testing.T) {
 		{"request fingerprint not sha-256 hex", func(g *SessionGrant) { g.RequestFingerprint = "abc" }},
 		{"scope fingerprint not sha-256 hex", func(g *SessionGrant) { g.ScopeFingerprint = strings.ToUpper(Fingerprint("scope")) }},
 		{"max uses above eight", func(g *SessionGrant) { g.MaxUses = 9; g.UsesRemaining = 8 }},
-		{"max uses not positive", func(g *SessionGrant) { g.MaxUses = 0 }},
+		{"max uses not positive", func(g *SessionGrant) { g.MaxUses = 0; g.UsesRemaining = 0 }},
 		{"uses remaining above max uses", func(g *SessionGrant) { g.UsesRemaining = g.MaxUses + 1 }},
 		{"missing expiry", func(g *SessionGrant) { g.ExpiresAt = nil }},
 		{"expiry at creation", func(g *SessionGrant) { at := g.CreatedAt; g.ExpiresAt = &at }},
@@ -554,16 +561,21 @@ func TestComputerUseAppScopeFingerprintAndActionClass(t *testing.T) {
 	if len(scope.Fingerprint()) != 64 {
 		t.Fatalf("unexpected scope fingerprint length: %d", len(scope.Fingerprint()))
 	}
-	changed := scope
-	changed.RunAuthorizationFence = 10
-	if scope.Fingerprint() == changed.Fingerprint() {
-		t.Fatal("scope fingerprint ignored the run authorization fence")
-	}
 	scopeDrifts := map[string]func(*ComputerUseAppScope){
-		"app id":                 func(s *ComputerUseAppScope) { s.AppID = "app-other" },
-		"server id":              func(s *ComputerUseAppScope) { s.ServerID = "server-other" },
-		"permission generation":  func(s *ComputerUseAppScope) { s.PermissionGeneration = 8 },
-		"descriptor fingerprint": func(s *ComputerUseAppScope) { s.DescriptorFingerprint = Fingerprint("other-descriptor") },
+		"run id":                   func(s *ComputerUseAppScope) { s.RunID = "run-other" },
+		"session id":               func(s *ComputerUseAppScope) { s.SessionID = "session-other" },
+		"workspace id":             func(s *ComputerUseAppScope) { s.WorkspaceID = "workspace-other" },
+		"app id":                   func(s *ComputerUseAppScope) { s.AppID = "app-other" },
+		"permission snapshot":      func(s *ComputerUseAppScope) { s.PermissionSnapshotID = "permission-other" },
+		"permission revision":      func(s *ComputerUseAppScope) { s.PermissionRevision = 2 },
+		"permission mode":          func(s *ComputerUseAppScope) { s.PermissionMode = "full" },
+		"permission generation":    func(s *ComputerUseAppScope) { s.PermissionGeneration = 8 },
+		"permission runtime epoch": func(s *ComputerUseAppScope) { s.PermissionRuntimeEpoch = "epoch-other" },
+		"run authorization fence":  func(s *ComputerUseAppScope) { s.RunAuthorizationFence = 10 },
+		"server id":                func(s *ComputerUseAppScope) { s.ServerID = "server-other" },
+		"descriptor fingerprint":   func(s *ComputerUseAppScope) { s.DescriptorFingerprint = Fingerprint("other-descriptor") },
+		"server generation":        func(s *ComputerUseAppScope) { s.ServerGeneration = 4 },
+		"capability fingerprint":   func(s *ComputerUseAppScope) { s.CapabilityFingerprint = Fingerprint("other-capability") },
 	}
 	for name, mutate := range scopeDrifts {
 		t.Run("scope fingerprint binds "+name, func(t *testing.T) {
@@ -634,17 +646,20 @@ func TestRecordFingerprintBindsDecisionState(t *testing.T) {
 	if first != RecordFingerprint(record) {
 		t.Fatal("record fingerprint is not deterministic")
 	}
-	changed := record
-	changed.GrantID = "grant-other"
-	if first == RecordFingerprint(changed) {
-		t.Fatal("record fingerprint ignored the grant id")
+	mutations := map[string]func(*Record){
+		"grant id":    func(r *Record) { r.GrantID = "grant-other" },
+		"status":      func(r *Record) { r.Status = StatusDenied },
+		"decided at":  func(r *Record) { at := r.DecidedAt.Add(time.Second); r.DecidedAt = &at },
+		"reviewed by": func(r *Record) { r.ReviewedBy = "reviewer-other" },
 	}
-	pending := record
-	pending.Status = StatusPending
-	pending.DecidedAt = nil
-	pending.ReviewedBy = ""
-	if first == RecordFingerprint(pending) {
-		t.Fatal("record fingerprint ignored the decision metadata")
+	for name, mutate := range mutations {
+		t.Run("binds "+name, func(t *testing.T) {
+			changed := record
+			mutate(&changed)
+			if first == RecordFingerprint(changed) {
+				t.Fatalf("record fingerprint ignored the %s", name)
+			}
+		})
 	}
 }
 
@@ -660,6 +675,29 @@ func TestRecordValidateDecisionStates(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("accepts a pending record and rejects each decision field independently", func(t *testing.T) {
+		pending := base
+		pending.Status = StatusPending
+		pending.DecidedAt = nil
+		pending.ReviewedBy = ""
+		pending.GrantID = ""
+		if err := pending.Validate(); err != nil {
+			t.Fatalf("valid pending record rejected: %v", err)
+		}
+		for name, mutate := range map[string]func(*Record){
+			"decided at":    func(r *Record) { r.DecidedAt = base.DecidedAt },
+			"reviewer":      func(r *Record) { r.ReviewedBy = "operator" },
+			"session grant": func(r *Record) { r.GrantID = grant.ID },
+		} {
+			t.Run("rejects pending with only "+name, func(t *testing.T) {
+				record := pending
+				mutate(&record)
+				if err := record.Validate(); err == nil {
+					t.Fatalf("pending record with only %s was accepted", name)
+				}
+			})
+		}
+	})
 	rejections := []struct {
 		name   string
 		mutate func(*Record)
@@ -671,15 +709,6 @@ func TestRecordValidateDecisionStates(t *testing.T) {
 		{"decision reason beyond 2048 runes", func(r *Record) { r.DecisionReason = strings.Repeat("长", 2049) }},
 		{"zero version", func(r *Record) { r.Version = 0 }},
 		{"updated before created", func(r *Record) { r.UpdatedAt = r.CreatedAt.Add(-time.Second) }},
-		{"pending with decided metadata", func(r *Record) {
-			r.Status = StatusPending
-			r.DecidedAt = base.DecidedAt
-			r.ReviewedBy = "operator"
-		}},
-		{"pending with a grant", func(r *Record) {
-			r.Status = StatusPending
-			r.GrantID = grant.ID
-		}},
 		{"decided without reviewer", func(r *Record) { r.ReviewedBy = "" }},
 		{"decided before creation", func(r *Record) {
 			before := r.CreatedAt.Add(-time.Second)
