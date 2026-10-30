@@ -13,10 +13,10 @@ import (
 const (
 	DependencyEdgeProtocolVersion = "agent_dependency.v1"
 
-	MaxDependencyReasonRunes       = 512
-	MaxDependencyEdgesPerRun       = 4096
-	MaxDependencyDepth             = 64
-	MaxDependencyWakesPerAgent     = 1024
+	MaxDependencyReasonRunes   = 512
+	MaxDependencyEdgesPerRun   = 4096
+	MaxDependencyDepth         = 64
+	MaxDependencyWakesPerAgent = 1024
 	DependencyPollingLivelockLimit = 64
 )
 
@@ -174,9 +174,9 @@ func (w DependencyWake) Validate() error {
 // DependencyStallDiagnosis projects the stable deadlock/livelock diagnosis for
 // one Run without mutating any ledger row.
 type DependencyStallDiagnosis struct {
-	RunID               string
-	DetectedAt          time.Time
-	DeadlockedEdgeIDs   []string
+	RunID              string
+	DetectedAt         time.Time
+	DeadlockedEdgeIDs  []string
 	LivelockedSourceIDs []string
 }
 
