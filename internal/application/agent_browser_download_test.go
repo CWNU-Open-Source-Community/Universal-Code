@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
@@ -107,6 +108,12 @@ func completedDownloadReceipt(t *testing.T, data []byte) browserruntime.AgentBro
 		SHA256: hex.EncodeToString(sum[:])}
 }
 
+// releaseIdentity is the server-side release identity: the control-plane
+// principal that authorized the release plus the declared operator name.
+func releaseIdentity(operator string) AgentBrowserDownloadRelease {
+	return AgentBrowserDownloadRelease{Principal: AgentBrowserDownloadReleasePrincipalControlPlane, Operator: operator}
+}
+
 func TestAgentBrowserDownloadReleasePersistsCaptureAndProvenance(t *testing.T) {
 	data := []byte("released capture bytes")
 	runtime := &downloadReleaseTestRuntime{receipt: completedDownloadReceipt(t, data), data: data}
@@ -118,7 +125,7 @@ func TestAgentBrowserDownloadReleasePersistsCaptureAndProvenance(t *testing.T) {
 	}
 
 	locator, receipt, err := service.ReleaseBrowserDownload(context.Background(),
-		"run-download-release", runtime.receipt.GUID, "operator-a")
+		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-a"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,24 +138,105 @@ func TestAgentBrowserDownloadReleasePersistsCaptureAndProvenance(t *testing.T) {
 	if err != nil || string(captured) != string(data) {
 		t.Fatalf("capture mismatch: %v", err)
 	}
-	var sidecar map[string]any
+	// The deterministic capture sidecar is a release contract: its exact bytes
+	// must not change when the approval event is written beside it.
+	wantSidecar := fmt.Sprintf(
+		`{"bytes":%d,"captured_at":"0001-01-01T00:00:00Z","guid":%q,"run_id":"run-download-release",`+
+			`"sha256":%q,"started_at":"0001-01-01T00:00:00Z","suggested_filename":"report.pdf",`+
+			`"url":"https://example.com/report.pdf","version":%q,"workspace_id":"ws-download-release"}`,
+		receipt.Bytes, receipt.GUID, receipt.SHA256, AgentBrowserDownloadReleaseVersion)
 	raw, err := os.ReadFile(filepath.Join(root, runtime.receipt.GUID+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(raw, &sidecar); err != nil {
-		t.Fatal(err)
-	}
-	if sidecar["sha256"] != receipt.SHA256 || sidecar["suggested_filename"] != "report.pdf" ||
-		sidecar["guid"] != runtime.receipt.GUID {
-		t.Fatalf("sidecar provenance mismatch: %+v", sidecar)
+	if string(raw) != wantSidecar {
+		t.Fatalf("capture sidecar changed:\n got %s\nwant %s", raw, wantSidecar)
 	}
 
-	// Repeating the release with identical bytes is idempotent.
+	// The release-approval event is a separate, non-overwritable record next to
+	// the sidecar: it proves which principal approved the release and when.
+	approvalPath := filepath.Join(root, runtime.receipt.GUID+".approval.json")
+	approvalRaw, err := os.ReadFile(approvalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var approval agentBrowserDownloadReleaseApproval
+	if err := json.Unmarshal(approvalRaw, &approval); err != nil {
+		t.Fatal(err)
+	}
+	if approval.GUID != receipt.GUID || approval.RunID != "run-download-release" ||
+		approval.WorkspaceID != "ws-download-release" || approval.SHA256 != receipt.SHA256 ||
+		approval.Bytes != receipt.Bytes || approval.ApprovedAt.IsZero() ||
+		approval.ApprovedAt.Location() != time.UTC {
+		t.Fatalf("approval event mismatch: %+v", approval)
+	}
+	if approval.Principal != AgentBrowserDownloadReleasePrincipalControlPlane ||
+		approval.PrincipalScope != AgentBrowserDownloadReleasePrincipalScopeCredentialClass {
+		t.Fatalf("approval principal mismatch: %+v", approval)
+	}
+	if approval.DeclaredOperator != "operator-a" || approval.Principal == approval.DeclaredOperator {
+		t.Fatalf("declared operator is not a distinct field from the principal: %+v", approval)
+	}
+	if strings.Contains(strings.ToLower(string(approvalRaw)), "token") {
+		t.Fatalf("approval event leaked credential material: %s", approvalRaw)
+	}
+
+	// Repeating the release with identical bytes is idempotent: the approval
+	// event keeps its first timestamp and is never rewritten.
+	before, err := os.Stat(approvalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	again, _, err := service.ReleaseBrowserDownload(context.Background(),
-		"run-download-release", runtime.receipt.GUID, "operator-a")
+		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-a"))
 	if err != nil || again != locator {
 		t.Fatalf("release replay: %q %+v", again, err)
+	}
+	repeated, err := os.ReadFile(approvalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(approvalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(repeated) != string(approvalRaw) || !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("repeat release rewrote the approval event: %s", repeated)
+	}
+	repeatedSidecar, err := os.ReadFile(filepath.Join(root, runtime.receipt.GUID+".json"))
+	if err != nil || string(repeatedSidecar) != wantSidecar {
+		t.Fatalf("repeat release changed the capture sidecar: %v", err)
+	}
+}
+
+func TestAgentBrowserDownloadReleaseRejectsConflictingApprovalEvent(t *testing.T) {
+	data := []byte("released capture bytes")
+	receipt := completedDownloadReceipt(t, data)
+	runtime := &downloadReleaseTestRuntime{receipt: receipt, data: data}
+	service := newDownloadReleaseTestService(t, runtime)
+	directory := filepath.Join(service.store.(*downloadReleaseTestStore).workspace.RootPath,
+		".cyberagent-workbench", "browser-artifacts", "downloads", "run-download-release")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conflicting := fmt.Sprintf(
+		`{"version":%q,"kind":"release_approval","guid":%q,"run_id":"run-download-release",`+
+			`"workspace_id":"ws-download-release","sha256":%q,"bytes":%d,`+
+			`"approved_at":"2026-01-01T00:00:00Z","authorized_principal":"control_plane",`+
+			`"authorized_principal_scope":"credential_class","declared_operator":"someone-else"}`,
+		AgentBrowserDownloadReleaseVersion, receipt.GUID, strings.Repeat("a", 64), receipt.Bytes)
+	path := filepath.Join(directory, receipt.GUID+".approval.json")
+	if err := os.WriteFile(path, []byte(conflicting), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.ReleaseBrowserDownload(context.Background(),
+		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
+		!strings.Contains(err.Error(), "approval event conflicts") {
+		t.Fatalf("conflicting approval event was not rejected: %v", err)
+	}
+	recorded, err := os.ReadFile(path)
+	if err != nil || string(recorded) != conflicting {
+		t.Fatalf("conflicting approval event was overwritten: %v", err)
 	}
 }
 
@@ -158,7 +246,7 @@ func TestAgentBrowserDownloadReleaseRejectsUnknownAndMismatched(t *testing.T) {
 	runtime := &downloadReleaseTestRuntime{receipt: receipt, data: data}
 	service := newDownloadReleaseTestService(t, runtime)
 	if _, _, err := service.ReleaseBrowserDownload(context.Background(),
-		"run-download-release", receipt.GUID, "operator-a"); err == nil ||
+		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "integrity mismatch") {
 		t.Fatalf("integrity mismatch not rejected: %v", err)
 	}
@@ -169,7 +257,7 @@ func TestAgentBrowserDownloadReleaseRejectsUnknownAndMismatched(t *testing.T) {
 	}
 	unknownService := newDownloadReleaseTestService(t, unknown)
 	if _, _, err := unknownService.ReleaseBrowserDownload(context.Background(),
-		"run-download-release", receipt.GUID, "operator-a"); err == nil ||
+		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "unknown") {
 		t.Fatalf("unknown download not rejected: %v", err)
 	}
@@ -182,7 +270,7 @@ func TestAgentBrowserDownloadReleaseRejectsUnknownAndMismatched(t *testing.T) {
 	}
 	goneService := newDownloadReleaseTestService(t, gone)
 	if _, _, err := goneService.ReleaseBrowserDownload(context.Background(),
-		"run-download-release", receipt.GUID, "operator-a"); err == nil ||
+		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "gone with the session quarantine") ||
 		strings.Contains(err.Error(), "downloads") {
 		t.Fatalf("gone capture leaked internals: %v", err)

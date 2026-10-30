@@ -127,13 +127,17 @@ type agentBrowserScreencastStub struct {
 	streams   int
 	lastRunID string
 	frames    []application.AgentBrowserScreencastFrameView
+	releases  []application.AgentBrowserDownloadRelease
 }
 
 func (s *agentBrowserScreencastStub) BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error) {
 	return []browserruntime.AgentBrowserDownloadReceipt{}, nil
 }
 
-func (s *agentBrowserScreencastStub) ReleaseBrowserDownload(_ context.Context, runID, guid, _ string) (string, browserruntime.AgentBrowserDownloadReceipt, error) {
+func (s *agentBrowserScreencastStub) ReleaseBrowserDownload(_ context.Context, runID, guid string,
+	release application.AgentBrowserDownloadRelease,
+) (string, browserruntime.AgentBrowserDownloadReceipt, error) {
+	s.releases = append(s.releases, release)
 	return "workspace:///.cyberagent-workbench/browser-artifacts/downloads/" + runID + "/" + guid,
 		browserruntime.AgentBrowserDownloadReceipt{GUID: guid, State: browserruntime.AgentBrowserDownloadCompleted}, nil
 }
@@ -300,6 +304,15 @@ func TestAgentBrowserDownloadListAndReleaseEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(release.Body.String(), `"locator":"workspace:///.cyberagent-workbench/browser-artifacts/downloads/`) {
 		t.Fatalf("release body: %s", release.Body.String())
+	}
+	// The control-plane authorization carries no human identity: the
+	// controller receives the server-derived principal and the caller-declared
+	// operator name as two separate values.
+	if len(stub.releases) != 1 ||
+		stub.releases[0].Principal != application.AgentBrowserDownloadReleasePrincipalControlPlane ||
+		stub.releases[0].Operator != "openapi-operator" ||
+		stub.releases[0].Principal == stub.releases[0].Operator {
+		t.Fatalf("release identity was not split into principal and declared operator: %+v", stub.releases)
 	}
 
 	denied := performRequest(t, api, http.MethodPost, releasePath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000",
