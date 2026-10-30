@@ -14,7 +14,8 @@ OCR 负责文件选择（`ocr delegate preview --from origin/main --to HEAD`：5
 生产文件）与规则解析（`ocr delegate rule`：Rule Group 1 system Go），主 agent 与
 独立评审子代理实际阅读判断。评审子代理全文核验 5 个生产文件、1 个人工补入的测试
 文件与全量 diff，并核对了 cdp_test.go 审计适配器守卫、screencast 事件泵先例与
-profile 生命周期。
+profile 生命周期。此后一轮外部代码复审又提出会话级累计下载字节无上限（P1，见
+F7），已在本轮修复并复测。
 
 ## 覆盖范围
 
@@ -31,7 +32,7 @@ ocr delegate preview --from b58f8981db87dd983e221839283e43f145b92b03 --to HEAD
 ocr delegate rule internal/browserruntime/agent_browser_download.go
 ```
 
-## 发现与修复（评审子代理报告，全部已修复并复测）
+## 发现与修复（评审子代理与外部复审报告，全部已修复并复测）
 
 | 发现 | 具体问题 | 最终处理 |
 | --- | --- | --- |
@@ -41,6 +42,13 @@ ocr delegate rule internal/browserruntime/agent_browser_download.go
 | F4，P3 | 容量注释与实现不符（实际是"仅驱逐终态回执、全 active 时对新下载 fail-closed"）。 | 注释改为准确描述 fail-closed 语义。 |
 | F5，P3 | Windows 句柄共享：拒绝路径 `os.Remove` 可能因 Chromium 持句柄而失败（超大残留滞留至 cleanup）；hash 读文件与 cleanup 的 rename 存在良性竞争。 | 注释明示 best-effort 语义：残留随 profile 消亡；hash 与 cleanup 的竞争是"丢哈希保 unverified + cleanup 可重试"，不夸大承诺。 |
 | F6，P3 | 重复 `completed` 事件把已 `completed`（有摘要）的回执重置回 `unverified` 并重触发哈希，与回执注释矛盾。 | completed 分支对非 active 回执幂等短路；结构体注释改为"终态不回退"；补重复 completed 不回归摘要的断言。 |
+| F7，P1（外部复审） | 会话级累计下载字节无上限：单文件 16MB、回执表 16 条，但隔离目录的总占用没有封顶；回执表满时驱逐终态回执只做 `delete(r.downloads, candidate)`，对应文件留在 `downloads/` 里直到 profile 清理，页面可连续完成多个小于 16MB 的下载把会话磁盘撑到无界；被驱逐的完成下载也无法再经下游释放流程找回。 | 新增 `AgentBrowserMaxDownloadTotalBytes`（= 4 × `AgentBrowserMaxDownloadBytes` = 64MB，是单文件上限的整数倍）：会话隔离目录的总字节上限，按"仍可能被回执命名的存活字节之和"计账，在 `inProgress`/`completed` 进度流上与单文件上限同点强制，越界下载 fail-closed 落 `rejected_budget`、best-effort 删除捕获文件并 `Browser.cancelDownload`（取消失败仍杀会话）。回执驱逐时同步 best-effort 删除捕获文件并停止计账——被驱逐的捕获无法再经下游释放流程释放，其字节随会话 profile 一同消亡。 |
+
+F7 的取值理由：回执表最多 16 条、每条最多 16MB，仅靠回执表本身就能让 16 × 16MB = 256MB
+落在会话临时存储里；因此 64MB 上限取单文件上限的 4 倍整数倍，既是可观测的硬上限（第五个
+满额捕获被拒），又给多个普通捕获留出余量，单次普通下载完全不受影响。内置 profile 只暴露
+单文件上限（`ProfileLimits.MaxDownloadBytes`），没有会话级下载上限可镜像，故该常量按上述
+推导定义并在注释中说明，`TestAgentBrowserDownloadTotalBudgetDerivation` 钉住整数倍关系。
 
 评审确认的无缺陷事实（节选）：单一 `r.mu` 贯穿下载路径、CDP/文件 I/O 均在锁外
 goroutine、`-race` 干净无死锁；`Browser.download*` 事件在 target switch 之前消费，
@@ -54,6 +62,13 @@ application/httpapi 现有消费方不受影响。
 
 - `gofmt -l internal/browserruntime/` 无输出；`go vet ./internal/browserruntime/` 无告警。
 - `go test -race -count=1 ./internal/browserruntime/` 全通过；完整套件通过。
+- F7 回归（新增，均在 Windows 上数秒内跑完、不依赖符号链接）：
+  `TestAgentBrowserDownloadSessionBudgetBoundsConsecutiveDownloads`（连续满额下载填满会话
+  预算后，后续下载落 `rejected_budget`、捕获文件不留存、隔离目录不超过预算）、
+  `TestAgentBrowserDownloadExhaustedBudgetKeepsFailingClosed`（预算耗尽后持续 fail-closed）、
+  `TestAgentBrowserDownloadEvictionRemovesCaptureFromQuarantine`（驱逐回执同时删除捕获文件、
+  回执表保持有界、会话重新接受新下载）、
+  `TestAgentBrowserDownloadTotalBudgetDerivation`（会话预算是单文件上限的整数倍）。
 - **opt-in 真浏览器端到端**（`TRAVERSE_TEST_AGENT_BROWSER=1`，本机已安装 Edge）：
   `TestAgentBrowserRealDownloadQuarantine` 通过——真实页面点击 → 真实下载 →
   GUID 命名捕获落入 profile 内隔离目录 → SHA-256 与字节长度一致 → 回执 completed。
