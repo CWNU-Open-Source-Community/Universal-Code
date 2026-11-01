@@ -2,7 +2,7 @@
   "schema_version": "1",
   "mode": "ocr_delegate",
   "base_branch": "Qiyuanqiii/browser-download-quarantine",
-  "base": "2a20c5a83c366ac9f42edd40003ac64bb3449ea1",
+  "base": "76fa2d3a5739e0cd3b26881eef5d7bda0da59000",
   "reviewed_head": "HEAD",
   "review_metadata_excluded": [
     "docs/reviews/browser-download-release/README.md",
@@ -11,13 +11,14 @@
   "reviewers": [
     "主 agent：释放链三层实现、OpenAPI 再生成与端到端测试",
     "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 TOCTOU 路径泄露的脱敏专项",
-    "external_review_round2：第二轮外部复审（OCR delegate preview 工作树模式检出 2 个生产文件、default_path 排除 2 个测试文件，排除项连同 #520 的测试文件一并人工全文核验；独立评审子代理复核 7 个疑点并发现失败注入钩子未用 t.Cleanup 恢复）。发现 F6 重复释放响应回显请求方而非落盘审批、F7 工件写失败遗留半截文件导致该 GUID 永久无法释放（旧实现实测：重试固定报 browser artifact already contains different bytes），均已修复并补三条先红后绿回归"
+    "external_review_round2：第二轮外部复审（OCR delegate preview 工作树模式检出 2 个生产文件、default_path 排除 2 个测试文件，排除项连同 #520 的测试文件一并人工全文核验；独立评审子代理复核 7 个疑点并发现失败注入钩子未用 t.Cleanup 恢复）。发现 F6 重复释放响应回显请求方而非落盘审批、F7 工件写失败遗留半截文件导致该 GUID 永久无法释放（旧实现实测：重试固定报 browser artifact already contains different bytes），均已修复并补三条先红后绿回归",
+    "delegate_review_round3：本 agent 用 OCR delegate 模式对本 PR 全量 diff（base 为 #520 分支尖端 76fa2d3a，9 个可选文件 + 5 个 default_path 排除的测试/文档文件人工全文核验）复扫，另发现 2 处：F9 释放写侧把 8 个原始 *fs.PathError 直接上抛，路径经 writeError 进入响应体（与 F1 同类，只是发生在持久化分支）；F10 重复释放的完整性检查没比对审批事件的 authorized_principal 与 authorized_principal_scope。均已修复：原始返回改为 apperror.Wrap(CodeUnavailable, 静态描述, e) 保留 cause，回放检查追加两个服务端身份字段的等值校验并 fail-closed；回滚用例的断言由 message 相等改为 errors.Is，改为验证 cause 存活。新增 2 条先红后绿回归（旧实现分别报 release error is not the static artifact message: open C:\\Users\\22977\\AppData\\Local\\Temp\\…\\missing-workspace… 与 an authorized_principal mismatch was accepted: <nil>）"
   ],
   "summary": {
-    "total_git_changed_files": 11,
-    "review_scope_files": 9,
+    "total_git_changed_files": 15,
+    "review_scope_files": 13,
     "ocr_selected_production": 5,
-    "manually_added_tests": 3,
+    "manually_added_tests": 4,
     "review_metadata_excluded_count": 2,
     "unread_in_scope": 0,
     "coverage_rate": 1.0
@@ -31,6 +32,10 @@
     { "path": "docs/openapi.json", "coverage": "quick", "reviewer": "primary" },
     { "path": "internal/application/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
     { "path": "internal/browserruntime/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
-    { "path": "internal/httpapi/agent_browser_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+    { "path": "internal/httpapi/agent_browser_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/httpapi/openapi_test.go", "coverage": "quick", "reviewer": "primary" },
+    { "path": "docs/convergence/protocol-registry.md", "coverage": "full", "reviewer": "primary" },
+    { "path": "protocols/registry.json", "coverage": "quick", "reviewer": "primary" },
+    { "path": "web/src/api/schema.d.ts", "coverage": "quick", "reviewer": "primary" }
   ]
 }
