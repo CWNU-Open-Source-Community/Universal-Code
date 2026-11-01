@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -229,6 +230,95 @@ func TestAgentBrowserDownloadBudgetRejectsOversize(t *testing.T) {
 	if len(canceled) != 1 || canceled[0] != guid {
 		t.Fatalf("over-budget download was not cancelled at the browser: %v", canceled)
 	}
+}
+
+// TestAgentBrowserDownloadCancelTargetsTheQuarantineContext pins the BrowserContext
+// pairing of the two download calls. The quarantine is installed with
+// browserContextId, so Chromium parks those captures in the runtime's own
+// context; a cancel that omits the id is resolved against the default context
+// and cannot find the download. The fake below enforces that contract, which
+// makes the consequence visible: an unresolved cancel used to tear the whole
+// session down for one over-budget file.
+func TestAgentBrowserDownloadCancelTargetsTheQuarantineContext(t *testing.T) {
+	var mu sync.Mutex
+	quarantineContext := ""
+	cancelContext := ""
+	cancels := 0
+	r := downloadTestRuntime(t, func(request cdpWireMessage) *cdpWireMessage {
+		switch request.Method {
+		case "Browser.setDownloadBehavior":
+			var params struct {
+				BrowserContextID string `json:"browserContextId"`
+			}
+			if json.Unmarshal(request.Params, &params) == nil {
+				mu.Lock()
+				quarantineContext = params.BrowserContextID
+				mu.Unlock()
+			}
+		case "Browser.cancelDownload":
+			var params struct {
+				GUID             string `json:"guid"`
+				BrowserContextID string `json:"browserContextId"`
+			}
+			if json.Unmarshal(request.Params, &params) != nil {
+				return downloadErrorReply(request)
+			}
+			mu.Lock()
+			cancels++
+			cancelContext = params.BrowserContextID
+			owned := quarantineContext != "" && params.BrowserContextID == quarantineContext
+			mu.Unlock()
+			if !owned {
+				return downloadErrorReply(request)
+			}
+		}
+		return downloadTestReply(request)
+	}, nil)
+	home := t.TempDir()
+	r.profile = agentBrowserProfile{path: home}
+	if err := r.initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	if err := os.WriteFile(filepath.Join(r.downloadPath, guid), make([]byte, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + guid + `","url":"https://example.com/huge.bin"}`)})
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+		`{"guid":"%s","state":"inProgress","receivedBytes":1024,"totalBytes":%d}`, guid, AgentBrowserMaxDownloadBytes+1))})
+	if receipt := waitDownloadState(t, r, guid, AgentBrowserDownloadRejected); receipt.SHA256 != "" {
+		t.Fatalf("rejected receipt carries a digest: %+v", receipt)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count := cancels
+		mu.Unlock()
+		if count > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// The failing cancel handler runs on a worker, so give it a moment before
+	// reading the session's life context.
+	time.Sleep(200 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if cancels != 1 {
+		t.Fatalf("over-budget cancel count: %d", cancels)
+	}
+	if cancelContext != quarantineContext || cancelContext != r.browserContextID {
+		t.Fatalf("cancel targeted %q, but the quarantine lives in %q (runtime context %q)",
+			cancelContext, quarantineContext, r.browserContextID)
+	}
+	if e := r.life.Err(); e != nil {
+		t.Fatalf("one over-budget download took the browser session down: %v", e)
+	}
+}
+
+func downloadErrorReply(request cdpWireMessage) *cdpWireMessage {
+	return &cdpWireMessage{ID: request.ID, Error: &cdpWireError{Code: -32000}}
 }
 
 func TestAgentBrowserDownloadReceiptsAreBounded(t *testing.T) {
@@ -539,6 +629,103 @@ func TestAgentBrowserRealDownloadQuarantine(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("download never completed: %+v", r.Status())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestAgentBrowserRealDownloadOverBudgetKeepsSessionAlive drives one capture
+// past the per-file budget against the installed browser, then a normal
+// download. The cancel has to name the BrowserContext that owns the quarantine:
+// Chromium resolves a context-less cancel against the default context and does
+// not find the download, the failing cancel closes the session, and every later
+// download and action would die with it.
+func TestAgentBrowserRealDownloadOverBudgetKeepsSessionAlive(t *testing.T) {
+	r, _ := agentBrowserTestRuntime(t)
+	const overBudgetBytes = AgentBrowserMaxDownloadBytes + (1 << 20)
+	const survivorPayload = "agent browser session still alive"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/oversize.bin":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", `attachment; filename="oversize.bin"`)
+			w.Header().Set("Content-Length", strconv.Itoa(overBudgetBytes))
+			_, _ = w.Write(make([]byte, overBudgetBytes))
+		case "/survivor.bin":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", `attachment; filename="survivor.bin"`)
+			_, _ = w.Write([]byte(survivorPayload))
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<!doctype html><title>Budget</title>`+
+				`<a href="/oversize.bin" aria-label="Oversize download">Oversize download</a>`+
+				`<a href="/survivor.bin" aria-label="Survivor download">Survivor download</a>`)
+		}
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := r.Navigate(ctx, server.URL); err != nil {
+		t.Fatal(err)
+	}
+	clickDownload := func(name string) {
+		t.Helper()
+		// Each click needs a fresh snapshot: the capture that just landed
+		// invalidates the previous element references.
+		page, err := r.Snapshot(ctx)
+		if err != nil {
+			t.Fatalf("snapshot for %s: %v", name, err)
+		}
+		ref := ""
+		for _, element := range page.Elements {
+			if element.Name == name {
+				ref = element.Ref
+			}
+		}
+		if ref == "" {
+			t.Fatalf("%s link missing from snapshot: %+v", name, page.Elements)
+		}
+		if _, err := r.Click(ctx, page.SnapshotID, ref); err != nil {
+			t.Fatalf("click %s: %v", name, err)
+		}
+	}
+	clickDownload("Oversize download")
+	deadline := time.Now().Add(45 * time.Second)
+	rejected := ""
+	for rejected == "" {
+		for _, receipt := range r.Status().Downloads {
+			if receipt.State == AgentBrowserDownloadRejected {
+				rejected = receipt.GUID
+				break
+			}
+		}
+		if rejected == "" {
+			if time.Now().After(deadline) {
+				t.Fatalf("oversize download never hit the budget: %+v", r.Status())
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	select {
+	case <-r.Done():
+		t.Fatalf("over-budget cancel tore the browser session down: %s", rejected)
+	default:
+	}
+	clickDownload("Survivor download")
+	sum := sha256.Sum256([]byte(survivorPayload))
+	deadline = time.Now().Add(45 * time.Second)
+	for {
+		for _, receipt := range r.Status().Downloads {
+			if receipt.State != AgentBrowserDownloadCompleted {
+				continue
+			}
+			if receipt.SHA256 != hex.EncodeToString(sum[:]) || receipt.Bytes != int64(len(survivorPayload)) {
+				t.Fatalf("capture after the rejection mismatched: %+v", receipt)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("download after the rejection never completed: %+v", r.Status())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
