@@ -114,6 +114,10 @@ application/httpapi 现有消费方不受影响。
 - F10–F14 修复后：`gofmt -l internal/browserruntime/` 无输出、`go vet ./internal/browserruntime/`
   无告警、`go test -count=1 ./internal/browserruntime/` 与 `go test -race -count=1 ./internal/browserruntime/`
   全通过（race 覆盖新增的删除 worker）。
+- 异步删除后在真实 Edge 上复跑 opt-in 端到端（TRAVERSE_TEST_AGENT_BROWSER=1）：
+  `TestAgentBrowserRealDownloadQuarantine` 1.05s、`TestAgentBrowserRealDownloadOverBudgetKeepsSessionAlive`
+  0.89s 均通过——真实下载仍然完成并核对摘要，超限拒绝仍不拆会话，删除改到 worker 上没有影响这两条。
+
 - 因删除改为异步，F7 的三条隔离断言（越界/拒绝/驱逐后"捕获文件不留存"）从同步 `os.Stat`
   改为 `waitDownloadCaptureGone` 有界轮询（3s 上限、5ms 间隔）——断言强度不变，只是把
   "最终不存在"如实写成最终性。
