@@ -9,7 +9,10 @@
 
 OCR 负责文件选择与规则解析（Rule Group 1 system Go），主 agent 与独立评审子代理
 实际阅读判断。评审子代理全文核验 5 个生产文件、3 个测试文件与全量 diff，并对
-ack token（前一 PR 模式）与释放错误映射做了脱敏断言。
+ack token（前一 PR 模式）与释放错误映射做了脱敏断言。第二轮外部复审又提出重复释放
+的响应与审批记录不一致（P2，见 F6）与工件写失败后无法重试（P2，见 F7），本轮修复并
+复测；OCR 本轮 `delegate preview` 在工作树模式下检出 2 个生产文件、按 `default_path`
+排除 2 个测试文件，排除项同样人工全文过一遍（连同 #520 分支那一轮的测试文件）。
 
 ## 覆盖范围
 
@@ -22,6 +25,11 @@ ack token（前一 PR 模式）与释放错误映射做了脱敏断言。
 - 测试（3 个，人工补入）：application 释放测试、browserruntime ReadDownload 测试、
   httpapi 端点测试。
 
+第二轮（F6–F8）改动 4 个文件，均已在上面的清单内：`internal/application/agent_browser_download.go`、
+`internal/httpapi/agent_browser.go`（OCR 检出）与 `internal/application/agent_browser_download_test.go`、
+`internal/httpapi/agent_browser_test.go`（OCR 按 `default_path` 排除，人工全文核验）。
+响应字段形状不变，`internal/httpapi/openapi.go` 与 `docs/openapi.json` 本轮未改动。
+
 具体明细见 [coverage.json](coverage.json)。
 
 ## 发现与修复（评审子代理报告，全部已修复并复测）
@@ -32,7 +40,10 @@ ack token（前一 PR 模式）与释放错误映射做了脱敏断言。
 | F2，P3 | server.go 全局 token 分支残留本提交引入的空 `if` 体（DEBUG 清理残留），位于鉴权路径上易误读。 | 删除。 |
 | F3，P3 | `matchAgentBrowserDownloadsPath` 零引用死代码，与真实路由逻辑分叉。 | 删除，路由单一来源（HasSuffix + matchAgentBrowserPath）。 |
 | F4，P3 | application 层"invalid GUID"用例是恒过断言（fake runtime 忽略 GUID，实际失败源是数据不一致）；runtime 测试名里的 "Lifetime" 未真正覆盖清理竞态。 | 移除 application 层无意义用例（GUID 形状校验由真实 runtime 的 `validDownloadGUID` 承担且已有测试）；runtime 层补"cleanup 已删除捕获 → `ErrAgentBrowserDownloadGone`"真实覆盖。 |
-| F5，P3 | 释放响应回显 `TrimSpace(input.Operator)`，与 application 层空白归一化为 `httpapi_operator` 的生效身份不一致。 | httpapi 侧用同一归一化（`releaseOperator`）后再回显。 |
+| F5，P3 | 释放响应回显 `TrimSpace(input.Operator)`，与 application 层空白归一化为 `httpapi_operator` 的生效身份不一致。 | 当时用同一归一化（`releaseOperator`）回显；第二轮复审证明"归一化后的请求身份"仍不是生效身份——生效身份是磁盘上那条审批事件，见 F6。`releaseOperator` 已随 F6 删除。 |
+| F6，P2（第二轮外部复审） | 重复释放的响应与持久化审批记录不一致：释放是幂等的，第二次请求保留第一次写入的 `.approval.json`，但响应回显本次请求的 `operator` 与 `time.Now()`。Alice 先释放、Bob 再释放同一 GUID 时，磁盘记 Alice，HTTP 却报 Bob 和第二次时间——按响应建审计日志的客户端会凭空多出一个审批人。 | `ReleaseBrowserDownload`/`persistAgentBrowserDownload` 返回**真正落盘**的审批元数据（新导出类型 `application.AgentBrowserDownloadApproval{DeclaredOperator, ApprovedAt}`），httpapi 用回显值答复；重复释放返回第一次的 operator 与 `approved_at`。审批事件里 `declared_operator` 为空视为冲突（fail-closed），保证回显值永不为空。响应字段形状未变，`docs/openapi.json` 无需再生成（`TestOpenAPIGoldenDocumentMatchesGoDTOs` 通过）。 |
+| F7，P2（第二轮外部复审） | 工件持久化失败后无法重试：捕获文件、`.json` 来源记录、`.approval.json` 都用 `O_CREATE \| O_EXCL` 新建后交给 `writeFullCDPArtifact`，写/同步/关失败时不清理，半截文件留在原地。下次释放走"已存在→比对字节"分支，内容不符即 `browser artifact already contains different bytes`，审批 JSON 半截则 `approval event is invalid`——该 GUID 的释放被永久楔死。旧实现实测确认：首次写失败后重试固定报 `browser artifact already contains different bytes`。 | 新增 `writeNewAgentBrowserDownloadArtifact`：写失败即 `root.Remove` 删掉**本次刚创建**的那一个文件，与 `internal/application/full_cdp_browser_actions.go` 里截图工件的既有做法一致；`O_EXCL` 不覆盖已完成工件的性质保持不变，前序已写成的工件下次按字节比对复用。删除只在本次创建的分支上执行，因此不会碰别人的文件。 |
+| F8，P3（评审子代理） | 失败注入测试把包级钩子换成失败闭包后只在内联路径恢复，中途 `t.Fatalf` 会把故障留给同一包的后续用例。 | 换钩子后立即注册 `t.Cleanup` 恢复，内联恢复仍保留用于验证重试。 |
 
 评审确认（生产代码其余部分 No blocking findings）：ReadDownload 锁内拷贝 receipt 后
 解锁再读文件、重算摘要；释放链 GetRun 归属、slot 判活、窄接口断言、持久化双重摘要
@@ -40,6 +51,10 @@ ack token（前一 PR 模式）与释放错误映射做了脱敏断言。
 Lstat+SameFile 防符号链接）；httpapi 的 GET=read token / POST=control token 与
 close/screenshot 同构，错误顺序 nil→404→405→401→400→415→严格 JSON→精确 version；
 openapi.json 与注册一致，live-handler 测试补了 release body。
+
+更正：上一轮把"工件持久化镜像 screenshot 的 O_EXCL + same-bytes 幂等模式"记成无缺陷事实，
+但只镜像了一半——截图分支在写失败时 `_ = root.Remove(relative)`，下载分支没有，缺口即 F7；
+同一轮的 F5 结论（回显归一化后的请求 operator）也已被 F6 取代。
 
 ## 验证
 
@@ -49,3 +64,17 @@ openapi.json 与注册一致，live-handler 测试补了 release body。
   `docs/openapi.json` 已用 `cyberagent api openapi` 再生成）。
 - 释放语义由三层测试覆盖：runtime（摘要/篡改/消失）、application（成功/幂等/未知/Gone 脱敏）、
   httpapi（GET 列表 200、POST 释放 200 + locator、read token 被拒 401）。
+- 第二轮（F6–F8）实测，全部先证红再证绿：
+  `TestAgentBrowserDownloadReleaseReportsTheRecordedApproval`（Alice 释放后 Bob 重放：断言返回
+  与磁盘 `.approval.json` 的 `declared_operator`/`approved_at` 一致；旧实现报
+  `replay reported the replaying caller: first={operator-alice ...} replay={operator-bob ...}`）、
+  `TestAgentBrowserDownloadReleaseRollsBackFailedArtifactWrite`（逐个失败第 1/2/3 次写入：断言本次
+  新建的文件不留存、前序工件仍在、恢复写入口后同一释放重试成功；旧实现在三个子用例都报
+  `failed create left a partial artifact`）、`TestAgentBrowserDownloadListAndReleaseEndpoint`
+  （响应必须报记录的审批而非请求方；旧实现 body 里是 `"operator":"openapi-operator"`）。
+- 楔死后果单独验证过：临时摘掉回滚后，首次写失败 → 恢复写入口 → 重试固定失败于
+  `browser artifact already contains different bytes`（一次性探针用例，未提交）。
+- 本轮复跑：`go test ./internal/httpapi/` 全套 223.97s 通过；
+  `go test -run TestAgentBrowserDownload ./internal/application/`、
+  `go test ./internal/browserruntime/`（携带 #520 的两条新回归）通过；
+  `TestOpenAPIGoldenDocumentMatchesGoDTOs` 通过，`docs/openapi.json` 无需再生成。
