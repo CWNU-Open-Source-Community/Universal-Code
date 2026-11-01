@@ -67,6 +67,16 @@ type agentBrowserDownloadReleaseApproval struct {
 	DeclaredOperator string    `json:"declared_operator"`
 }
 
+// AgentBrowserDownloadApproval is the release-approval metadata a release
+// actually left on disk. A repeat release reports the first approval — the
+// identity and timestamp written into the approval event — instead of the
+// caller who replayed the request, so a client that builds an audit trail from
+// the response reads back the same values it is told.
+type AgentBrowserDownloadApproval struct {
+	DeclaredOperator string
+	ApprovedAt       time.Time
+}
+
 // BrowserDownloads returns the bounded quarantine receipts of the run's live
 // browser session. Receipts are metadata only: no path ever leaves the
 // runtime, and the bytes themselves stay in the disposable profile quarantine.
@@ -99,56 +109,66 @@ func (s *AgentBrowserService) BrowserDownloads(ctx context.Context, runID string
 // it proves which principal approved the release and when. The capture dies
 // with the session profile, so a release must happen while the session is
 // open. Repeating a release with identical bytes is idempotent and keeps the
-// first approval event untouched.
-func (s *AgentBrowserService) ReleaseBrowserDownload(ctx context.Context, runID, guid string, release AgentBrowserDownloadRelease) (string, browserruntime.AgentBrowserDownloadReceipt, error) {
+// first approval event untouched; the returned approval is the event that
+// survives on disk, not the identity of the call that replayed the release.
+func (s *AgentBrowserService) ReleaseBrowserDownload(ctx context.Context, runID, guid string,
+	release AgentBrowserDownloadRelease,
+) (string, browserruntime.AgentBrowserDownloadReceipt, AgentBrowserDownloadApproval, error) {
 	if s == nil || s.store == nil {
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("Agent browser unavailable")
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+			agentBrowserUnavailable("Agent browser unavailable")
 	}
 	// Only the control-plane principal kind is accepted here: the authorizing
 	// principal is a server-side decision, so a caller cannot declare it.
 	principal := strings.TrimSpace(release.Principal)
 	if principal != AgentBrowserDownloadReleasePrincipalControlPlane {
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("release principal is invalid")
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+			agentBrowserUnavailable("release principal is invalid")
 	}
 	operator := strings.TrimSpace(release.Operator)
 	if operator == "" {
 		operator = "httpapi_operator"
 	}
 	if !utf8.ValidString(operator) || utf8.RuneCountInString(operator) > maxAgentBrowserReleaseOperatorRunes || strings.ContainsFunc(operator, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("release operator identity is invalid")
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+			agentBrowserUnavailable("release operator identity is invalid")
 	}
 	release = AgentBrowserDownloadRelease{Principal: principal, Operator: operator}
 	if _, e := s.store.GetRun(ctx, runID); e != nil {
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, e
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{}, e
 	}
 	s.mu.Lock()
 	slot := s.slots[runID]
 	if slot == nil || slot.closed || slot.runtime == nil {
 		s.mu.Unlock()
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("Agent browser session is not live")
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+			agentBrowserUnavailable("Agent browser session is not live")
 	}
 	runtime := slot.runtime
 	workspaceID := slot.authority.WorkspaceID
 	s.mu.Unlock()
 	reader, ok := runtime.(agentBrowserDownloadReader)
 	if !ok {
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("browser download release is unavailable")
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+			agentBrowserUnavailable("browser download release is unavailable")
 	}
 	data, receipt, err := reader.ReadDownload(ctx, guid)
 	if err != nil {
 		if errors.Is(err, browserruntime.ErrAgentBrowserDownloadUnknown) || errors.Is(err, browserruntime.ErrBrowserRuntimeBoundary) {
-			return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("browser download is unknown for this session")
+			return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+				agentBrowserUnavailable("browser download is unknown for this session")
 		}
 		if errors.Is(err, browserruntime.ErrAgentBrowserDownloadGone) {
-			return "", browserruntime.AgentBrowserDownloadReceipt{}, agentBrowserUnavailable("browser download capture is gone with the session quarantine")
+			return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{},
+				agentBrowserUnavailable("browser download capture is gone with the session quarantine")
 		}
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, err
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{}, err
 	}
-	locator, err := s.persistAgentBrowserDownload(ctx, workspaceID, runID, data, receipt, release)
+	locator, approval, err := s.persistAgentBrowserDownload(ctx, workspaceID, runID, data, receipt, release)
 	if err != nil {
-		return "", browserruntime.AgentBrowserDownloadReceipt{}, err
+		return "", browserruntime.AgentBrowserDownloadReceipt{}, AgentBrowserDownloadApproval{}, err
 	}
-	return locator, receipt, nil
+	return locator, receipt, approval, nil
 }
 
 // persistAgentBrowserDownload writes the capture, its provenance sidecar and
@@ -156,42 +176,45 @@ func (s *AgentBrowserService) ReleaseBrowserDownload(ctx context.Context, runID,
 // GUID is the only file name on disk; the page-controlled suggestion stays
 // inside the sidecar metadata. The sidecar stays byte-identical across
 // releases; the approval event is written once with an exclusive create and
-// is never rewritten.
-func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, workspaceID, runID string, data []byte, receipt browserruntime.AgentBrowserDownloadReceipt, release AgentBrowserDownloadRelease) (string, error) {
+// is never rewritten. The returned approval is the event left on disk, which
+// for a repeat release is the first approval rather than this call's identity.
+func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, workspaceID, runID string, data []byte,
+	receipt browserruntime.AgentBrowserDownloadReceipt, release AgentBrowserDownloadRelease,
+) (string, AgentBrowserDownloadApproval, error) {
 	sum := sha256.Sum256(data)
 	if hex.EncodeToString(sum[:]) != receipt.SHA256 || int64(len(data)) != receipt.Bytes {
-		return "", agentBrowserUnavailable("browser download integrity mismatch")
+		return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download integrity mismatch")
 	}
 	st, ok := s.store.(fullCDPWorkspaceInfoStore)
 	if !ok {
-		return "", agentBrowserUnavailable("browser download Workspace unavailable")
+		return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download Workspace unavailable")
 	}
 	workspace, e := st.GetWorkspaceInfo(ctx, workspaceID)
 	if e != nil {
-		return "", e
+		return "", AgentBrowserDownloadApproval{}, e
 	}
 	if workspace.ID != workspaceID || !filepath.IsAbs(workspace.RootPath) {
-		return "", agentBrowserUnavailable("browser download Workspace mismatch")
+		return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download Workspace mismatch")
 	}
 	root, e := os.OpenRoot(workspace.RootPath)
 	if e != nil {
-		return "", e
+		return "", AgentBrowserDownloadApproval{}, e
 	}
 	defer root.Close()
 	relative := filepath.Join(fullCDPBrowserArtifactDirectory, fullCDPDownloadArtifactDirectory, runID, receipt.GUID)
 	if e = root.MkdirAll(filepath.Dir(relative), 0o700); e != nil {
-		return "", e
+		return "", AgentBrowserDownloadApproval{}, e
 	}
 	file, e := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(e, os.ErrExist) {
 		old, x := readBoundedFullCDPArtifact(root, relative, browserruntime.AgentBrowserMaxDownloadBytes)
 		if x != nil || string(old) != string(data) {
-			return "", agentBrowserUnavailable("browser artifact already contains different bytes")
+			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser artifact already contains different bytes")
 		}
 	} else if e != nil {
-		return "", e
-	} else if e = writeFullCDPArtifact(file, data); e != nil {
-		return "", e
+		return "", AgentBrowserDownloadApproval{}, e
+	} else if e = writeNewAgentBrowserDownloadArtifact(root, relative, file, data); e != nil {
+		return "", AgentBrowserDownloadApproval{}, e
 	}
 	sidecarRelative := relative + ".json"
 	sidecar, e := json.Marshal(map[string]any{
@@ -207,18 +230,18 @@ func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, w
 		"workspace_id":       workspaceID,
 	})
 	if e != nil || !utf8.Valid(sidecar) {
-		return "", agentBrowserUnavailable("browser download provenance is invalid")
+		return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download provenance is invalid")
 	}
 	sidecarFile, e := root.OpenFile(sidecarRelative, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(e, os.ErrExist) {
 		old, x := readBoundedFullCDPArtifact(root, sidecarRelative, 16*1024)
 		if x != nil || string(old) != string(sidecar) {
-			return "", agentBrowserUnavailable("browser artifact already contains different bytes")
+			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser artifact already contains different bytes")
 		}
 	} else if e != nil {
-		return "", e
-	} else if e = writeFullCDPArtifact(sidecarFile, sidecar); e != nil {
-		return "", e
+		return "", AgentBrowserDownloadApproval{}, e
+	} else if e = writeNewAgentBrowserDownloadArtifact(root, sidecarRelative, sidecarFile, sidecar); e != nil {
+		return "", AgentBrowserDownloadApproval{}, e
 	}
 	// The approval event is written after the capture so it always refers to
 	// bytes that are already on disk. The exclusive create makes the first
@@ -239,30 +262,52 @@ func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, w
 	}
 	encoded, e := json.Marshal(approval)
 	if e != nil || !utf8.Valid(encoded) {
-		return "", agentBrowserUnavailable("browser download approval event is invalid")
+		return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download approval event is invalid")
 	}
+	// The caller is told what is on disk. For a repeat release that is the
+	// first approval event, not this call's identity or timestamp.
+	persisted := AgentBrowserDownloadApproval{DeclaredOperator: approval.DeclaredOperator, ApprovedAt: approval.ApprovedAt}
 	approvalRelative := relative + ".approval.json"
 	approvalFile, e := root.OpenFile(approvalRelative, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(e, os.ErrExist) {
 		old, x := readBoundedFullCDPArtifact(root, approvalRelative, 16*1024)
 		if x != nil {
-			return "", agentBrowserUnavailable("browser download approval event is unreadable")
+			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download approval event is unreadable")
 		}
 		var recorded agentBrowserDownloadReleaseApproval
 		if json.Unmarshal(old, &recorded) != nil {
-			return "", agentBrowserUnavailable("browser download approval event is invalid")
+			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download approval event is invalid")
 		}
 		if recorded.Kind != approval.Kind || recorded.Version != approval.Version ||
 			recorded.GUID != approval.GUID || recorded.RunID != approval.RunID ||
 			recorded.WorkspaceID != approval.WorkspaceID || recorded.SHA256 != approval.SHA256 ||
 			recorded.Bytes != approval.Bytes || recorded.ApprovedAt.IsZero() ||
-			recorded.Principal == "" {
-			return "", agentBrowserUnavailable("browser download approval event conflicts with the released capture")
+			recorded.Principal == "" || recorded.DeclaredOperator == "" {
+			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download approval event conflicts with the released capture")
 		}
+		persisted = AgentBrowserDownloadApproval{DeclaredOperator: recorded.DeclaredOperator, ApprovedAt: recorded.ApprovedAt}
 	} else if e != nil {
-		return "", e
-	} else if e = writeFullCDPArtifact(approvalFile, encoded); e != nil {
-		return "", e
+		return "", AgentBrowserDownloadApproval{}, e
+	} else if e = writeNewAgentBrowserDownloadArtifact(root, approvalRelative, approvalFile, encoded); e != nil {
+		return "", AgentBrowserDownloadApproval{}, e
 	}
-	return "workspace:///" + filepath.ToSlash(relative), nil
+	return "workspace:///" + filepath.ToSlash(relative), persisted, nil
+}
+
+// writeAgentBrowserDownloadArtifactBytes writes one freshly created artifact.
+// It is a package variable so a test can fail the write and watch the rollback
+// below without filling a disk.
+var writeAgentBrowserDownloadArtifactBytes = writeFullCDPArtifact
+
+// writeNewAgentBrowserDownloadArtifact writes through a file this release just
+// created exclusively and removes it when the write fails: a half-written
+// capture, sidecar, or approval event would fail the byte comparison on every
+// later release and wedge the GUID forever. The rollback only ever touches a
+// path this call created, so a completed artifact is still never overwritten.
+func writeNewAgentBrowserDownloadArtifact(root *os.Root, relative string, file *os.File, content []byte) error {
+	if e := writeAgentBrowserDownloadArtifactBytes(file, content); e != nil {
+		_ = root.Remove(relative)
+		return e
+	}
+	return nil
 }

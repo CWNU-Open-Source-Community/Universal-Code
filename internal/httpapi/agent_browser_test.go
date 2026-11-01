@@ -124,10 +124,11 @@ func TestAgentBrowserHTTPRejectsAmbiguousControl(t *testing.T) {
 
 type agentBrowserScreencastStub struct {
 	agentBrowserHTTPStub
-	streams   int
-	lastRunID string
-	frames    []application.AgentBrowserScreencastFrameView
-	releases  []application.AgentBrowserDownloadRelease
+	streams          int
+	lastRunID        string
+	frames           []application.AgentBrowserScreencastFrameView
+	releases         []application.AgentBrowserDownloadRelease
+	recordedApproval application.AgentBrowserDownloadApproval
 }
 
 func (s *agentBrowserScreencastStub) BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error) {
@@ -136,10 +137,11 @@ func (s *agentBrowserScreencastStub) BrowserDownloads(context.Context, string) (
 
 func (s *agentBrowserScreencastStub) ReleaseBrowserDownload(_ context.Context, runID, guid string,
 	release application.AgentBrowserDownloadRelease,
-) (string, browserruntime.AgentBrowserDownloadReceipt, error) {
+) (string, browserruntime.AgentBrowserDownloadReceipt, application.AgentBrowserDownloadApproval, error) {
 	s.releases = append(s.releases, release)
 	return "workspace:///.cyberagent-workbench/browser-artifacts/downloads/" + runID + "/" + guid,
-		browserruntime.AgentBrowserDownloadReceipt{GUID: guid, State: browserruntime.AgentBrowserDownloadCompleted}, nil
+		browserruntime.AgentBrowserDownloadReceipt{GUID: guid, State: browserruntime.AgentBrowserDownloadCompleted},
+		s.recordedApproval, nil
 }
 
 // flushableRecorder lets the SSE handler flush through httptest.ResponseRecorder.
@@ -298,12 +300,23 @@ func TestAgentBrowserDownloadListAndReleaseEndpoint(t *testing.T) {
 		t.Fatalf("downloads list status=%d body=%s", list.Code, list.Body.String())
 	}
 
+	// The approval event the release leaves behind names a different operator
+	// than this request: the response reports what is recorded, not who asked.
+	stub.recordedApproval = application.AgentBrowserDownloadApproval{
+		DeclaredOperator: "first-operator", ApprovedAt: time.Date(2026, 10, 30, 9, 8, 7, 0, time.UTC)}
 	release := performControlPathRequest(t, api, releasePath, "release-agent-browser-download", strings.NewReader(`{"version":"agent_browser_download_release.v1","operator":"openapi-operator"}`))
 	if release.Code != http.StatusOK {
 		t.Fatalf("release status=%d body=%s", release.Code, release.Body.String())
 	}
 	if !strings.Contains(release.Body.String(), `"locator":"workspace:///.cyberagent-workbench/browser-artifacts/downloads/`) {
 		t.Fatalf("release body: %s", release.Body.String())
+	}
+	if !strings.Contains(release.Body.String(), `"operator":"first-operator"`) ||
+		!strings.Contains(release.Body.String(), `"released_at":"2026-10-30T09:08:07Z"`) {
+		t.Fatalf("release response did not report the recorded approval: %s", release.Body.String())
+	}
+	if strings.Contains(release.Body.String(), `"operator":"openapi-operator"`) {
+		t.Fatalf("release response echoed the replaying caller: %s", release.Body.String())
 	}
 	// The control-plane authorization carries no human identity: the
 	// controller receives the server-derived principal and the caller-declared
