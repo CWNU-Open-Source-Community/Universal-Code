@@ -16,7 +16,9 @@ OCR 负责文件选择（`ocr delegate preview --from origin/main --to HEAD`：5
 文件与全量 diff，并核对了 cdp_test.go 审计适配器守卫、screencast 事件泵先例与
 profile 生命周期。此后一轮外部代码复审又提出会话级累计下载字节无上限（P1，见
 F7），已在本轮修复并复测。第二轮外部复审提出超限下载取消打错了 BrowserContext（P1，见
-F8），同样已在本轮修复并复测。
+F8），同样已在本轮修复并复测。第三轮由本 agent 用 OCR delegate 模式对 PR 全量 diff 复扫，
+另发现 5 处（F10–F14：持锁文件删除、负数进度字节、摘要阶段实测越界、元数据按字节截断、
+注释口径残留），已全部修复并先证红再证绿。
 
 ## 覆盖范围
 
@@ -44,9 +46,13 @@ ocr delegate rule internal/browserruntime/agent_browser_download.go
 | F5，P3 | Windows 句柄共享：拒绝路径 `os.Remove` 可能因 Chromium 持句柄而失败（超大残留滞留至 cleanup）；hash 读文件与 cleanup 的 rename 存在良性竞争。 | 注释明示 best-effort 语义：残留随 profile 消亡；hash 与 cleanup 的竞争是"丢哈希保 unverified + cleanup 可重试"，不夸大承诺。 |
 | F6，P3 | 重复 `completed` 事件把已 `completed`（有摘要）的回执重置回 `unverified` 并重触发哈希，与回执注释矛盾。 | completed 分支对非 active 回执幂等短路；结构体注释改为"终态不回退"；补重复 completed 不回归摘要的断言。 |
 | F7，P1（外部复审） | 会话级累计下载字节无上限：单文件 16MB、回执表 16 条，但隔离目录的总占用没有封顶；回执表满时驱逐终态回执只做 `delete(r.downloads, candidate)`，对应文件留在 `downloads/` 里直到 profile 清理，页面可连续完成多个小于 16MB 的下载把会话磁盘撑到无界；被驱逐的完成下载也无法再经下游释放流程找回。 | 新增 `AgentBrowserMaxDownloadTotalBytes`（= 4 × `AgentBrowserMaxDownloadBytes` = 64MB，是单文件上限的整数倍）：会话隔离目录的总字节**计账**上限，按"仍可能被回执命名的存活字节之和"计账，在 `inProgress`/`completed` 进度流上与单文件上限同点强制，越界下载 fail-closed 落 `rejected_budget`、best-effort 删除捕获文件并 `Browser.cancelDownload`（取消失败仍杀会话）。回执驱逐时同步 best-effort 删除捕获文件并停止计账——被驱逐的捕获无法再经下游释放流程释放，其字节随会话 profile 一同消亡。 |
-
 | F8，P1（第二轮外部复审） | `cancelDownload` 只发 `{guid}`：隔离捕获安装在自建 BrowserContext（`setDownloadBehavior` 带 `browserContextId`），而 CDP 的 `Browser.cancelDownload` 省略 `browserContextId` 时在**默认** context 里查 GUID，超限下载的取消因此注定失败；按既有策略"取消失败即关闭会话"，一个本应局部拒绝的超限下载会终止整个浏览器会话（连带在途回执与下游释放）。 | 取消请求携带与隔离同源的 context id，由两个持锁调用点（回执表越界 fail-closed、字节预算拒绝）读取 `r.browserContextID` 后传参，避免在 worker 里无锁读。新增两个回归：mock CDP 侧把"context 必须与隔离同源"做成契约（context 不对即回错误），断言取消参数与会话 `life` 未被取消；opt-in 真浏览器侧用 17MB 载荷打真实 Edge，超限拒绝后会话必须存活且随后一个普通下载仍能完成。 |
 | F9，P3（CodeRabbit，本轮唯一的 actionable） | 评审记录把 64MB 写成"可观测的硬上限"，常量注释也写成 "bounds the bytes one session may keep"——口径比实现强：预算是对**存活回执上报字节**的计账上限，检查发生在进度流到达之后，且被拒/被驱逐捕获的删除是 best-effort，删除失败的残留不再计账。按字面读会让维护者以为隔离目录的磁盘占用被硬封顶。 | 采纳为文档与注释口径修正（非行为缺陷）：常量注释新增"accounting ceiling, not a disk-usage limit"一段并写明残留字节的去向，README 的 F7 行与取值理由同步改为"计账上限"，PR 正文同样更正。CodeRabbit 四条前提里三条成立（计账口径、驱逐后停止计账、进度到达后才检查），第四条"测试在检查预算前先建好下一个捕获"是 mock 夹具的模拟顺序——真实 Chromium 本就是边收边写，不构成缺陷，也未改动测试。真要磁盘硬上限属另一件事（目录配额或写入侧计量），本 PR 不做。 |
+| F10，P2（本轮 delegate 复审） | 隔离捕获的删除写在持 `r.mu` 的 CDP reader 路径上：一次回执表驱逐最多排队 `AgentBrowserMaxDownloadReceipts`（16）次 `os.Remove`，预算拒绝也各删一次；Windows 上 Chromium 可能仍持捕获句柄，使单次删除变慢甚至返回重试。文件 I/O 在 reader 持锁期间进行会拖住所有在途 `call` 的回复分发与 `Status()`，即操作员表面被一个本应局部的拒绝拖慢。 | 删除改为 `removeDownloadCapturesAsync`：持锁调用点只复制 `downloadPath` 与 GUID 列表，`os.Remove` 全部在 worker goroutine 里逐个执行；`removeAgentBrowserDownloadCapture` 由函数改为可注入变量（与原 stat/read 原语同处审计适配器 `profile_materializer.go`，守卫测试仍覆盖）。新增 `TestAgentBrowserDownloadQuarantineRemovalDoesNotBlockReader`：删除桩阻塞不返回时 `Status()` 必须仍能返回。旧实现红为 `Status() blocked behind a quarantine removal`。 |
+| F11，P3（本轮 delegate 复审） | `Browser.downloadProgress` 不校验符号：`{"receivedBytes":-4096}` 会直接写进 `receipt.Bytes`，而会话预算按存活回执字节之和计账，负数把账本拉到低于隔离目录实际持有的字节，等于让页面用一条畸形进度事件自行扩大预算。 | 负 `receivedBytes`/`totalBytes` 与畸形 JSON、外会话事件同类，在 switch 入口当作 malformed 消费。`TestAgentBrowserDownloadNegativeProgressBytesAreIgnored` 先证红（`negative progress rewrote the ledger: ... Bytes:-4096`）再证绿。 |
+| F12，P2（本轮 delegate 复审） | `hashCompletedDownload` 把"测量越界"和"读不到"合并成同一个 `unverified` 终态：进度流从未上报越界（Chromium 可以不报 `totalBytes`）而完成时磁盘上的捕获大于 16MB，回执既不摘要也不拒绝——操作员看到一条永远无法解释、下游也永远无法释放的捕获。同一处还有一个 `receipt.State = AgentBrowserDownloadUnverified` 的自赋值死代码。 | 摘要阶段按 `Lstat` 实测长度区分两种情形：实测超过单文件上限即走 `rejectDownloadLocked`（落 `rejected_budget` + 异步删除 + 带 context 的取消），删除自赋值并把它换成"无摘要且无越界即终态 unverified"的说明。`TestAgentBrowserDownloadHashRejectsUndeclaredOversizeCapture` 写一个 16MB+1 的捕获、`completed` 事件只报满额字节；旧实现红为 `download ... never reached rejected_budget: [... State:unverified ...]`。 |
+| F13，P3（本轮 delegate 复审） | `boundedDownloadMetadata` 按字节切 `value[:limit]`，再交给下面的 `strings.Map` 清洗：切在多字节序列中间时，残字节被改写成 U+FFFD，操作员可见的 URL/文件名尾部被静默改变（非 ASCII 文件名很常见）。 | 截断点回退到 rune 边界（`utf8.RuneStart`）再切。`TestAgentBrowserDownloadMetadataTruncationKeepsRunesWhole` 旧实现红为 `truncation split a rune: "ééé\ufffd"`。 |
+| F14，P3（本轮 delegate 复审） | 口径残留：F9 更正后，驱逐注释仍写"隔离目录不会无界增长（the quarantine cannot grow without bound）"，摘要注释仍暗示"超限的捕获不会通过校验"。前者只在删除成功时成立，后者在 F12 修复前并不成立。 | 两处注释按实际保证重写：驱逐是"计账字节有界，删除失败的残留等到 profile 清理才消失"，摘要是"缺失/非普通文件保持 unverified，实测越界改为拒绝"。 |
 
 F7 的取值理由：回执表最多 16 条、每条最多 16MB，仅靠回执表本身就能让 16 × 16MB = 256MB
 落在会话临时存储里；因此 64MB 上限取单文件上限的 4 倍整数倍，既是可观测的**计账**上限（第五个
@@ -63,6 +69,10 @@ application/httpapi 现有消费方不受影响。
 
 更正：本轮之前的"白名单最小性成立（仅 `{guid}`、结果忽略）"结论有误——参数集确实最小，
 但少了 `browserContextId` 会让取消落到错误的 BrowserContext 上，见 F8。
+
+另一处更正：上面"评审确认的无缺陷事实"里的"CDP/文件 I/O 均在锁外 goroutine"对捕获删除
+不成立——被拒与被驱逐捕获的 `os.Remove` 当时就写在持 `r.mu` 的 reader 路径上，见 F10；
+该事实现在只对哈希路径（`hashCompletedDownload` 先解锁再 stat/read）成立。
 
 ## 验证
 
@@ -88,3 +98,18 @@ application/httpapi 现有消费方不受影响。
   `cancel targeted "", but the quarantine lives in "ctx-1"`，后者报
   `over-budget cancel tore the browser session down`——即缺陷已在真实浏览器上复现，不是静态推断。
 - F8 修复后 `go test -count=1 ./internal/browserruntime/` 全通过；`gofmt -l`、`go vet` 无输出。
+- F10–F14 回归（本轮 delegate 复审新增 4 条测试 + 1 条断言加强，均先证红再证绿）。红是在
+  `2c8e0d66` 的 `agent_browser_download.go` 上跑的（保留 `profile_materializer.go` 的可注入变量
+  与新测试，只回退生产逻辑），四条失败原文：
+  `Status() blocked behind a quarantine removal`（F10）、
+  `negative progress rewrote the ledger: {GUID:0f1e2d3c-… Bytes:-4096 …}`（F11）、
+  `download 0f1e2d3c-… never reached rejected_budget: [… State:unverified Bytes:16777216 …]`（F12）、
+  `truncation split a rune: "ééé\ufffd"`（F13）。
+  `TestAgentBrowserDownloadTotalBudgetDerivation` 新增的"预算必须小于回执表容量"那条断言在旧取值
+  （64MB）下同样通过，它是防未来把上限调成 16×16MB 的护栏，不作为回归证据。
+- F10–F14 修复后：`gofmt -l internal/browserruntime/` 无输出、`go vet ./internal/browserruntime/`
+  无告警、`go test -count=1 ./internal/browserruntime/` 与 `go test -race -count=1 ./internal/browserruntime/`
+  全通过（race 覆盖新增的删除 worker）。
+- 因删除改为异步，F7 的三条隔离断言（越界/拒绝/驱逐后"捕获文件不留存"）从同步 `os.Stat`
+  改为 `waitDownloadCaptureGone` 有界轮询（3s 上限、5ms 间隔）——断言强度不变，只是把
+  "最终不存在"如实写成最终性。
