@@ -43,13 +43,14 @@ ocr delegate rule internal/browserruntime/agent_browser_download.go
 | F4，P3 | 容量注释与实现不符（实际是"仅驱逐终态回执、全 active 时对新下载 fail-closed"）。 | 注释改为准确描述 fail-closed 语义。 |
 | F5，P3 | Windows 句柄共享：拒绝路径 `os.Remove` 可能因 Chromium 持句柄而失败（超大残留滞留至 cleanup）；hash 读文件与 cleanup 的 rename 存在良性竞争。 | 注释明示 best-effort 语义：残留随 profile 消亡；hash 与 cleanup 的竞争是"丢哈希保 unverified + cleanup 可重试"，不夸大承诺。 |
 | F6，P3 | 重复 `completed` 事件把已 `completed`（有摘要）的回执重置回 `unverified` 并重触发哈希，与回执注释矛盾。 | completed 分支对非 active 回执幂等短路；结构体注释改为"终态不回退"；补重复 completed 不回归摘要的断言。 |
-| F7，P1（外部复审） | 会话级累计下载字节无上限：单文件 16MB、回执表 16 条，但隔离目录的总占用没有封顶；回执表满时驱逐终态回执只做 `delete(r.downloads, candidate)`，对应文件留在 `downloads/` 里直到 profile 清理，页面可连续完成多个小于 16MB 的下载把会话磁盘撑到无界；被驱逐的完成下载也无法再经下游释放流程找回。 | 新增 `AgentBrowserMaxDownloadTotalBytes`（= 4 × `AgentBrowserMaxDownloadBytes` = 64MB，是单文件上限的整数倍）：会话隔离目录的总字节上限，按"仍可能被回执命名的存活字节之和"计账，在 `inProgress`/`completed` 进度流上与单文件上限同点强制，越界下载 fail-closed 落 `rejected_budget`、best-effort 删除捕获文件并 `Browser.cancelDownload`（取消失败仍杀会话）。回执驱逐时同步 best-effort 删除捕获文件并停止计账——被驱逐的捕获无法再经下游释放流程释放，其字节随会话 profile 一同消亡。 |
+| F7，P1（外部复审） | 会话级累计下载字节无上限：单文件 16MB、回执表 16 条，但隔离目录的总占用没有封顶；回执表满时驱逐终态回执只做 `delete(r.downloads, candidate)`，对应文件留在 `downloads/` 里直到 profile 清理，页面可连续完成多个小于 16MB 的下载把会话磁盘撑到无界；被驱逐的完成下载也无法再经下游释放流程找回。 | 新增 `AgentBrowserMaxDownloadTotalBytes`（= 4 × `AgentBrowserMaxDownloadBytes` = 64MB，是单文件上限的整数倍）：会话隔离目录的总字节**计账**上限，按"仍可能被回执命名的存活字节之和"计账，在 `inProgress`/`completed` 进度流上与单文件上限同点强制，越界下载 fail-closed 落 `rejected_budget`、best-effort 删除捕获文件并 `Browser.cancelDownload`（取消失败仍杀会话）。回执驱逐时同步 best-effort 删除捕获文件并停止计账——被驱逐的捕获无法再经下游释放流程释放，其字节随会话 profile 一同消亡。 |
 
 | F8，P1（第二轮外部复审） | `cancelDownload` 只发 `{guid}`：隔离捕获安装在自建 BrowserContext（`setDownloadBehavior` 带 `browserContextId`），而 CDP 的 `Browser.cancelDownload` 省略 `browserContextId` 时在**默认** context 里查 GUID，超限下载的取消因此注定失败；按既有策略"取消失败即关闭会话"，一个本应局部拒绝的超限下载会终止整个浏览器会话（连带在途回执与下游释放）。 | 取消请求携带与隔离同源的 context id，由两个持锁调用点（回执表越界 fail-closed、字节预算拒绝）读取 `r.browserContextID` 后传参，避免在 worker 里无锁读。新增两个回归：mock CDP 侧把"context 必须与隔离同源"做成契约（context 不对即回错误），断言取消参数与会话 `life` 未被取消；opt-in 真浏览器侧用 17MB 载荷打真实 Edge，超限拒绝后会话必须存活且随后一个普通下载仍能完成。 |
+| F9，P3（CodeRabbit，本轮唯一的 actionable） | 评审记录把 64MB 写成"可观测的硬上限"，常量注释也写成 "bounds the bytes one session may keep"——口径比实现强：预算是对**存活回执上报字节**的计账上限，检查发生在进度流到达之后，且被拒/被驱逐捕获的删除是 best-effort，删除失败的残留不再计账。按字面读会让维护者以为隔离目录的磁盘占用被硬封顶。 | 采纳为文档与注释口径修正（非行为缺陷）：常量注释新增"accounting ceiling, not a disk-usage limit"一段并写明残留字节的去向，README 的 F7 行与取值理由同步改为"计账上限"，PR 正文同样更正。CodeRabbit 四条前提里三条成立（计账口径、驱逐后停止计账、进度到达后才检查），第四条"测试在检查预算前先建好下一个捕获"是 mock 夹具的模拟顺序——真实 Chromium 本就是边收边写，不构成缺陷，也未改动测试。真要磁盘硬上限属另一件事（目录配额或写入侧计量），本 PR 不做。 |
 
 F7 的取值理由：回执表最多 16 条、每条最多 16MB，仅靠回执表本身就能让 16 × 16MB = 256MB
-落在会话临时存储里；因此 64MB 上限取单文件上限的 4 倍整数倍，既是可观测的硬上限（第五个
-满额捕获被拒），又给多个普通捕获留出余量，单次普通下载完全不受影响。内置 profile 只暴露
+落在会话临时存储里；因此 64MB 上限取单文件上限的 4 倍整数倍，既是可观测的**计账**上限（第五个
+满额捕获被拒），又给多个普通捕获留出余量，单次普通下载完全不受影响。口径要说清：它是**对存活回执上报字节的计账上限，不是隔离目录的磁盘硬上限**——预算在进度流到达之后才检查，此时字节已经落盘；被拒与被驱逐捕获的删除是 best-effort（Windows 上 Chromium 可能仍持句柄），删除失败的残留不再计账，随会话 profile 一起清理。要真正的磁盘硬上限得另设 enforcement（目录配额或写入侧计量），本轮不做。`downloadBytesLocked` 与常量注释同样按这个口径写（CodeRabbit 提出，见 F9）。内置 profile 只暴露
 单文件上限（`ProfileLimits.MaxDownloadBytes`），没有会话级下载上限可镜像，故该常量按上述
 推导定义并在注释中说明，`TestAgentBrowserDownloadTotalBudgetDerivation` 钉住整数倍关系。
 

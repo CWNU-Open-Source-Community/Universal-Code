@@ -23,10 +23,16 @@ const (
 	// ProfileLimits.MaxDownloadBytes for the agent browser runtime, which does
 	// not carry a profile descriptor; a pinning test keeps the values equal.
 	AgentBrowserMaxDownloadBytes = 16 << 20
-	// AgentBrowserMaxDownloadTotalBytes bounds the bytes one session may keep
-	// in its download quarantine. The per-file cap alone does not bound the
+	// AgentBrowserMaxDownloadTotalBytes bounds the accounted bytes a session may
+	// keep in its download quarantine. The per-file cap alone does not bound the
 	// session: a page can complete many sub-cap downloads, so the quarantine
 	// needs its own ceiling.
+	//
+	// It is an accounting ceiling, not a disk-usage limit: the budget is checked
+	// on the progress stream after bytes have already landed, and removing a
+	// rejected or evicted capture is best-effort because Chromium may still hold
+	// the handle on Windows. A residual file whose removal failed is no longer
+	// accounted for and sits in the quarantine until the profile is cleaned up.
 	//
 	// The value is an exact multiple of AgentBrowserMaxDownloadBytes
 	// (4 x 16 MiB = 64 MiB). It is derived, not mirrored: the builtin profile
