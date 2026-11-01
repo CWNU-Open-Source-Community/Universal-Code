@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/browserruntime"
 )
 
@@ -198,12 +199,16 @@ func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, w
 	}
 	root, e := os.OpenRoot(workspace.RootPath)
 	if e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		// The raw *fs.PathError carries the Workspace absolute path; it must stay
+		// in the cause and never reach the response message.
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download Workspace root could not be opened", e)
 	}
 	defer root.Close()
 	relative := filepath.Join(fullCDPBrowserArtifactDirectory, fullCDPDownloadArtifactDirectory, runID, receipt.GUID)
 	if e = root.MkdirAll(filepath.Dir(relative), 0o700); e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download artifact directory could not be created", e)
 	}
 	file, e := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(e, os.ErrExist) {
@@ -212,9 +217,11 @@ func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, w
 			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser artifact already contains different bytes")
 		}
 	} else if e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download capture could not be created", e)
 	} else if e = writeNewAgentBrowserDownloadArtifact(root, relative, file, data); e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download capture could not be persisted", e)
 	}
 	sidecarRelative := relative + ".json"
 	sidecar, e := json.Marshal(map[string]any{
@@ -239,9 +246,11 @@ func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, w
 			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser artifact already contains different bytes")
 		}
 	} else if e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download provenance could not be created", e)
 	} else if e = writeNewAgentBrowserDownloadArtifact(root, sidecarRelative, sidecarFile, sidecar); e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download provenance could not be persisted", e)
 	}
 	// The approval event is written after the capture so it always refers to
 	// bytes that are already on disk. The exclusive create makes the first
@@ -282,14 +291,17 @@ func (s *AgentBrowserService) persistAgentBrowserDownload(ctx context.Context, w
 			recorded.GUID != approval.GUID || recorded.RunID != approval.RunID ||
 			recorded.WorkspaceID != approval.WorkspaceID || recorded.SHA256 != approval.SHA256 ||
 			recorded.Bytes != approval.Bytes || recorded.ApprovedAt.IsZero() ||
-			recorded.Principal == "" || recorded.DeclaredOperator == "" {
+			recorded.Principal == "" || recorded.DeclaredOperator == "" ||
+			recorded.Principal != approval.Principal || recorded.PrincipalScope != approval.PrincipalScope {
 			return "", AgentBrowserDownloadApproval{}, agentBrowserUnavailable("browser download approval event conflicts with the released capture")
 		}
 		persisted = AgentBrowserDownloadApproval{DeclaredOperator: recorded.DeclaredOperator, ApprovedAt: recorded.ApprovedAt}
 	} else if e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download approval event could not be created", e)
 	} else if e = writeNewAgentBrowserDownloadArtifact(root, approvalRelative, approvalFile, encoded); e != nil {
-		return "", AgentBrowserDownloadApproval{}, e
+		return "", AgentBrowserDownloadApproval{}, apperror.Wrap(apperror.CodeUnavailable,
+			"browser download approval event could not be persisted", e)
 	}
 	return "workspace:///" + filepath.ToSlash(relative), persisted, nil
 }
