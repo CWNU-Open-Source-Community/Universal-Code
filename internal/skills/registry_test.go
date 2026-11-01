@@ -31,7 +31,7 @@ func TestBuiltinRegistryIsDeterministicBoundedAndReadOnly(t *testing.T) {
 		}
 	}
 	if want := []string{
-		"code", "debug", "doctor", "focused-checks", "frontend-design", "learn", "loop-monitor", "plan-delivery",
+		"code", "debug", "doctor", "focused-checks", "frontend-design", "init", "learn", "loop-monitor", "plan-delivery",
 		"review", "run-skill-generator", "run-verify", "script", "security-review", "simplify",
 	}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("built-in order = %v, want %v", names, want)
