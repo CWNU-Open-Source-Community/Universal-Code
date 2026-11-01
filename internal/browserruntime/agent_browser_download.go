@@ -116,11 +116,6 @@ func (r *AgentBrowserRuntime) handleDownloadEventLocked(event cdpWireMessage) {
 		r.beginDownloadLocked(params.GUID, boundedDownloadMetadata(params.URL, AgentBrowserMaxDownloadURLBytes),
 			boundedDownloadFilename(params.SuggestedFilename, AgentBrowserMaxDownloadNameBytes), now)
 	case "Browser.downloadProgress":
-		if params.ReceivedBytes < 0 || params.TotalBytes < 0 {
-			// A negative count would lower the session ledger below what the
-			// quarantine actually holds, so it is consumed as malformed input.
-			return
-		}
 		receipt := r.downloadReceiptLocked(params.GUID)
 		if receipt == nil {
 			return
@@ -130,6 +125,12 @@ func (r *AgentBrowserRuntime) handleDownloadEventLocked(event cdpWireMessage) {
 			// Late progress after a terminal event must not resurrect a
 			// completed, cancelled, or rejected capture.
 			if receipt.State != AgentBrowserDownloadActive {
+				return
+			}
+			if params.ReceivedBytes < 0 || params.TotalBytes < 0 {
+				// A negative count would lower the session ledger below what the
+				// quarantine actually holds, so the report is consumed as malformed
+				// input and the receipt keeps its last trustworthy size.
 				return
 			}
 			receipt.UpdatedAt = now
@@ -147,8 +148,16 @@ func (r *AgentBrowserRuntime) handleDownloadEventLocked(event cdpWireMessage) {
 				return
 			}
 			receipt.UpdatedAt = now
-			receipt.Bytes = params.ReceivedBytes
-			if params.ReceivedBytes > AgentBrowserMaxDownloadBytes ||
+			if params.ReceivedBytes >= 0 {
+				receipt.Bytes = params.ReceivedBytes
+			}
+			// A capture the browser declares finished while reporting a negative
+			// size is refused the same way an over-cap one is: the figure the
+			// release flow would vouch for cannot be trusted, and the bytes of a
+			// completed download are already on disk. Terminal events that carry no
+			// byte figure (`canceled`) still run the state machine, so a malformed
+			// count cannot leave a capture tracked as active.
+			if params.ReceivedBytes < 0 || params.ReceivedBytes > AgentBrowserMaxDownloadBytes ||
 				r.downloadBytesLocked() > AgentBrowserMaxDownloadTotalBytes {
 				r.rejectDownloadLocked(params.GUID, now)
 				return

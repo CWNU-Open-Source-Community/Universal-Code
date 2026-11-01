@@ -880,21 +880,36 @@ func TestAgentBrowserDownloadQuarantineRemovalDoesNotBlockReader(t *testing.T) {
 }
 
 // TestAgentBrowserDownloadNegativeProgressBytesAreIgnored keeps a malformed
-// count from lowering the session ledger below what the quarantine holds.
+// count from lowering the session ledger below what the quarantine holds, while
+// still letting a terminal event retire the capture.
 func TestAgentBrowserDownloadNegativeProgressBytesAreIgnored(t *testing.T) {
 	r := downloadEventRuntime(t)
 	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	other := "1a2b3c4d-5e6f-4708-9900-aabbccddeeff"
+	progress := func(payload string) {
+		t.Helper()
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(payload)})
+	}
 	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
 		`{"guid":"` + guid + `"}`)})
-	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(
-		`{"guid":"` + guid + `","state":"inProgress","receivedBytes":4096}`)})
-	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(
-		`{"guid":"` + guid + `","state":"inProgress","receivedBytes":-4096,"totalBytes":-1}`)})
-	for _, receipt := range r.Status().Downloads {
-		if receipt.GUID == guid && receipt.Bytes != 4096 {
-			t.Fatalf("negative progress rewrote the ledger: %+v", receipt)
-		}
+	progress(`{"guid":"` + guid + `","state":"inProgress","receivedBytes":4096}`)
+	progress(`{"guid":"` + guid + `","state":"inProgress","receivedBytes":-4096,"totalBytes":-1}`)
+	receipt := waitDownloadState(t, r, guid, AgentBrowserDownloadActive)
+	if receipt.Bytes != 4096 {
+		t.Fatalf("negative progress rewrote the ledger: %+v", receipt)
 	}
+	// A finish reported with a negative figure cannot be vouched for: refuse the
+	// capture instead of hashing it, and never leave it active.
+	progress(`{"guid":"` + guid + `","state":"completed","receivedBytes":-1}`)
+	if got := waitDownloadState(t, r, guid, AgentBrowserDownloadRejected); got.Bytes != 4096 {
+		t.Fatalf("rejected receipt lost its trustworthy size: %+v", got)
+	}
+	// A cancel carries no byte figure the ledger needs, so a negative count on a
+	// terminal event must still retire the capture.
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + other + `"}`)})
+	progress(`{"guid":"` + other + `","state":"canceled","receivedBytes":-1,"totalBytes":-1}`)
+	waitDownloadState(t, r, other, AgentBrowserDownloadCanceled)
 }
 
 // TestAgentBrowserDownloadHashRejectsUndeclaredOversizeCapture covers the case
