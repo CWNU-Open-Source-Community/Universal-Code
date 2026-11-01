@@ -220,7 +220,7 @@ func (r *AgentBrowserRuntime) beginDownloadLocked(guid, url, suggestedFilename s
 		r.downloadOrder = kept
 	}
 	if len(r.downloadOrder) >= AgentBrowserMaxDownloadReceipts {
-		go r.cancelDownload(guid)
+		go r.cancelDownload(guid, r.browserContextID)
 		return
 	}
 	r.downloads[guid] = &AgentBrowserDownloadReceipt{GUID: guid, SuggestedFilename: suggestedFilename,
@@ -274,13 +274,18 @@ func (r *AgentBrowserRuntime) rejectDownloadLocked(guid string, now time.Time) {
 	receipt.State = AgentBrowserDownloadRejected
 	receipt.UpdatedAt = now
 	r.removeDownloadCaptureLocked(guid)
-	go r.cancelDownload(guid)
+	go r.cancelDownload(guid, r.browserContextID)
 }
 
-func (r *AgentBrowserRuntime) cancelDownload(guid string) {
+// cancelDownload cancels one capture inside the runtime's own BrowserContext.
+// The context id must travel with the GUID: without it Chromium resolves the
+// download against the default context, so cancelling a quarantined capture
+// fails, and a failing cancel tears the whole session down for one file.
+func (r *AgentBrowserRuntime) cancelDownload(guid, browserContextID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := r.cdp.call(ctx, "", "Browser.cancelDownload", map[string]any{"guid": guid}, nil); err != nil && r.life.Err() == nil {
+	if err := r.cdp.call(ctx, "", "Browser.cancelDownload",
+		map[string]any{"guid": guid, "browserContextId": browserContextID}, nil); err != nil && r.life.Err() == nil {
 		go r.cancel()
 	}
 }

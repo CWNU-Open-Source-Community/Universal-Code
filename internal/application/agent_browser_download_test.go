@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,13 +125,14 @@ func TestAgentBrowserDownloadReleasePersistsCaptureAndProvenance(t *testing.T) {
 		t.Fatalf("list: %+v %v", listed, err)
 	}
 
-	locator, receipt, err := service.ReleaseBrowserDownload(context.Background(),
+	locator, receipt, reported, err := service.ReleaseBrowserDownload(context.Background(),
 		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-a"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(locator, "/"+runtime.receipt.GUID) || receipt.SHA256 == "" {
-		t.Fatalf("locator/receipt mismatch: %q %+v", locator, receipt)
+	if !strings.HasSuffix(locator, "/"+runtime.receipt.GUID) || receipt.SHA256 == "" ||
+		reported.DeclaredOperator != "operator-a" || reported.ApprovedAt.IsZero() {
+		t.Fatalf("locator/receipt/approval mismatch: %q %+v %+v", locator, receipt, reported)
 	}
 	root := filepath.Join(service.store.(*downloadReleaseTestStore).workspace.RootPath,
 		".cyberagent-workbench", "browser-artifacts", "downloads", "run-download-release")
@@ -187,10 +189,11 @@ func TestAgentBrowserDownloadReleasePersistsCaptureAndProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, _, err := service.ReleaseBrowserDownload(context.Background(),
+	again, _, replay, err := service.ReleaseBrowserDownload(context.Background(),
 		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-a"))
-	if err != nil || again != locator {
-		t.Fatalf("release replay: %q %+v", again, err)
+	if err != nil || again != locator || replay.DeclaredOperator != reported.DeclaredOperator ||
+		!replay.ApprovedAt.Equal(reported.ApprovedAt) || replay.DeclaredOperator != approval.DeclaredOperator {
+		t.Fatalf("release replay: %q %+v %+v %v", again, replay, reported, err)
 	}
 	repeated, err := os.ReadFile(approvalPath)
 	if err != nil {
@@ -206,6 +209,110 @@ func TestAgentBrowserDownloadReleasePersistsCaptureAndProvenance(t *testing.T) {
 	repeatedSidecar, err := os.ReadFile(filepath.Join(root, runtime.receipt.GUID+".json"))
 	if err != nil || string(repeatedSidecar) != wantSidecar {
 		t.Fatalf("repeat release changed the capture sidecar: %v", err)
+	}
+}
+
+// TestAgentBrowserDownloadReleaseReportsTheRecordedApproval pins the audit
+// contract of a repeat release: the approval event on disk keeps the first
+// approver, and what the release returns is that event rather than the identity
+// of whoever replayed the request.
+func TestAgentBrowserDownloadReleaseReportsTheRecordedApproval(t *testing.T) {
+	data := []byte("released capture bytes")
+	runtime := &downloadReleaseTestRuntime{receipt: completedDownloadReceipt(t, data), data: data}
+	service := newDownloadReleaseTestService(t, runtime)
+	_, _, first, err := service.ReleaseBrowserDownload(context.Background(),
+		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, replay, err := service.ReleaseBrowserDownload(context.Background(),
+		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-bob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.DeclaredOperator != "operator-alice" || !replay.ApprovedAt.Equal(first.ApprovedAt) {
+		t.Fatalf("replay reported the replaying caller: first=%+v replay=%+v", first, replay)
+	}
+	directory := filepath.Join(service.store.(*downloadReleaseTestStore).workspace.RootPath,
+		".cyberagent-workbench", "browser-artifacts", "downloads", "run-download-release")
+	raw, err := os.ReadFile(filepath.Join(directory, runtime.receipt.GUID+".approval.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recorded agentBrowserDownloadReleaseApproval
+	if err := json.Unmarshal(raw, &recorded); err != nil {
+		t.Fatal(err)
+	}
+	if recorded.DeclaredOperator != replay.DeclaredOperator || !recorded.ApprovedAt.Equal(replay.ApprovedAt) {
+		t.Fatalf("response is not the persisted approval event: disk=%+v response=%+v", recorded, replay)
+	}
+}
+
+// TestAgentBrowserDownloadReleaseRollsBackFailedArtifactWrite fails each of the
+// three exclusive creates in turn. A half-written capture, sidecar, or approval
+// event would fail the byte comparison on every later release and wedge the
+// download, so a failed create has to leave nothing behind and the next release
+// has to succeed.
+func TestAgentBrowserDownloadReleaseRollsBackFailedArtifactWrite(t *testing.T) {
+	data := []byte("released capture bytes")
+	for index := range 3 {
+		failAt := index + 1
+		t.Run(fmt.Sprintf("write-%d", failAt), func(t *testing.T) {
+			runtime := &downloadReleaseTestRuntime{receipt: completedDownloadReceipt(t, data), data: data}
+			service := newDownloadReleaseTestService(t, runtime)
+			directory := filepath.Join(service.store.(*downloadReleaseTestStore).workspace.RootPath,
+				".cyberagent-workbench", "browser-artifacts", "downloads", "run-download-release")
+			guid := runtime.receipt.GUID
+			names := []string{guid, guid + ".json", guid + ".approval.json"}
+
+			restore := writeAgentBrowserDownloadArtifactBytes
+			// A fatal below must not hand the failing writer to the next case.
+			t.Cleanup(func() { writeAgentBrowserDownloadArtifactBytes = restore })
+			calls := 0
+			writeAgentBrowserDownloadArtifactBytes = func(file *os.File, content []byte) error {
+				calls++
+				if calls != failAt {
+					return restore(file, content)
+				}
+				// writeFullCDPArtifact always closes the handle, even when the
+				// write fails; the rollback needs that on Windows.
+				_ = file.Close()
+				return errors.New("simulated artifact write failure")
+			}
+			_, _, _, err := service.ReleaseBrowserDownload(context.Background(),
+				"run-download-release", guid, releaseIdentity("operator-a"))
+			if err == nil || err.Error() != "simulated artifact write failure" {
+				t.Fatalf("release at write %d: %v", failAt, err)
+			}
+			if _, statErr := os.Stat(filepath.Join(directory, names[failAt-1])); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("failed create left a partial artifact: %v", statErr)
+			}
+			for _, name := range names[:failAt-1] {
+				if _, statErr := os.Stat(filepath.Join(directory, name)); statErr != nil {
+					t.Fatalf("artifact written before the failure vanished: %v", statErr)
+				}
+			}
+			// With the writer restored, the same release completes: the earlier
+			// artifacts are replayed byte-for-byte and the missing ones created.
+			writeAgentBrowserDownloadArtifactBytes = restore
+			locator, _, approval, err := service.ReleaseBrowserDownload(context.Background(),
+				"run-download-release", guid, releaseIdentity("operator-a"))
+			if err != nil {
+				t.Fatalf("retry after the failed write: %v", err)
+			}
+			if !strings.HasSuffix(locator, "/"+guid) || approval.DeclaredOperator != "operator-a" {
+				t.Fatalf("retry result mismatch: %q %+v", locator, approval)
+			}
+			captured, err := os.ReadFile(filepath.Join(directory, guid))
+			if err != nil || string(captured) != string(data) {
+				t.Fatalf("retry capture mismatch: %v", err)
+			}
+			for _, name := range names {
+				if _, statErr := os.Stat(filepath.Join(directory, name)); statErr != nil {
+					t.Fatalf("artifact %q missing after the retry: %v", name, statErr)
+				}
+			}
+		})
 	}
 }
 
@@ -229,7 +336,7 @@ func TestAgentBrowserDownloadReleaseRejectsConflictingApprovalEvent(t *testing.T
 	if err := os.WriteFile(path, []byte(conflicting), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.ReleaseBrowserDownload(context.Background(),
+	if _, _, _, err := service.ReleaseBrowserDownload(context.Background(),
 		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "approval event conflicts") {
 		t.Fatalf("conflicting approval event was not rejected: %v", err)
@@ -245,7 +352,7 @@ func TestAgentBrowserDownloadReleaseRejectsUnknownAndMismatched(t *testing.T) {
 	receipt := completedDownloadReceipt(t, []byte("other bytes"))
 	runtime := &downloadReleaseTestRuntime{receipt: receipt, data: data}
 	service := newDownloadReleaseTestService(t, runtime)
-	if _, _, err := service.ReleaseBrowserDownload(context.Background(),
+	if _, _, _, err := service.ReleaseBrowserDownload(context.Background(),
 		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "integrity mismatch") {
 		t.Fatalf("integrity mismatch not rejected: %v", err)
@@ -256,7 +363,7 @@ func TestAgentBrowserDownloadReleaseRejectsUnknownAndMismatched(t *testing.T) {
 		err: browserruntime.ErrAgentBrowserDownloadUnknown,
 	}
 	unknownService := newDownloadReleaseTestService(t, unknown)
-	if _, _, err := unknownService.ReleaseBrowserDownload(context.Background(),
+	if _, _, _, err := unknownService.ReleaseBrowserDownload(context.Background(),
 		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "unknown") {
 		t.Fatalf("unknown download not rejected: %v", err)
@@ -269,7 +376,7 @@ func TestAgentBrowserDownloadReleaseRejectsUnknownAndMismatched(t *testing.T) {
 		err: fmt.Errorf("%w", browserruntime.ErrAgentBrowserDownloadGone),
 	}
 	goneService := newDownloadReleaseTestService(t, gone)
-	if _, _, err := goneService.ReleaseBrowserDownload(context.Background(),
+	if _, _, _, err := goneService.ReleaseBrowserDownload(context.Background(),
 		"run-download-release", receipt.GUID, releaseIdentity("operator-a")); err == nil ||
 		!strings.Contains(err.Error(), "gone with the session quarantine") ||
 		strings.Contains(err.Error(), "downloads") {

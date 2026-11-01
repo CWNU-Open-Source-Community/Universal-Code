@@ -39,7 +39,8 @@ type agentBrowserScreenshotReader interface {
 
 type agentBrowserDownloadsController interface {
 	BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error)
-	ReleaseBrowserDownload(context.Context, string, string, application.AgentBrowserDownloadRelease) (string, browserruntime.AgentBrowserDownloadReceipt, error)
+	ReleaseBrowserDownload(context.Context, string, string, application.AgentBrowserDownloadRelease) (string,
+		browserruntime.AgentBrowserDownloadReceipt, application.AgentBrowserDownloadApproval, error)
 }
 
 type AgentBrowserDownloadView struct {
@@ -65,16 +66,6 @@ type AgentBrowserDownloadReleaseView struct {
 	Receipt    AgentBrowserDownloadView `json:"receipt"`
 	Operator   string                   `json:"operator"`
 	ReleasedAt time.Time                `json:"released_at"`
-}
-
-// releaseOperator mirrors the application-side normalization so the response
-// always echoes the identity that was actually applied.
-func releaseOperator(operator string) string {
-	operator = strings.TrimSpace(operator)
-	if operator == "" {
-		return "httpapi_operator"
-	}
-	return operator
 }
 
 func publicAgentBrowserDownload(value browserruntime.AgentBrowserDownloadReceipt) AgentBrowserDownloadView {
@@ -479,7 +470,7 @@ func (a *API) serveAgentBrowserDownloads(writer http.ResponseWriter, request *ht
 	// credential class, decided here on the server side, while the request
 	// body only declares a display name. Neither value is derived from the
 	// control credential itself, so no token or token hash is ever persisted.
-	locator, receipt, err := controller.ReleaseBrowserDownload(request.Context(), runID, releaseGUID,
+	locator, receipt, approval, err := controller.ReleaseBrowserDownload(request.Context(), runID, releaseGUID,
 		application.AgentBrowserDownloadRelease{
 			Principal: application.AgentBrowserDownloadReleasePrincipalControlPlane,
 			Operator:  input.Operator,
@@ -488,7 +479,10 @@ func (a *API) serveAgentBrowserDownloads(writer http.ResponseWriter, request *ht
 		a.writeError(writer, requestID, err, 0)
 		return
 	}
+	// operator and released_at come from the approval event the release left on
+	// disk, so a repeat release reports the approval that is actually recorded
+	// rather than the caller who replayed the request.
 	a.writeSuccess(writer, requestID, AgentBrowserDownloadReleaseView{Version: "agent_browser_download_release.v1", RunID: runID,
 		Locator: locator, Receipt: publicAgentBrowserDownload(receipt),
-		Operator: releaseOperator(input.Operator), ReleasedAt: time.Now().UTC()}, nil)
+		Operator: approval.DeclaredOperator, ReleasedAt: approval.ApprovedAt}, nil)
 }
