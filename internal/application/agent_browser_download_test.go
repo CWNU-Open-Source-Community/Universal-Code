@@ -248,6 +248,87 @@ func TestAgentBrowserDownloadReleaseReportsTheRecordedApproval(t *testing.T) {
 	}
 }
 
+// TestAgentBrowserDownloadReleaseDoesNotLeakWorkspacePaths is the error
+// contract of the persistence branches: a missing Workspace root makes
+// os.OpenRoot fail with a *fs.PathError that names the absolute path, and that
+// path (plus the GUID) must stay in the error cause instead of the message the
+// HTTP layer echoes back to the caller.
+func TestAgentBrowserDownloadReleaseDoesNotLeakWorkspacePaths(t *testing.T) {
+	data := []byte("released capture bytes")
+	runtime := &downloadReleaseTestRuntime{receipt: completedDownloadReceipt(t, data), data: data}
+	root := filepath.Join(t.TempDir(), "missing-workspace")
+	store := &downloadReleaseTestStore{
+		run:       domain.Run{ID: "run-download-release"},
+		workspace: session.WorkspaceInfo{ID: "ws-download-release", RootPath: root},
+	}
+	service := NewAgentBrowserService(store, AgentBrowserOptions{})
+	service.slots["run-download-release"] = &agentBrowserSlot{
+		runtime:   runtime,
+		authority: toolgateway.AgentBrowserCallAuthority{RunID: "run-download-release", WorkspaceID: "ws-download-release", SessionID: "session-download-release"},
+	}
+	_, _, _, err := service.ReleaseBrowserDownload(context.Background(),
+		"run-download-release", runtime.receipt.GUID, releaseIdentity("operator-a"))
+	if err == nil {
+		t.Fatal("a missing Workspace root was accepted")
+	}
+	if !strings.Contains(err.Error(), "Workspace root could not be opened") {
+		t.Fatalf("release error is not the static artifact message: %v", err)
+	}
+	if strings.Contains(err.Error(), root) || strings.Contains(err.Error(), runtime.receipt.GUID) {
+		t.Fatalf("release error leaked the Workspace path or GUID: %v", err)
+	}
+	// The cause still classifies the failure, so logs and errors.Is keep working.
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the filesystem cause was dropped instead of wrapped: %v", err)
+	}
+}
+
+// TestAgentBrowserDownloadReleaseRejectsForeignApprovalIdentity closes the
+// other half of the replay check: an approval event that matches the released
+// capture byte-for-byte but names a different authorizing principal or scope is
+// not this release's approval, and echoing it would launder the audit record.
+func TestAgentBrowserDownloadReleaseRejectsForeignApprovalIdentity(t *testing.T) {
+	data := []byte("released capture bytes")
+	receipt := completedDownloadReceipt(t, data)
+	for _, field := range []string{"authorized_principal", "authorized_principal_scope"} {
+		t.Run(field, func(t *testing.T) {
+			runtime := &downloadReleaseTestRuntime{receipt: receipt, data: data}
+			service := newDownloadReleaseTestService(t, runtime)
+			directory := filepath.Join(service.store.(*downloadReleaseTestStore).workspace.RootPath,
+				".cyberagent-workbench", "browser-artifacts", "downloads", "run-download-release")
+			if err := os.MkdirAll(directory, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			// Only the tested field deviates from an approval this release would write.
+			principal, scope := AgentBrowserDownloadReleasePrincipalControlPlane, AgentBrowserDownloadReleasePrincipalScopeCredentialClass
+			if field == "authorized_principal" {
+				principal = "desktop_operator"
+			} else {
+				scope = "human_account"
+			}
+			foreign := fmt.Sprintf(
+				`{"version":%q,"kind":"release_approval","guid":%q,"run_id":"run-download-release",`+
+					`"workspace_id":"ws-download-release","sha256":%q,"bytes":%d,`+
+					`"approved_at":"2026-01-01T00:00:00Z","authorized_principal":%q,`+
+					`"authorized_principal_scope":%q,"declared_operator":"someone-else"}`,
+				AgentBrowserDownloadReleaseVersion, receipt.GUID, receipt.SHA256, receipt.Bytes, principal, scope)
+			path := filepath.Join(directory, receipt.GUID+".approval.json")
+			if err := os.WriteFile(path, []byte(foreign), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, err := service.ReleaseBrowserDownload(context.Background(),
+				"run-download-release", receipt.GUID, releaseIdentity("operator-a"))
+			if err == nil || !strings.Contains(err.Error(), "approval event conflicts") {
+				t.Fatalf("a %s mismatch was accepted: %v", field, err)
+			}
+			recorded, err := os.ReadFile(path)
+			if err != nil || string(recorded) != foreign {
+				t.Fatalf("the foreign approval event was rewritten: %v", err)
+			}
+		})
+	}
+}
+
 // TestAgentBrowserDownloadReleaseRollsBackFailedArtifactWrite fails each of the
 // three exclusive creates in turn. A half-written capture, sidecar, or approval
 // event would fail the byte comparison on every later release and wedge the
@@ -269,6 +350,7 @@ func TestAgentBrowserDownloadReleaseRollsBackFailedArtifactWrite(t *testing.T) {
 			// A fatal below must not hand the failing writer to the next case.
 			t.Cleanup(func() { writeAgentBrowserDownloadArtifactBytes = restore })
 			calls := 0
+			simulated := errors.New("simulated artifact write failure")
 			writeAgentBrowserDownloadArtifactBytes = func(file *os.File, content []byte) error {
 				calls++
 				if calls != failAt {
@@ -277,12 +359,15 @@ func TestAgentBrowserDownloadReleaseRollsBackFailedArtifactWrite(t *testing.T) {
 				// writeFullCDPArtifact always closes the handle, even when the
 				// write fails; the rollback needs that on Windows.
 				_ = file.Close()
-				return errors.New("simulated artifact write failure")
+				return simulated
 			}
 			_, _, _, err := service.ReleaseBrowserDownload(context.Background(),
 				"run-download-release", guid, releaseIdentity("operator-a"))
-			if err == nil || err.Error() != "simulated artifact write failure" {
-				t.Fatalf("release at write %d: %v", failAt, err)
+			// The cause must survive: the response carries a static message, and
+			// only an unwrapped chain would let a caller (or a later test) still
+			// recognise the failure.
+			if !errors.Is(err, simulated) {
+				t.Fatalf("release at write %d lost the filesystem cause: %v", failAt, err)
 			}
 			if _, statErr := os.Stat(filepath.Join(directory, names[failAt-1])); !errors.Is(statErr, os.ErrNotExist) {
 				t.Fatalf("failed create left a partial artifact: %v", statErr)
