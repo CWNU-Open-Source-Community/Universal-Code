@@ -3,10 +3,13 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { components } from "../../api/schema";
+import { downloadTextFile } from "../../lib/download";
 import { LocaleProvider, useLocale } from "../../lib/locale";
 import { UsageSettings } from "./usage-settings";
 import { UsageActivity, UsageTrend, usageCalendar } from "./usage-charts";
 import { V2Settings } from "./settings";
+
+vi.mock("../../lib/download", () => ({ downloadTextFile: vi.fn() }));
 
 type UsageStatistics = components["schemas"]["UsageStatistics"];
 const totals = { calls: 4, usage_reported_calls: 3, cache_usage_reported_calls: 2,
@@ -140,6 +143,59 @@ it("shows a useful empty state while preserving an explicitly recorded zero cost
   expect(screen.getByText("$0.00")).toBeInTheDocument();
   expect(screen.getByText("No model usage yet")).toBeInTheDocument();
   expect(screen.getByText("No conversation usage yet")).toBeInTheDocument();
+});
+
+it("exports the loaded usage as CSV with totals, day, model, and session rows", async () => {
+  setup();
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  expect(downloadTextFile).toHaveBeenCalledExactlyOnceWith("universal-code-usage-30d-2026-09-20_2026-10-19.csv",
+    "text/csv;charset=utf-8", expect.stringMatching(/^\uFEFF/u));
+  const csv = (vi.mocked(downloadTextFile).mock.calls[0][2] as string).slice("\uFEFF".length);
+  const rows = csv.replace(/\r\n$/u, "").split("\r\n");
+  expect(rows).toHaveLength(5);
+  const header = rows[0].split(",");
+  expect(header).toHaveLength(20);
+  expect(header.slice(0, 8)).toEqual(["kind", "date", "provider", "model", "thread_id", "title", "last_activity_at", "input_tokens"]);
+  const totalsRow = rows[1].split(",");
+  expect(totalsRow[0]).toBe("totals");
+  expect(totalsRow.slice(1, 7)).toEqual(["", "", "", "", "", ""]);
+  expect(totalsRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
+  expect(totalsRow.slice(14)).toEqual(["1", "USD", "0.125000", "2", "1", "1"]);
+  const dayRow = rows[2].split(",");
+  expect(dayRow.slice(0, 2)).toEqual(["day", "2026-10-19"]);
+  expect(dayRow.slice(2, 7)).toEqual(["", "", "", "", ""]);
+  expect(dayRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
+  expect(dayRow.slice(14)).toEqual(["", "", "", "", "", ""]);
+  const modelRow = rows[3].split(",");
+  expect(modelRow.slice(0, 7)).toEqual(["model", "", "test-provider", "test-model", "", "", ""]);
+  expect(modelRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
+  const sessionRow = rows[4].split(",");
+  expect(sessionRow.slice(0, 7)).toEqual(["session", "", "", "", "thread-a", "修复设置布局", "2026-10-19T04:00:00Z"]);
+  expect(sessionRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
+});
+
+it("escapes CSV special characters in conversation titles", async () => {
+  vi.mocked(downloadTextFile).mockClear();
+  setup(vi.fn().mockResolvedValue({ ...data, recent_sessions: [
+    { thread_id: "thread-1", title: '修复, "设置" 布局', last_activity_at: "2026-10-19T04:00:00Z", usage: totals },
+    { thread_id: "thread-2", title: "两行\r\n标题", last_activity_at: "2026-10-19T05:00:00Z", usage: totals }] }));
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  const csv = vi.mocked(downloadTextFile).mock.calls[0][2] as string;
+  expect(csv).toContain('"修复, ""设置"" 布局"');
+  expect(csv).toContain('"两行\r\n标题"');
+});
+
+it("keeps the CSV export disabled while usage has not loaded", () => {
+  setup(vi.fn().mockReturnValue(new Promise(() => {})));
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
+});
+
+it("disables the CSV export for an empty period", async () => {
+  setup(vi.fn().mockResolvedValue({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [] }));
+  await screen.findByRole("status");
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
 });
 
 it("offers retry when loading fails and restores the real data", async () => {

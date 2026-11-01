@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, RefreshCw } from "lucide-react";
+import { ArrowUpRight, Download, RefreshCw } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { components } from "../../api/schema";
+import { downloadTextFile } from "../../lib/download";
 import { useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
+import { formatUsageCsv, usageCsvFilename } from "../usage-export";
 import { UsageActivity, UsageTrend, usageCalendar } from "./usage-charts";
 import "./usage-settings.css";
 
@@ -50,8 +52,16 @@ export function UsageSettings({ client, threadID = "", onOpenThread }: { client:
       <div className="v2-usage-controls"><div className="v2-setting-segmented" role="group" aria-label={t("统计时间范围", "Usage period")}>
         {([ ["today", t("今日", "Today")], ["30d", t("近 30 天", "30 days")], ["all", t("全部", "All time")] ] as const).map(([value, label]) =>
           <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)}>{label}</button>)}
-      </div><button className="v2-usage-refresh" type="button" aria-label={t("刷新用量", "Refresh usage")}
-        title={t("刷新用量", "Refresh usage")} disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw aria-hidden="true" size={16} /></button></div>
+      </div>
+        <button className="v2-usage-refresh v2-usage-export" type="button" aria-label={t("导出 CSV", "Export CSV")}
+          title={t("导出当前用量明细（CSV）", "Export the loaded usage details (CSV)")}
+          disabled={!data || query.isFetching || data.totals.calls === 0} onClick={() => {
+            if (!data) return;
+            try { downloadTextFile(usageCsvFilename(data), "text/csv;charset=utf-8", `\uFEFF${formatUsageCsv(data)}`); }
+            catch { /* A failed download is inert; the on-screen usage stays authoritative. */ }
+          }}><Download aria-hidden="true" size={16} /></button>
+        <button className="v2-usage-refresh" type="button" aria-label={t("刷新用量", "Refresh usage")}
+          title={t("刷新用量", "Refresh usage")} disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw aria-hidden="true" size={16} /></button></div>
     </header>
     {query.isPending && <p className="v2-usage-message" role="status">{t("正在读取模型用量…", "Loading model usage…")}</p>}
     {query.isError && <div className="v2-usage-message" role="alert"><p>{data
