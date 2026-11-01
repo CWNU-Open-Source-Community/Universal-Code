@@ -1164,7 +1164,7 @@ func prepareAgentBrowserDownloadQuarantine(profilePath string) (string, error) {
 
 // removeAgentBrowserDownloadCapture deletes one GUID-named capture, used when
 // a download is rejected over the byte budget.
-func removeAgentBrowserDownloadCapture(downloadPath, guid string) error {
+var removeAgentBrowserDownloadCapture = func(downloadPath, guid string) error {
 	return os.Remove(filepath.Join(downloadPath, guid))
 }
 

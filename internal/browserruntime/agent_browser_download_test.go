@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 )
@@ -212,9 +213,7 @@ func TestAgentBrowserDownloadBudgetRejectsOversize(t *testing.T) {
 	if receipt := waitDownloadState(t, r, guid, AgentBrowserDownloadRejected); receipt.Bytes != 1024 {
 		t.Fatalf("rejected receipt mismatch: %+v", receipt)
 	}
-	if _, err := os.Stat(capture); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("over-budget capture survived: %v", err)
-	}
+	waitDownloadCaptureGone(t, capture)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		mu.Lock()
@@ -358,6 +357,22 @@ func TestAgentBrowserDownloadReceiptsAreBounded(t *testing.T) {
 	}
 }
 
+// waitDownloadCaptureGone polls until the quarantine no longer holds one
+// capture: removal is scheduled on a worker precisely so the CDP reader is
+// never blocked by file I/O, so absence is eventually true rather than
+// synchronously true.
+func waitDownloadCaptureGone(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("capture %s never left the quarantine", filepath.Base(path))
+}
+
 // writeDownloadCapture writes one GUID-named capture into the quarantine.
 func writeDownloadCapture(t *testing.T, r *AgentBrowserRuntime, guid string, size int) {
 	t.Helper()
@@ -464,9 +479,7 @@ func TestAgentBrowserDownloadSessionBudgetBoundsConsecutiveDownloads(t *testing.
 	if receipt.Bytes != AgentBrowserMaxDownloadBytes {
 		t.Fatalf("rejected receipt mismatch: %+v", receipt)
 	}
-	if _, err := os.Stat(filepath.Join(r.downloadPath, over)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("over-budget capture survived in the quarantine: %v", err)
-	}
+	waitDownloadCaptureGone(t, filepath.Join(r.downloadPath, over))
 	waitDownloadCanceled(t, &mu, &canceled, over)
 	if held := downloadQuarantineBytes(t, r.downloadPath); held > AgentBrowserMaxDownloadTotalBytes {
 		t.Fatalf("quarantine grew past the session budget: %d bytes", held)
@@ -487,9 +500,7 @@ func TestAgentBrowserDownloadExhaustedBudgetKeepsFailingClosed(t *testing.T) {
 		r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
 			`{"guid":"%s","state":"inProgress","receivedBytes":%d}`, guid, AgentBrowserMaxDownloadBytes))})
 		waitDownloadState(t, r, guid, AgentBrowserDownloadRejected)
-		if _, err := os.Stat(filepath.Join(r.downloadPath, guid)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("rejected capture %s survived in the quarantine: %v", guid, err)
-		}
+		waitDownloadCaptureGone(t, filepath.Join(r.downloadPath, guid))
 	}
 	if held := downloadQuarantineBytes(t, r.downloadPath); held > AgentBrowserMaxDownloadTotalBytes {
 		t.Fatalf("quarantine grew past the session budget: %d bytes", held)
@@ -522,9 +533,7 @@ func TestAgentBrowserDownloadEvictionRemovesCaptureFromQuarantine(t *testing.T) 
 	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
 		`{"guid":"` + extra + `"}`)})
 	for _, guid := range guids {
-		if _, err := os.Stat(filepath.Join(r.downloadPath, guid)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("evicted capture %s survived in the quarantine: %v", guid, err)
-		}
+		waitDownloadCaptureGone(t, filepath.Join(r.downloadPath, guid))
 	}
 	status := r.Status()
 	if len(status.Downloads) != 1 || status.Downloads[0].GUID != extra {
@@ -810,5 +819,112 @@ func TestAgentBrowserDownloadTotalBudgetDerivation(t *testing.T) {
 		AgentBrowserMaxDownloadTotalBytes%AgentBrowserMaxDownloadBytes != 0 {
 		t.Fatalf("session budget is not an exact multiple of the per-file cap: %d",
 			AgentBrowserMaxDownloadTotalBytes)
+	}
+	// The budget has to bite before the receipt table is full: a multiple as large
+	// as the table itself (16 x 16 MiB) would never be reached by accounting alone.
+	if AgentBrowserMaxDownloadTotalBytes >= AgentBrowserMaxDownloadBytes*AgentBrowserMaxDownloadReceipts {
+		t.Fatalf("session budget %d never constrains a receipt table of %d captures",
+			AgentBrowserMaxDownloadTotalBytes, AgentBrowserMaxDownloadReceipts)
+	}
+}
+
+// TestAgentBrowserDownloadQuarantineRemovalDoesNotBlockReader proves the
+// removal worker is off the reader and off r.mu: a removal that never returns
+// must still let Status() (and therefore the operator surface) be served.
+func TestAgentBrowserDownloadQuarantineRemovalDoesNotBlockReader(t *testing.T) {
+	restore := removeAgentBrowserDownloadCapture
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	removeAgentBrowserDownloadCapture = func(string, string) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+		return nil
+	}
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		removeAgentBrowserDownloadCapture = restore
+	})
+	r := downloadEventRuntime(t)
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	writeDownloadCapture(t, r, guid, 32)
+	go func() {
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+			`{"guid":"` + guid + `"}`)})
+		r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+			`{"guid":"%s","state":"inProgress","receivedBytes":1024,"totalBytes":%d}`, guid,
+			AgentBrowserMaxDownloadBytes+1))})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the over-budget rejection never reached the quarantine removal")
+	}
+	served := make(chan struct{})
+	go func() {
+		_ = r.Status()
+		close(served)
+	}()
+	select {
+	case <-served:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Status() blocked behind a quarantine removal")
+	}
+	close(release)
+}
+
+// TestAgentBrowserDownloadNegativeProgressBytesAreIgnored keeps a malformed
+// count from lowering the session ledger below what the quarantine holds.
+func TestAgentBrowserDownloadNegativeProgressBytesAreIgnored(t *testing.T) {
+	r := downloadEventRuntime(t)
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + guid + `"}`)})
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(
+		`{"guid":"` + guid + `","state":"inProgress","receivedBytes":4096}`)})
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(
+		`{"guid":"` + guid + `","state":"inProgress","receivedBytes":-4096,"totalBytes":-1}`)})
+	for _, receipt := range r.Status().Downloads {
+		if receipt.GUID == guid && receipt.Bytes != 4096 {
+			t.Fatalf("negative progress rewrote the ledger: %+v", receipt)
+		}
+	}
+}
+
+// TestAgentBrowserDownloadHashRejectsUndeclaredOversizeCapture covers the case
+// the progress stream never flagged: the completed event stays inside the cap but
+// the capture measured on disk is over it, so the receipt must go to
+// rejected_budget instead of surviving unverified and unreleasable.
+func TestAgentBrowserDownloadHashRejectsUndeclaredOversizeCapture(t *testing.T) {
+	r := downloadEventRuntime(t)
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	writeDownloadCapture(t, r, guid, AgentBrowserMaxDownloadBytes+1)
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadWillBegin", Params: json.RawMessage(
+		`{"guid":"` + guid + `"}`)})
+	r.onEvent(cdpWireMessage{Method: "Browser.downloadProgress", Params: json.RawMessage(fmt.Sprintf(
+		`{"guid":"%s","state":"completed","receivedBytes":%d}`, guid, AgentBrowserMaxDownloadBytes))})
+	waitDownloadState(t, r, guid, AgentBrowserDownloadRejected)
+	for _, receipt := range r.Status().Downloads {
+		if receipt.GUID == guid && receipt.SHA256 != "" {
+			t.Fatalf("an over-cap capture was digested instead of rejected: %+v", receipt)
+		}
+	}
+}
+
+// TestAgentBrowserDownloadMetadataTruncationKeepsRunesWhole stops the budget cap
+// from reshaping operator-visible metadata into replacement characters.
+func TestAgentBrowserDownloadMetadataTruncationKeepsRunesWhole(t *testing.T) {
+	got := boundedDownloadMetadata(strings.Repeat("\u00e9", 4)+"tail", 7)
+	if !utf8.ValidString(got) || strings.ContainsRune(got, utf8.RuneError) {
+		t.Fatalf("truncation split a rune: %q", got)
+	}
+	if got != strings.Repeat("\u00e9", 3) {
+		t.Fatalf("unexpected truncation: %q", got)
 	}
 }

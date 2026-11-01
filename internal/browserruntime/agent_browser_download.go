@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Downloads are bytes a page pushes at the browser while the agent navigates.
@@ -115,6 +116,11 @@ func (r *AgentBrowserRuntime) handleDownloadEventLocked(event cdpWireMessage) {
 		r.beginDownloadLocked(params.GUID, boundedDownloadMetadata(params.URL, AgentBrowserMaxDownloadURLBytes),
 			boundedDownloadFilename(params.SuggestedFilename, AgentBrowserMaxDownloadNameBytes), now)
 	case "Browser.downloadProgress":
+		if params.ReceivedBytes < 0 || params.TotalBytes < 0 {
+			// A negative count would lower the session ledger below what the
+			// quarantine actually holds, so it is consumed as malformed input.
+			return
+		}
 		receipt := r.downloadReceiptLocked(params.GUID)
 		if receipt == nil {
 			return
@@ -196,22 +202,25 @@ func (r *AgentBrowserRuntime) beginDownloadLocked(guid, url, suggestedFilename s
 	if len(r.downloadOrder) >= AgentBrowserMaxDownloadReceipts {
 		// Evict terminal receipts first; a full list of active captures fails
 		// closed for the new download instead of dropping active tracking.
-		// An evicted capture leaves the quarantine with its receipt: its file
-		// is removed best-effort and its bytes stop counting against the
-		// session budget, so the quarantine cannot grow without bound. An
-		// evicted capture can no longer be released through the downstream
-		// release flow (no receipt survives to name it), and its bytes die
-		// with the session profile.
+		// An evicted capture leaves the quarantine with its receipt: its file is
+		// removed best-effort off the reader and its bytes stop counting against
+		// the session budget, so the accounted bytes stay bounded. A removal that
+		// fails leaves an unaccounted residual until the profile is cleaned up, so
+		// this bounds the ledger, not the bytes on disk. An evicted capture can no
+		// longer be released through the downstream release flow (no receipt
+		// survives to name it), and its bytes die with the session profile.
+		var evicted []string
 		kept := r.downloadOrder[:0]
 		for _, candidate := range r.downloadOrder {
 			if receipt := r.downloads[candidate]; receipt != nil && receipt.State == AgentBrowserDownloadActive {
 				kept = append(kept, candidate)
 				continue
 			}
-			r.removeDownloadCaptureLocked(candidate)
+			evicted = append(evicted, candidate)
 			delete(r.downloads, candidate)
 		}
 		r.downloadOrder = kept
+		r.removeDownloadCapturesAsync(evicted...)
 	}
 	if len(r.downloadOrder) >= AgentBrowserMaxDownloadReceipts {
 		go r.cancelDownload(guid, r.browserContextID)
@@ -244,14 +253,23 @@ func (r *AgentBrowserRuntime) downloadBytesLocked() int64 {
 	return total
 }
 
-// removeDownloadCaptureLocked best-effort removes one capture from the
-// quarantine. Chromium may still hold the capture handle on Windows, so a
-// residual file is acceptable and dies with the profile at cleanup.
-func (r *AgentBrowserRuntime) removeDownloadCaptureLocked(guid string) {
-	if r.downloadPath == "" {
+// removeDownloadCapturesAsync schedules best-effort quarantine removals on a
+// worker. Every caller holds r.mu on the CDP reader goroutine, and removing
+// there would stall reply dispatch for every in-flight call while a single
+// eviction pass alone can queue up to AgentBrowserMaxDownloadReceipts
+// removals. A residual file is still acceptable and dies with the profile at
+// cleanup.
+func (r *AgentBrowserRuntime) removeDownloadCapturesAsync(guids ...string) {
+	if r.downloadPath == "" || len(guids) == 0 {
 		return
 	}
-	_ = removeAgentBrowserDownloadCapture(r.downloadPath, guid)
+	downloadPath := r.downloadPath
+	pending := append([]string(nil), guids...)
+	go func() {
+		for _, guid := range pending {
+			_ = removeAgentBrowserDownloadCapture(downloadPath, guid)
+		}
+	}()
 }
 
 // rejectDownloadLocked marks the capture over budget and best-effort removes
@@ -267,7 +285,7 @@ func (r *AgentBrowserRuntime) rejectDownloadLocked(guid string, now time.Time) {
 	}
 	receipt.State = AgentBrowserDownloadRejected
 	receipt.UpdatedAt = now
-	r.removeDownloadCaptureLocked(guid)
+	r.removeDownloadCapturesAsync(guid)
 	go r.cancelDownload(guid, r.browserContextID)
 }
 
@@ -285,8 +303,9 @@ func (r *AgentBrowserRuntime) cancelDownload(guid, browserContextID string) {
 }
 
 // hashCompletedDownload digests the GUID-named capture inside the quarantine.
-// It never follows an event-provided path: allowAndName fixed the name, so any
-// missing, non-regular, or oversized capture stays unverified instead. The
+// It never follows an event-provided path: allowAndName fixed the name, so a
+// missing or non-regular capture stays unverified, and one measured over the
+// per-file cap is rejected instead of surviving as an unreleasable receipt. The
 // read races benignly with cleanup: losing it keeps the receipt unverified,
 // and a cleanup that trips over the open capture is retryable by design.
 func (r *AgentBrowserRuntime) hashCompletedDownload(guid string) {
@@ -294,9 +313,12 @@ func (r *AgentBrowserRuntime) hashCompletedDownload(guid string) {
 	downloadPath := r.downloadPath
 	r.mu.Unlock()
 	digest := ""
-	if info, err := statAgentBrowserDownloadCapture(downloadPath, guid); err == nil && info.Mode().IsRegular() &&
-		info.Size() <= AgentBrowserMaxDownloadBytes {
-		if data, readErr := readAgentBrowserDownloadCapture(downloadPath, guid); readErr == nil {
+	oversize := false
+	if info, err := statAgentBrowserDownloadCapture(downloadPath, guid); err == nil && info.Mode().IsRegular() {
+		if info.Size() > AgentBrowserMaxDownloadBytes {
+			// The progress stream never reported the overrun; the measured file did.
+			oversize = true
+		} else if data, readErr := readAgentBrowserDownloadCapture(downloadPath, guid); readErr == nil {
 			sum := sha256.Sum256(data)
 			digest = hex.EncodeToString(sum[:])
 		}
@@ -307,8 +329,13 @@ func (r *AgentBrowserRuntime) hashCompletedDownload(guid string) {
 	if receipt == nil || receipt.State != AgentBrowserDownloadUnverified {
 		return
 	}
+	if oversize {
+		r.rejectDownloadLocked(guid, time.Now().UTC())
+		return
+	}
 	if digest == "" {
-		receipt.State = AgentBrowserDownloadUnverified
+		// No digest and no overrun: the capture is missing, unreadable, or lost the
+		// race with cleanup. It stays unverified, which is a terminal state here.
 		return
 	}
 	receipt.SHA256 = digest
@@ -331,7 +358,14 @@ func (r *AgentBrowserRuntime) downloadReceiptsLocked() []AgentBrowserDownloadRec
 
 func boundedDownloadMetadata(value string, limit int) string {
 	if len(value) > limit {
-		value = value[:limit]
+		// Cut on a rune boundary: a raw byte slice can split a multi-byte sequence
+		// and the sanitizer below would rewrite the tail into U+FFFD, quietly
+		// reshaping an operator-visible URL or filename.
+		cut := limit
+		for cut > 0 && !utf8.RuneStart(value[cut]) {
+			cut--
+		}
+		value = value[:cut]
 	}
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
