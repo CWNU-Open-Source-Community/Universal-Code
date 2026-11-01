@@ -1592,7 +1592,6 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		}
 	}
 	if !a.authorized(request, a.tokenHash) {
-
 		tracked.Header().Set("WWW-Authenticate", `Bearer realm="CyberAgent API"`)
 		a.writeError(tracked, requestID,
 			apperror.New(apperror.CodePolicyDenied, "valid bearer authorization is required"),
