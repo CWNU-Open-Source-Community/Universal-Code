@@ -2,23 +2,26 @@
   "schema_version": "1",
   "mode": "ocr_delegate",
   "base_branch": "Qiyuanqiii/browser-download-release",
-  "base": "7edf02b3ec217060b4e2a01ba640c978d84ef22a",
+  "base": "9fe614efec34558f6063fce6a41f88be66c4e705",
   "reviewed_head": "HEAD",
   "review_metadata_excluded": [
     "docs/reviews/browser-takeover-mode/README.md",
-    "docs/reviews/browser-takeover-mode/coverage.json"
+    "docs/reviews/browser-takeover-mode/coverage.json",
+    "docs/reviews/browser-session-lifetime/README.md",
+    "docs/reviews/browser-session-lifetime/coverage.json"
   ],
   "reviewers": [
     "主 agent：接管模式实现（env 助手 + 三个组合根接线 + 文案 + 文档）",
-    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 Headless 汇点、指纹链与文案一致性专项"
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 Headless 汇点、指纹链与文案一致性专项",
+    "delegate_review_round2：本 agent 用 OCR delegate 模式复核本 PR 相对 #523 分支尖端（9fe614ef）的独有 diff：preview 选中 7 个文件（4 个 Go 生产 + web tsx + 2 个评审 coverage.json），5 个按 default_path/unsupported_ext 排除后人工全文核验。发现 F4——env 助手的 os/strings 被追加进项目 import 组，两条 env 测试被放在下载隔离用例文件里，gofmt 与 go vet 都不会报；已归位到 stdlib 组与 agent_browser_service_test.go，行为与断言强度不变。同时更正 F2：同分支 584a41d9 已实现 CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES 并在三个组合根接入，原记录的留作后续只对当时的提交成立"
   ],
   "summary": {
-    "total_git_changed_files": 10,
-    "review_scope_files": 7,
-    "ocr_selected_production": 4,
+    "total_git_changed_files": 12,
+    "review_scope_files": 8,
+    "ocr_selected_production": 5,
     "manually_added_tests": 2,
     "docs_verified_by_primary": 1,
-    "review_metadata_excluded_count": 2,
+    "review_metadata_excluded_count": 4,
     "unread_in_scope": 0,
     "coverage_rate": 1.0
   },
@@ -28,7 +31,7 @@
     { "path": "internal/app/run_runtime.go", "coverage": "full", "reviewer": "primary_and_delegate" },
     { "path": "internal/desktop/control_plane.go", "coverage": "full", "reviewer": "primary_and_delegate" },
     { "path": "web/src/v2/components/agent-browser.tsx", "coverage": "full", "reviewer": "primary_and_delegate" },
-    { "path": "internal/application/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_service_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
     { "path": "web/src/v2/components/agent-browser.test.tsx", "coverage": "full", "reviewer": "primary_and_delegate" },
     { "path": "docs/usage.md", "coverage": "full", "reviewer": "primary" }
   ]
