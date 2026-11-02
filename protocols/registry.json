@@ -1721,6 +1721,7 @@
       "active_identifiers": [
         "agent-code-tools.v1",
         "agent_browser_close.v1",
+        "agent_browser_download_release.v1",
         "agent_browser_screencast.v1",
         "agent_browser_status.v1",
         "agent_graph.v1",

@@ -2032,6 +2032,8 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"plan_delivery_control.v1"}`
 				} else if strings.HasPrefix(spec.Path, ChatGPTAuthPath+"/") {
 					body = `{"version":"chatgpt_auth.v1","confirm":true}`
+				} else if spec.Path == AgentBrowserDownloadReleasePathTemplate {
+					body = `{"version":"agent_browser_download_release.v1","operator":"openapi-live-operator"}`
 				} else if spec.Path != RunExecutionProfileControlPathTemplate {
 					attemptID := fixture.checkpoint.AttemptID
 					modelAttempt := 1
