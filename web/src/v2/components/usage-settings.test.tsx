@@ -155,24 +155,53 @@ it("exports the loaded usage as CSV with totals, day, model, and session rows", 
   const rows = csv.replace(/\r\n$/u, "").split("\r\n");
   expect(rows).toHaveLength(5);
   const header = rows[0].split(",");
-  expect(header).toHaveLength(20);
+  expect(header).toHaveLength(21);
   expect(header.slice(0, 8)).toEqual(["kind", "date", "provider", "model", "thread_id", "title", "last_activity_at", "input_tokens"]);
+  expect(header.slice(13, 16)).toEqual(["usage_reported_calls", "cache_usage_reported_calls", "unassigned_calls"]);
+  for (const row of rows) expect(row.split(",")).toHaveLength(21);
   const totalsRow = rows[1].split(",");
   expect(totalsRow[0]).toBe("totals");
   expect(totalsRow.slice(1, 7)).toEqual(["", "", "", "", "", ""]);
-  expect(totalsRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
-  expect(totalsRow.slice(14)).toEqual(["1", "USD", "0.125000", "2", "1", "1"]);
+  expect(totalsRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+  expect(totalsRow.slice(15)).toEqual(["1", "USD", "0.125000", "2", "1", "1"]);
   const dayRow = rows[2].split(",");
   expect(dayRow.slice(0, 2)).toEqual(["day", "2026-10-19"]);
   expect(dayRow.slice(2, 7)).toEqual(["", "", "", "", ""]);
-  expect(dayRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
-  expect(dayRow.slice(14)).toEqual(["", "", "", "", "", ""]);
+  expect(dayRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+  expect(dayRow.slice(15)).toEqual(["", "", "", "", "", ""]);
   const modelRow = rows[3].split(",");
   expect(modelRow.slice(0, 7)).toEqual(["model", "", "test-provider", "test-model", "", "", ""]);
-  expect(modelRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
+  expect(modelRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
   const sessionRow = rows[4].split(",");
   expect(sessionRow.slice(0, 7)).toEqual(["session", "", "", "", "thread-a", "修复设置布局", "2026-10-19T04:00:00Z"]);
-  expect(sessionRow.slice(7, 14)).toEqual(["1200", "300", "800", "100", "1500", "4", "3"]);
+  expect(sessionRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+});
+
+it("neutralizes spreadsheet formulas hiding in conversation titles and model names", async () => {
+  vi.mocked(downloadTextFile).mockClear();
+  setup(vi.fn().mockResolvedValue({ ...data,
+    models: [{ provider: "=1+1", model: "@SUM(A1)", usage: totals }],
+    recent_sessions: [
+      { thread_id: "thread-1", title: "=HYPERLINK(\"http://evil\",1)", last_activity_at: "2026-10-19T04:00:00Z", usage: totals },
+      { thread_id: "thread-2", title: "-2+3", last_activity_at: "2026-10-19T05:00:00Z", usage: totals },
+      { thread_id: "thread-3", title: "\t=cmd|'/C calc'!A0", last_activity_at: "2026-10-19T06:00:00Z", usage: totals },
+      { thread_id: "thread-4", title: "= 1+1", last_activity_at: "2026-10-19T07:00:00Z", usage: totals },
+      { thread_id: "thread-5", title: "100%= 进度", last_activity_at: "2026-10-19T08:00:00Z", usage: totals }] }));
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  const csv = vi.mocked(downloadTextFile).mock.calls[0][2] as string;
+  // Every trigger-starting cell gains the text-forcing apostrophe, and quoting
+  // still applies on top of it when the value carries a comma or a quote.
+  expect(csv).toContain('"\'=HYPERLINK(""http://evil"",1)"');
+  expect(csv).toContain("'@SUM(A1)");
+  expect(csv).toContain("'=1+1");
+  expect(csv).toContain("'-2+3");
+  expect(csv).toContain("'\t=cmd|'/C calc'!A0");
+  expect(csv).toContain("'= 1+1");
+  // A trigger that is not at the start is ordinary text and stays untouched.
+  expect(csv).toContain("100%= 进度");
+  // Numeric cells never take the prefix.
+  expect(csv).toContain("1200,300,800,100,1500,4,3,2");
 });
 
 it("escapes CSV special characters in conversation titles", async () => {

@@ -47,3 +47,27 @@ real runs.
 - `npm run build` — pass.
 - Manual: real download produced `universal-code-usage-30d-<start>_<end>.csv`
   opening cleanly in a spreadsheet with 20 aligned columns.
+
+## Follow-up on review (2026-11-02)
+
+Review found two defects in the exported file, both fixed in the follow-up commit;
+the screenshots above are unaffected because the button and panel did not change.
+
+- Cells that begin with `=`, `+`, `-`, or `@` — optionally behind whitespace or a
+  control character — are evaluated by spreadsheet software on open, so a session
+  titled `=HYPERLINK(...)` executed rather than displayed. `csvField` now prefixes
+  such cells with the text-forcing apostrophe before RFC4180 quoting applies.
+  Quoting alone was never a mitigation: it governs parsing, not evaluation.
+- `cache_usage_reported_calls` was in the loaded projection and in the panel's
+  coverage note but missing from the export, which left `cache_read_tokens` and
+  `cache_creation_tokens` unexplainable (provider silent vs. provider reported
+  zero). The header is now 21 columns and every row fills the coverage cell.
+
+Trade-off stated plainly: the apostrophe is what Excel and Google Sheets honour on
+import, and a spreadsheet's own re-save drops it; a byte-exact reader such as
+pandas sees the prefix as part of the value. That is the cost of exporting one file
+for both audiences, and titles beginning with `-` or `+` innocuously take it too.
+The pre-existing manual observation above ("20 aligned columns", opened cleanly)
+was made against the pre-fix export; the 21-column layout, the coverage cell, and
+the formula neutralization are covered by unit tests, and were not re-opened in
+Excel, Sheets, or LibreOffice on this host.

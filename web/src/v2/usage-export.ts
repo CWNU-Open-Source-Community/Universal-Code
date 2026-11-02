@@ -9,13 +9,22 @@ type UsageStatistics = components["schemas"]["UsageStatistics"];
 const usageCsvHeader = [
   "kind", "date", "provider", "model", "thread_id", "title", "last_activity_at",
   "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
-  "total_tokens", "calls", "usage_reported_calls", "unassigned_calls",
+  "total_tokens", "calls", "usage_reported_calls", "cache_usage_reported_calls",
+  "unassigned_calls",
   "cost_currency", "known_cost_usd", "priced_calls", "unpriced_calls", "untracked_calls",
 ] as const;
 
+// A cell whose text starts with a formula trigger is evaluated by Excel, Sheets
+// and LibreOffice when the CSV is opened, so a session titled "=HYPERLINK(...)"
+// executes on read. RFC4180 quoting does not help: it governs parsing, not
+// evaluation. A leading apostrophe forces the cell to text on import; numeric
+// cells are never triggers, and a title that legitimately starts with "-" or
+// "+" takes the same prefix as a hostile one.
+const csvFormulaTrigger = /^[\s\u0000-\u001F\u007F]*[=+\-@]/u;
+
 function csvField(value: string | number): string {
-  const text = String(value);
-  return /[",\r\n]/u.test(text) ? `"${text.replace(/"/gu, '""')}"` : text;
+  const raw = typeof value === "string" && csvFormulaTrigger.test(value) ? `'${value}` : String(value);
+  return /[",\r\n]/u.test(raw) ? `"${raw.replace(/"/gu, '""')}"` : raw;
 }
 
 function csvRow(values: readonly (string | number)[]): string {
@@ -24,7 +33,7 @@ function csvRow(values: readonly (string | number)[]): string {
 
 function tokenColumns(usage: UsageStatistics["totals"]): (string | number)[] {
   return [usage.input_tokens, usage.output_tokens, usage.cache_read_tokens, usage.cache_creation_tokens,
-    usage.total_tokens, usage.calls, usage.usage_reported_calls];
+    usage.total_tokens, usage.calls, usage.usage_reported_calls, usage.cache_usage_reported_calls];
 }
 
 const emptyCost = (cost: UsageStatistics["cost"]): (string | number)[] =>
