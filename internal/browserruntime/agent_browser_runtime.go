@@ -36,6 +36,10 @@ type AgentBrowserRuntime struct {
 	epoch                                     uint64
 	refs                                      map[string]agentBrowserRef
 	screencast                                *agentBrowserScreencastPump
+	browserContextID                          string
+	downloadPath                              string
+	downloads                                 map[string]*AgentBrowserDownloadReceipt
+	downloadOrder                             []string
 }
 
 func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
@@ -48,7 +52,11 @@ func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
 	if !validRestrictedCDPToken(bc.ID) {
 		return ErrBrowserRuntimeBoundary
 	}
-	if err := r.cdp.call(ctx, "", "Browser.setDownloadBehavior", map[string]any{"behavior": "deny", "browserContextId": bc.ID}, nil); err != nil {
+	r.mu.Lock()
+	r.browserContextID = bc.ID
+	r.downloads = map[string]*AgentBrowserDownloadReceipt{}
+	r.mu.Unlock()
+	if err := r.startDownloadQuarantine(ctx); err != nil {
 		return err
 	}
 	var target struct {
@@ -99,6 +107,15 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		var detached struct{ SessionID string }
 		if json.Unmarshal(event.Params, &detached) == nil && detached.SessionID == r.session && r.session != "" {
 			r.cancel()
+		}
+		return
+	}
+	// Download events are pushed on the browser-level session that enabled
+	// them; Chromium may also deliver them on the owning target session.
+	// Either way they are consumed here and never reach the target switch.
+	if event.Method == "Browser.downloadWillBegin" || event.Method == "Browser.downloadProgress" {
+		if event.SessionID == "" || event.SessionID == r.session {
+			r.handleDownloadEventLocked(event)
 		}
 		return
 	}
@@ -267,7 +284,7 @@ func (r *AgentBrowserRuntime) Status() AgentBrowserStatus {
 	if r.life.Err() != nil && state != "closed" && state != "cleanup_pending" {
 		state = "closing"
 	}
-	return AgentBrowserStatus{Version: AgentBrowserProtocolVersion, SessionID: r.request.Authority.SessionID, Generation: r.request.Authority.Generation, Product: r.product, State: state, CanonicalURL: r.currentURL, DocumentEpoch: r.epoch, SupportedActions: []string{"navigate", "snapshot", "click", "type", "screenshot", "scroll", "key"}}
+	return AgentBrowserStatus{Version: AgentBrowserProtocolVersion, SessionID: r.request.Authority.SessionID, Generation: r.request.Authority.Generation, Product: r.product, State: state, CanonicalURL: r.currentURL, DocumentEpoch: r.epoch, SupportedActions: []string{"navigate", "snapshot", "click", "type", "screenshot", "scroll", "key"}, Downloads: r.downloadReceiptsLocked()}
 }
 
 // Done signals invalidation and the end of the first cleanup attempt. Inspect
