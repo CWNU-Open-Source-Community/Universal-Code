@@ -387,7 +387,10 @@ describe("V2 custom Provider settings", () => {
     expect(manual).toHaveValue("");
   });
 
-  it("refuses an over-limit model merge without silently truncating the draft or selection", async () => {
+  // The over-limit fixture renders all 128 model policies plus image selectors;
+  // it runs close to the 5s default on a loaded CI worker, so give it headroom
+  // instead of racing the global timeout.
+  it("refuses an over-limit model merge without silently truncating the draft or selection", { timeout: 15000 }, async () => {
     const models = Array.from({ length: 128 }, (_, index) => `model-${index}`);
     const controls = createClient([provider({ models, default_model: models[0] })]);
     controls.discoverProviderModels.mockResolvedValue({ models: [{ id: "one-too-many" }], truncated: false });
