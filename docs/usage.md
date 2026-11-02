@@ -97,6 +97,35 @@ false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
 
+### CLI thread metadata and search / CLI 线程元数据与搜索
+
+The Desktop chat list can rename and pin conversations; the CLI now exposes the same
+thread metadata plus title search for headless work, against the identical store
+semantics (no authority, deleted Threads stay not-found):
+
+```powershell
+cyberagent thread rename <thread-id> "Parser refactoring plan"
+cyberagent thread pin <thread-id>
+cyberagent thread pin <thread-id> --pinned false
+cyberagent thread list --title-query "parser refactoring" --pinned true
+cyberagent thread list --json
+```
+
+`--title-query` is an ASCII case-insensitive literal substring match (other Unicode
+characters compare exactly, at most 256 characters); `--pinned true|false` filters on
+the pin state, and the text listing shows `pinned=` per row. `thread rename` rejects
+empty titles, control characters, and titles over 4096 characters; a missing Thread
+returns the standard not-found error. Both commands print the new `version`, which
+never decreases and increases on every actual change, so identical retries are safe.
+
+桌面聊天列表可以重命名与置顶会话；CLI 现在通过同一套存储语义暴露相同的线程元数据
+与标题搜索，供无人值守流程使用（不授予任何权限，已删除线程仍按不存在处理）。
+`--title-query` 为 ASCII 大小写不敏感的字面子串匹配（其余 Unicode 字符按精确比较，
+最长 256 字符）；`--pinned true|false` 按置顶状态过滤，文本列表每行带 `pinned=` 标记。
+`thread rename` 拒绝空标题、控制字符与超过 4096 字符的标题；线程不存在返回标准
+not-found 错误。两个命令都会输出新的 `version`——它单调不减、每次实际变更都会递增，
+因此同样的重试是安全的。
+
 ### 补充消息与排队 / Follow-up messages and queue
 
 任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击

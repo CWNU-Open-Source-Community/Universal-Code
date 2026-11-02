@@ -37,6 +37,10 @@ func (a *App) threadCommand(ctx context.Context, args []string) error {
 		return a.threadCompactions(ctx, args[1:])
 	case "history":
 		return a.threadHistory(ctx, service, args[1:])
+	case "rename":
+		return a.threadRename(ctx, args[1:])
+	case "pin":
+		return a.threadPin(ctx, args[1:])
 	case "archive", "restore", "delete":
 		return a.threadLifecycle(ctx, service, args[0], args[1:])
 	case "export":
@@ -128,22 +132,37 @@ func (a *App) threadList(ctx context.Context, service *application.ThreadService
 	fs := newFlagSet("thread list", a.errOut)
 	statusValue := fs.String("status", "", "Thread status")
 	includeDeleted := fs.Bool("include-deleted", false, "include soft-deleted Threads")
+	titleQuery := fs.String("title-query", "", "case-insensitive literal title substring")
+	pinnedValue := fs.String("pinned", "", "filter by pinned state: true|false")
 	limit := fs.Int("limit", 100, "maximum rows")
 	jsonOutput := fs.Bool("json", false, "emit JSON")
 	if err := fs.Parse(reorderFlags(args, map[string]bool{
-		"status": true, "include-deleted": false, "limit": true, "json": false,
+		"status": true, "include-deleted": false, "title-query": true,
+		"pinned": true, "limit": true, "json": false,
 	})); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 || *limit <= 0 || *limit > 1000 {
-		return errors.New("usage: cyberagent thread list [--status active|archived|deleted] [--include-deleted] [--limit <1..1000>] [--json]")
+		return errors.New("usage: cyberagent thread list [--status active|archived|deleted] [--include-deleted] [--title-query <text>] [--pinned true|false] [--limit <1..1000>] [--json]")
 	}
 	status := domain.ThreadStatus(strings.TrimSpace(*statusValue))
 	if status != "" && !domain.ValidThreadStatus(status) {
 		return fmt.Errorf("invalid Thread status %q", status)
 	}
-	items, err := service.List(ctx, domain.ThreadFilter{Status: status,
-		IncludeDeleted: *includeDeleted, Limit: *limit}, time.Time{}, "")
+	pinned := strings.TrimSpace(*pinnedValue)
+	if pinned != "" && pinned != "true" && pinned != "false" {
+		return fmt.Errorf("invalid pinned filter %q: use true or false", *pinnedValue)
+	}
+	filter := domain.ThreadFilter{Status: status, IncludeDeleted: *includeDeleted,
+		Limit: *limit}
+	if strings.TrimSpace(*titleQuery) != "" {
+		filter.TitleQuery = *titleQuery
+	}
+	if pinned != "" {
+		value := pinned == "true"
+		filter.Pinned = &value
+	}
+	items, err := service.List(ctx, filter, time.Time{}, "")
 	if err != nil {
 		return err
 	}
@@ -155,8 +174,8 @@ func (a *App) threadList(ctx context.Context, service *application.ThreadService
 		return nil
 	}
 	for _, item := range items {
-		fmt.Fprintf(a.out, "%s\t%s\tlast=%s\tactive=%s\t%s\n", item.ID,
-			item.Status, item.LastRunID, item.ActiveRunID, item.Title)
+		fmt.Fprintf(a.out, "%s\t%s\tlast=%s\tactive=%s\tpinned=%t\t%s\n", item.ID,
+			item.Status, item.LastRunID, item.ActiveRunID, item.Pinned, item.Title)
 	}
 	return nil
 }
@@ -258,6 +277,56 @@ func (a *App) threadHistory(ctx context.Context, service *application.ThreadServ
 			message.SessionID, message.ID, message.SourceKind, message.Status,
 			message.Role, message.Content)
 	}
+	return nil
+}
+
+func (a *App) threadRename(ctx context.Context, args []string) error {
+	fs := newFlagSet("thread rename", a.errOut)
+	jsonOutput := fs.Bool("json", false, "emit JSON")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{"json": false})); err != nil {
+		return err
+	}
+	if fs.NArg() < 2 {
+		return errors.New(`usage: cyberagent thread rename <thread-id> "new title" [--json]`)
+	}
+	threadRecord, err := a.store.RenameThread(ctx, fs.Arg(0),
+		strings.Join(fs.Args()[1:], " "))
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return writeContextJSON(a, threadRecord)
+	}
+	fmt.Fprintf(a.out, "thread: %s\ntitle: %s\nversion: %d\ncapability_grant: false\n",
+		threadRecord.ID, threadRecord.Title, threadRecord.Version)
+	return nil
+}
+
+func (a *App) threadPin(ctx context.Context, args []string) error {
+	fs := newFlagSet("thread pin", a.errOut)
+	pinnedValue := fs.String("pinned", "true", "pin state: true|false")
+	jsonOutput := fs.Bool("json", false, "emit JSON")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"pinned": true, "json": false,
+	})); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: cyberagent thread pin <thread-id> [--pinned true|false] [--json]")
+	}
+	pinned := strings.TrimSpace(*pinnedValue)
+	if pinned != "true" && pinned != "false" {
+		return fmt.Errorf("invalid pinned state %q: use true or false", *pinnedValue)
+	}
+	threadRecord, err := a.store.PinThread(ctx, fs.Arg(0), pinned == "true")
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return writeContextJSON(a, threadRecord)
+	}
+	fmt.Fprintf(a.out, "thread: %s\npinned: %t\nversion: %d\ncapability_grant: false\n",
+		threadRecord.ID, threadRecord.Pinned, threadRecord.Version)
 	return nil
 }
 
