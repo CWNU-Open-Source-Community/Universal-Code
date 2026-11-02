@@ -383,6 +383,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent model list|set")
 	fmt.Fprintln(a.out, "  cyberagent skill list|show|validate|package|import|installed|remove|candidate|candidates|select|selection|select-external|external-selection")
 	fmt.Fprintln(a.out, "  cyberagent context compact|show|instructions|memory")
+	fmt.Fprintln(a.out, "  cyberagent context instructions scaffold --workspace <name> [--target <dir>] [--print]  (writes AGENTS.md only when absent; never overwrites / 仅在缺失时写入 AGENTS.md，绝不覆盖)")
 	fmt.Fprintln(a.out, "  cyberagent context memory create|list|show|edit|enable|disable|delete|export")
 	fmt.Fprintln(a.out, "  cyberagent thread create|list|show|send|history|archive|restore|delete|export")
 	fmt.Fprintln(a.out, "  cyberagent session create|list|send|history|tree|checkpoint|fork|resume")

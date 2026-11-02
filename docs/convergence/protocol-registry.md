@@ -35,7 +35,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [mcp-oauth-credentials](#mcp-oauth-credentials) | `internal-durable` | MCP OAuth and credential maintainers | 1 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 65 | true |
-| [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 10 | true |
+| [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 11 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
 | [release-and-packaging-contracts](#release-and-packaging-contracts) | `external-durable` | Desktop release and packaging maintainers | 4 | true |
@@ -1421,7 +1421,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `project-instruction-dispatch-reader` (`v1`, active) at `internal/application/project_instruction_delivery.go`
   - `project-instruction-history-reader` (`v1`, active) at `internal/store/run_instruction_snapshots.go`
 
-<details><summary>10 active identifiers</summary>
+<details><summary>11 active identifiers</summary>
 
 - `prayu.locale.v1`
 - `project-hook-file-version.v1`
@@ -1432,6 +1432,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `project_config.v1`
 - `project_instruction_delivery.v1`
 - `project_instruction_guidance.v1`
+- `project_instruction_scaffold.v1`
 - `project_instruction_snapshot.v1`
 
 </details>

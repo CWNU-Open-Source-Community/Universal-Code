@@ -2388,6 +2388,7 @@
         "project_config.v1",
         "project_instruction_delivery.v1",
         "project_instruction_guidance.v1",
+        "project_instruction_scaffold.v1",
         "project_instruction_snapshot.v1"
       ],
       "retired_identifiers": [
