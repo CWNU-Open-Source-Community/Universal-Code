@@ -149,7 +149,8 @@
         "browser_sensitive_intent.v1",
         "browser_snapshot.v2",
         "browser_status.v2",
-        "browser_type.v2"
+        "browser_type.v2",
+        "browser_upload.v2"
       ],
       "retired_identifiers": []
     },
