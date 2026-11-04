@@ -41,6 +41,38 @@
         }
       }
     },
+    "browser_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Operator-narrowed browser session budget. Zero or absent fields keep the builtin profile value; present values may only narrow it (a widening value fails when the browser session plan is built). At least one positive bound is required.",
+      "properties": {
+        "max_origins": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_url_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_response_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_download_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "minProperties": 1
+    },
     "exclude_paths": {
       "description": "Pinned root-relative file-tool exclusions. Supports *, ?, character classes and whole ** segments; matching directories excludes descendants. Not an OS command sandbox.",
       "type": "array",

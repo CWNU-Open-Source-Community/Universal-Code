@@ -1,6 +1,9 @@
 package browserruntime
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSafeWebSessionPlanIsIsolatedAndNonAuthorizing(t *testing.T) {
 	plan, err := BuildSessionPlan(NewSessionPlanRequest{
@@ -173,4 +176,111 @@ func FuzzProxyConfiguration(f *testing.F) {
 			t.Fatalf("accepted proxy failed reconstruction: %v", err)
 		}
 	})
+}
+
+func TestSessionPlanLimitsOverrideNarrowsAndEntersFingerprint(t *testing.T) {
+	base, err := BuildSessionPlan(NewSessionPlanRequest{
+		SessionID: "browser-session-one", RunID: "run-one", WorkspaceID: "ws-demo",
+		ProfileID: ProfileSafeWeb, Targets: []string{"https://example.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	narrowed, err := BuildSessionPlan(NewSessionPlanRequest{
+		SessionID: "browser-session-one", RunID: "run-one", WorkspaceID: "ws-demo",
+		ProfileID: ProfileSafeWeb, Targets: []string{"https://example.com"},
+		LimitsOverride: &ProfileLimits{MaxRequests: 200, TimeoutMS: 180000},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := narrowed.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if narrowed.Limits.MaxRequests != 200 || narrowed.Limits.TimeoutMS != 180000 {
+		t.Fatalf("narrowed fields not applied: %+v", narrowed.Limits)
+	}
+	if narrowed.Limits.MaxOrigins != base.Limits.MaxOrigins ||
+		narrowed.Limits.MaxResponseBytes != base.Limits.MaxResponseBytes ||
+		narrowed.Limits.MaxDownloadBytes != base.Limits.MaxDownloadBytes ||
+		narrowed.Limits.MaxURLBytes != base.Limits.MaxURLBytes {
+		t.Fatalf("unset override fields must keep profile values: %+v", narrowed.Limits)
+	}
+	// The fingerprint covers the whole plan (limits and override); the
+	// profile token binds the disposable profile identity and intentionally
+	// stays the same — the budget does not change the profile contents.
+	if narrowed.Fingerprint == base.Fingerprint {
+		t.Fatal("override must change the plan fingerprint")
+	}
+	if narrowed.ProfileToken != base.ProfileToken {
+		t.Fatal("profile token must not depend on the budget override")
+	}
+	if narrowed.LimitsOverride == nil || narrowed.LimitsOverride.MaxRequests != 200 {
+		t.Fatalf("override not carried on the plan: %+v", narrowed.LimitsOverride)
+	}
+
+	// Zero-field overrides keep every profile value.
+	noOp, err := BuildSessionPlan(NewSessionPlanRequest{
+		SessionID: "browser-session-one", RunID: "run-one", WorkspaceID: "ws-demo",
+		ProfileID: ProfileSafeWeb, Targets: []string{"https://example.com"},
+		LimitsOverride: &ProfileLimits{},
+	})
+	if err != nil || noOp.Limits != base.Limits {
+		t.Fatalf("zero-field override: %v %+v", err, noOp.Limits)
+	}
+}
+
+func TestSessionPlanLimitsOverrideRejectsWideningAndNegative(t *testing.T) {
+	base := BuiltinRegistry()
+	profile, ok := base.Lookup(ProfileSafeWeb)
+	if !ok {
+		t.Fatal("safe-web profile missing")
+	}
+	cases := []struct {
+		name    string
+		version ProfileLimits
+		wantErr string
+	}{
+		{"widen requests", ProfileLimits{MaxRequests: profile.Limits.MaxRequests + 1}, "must narrow the profile ceiling"},
+		{"widen timeout", ProfileLimits{TimeoutMS: profile.Limits.TimeoutMS + 1}, "must narrow the profile ceiling"},
+		{"negative origins", ProfileLimits{MaxOrigins: -1}, "cannot be negative"},
+	}
+	for _, testCase := range cases {
+		_, err := BuildSessionPlan(NewSessionPlanRequest{
+			SessionID: "browser-session-one", RunID: "run-one", WorkspaceID: "ws-demo",
+			ProfileID: ProfileSafeWeb, Targets: []string{"https://example.com"},
+			LimitsOverride: &testCase.version,
+		})
+		if err == nil || !strings.Contains(err.Error(), testCase.wantErr) {
+			t.Fatalf("%s: err=%v want %q", testCase.name, err, testCase.wantErr)
+		}
+	}
+}
+
+func TestSessionPlanLimitsOverrideTamperFailsClosed(t *testing.T) {
+	narrowed, err := BuildSessionPlan(NewSessionPlanRequest{
+		SessionID: "browser-session-one", RunID: "run-one", WorkspaceID: "ws-demo",
+		ProfileID: ProfileSafeWeb, Targets: []string{"https://example.com"},
+		LimitsOverride: &ProfileLimits{MaxRequests: 200},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, ok := BuiltinRegistry().Lookup(ProfileSafeWeb)
+	if !ok {
+		t.Fatal("safe-web profile missing")
+	}
+	// A tamperer widens the limits back to the profile values and re-signs the
+	// fingerprint; the verifier must still catch the mismatch against the
+	// narrowing the override authorizes.
+	tampered := narrowed
+	tampered.Limits = profile.Limits
+	tampered.Fingerprint, err = sessionPlanFingerprint(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tampered.Validate(); err == nil ||
+		!strings.Contains(err.Error(), "browser session controls do not match") {
+		t.Fatalf("widened tamper accepted: %v", err)
+	}
 }

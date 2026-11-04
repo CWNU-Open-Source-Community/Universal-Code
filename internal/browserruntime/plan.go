@@ -81,18 +81,27 @@ type SessionIsolation struct {
 }
 
 type SessionPlan struct {
-	ProtocolVersion              string           `json:"protocol_version"`
-	SessionID                    string           `json:"session_id"`
-	RunID                        string           `json:"run_id"`
-	WorkspaceID                  string           `json:"workspace_id"`
-	ProfileID                    ProfileID        `json:"profile_id"`
-	ProfileFingerprint           string           `json:"profile_fingerprint"`
-	ProfileToken                 string           `json:"profile_token"`
-	Scope                        TargetScope      `json:"scope"`
-	Proxy                        ProxyConfig      `json:"proxy"`
-	Features                     PlannedFeatures  `json:"features"`
-	Isolation                    SessionIsolation `json:"isolation"`
-	Limits                       ProfileLimits    `json:"limits"`
+	ProtocolVersion    string           `json:"protocol_version"`
+	SessionID          string           `json:"session_id"`
+	RunID              string           `json:"run_id"`
+	WorkspaceID        string           `json:"workspace_id"`
+	ProfileID          ProfileID        `json:"profile_id"`
+	ProfileFingerprint string           `json:"profile_fingerprint"`
+	ProfileToken       string           `json:"profile_token"`
+	Scope              TargetScope      `json:"scope"`
+	Proxy              ProxyConfig      `json:"proxy"`
+	Features           PlannedFeatures  `json:"features"`
+	Isolation          SessionIsolation `json:"isolation"`
+	Limits             ProfileLimits    `json:"limits"`
+	// LimitsOverride is the operator-narrowed ceiling from the pinned project
+	// config, when one was supplied. It is part of the fingerprint; the
+	// verifier recomputes the narrowed limits from it and the profile. The
+	// fingerprint is an unkeyed digest, so a tamperer who rewrites both the
+	// override and the limits can re-sign them — but only back to the builtin
+	// profile ceiling: narrowing-only validation never accepts a wider value,
+	// and the plan is validated when it is built, not read back from
+	// untrusted storage.
+	LimitsOverride               *ProfileLimits   `json:"limits_override,omitempty"`
 	EvidenceClass                string           `json:"evidence_class"`
 	ApprovalRequired             bool             `json:"approval_required"`
 	InstrumentedRiskAcknowledged bool             `json:"instrumented_risk_acknowledged"`
@@ -113,6 +122,7 @@ type NewSessionPlanRequest struct {
 	ProxyCredentialRef           string
 	Features                     FeatureRequest
 	InstrumentedRiskAcknowledged bool
+	LimitsOverride               *ProfileLimits
 }
 
 func NewProxyConfig(rawURL string, credentialRef string) (ProxyConfig, error) {
@@ -244,6 +254,13 @@ func BuildSessionPlan(request NewSessionPlanRequest) (SessionPlan, error) {
 	if err != nil {
 		return SessionPlan{}, err
 	}
+	limits := profile.Limits
+	if request.LimitsOverride != nil {
+		if err := validateLimitsOverride(profile.Limits, *request.LimitsOverride); err != nil {
+			return SessionPlan{}, err
+		}
+		limits = narrowProfileLimits(profile.Limits, *request.LimitsOverride)
+	}
 	profileFingerprint, err := ProfileFingerprint(profile)
 	if err != nil {
 		return SessionPlan{}, err
@@ -256,8 +273,9 @@ func BuildSessionPlan(request NewSessionPlanRequest) (SessionPlan, error) {
 		ProtocolVersion: SessionPlanProtocolVersion, SessionID: request.SessionID,
 		RunID: request.RunID, WorkspaceID: request.WorkspaceID, ProfileID: profile.ID,
 		ProfileFingerprint: profileFingerprint, Scope: scope, Proxy: proxy, Features: features,
-		Isolation: fixedSessionIsolation(), Limits: profile.Limits,
-		EvidenceClass: profile.EvidenceClass, ApprovalRequired: profile.ApprovalRequired,
+		Isolation: fixedSessionIsolation(), Limits: limits,
+		LimitsOverride: request.LimitsOverride,
+		EvidenceClass:  profile.EvidenceClass, ApprovalRequired: profile.ApprovalRequired,
 		InstrumentedRiskAcknowledged: request.InstrumentedRiskAcknowledged,
 		RequiredBackend:              requiredBackend, StartBlocked: true,
 		BlockingGates: blockingGates(profile),
@@ -309,7 +327,14 @@ func (plan SessionPlan) Validate() error {
 	if profile.Isolation.ContainerRequired {
 		expectedBackend = "containerized_browser_worker"
 	}
-	if plan.Limits != profile.Limits || plan.EvidenceClass != profile.EvidenceClass ||
+	expectedLimits := profile.Limits
+	if plan.LimitsOverride != nil {
+		if err := validateLimitsOverride(profile.Limits, *plan.LimitsOverride); err != nil {
+			return err
+		}
+		expectedLimits = narrowProfileLimits(profile.Limits, *plan.LimitsOverride)
+	}
+	if plan.Limits != expectedLimits || plan.EvidenceClass != profile.EvidenceClass ||
 		plan.ApprovalRequired != profile.ApprovalRequired ||
 		plan.InstrumentedRiskAcknowledged != (plan.ProfileID == ProfileCTFInstrumented) ||
 		plan.RequiredBackend != expectedBackend {
@@ -388,6 +413,62 @@ func blockingGates(profile ProfileDescriptor) []string {
 	}
 	sort.Strings(gates)
 	return gates
+}
+
+// narrowProfileLimits applies operator narrowing to the builtin profile
+// limits: every positive override field takes min(base, override); zero
+// fields keep the profile value. Narrowing-only is enforced by
+// validateLimitsOverride before this runs.
+func narrowProfileLimits(base, override ProfileLimits) ProfileLimits {
+	narrowed := base
+	if override.MaxOrigins > 0 && override.MaxOrigins < narrowed.MaxOrigins {
+		narrowed.MaxOrigins = override.MaxOrigins
+	}
+	if override.MaxURLBytes > 0 && override.MaxURLBytes < narrowed.MaxURLBytes {
+		narrowed.MaxURLBytes = override.MaxURLBytes
+	}
+	if override.MaxRequests > 0 && override.MaxRequests < narrowed.MaxRequests {
+		narrowed.MaxRequests = override.MaxRequests
+	}
+	if override.MaxResponseBytes > 0 && override.MaxResponseBytes < narrowed.MaxResponseBytes {
+		narrowed.MaxResponseBytes = override.MaxResponseBytes
+	}
+	if override.MaxDownloadBytes > 0 && override.MaxDownloadBytes < narrowed.MaxDownloadBytes {
+		narrowed.MaxDownloadBytes = override.MaxDownloadBytes
+	}
+	if override.TimeoutMS > 0 && override.TimeoutMS < narrowed.TimeoutMS {
+		narrowed.TimeoutMS = override.TimeoutMS
+	}
+	return narrowed
+}
+
+// validateLimitsOverride rejects negative fields and any field that would
+// widen the builtin profile ceiling; zero fields mean "keep the profile
+// value". A value exactly equal to the ceiling is accepted as a no-op —
+// unlike budget.max_turns, which requires a strictly lower bound — because
+// the browser ceiling is the profile itself and equal budgets neither widen
+// nor narrow anything.
+func validateLimitsOverride(base, override ProfileLimits) error {
+	fields := []struct {
+		name           string
+		override, base int
+	}{
+		{"max_origins", override.MaxOrigins, base.MaxOrigins},
+		{"max_url_bytes", override.MaxURLBytes, base.MaxURLBytes},
+		{"max_requests", override.MaxRequests, base.MaxRequests},
+		{"max_response_bytes", override.MaxResponseBytes, base.MaxResponseBytes},
+		{"max_download_bytes", override.MaxDownloadBytes, base.MaxDownloadBytes},
+		{"timeout_ms", override.TimeoutMS, base.TimeoutMS},
+	}
+	for _, field := range fields {
+		if field.override < 0 {
+			return fmt.Errorf("browser limits override %s cannot be negative", field.name)
+		}
+		if field.override > field.base {
+			return fmt.Errorf("browser limits override %s must narrow the profile ceiling (%d)", field.name, field.base)
+		}
+	}
+	return nil
 }
 
 func profileToken(plan SessionPlan) string {

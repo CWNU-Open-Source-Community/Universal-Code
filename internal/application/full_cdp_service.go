@@ -149,6 +149,7 @@ func (s *FullCDPService) Open(ctx context.Context,
 	session, err := browserruntime.BuildSessionPlan(browserruntime.NewSessionPlanRequest{
 		SessionID: run.SessionID, RunID: run.ID, WorkspaceID: mission.WorkspaceID,
 		ProfileID: browserruntime.ProfileCTFLab, Targets: []string{request.Target},
+		LimitsOverride: browserLimitsOverrideForRun(run),
 		Features: browserruntime.FeatureRequest{
 			InterceptRequests: true, ModifyRequests: true,
 			ReplayRequests: true, EditCookies: true,
