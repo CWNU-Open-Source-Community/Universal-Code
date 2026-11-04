@@ -67,18 +67,17 @@ func TestBuiltinSkillContentNeverNamesAnOperatorTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	labels := []toolgateway.ToolName{toolgateway.ReadFileTool, toolgateway.ListWorkspaceTool,
-		toolgateway.ReplaceFileTool, toolgateway.ScriptProcessTool}
+	labels := toolgateway.OperatorToolLabels()
 	for _, manifest := range registry.List("") {
 		content, err := fs.ReadFile(builtinFiles, path.Join("builtins", manifest.Name, manifest.ContentPath))
 		if err != nil {
 			t.Fatalf("built-in %s content: %v", manifest.Name, err)
 		}
 		for _, label := range labels {
-			if toolgateway.IsSupervisorTool(label) {
+			if toolgateway.IsSupervisorTool(toolgateway.ToolName(label)) {
 				continue
 			}
-			if strings.Contains(string(content), string(label)) {
+			if strings.Contains(string(content), label) {
 				t.Fatalf("built-in %s names %q, an operator tool no model catalog offers",
 					manifest.Name, label)
 			}

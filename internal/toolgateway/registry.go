@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 type ToolDefinition struct {
@@ -35,6 +36,29 @@ var registeredTools toolRegistry
 
 func init() {
 	registeredTools = buildToolRegistry()
+}
+
+// operatorToolDefinitions are valid gateway names, but are absent from model
+// catalogs. They are permission and workflow labels: manifests may depend on
+// them, and skill content must never name them as model-callable tools.
+var operatorToolDefinitions = []ToolDefinition{
+	{Name: ReadFileTool, Class: ClassWorkspaceRead, Approval: ApprovalAutomatic},
+	{Name: ListWorkspaceTool, Class: ClassWorkspaceRead, Approval: ApprovalAutomatic},
+	{Name: ShellTool, Class: ClassShell, Approval: ApprovalPerCall},
+	{Name: ReplaceFileTool, Class: ClassWorkspaceWrite, Approval: ApprovalPerCall},
+	{Name: ScriptProcessTool, Class: ClassProcess, Approval: ApprovalPerCall},
+}
+
+// OperatorToolLabels returns every operator-only gateway tool name. Skill
+// bodies and tests that must never (or do) name an operator tool derive their
+// lists here instead of hand-copying it.
+func OperatorToolLabels() []string {
+	labels := make([]string, 0, len(operatorToolDefinitions))
+	for _, definition := range operatorToolDefinitions {
+		labels = append(labels, string(definition.Name))
+	}
+	sort.Strings(labels)
+	return labels
 }
 
 func buildToolRegistry() toolRegistry {
@@ -187,13 +211,7 @@ func buildToolRegistry() toolRegistry {
 	}
 
 	// Operator tools are valid gateway names, but are absent from model catalogs.
-	for _, definition := range []ToolDefinition{
-		{Name: ReadFileTool, Class: ClassWorkspaceRead, Approval: ApprovalAutomatic},
-		{Name: ListWorkspaceTool, Class: ClassWorkspaceRead, Approval: ApprovalAutomatic},
-		{Name: ShellTool, Class: ClassShell, Approval: ApprovalPerCall},
-		{Name: ReplaceFileTool, Class: ClassWorkspaceWrite, Approval: ApprovalPerCall},
-		{Name: ScriptProcessTool, Class: ClassProcess, Approval: ApprovalPerCall},
-	} {
+	for _, definition := range operatorToolDefinitions {
 		registration := toolRegistration{definition: definition, valid: true,
 			typedAction: definition.Name != ShellTool}
 		switch definition.Name {
