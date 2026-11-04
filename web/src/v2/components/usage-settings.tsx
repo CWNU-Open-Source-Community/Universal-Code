@@ -58,7 +58,7 @@ export function UsageSettings({ client, threadID = "", onOpenThread }: { client:
           disabled={!data || query.isFetching || data.totals.calls === 0} onClick={() => {
             if (!data) return;
             try { downloadTextFile(usageCsvFilename(data), "text/csv;charset=utf-8", `\uFEFF${formatUsageCsv(data)}`); }
-            catch { /* A failed download is inert; the on-screen usage stays authoritative. */ }
+            catch (error) { console.warn("usage CSV export failed; the on-screen usage stays authoritative", error); }
           }}><Download aria-hidden="true" size={16} /></button>
         <button className="v2-usage-refresh" type="button" aria-label={t("刷新用量", "Refresh usage")}
           title={t("刷新用量", "Refresh usage")} disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw aria-hidden="true" size={16} /></button></div>
