@@ -470,10 +470,12 @@ func TestAgentBrowserUploadResolverContainment(t *testing.T) {
 	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "empty.bin"); err == nil {
 		t.Fatal("empty upload accepted")
 	}
-	if err := os.WriteFile(filepath.Join(root, "escape.txt"), []byte("outside"), 0o600); err != nil {
+	// The link points OUTSIDE the workspace root: resolving it must escape.
+	outsideDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outsideDir, "escape.txt"), []byte("outside"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(root, "escape.txt"), filepath.Join(root, "docs", "link.txt")); err != nil {
+	if err := os.Symlink(filepath.Join(outsideDir, "escape.txt"), filepath.Join(root, "docs", "link.txt")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "docs/link.txt"); err == nil {
