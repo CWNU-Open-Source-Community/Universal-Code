@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "6a10b7c8",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-upload-tool/README.md",
+    "docs/reviews/browser-upload-tool/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：上传四层实现（toolgateway/browserruntime/application/接口）、路径解析与真浏览器 E2E",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 external_write 效应强制、批次守卫、TOCTOU 如实化与白名单最小性专项"
+  ],
+  "summary": {
+    "total_git_changed_files": 12,
+    "review_scope_files": 10,
+    "ocr_selected_production": 7,
+    "manually_added_tests": 3,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/toolgateway/model.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/toolgateway/agent_browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/toolgateway/browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_transport.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_service.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/toolgateway/agent_browser_actions_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_runtime_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}
