@@ -14,7 +14,7 @@ vi.mock("../hooks/use-public-model-stream", () => ({ usePublicModelStream: () =>
 vi.mock("./components/permission-control", () => ({ V2PermissionControl: () => null }));
 vi.mock("./components/run-network-authority-control", () => ({ V2RunNetworkAuthorityControl: () => null }));
 vi.mock("./components/model-route-control", () => ({ V2ModelRouteControl: () => null }));
-// Inspector rendering has its own coverage. The shell, Conversation, Composer,
+// Execution records rendering has its own coverage. The shell, Conversation, Composer,
 // query-backed submission lifetime and original-key confirmation stay real here.
 vi.mock("./components/execution-records", () => ({ V2ExecutionRecords: () => <section aria-label="Execution records fixture" /> }));
 
