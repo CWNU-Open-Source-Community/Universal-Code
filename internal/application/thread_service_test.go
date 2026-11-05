@@ -363,3 +363,44 @@ func transitionRunForThreadTest(ctx context.Context, st *store.SQLiteStore,
 	}
 	return run, nil
 }
+
+func TestThreadSuccessorInheritsBrowserOrigins(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "cyberagent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	runs := application.NewRunService(st)
+	_, initial, err := runs.Create(ctx, application.CreateRunRequest{
+		Goal: "scoped browser thread", Profile: "review",
+		Budget: domain.Budget{MaxTurns: 4}, WorkspaceID: "workspace-thread-test",
+		BrowserOrigins: []string{"https://example.org"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial.Config.BrowserOrigins) != 1 || initial.Config.BrowserOrigins[0] != "https://example.org:443" {
+		t.Fatalf("creation must canonicalize the declaration: %+v", initial.Config.BrowserOrigins)
+	}
+	if initial, err = runs.Cancel(ctx, initial.ID); err != nil {
+		t.Fatal(err)
+	}
+	threadRecord, err := st.GetThreadByRun(ctx, initial.ID)
+	if err != nil || threadRecord.ID == "" {
+		t.Fatalf("thread projection=%#v err=%v", threadRecord, err)
+	}
+	result, err := application.NewThreadService(st).Submit(ctx, application.SubmitThreadMessageRequest{
+		Version: domain.ThreadMessageProtocolVersion, ThreadID: threadRecord.ID,
+		Content:      "continue the scoped preview",
+		OperationKey: "thread-successor-origins-0001",
+		RequestedBy:  "test_operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.SuccessorCreated || len(result.Run.Config.BrowserOrigins) != 1 ||
+		result.Run.Config.BrowserOrigins[0] != "https://example.org:443" {
+		t.Fatalf("successor must inherit the declared origins: %#v", result.Run.Config.BrowserOrigins)
+	}
+}

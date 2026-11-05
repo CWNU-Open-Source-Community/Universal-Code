@@ -1714,6 +1714,9 @@ func (a *App) runCreate(ctx context.Context, service *application.RunService, ar
 	var allowedTargets stringListFlag
 	fs.Var(&allowedTargets, "allow-target",
 		"public HTTPS host, wildcard suffix, or public_https; repeat for multiple values")
+	var browserOrigins stringListFlag
+	fs.Var(&browserOrigins, "browser-origin",
+		"exact scheme+host+port origin for this Run's scoped agent browser sessions (ADR 0195); repeat for multiple values, 1..8; applies to ask/auto runs")
 	maxTurns := fs.Int("max-turns", domain.DefaultBudget().MaxTurns, "maximum agent turns")
 	maxTokens := fs.Int64("max-tokens", 0, "maximum model tokens; zero means unset")
 	maxToolCalls := fs.Int64("max-tool-calls", domain.DefaultBudget().MaxToolCalls, "maximum tool calls; zero means unlimited")
@@ -1735,6 +1738,7 @@ func (a *App) runCreate(ctx context.Context, service *application.RunService, ar
 		"interactive":                 false,
 		"network":                     true,
 		"allow-target":                true,
+		"browser-origin":              true,
 		"max-turns":                   true,
 		"max-tokens":                  true,
 		"max-tool-calls":              true,
@@ -1815,6 +1819,7 @@ func (a *App) runCreate(ctx context.Context, service *application.RunService, ar
 		Interactive:    *interactive,
 		NetworkMode:    *networkMode,
 		AllowedTargets: append([]string(nil), allowedTargets.values...),
+		BrowserOrigins: append([]string(nil), browserOrigins.values...),
 		Budget: domain.Budget{
 			MaxTurns:       *maxTurns,
 			MaxTokens:      *maxTokens,

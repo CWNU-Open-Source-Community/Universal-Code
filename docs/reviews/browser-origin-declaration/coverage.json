@@ -1,0 +1,78 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "dc740504",
+  "reviewed_head": "feat/agent-browser-origin-scope staged diff (Phase 4 slice 1)",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-origin-declaration/README.md",
+    "docs/reviews/browser-origin-declaration/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：Phase 4 切片范围冻结、实现、全文件自审与测试",
+    "review_delegate：独立复审——九项专项核对（回归面/槽位生命周期/信任边界/继承矩阵/测试真实性），发现 7 项并全部处置"
+  ],
+  "summary": {
+    "total_git_changed_files": 11,
+    "review_scope_files": 11,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    {
+      "path": "internal/domain/run.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/application/run_service.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/application/agent_browser_service.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/application/agent_browser_readiness.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/application/thread_project_move.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_scope.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/app/run_command.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/application/agent_browser_service_test.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/application/thread_service_test.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/app/run_command_test.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/usage.md",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    }
+  ]
+}

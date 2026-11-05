@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
@@ -14,8 +15,23 @@ type AgentBrowserServiceReadiness interface {
 }
 
 func (s *CommandRuntimeService) CheckAgentBrowserService(ctx context.Context, a toolgateway.AgentBrowserCallAuthority, jobID, url string) (runner.CommandServiceReadiness, error) {
-	if s == nil || s.manager == nil || a.Validate() != nil || a.PermissionMode != domain.RunExecutionPermissionFull {
+	if s == nil || s.manager == nil || a.Validate() != nil {
 		return runner.CommandServiceReadiness{}, runner.ErrCommandRuntimeBoundary
+	}
+	scoped := len(a.DeclaredOrigins) > 0 &&
+		(a.PermissionMode == domain.RunExecutionPermissionAsk || a.PermissionMode == domain.RunExecutionPermissionAuto)
+	if !scoped {
+		// Unscoped service previews keep their Full-activation gate.
+		if a.PermissionMode != domain.RunExecutionPermissionFull {
+			return runner.CommandServiceReadiness{}, runner.ErrCommandRuntimeBoundary
+		}
+	} else {
+		// A scoped session may only preview a service inside its declared
+		// origins (ADR 0195); membership needs no resolution or live document.
+		scope, err := browserruntime.NewAgentBrowserOriginScope(a.DeclaredOrigins)
+		if err != nil || !scope.MatchesOrigin(url) {
+			return runner.CommandServiceReadiness{}, runner.ErrCommandRuntimeBoundary
+		}
 	}
 	job, err := s.store.GetCommandRuntimeJob(ctx, jobID)
 	if err != nil {

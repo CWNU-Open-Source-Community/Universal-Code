@@ -731,3 +731,94 @@ func TestAgentBrowserRetainedPermissionsNeverLaunch(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentBrowserScopedAskRunAdvertisesDeclaredOrigins(t *testing.T) {
+	service, st, _, supervisor, turn := newAgentBrowserFixture(t)
+	st.base.executionPermission.Mode = domain.RunExecutionPermissionAsk
+	st.base.run.Config.BrowserOrigins = []string{"https://example.org"}
+	var scopedRequest browserruntime.AgentBrowserStartRequest
+	originalLaunch := service.launch
+	service.launch = func(ctx context.Context, request browserruntime.AgentBrowserStartRequest) (agentBrowserRuntime, error) {
+		scopedRequest = request
+		return originalLaunch(ctx, request)
+	}
+	caps, auth, e := supervisor.supervisorBrowserActionCapabilities(t.Context(), turn, st.base.executionPermission)
+	if e != nil || !caps.Available {
+		t.Fatalf("scoped capability %+v %v", caps, e)
+	}
+	liveCaps, e := service.Capabilities(t.Context(), st.base.run.ID)
+	if e != nil || !liveCaps.Available || len(liveCaps.DeclaredOrigins) != 1 || liveCaps.DeclaredOrigins[0] != "https://example.org:443" {
+		t.Fatalf("live capabilities must carry the canonical declared origin: %+v %v", liveCaps, e)
+	}
+	var a toolgateway.AgentBrowserCallAuthority
+	if e = json.Unmarshal(auth, &a); e != nil || a.Validate() != nil {
+		t.Fatalf("scoped authority invalid %v %s", e, auth)
+	}
+	if a.PermissionMode != domain.RunExecutionPermissionAsk || len(a.DeclaredOrigins) != 1 ||
+		a.DeclaredOrigins[0] != "https://example.org:443" || a.ScopeFingerprint == "" {
+		t.Fatalf("authority missing the scope binding: %+v", a)
+	}
+	options := supervisorToolOptions{BrowserActions: supervisorBrowserActionTools{Capabilities: toolgateway.BrowserActionCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, Available: true, Generation: a.Generation}, Authority: auth}}
+	specs := supervisorStructuredToolSpecs(turn.Mode.Surface, turn.Mode.Phase, st.base.executionPermission.Mode, false, false, options)
+	seen := 0
+	for _, spec := range specs {
+		if strings.HasPrefix(spec.Name, "browser_") {
+			seen++
+		}
+	}
+	if seen != 9 {
+		t.Fatalf("scoped ask run must advertise the nine browser tools: %d", seen)
+	}
+	call := agentBrowserFixtureCall(t, service, st, toolgateway.BrowserNavigateTool, `{"version":"browser_navigate.v2","url":"https://example.org/form"}`)
+	if _, e = runAgentBrowserFixtureCall(t, supervisor, turn, call); e != nil {
+		t.Fatalf("in-scope dispatch %v", e)
+	}
+	if len(scopedRequest.ScopedOrigins) != 1 || scopedRequest.ScopedOrigins[0] != "https://example.org:443" {
+		t.Fatalf("launch must receive the scoped origins: %+v", scopedRequest.ScopedOrigins)
+	}
+}
+
+func TestAgentBrowserAskRunWithoutDeclaredOriginsStaysUnavailable(t *testing.T) {
+	_, st, _, supervisor, turn := newAgentBrowserFixture(t)
+	st.base.executionPermission.Mode = domain.RunExecutionPermissionAsk
+	caps, auth, e := supervisor.supervisorBrowserActionCapabilities(t.Context(), turn, st.base.executionPermission)
+	if e != nil || caps.Available {
+		t.Fatalf("ask run without declarations must stay unavailable: %+v %v", caps, e)
+	}
+	if auth != nil {
+		t.Fatal("unavailable run must not advertise an authority")
+	}
+}
+
+func TestAgentBrowserFullRunIgnoresDeclaredOrigins(t *testing.T) {
+	_, st, _, supervisor, turn := newAgentBrowserFixture(t)
+	st.base.run.Config.BrowserOrigins = []string{"https://example.org"}
+	caps, auth, e := supervisor.supervisorBrowserActionCapabilities(t.Context(), turn, st.base.executionPermission)
+	if e != nil || !caps.Available {
+		t.Fatalf("Full run capabilities %+v %v", caps, e)
+	}
+	var a toolgateway.AgentBrowserCallAuthority
+	if e = json.Unmarshal(auth, &a); e != nil || len(a.DeclaredOrigins) != 0 {
+		t.Fatalf("Full authority must stay unscoped: %v %s", e, auth)
+	}
+}
+
+func TestNormalizeBrowserOrigins(t *testing.T) {
+	origins, err := normalizeBrowserOrigins([]string{"HTTPS://Example.com/path", "http://localhost:3000"})
+	if err != nil || len(origins) != 2 || origins[0] != "http://localhost:3000" || origins[1] != "https://example.com:443" {
+		t.Fatalf("canonical origins %v %v", origins, err)
+	}
+	if res, err := normalizeBrowserOrigins(nil); err != nil || res != nil {
+		t.Fatalf("empty declaration must be a nil set: %v %v", res, err)
+	}
+	if _, err = normalizeBrowserOrigins([]string{"https://192.168.1.5"}); err == nil || !strings.Contains(err.Error(), "browser origins fail-closed") {
+		t.Fatalf("private origin accepted: %v", err)
+	}
+	many := make([]string, 0, 9)
+	for index := 0; index < 9; index++ {
+		many = append(many, "https://host-"+strings.Repeat("a", 8)+".test")
+	}
+	if _, err = normalizeBrowserOrigins(many); err == nil {
+		t.Fatal("origin count above the ceiling accepted")
+	}
+}

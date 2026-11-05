@@ -241,6 +241,22 @@ func agentBrowserScopeForRequest(request AgentBrowserStartRequest) (*AgentBrowse
 	return &scope, nil
 }
 
+// MatchesOrigin reports whether the URL's origin is declared, without any
+// resolution: composition boundaries that only need membership (readiness
+// probes, display) use this, while navigation keeps the full authorization.
+func (scope AgentBrowserOriginScope) MatchesOrigin(rawURL string) bool {
+	origin, _, err := parseTarget(agentBrowserScopeProfile, agentBrowserScopeProfile.Limits, rawURL)
+	if err != nil {
+		return false
+	}
+	for _, allowed := range scope.Origins {
+		if allowed == origin {
+			return true
+		}
+	}
+	return false
+}
+
 func agentBrowserScopeFingerprint(scope AgentBrowserOriginScope) (string, error) {
 	copyValue := scope
 	copyValue.Fingerprint = ""
