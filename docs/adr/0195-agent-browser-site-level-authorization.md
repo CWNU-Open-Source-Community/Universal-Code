@@ -63,6 +63,9 @@ Full CDP products.
 - Chrome-extension identity (Codex's approach for signed-in sites): rejected —
   Universal-Code has no extension surface, and identity must never enter the isolated
   browser. The takeover mode remains the manual-login path.
+- Explicit block lists (the deny half of Codex's per-site allow/block model):
+  unnecessary — navigation outside the declared allow set already fails closed, so a
+  block list adds no enforcement the default-deny set does not already provide.
 - Origins from project config: rejected — `.prayu` is untrusted input and must never
   widen runtime reach; only an operator surface may declare origins.
 - Per-navigation operator approval for every request: rejected — unusable for real
