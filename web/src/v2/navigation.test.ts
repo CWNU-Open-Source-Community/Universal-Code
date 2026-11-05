@@ -106,3 +106,21 @@ it("rejects malformed resources, unexpected panes and old Inspector addresses", 
     expect(readV2Route("#/threads/current", path)).toEqual({ kind: "invalid" });
   }
 });
+
+it("can leave history after returning from a Run without cycling back into that Run", async () => {
+  window.history.replaceState({ v2NavigationIndex: 0 }, "", "#/threads/original");
+  const { result } = renderHook(() => useV2Navigation());
+  act(() => result.current.navigate({ kind: "history" }));
+  act(() => result.current.navigate({ kind: "run", resourceID: "run-one" }));
+  act(() => result.current.back());
+  expect(window.location.hash).toBe("#/history");
+  for (let step = 0; step < 2 && window.location.hash === "#/history"; step++) {
+    await act(async () => {
+      const changed = new Promise<void>((resolve) => window.addEventListener("popstate", () => resolve(), { once: true }));
+      result.current.back();
+      await changed;
+    });
+    expect(window.location.hash).not.toBe("#/runs/run-one");
+  }
+  expect(window.location.hash).toBe("#/threads/original");
+});

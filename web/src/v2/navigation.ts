@@ -119,10 +119,10 @@ export function useV2Navigation() {
     const route = location.route;
     if (route.section) navigate({ ...route, section: undefined }, true);
     else if (route.kind === "run" || route.kind === "session")
-      navigate(route.threadID ? { kind: "thread", threadID: route.threadID, panel: "records" } : { kind: "history" });
+      navigate(route.threadID ? { kind: "thread", threadID: route.threadID, panel: "records" } : { kind: "history" }, true);
     else if (route.kind === "automations")
-      navigate(route.threadID ? { kind: "thread", threadID: route.threadID } : { kind: "new" });
-    else if (route.panel === "records") navigate({ kind: "thread", threadID: route.threadID });
+      navigate(route.threadID ? { kind: "thread", threadID: route.threadID } : { kind: "new" }, true);
+    else if (route.panel === "records") navigate({ kind: "thread", threadID: route.threadID }, true);
     else if (location.index > 0) window.history.back();
     else if (route.kind === "history") navigate({ kind: "new" }, true);
   };
