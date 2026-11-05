@@ -55,7 +55,8 @@ export function UsageSettings({ client, threadID = "", onOpenThread }: { client:
       </div>
         <button className="v2-usage-refresh v2-usage-export" type="button" aria-label={t("导出 CSV", "Export CSV")}
           title={t("导出当前用量明细（CSV）", "Export the loaded usage details (CSV)")}
-          disabled={!data || query.isFetching || data.totals.calls === 0} onClick={() => {
+          disabled={!data || query.isFetching || (data.totals.calls === 0 && data.cost.priced_calls === 0 &&
+            data.cost.unpriced_calls === 0 && data.cost.untracked_calls === 0)} onClick={() => {
             if (!data) return;
             try { downloadTextFile(usageCsvFilename(data), "text/csv;charset=utf-8", `\uFEFF${formatUsageCsv(data)}`); }
             catch (error) { console.warn("usage CSV export failed; the on-screen usage stays authoritative", error); }

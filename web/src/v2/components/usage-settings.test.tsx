@@ -222,8 +222,42 @@ it("keeps the CSV export disabled while usage has not loaded", () => {
 });
 
 it("disables the CSV export for an empty period", async () => {
-  setup(vi.fn().mockResolvedValue({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [] }));
+  setup(vi.fn().mockResolvedValue({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [],
+    cost: { currency: "USD", known_cost_micros: 0, priced_calls: 0, unpriced_calls: 0, untracked_calls: 0 } }));
   await screen.findByRole("status");
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
+});
+
+it.each([
+  { known_cost_micros: 125000, priced_calls: 1, unpriced_calls: 0, untracked_calls: 0 },
+  { known_cost_micros: 0, priced_calls: 1, unpriced_calls: 0, untracked_calls: 0 },
+  { known_cost_micros: 0, priced_calls: 0, unpriced_calls: 1, untracked_calls: 0 },
+  { known_cost_micros: 0, priced_calls: 0, unpriced_calls: 0, untracked_calls: 1 },
+])("exports cost facts without calls in the selected period: %j", async (cost) => {
+  vi.mocked(downloadTextFile).mockClear();
+  setup(vi.fn().mockResolvedValue({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [],
+    unassigned_calls: 0, cost: { currency: "USD", ...cost } }));
+  await screen.findByRole("region", { name: "Usage overview" });
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  expect(downloadTextFile).toHaveBeenCalledExactlyOnceWith("universal-code-usage-30d-2026-09-20_2026-10-19.csv",
+    "text/csv;charset=utf-8", expect.stringMatching(/^\uFEFF/u));
+  const csv = vi.mocked(downloadTextFile).mock.calls[0][2] as string;
+  const rows = csv.slice(1).trimEnd().split("\r\n");
+  expect(rows).toHaveLength(2);
+  const total = rows[1].split(",");
+  expect(total[12]).toBe("0");
+  expect(total.slice(16)).toEqual(["USD", (cost.known_cost_micros / 1_000_000).toFixed(6),
+    String(cost.priced_calls), String(cost.unpriced_calls), String(cost.untracked_calls)]);
+});
+
+it("keeps the CSV export disabled during a refresh with previously loaded cost facts", async () => {
+  const get = vi.fn().mockResolvedValueOnce({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [] })
+    .mockReturnValue(new Promise(() => {}));
+  setup(get);
+  await screen.findByRole("region", { name: "Usage overview" });
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "Refresh usage" }));
   expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
 });
 
