@@ -595,6 +595,7 @@
       },
       "restart_persistence_proof": "Browser runtime restart tests create a fresh generation and never adopt prior CDP targets or request handles.",
       "active_identifiers": [
+        "agent_browser_origin_scope.v1",
         "browser-action-tools.v1",
         "browser_cdp_outcome.v1",
         "browser_cdp_request.v1",
