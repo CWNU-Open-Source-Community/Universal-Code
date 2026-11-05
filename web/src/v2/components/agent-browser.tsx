@@ -107,6 +107,7 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     <div className="v2-agent-browser-body">
     {!current.available && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
     {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过实时画面和截图查看。", "Pages open in a separate background browser and are shown as a live view and screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
+    {current.available && current.declared_origins && current.declared_origins.length > 0 && <p className="v2-agent-browser-note">{t("本会话的浏览器仅在操作者声明的来源内工作：", "This session's browser operates only inside the operator-declared origins: ")}{current.declared_origins.join(", ")}</p>}
     {current.headless && active && current.session_id && <AgentBrowserLiveView client={client} runID={runID} sessionID={current.session_id} />}
     {current.headless && active && <p className="v2-agent-browser-note">{t("浏览器在后台运行，上方为实时画面；已验证的截图仍会作为证据保存。需要结束网页操作时可停止浏览器；整个任务可在对话中停止。", "The browser runs in the background with the live view above; verified screenshots are still kept as evidence. Stop the browser to end web actions, or stop the whole task in the conversation.")}</p>}
     {!current.headless && canClose && <p className="v2-agent-browser-note">{t("需要结束网页操作时可停止浏览器；整个任务可在对话中停止。", "Stop the browser to end web actions, or stop the whole task in the conversation.")}</p>}

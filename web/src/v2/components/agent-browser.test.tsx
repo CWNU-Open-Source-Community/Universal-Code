@@ -309,3 +309,31 @@ it("falls back to screenshots when the live stream is unavailable", async () => 
   expect(await screen.findByText("实时画面暂不可用，已回退到截图。")).toBeInTheDocument();
   expect(screen.getByRole("img", { name: "Agent 浏览器实时画面" })).not.toHaveClass("is-live");
 });
+
+it("shows the operator-declared origins for a scoped session", async () => {
+  const scoped = { ...status(), declared_origins: ["https://example.org:443", "http://localhost:3000"] };
+  const get = vi.fn(async () => scoped);
+  const client = { baseURL: "/api/v1", get, postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByText(/https:\/\/example\.org:443, http:\/\/localhost:3000/)).toBeInTheDocument();
+  expect(screen.getByText(/仅在操作者声明的来源内工作/)).toBeInTheDocument();
+});
+
+it("hides the origins note for unscoped and unavailable sessions", async () => {
+  const unscoped = status();
+  delete (unscoped as Record<string, unknown>).declared_origins;
+  const get = vi.fn(async () => unscoped);
+  const client = { baseURL: "/api/v1", get, postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient;
+  const first = draw(client);
+  await first.findByText("Report run-browser");
+  expect(first.queryByText(/仅在操作者声明的来源内工作/)).not.toBeInTheDocument();
+  first.unmount();
+
+  const down = { ...status(), available: false, state: "closed", session_id: undefined, screenshot: undefined };
+  const second = draw({ baseURL: "/api/v1", get: vi.fn(async () => down), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient);
+  await second.findByText("当前环境没有可用的 Agent 浏览器运行时，请检查本机浏览器和执行权限配置。");
+  expect(second.queryByText(/仅在操作者声明的来源内工作/)).not.toBeInTheDocument();
+});
