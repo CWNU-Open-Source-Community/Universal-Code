@@ -1,5 +1,7 @@
 # Workflow pause deadline reproduction
 
+本文是修复前证据；当前行为与检查结果见[修复验收](fix-verification.md)。
+
 实际复现了暂停期间的两处到期清理阻塞。未暂停对照通过；暂停 workflow 后，宿主完全不接纳该 execution，审批 attempt 和未使用预算一直保留到恢复。仅暂停 Run 时，宿主接纳 execution，但清理报错，也要恢复 Run 后才能完成。
 
 ## 版本与运行方式

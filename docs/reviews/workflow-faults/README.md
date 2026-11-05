@@ -1,4 +1,10 @@
-# 工作流引擎故障复现与修复顺序
+# 工作流引擎故障复现与修复
+
+本目录保留修复前的实验和失败日志。当前实现与整合验收见
+[修复验收](fix-verification.md)、[取消与暂停修复](lifecycle-fix.md)和
+[完成通知修复](notification-fix.md)。复现测试现已默认执行，无需环境变量。
+
+以下内容记录修复前提交 `9d9cf3bc` 的结果。
 
 日期：2026-11-06（Asia/Hong_Kong）。产品基线：`21f56e6b390abf1c2a7de86f9ae8af68d34edb91`。汇总分支：`Qiyuanqiii/workflow-fault-repros`。
 
@@ -41,7 +47,7 @@ $env:UC_WORKFLOW_FAULT_REPRO='1'
 go test ./internal/application -run '^TestWorkflowFault' -count=1 -timeout=120s -v
 ```
 
-当前代码应在上述正确行为断言处失败。默认未设置环境变量时这些诊断测试 Skip；这不代表缺陷已修复。修复阶段应在启用状态下使对应测试通过，再移除该开关。
+在历史提交 `9d9cf3bc` 上，上述命令在正确行为断言处失败；未设置环境变量时诊断测试 Skip。当前分支已移除开关，执行同名测试检查修复后的行为。
 
 根代理整合后独立执行了以下命令：
 
