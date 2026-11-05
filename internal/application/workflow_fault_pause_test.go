@@ -20,14 +20,9 @@ import (
 	"cyberagent-workbench/internal/store"
 )
 
-// This opt-in reproduction asserts the documented deadline contract, so the
-// workflow_pause case intentionally fails on the affected implementation.
-// The provider is deterministic; SQLite, services, tool gateway, approvals,
-// claims, Run leases and the saved wall-clock deadline are real.
+// SQLite, services, tool gateway, approvals, claims, Run leases and the saved
+// wall-clock deadline are real; only model replies use a deterministic provider.
 func TestWorkflowFaultPauseDeadlineCleansPendingApproval(t *testing.T) {
-	if os.Getenv("UC_WORKFLOW_FAULT_REPRO") != "1" {
-		t.Skip("set UC_WORKFLOW_FAULT_REPRO=1 to run the deadline fault reproduction")
-	}
 	for _, mode := range []string{"unpaused", "run_pause", "workflow_pause"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
@@ -96,7 +91,14 @@ func TestWorkflowFaultPauseDeadlineCleansPendingApproval(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pauseFaultSnapshot(t, ctx, st, service, e.ID, stepID, ref, "after_control")
+			paused := pauseFaultSnapshot(t, ctx, st, service, e.ID, stepID, ref, "after_control")
+			if mode != "unpaused" {
+				pauseFaultTick(t, ctx, service)
+				current := pauseFaultSnapshot(t, ctx, st, service, e.ID, stepID, ref, "before_deadline_tick")
+				if current.ChildStatus != paused.ChildStatus || current.ActiveAttemptID != paused.ActiveAttemptID || current.AttemptStatus != paused.AttemptStatus || current.StepStatus != "pending" || p.calls != 2 {
+					t.Fatal("unexpired pause changed or dispatched its child")
+				}
+			}
 			// Wait for the persisted deadline itself. RunDue's now parameter alone
 			// cannot advance time inside advanceClaimed; no clock/SQL injection.
 			timer := time.NewTimer(time.Until(deadline) + 25*time.Millisecond)
@@ -134,29 +136,6 @@ func TestWorkflowFaultPauseDeadlineCleansPendingApproval(t *testing.T) {
 				t.Errorf("expired workflow must fail while %s: status=%s reason=%q", mode, after.WorkflowStatus, after.WorkflowReason)
 			}
 			pauseFaultAssertRetired(t, after)
-			if mode != "unpaused" && after.WorkflowStatus != "failed" {
-				if mode == "workflow_pause" {
-					current, err := service.Get(ctx, e.ID)
-					if err != nil {
-						t.Fatal(err)
-					}
-					_, err = service.Resume(ctx, e.ID, current.Version)
-				} else {
-					_, err = application.NewRunService(st).Resume(ctx, run.ID)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				pauseFaultTick(t, ctx, service)
-				resumed := pauseFaultSnapshot(t, ctx, st, service, e.ID, stepID, ref, "after_resume_tick")
-				if resumed.WorkflowStatus != "failed" || resumed.WorkflowReason != "workflow deadline exceeded" {
-					t.Errorf("resume must retain the original deadline: %+v", resumed)
-				}
-				pauseFaultAssertRetired(t, resumed)
-				if resumed.Usage.TotalTokens != before.Usage.TotalTokens {
-					t.Errorf("resume changed charged token usage: before=%d after=%d", before.Usage.TotalTokens, resumed.Usage.TotalTokens)
-				}
-			}
 			if p.calls != 2 {
 				t.Errorf("expiry or resume dispatched model work: calls=%d want=2", p.calls)
 			}
@@ -198,7 +177,7 @@ func pauseFaultFixture(t *testing.T, ctx context.Context, p *specialistTestProvi
 	checker := executionWorkerReviewPolicy{Checker: policy.NewDefaultChecker(), review: true}
 	caps := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
 	runtime := application.NewAgentRunner(st, router, checker).WithExecutionPermissionCapabilities(caps)
-	service := application.NewWorkflowService(st, application.NewSpecialistExecutionService(st, router, checker).WithWorkerRuntime(runtime))
+	service := application.NewWorkflowService(&lifecycleFenceStore{SQLiteStore: st, t: t}, application.NewSpecialistExecutionService(st, router, checker).WithWorkerRuntime(runtime))
 	return st, run, service
 }
 

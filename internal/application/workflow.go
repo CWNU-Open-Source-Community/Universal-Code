@@ -34,6 +34,9 @@ type WorkflowStore interface {
 	ControlWorkflowExecution(context.Context, string, string, int64) (domain.WorkflowExecution, error)
 	GetWorkflowStep(context.Context, string) (domain.WorkflowStepExecution, bool, error)
 	ListWorkflowVerificationSteps(context.Context, string, string, int64) ([]domain.WorkflowStepExecution, error)
+	ListWorkflowLifecycleSteps(context.Context, string, string, int64) ([]domain.WorkflowStepExecution, error)
+	ValidateWorkflowLifecycleAttempt(context.Context, string, string, int64, domain.RunExecutionLease, domain.AgentAttempt) error
+	FinalizeWorkflowLifecycle(context.Context, string, string, int64, *domain.RunExecutionLease, []domain.AgentAttempt) (domain.WorkflowExecution, error)
 	PrepareWorkflowStep(context.Context, domain.WorkflowStepExecution, string) (domain.WorkflowStepExecution, error)
 	CompleteWorkflowStep(context.Context, domain.WorkflowStepExecution, string) error
 	FailWorkflowStepWithLease(context.Context, domain.WorkflowStepExecution, string, int64, domain.RunExecutionLease, domain.AgentAttempt) error
@@ -213,22 +216,20 @@ func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowE
 		return checkpoint()
 	}
 	expire := func() (domain.WorkflowExecution, error) {
-		if err := s.expireWorkflowPending(ctx, &e, owner); err != nil {
-			if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeConflict {
-				wake = ""
-				e.Status, e.Reason = "waiting", err.Error()
-				return checkpoint()
-			}
-			return e, err
-		}
-		return fail("workflow deadline exceeded")
-	}
-	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
-		return expire()
+		return s.finalizeWorkflowLifecycle(ctx, e, owner)
 	}
 	run, err := s.store.GetRun(ctx, e.RunID)
 	if err != nil {
 		return e, err
+	}
+	if run.Terminal() {
+		return s.finalizeWorkflowLifecycle(ctx, e, owner)
+	}
+	if !time.Now().Before(e.CreatedAt.Add(time.Duration(d.Spec.Limits.TimeoutMillis) * time.Millisecond)) {
+		return expire()
+	}
+	if e.Status == "paused" {
+		return e, nil
 	}
 	if run.Status != domain.RunRunning {
 		e.Status = "waiting"

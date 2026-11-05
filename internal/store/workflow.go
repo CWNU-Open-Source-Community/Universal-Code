@@ -134,7 +134,7 @@ func (s *SQLiteStore) ListWorkflowExecutions(ctx context.Context, runID string) 
 // lease acquired by the real worker runner. One Advance is bounded to 10 minutes.
 func (s *SQLiteStore) ClaimWorkflowExecution(ctx context.Context, id, owner string) (domain.WorkflowExecution, bool, error) {
 	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner=?,claim_until=? WHERE id=? AND status IN ('running','waiting','waiting_approval') AND (claim_owner='' OR claim_until<=?)`, owner, ts(now.Add(15*time.Minute)), id, ts(now))
+	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner=?,claim_until=? WHERE id=? AND (status IN ('running','waiting','waiting_approval') OR (status='paused' AND (`+workflowLifecycleDueSQL+`))) AND (claim_owner='' OR claim_until<=?)`, owner, ts(now.Add(15*time.Minute)), id, ts(now), ts(now))
 	if err != nil {
 		return domain.WorkflowExecution{}, false, err
 	}

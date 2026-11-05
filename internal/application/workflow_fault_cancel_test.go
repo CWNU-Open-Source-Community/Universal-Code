@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -16,13 +15,9 @@ import (
 	"cyberagent-workbench/internal/store"
 )
 
-// This opt-in integration repro asserts the intended behavior, so the cancel
-// case fails until terminal Run state is propagated to its workflow. Only the
-// model provider is deterministic; SQLite, workers, cancellation and RunDue are real.
+// SQLite, workers, cancellation and host continuation are real; only model
+// responses use the deterministic test provider.
 func TestWorkflowFaultCancelRunConverges(t *testing.T) {
-	if os.Getenv("UC_WORKFLOW_FAULT_REPRO") != "1" {
-		t.Skip("set UC_WORKFLOW_FAULT_REPRO=1 to run the workflow cancellation repro")
-	}
 	for _, cancelRun := range []bool{false, true} {
 		name := "normal_completion"
 		if cancelRun {
