@@ -76,7 +76,7 @@ it("loads each advanced surface on first use while keeping drafts, focus, and la
   await user.click(screen.getByRole("button", { name: "返回应用" }));
   expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("切换页面后继续保留的需求");
 
-  const inspector = screen.getByRole("button", { name: "观察与记录" });
+  const inspector = screen.getByRole("button", { name: "历史与诊断" });
   await user.click(inspector);
   expect(await screen.findByText("正在加载 Inspector…")).toHaveAttribute("role", "status");
   expect(inspector).toHaveFocus();
@@ -87,13 +87,13 @@ it("loads each advanced surface on first use while keeping drafts, focus, and la
 
   await user.click(screen.getByRole("button", { name: "打开已保存执行" }));
   expect(await screen.findByText("正在加载检查工具…")).toHaveAttribute("role", "status");
-  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+  await user.click(screen.getByRole("button", { name: "新对话" }));
   expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("切换页面后继续保留的需求");
   await act(async () => { modules.tools.resolve(); });
   expect(window.location.hash).toBe("#/new");
   expect(screen.queryByRole("heading", { name: "Inspector 工具模块" })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+  await user.click(screen.getByRole("button", { name: "历史与诊断" }));
   await user.click(await screen.findByRole("button", { name: "打开已保存执行" }));
   expect(await screen.findByLabelText("检查记录")).toHaveTextContent("run-saved");
   expect(window.location.hash).toBe("#/new/inspector/runs/run-saved");

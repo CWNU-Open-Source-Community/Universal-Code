@@ -1,4 +1,4 @@
-import { lazy, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { lazy, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -8,6 +8,8 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
+  Microscope,
+  MoreHorizontal,
   PanelRightClose,
   PanelTop,
   Plus,
@@ -81,6 +83,8 @@ function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
       return <PanelTop aria-hidden="true" size={14} />;
     case "review":
       return <FileDiff aria-hidden="true" size={14} />;
+    case "records":
+      return <Microscope aria-hidden="true" size={14} />;
   }
 }
 
@@ -205,6 +209,9 @@ export function V2WorkspaceDock({
   reviewFileTarget,
   reviewToolTarget,
   reviewMemoryRef,
+  recordsContent,
+  onOpenRecordRun,
+  onOpenRecordUIEvidence,
 }: {
   client: APIClient;
   threadID: string;
@@ -231,6 +238,9 @@ export function V2WorkspaceDock({
   reviewFileTarget?: FileEditReviewTarget;
   reviewToolTarget?: { runID: string; tool: "github-review" };
   reviewMemoryRef?: RefObject<TaskReviewToolMemory>;
+  recordsContent?: ReactNode;
+  onOpenRecordRun?: () => void;
+  onOpenRecordUIEvidence?: () => void;
 }) {
   const { t } = useLocale();
   const leaveFileEdit = useFileEditLeave();
@@ -240,6 +250,14 @@ export function V2WorkspaceDock({
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const tabTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [recordsMenuOpen, setRecordsMenuOpen] = useState(false);
+  const recordsMenuAnchor = useRef<HTMLDivElement>(null);
+  const recordsMenuTrigger = useRef<HTMLButtonElement>(null);
+  const recordsMenuInitialFocus = useRef("first");
+  const closeRecordsMenu = () => {
+    setRecordsMenuOpen(false);
+    recordsMenuTrigger.current?.focus();
+  };
   const dragRef = useRef<{
     pointerID: number;
     element: HTMLDivElement;
@@ -295,6 +313,44 @@ export function V2WorkspaceDock({
       document.removeEventListener("keydown", closeEscape, true);
     };
   }, [addMenuOpen]);
+
+  useEffect(() => { setRecordsMenuOpen(false); }, [threadID, panelVisible, activeTab?.id]);
+  useEffect(() => {
+    if (!recordsMenuOpen) return;
+    const items = recordsMenuAnchor.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    (recordsMenuInitialFocus.current === "last" ? items?.[items.length - 1] : items?.[0])?.focus();
+    const closeOutside = (event: MouseEvent) => {
+      if (event.target instanceof Node && !recordsMenuAnchor.current?.contains(event.target)) setRecordsMenuOpen(false);
+    };
+    document.addEventListener("click", closeOutside);
+    return () => document.removeEventListener("click", closeOutside);
+  }, [recordsMenuOpen]);
+
+  const onRecordsMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
+    if (recordsMenuOpen && event.key === "Escape") {
+      event.stopPropagation();
+      if (!event.nativeEvent.isComposing && event.keyCode !== 229) {
+        event.preventDefault(); closeRecordsMenu();
+      }
+      return;
+    }
+    if (recordsMenuOpen && event.key === "Tab") { closeRecordsMenu(); return; }
+    const arrow = event.key === "ArrowDown" || event.key === "ArrowUp";
+    if (!arrow && (!recordsMenuOpen || event.key !== "Home" && event.key !== "End")) return;
+    event.preventDefault();
+    if (!recordsMenuOpen) {
+      setAddMenuOpen(false);
+      recordsMenuInitialFocus.current = event.key === "ArrowUp" ? "last" : "first";
+      setRecordsMenuOpen(true);
+      return;
+    }
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    const index = items.indexOf(event.target as HTMLButtonElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   const cancelResize = () => {
     if (!dragRef.current) return;
@@ -510,7 +566,7 @@ export function V2WorkspaceDock({
               aria-haspopup="menu"
               aria-label={t("新建或切换工作区标签", "Open workspace tab")}
               className="v2-workspace-icon-btn"
-              onClick={() => setAddMenuOpen((open) => !open)}
+              onClick={() => { setRecordsMenuOpen(false); setAddMenuOpen((open) => !open); }}
               ref={addTriggerRef}
               title={t("打开标签", "Open tab")}
               type="button"
@@ -580,11 +636,35 @@ export function V2WorkspaceDock({
                   <FileDiff aria-hidden="true" size={15} />
                   <span>{t("改动与交付", "Changes and delivery")}</span>
                 </button>
+                <button onClick={() => {
+                  setAddMenuOpen(false);
+                  const open = () => focusWorkspaceSingletonTab(threadID, "records");
+                  if (activeTab.kind === "file") leaveFileEdit(open);
+                  else open();
+                }} role="menuitem" type="button">
+                  <Microscope aria-hidden="true" size={15} /><span>{t("执行记录", "Execution records")}</span>
+                </button>
               </div>
             )}
           </div>
         </div>
         <div className="v2-workspace-window-actions">
+          {activeTab.kind === "records" && (onOpenRecordRun || onOpenRecordUIEvidence) && <div
+            className="v2-workspace-add-anchor" ref={recordsMenuAnchor} onKeyDownCapture={onRecordsMenuKeyDown}>
+            <button aria-label={t("执行记录选项", "Execution record options")} aria-expanded={recordsMenuOpen}
+              aria-haspopup="menu" aria-controls={recordsMenuOpen ? `v2-record-options-${sanitizeDomToken(threadID)}` : undefined}
+              className="v2-workspace-icon-btn" ref={recordsMenuTrigger} type="button"
+              onClick={() => { setAddMenuOpen(false); recordsMenuInitialFocus.current = "first"; setRecordsMenuOpen((open) => !open); }}>
+              <MoreHorizontal aria-hidden="true" size={16} />
+            </button>
+            {recordsMenuOpen && <div className="v2-workspace-add-menu v2-workspace-records-menu" role="menu"
+              id={`v2-record-options-${sanitizeDomToken(threadID)}`} aria-label={t("执行记录选项", "Execution record options")}>
+              {onOpenRecordRun && <button role="menuitem" type="button" onClick={() => { closeRecordsMenu(); onOpenRecordRun(); }}>
+                {t("运行与工具", "Runs and tools")}</button>}
+              {onOpenRecordUIEvidence && <button role="menuitem" type="button" onClick={() => { closeRecordsMenu(); onOpenRecordUIEvidence(); }}>
+                {t("界面观察证据", "UI evidence")}</button>}
+            </div>}
+          </div>}
           {docked && (
             <button
               aria-label={fullViewLabel}
@@ -626,6 +706,12 @@ export function V2WorkspaceDock({
         </div>
       )}
       <div className="v2-workspace-dock-body">
+        {panelVisible && activeTab.id === "records" && <div
+          aria-labelledby={tabButtonID(threadID, "records")}
+          className="v2-workspace-tabpanel"
+          id={tabPanelID(threadID, "records")}
+          role="tabpanel"
+        >{recordsContent}</div>}
         {state.tabs.filter((tab) => tab.kind === "file").map((tab) => (
           <div
             aria-labelledby={tabButtonID(threadID, tab.id)}

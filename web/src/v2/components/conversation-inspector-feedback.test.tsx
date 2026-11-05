@@ -7,7 +7,9 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import type { APIClient } from "../../api/client";
 import type { ThreadReview } from "../../api/task-delivery";
-import type { ThreadDetailView, WorkspaceView } from "../../api/types";
+import type { ThreadDetailView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
+import { FileEditDraftProvider, useFileEditLeaveEntry } from "../../components/file-edit-drafts";
+import { getThreadWorkspaceState } from "../workspace-tabs";
 import { V2Conversation } from "./conversation";
 
 vi.mock("../../hooks/use-run-event-stream", () => ({ useRunEventStream: () => ({ error: null, frames: [] }) }));
@@ -45,9 +47,9 @@ function review(threadID: string): ThreadReview {
       current_sha256: "b".repeat(64), current_match: "matches", diff: "--- a/src/review.ts\n+++ b/src/review.ts\n@@ -1 +1 @@\n-old\n+new",
       diff_truncated: false, redacted: false, updated_at: when }], unapplied_changes: [], checks: [], partial: false, reasons: [] };
 }
-function setup(view: "conversation" | "inspector" = "inspector") {
+function setup(recordsRequested = false, dirtyFile = false) {
   const submit = vi.fn(); const post = vi.fn(); const lifecycle = vi.fn();
-  const openPreview = vi.fn(); const onOpenTool = vi.fn(); const onOpenInspectorHome = vi.fn(); const onOpenInspector = vi.fn();
+  const openPreview = vi.fn(); const onOpenTool = vi.fn();
   const client = { hasThreadControl: true, hasFullCDPSessionControl: true,
     get: vi.fn((path: string) => {
       const id = path.split("/")[2];
@@ -56,34 +58,45 @@ function setup(view: "conversation" | "inspector" = "inspector") {
       if (path.startsWith("/runs/")) return Promise.resolve({ run: { id, status: "completed" } });
       return Promise.reject(new Error(`Unexpected read: ${path}`));
     }),
-    getPage: vi.fn().mockResolvedValue({ items: [], page: { limit: 100 }, requestID: "fixture" }),
+    getPage: vi.fn().mockResolvedValue({ items: [
+      { version: "thread_transcript.v1", id: "saved-reply", canonical_id: "saved-reply", run_id: "run-thread-a", run_ordinal: 1,
+        sequence: 1, source: "model", kind: "model_update", stage: "result", activity_type: "message", title: "Assistant reply",
+        detail: "Saved assistant reply", durable: true, provisional: false, created_at: when, verifiable: true, instruction_authorized: false },
+      { version: "thread_transcript.v1", id: "saved-tool", canonical_id: "saved-tool", run_id: "run-thread-a", run_ordinal: 1,
+        sequence: 2, source: "harness", kind: "tool_call", stage: "result", activity_type: "read", title: "Read file", tool_name: "workspace_read",
+        detail: "Saved tool result", durable: true, provisional: false, created_at: when, verifiable: true, instruction_authorized: false },
+    ] as ThreadTranscriptItemView[], page: { limit: 100 }, requestID: "fixture" }),
     getFullCDPSession: vi.fn().mockResolvedValue({ session: { state: "closed" } }),
     submitThreadTurn: submit, postControl: post, controlRunLifecycle: lifecycle, openFullCDPSession: openPreview,
   } as unknown as APIClient;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+  function DirtyFile() {
+    useFileEditLeaveEntry({ path: "README.md", dirty: dirtyFile, busy: false, canSave: false,
+      save: async () => undefined, keep: vi.fn(), discard: vi.fn() });
+    return null;
+  }
   function Harness() {
     const [threadID, setThreadID] = useState("thread-a");
     const [drafts, setDrafts] = useState<Record<string, string>>({ "thread-a": originalDraft, "thread-b": "另一个任务的草稿" });
-    return <QueryClientProvider client={queryClient}>
+    return <QueryClientProvider client={queryClient}><FileEditDraftProvider><DirtyFile />
       <button type="button" onClick={() => setThreadID("thread-b")}>切到另一个任务</button>
-      <V2Conversation client={client} threadID={threadID} workspaces={workspaces} view={view}
-        onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={onOpenInspector}
-        onOpenTool={onOpenTool} onOpenInspectorHome={onOpenInspectorHome}
+      <V2Conversation client={client} threadID={threadID} workspaces={workspaces} recordsRequested={recordsRequested}
+        onArchive={vi.fn()} onManageModels={vi.fn()}
+        onOpenTool={onOpenTool}
         draft={drafts[threadID]} onDraftChange={(next) => setDrafts((current) => ({ ...current, [threadID]: next }))} />
-    </QueryClientProvider>;
+    </FileEditDraftProvider></QueryClientProvider>;
   }
-  return { ...render(<Harness />), queryClient, client, onOpenTool, onOpenInspectorHome, onOpenInspector,
+  return { ...render(<Harness />), queryClient, client, onOpenTool,
     expectNoWrites: () => { expect(submit).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
       expect(lifecycle).not.toHaveBeenCalled(); expect(openPreview).not.toHaveBeenCalled(); } };
 }
 
-it.each(["inspector", "conversation"] as const)("appends exact review context and focuses the actual %s composer without sending", async (view) => {
-  const { container, expectNoWrites } = setup(view);
+it("appends exact review context and focuses the actual task composer without sending", async () => {
+  const { container, expectNoWrites } = setup();
   const user = userEvent.setup();
   await screen.findByText("Task thread-a");
   const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
   expect(editor).toHaveValue(originalDraft);
-  if (view === "inspector") expect(editor).not.toBeVisible();
   await user.click(screen.getByRole("button", { name: "审阅改动" }));
   const dialog = await screen.findByRole("dialog", { name: "审阅任务改动" }, { timeout: 5_000 });
   await user.click(await within(dialog).findByRole("button", { name: "引用文件" }, { timeout: 5_000 }));
@@ -94,12 +107,11 @@ it.each(["inspector", "conversation"] as const)("appends exact review context an
   for (const context of ["文件：src/review.ts", "来源执行：run-thread-a", "编辑记录：edit-original", "任务：thread-a", "b".repeat(64)]) {
     expect(editor.value).toContain(context);
   }
-  if (view === "inspector") expect(screen.getByRole("button", { name: "收起消息编辑器" })).toHaveAttribute("aria-expanded", "true");
   expectNoWrites();
 });
 
-it.each(["inspector", "conversation"] as const)("collects two inline comments in the %s draft while keeping review open, then returns without sending", async (view) => {
-  const { container, expectNoWrites } = setup(view);
+it("collects two inline comments in the task draft while keeping review open, then returns without sending", async () => {
+  const { container, expectNoWrites } = setup();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "审阅改动" }));
   const dialog = await screen.findByRole("dialog", { name: "审阅任务改动" });
@@ -135,8 +147,8 @@ it.each(["inspector", "conversation"] as const)("collects two inline comments in
   expectNoWrites();
 });
 
-it.each(["inspector", "conversation"] as const)("quotes the viewed worktree's source into the %s draft and returns without sending", async (view) => {
-  const { container, client, expectNoWrites } = setup(view);
+it("quotes the viewed worktree's source into the task draft and returns without sending", async () => {
+  const { container, client, expectNoWrites } = setup();
   client.fileEditChangeSet = vi.fn().mockResolvedValue({ workspace_id: "isolated-worktree" });
   client.workspaceExplore = vi.fn().mockResolvedValue({ protocol_version: "workspace_explorer.v1", workspace_id: "isolated-worktree",
     path: "src/example.ts", kind: "file", entries: [], content: "first line\n  selected source\nlast line", returned_bytes: 41,
@@ -172,8 +184,8 @@ it.each(["inspector", "conversation"] as const)("quotes the viewed worktree's so
   expectNoWrites();
 });
 
-it.each(["inspector", "conversation"] as const)("collects terminal excerpts in the %s draft, then returns without sending or changing the next task's draft", async (view) => {
-  const { container, expectNoWrites } = setup(view);
+it("collects terminal excerpts in the task draft, then returns without sending or changing the next task's draft", async () => {
+  const { container, expectNoWrites } = setup();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "终端" }));
   const dialog = await screen.findByRole("dialog", { name: "任务终端" });
@@ -194,8 +206,8 @@ it.each(["inspector", "conversation"] as const)("collects terminal excerpts in t
   expectNoWrites();
 });
 
-it.each(["inspector", "conversation"] as const)("reveals the %s draft when requesting an application startup, without starting or sending", async (view) => {
-  const { container, client, expectNoWrites } = setup(view);
+it("reveals the task draft when requesting an application startup, without starting or sending", async () => {
+  const { container, client, expectNoWrites } = setup();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "应用预览" }));
   const dialog = await screen.findByRole("dialog", { name: "应用预览" });
@@ -210,55 +222,170 @@ it.each(["inspector", "conversation"] as const)("reveals the %s draft when reque
   expectNoWrites();
 });
 
-it("makes observation tools and exact context recovery directly reachable without writes", async () => {
-  const { onOpenTool, onOpenInspectorHome, onOpenInspector, expectNoWrites } = setup();
+it("keeps chat and draft visible beside records and reuses the loaded transcript", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  const { container, client, expectNoWrites } = setup(true);
   const user = userEvent.setup();
-  const nav = await screen.findByRole("navigation", { name: "执行观察工具" });
-  expect(within(nav).getByRole("button", { name: "运行与工具" })).toBeVisible();
-  await user.click(within(nav).getByRole("button", { name: "全部运行与会话" }));
-  expect(onOpenInspectorHome).toHaveBeenCalledOnce();
-  await user.click(within(nav).getByRole("button", { name: "运行与工具" }));
-  await user.click(within(nav).getByRole("button", { name: "界面观察证据" }));
-  await user.click(within(nav).getByRole("button", { name: "自动化" }));
-  await user.click(screen.getByRole("button", { name: "查看上下文" }));
-  await user.click(await screen.findByRole("button", { name: "工作区恢复" }));
-  await user.click(screen.getByRole("button", { name: "查看上下文" }));
-  await user.click(await screen.findByRole("button", { name: "续接与记忆" }));
-  await user.click(screen.getByRole("button", { name: "查看上下文" }));
-  await user.click(await screen.findByRole("button", { name: "会话原始记录" }));
-  expect(onOpenTool.mock.calls).toEqual([["run", "run-thread-a"], ["run", "run-thread-a", "ui-evidence"],
-    ["schedule", "run-thread-a"], ["run", "run-thread-a", "checkpoints"], ["run", "run-thread-a", "context"], ["session", "session-thread-a"]]);
-  await user.click(screen.getByRole("button", { name: "对话操作" }));
-  expect(screen.queryByRole("menuitem", { name: "打开 Inspector" })).not.toBeInTheDocument();
-  expect(screen.getByRole("menuitem", { name: "归档对话" })).toBeVisible();
-  expect(onOpenInspector).not.toHaveBeenCalled();
+  const panel = await screen.findByRole("complementary", { name: "执行记录" });
+  await within(panel).findByRole("region", { name: "Inspector 记录" });
+  const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
+  expect(editor).toBeVisible(); expect(editor).toHaveValue(originalDraft);
+  expect(container.querySelector(".v2-conversation-scroll")).toHaveTextContent("Saved assistant reply");
+  expect(screen.queryByRole("button", { name: "补充消息" })).not.toBeInTheDocument();
+  const reads = vi.mocked(client.getPage).mock.calls.length;
+  await user.click(within(panel).getByRole("button", { name: /workspace_read/ }));
+  expect(await within(panel).findByRole("button", { name: "关闭记录详情" })).toHaveFocus();
+  await user.keyboard("{Escape}");
+  expect(panel).toBeVisible();
+  expect(within(panel).getByRole("button", { name: /workspace_read/ })).toHaveFocus();
+  await user.click(within(panel).getByRole("button", { name: "收起执行记录" }));
+  await user.click(screen.getByRole("button", { name: "执行记录" }));
+  expect(await screen.findByRole("complementary", { name: "执行记录" })).toBeVisible();
+  expect(vi.mocked(client.getPage).mock.calls.length).toBe(reads);
+  expect(editor).toHaveValue(originalDraft); expectNoWrites();
+});
+
+it("closes selected details before the compact records workspace and restores focus", async () => {
+  const { container, expectNoWrites } = setup(true);
+  const user = userEvent.setup();
+  const panel = await screen.findByRole("dialog", { name: "执行记录" });
+  const row = await within(panel).findByRole("button", { name: /workspace_read/ });
+  await user.click(row);
+  expect(within(panel).getByRole("button", { name: "关闭记录详情" })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape", isComposing: true });
+  expect(panel).toBeVisible();
+  expect(within(panel).getByLabelText("选中记录详情")).toBeVisible();
+  await user.keyboard("{Escape}");
+  expect(panel).toBeVisible(); expect(row).toHaveFocus();
+  expect(within(panel).queryByLabelText("选中记录详情")).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(panel).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "执行记录" })).toHaveFocus();
+  expect(container.querySelector(".v2-shared-composer textarea")).toHaveValue(originalDraft);
   expectNoWrites();
 });
 
-it("retains the conversation-to-Inspector entry and consumes feedback focus before another task is opened", async () => {
-  const { container, onOpenInspector, expectNoWrites } = setup("conversation");
+it("keeps exact run and UI evidence links in the records header menu", async () => {
+  const { onOpenTool, expectNoWrites } = setup(true);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "对话操作" }));
-  await user.click(screen.getByRole("menuitem", { name: "打开 Inspector" }));
-  expect(onOpenInspector).toHaveBeenCalledWith(screen.getByRole("button", { name: "对话操作" }));
-  expect(screen.queryByRole("navigation", { name: "执行观察工具" })).not.toBeInTheDocument();
-  expect(screen.getByRole("navigation", { name: "任务工作区" })).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "观察执行" }));
-  expect(onOpenInspector).toHaveBeenLastCalledWith(screen.getByRole("button", { name: "观察执行" }));
-  await user.click(screen.getByRole("button", { name: "审阅改动" }));
-  await user.click(await screen.findByRole("button", { name: "引用文件" }));
-  const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
-  await waitFor(() => expect(editor).toHaveFocus());
-  const otherTask = screen.getByRole("button", { name: "切到另一个任务" });
-  await user.click(otherTask);
-  await screen.findByText("Task thread-b");
-  await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
-  expect(otherTask).toHaveFocus();
-  expect(screen.getByRole("textbox", { name: "继续对话" })).toHaveValue("另一个任务的草稿");
-  fireEvent.change(screen.getByRole("textbox", { name: "继续对话" }), { target: { value: "保留新修改" } });
-  expect(screen.getByRole("textbox", { name: "继续对话" })).toHaveValue("保留新修改");
+  const panel = await screen.findByRole("dialog", { name: "执行记录" });
+  expect(within(panel).queryByRole("navigation", { name: "执行观察工具" })).not.toBeInTheDocument();
+  expect(within(panel).queryByRole("button", { name: "全部运行与会话" })).not.toBeInTheDocument();
+  for (const label of ["运行与工具", "界面观察证据"]) {
+    await user.click(within(panel).getByRole("button", { name: "执行记录选项" }));
+    await user.click(within(panel).getByRole("menuitem", { name: label }));
+    expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  }
+  await user.keyboard("{Escape}");
+  for (const label of ["工作区恢复", "续接与记忆", "会话原始记录"]) {
+    await user.click(screen.getByRole("button", { name: "查看上下文" }));
+    await user.click(await screen.findByRole("button", { name: label }));
+  }
+  expect(onOpenTool.mock.calls).toEqual([["run", "run-thread-a"], ["run", "run-thread-a", "ui-evidence"],
+    ["run", "run-thread-a", "checkpoints"], ["run", "run-thread-a", "context"], ["session", "session-thread-a"]]);
   expectNoWrites();
 });
+
+it.each([false, true])("opens records options by keyboard and closes only the menu (docked: %s)", async (docked) => {
+  if (docked) vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  const { expectNoWrites } = setup(true);
+  const user = userEvent.setup();
+  const panel = await screen.findByRole(docked ? "complementary" : "dialog", { name: "执行记录" });
+  const row = await within(panel).findByRole("button", { name: /workspace_read/ });
+  await user.click(row);
+  const trigger = within(panel).getByRole("button", { name: "执行记录选项" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).getByRole("menuitem", { name: "运行与工具" })).toHaveFocus();
+  await user.keyboard("{ArrowDown}");
+  expect(within(panel).getByRole("menuitem", { name: "界面观察证据" })).toHaveFocus();
+  await user.keyboard("{Escape}");
+  expect(panel).toBeVisible();
+  expect(within(panel).getByLabelText("选中记录详情")).toBeInTheDocument();
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  await user.keyboard("{ArrowUp}");
+  expect(within(panel).getByRole("menuitem", { name: "界面观察证据" })).toHaveFocus();
+  const search = within(panel).getByLabelText("在已加载记录中查找");
+  await user.click(search);
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(search).toHaveFocus();
+  const add = within(panel).getByRole("button", { name: "新建或切换工作区标签" });
+  await user.click(add);
+  trigger.focus();
+  await user.keyboard("{ArrowDown}");
+  expect(add).toHaveAttribute("aria-expanded", "false");
+  expect(within(panel).getAllByRole("menu")).toHaveLength(1);
+  await user.keyboard("{Escape}");
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(panel).toBeVisible();
+  expect(trigger).toHaveFocus();
+  expectNoWrites();
+});
+
+it("keeps focus in the composer when an outside click dismisses record options", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  const { expectNoWrites } = setup(true);
+  const user = userEvent.setup();
+  const panel = await screen.findByRole("complementary", { name: "执行记录" });
+  await user.click(within(panel).getByRole("button", { name: "执行记录选项" }));
+  expect(within(panel).getByRole("menu")).toBeVisible();
+  const editor = screen.getByRole("textbox", { name: "继续对话" });
+  await user.click(editor);
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveValue(originalDraft);
+  expectNoWrites();
+});
+
+it("returns compact records to the action menu when its trigger becomes hidden on resize", async () => {
+  let width = 700;
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => width);
+  const resizes = new Set<() => void>();
+  vi.stubGlobal("ResizeObserver", class {
+    resize: () => void;
+    constructor(callback: ResizeObserverCallback) {
+      this.resize = () => callback([], this as unknown as ResizeObserver);
+      resizes.add(this.resize);
+    }
+    observe() {}
+    disconnect() { resizes.delete(this.resize); }
+  });
+  const { container, expectNoWrites } = setup();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "执行记录" }));
+  const records = await screen.findByRole("dialog", { name: "执行记录" });
+  const workflow = container.querySelector<HTMLElement>(".v2-task-workflows")!;
+  act(() => {
+    width = 390;
+    workflow.style.display = "none";
+    for (const resize of [...resizes]) resize();
+  });
+  await user.click(within(records).getByRole("button", { name: "收起执行记录" }));
+  expect(screen.getByRole("button", { name: "对话操作" })).toHaveFocus();
+  expectNoWrites();
+});
+
+it("guards the dirty file editor before switching to execution records", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  const { expectNoWrites } = setup(false, true);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "工作区文件" }));
+  await user.click(screen.getByRole("button", { name: "执行记录" }));
+  const guard = await screen.findByRole("dialog");
+  expect(guard).toHaveTextContent("README.md");
+  expect(getThreadWorkspaceState("thread-a").activeTabID).toBe("file:1");
+  await user.click(within(guard).getByRole("button", { name: "继续编辑" }));
+  expect(getThreadWorkspaceState("thread-a").activeTabID).toBe("file:1");
+  await user.click(screen.getByRole("button", { name: "执行记录" }));
+  await user.click(screen.getByRole("button", { name: "保留草稿" }));
+  expect(await screen.findByRole("complementary", { name: "执行记录" })).toBeVisible();
+  expect(getThreadWorkspaceState("thread-a").activeTabID).toBe("records");
+  expectNoWrites();
+});
+
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

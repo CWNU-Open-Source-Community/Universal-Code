@@ -25,7 +25,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("preserves an unknown submission across Inspector/settings and confirms only the original key before sending new intent", async () => {
+it("preserves an unknown submission across execution records/settings and confirms only the original key before sending new intent", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
   const workspace = { id: "workspace-shell", name: "Shell project" } as WorkspaceView;
   const thread = { id: "thread-shell", title: "Shell task", status: "active", workspace_id: workspace.id,
     composer_state: "ready", version: 1 } as ThreadView;
@@ -53,14 +54,14 @@ it("preserves an unknown submission across Inspector/settings and confirms only 
   expect(submit).toHaveBeenCalledTimes(2); // Existing bounded automatic confirmation, same intent.
   expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]);
   const originalCall = submit.mock.calls[0];
-  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+  await user.click(screen.getByRole("button", { name: "执行记录" }));
   expect(await screen.findByRole("region", { name: "Inspector records fixture" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "重试核对" })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "设置" }));
   await user.click(screen.getByRole("button", { name: "返回应用" }));
-  expect(window.location.hash).toBe(`#/threads/${thread.id}/inspector`);
+  expect(window.location.hash).toBe(`#/threads/${thread.id}`);
   expect(screen.getByRole("button", { name: "重试核对" })).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+  await user.click(screen.getByRole("button", { name: "收起执行记录" }));
   const draft = await screen.findByRole("textbox", { name: "继续对话" });
   expect(draft).toHaveValue("Original request");
   expect(queryClient.getQueryData(key)).toEqual([original]);

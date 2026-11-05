@@ -47,7 +47,7 @@ function renderRevertConversation(history: boolean, unavailable?: "archived" | "
     const [draft, setDraft] = useState("Preserve my existing request.");
     return <QueryClientProvider client={queryClient}><V2Conversation client={client} threadID="thread-a"
       workspaces={[{ id: "workspace-source", name: "Source" }] as WorkspaceView[]}
-      draft={draft} onDraftChange={setDraft} onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={vi.fn()} />
+      draft={draft} onDraftChange={setDraft} onArchive={vi.fn()} onManageModels={vi.fn()} />
     </QueryClientProvider>;
   }
   render(<Harness />);

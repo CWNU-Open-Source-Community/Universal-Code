@@ -35,11 +35,17 @@ export type WorkspaceReviewTab = {
   kind: "review";
 };
 
+export type WorkspaceRecordsTab = {
+  id: "records";
+  kind: "records";
+};
+
 export type WorkspaceTab =
   | WorkspaceFileTab
   | WorkspaceTerminalTab
   | WorkspacePreviewTab
-  | WorkspaceReviewTab;
+  | WorkspaceReviewTab
+  | WorkspaceRecordsTab;
 
 export const maxWorkspaceTabsLimitNotice = "已达到 12 个工作区标签上限，请先关闭暂不使用的标签。";
 
@@ -111,6 +117,7 @@ function sanitizeTab(raw: unknown): WorkspaceTab | null {
   }
   if (candidate.kind === "preview") return { id: "preview", kind: "preview" };
   if (candidate.kind === "review") return { id: "review", kind: "review" };
+  if (candidate.kind === "records") return { id: "records", kind: "records" };
   return null;
 }
 
@@ -442,7 +449,7 @@ export function updateWorkspaceFileTabPath(threadID: string, tabID: string, next
 
 function ensureSingletonTab(
   state: ThreadWorkspaceState,
-  kind: "terminal" | "preview" | "review",
+  kind: "terminal" | "preview" | "review" | "records",
 ): { tabs: WorkspaceTab[]; activeTabID: string; notice?: string } {
   if (state.tabs.some((tab) => tab.id === kind)) {
     return { tabs: state.tabs, activeTabID: kind };
@@ -451,7 +458,7 @@ function ensureSingletonTab(
     ? { id: "terminal", kind: "terminal", ...(state.terminalShellName ? { shellName: state.terminalShellName } : {}) }
     : kind === "preview"
       ? { id: "preview", kind: "preview" }
-      : { id: "review", kind: "review" };
+      : kind === "review" ? { id: "review", kind: "review" } : { id: "records", kind: "records" };
   const result = tryAddTab(state.tabs, added);
   if (!result.accepted) {
     return {
@@ -463,7 +470,7 @@ function ensureSingletonTab(
   return { tabs: result.tabs, activeTabID: kind };
 }
 
-export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review") {
+export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review" | "records") {
   writeThreadWorkspaceState(threadID, (state) => {
     if (state.open && state.activeTabID === kind) {
       return { ...state, open: false };
@@ -479,7 +486,7 @@ export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" |
   });
 }
 
-export function focusWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review") {
+export function focusWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review" | "records") {
   writeThreadWorkspaceState(threadID, (state) => {
     const ensured = ensureSingletonTab(state, kind);
     return {
@@ -594,6 +601,8 @@ export function workspaceTabTitle(tab: WorkspaceTab, t: LocaleText): string {
       return t("应用预览", "App preview");
     case "review":
       return t("改动与交付", "Changes");
+    case "records":
+      return t("执行记录", "Execution records");
   }
 }
 
@@ -610,6 +619,8 @@ export function workspaceTabTooltip(tab: WorkspaceTab, workspaceName: string, t:
       return t("应用预览", "App preview");
     case "review":
       return t("改动与交付", "Changes and delivery");
+    case "records":
+      return t("执行记录", "Execution records");
   }
 }
 
@@ -623,6 +634,8 @@ export function workspaceSurfaceAriaLabel(kind: WorkspaceTab["kind"], t: LocaleT
       return t("应用预览", "App preview");
     case "review":
       return t("审阅任务改动", "Review task changes");
+    case "records":
+      return t("执行记录", "Execution records");
   }
 }
 
@@ -636,6 +649,8 @@ export function workspaceCollapseAriaLabel(kind: WorkspaceTab["kind"], t: Locale
       return t("收起应用预览", "Close app preview");
     case "review":
       return t("关闭任务审阅", "Close task review");
+    case "records":
+      return t("收起执行记录", "Close execution records");
   }
 }
 

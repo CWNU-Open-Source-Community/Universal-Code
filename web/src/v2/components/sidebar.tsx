@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
+import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, CalendarClock, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
 import type { ThreadSearchResultView, ThreadView, WorkspaceView } from "../../api/types";
 import type { APIClient } from "../../api/client";
@@ -38,7 +38,7 @@ function executionStatus(thread: ThreadView, readFailed: boolean, t: (chinese: s
 
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
   onNewConversation, onOpenModels, onSelectThread, onVisibleChatOrder, onOpenSettings, onArchive,
-  onOpenInspector, inspectorActive = false, onOpenConnections,
+  onOpenInspector, inspectorActive = false, onOpenConnections, onOpenAutomations, automationsActive = false,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
   searchCurrentThread = false, onSearchCurrentThreadChange,
@@ -62,6 +62,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onOpenInspector?: () => void;
   onOpenConnections?: () => void;
   inspectorActive?: boolean;
+  onOpenAutomations?: () => void;
+  automationsActive?: boolean;
   search?: string; appliedSearch?: string; searchPending?: boolean; searchTooLong?: boolean;
   onSearchChange?: (value: string) => void;
   onSearchCompositionChange?: (composing: boolean) => void;
@@ -289,8 +291,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           : searching ? t("加载更多匹配记录", "Load more matches") : t("加载更早对话", "Load earlier conversations")}</button>}
     </div>
     <div className="v2-sidebar-footer">
+      {onOpenAutomations && <button aria-pressed={automationsActive} onClick={onOpenAutomations} type="button">
+        <CalendarClock aria-hidden="true" size={16} />{t("自动化", "Automations")}</button>}
       {onOpenInspector && <button aria-pressed={inspectorActive} onClick={onOpenInspector} type="button">
-        <Box aria-hidden="true" size={16} />{t("观察与记录", "Observation and records")}</button>}
+        <Box aria-hidden="true" size={16} />{t("历史与诊断", "History and diagnostics")}</button>}
       {onOpenConnections && <button onClick={onOpenConnections} type="button">
         <PlugZap aria-hidden="true" size={16} />{t("连接与环境", "Connections and environment")}</button>}
       <button onClick={onOpenSettings} type="button"><Settings aria-hidden="true" size={16} />{t("设置", "Settings")}</button>

@@ -26,9 +26,9 @@ function LocaleSwitch() {
 const branchNavigation = vi.hoisted(() => ({ complete: undefined as ((thread: ThreadView) => void) | undefined, dirtyFile: false }));
 
 vi.mock("./components/conversation", () => ({
-  V2Conversation: ({ threadID, view = "conversation", draft, onDraftChange, reviewEntry, onBranchCreated }: {
+  V2Conversation: ({ threadID, recordsRequested = false, draft, onDraftChange, reviewEntry, onBranchCreated }: {
     threadID: string;
-    view?: "conversation" | "inspector";
+    recordsRequested?: boolean;
     draft: string;
     onDraftChange: (value: string) => void;
     reviewEntry?: { threadID: string; runID: string };
@@ -38,7 +38,7 @@ vi.mock("./components/conversation", () => ({
     useFileEditLeaveEntry({ path: "README.md", dirty: branchNavigation.dirtyFile, busy: false, canSave: false,
       save: async () => undefined, keep: () => { branchNavigation.dirtyFile = false; }, discard: vi.fn() });
     return (
-    <div data-testid="v2-conversation" data-view={view}>{threadID}
+    <div data-testid="v2-conversation" data-records-requested={recordsRequested}>{threadID}
       <textarea aria-label="任务草稿 fixture" value={draft} onChange={(event) => onDraftChange(event.target.value)} />
       {reviewEntry && <output aria-label="Requested GitHub review">{`${reviewEntry.threadID}:${reviewEntry.runID}`}</output>}
     </div>
@@ -194,7 +194,7 @@ describe("V2Workbench adjacent chat navigation", () => {
     await screen.findByRole("heading", { name: "常规", level: 1 });
     stays();
     fireEvent.click(screen.getByRole("button", { name: "返回应用" }));
-    fireEvent.click(screen.getByRole("button", { name: "观察与记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "历史与诊断" }));
     expect(window.location.hash).toContain("/inspector");
     stays();
     fireEvent.keyDown(window, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
@@ -450,7 +450,7 @@ describe("V2Workbench inspector navigation", () => {
     await act(async () => { window.history.back(); });
     await waitFor(() => expect(screen.getByTestId("v2-conversation")).toHaveTextContent(oldest.id));
   });
-  it("retains the same Thread draft and references across both views and shared settings without writes", async () => {
+  it("opens global history consistently and restores the task draft and references when the task is selected", async () => {
     window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
     const client = navigationClient();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -459,19 +459,18 @@ describe("V2Workbench inspector navigation", () => {
     render(<QueryClientProvider client={queryClient}><V2Workbench client={client} /></QueryClientProvider>);
     const user = userEvent.setup();
     await user.type(await screen.findByRole("textbox", { name: "任务草稿 fixture" }), "尚未发送的任务要求");
-    await user.click(screen.getByRole("button", { name: "观察与记录" }));
-    expect(screen.getByTestId("v2-conversation")).toHaveAttribute("data-view", "inspector");
-    expect(window.location.hash).toBe(`#/threads/${createdThread.id}/inspector`);
-    expect(screen.getByRole("textbox", { name: "任务草稿 fixture" })).toHaveValue("尚未发送的任务要求");
-    expect(screen.queryByRole("dialog", { name: "观察与记录" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "历史与诊断" }));
+    expect(window.location.hash).toBe("#/new/inspector");
+    expect(await screen.findByRole("heading", { name: "历史与诊断" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "历史与诊断" }));
+    expect(window.location.hash).toBe("#/new/inspector");
     await user.click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByRole("heading", { name: "常规", level: 1 })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "模型" }));
-    expect(window.location.hash).toBe(`#/threads/${createdThread.id}/inspector/settings/models`);
+    await user.click(await screen.findByRole("button", { name: "模型" }));
+    expect(window.location.hash).toBe("#/new/inspector/settings/models");
     await user.click(screen.getByRole("button", { name: "返回应用" }));
-    expect(await screen.findByTestId("v2-conversation")).toHaveAttribute("data-view", "inspector");
-    await user.click(screen.getByRole("button", { name: "观察与记录" }));
-    expect(screen.getByTestId("v2-conversation")).toHaveAttribute("data-view", "conversation");
+    expect(await screen.findByRole("heading", { name: "历史与诊断" })).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: createdThread.title }));
+    expect(await screen.findByTestId("v2-conversation")).toHaveAttribute("data-records-requested", "false");
     expect(screen.getByRole("textbox", { name: "任务草稿 fixture" })).toHaveValue("尚未发送的任务要求");
     expect(queryClient.getQueryData(v2FileReferenceKey(workspace.id, createdThread.id))).toEqual(files);
     expect(window.location.hash).toBe(`#/threads/${createdThread.id}`);
@@ -479,24 +478,42 @@ describe("V2Workbench inspector navigation", () => {
   });
 
   it.each([`#/threads/${createdThread.id}/inspector`, "#/new/inspector"])(
-    "returns to its explicit Inspector source after direct loading settings at %s", async (hash) => {
+    "retains the explicit source after direct loading settings at %s", async (hash) => {
       window.history.replaceState({}, "", `${hash}/settings/appearance`);
       const historyBack = vi.spyOn(window.history, "back");
       const client = navigationClient();
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      render(<QueryClientProvider client={queryClient}><V2Workbench client={client} /></QueryClientProvider>);
+      render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <V2Workbench client={client} /></QueryClientProvider>);
       const user = userEvent.setup();
       expect(await screen.findByRole("heading", { name: "外观", level: 1 })).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "返回应用" }));
       expect(historyBack).not.toHaveBeenCalled();
       expect(window.location.hash).toBe(hash);
-      expect(screen.getByRole("button", { name: "观察与记录" })).toHaveAttribute("aria-pressed", "true");
-      await user.click(screen.getByRole("button", { name: "观察与记录" }));
-      expect(window.location.hash).toBe(hash.replace("/inspector", ""));
-      expect(screen.getByRole("button", { name: "观察与记录" })).toHaveAttribute("aria-pressed", "false");
+      if (hash.startsWith("#/threads/")) {
+        expect(await screen.findByTestId("v2-conversation")).toHaveAttribute("data-records-requested", "true");
+        expect(screen.getByRole("button", { name: "历史与诊断" })).toHaveAttribute("aria-pressed", "false");
+      }
+      await user.click(screen.getByRole("button", { name: "历史与诊断" }));
+      expect(window.location.hash).toBe("#/new/inspector");
+      expect(screen.getByRole("button", { name: "历史与诊断" })).toHaveAttribute("aria-pressed", "true");
       expectNoNavigationWrites(client);
     },
   );
+
+  it("opens automations from its own sidebar entry without carrying a task into its scope", async () => {
+    window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
+    const client = navigationClient();
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    await screen.findByTestId("v2-conversation");
+    await user.click(screen.getByRole("button", { name: "自动化" }));
+    expect(window.location.hash).toBe("#/new/inspector/schedule");
+    expect(screen.getByRole("button", { name: "自动化" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "历史与诊断" })).toHaveAttribute("aria-pressed", "false");
+    expect(await screen.findByRole("button", { name: "刷新自动化" }, { timeout: 5_000 })).toBeVisible();
+    expectNoNavigationWrites(client);
+  });
 
   it("retains project selection, new-task draft and references before a Thread exists", async () => {
     window.history.replaceState({}, "", "#/new");
@@ -508,12 +525,12 @@ describe("V2Workbench inspector navigation", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "没有创建任务前的需求");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(workspace.id));
-    await user.click(screen.getByRole("button", { name: "观察与记录" }));
+    await user.click(screen.getByRole("button", { name: "历史与诊断" }));
     expect(window.location.hash).toBe("#/new/inspector");
     await user.click(screen.getByRole("button", { name: "设置" }));
     await user.click(screen.getByRole("button", { name: "返回应用" }));
     expect(window.location.hash).toBe("#/new/inspector");
-    await user.click(screen.getByRole("button", { name: "观察与记录" }));
+    await user.click(screen.getByRole("button", { name: "新对话" }));
     expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("没有创建任务前的需求");
     expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(workspace.id);
     expect(queryClient.getQueryData(v2FileReferenceKey(workspace.id, ""))).toEqual(files);
@@ -552,7 +569,7 @@ describe("V2Workbench inspector navigation", () => {
       await user.click(await screen.findByRole("button", { name: button }));
       expect(window.location.hash).toBe(base);
       expect(await screen.findByRole("textbox", { name: inputName })).toHaveValue("接入扩展前未发送的需求");
-      if (threadID) expect(screen.getByTestId("v2-conversation")).toHaveAttribute("data-view", "conversation");
+      if (threadID) expect(screen.getByTestId("v2-conversation")).toHaveAttribute("data-records-requested", "false");
       else expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(workspace.id);
       expect(queryClient.getQueryData(v2FileReferenceKey(workspace.id, threadID))).toEqual(files);
       expectNoNavigationWrites(client);
@@ -934,12 +951,12 @@ describe("V2Workbench first turn", () => {
 	  const user = userEvent.setup();
 	  await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "离开后也保留的首条草稿");
 	  await user.click(screen.getByRole("button", { name: "发送消息" }));
-	  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+	  await user.click(screen.getByRole("button", { name: "历史与诊断" }));
 	  expect(window.location.hash).toBe("#/new/inspector");
 	  await act(async () => catalog.resolve({ ...selectableModelCatalog(), routes: [] }));
 	  await waitFor(() => expect(window.location.hash).toBe("#/new/inspector"));
 	  expect(createThread).not.toHaveBeenCalled();
-	  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+	  await user.click(screen.getByRole("button", { name: "新对话" }));
 	  expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("离开后也保留的首条草稿");
 	});
 
