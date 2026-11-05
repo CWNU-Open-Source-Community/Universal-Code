@@ -75,8 +75,8 @@ func TestBundleSPAFallbackAndUnknownAssetsFailClosed(t *testing.T) {
 		status int
 	}{
 		{name: "navigation", method: http.MethodGet, path: "/runs/run-1", accept: "text/html", status: http.StatusOK},
-		{name: "legacy workbench", method: http.MethodGet, path: "/legacy", accept: "text/html", status: http.StatusOK},
-		{name: "legacy thread", method: http.MethodGet, path: "/legacy/threads/thread-1", accept: "text/html", status: http.StatusOK},
+		{name: "history", method: http.MethodGet, path: "/history", accept: "text/html", status: http.StatusOK},
+		{name: "similar namespace", method: http.MethodGet, path: "/legacy-history", accept: "text/html", status: http.StatusOK},
 		{name: "xhtml", method: http.MethodGet, path: "/sessions/one", accept: "application/xhtml+xml", status: http.StatusOK},
 		{name: "zero quality", method: http.MethodGet, path: "/runs/run-1", accept: "text/html;q=0.0", status: http.StatusNotFound},
 		{name: "no accept", method: http.MethodGet, path: "/runs/run-1", status: http.StatusNotFound},
@@ -96,6 +96,25 @@ func TestBundleSPAFallbackAndUnknownAssetsFailClosed(t *testing.T) {
 	}
 }
 
+func TestBundleRejectsRemovedLegacyRoutes(t *testing.T) {
+	bundle, err := LoadDirectory(writeTestBundle(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, requestPath := range []string{"/legacy", "/legacy/", "/legacy/threads/thread-1", "/legacy/runs/run-1", "/legacy/sessions/session-1"} {
+			t.Run(method+requestPath, func(t *testing.T) {
+				response := requestBundle(t, bundle, method, requestPath, "text/html", "")
+				if response.Code != http.StatusNotFound || response.Header().Get("Location") != "" ||
+					strings.Contains(response.Body.String(), testIndexBody) {
+					t.Fatalf("removed route served or redirected the SPA: status=%d headers=%#v body=%q",
+						response.Code, response.Header(), response.Body.String())
+				}
+			})
+		}
+	}
+}
+
 func TestBundleStyleNonceRendersIndexWithoutReusingCachedHTML(t *testing.T) {
 	const indexBody = `<!doctype html><head><meta name="uc-style-nonce" nonce="__UC_STYLE_NONCE__" /></head>` +
 		`<script type="module" src="/assets/index-AbCd1234.js"></script>`
@@ -108,7 +127,7 @@ func TestBundleStyleNonceRendersIndexWithoutReusingCachedHTML(t *testing.T) {
 	}
 	digest := bundle.Digest()
 	static := requestBundle(t, bundle, http.MethodGet, "/", "", "")
-	for _, requestPath := range []string{"/", "/legacy/threads/thread-1"} {
+	for _, requestPath := range []string{"/", "/history"} {
 		for _, nonce := range []string{"first-request-nonce", "second-request-nonce"} {
 			response := requestBundleWithStyleNonce(t, bundle, http.MethodGet, requestPath,
 				"text/html", static.Header().Get("ETag"), nonce)
