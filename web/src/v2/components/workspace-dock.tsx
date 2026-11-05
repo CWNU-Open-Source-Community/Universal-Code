@@ -340,6 +340,7 @@ export function V2WorkspaceDock({
     if (!arrow && (!recordsMenuOpen || event.key !== "Home" && event.key !== "End")) return;
     event.preventDefault();
     if (!recordsMenuOpen) {
+      setAddMenuOpen(false);
       recordsMenuInitialFocus.current = event.key === "ArrowUp" ? "last" : "first";
       setRecordsMenuOpen(true);
       return;
@@ -565,7 +566,7 @@ export function V2WorkspaceDock({
               aria-haspopup="menu"
               aria-label={t("新建或切换工作区标签", "Open workspace tab")}
               className="v2-workspace-icon-btn"
-              onClick={() => setAddMenuOpen((open) => !open)}
+              onClick={() => { setRecordsMenuOpen(false); setAddMenuOpen((open) => !open); }}
               ref={addTriggerRef}
               title={t("打开标签", "Open tab")}
               type="button"
@@ -653,7 +654,7 @@ export function V2WorkspaceDock({
             <button aria-label={t("执行记录选项", "Execution record options")} aria-expanded={recordsMenuOpen}
               aria-haspopup="menu" aria-controls={recordsMenuOpen ? `v2-record-options-${sanitizeDomToken(threadID)}` : undefined}
               className="v2-workspace-icon-btn" ref={recordsMenuTrigger} type="button"
-              onClick={() => { recordsMenuInitialFocus.current = "first"; setRecordsMenuOpen((open) => !open); }}>
+              onClick={() => { setAddMenuOpen(false); recordsMenuInitialFocus.current = "first"; setRecordsMenuOpen((open) => !open); }}>
               <MoreHorizontal aria-hidden="true" size={16} />
             </button>
             {recordsMenuOpen && <div className="v2-workspace-add-menu v2-workspace-records-menu" role="menu"

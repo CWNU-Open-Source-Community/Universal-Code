@@ -311,6 +311,16 @@ it.each([false, true])("opens records options by keyboard and closes only the me
   await user.click(search);
   expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
   expect(search).toHaveFocus();
+  const add = within(panel).getByRole("button", { name: "新建或切换工作区标签" });
+  await user.click(add);
+  trigger.focus();
+  await user.keyboard("{ArrowDown}");
+  expect(add).toHaveAttribute("aria-expanded", "false");
+  expect(within(panel).getAllByRole("menu")).toHaveLength(1);
+  await user.keyboard("{Escape}");
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(panel).toBeVisible();
+  expect(trigger).toHaveFocus();
   expectNoWrites();
 });
 
