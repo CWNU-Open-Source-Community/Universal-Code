@@ -120,3 +120,4 @@ func (s *DependencyWaitService) Stalls(ctx context.Context, runID string,
 	diagnosis, err := s.store.DetectDependencyStalls(ctx, runID, time.Now().UTC())
 	return diagnosis, apperror.Normalize(err)
 }
+

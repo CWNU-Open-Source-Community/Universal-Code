@@ -153,8 +153,8 @@ func TestGitHubReviewHTTPConfigurationRequiresEveryAuthorityGate(t *testing.T) {
 		ExecutionPermissionControlEnabled: true,
 		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{
 			OperatorApprovalEnabled: true},
-		ApprovalControlEnabled:     true,
-		ApprovalController:         application.NewApprovalControlService(fixture.store, nil, nil),
+		ApprovalControlEnabled: true,
+		ApprovalController:     application.NewApprovalControlService(fixture.store, nil, nil),
 		GitHubReviewControlEnabled: true,
 		GitHubReviewController:     &githubReviewControllerStub{}}
 	if _, err := New(fixture.store, valid); err != nil {

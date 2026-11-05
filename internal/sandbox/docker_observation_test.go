@@ -358,6 +358,7 @@ func TestDockerObservationCanonicalizesDaemonArchitectureNames(t *testing.T) {
 	}
 }
 
+
 func TestDockerObservationTransportUsesExactEvidenceResourceFilter(t *testing.T) {
 	endpoint, _ := NewDockerObservationEndpoint(DockerObservationEndpointLocalUnix)
 	attemptID := "production-attempt"

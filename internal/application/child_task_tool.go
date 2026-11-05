@@ -118,7 +118,7 @@ func childTaskEvents(run domain.Run, scope toolgateway.ChildTaskProposalContext,
 			"proposal_id": proposal.ID, "root_agent_id": proposal.RootAgentID,
 			"protocol_version": proposal.Spec.Version, "status": proposal.Status,
 			"surface": string(proposal.Surface), "fanout_tier": string(proposal.FanoutTier),
-			"task_count":      len(proposal.Spec.Tasks),
+			"task_count": len(proposal.Spec.Tasks),
 			"suggested_turns": totalTurns, "suggested_tokens": totalTokens,
 			"operator_review_required": true, "admission_authorized": false,
 		})
@@ -128,8 +128,8 @@ func childTaskEvents(run domain.Run, scope toolgateway.ChildTaskProposalContext,
 	toolEvent, err := events.New(run.ID, run.MissionID, events.ToolCompletedEvent,
 		"agent_proposal_tool", scope.InvocationID, map[string]any{
 			"invocation_id": scope.InvocationID,
-			"tool_name":     toolgateway.ChildTaskProposeTool,
-			"target_id":     proposal.ID, "agent_id": scope.RootAgentID,
+			"tool_name": toolgateway.ChildTaskProposeTool,
+			"target_id": proposal.ID, "agent_id": scope.RootAgentID,
 			"execution_backend": "agent_proposal", "admission_authorized": false,
 		})
 	if err != nil {
@@ -139,3 +139,4 @@ func childTaskEvents(run domain.Run, scope toolgateway.ChildTaskProposalContext,
 }
 
 var _ = json.Marshal
+
