@@ -335,9 +335,9 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
       </footer>
   </>;
   if (embedded) return <div className="v2-review-drawer is-embedded">{reviewInner}</div>;
-  return createPortal(<div className="v2-inspector-backdrop" role="presentation"
+  return createPortal(<div className="v2-detail-backdrop" role="presentation"
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section aria-label={t("审阅任务改动", "Review task changes")} aria-modal="true" className="v2-inspector-drawer v2-review-drawer"
+    <section aria-label={t("审阅任务改动", "Review task changes")} aria-modal="true" className="v2-detail-drawer v2-review-drawer"
       ref={dialog} role="dialog" tabIndex={-1}>
       {reviewInner}
     </section>

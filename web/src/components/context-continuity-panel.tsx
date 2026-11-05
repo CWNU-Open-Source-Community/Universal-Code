@@ -182,7 +182,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.inspectorRecords });
+      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.historyRecords });
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.workspaces });
     },

@@ -179,7 +179,7 @@ function renderPanel(client: APIClient, threadID = "", compact = false) {
   </QueryClientProvider>);
 }
 
-it("keeps uncertain approvals and failed continuations actionable in the compact Inspector", async () => {
+it("keeps uncertain approvals and failed continuations actionable in the execution records", async () => {
   const settled = { ...recordedProposal(7, false), id: "settled", purpose: "Settled command" };
   const uncertain = { ...proposal, id: "uncertain", purpose: "Uncertain command", review: approvedReview() };
   const failed = { ...recordedProposal(0, false), id: "failed-continuation", purpose: "Failed continuation",

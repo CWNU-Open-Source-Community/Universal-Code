@@ -26,7 +26,7 @@ const (
 
 // ThreadActivityToolFacts is a deprecated, private compatibility projection
 // used only as a bounded validation adapter by the v2 Go projector. Both the
-// Thread conversation and Legacy Inspector HTTP responses use
+// Thread conversation and execution record HTTP responses use
 // ThreadActivityTypedDetail and never emit this generic fact bag.
 // Like the v2 projection it contains no raw payload/result, credentials,
 // authority JSON, stdout/stderr, or private reasoning.

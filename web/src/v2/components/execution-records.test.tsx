@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
 import type { PublicModelStreamSnapshot, ThreadDetailView, ThreadTranscriptItemView } from "../../api/types";
-import { V2Inspector, type V2InspectorProps } from "./inspector";
+import { V2ExecutionRecords, type V2ExecutionRecordsProps } from "./execution-records";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const createdAt = "2026-09-10T15:00:00Z";
@@ -19,9 +19,9 @@ function item(id: string, overrides: Partial<ThreadTranscriptItemView> = {}): Th
 }
 function setup(items: ThreadTranscriptItemView[], client = {} as APIClient) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const props: V2InspectorProps = { client, threadID: "thread-1", detail: { thread: { id: "thread-1", last_run_id: "run-2" } } as ThreadDetailView,
+  const props: V2ExecutionRecordsProps = { client, threadID: "thread-1", detail: { thread: { id: "thread-1", last_run_id: "run-2" } } as ThreadDetailView,
     durableItems: items, liveSnapshot: null, liveStatus: "stopped", hasOlder: true, isFetchingOlder: false, onLoadOlder: vi.fn() };
-  const draw = (current = props) => render(<QueryClientProvider client={cache}><V2Inspector {...current} /></QueryClientProvider>);
+  const draw = (current = props) => render(<QueryClientProvider client={cache}><V2ExecutionRecords {...current} /></QueryClientProvider>);
   return { cache, props, draw };
 }
 function result(runID = "run-1") {
@@ -35,7 +35,7 @@ function result(runID = "run-1") {
   }] };
 }
 
-describe("V2Inspector", () => {
+describe("V2ExecutionRecords", () => {
   it("keeps an old model start as a time-bound fact without presenting it as current Agent activity", async () => {
     const { draw } = setup([
       item("open-boundary", { sequence: 0, status: "running" }),
@@ -165,7 +165,7 @@ describe("V2Inspector", () => {
     const { draw, cache } = setup([item("only-current", { run_id: "run-2", run_ordinal: 2 })]);
     const view = draw();
     expect(screen.queryByLabelText("执行记录范围")).not.toBeInTheDocument();
-    act(() => cache.setQueryData(["v2", "thread", "thread-1", "inspector-view"], {
+    act(() => cache.setQueryData(["v2", "thread", "thread-1", "execution-records-view"], {
       filter: "all", search: "", runID: "run-old-not-loaded", selected: null,
     }));
     await waitFor(() => expect(screen.getByLabelText("执行记录范围")).toHaveValue("run-old-not-loaded"));
@@ -235,13 +235,13 @@ describe("V2Inspector", () => {
     let view = draw();
     let viewport = screen.getByTestId("thread-transcript-viewport");
     fireEvent.scroll(viewport, { target: { scrollTop: 400 } });
-    await waitFor(() => expect(cache.getQueryData<{ position: { nearBottom: boolean } }>(["v2", "thread", "thread-1", "inspector-view"])?.position.nearBottom).toBe(false));
+    await waitFor(() => expect(cache.getQueryData<{ position: { nearBottom: boolean } }>(["v2", "thread", "thread-1", "execution-records-view"])?.position.nearBottom).toBe(false));
     view.unmount();
     view = draw();
     viewport = screen.getByTestId("thread-transcript-viewport");
     expect(viewport.scrollTop).toBe(400);
     const older = Array.from({ length: 3 }, (_, index) => item(`older-${index}`, { sequence: index + 1 }));
-    act(() => view.rerender(<QueryClientProvider client={cache}><V2Inspector {...props} durableItems={[...older, ...items]} /></QueryClientProvider>));
+    act(() => view.rerender(<QueryClientProvider client={cache}><V2ExecutionRecords {...props} durableItems={[...older, ...items]} /></QueryClientProvider>));
     expect(viewport.scrollTop).toBe(400 + 3 * 132);
     await userEvent.setup().click(screen.getByRole("button", { name: "回到最新" }));
     expect(viewport.scrollTop).toBe(8000);

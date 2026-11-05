@@ -864,7 +864,7 @@ export function V2WorkspaceDock({
 
   return docked ? content : createPortal(
     <div
-      className="v2-inspector-backdrop"
+      className="v2-detail-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) collapsePanel();
       }}

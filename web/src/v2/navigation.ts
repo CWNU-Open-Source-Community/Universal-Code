@@ -3,55 +3,68 @@ import type { V2SettingsSection } from "./components/sidebar";
 import { useFileEditLeave } from "../components/file-edit-drafts";
 
 export type V2RunPane = "context" | "checkpoints" | "tools" | "ui-evidence";
-export type V2Route = { kind: "initial" | "new" | "thread" | "invalid";
-  threadID?: string; messageID?: string; section?: V2SettingsSection; view?: "inspector";
-  tool?: "run" | "session" | "schedule"; resourceID?: string; pane?: V2RunPane };
-const sections: string[] = ["general", "models", "permissions", "appearance", "inspector", "archived",
+export type V2Route = { kind: "initial" | "new" | "thread" | "history" | "run" | "session" | "automations" | "invalid";
+  threadID?: string; messageID?: string; section?: V2SettingsSection;
+  panel?: "records"; resourceID?: string; pane?: V2RunPane };
+const sections: string[] = ["general", "models", "permissions", "appearance", "records", "archived",
   "extensions", "skills", "advanced-models", "about", "shortcuts", "connections", "task-configuration", "environment", "configuration", "usage"];
 
 // Fragments work with both the loopback UI and the existing Desktop asset
 // server. History contains navigation identity only, never tokens or drafts.
 export function readV2Route(hash: string, pathname = "/"): V2Route {
-  if (!hash && (pathname === "/legacy" || pathname === "/legacy/")) return { kind: "new", view: "inspector" };
-  if (!hash && pathname.startsWith("/legacy/")) {
-    const legacy = /^\/legacy\/(threads|runs|sessions)\/([^/]+)\/?$/u.exec(pathname);
-    if (!legacy) return { kind: "invalid" };
-    let id: string;
-    try { id = decodeURIComponent(legacy[2]); } catch { return { kind: "invalid" }; }
-    if (!/^[a-zA-Z0-9_.-]{1,256}$/u.test(id)) return { kind: "invalid" };
-    return legacy[1] === "threads" ? { kind: "thread", threadID: id, view: "inspector" }
-      : { kind: "new", view: "inspector", tool: legacy[1] === "runs" ? "run" : "session", resourceID: id };
-  }
+  if (/^\/legacy(?:\/|$)/u.test(pathname)) return { kind: "invalid" };
   if (!hash || hash === "#") return { kind: "initial" };
-  const message = /^#\/threads\/([a-zA-Z0-9_.-]{1,256})\/messages\/([a-zA-Z0-9_.-]{1,256})$/u.exec(hash);
-  if (message) return { kind: "thread", threadID: message[1], messageID: message[2] };
-  const match = /^#\/(new|threads\/([^/]+))(\/inspector(?:\/(schedule(?:\/[^/]+)?|runs\/[^/]+(?:\/(?:context|checkpoints|tools|ui-evidence))?|sessions\/[^/]+))?)?(?:\/settings\/([^/]+))?$/u.exec(hash);
-  if (!match) return { kind: "invalid" };
-  let threadID: string | undefined;
-  try { threadID = match[2] ? decodeURIComponent(match[2]) : undefined; }
-  catch { return { kind: "invalid" }; }
-  if (threadID && !/^[a-zA-Z0-9_.-]{1,256}$/u.test(threadID)) return { kind: "invalid" };
-  const section = (match[5] === "plugins" ? "extensions" : match[5] === "keyboard" ? "shortcuts"
-    : match[5]) as V2SettingsSection | undefined;
+  const settings = /\/settings\/([^/]+)$/u.exec(hash);
+  const path = settings ? hash.slice(0, settings.index) : hash;
+  const section = (settings?.[1] === "plugins" ? "extensions" : settings?.[1] === "keyboard" ? "shortcuts"
+    : settings?.[1]) as V2SettingsSection | undefined;
   if (section && !sections.includes(section)) return { kind: "invalid" };
-  const tool = match[4]?.startsWith("runs/") ? "run" : match[4]?.startsWith("sessions/") ? "session"
-    : match[4]?.startsWith("schedule") ? "schedule" : undefined;
-  let resourceID: string | undefined;
-  try { resourceID = match[4]?.includes("/") ? decodeURIComponent(match[4]!.split("/")[1]) : undefined; }
-  catch { return { kind: "invalid" }; }
-  if (resourceID && !/^[a-zA-Z0-9_.-]{1,256}$/u.test(resourceID)) return { kind: "invalid" };
-  const pane = tool === "run" ? match[4]?.split("/")[2] as V2RunPane | undefined : undefined;
-  return { kind: threadID ? "thread" : "new", ...(threadID ? { threadID } : {}),
-    ...(match[3] ? { view: "inspector" as const } : {}), ...(tool ? { tool } : {}),
-    ...(resourceID ? { resourceID } : {}), ...(pane ? { pane } : {}), ...(section ? { section } : {}) };
+  const parts = path.split("/");
+  if (parts.shift() !== "#") return { kind: "invalid" };
+  let threadID: string | undefined;
+  try {
+    if (parts[0] === "threads") {
+      threadID = decodeURIComponent(parts[1] ?? "");
+      if (!/^[a-zA-Z0-9_.-]{1,256}$/u.test(threadID)) return { kind: "invalid" };
+      parts.splice(0, 2);
+    }
+    let route: V2Route;
+    if (threadID && !parts.length) route = { kind: "thread", threadID };
+    else if (threadID && parts[0] === "records" && parts.length === 1)
+      route = { kind: "thread", threadID, panel: "records" };
+    else if (threadID && parts[0] === "messages" && parts.length === 2) {
+      const messageID = decodeURIComponent(parts[1]);
+      if (!/^[a-zA-Z0-9_.-]{1,256}$/u.test(messageID)) return { kind: "invalid" };
+      route = { kind: "thread", threadID, messageID };
+    } else if (!threadID && parts[0] === "new" && parts.length === 1) route = { kind: "new" };
+    else if (!threadID && parts[0] === "history" && parts.length === 1) route = { kind: "history" };
+    else if ((parts[0] === "runs" && (parts.length === 2 || parts.length === 3)) ||
+      (parts[0] === "sessions" && parts.length === 2)) {
+      const resourceID = decodeURIComponent(parts[1]);
+      if (!/^[a-zA-Z0-9_.-]{1,256}$/u.test(resourceID)) return { kind: "invalid" };
+      const pane = parts[2] as V2RunPane | undefined;
+      if (parts.length === 3 && !["context", "checkpoints", "tools", "ui-evidence"].includes(pane ?? "")) return { kind: "invalid" };
+      route = { kind: parts[0] === "runs" ? "run" : "session", resourceID,
+        ...(threadID ? { threadID } : {}), ...(pane ? { pane } : {}) };
+    } else if (parts[0] === "automations" && (parts.length === 1 || (parts.length === 3 && parts[1] === "runs"))) {
+      const resourceID = parts[2] ? decodeURIComponent(parts[2]) : undefined;
+      if (parts.length === 3 && (!resourceID || !/^[a-zA-Z0-9_.-]{1,256}$/u.test(resourceID))) return { kind: "invalid" };
+      route = { kind: "automations", ...(threadID ? { threadID } : {}), ...(resourceID ? { resourceID } : {}) };
+    } else return { kind: "invalid" };
+    return { ...route, ...(section ? { section } : {}) };
+  } catch { return { kind: "invalid" }; }
 }
 
 function routeHash(route: V2Route) {
-  const base = route.kind === "thread" ? `#/threads/${encodeURIComponent(route.threadID!)}` : "#/new";
-  if (route.messageID && route.kind === "thread" && !route.section && !route.view) return `${base}/messages/${encodeURIComponent(route.messageID)}`;
-  const tool = route.tool === "schedule" ? `/schedule${route.resourceID ? `/${encodeURIComponent(route.resourceID)}` : ""}` : route.tool && route.resourceID
-    ? `/${route.tool}s/${encodeURIComponent(route.resourceID)}${route.tool === "run" && route.pane ? `/${route.pane}` : ""}` : "";
-  return `${base}${route.view === "inspector" ? `/inspector${tool}` : ""}${route.section ? `/settings/${route.section}` : ""}`;
+  const thread = route.threadID ? `#/threads/${encodeURIComponent(route.threadID)}` : "#";
+  const resource = route.resourceID ? encodeURIComponent(route.resourceID) : "";
+  const base = route.kind === "thread" ? `${thread}${route.messageID ? `/messages/${encodeURIComponent(route.messageID)}`
+    : route.panel === "records" ? "/records" : ""}`
+    : route.kind === "history" ? "#/history"
+      : route.kind === "run" ? `${thread}/runs/${resource}${route.pane ? `/${route.pane}` : ""}`
+        : route.kind === "session" ? `${thread}/sessions/${resource}`
+          : route.kind === "automations" ? `${thread}/automations${resource ? `/runs/${resource}` : ""}` : "#/new";
+  return `${base}${route.section ? `/settings/${route.section}` : ""}`;
 }
 
 function historyIndex() {
@@ -72,7 +85,8 @@ export function useV2Navigation() {
       const previous = accepted.current;
       if (window.location.href === previous.url) return;
       if (!Number.isSafeInteger(window.history.state?.v2NavigationIndex)) {
-        window.history.replaceState({ ...window.history.state, v2NavigationIndex: previous.index + 1 }, "");
+        window.history.replaceState({ ...window.history.state, v2NavigationIndex: previous.index + 1,
+          v2PreviousHash: undefined }, "");
       }
       const next = { url: window.location.href, index: historyIndex(), state: window.history.state };
       const route = readV2Route(window.location.hash, window.location.pathname);
@@ -95,18 +109,40 @@ export function useV2Navigation() {
     leave(() => {
       const index = historyIndex() + (replace ? 0 : 1);
       const state = { ...window.history.state, v2NavigationIndex: index };
-      const url = window.location.pathname.startsWith("/legacy") ? `/${window.location.search}${hash}` : hash;
-      if (replace) window.history.replaceState(state, "", url);
-      else window.history.pushState(state, "", url);
+      if (!replace) {
+        const source = readV2Route(window.location.hash, window.location.pathname);
+        state.v2PreviousHash = source.kind === "initial" || source.kind === "invalid" ? undefined : routeHash(source);
+      }
+      if (replace) window.history.replaceState(state, "", hash);
+      else window.history.pushState(state, "", hash);
       accepted.current = { url: window.location.href, index, state };
       setLocation({ route, index });
       onAccepted?.();
     });
   }, [leave]);
   const back = () => {
-    if (location.route.section) navigate({ ...location.route, section: undefined }, true);
+    const route = location.route;
+    const returnToResourceParent = (target: V2Route) => {
+      // Reuse a known parent entry. Replacing it would leave two identical pages
+      // in the stack; unknown predecessors and direct links still need a target.
+      if (location.index > 0 && window.history.state?.v2PreviousHash === routeHash(target)) window.history.back();
+      else navigate(target, true);
+    };
+    if (route.section) {
+      const source = { ...route, section: undefined };
+      if (route.kind === "run" || route.kind === "session") returnToResourceParent(source);
+      else navigate(source, true);
+    }
+    else if (route.kind === "run" || route.kind === "session") {
+      if (route.threadID) navigate({ kind: "thread", threadID: route.threadID, panel: "records" }, true);
+      else returnToResourceParent({ kind: "history" });
+    }
+    else if (route.kind === "automations")
+      navigate(route.threadID ? { kind: "thread", threadID: route.threadID } : { kind: "new" }, true);
+    else if (route.panel === "records") navigate({ kind: "thread", threadID: route.threadID }, true);
     else if (location.index > 0) window.history.back();
-    else if (location.route.view) navigate({ ...location.route, view: undefined, tool: undefined, resourceID: undefined, pane: undefined }, true);
+    else if (route.kind === "history") navigate({ kind: "new" }, true);
   };
-  return { route: location.route, navigate, back, canGoBack: location.index > 0 || Boolean(location.route.section || location.route.view) };
+  return { route: location.route, navigate, back, canGoBack: location.index > 0 || Boolean(location.route.section ||
+    location.route.panel || ["history", "run", "session", "automations"].includes(location.route.kind)) };
 }

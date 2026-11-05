@@ -5,19 +5,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render as renderComponent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
-import { InspectorRecordBrowser } from "./inspector-record-browser";
+import { HistoryRecordBrowser } from "./history-record-browser";
 
 function mount(getPage: ReturnType<typeof vi.fn>) {
   const onOpen = vi.fn();
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <InspectorRecordBrowser client={{ getPage } as unknown as APIClient} onOpen={onOpen} />
+    <HistoryRecordBrowser client={{ getPage } as unknown as APIClient} onOpen={onOpen} />
   </QueryClientProvider>);
   return onOpen;
 }
 const record = (id: string) => ({ id, status: "completed", updated_at: "2026-09-10T01:00:00Z" });
 const page = (items: unknown[], next_cursor = "") => ({ items, page: { limit: 50, next_cursor } });
 
-describe("Inspector saved record browser", () => {
+describe("History record browser", () => {
   it("presents a running Run as an unfinished execution record without guessing live activity or fetching each Run", async () => {
     const getPage = vi.fn().mockResolvedValue(page([{ ...record("run-open"), status: "running" }]));
     mount(getPage);
@@ -25,7 +25,6 @@ describe("Inspector saved record browser", () => {
     const saved = await screen.findByRole("button", { name: "打开运行记录 run-open" });
     expect(saved).toHaveTextContent("未结束");
     expect(saved).not.toHaveTextContent("running");
-    expect(screen.getByText(/选择历史执行或会话/)).toHaveTextContent("需要继续任务时，回到对应对话发送消息");
     expect(getPage).toHaveBeenCalledExactlyOnceWith("/runs", { limit: 50 }, "", expect.any(AbortSignal));
   });
 

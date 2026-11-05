@@ -12,9 +12,9 @@ import { mergeThreadTranscriptItems, VirtualTranscriptList,
   type TranscriptReadingPosition } from "../../components/thread-transcript";
 import { ActivityItemDetail } from "./activity-detail";
 import { V2ImagePreview } from "./image-input";
-import "./inspector.css";
+import "./execution-records.css";
 
-export interface V2InspectorProps {
+export interface V2ExecutionRecordsProps {
   client: APIClient;
   threadID: string;
   detail: ThreadDetailView;
@@ -27,14 +27,14 @@ export interface V2InspectorProps {
 }
 
 type Filter = "all" | "tools" | "approvals" | "exceptions";
-interface InspectorState {
+interface ExecutionRecordsState {
   filter: Filter;
   search: string;
   runID: string;
   selected: { id: string; runID: string } | null;
   position?: TranscriptReadingPosition;
 }
-const emptyState: InspectorState = { filter: "all", search: "", runID: "", selected: null };
+const emptyState: ExecutionRecordsState = { filter: "all", search: "", runID: "", selected: null };
 const filterLabels = (t: LocaleText): Record<Filter, string> => ({ all: t("全部", "All"), tools: t("工具", "Tool"), approvals: t("审批", "Approvals"), exceptions: t("异常", "Exceptions") });
 const sourceLabels = (t: LocaleText) => ({ harness: t("执行记录", "Execution records"), model: t("模型公开内容", "Public model content"), operator: t("用户输入", "User input"), peer: t("其他聊天", "Other conversations") });
 const stageLabels = (t: LocaleText) => ({ started: t("已开始", "Started"), arguments_ready: t("参数就绪", "Arguments ready"), running: t("运行中", "Running"), result: t("结果", "Result"), blocked: t("已阻塞", "Blocked") });
@@ -55,23 +55,23 @@ function inCategory(item: ThreadTranscriptItemView, filter: Filter): boolean {
 }
 
 /** Read-only content area. Submission, approvals and execution state belong to the shared conversation owner. */
-export function V2Inspector(props: V2InspectorProps) {
-  return <InspectorContent key={props.threadID} {...props} />;
+export function V2ExecutionRecords(props: V2ExecutionRecordsProps) {
+  return <ExecutionRecordsContent key={props.threadID} {...props} />;
 }
 
-function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot, liveStatus,
-  hasOlder, isFetchingOlder, onLoadOlder }: V2InspectorProps) {
+function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveSnapshot, liveStatus,
+  hasOlder, isFetchingOlder, onLoadOlder }: V2ExecutionRecordsProps) {
   const { t, locale } = useLocale();
   const queryClient = useQueryClient();
-  const stateKey = useMemo(() => ["v2", "thread", threadID, "inspector-view"], [threadID]);
-  const state = useQuery<InspectorState>({ queryKey: stateKey, queryFn: () => emptyState,
+  const stateKey = useMemo(() => ["v2", "thread", threadID, "execution-records-view"], [threadID]);
+  const state = useQuery<ExecutionRecordsState>({ queryKey: stateKey, queryFn: () => emptyState,
     initialData: emptyState, enabled: false, staleTime: Infinity, gcTime: Infinity }).data;
   const ui = state ?? emptyState;
-  const update = useCallback((patch: Partial<InspectorState>) => {
-    queryClient.setQueryData<InspectorState>(stateKey, (old) => ({ ...(old ?? emptyState), ...patch }));
+  const update = useCallback((patch: Partial<ExecutionRecordsState>) => {
+    queryClient.setQueryData<ExecutionRecordsState>(stateKey, (old) => ({ ...(old ?? emptyState), ...patch }));
   }, [queryClient, stateKey]);
   const onPositionChange = useCallback((position: TranscriptReadingPosition) => {
-    queryClient.setQueryData<InspectorState>(stateKey, (old) => {
+    queryClient.setQueryData<ExecutionRecordsState>(stateKey, (old) => {
       const previous = old?.position;
       return previous?.anchorID === position.anchorID && previous.offset === position.offset &&
         previous.nearBottom === position.nearBottom ? old : { ...(old ?? emptyState), position };
@@ -111,21 +111,21 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
   const currentRunID = detail.thread.active_run_id || detail.thread.last_run_id;
   const hasFilters = ui.filter !== "all" || ui.search !== "" || ui.runID !== "";
   const reset = () => update({ filter: "all", search: "", runID: "", position: undefined });
-  return <section className={`v2-inspector-content${ui.selected ? " has-selection" : ""}`} aria-label={t("Inspector 记录", "Inspector records")}>
-    <header className="v2-inspector-controls">
-      <div className="v2-inspector-range">
+  return <section className={`v2-execution-records-content${ui.selected ? " has-selection" : ""}`} aria-label={t("执行记录", "Execution records")}>
+    <header className="v2-execution-records-controls">
+      <div className="v2-execution-records-range">
         <span>{t(`已加载 ${durableItems.length} 条`, `${durableItems.length} records loaded`)}{hasOlder ? t(" · 还有更早记录", " · Earlier records available") : t(" · 已到最早记录", " · Earliest record reached")}</span>
         {items.some((item) => item.provisional) && <span>{t("含未落盘的实时内容", "Includes unsaved live content")}</span>}
       </div>
-      <div className="v2-inspector-tools">
-        <div className="v2-inspector-filters" role="group" aria-label={t("记录类型", "Record type")}>
+      <div className="v2-execution-records-tools">
+        <div className="v2-execution-records-filters" role="group" aria-label={t("记录类型", "Record type")}>
           {(Object.keys(filterLabels(t)) as Filter[]).map((filter) => <button key={filter} type="button"
             aria-pressed={ui.filter === filter} onClick={() => update({ filter, position: undefined })}>{filterLabels(t)[filter]}</button>)}
         </div>
-        <label className="v2-inspector-search"><Search size={15} aria-hidden="true" />
+        <label className="v2-execution-records-search"><Search size={15} aria-hidden="true" />
           <input aria-label={t("在已加载记录中查找", "Search loaded records")} placeholder={t("查找已加载记录", "Search loaded records")} value={ui.search}
             onChange={(event) => update({ search: event.target.value, position: undefined })} /></label>
-        {(runs.length > 1 || ui.runID) && <label className="v2-inspector-run"><span>{t("执行范围", "Run scope")}</span><select aria-label={t("执行记录范围", "Execution record scope")} value={ui.runID}
+        {(runs.length > 1 || ui.runID) && <label className="v2-execution-records-run"><span>{t("执行范围", "Run scope")}</span><select aria-label={t("执行记录范围", "Execution record scope")} value={ui.runID}
           onChange={(event) => update({ runID: event.target.value, position: undefined })}>
           <option value="">{t("全部执行记录", "All runs")}</option>
           {ui.runID && !runs.some(([runID]) => runID === ui.runID) && <option value={ui.runID}>{t("已选执行（暂未加载）", "Selected run (not loaded)")}</option>}
@@ -133,36 +133,36 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
             {t("执行", "Run")}{ordinal}{runID === currentRunID ? t("· 当前", " · Current") : t("· 历史只读", " · Historical, read only")}</option>)}
         </select></label>}
       </div>
-      <div className="v2-inspector-scope"><span>{t(`显示 ${visible.filter((item) => item.sequence !== 0).length} 条记录 · 查找仅覆盖已加载内容`, `${visible.filter((item) => item.sequence !== 0).length} records shown · Search covers loaded content only`)}</span>
+      <div className="v2-execution-records-scope"><span>{t(`显示 ${visible.filter((item) => item.sequence !== 0).length} 条记录 · 查找仅覆盖已加载内容`, `${visible.filter((item) => item.sequence !== 0).length} records shown · Search covers loaded content only`)}</span>
         {hasFilters && <button type="button" onClick={reset}>{t("清除筛选", "Clear filters")}</button>}
         <button type="button" onClick={() => { reset(); setLatestRequest((value) => value + 1); }}>
           <ArrowDown size={14} aria-hidden="true" />{t("回到最新", "Jump to latest")}</button>
       </div>
     </header>
-    <div className="v2-inspector-body">
-      <div className="v2-inspector-records" ref={listRef}>
+    <div className="v2-execution-records-body">
+      <div className="v2-execution-records-records" ref={listRef}>
         {visible.length > 0 ? <VirtualTranscriptList key={`${ui.filter}:${ui.runID}:${ui.search}`}
           items={visible} hasOlder={hasOlder} isFetchingOlder={isFetchingOlder} onLoadOlder={onLoadOlder}
           t={t} initialPosition={ui.position} onPositionChange={onPositionChange} latestRequest={latestRequest}
-          renderItem={(item) => <button type="button" className={`v2-inspector-row${item.sequence === 0 ? " is-boundary" : ""}${isException(item) ? " is-exception" : ""}`}
+          renderItem={(item) => <button type="button" className={`v2-execution-records-row${item.sequence === 0 ? " is-boundary" : ""}${isException(item) ? " is-exception" : ""}`}
             aria-pressed={ui.selected?.id === item.id && ui.selected.runID === item.run_id}
             onClick={(event) => { selectedButton.current = event.currentTarget; update({ selected: { id: item.id, runID: item.run_id } }); }}>
-            <span className="v2-inspector-row-heading"><strong>{item.sequence === 0 ? t(`执行 ${item.run_ordinal}`, `Run ${item.run_ordinal}`) : item.tool_name || item.title}</strong>
+            <span className="v2-execution-records-row-heading"><strong>{item.sequence === 0 ? t(`执行 ${item.run_ordinal}`, `Run ${item.run_ordinal}`) : item.tool_name || item.title}</strong>
               {item.status && <span>{item.sequence === 0 ? <LifecycleStatusLabel status={item.status} />
                 : item.status === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : <StatusLabel status={item.status} />}</span>}</span>
-            {item.detail && <span className="v2-inspector-row-preview">{item.detail.slice(0, 200)}</span>}
-            {!!item.images?.length && <span className="v2-inspector-row-preview">{t(`${item.images.length} 张图片`, `${item.images.length} images`)}</span>}
-            <span className="v2-inspector-row-meta"><span>{sourceLabels(t)[item.source]}</span>
+            {item.detail && <span className="v2-execution-records-row-preview">{item.detail.slice(0, 200)}</span>}
+            {!!item.images?.length && <span className="v2-execution-records-row-preview">{t(`${item.images.length} 张图片`, `${item.images.length} images`)}</span>}
+            <span className="v2-execution-records-row-meta"><span>{sourceLabels(t)[item.source]}</span>
               <span>{t(`执行 ${item.run_ordinal}`, `Run ${item.run_ordinal}`)}</span>
               <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleTimeString(locale, { hour12: false })}</time>
               {item.provisional && <span>{t("未落盘", "Not saved")}</span>}</span>
-          </button>} /> : <div className="v2-inspector-empty" role="status">
+          </button>} /> : <div className="v2-execution-records-empty" role="status">
           <p>{items.length ? t("已加载范围内没有匹配记录。", "No matching records in the loaded history.") : t("还没有公开记录。", "No public records yet.")}</p>
           {hasOlder && <button type="button" disabled={isFetchingOlder} onClick={onLoadOlder}>
             {isFetchingOlder ? t("正在加载较早记录…", "Loading earlier records…") : t("加载较早记录", "Load earlier records")}</button>}
         </div>}
       </div>
-      {ui.selected && <aside className="v2-inspector-detail" aria-label={t("选中记录详情", "Selected record details")}
+      {ui.selected && <aside className="v2-execution-records-detail" aria-label={t("选中记录详情", "Selected record details")}
         onKeyDownCapture={(event) => {
           if (event.key !== "Escape" || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
           event.stopPropagation();
@@ -170,32 +170,32 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
           event.preventDefault(); closeDetail();
         }}>
         <header><strong>{t("记录详情", "Record details")}</strong><button ref={closeRef} type="button" aria-label={t("关闭记录详情", "Close record details")} onClick={closeDetail}><X size={18} /></button></header>
-        {selected ? <InspectorDetail key={`${selected.run_id}:${selected.id}`} client={client} threadID={threadID} item={selected} /> :
+        {selected ? <ExecutionRecordDetail key={`${selected.run_id}:${selected.id}`} client={client} threadID={threadID} item={selected} /> :
           <p>{t("选中记录暂不在已加载范围内。可加载更早记录后继续查看。", "The selected record is outside the loaded history. Load earlier records to view it.")}</p>}
       </aside>}
     </div>
   </section>;
 }
 
-function InspectorDetail({ client, threadID, item }: { client: APIClient; threadID: string; item: ThreadTranscriptItemView }) {
+function ExecutionRecordDetail({ client, threadID, item }: { client: APIClient; threadID: string; item: ThreadTranscriptItemView }) {
   const { t } = useLocale();
-  return <div className="v2-inspector-detail-content">
+  return <div className="v2-execution-records-detail-content">
     <h3>{item.tool_name || item.title}</h3>
-    <p className="v2-inspector-origin">{sourceLabels(t)[item.source]} · {item.stage === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
+    <p className="v2-execution-records-origin">{sourceLabels(t)[item.source]} · {item.stage === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
       {item.provisional ? t("· 尚未落盘", " · Not saved yet") : t("· 已保存", " · Saved")}</p>
     {item.durable && !item.provisional && item.status === "running" && item.sequence !== 0 &&
-      <p className="v2-inspector-origin">{t("这是记录保存时的执行状态。Agent 的当前活动请查看对话上方的工作状态。", "This was the execution state when the record was saved. Check the conversation's activity status for what the agent is doing now.")}</p>}
-    {item.source === "model" && <p className="v2-inspector-origin">{t("公开模型内容；实际执行结果以对应工具记录为准。", "Public model content. Tool records show the actual execution results.")}</p>}
+      <p className="v2-execution-records-origin">{t("这是记录保存时的执行状态。Agent 的当前活动请查看对话上方的工作状态。", "This was the execution state when the record was saved. Check the conversation's activity status for what the agent is doing now.")}</p>}
+    {item.source === "model" && <p className="v2-execution-records-origin">{t("公开模型内容；实际执行结果以对应工具记录为准。", "Public model content. Tool records show the actual execution results.")}</p>}
     {item.detail && (item.activity_type === "message" && item.source === "model" ? <SafeMarkdown>{item.detail}</SafeMarkdown> :
-      <pre className="v2-inspector-record-text">{item.detail}</pre>)}
+      <pre className="v2-execution-records-record-text">{item.detail}</pre>)}
     {item.source === "operator" && <V2ImagePreview client={client} images={item.images ?? []} />}
-    {(item.detail_available && item.activity_detail_ref || item.web_evidence) && <ul className="v2-inspector-structured-detail">
+    {(item.detail_available && item.activity_detail_ref || item.web_evidence) && <ul className="v2-execution-records-structured-detail">
       <ActivityItemDetail client={client} threadID={threadID} expectedRunID={item.run_id} initialOpen item={{
         title: item.title, detail: "", status: item.status ?? "", provisional: item.provisional,
         detailAvailable: item.durable && !item.provisional && Boolean(item.detail_available && item.activity_detail_ref),
         detailRef: item.activity_detail_ref, summary: item.activity_summary, webEvidence: item.web_evidence,
       }} /></ul>}
-    <details className="v2-inspector-identities"><summary>{t("来源与精确标识", "Source and exact identifiers")}</summary>
+    <details className="v2-execution-records-identities"><summary>{t("来源与精确标识", "Source and exact identifiers")}</summary>
       {item.images?.map((image) => <p key={image.id}>{t("图片", "Image")}{image.name || image.id}<br />
         <code>{image.id}</code><br /><code>SHA256 {image.sha256}</code></p>)}
       <dl>{Object.entries({ [t("记录 ID", "Record ID")]: item.id, [t("稳定标识", "Stable ID")]: item.canonical_id, [t("执行 ID", "Run ID")]: item.run_id,

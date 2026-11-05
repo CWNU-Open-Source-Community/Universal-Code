@@ -8,8 +8,9 @@ import type { APIClient } from "../api/client";
 import type { ThreadExecutionView } from "../api/types";
 import { v2QueryKeys } from "./query-keys";
 import { useConnectionStore } from "../state/connection";
-import { V2InspectorHome } from "./components/inspector-home";
-import { V2InspectorTools } from "./components/inspector-tools";
+import { V2HistoryPage } from "./components/history-page";
+import { V2RunDetailsPage } from "./components/run-details-page";
+import { V2SessionDetailsPage } from "./components/session-details-page";
 
 const submitResource = vi.hoisted(() => vi.fn());
 
@@ -28,31 +29,31 @@ vi.mock("../components/run-workspace", () => ({ RunWorkspace: ({ runID, initialT
   <><output aria-label="Run entry pane">{initialTab ?? "activity"}</output><ResourceProbe kind="run" id={runID} /></> }));
 vi.mock("../components/session-workspace", () => ({ SessionWorkspace: ({ sessionID }: { sessionID: string }) => <ResourceProbe kind="session" id={sessionID} /> }));
 vi.mock("../components/workbench-frame", () => ({ WorkbenchFrame: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
-vi.mock("../components/scheduled-tasks-workspace", () => ({ ScheduledTasksWorkspace: () => null }));
 
 afterEach(() => { cleanup(); submitResource.mockClear(); useConnectionStore.getState().disconnect(); });
 
 it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("opens the existing %s pane on the exact Run and refuses a missing identity", (pane) => {
-  const props = { client: {} as APIClient, tool: "run" as const, threadID: "", pane,
+  const props = { client: {} as APIClient, threadID: "", pane,
     onBack: vi.fn(), onOpenSettings: vi.fn() };
-  const view = render(<V2InspectorTools {...props} resourceID="run-exact" />);
+  const view = render(<V2RunDetailsPage {...props} resourceID="run-exact" />);
   expect(screen.getByLabelText("Run entry pane")).toHaveTextContent(pane);
   expect(screen.getByLabelText("Resource identity")).toHaveTextContent("run:run-exact");
-  view.rerender(<V2InspectorTools {...props} resourceID="" />);
+  view.rerender(<V2RunDetailsPage {...props} resourceID="" />);
   expect(screen.getByRole("alert")).toHaveTextContent("地址缺少记录标识");
   expect(screen.queryByLabelText("Resource identity")).not.toBeInTheDocument();
   expect(submitResource).not.toHaveBeenCalled();
 });
 
-it.each(["run", "session"] as const)("does not transfer %s draft or uncertain operation state to another resource", (tool) => {
+it.each(["run", "session"] as const)("does not transfer %s draft or uncertain operation state to another resource", (kind) => {
   const client = {} as APIClient;
-  const props = { client, tool, threadID: "", onBack: vi.fn(), onOpenSettings: vi.fn() };
-  const view = render(<V2InspectorTools {...props} resourceID="resource-a" />);
+  const props = { client, threadID: "", onBack: vi.fn(), onOpenSettings: vi.fn() };
+  const Page = kind === "run" ? V2RunDetailsPage : V2SessionDetailsPage;
+  const view = render(<Page {...props} resourceID="resource-a" />);
   fireEvent.change(screen.getByLabelText("Resource-scoped draft"), { target: { value: "Only for resource A" } });
   fireEvent.click(screen.getByRole("button", { name: "Mark resource operation uncertain" }));
   expect(screen.getByLabelText("Resource operation state")).toHaveTextContent("uncertain");
-  view.rerender(<V2InspectorTools {...props} resourceID="resource-b" />);
-  expect(screen.getByLabelText("Resource identity")).toHaveTextContent(`${tool}:resource-b`);
+  view.rerender(<Page {...props} resourceID="resource-b" />);
+  expect(screen.getByLabelText("Resource identity")).toHaveTextContent(`${kind}:resource-b`);
   expect(screen.getByLabelText("Resource-scoped draft")).toHaveValue("");
   expect(screen.getByLabelText("Resource operation state")).toHaveTextContent("idle");
   expect(screen.getByRole("button", { name: "Submit resource draft" })).toBeDisabled();
@@ -63,24 +64,24 @@ it("keeps direct resource navigation unbound to a previously selected Thread and
   useConnectionStore.getState().selectThread("unrelated-stale-thread");
   const onBack = vi.fn();
   const onOpenSettings = vi.fn();
-  render(<V2InspectorTools client={{} as APIClient} tool="run" resourceID="run-history"
+  render(<V2RunDetailsPage client={{} as APIClient} resourceID="run-history"
     threadID="" onBack={onBack} onOpenSettings={onOpenSettings} />);
-  expect(screen.getByText(/此记录尚未绑定对话，请返回任务观察选择来源任务后设置权限/)).toBeInTheDocument();
+  expect(screen.getByText(/此记录尚未绑定来源对话/)).toBeInTheDocument();
   expect(screen.queryByText(/unrelated-stale-thread/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "设置" })).not.toBeVisible();
   fireEvent.click(screen.getByText("来源与设置"));
   expect(screen.getByText("run-history")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
   expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("general");
-  fireEvent.click(screen.getByRole("button", { name: "返回任务观察" }));
+  fireEvent.click(screen.getByRole("button", { name: "返回历史记录" }));
   expect(onBack).toHaveBeenCalledOnce();
   expect(submitResource).not.toHaveBeenCalled();
 });
 
 it("keeps global history focused on saved runs and sessions without fetching on arrival", () => {
-  const getPage = vi.fn(), onOpenTool = vi.fn();
-  render(<QueryClientProvider client={new QueryClient()}><V2InspectorHome client={{ getPage } as unknown as APIClient}
-    onOpenTool={onOpenTool} /></QueryClientProvider>);
+  const getPage = vi.fn(), onOpenRecord = vi.fn();
+  render(<QueryClientProvider client={new QueryClient()}><V2HistoryPage client={{ getPage } as unknown as APIClient}
+    onOpenRecord={onOpenRecord} /></QueryClientProvider>);
   expect(screen.getByRole("button", { name: "运行记录" })).toBeVisible();
   expect(screen.getByRole("button", { name: "会话记录" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "自动化" })).not.toBeInTheDocument();
@@ -96,7 +97,7 @@ it("keeps source Thread activity separate from a historical resource and does no
   const client = { hasThreadExecutionRead: true, threadExecution } as unknown as APIClient;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (threadID: string) => <QueryClientProvider client={queryClient}>
-    <V2InspectorTools client={client} tool="run" resourceID="historical-run" threadID={threadID}
+    <V2RunDetailsPage client={client} resourceID="historical-run" threadID={threadID}
       onBack={vi.fn()} onOpenSettings={vi.fn()} />
   </QueryClientProvider>;
   const view = render(tree("task-a"));

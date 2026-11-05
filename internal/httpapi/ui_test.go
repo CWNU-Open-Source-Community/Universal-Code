@@ -41,11 +41,11 @@ func TestWebUIReusesLoopbackBoundaryWithoutWeakeningAPIAuthorization(t *testing.
 	if root.Header().Get("X-CyberAgent-API-Version") != "" {
 		t.Fatal("UI response was mislabeled as an API response")
 	}
-	legacy := performRequest(t, api, http.MethodGet, "/legacy/threads/thread-1", "",
+	history := performRequest(t, api, http.MethodGet, "/history", "",
 		"127.0.0.1:8765", "127.0.0.1:45000", nil)
-	if legacy.Code != http.StatusOK || lastUIPath != "/legacy/threads/thread-1" || uiCalls.Load() != 2 {
-		t.Fatalf("legacy SPA route did not reach UI handler: status=%d path=%q calls=%d body=%q",
-			legacy.Code, lastUIPath, uiCalls.Load(), legacy.Body.String())
+	if history.Code != http.StatusOK || lastUIPath != "/history" || uiCalls.Load() != 2 {
+		t.Fatalf("SPA route did not reach UI handler: status=%d path=%q calls=%d body=%q",
+			history.Code, lastUIPath, uiCalls.Load(), history.Body.String())
 	}
 
 	unauthorizedAPI := performRequest(t, api, http.MethodGet, "/api/v1/health", "",
@@ -59,6 +59,48 @@ func TestWebUIReusesLoopbackBoundaryWithoutWeakeningAPIAuthorization(t *testing.
 	reservedTypo := performRequest(t, api, http.MethodGet, "/api/v10", testAccessToken,
 		"127.0.0.1:8765", "127.0.0.1:45000", nil)
 	assertAPIError(t, reservedTypo, http.StatusNotFound, "NOT_FOUND")
+}
+
+func TestWebUIBundleRejectsRemovedLegacyRoutes(t *testing.T) {
+	fixture := newAPIFixture(t)
+	const indexBody = `<!doctype html><title>CyberAgent</title>`
+	bundle, err := webui.LoadEmbeddedFS(fstest.MapFS{
+		"dist/index.html":               &fstest.MapFile{Data: []byte(indexBody)},
+		"dist/assets/index-AbCd1234.js": &fstest.MapFile{Data: []byte("document.body.dataset.ready = 'yes';")},
+	}, "dist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, UIHandler: bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, current := range []struct {
+			path   string
+			status int
+		}{
+			{path: "/legacy", status: http.StatusNotFound},
+			// The request boundary rejects trailing slashes before the Bundle.
+			{path: "/legacy/", status: http.StatusBadRequest},
+			{path: "/legacy/threads/thread-1", status: http.StatusNotFound},
+			{path: "/legacy/runs/run-1", status: http.StatusNotFound},
+			{path: "/legacy/sessions/session-1", status: http.StatusNotFound},
+		} {
+			t.Run(method+current.path, func(t *testing.T) {
+				request := httptest.NewRequest(method, "http://127.0.0.1:8765"+current.path, nil)
+				request.RemoteAddr = "127.0.0.1:45000"
+				request.Header.Set("Accept", "text/html")
+				response := httptest.NewRecorder()
+				api.ServeHTTP(response, request)
+				if response.Code != current.status || response.Header().Get("Location") != "" ||
+					strings.Contains(response.Body.String(), indexBody) {
+					t.Fatalf("removed route served or redirected the SPA: status=%d headers=%#v body=%q",
+						response.Code, response.Header(), response.Body.String())
+				}
+			})
+		}
+	}
 }
 
 func TestWebUIRejectsUnsafeRequestsBeforeStaticHandler(t *testing.T) {
@@ -147,7 +189,7 @@ func TestWebUIStyleNonceMatchesIndexAndChangesPerResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	seen := make(map[string]bool)
-	for _, requestPath := range []string{"/", "/legacy/threads/thread-1", "/"} {
+	for _, requestPath := range []string{"/", "/history", "/"} {
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8765"+requestPath, nil)
 		request.RemoteAddr = "127.0.0.1:45000"
 		request.Header.Set("Accept", "text/html")

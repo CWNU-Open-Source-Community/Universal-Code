@@ -17,7 +17,7 @@ vi.mock("../hooks/use-public-model-stream", () => ({ usePublicModelStream: () =>
 vi.mock("./components/permission-control", () => ({ V2PermissionControl: () => null }));
 vi.mock("./components/run-network-authority-control", () => ({ V2RunNetworkAuthorityControl: () => null }));
 vi.mock("./components/model-route-control", () => ({ V2ModelRouteControl: () => null }));
-vi.mock("./components/inspector", () => ({ V2Inspector: () => <section aria-label="Inspector records fixture" /> }));
+vi.mock("./components/execution-records", () => ({ V2ExecutionRecords: () => <section aria-label="Execution records fixture" /> }));
 
 const scopeA = `ds1_${"a".repeat(64)}`;
 const scopeB = `ds1_${"b".repeat(64)}`;
