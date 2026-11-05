@@ -27,6 +27,10 @@ func browserBatchCall(index int, name toolgateway.ToolName) llm.ToolCall {
 	case toolgateway.BrowserScrollTool:
 		x, y := 0.0, 100.0
 		p.DeltaX, p.DeltaY = &x, &y
+	case toolgateway.BrowserUploadTool:
+		p.SnapshotID, p.ElementRef = "current-snapshot", fmt.Sprintf("current-ref-%d", index)
+		p.WorkspacePath = "evidence/sample.txt"
+		p.Sensitive = &toolgateway.AgentBrowserSensitiveIntent{Version: "browser_sensitive_intent.v1", Effect: "external_write", Target: "https://example.org/form", Description: "Attach the local evidence file", DocumentEpoch: 1}
 	}
 	args, _ := json.Marshal(p)
 	return llm.ToolCall{ID: fmt.Sprintf("batch-%d", index), Name: string(name), Arguments: args}
@@ -34,8 +38,10 @@ func browserBatchCall(index int, name toolgateway.ToolName) llm.ToolCall {
 
 func TestSupervisorBrowserBatchRejectsUnresolvedRefDependencyBeforeEffects(t *testing.T) {
 	for _, prefix := range []toolgateway.ToolName{toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool,
-		toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserKeyTool, toolgateway.BrowserScrollTool} {
-		for _, last := range []toolgateway.ToolName{toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool} {
+		toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserKeyTool, toolgateway.BrowserScrollTool,
+		toolgateway.BrowserUploadTool} {
+		for _, last := range []toolgateway.ToolName{toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool,
+			toolgateway.BrowserUploadTool} {
 			t.Run(string(prefix)+"-then-"+string(last), func(t *testing.T) {
 				_, st, runtime, supervisor, turn := newAgentBrowserFixture(t)
 				caps, auth, err := supervisor.supervisorBrowserActionCapabilities(t.Context(), turn, st.base.executionPermission)
@@ -64,6 +70,7 @@ func TestSupervisorBrowserBatchKeepsInputObservationAndKeySequences(t *testing.T
 		{toolgateway.BrowserTypeTool, toolgateway.BrowserKeyTool, toolgateway.BrowserSnapshotTool},
 		{toolgateway.BrowserScreenshotTool, toolgateway.BrowserStatusTool, toolgateway.BrowserClickTool},
 		{toolgateway.BrowserKeyTool, toolgateway.BrowserScrollTool, toolgateway.BrowserSnapshotTool},
+		{toolgateway.BrowserStatusTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserUploadTool},
 	} {
 		t.Run(fmt.Sprint(names), func(t *testing.T) {
 			_, st, _, supervisor, turn := newAgentBrowserFixture(t)

@@ -165,7 +165,7 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 		definitions = toolgateway.PlanPhaseSupervisorToolDefinitions()
 	}
 	if configured.BrowserActions.Capabilities.Available && configured.BrowserActions.Capabilities.ProtocolVersion == toolgateway.AgentBrowserAuthorityVersion {
-		for _, name := range []toolgateway.ToolName{toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool} {
+		for _, name := range []toolgateway.ToolName{toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool} {
 			d, _ := toolgateway.AgentBrowserToolDefinition(name)
 			definitions = append(definitions, d)
 		}

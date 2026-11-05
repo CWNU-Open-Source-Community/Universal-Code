@@ -284,7 +284,7 @@ func (r *AgentBrowserRuntime) Status() AgentBrowserStatus {
 	if r.life.Err() != nil && state != "closed" && state != "cleanup_pending" {
 		state = "closing"
 	}
-	return AgentBrowserStatus{Version: AgentBrowserProtocolVersion, SessionID: r.request.Authority.SessionID, Generation: r.request.Authority.Generation, Product: r.product, State: state, CanonicalURL: r.currentURL, DocumentEpoch: r.epoch, SupportedActions: []string{"navigate", "snapshot", "click", "type", "screenshot", "scroll", "key"}, Downloads: r.downloadReceiptsLocked()}
+	return AgentBrowserStatus{Version: AgentBrowserProtocolVersion, SessionID: r.request.Authority.SessionID, Generation: r.request.Authority.Generation, Product: r.product, State: state, CanonicalURL: r.currentURL, DocumentEpoch: r.epoch, SupportedActions: []string{"navigate", "snapshot", "click", "type", "screenshot", "scroll", "key", "upload"}, Downloads: r.downloadReceiptsLocked()}
 }
 
 // Done signals invalidation and the end of the first cleanup attempt. Inspect
