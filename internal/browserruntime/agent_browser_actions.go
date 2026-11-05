@@ -104,7 +104,7 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 	if err != nil {
 		return AgentBrowserNavigation{}, err
 	}
-	if err := r.authorizeSessionNavigation(canonical); err != nil {
+	if err := r.authorizeSessionNavigation(ctx, canonical); err != nil {
 		return AgentBrowserNavigation{}, err
 	}
 	op, end, err := r.begin(ctx)
@@ -171,7 +171,7 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 				v := page.Layout.Viewport
 				observed = &v
 			}
-			if err := r.authorizeSessionNavigation(doc.url); err != nil {
+			if err := r.authorizeSessionNavigation(ctx, doc.url); err != nil {
 				var scopeErr *AgentBrowserScopeError
 				if errors.As(err, &scopeErr) && scopeErr.Code == AgentBrowserScopeOriginNotDeclared {
 					return AgentBrowserNavigation{}, &AgentBrowserScopeError{Code: AgentBrowserScopeLeftOrigins, Origin: doc.url}

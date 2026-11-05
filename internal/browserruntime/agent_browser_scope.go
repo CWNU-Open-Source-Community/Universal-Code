@@ -146,7 +146,9 @@ func (scope AgentBrowserOriginScope) Validate() error {
 // allowed origin passes; the scheme, host, or port must match exactly. URLs
 // beyond the scope's 4096-byte grammar bound fail here even though the raw
 // runtime limit is 8192: the model path is bounded at 4096 upstream anyway.
-func (scope AgentBrowserOriginScope) AuthorizeNavigation(rawURL string) error {
+// The context reaches the dispatch-time DNS lookup so cancellation and the
+// caller's deadlines apply; no separate timeout is layered on top.
+func (scope AgentBrowserOriginScope) AuthorizeNavigation(ctx context.Context, rawURL string) error {
 	origin, err := scope.authorizeOrigin(rawURL)
 	if err != nil {
 		return err
@@ -161,7 +163,7 @@ func (scope AgentBrowserOriginScope) AuthorizeNavigation(rawURL string) error {
 	// dispatch-time check closes the obvious DNS-rebinding route, and the
 	// window between this resolution and the browser's own connection is the
 	// same accepted TOCTOU residual the composition already documents.
-	return scope.authorizeResolved(context.Background(), origin, net.DefaultResolver.LookupHost)
+	return scope.authorizeResolved(ctx, origin, net.DefaultResolver.LookupHost)
 }
 
 func (scope AgentBrowserOriginScope) authorizeOrigin(rawURL string) (Origin, error) {
@@ -274,9 +276,9 @@ func agentBrowserScopeFingerprint(scope AgentBrowserOriginScope) (string, error)
 // navigation and redirects only; once a landing escape is named, inputs on the
 // escaped page are a Phase 2 boundary decision (the error already tells the
 // model to navigate back before further inputs).
-func (r *AgentBrowserRuntime) authorizeSessionNavigation(rawURL string) error {
+func (r *AgentBrowserRuntime) authorizeSessionNavigation(ctx context.Context, rawURL string) error {
 	if r.scope == nil {
 		return nil
 	}
-	return r.scope.AuthorizeNavigation(rawURL)
+	return r.scope.AuthorizeNavigation(ctx, rawURL)
 }

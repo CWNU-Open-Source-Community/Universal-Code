@@ -1,6 +1,7 @@
 package browserruntime
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -89,7 +90,9 @@ func TestAgentBrowserScopeAuthorizeNavigationMatchesExactOrigins(t *testing.T) {
 		"https://example.com/", "https://example.com/a/b?c=d", "http://localhost:3000/app",
 		"HTTPS://EXAMPLE.COM", // canonicalization admits the same origin in any case form
 	} {
-		if err := scope.AuthorizeNavigation(raw); err != nil {
+		// Origin membership only: the resolved-address path is covered by the
+		// injected-lookup tests and must not touch DNS here.
+		if _, err := scope.authorizeOrigin(raw); err != nil {
 			t.Fatalf("in-scope navigation rejected: %s: %v", raw, err)
 		}
 	}
@@ -97,7 +100,7 @@ func TestAgentBrowserScopeAuthorizeNavigationMatchesExactOrigins(t *testing.T) {
 		"https://example.com:8443/", "http://example.com/", "https://example.org/",
 		"http://localhost:3001/app", "https://host.example.com.evil.test/",
 	} {
-		err := scope.AuthorizeNavigation(raw)
+		_, err := scope.authorizeOrigin(raw)
 		var scopeErr *AgentBrowserScopeError
 		if !errors.As(err, &scopeErr) || scopeErr.Code != AgentBrowserScopeOriginNotDeclared {
 			t.Fatalf("out-of-scope navigation must name the missing origin: %s: %v", raw, err)
@@ -106,7 +109,7 @@ func TestAgentBrowserScopeAuthorizeNavigationMatchesExactOrigins(t *testing.T) {
 			t.Fatalf("refusal is not a named origin error: %v", err)
 		}
 	}
-	if err := scope.AuthorizeNavigation("https://u:p@example.com/"); err == nil {
+	if err := scope.AuthorizeNavigation(context.Background(), "https://u:p@example.com/"); err == nil {
 		t.Fatal("credentialed URL accepted")
 	}
 }
