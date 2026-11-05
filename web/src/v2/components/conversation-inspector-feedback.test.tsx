@@ -49,7 +49,7 @@ function review(threadID: string): ThreadReview {
 }
 function setup(recordsRequested = false, dirtyFile = false) {
   const submit = vi.fn(); const post = vi.fn(); const lifecycle = vi.fn();
-  const openPreview = vi.fn(); const onOpenTool = vi.fn(); const onOpenInspectorHome = vi.fn();
+  const openPreview = vi.fn(); const onOpenTool = vi.fn();
   const client = { hasThreadControl: true, hasFullCDPSessionControl: true,
     get: vi.fn((path: string) => {
       const id = path.split("/")[2];
@@ -82,11 +82,11 @@ function setup(recordsRequested = false, dirtyFile = false) {
       <button type="button" onClick={() => setThreadID("thread-b")}>切到另一个任务</button>
       <V2Conversation client={client} threadID={threadID} workspaces={workspaces} recordsRequested={recordsRequested}
         onArchive={vi.fn()} onManageModels={vi.fn()}
-        onOpenTool={onOpenTool} onOpenInspectorHome={onOpenInspectorHome}
+        onOpenTool={onOpenTool}
         draft={drafts[threadID]} onDraftChange={(next) => setDrafts((current) => ({ ...current, [threadID]: next }))} />
     </FileEditDraftProvider></QueryClientProvider>;
   }
-  return { ...render(<Harness />), queryClient, client, onOpenTool, onOpenInspectorHome,
+  return { ...render(<Harness />), queryClient, client, onOpenTool,
     expectNoWrites: () => { expect(submit).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
       expect(lifecycle).not.toHaveBeenCalled(); expect(openPreview).not.toHaveBeenCalled(); } };
 }
@@ -265,14 +265,17 @@ it("closes selected details before the compact records workspace and restores fo
   expectNoWrites();
 });
 
-it("keeps exact run, tool, UI evidence, session and recovery links reachable from the task", async () => {
-  const { onOpenTool, onOpenInspectorHome, expectNoWrites } = setup(true);
+it("keeps exact run and UI evidence links in the records header menu", async () => {
+  const { onOpenTool, expectNoWrites } = setup(true);
   const user = userEvent.setup();
-  const nav = await screen.findByRole("navigation", { name: "执行观察工具" });
-  await user.click(within(nav).getByRole("button", { name: "全部运行与会话" }));
-  expect(onOpenInspectorHome).toHaveBeenCalledOnce();
-  await user.click(within(nav).getByRole("button", { name: "运行与工具" }));
-  await user.click(within(nav).getByRole("button", { name: "界面观察证据" }));
+  const panel = await screen.findByRole("dialog", { name: "执行记录" });
+  expect(within(panel).queryByRole("navigation", { name: "执行观察工具" })).not.toBeInTheDocument();
+  expect(within(panel).queryByRole("button", { name: "全部运行与会话" })).not.toBeInTheDocument();
+  for (const label of ["运行与工具", "界面观察证据"]) {
+    await user.click(within(panel).getByRole("button", { name: "执行记录选项" }));
+    await user.click(within(panel).getByRole("menuitem", { name: label }));
+    expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  }
   await user.keyboard("{Escape}");
   for (const label of ["工作区恢复", "续接与记忆", "会话原始记录"]) {
     await user.click(screen.getByRole("button", { name: "查看上下文" }));
@@ -280,6 +283,49 @@ it("keeps exact run, tool, UI evidence, session and recovery links reachable fro
   }
   expect(onOpenTool.mock.calls).toEqual([["run", "run-thread-a"], ["run", "run-thread-a", "ui-evidence"],
     ["run", "run-thread-a", "checkpoints"], ["run", "run-thread-a", "context"], ["session", "session-thread-a"]]);
+  expectNoWrites();
+});
+
+it.each([false, true])("opens records options by keyboard and closes only the menu (docked: %s)", async (docked) => {
+  if (docked) vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  const { expectNoWrites } = setup(true);
+  const user = userEvent.setup();
+  const panel = await screen.findByRole(docked ? "complementary" : "dialog", { name: "执行记录" });
+  const row = await within(panel).findByRole("button", { name: /workspace_read/ });
+  await user.click(row);
+  const trigger = within(panel).getByRole("button", { name: "执行记录选项" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).getByRole("menuitem", { name: "运行与工具" })).toHaveFocus();
+  await user.keyboard("{ArrowDown}");
+  expect(within(panel).getByRole("menuitem", { name: "界面观察证据" })).toHaveFocus();
+  await user.keyboard("{Escape}");
+  expect(panel).toBeVisible();
+  expect(within(panel).getByLabelText("选中记录详情")).toBeInTheDocument();
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  await user.keyboard("{ArrowUp}");
+  expect(within(panel).getByRole("menuitem", { name: "界面观察证据" })).toHaveFocus();
+  const search = within(panel).getByLabelText("在已加载记录中查找");
+  await user.click(search);
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(search).toHaveFocus();
+  expectNoWrites();
+});
+
+it("keeps focus in the composer when an outside click dismisses record options", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  const { expectNoWrites } = setup(true);
+  const user = userEvent.setup();
+  const panel = await screen.findByRole("complementary", { name: "执行记录" });
+  await user.click(within(panel).getByRole("button", { name: "执行记录选项" }));
+  expect(within(panel).getByRole("menu")).toBeVisible();
+  const editor = screen.getByRole("textbox", { name: "继续对话" });
+  await user.click(editor);
+  expect(within(panel).queryByRole("menu")).not.toBeInTheDocument();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveValue(originalDraft);
   expectNoWrites();
 });
 

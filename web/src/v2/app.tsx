@@ -830,7 +830,6 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             recordsRequested={view === "inspector"} onOpenTool={openTool}
             reviewMemoryRef={reviewMemoryRef} reviewEntry={reviewEntry}
             onReviewEntryHandled={(requestID) => setReviewEntry((current) => current?.requestID === requestID ? undefined : current)}
-            onOpenInspectorHome={() => navigate({ kind: "new", view: "inspector" })}
             draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             onManageModels={() => openModels(false)}
             messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}

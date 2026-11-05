@@ -234,7 +234,7 @@ export function V2TerminalDrawer({
 }
 
 export function V2Conversation({ client, threadID, workspaces, onArchive, onManageModels, messageID = "", onExitMessage,
-  draft: legacyDraft, onDraftChange: legacyDraftChange, recordsRequested = false, onOpenTool, onOpenInspectorHome, onOpenWorktree,
+  draft: legacyDraft, onDraftChange: legacyDraftChange, recordsRequested = false, onOpenTool, onOpenWorktree,
   reviewEntry, onReviewEntryHandled, reviewMemoryRef, onBranchCreated, onOpenThread,
   replyReading, readRequest = 0, readingEnabled = true }: {
   client: APIClient;
@@ -248,7 +248,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   onDraftChange?: (content: string, expected?: string) => void;
   recordsRequested?: boolean;
   onOpenTool?: (tool: "run" | "session" | "schedule", resourceID?: string, pane?: V2RunPane) => void;
-  onOpenInspectorHome?: () => void;
   onOpenWorktree?: (workspace: WorkspaceView) => void;
   reviewEntry?: { threadID: string; runID: string; requestID: string };
   onReviewEntryHandled?: (requestID: string) => void;
@@ -1000,14 +999,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       returnFocusRef={workspaceFocusTarget}
       reviewFileTarget={reviewFileTarget}
       reviewMemoryRef={reviewMemoryRef}
+      onOpenRecordRun={onOpenTool ? () => onOpenTool("run", currentRun.id) : undefined}
+      onOpenRecordUIEvidence={onOpenTool ? () => onOpenTool("run", currentRun.id, "ui-evidence") : undefined}
       recordsContent={<>
-        {(onOpenTool || onOpenInspectorHome) && <nav className="v2-inspector-advanced" aria-label={t("执行观察工具", "Execution tools")}>
-          {onOpenInspectorHome && <button onClick={onOpenInspectorHome} type="button">{t("全部运行与会话", "All runs and sessions")}</button>}
-          {onOpenTool && <>
-            <button onClick={() => onOpenTool("run", currentRun.id)} type="button">{t("运行与工具", "Runs and tools")}</button>
-            <button onClick={() => onOpenTool("run", currentRun.id, "ui-evidence")} type="button">{t("界面观察证据", "UI evidence")}</button>
-          </>}
-        </nav>}
         {!transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载执行记录…", "Loading execution records…")}
           errorLabel={t("执行记录", "Execution records")} resetKey={threadID} onDismiss={handleCollapseWorkspace}>
           <V2Inspector client={client} key={threadID} detail={detail} threadID={threadID} durableItems={transcriptItems}

@@ -2,7 +2,7 @@
 .v2-inspector-home h1 { font-size: 24px; margin: 0; }
 .v2-inspector-home p { max-width: 560px; margin: 0; line-height: 1.7; color: var(--v2-muted); }
 .v2-inspector-home > div, .v2-inspector-resource > header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.v2-inspector-home button, .v2-inspector-resource > header button, .v2-inspector-advanced button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--v2-border); border-radius: 7px; background: var(--v2-control); cursor: pointer; font-size: 12px; min-height: 30px; }
+.v2-inspector-home button, .v2-inspector-resource > header button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--v2-border); border-radius: 7px; background: var(--v2-control); cursor: pointer; font-size: 12px; min-height: 30px; }
 .v2-inspector-resource { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
 .v2-inspector-resource > header { padding: 10px 16px; border-bottom: 1px solid var(--v2-border); }
 .v2-inspector-resource > header > strong { flex: 1; }
@@ -14,16 +14,8 @@
 .v2-inspector-tool-body .workspace-header h1 { font-size: 20px; }
 .v2-inspector-tool-body .workspace-content { padding: 16px; }
 .v2-inspector-tool-body .resource-row, .v2-inspector-tool-body .detail-section, .v2-inspector-tool-body .session-summary { font-size: 13px; }
-.v2-inspector-advanced { flex-shrink: 0; display: flex; gap: 6px; padding: 6px 16px; flex-wrap: wrap; border-bottom: 1px solid var(--v2-border); }
-.v2-inspector-advanced { align-items: flex-start; }
-.v2-inspector-advanced > details { min-width: 0; }
-.v2-inspector-advanced summary { cursor: pointer; border: 1px solid var(--v2-border); border-radius: 7px; background: var(--v2-control); padding: 6px 10px; font-size: 12px; min-height: 30px; box-sizing: border-box; }
-.v2-inspector-advanced summary:hover { background: var(--v2-control-hover); }
-.v2-inspector-advanced summary:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
-.v2-inspector-advanced details > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .v2-execution-label { font-size: 12px; color: var(--v2-muted); white-space: nowrap; }
 @media (max-width: 760px) {
-  .v2-inspector-advanced { padding-inline: 10px; }
   .v2-inspector-tool-body .workspace-header, .v2-inspector-tool-body .workspace-content { padding: 10px; }
   .v2-inspector-resource > header { padding: 8px; }
 }
