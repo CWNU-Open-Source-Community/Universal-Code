@@ -38,6 +38,6 @@ Omit unsupported sections or say "not confirmed from the repository". Include no
 
 ## Write through the proposal path
 
-Summarize additions, corrections, and preserved text before proposing changes. `workspace_change` prepares the proposal; `workspace_apply` writes bytes only after authorization or approval. Distinguish proposal, approval, and apply; claim a write only after apply runs. Mutations require Deliver; in Plan stop at the draft. Instructions are pinned when a Run is created: changes govern the next task, or this Run after the operator refreshes and confirms its instruction snapshot.
+Summarize additions, corrections, and preserved text before proposing changes. `workspace_change` prepares the proposal; `workspace_apply` writes bytes only after authorization or approval. Distinguish proposal, approval, and apply; claim a write only when a successful `workspace_apply` result confirms the mutation. Failure or missing confirmation does not establish a write. Mutations require Deliver; in Plan stop at the draft. Instructions are pinned when a Run is created: changes govern the next task, or this Run after the operator refreshes and confirms its instruction snapshot.
 
 If the workspace blocks writes or the operator prefers read-only output, print the proposed content instead of filing a proposal.
