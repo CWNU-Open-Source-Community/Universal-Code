@@ -68,7 +68,11 @@ Full CDP products.
    revision, and rejects additions beyond the effective origin-count bound. A
    dedicated preflight validates those fields even before first
    navigation, without requiring a running browser or a document epoch. Existing
-   document checks remain mandatory for document-bound actions.
+   document checks remain mandatory for document-bound actions. Origin addition
+   uses a dedicated no-action operation; existing navigation, click, type, key,
+   scroll and upload tools reject `browser_origin_add`. Approval mutates only the
+   declared set and never dispatches an accompanying browser action. Any later
+   action requires a separate invocation under the updated authority.
 5. Isolation and effect approval. Disposable profile, download quarantine and
    release, evidence chain and credential restrictions remain in force. The current
    click/type/key approval path consults the ledger only when the model supplies
@@ -76,8 +80,14 @@ Full CDP products.
    action policy must require exact per-call approval for potential external writes
    or deletes, conservatively including actions it cannot establish as read-only.
    Omitting a model-supplied intent cannot bypass that decision. Uploads always
-   require external-write approval. Full unscoped sessions retain their existing
-   activation and action policy.
+   require external-write approval. Page-initiated writes also need enforcement:
+   scoped sessions initially block form submissions and fetch/XHR write requests
+   before dispatch, even on declared origins. Allowing such a request requires an
+   exact, single-use approval bound to its method, destination and body identity;
+   a tool approval cannot grant ambient network-write authority. Requests whose
+   effects cannot be classified or bound are blocked. Phase 1 must implement this
+   request boundary before scoped Ask/Auto is exposed. Full unscoped sessions
+   retain their existing activation and action policy.
 
 ## Alternatives considered
 
@@ -121,18 +131,22 @@ Full CDP products.
    extension or restricted-transport migration) with its transport whitelist
    changes. Bind resolved-address checks to actual target connections, or restrict
    the initial implementation to literal targets. Preserve profile ceilings and
-   any narrower origin-count or URL-byte limits at all these boundaries.
+   any narrower origin-count or URL-byte limits at all these boundaries. Enforce
+   the page-initiated write rule from Decision 5 at the request boundary; URL
+   membership alone cannot authorize a form submit or fetch/XHR write.
 2. Authority variant: ask/auto validation with scoped authorities; Full keeps the
    unscoped behavior; the desktop takeover mode interacts with scoped sessions
    unchanged. Before enabling scoped Ask/Auto, implement host-derived effect
    approval so omitted sensitive intent cannot turn an external write into an
    automatic action. Unclassified effects require per-call approval.
-3. Per-origin additions: `browser_origin_add` sensitive intent (new effect in
-   `NormalizeAgentBrowserPayload`'s effect whitelist and the tool JSON schema enum —
-   the approval ActionClass derives as
-   `browser_browser_origin_add`), approval ledger
+3. Per-origin additions: a dedicated no-action origin-add operation is the only
+   operation accepting `browser_origin_add`. Its schema and normalization reject
+   action fields, and existing browser-action schemas and normalizers reject this
+   effect. Bind the operation identity into the approval fingerprint (the approval
+   ActionClass derives as `browser_browser_origin_add`), with approval ledger
    integration, the distinct canonical origin field and cold-session preflight
-   described above, and append-only declared-set mutation with receipts. Origin-set
+   described above, and append-only declared-set mutation with receipts. The
+   approved mutation dispatches no navigation or other browser action. Origin-set
    changes bump the authority generation: calls carrying the previous generation
    fail with a named error, pending approvals for the old set are invalidated, and
    the takeover window resolves against the regenerated authority. The runtime's
@@ -159,9 +173,14 @@ Full CDP products.
   forbidden addresses fail at the actual connection boundary, or hostnames are
   rejected under the initial literal-only policy.
 - Effects: click/type/key calls omitting sensitive intent still require approval
-  when they may write externally; rejection dispatches no action.
+  when they may write externally; rejection dispatches no action. Page-triggered
+  form submissions and fetch/XHR POSTs without exact request approval are blocked
+  before network dispatch, including on declared origins and without a tool call;
+  altered destinations/bodies and approval replay are rejected.
 - Additions: cold-session approval works before first navigation; denied, stale or
   modified origins cannot expand scope; an approved addition preserves the live
   runtime and takeover state while invalidating old-generation calls and approvals.
+  Origin-add intent on any existing action is rejected; approval of the dedicated
+  operation changes the set without navigation, clicks or other browser effects.
 - Real-browser E2E: declared-origin navigation and form flow works; out-of-scope
   navigation and addition flows produce the documented errors and receipts.
