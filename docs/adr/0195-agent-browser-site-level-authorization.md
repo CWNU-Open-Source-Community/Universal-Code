@@ -221,7 +221,11 @@ path reaches it, so the implementation PR delivers mechanism and tests only.
    recheck (permission revocation, and the worker path's parent/workspace binding
    checks) against it — identity fields are transition-invariant, so no previous-
    acceptance window is needed and a monitor wakeup during or after the swap always
-   validates against the current authority. Every runtime CheckAuthority consumer
+   validates against the current authority. The closure also retains the runtime
+   fence check, `RuntimeAuthority.AllowsRunAuthorizationFence(a.RunID,
+   a.RunAuthorizationFence)`, alongside the store-level recheck: the two checks
+   guard different properties (fence freshness versus durable state) and neither
+   replaces the other. Every runtime CheckAuthority consumer
    (monitor, `begin`, `check`) reads the atomic holder. Lock ordering: the
    transition runs under the slot action lock (an origin-add is itself an action, so
    no browser action is in flight) and takes `s.mu` inside it; the monitor reads the
@@ -245,8 +249,10 @@ path reaches it, so the implementation PR delivers mechanism and tests only.
    checkpoints accept a call exactly when its call identifier matches the recorded
    mutation, its authority equals the recorded pre-authority, and the slot's current
    equals the recorded post-authority — sibling calls prepared before the mutation
-   carry the same pre-authority but a different identifier and stay fenced. Both
-   checkpoints keep their revocation semantics for every other action. A
+   carry the same pre-authority but a different identifier and stay fenced. Only the
+   authority-generation mismatch is exempted: live permission, session, and run-fence
+   checks still apply against the post-authority, and both checkpoints keep their
+   revocation semantics for every other action. A
    failed mutation (bound exceeded, malformed origin) consumes the call and returns
    a named error; retrying requires a new call, consistent with existing actions.
 5. Cold-session preflight and payload. The operation's payload is
