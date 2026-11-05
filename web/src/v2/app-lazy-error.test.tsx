@@ -63,9 +63,9 @@ it("keeps navigation and the draft available when an advanced module fails to lo
   expect(restoredComposer).toHaveValue("模块失败后继续编辑的需求");
   expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(workspace.id);
   await user.type(restoredComposer, "，还能继续修改");
-  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+  await user.click(screen.getByRole("button", { name: "历史与诊断" }));
   expect(await screen.findByRole("heading", { name: "Inspector 首页模块" })).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "观察与记录" }));
+  await user.click(screen.getByRole("button", { name: "新对话" }));
   expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("模块失败后继续编辑的需求，还能继续修改");
   expect(window.location.hash).toBe("#/new");
   for (const mutation of [client.createThread, client.submitThreadTurn, client.executeRun, client.transitionThread]) {
