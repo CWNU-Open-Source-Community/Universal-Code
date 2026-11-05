@@ -114,7 +114,6 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
   return <section className={`v2-inspector-content${ui.selected ? " has-selection" : ""}`} aria-label={t("Inspector 记录", "Inspector records")}>
     <header className="v2-inspector-controls">
       <div className="v2-inspector-range">
-        <strong>{t("执行记录", "Execution records")}</strong>
         <span>{t(`已加载 ${durableItems.length} 条`, `${durableItems.length} records loaded`)}{hasOlder ? t(" · 还有更早记录", " · Earlier records available") : t(" · 已到最早记录", " · Earliest record reached")}</span>
         {items.some((item) => item.provisional) && <span>{t("含未落盘的实时内容", "Includes unsaved live content")}</span>}
       </div>
@@ -164,7 +163,12 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
         </div>}
       </div>
       {ui.selected && <aside className="v2-inspector-detail" aria-label={t("选中记录详情", "Selected record details")}
-        onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDetail(); } }}>
+        onKeyDownCapture={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          event.preventDefault(); closeDetail();
+        }}>
         <header><strong>{t("记录详情", "Record details")}</strong><button ref={closeRef} type="button" aria-label={t("关闭记录详情", "Close record details")} onClick={closeDetail}><X size={18} /></button></header>
         {selected ? <InspectorDetail key={`${selected.run_id}:${selected.id}`} client={client} threadID={threadID} item={selected} /> :
           <p>{t("选中记录暂不在已加载范围内。可加载更早记录后继续查看。", "The selected record is outside the loaded history. Load earlier records to view it.")}</p>}

@@ -77,19 +77,14 @@ it("keeps direct resource navigation unbound to a previously selected Thread and
   expect(submitResource).not.toHaveBeenCalled();
 });
 
-it("keeps saved records, scheduled observation and connections directly available without fetching", () => {
-  const getPage = vi.fn(), onOpenTool = vi.fn(), onOpenSettings = vi.fn();
+it("keeps global history focused on saved runs and sessions without fetching on arrival", () => {
+  const getPage = vi.fn(), onOpenTool = vi.fn();
   render(<QueryClientProvider client={new QueryClient()}><V2InspectorHome client={{ getPage } as unknown as APIClient}
-    onOpenTool={onOpenTool} onOpenSettings={onOpenSettings} /></QueryClientProvider>);
+    onOpenTool={onOpenTool} /></QueryClientProvider>);
   expect(screen.getByRole("button", { name: "运行记录" })).toBeVisible();
   expect(screen.getByRole("button", { name: "会话记录" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "自动化" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "连接与环境" })).toBeVisible();
-  expect(getPage).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "自动化" }));
-  expect(onOpenTool).toHaveBeenCalledExactlyOnceWith("schedule");
-  fireEvent.click(screen.getByRole("button", { name: "连接与环境" }));
-  expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("connections");
+  expect(screen.queryByRole("button", { name: "自动化" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "连接与环境" })).not.toBeInTheDocument();
   expect(getPage).not.toHaveBeenCalled();
 });
 

@@ -1,4 +1,4 @@
-import { lazy, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { lazy, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
+  Microscope,
   PanelRightClose,
   PanelTop,
   Plus,
@@ -81,6 +82,8 @@ function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
       return <PanelTop aria-hidden="true" size={14} />;
     case "review":
       return <FileDiff aria-hidden="true" size={14} />;
+    case "records":
+      return <Microscope aria-hidden="true" size={14} />;
   }
 }
 
@@ -205,6 +208,7 @@ export function V2WorkspaceDock({
   reviewFileTarget,
   reviewToolTarget,
   reviewMemoryRef,
+  recordsContent,
 }: {
   client: APIClient;
   threadID: string;
@@ -231,6 +235,7 @@ export function V2WorkspaceDock({
   reviewFileTarget?: FileEditReviewTarget;
   reviewToolTarget?: { runID: string; tool: "github-review" };
   reviewMemoryRef?: RefObject<TaskReviewToolMemory>;
+  recordsContent?: ReactNode;
 }) {
   const { t } = useLocale();
   const leaveFileEdit = useFileEditLeave();
@@ -580,6 +585,14 @@ export function V2WorkspaceDock({
                   <FileDiff aria-hidden="true" size={15} />
                   <span>{t("改动与交付", "Changes and delivery")}</span>
                 </button>
+                <button onClick={() => {
+                  setAddMenuOpen(false);
+                  const open = () => focusWorkspaceSingletonTab(threadID, "records");
+                  if (activeTab.kind === "file") leaveFileEdit(open);
+                  else open();
+                }} role="menuitem" type="button">
+                  <Microscope aria-hidden="true" size={15} /><span>{t("执行记录", "Execution records")}</span>
+                </button>
               </div>
             )}
           </div>
@@ -626,6 +639,12 @@ export function V2WorkspaceDock({
         </div>
       )}
       <div className="v2-workspace-dock-body">
+        {panelVisible && activeTab.id === "records" && <div
+          aria-labelledby={tabButtonID(threadID, "records")}
+          className="v2-workspace-tabpanel"
+          id={tabPanelID(threadID, "records")}
+          role="tabpanel"
+        >{recordsContent}</div>}
         {state.tabs.filter((tab) => tab.kind === "file").map((tab) => (
           <div
             aria-labelledby={tabButtonID(threadID, tab.id)}

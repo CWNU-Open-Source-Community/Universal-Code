@@ -545,7 +545,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const openConversation = (threadID: string, onAccepted?: () => void) => {
     setBackgroundCreations((current) => current.filter((thread) => thread.id !== threadID));
     updateModelSetupToken("");
-    navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) }, false, onAccepted);
+    navigate({ kind: "thread", threadID }, false, onAccepted);
     closeNavigationSidebar();
   };
   const openSidebarConversation = (threadID: string) => openConversation(threadID, () => {
@@ -553,7 +553,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     setReadRequest((current) => ({ threadID, revision: current.revision + 1 }));
   });
   const openAdjacentChat = (direction: -1 | 1) => {
-    if (!selectedThreadID || surface !== "conversation" || view !== "conversation" || route.tool || searchOpen) return false;
+    if (!selectedThreadID || surface !== "conversation" || route.tool || searchOpen) return false;
     const index = visibleChatOrder.current.indexOf(selectedThreadID);
     const next = index < 0 ? undefined : visibleChatOrder.current[index + direction];
     if (next) openSidebarConversation(next);
@@ -627,7 +627,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   };
 
   const openSearch = (currentThread: boolean) => {
-    if (currentThread && (!selectedThreadID || surface !== "conversation" || route.tool || view !== "conversation")) return false;
+    if (currentThread && (!selectedThreadID || surface !== "conversation" || route.tool)) return false;
     if (surface === "settings") returnFromSettings();
     setSearchCurrentThread(currentThread);
     setSidebarVisible(true);
@@ -669,8 +669,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           }} />}
           onOpenSettings={openSettings}
           onOpenConnections={() => setSettingsSection("connections")}
-          onOpenInspector={() => changeView(view === "inspector" ? "conversation" : "inspector")}
-          inspectorActive={view === "inspector"}
+          onOpenInspector={() => { navigate({ kind: "new", view: "inspector" }); closeNavigationSidebar(); }}
+          onOpenAutomations={() => { navigate({ kind: "new", view: "inspector", tool: "schedule" }); closeNavigationSidebar(); }}
+          automationsActive={route.tool === "schedule"}
+          inspectorActive={route.kind === "new" && view === "inspector" && !route.tool}
           onSearchOpen={(open) => {
             setSearchOpen(open);
             setSearchCurrentThread(false);
@@ -728,7 +730,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             onOpenRun={openCreatedRun} /></V2LazySurface>
           : view === "inspector" && !selectedThreadID
           ? <V2LazySurface resetKey="inspector-home" loadingText={t("正在加载 Inspector…", "Loading Inspector…")} errorLabel="Inspector">
-            <V2InspectorHome client={client} onOpenTool={openTool} onOpenSettings={setSettingsSection} /></V2LazySurface>
+            <V2InspectorHome client={client} onOpenTool={openTool} /></V2LazySurface>
           : newConversation || !selectedThreadID
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             projectID={projectID}
@@ -825,13 +827,12 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               navigate({ kind: "new" });
               closeNavigationSidebar();
             }}
-            view={view} onOpenTool={openTool}
+            recordsRequested={view === "inspector"} onOpenTool={openTool}
             reviewMemoryRef={reviewMemoryRef} reviewEntry={reviewEntry}
             onReviewEntryHandled={(requestID) => setReviewEntry((current) => current?.requestID === requestID ? undefined : current)}
             onOpenInspectorHome={() => navigate({ kind: "new", view: "inspector" })}
-            onExitInspector={() => changeView("conversation")}
             draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
-            onManageModels={() => openModels(false)} onOpenInspector={openInspector}
+            onManageModels={() => openModels(false)}
             messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}
             threadID={selectedThreadID} workspaces={workspaces} />}
       </div>

@@ -5,17 +5,6 @@
   overscroll-behavior-y: contain;
 }
 
-/* Keep the Inspector controls inside their own scroll area when comparing
-   tall drafts; its non-shrinking toolbar must not overflow into the editor. */
-.v2-conversation.is-inspector:has(.v2-draft-conflict) .v2-inspector-content {
-  min-height: min(240px, 30dvh);
-  overflow: auto;
-  overscroll-behavior-y: contain;
-}
-.v2-conversation.is-inspector .v2-composer-dock:has(.v2-draft-conflict) {
-  flex-shrink: 1;
-}
-
 .v2-draft-conflict {
   min-width: 0;
   margin: 10px 0;

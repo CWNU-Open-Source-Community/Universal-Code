@@ -159,7 +159,7 @@ function renderConversation(client: APIClient, initialThreadID = "thread-a", ext
   const props = (threadID: string) => <QueryClientProvider client={queryClient}>
     {extras}
     <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()}
-      onOpenInspector={vi.fn()} threadID={threadID} workspaces={workspaces} {...draftProps} />
+      threadID={threadID} workspaces={workspaces} {...draftProps} />
   </QueryClientProvider>;
   const view = render(props(initialThreadID));
   return { ...view, queryClient,
@@ -410,7 +410,7 @@ describe("V2Conversation", () => {
     } as unknown as Partial<APIClient>);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } } });
     render(<V2RecoveryProvider client={client} scopeID="conversation-queue-owner-test"><QueryClientProvider client={queryClient}>
-      <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={vi.fn()}
+      <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()}
         threadID="thread-a" workspaces={workspaces} />
     </QueryClientProvider></V2RecoveryProvider>);
     const action = await screen.findByRole("button", { name: "引导当前任务" });
@@ -1078,7 +1078,7 @@ describe("V2Conversation", () => {
     const user = userEvent.setup();
     render(<><button type="button">Outside</button><QueryClientProvider client={queryClient}>
       <V2Conversation client={client} onArchive={onArchive} onManageModels={vi.fn()}
-        onOpenInspector={vi.fn()} threadID="thread-a" workspaces={workspaces} />
+        threadID="thread-a" workspaces={workspaces} />
     </QueryClientProvider></>);
     await screen.findByText("Title thread-a");
     const trigger = screen.getByRole("button", { name: "对话操作" });
@@ -1572,7 +1572,7 @@ it("switches the mounted task navigation and open conversation menu while preser
   expect(within(navigation).getByRole("button", { name: "Review changes" })).toHaveTextContent("Changes and delivery");
   expect(within(navigation).getByRole("button", { name: "View context" })).toHaveTextContent("Context and recovery");
   expect(screen.getByRole("menuitem", { name: "Archive conversation" })).toBeInTheDocument();
-  expect(screen.getByRole("menuitem", { name: "Open Inspector" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Execution records" })).toBeInTheDocument();
   expect(screen.getByText("用户消息和工具输出保持原文")).toBeInTheDocument();
   expect(screen.getByText("Title thread-a")).toBeInTheDocument();
 
