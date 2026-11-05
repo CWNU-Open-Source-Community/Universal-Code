@@ -48,3 +48,4 @@ CLAUDE.md、.claude/CLAUDE.md、.prayu/instructions.md、.prayu/rules/**、
   全过（含派生标签后的防幽灵工具回归测试与目录顺序测试）。
 - 作用域发现（如实记录）：`bounded_grant_test.go` 与本 PR 及 CSV 导出主题均无关，
   属同基分支搭车文件，维护者可决定是否随本 PR 合入。
+  （复审更新 2026-11-05：该文件已随 #521 合入 main，不再出现在本 PR 的 diff 中，该作用域发现就此解决。）
