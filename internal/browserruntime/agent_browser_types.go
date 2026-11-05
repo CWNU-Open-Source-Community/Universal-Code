@@ -37,6 +37,11 @@ type AgentBrowserStartRequest struct {
 	Product         BrowserProduct
 	Headless        bool
 	RuntimeDeadline time.Time
+	// ScopedOrigins declares the operator-approved, default-deny origin set of
+	// a scoped session (ADR 0195). Empty keeps the unscoped Full-activation
+	// session; a non-empty set requires an ask/auto permission mode and is
+	// enforced on every dispatched navigation and its landing URL.
+	ScopedOrigins []string
 }
 
 type AgentBrowserStatus struct {

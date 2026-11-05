@@ -98,7 +98,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 	s.mu.Unlock()
 	if r == nil && name == toolgateway.BrowserNavigateTool {
 		runtimeAuthority := browserruntime.AgentBrowserAuthority{RunID: a.RunID, ManagerBootID: a.ManagerBootID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, PermissionSnapshotID: a.PermissionSnapshotID, PermissionRevision: a.PermissionRevision, PermissionActivation: slot.activation, RunAuthorizationFence: a.RunAuthorizationFence, PermissionMode: string(a.PermissionMode)}
-		r, e = s.launch(ctx, browserruntime.AgentBrowserStartRequest{HomePath: s.options.HomePath, Authority: runtimeAuthority, Product: s.options.Product, Headless: s.options.Headless, RuntimeDeadline: time.Now().Add(s.options.SessionLifetime), CheckAuthority: func(c context.Context, received browserruntime.AgentBrowserAuthority) error {
+		r, e = s.launch(ctx, browserruntime.AgentBrowserStartRequest{HomePath: s.options.HomePath, Authority: runtimeAuthority, Product: s.options.Product, Headless: s.options.Headless, RuntimeDeadline: time.Now().Add(s.options.SessionLifetime), ScopedOrigins: append([]string(nil), a.DeclaredOrigins...), CheckAuthority: func(c context.Context, received browserruntime.AgentBrowserAuthority) error {
 			if received != runtimeAuthority {
 				return agentBrowserUnavailable("runtime activation does not match its private slot")
 			}
@@ -299,6 +299,12 @@ func normalizeAgentBrowserActionError(err error) error {
 	var action *browserruntime.AgentBrowserActionError
 	if errors.As(err, &action) && action.OutcomeUnknown {
 		return apperror.Wrap(apperror.CodeFailedPrecondition, "outcome_unknown: browser input was dispatched; do not automatically repeat it", err)
+	}
+	var scopeErr *browserruntime.AgentBrowserScopeError
+	if errors.As(err, &scopeErr) {
+		// Scope refusals are named and deterministic: nothing was dispatched on
+		// a pre-navigation refusal, and a landing escape names the page it left.
+		return apperror.Wrap(apperror.CodeFailedPrecondition, scopeErr.Error(), err)
 	}
 	if errors.Is(err, browserruntime.ErrAgentBrowserStaleReference) {
 		return apperror.Wrap(apperror.CodeFailedPrecondition, "stale_browser_reference: snapshot or input invalidated the old refs; obtain a new snapshot before the next input; never automatically repeat an outcome_unknown action", err)

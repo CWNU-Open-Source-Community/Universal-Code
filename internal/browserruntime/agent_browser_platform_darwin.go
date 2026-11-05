@@ -122,7 +122,11 @@ func LaunchAgentBrowser(ctx context.Context, request AgentBrowserStartRequest) (
 	}
 	cleanup.ProfileRemoved = false
 	life, cancel := context.WithDeadline(context.Background(), request.RuntimeDeadline)
-	r := &AgentBrowserRuntime{request: request, profile: profile, product: BrowserProductChrome, life: life, cancel: cancel,
+	scope, scopeErr := agentBrowserScopeForRequest(request)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	r := &AgentBrowserRuntime{request: request, profile: profile, product: BrowserProductChrome, life: life, cancel: cancel, scope: scope,
 		done: make(chan struct{}), operation: make(chan struct{}, 1), refs: map[string]agentBrowserRef{}, state: "starting", epoch: 1}
 	r.operation <- struct{}{}
 	unreapedChild := false

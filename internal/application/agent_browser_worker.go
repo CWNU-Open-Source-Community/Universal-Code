@@ -8,6 +8,10 @@ import (
 	"cyberagent-workbench/internal/toolgateway"
 )
 
+// agentBrowserSlotKey intentionally excludes the declared origin scope: one
+// Run owns one browser slot, and a changed scope arrives as a changed
+// authority that the existing rotation path replaces (Phase 3 reuses it for
+// approved per-origin additions).
 func agentBrowserSlotKey(a toolgateway.AgentBrowserCallAuthority) string {
 	if a.Role == domain.AgentRoleSpecialist {
 		return a.RunID + "\x00" + a.AgentID
@@ -42,7 +46,7 @@ func agentBrowserSameResource(a, b toolgateway.AgentBrowserCallAuthority) bool {
 		a.AgentAttemptID, b.AgentAttemptID = "", ""
 		a.Generation, b.Generation = "", ""
 	}
-	return a == b
+	return a.Equal(b)
 }
 
 // The browser's process monitor runs between model turns. It checks resource

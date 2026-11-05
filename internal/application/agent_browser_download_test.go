@@ -484,6 +484,16 @@ func TestAgentBrowserUploadResolverContainment(t *testing.T) {
 	}
 }
 
+func TestAgentBrowserScopeErrorsSurfaceByName(t *testing.T) {
+	err := normalizeAgentBrowserActionError(&browserruntime.AgentBrowserScopeError{Code: browserruntime.AgentBrowserScopeOriginNotDeclared, Origin: "https://example.com:8443"})
+	if !strings.Contains(err.Error(), "browser_origin_not_declared") || !strings.Contains(err.Error(), "https://example.com:8443") {
+		t.Fatalf("scope refusal lost its named origin: %v", err)
+	}
+	if strings.Contains(err.Error(), "outcome_unknown") {
+		t.Fatal("a pre-dispatch scope refusal must not read as an unknown outcome")
+	}
+}
+
 func TestWithinResolvedWorkspaceAllowsDriveRootsAndRejectsSiblings(t *testing.T) {
 	root := filepath.Clean(t.TempDir())
 	if !withinResolvedWorkspace(root, filepath.Join(root, "report.txt")) {

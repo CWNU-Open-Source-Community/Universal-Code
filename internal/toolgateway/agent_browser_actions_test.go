@@ -2,6 +2,7 @@ package toolgateway
 
 import (
 	"context"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/policy"
 	"encoding/json"
@@ -144,5 +145,84 @@ func TestAgentBrowserSensitiveIntentSchemaMatchesNormalization(t *testing.T) {
 				t.Fatalf("normalization valid=%t, want %t: %v", err == nil, tc.valid, err)
 			}
 		})
+	}
+}
+
+func TestAgentBrowserScopedAuthorityBindsOriginsAndMode(t *testing.T) {
+	base := AgentBrowserCallAuthority{ProtocolVersion: AgentBrowserAuthorityVersion, RunID: "run-scoped", MissionID: "mission-scoped", SessionID: "session-scoped", RootAgentID: "root-scoped", WorkspaceID: "workspace-scoped", Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhaseDeliver, Role: domain.AgentRoleRoot, Profile: domain.ProfileCode, PermissionMode: domain.RunExecutionPermissionFullAccess, ModeRevision: 1, PermissionSnapshotID: "permission-scoped", PermissionRevision: 1, PermissionActivation: 2, RunAuthorizationFence: 3, ManagerBootID: "boot-scoped", BrowserSessionID: "managed-scoped", SessionGeneration: 1}
+	base.Generation = base.Fingerprint()
+	raw, err := json.Marshal(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "declared_origins") || strings.Contains(string(raw), "scope_fingerprint") {
+		t.Fatal("unscoped authority fingerprint material changed")
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("unscoped Full authority rejected: %v", err)
+	}
+	scope, err := browserruntime.NewAgentBrowserOriginScope([]string{"https://example.com", "http://localhost:3000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := base
+	scoped.PermissionMode = domain.RunExecutionPermissionAuto
+	scoped.DeclaredOrigins = []string{"https://example.com", "http://localhost:3000"}
+	scoped.ScopeFingerprint = scope.Fingerprint
+	scoped.Generation = scoped.Fingerprint()
+	if err := scoped.Validate(); err != nil {
+		t.Fatalf("scoped auto authority rejected: %v", err)
+	}
+	ask := scoped
+	ask.PermissionMode = domain.RunExecutionPermissionAsk
+	ask.Generation = ask.Fingerprint()
+	if err := ask.Validate(); err != nil {
+		t.Fatalf("scoped ask authority rejected: %v", err)
+	}
+	unscopedAsk := base
+	unscopedAsk.PermissionMode = domain.RunExecutionPermissionAsk
+	unscopedAsk.Generation = unscopedAsk.Fingerprint()
+	if err := unscopedAsk.Validate(); err == nil {
+		t.Fatal("unscoped ask authority accepted")
+	}
+	full := scoped
+	full.PermissionMode = domain.RunExecutionPermissionFullAccess
+	full.Generation = full.Fingerprint()
+	if err := full.Validate(); err == nil || !strings.Contains(err.Error(), "scope binding") {
+		t.Fatalf("scoped Full authority accepted: %v", err)
+	}
+	tampered := scoped
+	tampered.ScopeFingerprint = strings.Repeat("0", 64)
+	tampered.Generation = tampered.Fingerprint()
+	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "declared origins") {
+		t.Fatalf("tampered scope fingerprint accepted: %v", err)
+	}
+	missingFingerprint := scoped
+	missingFingerprint.ScopeFingerprint = ""
+	missingFingerprint.Generation = missingFingerprint.Fingerprint()
+	if err := missingFingerprint.Validate(); err == nil {
+		t.Fatal("origins without a scope fingerprint accepted")
+	}
+	widened := scoped
+	widened.DeclaredOrigins = append(append([]string(nil), scoped.DeclaredOrigins...), "https://other.test")
+	widened.Generation = widened.Fingerprint()
+	if err := widened.Validate(); err == nil || !strings.Contains(err.Error(), "declared origins") {
+		t.Fatalf("widened origin set accepted: %v", err)
+	}
+	if scoped.Fingerprint() == base.Fingerprint() {
+		t.Fatal("the declared scope must enter the authority fingerprint")
+	}
+	other := scoped
+	other.DeclaredOrigins = []string{"https://example.com"}
+	if scoped.Equal(other) || !scoped.Equal(scoped) {
+		t.Fatal("authority equality ignores the declared scope")
+	}
+	encoded, err := json.Marshal(scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeAgentBrowserAuthority(encoded)
+	if err != nil || !decoded.Equal(scoped) {
+		t.Fatalf("scoped authority decode %v %+v", err, decoded)
 	}
 }

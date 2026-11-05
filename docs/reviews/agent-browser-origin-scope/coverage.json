@@ -1,0 +1,39 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "9a0b73b0",
+  "reviewed_head": "feat/agent-browser-origin-scope staged diff",
+  "review_metadata_excluded": [
+    "docs/reviews/agent-browser-origin-scope/README.md",
+    "docs/reviews/agent-browser-origin-scope/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：Phase 1 范围冻结、实现、全文件自审与测试",
+    "review_delegate：独立全文复审与专项安全探针"
+  ],
+  "summary": {
+    "total_git_changed_files": 14,
+    "review_scope_files": 14,
+    "ocr_selected_production": 11,
+    "manually_added_review_files": 3,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/browserruntime/agent_browser_scope.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_scope_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_types.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_start.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_platform_darwin.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_runtime.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_runtime_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/toolgateway/agent_browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/toolgateway/agent_browser_actions_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_actions.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_service.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_worker.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}

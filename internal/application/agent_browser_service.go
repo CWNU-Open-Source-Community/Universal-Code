@@ -248,7 +248,7 @@ func (s *AgentBrowserService) check(ctx context.Context, a toolgateway.AgentBrow
 	if e != nil {
 		return e
 	}
-	if current != a {
+	if !current.Equal(a) {
 		return agentBrowserUnavailable("Agent browser authority changed")
 	}
 	return nil

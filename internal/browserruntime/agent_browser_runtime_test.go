@@ -219,7 +219,7 @@ func agentBrowserTestRuntime(t *testing.T) (*AgentBrowserRuntime, *atomic.Bool) 
 	return agentBrowserTestRuntimeWithCheck(t, nil)
 }
 
-func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) error) (*AgentBrowserRuntime, *atomic.Bool) {
+func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) error, options ...func(*AgentBrowserStartRequest)) (*AgentBrowserRuntime, *atomic.Bool) {
 	t.Helper()
 	if os.Getenv("TRAVERSE_TEST_AGENT_BROWSER") != "1" {
 		t.Skip("opt-in real installed browser")
@@ -259,6 +259,9 @@ func agentBrowserTestRuntimeWithCheck(t *testing.T, extra func(context.Context) 
 	}
 	if product := os.Getenv("TRAVERSE_TEST_AGENT_BROWSER_PRODUCT"); product != "" {
 		request.Product = BrowserProduct(product)
+	}
+	for _, option := range options {
+		option(&request)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 	defer cancel()
@@ -640,5 +643,49 @@ func TestAgentBrowserRealUploadRequiresFileInputAndDeliversBytes(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("form submission never reached the server")
+	}
+}
+
+func TestAgentBrowserRealScopedSessionEnforcesDeclaredOrigins(t *testing.T) {
+	if os.Getenv("TRAVERSE_TEST_AGENT_BROWSER") != "1" {
+		t.Skip("opt-in real installed browser")
+	}
+	var declared atomic.Value
+	// The escape target is a second loopback server: a different port is a
+	// different origin, and the evidence job must not touch the live internet.
+	escaped := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		fmt.Fprint(w, `<!doctype html><title>Escaped</title><h1>Out of scope</h1>`)
+	}))
+	defer escaped.Close()
+	var local *httptest.Server
+	local = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/redirect" {
+			http.Redirect(w, req, escaped.URL+"/escaped", http.StatusFound)
+			return
+		}
+		fmt.Fprint(w, `<!doctype html><title>Scoped fixture</title><h1>In scope</h1>`)
+	}))
+	defer local.Close()
+	declared.Store([]string{local.URL})
+	r, _ := agentBrowserTestRuntimeWithCheck(t, nil, func(request *AgentBrowserStartRequest) {
+		request.Authority.PermissionMode = "auto"
+		request.ScopedOrigins = declared.Load().([]string)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+	defer cancel()
+	nav, err := r.Navigate(ctx, local.URL+"/app")
+	if err != nil || nav.CanonicalURL == "" {
+		t.Fatalf("in-scope navigation %v %+v", err, nav)
+	}
+	var scopeErr *AgentBrowserScopeError
+	if _, err = r.Navigate(ctx, escaped.URL+"/out-of-scope"); !errors.As(err, &scopeErr) || scopeErr.Code != AgentBrowserScopeOriginNotDeclared {
+		t.Fatalf("out-of-scope navigation must name the missing origin: %v", err)
+	}
+	if _, err = r.Navigate(ctx, local.URL+"/redirect"); !errors.As(err, &scopeErr) || scopeErr.Code != AgentBrowserScopeLeftOrigins {
+		t.Fatalf("redirect escape must name the landing page: %v", err)
+	}
+	// A refused escape leaves the session usable for in-scope work.
+	if _, err = r.Navigate(ctx, local.URL); err != nil {
+		t.Fatalf("session unusable after a refused navigation: %v", err)
 	}
 }

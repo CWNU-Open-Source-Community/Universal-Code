@@ -35,6 +35,7 @@ type AgentBrowserRuntime struct {
 	loading                                   bool
 	epoch                                     uint64
 	refs                                      map[string]agentBrowserRef
+	scope                                     *AgentBrowserOriginScope
 	screencast                                *agentBrowserScreencastPump
 	browserContextID                          string
 	downloadPath                              string
