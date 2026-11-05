@@ -26,75 +26,46 @@ it("restores task/settings identity and rejects malformed links without guessing
   }
 });
 
-it("restores Inspector and its settings source directly without browser history", () => {
-  expect(readV2Route("#/threads/thread-42/inspector")).toEqual({ kind: "thread", threadID: "thread-42", view: "inspector" });
-  expect(readV2Route("#/threads/thread-42/inspector/settings/appearance")).toEqual({
-    kind: "thread", threadID: "thread-42", view: "inspector", section: "appearance",
-  });
-  expect(readV2Route("#/new/inspector")).toEqual({ kind: "new", view: "inspector" });
-  expect(readV2Route("#/new/inspector/settings/models")).toEqual({ kind: "new", view: "inspector", section: "models" });
-  for (const hash of ["#/threads/%2fother/inspector", "#/threads/task/inspector/inspector",
-    "#/new/inspector/settings/unknown", "#/threads/task/settings/models/inspector"]) {
-    expect(readV2Route(hash)).toEqual({ kind: "invalid" });
-  }
-});
+const resourceRoutes = [
+  ["#/history", { kind: "history" }],
+  ["#/threads/thread-source/records", { kind: "thread", threadID: "thread-source", panel: "records" }],
+  ["#/runs/run-history", { kind: "run", resourceID: "run-history" }],
+  ["#/sessions/session-history", { kind: "session", resourceID: "session-history" }],
+  ["#/automations", { kind: "automations" }],
+  ["#/automations/runs/run-scheduled", { kind: "automations", resourceID: "run-scheduled" }],
+  ["#/threads/thread-source/runs/run-history", { kind: "run", threadID: "thread-source", resourceID: "run-history" }],
+  ["#/threads/thread-source/sessions/session-history", { kind: "session", threadID: "thread-source", resourceID: "session-history" }],
+  ["#/threads/thread-source/automations", { kind: "automations", threadID: "thread-source" }],
+  ["#/threads/thread-source/automations/runs/run-scheduled", { kind: "automations", threadID: "thread-source", resourceID: "run-scheduled" }],
+  ["#/threads/thread-source/messages/message-source", { kind: "thread", threadID: "thread-source", messageID: "message-source" }],
+] as const;
 
-it.each([0, 7])("returns settings to the explicit Inspector source even with history index %s", (index) => {
-  window.history.replaceState({ v2NavigationIndex: index }, "", "#/threads/thread-42/inspector/settings/models");
-  const historyBack = vi.spyOn(window.history, "back");
-  const { result, unmount } = renderHook(() => useV2Navigation());
-  expect(result.current.route).toEqual({ kind: "thread", threadID: "thread-42", view: "inspector", section: "models" });
-  act(() => result.current.back());
-  expect(historyBack).not.toHaveBeenCalled();
-  expect(window.location.hash).toBe("#/threads/thread-42/inspector");
-  expect(result.current.route).toEqual({ kind: "thread", threadID: "thread-42", view: "inspector" });
-  unmount();
-  const refreshed = renderHook(() => useV2Navigation());
-  expect(refreshed.result.current.route).toEqual({ kind: "thread", threadID: "thread-42", view: "inspector" });
-});
-
-it("serializes view changes and keeps drafts and other UI state out of the route", () => {
-  window.history.replaceState({}, "", "#/threads/thread-42");
+it.each(resourceRoutes)("restores and serializes the explicit source %s", (hash, route) => {
+  window.history.replaceState({}, "", "#/new");
   const { result } = renderHook(() => useV2Navigation());
-  act(() => result.current.navigate({ kind: "thread", threadID: "thread-42", view: "inspector" }));
-  expect(window.location.hash).toBe("#/threads/thread-42/inspector");
-  act(() => result.current.navigate({ ...result.current.route, section: "general" }));
-  expect(window.location.hash).toBe("#/threads/thread-42/inspector/settings/general");
-  act(() => result.current.back());
-  expect(window.location.hash).toBe("#/threads/thread-42/inspector");
-  act(() => result.current.navigate({ kind: "thread", threadID: "thread-42" }));
-  expect(window.location.hash).toBe("#/threads/thread-42");
+  expect(readV2Route(hash)).toEqual(route);
+  act(() => result.current.navigate(route));
+  expect(window.location.hash).toBe(hash);
   expect(Object.keys(window.history.state)).toEqual(["v2NavigationIndex"]);
 });
 
-it.each([
-  ["runs/run-history", "run", "run-history"],
-  ["sessions/session-history", "session", "session-history"],
-  ["schedule", "schedule", undefined],
-  ["schedule/run-scheduled", "schedule", "run-scheduled"],
-] as const)("keeps the explicit Thread/resource source when returning from %s settings", (path, tool, resourceID) => {
-  const source = `#/threads/thread-source/inspector/${path}`;
-  window.history.replaceState({ v2NavigationIndex: 4 }, "", `${source}/settings/general`);
-  const { result } = renderHook(() => useV2Navigation());
-  expect(result.current.route).toEqual({ kind: "thread", threadID: "thread-source", view: "inspector",
-    tool, ...(resourceID ? { resourceID } : {}), section: "general" });
+it.each(resourceRoutes)("returns settings to %s without browser history or losing resource identity", (hash, route) => {
+  window.history.replaceState({ v2NavigationIndex: 7 }, "", `${hash}/settings/models`);
+  const historyBack = vi.spyOn(window.history, "back");
+  const { result, unmount } = renderHook(() => useV2Navigation());
+  expect(result.current.route).toEqual({ ...route, section: "models" });
   act(() => result.current.back());
-  expect(window.location.hash).toBe(source);
+  expect(historyBack).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe(hash);
+  unmount();
+  const refreshed = renderHook(() => useV2Navigation());
+  expect(refreshed.result.current.route).toEqual(route);
 });
 
-it("retains a task's scheduled Run when its route is serialized and refreshed", () => {
+it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("retains the exact Run's %s pane through settings", (pane) => {
   const { result } = renderHook(() => useV2Navigation());
-  act(() => result.current.navigate({ kind: "thread", threadID: "thread-source", view: "inspector",
-    tool: "schedule", resourceID: "run-scheduled" }));
-  expect(readV2Route(window.location.hash)).toEqual(result.current.route);
-  expect(window.location.hash).toBe("#/threads/thread-source/inspector/schedule/run-scheduled");
-});
-
-it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("opens and restores the exact Run's %s pane with its settings source", (pane) => {
-  const { result } = renderHook(() => useV2Navigation());
-  act(() => result.current.navigate({ kind: "thread", threadID: "thread-source", view: "inspector",
-    tool: "run", resourceID: "run-history", pane }));
-  const source = `#/threads/thread-source/inspector/runs/run-history/${pane}`;
+  act(() => result.current.navigate({ kind: "run", threadID: "thread-source", resourceID: "run-history", pane }));
+  const source = `#/threads/thread-source/runs/run-history/${pane}`;
   expect(window.location.hash).toBe(source);
   expect(readV2Route(source)).toEqual(result.current.route);
   act(() => result.current.navigate({ ...result.current.route, section: "connections" }));
@@ -103,19 +74,35 @@ it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("opens and 
   expect(readV2Route(window.location.hash).resourceID).toBe("run-history");
 });
 
-it("rejects unrecognized Run panes and panes attached to non-Run records", () => {
-  for (const hash of ["#/new/inspector/runs/run-1/unknown", "#/new/inspector/runs/run-1/%2fcontext",
-    "#/new/inspector/sessions/session-1/context", "#/new/inspector/schedule/run-1/checkpoints",
-    "#/new/inspector/runs/%2frun/context", "#/new/inspector/runs/run-1/context/context"]) {
-    expect(readV2Route(hash)).toEqual({ kind: "invalid" });
-  }
+it.each([
+  ["#/runs/run-1", "#/history"],
+  ["#/sessions/session-1", "#/history"],
+  ["#/threads/task/runs/run-1", "#/threads/task/records"],
+  ["#/threads/task/sessions/session-1", "#/threads/task/records"],
+  ["#/automations/runs/run-1", "#/new"],
+  ["#/threads/task/automations/runs/run-1", "#/threads/task"],
+  ["#/threads/task/records", "#/threads/task"],
+] as const)("returns %s to its explicit destination %s", (source, target) => {
+  window.history.replaceState({ v2NavigationIndex: 4 }, "", source);
+  const historyBack = vi.spyOn(window.history, "back");
+  const { result } = renderHook(() => useV2Navigation());
+  act(() => result.current.back());
+  expect(historyBack).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe(target);
 });
 
-it("rejects malformed compatible resource IDs and leaves direct resources unbound to a Thread", () => {
-  expect(readV2Route("", "/legacy/runs/run-direct")).toEqual({ kind: "new", view: "inspector", tool: "run", resourceID: "run-direct" });
-  expect(readV2Route("", "/legacy/sessions/session-direct")).toEqual({ kind: "new", view: "inspector", tool: "session", resourceID: "session-direct" });
-  for (const path of ["/legacy/runs/%2fother", "/legacy/sessions/%ZZ", "/legacy/runs/../../other"]) {
-    expect(readV2Route("", path)).toEqual({ kind: "invalid" });
+it("rejects malformed resources, unexpected panes and old Inspector addresses", () => {
+  for (const hash of ["#/runs/run-1/unknown", "#/runs/run-1/%2fcontext", "#/runs/run-1/",
+    "#/sessions/session-1/context", "#/automations/runs/run-1/checkpoints", "#/automations/runs/",
+    "#/runs/%2frun/context", "#/runs/run-1/context/context", "#/sessions/%ZZ", "#/threads/task/history",
+    "#/threads/thread-source/runs/%2fother", "#/new/inspector", "#/threads/task/inspector",
+    "#/new/inspector/runs/run-1", "#/threads/task/inspector/sessions/session-1", "#/new/settings/inspector",
+    "#/threads/task/settings/inspector", "#/history/settings/unknown"]) {
+    expect(readV2Route(hash)).toEqual({ kind: "invalid" });
   }
-  expect(readV2Route("#/threads/thread-source/inspector/runs/%2fother")).toEqual({ kind: "invalid" });
+  for (const path of ["/legacy", "/legacy/", "/legacy/threads/task", "/legacy/runs/run-direct",
+    "/legacy/sessions/session-direct", "/legacy/runs/%2fother", "/legacy/sessions/%ZZ"]) {
+    expect(readV2Route("", path)).toEqual({ kind: "invalid" });
+    expect(readV2Route("#/threads/current", path)).toEqual({ kind: "invalid" });
+  }
 });

@@ -40,10 +40,10 @@ it("uses the existing connection gate before mounting the shared shell", () => {
 it.each([
   ["/", { kind: "initial" }],
   ["/?legacy=1", { kind: "initial" }],
-  ["/legacy", { kind: "new", view: "inspector" }],
-  ["/legacy/threads/thread-url", { kind: "thread", threadID: "thread-url", view: "inspector" }],
-  ["/legacy/runs/run-url", { kind: "new", view: "inspector", tool: "run", resourceID: "run-url" }],
-  ["/legacy/sessions/session-url", { kind: "new", view: "inspector", tool: "session", resourceID: "session-url" }],
+  ["/legacy", { kind: "invalid" }],
+  ["/legacy/threads/thread-url", { kind: "invalid" }],
+  ["/legacy/runs/run-url", { kind: "invalid" }],
+  ["/legacy/sessions/session-url", { kind: "invalid" }],
 ] as const)("keeps %s inside the one connected shell", (url, route) => {
   connect();
   useConnectionStore.getState().selectThread("unrelated-previous-thread");
@@ -55,14 +55,14 @@ it.each([
   expect(document.querySelector(".prayu-shell")).not.toBeInTheDocument();
 });
 
-it("does not replace the shell or connection while moving between current and compatible addresses", () => {
+it("does not replace the shell or connection while moving between task and resource pages", () => {
   connect();
   window.history.replaceState({}, "", "#/threads/thread-url");
   render(<App />);
   const shell = screen.getByTestId("v2-workbench");
   fireEvent.change(screen.getByLabelText("Shell local state fixture"), { target: { value: "shared shell state" } });
-  for (const url of ["/legacy/threads/thread-url", "/#/threads/thread-url/inspector/settings/appearance",
-    "/#/threads/thread-url/inspector", "/#/threads/thread-url"]) {
+  for (const url of ["/#/threads/thread-url/records", "/#/threads/thread-url/runs/run-1/settings/appearance",
+    "/#/runs/run-1", "/#/history", "/#/threads/thread-url"]) {
     act(() => { window.history.pushState({}, "", url); window.dispatchEvent(new PopStateEvent("popstate")); });
     expect(screen.getByTestId("v2-workbench")).toBe(shell);
     expect(screen.getByLabelText("Shell local state fixture")).toHaveValue("shared shell state");

@@ -16,7 +16,7 @@ vi.mock("./components/run-network-authority-control", () => ({ V2RunNetworkAutho
 vi.mock("./components/model-route-control", () => ({ V2ModelRouteControl: () => null }));
 // Inspector rendering has its own coverage. The shell, Conversation, Composer,
 // query-backed submission lifetime and original-key confirmation stay real here.
-vi.mock("./components/inspector", () => ({ V2Inspector: () => <section aria-label="Inspector records fixture" /> }));
+vi.mock("./components/execution-records", () => ({ V2ExecutionRecords: () => <section aria-label="Execution records fixture" /> }));
 
 afterEach(() => {
   cleanup();
@@ -55,7 +55,7 @@ it("preserves an unknown submission across execution records/settings and confir
   expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]);
   const originalCall = submit.mock.calls[0];
   await user.click(screen.getByRole("button", { name: "执行记录" }));
-  expect(await screen.findByRole("region", { name: "Inspector records fixture" })).toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "Execution records fixture" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "重试核对" })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "设置" }));
   await user.click(screen.getByRole("button", { name: "返回应用" }));

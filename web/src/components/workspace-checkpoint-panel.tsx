@@ -44,16 +44,16 @@ const restoreIntentKey = (runID: string) => ["run", runID, "workspace-restore-in
 
 const reversibleKinds = new Set(["file_tool", "command_batch", "git_mutation", "agent_merge"]);
 
-export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "inspector", onChanged, onOpenRun }: {
+export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "resource", onChanged, onOpenRun }: {
   client: APIClient;
   runID: string;
   runStatus: string;
-  variant?: "inspector" | "conversation";
+  variant?: "resource" | "conversation";
   onChanged?: () => void;
   onOpenRun?: (runID: string) => void;
 }) {
   const { t } = useLocale();
-  const allowFork = variant === "inspector";
+  const allowFork = variant === "resource";
   const checkpointLabel = (checkpoint: WorkspaceCheckpointView) => {
     if (allowFork) return checkpoint.title || checkpoint.trigger;
     const triggers: Record<string, string> = { file_tool: "文件修改", command_batch: "命令执行",
@@ -218,7 +218,7 @@ export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.inspectorRecords });
+      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.historyRecords });
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.workspaces });
     },
