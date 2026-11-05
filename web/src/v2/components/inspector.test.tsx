@@ -9,7 +9,7 @@ import type { APIClient } from "../../api/client";
 import type { PublicModelStreamSnapshot, ThreadDetailView, ThreadTranscriptItemView } from "../../api/types";
 import { V2Inspector, type V2InspectorProps } from "./inspector";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const createdAt = "2026-09-10T15:00:00Z";
 function item(id: string, overrides: Partial<ThreadTranscriptItemView> = {}): ThreadTranscriptItemView {
   return { version: "thread_transcript.v1", id, canonical_id: id, run_id: "run-1", run_ordinal: 1,
@@ -107,6 +107,37 @@ describe("V2Inspector", () => {
     expect(hiddenAtFocus).toEqual([false]);
     expect(client.resumeHostCommandProposal).not.toHaveBeenCalled();
     expect(client.submitThreadTurn).not.toHaveBeenCalled();
+  });
+
+  it("lets a record image viewer own Escape before closing the selected record", async () => {
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = vi.fn(() => "blob:record-image");
+      static revokeObjectURL = vi.fn();
+    });
+    const user = userEvent.setup();
+    const image = { id: "record-image", workspace_id: "workspace-1", sha256: "a".repeat(64),
+      mime_type: "image/png" as const, byte_size: 10, width: 640, height: 480, name: "record.png" };
+    const client = { downloadWorkspaceImage: vi.fn().mockResolvedValue(new Blob(["image"], { type: "image/png" })) } as unknown as APIClient;
+    const { draw } = setup([item("image-record", { source: "operator", kind: "operator_input", activity_type: "message", images: [image] })], client);
+    draw();
+    const row = screen.getByRole("button", { name: /image-record/ });
+    await user.click(row);
+    const detail = screen.getByLabelText("选中记录详情");
+    const thumbnail = within(detail).getByRole("button", { name: "预览图片 record.png" });
+    await waitFor(() => expect(thumbnail).toBeEnabled());
+    await user.click(thumbnail);
+    const viewer = screen.getByRole("dialog", { name: "图片预览 record.png" });
+    expect(detail).not.toContainElement(viewer);
+    expect(within(viewer).getByRole("button", { name: "关闭图片预览" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(viewer).not.toBeInTheDocument();
+    expect(detail).toBeVisible();
+    expect(row).toHaveAttribute("aria-pressed", "true");
+    expect(thumbnail).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(detail).not.toBeInTheDocument();
+    expect(row).toHaveFocus();
+    expect(client.downloadWorkspaceImage).toHaveBeenCalledOnce();
   });
 
   it("keeps persisted failed web evidence in exceptions without treating quoted failure text as execution failure", async () => {

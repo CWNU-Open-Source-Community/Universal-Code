@@ -164,7 +164,7 @@ function InspectorContent({ client, threadID, detail, durableItems, liveSnapshot
       </div>
       {ui.selected && <aside className="v2-inspector-detail" aria-label={t("选中记录详情", "Selected record details")}
         onKeyDownCapture={(event) => {
-          if (event.key !== "Escape") return;
+          if (event.key !== "Escape" || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
           event.stopPropagation();
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
           event.preventDefault(); closeDetail();

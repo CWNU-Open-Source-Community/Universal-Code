@@ -283,6 +283,34 @@ it("keeps exact run, tool, UI evidence, session and recovery links reachable fro
   expectNoWrites();
 });
 
+it("returns compact records to the action menu when its trigger becomes hidden on resize", async () => {
+  let width = 700;
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => width);
+  const resizes = new Set<() => void>();
+  vi.stubGlobal("ResizeObserver", class {
+    resize: () => void;
+    constructor(callback: ResizeObserverCallback) {
+      this.resize = () => callback([], this as unknown as ResizeObserver);
+      resizes.add(this.resize);
+    }
+    observe() {}
+    disconnect() { resizes.delete(this.resize); }
+  });
+  const { container, expectNoWrites } = setup();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "执行记录" }));
+  const records = await screen.findByRole("dialog", { name: "执行记录" });
+  const workflow = container.querySelector<HTMLElement>(".v2-task-workflows")!;
+  act(() => {
+    width = 390;
+    workflow.style.display = "none";
+    for (const resize of [...resizes]) resize();
+  });
+  await user.click(within(records).getByRole("button", { name: "收起执行记录" }));
+  expect(screen.getByRole("button", { name: "对话操作" })).toHaveFocus();
+  expectNoWrites();
+});
+
 it("guards the dirty file editor before switching to execution records", async () => {
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
   const { expectNoWrites } = setup(false, true);
@@ -301,7 +329,7 @@ it("guards the dirty file editor before switching to execution records", async (
   expectNoWrites();
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 // Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

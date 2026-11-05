@@ -1071,6 +1071,34 @@ describe("V2Conversation", () => {
     expect(screen.queryByRole("button", { name: "加载更早记录" })).not.toBeInTheDocument();
   });
 
+  it("preserves the chat reading position when earlier records load from the dock", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+    const middle = transcriptItem("middle-dock", "middle dock message", 2);
+    const getPage = vi.fn((_path: string, _query: unknown, cursor: string) => Promise.resolve(
+      cursor === "older-dock-cursor" ? page([transcriptItem("oldest-dock", "oldest dock message", 1), middle])
+        : page([middle, transcriptItem("newest-dock", "newest dock message", 3)], "older-dock-cursor"),
+    ));
+    try {
+      const view = renderConversation(baseClient({ getPage } as Partial<APIClient>));
+      const user = userEvent.setup();
+      await screen.findByText("newest dock message");
+      const chat = view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+      Object.defineProperties(chat, {
+        scrollHeight: { get: () => chat.querySelectorAll(".v2-narrative > li").length * 200, configurable: true },
+        clientHeight: { value: 100, configurable: true },
+      });
+      chat.scrollTop = 80;
+      fireEvent.scroll(chat);
+      await user.click(screen.getByRole("button", { name: "执行记录" }));
+      const dock = await screen.findByRole("complementary", { name: "执行记录" });
+      await user.click(await within(dock).findByRole("button", { name: "加载较早记录" }));
+      await waitFor(() => expect(chat).toHaveTextContent("oldest dock message"));
+      expect(chat.scrollTop).toBe(280);
+      expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 280, following: false });
+      expect(within(dock).queryByRole("button", { name: "加载较早记录" })).not.toBeInTheDocument();
+    } finally { vi.restoreAllMocks(); }
+  });
+
   it("closes the title menu with Escape or an outside click and restores focus predictably", async () => {
     const onArchive = vi.fn();
     const client = baseClient();

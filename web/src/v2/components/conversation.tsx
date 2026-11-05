@@ -312,7 +312,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const contextReturnFocus = useRef<HTMLButtonElement | null>(null);
   const previewTrigger = useRef<HTMLButtonElement>(null);
   const recordsTrigger = useRef<HTMLButtonElement>(null);
-  const recordsReturnFocus = useRef<HTMLElement | null>(null);
+  const recordsReturnFocus = useRef<HTMLButtonElement | null>(null);
   const composerContainerRef = useRef<HTMLDivElement>(null);
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [composerFocusRequest, setComposerFocusRequest] = useState<{ threadID: string } | null>(null);
@@ -488,7 +488,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         case "review":
           return workflowFocusTarget(reviewReturnFocus.current?.isConnected ? reviewReturnFocus.current : reviewTrigger.current);
         case "records":
-          return recordsReturnFocus.current?.isConnected ? recordsReturnFocus.current : workflowFocusTarget(recordsTrigger.current);
+          return workflowFocusTarget(recordsReturnFocus.current?.isConnected ? recordsReturnFocus.current : recordsTrigger.current);
         default:
           return fileTrigger.current;
       }
@@ -1013,7 +1013,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <V2Inspector client={client} key={threadID} detail={detail} threadID={threadID} durableItems={transcriptItems}
             liveSnapshot={liveSnapshot} liveStatus={publicStream.status}
             hasOlder={Boolean(transcriptQuery.hasNextPage)} isFetchingOlder={transcriptQuery.isFetchingNextPage}
-            onLoadOlder={() => void transcriptQuery.fetchNextPage()} />
+            onLoadOlder={() => void loadOlderTranscript()} />
         </V2LazySurface>}
       </>}
       reviewToolTarget={reviewToolTarget}
