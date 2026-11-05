@@ -1,0 +1,20 @@
+=== RUN   TestWorkflowFaultCancelRunConverges
+    workflow_fault_cancel_test.go:24: set UC_WORKFLOW_FAULT_REPRO=1 to run the workflow cancellation repro
+--- SKIP: TestWorkflowFaultCancelRunConverges (0.00s)
+=== RUN   TestWorkflowFaultCompletionNormalExactlyOnce
+    workflow_fault_completion_test.go:165: set UC_WORKFLOW_FAULT_REPRO=1 to run the completion fault reproductions
+--- SKIP: TestWorkflowFaultCompletionNormalExactlyOnce (0.00s)
+=== RUN   TestWorkflowFaultCompletionStorageFailureRecovery
+    workflow_fault_completion_test.go:192: set UC_WORKFLOW_FAULT_REPRO=1 to run the completion fault reproductions
+--- SKIP: TestWorkflowFaultCompletionStorageFailureRecovery (0.00s)
+=== RUN   TestWorkflowFaultCompletionProcessExitRecovery
+    workflow_fault_completion_test.go:219: set UC_WORKFLOW_FAULT_REPRO=1 to run the completion fault reproductions
+--- SKIP: TestWorkflowFaultCompletionProcessExitRecovery (0.00s)
+=== RUN   TestWorkflowFaultCompletionCrashChild
+    workflow_fault_completion_test.go:240: set UC_WORKFLOW_FAULT_REPRO=1 to run the completion fault reproductions
+--- SKIP: TestWorkflowFaultCompletionCrashChild (0.00s)
+=== RUN   TestWorkflowFaultPauseDeadlineCleansPendingApproval
+    workflow_fault_pause_test.go:29: set UC_WORKFLOW_FAULT_REPRO=1 to run the deadline fault reproduction
+--- SKIP: TestWorkflowFaultPauseDeadlineCleansPendingApproval (0.00s)
+PASS
+ok  	cyberagent-workbench/internal/application	0.089s

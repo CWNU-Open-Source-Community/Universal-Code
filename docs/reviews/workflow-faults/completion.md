@@ -27,7 +27,7 @@ go test ./internal/application -run '^TestWorkflowFaultCompletion' -count=1 -v
 | 案例 | 精确故障位置 | 实际结果 |
 | --- | --- | --- |
 | 正常完成对照 | 不注入故障 | 自动产生一个已提交通知及一个主会话总结；重复 `Advance`、关闭/重开 SQLite 后再次 `Advance`，仍各一个，模型总调用两次。通过。 |
-| `get-run-once` | `completed` checkpoint 成功后，完成总结读取 `GetRun` 时仅一次返回 `UNAVAILABLE` | `RunDue` 报 `workflow completed; main-conversation summary is pending: UNAVAILABLE`；同进程下一次 tick 不补发，数据库重开后也不补发。自动恢复断言失败。 |
+| `get-run-once` | `completed` checkpoint 成功后，完成总结读取 `GetRun` 时仅一次返回 `UNAVAILABLE` | `RunDue` 报 `workflow completed; main-conversation summary is pending: UNAVAILABLE`；数据库重开后，健康宿主也不补发。自动恢复断言失败。 |
 | `enqueue-once` | `completed` checkpoint 成功后，仅该 execution 总结 key 的 `EnqueueOperatorSteering` 一次返回 `UNAVAILABLE` | 与上一例相同；SQLite 中没有该完成通知。自动恢复断言失败。 |
 | 真实子进程退出 | 子进程内真实 SQLite 完成 checkpoint 的 UPDATE 和读取均返回之后、回到总结函数之前调用 `os.Exit(86)` | 子进程实际以 86 退出；未执行 SQLite `Close`、claim release 或测试清理。父进程重开相同数据库后结果仍是 `completed`、一个已完成 job、无通知。自动恢复断言失败。 |
 
