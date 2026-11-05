@@ -2,7 +2,7 @@
 
 结论：workflow 写入 `completed` 后、总结通知入队前发生一次存储错误或进程退出，已完成的 worker 结果会保留，但宿主不会自动补发主会话总结。数据库重开后仍复现；显式调用 `Advance` 可以补发，重复调用没有重复通知。
 
-基线：`main` 的 `21f56e6b390abf1c2a7de86f9ae8af68d34edb91`。独占分支：`Qiyuanqiii/workflow-repro-completion`。仅新增测试与本说明、日志，没有修改产品源码。环境为 Windows amd64、Go 1.26.10、`CGO_ENABLED=1`、现有 WinLibs GCC。完整输出和真实退出码见 [completion.txt](completion.txt)。
+基线：`main` 的 `21f56e6b390abf1c2a7de86f9ae8af68d34edb91`。独占分支：`Qiyuanqiii/workflow-repro-completion`。仅新增测试与本说明、日志，没有修改产品源码。环境为 Windows amd64、Go 1.26.10、`CGO_ENABLED=1`、现有 WinLibs GCC。完整输出和真实退出码见 [completion-output.md](completion-output.md)。
 
 ## 运行命令
 

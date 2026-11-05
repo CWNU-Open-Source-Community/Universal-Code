@@ -1,3 +1,4 @@
+```text
 Completion notification fault reproduction
 Baseline: 21f56e6b390abf1c2a7de86f9ae8af68d34edb91
 Branch: Qiyuanqiii/workflow-repro-completion
@@ -75,3 +76,4 @@ Default gate check command: Remove-Item Env:UC_WORKFLOW_FAULT_REPRO; go test ./i
 PASS
 ok  	cyberagent-workbench/internal/application	0.091s
 DEFAULT_GATE_EXIT_CODE=0
+```

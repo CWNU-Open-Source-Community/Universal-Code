@@ -7,7 +7,7 @@
 - 产品基线：`main`，`21f56e6b390abf1c2a7de86f9ae8af68d34edb91`。
 - 独立分支：`Qiyuanqiii/workflow-repro-pause`；工作树：`D:/CodexProjects/worktrees/workflow-repro-pause`。
 - 环境：Windows amd64，Go 1.26.10，`CGO_ENABLED=1`，现有 WinLibs gcc；未修改依赖或产品源码。
-- 测试：`internal/application/workflow_fault_pause_test.go`；完整输出：[pause.log](pause.log)。
+- 测试：`internal/application/workflow_fault_pause_test.go`；完整输出：[pause-output.md](pause-output.md)。
 
 ```powershell
 $env:UC_WORKFLOW_FAULT_REPRO='1'

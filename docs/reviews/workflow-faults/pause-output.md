@@ -1,3 +1,4 @@
+```text
 Baseline: main 21f56e6b390abf1c2a7de86f9ae8af68d34edb91
 Worktree: D:/CodexProjects/worktrees/workflow-repro-pause
 Branch: Qiyuanqiii/workflow-repro-pause
@@ -67,3 +68,4 @@ Command (default opt-out): go test ./internal/application -run ^TestWorkflowFaul
 PASS
 ok  	cyberagent-workbench/internal/application	0.090s
 Exit code: 0
+```

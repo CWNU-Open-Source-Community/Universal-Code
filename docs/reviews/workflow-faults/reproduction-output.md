@@ -1,3 +1,4 @@
+```text
 === RUN   TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart
 --- PASS: TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart (0.55s)
 === RUN   TestWorkflowCompletionSummarizesOnlyOnceAfterAllSteps
@@ -170,3 +171,4 @@
 FAIL
 FAIL	cyberagent-workbench/internal/application	25.166s
 FAIL
+```

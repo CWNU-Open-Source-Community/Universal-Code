@@ -1,3 +1,4 @@
+```text
 Baseline: 21f56e6b390abf1c2a7de86f9ae8af68d34edb91
 Platform: Windows amd64; Go 1.26.10; CGO_ENABLED=1; existing WinLibs gcc
 Command: go test ./internal/application -run ^TestWorkflowFaultCancelRunConverges$ -count=1 -timeout=60s -v (environment unset)
@@ -74,3 +75,4 @@ FAIL
 FAIL	cyberagent-workbench/internal/application	4.255s
 FAIL
 Enabled exit: 1
+```

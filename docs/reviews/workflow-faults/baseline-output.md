@@ -1,3 +1,4 @@
+```text
 === RUN   TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart
 --- PASS: TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart (0.60s)
 === RUN   TestWorkflowCompletionSummarizesOnlyOnceAfterAllSteps
@@ -8,3 +9,4 @@
 --- PASS: TestWorkflowHostClaimsExcludeSecondDatabaseOwner (0.50s)
 PASS
 ok  	cyberagent-workbench/internal/application	2.408s
+```

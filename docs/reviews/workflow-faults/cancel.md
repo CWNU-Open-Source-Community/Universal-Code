@@ -1,6 +1,6 @@
 # Run 取消后的 workflow 终态传播复现
 
-基线：`21f56e6b390abf1c2a7de86f9ae8af68d34edb91`，分支 `Qiyuanqiii/workflow-repro-cancel`。Windows amd64、Go 1.26.10、`CGO_ENABLED=1`、现有 WinLibs gcc。完整实跑输出见 [cancel.txt](cancel.txt)。产品源码未修改。
+基线：`21f56e6b390abf1c2a7de86f9ae8af68d34edb91`，分支 `Qiyuanqiii/workflow-repro-cancel`。Windows amd64、Go 1.26.10、`CGO_ENABLED=1`、现有 WinLibs gcc。完整实跑输出见 [cancel-output.md](cancel-output.md)。产品源码未修改。
 
 ## 命令与替代层
 

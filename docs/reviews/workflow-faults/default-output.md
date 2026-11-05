@@ -1,3 +1,4 @@
+```text
 === RUN   TestWorkflowFaultCancelRunConverges
     workflow_fault_cancel_test.go:24: set UC_WORKFLOW_FAULT_REPRO=1 to run the workflow cancellation repro
 --- SKIP: TestWorkflowFaultCancelRunConverges (0.00s)
@@ -18,3 +19,4 @@
 --- SKIP: TestWorkflowFaultPauseDeadlineCleansPendingApproval (0.00s)
 PASS
 ok  	cyberagent-workbench/internal/application	0.089s
+```

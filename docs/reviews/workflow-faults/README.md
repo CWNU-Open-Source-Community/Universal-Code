@@ -8,10 +8,10 @@
 
 | 问题 | 触发与实际结果 | 对用户的影响 | 证据 |
 | --- | --- | --- | --- |
-| 取消后无法收尾 | worker 返回 continue 后取消 Run；child 已 cancelled，workflow 却变 waiting、step 留在 pending。重开数据库仍不恢复；到期后每次推进均清理报错。 | 任务已经停止，执行记录仍显示未结束，宿主反复处理无法完成的清理。 | [取消报告](cancel.md)、[日志](cancel.txt) |
-| workflow 暂停后不处理到期 | 在真实文件写入审批停点暂停 workflow，经过原有 deadline；候选与 claim 排除 paused，宿主不执行清理。恢复后一个 tick 才清理。 | 有效审批等待、非终态子任务及未使用预算预留持续保留。 | [暂停报告](pause.md)、[日志](pause.log) |
-| Run 暂停后清理被拒 | 同一审批停点只暂停 Run；到期候选正常，但清理调用要求 running Run 的恢复入口并失败。恢复 Run 后一个 tick 才清理。 | 暂停的任务无法完成到期收尾，未使用预算持续预留。 | [暂停报告](pause.md)、[日志](pause.log) |
-| 已完成但总结丢失 | completed 已落盘、通知尚未入队时，GetRun/Enqueue 一次失败或实际子进程退出；重开后宿主不再选择该 execution。显式 Advance 才补发，重复调用不重复。 | 工作已完成，主对话却没有最终结果，需要人工恢复。 | [通知报告](completion.md)、[日志](completion.txt) |
+| 取消后无法收尾 | worker 返回 continue 后取消 Run；child 已 cancelled，workflow 却变 waiting、step 留在 pending。重开数据库仍不恢复；到期后每次推进均清理报错。 | 任务已经停止，执行记录仍显示未结束，宿主反复处理无法完成的清理。 | [取消报告](cancel.md)、[日志](cancel-output.md) |
+| workflow 暂停后不处理到期 | 在真实文件写入审批停点暂停 workflow，经过原有 deadline；候选与 claim 排除 paused，宿主不执行清理。恢复后一个 tick 才清理。 | 有效审批等待、非终态子任务及未使用预算预留持续保留。 | [暂停报告](pause.md)、[日志](pause-output.md) |
+| Run 暂停后清理被拒 | 同一审批停点只暂停 Run；到期候选正常，但清理调用要求 running Run 的恢复入口并失败。恢复 Run 后一个 tick 才清理。 | 暂停的任务无法完成到期收尾，未使用预算持续预留。 | [暂停报告](pause.md)、[日志](pause-output.md) |
+| 已完成但总结丢失 | completed 已落盘、通知尚未入队时，GetRun/Enqueue 一次失败或实际子进程退出；重开后宿主不再选择该 execution。显式 Advance 才补发，重复调用不重复。 | 工作已完成，主对话却没有最终结果，需要人工恢复。 | [通知报告](completion.md)、[日志](completion-output.md) |
 
 取消实验没有额外模型调用、活跃 Run lease 或 command jobs。暂停实验没有执行未批准的文件写入，计费 tokens 未增加；其未用预算预留由子任务状态与分配额度计算。这里证明的是状态收敛、预留回收和通知恢复缺陷，没有据此声称进程泄漏或越权执行。
 
@@ -54,6 +54,6 @@ Remove-Item Env:UC_WORKFLOW_FAULT_REPRO -ErrorAction SilentlyContinue
 go test ./internal/application -run '^TestWorkflowFault' -count=1 -timeout=120s -v
 ```
 
-整合复跑退出 **1**：取消、两种暂停，以及通知的两种方法故障和真实子进程退出案例，均在预期的正确行为断言处失败；各自的正常对照和原有四条测试通过。子进程入口在父测试中实际执行并退出 86，单独被测试框架枚举时按设计 Skip。完整输出见 [integrated.txt](integrated.txt)。
+整合复跑退出 **1**：取消、两种暂停，以及通知的两种方法故障和真实子进程退出案例，均在预期的正确行为断言处失败；各自的正常对照和原有四条测试通过。子进程入口在父测试中实际执行并退出 86，单独被测试框架枚举时按设计 Skip。完整输出见 [reproduction-output.md](reproduction-output.md)。
 
-默认运行退出 **0**，六个复现入口均 Skip，见 [default.txt](default.txt)。原有四条对照的首次独立执行也通过，见 [baseline.txt](baseline.txt)。根代理还检查了整合 diff，仅新增诊断测试与文档，`git diff --check` 通过。未运行完整测试套件或桌面 UI 验收。
+默认运行退出 **0**，六个复现入口均 Skip，见 [default-output.md](default-output.md)。原有四条对照的首次独立执行也通过，见 [baseline-output.md](baseline-output.md)。根代理还检查了整合 diff，仅新增诊断测试与文档，`git diff --check` 通过。未运行完整测试套件或桌面 UI 验收。
