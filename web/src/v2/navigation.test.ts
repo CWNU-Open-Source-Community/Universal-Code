@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { readV2Route, useV2Navigation } from "./navigation";
 
@@ -46,7 +46,7 @@ it.each(resourceRoutes)("restores and serializes the explicit source %s", (hash,
   expect(readV2Route(hash)).toEqual(route);
   act(() => result.current.navigate(route));
   expect(window.location.hash).toBe(hash);
-  expect(Object.keys(window.history.state)).toEqual(["v2NavigationIndex"]);
+  expect(window.history.state).toEqual({ v2NavigationIndex: 1, v2PreviousHash: "#/new" });
 });
 
 it.each(resourceRoutes)("returns settings to %s without browser history or losing resource identity", (hash, route) => {
@@ -62,7 +62,7 @@ it.each(resourceRoutes)("returns settings to %s without browser history or losin
   expect(refreshed.result.current.route).toEqual(route);
 });
 
-it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("retains the exact Run's %s pane through settings", (pane) => {
+it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("retains the exact Run's %s pane through settings", async (pane) => {
   const { result } = renderHook(() => useV2Navigation());
   act(() => result.current.navigate({ kind: "run", threadID: "thread-source", resourceID: "run-history", pane }));
   const source = `#/threads/thread-source/runs/run-history/${pane}`;
@@ -70,7 +70,7 @@ it.each(["context", "checkpoints", "tools", "ui-evidence"] as const)("retains th
   expect(readV2Route(source)).toEqual(result.current.route);
   act(() => result.current.navigate({ ...result.current.route, section: "connections" }));
   act(() => result.current.back());
-  expect(window.location.hash).toBe(source);
+  await waitFor(() => expect(window.location.hash).toBe(source));
   expect(readV2Route(window.location.hash).resourceID).toBe("run-history");
 });
 
@@ -107,20 +107,56 @@ it("rejects malformed resources, unexpected panes and old Inspector addresses", 
   }
 });
 
-it("can leave history after returning from a Run without cycling back into that Run", async () => {
+it.each([
+  ["run", false], ["session", false], ["run", true], ["session", true],
+] as const)("returns %s through history with one click per page, including settings/remount: %s", async (kind, withSettings) => {
   window.history.replaceState({ v2NavigationIndex: 0 }, "", "#/threads/original");
-  const { result } = renderHook(() => useV2Navigation());
-  act(() => result.current.navigate({ kind: "history" }));
-  act(() => result.current.navigate({ kind: "run", resourceID: "run-one" }));
-  act(() => result.current.back());
-  expect(window.location.hash).toBe("#/history");
-  for (let step = 0; step < 2 && window.location.hash === "#/history"; step++) {
-    await act(async () => {
-      const changed = new Promise<void>((resolve) => window.addEventListener("popstate", () => resolve(), { once: true }));
-      result.current.back();
-      await changed;
-    });
-    expect(window.location.hash).not.toBe("#/runs/run-one");
+  let view = renderHook(() => useV2Navigation());
+  act(() => view.result.current.navigate({ kind: "history" }));
+  act(() => view.result.current.navigate({ kind, resourceID: "resource-one" }));
+  const resourceHash = window.location.hash;
+  if (withSettings) {
+    act(() => view.result.current.navigate({ ...view.result.current.route, section: "models" }));
+    act(() => view.result.current.navigate({ ...view.result.current.route, section: "appearance" }, true));
+    view.unmount();
+    view = renderHook(() => useV2Navigation());
+    act(() => view.result.current.back());
+    await waitFor(() => expect(window.location.hash).toBe(resourceHash));
   }
-  expect(window.location.hash).toBe("#/threads/original");
+  act(() => view.result.current.back());
+  await waitFor(() => expect(window.location.hash).toBe("#/history"));
+  expect(window.history.state.v2NavigationIndex).toBe(1);
+  act(() => view.result.current.back());
+  await waitFor(() => expect(window.location.hash).toBe("#/threads/original"));
+  expect(view.result.current.canGoBack).toBe(false);
+});
+
+it.each(["run", "session"] as const)("does not back into an unrelated page when returning from %s", (kind) => {
+  window.history.replaceState({}, "", "#/automations");
+  const { result } = renderHook(() => useV2Navigation());
+  act(() => result.current.navigate({ kind, resourceID: "resource-one" }));
+  const historyBack = vi.spyOn(window.history, "back");
+  act(() => result.current.back());
+  expect(historyBack).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe("#/history");
+});
+
+it.each(["run", "session"] as const)("returns a direct %s link to history without leaving the app", (kind) => {
+  window.history.replaceState({}, "", `#/${kind}s/resource-direct`);
+  const { result } = renderHook(() => useV2Navigation());
+  const historyBack = vi.spyOn(window.history, "back");
+  act(() => result.current.back());
+  expect(historyBack).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe("#/history");
+});
+
+it("does not guess the predecessor of an external hash link", async () => {
+  window.history.replaceState({}, "", "#/history");
+  const { result } = renderHook(() => useV2Navigation());
+  act(() => { window.location.hash = "#/runs/external"; });
+  await waitFor(() => expect(result.current.route.resourceID).toBe("external"));
+  const historyBack = vi.spyOn(window.history, "back");
+  act(() => result.current.back());
+  expect(historyBack).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe("#/history");
 });

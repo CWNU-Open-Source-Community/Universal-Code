@@ -1,7 +1,7 @@
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useV2Navigation } from "./navigation";
 
-const leave = vi.hoisted(() => vi.fn<(proceed: () => void) => void>());
+const leave = vi.hoisted(() => vi.fn<(proceed: () => void, cancel?: () => void) => void>());
 vi.mock("../components/file-edit-drafts", () => ({ useFileEditLeave: () => leave }));
 afterEach(() => { cleanup(); leave.mockReset(); window.history.replaceState({}, "", "/"); });
 
@@ -26,4 +26,24 @@ it("acknowledges explicitly reopening the current route without another leave re
   act(() => view.result.current.navigate({ kind: "thread", threadID: "current" }, false, accepted));
   expect(accepted).toHaveBeenCalledOnce();
   expect(leave).not.toHaveBeenCalled();
+});
+
+it("restores a resource when leaving is cancelled and can then return to its existing history entry", async () => {
+  window.history.replaceState({}, "", "#/history");
+  leave.mockImplementation((proceed) => proceed());
+  const view = renderHook(() => useV2Navigation());
+  act(() => view.result.current.navigate({ kind: "run", resourceID: "run-dirty" }));
+  leave.mockReset();
+  act(() => view.result.current.back());
+  await waitFor(() => expect(leave).toHaveBeenCalled());
+  expect(view.result.current.route.resourceID).toBe("run-dirty");
+  act(() => leave.mock.calls.at(-1)![1]!());
+  await waitFor(() => expect(window.location.hash).toBe("#/runs/run-dirty"));
+  expect(window.history.state.v2PreviousHash).toBe("#/history");
+  leave.mockReset();
+  act(() => view.result.current.back());
+  await waitFor(() => expect(leave).toHaveBeenCalled());
+  act(() => leave.mock.calls.at(-1)![0]());
+  expect(view.result.current.route.kind).toBe("history");
+  expect(window.history.state.v2NavigationIndex).toBe(0);
 });

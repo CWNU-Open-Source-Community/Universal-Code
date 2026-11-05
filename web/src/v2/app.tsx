@@ -573,7 +573,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const goBack = () => { updateModelSetupToken(""); navigation.back(); closeNavigationSidebar(); };
   const returnFromSettings = () => {
     updateModelSetupToken("");
-    navigate({ ...route, section: undefined }, true);
+    navigation.back();
     closeNavigationSidebar();
   };
   const openTask = () => {
