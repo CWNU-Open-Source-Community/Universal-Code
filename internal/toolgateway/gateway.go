@@ -921,7 +921,8 @@ func validateToolArguments(call ToolCall) error {
 				return errors.New("MCP tool calls require a fenced host actor")
 			}
 		case BrowserStatusTool, BrowserNavigateTool, BrowserSnapshotTool,
-			BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool:
+			BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool,
+			BrowserUploadTool:
 			if !recordedExecutionActor(call) || call.AgentID == "" ||
 				call.LeaseID == "" {
 				return errors.New("browser actions require a fenced root Supervisor")

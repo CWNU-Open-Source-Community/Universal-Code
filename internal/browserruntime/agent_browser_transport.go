@@ -77,6 +77,10 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
+	// Upload sets file paths on one snapshot-resolved file input; the
+	// application layer proves the path is a real file inside the workspace
+	// before this method is ever reachable.
+	"DOM.setFileInputFiles":  true,
 	"Runtime.callFunctionOn": true, "Runtime.releaseObjectGroup": true, "Accessibility.getFullAXTree": true,
 	"Input.dispatchMouseEvent": true, "Input.dispatchKeyEvent": true, "Input.insertText": true,
 	"Emulation.setDeviceMetricsOverride": true,

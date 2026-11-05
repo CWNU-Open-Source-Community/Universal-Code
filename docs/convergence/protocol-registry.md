@@ -8,7 +8,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | Family | Class | Owner | Active IDs | Persisted/exported |
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 6 | true |
-| [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
+| [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 12 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 57 | true |
@@ -92,7 +92,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `agent-browser-supervisor-ledger-reader` (`v1, v2`, active) at `internal/store`
   - `agent-browser-supervisor-authority-reader` (`v1, v2`, active) at `internal/toolgateway`
 
-<details><summary>11 active identifiers</summary>
+<details><summary>12 active identifiers</summary>
 
 - `agent-browser-actions.v1`
 - `browser_click.v2`
@@ -105,6 +105,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `browser_snapshot.v2`
 - `browser_status.v2`
 - `browser_type.v2`
+- `browser_upload.v2`
 
 </details>
 

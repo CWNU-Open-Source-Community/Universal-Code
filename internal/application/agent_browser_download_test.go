@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +63,10 @@ func (r *downloadReleaseTestRuntime) Click(context.Context, string, string) (bro
 }
 
 func (r *downloadReleaseTestRuntime) Type(context.Context, string, string, string, bool) (browserruntime.AgentBrowserInteraction, error) {
+	return browserruntime.AgentBrowserInteraction{}, nil
+}
+
+func (r *downloadReleaseTestRuntime) Upload(context.Context, string, string, string) (browserruntime.AgentBrowserInteraction, error) {
 	return browserruntime.AgentBrowserInteraction{}, nil
 }
 
@@ -427,5 +432,83 @@ func TestBrowserSessionLifetimeFromEnvironment(t *testing.T) {
 		if got := BrowserSessionLifetimeFromEnvironment(); got != 0 {
 			t.Fatalf("out-of-range value %q must fall back to the default: %v", value, got)
 		}
+	}
+}
+
+func TestAgentBrowserUploadResolverContainment(t *testing.T) {
+	root := t.TempDir()
+	store := &downloadReleaseTestStore{
+		run:       domain.Run{ID: "run-upload"},
+		workspace: session.WorkspaceInfo{ID: "ws-upload", RootPath: root},
+	}
+	service := NewAgentBrowserService(store, AgentBrowserOptions{})
+	if err := os.WriteFile(filepath.Join(root, "report.txt"), []byte("upload payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "docs/../report.txt")
+	if err != nil || !filepath.IsAbs(resolved) {
+		t.Fatalf("regular file: %v %q", err, resolved)
+	}
+
+	for _, relative := range []string{"missing.txt", "docs", "", "../outside.txt", "report.txt/../../escape.txt", "report.txt/x"} {
+		if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", relative); err == nil {
+			t.Fatalf("upload path %q accepted", relative)
+		}
+	}
+	oversize := filepath.Join(root, "big.bin")
+	if err := os.WriteFile(oversize, make([]byte, AgentBrowserMaxUploadBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "big.bin"); err == nil {
+		t.Fatal("oversize upload accepted")
+	}
+	if err := os.WriteFile(filepath.Join(root, "empty.bin"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "empty.bin"); err == nil {
+		t.Fatal("empty upload accepted")
+	}
+	// The link points OUTSIDE the workspace root: resolving it must escape.
+	outsideDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outsideDir, "escape.txt"), []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outsideDir, "escape.txt"), filepath.Join(root, "docs", "link.txt")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "docs/link.txt"); err == nil {
+		t.Fatal("symlinked escape accepted")
+	}
+}
+
+func TestWithinResolvedWorkspaceAllowsDriveRootsAndRejectsSiblings(t *testing.T) {
+	root := filepath.Clean(t.TempDir())
+	if !withinResolvedWorkspace(root, filepath.Join(root, "report.txt")) {
+		t.Fatalf("file inside the workspace rejected: %q", root)
+	}
+	if withinResolvedWorkspace(root, filepath.Join(filepath.Clean(root+"-sibling"), "escape.txt")) {
+		t.Fatalf("sibling directory admitted: %q", root)
+	}
+	if withinResolvedWorkspace(root, root) {
+		t.Fatal("the workspace root itself is not a file inside it")
+	}
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// A resolved drive root keeps its trailing separator: appending another one
+	// would reject every file on that drive.
+	separator := string(filepath.Separator)
+	driveRoot := "C:" + separator
+	if !withinResolvedWorkspace(driveRoot, driveRoot+"Windows"+separator+"notepad.exe") {
+		t.Fatal("drive-root workspace rejected a file on that drive")
+	}
+	if withinResolvedWorkspace(driveRoot, "D:"+separator+"outside.txt") {
+		t.Fatal("drive-root workspace admitted another drive")
+	}
+	if withinResolvedWorkspace("C:"+separator+"ws"+separator, "C:"+separator+"ws2"+separator+"report.txt") {
+		t.Fatal("trailing-separator root admitted a sibling directory")
 	}
 }

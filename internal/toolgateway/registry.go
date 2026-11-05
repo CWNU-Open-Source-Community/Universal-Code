@@ -177,7 +177,7 @@ func buildToolRegistry() toolRegistry {
 			return canonical, err
 		}, (*Gateway).invokeCodeIntel,
 		requireExecutor("code-intel tool", func(g *Gateway, _ ToolCall) bool { return g.codeIntel != nil }), true, false)
-	for _, name := range []ToolName{BrowserScrollTool, BrowserKeyTool} {
+	for _, name := range []ToolName{BrowserScrollTool, BrowserKeyTool, BrowserUploadTool} {
 		definition, found := AgentBrowserToolDefinition(name)
 		if !found {
 			panic(fmt.Sprintf("missing Agent Browser definition %q", name))
