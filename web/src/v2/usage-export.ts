@@ -42,6 +42,10 @@ const emptyCost = (cost: UsageStatistics["cost"]): (string | number)[] =>
 // unassigned_calls plus the five cost columns, which only the totals row fills.
 const noFacts = ["", "", "", "", "", ""] as const;
 
+// The ledger prices globally in USD (known_cost_micros sums only priced USD
+// settlements), so the known_cost_usd column is denominated in USD by
+// construction; cost_currency records that currency for downstream readers.
+
 // The exported CSV mirrors the loaded usage projection exactly; it adds no
 // derived numbers beyond formatting known_cost_micros into USD decimals.
 export function formatUsageCsv(data: UsageStatistics): string {
