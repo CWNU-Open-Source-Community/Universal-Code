@@ -148,7 +148,10 @@ Full CDP products.
    extension or restricted-transport migration) with its transport whitelist
    changes. Bind resolved-address checks to actual target connections, or restrict
    the initial implementation to literal targets. Preserve profile ceilings and
-   any narrower origin-count or URL-byte limits at all these boundaries. Enforce
+   any narrower origin-count or URL-byte limits at all these boundaries. The network
+   boundary must block undeclared destinations for browser-generated CORS preflight
+   `OPTIONS` requests too, including traffic not intercepted by Fetch; literal-only
+   mode retains this requirement. Enforce
    the page-initiated write rule from Decision 5 at the request boundary; URL
    membership alone cannot authorize a form submit or fetch/XHR write. Implement
    the dedicated durable request proposal and existing-UI operator review, bounded
@@ -192,7 +195,8 @@ Full CDP products.
   approved mutations.
 - Network: undeclared subresources are blocked; hostname resolution changes to
   forbidden addresses fail at the actual connection boundary, or hostnames are
-  rejected under the initial literal-only policy.
+  rejected under the initial literal-only policy. A controlled undeclared target
+  must receive no CORS preflight `OPTIONS` request, including in literal-only mode.
 - Effects: click/type/key calls omitting sensitive intent still require approval
   when they may write externally; rejection dispatches no action.
 - Request approvals: page-triggered form submissions and fetch/XHR POSTs remain
