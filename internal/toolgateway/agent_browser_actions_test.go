@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 type agentBrowserGatewayProbe struct{ calls int }
@@ -90,5 +92,57 @@ func TestAgentBrowserUploadPayloadRequiresSensitiveIntentAndBoundedPath(t *testi
 		if _, e := NormalizeAgentBrowserPayload(BrowserUploadTool, json.RawMessage(raw)); e == nil {
 			t.Fatalf("invalid upload accepted: %s", raw)
 		}
+	}
+}
+
+func TestAgentBrowserSensitiveIntentSchemaMatchesNormalization(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		tool   ToolName
+		effect string
+		valid  bool
+	}{
+		{"upload write", BrowserUploadTool, "external_write", true},
+		{"upload missing intent", BrowserUploadTool, "", false},
+		{"upload delete", BrowserUploadTool, "external_delete", false},
+		{"click without intent", BrowserClickTool, "", true},
+		{"click delete", BrowserClickTool, "external_delete", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			definition, ok := AgentBrowserToolDefinition(tc.tool)
+			if !ok {
+				t.Fatal("missing browser tool definition")
+			}
+			compiler := jsonschema.NewCompiler()
+			if err := compiler.AddResource("browser-action.json", strings.NewReader(string(definition.InputSchema))); err != nil {
+				t.Fatal(err)
+			}
+			schema, err := compiler.Compile("browser-action.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := map[string]any{"version": string(tc.tool) + ".v2", "snapshot_id": "snap-1", "element_ref": "ref-1"}
+			if tc.tool == BrowserUploadTool {
+				payload["workspace_path"] = "docs/report.pdf"
+			}
+			if tc.effect != "" {
+				payload["sensitive_intent"] = map[string]any{"version": "browser_sensitive_intent.v1", "effect": tc.effect,
+					"target": "https://example.com/upload", "description": "Perform the selected external action", "document_epoch": 7}
+			}
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if err := schema.Validate(decoded); (err == nil) != tc.valid {
+				t.Fatalf("schema valid=%t, want %t: %v", err == nil, tc.valid, err)
+			}
+			if _, err := NormalizeAgentBrowserPayload(tc.tool, raw); (err == nil) != tc.valid {
+				t.Fatalf("normalization valid=%t, want %t: %v", err == nil, tc.valid, err)
+			}
+		})
 	}
 }

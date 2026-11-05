@@ -316,7 +316,12 @@ func AgentBrowserToolDefinition(name ToolName) (ToolDefinition, bool) {
 		add("workspace_path", 512)
 	}
 	if name == BrowserNavigateTool || name == BrowserClickTool || name == BrowserTypeTool || name == BrowserScrollTool || name == BrowserKeyTool || name == BrowserUploadTool {
-		properties["sensitive_intent"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"version", "effect", "target", "description", "document_epoch"}, "properties": map[string]any{"version": map[string]any{"const": "browser_sensitive_intent.v1"}, "effect": map[string]any{"enum": []string{"external_write", "external_delete"}}, "target": map[string]any{"type": "string", "maxLength": 4096}, "description": map[string]any{"type": "string", "minLength": 1, "maxLength": 2048}, "document_epoch": map[string]any{"type": "integer", "minimum": 1}}}
+		effects := []string{"external_write", "external_delete"}
+		if name == BrowserUploadTool {
+			required = append(required, "sensitive_intent")
+			effects = []string{"external_write"}
+		}
+		properties["sensitive_intent"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"version", "effect", "target", "description", "document_epoch"}, "properties": map[string]any{"version": map[string]any{"const": "browser_sensitive_intent.v1"}, "effect": map[string]any{"enum": effects}, "target": map[string]any{"type": "string", "maxLength": 4096}, "description": map[string]any{"type": "string", "minLength": 1, "maxLength": 2048}, "document_epoch": map[string]any{"type": "integer", "minimum": 1}}}
 	}
 	schema := map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
 	if name == BrowserClickTool || name == BrowserTypeTool || name == BrowserUploadTool {
