@@ -55,18 +55,19 @@ func (s *completionFaultStore) GetRun(ctx context.Context, id string) (domain.Ru
 
 func (s *completionFaultStore) EnqueueOperatorSteering(ctx context.Context, request domain.EnqueueOperatorSteeringRequest) (domain.OperatorSteeringEnqueueResult, error) {
 	key := "specialist-summary-" + runmutation.Fingerprint("workflow-summary.v1", s.completedID)
-	if s.mode == "enqueue-once" && s.completedID != "" && s.injections == 0 && request.OperationKey == key && request.RequestedBy == "specialist_completion" {
+	if (s.mode == "enqueue-always" || (s.mode == "enqueue-once" && s.injections == 0)) && s.completedID != "" && request.OperationKey == key && request.RequestedBy == "specialist_completion" {
 		s.injections++
 		return domain.OperatorSteeringEnqueueResult{}, apperror.New(apperror.CodeUnavailable, "injected completion-summary EnqueueOperatorSteering failure")
 	}
 	return s.SQLiteStore.EnqueueOperatorSteering(ctx, request)
 }
 
-func requireCompletionFaultRepro(t *testing.T) {
-	t.Helper()
-	if os.Getenv("UC_WORKFLOW_FAULT_REPRO") != "1" {
-		t.Skip("set UC_WORKFLOW_FAULT_REPRO=1 to run the completion fault reproductions")
+func (s *completionFaultStore) FinishWorkflowSummary(ctx context.Context, executionID, owner, status, reason string, next time.Time) error {
+	if s.mode == "finish-once" && s.injections == 0 {
+		s.injections++
+		return apperror.New(apperror.CodeUnavailable, "injected workflow summary acknowledgement failure")
 	}
+	return s.SQLiteStore.FinishWorkflowSummary(ctx, executionID, owner, status, reason, next)
 }
 
 func completionFaultService(st *completionFaultStore, provider *specialistTestProvider) *application.WorkflowService {
@@ -162,7 +163,6 @@ func requireOneCompletionFaultSummary(t *testing.T, st *store.SQLiteStore, run d
 }
 
 func TestWorkflowFaultCompletionNormalExactlyOnce(t *testing.T) {
-	requireCompletionFaultRepro(t)
 	st, run, service, execution, provider, path := completionFaultFixture(t, "")
 	workflowTick(t, service)
 	for i := 0; i < 2; i++ {
@@ -186,10 +186,9 @@ func TestWorkflowFaultCompletionNormalExactlyOnce(t *testing.T) {
 	requireOneCompletionFaultSummary(t, reopened, run, execution.ID, provider)
 }
 
-// These assert automatic host recovery, so the current defect deliberately
-// fails. Errorf retains the later explicit-Advance/idempotency observations.
+// Storage faults retain the completed output and a retryable notification.
+// A healthy host recovers it without running the completed worker again.
 func TestWorkflowFaultCompletionStorageFailureRecovery(t *testing.T) {
-	requireCompletionFaultRepro(t)
 	for _, mode := range []string{"get-run-once", "enqueue-once"} {
 		t.Run(mode, func(t *testing.T) {
 			st, run, service, execution, provider, path := completionFaultFixture(t, mode)
@@ -203,8 +202,8 @@ func TestWorkflowFaultCompletionStorageFailureRecovery(t *testing.T) {
 			}
 			t.Logf("method-level one-shot %s: ran=%t injections=%d error=%v state=%+v", mode, ran, st.injections, err, state)
 			ran, err = service.RunDue(t.Context(), "completion-same-process-retry", time.Now().UTC())
-			if err != nil {
-				t.Fatal(err)
+			if err != nil || ran {
+				t.Fatalf("notification ignored retry backoff: ran=%t err=%v", ran, err)
 			}
 			t.Logf("healthy same-process RunDue retry: ran=%t injections=%d state=%+v", ran, st.injections, completionFaultEvidence(t, st.SQLiteStore, run, execution.ID))
 			if err := st.Close(); err != nil {
@@ -216,7 +215,6 @@ func TestWorkflowFaultCompletionStorageFailureRecovery(t *testing.T) {
 }
 
 func TestWorkflowFaultCompletionProcessExitRecovery(t *testing.T) {
-	requireCompletionFaultRepro(t)
 	st, run, _, execution, provider, path := completionFaultFixture(t, "")
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -237,7 +235,6 @@ func TestWorkflowFaultCompletionProcessExitRecovery(t *testing.T) {
 }
 
 func TestWorkflowFaultCompletionCrashChild(t *testing.T) {
-	requireCompletionFaultRepro(t)
 	path, executionID := os.Getenv("UC_WORKFLOW_FAULT_COMPLETION_CHILD_DB"), os.Getenv("UC_WORKFLOW_FAULT_COMPLETION_CHILD_ID")
 	if path == "" || executionID == "" {
 		t.Skip("only run as the completion-checkpoint crash subprocess")
@@ -270,9 +267,9 @@ func completionFaultRecover(t *testing.T, path string, run domain.Run, execution
 		t.Fatalf("reopened SQLite did not retain exactly the pre-notification checkpoint: %+v calls=%d", state, provider.calls)
 	}
 	t.Logf("SQLite reopened with healthy store and summary handoff: %+v", state)
-	// Advancing scheduler time past the 15-minute abandoned claim also rules
-	// out a live workflow claim as the cause of the missing candidate.
-	for _, offset := range []time.Duration{0, 16 * time.Minute, 24 * time.Hour} {
+	// Recovery uses the independent notification obligation, even while the
+	// abandoned interpreter claim remains live after the subprocess exit.
+	for _, offset := range []time.Duration{0, 6 * time.Second, 16 * time.Minute, 24 * time.Hour} {
 		now := time.Now().UTC().Add(offset)
 		candidates, err := reopened.ListWorkflowCandidates(t.Context(), time.Time{}, "", now, 32)
 		if err != nil {
@@ -286,10 +283,9 @@ func completionFaultRecover(t *testing.T, path string, run domain.Run, execution
 	}
 	state = completionFaultEvidence(t, reopened, run, executionID)
 	if state.Notifications != 1 || state.Committed != 1 || state.Summaries != 1 || provider.calls != 2 {
-		t.Errorf("HOST RECOVERY DEFECT: completed workflow has no automatic main-conversation summary after healthy database reopen and RunDue: %+v provider_calls=%d; want one committed notification and one summary without operator Advance", state, provider.calls)
+		t.Fatalf("completed workflow did not automatically recover after healthy database reopen and RunDue: %+v provider_calls=%d; want one committed notification and one summary without operator Advance", state, provider.calls)
 	}
-	// Observe the available manual recovery even after the expected host-recovery
-	// assertion fails, then retry it to prove the completion key is idempotent.
+	// Explicit advances after host delivery must also remain idempotent.
 	for i := 0; i < 2; i++ {
 		if _, err := service.Advance(t.Context(), executionID); err != nil {
 			t.Fatalf("explicit Advance recovery %d: %v", i+1, err)

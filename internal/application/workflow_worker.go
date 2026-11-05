@@ -39,8 +39,7 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 	}
 	var afterTime time.Time
 	var afterID string
-	var attempted bool
-	var failures error
+	attempted, failures := s.runDueWorkflowSummary(ctx, now)
 	for {
 		candidates, err := s.store.ListWorkflowCandidates(ctx, afterTime, afterID, now, 32)
 		if err != nil || len(candidates) == 0 {

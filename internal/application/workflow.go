@@ -31,6 +31,11 @@ type WorkflowStore interface {
 	ClaimWorkflowExecution(context.Context, string, string) (domain.WorkflowExecution, bool, error)
 	ReleaseWorkflowExecution(context.Context, string, string) error
 	CheckpointWorkflowExecution(context.Context, domain.WorkflowExecution, string) (domain.WorkflowExecution, error)
+	ListWorkflowSummaryCandidates(context.Context, time.Time, int) ([]domain.WorkflowExecution, error)
+	ClaimWorkflowSummary(context.Context, string, string, time.Time) (int64, bool, error)
+	WorkflowSummaryDelivered(context.Context, string) (bool, error)
+	AdvanceWorkflowSummaryWake(context.Context, string, string, string, int64) (bool, error)
+	FinishWorkflowSummary(context.Context, string, string, string, string, time.Time) error
 	ControlWorkflowExecution(context.Context, string, string, int64) (domain.WorkflowExecution, error)
 	GetWorkflowStep(context.Context, string) (domain.WorkflowStepExecution, bool, error)
 	ListWorkflowVerificationSteps(context.Context, string, string, int64) ([]domain.WorkflowStepExecution, error)
