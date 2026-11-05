@@ -12387,6 +12387,7 @@ export interface components {
             ui_evidence: components["schemas"]["VerificationFeatureReadinessView"];
         };
         RunConfigView: {
+            browser_origins?: string[];
             continuity_context_fingerprint?: string;
             interactive: boolean;
             model_route: string;
