@@ -57,3 +57,15 @@ projectconfig validate 镜像 budget 分支（负值/全零拒绝）、Narrow �
 - `go test -race ./internal/application/ -run "TestAgentBrowserUpload|
   TestAgentBrowserDownload|TestBrowserHeaded|TestBrowserSessionLifetime"` 通过
   （相邻浏览器功能无回归）。
+
+## 复审附记（2026-11-05，第二轮）
+
+独立复审发现 F2 的"最终处理"与代码不符：plan_test.go 此前只有"全零 override = no-op"
+用例，恰等 profile ceiling 的通过分支没有任何测试锚定（上文覆盖范围里"等值 no-op"的
+表述实际指全零用例，不准确）。F2 所述的注释锚定确实存在，本轮已补上恰等 ceiling 的
+通过用例并断言其仍进入 plan 指纹。另按复审意见补两处：
+`browserLimitsOverrideForRun` 对畸形 pinned 快照的静默回退改为 `slog.Warn` 留痕（快照
+在 Run 创建时已 validate + 指纹固定，触发即存储损坏，但操作者窄化意图被静默忽略应可
+观察）；usage.md 补写作用面——browser_limits 只约束走 BuildSessionPlan 的会话面
+（Safe Web 与两个 Full CDP 产品），agent-managed browser 工具链不在该预算内。
+验证：`go test ./internal/browserruntime/ ./internal/projectconfig/ -count=1` 全过。

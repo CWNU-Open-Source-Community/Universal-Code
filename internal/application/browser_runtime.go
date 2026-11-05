@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -114,7 +115,15 @@ func browserLimitsOverrideForRun(run domain.Run) *browserruntime.ProfileLimits {
 		return nil
 	}
 	var effective projectconfig.Effective
-	if json.Unmarshal(run.Config.ProjectConfig, &effective) != nil || effective.BrowserLimits == nil {
+	if json.Unmarshal(run.Config.ProjectConfig, &effective) != nil {
+		// The pinned snapshot was validated and fingerprint-bound at Run
+		// creation, so reaching this branch means stored state was corrupted.
+		// The builtin profile limits are the safe fallback, but the operator's
+		// narrowing intent silently disappearing deserves a record.
+		slog.Warn("browser limits override snapshot is malformed; using the builtin profile limits", "run_id", run.ID)
+		return nil
+	}
+	if effective.BrowserLimits == nil {
 		return nil
 	}
 	limits := effective.BrowserLimits

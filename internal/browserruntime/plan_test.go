@@ -228,6 +228,22 @@ func TestSessionPlanLimitsOverrideNarrowsAndEntersFingerprint(t *testing.T) {
 	if err != nil || noOp.Limits != base.Limits {
 		t.Fatalf("zero-field override: %v %+v", err, noOp.Limits)
 	}
+
+	// An override exactly equal to the profile ceiling is a legal no-op: unlike
+	// budget.max_turns, the browser ceiling IS the profile itself, so equality
+	// neither widens nor narrows.
+	equal, err := BuildSessionPlan(NewSessionPlanRequest{
+		SessionID: "browser-session-one", RunID: "run-one", WorkspaceID: "ws-demo",
+		ProfileID: ProfileSafeWeb, Targets: []string{"https://example.com"},
+		LimitsOverride: &ProfileLimits{MaxRequests: base.Limits.MaxRequests, TimeoutMS: base.Limits.TimeoutMS},
+	})
+	if err != nil || equal.Limits != base.Limits || equal.LimitsOverride == nil ||
+		equal.LimitsOverride.MaxRequests != base.Limits.MaxRequests {
+		t.Fatalf("ceiling-equal override: %v %+v", err, equal.Limits)
+	}
+	if equal.Fingerprint == base.Fingerprint {
+		t.Fatal("ceiling-equal override must still enter the fingerprint")
+	}
 }
 
 func TestSessionPlanLimitsOverrideRejectsWideningAndNegative(t *testing.T) {
