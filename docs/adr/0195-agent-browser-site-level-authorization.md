@@ -181,8 +181,101 @@ Full CDP products.
    new authority. Concurrent old-generation dispatch must be fenced before the new
    scope is used; the exact locking and in-flight-call semantics are designed and
    reviewed before implementation.
+
 4. Operator surfaces: session-start declaration (CLI and Desktop), live view origin
    display, docs.
+
+### Phase 3 transition semantics (designed)
+
+This subsection is the binding contract for the Phase 3 implementation PR and
+incorporates the OCR delegate design review against the Phase 1 code. It assumes the
+Phase 2 ask/auto wiring (currentAuthority, readiness, worker catalogue gates) lands
+first: this design binds the mechanism, and until that wiring exists no production
+path reaches it, so the implementation PR delivers mechanism and tests only.
+
+1. Single authority holder with a derivation chain. The browser slot owns the only
+   mutable current authority, and it is the source of truth for the declared origin
+   set in both states: a cold slot carries the pending declared set, a launched slot
+   carries the live one. The derivation chain must carry that set into every call
+   authority — `agentBrowserAuthorityForSlot` copies the scope fields alongside the
+   identity fields, and the advertisement path derives scoped authorities for
+   ask/auto from the slot's declared set — otherwise the first mutation leaves every
+   subsequent advertisement and `check` failing ("authority changed") and the
+   session is bricked. The runtime authority record itself
+   (`browserruntime.AgentBrowserAuthority`) intentionally stays without scope
+   fields, so a scope mutation does not change the value the runtime monitor
+   reports; the runtime holds its authority-and-scope pair in one atomic holder
+   swapped through the same transition.
+2. The real cancel points, fenced. The launch closure's first comparison
+   (`received != runtimeAuthority`) is unaffected by a scope mutation because the
+   runtime authority value does not change; the monitor would cancel the browser
+   through the closure's second half, `checkResource`, which captured the launch
+   call authority including its old declared origins. The transition therefore
+   rebuilds that half: the closure validates the captured call authority against the
+   slot holder — current authority always, and the immediately previous one only
+   while the transition flag is set — preserving the store-level live recheck
+   (permission revocation, and the worker path's parent/workspace binding checks)
+   against whichever of the two applies. Every runtime CheckAuthority consumer
+   (monitor, `begin`, `check`) reads the atomic holder. Lock ordering: the
+   transition runs under the slot action lock (an origin-add is itself an action, so
+   no browser action is in flight) and takes `s.mu` inside it; the monitor reads the
+   holder and flag without the action lock. Slot-side authority reads and writes
+   stay under `s.mu` everywhere, including the `CloseWorker` session-id snapshot.
+3. Fencing old generations. The durable call row binds the exact pre-mutation
+   `AuthorityJSON`, and the dispatch fence is `s.agentBrowser.check` — at
+   supervisor dispatch preparation and again inside the slot action lock — which
+   fails an old-generation call with its existing named "Agent browser authority
+   changed" error once the new authority is published. `checkDurableDispatch`
+   re-encodes the row's own authority and must not be presented as the generation
+   fence; it remains the started-durable-call identity check. There is no bypass
+   path: worker dispatches converge on the same `ExecuteAgentBrowserAction` checks.
+4. The origin-add call's own transition exemption. The approved origin-add
+   operation mutates the scope mid-dispatch, so its own post-action recheck and the
+   supervisor result-persistence recheck compare against the post-mutation
+   authority instead of the call's pre-mutation authority (the approval bound that
+   pre-mutation authority by design; the mutation is the call's approved effect).
+   Both checkpoints keep their revocation semantics for every other action. A
+   failed mutation (bound exceeded, malformed origin) consumes the call and returns
+   a named error; retrying requires a new call, consistent with existing actions.
+5. Cold-session preflight and payload. The operation's payload is
+   `{version, origin, sensitive_intent}` where `origin` is the canonical new origin
+   (the normalizer canonicalizes and rejects action fields — url, snapshot,
+   element_ref, deltas, key, value, mode, workspace_path, target and viewport are
+   all absent), `sensitive_intent.effect` is `browser_origin_add`, its `target` is
+   the same canonical origin (the live-document target contract is not overloaded),
+   and `document_epoch` is 0 — the shared normalizer waives the epoch-positive rule
+   for this effect only. The "navigate first" gate and the live-document sensitive
+   gate admit this operation with no runtime, and the dedicated preflight (supervisor
+   and worker variants) skips the runtime and document checks, validating the
+   canonical origin, the prior scope fingerprint, the authority generation and the
+   permission revision instead. The approval proposal keeps
+   `ToolName: agent_browser_sensitive` with `ActionClass: browser_browser_origin_add`
+   (derived from the effect), and the existing payload-plus-authority fingerprint
+   already binds origin, prior scope fingerprint, generation and permission revision,
+   so no fingerprint scheme changes. Phase 3 is root-only: the worker catalogue and
+   worker preflight do not offer the operation; extending it to specialists is later
+   work.
+6. Receipts and replay. The approved mutation dispatches no browser action; its
+   result envelope `agent_browser_origin_add.v1` (the registered protocol literal;
+   the payload version is the family's dynamic `.v2` and needs no registration)
+   carries the canonical origin, the prior and new scope fingerprints, and the new
+   authority generation. The consumed-call registry still refuses a re-dispatch of
+   the same call ("no changes were made" wording — a replay must never read as the
+   origin having been added); a second, new origin-add call for an already-declared
+   origin is a set-membership no-op receipt under the post-mutation authority.
+   A cold-slot rotation inherits the slot's declared set into the successor slot, so
+   an approved addition survives mode or permission rotation. The service
+   `Capabilities.SupportedActions` gains the operation; the runtime `Status`
+   action table does not (it lists runtime-executed actions only). The desktop
+   approval panel gains a label mapping for the new action class.
+7. Wiring inventory. Gateway registration, supervisor and worker catalogue paths
+   (the latter wired for the capability but not offering the operation), refresh
+   path, capability list, recorded-actor case, domain classifier, artifact source
+   scopes, the Supervisor ledger CHECK migration (v221: three enum sites, rowid
+   preservation, `LatestSchemaVersion` 221), protocol registration of the receipt
+   envelope literal, the preflight branches above, the two post-action exemptions,
+   the derivation-chain change in point 1, the `CloseWorker` snapshot fix, the
+   slot-key comment rewrite, and the desktop approval label mapping.
 
 ## Verification outline
 
