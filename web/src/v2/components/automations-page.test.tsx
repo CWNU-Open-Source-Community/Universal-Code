@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { APIClient } from "../../api/client";
 import { LocaleProvider } from "../../lib/locale";
 import { V2AutomationsPage } from "./automations-page";
@@ -17,16 +17,12 @@ it("opens the independent automation workspace with the exact initial run and co
   localStorage.setItem("prayu.locale.v1", "zh-CN");
   const threadExecution = vi.fn();
   const client = { hasThreadExecutionRead: true, threadExecution } as unknown as APIClient;
-  const onBack = vi.fn();
   const view = render(<LocaleProvider><V2AutomationsPage client={client} initialRunID="run-exact"
-    initialThreadID="thread-exact" onBack={onBack} /></LocaleProvider>);
+    initialThreadID="thread-exact" /></LocaleProvider>);
   expect(scheduledWorkspace).toHaveBeenLastCalledWith({ client, initialRunID: "run-exact", initialThreadID: "thread-exact" });
   expect(screen.getByLabelText("Scheduled tasks workspace")).toBeVisible();
   expect(screen.queryByText("来源与设置")).not.toBeInTheDocument();
   expect(threadExecution).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "返回" }));
-  expect(onBack).toHaveBeenCalledOnce();
-
-  view.rerender(<LocaleProvider><V2AutomationsPage client={client} onBack={onBack} /></LocaleProvider>);
+  view.rerender(<LocaleProvider><V2AutomationsPage client={client} /></LocaleProvider>);
   expect(scheduledWorkspace).toHaveBeenLastCalledWith({ client, initialRunID: undefined, initialThreadID: undefined });
 });

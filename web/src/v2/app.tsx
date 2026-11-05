@@ -731,7 +731,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               onBack={goBack} onOpenSettings={setSettingsSection} /></V2LazySurface>
           : route.kind === "automations"
           ? <V2LazySurface resetKey="automations" loadingText={t("正在加载自动化…", "Loading automations…")} errorLabel={t("自动化", "Automations")}>
-            <V2AutomationsPage client={client} initialRunID={route.resourceID} initialThreadID={selectedThreadID} onBack={goBack} /></V2LazySurface>
+            <V2AutomationsPage client={client} initialRunID={route.resourceID} initialThreadID={selectedThreadID} /></V2LazySurface>
           : route.kind === "history"
           ? <V2LazySurface resetKey="history" loadingText={t("正在加载历史记录…", "Loading history…")} errorLabel={t("历史记录", "History")}>
             <V2HistoryPage client={client} onOpenRecord={(kind, resourceID) => navigate({ kind, resourceID })} /></V2LazySurface>

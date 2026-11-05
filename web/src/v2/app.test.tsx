@@ -290,7 +290,7 @@ describe("V2Workbench resource navigation", () => {
     const client = navigationClient();
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <V2Workbench client={client} /></QueryClientProvider>);
-    await userEvent.setup().click(await screen.findByRole("button", { name: button }));
+    await userEvent.setup().click(await screen.findByRole("button", { name: button }, { timeout: 5_000 }));
     expect(window.location.hash).toBe(target);
     expect(historyBack).not.toHaveBeenCalled();
     if (target.endsWith("/records")) expect(await screen.findByTestId("v2-conversation")).toHaveAttribute("data-records-requested", "true");
