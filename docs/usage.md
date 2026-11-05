@@ -678,7 +678,7 @@ cyberagent skill candidate reject <candidate-id> --candidate-fingerprint <sha256
 cyberagent skill candidate import <candidate-id> --candidate-fingerprint <sha256> --operation-key <stable-key> --confirm-untrusted-skill
 ```
 
-The embedded read-only `skill.v1` Registry currently exposes fourteen workflows.
+The embedded read-only `skill.v1` Registry currently exposes fifteen workflows.
 The maintained catalog and invocation rules are in [Built-in skills](builtin-skills.md);
 exact current versions are defined by the [embedded manifests](../internal/skills/builtins/).
 Each manifest declares compatible `profiles`, `surfaces`, `phases`, and receiving
