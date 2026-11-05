@@ -82,12 +82,29 @@ Full CDP products.
    Omitting a model-supplied intent cannot bypass that decision. Uploads always
    require external-write approval. Page-initiated writes also need enforcement:
    scoped sessions initially block form submissions and fetch/XHR write requests
-   before dispatch, even on declared origins. Allowing such a request requires an
-   exact, single-use approval bound to its method, destination and body identity;
-   a tool approval cannot grant ambient network-write authority. Requests whose
-   effects cannot be classified or bound are blocked. Phase 1 must implement this
-   request boundary before scoped Ask/Auto is exposed. Full unscoped sessions
-   retain their existing activation and action policy.
+   before dispatch, even on declared origins. After `Fetch.requestPaused`, the host
+   classifies the request and creates a dedicated durable pending request-approval
+   proposal for a potential write. Its fingerprint binds the browser session,
+   runtime instance, paused request ID, initiating document identity and epoch,
+   authority generation, permission revision, method, canonical destination and
+   digest of the exact complete request-body bytes. Requests whose effects cannot
+   be classified, or whose complete body cannot be captured and bound, are blocked.
+   The existing operator approval UI presents the proposal; the model and page
+   cannot approve it. Tool approval cannot grant this request approval or ambient
+   network-write authority.
+
+   The host keeps the request paused only until a finite expiry recorded on the
+   proposal. Approval can resume only that still-live paused request in the same
+   runtime, with matching request/body, document, current authority and permission
+   bindings. Under a dispatch fence shared with invalidation, the host atomically
+   rechecks those bindings and consumes the approval once before issuing
+   `Fetch.continueRequest` for the unchanged request. Denial, expiry, subsequent
+   navigation or document change, session close, runtime restart, or authority or
+   permission change invalidates the proposal and aborts any still-live paused
+   request. Recovery invalidates outstanding proposals rather than reconstructing
+   requests; neither a restart nor a failed continuation permits background replay.
+   Phase 1 must implement this lifecycle before scoped Ask/Auto is exposed. Full
+   unscoped sessions retain their existing activation and action policy.
 
 ## Alternatives considered
 
@@ -133,7 +150,11 @@ Full CDP products.
    the initial implementation to literal targets. Preserve profile ceilings and
    any narrower origin-count or URL-byte limits at all these boundaries. Enforce
    the page-initiated write rule from Decision 5 at the request boundary; URL
-   membership alone cannot authorize a form submit or fetch/XHR write.
+   membership alone cannot authorize a form submit or fetch/XHR write. Implement
+   the dedicated durable request proposal and existing-UI operator review, bounded
+   pause, fenced single-use continuation, and invalidation/abort on the lifecycle
+   changes listed in Decision 5. Recovery must invalidate pending proposals without
+   replaying requests; unbound complete bodies remain blocked.
 2. Authority variant: ask/auto validation with scoped authorities; Full keeps the
    unscoped behavior; the desktop takeover mode interacts with scoped sessions
    unchanged. Before enabling scoped Ask/Auto, implement host-derived effect
@@ -173,14 +194,23 @@ Full CDP products.
   forbidden addresses fail at the actual connection boundary, or hostnames are
   rejected under the initial literal-only policy.
 - Effects: click/type/key calls omitting sensitive intent still require approval
-  when they may write externally; rejection dispatches no action. Page-triggered
-  form submissions and fetch/XHR POSTs without exact request approval are blocked
-  before network dispatch, including on declared origins and without a tool call;
-  altered destinations/bodies and approval replay are rejected.
+  when they may write externally; rejection dispatches no action.
+- Request approvals: page-triggered form submissions and fetch/XHR POSTs remain
+  paused without network dispatch while a durable proposal awaits operator review,
+  including on declared origins and without a tool call. Only approval matching the
+  live session/runtime/request, initiating document, authority and permission
+  bindings, method, canonical destination and complete body digest continues the
+  unchanged request once. Altered bindings/bodies, incomplete body capture, model
+  or page approval, duplicate consumption and late approval are rejected. Denial,
+  expiry, navigation/document change, close, restart and authority/permission
+  changes invalidate the proposal and abort the live request; approval racing these
+  changes cannot dispatch a stale request, and recovery performs no replay.
 - Additions: cold-session approval works before first navigation; denied, stale or
   modified origins cannot expand scope; an approved addition preserves the live
   runtime and takeover state while invalidating old-generation calls and approvals.
   Origin-add intent on any existing action is rejected; approval of the dedicated
   operation changes the set without navigation, clicks or other browser effects.
-- Real-browser E2E: declared-origin navigation and form flow works; out-of-scope
-  navigation and addition flows produce the documented errors and receipts.
+- Real-browser E2E: declared-origin navigation works, and a form write with exact
+  operator request approval dispatches once; an unapproved or invalidated form
+  request never dispatches. Out-of-scope navigation and addition flows produce the
+  documented errors and receipts.
