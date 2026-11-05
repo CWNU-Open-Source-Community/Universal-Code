@@ -40,7 +40,7 @@ function setup(get = vi.fn().mockResolvedValue(data), integrated = false, thread
   }
   render(<LocaleProvider><QueryClientProvider client={queries}><LocaleSwitch />{integrated
     ? <V2Settings client={client} section="usage" onOpenThread={onOpenThread} threadID={threadID} workspaces={[]}
-      onOpenInspector={vi.fn()} onSelectSection={vi.fn()} />
+      onOpenHistory={vi.fn()} onSelectSection={vi.fn()} />
     : <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />}
   </QueryClientProvider></LocaleProvider>);
   return { get, onOpenThread };

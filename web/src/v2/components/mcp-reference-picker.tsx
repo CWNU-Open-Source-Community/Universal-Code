@@ -81,10 +81,10 @@ export function V2MCPReferencePicker({ client, workspaceID, runID, kind, onClose
         arguments: parameters } });
     onClose();
   };
-  return createPortal(<div className="v2-inspector-backdrop" role="presentation"
+  return createPortal(<div className="v2-detail-backdrop" role="presentation"
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section aria-label={kind === "resource" ? t("选择 MCP 资源", "Choose MCP resource") : t("选择 MCP Prompt", "Choose MCP prompt")} aria-modal="true"
-      className="v2-inspector-drawer v2-mcp-picker" ref={dialog} role="dialog" tabIndex={-1}>
+      className="v2-detail-drawer v2-mcp-picker" ref={dialog} role="dialog" tabIndex={-1}>
       <header><strong>{kind === "resource" ? t("引用 MCP 资源", "Reference MCP resource") : t("使用 MCP Prompt", "Use MCP prompt")}</strong>
         <button aria-label={t("关闭 MCP 选择", "Close MCP picker")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>
       <p>{t("发送消息即授权读取这次选定的内容。服务器返回的内容会作为参考资料提供给模型。", "Sending the message authorizes reading the selected content. The server's response is provided to the model as reference material.")}</p>

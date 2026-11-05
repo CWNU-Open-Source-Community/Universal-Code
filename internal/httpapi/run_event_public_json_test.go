@@ -87,7 +87,7 @@ func TestEventViewNeverCarriesTheRawEventPayload(t *testing.T) {
 		CreatedAt:   time.Now().UTC()})
 	public := string(view.Payload)
 	if strings.Contains(public, "raw-extension-secret") || strings.Contains(public, "raw-output") {
-		t.Fatalf("EventView crossed the Inspector boundary with raw payload: %s", public)
+		t.Fatalf("EventView crossed the record detail boundary with raw payload: %s", public)
 	}
 	if !strings.Contains(public, `"status":"completed"`) ||
 		!strings.Contains(public, `"redacted":true`) {

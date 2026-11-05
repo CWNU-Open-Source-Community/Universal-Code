@@ -13,7 +13,7 @@ function setup(threadID = "", initialMode: WebAccessMode = "rules", initialTarge
   const tree = (mode: WebAccessMode, targets: string[]) => <LocaleProvider><QueryClientProvider client={queries}>
     <V2Settings client={client} section="configuration" threadID={threadID} workspaces={[]}
       defaultWebAccessMode={mode} defaultWebAccessTargets={targets} onDefaultWebAccessChange={onChange}
-      onSelectSection={onSelect} onOpenInspector={vi.fn()} />
+      onSelectSection={onSelect} onOpenHistory={vi.fn()} />
   </QueryClientProvider></LocaleProvider>;
   const view = render(tree(initialMode, initialTargets));
   return { ...view, onChange, onSelect, get, setRunWebAccess,

@@ -227,7 +227,7 @@ it("keeps chat and draft visible beside records and reuses the loaded transcript
   const { container, client, expectNoWrites } = setup(true);
   const user = userEvent.setup();
   const panel = await screen.findByRole("complementary", { name: "执行记录" });
-  await within(panel).findByRole("region", { name: "Inspector 记录" });
+  await within(panel).findByRole("region", { name: "执行记录" });
   const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
   expect(editor).toBeVisible(); expect(editor).toHaveValue(originalDraft);
   expect(container.querySelector(".v2-conversation-scroll")).toHaveTextContent("Saved assistant reply");

@@ -208,7 +208,7 @@ function noticeTone(item: ThreadTranscriptItemView): "neutral" | "warning" | "su
 /**
  * Turns the durable audit transcript into the small, human-facing story used by v2.
  * Run boundaries, sequence numbers and Harness lifecycle chatter stay available to
- * Inspector but never become default conversation rows.
+ * execution records but never become default conversation rows.
  */
 export function projectThreadNarrative(
   transcript: ThreadTranscriptActivityItem[],

@@ -73,7 +73,7 @@ import { V2ThreadExport } from "./thread-export";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
-const V2Inspector = lazy(() => import("./inspector").then((module) => ({ default: module.V2Inspector })));
+const V2ExecutionRecords = lazy(() => import("./execution-records").then((module) => ({ default: module.V2ExecutionRecords })));
 
 export function V2FileDrawer({
   client,
@@ -116,7 +116,7 @@ export function V2FileDrawer({
       <section
         aria-label={t("工作区文件", "Workspace files")}
         aria-modal={docked ? undefined : "true"}
-        className={`v2-inspector-drawer v2-file-drawer${docked ? " is-docked" : ""}`}
+        className={`v2-detail-drawer v2-file-drawer${docked ? " is-docked" : ""}`}
         ref={dialog}
         role={docked ? "complementary" : "dialog"}
         onKeyDown={(event) => { if (docked && event.key === "Escape") { event.stopPropagation(); onClose(); } }}
@@ -145,7 +145,7 @@ export function V2FileDrawer({
       </section>
   );
   return docked ? content : createPortal(
-    <div className="v2-inspector-backdrop" role="presentation" onMouseDown={(event) => {
+    <div className="v2-detail-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>{content}</div>, document.body);
 }
@@ -186,7 +186,7 @@ export function V2TerminalDrawer({
       <section
         aria-label={t("任务终端", "Task terminal")}
         aria-modal={docked ? undefined : "true"}
-        className={`v2-inspector-drawer v2-terminal-drawer${docked ? " is-docked" : ""}`}
+        className={`v2-detail-drawer v2-terminal-drawer${docked ? " is-docked" : ""}`}
         onKeyDown={(event) => { if (docked && event.key === "Escape") { event.stopPropagation(); onClose(); } }}
         ref={dialog}
         role={docked ? "complementary" : "dialog"}
@@ -228,7 +228,7 @@ export function V2TerminalDrawer({
       </section>
   );
   return docked ? content : createPortal(
-    <div className="v2-inspector-backdrop" role="presentation" onMouseDown={(event) => {
+    <div className="v2-detail-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>{content}</div>, document.body);
 }
@@ -1004,7 +1004,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       recordsContent={<>
         {!transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载执行记录…", "Loading execution records…")}
           errorLabel={t("执行记录", "Execution records")} resetKey={threadID} onDismiss={handleCollapseWorkspace}>
-          <V2Inspector client={client} key={threadID} detail={detail} threadID={threadID} durableItems={transcriptItems}
+          <V2ExecutionRecords client={client} key={threadID} detail={detail} threadID={threadID} durableItems={transcriptItems}
             liveSnapshot={liveSnapshot} liveStatus={publicStream.status}
             hasOlder={Boolean(transcriptQuery.hasNextPage)} isFetchingOlder={transcriptQuery.isFetchingNextPage}
             onLoadOlder={() => void loadOlderTranscript()} />
