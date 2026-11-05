@@ -201,7 +201,12 @@ path reaches it, so the implementation PR delivers mechanism and tests only.
    identity fields, and the advertisement path derives scoped authorities for
    ask/auto from the slot's declared set — otherwise the first mutation leaves every
    subsequent advertisement and `check` failing ("authority changed") and the
-   session is bricked. The runtime authority record itself
+   session is bricked. Because `currentAuthority` derives from the immutable
+   `RunConfig.BrowserOrigins`, the slot's set overrides that derivation whenever the
+   slot carries a mutated set: `authorityLocked` rebuilds the scope fields from the
+   slot's declared origins (an absent slot or an unmutated slot falls back to the
+   Run config), and the launch consumes the corrected set. The runtime authority
+   record itself
    (`browserruntime.AgentBrowserAuthority`) intentionally stays without scope
    fields, so a scope mutation does not change the value the runtime monitor
    reports; the runtime holds its authority-and-scope pair in one atomic holder
@@ -211,11 +216,12 @@ path reaches it, so the implementation PR delivers mechanism and tests only.
    runtime authority value does not change; the monitor would cancel the browser
    through the closure's second half, `checkResource`, which captured the launch
    call authority including its old declared origins. The transition therefore
-   rebuilds that half: the closure validates the captured call authority against the
-   slot holder — current authority always, and the immediately previous one only
-   while the transition flag is set — preserving the store-level live recheck
-   (permission revocation, and the worker path's parent/workspace binding checks)
-   against whichever of the two applies. Every runtime CheckAuthority consumer
+   rebuilds that half without a captured-authority comparison at all: the closure
+   fetches the slot's current authority under `s.mu` and runs the store-level live
+   recheck (permission revocation, and the worker path's parent/workspace binding
+   checks) against it — identity fields are transition-invariant, so no previous-
+   acceptance window is needed and a monitor wakeup during or after the swap always
+   validates against the current authority. Every runtime CheckAuthority consumer
    (monitor, `begin`, `check`) reads the atomic holder. Lock ordering: the
    transition runs under the slot action lock (an origin-add is itself an action, so
    no browser action is in flight) and takes `s.mu` inside it; the monitor reads the
@@ -234,7 +240,13 @@ path reaches it, so the implementation PR delivers mechanism and tests only.
    supervisor result-persistence recheck compare against the post-mutation
    authority instead of the call's pre-mutation authority (the approval bound that
    pre-mutation authority by design; the mutation is the call's approved effect).
-   Both checkpoints keep their revocation semantics for every other action. A
+   The exemption is identifier-bound: the slot records
+   `{callID, preAuthority, postAuthority}` for the approved mutation, and both
+   checkpoints accept a call exactly when its call identifier matches the recorded
+   mutation, its authority equals the recorded pre-authority, and the slot's current
+   equals the recorded post-authority — sibling calls prepared before the mutation
+   carry the same pre-authority but a different identifier and stay fenced. Both
+   checkpoints keep their revocation semantics for every other action. A
    failed mutation (bound exceeded, malformed origin) consumes the call and returns
    a named error; retrying requires a new call, consistent with existing actions.
 5. Cold-session preflight and payload. The operation's payload is
