@@ -50,6 +50,7 @@ Run from the repository root in an isolated checkout. Build the before frontend
 at the baseline commit, then preserve `web/dist` before applying the fix:
 
 ```powershell
+git switch --detach 81ceefbbbdbdcc3c3921d333e1526aea02dd849e
 Set-Location web
 npm ci
 npm run build
@@ -67,6 +68,7 @@ Keep the harness running with stdin open in a separate terminal. Its
 Then seed once, build the fixed source, and serve it against the same API:
 
 ```powershell
+git switch --detach 4f624d01bb848d2a74bb22cf9d60681f9c1cfe57
 New-Item -ItemType Directory output/playwright/usage-cost-only/seed -Force
 Copy-Item docs/evidence/usage-export-cost-only/seed-cost-only.go.txt output/playwright/usage-cost-only/seed/main.go
 go run ./output/playwright/usage-cost-only/seed ./output/playwright/usage-cost-only/private-state.json
