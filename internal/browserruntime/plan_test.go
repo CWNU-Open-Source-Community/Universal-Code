@@ -206,9 +206,8 @@ func TestSessionPlanLimitsOverrideNarrowsAndEntersFingerprint(t *testing.T) {
 		narrowed.Limits.MaxURLBytes != base.Limits.MaxURLBytes {
 		t.Fatalf("unset override fields must keep profile values: %+v", narrowed.Limits)
 	}
-	// The fingerprint covers the whole plan (limits and override); the
-	// profile token binds the disposable profile identity and intentionally
-	// stays the same — the budget does not change the profile contents.
+	// The fingerprint covers the whole plan (limits and override). Request
+	// count and timeout overrides preserve the scope and profile token.
 	if narrowed.Fingerprint == base.Fingerprint {
 		t.Fatal("override must change the plan fingerprint")
 	}

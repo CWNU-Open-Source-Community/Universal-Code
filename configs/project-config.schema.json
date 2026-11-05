@@ -71,7 +71,14 @@
           "minimum": 0
         }
       },
-      "minProperties": 1
+      "anyOf": [
+        { "required": ["max_origins"], "properties": { "max_origins": { "minimum": 1 } } },
+        { "required": ["max_url_bytes"], "properties": { "max_url_bytes": { "minimum": 1 } } },
+        { "required": ["max_requests"], "properties": { "max_requests": { "minimum": 1 } } },
+        { "required": ["max_response_bytes"], "properties": { "max_response_bytes": { "minimum": 1 } } },
+        { "required": ["max_download_bytes"], "properties": { "max_download_bytes": { "minimum": 1 } } },
+        { "required": ["timeout_ms"], "properties": { "timeout_ms": { "minimum": 1 } } }
+      ]
     },
     "exclude_paths": {
       "description": "Pinned root-relative file-tool exclusions. Supports *, ?, character classes and whole ** segments; matching directories excludes descendants. Not an OS command sandbox.",

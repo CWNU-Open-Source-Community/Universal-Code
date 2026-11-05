@@ -239,7 +239,14 @@ func BuildSessionPlan(request NewSessionPlanRequest) (SessionPlan, error) {
 	if request.InstrumentedRiskAcknowledged != (request.ProfileID == ProfileCTFInstrumented) {
 		return SessionPlan{}, errors.New("ctf-instrumented requires an explicit, profile-specific risk acknowledgement")
 	}
-	scope, err := NewTargetScope(request.ProfileID, request.Targets)
+	limits := profile.Limits
+	if request.LimitsOverride != nil {
+		if err := validateLimitsOverride(profile.Limits, *request.LimitsOverride); err != nil {
+			return SessionPlan{}, err
+		}
+		limits = narrowProfileLimits(profile.Limits, *request.LimitsOverride)
+	}
+	scope, err := newTargetScope(profile, limits, request.Targets)
 	if err != nil {
 		return SessionPlan{}, err
 	}
@@ -253,13 +260,6 @@ func BuildSessionPlan(request NewSessionPlanRequest) (SessionPlan, error) {
 	features, err := planFeatures(profile, request.Features)
 	if err != nil {
 		return SessionPlan{}, err
-	}
-	limits := profile.Limits
-	if request.LimitsOverride != nil {
-		if err := validateLimitsOverride(profile.Limits, *request.LimitsOverride); err != nil {
-			return SessionPlan{}, err
-		}
-		limits = narrowProfileLimits(profile.Limits, *request.LimitsOverride)
 	}
 	profileFingerprint, err := ProfileFingerprint(profile)
 	if err != nil {
@@ -333,6 +333,11 @@ func (plan SessionPlan) Validate() error {
 			return err
 		}
 		expectedLimits = narrowProfileLimits(profile.Limits, *plan.LimitsOverride)
+	}
+	scopeLimits, err := plan.Scope.effectiveLimits(profile)
+	if err != nil || scopeLimits.MaxOrigins != expectedLimits.MaxOrigins ||
+		scopeLimits.MaxURLBytes != expectedLimits.MaxURLBytes {
+		return errors.New("browser session target scope limits do not match the session limits")
 	}
 	if plan.Limits != expectedLimits || plan.EvidenceClass != profile.EvidenceClass ||
 		plan.ApprovalRequired != profile.ApprovalRequired ||
