@@ -7,19 +7,17 @@ import type { RunView, SessionView } from "../../api/types";
 import { LifecycleStatusLabel } from "../../components/lifecycle-status";
 import { formatDate } from "../../lib/format";
 import { v2QueryKeys } from "../query-keys";
-import "./inspector-record-browser.css";
+import "./history-page.css";
 
 type RecordKind = "run" | "session";
 
-export function InspectorRecordBrowser({ client, onOpen }: {
+export function HistoryRecordBrowser({ client, onOpen }: {
   client: APIClient;
   onOpen: (kind: RecordKind, id: string) => void;
 }) {
   const { t } = useLocale();
   const [kind, setKind] = useState<RecordKind | null>(null);
   return <section className="v2-record-browser" aria-label={t("全部运行与会话", "All runs and sessions")}>
-    <h2>{t("全部运行与会话", "All runs and sessions")}</h2>
-    <p>{t("选择历史执行或会话，查看当时的工作记录与上下文。需要继续任务时，回到对应对话发送消息。", "Select a past run or session to view its work log and context. Return to its conversation and send a message to continue the task.")}</p>
     <div className="v2-record-kinds" role="group" aria-label={t("记录类型", "Record type")}>
       <button aria-pressed={kind === "run"} onClick={() => setKind("run")} type="button">{t("运行记录", "Run records")}</button>
       <button aria-pressed={kind === "session"} onClick={() => setKind("session")} type="button">{t("会话记录", "Session records")}</button>
@@ -36,7 +34,7 @@ function RecordList({ client, kind, onOpen }: {
   const { t } = useLocale();
   const [search, setSearch] = useState("");
   const query = useInfiniteQuery({
-    queryKey: [...v2QueryKeys.inspectorRecords, kind],
+    queryKey: [...v2QueryKeys.historyRecords, kind],
     queryFn: ({ signal, pageParam }) => client.getPage<RunView | SessionView>(
       kind === "run" ? "/runs" : "/sessions", { limit: 50 }, pageParam, signal),
     initialPageParam: "", getNextPageParam: (page) => page.page.next_cursor || undefined,
