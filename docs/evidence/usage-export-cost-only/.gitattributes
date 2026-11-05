@@ -1,0 +1,2 @@
+# Preserve the downloaded CSV's UTF-8 BOM and CRLF bytes as evidence.
+cost-only.csv -text whitespace=cr-at-eol

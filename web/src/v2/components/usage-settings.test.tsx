@@ -3,10 +3,13 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { components } from "../../api/schema";
+import { downloadTextFile } from "../../lib/download";
 import { LocaleProvider, useLocale } from "../../lib/locale";
 import { UsageSettings } from "./usage-settings";
 import { UsageActivity, UsageTrend, usageCalendar } from "./usage-charts";
 import { V2Settings } from "./settings";
+
+vi.mock("../../lib/download", () => ({ downloadTextFile: vi.fn() }));
 
 type UsageStatistics = components["schemas"]["UsageStatistics"];
 const totals = { calls: 4, usage_reported_calls: 3, cache_usage_reported_calls: 2,
@@ -140,6 +143,122 @@ it("shows a useful empty state while preserving an explicitly recorded zero cost
   expect(screen.getByText("$0.00")).toBeInTheDocument();
   expect(screen.getByText("No model usage yet")).toBeInTheDocument();
   expect(screen.getByText("No conversation usage yet")).toBeInTheDocument();
+});
+
+it("exports the loaded usage as CSV with totals, day, model, and session rows", async () => {
+  setup();
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  expect(downloadTextFile).toHaveBeenCalledExactlyOnceWith("universal-code-usage-30d-2026-09-20_2026-10-19.csv",
+    "text/csv;charset=utf-8", expect.stringMatching(/^\uFEFF/u));
+  const csv = (vi.mocked(downloadTextFile).mock.calls[0][2] as string).slice("\uFEFF".length);
+  const rows = csv.replace(/\r\n$/u, "").split("\r\n");
+  expect(rows).toHaveLength(5);
+  const header = rows[0].split(",");
+  expect(header).toHaveLength(21);
+  expect(header.slice(0, 8)).toEqual(["kind", "date", "provider", "model", "thread_id", "title", "last_activity_at", "input_tokens"]);
+  expect(header.slice(13, 16)).toEqual(["usage_reported_calls", "cache_usage_reported_calls", "unassigned_calls"]);
+  for (const row of rows) expect(row.split(",")).toHaveLength(21);
+  const totalsRow = rows[1].split(",");
+  expect(totalsRow[0]).toBe("totals");
+  expect(totalsRow.slice(1, 7)).toEqual(["", "", "", "", "", ""]);
+  expect(totalsRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+  expect(totalsRow.slice(15)).toEqual(["1", "USD", "0.125000", "2", "1", "1"]);
+  const dayRow = rows[2].split(",");
+  expect(dayRow.slice(0, 2)).toEqual(["day", "2026-10-19"]);
+  expect(dayRow.slice(2, 7)).toEqual(["", "", "", "", ""]);
+  expect(dayRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+  expect(dayRow.slice(15)).toEqual(["", "", "", "", "", ""]);
+  const modelRow = rows[3].split(",");
+  expect(modelRow.slice(0, 7)).toEqual(["model", "", "test-provider", "test-model", "", "", ""]);
+  expect(modelRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+  const sessionRow = rows[4].split(",");
+  expect(sessionRow.slice(0, 7)).toEqual(["session", "", "", "", "thread-a", "修复设置布局", "2026-10-19T04:00:00Z"]);
+  expect(sessionRow.slice(7, 15)).toEqual(["1200", "300", "800", "100", "1500", "4", "3", "2"]);
+});
+
+it("neutralizes spreadsheet formulas hiding in conversation titles and model names", async () => {
+  vi.mocked(downloadTextFile).mockClear();
+  setup(vi.fn().mockResolvedValue({ ...data,
+    models: [{ provider: "=1+1", model: "@SUM(A1)", usage: totals }],
+    recent_sessions: [
+      { thread_id: "thread-1", title: "=HYPERLINK(\"http://evil\",1)", last_activity_at: "2026-10-19T04:00:00Z", usage: totals },
+      { thread_id: "thread-2", title: "-2+3", last_activity_at: "2026-10-19T05:00:00Z", usage: totals },
+      { thread_id: "thread-3", title: "\t=cmd|'/C calc'!A0", last_activity_at: "2026-10-19T06:00:00Z", usage: totals },
+      { thread_id: "thread-4", title: "= 1+1", last_activity_at: "2026-10-19T07:00:00Z", usage: totals },
+      { thread_id: "thread-5", title: "100%= 进度", last_activity_at: "2026-10-19T08:00:00Z", usage: totals }] }));
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  const csv = vi.mocked(downloadTextFile).mock.calls[0][2] as string;
+  // Every trigger-starting cell gains the text-forcing apostrophe, and quoting
+  // still applies on top of it when the value carries a comma or a quote.
+  expect(csv).toContain('"\'=HYPERLINK(""http://evil"",1)"');
+  expect(csv).toContain("'@SUM(A1)");
+  expect(csv).toContain("'=1+1");
+  expect(csv).toContain("'-2+3");
+  expect(csv).toContain("'\t=cmd|'/C calc'!A0");
+  expect(csv).toContain("'= 1+1");
+  // A trigger that is not at the start is ordinary text and stays untouched.
+  expect(csv).toContain("100%= 进度");
+  // Numeric cells never take the prefix.
+  expect(csv).toContain("1200,300,800,100,1500,4,3,2");
+});
+
+it("escapes CSV special characters in conversation titles", async () => {
+  vi.mocked(downloadTextFile).mockClear();
+  setup(vi.fn().mockResolvedValue({ ...data, recent_sessions: [
+    { thread_id: "thread-1", title: '修复, "设置" 布局', last_activity_at: "2026-10-19T04:00:00Z", usage: totals },
+    { thread_id: "thread-2", title: "两行\r\n标题", last_activity_at: "2026-10-19T05:00:00Z", usage: totals }] }));
+  await screen.findByRole("region", { name: "Usage overview" });
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  const csv = vi.mocked(downloadTextFile).mock.calls[0][2] as string;
+  expect(csv).toContain('"修复, ""设置"" 布局"');
+  expect(csv).toContain('"两行\r\n标题"');
+});
+
+it("keeps the CSV export disabled while usage has not loaded", () => {
+  setup(vi.fn().mockReturnValue(new Promise(() => {})));
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
+});
+
+it("disables the CSV export for an empty period", async () => {
+  setup(vi.fn().mockResolvedValue({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [],
+    cost: { currency: "USD", known_cost_micros: 0, priced_calls: 0, unpriced_calls: 0, untracked_calls: 0 } }));
+  await screen.findByRole("status");
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
+});
+
+it.each([
+  { known_cost_micros: 125000, priced_calls: 1, unpriced_calls: 0, untracked_calls: 0 },
+  { known_cost_micros: 0, priced_calls: 1, unpriced_calls: 0, untracked_calls: 0 },
+  { known_cost_micros: 0, priced_calls: 0, unpriced_calls: 1, untracked_calls: 0 },
+  { known_cost_micros: 0, priced_calls: 0, unpriced_calls: 0, untracked_calls: 1 },
+])("exports cost facts without calls in the selected period: %j", async (cost) => {
+  vi.mocked(downloadTextFile).mockClear();
+  setup(vi.fn().mockResolvedValue({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [],
+    unassigned_calls: 0, cost: { currency: "USD", ...cost } }));
+  await screen.findByRole("region", { name: "Usage overview" });
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  expect(downloadTextFile).toHaveBeenCalledExactlyOnceWith("universal-code-usage-30d-2026-09-20_2026-10-19.csv",
+    "text/csv;charset=utf-8", expect.stringMatching(/^\uFEFF/u));
+  const csv = vi.mocked(downloadTextFile).mock.calls[0][2] as string;
+  const rows = csv.slice(1).trimEnd().split("\r\n");
+  expect(rows).toHaveLength(2);
+  const total = rows[1].split(",");
+  expect(total[12]).toBe("0");
+  expect(total.slice(16)).toEqual(["USD", (cost.known_cost_micros / 1_000_000).toFixed(6),
+    String(cost.priced_calls), String(cost.unpriced_calls), String(cost.untracked_calls)]);
+});
+
+it("keeps the CSV export disabled during a refresh with previously loaded cost facts", async () => {
+  const get = vi.fn().mockResolvedValueOnce({ ...data, totals: emptyTotals, models: [], recent_sessions: [], days: [] })
+    .mockReturnValue(new Promise(() => {}));
+  setup(get);
+  await screen.findByRole("region", { name: "Usage overview" });
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "Refresh usage" }));
+  expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
 });
 
 it("offers retry when loading fails and restores the real data", async () => {
