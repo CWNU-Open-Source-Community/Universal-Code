@@ -317,7 +317,10 @@ const AgentBrowserMaxUploadBytes = 16 << 20
 // returned absolute path is what the browser process itself will read. This is
 // a check-then-act boundary: a concurrent workspace writer can still swap or
 // grow the file between verification and the browser opening it, which is an
-// accepted residual within the approved external_write effect.
+// accepted residual within the approved external_write effect. Same-volume
+// hardlinks are not detected either: their resolved path always stays inside
+// the root, so containing them relies on the same host sandbox assumption that
+// already bounds this residual.
 func (s *AgentBrowserService) resolveAgentBrowserUpload(ctx context.Context, workspaceID, relative string) (string, error) {
 	st, ok := s.store.(fullCDPWorkspaceInfoStore)
 	if !ok {
@@ -354,10 +357,16 @@ func (s *AgentBrowserService) resolveAgentBrowserUpload(ctx context.Context, wor
 
 func withinResolvedWorkspace(resolvedRoot, resolved string) bool {
 	separator := string(filepath.Separator)
-	if runtime.GOOS == "windows" {
-		return strings.HasPrefix(strings.ToLower(resolved), strings.ToLower(resolvedRoot+separator))
+	// A resolved drive root such as C:\ already ends in the separator; appending
+	// another one would reject every file on that drive.
+	root := resolvedRoot
+	if !strings.HasSuffix(root, separator) {
+		root += separator
 	}
-	return strings.HasPrefix(resolved, resolvedRoot+separator)
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToLower(resolved), strings.ToLower(root))
+	}
+	return strings.HasPrefix(resolved, root)
 }
 
 func (s *AgentBrowserService) persistAgentBrowserScreenshot(ctx context.Context, workspaceID, runID, key string, c browserruntime.AgentBrowserScreenshot) (string, error) {

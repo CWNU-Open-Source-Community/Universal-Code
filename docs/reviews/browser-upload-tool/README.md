@@ -59,3 +59,30 @@ workspace_path 的精确 canonical payload，批准后路径无法替换）；�
 - 已知边界（如实记录）：resolve 与浏览器打开之间的 TOCTOU 窗口为已批准外部写效果内的
   可接受残留；512 字节路径上限严于 schema 的字符 maxLength；无效 effect 分支与 512
   字节边界由归一化测试锚定。
+
+## 复审附记（2026-11-05，第二轮：入口接线修复）
+
+独立复审实证发现上一轮的评审确认存在重大遗漏：**`browser_upload` 从未接入任何执行
+入口**——gateway registry 的 agent-browser 注册循环、Supervisor 工具目录追加、
+`refreshBrowserModelTools`、worker 目录、两处 `SupportedActions` 能力列表、gateway
+recorded-actor 校验 case、`domain.isBrowserActionSupervisorTool`、store
+`run_supervisor_tool_calls` 的三处 CHECK 约束与 artifact 来源 scope 全部缺失。用合法
+authority 直调 `Gateway.Invoke` 返回 `unsupported tool "browser_upload"`；既有的全部
+测试都绕过入口层直接调内部函数，因此 CI 全绿。上一轮"已审"的
+`agent_browser_actions.go（Upload + SupportedActions）`与"No blocking findings"结论
+对此失实，如实更正。
+
+本轮修复（提交 1）：上述 10 处接线全部补齐；新增 store migration v220（沿用 v169 的
+保 rowid 重建模式，三处 CHECK 加入 `browser_upload` 并要求 authority_json 绑定，
+clean-install 基线经生成器重建，LatestSchemaVersion 219→220）；批次守卫测试把 upload
+同时作为失效者与消费者加入枚举并新增合法序列；`tool schema` CLI 目录测试、API/Desktop
+布线测试与 `TestAgentBrowserFirstNavigationAdvertised...` 的精确目录断言（8→9）均锚定
+upload 的入口可见性。验证：`go build ./internal/...`、`go test ./internal/store/
+（migration v220 + clean-install baseline）`、`./internal/toolgateway/
+./internal/application/ ./internal/browserruntime/ ./internal/domain/ ./internal/app/
+（structured tool）` 全过。
+
+本轮修复（提交 2）：工具描述如实写明"任意 regular 文件类型均可，仅限制包含性与大小"；
+`resolveAgentBrowserUpload` 注释补充同卷 hardlink 不在解析感知范围内（与 TOCTOU 同属
+宿主沙箱假设内的残留）；`withinResolvedWorkspace` 修复盘符根（`C:\`）尾分隔符导致的
+全量误拒边界并补单元测试。

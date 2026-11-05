@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -480,5 +481,34 @@ func TestAgentBrowserUploadResolverContainment(t *testing.T) {
 	}
 	if _, err := service.resolveAgentBrowserUpload(context.Background(), "ws-upload", "docs/link.txt"); err == nil {
 		t.Fatal("symlinked escape accepted")
+	}
+}
+
+func TestWithinResolvedWorkspaceAllowsDriveRootsAndRejectsSiblings(t *testing.T) {
+	root := filepath.Clean(t.TempDir())
+	if !withinResolvedWorkspace(root, filepath.Join(root, "report.txt")) {
+		t.Fatalf("file inside the workspace rejected: %q", root)
+	}
+	if withinResolvedWorkspace(root, filepath.Join(filepath.Clean(root+"-sibling"), "escape.txt")) {
+		t.Fatalf("sibling directory admitted: %q", root)
+	}
+	if withinResolvedWorkspace(root, root) {
+		t.Fatal("the workspace root itself is not a file inside it")
+	}
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// A resolved drive root keeps its trailing separator: appending another one
+	// would reject every file on that drive.
+	separator := string(filepath.Separator)
+	driveRoot := "C:" + separator
+	if !withinResolvedWorkspace(driveRoot, driveRoot+"Windows"+separator+"notepad.exe") {
+		t.Fatal("drive-root workspace rejected a file on that drive")
+	}
+	if withinResolvedWorkspace(driveRoot, "D:"+separator+"outside.txt") {
+		t.Fatal("drive-root workspace admitted another drive")
+	}
+	if withinResolvedWorkspace("C:"+separator+"ws"+separator, "C:"+separator+"ws2"+separator+"report.txt") {
+		t.Fatal("trailing-separator root admitted a sibling directory")
 	}
 }
