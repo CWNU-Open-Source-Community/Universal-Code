@@ -1606,22 +1606,27 @@ func (m *CommandRuntimeManager) wait(entry *commandRuntimeEntry) {
 func (m *CommandRuntimeManager) enforceTimeout(entry *commandRuntimeEntry,
 	duration time.Duration,
 ) {
+	const killRetryInterval = 250 * time.Millisecond
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
-	select {
-	case <-entry.processDone:
-		return
-	case <-timer.C:
+	for {
+		select {
+		case <-entry.processDone:
+			return
+		case <-timer.C:
+		}
 		select {
 		case <-entry.processDone:
 			return
 		default:
 		}
-		// A previous stop may have failed. Keep its original reason while
-		// enforcing the command deadline with another Kill attempt.
-		if entry.setDesired(CommandRuntimeJobTimedOut) || entry.snapshot().State == CommandRuntimeJobStopping {
-			_ = entry.process.Kill()
+		// Keep the first stop reason and retry until Wait confirms exit. A
+		// failed handoff has no ownership-renewal loop to retry failed Kills.
+		if !entry.setDesired(CommandRuntimeJobTimedOut) && entry.snapshot().State != CommandRuntimeJobStopping {
+			return
 		}
+		_ = entry.process.Kill()
+		timer.Reset(killRetryInterval)
 	}
 }
 
