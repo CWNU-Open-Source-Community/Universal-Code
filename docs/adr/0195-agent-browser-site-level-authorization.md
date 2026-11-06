@@ -188,10 +188,13 @@ Full CDP products.
 ### Phase 3 transition semantics (designed)
 
 This subsection is the binding contract for the Phase 3 implementation PR and
-incorporates the OCR delegate design review against the Phase 1 code. It assumes the
-Phase 2 ask/auto wiring (currentAuthority, readiness, worker catalogue gates) lands
-first: this design binds the mechanism, and until that wiring exists no production
-path reaches it, so the implementation PR delivers mechanism and tests only.
+incorporates the OCR delegate design review against the Phase 1 code. The Phase 3
+implementation depends on Phase 2 ask/auto wiring (currentAuthority, readiness and
+worker catalogue gates) and the Phase 1 network and request-approval boundaries
+described above. The implementation PR must verify those dependencies against its
+merged base and exercise the origin-add operation through the production Ask/Auto
+path once that wiring is present; mechanism-only tests are sufficient only while
+that path remains unavailable.
 
 1. Single authority holder with a derivation chain. The browser slot owns the only
    mutable current authority, and it is the source of truth for the declared origin
@@ -289,8 +292,11 @@ path reaches it, so the implementation PR delivers mechanism and tests only.
 7. Wiring inventory. Gateway registration, supervisor and worker catalogue paths
    (the latter wired for the capability but not offering the operation), refresh
    path, capability list, recorded-actor case, domain classifier, artifact source
-   scopes, the Supervisor ledger CHECK migration (v221: three enum sites, rowid
-   preservation, `LatestSchemaVersion` 221), protocol registration of the receipt
+   scopes, the Supervisor ledger CHECK migration (three enum sites and rowid
+   preservation; allocate the next available version at implementation time and
+   update `LatestSchemaVersion` accordingly. Main currently uses v221 for workflow
+   recovery, so v222 is the next number before prerequisite migrations land; Phase 3
+   must recheck after those dependencies merge), protocol registration of the receipt
    envelope literal, the preflight branches above, the two post-action exemptions,
    the derivation-chain change in point 1, the `CloseWorker` snapshot fix, the
    slot-key comment rewrite, and the desktop approval label mapping.
