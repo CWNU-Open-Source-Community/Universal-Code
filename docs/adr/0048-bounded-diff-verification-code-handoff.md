@@ -22,6 +22,9 @@ check, approve work, resume a Run, mutate a repository, or create a composite ac
 
 ### D1-G2: repository Diff is bounded evidence
 
+The limits and pagination/statistics behavior below are superseded by
+[ADR 0194](0194-bounded-repository-diff-pagination.md); the read-only authority boundary remains.
+
 `repository_diff.v1` uses `go-git/v5` and the existing Workspace explorer boundary at
 the exact registered root. It follows no links, performs no parent discovery, starts
 no process, reads no remote, executes no hook, and performs no network request. It

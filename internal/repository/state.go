@@ -61,6 +61,10 @@ type State struct {
 }
 
 func Inspect(ctx context.Context, root string, workspaceID string) (State, error) {
+	return inspectChanges(ctx, root, workspaceID, MaxChangeItems)
+}
+
+func inspectChanges(ctx context.Context, root string, workspaceID string, changeLimit int) (State, error) {
 	base := State{ProtocolVersion: ProtocolVersion, WorkspaceID: workspaceID,
 		Kind: "none", Changes: []Change{}, ReadOnly: true}
 	if err := validateIdentity(workspaceID); err != nil {
@@ -148,7 +152,7 @@ func Inspect(ctx context.Context, root string, workspaceID string) (State, error
 			base.Truncated = true
 			continue
 		}
-		if len(base.Changes) >= MaxChangeItems {
+		if len(base.Changes) >= changeLimit {
 			base.Truncated = true
 			continue
 		}

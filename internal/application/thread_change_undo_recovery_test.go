@@ -68,6 +68,9 @@ func TestThreadChangeUndoClaimAndDrydockRestartRecovery(t *testing.T) {
 	if err := f.state.CheckThreadChangeUndoIdle(t.Context(), domain.InitialThreadID(f.run.ID), f.run.ID, ""); err == nil {
 		t.Fatal("open undo did not reserve workspace")
 	}
+	if err := f.state.CheckThreadChangeUndoIdle(t.Context(), domain.InitialThreadID(f.run.ID), f.run.ID, tx.ID); err != nil {
+		t.Fatalf("expected idle when excluding own transaction %s: %v", tx.ID, err)
+	}
 	// Recovery observes an interrupted process; user content is retained.
 	writeDrydockTestFile(t, filepath.Join(w.Path, "tracked.txt"), "user work after crash\n")
 	count, err := f.service.ReconcileWorkspaceCheckpoints(t.Context())

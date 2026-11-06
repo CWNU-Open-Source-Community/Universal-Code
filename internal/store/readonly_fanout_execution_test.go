@@ -302,7 +302,7 @@ func TestReadOnlyFanoutCancellationRecoversInterruptedExecution(t *testing.T) {
 	}
 	controller := application.NewReadOnlyFanoutExecutionService(st, llm.NewDefaultRouter(), policy.NewDefaultChecker())
 	activeLease := acquireTestRunExecutionLease(t, ctx, st, run.ID)
-	if _, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].ID,
+	if _, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].RunID, executions[0].ID,
 		"operator", "cancel-active-owner"); apperror.CodeOf(err) != apperror.CodeConflict {
 		t.Fatalf("cancellation stole an active lease: %v", err)
 	}
@@ -311,7 +311,8 @@ func TestReadOnlyFanoutCancellationRecoversInterruptedExecution(t *testing.T) {
 	}
 	var version int64
 	for _, key := range []string{"cancel-interrupted-worker", "cancel-interrupted-worker-replay"} {
-		cancelled, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].ID, "operator", key)
+		cancelled, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].RunID,
+			executions[0].ID, "operator", key)
 		if err != nil || cancelled.Status != domain.ReadOnlyFanoutExecutionCancelled || cancelled.Validate() != nil {
 			t.Fatalf("interrupted execution did not cancel: %#v err=%v", cancelled, err)
 		}
@@ -355,7 +356,8 @@ func TestReadOnlyFanoutCancellationPreservesCompletedShardResults(t *testing.T) 
 		t.Fatalf("interrupted execution missing: %#v err=%v", executions, err)
 	}
 	controller := application.NewReadOnlyFanoutExecutionService(st, llm.NewDefaultRouter(), policy.NewDefaultChecker())
-	final, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].ID, "operator", "completed-cancel")
+	final, err := controller.CancelReadOnlyFanoutExecution(ctx, executions[0].RunID,
+		executions[0].ID, "operator", "completed-cancel")
 	if err != nil || final.Status != domain.ReadOnlyFanoutExecutionCompleted || final.Validate() != nil {
 		t.Fatalf("already completed shards were not finalized: %#v err=%v", final, err)
 	}

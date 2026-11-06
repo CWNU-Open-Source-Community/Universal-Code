@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
+import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, CalendarClock, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
 import type { ThreadSearchResultView, ThreadView, WorkspaceView } from "../../api/types";
 import type { APIClient } from "../../api/client";
@@ -8,11 +8,16 @@ import { useLocale } from "../../lib/locale";
 import { ThreadProjectDialog, threadProjectID } from "./thread-project-dialog";
 import { ProjectHeader } from "./project-header";
 import { ThreadActions } from "./thread-actions";
+import { useV2PersistentState } from "../recovery-storage";
 import "./project-sidebar.css";
+
+function projectPinIDs(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
+}
 
 export type V2SettingsSection = "general" | "permissions" | "appearance" | "voice" |
   "models" | "plugins" | "browser" | "hooks" | "git" | "environment" |
-  "worktrees" | "keyboard" | "inspector" | "archived" | "extensions" | "skills" |
+  "worktrees" | "keyboard" | "records" | "archived" | "extensions" | "skills" |
   "advanced-models" | "about" | "shortcuts" | "connections" | "task-configuration" | "configuration" | "usage";
 
 const executionLabels = {
@@ -33,7 +38,7 @@ function executionStatus(thread: ThreadView, readFailed: boolean, t: (chinese: s
 
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
   onNewConversation, onOpenModels, onSelectThread, onVisibleChatOrder, onOpenSettings, onArchive,
-  onOpenInspector, inspectorActive = false, onOpenConnections,
+  onOpenHistory, historyActive = false, onOpenConnections, onOpenAutomations, automationsActive = false,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
   searchCurrentThread = false, onSearchCurrentThreadChange,
@@ -54,9 +59,11 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onVisibleChatOrder?: (threadIDs: readonly string[]) => void;
   onOpenSettings: () => void;
   onArchive: (thread: ThreadView) => void;
-  onOpenInspector?: () => void;
+  onOpenHistory?: () => void;
   onOpenConnections?: () => void;
-  inspectorActive?: boolean;
+  historyActive?: boolean;
+  onOpenAutomations?: () => void;
+  automationsActive?: boolean;
   search?: string; appliedSearch?: string; searchPending?: boolean; searchTooLong?: boolean;
   onSearchChange?: (value: string) => void;
   onSearchCompositionChange?: (composing: boolean) => void;
@@ -89,6 +96,12 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   const [projectCandidate, setProjectCandidate] = useState<ThreadView | null>(null);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
+  const [savedProjectPins, setProjectPins] = useV2PersistentState<unknown>("pinned-projects", []);
+  const pinnedProjects = useMemo(() => new Set(projectPinIDs(savedProjectPins)), [savedProjectPins]);
+  const toggleProjectPin = (id: string) => setProjectPins((previous: unknown) => {
+    const ids = projectPinIDs(previous);
+    return ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id];
+  });
   const pinsQuery = useInfiniteQuery({
     queryKey: ["v2", "threads", "active", "pinned", executionFilter],
     queryFn: ({ signal, pageParam }) => client!.getPage<ThreadView>("/threads", {
@@ -119,8 +132,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     if (draggingThreadID && !result.has("")) result.set("", []);
     const order = new Map(workspaces.map((workspace, index) => [workspace.id, index]));
     return [...result.entries()].sort(([a], [b]) => a === "" ? 1 : b === "" ? -1
-      : (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
-  }, [threads, workspaces, onNewInProject, draggingThreadID, executionFilter, pinnedIDs]);
+      : Number(pinnedProjects.has(b)) - Number(pinnedProjects.has(a)) || (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
+  }, [threads, workspaces, onNewInProject, draggingThreadID, executionFilter, pinnedIDs, pinnedProjects]);
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>();
     for (const { name } of workspaces) counts.set(name, (counts.get(name) ?? 0) + 1);
@@ -261,6 +274,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
             event.preventDefault(); setDropProjectID(null); setDraggingThreadID(""); onMoveThread?.(draggedThread, workspaceID);
           }}>
         {workspaceID ? <ProjectHeader workspace={workspace} label={label} client={client} expanded={expanded}
+          pinned={pinnedProjects.has(workspaceID)} onTogglePin={() => toggleProjectPin(workspaceID)}
           onToggle={() => setCollapsedProjects((previous) => { const next = new Set(previous); if (next.has(workspaceID)) next.delete(workspaceID); else next.add(workspaceID); return next; })}
           onNewChat={onNewInProject ? () => onNewInProject(workspaceID) : undefined} onEdit={onEditProject} />
           : <header className="v2-local-heading"><span>{label}</span>
@@ -277,8 +291,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           : searching ? t("加载更多匹配记录", "Load more matches") : t("加载更早对话", "Load earlier conversations")}</button>}
     </div>
     <div className="v2-sidebar-footer">
-      {onOpenInspector && <button aria-pressed={inspectorActive} onClick={onOpenInspector} type="button">
-        <Box aria-hidden="true" size={16} />{t("观察与记录", "Observation and records")}</button>}
+      {onOpenAutomations && <button aria-pressed={automationsActive} onClick={onOpenAutomations} type="button">
+        <CalendarClock aria-hidden="true" size={16} />{t("自动化", "Automations")}</button>}
+      {onOpenHistory && <button aria-pressed={historyActive} onClick={onOpenHistory} type="button">
+        <Box aria-hidden="true" size={16} />{t("历史记录", "History")}</button>}
       {onOpenConnections && <button onClick={onOpenConnections} type="button">
         <PlugZap aria-hidden="true" size={16} />{t("连接与环境", "Connections and environment")}</button>}
       <button onClick={onOpenSettings} type="button"><Settings aria-hidden="true" size={16} />{t("设置", "Settings")}</button>
@@ -289,7 +305,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
 }
 
 const settingsGroups: Array<{ label: [string, string]; items: Array<{
-  id: V2SettingsSection; label: [string, string]; icon: typeof Settings;
+  id: V2SettingsSection; label: [string, string]; icon: typeof Settings; keywords?: string;
 }> }> = [
   { label: ["应用", "Application"], items: [
     { id: "general", label: ["常规", "General"], icon: Settings },
@@ -304,12 +320,12 @@ const settingsGroups: Array<{ label: [string, string]; items: Array<{
     { id: "models", label: ["模型", "Models"], icon: Cpu },
     { id: "extensions", label: ["扩展与代码智能", "Extensions and code intelligence"], icon: PlugZap },
     { id: "skills", label: ["Skill 包", "Skill packages"], icon: PackageSearch },
-    { id: "environment", label: ["执行环境", "Execution environment"], icon: Box },
+    { id: "environment", label: ["执行环境", "Execution environment"], icon: Box, keywords: "终端 terminal shell powershell pwsh cmd 授权" },
   ] },
-  { label: ["任务与观察", "Tasks and observation"], items: [
+  { label: ["任务与记录", "Tasks and records"], items: [
     { id: "task-configuration", label: ["任务预算与项目配置", "Task budget and project configuration"], icon: Settings },
     { id: "permissions", label: ["当前任务权限", "Current task permissions"], icon: ShieldCheck },
-    { id: "inspector", label: ["观察视图偏好", "Inspector preferences"], icon: Box },
+    { id: "records", label: ["记录显示", "Record preferences"], icon: Box },
   ] },
 ];
 
@@ -329,7 +345,7 @@ export function V2SettingsSidebar({ section, onBack, onSelect }: {
         placeholder={t("搜索设置…", "Search settings…")} type="search" value={search} /></label>
     <nav aria-label={t("设置分类", "Settings categories")} className="v2-settings-nav">
       {settingsGroups.map((group) => {
-        const items = group.items.filter((item) => !normalized || t(...item.label).toLocaleLowerCase().includes(normalized));
+        const items = group.items.filter((item) => !normalized || `${t(...item.label)} ${item.keywords ?? ""}`.toLocaleLowerCase().includes(normalized));
         if (!items.length) return null;
         return <section key={group.label[0]}><h2>{t(...group.label)}</h2>{items.map(({ id, label, icon: Icon }) => {
           const active = section === id || section === "advanced-models" && id === "models" ||

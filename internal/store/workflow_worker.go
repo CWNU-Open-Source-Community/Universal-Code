@@ -15,7 +15,7 @@ func (s *SQLiteStore) ListWorkflowCandidates(ctx context.Context, afterTime time
 	if now.IsZero() || limit < 1 || limit > 128 {
 		return nil, apperror.New(apperror.CodeInvalidArgument, "workflow candidate time or page bound is invalid")
 	}
-	rows, err := s.db.QueryContext(ctx, workflowExecutionSelect+` WHERE status IN ('running','waiting','waiting_approval') AND (claim_owner='' OR claim_until<=?) AND (updated_at>? OR (updated_at=? AND id>?)) ORDER BY updated_at,id LIMIT ?`, ts(now), ts(afterTime), ts(afterTime), afterID, limit)
+	rows, err := s.db.QueryContext(ctx, workflowExecutionSelect+` WHERE (status IN ('running','waiting','waiting_approval') OR (status='paused' AND (`+workflowLifecycleDueSQL+`))) AND (claim_owner='' OR claim_until<=?) AND (updated_at>? OR (updated_at=? AND id>?)) ORDER BY updated_at,id LIMIT ?`, ts(now), ts(now), ts(afterTime), ts(afterTime), afterID, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -129,6 +129,7 @@ func webFetchAuthorizationReconcilerEnabled(config ControlPlaneConfig) bool {
 }
 
 type ControlPlaneConfig struct {
+	TerminalSettingsStore              application.DesktopTerminalSettingsStore
 	DatabasePath                       string
 	HomePath                           string
 	ReadToken                          string
@@ -697,7 +698,8 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	if config.RunExecutionEnabled {
 		agentBrowser = application.NewAgentBrowserService(stateStore, application.AgentBrowserOptions{
 			HomePath: home, Capabilities: config.ExecutionPermissionCapabilities,
-			Headless: true, ServiceReadiness: commandRuntime})
+			Headless:        !application.BrowserHeadedFromEnvironment(),
+			SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: commandRuntime})
 		runtimeDependencies.AgentBrowser = agentBrowser
 		agentBrowserController = agentBrowser
 	}
@@ -808,6 +810,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 			_ = terminalManager.Shutdown()
 			return nil, err
 		}
+		userTerminal.settings = config.TerminalSettingsStore
 		agentInputBridge, bridgeErr := terminalruntime.NewAgentInputBridge(
 			terminalManager, terminalBroker)
 		if bridgeErr != nil {
@@ -826,6 +829,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		if err != nil {
 			_ = terminalManager.Shutdown()
 			return nil, err
+		}
+		if config.TerminalSettingsStore != nil {
+			debugAgentInput = application.NewTerminalPreferencesController(debugAgentInput, config.TerminalSettingsStore, terminalManager)
 		}
 	}
 	if debugAgentInput != nil &&

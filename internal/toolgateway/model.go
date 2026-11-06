@@ -63,6 +63,7 @@ const (
 	BrowserScreenshotTool           ToolName = "browser_screenshot"
 	BrowserScrollTool               ToolName = "browser_scroll"
 	BrowserKeyTool                  ToolName = "browser_key"
+	BrowserUploadTool               ToolName = "browser_upload"
 	OneShotCommandProposeTool       ToolName = "one_shot_command_propose"
 	DockerSandboxRunProposeTool     ToolName = "sandbox_docker_run_propose"
 	SkillCandidateProposeTool       ToolName = "skill_candidate_propose"

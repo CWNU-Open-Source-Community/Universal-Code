@@ -149,7 +149,8 @@
         "browser_sensitive_intent.v1",
         "browser_snapshot.v2",
         "browser_status.v2",
-        "browser_type.v2"
+        "browser_type.v2",
+        "browser_upload.v2"
       ],
       "retired_identifiers": []
     },
@@ -185,7 +186,7 @@
         }
       ],
       "persisted_or_exported": true,
-      "persistence_boundary": "SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.",
+      "persistence_boundary": "SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. workflow-summary-wake-retry.v1 binds replacement wake identities to the execution and persisted notification generation while retaining its original inbox identity. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.",
       "compatibility_rule": "Add versions without reinterpreting generations or exactly-once keys; retain old readers until migration or indefinite support is proven. Original first-attempt worker identities and reports without data remain readable. Dynamic map/retry states and structured completion data require the upgraded readers; rollback must retain these readers or preserve those records without replaying them through older decoders.",
       "retirement_gate": {
         "mode": "migration-or-retention",
@@ -281,6 +282,7 @@
         "worker-history.v1",
         "worker_resource.v1",
         "worker_skill_read.v1",
+        "workflow-summary-wake-retry.v1",
         "workflow-summary.v1",
         "workflow.v1",
         "workflow_control.v1",
@@ -1233,6 +1235,32 @@
       "retired_identifiers": []
     },
     {
+      "id": "desktop-terminal-settings",
+      "class": "internal-durable",
+      "owner": "Desktop terminal maintainers",
+      "source_of_truth": ["internal/application", "internal/desktop"],
+      "writers": [
+        { "id": "desktop-terminal-settings-writer", "source": "internal/application", "versions": [1], "mode": "write-current" }
+      ],
+      "readers": [
+        { "id": "desktop-terminal-settings-reader", "source": "internal/application", "versions": [1], "status": "active" },
+        { "id": "desktop-terminal-settings-ui-reader", "source": "web/src/lib", "versions": [1], "status": "active" }
+      ],
+      "persisted_or_exported": true,
+      "persistence_boundary": "Native confirmation saves revision-bound shared-terminal consent, manual duration and a fixed shell identifier in the application home.",
+      "compatibility_rule": "Default manual consent and automatic trusted shell selection. Saved full consent can renew process-local terminal leases only while the current Run has active Full permission. No Run authority, lease token or arbitrary executable path is persisted. Unknown fields, revisions and invalid preferences fail closed.",
+      "retirement_gate": {
+        "mode": "migration-or-retention",
+        "requirements": [
+          "ADR-backed retirement decision and rollback path",
+          "Old-version fixtures remain until every supported source is migrated or retained",
+          "Reader history is append-only; retirement requires migration or retention evidence"
+        ]
+      },
+      "active_identifiers": ["desktop_terminal_settings.v1"],
+      "retired_identifiers": []
+    },
+    {
       "id": "desktop-verification-settings",
       "class": "internal-durable",
       "owner": "Desktop verification settings maintainers",
@@ -1315,11 +1343,14 @@
         "desktop_workspace_launcher_list.v1",
         "desktop_workspace_open.v1",
         "prayu.run-navigation.v1",
+        "prayu.typography.v1",
         "universal-code.batch-workbench.v1",
         "universal-code.chat-preferences.v1",
+        "universal-code.prompt-commands.v1",
         "universal-code.sidebar-width.v1",
         "universal-code.specialist-continuation.v1",
         "universal-code.turn-notifications.v1",
+        "universal-code.workspace-tabs.v1",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [
@@ -1692,6 +1723,8 @@
       "active_identifiers": [
         "agent-code-tools.v1",
         "agent_browser_close.v1",
+        "agent_browser_download_release.v1",
+        "agent_browser_screencast.v1",
         "agent_browser_status.v1",
         "agent_graph.v1",
         "api.v1",
@@ -2358,6 +2391,7 @@
         "project_config.v1",
         "project_instruction_delivery.v1",
         "project_instruction_guidance.v1",
+        "project_instruction_scaffold.v1",
         "project_instruction_snapshot.v1"
       ],
       "retired_identifiers": [

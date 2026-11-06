@@ -15,6 +15,7 @@ import (
 
 	"cyberagent-workbench/internal/app"
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/computeruse"
 	"cyberagent-workbench/internal/desktop"
@@ -234,9 +235,14 @@ func containsUserAgentToken(value, expected string) bool {
 	return false
 }
 
-type desktopBindingError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+func formatDesktopBindingError(err error) any {
+	// Wails constructs Error(message.error), so an object loses its message.
+	// Use the normalized public Message field without falling back to causes.
+	var normalized *apperror.Error
+	if errors.As(apperror.Normalize(err), &normalized) && normalized != nil && strings.TrimSpace(normalized.Message) != "" {
+		return normalized.Message
+	}
+	return "Desktop operation failed"
 }
 
 func main() {
@@ -609,6 +615,16 @@ func runDesktop(config desktopOptions) error {
 	if err != nil {
 		return err
 	}
+	var terminalSettingsStore application.DesktopTerminalSettingsStore
+	if config.riskProfileRestart {
+		terminalSettingsStore, err = application.NewFileDesktopTerminalSettingsStore(homePath)
+		if err != nil {
+			return err
+		}
+		if _, err = terminalSettingsStore.Load(context.Background()); err != nil {
+			return err
+		}
+	}
 	config, environmentSettings, err := loadDesktopSandboxSettings(context.Background(), config, homePath)
 	if err != nil {
 		return err
@@ -716,7 +732,8 @@ func runDesktop(config desktopOptions) error {
 		}
 	}
 	controlPlane, err := desktop.OpenControlPlane(desktop.ControlPlaneConfig{
-		DatabasePath: databasePath, HomePath: homePath, ReadToken: readToken,
+		TerminalSettingsStore: terminalSettingsStore,
+		DatabasePath:          databasePath, HomePath: homePath, ReadToken: readToken,
 		ControlToken:          controlToken,
 		ComputerUseExecutable: computerUseExecutable,
 		RunControlEnabled:     config.profileControl, RunCreationEnabled: config.runCreation,
@@ -810,6 +827,13 @@ func runDesktop(config desktopOptions) error {
 	commandRuntimeAdapterInstalled, commandRuntimeAdapterReady :=
 		controlPlane.CommandRuntimeProcessStatus()
 	bridge, err := desktop.NewDesktopBridge(desktop.DesktopBridgeConfig{
+		TerminalSettingsStore: terminalSettingsStore,
+		TerminalSettingsConfirmer: func() desktop.DesktopTerminalSettingsConfirmer {
+			if terminalSettingsStore == nil {
+				return nil
+			}
+			return nativeTerminalSettingsConfirmer{}
+		}(),
 		ContextProvider: lifecycle.Context, FilePicker: nativeSkillPackagePicker{},
 		ReadToken: readToken, ControlToken: controlToken, APIVersion: httpapi.Version,
 		RunControlEnabled: config.profileControl, RunCreationEnabled: config.runCreation,
@@ -917,11 +941,8 @@ func runDesktop(config desktopOptions) error {
 			UniqueId:               desktopSingleInstanceID,
 			OnSecondInstanceLaunch: secondInstanceHandler(lifecycle),
 		},
-		Debug: options.Debug{OpenInspectorOnStartup: false},
-		ErrorFormatter: func(err error) any {
-			normalized := apperror.Normalize(err)
-			return desktopBindingError{Code: string(apperror.CodeOf(normalized)), Message: normalized.Error()}
-		},
+		Debug:          options.Debug{OpenInspectorOnStartup: false},
+		ErrorFormatter: formatDesktopBindingError,
 	}
 	applyDesktopPlatformOptions(appOptions)
 	return wails.Run(appOptions)

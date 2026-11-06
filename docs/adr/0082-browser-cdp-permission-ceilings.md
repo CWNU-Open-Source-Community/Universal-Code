@@ -72,3 +72,24 @@ This ADR does not add a browser process starter, disposable Profile writes,
 network access, a CDP socket, request interception, Cookie extraction, or any
 model-callable browser Tool. The existing Disabled/Fake CDP transport remains
 the only implementation in this batch.
+
+## Amendment (2026-10-28): operator live-view methods on the restricted ceiling
+
+Issue #491 decouples the security goal (the agent must never gain power) from
+the product goal (the operator must be able to see what the isolated browser
+renders). The restricted ceiling admits three additional target-scoped CDP
+methods — `Page.startScreencast`, `Page.stopScreencast`, and
+`Page.screencastFrameAck` — as an operator-visibility tap:
+
+- The tap is started and stopped only by the Go runtime for a viewer attached
+  through the run-scoped read surface. The agent cannot call it; frames are
+  forwarded to the operator UI over SSE, are never persisted, never enter the
+  evidence ledger, and never reach tool results.
+- The stream is capped server-side (JPEG, bounded dimensions, at most 10 fps
+  with a wall-clock limiter, one viewer per session, per-frame size bound), so
+  it cannot become a bulk exfiltration channel: everything a frame could show
+  was already available to the operator through hashed `Page.captureScreenshot`
+  evidence.
+- No navigation, evaluation, cookie, request-mutation, or replay method is
+  admitted by this amendment; the table above and the fail-closed ceilings are
+  unchanged.

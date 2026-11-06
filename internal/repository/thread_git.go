@@ -21,6 +21,12 @@ import (
 	"cyberagent-workbench/internal/toolcontract"
 )
 
+// Thread mutation previews keep their original bounds independently of repository review.
+const (
+	maxThreadDiffFileBytes  = 64 * 1024
+	maxThreadDiffPatchBytes = 64 * 1024
+)
+
 // SelectedGitFile is immutable evidence of the bytes selected by the operator.
 // Content stays in memory and is never accepted from an API request.
 type SelectedGitFile struct {
@@ -182,7 +188,7 @@ func (e *MutationExecutor) ReviewIndexChange(ctx context.Context, root string, p
 			return value, apperror.New(apperror.CodeFailedPrecondition, "selected index content cannot be completely and safely reviewed")
 		}
 		value.Diff += fileedit.UnifiedDiff(file.Path, string(before), string(after))
-		if len(value.Diff) > MaxDiffPatchBytes {
+		if len(value.Diff) > maxThreadDiffPatchBytes {
 			return value, apperror.New(apperror.CodeResourceExhausted, "selected index diff exceeds the review bound")
 		}
 	}
@@ -252,11 +258,11 @@ func (e *MutationExecutor) ReviewSelected(ctx context.Context, root string, path
 				return value, errors.New("selected file does not exist")
 			}
 		}
-		if len(old) > MaxDiffFileBytes || !utf8.Valid(old) || bytes.IndexByte(old, 0) >= 0 || redact.String(string(old)) != string(old) || redact.String(string(file.Content)) != string(file.Content) {
+		if len(old) > maxThreadDiffFileBytes || !utf8.Valid(old) || bytes.IndexByte(old, 0) >= 0 || redact.String(string(old)) != string(old) || redact.String(string(file.Content)) != string(file.Content) {
 			return value, apperror.New(apperror.CodeFailedPrecondition, "selected file cannot be completely and safely reviewed as text")
 		}
 		value.Diff += fileedit.UnifiedDiff(path, string(old), string(file.Content))
-		if len(value.Diff) > MaxDiffPatchBytes {
+		if len(value.Diff) > maxThreadDiffPatchBytes {
 			return value, apperror.New(apperror.CodeResourceExhausted, "selected diff exceeds the review limit; select fewer files")
 		}
 		value.Files = append(value.Files, file)
@@ -287,7 +293,7 @@ func readSelectedGitFile(root *os.Root, path string) (SelectedGitFile, error) {
 		if info.Mode()&os.ModeSymlink != 0 || (i < len(parts) && !info.IsDir()) {
 			return value, errors.New("selected path has a linked or invalid ancestor")
 		}
-		if i == len(parts) && (!info.Mode().IsRegular() || info.Size() > MaxDiffFileBytes) {
+		if i == len(parts) && (!info.Mode().IsRegular() || info.Size() > maxThreadDiffFileBytes) {
 			return value, errors.New("selected path is not a bounded regular file")
 		}
 	}
@@ -296,11 +302,11 @@ func readSelectedGitFile(root *os.Root, path string) (SelectedGitFile, error) {
 		return value, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, MaxDiffFileBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, maxThreadDiffFileBytes+1))
 	if err != nil {
 		return value, err
 	}
-	if len(data) > MaxDiffFileBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+	if len(data) > maxThreadDiffFileBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return value, errors.New("selected file is not bounded UTF-8 text")
 	}
 	sum := sha256.Sum256(data)

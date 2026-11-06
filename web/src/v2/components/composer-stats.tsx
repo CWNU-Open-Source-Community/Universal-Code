@@ -56,8 +56,8 @@ export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
     `Main agent totals: ${format(stats.input_tokens)} input tokens (including cache), ${format(stats.output_tokens)} output tokens. ${cacheKnown ? `Cache hit ${cacheLabel}. Cache hit rate = cached input / all input tokens.` : `${stats.cache_reported_calls} / ${stats.usage_calls} calls reported cache usage; hit rate is unavailable.`}`,
   );
   const contextTitle = context ? t(
-    `最近一次模型请求${context.estimated ? "估算" : "使用"} ${format(context.input_tokens)} / ${format(context.window_tokens)} Token（应用规划窗口）。`,
-    `Latest model request: ${context.estimated ? "estimated " : ""}${format(context.input_tokens)} / ${format(context.window_tokens)} tokens (application context limit).`,
+    `最近一次模型请求${context.estimated ? "估算" : "报告输入"} ${format(context.input_tokens)} / ${format(context.window_tokens)} Token（应用规划窗口）。${context.estimated ? "" : "输入含缓存，不含输出。"}`,
+    `Latest model request: ${context.estimated ? "estimated " : "reported input "}${format(context.input_tokens)} / ${format(context.window_tokens)} tokens (application context limit).${context.estimated ? "" : " Input includes cache, excluding output."}`,
   ) : undefined;
 
   const description = expanded === "activity" ? activityTitle : expanded === "usage" ? usageTitle : expanded === "context" ? contextTitle : undefined;

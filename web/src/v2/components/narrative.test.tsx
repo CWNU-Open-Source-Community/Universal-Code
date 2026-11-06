@@ -137,3 +137,22 @@ it("waits for a saved reply before exposing branch actions", () => {
   view.rerender(<V2Narrative client={client} entries={[{ ...entry, provisional: false }]} threadID="thread-1" onBranch={onBranch} />);
   expect(screen.getByRole("button", { name: "Branch into new chat" })).toBeDisabled();
 });
+
+it("shows the producing model as muted attribution on durable replies only", () => {
+  const entries: NarrativeEntry[] = [
+    { id: "reply", kind: "assistant", text: "Attributed reply", model: "anthropic / test-model",
+      createdAt: "2026-10-28T00:00:00Z", provisional: false },
+    { id: "bare", kind: "assistant", text: "Unattributed reply", createdAt: "2026-10-28T00:00:00Z", provisional: false },
+  ];
+  const { container } = render(<V2Narrative client={{} as APIClient} entries={entries} threadID="thread" />);
+  const badges = container.querySelectorAll(".v2-assistant-model");
+  expect(badges).toHaveLength(1);
+  expect(badges[0].textContent).toBe("anthropic / test-model");
+  const streaming: NarrativeEntry[] = [
+    { id: "live", kind: "assistant", text: "Streaming", model: "anthropic / test-model",
+      createdAt: "2026-10-28T00:00:00Z", provisional: true },
+  ];
+  cleanup();
+  const live = render(<V2Narrative client={{} as APIClient} entries={streaming} threadID="thread" />);
+  expect(live.container.querySelectorAll(".v2-assistant-model")).toHaveLength(0);
+});

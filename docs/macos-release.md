@@ -1,39 +1,38 @@
 # macOS 下载与发行边界
 
-Mac 交付包含 Apple Silicon（arm64）和 Intel（amd64）两份 ZIP。文件名绑定完整版本、
-架构与源码 revision 前 12 位；manifest 内保存完整 revision。包内应用名为
-`TraverseBoard.app`，原 bundle identifier `workbench.prayu.desktop` 和数据目录不变。
+[首页](../README.md) | [English home](../README.en.md) | [Windows 下载](windows-release.md)
 
-## 获取候选包
+## 下载与启动 / Download and launch
 
-持续更新入口：[Desktop release 双架构打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)。也可从 [主干中央 CI](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml?query=branch%3Amain) 选择已成功且含 `TraverseBoard-macos-preview-arm64` artifact 的运行，获取 arm64 预览；主干 CI 不提供 Intel 包。下载前核对运行的源码 revision 和包内 metadata。
-
-For newer candidates, use the [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) for both architectures, or a successful [main-branch CI run](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml?query=branch%3Amain) containing `TraverseBoard-macos-preview-arm64` for arm64 only. Check the run revision against the package metadata.
-
-截至 2026-10-20，[公开 Releases](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases) 尚无 Mac 资产。
-[PR #411 的双架构打包检查](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692)
-已完成原生构建与归档复验。以下链接对应 `v1.0.0-pr.411`、源码合并检出
-`4158910bc9f478b3511459e0b5babfdc0d4def97`；完整中央 CI 状态见 [PR 检查](https://github.com/CWNU-Open-Source-Community/Universal-Code/pull/411/checks)。
-下载需要登录 GitHub；两份 artifact 均保留 30 天，**2026-11-18 19:02 UTC（两种架构）到期**。
-
-Public Releases do not yet contain Mac assets. The following `v1.0.0-pr.411` previews passed native build and archive verification in [Desktop release](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692), from merge revision `4158910bc9f478b3511459e0b5babfdc0d4def97`. A GitHub login is required. Downloads expire on **2026-11-18 at 19:02 UTC (both architectures)**.
+<!-- public-downloads:start -->
+当前公开预览版 / Current public preview: [**v1.0.0-preview.20261020**](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020)，发布于 / published on **2026-10-20**，已提供两种架构的 DMG。
 
 | Mac 类型 / Architecture | 下载 / Download |
 | --- | --- |
-| Apple Silicon（M 系列 / arm64） | [预览包 / Preview](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692/artifacts/12214676343) |
-| Intel（amd64） | [预览包 / Preview](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692/artifacts/12214631395) |
+| Apple Silicon（M 系列 / arm64） | 在 [Release Assets](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020) 选择名称含 `macos-arm64` 的 `.dmg` |
+| Intel（amd64） | 在 [Release Assets](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020) 选择名称含 `macos-amd64` 的 `.dmg` |
 
-在对应候选的 **Desktop release** 检查页面下载两个 `TraverseBoard-macos-<arch>-<revision>`
-artifact。artifact 外层是 GitHub 的传输 ZIP；解开后取得产品 ZIP、manifest 和 checksum。
-到期后在 [Desktop release 工作流](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)选择较新的成功运行，核对版本、revision 和架构。
-CI artifact 不是 GitHub Release。预发布 tag 的流程成功后，同一 publisher
-才会把两架构文件发布到同一个 Release 的 Assets 中。
+1. 按处理器架构下载 DMG，用 `shasum -a 256 /path/to/download.dmg` 与同一 Release 的 [SHA256SUMS](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/SHA256SUMS) 核对。
+2. 打开 DMG，将 **`TraverseBoard.app`** 拖到 **Applications**，复制完成后弹出映像，再从 Applications 打开应用。前端和后端均已内置。
+3. 包只有 **ad-hoc 签名，未经 Apple 公证**，首次打开可能被 Gatekeeper 阻止。最低构建目标为 macOS 12；该版本的原生启动检查在 macOS 15 完成，完整交互、真实模型调用和升级恢复仍需验收。具体证据与限制见 Release 说明。
 
-解开产品 ZIP 后打开 `TraverseBoard.app`，无需编译前端或单独启动后端。包内保留历史名称的
-`Start-Prayu-Operator-Preview.command` 作为兼容入口，并提供中英文使用说明。
-当前包只有 ad-hoc 签名；macOS 可能阻止首次启动。没有公证和真机验收证据时，不称正式 Mac 发行。
+Choose the DMG matching your processor from Release Assets, verify it against the same release's `SHA256SUMS`, then drag `TraverseBoard.app` into Applications and eject the image. The UI and backend are included. These **ad-hoc signed, unnotarized previews** may be blocked by Gatekeeper. The minimum build target is macOS 12; native startup was checked on macOS 15. Full interaction, real-model workflows and upgrade recovery remain unverified.
 
-Extract the Actions transport ZIP, then the product ZIP inside it, and open `TraverseBoard.app`. The UI and backend are included. The bundle is ad-hoc signed and unnotarized, so macOS may block its first launch.
+公开 Release 下载无需登录 GitHub，不受 Actions artifact 保留期限限制。
+Public Release downloads require no GitHub login and are not subject to Actions artifact retention limits.
+<!-- public-downloads:end -->
+
+## 更新的测试候选 / Newer test candidates
+
+[Desktop release 双架构打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)提供两种架构的测试候选。选择成功运行并核对版本、源码 revision 和架构；下载需要 GitHub 登录且会过期。
+`TraverseBoard-macos-dmg-<arch>-<revision>` artifact 内含 DMG 与 checksum；
+`TraverseBoard-macos-<arch>-<revision>` artifact 内含产品 ZIP、manifest 与 checksum。
+先解开 Actions 的传输 ZIP；若选择产品 ZIP，再解开内层 ZIP 后打开 `TraverseBoard.app`。
+
+For newer candidates, use a successful Desktop release run for the matching architecture and source revision. Actions downloads require login and expire. The DMG artifact contains an image and checksum; the archive artifact contains a product ZIP, manifest and checksum. Unpack the outer Actions transport ZIP first.
+
+应用名仍为 `TraverseBoard.app`，bundle identifier `workbench.prayu.desktop` 和数据目录不变。
+发行文件名绑定版本、架构与源码 revision 前 12 位；ZIP manifest 保存完整 revision。
 
 ## 构建与核验
 
@@ -64,8 +63,11 @@ Mach-O CPU 三者一致。构建两次比较二进制，再 ad-hoc 签名。`CFB
 产物位于 `build/macos-public`。ZIP 包含完整应用、指南、兼容入口、元数据、兼容报告、
 SBOM、NOTICE 与 LICENSE。`ditto` 保留 POSIX 权限；新目录解压后再次核对全部文件、
 可执行权限、Mach-O、部署目标、Go metadata 和 codesign。
-manifest 与 checksum 绑定完整 ZIP。Windows publisher 复验 ZIP 内的实际文件、架构、
-版本、revision 和全部哈希，再汇总两架构的精确资产白名单；只有 publisher 可写 Release。
+manifest 与 checksum 绑定完整 ZIP。DMG 来自该核验后的 ZIP，原生 Mac job 会挂载映像
+核对包内字节、权限与签名。Windows publisher 复验 ZIP 内的实际文件、架构、版本、
+revision 和全部哈希，并下载同次运行的 DMG、核对其独立 checksum，再汇总两架构的
+ZIP、DMG 与校验文件。公开 `SHA256SUMS` 同时包含 Windows EXE 和两份 DMG；
+只有 publisher 可写 Release，公开前须通过四份下载文档与实际资产的一致性检查。
 
 ## 正式版尚缺什么
 
@@ -81,10 +83,11 @@ Developer ID 签名、公证、staple 验证及绑定最终分发包的真机验
 通过隔离 Keychain 持久化测试，并随上方新候选编译。实际 `.app` 的授权提示、取消、锁定恢复、
 重启与升级体验仍需在 Mac 登录会话验收。
 
-Mac 的普通 Agent Browser 当前返回 `platform_unsupported`，原生 Computer Use 与 Local Sandbox
-也有独立平台实现缺口。不得通过删除身份校验、明文保存凭据或默认提升权限开放这些能力。
+Mac 浏览器、原生 Computer Use 与 Local Sandbox 的可用能力须以当前构建的运行时能力报告
+为准。浏览器启动检查不等于完整用户工作流验收；不得通过删除身份校验、明文保存凭据
+或默认提升权限开放尚不可用的能力。
 
-Native macOS CI passed the isolated Keychain persistence test and built the implementation into the newer candidate. Actual application permission prompts, cancellation, locked-keychain recovery, restart, and upgrade still need acceptance in a Mac login session. Ordinary Agent Browser, native Computer Use, and Local Sandbox have separate Mac platform gaps.
+Native macOS CI passed the isolated Keychain persistence test. Actual application permission prompts, cancellation, locked-keychain recovery, restart, and upgrade still need acceptance in a Mac login session. Check the current build's runtime capability report for browser, native Computer Use and Local Sandbox availability; browser startup checks do not establish complete workflow acceptance.
 
 现有 Windows 签名、Store、精确 CI revision、Draft evidence 和 attestation 门保持。
 Mac job 不预先向 Draft 添加附件，避免破坏 Windows 的精确证据清单。

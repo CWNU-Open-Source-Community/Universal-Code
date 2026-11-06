@@ -21,6 +21,13 @@ function tool(patch: Partial<ThreadTranscriptItemView> = {}): ThreadTranscriptIt
 }
 
 describe("Agent activity reflects execution evidence", () => {
+  it("distinguishes an unsupported connection, a pending read and a failed read", () => {
+    expect(projectAgentActivity({ ...base, execution: undefined, executionReadable: false })?.label)
+      .toBe("当前连接不支持读取 Agent 状态");
+    expect(projectAgentActivity({ ...base, execution: undefined })?.label).toBe("正在同步状态");
+    expect(projectAgentActivity({ ...base, execution: undefined, executionError: true }))
+      .toEqual({ label: "状态读取失败", attention: true });
+  });
   it("does not treat an open run or cached text as a running worker", () => {
     expect(projectAgentActivity({ ...base, execution: { ...execution, state: "idle" }, snapshot,
       streamStatus: "live" })).toBeNull();

@@ -1,3 +1,4 @@
+import { validTerminalShell, type TerminalShell } from "./desktop-terminal-settings";
 import { parsePluginSkillInstall, parseSkillPackageInventory, parseSkillPackageRemoval } from "../api/client";
 import type { PluginSkillInstallView, ProjectlessDirectory, SkillPackageInventoryView, SkillPackageRemovalView } from "../api/types";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
@@ -178,10 +179,11 @@ export interface DesktopConnectionBootstrap {
 }
 
 export interface DesktopTerminalSession {
+  shell?: TerminalShell;
   protocol_version: typeof desktopUserTerminalProtocol;
   session_id: string;
   run_id: string;
-  state: "running" | "exited" | "failed";
+  state: "starting" | "running" | "exited" | "closed" | "failed";
   backend: string;
   columns: number;
   rows: number;
@@ -205,7 +207,7 @@ export interface DesktopTerminalOutput {
   data_base64: string;
   data_bytes: number;
   dropped: boolean;
-  state: "running" | "exited" | "failed";
+  state: "starting" | "running" | "exited" | "closed" | "failed";
 }
 
 export interface DesktopTerminalWriteResult {
@@ -379,6 +381,8 @@ export interface DesktopLegacySkillInstallResult {
 }
 
 interface NativeDesktopBridge {
+  GetTerminalSettings?: () => Promise<unknown>;
+  ConfirmTerminalSettings?: (request: import("./desktop-terminal-settings").TerminalSettingsRequest) => Promise<unknown>;
   Bootstrap: () => Promise<unknown>;
   OpenExternalURL?: (url: string) => Promise<unknown>;
   PreviewExternalURL?: (url: string) => Promise<unknown>;
@@ -1298,16 +1302,17 @@ function validDebugRestartResult(value: unknown): value is DesktopDebugRestartRe
 
 function validTerminalSession(value: unknown,
   runID?: string): value is DesktopTerminalSession {
+  const hasShell = typeof value === "object" && value !== null && "shell" in value;
   if (!hasExactKeys(value, ["agent_input_default", "backend", "columns", "exit_code",
     "job_assigned_at_creation", "kill_on_job_close", "output_base_cursor",
     "output_next_cursor", "persistent", "process_local", "protocol_version",
-    "raw_output_persisted", "rows", "run_id", "session_id", "state", "user_owned"])) {
+    "raw_output_persisted", "rows", "run_id", "session_id", "state", "user_owned", ...(hasShell ? ["shell"] : [])])) {
     return false;
   }
-  return value.protocol_version === desktopUserTerminalProtocol &&
+  return (!hasShell || validTerminalShell(value.shell)) && value.protocol_version === desktopUserTerminalProtocol &&
     validWorkspaceID(value.session_id) && validWorkspaceID(value.run_id) &&
     (runID === undefined || value.run_id === runID) &&
-    (value.state === "running" || value.state === "exited" || value.state === "failed") &&
+    (value.state === "starting" || value.state === "running" || value.state === "exited" || value.state === "closed" || value.state === "failed") &&
     boundedText(value.backend, 1, 64) && validTerminalSize(value.columns, value.rows) &&
     safeCount(value.output_base_cursor) && safeCount(value.output_next_cursor) &&
     value.output_next_cursor >= value.output_base_cursor &&
@@ -1327,7 +1332,7 @@ function validTerminalOutput(value: unknown,
     safeCount(value.data_bytes) && value.data_bytes <= 65536 &&
     validBase64Payload(value.data_base64, value.data_bytes) &&
     typeof value.dropped === "boolean" &&
-    (value.state === "running" || value.state === "exited" || value.state === "failed");
+    (value.state === "starting" || value.state === "running" || value.state === "exited" || value.state === "closed" || value.state === "failed");
 }
 
 function validBase64Payload(value: unknown, expectedBytes: number): boolean {

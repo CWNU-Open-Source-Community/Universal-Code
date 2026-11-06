@@ -47,6 +47,7 @@ func (s *SQLiteStore) GetThreadStatistics(ctx context.Context, threadID string) 
 	defer rows.Close()
 	steps := make(map[string]struct{})
 	startedSteps := make(map[string]string)
+	latestContextCall := ""
 	for rows.Next() {
 		var runID, kind, subject, raw string
 		if err := rows.Scan(&runID, &kind, &subject, &raw); err != nil {
@@ -61,6 +62,7 @@ func (s *SQLiteStore) GetThreadStatistics(ctx context.Context, threadID string) 
 			ContextWindowTokens int64      `json:"context_window_tokens"`
 			ContextWindowSource string     `json:"context_window_source"`
 			Usage               *llm.Usage `json:"usage"`
+			UsageUnknown        bool       `json:"usage_unknown"`
 			DecodeMillis        *int64     `json:"decode_millis"`
 		}
 		if err := json.Unmarshal([]byte(raw), &receipt); err != nil {
@@ -80,6 +82,7 @@ func (s *SQLiteStore) GetThreadStatistics(ctx context.Context, threadID string) 
 		call := runID + "/" + subject
 		if kind == events.ModelStartedEvent {
 			startedSteps[call] = step
+			latestContextCall = call
 			result.Context = nil
 			if receipt.ContextWindowTokens > 0 && receipt.InputEstimate >= 0 {
 				result.Context = &domain.ThreadContextUsage{InputTokens: receipt.InputEstimate,
@@ -97,6 +100,14 @@ func (s *SQLiteStore) GetThreadStatistics(ctx context.Context, threadID string) 
 		input, output, total, err := supervisorUsage(*receipt.Usage)
 		if err != nil {
 			return result, err
+		}
+		// Only the latest request's completed receipt can replace its estimate.
+		// Canonical input already includes cache reads and writes. Missing or
+		// partial usage (including accounting-only failures) stays estimated.
+		if kind == events.ModelCompletedEvent && call == latestContextCall && result.Context != nil &&
+			input > 0 && !receipt.UsageUnknown && !supervisorModelUsageUnknown(*receipt.Usage) {
+			result.Context.InputTokens = input
+			result.Context.Estimated = false
 		}
 		for _, counter := range []struct {
 			target *int64

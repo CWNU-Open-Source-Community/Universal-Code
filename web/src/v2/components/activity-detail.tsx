@@ -115,7 +115,7 @@ export function projectThreadActivityDetail(
       status: tool.status } } : {}) };
 }
 
-/** Shared safe renderer for both the v2 conversation and the Legacy Inspector.
+/** Shared safe renderer for both the v2 conversation and the execution record details.
  * It accepts only the Go-owned closed activity union; raw durable payload JSON
  * is deliberately not part of this component's props. */
 export function ThreadActivityToolDetailPanel({ activityRef, client, runID, threadID, tool }: {
@@ -459,7 +459,7 @@ function CommandDetail({ activityRef, client, command, threadID }: {
   command: ThreadActivityCommandDetail;
   threadID: string;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const duration = durationLabel(command.duration_ms, command.status);
   // This display-only projection has no executable/adapter identity. The
   // observed output can suggest a startup problem, never prove no side effects.
@@ -502,7 +502,7 @@ function CommandDetail({ activityRef, client, command, threadID }: {
       {t("输出过长，当前仅显示已脱敏预览。", "The output is too long. Only a redacted preview is shown.")}</p>}
     {command.artifacts.map((reference) => <SavedCommandOutput activityRef={activityRef}
       artifactRef={reference.artifact_ref} client={client} key={reference.artifact_ref}
-      reference={reference} threadID={threadID} />)}
+      locale={locale} reference={reference} threadID={threadID} />)}
   </article>;
 }
 

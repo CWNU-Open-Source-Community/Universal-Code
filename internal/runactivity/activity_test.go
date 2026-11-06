@@ -73,6 +73,9 @@ func TestBuildSeparatesPublicModelUpdatesFromHarnessEvents(t *testing.T) {
 		got.Items[3].Detail != "读取文件" || got.Items[3].Status != "" {
 		t.Fatalf("tool activity was not bounded to names: %#v", got.Items)
 	}
+	if got.Items[0].Model != "anthropic / test-model" {
+		t.Fatalf("model call record lost its provider/model identity: %#v", got.Items[0])
+	}
 }
 
 func TestBuildKeepsClosedThreadFailureVisibleAfterContinuation(t *testing.T) {

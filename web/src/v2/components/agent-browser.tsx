@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Maximize2, RefreshCw, X } from "lucide-react";
 import { useLocale, type LocaleText } from "../../lib/locale";
 import type { APIClient } from "../../api/client";
-import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser, type AgentBrowserStatus } from "../../api/agent-browser";
+import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser,
+  type AgentBrowserScreencastFrame, type AgentBrowserStatus } from "../../api/agent-browser";
+import { V2ImageViewer } from "./image-viewer";
+import "./image-input.css";
 import "./agent-browser.css";
 
 export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
@@ -16,7 +19,7 @@ function stateText(status: AgentBrowserStatus, t: LocaleText): string {
     case "ready": return t("浏览器正在运行", "Browser running");
     case "loading": return t("正在加载网页…", "Loading page…");
     case "busy": return t("正在操作网页…", "Interacting with page…");
-    case "waiting_user": return t("网页需要人工处理", "Page needs your attention");
+    case "waiting_user": return t("网页需要人工处理；以接管模式（CYBERAGENT_BROWSER_HEADED=1）启动后可在可见窗口人工处理", "The page needs attention; start with takeover mode (CYBERAGENT_BROWSER_HEADED=1) to handle it in the visible window");
     case "failed": return t("浏览器操作未完成", "Browser action incomplete");
     case "closing": return t("正在停止浏览器…", "Stopping browser…");
     case "cleanup_pending": return t("会话已停止，仍在清理临时进程或资料", "Session stopped; cleaning up temporary processes or data");
@@ -55,7 +58,9 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
   const queries = useQueryClient();
   const key = agentBrowserQueryKey(client.baseURL, runID);
   const [message, setMessage] = useState("");
-  const [image, setImage] = useState<{ binding: string; url: string }>();
+  const [image, setImage] = useState<{ binding: string; url: string; blob: Blob }>();
+  const [failedImageBinding, setFailedImageBinding] = useState("");
+  const [imageRetry, setImageRetry] = useState(0);
   const status = useQuery({ queryKey: key, queryFn: ({ signal }) => readAgentBrowser(client, runID, signal), retry: false,
     refetchOnMount: "always", refetchInterval: (query) => running && !query.state.error ? 3000 : false });
   const current = status.data;
@@ -75,14 +80,15 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     ? `${runID}\0${current.session_id}\0${current.screenshot.locator}\0${current.screenshot.sha256}` : "";
   useEffect(() => {
     setImage(undefined);
+    setFailedImageBinding("");
     if (!current?.screenshot || !current.session_id || !imageBinding) return;
     const abort = new AbortController(); let objectURL = "";
     void client.downloadVerifiedImage(screenshotPath(runID, current), current.screenshot, abort.signal).then((blob) => {
       if (abort.signal.aborted) return;
-      objectURL = URL.createObjectURL(blob); setImage({ binding: imageBinding, url: objectURL });
-    }).catch(() => { if (!abort.signal.aborted) setMessage(t("无法验证当前页面截图，请重新读取状态。", "The current screenshot could not be verified. Refresh the browser status.")); });
+      objectURL = URL.createObjectURL(blob); setImage({ binding: imageBinding, url: objectURL, blob });
+    }).catch(() => { if (!abort.signal.aborted) setFailedImageBinding(imageBinding); });
     return () => { abort.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
-  }, [client, imageBinding, runID]);
+  }, [client, imageBinding, runID, imageRetry]);
 
   if (status.isError && agentBrowserAPIAbsent(status.error)) return null;
   if (status.isPending) return null;
@@ -100,14 +106,21 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
       <div className="v2-agent-browser-actions">{canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>{t("停止浏览器", "Stop browser")}</button>}{dismissButton}</div></header>
     <div className="v2-agent-browser-body">
     {!current.available && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
-    {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过截图查看。", "Pages open in a separate background browser and are shown as screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
-    {current.headless && active && <p className="v2-agent-browser-note">{t("浏览器在后台运行，当前页面以已验证的截图展示。需要结束网页操作时可停止浏览器；整个任务可在对话中停止。", "The browser runs in the background. Verified screenshots show its page. Stop the browser to end web actions, or stop the whole task in the conversation.")}</p>}
+    {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过实时画面和截图查看。", "Pages open in a separate background browser and are shown as a live view and screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
+    {current.headless && active && current.session_id && <AgentBrowserLiveView client={client} runID={runID} sessionID={current.session_id} />}
+    {current.headless && active && <p className="v2-agent-browser-note">{t("浏览器在后台运行，上方为实时画面；已验证的截图仍会作为证据保存。需要结束网页操作时可停止浏览器；整个任务可在对话中停止。", "The browser runs in the background with the live view above; verified screenshots are still kept as evidence. Stop the browser to end web actions, or stop the whole task in the conversation.")}</p>}
     {!current.headless && canClose && <p className="v2-agent-browser-note">{t("需要结束网页操作时可停止浏览器；整个任务可在对话中停止。", "Stop the browser to end web actions, or stop the whole task in the conversation.")}</p>}
     {(current.title || current.url) && <div className="v2-agent-browser-page">
       {current.title && <strong>{current.title}</strong>}
       {current.url && <a href={current.url} target="_blank" rel="noreferrer">{current.url}<ExternalLink size={14} /></a>}
     </div>}
-    {image?.binding === imageBinding && <img src={image.url} alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
+    {image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
+      name={`agent-browser-${current.screenshot!.sha256.slice(0, 12)}.png`}
+      alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
+    {failedImageBinding && failedImageBinding === imageBinding && <p role="alert">
+      {t("无法验证当前页面截图。", "The current screenshot could not be verified.")}{" "}
+      <button type="button" onClick={() => setImageRetry((attempt) => attempt + 1)}>{t("重新读取截图", "Reload screenshot")}</button>
+    </p>}
     {(current.last_action || current.updated_at || current.failure_code) && <details><summary>{t("最近状态", "Latest status")}</summary>
       {current.last_action && <p>{t("最近动作：", "Last action: ")}{actionText(current.last_action, t)}</p>}
       <p>{t("更新时间：", "Updated: ")}{new Date(current.updated_at).toLocaleTimeString(locale)}</p>
@@ -117,4 +130,91 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
     {message && <p role="alert">{message}</p>}
     </div>
   </section>;
+}
+
+function BrowserScreenshot({ url, blob, name, alt }: { url: string; blob: Blob; name: string; alt: string }) {
+  const { t } = useLocale();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>();
+  const [failed, setFailed] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  return <>
+    <button ref={trigger} type="button" className="v2-agent-browser-screenshot" disabled={!dimensions || failed}
+      aria-label={t("查看浏览器截图原图", "View original browser screenshot")} onClick={() => setViewing(true)}>
+      <img src={url} alt={alt} onLoad={({ currentTarget }) => {
+        if (currentTarget.naturalWidth > 0 && currentTarget.naturalHeight > 0) {
+          setDimensions({ width: currentTarget.naturalWidth, height: currentTarget.naturalHeight });
+        }
+      }} onError={() => { setFailed(true); setViewing(false); }} />
+      <span><Maximize2 size={14} aria-hidden="true" />{t("查看原图", "View original")}</span>
+    </button>
+    {failed && <p role="alert">{t("无法显示当前页面截图，请让 Agent 重新截图。", "The current screenshot could not be displayed. Ask the agent to capture it again.")}</p>}
+    {viewing && dimensions && <V2ImageViewer image={{ name, mime_type: "image/png", ...dimensions }}
+      url={url} blob={blob} onClose={() => setViewing(false)} returnFocusRef={trigger} />}
+  </>;
+}
+
+// The live view is visibility only: it streams the operator-facing picture of
+// the exact session, never persists frames, and falls back to the verified
+// screenshot chain when the stream is unavailable.
+function AgentBrowserLiveView({ client, runID, sessionID }: { client: APIClient; runID: string; sessionID: string }) {
+  const { t } = useLocale();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [live, setLive] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    let retry = 0;
+    let timer: number | undefined;
+    const draw = (frame: AgentBrowserScreencastFrame) => {
+      if (frame.session_id !== sessionID) return;
+      setLive(true);
+      const canvas = canvasRef.current;
+      if (!canvas || typeof atob !== "function") return;
+      const binary = atob(frame.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      void createImageBitmap(new Blob([bytes], { type: "image/jpeg" })).then((bitmap) => {
+        if (cancelled) { bitmap.close(); return; }
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        if (context) context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+      }).catch(() => { /* keep the last good frame; the next frame redraws */ });
+    };
+    const connect = () => {
+      if (cancelled) return;
+      try {
+        void client.streamAgentBrowserScreencast(runID, {
+          signal: controller.signal,
+          onOpen: () => { retry = 0; setFailed(false); },
+          onFrame: draw,
+        }).catch(() => {
+          if (cancelled || controller.signal.aborted) return;
+          setLive(false);
+          setFailed(true);
+          retry = Math.min(retry + 1, 5);
+          timer = window.setTimeout(connect, Math.min(1000 * 2 ** retry, 8000));
+        });
+      } catch {
+        if (!cancelled) {
+          setLive(false);
+          setFailed(true);
+        }
+      }
+    };
+    connect();
+    return () => { cancelled = true; controller.abort(); if (timer !== undefined) window.clearTimeout(timer); };
+  }, [client, runID, sessionID]);
+  return <figure className="v2-agent-browser-live">
+    <canvas ref={canvasRef} className={`v2-agent-browser-live-canvas${live ? " is-live" : ""}`}
+      role="img" aria-label={t("Agent 浏览器实时画面", "Agent browser live view")} />
+    <figcaption>
+      {live ? t("实时画面（直播流不保存、不作为证据）", "Live view (streamed only, never stored as evidence)")
+        : failed ? t("实时画面暂不可用，已回退到截图。", "Live view unavailable; falling back to screenshots.")
+        : t("正在连接实时画面…", "Connecting to the live view…")}
+    </figcaption>
+  </figure>;
 }

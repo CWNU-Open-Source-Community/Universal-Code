@@ -97,6 +97,35 @@ false until that matrix is signed.
 
 ## Threads, Runs, and advanced diagnostics / Thread、Run 与高级诊断
 
+### CLI thread metadata and search / CLI 线程元数据与搜索
+
+The Desktop chat list can rename and pin conversations; the CLI now exposes the same
+thread metadata plus title search for headless work, against the identical store
+semantics (no authority, deleted Threads stay not-found):
+
+```powershell
+cyberagent thread rename <thread-id> "Parser refactoring plan"
+cyberagent thread pin <thread-id>
+cyberagent thread pin <thread-id> --pinned false
+cyberagent thread list --title-query "parser refactoring" --pinned true
+cyberagent thread list --json
+```
+
+`--title-query` is an ASCII case-insensitive literal substring match (other Unicode
+characters compare exactly, at most 256 characters); `--pinned true|false` filters on
+the pin state, and the text listing shows `pinned=` per row. `thread rename` rejects
+empty titles, control characters, and titles over 4096 characters; a missing Thread
+returns the standard not-found error. Both commands print the new `version`, which
+never decreases and increases on every actual change, so identical retries are safe.
+
+桌面聊天列表可以重命名与置顶会话；CLI 现在通过同一套存储语义暴露相同的线程元数据
+与标题搜索，供无人值守流程使用（不授予任何权限，已删除线程仍按不存在处理）。
+`--title-query` 为 ASCII 大小写不敏感的字面子串匹配（其余 Unicode 字符按精确比较，
+最长 256 字符）；`--pinned true|false` 按置顶状态过滤，文本列表每行带 `pinned=` 标记。
+`thread rename` 拒绝空标题、控制字符与超过 4096 字符的标题；线程不存在返回标准
+not-found 错误。两个命令都会输出新的 `version`——它单调不减、每次实际变更都会递增，
+因此同样的重试是安全的。
+
 ### 补充消息与排队 / Follow-up messages and queue
 
 任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击
@@ -649,7 +678,7 @@ cyberagent skill candidate reject <candidate-id> --candidate-fingerprint <sha256
 cyberagent skill candidate import <candidate-id> --candidate-fingerprint <sha256> --operation-key <stable-key> --confirm-untrusted-skill
 ```
 
-The embedded read-only `skill.v1` Registry currently exposes fourteen workflows.
+The embedded read-only `skill.v1` Registry currently exposes fifteen workflows.
 The maintained catalog and invocation rules are in [Built-in skills](builtin-skills.md);
 exact current versions are defined by the [embedded manifests](../internal/skills/builtins/).
 Each manifest declares compatible `profiles`, `surfaces`, `phases`, and receiving
@@ -1005,6 +1034,39 @@ Ordinary text sent to a Run-created Session uses the same RunSupervisor path as 
 CLI errors keep their existing text and use stable exit codes documented in [errors.md](errors.md).
 
 Supported profiles are `code`, `review`, `learn`, and `script`. New runs start with network access disabled. Budget flags reject negative values and include maximum turns, tokens, model cost, and wall-clock timeout.
+
+### Browser takeover and session login / 浏览器接管与会话登录
+
+By default the agent browser runs headless: the operator watches the live view and
+screenshots, and a `waiting_user` state can only be resolved by the agent. Takeover
+mode launches the same isolated, disposable browser as a **visible window** on the
+operator's desktop, so a human can log in, complete 2FA/OAuth, or handle dialogs
+manually. Login state lives in the session's disposable profile: it persists for the
+whole session, is invisible to the operator's personal browser, and is wiped with the
+profile at cleanup together with a cleanup receipt. The browser session has a
+runtime deadline (30 minutes by default): when it elapses the profile is wiped and
+the next navigation starts a fresh one, so complete manual logins within the
+session's lifetime. Operators can raise it with
+`CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES` (5..1440 minutes, accepted at the same
+composition roots) — the quarantine, approvals, and cleanup receipts are unchanged.
+
+Enable it at the composition root with `CYBERAGENT_BROWSER_HEADED=1` (or `true`), or
+for the CLI API with `cyberagent api serve --browser-headed`. The mode changes process
+visibility only: origin scope, request-level interception, the download quarantine,
+and the approval rules are unchanged, and the agent gains no extra authority. The
+`waiting_user` status points at this mode when a page needs manual attention.
+
+默认情况下 agent 浏览器以 headless 运行：操作者通过实时画面与截图观察，`waiting_user`
+只能交给 agent 处理。接管模式把同一个隔离、一次性的浏览器以**可见窗口**启动在操作者
+桌面上，人工即可完成登录、2FA/OAuth 或对话框处理。登录态保存在会话的一次性 profile
+中：整个会话存续有效，与操作者个人浏览器完全隔离，cleanup 时随 profile 一起擦除并
+留有清理回执。浏览器会话有时长上限（默认 30 分钟 RuntimeDeadline），到期后 profile
+被擦除、下次导航开新 profile；操作者可用 `CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES`
+（5..1440 分钟，在同一组组合根生效）上调——隔离区、审批与清理回执语义不变。在组合根设置 `CYBERAGENT_BROWSER_HEADED=1`（或 `true`）启用，CLI 亦可用
+`cyberagent api serve --browser-headed`。该模式只改变进程可见性：origin scope、请求级
+拦截、下载隔离与审批规则全部不变，agent 不获得任何额外权限。页面需要人工处理时，
+`waiting_user` 状态会指向本模式。
+
 
 ## Local HTTP API
 
@@ -1631,7 +1693,7 @@ cyberagent model set script mock/mock-code
 
 `model set` validates and persists the route before changing the in-memory Router, so a failed SQLite write cannot create a process-only route. Route selection does not automatically qualify the model. Root, Specialist, and read-only Fan-out use one Go-owned Harness preflight immediately before every Provider call; external models that have not passed the exact qualification are rejected before normal Agent execution.
 
-`provider price-import --file <path>` atomically installs one operator-authored `price_snapshot.v1` document as the active price table; `provider price-list` prints the import history newest first. Prices are operator configuration, never model output: a Provider response, README, Skill, or repository file can never reach the import surface. A same-content import replays idempotently, a new import rotates the active table, and an invalid or unknown-field document is rejected without changing state. The document bounds are 64 KiB, 512 unique provider/model entries, RFC3339 validity that must cover the import time and last at most one year, and integer micro-USD prices (1 USD = 1,000,000 micros). [`configs/prices.example.json`](../configs/prices.example.json) is a documentation-only example.
+`provider price-import --file <path>` atomically installs one operator-authored `price_snapshot.v1` document as the active price table; `provider price-list` prints the import history newest first. Prices are operator configuration, never model output: a Provider response, README, Skill, or repository file can never reach the import surface. A same-content import replays idempotently, a new import rotates the active table, and an invalid or unknown-field document is rejected without changing state. A document whose fingerprint matches an existing snapshot but whose validity window differs is rejected; changing the validity window requires a new snapshot id. The document bounds are 64 KiB, 512 unique provider/model entries, RFC3339 validity that must cover the import time and last at most one year, and integer micro-USD prices (1 USD = 1,000,000 micros). [`configs/prices.example.json`](../configs/prices.example.json) is a documentation-only example.
 
 Model receipts normalize `input_tokens` as the complete logical input. `cache_read_tokens` and `cache_creation_tokens` are disjoint subsets: Anthropic's uncached input is combined with its cache read/creation counters once, while OpenAI's inclusive input is not increased by its cache details. `cache_usage_reported` distinguishes absent details from an explicitly reported zero; `cache_creation_breakdown_known` distinguishes an exact 5-minute/1-hour creation split from an unknown TTL. Root, Specialist, failed calls with known usage, and context-compaction receipts retain these fields in the existing event ledger. Read-only fan-out terminal receipts retain their full usage too.
 
@@ -1907,7 +1969,7 @@ cyberagent project-config validate <path-to-config.yaml>
 cyberagent project-config show <path-to-config.yaml> --profile code --max-turns 100 --max-tool-calls 100
 ```
 
-The file uses `project_config.v1` (JSON schema in `configs/project-config.schema.json`, example in `configs/project-config.example.yaml`). It is untrusted input: it can only reduce the operator/process/policy limits, never widen them. `budget.max_turns`/`budget.max_tool_calls` must be strictly lower than the requested ceiling; `allowed_profiles` may only shrink the set; `read_only: true` forbids write-capable profiles (`code`/`script`); `exclude_paths` are workspace-relative paths without escapes; `skill_suggestions` use the signed Skill identity contract (`name@version`); `test_command_id`/`format_command_id` may only reference registered Tool Gateway typed action IDs — never Shell text. Unknown fields, duplicate keys, type errors, YAML aliases/anchors, files over 64 KiB, nesting deeper than 32, more than 4096 nodes, symlinks/junctions/reparse points, and oversized path lists all fail closed. Any widening attempt aborts Run creation with the offending field named.
+The file uses `project_config.v1` (JSON schema in `configs/project-config.schema.json`, example in `configs/project-config.example.yaml`). It is untrusted input: it can only reduce the operator/process/policy limits, never widen them. `budget.max_turns`/`budget.max_tool_calls` must be strictly lower than the requested ceiling; `allowed_profiles` may only shrink the set; `read_only: true` forbids write-capable profiles (`code`/`script`); `exclude_paths` are workspace-relative paths without escapes; `skill_suggestions` use the signed Skill identity contract (`name@version`); `test_command_id`/`format_command_id` may only reference registered Tool Gateway typed action IDs — never Shell text. `browser_limits` narrows the browser session budget (`max_origins`, `max_url_bytes`, `max_requests`, `max_response_bytes`, `max_download_bytes`, `timeout_ms`): zero or absent fields keep the builtin profile value, at least one positive bound is required, and widening values fail when the browser session plan is built (values equal to the profile ceiling are accepted as no-ops). The budget applies to the session-plan surfaces (Safe Web and the Full CDP products); the agent-managed browser tools run under their own runtime budget and are not affected by `browser_limits`. Unknown fields, duplicate keys, type errors, YAML aliases/anchors, files over 64 KiB, nesting deeper than 32, more than 4096 nodes, symlinks/junctions/reparse points, and oversized path lists all fail closed. Any widening attempt aborts Run creation with the offending field named (browser_limits widening aborts when the browser session plan is built).
 
 At Run creation the normalized effective view and its SHA-256 fingerprint are pinned into the Run config snapshot; editing `.prayu/config.yaml` afterwards never changes a running Run.
 
@@ -2031,6 +2093,38 @@ Use `cyberagent context instructions`, `cyberagent context memory ...`, and
 source explanations, drift, memory lifecycle, tree, and branch comparison. Complete commands,
 limits, threat model, privacy deletion semantics, and English/Chinese guidance are in
 [Project Instructions, Long-Term Memory, And Session Continuity](context-continuity.md).
+
+### Scaffold project instructions / 项目指令脚手架
+
+New workspaces have no project instructions until someone writes them. `context instructions
+scaffold` bootstraps the standard `AGENTS.md` the same deterministic, offline way Claude Code
+`/init` and Codex `/init` onboard a project — without any model call:
+
+```powershell
+cyberagent context instructions scaffold --workspace demo --print
+cyberagent context instructions scaffold --workspace demo
+cyberagent context instructions scaffold --workspace demo --target src/ui
+```
+
+The scaffold detects root markers only (`go.mod`, `package.json` and its lockfiles, `Cargo.toml`,
+`pyproject.toml`, `.github/workflows`, `.prayu/config.yaml`, `CLAUDE.md`, and other fixed entries),
+renders a fixed bilingual draft, and prints its SHA-256. Detection reads no file contents, so
+secrets cannot reach the draft, and the render is byte-for-byte deterministic. `--print` previews
+without writing; `--json` emits the full machine-readable result including the draft content.
+
+A writing scaffold never overwrites: it refuses when the target directory already contains
+`AGENTS.md` or `AGENTS.override.md` — including an empty `AGENTS.md`, which discovery rejects —
+and a preview stays available in that case. Scaffolding grants nothing: the draft itself states
+that project instructions are untrusted workflow guidance under the Ask/Auto/Full rules. Run
+`cyberagent context instructions --workspace <name>` afterwards to verify discovery.
+
+新工作区在有人手写指令之前没有任何项目指令。`context instructions scaffold` 以与 Claude Code
+`/init`、Codex `/init` 一致的引导目标，用离线、确定性、不调用模型的方式生成标准 `AGENTS.md`：
+只检测目标目录根部的固定标识文件（不读取内容，因此秘密不会进入草稿），渲染固定双语模板并输出
+SHA-256。`--print` 只预览不写入；`--json` 返回含草稿正文的完整结果。写入模式绝不覆盖：目标目录
+已存在 `AGENTS.md` 或 `AGENTS.override.md`（包括会被发现流程拒绝的空 `AGENTS.md`）时拒绝执行，
+此时仍可用 `--print` 预览。脚手架不授予任何权限，草稿本身写明项目指令是 Ask/Auto/Full 规则下的
+untrusted 工作流建议。写入后可用 `cyberagent context instructions --workspace <name>` 复核发现结果。
 
 The project Context panel also reviews source-bound experience candidates. Pending candidates
 remain outside later tasks until the operator confirms them. Configured memory is distinct from

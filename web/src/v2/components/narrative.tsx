@@ -97,7 +97,7 @@ function MessageTime({ createdAt }: { createdAt: string }) {
     aria-label={t("消息时间：", "Message time: ") + full}>{formats.short.format(date)}</time>;
 }
 
-function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, user = false, onCompose, loadText }: {
+function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, user = false, onCompose, loadText, model }: {
   text: string;
   createdAt: string;
   branchSourceID?: string;
@@ -105,6 +105,7 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
   user?: boolean;
   onCompose?: (text: string) => void;
   loadText?: () => Promise<string>;
+  model?: string;
 }) {
   const { t } = useLocale();
   const [copied, setCopied] = useState<"idle" | "success" | "error">("idle");
@@ -194,6 +195,7 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
       {branching ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <Split size={16} aria-hidden="true" />}
       <span className="v2-assistant-action-tooltip" aria-hidden="true">{branchLabel}</span>
     </button>
+    {model && <span className="v2-assistant-model" title={t("生成此回复的模型", "Model that produced this reply")}>{model}</span>}
     <MessageTime createdAt={createdAt} />
   </div>{branchError && <p className="v2-assistant-action-error" role="alert">{branchError}</p>}</>;
 }
@@ -274,7 +276,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
     {!entry.provisional && entry.changeSourceID && entry.runId && typeof client.threadChanges === "function" &&
       <V2TurnChanges client={client} threadID={threadID} runID={entry.runId} sourceEventID={entry.changeSourceID} />}
-    {!entry.provisional && <AssistantMessageActions text={entry.text} createdAt={entry.createdAt} branchSourceID={entry.branchSourceID} onBranch={onBranch} onCompose={onCompose} />}
+    {!entry.provisional && <AssistantMessageActions text={entry.text} createdAt={entry.createdAt} branchSourceID={entry.branchSourceID} onBranch={onBranch} onCompose={onCompose} model={entry.model} />}
   </li>;
   if (entry.kind === "activity") return <li className="v2-activity-turn">
     <V2ActivityGroup client={client} entry={entry} threadID={threadID} /></li>;

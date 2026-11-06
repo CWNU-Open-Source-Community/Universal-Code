@@ -32,8 +32,10 @@ const (
 func (a *API) workspaceRepositoryDiff(request *http.Request,
 	workspaceID string,
 ) (any, *Page, error) {
-	if err := rejectQuery(request.URL.Query()); err != nil {
-		return nil, nil, err
+	for key, values := range request.URL.Query() {
+		if key != "after" || len(values) != 1 || values[0] == "" {
+			return nil, nil, apperror.New(apperror.CodeInvalidArgument, "repository diff accepts one after path")
+		}
 	}
 	registered, err := a.store.GetWorkspaceInfo(request.Context(), workspaceID)
 	if err != nil {
@@ -44,7 +46,7 @@ func (a *API) workspaceRepositoryDiff(request *http.Request,
 			"workspace lookup returned a mismatched identity")
 	}
 	projection, err := repository.InspectDiff(request.Context(), registered.RootPath,
-		registered.ID)
+		registered.ID, repository.DiffOptions{After: request.URL.Query().Get("after")})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -55,12 +57,14 @@ func (a *API) workspaceRepositoryDiff(request *http.Request,
 			ContentState: item.ContentState, Patch: item.Patch, PatchBytes: item.PatchBytes,
 			AddedLines: item.AddedLines, DeletedLines: item.DeletedLines,
 			Redacted: item.Redacted, Truncated: item.Truncated,
+			StatisticsComplete: item.StatisticsComplete,
 		}
 	}
 	return RepositoryDiffView{
 		ProtocolVersion: projection.ProtocolVersion, WorkspaceID: projection.WorkspaceID,
 		Kind: projection.Kind, Available: projection.Available, BaseHead: projection.BaseHead,
 		Items: items, ReturnedCount: projection.ReturnedCount,
+		NextAfter:    projection.NextAfter,
 		OmittedCount: projection.OmittedCount, RedactionCount: projection.RedactionCount,
 		TotalPatchBytes: projection.TotalPatchBytes, Truncated: projection.Truncated,
 		ReadOnly: projection.ReadOnly, InstructionAuthorized: projection.InstructionAuthorized,

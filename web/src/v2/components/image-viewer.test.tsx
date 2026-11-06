@@ -83,6 +83,28 @@ it("copies the verified original PNG only after a click and reports success only
   expect(client.downloadWorkspaceImage).toHaveBeenCalledTimes(1);
 });
 
+it("reports a thumbnail copy rejection without asking to reload a valid image, and clears it after success", async () => {
+  const write = vi.fn().mockRejectedValueOnce(new DOMException("Clipboard write denied", "NotAllowedError"))
+    .mockResolvedValueOnce(undefined);
+  const contents = clipboard(write);
+  const client = fixture();
+  render(<V2ImagePreview client={client} images={[original]} />);
+  const trigger = screen.getByRole("button", { name: `预览图片 ${original.name}` });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  fireEvent.contextMenu(trigger);
+  fireEvent.click(screen.getByRole("menuitem", { name: "复制图片" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("浏览器未允许写入剪贴板");
+  expect(screen.queryByRole("button", { name: "重新读取图片" })).not.toBeInTheDocument();
+  expect(screen.queryByText("已复制图片")).not.toBeInTheDocument();
+  expect(trigger).toBeEnabled();
+  fireEvent.contextMenu(trigger);
+  fireEvent.click(screen.getByRole("menuitem", { name: "复制图片" }));
+  expect(await screen.findByText("已复制图片")).toHaveAttribute("role", "status");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(client.downloadWorkspaceImage).toHaveBeenCalledTimes(1);
+  expect(await contents[1]["image/png"]).toBe(png);
+});
+
 it("converts JPEG only for the clipboard and keeps the original download and dimensions", async () => {
   const jpeg = new Blob(["original JPEG bytes"], { type: "image/jpeg" });
   const image: WorkspaceImageAttachment = { ...original, mime_type: "image/jpeg", name: "原图.jpg" };

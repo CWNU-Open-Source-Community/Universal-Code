@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { readFileSync } from "node:fs";
+import { defaultPrayuReviewColors } from "./lib/appearance";
 
 const styles = readFileSync("src/styles.css", "utf8");
 const uncommentedStyles = styles.replace(/\/\*[\s\S]*?\*\//gu, "");
@@ -93,5 +94,13 @@ describe("product typography roles", () => {
     expect(declarationsFor(".safe-markdown table", "overflow-x")).toEqual(["auto"]);
     expect(declarationsFor(".safe-markdown table", "display")).toEqual(["block"]);
     expect(declarationsFor(".desktop-dialog h2", "text-overflow")).toEqual(["ellipsis"]);
+  });
+});
+
+describe("review color tokens", () => {
+  it.each(["light", "dark", "glass"] as const)("keeps the %s CSS tokens aligned with the appearance defaults", (theme) => {
+    const selector = `[data-prayu-theme="${theme}"]`;
+    expect(declarationsFor(selector, "--prayu-diff-add")).toEqual([defaultPrayuReviewColors[theme].add]);
+    expect(declarationsFor(selector, "--prayu-diff-delete")).toEqual([defaultPrayuReviewColors[theme].remove]);
   });
 });

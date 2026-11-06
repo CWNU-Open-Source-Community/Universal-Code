@@ -1,0 +1,78 @@
+```text
+Baseline: 21f56e6b390abf1c2a7de86f9ae8af68d34edb91
+Platform: Windows amd64; Go 1.26.10; CGO_ENABLED=1; existing WinLibs gcc
+Command: go test ./internal/application -run ^TestWorkflowFaultCancelRunConverges$ -count=1 -timeout=60s -v (environment unset)
+=== RUN   TestWorkflowFaultCancelRunConverges
+    workflow_fault_cancel_test.go:24: set UC_WORKFLOW_FAULT_REPRO=1 to run the workflow cancellation repro
+--- SKIP: TestWorkflowFaultCancelRunConverges (0.00s)
+PASS
+ok  	cyberagent-workbench/internal/application	0.169s
+Default exit: 0
+Command: UC_WORKFLOW_FAULT_REPRO=1 go test ./internal/application -run ^TestWorkflowFaultCancelRunConverges$ -count=1 -timeout=60s -v
+=== RUN   TestWorkflowFaultCancelRunConverges
+=== RUN   TestWorkflowFaultCancelRunConverges/normal_completion
+    workflow_fault_cancel_test.go:127: first_continue: RunDue ran=true error=<nil>
+    workflow_fault_cancel_test.go:127: first_continue: run=running workflow=running revision=3 reason="" step=pending child=ready active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:138: host_tick_1: RunDue ran=true error=<nil>
+    workflow_fault_cancel_test.go:138: host_tick_1: run=running workflow=running revision=4 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:138: host_tick_2: RunDue ran=true error=<nil>
+    workflow_fault_cancel_test.go:138: host_tick_2: run=running workflow=completed revision=5 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:138: host_tick_3: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:138: host_tick_3: run=running workflow=completed revision=5 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:144: database_reopened: run=running workflow=completed revision=5 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:146: reopened_host_tick_1: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:146: reopened_host_tick_1: run=running workflow=completed revision=5 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:146: reopened_host_tick_2: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:146: reopened_host_tick_2: run=running workflow=completed revision=5 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:146: reopened_host_tick_3: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:146: reopened_host_tick_3: run=running workflow=completed revision=5 reason="" step=completed child=completed active_attempt="" attempts=[continued finished] model_calls=2
+    workflow_fault_cancel_test.go:191: final: workflow=completed step=completed model_calls=2 total_tokens=10 lease_status=released lease_active=false command_jobs=0
+=== RUN   TestWorkflowFaultCancelRunConverges/cancel_between_rounds
+    workflow_fault_cancel_test.go:127: first_continue: RunDue ran=true error=<nil>
+    workflow_fault_cancel_test.go:127: first_continue: run=running workflow=running revision=3 reason="" step=pending child=ready active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:135: after_cancel: run=cancelled workflow=running revision=3 reason="" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:138: host_tick_1: RunDue ran=true error=<nil>
+    workflow_fault_cancel_test.go:138: host_tick_1: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:138: host_tick_2: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:138: host_tick_2: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:138: host_tick_3: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:138: host_tick_3: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:141: cancelled Run must settle its unfinished workflow, got "waiting"
+    workflow_fault_cancel_test.go:144: database_reopened: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:146: reopened_host_tick_1: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:146: reopened_host_tick_1: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:146: reopened_host_tick_2: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:146: reopened_host_tick_2: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:146: reopened_host_tick_3: RunDue ran=false error=<nil>
+    workflow_fault_cancel_test.go:146: reopened_host_tick_3: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:159: expired_host_tick_1: RunDue ran=true error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_host_tick_1: cause code=INTERNAL error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_host_tick_1: cause code=FAILED_PRECONDITION error=run run-20261105161248-608cde7533fa is terminal as cancelled
+    workflow_fault_cancel_test.go:159: host should settle the workflow without an error: code=INTERNAL err=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:159: expired_host_tick_1: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:159: expired_host_tick_2: RunDue ran=true error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_host_tick_2: cause code=INTERNAL error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_host_tick_2: cause code=FAILED_PRECONDITION error=run run-20261105161248-608cde7533fa is terminal as cancelled
+    workflow_fault_cancel_test.go:159: host should settle the workflow without an error: code=INTERNAL err=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:159: expired_host_tick_2: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:159: expired_host_tick_3: RunDue ran=true error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_host_tick_3: cause code=INTERNAL error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_host_tick_3: cause code=FAILED_PRECONDITION error=run run-20261105161248-608cde7533fa is terminal as cancelled
+    workflow_fault_cancel_test.go:159: host should settle the workflow without an error: code=INTERNAL err=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:159: expired_host_tick_3: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:162: expired_after_second_reopen: RunDue ran=true error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_after_second_reopen: cause code=INTERNAL error=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:103: expired_after_second_reopen: cause code=FAILED_PRECONDITION error=run run-20261105161248-608cde7533fa is terminal as cancelled
+    workflow_fault_cancel_test.go:162: host should settle the workflow without an error: code=INTERNAL err=workflow budget cleanup is incomplete
+    workflow_fault_cancel_test.go:162: expired_after_second_reopen: run=cancelled workflow=waiting revision=4 reason="Run is not running" step=pending child=cancelled active_attempt="" attempts=[continued] model_calls=1
+    workflow_fault_cancel_test.go:169: workflow should have settled, got status="waiting"
+    workflow_fault_cancel_test.go:173: workflow step should have settled: found=true status="pending" err=<nil>
+    workflow_fault_cancel_test.go:191: final: workflow=waiting step=pending model_calls=1 total_tokens=5 lease_status=released lease_active=false command_jobs=0
+--- FAIL: TestWorkflowFaultCancelRunConverges (4.14s)
+    --- PASS: TestWorkflowFaultCancelRunConverges/normal_completion (0.61s)
+    --- FAIL: TestWorkflowFaultCancelRunConverges/cancel_between_rounds (3.53s)
+FAIL
+FAIL	cyberagent-workbench/internal/application	4.255s
+FAIL
+Enabled exit: 1
+```

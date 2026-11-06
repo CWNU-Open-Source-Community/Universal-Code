@@ -3,12 +3,15 @@ package application
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/projectconfig"
+	"encoding/json"
 )
 
 // BrowserRuntimeStore supplies the durable browser launch preparation, review,
@@ -103,6 +106,37 @@ func (s *BrowserRuntimeService) LaunchUIEvidence(ctx context.Context,
 	return s.launch(ctx, request, true)
 }
 
+// browserLimitsOverrideForRun decodes the run's pinned project config and
+// returns the operator-narrowed browser limits, if any. The stored snapshot is
+// the marshaled projectconfig.Effective; a missing, malformed, or absent
+// browser_limits section yields nil (keep the builtin profile limits).
+func browserLimitsOverrideForRun(run domain.Run) *browserruntime.ProfileLimits {
+	if len(run.Config.ProjectConfig) == 0 {
+		return nil
+	}
+	var effective projectconfig.Effective
+	if json.Unmarshal(run.Config.ProjectConfig, &effective) != nil {
+		// The pinned snapshot was validated and fingerprint-bound at Run
+		// creation, so reaching this branch means stored state was corrupted.
+		// The builtin profile limits are the safe fallback, but the operator's
+		// narrowing intent silently disappearing deserves a record.
+		slog.Warn("browser limits override snapshot is malformed; using the builtin profile limits", "run_id", run.ID)
+		return nil
+	}
+	if effective.BrowserLimits == nil {
+		return nil
+	}
+	limits := effective.BrowserLimits
+	return &browserruntime.ProfileLimits{
+		MaxOrigins:       limits.MaxOrigins,
+		MaxURLBytes:      limits.MaxURLBytes,
+		MaxRequests:      limits.MaxRequests,
+		MaxResponseBytes: limits.MaxResponseBytes,
+		MaxDownloadBytes: limits.MaxDownloadBytes,
+		TimeoutMS:        limits.TimeoutMS,
+	}
+}
+
 func (s *BrowserRuntimeService) launch(ctx context.Context,
 	request BrowserRuntimeLaunchRequest, uiEvidence bool,
 ) (*BrowserRuntimeHandle, error) {
@@ -148,6 +182,7 @@ func (s *BrowserRuntimeService) launch(ctx context.Context,
 	session, err := browserruntime.BuildSessionPlan(browserruntime.NewSessionPlanRequest{
 		SessionID: run.SessionID, RunID: run.ID, WorkspaceID: mission.WorkspaceID,
 		ProfileID: browserruntime.ProfileSafeWeb, Targets: []string{request.Target},
+		LimitsOverride: browserLimitsOverrideForRun(run),
 	})
 	if err != nil {
 		return nil, err

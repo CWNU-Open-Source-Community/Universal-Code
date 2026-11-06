@@ -106,7 +106,9 @@ export function ProjectDialog({ client, workspace, onClose, onSaved, returnFocus
             : editingPath ? <div className="v2-project-path-entry">
               <label>{t("项目文件夹路径", "Project folder path")}<input autoFocus autoComplete="off" disabled={busy} maxLength={4096}
                 onChange={(event) => setPathInput(event.target.value)} onKeyDown={(event) => {
-                  if (event.key === "Enter") { event.preventDefault(); addPath(); }
+                  if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  event.preventDefault();
+                  addPath();
                 }} placeholder={t("文件夹的完整路径", "Full folder path")} ref={path} spellCheck={false} value={pathInput} /></label>
               <p>{t("输入运行 Universal-Code 的电脑上的文件夹路径。", "Enter the folder path on the computer running Universal-Code.")}</p>
               <button disabled={!pathInput.trim() || busy} onClick={addPath} type="button"><FolderPlus aria-hidden="true" size={16} />{t("添加", "Add")}</button>

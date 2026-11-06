@@ -29,8 +29,10 @@ const (
 type windowsBackend struct{}
 
 type windowsProcess struct {
+	shell      ShellInfo
 	mu         sync.Mutex
 	closeOnce  sync.Once
+	reads      sync.WaitGroup
 	console    windows.Handle
 	inputWrite windows.Handle
 	outputRead windows.Handle
@@ -73,10 +75,11 @@ func (windowsBackend) Start(ctx context.Context,
 	if err != nil || attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 		return nil, ErrTerminalBoundary
 	}
-	shell, err := terminalShellPath()
+	shellInfo, err := resolveTerminalShell(request.ShellID)
 	if err != nil {
 		return nil, err
 	}
+	shell := shellInfo.Path
 
 	inputRead, inputWrite, err := createTerminalPipe()
 	if err != nil {
@@ -157,10 +160,11 @@ func (windowsBackend) Start(ctx context.Context,
 	if err != nil {
 		return nil, ErrTerminalBoundary
 	}
-	commandLinePointer, err := windows.UTF16PtrFromString(
-		windows.ComposeCommandLine([]string{
-			shell, "-NoLogo", "-NoProfile",
-		}))
+	arguments := []string{shell, "-NoLogo", "-NoProfile"}
+	if shellInfo.ID == "cmd" {
+		arguments = []string{shell, "/D"}
+	}
+	commandLinePointer, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(arguments))
 	if err != nil {
 		return nil, ErrTerminalBoundary
 	}
@@ -187,10 +191,13 @@ func (windowsBackend) Start(ctx context.Context,
 	closeConsole = false
 	closeJob = false
 	return &windowsProcess{
+		shell:   shellInfo,
 		console: console, inputWrite: inputWrite, outputRead: outputRead,
 		process: processInformation.Process, job: job,
 	}, nil
 }
+
+func (p *windowsProcess) ShellInfo() ShellInfo { return p.shell }
 
 func (p *windowsProcess) Boundary() ProcessBoundary {
 	return ProcessBoundary{
@@ -206,10 +213,14 @@ func (p *windowsProcess) Read(buffer []byte) (int, error) {
 	p.mu.Lock()
 	handle := p.outputRead
 	closed := p.closed
+	if !closed && handle != 0 {
+		p.reads.Add(1)
+	}
 	p.mu.Unlock()
 	if closed || handle == 0 {
 		return 0, ioEOF()
 	}
+	defer p.reads.Done()
 	var count uint32
 	err := windows.ReadFile(handle, buffer, &count, nil)
 	if errors.Is(err, windows.ERROR_BROKEN_PIPE) ||
@@ -307,6 +318,29 @@ func (p *windowsProcess) Close() error {
 				result = errors.Join(result, err)
 			}
 		}
+		// CloseHandle on a pipe with a synchronous ReadFile can wait forever
+		// while ConPTY still owns the writer. Keep draining its final frame on
+		// a separate goroutine until ClosePseudoConsole breaks the channel.
+		// The normal reader stops accepting new reads once closed is set.
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			if output == 0 {
+				return
+			}
+			buffer := make([]byte, 32*1024)
+			for {
+				var count uint32
+				if err := windows.ReadFile(output, buffer, &count, nil); err != nil || count == 0 {
+					return
+				}
+			}
+		}()
+		if console != 0 {
+			windows.ClosePseudoConsole(console)
+		}
+		<-drained
+		p.reads.Wait()
 		if input != 0 {
 			result = errors.Join(result, windows.CloseHandle(input))
 		}
@@ -316,9 +350,6 @@ func (p *windowsProcess) Close() error {
 		if process != 0 {
 			_, _ = waitTerminalHandle(process, 2*time.Second)
 			result = errors.Join(result, windows.CloseHandle(process))
-		}
-		if console != 0 {
-			windows.ClosePseudoConsole(console)
 		}
 		if job != 0 {
 			result = errors.Join(result, windows.CloseHandle(job))

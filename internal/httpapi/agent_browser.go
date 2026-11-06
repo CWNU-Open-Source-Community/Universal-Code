@@ -4,20 +4,29 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/redact"
 )
 
 const AgentBrowserStatusPathTemplate = "/api/v1/runs/{run_id}/agent-browser"
 const AgentBrowserClosePathTemplate = AgentBrowserStatusPathTemplate + "/close"
 const AgentBrowserScreenshotPathTemplate = AgentBrowserStatusPathTemplate + "/screenshot"
+const AgentBrowserScreencastPathTemplate = AgentBrowserStatusPathTemplate + "/screencast"
+const AgentBrowserDownloadsPathTemplate = AgentBrowserStatusPathTemplate + "/downloads"
+const AgentBrowserDownloadReleasePathTemplate = AgentBrowserDownloadsPathTemplate + "/{download_guid}/release"
+
+const agentBrowserScreencastHeartbeat = 15 * time.Second
 
 type AgentBrowserController interface {
 	GetStatus(context.Context, string) (application.AgentBrowserView, error)
@@ -26,6 +35,43 @@ type AgentBrowserController interface {
 
 type agentBrowserScreenshotReader interface {
 	ReadScreenshot(context.Context, string, string, string) ([]byte, string, error)
+}
+
+type agentBrowserDownloadsController interface {
+	BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error)
+	ReleaseBrowserDownload(context.Context, string, string, application.AgentBrowserDownloadRelease) (string,
+		browserruntime.AgentBrowserDownloadReceipt, application.AgentBrowserDownloadApproval, error)
+}
+
+type AgentBrowserDownloadView struct {
+	GUID              string    `json:"guid"`
+	SuggestedFilename string    `json:"suggested_filename,omitempty"`
+	URL               string    `json:"url,omitempty"`
+	State             string    `json:"state"`
+	Bytes             int64     `json:"bytes,omitempty"`
+	SHA256            string    `json:"sha256,omitempty"`
+	StartedAt         time.Time `json:"started_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type AgentBrowserDownloadReleaseRequestView struct {
+	Version  string `json:"version"`
+	Operator string `json:"operator,omitempty"`
+}
+
+type AgentBrowserDownloadReleaseView struct {
+	Version    string                   `json:"version"`
+	RunID      string                   `json:"run_id"`
+	Locator    string                   `json:"locator"`
+	Receipt    AgentBrowserDownloadView `json:"receipt"`
+	Operator   string                   `json:"operator"`
+	ReleasedAt time.Time                `json:"released_at"`
+}
+
+func publicAgentBrowserDownload(value browserruntime.AgentBrowserDownloadReceipt) AgentBrowserDownloadView {
+	return AgentBrowserDownloadView{GUID: value.GUID, SuggestedFilename: value.SuggestedFilename,
+		URL: value.URL, State: value.State, Bytes: value.Bytes, SHA256: value.SHA256,
+		StartedAt: value.StartedAt, UpdatedAt: value.UpdatedAt}
 }
 
 type AgentBrowserScreenshotView struct {
@@ -230,4 +276,213 @@ func (a *API) serveAgentBrowserScreenshot(w http.ResponseWriter, r *http.Request
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
+}
+
+type agentBrowserScreencastStreamer interface {
+	StreamScreencast(context.Context, string, func(application.AgentBrowserScreencastFrameView) error) error
+}
+
+// AgentBrowserScreencastFrameView is one operator live-view SSE frame. The
+// projection re-validates every field against this Run before it leaves the
+// Go process and carries no authority, URL, or evidence identity.
+type AgentBrowserScreencastFrameView struct {
+	Version    string    `json:"version"`
+	RunID      string    `json:"run_id"`
+	SessionID  string    `json:"session_id"`
+	Generation uint64    `json:"generation"`
+	MediaType  string    `json:"media_type"`
+	Width      int       `json:"width"`
+	Height     int       `json:"height"`
+	Data       string    `json:"data"`
+	CapturedAt time.Time `json:"captured_at"`
+}
+
+const maxAgentBrowserScreencastFrameData = 700 * 1024
+
+func publicAgentBrowserScreencastFrame(value application.AgentBrowserScreencastFrameView,
+	runID string,
+) (AgentBrowserScreencastFrameView, error) {
+	if value.Version != application.AgentBrowserScreencastVersion || value.RunID != runID ||
+		value.MediaType != "image/jpeg" {
+		return AgentBrowserScreencastFrameView{}, apperror.New(apperror.CodeConflict, "Agent browser live view belongs to another execution")
+	}
+	if validatePathIdentity(value.SessionID) != nil || value.Width < 0 || value.Height < 0 ||
+		value.Width > 4096 || value.Height > 4096 || value.Data == "" ||
+		len(value.Data) > maxAgentBrowserScreencastFrameData ||
+		(value.CapturedAt.IsZero() || value.CapturedAt.After(time.Now().Add(time.Minute))) {
+		return AgentBrowserScreencastFrameView{}, apperror.New(apperror.CodeConflict, "Agent browser live view frame is invalid")
+	}
+	return AgentBrowserScreencastFrameView{Version: value.Version, RunID: runID, SessionID: value.SessionID,
+		Generation: value.Generation, MediaType: value.MediaType, Width: value.Width, Height: value.Height,
+		Data: value.Data, CapturedAt: value.CapturedAt}, nil
+}
+
+// serveAgentBrowserScreencast streams the operator-only live view as SSE. It
+// is visibility only: read-scoped, run-bound, launch-free, and it never
+// persists frames or touches the hashed screenshot evidence chain.
+func (a *API) serveAgentBrowserScreencast(w http.ResponseWriter, request *http.Request, requestID, runID string) {
+	streamer, ok := a.agentBrowserController.(agentBrowserScreencastStreamer)
+	if !ok {
+		a.writeError(w, requestID, apperror.New(apperror.CodeNotFound, "Agent browser live view unavailable"), http.StatusNotFound)
+		return
+	}
+	if !a.authorized(request, a.tokenHash) {
+		a.writeError(w, requestID, apperror.New(apperror.CodePolicyDenied, "valid bearer authorization is required"), http.StatusUnauthorized)
+		return
+	}
+	if request.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "Agent browser live view requires GET"), http.StatusMethodNotAllowed)
+		return
+	}
+	if validatePathIdentity(runID) != nil || request.ContentLength != 0 || len(request.TransferEncoding) != 0 {
+		a.writeError(w, requestID, apperror.New(apperror.CodeInvalidArgument, "invalid Agent browser live view request"), 0)
+		return
+	}
+	if err := rejectQuery(request.URL.Query()); err != nil {
+		a.writeError(w, requestID, err, 0)
+		return
+	}
+	if current, err := a.agentBrowserController.GetStatus(request.Context(), runID); err != nil {
+		a.writeError(w, requestID, err, 0)
+		return
+	} else if !current.Capabilities.Available {
+		a.writeError(w, requestID, apperror.New(apperror.CodeFailedPrecondition, "Agent browser session is not available"), http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	// Headers must be committed before the first flush; probing with Flush first
+	// would send the response without its event-stream content type.
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		return
+	}
+
+	var writeMu sync.Mutex
+	writeFrame := func(frame []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		// Every write re-arms a short deadline so the server's 30s write timeout
+		// cannot cut a healthy live view between heartbeats.
+		return writeEventStreamFrame(w, DefaultEventStreamWriteTimeout, frame)
+	}
+	emit := func(frame application.AgentBrowserScreencastFrameView) error {
+		view, err := publicAgentBrowserScreencastFrame(frame, runID)
+		if err != nil {
+			return err
+		}
+		data, err := json.Marshal(view)
+		if err != nil {
+			return err
+		}
+		payload := append([]byte("event: agent_browser.frame\ndata: "), data...)
+		return writeFrame(append(payload, '\n', '\n'))
+	}
+	done := make(chan error, 1)
+	go func() { done <- streamer.StreamScreencast(request.Context(), runID, emit) }()
+	heartbeat := time.NewTicker(agentBrowserScreencastHeartbeat)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) && request.Context().Err() == nil {
+				// A terminal but unclassified stream failure ends the SSE body
+				// without leaking backend internals; the client reconnects and
+				// re-reads the status projection.
+				_ = writeFrame([]byte("event: agent_browser.closed\ndata: {\"version\":\"agent_browser_screencast.v1\",\"reason\":\"ended\"}\n\n"))
+			}
+			return
+		case <-heartbeat.C:
+			if err := writeFrame([]byte(": keepalive\n\n")); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (a *API) serveAgentBrowserDownloads(writer http.ResponseWriter, request *http.Request, requestID, runID, releaseGUID string) {
+	if a.agentBrowserController == nil {
+		a.writeError(writer, requestID, apperror.New(apperror.CodeNotFound, "Agent browser is unavailable"), http.StatusNotFound)
+		return
+	}
+	// Mirrors the close surface: the bounded list reads with the API token,
+	// the operator release mutates with the control token.
+	method, token := http.MethodGet, a.tokenHash
+	if releaseGUID != "" {
+		method, token = http.MethodPost, a.controlTokenHash
+	}
+	if request.Method != method {
+		writer.Header().Set("Allow", method)
+		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "unsupported Agent browser downloads method"), http.StatusMethodNotAllowed)
+		return
+	}
+	if !a.authorized(request, token) {
+		a.writeError(writer, requestID, apperror.New(apperror.CodePolicyDenied, "valid bearer authorization is required"), http.StatusUnauthorized)
+		return
+	}
+	if err := validatePathIdentity(runID); err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	if err := rejectQuery(request.URL.Query()); err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	controller, ok := a.agentBrowserController.(agentBrowserDownloadsController)
+	if !ok {
+		a.writeError(writer, requestID, apperror.New(apperror.CodeUnavailable, "Agent browser downloads are unavailable"), http.StatusNotFound)
+		return
+	}
+	if releaseGUID == "" {
+		receipts, err := controller.BrowserDownloads(request.Context(), runID)
+		if err != nil {
+			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		views := make([]AgentBrowserDownloadView, 0, len(receipts))
+		for _, receipt := range receipts {
+			views = append(views, publicAgentBrowserDownload(receipt))
+		}
+		a.writeSuccess(writer, requestID, views, nil)
+		return
+	}
+	if err := validatePathIdentity(releaseGUID); err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	if err := validateJSONContentType(request.Header); err != nil {
+		a.writeError(writer, requestID, err, http.StatusUnsupportedMediaType)
+		return
+	}
+	var input AgentBrowserDownloadReleaseRequestView
+	if err := decodeFullCDPSessionRequest(request, "Agent browser download release", &input); err != nil {
+		a.writeFullCDPSessionRequestError(writer, requestID, err)
+		return
+	}
+	if input.Version != "agent_browser_download_release.v1" {
+		a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "Agent browser download release requires the exact protocol version"), 0)
+		return
+	}
+	// The release surface is control-plane authorized and that authorization
+	// carries no human identity: the recorded principal is the authorizing
+	// credential class, decided here on the server side, while the request
+	// body only declares a display name. Neither value is derived from the
+	// control credential itself, so no token or token hash is ever persisted.
+	locator, receipt, approval, err := controller.ReleaseBrowserDownload(request.Context(), runID, releaseGUID,
+		application.AgentBrowserDownloadRelease{
+			Principal: application.AgentBrowserDownloadReleasePrincipalControlPlane,
+			Operator:  input.Operator,
+		})
+	if err != nil {
+		a.writeError(writer, requestID, err, 0)
+		return
+	}
+	// operator and released_at come from the approval event the release left on
+	// disk, so a repeat release reports the approval that is actually recorded
+	// rather than the caller who replayed the request.
+	a.writeSuccess(writer, requestID, AgentBrowserDownloadReleaseView{Version: "agent_browser_download_release.v1", RunID: runID,
+		Locator: locator, Receipt: publicAgentBrowserDownload(receipt),
+		Operator: approval.DeclaredOperator, ReleasedAt: approval.ApprovedAt}, nil)
 }

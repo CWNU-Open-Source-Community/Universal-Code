@@ -1,19 +1,25 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveRestore, ArrowRight, BookOpen, Monitor, Search, Trash2, X } from "lucide-react";
+import { ArchiveRestore, ArrowRight, BookOpen, Search, Trash2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WebAccessMode, WorkspaceView } from "../../api/types";
 import {
   applyPrayuGlassSettings,
   applyPrayuTheme,
   defaultPrayuGlassSettings,
+  defaultPrayuReviewColors,
   prayuGlassPresets,
   readPrayuGlassSettings,
+  readPrayuReviewColors,
   readPrayuThemePreference,
   resetPrayuGlassSettings,
+  resetPrayuReviewColors,
+  savePrayuReviewColors,
+  usePrayuTheme,
   type PrayuGlassPreset,
   type PrayuGlassSettings,
+  type PrayuReviewColors,
   type PrayuThemePreference,
 } from "../../lib/appearance";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
@@ -35,16 +41,18 @@ import { V2ExecutionSettings } from "./execution-settings";
 import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2ProjectlessDirectorySettings } from "./projectless-directory-settings";
 import { V2WebAccessSettings } from "./web-access-settings";
+import { TypographySettingsPanel } from "./typography-settings";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
 import { ModelAvailabilitySettings } from "../../components/model-availability-dialog";
-import { V2AboutSettings, V2ExtensionSettings, V2InspectorPreferences, V2SkillSettings } from "./advanced-settings";
+import { V2AboutSettings, V2ExtensionSettings, V2RecordPreferences, V2SkillSettings } from "./advanced-settings";
 import "./settings.css";
 
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
 const SandboxEnvironmentPanel = lazy(() => import("../../components/sandbox-environment-panel").then((module) => ({ default: module.SandboxEnvironmentPanel })));
 const VerificationSettingsPanel = lazy(() => import("../../components/verification-settings-panel").then((module) => ({ default: module.VerificationSettingsPanel })));
+const TerminalSettingsPanel = lazy(() => import("../../components/terminal-settings-panel").then((module) => ({ default: module.TerminalSettingsPanel })));
 const UsageSettings = lazy(() => import("./usage-settings").then((module) => ({ default: module.UsageSettings })));
 
 function SettingRow({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
@@ -217,6 +225,11 @@ function AppearanceSettings() {
   const { t } = useLocale();
   const [theme, setTheme] = useState<PrayuThemePreference>(() => readPrayuThemePreference());
   const [glass, setGlass] = useState<PrayuGlassSettings>(() => readPrayuGlassSettings());
+  const appliedTheme = usePrayuTheme();
+  const [reviewColors, setReviewColors] = useState<PrayuReviewColors>(() => readPrayuReviewColors()[appliedTheme]);
+  useEffect(() => {
+    setReviewColors(readPrayuReviewColors()[appliedTheme]);
+  }, [appliedTheme]);
   const select = (next: PrayuThemePreference) => {
     setTheme(next);
     applyPrayuTheme(next);
@@ -243,6 +256,20 @@ function AppearanceSettings() {
     glass.frost === defaultPrayuGlassSettings.frost &&
     glass.brightness === defaultPrayuGlassSettings.brightness &&
     glass.glow === defaultPrayuGlassSettings.glow;
+  const updateReviewColor = (key: "add" | "remove", value: string) => {
+    setReviewColors(savePrayuReviewColors(appliedTheme, key === "add" ? { add: value } : { remove: value }));
+  };
+  const resetReviewColors = () => {
+    setReviewColors(resetPrayuReviewColors(appliedTheme));
+  };
+  const appliedThemeLabel = {
+    light: t("浅色", "Light"),
+    dark: t("深色", "Dark"),
+    glass: t("雾透", "Mist"),
+  }[appliedTheme];
+  const isDefaultReviewColors =
+    reviewColors.add === defaultPrayuReviewColors[appliedTheme].add &&
+    reviewColors.remove === defaultPrayuReviewColors[appliedTheme].remove;
   return <><h1>{t("外观", "Appearance")}</h1><section className="v2-settings-section"><h2>{t("主题与材质", "Theme & materials")}</h2>
     <div className="v2-settings-card v2-appearance-card">
       <div className="v2-theme-options" role="group" aria-label={t("应用主题", "App theme")}>
@@ -256,6 +283,28 @@ function AppearanceSettings() {
         </button>)}</div>
       <p>{t("系统模式随设备设置切换浅色与深色。雾透采用灰蓝透色与轻盈的磨砂质感；深色使用深灰玻璃材质。开启系统的「降低透明度」后，界面会使用清晰的实色背景。", "System follows your device’s light or dark appearance. Mist combines a muted blue-gray tint with light frosted glass; Dark uses dark gray glass. Enable Reduce transparency in your system settings to use solid backgrounds.")}</p>
     </div></section>
+    <section className="v2-settings-section" aria-label={t("审阅配色", "Review colors")}>
+      <h2>{t("审阅配色", "Review colors")}</h2>
+      <div className="v2-settings-card">
+        <SettingRow detail={t(`新增行与 + 符号按当前${appliedThemeLabel}主题调和；修改立即生效。`, `Added lines and the + marker follow the current ${appliedThemeLabel.toLowerCase()} theme; changes apply immediately.`)} title={t("新增色", "Added color")}>
+          <label className="v2-review-color-control">
+            <input type="color" aria-label={t("新增色", "Added color")} value={reviewColors.add}
+              onChange={(event) => updateReviewColor("add", event.currentTarget.value)} />
+            <code>{reviewColors.add.toUpperCase()}</code>
+          </label>
+        </SettingRow>
+        <SettingRow detail={t(`删除行与 − 符号按当前${appliedThemeLabel}主题调和；修改立即生效。`, `Removed lines and the − marker follow the current ${appliedThemeLabel.toLowerCase()} theme; changes apply immediately.`)} title={t("删除色", "Removed color")}>
+          <label className="v2-review-color-control">
+            <input type="color" aria-label={t("删除色", "Removed color")} value={reviewColors.remove}
+              onChange={(event) => updateReviewColor("remove", event.currentTarget.value)} />
+            <code>{reviewColors.remove.toUpperCase()}</code>
+          </label>
+        </SettingRow>
+        <SettingRow detail={t("配色按浅色、深色与雾透分别保存；切换主题后自动载入对应颜色。", "Colors are saved separately for Light, Dark, and Mist, and load with the active theme.")} title={t("配色默认值", "Color defaults")}>
+          <button className="v2-setting-link" disabled={isDefaultReviewColors} onClick={resetReviewColors} type="button">{t("恢复默认", "Reset to defaults")}</button>
+        </SettingRow>
+      </div>
+    </section>
     {theme === "glass" && <section className="v2-settings-section" aria-label={t("雾透玻璃参数", "Mist glass tuning")}>
       <h2>{t("雾透材质", "Mist material")}</h2>
       <div className="v2-settings-card v2-glass-settings-card">
@@ -304,7 +353,8 @@ function AppearanceSettings() {
           <button className="v2-setting-link" disabled={isDefaultGlass} onClick={resetGlass} type="button">{t("还原默认值", "Reset to defaults")}</button>
         </SettingRow>
       </div>
-    </section>}</>;
+    </section>}
+    <TypographySettingsPanel /></>;
 }
 
 function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraft = false,
@@ -433,26 +483,8 @@ function ArchivedSettings({ client, onOpenThread }: { client: APIClient; onOpenT
   </>;
 }
 
-function PlaceholderSettings({ section, onOpenLegacy }: {
-  section: V2SettingsSection;
-  onOpenLegacy: (returnFocus: HTMLElement) => void;
-}) {
-  const { t } = useLocale();
-  const titles: Partial<Record<V2SettingsSection, string>> = {
-    voice: t("语音", "Voice"), keyboard: t("键盘快捷键", "Keyboard shortcuts"), plugins: t("插件", "Plugins"),
-    browser: t("浏览器", "Browser"), hooks: t("钩子", "Hooks"), git: "Git", environment: t("环境", "Environment"), worktrees: "Worktrees",
-  };
-  return <><h1>{titles[section] ?? t("设置", "Settings")}</h1><section className="v2-settings-section">
-    <div className="v2-settings-card v2-settings-placeholder"><Monitor aria-hidden="true" size={22} />
-      <strong>{t(`打开${titles[section] ?? "高级"}工具`, `Open ${titles[section] ?? "advanced"} tools`)}</strong>
-      <p>{t("进入 Inspector，查看详细设置和运行记录。", "Open Inspector to view detailed settings and run records.")}</p>
-      <button onClick={(event) => onOpenLegacy(event.currentTarget)}
-        type="button">{t("在 Inspector 中打开", "Open in Inspector")}</button></div>
-  </section></>;
-}
-
 export function V2Settings({ client, section, threadID, workspaces, onSelectSection,
-  onOpenInspector, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
+  onOpenHistory, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
   onModelReady, onOpenTask, sourceRunID, onOpenGithubReview, draftWorkspaceID, draftPhase, draftBudget,
   onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange,
   defaultWebAccessMode = "rules", defaultWebAccessTargets = [], onDefaultWebAccessChange,
@@ -476,7 +508,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   defaultWebAccessMode?: WebAccessMode;
   defaultWebAccessTargets?: string[];
   onDefaultWebAccessChange?: (mode: WebAccessMode, targets: string[]) => void;
-  onOpenInspector: (returnFocus?: HTMLElement | null) => void;
+  onOpenHistory: (returnFocus?: HTMLElement | null) => void;
   prepareModelForDraft?: boolean;
   modelSetupToken?: string;
   onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
@@ -504,9 +536,9 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
         <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />
       </Suspense>}
-      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("检测用户安装，保存下次启动配置，再回到任务选择编码环境。", "Detect installed environments, save settings for the next startup, then return to your task to choose a coding environment.")}</p>
+      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("管理执行环境、内置终端与验证功能。各项设置下方会说明生效时间。", "Manage execution environments, the integrated terminal, and verification features. Each setting explains when it takes effect.")}</p>
         <Suspense fallback={<p role="status">{t("正在加载执行环境设置…", "Loading execution environment settings…")}</p>}><SandboxEnvironmentPanel client={client} />
-          <VerificationSettingsPanel client={client} /></Suspense></>}
+          <TerminalSettingsPanel /><VerificationSettingsPanel client={client} /></Suspense></>}
       {section === "connections" && <ConnectionsSettings client={client} threadID={threadID} sourceRunID={sourceRunID}
         onOpenGithubReview={onOpenGithubReview} onOpenTask={onOpenTask} onSelect={onSelectSection} />}
       {section === "task-configuration" && <Suspense fallback={<p role="status">{t("正在加载任务配置…", "Loading task configuration…")}</p>}>
@@ -526,10 +558,10 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {(section === "shortcuts" || section === "keyboard") && <div className="v2-shared-settings">
         <V2KeyboardSettings />
       </div>}
-      {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
-      {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",
+      {section === "records" && <V2RecordPreferences onOpenHistory={onOpenHistory} />}
+      {!(["general", "permissions", "appearance", "archived", "models", "records", "extensions", "plugins",
         "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration", "usage"] as V2SettingsSection[])
-        .includes(section) && <PlaceholderSettings onOpenLegacy={onOpenInspector} section={section} />}
+        .includes(section) && <p role="alert">{t("设置项不可用。", "This setting is unavailable.")}</p>}
     </div></div>
   </main>;
 }

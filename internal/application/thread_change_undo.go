@@ -144,6 +144,7 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 		return r, err
 	}
 	digest := threadUndoDigest(threadID, request.SourceEventID)
+	plannedTxID := "thread-undo-" + digest[:40]
 	t, found, err := s.store.GetWorkspaceCheckpointTransactionByOperation(ctx, digest)
 	if err != nil {
 		return r, apperror.Normalize(err)
@@ -185,7 +186,7 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 	if thread.Status != domain.ThreadActive {
 		return threadUndoBlocked(r, "run_busy"), nil
 	}
-	if err := s.store.CheckThreadChangeUndoIdle(ctx, threadID, run.ID, t.ID); err != nil {
+	if err := s.store.CheckThreadChangeUndoIdle(ctx, threadID, run.ID, plannedTxID); err != nil {
 		return threadUndoBlocked(r, "run_busy"), nil
 	}
 	mode, err := s.store.GetRunMode(ctx, run.ID)
@@ -250,7 +251,7 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 		}
 	}
 	now := time.Now().UTC()
-	t = workspacecheckpoint.Transaction{ID: "thread-undo-" + digest[:40], ProtocolVersion: workspacecheckpoint.ProtocolVersion, OperationKeyDigest: digest,
+	t = workspacecheckpoint.Transaction{ID: plannedTxID, ProtocolVersion: workspacecheckpoint.ProtocolVersion, OperationKeyDigest: digest,
 		RequestFingerprint: runmutation.Fingerprint(ThreadChangeUndoVersion, threadID, request.SourceEventID, run.ID, files.Workspace.ID), RunID: run.ID, WorkspaceID: files.Workspace.ID,
 		Kind: workspacecheckpoint.TransactionUndo, TriggerReceiptID: workspacecheckpoint.ThreadUndoReceiptPrefix + request.SourceEventID,
 		BeforeCheckpointID: before.Checkpoint.ID, TargetCheckpointID: target.Checkpoint.ID, Status: workspacecheckpoint.TransactionPrepared,

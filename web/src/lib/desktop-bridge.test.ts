@@ -119,6 +119,16 @@ describe("desktop native bridge", () => {
     delete window.go;
   });
 
+  it("uses only the public message from native errors", async () => {
+    const { desktopErrorMessage } = await import("./desktop-bridge");
+    const message = "File actions support files up to 5 MiB";
+    expect(desktopErrorMessage(new Error(message))).toBe(message);
+    expect(desktopErrorMessage({ code: "RESOURCE_EXHAUSTED", message, cause: "private cause", stack: "private stack" })).toBe(message);
+    for (const value of [{ code: "INTERNAL", cause: "private cause" }, { message: { detail: "private detail" } }, { message: "  ", stack: "private stack" }]) {
+      expect(desktopErrorMessage(value)).toBe("Desktop operation failed");
+    }
+  });
+
   it("saves only the confirmed verification choices and restarts through a separate fixed request", async () => {
     const initial = verificationView();
     const saved = verificationView(true);
@@ -1043,6 +1053,15 @@ describe("desktop native bridge", () => {
       .resolves.toMatchObject({ data_base64: "b2s=", data_bytes: 2 });
     await expect(module.writeDesktopUserTerminal(session.session_id, "ok"))
       .resolves.toMatchObject({ bytes_written: 2 });
+    const maximumPaste = "中".repeat(5461) + "a";
+    write.mockResolvedValueOnce({
+      protocol_version: "desktop_user_terminal.v1", session_id: session.session_id, bytes_written: 16 * 1024,
+    });
+    await expect(module.writeDesktopUserTerminal(session.session_id, maximumPaste))
+      .resolves.toMatchObject({ bytes_written: 16 * 1024 });
+    await expect(module.writeDesktopUserTerminal(session.session_id, maximumPaste + "a"))
+      .rejects.toThrow("input was rejected");
+    expect(write).toHaveBeenCalledTimes(2);
     await expect(module.resizeDesktopUserTerminal(session.session_id, 100, 30))
       .resolves.toBeUndefined();
     await expect(module.closeDesktopUserTerminal(session.session_id))
@@ -1063,6 +1082,15 @@ describe("desktop native bridge", () => {
     });
     await expect(module.readDesktopUserTerminal(session.session_id, 0))
       .rejects.toThrow("output was rejected");
+    for (const state of ["starting", "closed"]) {
+      get.mockResolvedValueOnce({ ...session, state });
+      await expect(module.getDesktopUserTerminal(session.session_id)).resolves.toMatchObject({ state });
+      read.mockResolvedValueOnce({ protocol_version: "desktop_user_terminal.v1", session_id: session.session_id,
+        base_cursor: 0, next_cursor: 0, data_base64: "", data_bytes: 0, dropped: false, state });
+      await expect(module.readDesktopUserTerminal(session.session_id, 0)).resolves.toMatchObject({ state });
+    }
+    get.mockResolvedValueOnce({ ...session, state: "invented" });
+    await expect(module.getDesktopUserTerminal(session.session_id)).rejects.toThrow("rejected");
   });
 
   it("grants only a bounded process-local Full terminal Agent-input lease", async () => {

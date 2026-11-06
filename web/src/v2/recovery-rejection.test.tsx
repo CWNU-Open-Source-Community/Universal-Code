@@ -14,7 +14,7 @@ vi.mock("../hooks/use-public-model-stream", () => ({ usePublicModelStream: () =>
 vi.mock("./components/permission-control", () => ({ V2PermissionControl: () => null }));
 vi.mock("./components/run-network-authority-control", () => ({ V2RunNetworkAuthorityControl: () => null }));
 vi.mock("./components/model-route-control", () => ({ V2ModelRouteControl: () => null }));
-vi.mock("./components/inspector", () => ({ V2Inspector: () => null }));
+vi.mock("./components/execution-records", () => ({ V2ExecutionRecords: () => null }));
 
 const scope = `ds1_${"c".repeat(64)}`;
 const workspace = { id: "workspace-rejection", name: "Rejection fixture" } as WorkspaceView;

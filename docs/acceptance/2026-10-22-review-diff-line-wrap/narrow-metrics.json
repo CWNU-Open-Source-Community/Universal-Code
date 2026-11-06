@@ -1,0 +1,50 @@
+{
+  "protocol_version": "traverse_visual_diff.v1",
+  "name": "narrow",
+  "baseline": {
+    "file": "before-narrow.png",
+    "sha256": "be84800744c5f06a35df1939e6665ed82a56855a3f1a4bb67893e7f6096bf3a9",
+    "bytes": 54873,
+    "width": 390,
+    "height": 844
+  },
+  "actual": {
+    "file": "after-narrow.png",
+    "sha256": "23b60c7c828f25ccbf7622602d4c7866dcce681508e85e0c7fbb58e1e7f8962d",
+    "bytes": 58139,
+    "width": 390,
+    "height": 844
+  },
+  "dimensions_equal": true,
+  "rois": [
+    {
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "masks": [],
+  "compared_pixels": 329160,
+  "masked_pixels": 0,
+  "changed_pixels": 108576,
+  "diff_pixel_ratio": 0.3298578199052133,
+  "mean_absolute_error": 9.018651263823065,
+  "root_mean_squared_error": 29.683486692357015,
+  "maximum_channel_delta": 223,
+  "thresholds": {
+    "channel_threshold": 0,
+    "max_diff_ratio": 0,
+    "max_mean_absolute_error": 0
+  },
+  "passed": false,
+  "failure_reasons": [
+    "diff_ratio_exceeded",
+    "mean_absolute_error_exceeded"
+  ],
+  "outputs": {
+    "actual": "narrow-actual.png",
+    "diff": "narrow-diff.png",
+    "metrics": "narrow-metrics.json"
+  }
+}

@@ -3,9 +3,12 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -13,6 +16,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/webevidence"
 )
 
@@ -115,5 +119,218 @@ func TestAgentBrowserHTTPRejectsAmbiguousControl(t *testing.T) {
 	}
 	if stub.closes != 0 {
 		t.Fatal("invalid payload reached controller")
+	}
+}
+
+type agentBrowserScreencastStub struct {
+	agentBrowserHTTPStub
+	streams          int
+	lastRunID        string
+	frames           []application.AgentBrowserScreencastFrameView
+	releases         []application.AgentBrowserDownloadRelease
+	recordedApproval application.AgentBrowserDownloadApproval
+}
+
+func (s *agentBrowserScreencastStub) BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error) {
+	return []browserruntime.AgentBrowserDownloadReceipt{}, nil
+}
+
+func (s *agentBrowserScreencastStub) ReleaseBrowserDownload(_ context.Context, runID, guid string,
+	release application.AgentBrowserDownloadRelease,
+) (string, browserruntime.AgentBrowserDownloadReceipt, application.AgentBrowserDownloadApproval, error) {
+	s.releases = append(s.releases, release)
+	return "workspace:///.cyberagent-workbench/browser-artifacts/downloads/" + runID + "/" + guid,
+		browserruntime.AgentBrowserDownloadReceipt{GUID: guid, State: browserruntime.AgentBrowserDownloadCompleted},
+		s.recordedApproval, nil
+}
+
+// flushableRecorder lets the SSE handler flush through httptest.ResponseRecorder.
+type flushableRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (f *flushableRecorder) Flush() {}
+
+func (s *agentBrowserScreencastStub) StreamScreencast(ctx context.Context, runID string,
+	emit func(application.AgentBrowserScreencastFrameView) error,
+) error {
+	s.streams++
+	s.lastRunID = runID
+	frames := s.frames
+	if len(frames) == 0 {
+		frames = []application.AgentBrowserScreencastFrameView{{Version: application.AgentBrowserScreencastVersion,
+			RunID: s.view.RunID, SessionID: s.view.SessionID, Generation: s.view.Generation,
+			MediaType: "image/jpeg", Width: 1280, Height: 900,
+			Data: base64.StdEncoding.EncodeToString([]byte("live-frame")), CapturedAt: time.Now().UTC()}}
+	}
+	for _, frame := range frames {
+		if err := emit(frame); err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func TestAgentBrowserScreencastStreamsRunBoundFrames(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserScreencastStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "browser-live-session", Generation: 3, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	now := time.Now().UTC()
+	stub.frames = []application.AgentBrowserScreencastFrameView{
+		{Version: application.AgentBrowserScreencastVersion, RunID: fixture.run.ID, SessionID: "browser-live-session",
+			Generation: 3, MediaType: "image/jpeg", Width: 1280, Height: 900, Data: "aGVsbG8=", CapturedAt: now},
+		{Version: application.AgentBrowserScreencastVersion, RunID: "another-run", SessionID: "browser-live-session",
+			Generation: 3, MediaType: "image/jpeg", Width: 1280, Height: 900, Data: "cHJpdmF0ZQ==", CapturedAt: now},
+	}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/runs/" + fixture.run.ID + "/agent-browser/screencast"
+	denied := performRequest(t, api, http.MethodGet, path, "not-the-read-token", "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if denied.Code != http.StatusUnauthorized || stub.streams != 0 {
+		t.Fatal("live view streamed without a valid read token")
+	}
+	withQuery := performRequest(t, api, http.MethodGet, path+"?fps=30", testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if withQuery.Code != http.StatusBadRequest {
+		t.Fatal("live view accepted query parameters", withQuery.Code)
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+	request.Host = "127.0.0.1:8765"
+	request.RemoteAddr = "127.0.0.1:45000"
+	request.Header.Set("Authorization", "Bearer "+testAccessToken)
+	response := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	api.ServeHTTP(response, request)
+	if response.Code != http.StatusOK ||
+		!strings.HasPrefix(response.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatal("live view did not answer as an event stream", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+	}
+	body := response.Body.String()
+	if strings.Count(body, "event: agent_browser.frame") != 1 || !strings.Contains(body, `"data":"aGVsbG8="`) ||
+		strings.Contains(body, "cHJpdmF0ZQ==") || strings.Contains(body, "another-run") {
+		t.Fatal("live view leaked a foreign-run frame or dropped the owned one", body)
+	}
+	if !strings.Contains(body, "event: agent_browser.closed") {
+		t.Fatal("live view did not report a terminal close after the foreign frame was rejected", body)
+	}
+	if stub.streams != 1 || stub.lastRunID != fixture.run.ID {
+		t.Fatal("live view reached the controller with the wrong identity")
+	}
+}
+
+func TestAgentBrowserScreencastCommitsEventStreamHeaders(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserScreencastStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "browser-live-session", Generation: 3, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(api)
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodGet,
+		server.URL+"/api/v1/runs/"+fixture.run.ID+"/agent-browser/screencast", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Host = "127.0.0.1:8765"
+	request.Header.Set("Authorization", "Bearer "+testAccessToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A response recorder with a no-op Flush cannot observe that net/http
+	// commits headers at the first flush, before the handler sets Content-Type.
+	if response.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("live view headers were not committed as an event stream: %d %q", response.StatusCode,
+			response.Header.Get("Content-Type"))
+	}
+	if response.Header.Get("Cache-Control") != "no-store" ||
+		!strings.Contains(string(body), "event: agent_browser.frame") {
+		t.Fatalf("live view response lost caching or frame semantics: %q %s",
+			response.Header.Get("Cache-Control"), body)
+	}
+}
+
+func TestAgentBrowserScreencastUnavailableWithoutStreamer(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserHTTPStub{view: application.AgentBrowserView{Version: "agent_browser_status.v1",
+		RunID: fixture.run.ID, SessionID: "browser-http-session", State: "ready",
+		Capabilities: application.AgentBrowserCapabilities{Available: true}}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/runs/" + fixture.run.ID + "/agent-browser/screencast"
+	response := performRequest(t, api, http.MethodGet, path, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if response.Code != http.StatusNotFound {
+		t.Fatal("live view offered without a streaming controller", response.Code)
+	}
+}
+
+func TestAgentBrowserDownloadListAndReleaseEndpoint(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserScreencastStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "browser-download-session", Generation: 1, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	listPath := "/api/v1/runs/" + fixture.run.ID + "/agent-browser/downloads"
+	releasePath := listPath + "/" + guid + "/release"
+
+	list := performRequest(t, api, http.MethodGet, listPath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("downloads list status=%d body=%s", list.Code, list.Body.String())
+	}
+
+	// The approval event the release leaves behind names a different operator
+	// than this request: the response reports what is recorded, not who asked.
+	stub.recordedApproval = application.AgentBrowserDownloadApproval{
+		DeclaredOperator: "first-operator", ApprovedAt: time.Date(2026, 10, 30, 9, 8, 7, 0, time.UTC)}
+	release := performControlPathRequest(t, api, releasePath, "release-agent-browser-download", strings.NewReader(`{"version":"agent_browser_download_release.v1","operator":"openapi-operator"}`))
+	if release.Code != http.StatusOK {
+		t.Fatalf("release status=%d body=%s", release.Code, release.Body.String())
+	}
+	if !strings.Contains(release.Body.String(), `"locator":"workspace:///.cyberagent-workbench/browser-artifacts/downloads/`) {
+		t.Fatalf("release body: %s", release.Body.String())
+	}
+	if !strings.Contains(release.Body.String(), `"operator":"first-operator"`) ||
+		!strings.Contains(release.Body.String(), `"released_at":"2026-10-30T09:08:07Z"`) {
+		t.Fatalf("release response did not report the recorded approval: %s", release.Body.String())
+	}
+	if strings.Contains(release.Body.String(), `"operator":"openapi-operator"`) {
+		t.Fatalf("release response echoed the replaying caller: %s", release.Body.String())
+	}
+	// The control-plane authorization carries no human identity: the
+	// controller receives the server-derived principal and the caller-declared
+	// operator name as two separate values.
+	if len(stub.releases) != 1 ||
+		stub.releases[0].Principal != application.AgentBrowserDownloadReleasePrincipalControlPlane ||
+		stub.releases[0].Operator != "openapi-operator" ||
+		stub.releases[0].Principal == stub.releases[0].Operator {
+		t.Fatalf("release identity was not split into principal and declared operator: %+v", stub.releases)
+	}
+
+	denied := performRequest(t, api, http.MethodPost, releasePath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000",
+		strings.NewReader(`{"version":"agent_browser_download_release.v1"}`))
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("release accepted a read token: %d", denied.Code)
 	}
 }

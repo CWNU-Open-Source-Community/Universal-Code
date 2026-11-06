@@ -1,0 +1,37 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "8d9ce6ac918c0e142ac1089afa1022d85b750281",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/reply-model-attribution/README.md",
+    "docs/reviews/reply-model-attribution/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：模型归属全栈实现（runactivity/threadtranscript/httpapi/web 投影与徽标）及全部回归",
+    "review_delegate：OCR delegate 规则检查（Go 组：错误/API 契约、nil 与值语义、性能分配；TS/React 组；CSS 组）与独立全文复审"
+  ],
+  "summary": {
+    "total_git_changed_files": 13,
+    "review_scope_files": 11,
+    "ocr_selected_production": 5,
+    "manually_added_tests_and_generated": 6,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/runactivity/activity.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/threadtranscript/transcript.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/httpapi/views.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/v2/projection/narrative.ts", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/v2/components/narrative.tsx", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/v2/styles.css", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "docs/openapi.json", "coverage": "regenerated", "reviewer": "delegate" },
+    { "path": "web/src/api/schema.d.ts", "coverage": "regenerated", "reviewer": "delegate" },
+    { "path": "internal/runactivity/activity_test.go", "coverage": "full", "reviewer": "primary" },
+    { "path": "internal/threadtranscript/transcript_test.go", "coverage": "full", "reviewer": "primary" },
+    { "path": "web/src/v2/projection/narrative.test.ts", "coverage": "full", "reviewer": "primary" },
+    { "path": "web/src/v2/components/narrative.test.tsx", "coverage": "full", "reviewer": "primary" }
+  ]
+}

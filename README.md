@@ -11,18 +11,9 @@
 
   <p>
     <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white"></a>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/releases"><img alt="Release" src="https://img.shields.io/github/v/release/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=blue&logo=github"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/releases"><img alt="最新版本（含预览版）" src="https://img.shields.io/github/v/release/CWNU-Open-Source-Community/Universal-Code?include_prereleases&sort=date&label=version&style=flat-square&color=blue&logo=github"></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=green"></a>
-    <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blueviolet?style=flat-square">
-    <img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white">
-    <img alt="Node" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
-    <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black">
-    <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square"></a>
-  </p>
-  <p>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github&color=gold"></a>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github"></a>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/issues"><img alt="Issues" src="https://img.shields.io/github/issues/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=orange"></a>
+    <a href="#方式一下载预编译客户端"><img alt="支持 Windows 和 macOS" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-64748b?style=flat-square"></a>
   </p>
 </div>
 
@@ -42,13 +33,19 @@
 
 ### 方式一：下载预编译客户端
 
+<!-- public-downloads:start -->
+当前公开预览版：[**v1.0.0-preview.20261020**](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020)（2026-10-20 发布）。
+
 | 平台 | 下载与运行说明 |
 | :--- | :--- |
-| **Windows 10/11** | 当前 Actions 测试包及启动步骤见 [Windows 下载说明](docs/windows-release.md)。实际文件名为 `TraverseBoard.exe`，双击运行，需 Edge WebView2 Runtime。最新公开 Release 仍是 [2026-09-05 的旧预览](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview)。 |
-| **macOS (Apple Silicon / Intel)** | 从 [macOS 下载说明](docs/macos-release.md) 获取对应架构的 Actions 预览 ZIP，解包后打开 `TraverseBoard.app`。当前仅有 ad-hoc 签名，未公证；公开 Release 尚无 Mac 包。 |
+| **Windows x64** | 下载 [TraverseBoard.exe](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/TraverseBoard.exe)，双击运行；需要 Edge WebView2 Runtime。详见 [Windows 下载说明](docs/windows-release.md)。 |
+| **macOS Apple Silicon / Intel** | 在 [Release Assets](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020) 中选择名称含 `macos-arm64`（M 系列）或 `macos-amd64`（Intel）的 `.dmg`，将 `TraverseBoard.app` 拖入 Applications。详见 [macOS 下载说明](docs/macos-release.md)。 |
 
-持续更新的候选入口为 [Desktop release 打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)。Actions 下载需要登录 GitHub，且有保留期限；对应版本、源码提交和到期时间见平台说明。
-测试包沿用历史文件名，窗口中的产品名为 Universal-Code。
+公开 Release 下载无需登录 GitHub，不受 Actions artifact 保留期限限制；可用同页的 [SHA256SUMS](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/SHA256SUMS) 核对文件。Windows EXE 未签名，Mac 包仅 ad-hoc 签名、未经 Apple 公证，首次启动可能被系统阻止。这是预览版，验证范围与已知问题以 Release 说明为准。
+<!-- public-downloads:end -->
+
+需要比公开预览更新的测试候选时，查看 [Desktop release 打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)，核对版本与源码提交。Actions 下载需要登录 GitHub，且会过期。
+文件保留历史名称，窗口中的产品名为 Universal-Code。
 
 ### 方式二：从源码构建运行
 

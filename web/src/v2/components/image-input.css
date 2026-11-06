@@ -7,6 +7,8 @@
 .v2-image-remove { position:absolute; right:-5px; top:-5px; display:grid; place-items:center; width:24px; height:24px; border:1px solid var(--v2-border-strong); border-radius:50%; background:var(--prayu-surface-solid); color:inherit; }
 .v2-image-remove:disabled { opacity:.45; }
 .v2-image-retry { font-size:12px; background:transparent; color:inherit; border:0; text-decoration:underline; }
+.v2-image-notice { display:block; margin-top:5px; line-height:1.5; overflow-wrap:anywhere; }
+.v2-image-notice[role="alert"] { color:var(--v2-danger); }
 .v2-image-overlay { position:fixed; inset:0; z-index:2000; display:grid; place-items:center; padding:24px; background:color-mix(in srgb, var(--prayu-primary-fg) 74%, transparent); }
 .v2-image-dialog { display:grid; grid-template-rows:auto minmax(0, 1fr) auto; width:min(1440px, 100%); height:min(960px, calc(100dvh - 48px)); min-width:0; border:1px solid var(--v2-border); border-radius:12px; background:var(--prayu-surface-solid); overflow:hidden; color:var(--v2-ink); box-shadow:0 20px 80px var(--prayu-glass-shadow); }
 .v2-image-viewer-header { display:flex; gap:10px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--v2-border); }

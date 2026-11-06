@@ -1,0 +1,11 @@
+.terminal-settings fieldset { border: 1px solid var(--prayu-border); border-radius: 16px; background: var(--prayu-glass-fill-strong); display: grid; gap: 16px; margin: 18px 0; min-width: 0; padding: 20px; }
+.terminal-settings label { display: grid; gap: 8px; min-width: 0; font-size: 14px; }
+.terminal-settings select, .terminal-settings input { width: 100%; max-width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--prayu-border); border-radius: 9px; padding: 9px 12px; color: var(--prayu-text); background: var(--prayu-surface-solid); font: inherit; }
+.terminal-settings p { color: var(--prayu-muted); font-size: 13px; line-height: 1.6; }
+.terminal-settings fieldset p { margin: 0; }
+.terminal-settings small { color: var(--prayu-muted); font-size: 12px; }
+.terminal-settings button { width: fit-content; max-width: 100%; border: 1px solid var(--prayu-border); border-radius: 9px; padding: 9px 14px; color: var(--prayu-text); background: var(--prayu-glass-fill-strong); font: inherit; font-size: 13px; cursor: pointer; }
+.terminal-settings button:disabled { opacity: .55; cursor: default; }
+.terminal-settings select:focus-visible, .terminal-settings input:focus-visible, .terminal-settings button:focus-visible { outline: 2px solid var(--prayu-text); outline-offset: 2px; }
+.terminal-shell-path { display: grid; gap: 4px; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .terminal-settings fieldset { padding: 14px; } }

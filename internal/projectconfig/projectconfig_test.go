@@ -190,3 +190,33 @@ func TestProjectConfigRejectsAnchorAndParentIndirection(t *testing.T) {
 		t.Fatal("project config followed an outside parent symlink")
 	}
 }
+
+func TestBrowserLimitsValidateAndNarrowPassthrough(t *testing.T) {
+	// At least one positive bound is required.
+	allZero := Config{Protocol: ProtocolVersion, BrowserLimits: &BrowserLimitsConfig{}}
+	if err := allZero.validate(); err == nil || !strings.Contains(err.Error(), "must narrow at least one") {
+		t.Fatalf("all-zero browser_limits accepted: %v", err)
+	}
+	negative := Config{Protocol: ProtocolVersion, BrowserLimits: &BrowserLimitsConfig{MaxRequests: -1}}
+	if err := negative.validate(); err == nil || !strings.Contains(err.Error(), "cannot be negative") {
+		t.Fatalf("negative browser_limits accepted: %v", err)
+	}
+
+	// The effective result carries the operator ceilings verbatim; the
+	// narrowing against the builtin profile happens when the session plan is
+	// built, where widening attempts become named errors.
+	config := Config{Protocol: ProtocolVersion,
+		BrowserLimits: &BrowserLimitsConfig{MaxOrigins: 4, MaxRequests: 200, TimeoutMS: 180000}}
+	effective, rejections, err := config.Narrow(Ceiling{AllowedProfiles: []string{"code"},
+		MaxTurns: 100, MaxToolCalls: 100, RegisteredCommands: map[string]struct{}{"test.go": {}}})
+	if err != nil || len(rejections) != 0 {
+		t.Fatalf("narrow: %v %v", rejections, err)
+	}
+	if effective.BrowserLimits == nil || effective.BrowserLimits.MaxOrigins != 4 ||
+		effective.BrowserLimits.MaxRequests != 200 || effective.BrowserLimits.TimeoutMS != 180000 {
+		t.Fatalf("browser limits passthrough lost: %+v", effective.BrowserLimits)
+	}
+	if effective.MaxTurns != 100 || effective.MaxToolCalls != 100 {
+		t.Fatalf("unrelated ceilings changed: %+v", effective)
+	}
+}

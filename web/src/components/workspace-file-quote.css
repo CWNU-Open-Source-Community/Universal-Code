@@ -1,0 +1,4 @@
+.workspace-file-quote { margin: 8px 0; color: var(--muted); font-size: 12px; }
+.workspace-file-quote > div, .workspace-file-quote > p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.workspace-file-quote > div { justify-content: space-between; }
+.workspace-file-quote > p { margin: 8px 0; }

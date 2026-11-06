@@ -1,38 +1,88 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, vi } from "vitest";
-import { UserTerminalPanel } from "./user-terminal-panel";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, vi } from "vitest";
+import { applyPrayuTheme } from "../lib/appearance";
+import { getThreadWorkspaceState, resetWorkspaceTabsMemoryCache, setWorkspaceTerminalSession,
+  useThreadWorkspaceState, workspaceTabsStorageKey } from "../v2/workspace-tabs";
+import { UserTerminalPanel, terminalXtermTheme } from "./user-terminal-panel";
 
 const terminalMocks = vi.hoisted(() => ({
+  instances: [] as Array<{
+    options: Record<string, unknown>;
+    select: (text: string) => void;
+    disposed: boolean;
+    selectionDisposed: boolean;
+    write: (data: Uint8Array) => void;
+  }>,
   agentEnabled: false,
+  settingsAvailable: false,
+  settings: vi.fn(),
   close: vi.fn(async () => undefined),
+  clipboardRead: vi.fn(async () => ""),
+  clipboardWrite: vi.fn(async (_text: string) => undefined),
+  emitData: (_data: string) => {},
+  fit: vi.fn(),
   get: vi.fn(),
   getAgent: vi.fn(),
   grantAgent: vi.fn(),
+  key: (_event: KeyboardEvent): boolean => true,
+  paste: vi.fn(),
+  output: vi.fn(),
   read: vi.fn(),
+  resize: vi.fn(async () => undefined),
   revokeAgent: vi.fn(async () => undefined),
+  terminalResize: vi.fn(),
   start: vi.fn(),
+  write: vi.fn(async () => ({ protocol_version: "desktop_user_terminal.v1", session_id: "unused", bytes_written: 1 })),
 }));
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
+    options: Record<string, unknown>;
+    selected = "";
+    changed = () => {};
+    disposed = false;
+    selectionDisposed = false;
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = options;
+      terminalMocks.instances.push(this);
+    }
+    select(text: string) { this.selected = text; this.changed(); }
+    getSelection() { return this.selected; }
+    clearSelection() { this.select(""); }
+    onSelectionChange(changed: () => void) {
+      this.changed = changed;
+      return { dispose: () => { this.selectionDisposed = true; this.changed = () => {}; } };
+    }
     cols = 120;
     rows = 32;
+    element = document.createElement("div");
     loadAddon() {}
-    open() {}
-    onData() {
+    open(host: HTMLElement) {
+      host.appendChild(this.element);
+      this.write.mockImplementation((_bytes: Uint8Array, callback?: () => void) => callback?.());
+      terminalMocks.output = this.write;
+      terminalMocks.terminalResize = this.resize;
+    }
+    onData(callback: (data: string) => void) {
+      terminalMocks.emitData = callback;
       return { dispose() {} };
     }
+    attachCustomKeyEventHandler(callback: (event: KeyboardEvent) => boolean) { terminalMocks.key = callback; }
+    paste(text: string) { terminalMocks.paste(text); terminalMocks.emitData(text); }
     clear() {}
-    dispose() {}
+    dispose() { this.disposed = true; }
     focus() {}
+    resize = vi.fn((columns: number, rows: number) => { this.cols = columns; this.rows = rows; });
     reset() {}
-    write() {}
+    write = vi.fn();
   },
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
-    fit() {}
+    fit = terminalMocks.fit;
   },
 }));
 
@@ -40,25 +90,51 @@ vi.mock("../lib/desktop-bridge", () => ({
   closeDesktopUserTerminal: terminalMocks.close,
   desktopDebugTerminalAgentInputEnabled: () => terminalMocks.agentEnabled,
   desktopErrorMessage: (value: unknown) => String(value),
+  desktopIsMacPlatform: () => false,
   desktopUserTerminalEnabled: () => true,
   getDesktopUserTerminal: terminalMocks.get,
   getDesktopDebugTerminalAgentInput: terminalMocks.getAgent,
   grantDesktopDebugTerminalAgentInput: terminalMocks.grantAgent,
   readDesktopUserTerminal: terminalMocks.read,
-  resizeDesktopUserTerminal: vi.fn(async () => undefined),
+  resizeDesktopUserTerminal: terminalMocks.resize,
   revokeDesktopDebugTerminalAgentInput: terminalMocks.revokeAgent,
   startDesktopUserTerminal: terminalMocks.start,
-  writeDesktopUserTerminal: vi.fn(async () => ({
-    protocol_version: "desktop_user_terminal.v1",
-    session_id: "unused",
-    bytes_written: 1,
-  })),
+  writeDesktopUserTerminal: terminalMocks.write,
+}));
+
+vi.mock("../lib/desktop-text-clipboard", () => ({
+  readDesktopClipboardText: terminalMocks.clipboardRead,
+  writeDesktopClipboardText: terminalMocks.clipboardWrite,
+}));
+
+vi.mock("../lib/desktop-terminal-settings", () => ({
+  desktopTerminalSettingsAvailable: () => terminalMocks.settingsAvailable,
+  getDesktopTerminalSettings: terminalMocks.settings,
+  terminalSettingsChanged: "uc-terminal-settings-changed",
 }));
 
 describe("UserTerminalPanel", () => {
+  let notifyResize: () => void;
+
   beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = () => callback([], this as unknown as ResizeObserver);
+      }
+      observe() {}
+      disconnect() {}
+    });
+    terminalMocks.fit.mockReset();
+    terminalMocks.clipboardRead.mockReset().mockResolvedValue("");
+    terminalMocks.clipboardWrite.mockReset().mockResolvedValue(undefined);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     terminalMocks.agentEnabled = false;
+    terminalMocks.settingsAvailable = false;
+    terminalMocks.settings.mockReset();
     vi.clearAllMocks();
+    terminalMocks.instances = [];
+    terminalMocks.get.mockImplementation(async (id: string) => ({ session_id: id, run_id: "source-run", state: "exited", output_base_cursor: 0 }));
+    terminalMocks.read.mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false, state: "exited" });
   });
 
   it("closes a terminal whose asynchronous start completes after the Run changed", async () => {
@@ -100,6 +176,317 @@ describe("UserTerminalPanel", () => {
     await waitFor(() => {
       expect(terminalMocks.close).toHaveBeenCalledWith("terminal-stale");
     });
+    expect(onSession).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const runningClipboardSession = (session_id = "terminal-clipboard", run_id = "run-1") => ({
+    session_id, run_id, state: "running", columns: 120, rows: 32, output_base_cursor: 0, output_next_cursor: 0,
+  });
+
+  async function renderClipboardTerminal() {
+    vi.useFakeTimers();
+    terminalMocks.get.mockReset().mockResolvedValue(runningClipboardSession());
+    terminalMocks.read.mockReset().mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false });
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-clipboard" onSession={onSession} />);
+    await act(async () => {});
+    return { view, onSession };
+  }
+
+  it("copies selected output without writing to the terminal and pastes through xterm", async () => {
+    await renderClipboardTerminal();
+    act(() => terminalMocks.instances[0].select("  selected output "));
+    terminalMocks.clipboardRead.mockResolvedValue("  中文\nnext ");
+    await act(async () => {
+      expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(false);
+    });
+    expect(terminalMocks.clipboardWrite).toHaveBeenCalledExactlyOnceWith("  selected output ");
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+    await act(async () => {
+      expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))).toBe(false);
+    });
+    expect(terminalMocks.paste).toHaveBeenCalledExactlyOnceWith("  中文\nnext ");
+    expect(terminalMocks.write).toHaveBeenCalledExactlyOnceWith("terminal-clipboard", "  中文\nnext ");
+  });
+
+  it("shows clipboard read and write failures without forwarding their keys", async () => {
+    await renderClipboardTerminal();
+    act(() => terminalMocks.instances[0].select("output"));
+    terminalMocks.clipboardWrite.mockRejectedValueOnce(new Error("copy denied"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Copy failed: Error: copy denied");
+    terminalMocks.clipboardRead.mockRejectedValueOnce(new Error("paste denied"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Paste failed: Error: paste denied");
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+    expect(terminalMocks.paste).not.toHaveBeenCalled();
+  });
+
+  it("can copy retained output after exit while refusing a paste", async () => {
+    await renderClipboardTerminal();
+    terminalMocks.get.mockResolvedValue({ ...runningClipboardSession(), state: "exited" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    act(() => terminalMocks.instances[0].select("final output"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true })); });
+    expect(terminalMocks.clipboardWrite).toHaveBeenCalledExactlyOnceWith("final output");
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Paste failed: Error: The terminal is not running");
+    expect(terminalMocks.clipboardRead).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+  });
+
+  it("shows rejected terminal input without truncating or retrying a paste", async () => {
+    await renderClipboardTerminal();
+    const text = "中".repeat(5462);
+    terminalMocks.clipboardRead.mockResolvedValueOnce(text);
+    terminalMocks.write.mockRejectedValueOnce(new Error("Desktop terminal input was rejected"));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    expect(screen.getByRole("status")).toHaveTextContent("Desktop terminal input was rejected");
+    expect(terminalMocks.paste).toHaveBeenCalledExactlyOnceWith(text);
+    expect(terminalMocks.write).toHaveBeenCalledExactlyOnceWith("terminal-clipboard", text);
+  });
+
+  it.each(["session", "run", "exit", "unmount"])("drops an asynchronous paste after %s changes", async (change) => {
+    const { view, onSession } = await renderClipboardTerminal();
+    let finishRead: (value: string) => void = () => {};
+    terminalMocks.clipboardRead.mockReturnValueOnce(new Promise((resolve) => { finishRead = resolve; }));
+    act(() => { terminalMocks.key(new KeyboardEvent("keydown", { key: "v", ctrlKey: true })); });
+    if (change === "unmount") {
+      view.unmount();
+    } else if (change === "exit") {
+      terminalMocks.get.mockResolvedValue({ ...runningClipboardSession(), state: "exited" });
+      await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    } else {
+      const sessionID = change === "session" ? "terminal-next" : "terminal-clipboard";
+      const runID = change === "run" ? "run-next" : "run-1";
+      terminalMocks.get.mockResolvedValue(runningClipboardSession(sessionID, runID));
+      view.rerender(<UserTerminalPanel runID={runID} sessionID={sessionID} onSession={onSession} />);
+      await act(async () => {});
+    }
+    await act(async () => { finishRead("stale paste"); });
+    expect(terminalMocks.paste).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+  });
+
+  it("fits unknown or exited sessions without resizing or answering replayed terminal queries", async () => {
+    let completeGet: (value: unknown) => void = () => {};
+    const cursorQuery = "\x1b[6n";
+    const cursorReply = "\x1b[1;1R";
+    const exited = {
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: cursorQuery.length,
+    };
+    terminalMocks.get.mockReset().mockResolvedValue(exited)
+      .mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    terminalMocks.read.mockReset().mockResolvedValue({
+      data_bytes: cursorQuery.length, data_base64: btoa(cursorQuery), next_cursor: cursorQuery.length, dropped: false,
+    });
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    const initialFits = terminalMocks.fit.mock.calls.length;
+    act(() => notifyResize());
+    await act(async () => { terminalMocks.emitData(cursorReply); });
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits);
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+
+    await act(async () => { completeGet(exited); });
+    expect(new TextDecoder().decode(terminalMocks.output.mock.calls[0][0])).toBe(cursorQuery);
+    await act(async () => { terminalMocks.emitData(cursorReply); });
+    act(() => notifyResize());
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits + 2);
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("syncs dimensions and forwards terminal replies only for the matching running session", async () => {
+    vi.useFakeTimers();
+    const cursorReply = "\x1b[1;1R";
+    const running = (session_id: string) => ({
+      session_id, run_id: "run-1", state: "running", output_base_cursor: 0, output_next_cursor: 0,
+      columns: 120, rows: 32,
+    });
+    let completeGet: (value: unknown) => void = () => {};
+    terminalMocks.get.mockReset().mockResolvedValue(running("terminal-first"))
+      .mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    terminalMocks.read.mockReset().mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false });
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-first" onSession={onSession} />);
+    act(() => notifyResize());
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    await act(async () => { completeGet(running("terminal-first")); });
+    // No further container resize is needed after the asynchronous session lookup.
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.resize).toHaveBeenLastCalledWith("terminal-first", 120, 32);
+    await act(async () => { terminalMocks.emitData(cursorReply); });
+    expect(terminalMocks.write).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.write).toHaveBeenLastCalledWith("terminal-first", cursorReply);
+
+    terminalMocks.get.mockResolvedValue(running("terminal-next"))
+      .mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    view.rerender(<UserTerminalPanel runID="run-1" sessionID="terminal-next" onSession={onSession} />);
+    act(() => notifyResize());
+    await act(async () => { terminalMocks.emitData(cursorReply); });
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.write).toHaveBeenCalledTimes(1);
+
+    await act(async () => { completeGet(running("terminal-next")); });
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.resize).toHaveBeenLastCalledWith("terminal-next", 120, 32);
+    await act(async () => { terminalMocks.emitData(cursorReply); });
+    expect(terminalMocks.write).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.write).toHaveBeenLastCalledWith("terminal-next", cursorReply);
+    act(() => notifyResize());
+    expect(terminalMocks.resize).toHaveBeenCalledTimes(3);
+  });
+
+  it("drains all retained output after exit, then stops polling", async () => {
+    vi.useFakeTimers();
+    const baseCursor = 123;
+    const firstPage = "x".repeat(65536);
+    const finalPage = "\r\nFINAL_BUILD_RESULT\r\n";
+    const output = firstPage + finalPage;
+    terminalMocks.get.mockReset().mockResolvedValue({
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      columns: 120, rows: 32,
+      output_base_cursor: baseCursor, output_next_cursor: baseCursor + output.length,
+    });
+    terminalMocks.read.mockReset().mockImplementation(async (_sessionID: string, cursor: number) => {
+      const data = output.slice(cursor - baseCursor, cursor - baseCursor + 65536);
+      return { data_bytes: data.length, data_base64: btoa(data), next_cursor: cursor + data.length, dropped: false };
+    });
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    await act(async () => {});
+    expect(terminalMocks.read).toHaveBeenNthCalledWith(1, "terminal-exited", baseCursor);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(terminalMocks.read).toHaveBeenNthCalledWith(2, "terminal-exited", baseCursor + firstPage.length);
+    const writtenPages = terminalMocks.output.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
+    expect(writtenPages).toEqual([firstPage, finalPage]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.output).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["read", "parse"])("stops replay when an in-flight %s completes after unmount", async (phase) => {
+    vi.useFakeTimers();
+    let completeRead: (value: unknown) => void = () => {};
+    let completeWrite = () => {};
+    terminalMocks.get.mockReset().mockResolvedValue({
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: 65540,
+    });
+    terminalMocks.read.mockReset()
+      .mockResolvedValueOnce({ data_bytes: 65536, data_base64: btoa("x".repeat(65536)), next_cursor: 65536, dropped: false })
+      .mockReturnValueOnce(new Promise((resolve) => { completeRead = resolve; }));
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    terminalMocks.output.mockImplementationOnce((_bytes: Uint8Array, callback: () => void) => callback())
+      .mockImplementationOnce((_bytes: Uint8Array, callback: () => void) => { completeWrite = callback; });
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
+    expect(terminalMocks.output).toHaveBeenCalledTimes(1);
+    const finalPage = { data_bytes: 4, data_base64: btoa("late"), next_cursor: 65540, dropped: false };
+    if (phase === "parse") await act(async () => { completeRead(finalPage); });
+    const writeCount = terminalMocks.output.mock.calls.length;
+    const getCount = terminalMocks.get.mock.calls.length;
+
+    view.unmount();
+    await act(async () => {
+      if (phase === "read") completeRead(finalPage);
+      else completeWrite();
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(terminalMocks.output).toHaveBeenCalledTimes(writeCount);
+    expect(terminalMocks.get).toHaveBeenCalledTimes(getCount);
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps backend dimensions through every parsed history page before fitting the container", async () => {
+    vi.useFakeTimers();
+    const initial = {
+      session_id: "terminal-running", run_id: "run-1", state: "running",
+      columns: 41, rows: 24, output_base_cursor: 0, output_next_cursor: 6,
+    };
+    terminalMocks.get.mockReset().mockResolvedValue({ ...initial, output_next_cursor: 9 })
+      .mockResolvedValueOnce(initial);
+    terminalMocks.read.mockReset()
+      .mockResolvedValueOnce({ data_bytes: 3, data_base64: btoa("one"), next_cursor: 3, dropped: false })
+      .mockResolvedValueOnce({ data_bytes: 3, data_base64: btoa("two"), next_cursor: 6, dropped: false })
+      .mockResolvedValueOnce({ data_bytes: 3, data_base64: btoa("new"), next_cursor: 9, dropped: false });
+    terminalMocks.fit.mockImplementation(() => terminalMocks.terminalResize(80, 24));
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-running" onSession={vi.fn()} />);
+    const parsed: Array<() => void> = [];
+    terminalMocks.output.mockImplementation((_bytes: Uint8Array, callback: () => void) => { parsed.push(callback); });
+    await act(async () => {});
+    const initialFits = terminalMocks.fit.mock.calls.length;
+    act(() => { notifyResize(); notifyResize(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits);
+    expect(terminalMocks.terminalResize).toHaveBeenLastCalledWith(41, 24);
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+
+    await act(async () => { parsed.shift()!(); await vi.advanceTimersByTimeAsync(120); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(2);
+    act(() => notifyResize());
+    expect(terminalMocks.terminalResize).toHaveBeenLastCalledWith(41, 24);
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits);
+
+    await act(async () => { parsed.shift()!(); });
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits + 1);
+    expect(terminalMocks.terminalResize).toHaveBeenLastCalledWith(80, 24);
+    expect(terminalMocks.resize).toHaveBeenLastCalledWith("terminal-running", 80, 24);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(terminalMocks.read).toHaveBeenCalledTimes(3);
+    act(() => notifyResize());
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(initialFits + 2);
+    await act(async () => { parsed.shift()!(); });
+  });
+
+  it.each(["lookup", "read"])("resumes container fitting after a replay %s error", async (phase) => {
+    terminalMocks.get.mockReset().mockResolvedValue({
+      session_id: "terminal-exited", run_id: "run-1", state: "exited",
+      columns: 41, rows: 24, output_base_cursor: 0, output_next_cursor: 10,
+    });
+    terminalMocks.read.mockReset().mockRejectedValue(new Error("replay failed"));
+    if (phase === "lookup") terminalMocks.get.mockRejectedValueOnce(new Error("lookup failed"));
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-exited" onSession={vi.fn()} />);
+    await act(async () => {});
+    const fitCount = terminalMocks.fit.mock.calls.length;
+    act(() => notifyResize());
+    expect(terminalMocks.fit).toHaveBeenCalledTimes(fitCount + 1);
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("failed");
+  });
+
+  it("shows shell state separately and keeps a terminal attached when ending it fails", async () => {
+    terminalMocks.get.mockResolvedValue({ session_id: "terminal-end", run_id: "run-1", state: "running", output_base_cursor: 0 });
+    terminalMocks.close.mockRejectedValueOnce(new Error("Process busy"));
+    const onSession = vi.fn();
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-end" onSession={onSession} />);
+    expect(await screen.findByText("Terminal connected")).toHaveAttribute("title", expect.stringContaining("not Agent activity"));
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Process busy");
+    expect(onSession).not.toHaveBeenCalled();
+  });
+
+  it("does not clear a replacement session after an earlier end completes", async () => {
+    let complete!: () => void;
+    terminalMocks.close.mockReturnValueOnce(new Promise<undefined>((resolve) => { complete = () => resolve(undefined); }));
+    const onSession = vi.fn();
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-old" onSession={onSession} />);
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    view.rerender(<UserTerminalPanel runID="run-1" sessionID="terminal-new" onSession={onSession} />);
+    await act(async () => { complete(); });
     expect(onSession).not.toHaveBeenCalled();
   });
 
@@ -164,4 +551,335 @@ describe("UserTerminalPanel", () => {
     });
     confirm.mockRestore();
   });
+
+  it("uses persisted full consent without another dialog and reflects disabled settings", async () => {
+    terminalMocks.agentEnabled = true;
+    terminalMocks.settingsAvailable = true;
+    const preferences = { revision: 1, settings: { agent_control: "full", manual_ttl_seconds: 60, default_shell: "cmd" } };
+    terminalMocks.settings.mockResolvedValue(preferences);
+    terminalMocks.getAgent.mockRejectedValue(new Error("no active binding"));
+    terminalMocks.get.mockResolvedValue({ session_id: "terminal-1", run_id: "run-1", state: "running", output_base_cursor: 0,
+      shell: { id: "cmd", name: "CMD", path: "C:\\Windows\\System32\\cmd.exe", version: "10.0", available: true } });
+    terminalMocks.read.mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false, state: "running" });
+    terminalMocks.grantAgent.mockResolvedValue({ binding_id: "binding-full", terminal_session_id: "terminal-1", expires_at: new Date(Date.now() + 900_000).toISOString() });
+    const confirm = vi.spyOn(globalThis, "confirm");
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Allow Agent control" }));
+    await screen.findByRole("button", { name: "Stop Agent control" });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByText("CMD")).toHaveAttribute("title", expect.stringContaining("cmd.exe"));
+    fireEvent.click(screen.getByRole("button", { name: "Stop Agent control" }));
+    await waitFor(() => expect(terminalMocks.revokeAgent).toHaveBeenCalledWith("binding-full"));
+    terminalMocks.settings.mockResolvedValue({ ...preferences, revision: 2, settings: { ...preferences.settings, agent_control: "disabled" } });
+    act(() => window.dispatchEvent(new Event("uc-terminal-settings-changed")));
+    await screen.findByText("Agent control disabled");
+    expect(screen.queryByRole("button", { name: "Allow Agent control" })).not.toBeInTheDocument();
+    act(() => terminalMocks.emitData("echo manual\r"));
+    await waitFor(() => expect(terminalMocks.write).toHaveBeenCalledWith("terminal-1", "echo manual\r"));
+    confirm.mockRestore();
+  });
+
+  it("keeps a completed grant when an overlapping status read returns late", async () => {
+    terminalMocks.agentEnabled = true;
+    terminalMocks.settingsAvailable = true;
+    terminalMocks.settings.mockResolvedValue({ settings: { agent_control: "full", manual_ttl_seconds: 300 } });
+    terminalMocks.getAgent.mockRejectedValue(new Error("no binding"));
+    terminalMocks.get.mockResolvedValue({ session_id: "terminal-1", run_id: "run-1", state: "running", output_base_cursor: 0 });
+    terminalMocks.read.mockResolvedValue({ data_bytes: 0, next_cursor: 0, dropped: false, state: "running" });
+    vi.useFakeTimers();
+    try {
+      await act(async () => { render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={vi.fn()} />); });
+      let completeGrant!: (value: unknown) => void;
+      let rejectRead!: (error: Error) => void;
+      terminalMocks.grantAgent.mockReturnValueOnce(new Promise((resolve) => { completeGrant = resolve; }));
+      terminalMocks.getAgent.mockReturnValueOnce(new Promise((_, reject) => { rejectRead = reject; }));
+      fireEvent.click(screen.getByRole("button", { name: "Allow Agent control" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      await act(async () => { completeGrant({ binding_id: "new-binding", terminal_session_id: "terminal-1", expires_at: new Date(Date.now() + 900_000).toISOString() }); });
+      await act(async () => { rejectRead(new Error("old no-binding response")); });
+      expect(screen.getByRole("button", { name: "Stop Agent control" })).toBeEnabled();
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it("quotes only the current selection with its actual source, preserving whitespace and Markdown fences", async () => {
+    const onQuote = vi.fn().mockReturnValue("added");
+    const onReturnToDraft = vi.fn();
+    render(<UserTerminalPanel runID="current-run" sessionID="terminal-1" onSession={vi.fn()}
+      onQuote={onQuote} onReturnToDraft={onReturnToDraft} />);
+    const button = screen.getByRole("button", { name: "Quote selection" });
+    expect(button).toBeDisabled();
+    act(() => terminalMocks.instances[0].select("old selection"));
+    await waitFor(() => expect(button).toBeEnabled());
+    const excerpt = "  build failed 中文\n\n```\n  final line  ";
+    act(() => terminalMocks.instances[0].select(excerpt));
+    await act(async () => { terminalMocks.key(new KeyboardEvent("keydown", { key: "c", ctrlKey: true })); });
+    expect(terminalMocks.clipboardWrite).toHaveBeenCalledExactlyOnceWith(excerpt);
+    expect(onQuote).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(onQuote).toHaveBeenCalledOnce();
+    const content = onQuote.mock.calls[0][0];
+    expect(content).toContain("Source run: source-run\nSource terminal: terminal-1");
+    expect(content).toContain(`\n\`\`\`\`text\n${excerpt}\n\`\`\`\``);
+    expect(content).not.toContain("current-run");
+    expect(content).not.toContain("old selection");
+    expect(button).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Not sent");
+    fireEvent.click(screen.getByRole("button", { name: "Return to chat draft" }));
+    expect(onReturnToDraft).toHaveBeenCalledOnce();
+    expect(terminalMocks.grantAgent).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+  });
+
+  it.each(["blocked", "unsaved"] as const)("handles a %s draft without losing a rejected selection or duplicating an accepted append", async (result) => {
+    const onQuote = vi.fn().mockReturnValue(result);
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={vi.fn()} onQuote={onQuote} />);
+    act(() => terminalMocks.instances[0].select("failure"));
+    const button = screen.getByRole("button", { name: "Quote selection" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    expect(screen.getByRole("alert")).toHaveTextContent(result === "blocked" ? "Could not append" : "local saving failed");
+    if (result === "blocked") {
+      expect(button).toBeEnabled();
+      onQuote.mockReturnValue("added");
+      fireEvent.click(button);
+      expect(onQuote).toHaveBeenCalledTimes(2);
+    } else {
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(onQuote).toHaveBeenCalledOnce();
+    }
+  });
+
+  it.each(["run", "session"] as const)("discards the old terminal and a late read on %s changes", async (changed) => {
+    let completeRead: (value: unknown) => void = () => {};
+    terminalMocks.read.mockReturnValueOnce(new Promise((resolve) => { completeRead = resolve; }));
+    const onSession = vi.fn(); const onQuote = vi.fn().mockReturnValue("added");
+    const view = render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={onSession} onQuote={onQuote} />);
+    await waitFor(() => expect(terminalMocks.read).toHaveBeenCalledOnce());
+    const oldTerminal = terminalMocks.instances[0];
+    act(() => oldTerminal.select("old output"));
+    expect(screen.getByRole("button", { name: "Quote selection" })).toBeEnabled();
+    view.rerender(<UserTerminalPanel runID={changed === "run" ? "run-2" : "run-1"}
+      sessionID={changed === "session" ? "terminal-2" : "terminal-1"} onSession={onSession} onQuote={onQuote} />);
+    expect(oldTerminal.disposed).toBe(true);
+    expect(oldTerminal.selectionDisposed).toBe(true);
+    await act(async () => completeRead({ data_bytes: 4, data_base64: btoa("late"), next_cursor: 4, dropped: false }));
+    const button = screen.getByRole("button", { name: "Quote selection" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onQuote).not.toHaveBeenCalled();
+    expect(terminalMocks.instances[1].write).not.toHaveBeenCalled();
+    view.unmount();
+    expect(terminalMocks.instances[1].selectionDisposed).toBe(true);
+  });
+
+  it("does not quote before source identity is loaded or if it does not match the displayed session", async () => {
+    let completeGet: (value: unknown) => void = () => {};
+    terminalMocks.get.mockReturnValueOnce(new Promise((resolve) => { completeGet = resolve; }));
+    const onQuote = vi.fn();
+    render(<UserTerminalPanel runID="run-1" sessionID="terminal-1" onSession={vi.fn()} onQuote={onQuote} />);
+    act(() => terminalMocks.instances[0].select("selected"));
+    const button = screen.getByRole("button", { name: "Quote selection" });
+    expect(button).toBeDisabled();
+    terminalMocks.get.mockResolvedValue({ session_id: "wrong-session", run_id: "wrong-run", state: "exited", output_base_cursor: 0 });
+    await act(async () => completeGet({ session_id: "wrong-session", run_id: "wrong-run", state: "exited", output_base_cursor: 0 }));
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onQuote).not.toHaveBeenCalled();
+  });
+
+  it("syncs xterm theme options with light, glass, and dark application themes", async () => {
+    try {
+      applyPrayuTheme("light");
+      render(<UserTerminalPanel runID="run-1" sessionID="" onSession={vi.fn()} />);
+      expect(terminalMocks.instances[0].options.theme).toEqual(terminalXtermTheme("light"));
+
+      act(() => {
+        applyPrayuTheme("glass");
+      });
+      await waitFor(() => {
+        expect(terminalMocks.instances[0].options.theme).toEqual(terminalXtermTheme("glass"));
+      });
+
+      act(() => {
+        applyPrayuTheme("dark");
+      });
+      await waitFor(() => {
+        expect(terminalMocks.instances[0].options.theme).toEqual(terminalXtermTheme("dark"));
+      });
+    } finally {
+      cleanup();
+      applyPrayuTheme("light");
+    }
+  });
+
+  it("allows Ctrl+Shift+F and Cmd+Shift+F full-view shortcuts to bubble past xterm", async () => {
+    await renderClipboardTerminal();
+    expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(terminalMocks.key(new KeyboardEvent("keydown", { key: "f", code: "KeyF", metaKey: true, shiftKey: true }))).toBe(false);
+    expect(terminalMocks.clipboardRead).not.toHaveBeenCalled();
+    expect(terminalMocks.clipboardWrite).not.toHaveBeenCalled();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+  });
+
+  it("offers explicit Restart without auto-running old commands when recovering an ended or restarted terminal", async () => {
+    terminalMocks.start.mockResolvedValueOnce({
+      protocol_version: "desktop_user_terminal.v1",
+      session_id: "terminal-restarted",
+      run_id: "run-1",
+      state: "running",
+      columns: 120,
+      rows: 32,
+      output_base_cursor: 0,
+      output_next_cursor: 0,
+      shell: { id: "pwsh", name: "PowerShell 7", path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe", version: "7.4.6" },
+    });
+    const onSession = vi.fn();
+    const onShellChange = vi.fn();
+    const view = render(
+      <UserTerminalPanel
+        onSession={onSession}
+        onShellChange={onShellChange}
+        recoverable
+        runID="run-1"
+        sessionID=""
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+    expect(screen.getByText("Previous session ended · commands are not rerun")).toBeInTheDocument();
+    const restartBtn = screen.getByRole("button", { name: "Restart" });
+    expect(terminalMocks.start).not.toHaveBeenCalled();
+
+    fireEvent.click(restartBtn);
+    await waitFor(() => {
+      expect(terminalMocks.start).toHaveBeenCalledWith("run-1", 120, 32, false);
+      expect(onSession).toHaveBeenCalledWith("terminal-restarted");
+      expect(onShellChange).toHaveBeenCalledWith("PowerShell 7");
+    });
+
+    terminalMocks.get.mockResolvedValueOnce({
+      session_id: "terminal-exited-2",
+      run_id: "run-1",
+      state: "exited",
+      columns: 120,
+      rows: 32,
+      output_base_cursor: 0,
+      output_next_cursor: 0,
+    });
+    view.rerender(<UserTerminalPanel onSession={onSession} recoverable runID="run-1" sessionID="terminal-exited-2" />);
+    expect(await screen.findByText("Process exited")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
+  });
+
+  it("clears the current session after its close succeeds", async () => {
+    terminalMocks.close.mockResolvedValueOnce(undefined);
+    const onSession = vi.fn();
+    render(<UserTerminalPanel runID="run-1" sessionID="sess-current" onSession={onSession} />);
+    fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
+    await waitFor(() => expect(onSession).toHaveBeenCalledExactlyOnceWith("", "sess-current"));
+    expect(terminalMocks.close).toHaveBeenCalledWith("sess-current");
+  });
+
+  it("keeps the replacement when the old close settles during its commit", async () => {
+    terminalMocks.get.mockImplementation(async (id: string) => ({
+      session_id: id, run_id: "run-1", state: "running", columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: 0,
+    }));
+    let resolveClose = () => {};
+    terminalMocks.close.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      resolveClose = () => resolve(undefined);
+    }));
+    let resolveCommit = () => {};
+    const committed = new Promise<void>((resolve) => { resolveCommit = resolve; });
+    const onSession = vi.fn();
+    function Probe({ sessionID }: { sessionID: string }) {
+      useLayoutEffect(() => {
+        if (sessionID === "sess-new") {
+          resolveClose();
+          resolveCommit();
+        }
+      }, [sessionID]);
+      return <UserTerminalPanel runID="run-1" sessionID={sessionID} onSession={onSession} />;
+    }
+
+    // RTL's rerender uses act(), which eagerly flushes passive cleanup and
+    // hides the gap between commit and that cleanup.
+    const reactEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    reactEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      root.render(<Probe sessionID="sess-old" />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "End terminal" })).toBeEnabled());
+      screen.getByRole("button", { name: "End terminal" }).click();
+      await waitFor(() => expect(terminalMocks.close).toHaveBeenCalledWith("sess-old"));
+      root.render(<Probe sessionID="sess-new" />);
+      await committed;
+      await Promise.resolve();
+      expect(onSession).not.toHaveBeenCalled();
+    } finally {
+      root.unmount();
+      container.remove();
+      reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    }
+  });
+
+  it("does not clear a replacement already written to the workspace store", async () => {
+    const threadID = "terminal-close-race";
+    terminalMocks.get.mockImplementation(async (id: string) => ({
+      session_id: id, run_id: "run-1", state: "running", columns: 120, rows: 32,
+      output_base_cursor: 0, output_next_cursor: 0,
+    }));
+    let resolveClose = () => {};
+    terminalMocks.close.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      resolveClose = () => resolve(undefined);
+    }));
+    const observed = vi.fn();
+    function Probe() {
+      const state = useThreadWorkspaceState(threadID);
+      return <UserTerminalPanel runID="run-1" sessionID={state.terminalSessionID}
+        onSession={(sessionID, expectedSessionID) => {
+          observed(sessionID, expectedSessionID);
+          setWorkspaceTerminalSession(threadID, sessionID, expectedSessionID);
+        }} />;
+    }
+    const reactEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    reactEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      setWorkspaceTerminalSession(threadID, "sess-old");
+      root.render(<Probe />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "End terminal" })).toBeEnabled());
+      screen.getByRole("button", { name: "End terminal" }).click();
+      await waitFor(() => expect(terminalMocks.close).toHaveBeenCalledWith("sess-old"));
+      resolveClose();
+      setWorkspaceTerminalSession(threadID, "sess-new");
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(getThreadWorkspaceState(threadID).terminalSessionID).toBe("sess-new");
+      expect(observed).toHaveBeenCalledWith("", "sess-old");
+      await waitFor(() => expect(terminalMocks.get).toHaveBeenCalledWith("sess-new"));
+      terminalMocks.close.mockResolvedValueOnce(undefined);
+      await waitFor(() => expect(screen.getByRole("button", { name: "End terminal" })).toBeEnabled());
+      screen.getByRole("button", { name: "End terminal" }).click();
+      await waitFor(() => expect(getThreadWorkspaceState(threadID).terminalSessionID).toBe(""));
+      expect(observed).toHaveBeenCalledWith("", "sess-new");
+    } finally {
+      root.unmount();
+      container.remove();
+      localStorage.removeItem(workspaceTabsStorageKey);
+      resetWorkspaceTabsMemoryCache();
+      reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    }
+  });
+
 });

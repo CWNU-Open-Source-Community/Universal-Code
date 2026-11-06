@@ -8,9 +8,22 @@ import type { PropsWithChildren } from "react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { V2Composer } from "./composer";
 import { useV2ThreadTurn, useV2ThreadSubmissions } from "../use-thread-turn";
-import { v2FileReferenceKey } from "./file-context";
+import { v2FileReferenceKey, withV2FileReference } from "./file-context";
+import type { WorkspaceExplorerView } from "../../api/types";
 
 const digest = "a".repeat(64);
+it("shares the four-file limit and same-path replacement across reference entry points", () => {
+  const files = Array.from({ length: 4 }, (_, index) => ({ id: `ref-${index}`, path: `${index}.md`, digest,
+    partial: false, redacted: false }));
+  const incoming = { path: "new.md", provenance: { content_sha256: "b".repeat(64) }, truncated: true, redaction_count: 1 } as WorkspaceExplorerView;
+  expect(() => withV2FileReference(files, incoming, "最多四个")).toThrow("最多四个");
+  expect(files).toHaveLength(4);
+  const replaced = withV2FileReference(files, { ...incoming, path: "2.md" }, "最多四个");
+  expect(replaced).toHaveLength(4);
+  expect(replaced.at(-1)).toMatchObject({ path: "2.md", digest: "b".repeat(64), partial: true, redacted: true });
+  expect(replaced.at(-1)?.id).not.toBe("ref-2");
+});
+
 function setup() {
   const workspaceExplore = vi.fn(async (_workspace: string, path: string) => ({
     protocol_version: "workspace_explorer.v1", workspace_id: "workspace-1", path,

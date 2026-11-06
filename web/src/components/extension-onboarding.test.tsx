@@ -152,6 +152,53 @@ it("registers MCP only on submit, reviews each pinned stage, and reads actual ca
   expect(screen.getByText(/在任务消息和证据中查看具体返回内容/)).toBeInTheDocument();
 });
 
+it("refreshes saved MCP health after rediscovery fails and clears errors after recovery", async () => {
+  const user = userEvent.setup();
+  const current = inventory();
+  current.mcp_servers = [mcpServer("enabled")];
+  const healthMessage = "Connection failed: token=[REDACTED]";
+  let inventoryReads = 0;
+  let rediscoveries = 0;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    const path = url.split("?")[0];
+    if (path.endsWith("/code-intel")) return respond({ ...emptyLSP, workspace_id: "project-one" });
+    if (init?.method !== "POST") {
+      expect(path).toBe("/api/v1/extensions");
+      expect(new URL(url, "http://localhost").searchParams.get("workspace_id")).toBe("project-one");
+      inventoryReads++;
+      return respond(current);
+    }
+    expect(path).toBe("/api/v1/extensions/mcp/first-mcp/refresh");
+    expect(JSON.parse(String(init.body))).toEqual({ version: "extension-control.v1" });
+    rediscoveries++;
+    if (rediscoveries === 1) {
+      current.mcp_servers = [{ ...mcpServer("enabled"), health: "unavailable", health_message: healthMessage }];
+      return new Response(JSON.stringify({ version: "api.v1", request_id: "refresh-failed",
+        error: { code: "UNAVAILABLE", message: "MCP server discovery failed" },
+      }), { status: 503, headers: { "Content-Type": "application/json" } });
+    }
+    current.mcp_servers = [mcpServer("enabled")];
+    return respond(current.mcp_servers[0]);
+  }));
+  mount(<ExtensionSettings client={new APIClient("read", "/api/v1", "control")}
+    selectedRunID="" selectedWorkspaceID="project-one" />);
+  const card = (await screen.findByText("First MCP")).closest("article")!;
+  expect(within(card).getByText("healthy")).toBeInTheDocument();
+  await user.click(within(card).getByRole("button", { name: "重新发现" }));
+  expect(await within(card).findByText("unavailable")).toBeInTheDocument();
+  expect(within(card).getByText(healthMessage)).toBeInTheDocument();
+  expect(screen.getByText("MCP server discovery failed")).toBeInTheDocument();
+  expect(inventoryReads).toBe(2);
+  expect(rediscoveries).toBe(1);
+
+  await user.click(within(card).getByRole("button", { name: "重新发现" }));
+  expect(await within(card).findByText("healthy")).toBeInTheDocument();
+  expect(screen.queryByText(healthMessage)).not.toBeInTheDocument();
+  expect(screen.queryByText("MCP server discovery failed")).not.toBeInTheDocument();
+  expect(inventoryReads).toBe(3);
+  expect(rediscoveries).toBe(2);
+});
+
 it("preserves the Plugin file and exact upload on failure, then requires separate untrusted review and enable", async () => {
   const user = userEvent.setup();
   vi.stubGlobal("crypto", webcrypto);

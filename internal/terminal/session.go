@@ -87,6 +87,7 @@ func (s SessionScope) Validate() error {
 }
 
 type StartRequest struct {
+	ShellID           string
 	ID                string
 	Scope             SessionScope
 	WorkspaceRoot     string
@@ -104,6 +105,7 @@ type StartRequest struct {
 }
 
 type BackendStartRequest struct {
+	ShellID       string
 	SessionID     string
 	WorkspaceRoot string
 	Columns       int
@@ -149,6 +151,7 @@ type LeaseRevoker interface {
 }
 
 type Session struct {
+	Shell                    *ShellInfo
 	ID                       string
 	ProtocolVersion          string
 	PolicyVersion            string
@@ -311,6 +314,7 @@ func (m *Manager) Start(ctx context.Context, request StartRequest) (Session, err
 		return Session{}, fmt.Errorf("%w: %v", ErrTerminalDenied, err)
 	}
 	process, err := m.backend.Start(ctx, BackendStartRequest{
+		ShellID:   request.ShellID,
 		SessionID: request.ID, WorkspaceRoot: request.WorkspaceRoot,
 		Columns: request.Columns, Rows: request.Rows,
 	})
@@ -344,6 +348,11 @@ func (m *Manager) Start(ctx context.Context, request StartRequest) (Session, err
 	entry := &sessionEntry{value: value, process: process, cancel: cancel,
 		authorizer: request.Authorizer, subject: subject,
 		startOperation: operation, authorizationRef: decision.AuthorizationRef,
+	}
+	if source, ok := process.(processShellInfo); ok {
+		shell := source.ShellInfo()
+		entry.value.Shell = &shell
+		value.Shell = &shell
 	}
 	if err := entry.value.Validate(); err != nil {
 		cancel()

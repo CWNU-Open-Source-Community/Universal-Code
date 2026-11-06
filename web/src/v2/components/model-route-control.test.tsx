@@ -4,9 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
+import { chatPreferencesKey, saveChatPreferences } from "../chat-preferences";
 import { V2ModelRouteControl, type V2ModelRouteCatalog, type V2ThreadModelRoute } from "./model-route-control";
 
 const routeStyles = readFileSync("src/v2/styles.css", "utf8");
+
+afterEach(() => localStorage.removeItem(chatPreferencesKey));
 
 const catalog: V2ModelRouteCatalog = {
   protocol_version: "model_route_catalog.v1",
@@ -74,6 +77,87 @@ function renderControl(client: TestRouteClient = routeClient(), options: {
 }
 
 describe("V2ModelRouteControl", () => {
+  it.each(["ctrlKey", "metaKey"])("opens the model list with %s without selecting a route or changing the draft", async (modifier) => {
+    const client = routeClient();
+    const onManageModels = vi.fn();
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2ModelRouteControl client={client} threadID="thread-1" onManageModels={onManageModels} />
+      <textarea aria-label="下一条消息" defaultValue="保留这份草稿" />
+    </QueryClientProvider>);
+    const composer = screen.getByRole("textbox", { name: "下一条消息" });
+    act(() => composer.focus());
+    const event = new KeyboardEvent("keydown", { key: "M", code: "KeyM", [modifier]: true,
+      shiftKey: true, bubbles: true, cancelable: true });
+    fireEvent(composer, event);
+    expect(event.defaultPrevented).toBe(true);
+    const models = screen.getByRole("menu", { name: "选择模型路由" });
+    expect(screen.queryByRole("menu", { name: "模型与响应设置" })).not.toBeInTheDocument();
+    expect(within(models).getByRole("menuitem", { name: "返回模型设置" })).toHaveFocus();
+    expect(await within(models).findByRole("menuitemradio", { name: "deepseek-v4-flash" })).toHaveAttribute("aria-checked", "true");
+    expect(within(models).getByRole("menuitemradio", { name: /^gpt-5\.6-terra/u })).toBeDisabled();
+    expect(client.selectThreadModelRoute).not.toHaveBeenCalled();
+    expect(onManageModels).not.toHaveBeenCalled();
+    expect(composer).toHaveValue("保留这份草稿");
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /模型路由/u })).toHaveFocus();
+  });
+
+  it("uses a remapped model shortcut immediately and leaves an unassigned shortcut available", () => {
+    renderControl();
+    const key = { key: "m", code: "KeyM", ctrlKey: true, shiftKey: true, cancelable: true };
+    act(() => saveChatPreferences({ shortcuts: { modelPicker: "Mod+Shift+J" } }));
+    fireEvent.keyDown(window, key);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { ...key, key: "j", code: "KeyJ" });
+    expect(screen.getByRole("menu", { name: "选择模型路由" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    act(() => saveChatPreferences({ shortcuts: { modelPicker: "" } }));
+    const event = new KeyboardEvent("keydown", key);
+    fireEvent(window, event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("does not open over another menu, a dialog, recording, editors, terminals or composition", () => {
+    const { client } = renderControl();
+    const key = { key: "m", code: "KeyM", ctrlKey: true, shiftKey: true };
+    for (const className of ["monaco-editor", "xterm"]) {
+      const editor = document.createElement("input"); editor.className = className; document.body.append(editor);
+      fireEvent.keyDown(editor, key);
+      editor.remove();
+    }
+    for (const role of ["dialog", "menu", "listbox"]) {
+      const popup = document.createElement("div"); popup.setAttribute("role", role); document.body.append(popup);
+      fireEvent.keyDown(window, key);
+      popup.remove();
+    }
+    const recorder = document.createElement("button"); recorder.dataset.shortcutRecorder = "true"; document.body.append(recorder);
+    fireEvent.keyDown(recorder, key);
+    recorder.remove();
+    const projectMenu = document.createElement("details");
+    projectMenu.className = "v2-project-section-menu"; projectMenu.open = true; document.body.append(projectMenu);
+    fireEvent.keyDown(window, key);
+    projectMenu.remove();
+    fireEvent.keyDown(window, { ...key, isComposing: true });
+    fireEvent.keyDown(window, { ...key, keyCode: 229 });
+    fireEvent.keyDown(window, { ...key, repeat: true });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(client.availableModelRoutes).not.toHaveBeenCalled();
+    expect(client.selectThreadModelRoute).not.toHaveBeenCalled();
+  });
+
+  it("leaves the shortcut untouched when model control is unavailable", () => {
+    const { client } = renderControl(routeClient({ hasModelControl: false }));
+    const event = new KeyboardEvent("keydown", { key: "m", code: "KeyM", ctrlKey: true,
+      shiftKey: true, cancelable: true });
+    fireEvent(window, event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(client.availableModelRoutes).not.toHaveBeenCalled();
+    expect(client.selectThreadModelRoute).not.toHaveBeenCalled();
+  });
+
   it("keeps only the model basename on the toolbar while retaining the full route and reasoning detail", async () => {
     const user = userEvent.setup();
     const client = routeClient({ threadModelRoute: vi.fn().mockResolvedValue({ ...current,

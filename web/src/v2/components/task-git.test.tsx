@@ -74,17 +74,18 @@ function mount(f: ReturnType<typeof fixture>, threadID = "task-a", identity = sc
   let store!: V2RecoveryStore;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5000 }, mutations: { retry: false } } });
   const onOpenWorktree = vi.fn(), onFeedback = vi.fn(), onPullRequest = vi.fn();
+  const onAddComment = vi.fn().mockReturnValue("added");
   function Probe() { store = useV2RecoveryStore()!; return null; }
   let currentThread = threadID;
   const tree = (id: string, visible = true) => <QueryClientProvider client={queryClient}>
     <V2RecoveryProvider client={f.client} scopeID={identity}><Probe />
       {/* The actual review owner remounts its task body on Run/tab changes. */}
       {visible && <TaskGit key={id} client={f.client} threadID={id} working={false} onFeedback={onFeedback}
-        onPullRequest={onPullRequest} onOpenWorktree={onOpenWorktree} />}
+        onPullRequest={onPullRequest} onOpenWorktree={onOpenWorktree} onAddComment={onAddComment} />}
     </V2RecoveryProvider>
   </QueryClientProvider>;
   const view = render(tree(threadID));
-  return { ...view, store: () => store, queryClient, onOpenWorktree, onFeedback, onPullRequest,
+  return { ...view, store: () => store, queryClient, onOpenWorktree, onFeedback, onPullRequest, onAddComment,
     selectThread: (id: string) => { currentThread = id; view.rerender(tree(id)); },
     showGit: (visible: boolean) => view.rerender(tree(currentThread, visible)) };
 }
@@ -102,6 +103,23 @@ async function selectCommit(message = "only the selected change") {
 }
 beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it("adds a comment bound to the preview fingerprint without executing Git or closing the preview", async () => {
+  const f = fixture();
+  const view = mount(f);
+  await ready();
+  const user = await selectCommit();
+  await user.click(screen.getByRole("button", { name: "评论新第 1 行" }));
+  await user.type(screen.getByRole("textbox", { name: "新第 1 行的意见" }), "Check the fallback first");
+  await user.click(screen.getByRole("button", { name: "加入聊天草稿" }));
+  expect(view.onAddComment).toHaveBeenCalledWith(expect.stringContaining(`Git 预览：${fingerprint}`));
+  expect(view.onAddComment).toHaveBeenCalledWith(expect.stringContaining("新文件路径：b/chosen.txt"));
+  expect(view.onAddComment).toHaveBeenCalledWith(expect.stringContaining("要求：Check the fallback first"));
+  expect(screen.getByRole("region", { name: "Git 操作确认" })).toBeVisible();
+  expect(f.previews()).toHaveLength(1);
+  expect(f.executions()).toHaveLength(0);
+  expect(view.onFeedback).not.toHaveBeenCalled();
+});
 
 it("requires nonempty selection, exact preview and a separate confirmation before executing", async () => {
   const f = fixture();

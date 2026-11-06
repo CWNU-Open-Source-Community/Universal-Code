@@ -182,6 +182,8 @@ func (value SkillPackageInstallResult) MarshalJSON() ([]byte, error) {
 }
 
 type DesktopBridgeConfig struct {
+	TerminalSettingsStore              application.DesktopTerminalSettingsStore
+	TerminalSettingsConfirmer          DesktopTerminalSettingsConfirmer
 	ContextProvider                    func() context.Context
 	FilePicker                         SkillPackageFilePicker
 	ReadToken                          string
@@ -253,36 +255,41 @@ type DesktopBridgeConfig struct {
 // DesktopBridge is the complete renderer binding surface for D0-A. Keep this
 // type deliberately small: Wails binds every exported method.
 type DesktopBridge struct {
-	workspaceSelectionMu     sync.Mutex
-	workspaceSelection       *pendingWorkspaceDirectory
-	contextProvider          func() context.Context
-	filePicker               SkillPackageFilePicker
-	selector                 NativeSkillPackageSelector
-	previewBridge            *SkillPackagePreviewBridge
-	skillInstaller           SkillPackageInstaller
-	skillRegistry            SkillPackageRegistry
-	workspaceResolver        WorkspaceResolver
-	workspaceLauncher        NativeWorkspaceLauncher
-	workspaceDirectoryPicker WorkspaceDirectoryPicker
-	workspaceRegistrar       WorkspaceDirectoryRegistrar
-	clipboardReader          ClipboardFileReader
-	clipboardFiles           ClipboardFileImporter
-	clipboardImages          ClipboardImageImporter
-	clipboardActive          atomic.Bool
-	resourceReader           ChatResourceReader
-	resourceHost             ChatResourceHost
-	userTerminal             UserTerminalController
-	debugTerminalAgentInput  application.DebugTerminalAgentInputController
-	riskProfileRestarter     DesktopRiskProfileRestarter
-	verificationSettings     application.DesktopVerificationSettingsStore
-	verificationConfirmer    DesktopVerificationSettingsConfirmer
-	bootstrap                ConnectionBootstrap
-	dialogActive             atomic.Bool
-	workspaceOpenActive      atomic.Bool
-	riskRestartActive        atomic.Bool
+	terminalSettings          application.DesktopTerminalSettingsStore
+	terminalSettingsConfirmer DesktopTerminalSettingsConfirmer
+	workspaceSelectionMu      sync.Mutex
+	workspaceSelection        *pendingWorkspaceDirectory
+	contextProvider           func() context.Context
+	filePicker                SkillPackageFilePicker
+	selector                  NativeSkillPackageSelector
+	previewBridge             *SkillPackagePreviewBridge
+	skillInstaller            SkillPackageInstaller
+	skillRegistry             SkillPackageRegistry
+	workspaceResolver         WorkspaceResolver
+	workspaceLauncher         NativeWorkspaceLauncher
+	workspaceDirectoryPicker  WorkspaceDirectoryPicker
+	workspaceRegistrar        WorkspaceDirectoryRegistrar
+	clipboardReader           ClipboardFileReader
+	clipboardFiles            ClipboardFileImporter
+	clipboardImages           ClipboardImageImporter
+	clipboardActive           atomic.Bool
+	resourceReader            ChatResourceReader
+	resourceHost              ChatResourceHost
+	userTerminal              UserTerminalController
+	debugTerminalAgentInput   application.DebugTerminalAgentInputController
+	riskProfileRestarter      DesktopRiskProfileRestarter
+	verificationSettings      application.DesktopVerificationSettingsStore
+	verificationConfirmer     DesktopVerificationSettingsConfirmer
+	bootstrap                 ConnectionBootstrap
+	dialogActive              atomic.Bool
+	workspaceOpenActive       atomic.Bool
+	riskRestartActive         atomic.Bool
 }
 
 func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
+	if (config.TerminalSettingsStore == nil) != (config.TerminalSettingsConfirmer == nil) {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "terminal settings require native confirmation")
+	}
 	if config.ContextProvider == nil || config.FilePicker == nil || config.Selector == nil ||
 		config.PreviewBridge == nil {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
@@ -437,6 +444,7 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 			"desktop bridge version and UI digest metadata are invalid")
 	}
 	return &DesktopBridge{
+		terminalSettings: config.TerminalSettingsStore, terminalSettingsConfirmer: config.TerminalSettingsConfirmer,
 		contextProvider:          config.ContextProvider,
 		filePicker:               config.FilePicker,
 		selector:                 config.Selector,

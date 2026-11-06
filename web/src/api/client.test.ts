@@ -3734,10 +3734,10 @@ describe("APIClient", () => {
     const patch = "--- a/src/main.go\n+++ b/src/main.go\n@@ -1 +1 @@\n-old\n+new\n";
     const patchBytes = new TextEncoder().encode(patch).length;
     const diff = { protocol_version: "repository_diff.v1", workspace_id: "workspace-1",
-      kind: "git", available: true, base_head: "1234567890ab",
+      kind: "git", available: true, base_head: "1234567890ab", next_after: "",
       items: [{ path: "src/main.go", staging: "unmodified", worktree: "modified",
         content_state: "text", patch, patch_bytes: patchBytes, added_lines: 1,
-        deleted_lines: 1, redacted: false, truncated: false }],
+        deleted_lines: 1, redacted: false, truncated: false, statistics_complete: true }],
       returned_count: 1, omitted_count: 0, redaction_count: 0,
       total_patch_bytes: patchBytes, truncated: false, read_only: true,
       instruction_authorized: false, mutation_supported: false, authority_granted: false,
@@ -4548,6 +4548,36 @@ describe("APIClient", () => {
       signal: new AbortController().signal,
       onFrame: () => undefined,
     })).rejects.toThrow("id does not match");
+  });
+
+  it("rejects an explicit agent browser live-view close after delivering frames", async () => {
+    const frame = {
+      version: "agent_browser_screencast.v1", run_id: "run-1", session_id: "browser-live-session",
+      generation: 1, media_type: "image/jpeg", width: 1280, height: 900, data: "aGVsbG8=",
+      captured_at: "2026-10-28T00:00:00Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      `event: agent_browser.frame\ndata: ${JSON.stringify(frame)}\n\n` +
+        'event: agent_browser.closed\ndata: {"version":"agent_browser_screencast.v1","reason":"ended"}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    )));
+    const onFrame = vi.fn();
+    await expect(new APIClient("read-secret").streamAgentBrowserScreencast("run-1", {
+      signal: new AbortController().signal, onFrame,
+    })).rejects.toThrow("live view closed");
+    expect(onFrame).toHaveBeenCalledWith(frame);
+  });
+
+  it("rejects a malformed agent browser live frame instead of ignoring it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      'event: agent_browser.frame\ndata: {"version":"agent_browser_screencast.v1","run_id":"run-1",' +
+        '"session_id":"browser-live-session","generation":1,"media_type":"image/jpeg","width":1280,' +
+        '"height":900,"data":"not base64!","captured_at":"2026-10-28T00:00:00Z"}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    )));
+    await expect(new APIClient("read-secret").streamAgentBrowserScreencast("run-1", {
+      signal: new AbortController().signal, onFrame: vi.fn(),
+    })).rejects.toThrow("帧无效");
   });
 
   it("keeps Provider credentials write-only and returns status metadata", async () => {

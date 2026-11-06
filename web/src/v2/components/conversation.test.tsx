@@ -159,7 +159,7 @@ function renderConversation(client: APIClient, initialThreadID = "thread-a", ext
   const props = (threadID: string) => <QueryClientProvider client={queryClient}>
     {extras}
     <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()}
-      onOpenInspector={vi.fn()} threadID={threadID} workspaces={workspaces} {...draftProps} />
+      threadID={threadID} workspaces={workspaces} {...draftProps} />
   </QueryClientProvider>;
   const view = render(props(initialThreadID));
   return { ...view, queryClient,
@@ -410,7 +410,7 @@ describe("V2Conversation", () => {
     } as unknown as Partial<APIClient>);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } } });
     render(<V2RecoveryProvider client={client} scopeID="conversation-queue-owner-test"><QueryClientProvider client={queryClient}>
-      <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={vi.fn()}
+      <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()}
         threadID="thread-a" workspaces={workspaces} />
     </QueryClientProvider></V2RecoveryProvider>);
     const action = await screen.findByRole("button", { name: "引导当前任务" });
@@ -696,6 +696,34 @@ describe("V2Conversation", () => {
     view.rerenderThread("thread-a");
     await screen.findByText("Title thread-a");
     expect(view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!.scrollTop).toBe(180);
+  });
+
+  it("offers a return to the latest message while reading a completed chat without new content", async () => {
+    const view = renderConversation(baseClient());
+    await screen.findByText("Title thread-a");
+    await waitFor(() => expect(view.queryClient.getQueryState(v2QueryKeys.transcript("thread-a"))?.status).toBe("success"));
+    const scroller = view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+    let top = 1500;
+    Object.defineProperties(scroller, { scrollHeight: { value: 2000, configurable: true },
+      clientHeight: { value: 500, configurable: true },
+      scrollTop: { get: () => top, set: (value: number) => { top = Math.min(value, 1500); }, configurable: true } });
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    scroller.scrollTop = 180;
+    fireEvent.scroll(scroller);
+    const jump = screen.getByRole("button", { name: "回到最新" });
+    expect(screen.queryByRole("button", { name: "有新内容 · 回到最新" })).not.toBeInTheDocument();
+    expect(scroller.scrollTop).toBe(180);
+    await userEvent.click(jump);
+    expect(scroller.scrollTop).toBe(1500);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 1500, following: true });
+    scroller.scrollTop = 120;
+    fireEvent.scroll(scroller);
+    expect(screen.getByRole("button", { name: "回到最新" })).toBeInTheDocument();
+    scroller.scrollTop = 1500;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
   });
 
   it("follows viewport and card size changes without moving a reader looking at history", async () => {
@@ -988,7 +1016,7 @@ describe("V2Conversation", () => {
       view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"),
         { ...execution, state: "idle", execution_id: undefined });
     });
-    expect(screen.getByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
+    expect(await screen.findByText("发送消息即可继续，也可以仅解除暂停。")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     await waitFor(() => expect(submitThreadTurn).toHaveBeenCalledWith("thread-a",
       expect.objectContaining({ content: "pending-thread-a" }), expect.any(String)));
@@ -1043,6 +1071,34 @@ describe("V2Conversation", () => {
     expect(screen.queryByRole("button", { name: "加载更早记录" })).not.toBeInTheDocument();
   });
 
+  it("preserves the chat reading position when earlier records load from the dock", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+    const middle = transcriptItem("middle-dock", "middle dock message", 2);
+    const getPage = vi.fn((_path: string, _query: unknown, cursor: string) => Promise.resolve(
+      cursor === "older-dock-cursor" ? page([transcriptItem("oldest-dock", "oldest dock message", 1), middle])
+        : page([middle, transcriptItem("newest-dock", "newest dock message", 3)], "older-dock-cursor"),
+    ));
+    try {
+      const view = renderConversation(baseClient({ getPage } as Partial<APIClient>));
+      const user = userEvent.setup();
+      await screen.findByText("newest dock message");
+      const chat = view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+      Object.defineProperties(chat, {
+        scrollHeight: { get: () => chat.querySelectorAll(".v2-narrative > li").length * 200, configurable: true },
+        clientHeight: { value: 100, configurable: true },
+      });
+      chat.scrollTop = 80;
+      fireEvent.scroll(chat);
+      await user.click(screen.getByRole("button", { name: "执行记录" }));
+      const dock = await screen.findByRole("complementary", { name: "执行记录" });
+      await user.click(await within(dock).findByRole("button", { name: "加载较早记录" }));
+      await waitFor(() => expect(chat).toHaveTextContent("oldest dock message"));
+      expect(chat.scrollTop).toBe(280);
+      expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 280, following: false });
+      expect(within(dock).queryByRole("button", { name: "加载较早记录" })).not.toBeInTheDocument();
+    } finally { vi.restoreAllMocks(); }
+  });
+
   it("closes the title menu with Escape or an outside click and restores focus predictably", async () => {
     const onArchive = vi.fn();
     const client = baseClient();
@@ -1050,7 +1106,7 @@ describe("V2Conversation", () => {
     const user = userEvent.setup();
     render(<><button type="button">Outside</button><QueryClientProvider client={queryClient}>
       <V2Conversation client={client} onArchive={onArchive} onManageModels={vi.fn()}
-        onOpenInspector={vi.fn()} threadID="thread-a" workspaces={workspaces} />
+        threadID="thread-a" workspaces={workspaces} />
     </QueryClientProvider></>);
     await screen.findByText("Title thread-a");
     const trigger = screen.getByRole("button", { name: "对话操作" });
@@ -1141,7 +1197,7 @@ describe("V2Conversation", () => {
       const dock = await screen.findByRole("complementary", { name: "工作区文件" });
       expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
       expect(dock).not.toHaveAttribute("aria-modal");
-      within(dock).getByRole("button", { name: "关闭文件面板" }).focus();
+      within(dock).getAllByRole("tab")[0].focus();
       await user.tab({ shift: true });
       expect(screen.getByRole("button", { name: "发送 thread-a" })).toHaveFocus();
       expect(await within(dock).findByText("export const value = 1;")).toBeInTheDocument();
@@ -1367,76 +1423,18 @@ describe("V2Conversation", () => {
     expect(termTrigger).toHaveFocus();
   });
 
-  it("protects terminal termination against errors and surfaces error notice", async () => {
-    vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
-    const closeSpy = vi.spyOn(desktopBridge, "closeDesktopUserTerminal").mockRejectedValue(new Error("Process busy"));
-    const onSession = vi.fn();
-    const trigger = { current: document.createElement("button") };
-    const user = userEvent.setup();
-
-    render(
-      <V2TerminalDrawer
-        runID="run-term"
-        sessionID="sess-active"
-        threadTitle="Thread Term"
-        workspaceName="Workspace Term"
-        onSession={onSession}
-        onClose={vi.fn()}
-        returnFocusRef={trigger}
-      />
-    );
-
-    const termBtn = screen.getByRole("button", { name: "终止终端进程" });
-    await user.click(termBtn);
-
-    expect(closeSpy).toHaveBeenCalledWith("sess-active");
-    expect(onSession).not.toHaveBeenCalledWith("");
-    expect(await screen.findByRole("alert")).toHaveTextContent("终止终端失败：Process busy");
+  it("has one collapse control and a compact workspace heading", () => {
+    const onClose = vi.fn();
+    render(<V2TerminalDrawer runID="run-term" sessionID="sess-active"
+      threadTitle="Very long task title" workspaceName="Very long workspace directory"
+      onSession={vi.fn()} onClose={onClose} returnFocusRef={{ current: null }} />);
+    expect(screen.getByRole("heading", { name: "终端" })).toHaveAttribute("title", "Very long task title");
+    expect(screen.getByText("Very long workspace directory")).toHaveAttribute("title", "Very long workspace directory");
+    fireEvent.click(screen.getByRole("button", { name: "收起终端" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "关闭终端面板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "终止终端进程" })).not.toBeInTheDocument();
   });
-
-  it("does not clear a replacement session if earlier termination settled late", async () => {
-    vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
-    let resolveClose!: () => void;
-    vi.spyOn(desktopBridge, "closeDesktopUserTerminal").mockImplementation(
-      () => new Promise((resolve) => { resolveClose = resolve; })
-    );
-    const onSession = vi.fn();
-    const trigger = { current: document.createElement("button") };
-    const user = userEvent.setup();
-
-    const { rerender } = render(
-      <V2TerminalDrawer
-        runID="run-term"
-        sessionID="sess-old"
-        threadTitle="Thread Term"
-        workspaceName="Workspace Term"
-        onSession={onSession}
-        onClose={vi.fn()}
-        returnFocusRef={trigger}
-      />
-    );
-
-    const termBtn = screen.getByRole("button", { name: "终止终端进程" });
-    await user.click(termBtn);
-
-    rerender(
-      <V2TerminalDrawer
-        runID="run-term"
-        sessionID="sess-new"
-        threadTitle="Thread Term"
-        workspaceName="Workspace Term"
-        onSession={onSession}
-        onClose={vi.fn()}
-        returnFocusRef={trigger}
-      />
-    );
-
-    resolveClose();
-    await waitFor(() => {
-      expect(onSession).not.toHaveBeenCalledWith("");
-    });
-  });
-
   it("keeps terminal session bindings across conversation-page unmounts", async () => {
     vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
     const client = baseClient();
@@ -1463,6 +1461,116 @@ describe("V2Conversation", () => {
     expect(await screen.findByRole("dialog", { name: "任务终端" })).toBeInTheDocument();
     const panel = screen.getByTestId("user-terminal-panel");
     expect(panel).toHaveAttribute("data-session-id", "sess-created");
+  });
+
+  it("maintains multi-file and terminal tabs, preserves file paths across top-bar switches, and toggles full view", async () => {
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("v2-shell") ? 1360 : this.classList.contains("v2-conversation") ? 1060 : 1060;
+    });
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+    vi.spyOn(desktopBridge, "desktopUserTerminalEnabled").mockReturnValue(true);
+    try {
+      const user = userEvent.setup();
+      const client = baseClient({
+        fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }),
+        getPage: vi.fn(() => Promise.resolve(page([
+          transcriptItem("multi-link", "对照 [src/index.ts](src/index.ts) 与 [README.md](README.md)", 1),
+        ]))) as unknown as APIClient["getPage"],
+      });
+      const directory = await client.workspaceExplore("workspace-1", ".");
+      vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => {
+        if (path === "src/index.ts") {
+          return { ...directory, path, kind: "file", entries: [], content: "export const indexValue = 1;" };
+        }
+        if (path === "README.md") {
+          return { ...directory, path, kind: "file", entries: [], content: "# Project Overview" };
+        }
+        return directory;
+      });
+
+      const view = renderConversation(client, "thread-a");
+      view.container.classList.add("v2-shell", "has-sidebar");
+
+      await user.click(await screen.findByRole("link", { name: "index.ts" }));
+      const dock = await screen.findByRole("complementary", { name: "工作区文件" });
+      expect(await within(dock).findByText("export const indexValue = 1;")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("link", { name: "README.md" }));
+      expect(await within(dock).findByText("# Project Overview")).toBeInTheDocument();
+      const tabsAfterFiles = within(dock).getAllByRole("tab");
+      expect(tabsAfterFiles.map((tab) => tab.textContent)).toEqual(["index.ts", "README.md"]);
+
+      // Switch to index.ts via tab click, then switch to Terminal via top header, then back to top Files button.
+      await user.click(within(dock).getByRole("tab", { name: "index.ts" }));
+      expect(within(dock).getByText("export const indexValue = 1;")).toBeVisible();
+
+      const headerNav = screen.getByRole("navigation", { name: "任务工作区" });
+      await user.click(within(headerNav).getByRole("button", { name: "终端" }));
+      expect(screen.getByRole("complementary", { name: "任务终端" })).toBe(dock);
+      const terminalPanel = within(dock).getByTestId("user-terminal-panel");
+      await user.click(within(terminalPanel).getByRole("button", { name: "Mock Start Session" }));
+      expect(terminalPanel).toHaveAttribute("data-session-id", "sess-created");
+
+      // Top "工作区文件" restores the last active file tab (index.ts) without resetting to root "."
+      vi.mocked(client.workspaceExplore).mockClear();
+      await user.click(within(headerNav).getByRole("button", { name: "工作区文件" }));
+      expect(screen.getByRole("complementary", { name: "工作区文件" })).toBe(dock);
+      expect(within(dock).getByRole("tab", { name: "index.ts" })).toHaveAttribute("aria-selected", "true");
+      expect(within(dock).getByText("export const indexValue = 1;")).toBeVisible();
+      expect(client.workspaceExplore).not.toHaveBeenCalledWith("workspace-1", ".", expect.anything());
+      // Terminal tab panel stays mounted while hidden.
+      expect(within(dock).getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-created");
+
+      // Toggle Full View via button and via Ctrl+Shift+F shortcut without unmounting tabs.
+      const stage = view.container.querySelector(".v2-conversation-stage")!;
+      const chatColumn = stage.querySelector(".v2-conversation-main-column")!;
+      expect(headerNav.closest(".v2-conversation-main-column")).toBe(chatColumn);
+      expect(dock.parentElement?.parentElement).toBe(stage);
+      expect(chatColumn).not.toContainElement(dock);
+      expect(stage).not.toHaveClass("is-full-view");
+      await user.click(within(dock).getByRole("button", { name: "进入完整视图" }));
+      expect(stage).toHaveClass("is-full-view");
+      expect(headerNav.closest("[inert]")).toBe(chatColumn);
+      expect(screen.queryByRole("navigation", { name: "任务工作区" })).not.toBeInTheDocument();
+      expect(within(dock).getByRole("button", { name: "退出完整视图" })).toHaveAttribute("aria-pressed", "true");
+
+      fireEvent.keyDown(window, { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true });
+      expect(stage).not.toHaveClass("is-full-view");
+      expect(screen.getByRole("navigation", { name: "任务工作区" })).toBe(headerNav);
+      expect(within(dock).getByRole("button", { name: "进入完整视图" })).toHaveAttribute("aria-pressed", "false");
+
+      // Collapsing full view restores the header before returning keyboard focus.
+      await user.click(within(dock).getByRole("button", { name: "进入完整视图" }));
+      await user.click(within(dock).getByRole("button", { name: "关闭文件面板" }));
+      await waitFor(() => expect(within(headerNav).getByRole("button", { name: "工作区文件" })).toHaveFocus());
+      await user.click(within(headerNav).getByRole("button", { name: "工作区文件" }));
+      expect(stage).toHaveClass("is-full-view");
+      await user.click(within(dock).getByRole("button", { name: "退出完整视图" }));
+
+      // Closing the terminal tab keeps terminalSessionID alive for reattachment when reopened.
+      await user.click(within(dock).getByRole("button", { name: "关闭标签 终端" }));
+      expect(within(dock).queryByRole("tab", { name: "终端" })).not.toBeInTheDocument();
+      await user.click(within(headerNav).getByRole("button", { name: "终端" }));
+      expect(within(dock).getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-created");
+
+      // Per-chat workspace memory isolates thread-b and restores thread-a on return.
+      view.rerenderThread("thread-b");
+      await screen.findByText("Title thread-b");
+      expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+
+      view.rerenderThread("thread-a");
+      await screen.findByText("Title thread-a");
+      const restoredDock = await screen.findByRole("complementary", { name: "任务终端" });
+      expect(within(restoredDock).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["index.ts", "README.md", "终端"]);
+      expect(within(restoredDock).getByTestId("user-terminal-panel")).toHaveAttribute("data-session-id", "sess-created");
+    } finally {
+      cleanup();
+      clientWidth.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -1492,7 +1600,7 @@ it("switches the mounted task navigation and open conversation menu while preser
   expect(within(navigation).getByRole("button", { name: "Review changes" })).toHaveTextContent("Changes and delivery");
   expect(within(navigation).getByRole("button", { name: "View context" })).toHaveTextContent("Context and recovery");
   expect(screen.getByRole("menuitem", { name: "Archive conversation" })).toBeInTheDocument();
-  expect(screen.getByRole("menuitem", { name: "Open Inspector" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Execution records" })).toBeInTheDocument();
   expect(screen.getByText("用户消息和工具输出保持原文")).toBeInTheDocument();
   expect(screen.getByText("Title thread-a")).toBeInTheDocument();
 

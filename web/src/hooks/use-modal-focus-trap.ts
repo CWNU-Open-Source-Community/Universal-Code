@@ -123,8 +123,8 @@ export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape
       dialog.removeEventListener("keydown", handleKeyDown);
       isolated.forEach(restoreElement);
       const returnFocus = options?.returnFocusRef?.current;
-      if (returnFocus?.isConnected) returnFocus.focus();
-      else if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+      else if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true });
     };
   }, [open, options?.isolateBackground, options?.trapFocus]);
 

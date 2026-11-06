@@ -8,7 +8,10 @@ import { V2RecoveryProvider, useV2RecoveryStore, type V2RecoveryStore } from "..
 import { V2ThreadPlanControl } from "./thread-plan";
 
 function fixture() {
-  const state: { phase: string; proposal: string | null } = { phase: "plan", proposal: "proposal-1" };
+  const directions = [{ ordinal: 1, title: "整理日志", summary: "只生成汇总文件，保留接口。",
+    tradeoffs: ["优先复用现有解析器"], modules: [{ ordinal: 1, title: "汇总", objective: "输出中文汇总", acceptance_criteria: ["不修改原始日志"], dependencies: [] }] }];
+  const state: { phase: string; proposal: string | null; directions: typeof directions;
+    selection?: { proposal_id: string; direction_ordinal: number } } = { phase: "plan", proposal: "proposal-1", directions };
   const result = (threadID: string, body: ThreadPlanRequest, status = "completed") => ({
     version: "plan_delivery_control.v1", thread_id: threadID, run_id: body.run_id, action: body.action, state: status,
     proposal_id: body.proposal_id, direction: body.direction, manual_acceptance: body.manual_acceptance,
@@ -21,8 +24,7 @@ function fixture() {
   const requests = new Map<string, { threadID: string; body: ThreadPlanRequest }>();
   const hooks: { execute?: (body: ThreadPlanRequest) => Promise<unknown>; observe?: () => unknown } = {};
   const get = vi.fn(async (path: string) => ({ run: { id: path.split("/")[2], status: "running" }, mode: { phase: state.phase },
-    plan_delivery: { proposal: state.proposal ? { id: state.proposal, directions: [{ ordinal: 1, title: "整理日志", summary: "只生成汇总文件，保留接口。",
-      tradeoffs: ["优先复用现有解析器"], modules: [{ ordinal: 1, title: "汇总", objective: "输出中文汇总", acceptance_criteria: ["不修改原始日志"], dependencies: [] }] }] } : undefined } }));
+    plan_delivery: { proposal: state.proposal ? { id: state.proposal, directions: state.directions } : undefined, selection: state.selection } }));
   const postControl = vi.fn(async (path: string, body: ThreadPlanRequest, key: string) => {
     const threadID = path.split("/")[2]; requests.set(key, { threadID, body });
     if (hooks.execute) return hooks.execute(body);
@@ -181,4 +183,85 @@ test("settled confirmation needs the exact selected plan and accepted message id
   expect(parseThreadPlanObservation(valid, attempt).state).toBe("completed");
   expect(() => parseThreadPlanObservation({ ...valid, proposal_id: undefined }, attempt)).toThrow(/来源或格式/u);
   expect(() => parseThreadPlanObservation({ ...valid, turn_request: { ...valid.turn_request, thread_id: "task-b" } }, attempt)).toThrow(/来源或格式/u);
+});
+
+test.each(["plan", "deliver"])("reopening a %s plan shows the server-confirmed direction as read-only", async (phase) => {
+  const f = fixture(); f.state.phase = phase;
+  f.state.directions.push({ ...f.state.directions[0], ordinal: 2, title: "建立日志索引" });
+  f.state.selection = { proposal_id: "proposal-1", direction_ordinal: 2 };
+  const user = userEvent.setup();
+  const view = mount(f);
+  await user.click(await screen.findByRole("button", { name: "查看计划" }));
+  expect(screen.getByRole("radio", { name: "建立日志索引 已确认" })).toBeChecked();
+  await user.click(screen.getByRole("radio", { name: "整理日志" }));
+  expect(screen.getByRole("radio", { name: "整理日志" })).not.toBeChecked();
+  expect(screen.getByRole("radio", { name: "建立日志索引 已确认" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "确认计划并执行" })).not.toBeInTheDocument();
+  view.unmount();
+  mount(f);
+  await user.click(await screen.findByRole("button", { name: "查看计划" }));
+  expect(screen.getByRole("radio", { name: "建立日志索引 已确认" })).toBeChecked();
+  expect(f.postControl).not.toHaveBeenCalled();
+});
+
+test.each([
+  { name: "another proposal", selection: { proposal_id: "old-proposal", direction_ordinal: 1 } },
+  { name: "a missing direction", selection: { proposal_id: "proposal-1", direction_ordinal: 2 } },
+  { name: "no saved selection", selection: undefined },
+])("a delivered plan does not invent a confirmed choice from $name", async ({ selection }) => {
+  const f = fixture(); f.state.phase = "deliver"; f.state.selection = selection;
+  mount(f); const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "查看计划" }));
+  expect(screen.getByRole("radio", { name: "整理日志" })).not.toBeChecked();
+  expect(screen.getByRole("radio", { name: "整理日志" })).toBeDisabled();
+  expect(screen.queryByText("已确认")).not.toBeInTheDocument();
+  expect(f.postControl).not.toHaveBeenCalled();
+});
+
+test("a replacement proposal requires a fresh choice instead of inheriting the saved confirmation", async () => {
+  const f = fixture(); f.state.phase = "deliver";
+  f.state.directions.push({ ...f.state.directions[0], ordinal: 2, title: "建立日志索引" });
+  f.state.selection = { proposal_id: "proposal-1", direction_ordinal: 2 };
+  const view = mount(f); const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "查看计划" }));
+  f.state.phase = "plan"; f.state.proposal = "proposal-2";
+  await act(async () => { await view.queries.invalidateQueries({ queryKey: ["run", "task-a-run"] }); });
+  await screen.findByRole("dialog", { name: "确认计划" });
+  expect(screen.queryByText("已确认")).not.toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: "建立日志索引" })).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "确认计划并执行" })).toBeDisabled();
+  await user.click(screen.getByRole("radio", { name: "整理日志" }));
+  await user.click(screen.getByRole("button", { name: "确认计划并执行" }));
+  await waitFor(() => expect(f.postControl).toHaveBeenCalledTimes(1));
+  expect(f.postControl.mock.calls[0][1]).toMatchObject({ proposal_id: "proposal-2", direction: 1 });
+});
+
+test("a refreshed server confirmation replaces an unsaved local choice", async () => {
+  const f = fixture(); f.state.directions.push({ ...f.state.directions[0], ordinal: 2, title: "建立日志索引" });
+  const view = mount(f); const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "查看计划" }));
+  await user.click(screen.getByRole("radio", { name: "整理日志" }));
+  f.state.phase = "deliver"; f.state.selection = { proposal_id: "proposal-1", direction_ordinal: 2 };
+  await act(async () => { await view.queries.invalidateQueries({ queryKey: ["run", "task-a-run"] }); });
+  await screen.findByRole("radio", { name: "建立日志索引 已确认" });
+  expect(screen.getByRole("radio", { name: "整理日志" })).not.toBeChecked();
+  expect(screen.getByRole("radio", { name: "建立日志索引 已确认" })).toBeChecked();
+  expect(f.postControl).not.toHaveBeenCalled();
+});
+
+test("a saved selection still allows continuing its prepared original request", async () => {
+  const f = fixture(); f.state.selection = { proposal_id: "proposal-1", direction_ordinal: 1 };
+  const attempt: ThreadPlanAttempt = { threadID: "task-a", key: "thread-plan-prepared", body: {
+    version: "plan_delivery_control.v1", action: "confirm", run_id: "task-a-run", proposal_id: "proposal-1",
+    direction: 1, manual_acceptance: "on_demand", content: "继续原计划" } };
+  f.hooks.observe = () => f.result("task-a", attempt.body, "prepared");
+  const view = mount(f); const user = userEvent.setup();
+  await screen.findByRole("button", { name: "查看计划" });
+  act(() => view.getStore().write("thread:task-a:plan-attempt", attempt));
+  await user.click(await screen.findByRole("button", { name: "计划操作待核对" }));
+  expect(screen.getByRole("radio", { name: "整理日志 已确认" })).toBeChecked();
+  expect(screen.queryByRole("button", { name: "确认计划并执行" })).not.toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "继续原操作" }));
+  await waitFor(() => expect(f.postControl).toHaveBeenCalledTimes(1));
+  expect(f.postControl.mock.calls[0]).toEqual(["/threads/task-a/plan", attempt.body, attempt.key]);
 });

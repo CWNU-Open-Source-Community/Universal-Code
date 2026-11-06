@@ -11,7 +11,7 @@ import { EmptyState, ErrorState, KeyValue, LoadMoreButton, LoadingState, StatusB
 import { LifecycleStatusBadge } from "./lifecycle-status";
 import { SessionComposer, SessionSteeringQueue, type SessionComposerStatus } from "./session-composer";
 import { SafeMarkdown } from "./safe-markdown";
-import "./inspector-workspace-navigation.css";
+import "./resource-workspace-navigation.css";
 
 export function SessionWorkspace({ client, sessionID, onOpenPlugins }: {
   client: APIClient;
@@ -98,10 +98,10 @@ export function SessionWorkspace({ client, sessionID, onOpenPlugins }: {
       <SessionSteeringQueue client={client} diagnosticSession sessionID={sessionID}
         run={boundRun}
         state={runQuery.data?.operator_steering ?? null} />
-      {boundRun && <div className="inspector-session-run-state" role="status"><span>{t("绑定执行记录状态", "Bound execution record state")}</span>
+      {boundRun && <div className="resource-session-run-state" role="status"><span>{t("绑定执行记录状态", "Bound execution record state")}</span>
         {runQuery.isError ? <span>{t("状态暂不可用，无法刷新绑定运行", "State temporarily unavailable; could not refresh the bound Run")}</span>
           : <LifecycleStatusBadge status={boundRun.status} />}</div>}
-      {boundRun && client.hasSessionMessages && <details className="inspector-workspace-input" open={inputOpen}
+      {boundRun && client.hasSessionMessages && <details className="resource-workspace-input" open={inputOpen}
         onToggle={(event) => setInputOpen(event.currentTarget.open)}><summary><span>{t("向此会话补充输入（高级）", "Add input to this Session (advanced)")}</span>
           <span role="status">{inputStatus.pending ? t(" · 输入请求处理中", " · Input in progress") : inputStatus.error ? t(" · 输入未完成，请查看原因", " · Input needs attention") : ""}</span></summary>
         <p>{t("输入目标：此上下文绑定的执行。发送时会核对执行状态与权限；继续整个任务请返回对话。", "Input target: the execution bound to this context. Sending checks its state and permissions. Return to the conversation to continue the whole task.")}</p>

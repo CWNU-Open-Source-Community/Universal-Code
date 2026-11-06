@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/toolgateway"
+	"os"
+	"strings"
 )
 
 type AgentBrowserStore interface {
@@ -64,6 +67,7 @@ type agentBrowserRuntime interface {
 	Snapshot(context.Context) (browserruntime.AgentBrowserSnapshot, error)
 	Click(context.Context, string, string) (browserruntime.AgentBrowserInteraction, error)
 	Type(context.Context, string, string, string, bool) (browserruntime.AgentBrowserInteraction, error)
+	Upload(context.Context, string, string, string) (browserruntime.AgentBrowserInteraction, error)
 	Screenshot(context.Context) (browserruntime.AgentBrowserScreenshot, error)
 	Scroll(context.Context, float64, float64) (browserruntime.AgentBrowserInteraction, error)
 	Key(context.Context, string) (browserruntime.AgentBrowserInteraction, error)
@@ -96,6 +100,9 @@ type agentBrowserSlot struct {
 	screenshotURL   string
 	titleEpoch      uint64
 	titleURL        string
+	// screencastViewer marks the single operator live-view attachment. It is a
+	// process-local visibility guard and grants no execution authority.
+	screencastViewer bool
 }
 type AgentBrowserService struct {
 	store     AgentBrowserStore
@@ -278,7 +285,7 @@ func (s *AgentBrowserService) authorityForAdvertisement(ctx context.Context, run
 	return s.authorityLocked(a, true)
 }
 func (s *AgentBrowserService) Capabilities(ctx context.Context, runID string) (AgentBrowserCapabilities, error) {
-	c := AgentBrowserCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, SupportedActions: []string{"browser_status", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key"}}
+	c := AgentBrowserCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, SupportedActions: []string{"browser_status", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload"}}
 	a, e := s.currentAuthority(ctx, runID)
 	if e != nil {
 		c.RefusalReason = e.Error()
@@ -491,7 +498,7 @@ func refreshBrowserModelTools(existing []llm.ToolSpec, c toolgateway.BrowserActi
 		names := toolgateway.BrowserActionToolNames()
 		definition := toolgateway.BrowserActionToolDefinition
 		if c.ProtocolVersion == toolgateway.AgentBrowserAuthorityVersion {
-			names = append(names, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool)
+			names = append(names, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool)
 			definition = toolgateway.AgentBrowserToolDefinition
 		}
 		for _, name := range names {
@@ -500,4 +507,31 @@ func refreshBrowserModelTools(existing []llm.ToolSpec, c toolgateway.BrowserActi
 		}
 	}
 	return out
+}
+
+// BrowserSessionLifetimeFromEnvironment reports the operator-selected browser
+// session lifetime in minutes (CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES).
+// Values outside 5..1440 (or a malformed value) return 0, which keeps the
+// composition default (30 minutes). Long lifetimes matter for the takeover
+// mode: the session profile, including manual login state, is wiped when the
+// runtime deadline elapses.
+func BrowserSessionLifetimeFromEnvironment() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("CYBERAGENT_BROWSER_SESSION_LIFETIME_MINUTES"))
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes < 5 || minutes > 1440 {
+		return 0
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// BrowserHeadedFromEnvironment reports whether the operator requested the
+// takeover mode: the agent browser runs as a visible window on the operator's
+// desktop so a human can log in or handle waiting_user states manually. The
+// window shares the same disposable session profile, so login state persists
+// for the session and dies with the profile at cleanup; it grants no
+// additional authority to the agent. Opt-in via
+// CYBERAGENT_BROWSER_HEADED=1|true at the composition root.
+func BrowserHeadedFromEnvironment() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("CYBERAGENT_BROWSER_HEADED")))
+	return value == "1" || value == "true"
 }

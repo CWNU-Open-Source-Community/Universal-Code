@@ -11,6 +11,60 @@ function Commands({ search, findInChat = vi.fn(), previousChat = vi.fn(), nextCh
   return <V2KeyboardSettings />;
 }
 
+function ModelShortcut({ action }: { action: () => void }) {
+  useChatShortcuts({ modelPicker: action });
+  return null;
+}
+
+it("leaves unregistered model shortcuts available and dispatches to a local registration", () => {
+  const modelPicker = vi.fn();
+  const view = render(<Commands search={vi.fn()} />);
+  const key = { key: "m", code: "KeyM", ctrlKey: true, shiftKey: true, cancelable: true };
+  const unregistered = new KeyboardEvent("keydown", key);
+  fireEvent(window, unregistered);
+  expect(unregistered.defaultPrevented).toBe(false);
+  expect(screen.getByRole("button", { name: "Change shortcut for Open model picker" })).toHaveTextContent("Ctrl+Shift+M");
+  view.rerender(<><Commands search={vi.fn()} /><ModelShortcut action={modelPicker} /></>);
+  const registered = new KeyboardEvent("keydown", key);
+  fireEvent(window, registered);
+  expect(registered.defaultPrevented).toBe(true);
+  expect(modelPicker).toHaveBeenCalledOnce();
+});
+
+it("records, persists and clears the model picker shortcut without activating it during recording", () => {
+  const modelPicker = vi.fn();
+  const view = render(<><Commands search={vi.fn()} /><ModelShortcut action={modelPicker} /></>);
+  const record = screen.getByRole("button", { name: "Change shortcut for Open model picker" });
+  fireEvent.click(record);
+  fireEvent.keyDown(record, { key: "j", code: "KeyJ", ctrlKey: true, shiftKey: true });
+  expect(modelPicker).not.toHaveBeenCalled();
+  expect(localStorage.getItem(chatPreferencesKey)).toContain('"modelPicker":"Mod+Shift+J"');
+  view.unmount();
+  render(<><Commands search={vi.fn()} /><ModelShortcut action={modelPicker} /></>);
+  const saved = screen.getByRole("button", { name: "Change shortcut for Open model picker" });
+  expect(saved).toHaveTextContent("Ctrl+Shift+J");
+  fireEvent.keyDown(window, { key: "m", code: "KeyM", ctrlKey: true, shiftKey: true });
+  expect(modelPicker).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, { key: "j", code: "KeyJ", ctrlKey: true, shiftKey: true });
+  expect(modelPicker).toHaveBeenCalledOnce();
+  fireEvent.click(saved);
+  fireEvent.keyDown(saved, { key: "Backspace" });
+  expect(saved).toHaveTextContent("Unassigned");
+  fireEvent.keyDown(window, { key: "j", code: "KeyJ", ctrlKey: true, shiftKey: true });
+  expect(modelPicker).toHaveBeenCalledOnce();
+});
+
+it("preserves an older custom binding that uses the new model picker default", () => {
+  saveChatPreferences({ shortcuts: { settings: "Mod+Shift+M" } });
+  const settings = vi.fn();
+  const modelPicker = vi.fn();
+  render(<><Commands search={vi.fn()} settings={settings} /><ModelShortcut action={modelPicker} /></>);
+  expect(screen.getByRole("button", { name: "Change shortcut for Open model picker" })).toHaveTextContent("Unassigned");
+  fireEvent.keyDown(window, { key: "m", code: "KeyM", ctrlKey: true, shiftKey: true });
+  expect(settings).toHaveBeenCalledOnce();
+  expect(modelPicker).not.toHaveBeenCalled();
+});
+
 it("records, searches, persists and resets shortcuts without invoking actions while recording", () => {
   const search = vi.fn();
   const view = render(<Commands search={search} />);

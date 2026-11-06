@@ -4,29 +4,24 @@
 
 ## 下载与启动 / Download and launch
 
-截至 2026-10-20，最新公开 Release 为 [v0.1.0-pr195-preview](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview)，发布于 2026-09-05、源码为 `8df0df9ad48a9d53c03fdb63ac78d5c7199219b0`。其中的 `TraverseBoard.exe` 是旧预览，不能用于验收当前主线功能。v1.0.0 进度见 [发布说明](releases/v1.0.0.md)。
+<!-- public-downloads:start -->
+当前公开预览版 / Current public preview: [**v1.0.0-preview.20261020**](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020)，发布于 / published on **2026-10-20**。
 
-As of 2026-10-20, the newest public Release is the older [v0.1.0-pr195-preview](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview), published on 2026-09-05 from revision `8df0df9ad48a9d53c03fdb63ac78d5c7199219b0`. Its `TraverseBoard.exe` predates current main-branch features.
+1. 下载 [Windows x64 — TraverseBoard.exe](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/TraverseBoard.exe)，安装好 Microsoft Edge WebView2 Evergreen Runtime 后双击运行。界面和后端均已内置，无需编译或另开服务。
+2. 在 PowerShell 中运行 `Get-FileHash .\TraverseBoard.exe -Algorithm SHA256`，与同一 Release 的 [SHA256SUMS](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/SHA256SUMS) 比较。
+3. 此 EXE 未作 Authenticode 签名，可能出现 SmartScreen“未知发布者”提示。已公开的检查包括 Windows 11 启动和部分界面交互；Windows 10 与完整兼容性、真实模型工作流尚未完成验收，详见 Release 说明。
 
-### 当前测试候选 / Current test candidate
+Download the Windows x64 EXE above and double-click it with Edge WebView2 Evergreen Runtime installed. The UI and backend are included. Compare `Get-FileHash` output with the same release's `SHA256SUMS`. This unsigned preview may trigger SmartScreen. Windows 11 startup and selected UI interactions were checked; Windows 10, full compatibility and real-model workflows still need acceptance.
 
-长期入口为 [Desktop release 打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)，成功运行中的 Windows artifact 可用于测试。当前中央 CI 主干运行不上传 Windows 应用包。
+公开 Release 下载无需 GitHub 登录，也没有 Actions artifact 的到期时间。文件沿用历史名，窗口显示 Universal-Code。只读启动入口为 `TraverseBoard.exe --safe-view`。
+Public Release downloads require no GitHub login and have no Actions artifact expiry. Use `TraverseBoard.exe --safe-view` for the read-only view.
+<!-- public-downloads:end -->
 
-The [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) remains the ongoing Windows candidate entry point. Main-branch central CI does not currently upload a Windows application package.
+### 更新的测试候选 / Newer test candidates
 
-[PR #411 的 Desktop release 打包检查](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692)已通过。以下候选版本为 `v1.0.0-pr.411`，源码绑定 PR 合并检出 `4158910bc9f478b3511459e0b5babfdc0d4def97`；它与 PR 分支头提交不同。完整中央 CI 状态见 [PR 检查](https://github.com/CWNU-Open-Source-Community/Universal-Code/pull/411/checks)。
+开发测试候选见 [Desktop release 打包记录](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)。选择成功运行，核对版本、源码 revision 和 `TraverseBoard-windows-release-*` artifact。Actions 下载需要登录 GitHub，有保留期限；解开传输 ZIP 后运行根目录的 `TraverseBoard.exe`。中央 CI 主干运行不上传 Windows 应用包。
 
-The [PR #411 Desktop release packaging check](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692) passed. The candidate is `v1.0.0-pr.411`, built from the PR merge checkout `4158910bc9f478b3511459e0b5babfdc0d4def97`. See the [PR checks](https://github.com/CWNU-Open-Source-Community/Universal-Code/pull/411/checks) for the full central CI status.
-
-1. 登录 GitHub，下载 [Windows 测试候选](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692/artifacts/12215261616)（`TraverseBoard-windows-release-v1.0.0-pr.411`）。该 artifact 保留 14 天，**2026-11-02 19:13 UTC 到期**。
-2. 解开 GitHub Actions 的传输 ZIP，双击根目录的 **`TraverseBoard.exe`**。Windows 10/11 需要已安装的 Edge WebView2 Evergreen Runtime。
-3. 这是未签名测试候选，可能出现 SmartScreen 提示。窗口显示 Universal-Code，文件仍沿用历史名。测试说明见[本机测试指南](../packaging/windows/LOCAL-TEST-GUIDE.txt)。
-
-Sign in to GitHub, download the [Windows test candidate](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/runs/39306404692/artifacts/12215261616), and extract the Actions transport ZIP. It expires on **2026-11-02 at 19:13 UTC**. Double-click the root `TraverseBoard.exe` on Windows 10/11 with Edge WebView2 Evergreen Runtime installed. This unsigned candidate may trigger SmartScreen; the application displays Universal-Code while retaining the historical filename.
-
-候选到期后，在 [Desktop release 工作流](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml)选择较新的成功运行，核对版本、源码 revision 和 `TraverseBoard-windows-release-*` artifact。Actions 测试包与公开 Release 的直发 EXE 分发方式不同。只读启动入口为 `TraverseBoard.exe --safe-view`。
-
-If this artifact has expired, select a newer successful [Desktop release run](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml), check its version and source revision, and download its `TraverseBoard-windows-release-*` artifact. `TraverseBoard.exe --safe-view` starts the read-only view.
+For newer test candidates, select a successful Desktop release run and check its version, revision and Windows artifact. Actions downloads require login and expire; extract the transport ZIP before running the EXE. These candidates are separate from the public Release above.
 
 ### 从源码构建与启动 / Build and launch from source
 

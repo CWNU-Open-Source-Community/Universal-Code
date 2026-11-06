@@ -21,6 +21,7 @@ import type {
   SessionTreeNodeView,
   SessionTreeView,
 } from "../api/types";
+import { downloadTextFile } from "../lib/download";
 import { formatDate, shortID } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { v2QueryKeys } from "../v2/query-keys";
@@ -181,7 +182,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.inspectorRecords });
+      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.historyRecords });
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
       void queryClient.invalidateQueries({ queryKey: v2QueryKeys.workspaces });
     },
@@ -198,8 +199,11 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
       scope: memoryScope,
       scope_id: scopeID,
     }),
+    // The filename must follow the scope the server actually exported (the
+    // response), not the selector state at click time: the operator may switch
+    // scope while the export request is in flight.
     onSuccess: (value) => downloadJSON(
-      `prayu-${memoryScope}-memory-${new Date().toISOString().slice(0, 10)}.json`, value),
+      `prayu-${value.scope}-memory-${new Date().toISOString().slice(0, 10)}.json`, value),
   });
 
   const treeNodes = treeQuery.data?.nodes ?? [];
@@ -338,7 +342,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
                         setEditingMemoryID(memory.id);
                         setEditDraft({ title: memory.title, content: memory.content,
                           sourceRef: memory.source_ref ?? "", references: memory.references.join("\n"),
-                          retention: memory.retention_until?.slice(0, 10) ?? "",
+                          retention: retentionDateValue(memory.retention_until),
                           redactSensitive: memory.redacted });
                       }} type="button">{t("编辑", "Edit")}</button>
                       <button className="compact-command" disabled={!client.hasControl || updateMemory.isPending}
@@ -520,7 +524,18 @@ function ProjectInstructionsSection({ client, query, refreshing, refreshError, o
 }
 
 function retentionTimestamp(value: string): string | undefined {
-  return value ? new Date(`${value}T23:59:59.000Z`).toISOString() : undefined;
+  if (!value) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
+}
+
+function retentionDateValue(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function memoryReferenceList(value: string): string[] {
@@ -550,14 +565,7 @@ function continuityDepths(nodes: SessionTreeNodeView[]): Map<string, number> {
 }
 
 function downloadJSON(filename: string, value: unknown): void {
-  const url = URL.createObjectURL(new Blob([`${JSON.stringify(value, null, 2)}\n`], {
-    type: "application/json",
-  }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(filename, "application/json", `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function humanError(value: unknown): string {

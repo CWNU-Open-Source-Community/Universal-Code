@@ -572,8 +572,8 @@ td code { font-size: 11px; }
 .unified-diff-marker { color: var(--muted); text-align: center; user-select: none; }
 .unified-diff-line.is-add { background: var(--prayu-diff-add-soft); }
 .unified-diff-line.is-delete { background: var(--prayu-diff-delete-soft); }
-.unified-diff-line.is-add .unified-diff-marker { color: var(--prayu-diff-add); }
-.unified-diff-line.is-delete .unified-diff-marker { color: var(--prayu-diff-delete); }
+.unified-diff-line.is-add .unified-diff-marker { color: color-mix(in srgb, var(--prayu-diff-add) 72%, var(--prayu-text)); }
+.unified-diff-line.is-delete .unified-diff-marker { color: color-mix(in srgb, var(--prayu-diff-delete) 72%, var(--prayu-text)); }
 .unified-diff-line.is-hunk { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); color: var(--muted); }
 .unified-diff-line.is-hunk > code, .unified-diff-line.is-meta > code { grid-column: 2 / -1; }
 .unified-diff-line.is-hunk > span:not(.unified-diff-marker), .unified-diff-line.is-meta > span { display: none; }
@@ -1984,14 +1984,17 @@ body { background: transparent; }
 .user-terminal-panel {
   min-height: 0;
   flex: 1;
-  display: grid;
-  grid-template-rows: 30px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--prayu-terminal-bg);
 }
 .user-terminal-controls {
   min-width: 0;
+  min-height: 30px;
+  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 3px 9px;
@@ -2000,7 +2003,8 @@ body { background: transparent; }
   background: var(--prayu-terminal-control);
   border-color: var(--prayu-terminal-border);
 }
-.user-terminal-controls button {
+.user-terminal-controls button,
+.user-terminal-quote-feedback button {
   height: 24px;
   display: inline-flex;
   align-items: center;
@@ -2010,31 +2014,44 @@ body { background: transparent; }
   border-radius: 5px;
   color: var(--prayu-terminal-text);
   background: var(--prayu-terminal-control);
-  font-size: 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
   border-color: var(--prayu-terminal-border);
 }
-.user-terminal-controls button:hover:not(:disabled) {
+.user-terminal-controls button:hover:not(:disabled),
+.user-terminal-quote-feedback button:hover:not(:disabled) {
   border-color: var(--prayu-terminal-text);
   background: var(--prayu-terminal-control-hover);
 }
 .user-terminal-controls button:disabled { opacity: .45; }
+.user-terminal-quote-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 9px;
+  color: var(--prayu-terminal-text);
+  font-size: 11px;
+}
 .user-terminal-state {
   flex: 0 0 auto;
   color: var(--prayu-terminal-muted);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 .user-terminal-state.running { color: var(--prayu-terminal-text); }
-.user-terminal-state.failed { color: var(--prayu-danger-on-dark); }
+.user-terminal-state.failed { color: var(--prayu-danger); }
 .user-terminal-message {
   min-width: 0;
   overflow: hidden;
-  color: var(--prayu-danger-on-dark);
+  color: var(--prayu-danger);
   font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .user-terminal-host {
+  flex: 1;
   min-width: 0;
   min-height: 0;
   padding: 6px 8px;
@@ -2553,10 +2570,12 @@ body { background: transparent; }
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
   --prayu-success: var(--prayu-text);
   --prayu-warning: var(--prayu-text);
-  --prayu-diff-add: #9cd4ae;
-  --prayu-diff-delete: var(--prayu-danger);
-  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
-  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-diff-add: #7ee787;
+  --prayu-diff-delete: #ffa198;
+  --prayu-diff-add-strength: 20%;
+  --prayu-diff-delete-strength: 18%;
+  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength), var(--prayu-surface-solid));
+  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength), var(--prayu-surface-solid));
   --prayu-glass-fill: rgb(26 26 26 / 86%);
   --prayu-glass-fill-strong: rgb(30 30 30 / 96%);
   --prayu-glass-highlight: rgb(255 255 255 / 30%);
@@ -2590,15 +2609,23 @@ body { background: transparent; }
   --prayu-danger: #b42318;
   --prayu-success: var(--prayu-text);
   --prayu-warning: var(--prayu-text);
-  --prayu-diff-add: #18673c;
+  --prayu-diff-add: #1a7f37;
+  --prayu-diff-add-strength: 14%;
   --prayu-glass-fill: rgb(255 255 255 / 94%);
   --prayu-glass-fill-strong: rgb(255 255 255 / 98%);
   --prayu-glass-highlight: rgb(255 255 255 / 92%);
   --prayu-glass-shadow: rgb(0 0 0 / 18%);
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
-  --prayu-diff-delete: var(--prayu-danger);
-  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
-  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-diff-delete: #cf222e;
+  --prayu-diff-delete-strength: 12%;
+  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength), var(--prayu-surface-solid));
+  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength), var(--prayu-surface-solid));
+  --prayu-terminal-bg: #ffffff;
+  --prayu-terminal-control: #f7f7f8;
+  --prayu-terminal-control-hover: #ececef;
+  --prayu-terminal-text: #202020;
+  --prayu-terminal-muted: #616161;
+  --prayu-terminal-border: rgb(0 0 0 / 12%);
 }
 
 [data-prayu-theme="glass"] {
@@ -2644,7 +2671,8 @@ body { background: transparent; }
   --prayu-danger-on-dark: #f38ba8;
   --prayu-success: #40a02b;
   --prayu-warning: #fe640b;
-  --prayu-diff-add: #40a02b;
+  --prayu-diff-add: #3e7659;
+  --prayu-diff-add-strength: 12%;
   --prayu-glass-fill: var(--dsh-glass-card);
   --prayu-glass-fill-strong: var(--dsh-glass-popover);
   --prayu-glass-highlight: rgb(255 255 255 / 42%);
@@ -2652,9 +2680,16 @@ body { background: transparent; }
   --prayu-elevation-panel: var(--dsh-glass-edge), var(--dsh-glass-drop);
   --prayu-elevation-floating: var(--dsh-glass-edge), var(--dsh-glass-input-shadow);
   --prayu-danger-soft: color-mix(in srgb, var(--prayu-danger) 10%, var(--prayu-surface-solid));
-  --prayu-diff-delete: var(--prayu-danger);
-  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) 12%, var(--prayu-surface-solid));
-  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) 10%, var(--prayu-surface-solid));
+  --prayu-diff-delete: #955151;
+  --prayu-diff-delete-strength: 10%;
+  --prayu-diff-add-soft: color-mix(in srgb, var(--prayu-diff-add) var(--prayu-diff-add-strength), var(--prayu-surface-solid));
+  --prayu-diff-delete-soft: color-mix(in srgb, var(--prayu-diff-delete) var(--prayu-diff-delete-strength), var(--prayu-surface-solid));
+  --prayu-terminal-bg: #eff1f5;
+  --prayu-terminal-control: rgb(38 49 72 / 6%);
+  --prayu-terminal-control-hover: rgb(38 49 72 / 10%);
+  --prayu-terminal-text: #30363d;
+  --prayu-terminal-muted: #697078;
+  --prayu-terminal-border: var(--dsh-glass-rim-soft);
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
@@ -2718,10 +2753,13 @@ body { background: transparent; }
     --prayu-danger-soft: Canvas;
     --prayu-success: CanvasText;
     --prayu-warning: CanvasText;
-    --prayu-diff-add: CanvasText;
-    --prayu-diff-delete: CanvasText;
-    --prayu-diff-add-soft: Canvas;
-    --prayu-diff-delete-soft: Canvas;
+    /* Inline user review colors must not win over forced-colors. */
+    --prayu-diff-add: CanvasText !important;
+    --prayu-diff-delete: CanvasText !important;
+    --prayu-diff-add-strength: 0% !important;
+    --prayu-diff-delete-strength: 0% !important;
+    --prayu-diff-add-soft: Canvas !important;
+    --prayu-diff-delete-soft: Canvas !important;
     --prayu-glass-fill: Canvas;
     --prayu-glass-fill-strong: Canvas;
     --prayu-glass-highlight: transparent;
@@ -4773,7 +4811,7 @@ samp {
 
 .user-terminal-state.failed,
 .user-terminal-message {
-  color: var(--prayu-danger-on-dark);
+  color: var(--prayu-danger);
 }
 
 .context-meter > i {

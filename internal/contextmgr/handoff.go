@@ -502,6 +502,15 @@ func validateHandoffEnvelope(envelope handoffMemoryEnvelope, taskID string,
 	return nil
 }
 
+// storedHandoffEnvelope reports whether content already decodes as a handoff
+// memory envelope, which is the point after which a text regex would be running
+// over serialized JSON instead of over record text.
+func storedHandoffEnvelope(content string) bool {
+	var envelope handoffMemoryEnvelope
+	return json.Unmarshal([]byte(content), &envelope) == nil &&
+		envelope.Version == HandoffMemoryProtocolVersion
+}
+
 func PrepareSummaryForStorage(summary Summary) (Summary, error) {
 	summary.TaskID = strings.TrimSpace(summary.TaskID)
 	summary.WorkspaceID = strings.TrimSpace(summary.WorkspaceID)
@@ -512,12 +521,19 @@ func PrepareSummaryForStorage(summary Summary) (Summary, error) {
 		summary.PreservedMessageCount > summary.SourceMessageCount {
 		return Summary{}, errors.New("handoff summary source counters are invalid")
 	}
-	if summary.ProtocolVersion == HandoffMemoryProtocolVersion && generatedFromSummaryContent(summary.Content) != nil {
-		// Generated JSON has byte-bound text and receipt fields. Verify each
-		// decoded string is already redacted; applying a text regex to serialized
-		// JSON would consume escaped newlines and invalidate an honest digest.
-		if err := validateGeneratedHandoffRedaction(summary.Content); err != nil {
-			return Summary{}, err
+	// A stored handoff envelope is serialized JSON whose record text is already
+	// bound by per-record digests. Generated JSON additionally carries byte-bound
+	// text and receipt fields, so verify each decoded string is already redacted;
+	// applying a text regex to serialized JSON would consume escaped newlines and
+	// invalidate an honest digest. An envelope without a generated receipt has the
+	// same hazard without the extra shape: Compact masks text before it excerpts
+	// and digests it, and redact.String is not idempotent, so a second pass here
+	// would rewrite text that content_sha256 still binds and reject the record.
+	if summary.ProtocolVersion == HandoffMemoryProtocolVersion && storedHandoffEnvelope(summary.Content) {
+		if generatedFromSummaryContent(summary.Content) != nil {
+			if err := validateGeneratedHandoffRedaction(summary.Content); err != nil {
+				return Summary{}, err
+			}
 		}
 		summary.Content = strings.TrimSpace(summary.Content)
 	} else {

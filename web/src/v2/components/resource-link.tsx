@@ -85,6 +85,8 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
     if (!file) return;
     let path = file.path;
     if (nativeResourcesAvailable() && workspaceID) {
+      // System apps open the validated workspace path without previewing bytes.
+      if (/\.(pdf|docx?|xlsx?|pptx?|zip|7z)$/iu.test(path)) { await resourceAction(reference, "open"); return; }
       const data = await readChatResource(reference);
       path = data.relative_path;
       const media = data.mime_type.split(";")[0];
@@ -97,7 +99,6 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
         } finally { bitmap.close(); }
         return;
       }
-      if (/\.(pdf|docx?|xlsx?|pptx?|zip|7z)$/iu.test(path)) { await resourceAction(reference, "open"); return; }
     }
     onOpenFile?.({ path, line: file.line, runID, triggerElement: trigger.current });
   };

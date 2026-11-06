@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io/fs"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -87,7 +87,7 @@ func Normalize(err error) error {
 		return Wrap(CodeCancelled, err.Error(), err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return Wrap(CodeDeadlineExceeded, err.Error(), err)
-	case errors.Is(err, sql.ErrNoRows), os.IsNotExist(err):
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, fs.ErrNotExist):
 		return Wrap(CodeNotFound, err.Error(), err)
 	}
 

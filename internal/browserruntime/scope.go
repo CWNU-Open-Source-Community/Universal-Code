@@ -56,6 +56,10 @@ type TargetScope struct {
 	ResolvedAddressRevalidation bool           `json:"resolved_address_revalidation"`
 	Authority                   ScopeAuthority `json:"authority"`
 	Fingerprint                 string         `json:"fingerprint"`
+	// Zero keeps the builtin ceiling. Omission preserves existing v1 scope
+	// fingerprints; narrowed bounds travel with the scope to CDP request checks.
+	MaxOrigins  int `json:"max_origins,omitempty"`
+	MaxURLBytes int `json:"max_url_bytes,omitempty"`
 }
 
 type NavigationDecision struct {
@@ -77,14 +81,18 @@ func NewTargetScope(profileID ProfileID, rawTargets []string) (TargetScope, erro
 	if !ok {
 		return TargetScope{}, fmt.Errorf("unsupported browser profile %q", profileID)
 	}
-	if len(rawTargets) == 0 || len(rawTargets) > profile.Limits.MaxOrigins {
+	return newTargetScope(profile, profile.Limits, rawTargets)
+}
+
+func newTargetScope(profile ProfileDescriptor, limits ProfileLimits, rawTargets []string) (TargetScope, error) {
+	if len(rawTargets) == 0 || len(rawTargets) > limits.MaxOrigins {
 		return TargetScope{}, fmt.Errorf("browser target scope requires between 1 and %d targets",
-			profile.Limits.MaxOrigins)
+			limits.MaxOrigins)
 	}
 
 	unique := make(map[string]Origin, len(rawTargets))
 	for _, rawTarget := range rawTargets {
-		origin, _, err := parseTarget(profile, rawTarget)
+		origin, _, err := parseTarget(profile, limits, rawTarget)
 		if err != nil {
 			return TargetScope{}, err
 		}
@@ -101,9 +109,15 @@ func NewTargetScope(profileID ProfileID, rawTargets []string) (TargetScope, erro
 		return TargetScope{}, err
 	}
 	scope := TargetScope{
-		ProtocolVersion: TargetScopeProtocolVersion, ProfileID: profileID,
+		ProtocolVersion: TargetScopeProtocolVersion, ProfileID: profile.ID,
 		ProfileFingerprint: profileFingerprint, Origins: origins, DefaultDeny: true,
 		RedirectRevalidation: true, ResolvedAddressRevalidation: true,
+	}
+	if limits.MaxOrigins != profile.Limits.MaxOrigins {
+		scope.MaxOrigins = limits.MaxOrigins
+	}
+	if limits.MaxURLBytes != profile.Limits.MaxURLBytes {
+		scope.MaxURLBytes = limits.MaxURLBytes
 	}
 	scope.Fingerprint, err = targetScopeFingerprint(scope)
 	if err != nil {
@@ -127,7 +141,11 @@ func (scope TargetScope) Validate() error {
 	if err != nil || scope.ProfileFingerprint != profileFingerprint {
 		return errors.New("browser target scope profile fingerprint mismatch")
 	}
-	if len(scope.Origins) == 0 || len(scope.Origins) > profile.Limits.MaxOrigins {
+	limits, err := scope.effectiveLimits(profile)
+	if err != nil {
+		return err
+	}
+	if len(scope.Origins) == 0 || len(scope.Origins) > limits.MaxOrigins {
 		return errors.New("browser target scope origin count is out of bounds")
 	}
 	if !scope.DefaultDeny || !scope.RedirectRevalidation || !scope.ResolvedAddressRevalidation {
@@ -138,7 +156,7 @@ func (scope TargetScope) Validate() error {
 	}
 	last := ""
 	for _, origin := range scope.Origins {
-		rebuilt, _, parseErr := parseTarget(profile, origin.String())
+		rebuilt, _, parseErr := parseTarget(profile, limits, origin.String())
 		if parseErr != nil || rebuilt != origin {
 			return errors.New("browser target scope contains a non-canonical origin")
 		}
@@ -155,12 +173,21 @@ func (scope TargetScope) Validate() error {
 	return nil
 }
 
+func (scope TargetScope) effectiveLimits(profile ProfileDescriptor) (ProfileLimits, error) {
+	override := ProfileLimits{MaxOrigins: scope.MaxOrigins, MaxURLBytes: scope.MaxURLBytes}
+	if err := validateLimitsOverride(profile.Limits, override); err != nil {
+		return ProfileLimits{}, err
+	}
+	return narrowProfileLimits(profile.Limits, override), nil
+}
+
 func (scope TargetScope) AuthorizeNavigation(rawURL string) NavigationDecision {
 	if err := scope.Validate(); err != nil {
 		return NavigationDecision{Code: "invalid_scope"}
 	}
 	profile, _ := BuiltinRegistry().Lookup(scope.ProfileID)
-	origin, canonicalURL, err := parseTarget(profile, rawURL)
+	limits, _ := scope.effectiveLimits(profile) // Validate checked the narrowed bounds.
+	origin, canonicalURL, err := parseTarget(profile, limits, rawURL)
 	if err != nil {
 		return NavigationDecision{Code: "invalid_or_forbidden_url"}
 	}
@@ -224,9 +251,9 @@ func (scope TargetScope) AuthorizeResolvedAddress(origin Origin, rawAddress stri
 	return AddressDecision{Code: "resolved_address_out_of_scope", Class: class}
 }
 
-func parseTarget(profile ProfileDescriptor, rawTarget string) (Origin, string, error) {
+func parseTarget(profile ProfileDescriptor, limits ProfileLimits, rawTarget string) (Origin, string, error) {
 	rawTarget = strings.TrimSpace(rawTarget)
-	if rawTarget == "" || len([]byte(rawTarget)) > profile.Limits.MaxURLBytes ||
+	if rawTarget == "" || len(rawTarget) > limits.MaxURLBytes ||
 		!utf8.ValidString(rawTarget) || containsControl(rawTarget) || strings.Contains(rawTarget, "\\") {
 		return Origin{}, "", errors.New("browser target URL is empty, oversized, or malformed")
 	}
@@ -266,7 +293,11 @@ func parseTarget(profile ProfileDescriptor, rawTarget string) (Origin, string, e
 	parsed.Scheme = scheme
 	parsed.Host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	parsed.User = nil
-	return origin, parsed.String(), nil
+	canonicalURL := parsed.String()
+	if len(canonicalURL) > limits.MaxURLBytes {
+		return Origin{}, "", errors.New("canonical browser target URL exceeds its byte limit")
+	}
+	return origin, canonicalURL, nil
 }
 
 func normalizeHost(rawHost string) (string, error) {

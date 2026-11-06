@@ -36,6 +36,7 @@ const messages: Record<string, string> = {
   "保存的工作目录请求无法读取，原记录已保留。": "The saved working directory request could not be read. The original record is preserved.",
   "最新工作记录存在未读取的间隔，请重试同步。": "There is an unread gap in the latest work records. Retry syncing.",
   "工作记录分页游标未推进，已有记录已保留。": "Work record pagination did not advance. Existing records are kept.",
+  "已达到 12 个工作区标签上限，请先关闭暂不使用的标签。": "Maximum of 12 workspace tabs reached. Please close unused tabs before opening new ones.",
 };
 
 export function localUIMessage(message: string, t: LocaleText): string {

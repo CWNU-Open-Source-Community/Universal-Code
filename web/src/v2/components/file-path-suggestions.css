@@ -1,0 +1,12 @@
+.v2-file-path-input { position: relative; min-width: 0; }
+.v2-file-path-suggestions { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: 0; right: 0; max-height: min(320px, 45vh); overflow: auto; border: 1px solid var(--v2-border); border-radius: 12px; background: var(--v2-floating-surface); box-shadow: 0 12px 32px rgb(0 0 0 / .14); padding: 6px; font-size: 12px; }
+.v2-file-path-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 8px; color: var(--v2-muted); }
+.v2-file-path-heading > span { min-width: 0; overflow-wrap: anywhere; }
+.v2-file-path-heading button { display: grid; place-items: center; flex-shrink: 0; border: 0; background: transparent; color: inherit; padding: 4px; border-radius: 5px; cursor: pointer; }
+.v2-file-path-suggestions [role="option"] { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: 6px; padding: 8px; background: transparent; color: var(--v2-ink); text-align: left; font: inherit; cursor: pointer; }
+.v2-file-path-suggestions [role="option"] > svg { flex-shrink: 0; }
+.v2-file-path-suggestions [role="option"] > span { min-width: 0; overflow-wrap: anywhere; }
+.v2-file-path-suggestions [role="option"][aria-selected="true"], .v2-file-path-suggestions [role="option"]:hover { background: var(--v2-control-hover); }
+.v2-file-path-suggestions p { margin: 6px; color: var(--v2-muted); overflow-wrap: anywhere; }
+.v2-file-path-suggestions [role="alert"] { color: var(--v2-danger); }
+.v2-file-path-suggestions .v2-file-path-help { font-size: 11px; }

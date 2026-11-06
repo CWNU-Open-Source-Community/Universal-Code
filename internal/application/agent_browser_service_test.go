@@ -116,14 +116,16 @@ func (s *agentBrowserTestStore) ListSupervisorToolRounds(_ context.Context, chec
 }
 
 type agentBrowserTestRuntime struct {
-	done       chan struct{}
-	cancelOnce sync.Once
-	status     browserruntime.AgentBrowserStatus
-	actions    []string
-	png        []byte
-	cancelled  bool
-	after      func()
-	block      bool
+	done              chan struct{}
+	cancelOnce        sync.Once
+	screencastOnce    sync.Once
+	screencastStarted chan struct{}
+	status            browserruntime.AgentBrowserStatus
+	actions           []string
+	png               []byte
+	cancelled         bool
+	after             func()
+	block             bool
 }
 
 func (r *agentBrowserTestRuntime) Navigate(ctx context.Context, url string) (browserruntime.AgentBrowserNavigation, error) {
@@ -159,6 +161,10 @@ func (r *agentBrowserTestRuntime) Scroll(context.Context, float64, float64) (bro
 	r.actions = append(r.actions, "scroll")
 	return browserruntime.AgentBrowserInteraction{Dispatched: true}, nil
 }
+func (r *agentBrowserTestRuntime) Upload(context.Context, string, string, string) (browserruntime.AgentBrowserInteraction, error) {
+	return browserruntime.AgentBrowserInteraction{}, nil
+}
+
 func (r *agentBrowserTestRuntime) Screenshot(context.Context) (browserruntime.AgentBrowserScreenshot, error) {
 	h := sha256.Sum256(r.png)
 	return browserruntime.AgentBrowserScreenshot{SessionID: r.status.SessionID, CanonicalURL: r.status.CanonicalURL, DocumentEpoch: r.status.DocumentEpoch, MediaType: "image/png", PNG: r.png, Bytes: len(r.png), SHA256: hex.EncodeToString(h[:])}, nil
@@ -177,6 +183,15 @@ func (r *agentBrowserTestRuntime) Close(context.Context) (browserruntime.AgentBr
 	return browserruntime.AgentBrowserCleanup{SessionID: r.status.SessionID, TreeReaped: true, ProfileRemoved: true}, nil
 }
 func (r *agentBrowserTestRuntime) Done() <-chan struct{} { return r.done }
+
+// StartScreencast returns an idle stream: the live view blocks on its request
+// context until the test cancels it, which is what the lifecycle test needs.
+func (r *agentBrowserTestRuntime) StartScreencast(context.Context) (browserruntime.AgentBrowserScreencastStream, error) {
+	if r.screencastStarted != nil {
+		r.screencastOnce.Do(func() { close(r.screencastStarted) })
+	}
+	return browserruntime.AgentBrowserScreencastStream{}, nil
+}
 
 func newAgentBrowserFixture(t *testing.T) (*AgentBrowserService, *agentBrowserTestStore, *agentBrowserTestRuntime, *AgentRunner, domain.SupervisorTurn) {
 	t.Helper()
@@ -241,7 +256,7 @@ func TestAgentBrowserFirstNavigationAdvertisedDurableAndNeverRepeated(t *testing
 			}
 		}
 	}
-	if len(seen) != 8 {
+	if len(seen) != 9 {
 		t.Fatalf("tools %v", seen)
 	}
 	prepared, e := prepareSupervisorToolCalls([]llm.ToolCall{{ID: "model-1", Name: "browser_navigate", Arguments: json.RawMessage(`{"version":"browser_navigate.v2","url":"https://example.org/#dynamic"}`)}}, turn.Run.ID, 1, 1, turn.Mode.Surface, turn.Mode.Phase, st.base.executionPermission.Mode, false, false, options)

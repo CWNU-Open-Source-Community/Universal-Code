@@ -72,7 +72,7 @@ export function parseRepositoryDiff(value: unknown, workspaceID: string): Reposi
     "instruction_authorized", "items", "kind", "mutation_supported", "network_used",
     "omitted_count", "patch_content_included", "process_started", "protocol_version",
     "raw_content_included", "read_only", "redaction_count", "remote_config_included",
-    "returned_count", "root_path_exposed", "total_patch_bytes", "truncated", "workspace_id"];
+    "returned_count", "root_path_exposed", "total_patch_bytes", "truncated", "workspace_id", "next_after"];
   if (!hasExactKeys(value, keys) || value.protocol_version !== "repository_diff.v1" ||
     value.workspace_id !== workspaceID || !["none", "git"].includes(String(value.kind)) ||
     typeof value.available !== "boolean" || typeof value.truncated !== "boolean" ||
@@ -85,28 +85,32 @@ export function parseRepositoryDiff(value: unknown, workspaceID: string): Reposi
     !Array.isArray(value.items) || value.items.length > 50 ||
     !safeBoundedCount(value.returned_count, 50) || value.returned_count !== value.items.length ||
     !safeBoundedCount(value.omitted_count, 10_000) ||
-    !safeBoundedCount(value.redaction_count, 10_000) ||
-    !safeBoundedCount(value.total_patch_bytes, 512 * 1024) ||
+    !safeBoundedCount(value.redaction_count, 100_000_000) ||
+    typeof value.next_after !== "string" ||
+    (value.next_after !== "" && (!validWorkspaceRelativePath(value.next_after) || value.next_after === ".")) ||
+    !safeBoundedCount(value.total_patch_bytes, 2 * 1024 * 1024) ||
     value.available !== (value.kind === "git")) {
     throw new APIRequestError("Repository diff violated its bounded read-only contract",
       "INVALID_RESPONSE", 502);
   }
   const status = ["unmodified", "untracked", "modified", "added", "deleted", "renamed",
     "copied", "conflicted"];
-  const contentStates = ["text", "binary_or_unsupported", "size_limited", "linked", "unavailable"];
+  const contentStates = ["text", "binary_or_unsupported", "size_limited", "linked", "unavailable", "computation_limited"];
   let totalBytes = 0;
   let redactedItems = 0;
   const paths = new Set<string>();
   const items = value.items.map((item) => {
     if (!hasExactKeys(item, ["added_lines", "content_state", "deleted_lines", "patch",
-      "patch_bytes", "path", "redacted", "staging", "truncated", "worktree"]) ||
+      "patch_bytes", "path", "redacted", "staging", "truncated", "worktree", "statistics_complete"]) ||
       !validWorkspaceRelativePath(item.path) || item.path === "." || paths.has(String(item.path)) ||
       !status.includes(String(item.staging)) || !status.includes(String(item.worktree)) ||
       !contentStates.includes(String(item.content_state)) || typeof item.patch !== "string" ||
-      !safeBoundedCount(item.patch_bytes, 64 * 1024) ||
+      !safeBoundedCount(item.patch_bytes, 256 * 1024) ||
       new TextEncoder().encode(item.patch).length !== item.patch_bytes ||
-      !safeBoundedCount(item.added_lines, 64 * 1024) ||
-      !safeBoundedCount(item.deleted_lines, 64 * 1024) ||
+      !safeBoundedCount(item.added_lines, 100_000) ||
+      !safeBoundedCount(item.deleted_lines, 100_000) ||
+      typeof item.statistics_complete !== "boolean" ||
+      (item.statistics_complete && (item.content_state !== "text" || item.redacted)) ||
       typeof item.redacted !== "boolean" || typeof item.truncated !== "boolean" ||
       (item.content_state !== "text" &&
         (item.patch !== "" || item.patch_bytes !== 0 || item.added_lines !== 0 ||
@@ -120,7 +124,10 @@ export function parseRepositoryDiff(value: unknown, workspaceID: string): Reposi
     return item;
   });
   if (totalBytes !== value.total_patch_bytes || redactedItems > value.redaction_count ||
-    ((items.some((item) => item.truncated) || value.omitted_count > 0) && !value.truncated) ||
+    (items.some((item) => item.truncated) && !value.truncated) ||
+    (value.next_after !== "" && (items.length === 0 || value.omitted_count === 0 ||
+      value.next_after !== items[items.length - 1].path)) ||
+    (value.omitted_count > 0 && value.next_after === "") ||
     (!value.available && (items.length !== 0 || value.base_head !== "" ||
       value.total_patch_bytes !== 0 || value.omitted_count !== 0 || value.redaction_count !== 0))) {
     throw new APIRequestError("Repository diff contains inconsistent bounded facts",

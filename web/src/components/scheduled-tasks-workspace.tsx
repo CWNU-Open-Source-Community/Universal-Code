@@ -4,6 +4,7 @@ import { CalendarClock, Download, LoaderCircle, Pause, Play, Plus, RefreshCw, Sq
 import type { APIClient } from "../api/client";
 import type { ScheduledJobCreateRequestView, ScheduledJobObservationRequestView, ScheduledJobView, ThreadDetailView, ThreadView } from "../api/types";
 import { readThreadReview } from "../api/task-delivery";
+import { downloadTextFile } from "../lib/download";
 import { useLocale } from "../lib/locale";
 import { AutomationPRFollowup } from "./automation-pr-followup";
 import "./scheduled-tasks-workspace.css";
@@ -25,12 +26,8 @@ function formatTime(value: string | undefined, locale: string): string {
   return value ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
 }
 function downloadBundle(runID: string, value: unknown): void {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "cyberagent-diagnostics-" + runID + ".json";
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile("cyberagent-diagnostics-" + runID + ".json", "application/json",
+    JSON.stringify(value, null, 2));
 }
 
 export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThreadID = "" }: {
@@ -259,7 +256,7 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
           <button className="compact-command" disabled={bundle.isPending} onClick={() => bundle.mutate(selected)} type="button"><Download aria-hidden="true" size={13} />{t("导出诊断包", "Export diagnostics")}</button>
         </div>
         {selected.spec.execution_target?.kind === "thread" && selected.spec.execution_target.thread_id && <a className="automation-result-link" href={"#/threads/" + encodeURIComponent(selected.spec.execution_target.thread_id)}>{t("打开执行任务", "Open execution task")}</a>}
-        {detail.data?.snapshot.executions?.length ? <section className="automation-executions" aria-label={t("执行结果", "Execution results")}><strong>{t("执行结果", "Execution results")}</strong>{detail.data.snapshot.executions.map((item) => <article key={item.job_id + ":" + item.occurrence_at}><div><span className="status-badge">{statusLabel(item.state)}</span><small>{formatTime(item.occurrence_at, locale)}</small></div>{item.result && <p>{item.result}</p>}{item.error_code && <p role="alert">{item.error_code}</p>}{item.run_id && <a href={"#/new/inspector/runs/" + encodeURIComponent(item.run_id)}>{t("查看运行记录", "View run record")}</a>}{item.workflow_execution_id && <small>{t("工作流执行", "Workflow execution")} {item.workflow_execution_id}</small>}</article>)}</section> : null}
+        {detail.data?.snapshot.executions?.length ? <section className="automation-executions" aria-label={t("执行结果", "Execution results")}><strong>{t("执行结果", "Execution results")}</strong>{detail.data.snapshot.executions.map((item) => <article key={item.job_id + ":" + item.occurrence_at}><div><span className="status-badge">{statusLabel(item.state)}</span><small>{formatTime(item.occurrence_at, locale)}</small></div>{item.result && <p>{item.result}</p>}{item.error_code && <p role="alert">{item.error_code}</p>}{item.run_id && <a href={"#/runs/" + encodeURIComponent(item.run_id)}>{t("查看运行记录", "View run record")}</a>}{item.workflow_execution_id && <small>{t("工作流执行", "Workflow execution")} {item.workflow_execution_id}</small>}</article>)}</section> : null}
         {detail.data?.snapshot.notifications.length ? <section className="scheduled-notifications"><strong>{t("通知", "Notifications")}</strong>{detail.data.snapshot.notifications.map((notice) => <p key={notice.id}><span className="status-badge">{notice.kind}</span>{notice.summary}</p>)}</section> : null}
       </> : <div className="utility-empty-state"><CalendarClock aria-hidden="true" size={25} /><strong>{t("选择计划，查看执行结果、通知与暂停控制。", "Select a schedule to view results, notifications, and pause controls.")}</strong></div>}</div>
     </div>

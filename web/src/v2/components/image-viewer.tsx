@@ -5,12 +5,19 @@ import { Copy, Download, Maximize2, Minus, Plus, X } from "lucide-react";
 import type { WorkspaceImageAttachment } from "../../api/image-attachments";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 
-type PreviewImage = Pick<WorkspaceImageAttachment, "name" | "mime_type" | "width" | "height">;
+type PreviewImage = Pick<WorkspaceImageAttachment, "name" | "width" | "height"> & { mime_type: WorkspaceImageAttachment["mime_type"] | "image/gif" };
 export async function copyImageToClipboard(blob: Blob, image: PreviewImage, t: LocaleText): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error(t("当前浏览器不支持复制图片，请下载原图。", "This browser cannot copy images. Download the original."));
   const png = clipboardPNG(blob, image, t);
   void png.catch(() => {});
-  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+  } catch (failure) {
+    if (failure instanceof DOMException && failure.name === "NotAllowedError") {
+      throw new Error(t("浏览器未允许写入剪贴板，请允许权限后重试，或下载原图。", "Clipboard access was denied. Allow it and retry, or download the original image."));
+    }
+    throw failure;
+  }
 }
 async function clipboardPNG(blob: Blob, image: PreviewImage, t: LocaleText): Promise<Blob> {
   // Reuse the authenticated, hash-verified bytes. Fetching the display's blob:
@@ -81,9 +88,7 @@ export function V2ImageViewer({ image, url, blob, onClose, returnFocusRef }: {
       await copyImageToClipboard(blob, image, t);
       setCopied(true);
     } catch (failure) {
-      setCopyError(failure instanceof DOMException && failure.name === "NotAllowedError"
-        ? t("浏览器未允许写入剪贴板，请允许权限后重试，或下载原图。", "Clipboard access was denied. Allow it and retry, or download the original image.")
-        : t("复制图片失败：", "Could not copy image: ") + (failure instanceof Error ? failure.message : t("请重试，或下载原图。", "Try again or download the original image.")));
+      setCopyError(t("复制图片失败：", "Could not copy image: ") + (failure instanceof Error ? failure.message : t("请重试，或下载原图。", "Try again or download the original image.")));
     } finally { setCopying(false); }
   };
 

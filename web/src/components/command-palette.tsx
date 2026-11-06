@@ -63,7 +63,7 @@ export function CommandPalette({ commands }: { commands: CommandPaletteCommand[]
     } else if (event.key === "ArrowUp" && filtered.length > 0) {
       event.preventDefault();
       setSelected((current) => (current - 1 + filtered.length) % filtered.length);
-    } else if (event.key === "Enter") {
+    } else if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       execute(filtered[selected]);
     }

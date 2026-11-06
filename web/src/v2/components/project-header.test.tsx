@@ -16,6 +16,7 @@ it("fetches full project details only when opened and exposes editing to keyboar
       label={workspace.name} expanded onToggle={vi.fn()} onEdit={onEdit} />
   </LocaleProvider></QueryClientProvider>);
   expect(getWorkspaceProject).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "复制项目目录" })).not.toBeInTheDocument();
   const user = userEvent.setup();
   const trigger = screen.getByRole("button", { name: "页面设计 项目信息" });
   trigger.focus();
@@ -42,6 +43,60 @@ it("opens on hover and keeps the interactive card open while the pointer enters 
   const card = await screen.findByRole("dialog", { name: "页面设计 项目信息" });
   await user.hover(card);
   expect(card).toHaveTextContent("连接操作令牌");
+  expect(within(card).queryByRole("button", { name: "复制项目目录" })).not.toBeInTheDocument();
   await user.unhover(card);
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+it.each([
+  ["zh-CN", "复制项目目录", "已复制项目目录", "编辑项目", "页面设计 项目信息"],
+  ["en-US", "Copy project directory", "Project directory copied", "Edit project", "页面设计 project details"],
+])("copies the complete project path from the keyboard in %s", async (locale, copyLabel, copiedLabel, editLabel, detailsLabel) => {
+  localStorage.setItem("prayu.locale.v1", locale);
+  const user = userEvent.setup();
+  const writeText = vi.spyOn(navigator.clipboard, "writeText");
+  const path = "D:\\团队 项目\\Release 2026\\完整目录";
+  const getWorkspaceProject = vi.fn().mockResolvedValue({ ...workspace, directory_path: path, thread_count: 2, active_thread_count: 1 });
+  render(<QueryClientProvider client={new QueryClient()}><LocaleProvider>
+    <ProjectHeader client={{ hasControl: true, getWorkspaceProject } as unknown as APIClient} workspace={workspace}
+      label={workspace.name} expanded onToggle={vi.fn()} onEdit={vi.fn()} />
+  </LocaleProvider></QueryClientProvider>);
+  const trigger = screen.getByRole("button", { name: detailsLabel });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const copyButton = await screen.findByRole("button", { name: copyLabel });
+  await waitFor(() => expect(screen.getByRole("button", { name: editLabel })).toHaveFocus());
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(copyButton).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(within(copyButton).getByRole("status")).toHaveTextContent(copiedLabel));
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(path);
+  expect(await navigator.clipboard.readText()).toBe(path);
+  expect(screen.getByText(path)).toBeVisible();
+  expect(copyButton).toHaveFocus();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(within(await screen.findByRole("button", { name: copyLabel })).getByRole("status")).toHaveTextContent(copyLabel);
+});
+
+it("reports clipboard rejection without success and lets the user retry", async () => {
+  const user = userEvent.setup();
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new DOMException("Write permission denied", "NotAllowedError"));
+  const path = "D:\\Projects\\目录 with spaces";
+  const getWorkspaceProject = vi.fn().mockResolvedValue({ ...workspace, directory_path: path, thread_count: 0, active_thread_count: 0 });
+  render(<QueryClientProvider client={new QueryClient()}><LocaleProvider>
+    <ProjectHeader client={{ hasControl: true, getWorkspaceProject } as unknown as APIClient} workspace={workspace}
+      label={workspace.name} expanded onToggle={vi.fn()} />
+  </LocaleProvider></QueryClientProvider>);
+  await user.click(screen.getByRole("button", { name: "页面设计 项目信息" }));
+  const copyButton = await screen.findByRole("button", { name: "复制项目目录" });
+  await user.click(copyButton);
+  expect(within(copyButton).getByRole("status")).toHaveTextContent("复制失败，请重试");
+  expect(screen.queryByText("已复制项目目录")).not.toBeInTheDocument();
+  expect(screen.getByText(path)).toBeVisible();
+  await user.click(copyButton);
+  expect(within(copyButton).getByRole("status")).toHaveTextContent("已复制项目目录");
+  expect(writeText).toHaveBeenNthCalledWith(2, path);
 });

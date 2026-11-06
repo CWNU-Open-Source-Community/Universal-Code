@@ -10,7 +10,7 @@ import (
 	"cyberagent-workbench/internal/toolgateway"
 )
 
-func TestSupervisorToolRoundViewRedactsInspectorPayloadAndResult(t *testing.T) {
+func TestSupervisorToolRoundViewRedactsRecordPayloadAndResult(t *testing.T) {
 	completed := time.Now().UTC()
 	round := domain.SupervisorToolRound{Calls: []domain.SupervisorToolCall{{
 		CallID: "call-command", ToolName: string(toolgateway.CommandRuntimeTool),
@@ -40,17 +40,17 @@ func TestSupervisorToolRoundViewRedactsInspectorPayloadAndResult(t *testing.T) {
 	for _, forbidden := range []string{"private-env-value", "operator-input",
 		"another-secret-value", "session-value", "private message"} {
 		if strings.Contains(public, forbidden) {
-			t.Fatalf("Inspector projection exposed %q: %s", forbidden, public)
+			t.Fatalf("Record projection exposed %q: %s", forbidden, public)
 		}
 	}
 	for _, required := range []string{"Write-Output safe", `"kind":"command"`,
 		`"detail_available":true`, `"agent_id":"agent-root"`} {
 		if !strings.Contains(public, required) {
-			t.Fatalf("Inspector projection omitted %q: %s", required, public)
+			t.Fatalf("Record projection omitted %q: %s", required, public)
 		}
 	}
 	if strings.Contains(public, `"payload"`) || strings.Contains(public, `"result"`) {
-		t.Fatalf("Inspector public call retained generic payload/result fields: %s", public)
+		t.Fatalf("Record public call retained generic payload/result fields: %s", public)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestSupervisorToolRoundViewUsesTypedMCPDetail(t *testing.T) {
 		}
 	}
 	if strings.Contains(public, `"payload"`) || strings.Contains(public, `"result":[`) {
-		t.Fatalf("typed MCP Inspector response retained a generic fact bag: %s", public)
+		t.Fatalf("typed MCP Record response retained a generic fact bag: %s", public)
 	}
 }
 
@@ -120,7 +120,7 @@ func TestSupervisorToolRoundViewFailsClosedForLegacyUntypedTool(t *testing.T) {
 	public := string(encoded)
 	if strings.Contains(public, "private work item") || strings.Contains(public, "private result") ||
 		!strings.Contains(public, `"detail_available":false`) || strings.Contains(public, `"detail":`) {
-		t.Fatalf("untyped Inspector tool did not fail closed: %s", public)
+		t.Fatalf("untyped Record tool did not fail closed: %s", public)
 	}
 }
 
@@ -138,12 +138,12 @@ func TestPublicSupervisorToolJSONRedactsCustomProviderHeadersAndPrefixedSecrets(
 	for _, forbidden := range []string{"unstructured-secret-value", "another-unstructured-value",
 		"third-value", "application/json"} {
 		if strings.Contains(projected, forbidden) {
-			t.Fatalf("Inspector projection leaked %q: %s", forbidden, projected)
+			t.Fatalf("Record projection leaked %q: %s", forbidden, projected)
 		}
 	}
 	if !strings.Contains(projected, `"safe":"visible"`) ||
-		!strings.Contains(projected, inspectorRedactedValue) {
-		t.Fatalf("Inspector projection did not preserve safe structure: %s", projected)
+		!strings.Contains(projected, recordRedactedValue) {
+		t.Fatalf("Record projection did not preserve safe structure: %s", projected)
 	}
 }
 
@@ -152,9 +152,9 @@ func TestPublicSupervisorToolJSONOmitsSecretMaterialUsedAsAFieldName(t *testing.
 	projected := string(publicSupervisorToolJSON(`{"` + secretKey + `":"value",` +
 		`"nested":{"safe":"visible"}}`))
 	if strings.Contains(projected, secretKey) || strings.Contains(projected, "value") {
-		t.Fatalf("Inspector projection leaked a secret-bearing JSON field name: %s", projected)
+		t.Fatalf("Record projection leaked a secret-bearing JSON field name: %s", projected)
 	}
 	if !strings.Contains(projected, `"safe":"visible"`) {
-		t.Fatalf("Inspector projection removed unrelated safe structure: %s", projected)
+		t.Fatalf("Record projection removed unrelated safe structure: %s", projected)
 	}
 }

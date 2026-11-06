@@ -250,3 +250,53 @@ function render(ui: ReactElement, options?: RenderOptions) {
   window.localStorage.setItem("prayu.locale.v1", "zh-CN");
   return renderComponent(ui, { wrapper: LocaleProvider, ...options });
 }
+
+it("offers the “/” command menu: Enter inserts the exact match, arguments reach $ARGUMENTS, unmatched sends stay blocked", async () => {
+  localStorage.setItem("universal-code.composer-plain-text", "true");
+  localStorage.setItem("universal-code.prompt-commands.v1", JSON.stringify({ version: 1, commands: [
+    { id: "cmd-1", name: "release-check", title: "Release checklist", body: "Check $ARGUMENTS against the notes.",
+      created_at: "2026-10-28T00:00:00Z", updated_at: "2026-10-28T00:00:00Z" },
+  ] }));
+  const onSubmit = vi.fn(async () => undefined);
+  renderComposer(onSubmit);
+  const input = screen.getByRole("textbox", { name: "开始新对话" });
+  const user = userEvent.setup();
+
+  await user.type(input, "/rel src/main.ts");
+  const menu = screen.getByRole("menu", { name: "自定义指令" });
+  expect(screen.getByRole("menuitem", { name: /release-check/ })).toBeInTheDocument();
+
+  // Click inserts with the typed arguments.
+  await user.click(screen.getByRole("menuitem", { name: /release-check/ }));
+  await waitFor(() => expect(menu).not.toBeInTheDocument());
+  expect(input).toHaveValue("Check src/main.ts against the notes.");
+
+  // Enter on an exact name match inserts instead of sending a bare token.
+  await user.clear(input);
+  await user.type(input, "/release-check");
+  await user.type(input, "{enter}");
+  await waitFor(() => expect(input).toHaveValue("Check  against the notes."));
+  expect(onSubmit).not.toHaveBeenCalled();
+
+  // A bare "/" opens the menu showing all available commands.
+  await user.clear(input);
+  await user.type(input, "/");
+  expect(screen.getByRole("menu", { name: "自定义指令" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: /release-check/ })).toBeInTheDocument();
+
+  // The command manager dialog escapes the composer form via createPortal.
+  await user.click(screen.getByRole("menuitem", { name: "管理指令库…" }));
+  const dialog = screen.getByRole("dialog", { name: "管理自定义指令" });
+  expect(dialog).toBeInTheDocument();
+  const composerForm = input.closest("form")!;
+  expect(composerForm.contains(dialog)).toBe(false);
+  await user.click(screen.getByRole("button", { name: "关闭" }));
+
+  // Without a confident match, Enter sends the draft as ordinary text and the
+  // menu only hints that nothing matched.
+  await user.clear(input);
+  await user.type(input, "/nowhere");
+  expect(screen.getByText("没有匹配的指令。")).toBeInTheDocument();
+  await user.type(input, "{enter}");
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("/nowhere"));
+});

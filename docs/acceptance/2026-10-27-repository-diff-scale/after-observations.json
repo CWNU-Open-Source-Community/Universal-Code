@@ -1,0 +1,38 @@
+{
+  "mode": "after",
+  "elapsed_ms": 764.0671000000002,
+  "source_bytes": 2150000,
+  "returned": 50,
+  "omitted": 8,
+  "next_after": "zz-page-46.txt",
+  "total_patch_bytes": 272822,
+  "items": [
+    {
+      "path": "engine.txt",
+      "content_state": "text",
+      "statistics_complete": true,
+      "added_lines": 2,
+      "deleted_lines": 2,
+      "patch_bytes": 6976,
+      "truncated": false
+    },
+    {
+      "path": "small.ts",
+      "content_state": "text",
+      "statistics_complete": true,
+      "added_lines": 2,
+      "deleted_lines": 2,
+      "patch_bytes": 508,
+      "truncated": false
+    },
+    {
+      "path": "truncated.txt",
+      "content_state": "text",
+      "statistics_complete": true,
+      "added_lines": 40000,
+      "deleted_lines": 40000,
+      "patch_bytes": 262142,
+      "truncated": true
+    }
+  ]
+}

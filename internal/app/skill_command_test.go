@@ -76,7 +76,7 @@ func TestSkillCLIListsShowsAndValidatesBuiltinsWithoutRuntimeState(t *testing.T)
 	}
 
 	validated, stderr, code := executeTestCommand(t, "skill", "validate")
-	if code != 0 || stderr != "" || !strings.Contains(validated, "validated 14 built-in skill.v1 manifests") {
+	if code != 0 || stderr != "" || !strings.Contains(validated, "validated 15 built-in skill.v1 manifests") {
 		t.Fatalf("unexpected skill validation: code=%d stderr=%q output=%q", code, stderr, validated)
 	}
 	if _, err := os.Stat(filepath.Join(home, "cyberagent.db")); !os.IsNotExist(err) {

@@ -371,7 +371,26 @@ describe("V2 custom Provider settings", () => {
     expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
   });
 
-  it("refuses an over-limit model merge without silently truncating the draft or selection", async () => {
+  it("waits for an IME candidate before Enter merges a manually added model", async () => {
+    const controls = createClient([provider()]);
+    const user = userEvent.setup();
+    renderSettings(controls.client);
+    await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
+    const manual = screen.getByLabelText("手动添加模型");
+    fireEvent.change(manual, { target: { value: "acme-new" } });
+    fireEvent.keyDown(manual, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(manual, { key: "Enter", keyCode: 229 });
+    expect(manual).toHaveValue("acme-new");
+    expect(screen.getByLabelText("模型列表")).toHaveValue("acme-pro");
+    fireEvent.keyDown(manual, { key: "Enter" });
+    expect(screen.getByLabelText("模型列表")).toHaveValue("acme-pro\nacme-new");
+    expect(manual).toHaveValue("");
+  });
+
+  // The over-limit fixture renders all 128 model policies plus image selectors;
+  // it runs close to the 5s default on a loaded CI worker, so give it headroom
+  // instead of racing the global timeout.
+  it("refuses an over-limit model merge without silently truncating the draft or selection", { timeout: 15000 }, async () => {
     const models = Array.from({ length: 128 }, (_, index) => `model-${index}`);
     const controls = createClient([provider({ models, default_model: models[0] })]);
     controls.discoverProviderModels.mockResolvedValue({ models: [{ id: "one-too-many" }], truncated: false });

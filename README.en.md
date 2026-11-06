@@ -11,18 +11,9 @@
 
   <p>
     <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/CWNU-Open-Source-Community/Universal-Code/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white"></a>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/releases"><img alt="Release" src="https://img.shields.io/github/v/release/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=blue&logo=github"></a>
+    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/releases"><img alt="Latest version (including previews)" src="https://img.shields.io/github/v/release/CWNU-Open-Source-Community/Universal-Code?include_prereleases&sort=date&label=version&style=flat-square&color=blue&logo=github"></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=green"></a>
-    <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blueviolet?style=flat-square">
-    <img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white">
-    <img alt="Node" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
-    <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black">
-    <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square"></a>
-  </p>
-  <p>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github&color=gold"></a>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/CWNU-Open-Source-Community/Universal-Code?style=flat-square&logo=github"></a>
-    <a href="https://github.com/CWNU-Open-Source-Community/Universal-Code/issues"><img alt="Issues" src="https://img.shields.io/github/issues/CWNU-Open-Source-Community/Universal-Code?style=flat-square&color=orange"></a>
+    <a href="#option-1-download-pre-built-binaries"><img alt="Windows and macOS support" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-64748b?style=flat-square"></a>
   </p>
 </div>
 
@@ -42,12 +33,18 @@
 
 ### Option 1: Download Pre-built Binaries
 
-| OS | Instructions |
-| :--- | :--- |
-| **Windows 10/11** | Get the current Actions test package and launch steps from the [Windows download guide](docs/windows-release.md). The executable is named `TraverseBoard.exe`; double-click it to launch. Edge WebView2 Runtime is required. The newest public Release remains the [older preview from 2026-09-05](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v0.1.0-pr195-preview). |
-| **macOS (Apple Silicon / Intel)** | Get the Actions preview ZIP for your architecture from the [macOS download guide](docs/macos-release.md), unpack it, and open `TraverseBoard.app`. It is ad-hoc signed and unnotarized. Public Releases do not yet contain Mac packages. |
+<!-- public-downloads:start -->
+Current public preview: [**v1.0.0-preview.20261020**](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020), published on 2026-10-20.
 
-Use the [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) as the ongoing candidate entry point. Actions downloads require a GitHub login and expire. Each platform guide records the candidate version, source revision, and expiry date.
+| OS | Download and launch |
+| :--- | :--- |
+| **Windows x64** | Download [TraverseBoard.exe](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/TraverseBoard.exe) and double-click it. Edge WebView2 Runtime is required. See the [Windows download guide](docs/windows-release.md). |
+| **macOS Apple Silicon / Intel** | In [Release Assets](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/tag/v1.0.0-preview.20261020), choose the `.dmg` containing `macos-arm64` (Apple Silicon) or `macos-amd64` (Intel), then drag `TraverseBoard.app` into Applications. See the [macOS download guide](docs/macos-release.md). |
+
+Public Release downloads require no GitHub login and are not subject to Actions artifact retention limits. Verify downloads against [SHA256SUMS](https://github.com/CWNU-Open-Source-Community/Universal-Code/releases/download/v1.0.0-preview.20261020/SHA256SUMS) on the same release. The Windows EXE is unsigned; Mac apps are ad-hoc signed and unnotarized, so the OS may block the first launch. This is a preview; see the release notes for verified scope and known issues.
+<!-- public-downloads:end -->
+
+For test candidates newer than the public preview, use the [Desktop release run list](https://github.com/CWNU-Open-Source-Community/Universal-Code/actions/workflows/release-desktop.yml) and check the version and source revision. Actions downloads require a GitHub login and expire.
 Packages retain their historical filenames; the product name shown in the application is Universal-Code.
 
 ### Option 2: Build from Source

@@ -1,0 +1,151 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "7a16e94d855bba38c31ced621b2b1a798cc4eb99",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/workspace-tabs/README.md",
+    "docs/reviews/workspace-tabs/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：右侧多标签容器、完整视图、终端主题与草稿守卫实现及回归",
+    "review_delegate：OCR delegate 规则检查、视觉截图核对与独立复审"
+  ],
+  "summary": {
+    "total_git_changed_files": 27,
+    "review_scope_files": 25,
+    "ocr_selected_production": 14,
+    "manually_added_tests_and_docs": 6,
+    "visually_checked_screenshots": 5,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    {
+      "path": "protocols/registry.json",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/convergence/protocol-registry.md",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/lib/local-ui-message.ts",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/components/user-terminal-panel.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/styles.css",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/test/setup.ts",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/application-preview.css",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/application-preview.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/conversation.tsx",
+      "coverage": "diff_and_dock_wiring",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/task-review.css",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/task-review.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/workspace-dock.css",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/workspace-dock.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/styles.css",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/workspace-tabs.ts",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/components/user-terminal-panel.test.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/conversation-inspector-feedback.test.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/components/conversation.test.tsx",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/v2/workspace-tabs.test.ts",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/e2e/workbench.spec.ts",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/images/workspace-tabs/before.png",
+      "coverage": "visual",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/images/workspace-tabs/after.png",
+      "coverage": "visual",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/images/workspace-tabs/after-fullview.png",
+      "coverage": "visual",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/images/workspace-tabs/after-dark-restart.png",
+      "coverage": "visual",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/images/workspace-tabs/after-narrow.png",
+      "coverage": "visual",
+      "reviewer": "primary_and_delegate"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "base_commit": "ed87d1dbdf3bc04c7935ca9c7b4fabfb67524e0e",
+  "browser": "154.0.8037.57",
+  "platform": "Linux Chromium",
+  "same_persisted_fixture": true,
+  "thread_id": "thread-run-20261022031942-ee1059310b39",
+  "edit_id": "edit-20261022031942-fa4f5fd41508",
+  "patch": "--- a/settings.ts\n+++ b/settings.ts\n@@ -1,3 +1,3 @@\n-export const attempts = 3;\n-export const timeout = 1000;\n-export const endpoint = \"https://example.test/api\";\n+export const attempts = 0;\n+export const timeout = 0;\n+export const endpoint = \"https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/\";\n",
+  "raw_diff_lines": [
+    "-export const attempts = 3;",
+    "-export const timeout = 1000;",
+    "-export const endpoint = \"https://example.test/api\";",
+    "+export const attempts = 0;",
+    "+export const timeout = 0;",
+    "+export const endpoint = \"https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/\";"
+  ],
+  "narrow": {
+    "viewport": 390,
+    "document": 390,
+    "x": 39,
+    "width": 313,
+    "diffWidth": 337,
+    "diffScroll": 337
+  },
+  "comments_in_reloaded_draft": 2,
+  "api_writes_during_ui_flow": [],
+  "uncaught_browser_errors": [],
+  "escape_kept_review_open": true,
+  "synthetic_composing_escape_retained_input": true,
+  "return_draft_focused": true
+}

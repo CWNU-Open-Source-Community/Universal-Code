@@ -1,4 +1,6 @@
 interface WailsWindowRuntime {
+  ClipboardGetText?: () => Promise<string>;
+  ClipboardSetText?: (text: string) => Promise<boolean>;
   Quit?: () => void;
   WindowMinimise?: () => void;
   WindowSetDarkTheme?: () => void;

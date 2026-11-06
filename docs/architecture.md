@@ -807,7 +807,9 @@ unknown-field rejection. Only the Go control plane can import a snapshot
 (`POST /api/v1/models/prices`, `provider price-import`); a Provider response,
 README, Skill, or repository file can never reach that surface. A same-content
 import replays idempotently, and a new import atomically rotates the single active
-table.
+table. The content fingerprint does not bind the validity window, so a
+fingerprint replay with a different window is rejected and requires a new
+snapshot id.
 
 Schema v100 stores the run monetary aggregate (`run_monetary_usage`) and per-attempt
 reservations (`run_monetary_reservations`). Every tracked model call follows

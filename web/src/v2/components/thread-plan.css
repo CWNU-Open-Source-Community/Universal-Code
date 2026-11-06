@@ -31,8 +31,10 @@
 .v2-thread-plan button:hover:not(:disabled) { background:var(--v2-control-hover); color:var(--v2-ink); }
 .v2-thread-plan button:focus-visible, .v2-thread-plan summary:focus-visible, .v2-plan-trigger:focus-visible { outline:2px solid var(--v2-accent); outline-offset:3px; }
 .v2-plan-directions > section { border:1px solid var(--v2-border); border-radius:10px; padding:14px 16px; margin:14px 0; }
+.v2-plan-directions > section.is-confirmed { border-color:var(--v2-accent); }
 .v2-plan-choice { display:flex; gap:9px; align-items:baseline; }
 .v2-plan-choice input { accent-color:var(--v2-accent); }
+.v2-plan-confirmed { flex-shrink:0; margin-left:auto; color:var(--v2-accent); font-size:12px; }
 .v2-thread-plan strong { font-weight:600; }
 .v2-thread-plan summary { cursor:pointer; width:fit-content; }
 .v2-thread-plan li { margin:6px 0; }

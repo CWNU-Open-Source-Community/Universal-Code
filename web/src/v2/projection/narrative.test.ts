@@ -595,3 +595,91 @@ it("localizes generated activity labels while preserving original messages, comm
     snapshot: snapshot({ text: "", items: [{ id: "tool-1", type: "tool_call", tool_name: "command_runtime", status: "running", argument_bytes: 12, durable: false, provisional: true, response_id: "response-1" }] }) });
   expect(live[0]).toMatchObject({ kind: "activity", title: "Run command", detail: "Preparing tool request · 12 bytes" });
 });
+
+it("attributes a durable assistant reply to the model recorded for its attempt", () => {
+  const transcript: ThreadTranscriptActivityItem[] = [
+    item({ id: "call-1", canonical_id: "call-1", sequence: 1, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-7", model: "anthropic / test-model",
+      title: "模型调用开始", detail: "anthropic / test-model", status: "running" }),
+    item({ id: "reply-1", canonical_id: "reply-1", sequence: 2, source: "model", kind: "model_update",
+      activity_type: "message", attempt_id: "attempt-7", title: "更新", detail: "我会先检查相关实现。" }),
+  ];
+  const projected = projectThreadNarrative(transcript);
+  expect(projected.filter((entry) => entry.kind === "assistant"))
+    .toEqual([expect.objectContaining({ model: "anthropic / test-model" })]);
+
+  // A reply from another attempt keeps its own attribution, including none.
+  const mixed = projectThreadNarrative([...transcript, item({
+    id: "reply-2", canonical_id: "reply-2", sequence: 3, source: "model", kind: "model_update",
+    activity_type: "message", attempt_id: "attempt-9", title: "更新", detail: "第二条。", run_id: "run-2",
+    run_ordinal: 2 })]);
+  expect(mixed.at(-1)).toMatchObject({ kind: "assistant" });
+  expect(mixed.at(-1)).not.toHaveProperty("model");
+});
+
+it("attributes to the actual producing model when multiple model attempts share one supervisor attempt", () => {
+  const transcript: ThreadTranscriptActivityItem[] = [
+    item({ id: "call-1", canonical_id: "call-1", sequence: 1, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 1, model: "anthropic / claude",
+      title: "模型调用开始", detail: "anthropic / claude", status: "failed" }),
+    item({ id: "call-2", canonical_id: "call-2", sequence: 2, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 2, model: "google / gemini",
+      title: "模型响应", detail: "google / gemini", status: "completed" }),
+    item({ id: "reply-1", canonical_id: "reply-1", sequence: 3, source: "model", kind: "model_update",
+      activity_type: "message", attempt_id: "attempt-1", model_attempt: 2, model: "google / gemini",
+      title: "答复", detail: "来自 Gemini 的回复" }),
+  ];
+  const projected = projectThreadNarrative(transcript);
+  expect(projected.filter((entry) => entry.kind === "assistant"))
+    .toEqual([expect.objectContaining({ model: "google / gemini" })]);
+
+  // Fallback attribution without direct item.model picks the specific model_attempt
+  const fallbackTranscript: ThreadTranscriptActivityItem[] = [
+    item({ id: "call-1", canonical_id: "call-1", sequence: 1, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 1, model: "anthropic / claude",
+      title: "模型调用开始", detail: "anthropic / claude", status: "failed" }),
+    item({ id: "call-2", canonical_id: "call-2", sequence: 2, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 2, model: "google / gemini",
+      title: "模型响应", detail: "google / gemini", status: "completed" }),
+    item({ id: "reply-1", canonical_id: "reply-1", sequence: 3, source: "model", kind: "model_update",
+      activity_type: "message", attempt_id: "attempt-1", model_attempt: 2,
+      title: "答复", detail: "来自 Gemini 的回复" }),
+  ];
+  const fallbackProjected = projectThreadNarrative(fallbackTranscript);
+  expect(fallbackProjected.filter((entry) => entry.kind === "assistant"))
+    .toEqual([expect.objectContaining({ model: "google / gemini" })]);
+
+  // Strict fallback boundary: if a reply lacks both item.model and model_attempt,
+  // and the attempt contained multiple different models, do not guess; omit the badge.
+  const ambiguousTranscript: ThreadTranscriptActivityItem[] = [
+    item({ id: "call-1", canonical_id: "call-1", sequence: 1, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 1, model: "anthropic / claude",
+      title: "模型调用开始", detail: "anthropic / claude", status: "failed" }),
+    item({ id: "call-2", canonical_id: "call-2", sequence: 2, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 2, model: "google / gemini",
+      title: "模型响应", detail: "google / gemini", status: "completed" }),
+    item({ id: "reply-ambiguous", canonical_id: "reply-ambiguous", sequence: 3, source: "model", kind: "model_update",
+      activity_type: "message", attempt_id: "attempt-1",
+      title: "答复", detail: "无明确模型尝试标识的回复" }),
+  ];
+  const ambiguousProjected = projectThreadNarrative(ambiguousTranscript);
+  expect(ambiguousProjected.find((entry) => entry.kind === "assistant" && entry.id === "reply-ambiguous"))
+    .not.toHaveProperty("model");
+
+  // Strict fallback boundary: if all model calls within the attempt used the same model,
+  // the bare attempt_id fallback is uniquely provable and safely displays the model.
+  const singleModelTranscript: ThreadTranscriptActivityItem[] = [
+    item({ id: "call-1", canonical_id: "call-1", sequence: 1, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 1, model: "google / gemini",
+      title: "模型调用开始", detail: "google / gemini", status: "failed" }),
+    item({ id: "call-2", canonical_id: "call-2", sequence: 2, source: "harness", kind: "model_call",
+      activity_type: "execute", attempt_id: "attempt-1", model_attempt: 2, model: "google / gemini",
+      title: "模型响应", detail: "google / gemini", status: "completed" }),
+    item({ id: "reply-single", canonical_id: "reply-single", sequence: 3, source: "model", kind: "model_update",
+      activity_type: "message", attempt_id: "attempt-1",
+      title: "答复", detail: "唯一确定模型的回复" }),
+  ];
+  const singleModelProjected = projectThreadNarrative(singleModelTranscript);
+  expect(singleModelProjected.find((entry) => entry.kind === "assistant" && entry.id === "reply-single"))
+    .toMatchObject({ model: "google / gemini" });
+});

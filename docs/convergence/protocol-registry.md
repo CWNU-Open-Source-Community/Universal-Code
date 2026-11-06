@@ -8,8 +8,8 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | Family | Class | Owner | Active IDs | Persisted/exported |
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 6 | true |
-| [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 11 | true |
-| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
+| [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 12 | true |
+| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 93 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 57 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 25 | false |
@@ -20,13 +20,14 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 117 | true |
 | [credential-provider-ledgers](#credential-provider-ledgers) | `internal-durable` | Credential, provider, model-route, and pricing maintainers | 24 | true |
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
+| [desktop-terminal-settings](#desktop-terminal-settings) | `internal-durable` | Desktop terminal maintainers | 1 | true |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 22 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 25 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
-| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 145 | true |
+| [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 147 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
 | [lsp-process-session](#lsp-process-session) | `ephemeral` | Code intelligence maintainers | 1 | false |
 | [mcp-interchange](#mcp-interchange) | `external-durable` | MCP client/server maintainers | 9 | true |
@@ -34,7 +35,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [mcp-oauth-credentials](#mcp-oauth-credentials) | `internal-durable` | MCP OAuth and credential maintainers | 1 | true |
 | [operation-receipt-projection](#operation-receipt-projection) | `projection` | Operation receipt maintainers | 2 | true |
 | [process-runtime-lifecycle](#process-runtime-lifecycle) | `internal-durable` | Command, model, terminal, and runner lifecycle maintainers | 65 | true |
-| [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 10 | true |
+| [project-configuration-contract](#project-configuration-contract) | `external-durable` | Project configuration and instruction maintainers | 11 | true |
 | [provider-stream-presentation](#provider-stream-presentation) | `ephemeral` | Model streaming and renderer maintainers | 4 | false |
 | [registry-governance-contract](#registry-governance-contract) | `external-durable` | Protocol and Surface governance maintainers | 2 | true |
 | [release-and-packaging-contracts](#release-and-packaging-contracts) | `external-durable` | Desktop release and packaging maintainers | 4 | true |
@@ -91,7 +92,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `agent-browser-supervisor-ledger-reader` (`v1, v2`, active) at `internal/store`
   - `agent-browser-supervisor-authority-reader` (`v1, v2`, active) at `internal/toolgateway`
 
-<details><summary>11 active identifiers</summary>
+<details><summary>12 active identifiers</summary>
 
 - `agent-browser-actions.v1`
 - `browser_click.v2`
@@ -104,6 +105,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `browser_snapshot.v2`
 - `browser_status.v2`
 - `browser_type.v2`
+- `browser_upload.v2`
 
 </details>
 
@@ -112,7 +114,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Class: `internal-durable`
 - Owner: Agent graph, scheduler, and batch-delivery maintainers
 - Source of truth: `internal/application`, `internal/domain`, `internal/store`
-- Persistence/export boundary: SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.
+- Persistence/export boundary: SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. workflow-summary-wake-retry.v1 binds replacement wake identities to the execution and persisted notification generation while retaining its original inbox identity. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.
 - Compatibility rule: Add versions without reinterpreting generations or exactly-once keys; retain old readers until migration or indefinite support is proven. Original first-attempt worker identities and reports without data remain readable. Dynamic map/retry states and structured completion data require the upgraded readers; rollback must retain these readers or preserve those records without replaying them through older decoders.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
@@ -120,7 +122,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `agent-scheduling-delivery-ledgers-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>92 active identifiers</summary>
+<details><summary>93 active identifiers</summary>
 
 - `agent-code-edit.v1`
 - `agent_admission_operation.v1`
@@ -207,6 +209,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `worker-history.v1`
 - `worker_resource.v1`
 - `worker_skill_read.v1`
+- `workflow-summary-wake-retry.v1`
 - `workflow-summary.v1`
 - `workflow.v1`
 - `workflow_control.v1`
@@ -749,6 +752,26 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 </details>
 
+### desktop-terminal-settings
+
+- Class: `internal-durable`
+- Owner: Desktop terminal maintainers
+- Source of truth: `internal/application`, `internal/desktop`
+- Persistence/export boundary: Native confirmation saves revision-bound shared-terminal consent, manual duration and a fixed shell identifier in the application home.
+- Compatibility rule: Default manual consent and automatic trusted shell selection. Saved full consent can renew process-local terminal leases only while the current Run has active Full permission. No Run authority, lease token or arbitrary executable path is persisted. Unknown fields, revisions and invalid preferences fail closed.
+- Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
+- Writers:
+  - `desktop-terminal-settings-writer` (`v1`, write-current) at `internal/application`
+- Readers:
+  - `desktop-terminal-settings-reader` (`v1`, active) at `internal/application`
+  - `desktop-terminal-settings-ui-reader` (`v1`, active) at `web/src/lib`
+
+<details><summary>1 active identifiers</summary>
+
+- `desktop_terminal_settings.v1`
+
+</details>
+
 ### desktop-verification-settings
 
 - Class: `internal-durable`
@@ -783,7 +806,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
 
-<details><summary>22 active identifiers</summary>
+<details><summary>25 active identifiers</summary>
 
 - `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
@@ -801,11 +824,14 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_workspace_launcher_list.v1`
 - `desktop_workspace_open.v1`
 - `prayu.run-navigation.v1`
+- `prayu.typography.v1`
 - `universal-code.batch-workbench.v1`
 - `universal-code.chat-preferences.v1`
+- `universal-code.prompt-commands.v1`
 - `universal-code.sidebar-width.v1`
 - `universal-code.specialist-continuation.v1`
 - `universal-code.turn-notifications.v1`
+- `universal-code.workspace-tabs.v1`
 - `v2_file_upload.v1`
 
 </details>
@@ -995,10 +1021,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `pr-followup-http-request-reader` (`v1`, active) at `internal/application/pr_followup.go`
   - `pr-followup-http-response-reader` (`v1`, active) at `web/src/api/pr-followup.ts`
 
-<details><summary>145 active identifiers</summary>
+<details><summary>147 active identifiers</summary>
 
 - `agent-code-tools.v1`
 - `agent_browser_close.v1`
+- `agent_browser_download_release.v1`
+- `agent_browser_screencast.v1`
 - `agent_browser_status.v1`
 - `agent_graph.v1`
 - `api.v1`
@@ -1396,7 +1424,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `project-instruction-dispatch-reader` (`v1`, active) at `internal/application/project_instruction_delivery.go`
   - `project-instruction-history-reader` (`v1`, active) at `internal/store/run_instruction_snapshots.go`
 
-<details><summary>10 active identifiers</summary>
+<details><summary>11 active identifiers</summary>
 
 - `prayu.locale.v1`
 - `project-hook-file-version.v1`
@@ -1407,6 +1435,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `project_config.v1`
 - `project_instruction_delivery.v1`
 - `project_instruction_guidance.v1`
+- `project_instruction_scaffold.v1`
 - `project_instruction_snapshot.v1`
 
 </details>

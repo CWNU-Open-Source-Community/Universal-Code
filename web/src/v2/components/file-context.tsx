@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import type { APIClient } from "../../api/client";
+import type { WorkspaceExplorerView } from "../../api/types";
 import { WorkspaceExplorer } from "../../components/workspace-explorer";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { useV2DraftDocument } from "../draft-context";
@@ -14,6 +15,14 @@ export interface V2FileReference {
   digest: string;
   partial: boolean;
   redacted: boolean;
+}
+
+export function withV2FileReference(files: V2FileReference[], file: WorkspaceExplorerView, limitMessage: string): V2FileReference[] {
+  if (files.length >= 4 && !files.some(({ path }) => path === file.path)) throw new Error(limitMessage);
+  return [...files.filter(({ path }) => path !== file.path), {
+    id: globalThis.crypto.randomUUID(), path: file.path, digest: file.provenance.content_sha256,
+    partial: file.truncated, redacted: file.redaction_count > 0,
+  }];
 }
 
 export const v2FileReferenceKey = (workspaceID: string, threadID: string) =>
@@ -65,9 +74,9 @@ export function V2FileContext({ client, workspaceID, files, onChange, disabled, 
           onChange((current) => current.filter(({ id }) => id !== file.id))} type="button">
           <X aria-hidden="true" size={13} /></button></span>)}
     </div>}
-    {open && createPortal(<div className="v2-inspector-backdrop" role="presentation"
+    {open && createPortal(<div className="v2-detail-backdrop" role="presentation"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section aria-label={t("选择项目文件", "Choose project files")} aria-modal="true" className="v2-inspector-drawer v2-file-picker"
+      <section aria-label={t("选择项目文件", "Choose project files")} aria-modal="true" className="v2-detail-drawer v2-file-picker"
         ref={dialog} role="dialog" tabIndex={-1}>
         <header><strong>{t("引用项目文件", "Reference project files")}</strong><button aria-label={t("关闭文件选择", "Close file picker")} onClick={onClose}
           ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>
@@ -75,14 +84,11 @@ export function V2FileContext({ client, workspaceID, files, onChange, disabled, 
         {error && <p role="alert">{error}</p>}
         <WorkspaceExplorer client={client} workspaceID={workspaceID} onSelectReference={(file) => {
           if (disabled || unavailableReason) return;
-          if (files.length >= 4 && !files.some(({ path }) => path === file.path)) {
-            setError(t("最多引用 4 个文件，请先移除一个引用。", "You can reference up to 4 files. Remove a reference first.")); return;
-          }
-          const reference = { id: globalThis.crypto.randomUUID(), path: file.path,
-            digest: file.provenance.content_sha256, partial: file.truncated,
-            redacted: file.redaction_count > 0 };
-          onChange((current) => [...current.filter(({ path }) => path !== file.path), reference]);
-          onClose();
+          try {
+            onChange((current) => withV2FileReference(current, file,
+              t("最多引用 4 个文件，请先移除一个引用。", "You can reference up to 4 files. Remove a reference first.")));
+            onClose();
+          } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
         }} />
       </section>
     </div>, document.body)}

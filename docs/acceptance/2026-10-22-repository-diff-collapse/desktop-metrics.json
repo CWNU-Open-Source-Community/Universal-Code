@@ -1,0 +1,50 @@
+{
+  "protocol_version": "traverse_visual_diff.v1",
+  "name": "desktop",
+  "baseline": {
+    "file": "before-desktop.png",
+    "sha256": "b6a08d67e8b8e8cbd71dd88e678d2342f2694a7cb19886a5874b43e21910ecd7",
+    "bytes": 103209,
+    "width": 1280,
+    "height": 900
+  },
+  "actual": {
+    "file": "after-desktop.png",
+    "sha256": "525b20282b1d4c2fff8fd3b2197780c0167b7e599da1a4b71890d63675f30977",
+    "bytes": 102706,
+    "width": 1280,
+    "height": 900
+  },
+  "dimensions_equal": true,
+  "rois": [
+    {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 900
+    }
+  ],
+  "masks": [],
+  "compared_pixels": 1152000,
+  "masked_pixels": 0,
+  "changed_pixels": 19935,
+  "diff_pixel_ratio": 0.0173046875,
+  "mean_absolute_error": 0.9145345052083333,
+  "root_mean_squared_error": 10.369523372554706,
+  "maximum_channel_delta": 223,
+  "thresholds": {
+    "channel_threshold": 0,
+    "max_diff_ratio": 0,
+    "max_mean_absolute_error": 0
+  },
+  "passed": false,
+  "failure_reasons": [
+    "diff_ratio_exceeded",
+    "mean_absolute_error_exceeded"
+  ],
+  "outputs": {
+    "actual": "desktop-actual.png",
+    "diff": "desktop-diff.png",
+    "metrics": "desktop-metrics.json"
+  }
+}

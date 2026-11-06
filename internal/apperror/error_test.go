@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
 	"testing"
 )
 
@@ -25,6 +28,12 @@ func TestNormalizeClassifiesStandardAndLegacyErrors(t *testing.T) {
 		code Code
 	}{
 		{sql.ErrNoRows, CodeNotFound},
+		{&os.PathError{Op: "open", Path: "missing.txt", Err: fs.ErrNotExist}, CodeNotFound},
+		{&os.SyscallError{Syscall: "stat", Err: fs.ErrNotExist}, CodeNotFound},
+		// Repository code wraps the sentinel, so only errors.Is can see it.
+		{fmt.Errorf("read skill file %q: %w", "SKILL.md", fs.ErrNotExist), CodeNotFound},
+		{fmt.Errorf("open workspace file: %w",
+			&os.PathError{Op: "open", Path: "missing.txt", Err: fs.ErrNotExist}), CodeNotFound},
 		{context.Canceled, CodeCancelled},
 		{context.DeadlineExceeded, CodeDeadlineExceeded},
 		{errors.New("usage: cyberagent run show <run-id>"), CodeInvalidArgument},

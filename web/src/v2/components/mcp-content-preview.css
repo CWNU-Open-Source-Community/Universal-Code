@@ -1,0 +1,5 @@
+.v2-mcp-image-preview { display:grid; justify-items:start; gap:6px; width:fit-content; max-width:100%; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:zoom-in; }
+.v2-mcp-image-preview > span { display:inline-flex; align-items:center; gap:5px; color:var(--v2-muted); font-size:12px; }
+.v2-mcp-image-preview:disabled { cursor:default; }
+.v2-mcp-image-preview:disabled > span { visibility:hidden; }
+.v2-mcp-image-preview:focus-visible { outline:2px solid var(--v2-accent); outline-offset:4px; border-radius:8px; }

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "8d9ce6ac918c0e142ac1089afa1022d85b750281",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/prompt-commands/README.md",
+    "docs/reviews/prompt-commands/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：自定义指令库实现、composer 接线与全部回归测试",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system TS/JS/TSX + Rule Group 2 default CSS）与独立全文复审"
+  ],
+  "summary": {
+    "total_git_changed_files": 9,
+    "review_scope_files": 7,
+    "ocr_selected_production": 4,
+    "manually_added_tests": 3,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "web/src/lib/prompt-commands.ts", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/v2/components/prompt-command-menu.tsx", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/v2/components/composer.tsx", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/v2/styles.css", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "web/src/lib/prompt-commands.test.ts", "coverage": "full", "reviewer": "primary" },
+    { "path": "web/src/v2/components/prompt-command-menu.test.tsx", "coverage": "full", "reviewer": "primary" },
+    { "path": "web/src/v2/components/composer.test.tsx", "coverage": "full", "reviewer": "primary" }
+  ]
+}

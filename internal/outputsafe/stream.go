@@ -367,6 +367,15 @@ func (s *Stream) consume(value rune, output *strings.Builder) {
 
 // Sanitize is the one-shot form used for already bounded output.
 func Sanitize(data []byte) string {
+	text, _ := SanitizeWithRedaction(data)
+	return text
+}
+
+// SanitizeWithRedaction is Sanitize plus whether secret redaction changed the
+// text, so callers can tell a redaction apart from control-character removal.
+func SanitizeWithRedaction(data []byte) (string, bool) {
 	stream := &Stream{}
-	return redact.String(stream.Feed(data) + stream.Flush())
+	inert := stream.Feed(data) + stream.Flush()
+	redacted := redact.String(inert)
+	return redacted, redacted != inert
 }

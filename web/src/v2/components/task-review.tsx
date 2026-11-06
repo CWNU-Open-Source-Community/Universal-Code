@@ -23,6 +23,7 @@ import { TaskPullRequest } from "./task-pull-request";
 import { ProjectChecks } from "./project-checks";
 import { TaskReviewTools, type TaskReviewToolMemory, type TaskReviewToolReviews } from "./task-review-tools";
 import type { WorkspaceView } from "../../api/types";
+import type { ReviewCommentResult } from "../review-comment-draft";
 import "./task-review.css";
 
 type ReviewTab = "overview" | "git" | "pr" | "tools" | "files" | "checks" | "records" | "restore" | "evidence";
@@ -41,17 +42,25 @@ interface ReportAttempt {
 }
 const reportIntentKey = (runID: string) => ["run", runID, "standard-code-delivery-intent"] as const;
 
-export function V2TaskReview({ client, detail, working, onClose, onRequestChange, returnFocusRef, onOpenWorktree, initialFileTarget,
-  initialToolTarget, toolMemoryRef }: {
+export function V2TaskReview({ client, detail, working, onClose, onRequestChange, onAddComment, returnFocusRef, onOpenWorktree, initialFileTarget,
+  initialToolTarget, toolMemoryRef, embedded = false }: {
   client: APIClient; detail: ThreadDetailView; working: boolean;
   onClose: () => void; onRequestChange: (context: string) => void;
+  onAddComment?: (context: string) => ReviewCommentResult;
   returnFocusRef: RefObject<HTMLElement | null>;
   onOpenWorktree?: (workspace: WorkspaceView) => void;
   initialFileTarget?: FileEditReviewTarget;
   initialToolTarget?: { runID: string; tool: "github-review" };
   toolMemoryRef?: RefObject<TaskReviewToolMemory>;
+  embedded?: boolean;
 }) {
   const { t } = useLocale();
+  const [commentResult, setCommentResult] = useState<ReviewCommentResult | null>(null);
+  const addComment = onAddComment ? (context: string) => {
+    const result = onAddComment(t(`任务：${detail.thread.id}\n${context}`, `Task: ${detail.thread.id}\n${context}`));
+    setCommentResult(result);
+    return result;
+  } : undefined;
   const historyTabs: [ReviewTab, string][] = [["files", t("编辑明细", "Edit details")],
   ["records", t("执行记录", "Execution records")], ["evidence", t("参考资料", "References")], ["restore", t("撤销与恢复", "Undo and recovery")]];
   const primaryTabs = [{ value: "overview", label: t("查看改动", "View changes"), icon: FileDiff },
@@ -85,6 +94,11 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
     setSelectedRunID(initialFileTarget.runID); setFileTarget(initialFileTarget);
     setTab("files"); setShowHistory(true);
   }, [initialFileTarget?.runID, initialFileTarget?.editID, initialFileTarget?.workspaceID]);
+  useEffect(() => {
+    if (!initialToolTarget) return;
+    setSelectedRunID(initialToolTarget.runID); setFileTarget(undefined);
+    setTab("tools"); setShowHistory(false);
+  }, [initialToolTarget?.runID, initialToolTarget?.tool]);
   const navigation = useRef<HTMLDivElement>(null);
   const selectTab = (value: ReviewTab, focusNavigation = false) => {
     setTab(value); setFilePath(null);
@@ -93,8 +107,8 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
   };
   const [filePath, setFilePath] = useState<{ path: string; workspaceID: string } | null>(null);
   const close = useRef<HTMLButtonElement>(null);
-  const dialog = useModalFocusTrap<HTMLElement>(true, onClose, false, close,
-    { isolateBackground: true, returnFocusRef });
+  const dialog = useModalFocusTrap<HTMLElement>(!embedded, onClose, false, close,
+    { isolateBackground: !embedded, trapFocus: !embedded, returnFocusRef });
   const keys = useRef(new Map<string, string>());
   const selectedRun = detail.runs.find(({ run }) => run.id === selectedRunID)?.run
     ?? (selectedRunID === currentRun.id ? currentRun : undefined);
@@ -187,12 +201,9 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
   };
   const requestChange = (context: string) => onRequestChange(
     t(`请调整以下审阅对象：\n${context}\n执行记录：${reviewedRunID}\n具体要求：`, `Update the following reviewed item:\n${context}\nRun: ${reviewedRunID}\nRequirements:`));
-  return createPortal(<div className="v2-inspector-backdrop" role="presentation"
-    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section aria-label={t("审阅任务改动", "Review task changes")} aria-modal="true" className="v2-inspector-drawer v2-review-drawer"
-      ref={dialog} role="dialog" tabIndex={-1}>
-      <header><div className="v2-review-title"><strong>{t("审阅与交付", "Review and delivery")}</strong><span title={detail.thread.title}>{detail.thread.title}</span></div>
-        <button aria-label={t("关闭任务审阅", "Close task review")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={18} /></button></header>
+  const reviewInner = <>
+      {!embedded && <header><div className="v2-review-title"><strong>{t("审阅与交付", "Review and delivery")}</strong><span title={detail.thread.title}>{detail.thread.title}</span></div>
+        <button aria-label={t("关闭任务审阅", "Close task review")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={18} /></button></header>}
       <div className="v2-review-navigation" ref={navigation}>
         <div className="v2-review-main-nav">
           <div aria-label={t("交付流程", "Delivery workflow")} role="group">{primaryTabs.map(({ value, label, icon: Icon }) => <button
@@ -205,25 +216,25 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
           {historyTabs.map(([value, label]) => <button aria-pressed={tab === value} data-review-tab={value} key={value}
             onClick={() => selectTab(value)} type="button">{label}</button>)}
         </div>}
-        {!["overview", "git", "pr"].includes(tab) && <label>{t("执行记录范围 ", "Execution record scope")}<select aria-label={t("选择审阅的执行记录", "Choose a run to review")} onChange={(event) => {
+        {!["overview", "git", "pr"].includes(tab) && (detail.runs.length > 1 || !selectedRun || detail.runs.some(({ run }) => run.id !== currentRun.id)) && <label className="v2-review-run-picker"><select aria-label={t("选择审阅的执行记录", "Choose a run to review")} onChange={(event) => {
           setSelectedRunID(event.target.value); setFileTarget(undefined); setFilePath(null); lifecycle.reset(); report.reset();
         }} value={reviewedRunID}>
           {!selectedRun && <option value={selectedRunID}>{t("目标执行记录尚未找到", "Target execution record not found")}</option>}
           {detail.runs.map(({ ordinal, run }) => <option key={run.id} value={run.id}>
             {run.id === currentRun.id ? t("当前", "Current") : t("历史", "Past")} {t(" · 第 ", " · Run ")}{ordinal} {t(" 次执行", " runs")}</option>)}
           {!detail.runs.some(({ run }) => run.id === currentRun.id) && <option value={currentRun.id}>{t("当前执行", "Current run")}</option>}
-        </select></label>}
+        </select><ChevronDown aria-hidden="true" size={14} /></label>}
       </div>
       <div className="v2-review-body" key={`${reviewedRunID}:${tab}`}>
         {!["overview", "git", "pr"].includes(tab) && <div className="v2-review-history-heading">
           <button onClick={() => selectTab("overview", true)} type="button"><ArrowLeft size={14} aria-hidden="true" />{t("返回任务改动", "Back to task changes")}</button>
           <h2>{primaryTabs.find((item) => item.value === tab)?.label ?? historyTabs.find(([value]) => value === tab)?.[1]}</h2></div>}
-        {tab === "overview" && <TaskOverview client={client} threadID={detail.thread.id} onFeedback={onRequestChange}
+        {tab === "overview" && <TaskOverview client={client} threadID={detail.thread.id} onFeedback={onRequestChange} onAddComment={addComment}
           onReviewFile={reviewFile} onGit={() => selectTab("git", true)}
           onPullRequest={() => selectTab("pr", true)}
           onChecks={() => selectTab("checks", true)}
           currentRunDetail={currentPlanQuery.data} />}
-        {tab === "git" && <TaskGit client={client} threadID={detail.thread.id} working={working} onFeedback={onRequestChange} onPullRequest={() => selectTab("pr", true)} onOpenWorktree={onOpenWorktree} />}
+        {tab === "git" && <TaskGit client={client} threadID={detail.thread.id} working={working} onFeedback={onRequestChange} onAddComment={addComment} onPullRequest={() => selectTab("pr", true)} onOpenWorktree={onOpenWorktree} />}
         {tab === "pr" && <TaskPullRequest client={client} threadID={detail.thread.id} working={working} onFeedback={onRequestChange} onGit={() => selectTab("git", true)} />}
         {!["overview", "git", "pr"].includes(tab) && !selectedRun && <p role="alert">{t("无法找到目标执行记录 ", "Could not find the target execution record ")}{selectedRunID}{t("，尚未打开审阅工具。请刷新任务后重试，或明确选择另一次执行。", ". Review tools have not opened. Refresh the task and retry, or select another run.")}</p>}
         {tab === "tools" && selectedRun && <TaskReviewTools client={client} runID={reviewedRunID}
@@ -314,8 +325,21 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
             runID={reviewedRunID} runStatus={selectedRun.status} />
         </>}
       </div>
-      <footer><span>{t("关闭面板会保留当前改动。", "Closing this panel preserves current changes.")}</span>
-        <button onClick={onClose} type="button">{t("返回对话", "Back to conversation")}</button></footer>
+      <footer className={onAddComment ? "v2-review-comment-status" : undefined}>
+        {onAddComment ? <p role={commentResult === "unsaved" ? "alert" : "status"}>{commentResult === "unsaved"
+          ? t("意见已加入本窗口草稿，但保存或版本有问题。请返回草稿处理，暂勿刷新或退出。", "Comment added in this window, but the draft has a storage or version issue. Return to the draft before reloading or leaving.")
+          : commentResult === "added" ? t("意见已加入聊天草稿，尚未发送。可继续评论其他行。", "Comment added to the chat draft, not sent. You can comment on more lines.")
+          : t("点击差异行旁的 + 写意见，加入聊天草稿后再发送。", "Use + beside a diff line to add feedback to your chat draft, then send from chat.")}</p> : <span>{t("关闭面板会保留当前改动。", "Closing this panel preserves current changes.")}</span>}
+        <button onClick={onAddComment ? () => onRequestChange("") : onClose} type="button">
+          {onAddComment ? t("返回聊天草稿", "Return to chat draft") : t("返回对话", "Back to conversation")}</button>
+      </footer>
+  </>;
+  if (embedded) return <div className="v2-review-drawer is-embedded">{reviewInner}</div>;
+  return createPortal(<div className="v2-detail-backdrop" role="presentation"
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section aria-label={t("审阅任务改动", "Review task changes")} aria-modal="true" className="v2-detail-drawer v2-review-drawer"
+      ref={dialog} role="dialog" tabIndex={-1}>
+      {reviewInner}
     </section>
   </div>, document.body);
 }
