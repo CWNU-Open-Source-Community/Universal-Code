@@ -15,6 +15,7 @@ export interface BrowserNetworkView extends BrowserNetworkPreference {
   version: "browser_network_access.v1";
   run_id?: string;
   project_preference?: BrowserNetworkPreference;
+  for_next_run?: boolean;
   replayed?: boolean;
 }
 
@@ -45,6 +46,7 @@ function validPreference(value: unknown): value is BrowserNetworkPreference {
 export function parseBrowserNetwork(value: unknown, target: BrowserNetworkTarget): BrowserNetworkView {
   if (!validPreference(value) || !isRecord(value) || value.version !== "browser_network_access.v1" ||
     (target.kind === "runs" ? value.run_id !== target.id : value.workspace_id !== target.id) ||
+    (value.for_next_run !== undefined && typeof value.for_next_run !== "boolean") ||
     (value.replayed !== undefined && typeof value.replayed !== "boolean") ||
     (value.project_preference !== undefined && (!validPreference(value.project_preference) ||
       value.project_preference.workspace_id !== value.workspace_id))) {

@@ -6,12 +6,11 @@ import type { APIClient } from "../../api/client";
 import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser,
   type AgentBrowserScreencastFrame, type AgentBrowserStatus } from "../../api/agent-browser";
 import { V2ImageViewer } from "./image-viewer";
-import type { RunView } from "../../api/types";
-import { browserNetworkRunFinished, V2BrowserNetworkControl } from "./browser-network-control";
+import { V2BrowserNetworkControl } from "./browser-network-control";
 import "./image-input.css";
 import "./agent-browser.css";
 
-export function V2AgentBrowser(props: { client: APIClient; runID: string; runStatus?: RunView["status"]; running: boolean; onDismiss?: () => void }) {
+export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
   return <AgentBrowserCard key={JSON.stringify([props.client.baseURL, props.runID])} {...props} />;
 }
 
@@ -56,7 +55,7 @@ function screenshotPath(runID: string, status: AgentBrowserStatus): string {
   })}`;
 }
 
-function AgentBrowserCard({ client, runID, runStatus, running, onDismiss }: { client: APIClient; runID: string; runStatus?: RunView["status"]; running: boolean; onDismiss?: () => void }) {
+function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
   const { t, locale } = useLocale();
   const queries = useQueryClient();
   const key = agentBrowserQueryKey(client.baseURL, runID);
@@ -109,7 +108,7 @@ function AgentBrowserCard({ client, runID, runStatus, running, onDismiss }: { cl
       {current.unavailable_code !== "browser_network_off" && <span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current, t)}</span>}</div>
       <div className="v2-agent-browser-actions">{canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>{t("停止浏览器", "Stop browser")}</button>}{dismissButton}</div></header>
     <div className="v2-agent-browser-body">
-    <V2BrowserNetworkControl client={client} target={{ kind: "runs", id: runID }} finished={browserNetworkRunFinished(runStatus)} />
+    <V2BrowserNetworkControl client={client} target={{ kind: "runs", id: runID }} />
     {!current.available && unavailableText(current.unavailable_code, t) && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
     {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过实时画面和截图查看。", "Pages open in a separate background browser and are shown as a live view and screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
     {current.headless && active && current.session_id && <AgentBrowserLiveView client={client} runID={runID} sessionID={current.session_id} />}

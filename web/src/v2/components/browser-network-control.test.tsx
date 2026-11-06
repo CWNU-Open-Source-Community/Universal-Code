@@ -13,7 +13,7 @@ function policy(mode: BrowserNetworkAccess = "off", runID = "run-1") {
     project_preference: { workspace_id: "workspace-1", revision: 0, browser_network_access: "off" } };
 }
 function setup(mode: BrowserNetworkAccess = "off") {
-  const get = vi.fn(async (path: string) => path.startsWith("/workspaces/")
+  const get = vi.fn(async (path: string): Promise<unknown> => path.startsWith("/workspaces/")
     ? { ...policy(), run_id: undefined, revision: 0 } : policy(mode));
   const putControl = vi.fn(async (path: string, body: Record<string, unknown>) => ({ ...policy(), ...body,
     run_id: path.startsWith("/workspaces/") ? undefined : "run-1", revision: 2, replayed: false }));
@@ -108,15 +108,38 @@ it("saves the project preference before its first task", async () => {
   }, expect.any(String)));
 });
 
-it("updates only the project preference when the displayed run has finished", async () => {
-  const { client, putControl, wrapper } = setup("internet");
-  render(<V2BrowserNetworkControl client={client} target={runTarget} finished />, { wrapper });
+it("saves the next-run selection through the current finished run endpoint", async () => {
+  const { client, get, putControl, wrapper } = setup();
+  get.mockImplementation(async (path) => path.startsWith("/threads/")
+    ? { thread: { id: "thread-1", workspace_id: "workspace-1" }, last_run: { id: "run-1", status: "completed" } }
+    : policy());
+  putControl.mockImplementation(async (_path, body) => ({ ...policy(), ...body, revision: 2, replayed: false, for_next_run: true }));
+  render(<V2BrowserNetworkSettings client={client} threadID="thread-1" />, { wrapper });
   const toggle = await screen.findByRole("switch", { name: "允许联网" });
   await waitFor(() => expect(toggle).toBeEnabled());
   expect(toggle).toHaveAttribute("aria-checked", "false");
   await userEvent.click(toggle);
-  await waitFor(() => expect(putControl).toHaveBeenCalledExactlyOnceWith("/workspaces/workspace-1/browser-network", expect.objectContaining({
-    expected_revision: 0, browser_network_access: "internet",
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+  expect(putControl).toHaveBeenCalledExactlyOnceWith("/runs/run-1/browser-network", expect.objectContaining({
+    expected_revision: 1, browser_network_access: "internet", remember_for_project: true,
+  }), expect.any(String));
+  expect(get.mock.calls.some(([path]) => path.startsWith("/workspaces/"))).toBe(false);
+  await userEvent.click(toggle);
+  await waitFor(() => expect(putControl).toHaveBeenCalledTimes(2));
+  expect(putControl.mock.calls[1]).toEqual(["/runs/run-1/browser-network", expect.objectContaining({
+    expected_revision: 2, browser_network_access: "off",
+  }), expect.any(String)]);
+});
+
+it("displays a saved next-run selection returned by the run endpoint after reopening", async () => {
+  const { client, get, putControl, wrapper } = setup();
+  get.mockResolvedValue({ ...policy("internet"), revision: 2, for_next_run: true });
+  render(<V2BrowserNetworkControl client={client} target={runTarget} />, { wrapper });
+  const toggle = await screen.findByRole("switch", { name: "允许联网" });
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+  await userEvent.click(toggle);
+  await waitFor(() => expect(putControl).toHaveBeenCalledExactlyOnceWith("/runs/run-1/browser-network", expect.objectContaining({
+    expected_revision: 2, browser_network_access: "off", remember_for_project: true,
   }), expect.any(String)));
 });
 
