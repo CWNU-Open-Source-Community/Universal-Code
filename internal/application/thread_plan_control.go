@@ -199,12 +199,16 @@ func (s *ThreadTurnService) ControlPlan(ctx context.Context, request ThreadPlanC
 
 func (s *ThreadTurnService) prepareThreadPlanOnly(ctx context.Context, request ThreadPlanControlRequest, prepare func(context.Context) error) error {
 	s.turnMu.Lock()
+	if s.hostContext != nil && s.hostContext.Err() != nil {
+		s.turnMu.Unlock()
+		return apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down")
+	}
 	if s.activeTurns[request.ThreadID] != nil {
 		s.turnMu.Unlock()
 		return apperror.New(apperror.CodeFailedPrecondition, "Plan control requires an idle task")
 	}
 	prepareCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: request.OperationKey, cancel: cancel, preparingPlan: true}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: request.OperationKey, cancel: cancel, preparingPlan: true, done: make(chan struct{})}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}
@@ -216,6 +220,7 @@ func (s *ThreadTurnService) prepareThreadPlanOnly(ctx context.Context, request T
 		if s.activeTurns[request.ThreadID] == active {
 			delete(s.activeTurns, request.ThreadID)
 		}
+		close(active.done)
 		s.turnMu.Unlock()
 	}()
 	return prepare(prepareCtx)

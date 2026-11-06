@@ -60,6 +60,7 @@ type App struct {
 	credentials           credential.Store
 	checker               policy.Checker
 	calls                 *application.ActiveCallRegistry
+	threadTurns           *application.ThreadTurnService
 	dockerObserver        sandbox.DockerProductionObserver
 	dockerWriteTransport  sandbox.DockerContainerWriteTransport
 	dockerReadinessProbe  sandbox.ReadinessProbe
@@ -245,6 +246,12 @@ func DefaultHome() string {
 }
 
 func (a *App) Close() {
+	var turnDrainPending bool
+	if a.threadTurns != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		turnDrainPending = a.threadTurns.Shutdown(ctx) != nil
+		cancel()
+	}
 	if a.mcpClient != nil {
 		_ = a.mcpClient.Close()
 	}
@@ -255,7 +262,15 @@ func (a *App) Close() {
 		cancel()
 	}
 	if a.store != nil {
-		_ = a.store.Close()
+		if turnDrainPending {
+			turns, state := a.threadTurns, a.store
+			go func() {
+				_ = turns.Shutdown(context.Background())
+				_ = state.Close()
+			}()
+		} else {
+			_ = a.store.Close()
+		}
 	}
 }
 

@@ -80,6 +80,7 @@ type ControlPlane struct {
 	prFollowupWorker               *application.PRFollowupService
 	workflowWorker                 *application.WorkflowService
 	threadPeerMessages             *application.ThreadPeerMessageService
+	threadTurns                    *application.ThreadTurnService
 	threadPeerCancel               context.CancelFunc
 	threadPeerDone                 chan struct{}
 	workerMu                       sync.Mutex
@@ -898,7 +899,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	}
 	threadTurnControl := application.NewThreadTurnServiceWithExecutionCapabilities(
 		stateStore, lifecycleControl, executionControl,
-		config.ExecutionPermissionCapabilities).WithModelRouteRegistry(models).
+		config.ExecutionPermissionCapabilities).
+		WithHostLifetime(context.Background()).
+		WithModelRouteRegistry(models).
 		WithLifecycleHooks(hookEngine)
 	var threadPeerMessages *application.ThreadPeerMessageService
 	if config.RunExecutionEnabled && config.ModelControlEnabled && config.ControlToken != "" {
@@ -1094,7 +1097,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		codeIntelManager:               codeIntelManager,
 		terminalManager:                terminalManager, boundaryMonitor: boundaryMonitor,
 		wakeWorker: wakeWorker, scheduledJobWorker: scheduledJobWorker, prFollowupWorker: prFollowupWorker,
-		workflowWorker: workflowWorker, threadPeerMessages: threadPeerMessages}, nil
+		workflowWorker: workflowWorker, threadPeerMessages: threadPeerMessages, threadTurns: threadTurnControl}, nil
 }
 
 // CommandRuntimeProcessStatus exposes non-authorizing process facts to the
@@ -1386,6 +1389,14 @@ func (c *ControlPlane) Close() error {
 		c.webFetchReconcileCancel = nil
 		c.webFetchReconcileDone = nil
 		c.workerMu.Unlock()
+		turnDrainPending := false
+		if c.threadTurns != nil {
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+			turnErr := c.threadTurns.Shutdown(shutdownCtx)
+			cancelShutdown()
+			turnDrainPending = turnErr != nil
+			c.closeErr = errors.Join(c.closeErr, turnErr)
+		}
 		if peerCancel != nil {
 			peerCancel()
 		}
@@ -1524,13 +1535,18 @@ func (c *ControlPlane) Close() error {
 			c.closeErr = errors.Join(c.closeErr,
 				c.terminalManager.Shutdown())
 		}
-		if commandDrainPending {
+		if commandDrainPending || turnDrainPending {
 			// Keep the borrowed store alive if a stalled completion exceeded the
 			// visible shutdown budget. The last writer releases it after draining;
 			// a process exit also closes its OS handles.
-			runtimes, stateStore := c.commandRuntimeSet, c.stateStore
+			runtimes, turns, stateStore := c.commandRuntimeSet, c.threadTurns, c.stateStore
 			go func() {
-				_ = runtimes.Shutdown(context.Background())
+				if turnDrainPending {
+					_ = turns.Shutdown(context.Background())
+				}
+				if commandDrainPending {
+					_ = runtimes.Shutdown(context.Background())
+				}
 				_ = stateStore.Close()
 			}()
 		} else {

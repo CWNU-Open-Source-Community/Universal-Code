@@ -39,12 +39,13 @@ type activeThreadTurn struct {
 	stopping      bool
 	queue         []queuedThreadTurn
 	approvals     []ApprovalContinuationRequest
+	hostContext   context.Context
+	done          chan struct{}
 }
 
-// Execute retains the caller's lifetime. A second explicit message is durably
-// queued and consumed at the next turn boundary by that same request owner.
-// There is no detached goroutine, reconstructed process authority, or second
-// Supervisor; all work still crosses the existing execution lease and handoff.
+// Execute retains the caller's lifetime unless the host opts into owning
+// accepted ordinary turns. A second explicit message is durably queued and
+// consumed at the next boundary by that same owner and Supervisor.
 func (s *ThreadTurnService) Execute(ctx context.Context,
 	request ExecuteThreadTurnRequest,
 ) (result ExecuteThreadTurnResult, resultErr error) {
@@ -79,6 +80,9 @@ func (s *ThreadTurnService) SubmitCurrentSteering(ctx context.Context,
 	}
 	s.turnMu.Lock()
 	defer s.turnMu.Unlock()
+	if s.hostContext != nil && s.hostContext.Err() != nil {
+		return SubmitSessionMessageResult{}, apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down")
+	}
 	if active := s.activeTurns[thread.ID]; active != nil && active.stopping {
 		observer, ok := s.threads.store.(interface {
 			InspectOperatorSteeringOperation(context.Context, string, string) (domain.OperatorSteeringMessage, bool, error)
@@ -106,6 +110,9 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		s.execution == nil || s.execution.store == nil || s.execution.supervisor == nil {
 		return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"Thread turn dependencies are required")
+	}
+	if s.hostContext != nil && s.hostContext.Err() != nil {
+		return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down")
 	}
 	normalized, err := normalizeSubmitThreadMessageRequest(SubmitThreadMessageRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: request.Content,
@@ -156,6 +163,10 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	}
 	request.ThreadID = normalized.ThreadID
 	s.turnMu.Lock()
+	if s.hostContext != nil && s.hostContext.Err() != nil {
+		s.turnMu.Unlock()
+		return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down")
+	}
 	if active := s.activeTurns[request.ThreadID]; active != nil {
 		defer s.turnMu.Unlock()
 		if request.queued != nil {
@@ -247,8 +258,20 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 			}
 		}
 	}
-	turnCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil}
+	parent := ctx
+	if !request.automatic && s.hostContext != nil {
+		parent = s.hostContext
+	}
+	turnCtx, cancel := context.WithCancel(parent)
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil, done: make(chan struct{})}
+	preparationCtx := turnCtx
+	if !request.automatic && s.hostContext != nil {
+		active.hostContext = turnCtx
+		var cancelPreparation context.CancelFunc
+		preparationCtx, cancelPreparation = context.WithCancel(ctx)
+		stopHostCancellation := context.AfterFunc(turnCtx, cancelPreparation)
+		defer func() { stopHostCancellation(); cancelPreparation() }()
+	}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}
@@ -261,14 +284,15 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 			active.stopping = true
 			delete(s.activeTurns, request.ThreadID)
 		}
+		close(active.done)
 		s.turnMu.Unlock()
 	}()
 	if prepare != nil {
-		if err := prepare(turnCtx); err != nil {
+		if err := prepare(preparationCtx); err != nil {
 			return result, err
 		}
 		s.turnMu.Lock()
-		stopped := active.stopping || turnCtx.Err() != nil
+		stopped := active.stopping || preparationCtx.Err() != nil
 		s.turnMu.Unlock()
 		if stopped {
 			return result, apperror.New(apperror.CodeCancelled, "Plan preparation stopped before execution")
@@ -279,7 +303,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	if request.queued != nil {
 		result, executionErr = s.executeSubmissionMode(turnCtx, normalized, ExecuteThreadTurnResult{Submission: *request.queued}, true)
 	} else {
-		result, executionErr = s.execute(turnCtx, request)
+		result, executionErr = s.execute(preparationCtx, request)
 	}
 	for {
 		s.turnMu.Lock()

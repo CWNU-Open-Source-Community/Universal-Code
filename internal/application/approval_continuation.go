@@ -52,6 +52,10 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return ApprovalContinuationResult{State: "not_started"}
 	}
 	s.turnMu.Lock()
+	if s.hostContext != nil && s.hostContext.Err() != nil {
+		s.turnMu.Unlock()
+		return approvalContinuationFailed(apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down"))
+	}
 	if active := s.activeTurns[thread.ID]; active != nil {
 		defer s.turnMu.Unlock()
 		if active.stopping {
@@ -69,7 +73,7 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return ApprovalContinuationResult{State: "queued"}
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel, done: make(chan struct{})}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}
@@ -82,6 +86,7 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 			active.stopping = true
 			delete(s.activeTurns, thread.ID)
 		}
+		close(active.done)
 		s.turnMu.Unlock()
 	}()
 	result := s.resumeApprovalWithOwner(turnCtx, request)
