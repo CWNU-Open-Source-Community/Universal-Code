@@ -317,7 +317,7 @@ it("shows the operator-declared origins for a scoped session", async () => {
     downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient;
   draw(client);
   expect(await screen.findByText(/https:\/\/example\.org:443, http:\/\/localhost:3000/)).toBeInTheDocument();
-  expect(screen.getByText(/仅在操作者声明的来源内工作/)).toBeInTheDocument();
+  expect(screen.getByText(/^已声明的导航来源：/)).toBeInTheDocument();
 });
 
 it("hides the origins note for unscoped and unavailable sessions", async () => {
@@ -328,12 +328,12 @@ it("hides the origins note for unscoped and unavailable sessions", async () => {
     downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient;
   const first = draw(client);
   await first.findByText("Report run-browser");
-  expect(first.queryByText(/仅在操作者声明的来源内工作/)).not.toBeInTheDocument();
+  expect(first.queryByText(/^已声明的导航来源：/)).not.toBeInTheDocument();
   first.unmount();
 
   const down = { ...status(), available: false, state: "closed", session_id: undefined, screenshot: undefined };
   const second = draw({ baseURL: "/api/v1", get: vi.fn(async () => down), postControl: vi.fn(),
     downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })) } as unknown as APIClient);
   await second.findByText("当前环境没有可用的 Agent 浏览器运行时，请检查本机浏览器和执行权限配置。");
-  expect(second.queryByText(/仅在操作者声明的来源内工作/)).not.toBeInTheDocument();
+  expect(second.queryByText(/^已声明的导航来源：/)).not.toBeInTheDocument();
 });
