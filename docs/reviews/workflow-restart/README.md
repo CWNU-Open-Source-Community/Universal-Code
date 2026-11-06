@@ -27,9 +27,12 @@ current interpreter context; exit stops and joins the renewer before releasing
 the original owner's claim. Renewal and release errors are returned. Claim,
 renewal and release store calls use two-second context deadlines.
 
-The independent Run execution lease still fences worker execution and side
-effects. An old worker keeps that lease until it drains. A new interpreter claim
-does not permit overlapping execution. A paused accepted wave retains ownership
+The independent Run execution lease fences worker execution and side effects
+while live. Cancellation stops renewal; an old worker that drains beyond the
+lease expiry can lose ownership before returning. A replacement interpreter
+settles the already-begun unknown attempt as `crashed` / `worker_lost` and does
+not replay its model call. The old owner cannot overwrite that checkpoint when
+it eventually exits. A paused accepted wave retains ownership
 while settling; renewal neither resumes it nor permits a new dispatch. Claims
 already persisted by older versions retain their original expiry until released
 or renewed by their owner.
@@ -67,15 +70,23 @@ The short-workflow regression and the 35-second long-worker test use actual
 elapsed time. The long-worker test observes three successful renewals and proves
 that a second SQLite owner cannot steal the claim past its original expiry.
 Renewal storage failure, owner replacement and renewal-call timeout each cancel
-the model fixture. A drain gate verifies that a second worker cannot acquire the
-Run lease until the first worker exits. Owner replacement uses one explicit
+the model fixture. An immediate drain-gate check verifies that a second worker
+cannot acquire the still-live Run lease. Owner replacement uses one explicit
 expiry-time injection; replacement, fencing and release use the production store.
+An additional independent case keeps the cancelled provider draining for 35 real
+seconds, past the Run lease expiry, and calls a second real WorkflowService on
+the same database. It verifies zero replacement model calls, one original
+`crashed` / `worker_lost` attempt, and the same replacement checkpoint after the
+old interpreter finally drains. This models delayed provider cleanup after
+cancellation.
 
 ## Verification
 
 ```powershell
 go test ./internal/application -run '^TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline$' -count=1 -v -timeout=65s
-go test ./internal/application -run '^TestWorkflowClaim' -count=1 -v -timeout=90s
+go test ./internal/application -run '^TestWorkflowClaim' -count=1 -v -timeout=120s
+go test ./internal/application -run '^TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt$' -count=1 -v -timeout=90s
+go test -race ./internal/application ./internal/store -run '^TestWorkflowClaim' -count=1 -timeout=120s
 go test ./internal/store -run '^TestWorkflowClaimRenewal' -count=1 -v -timeout=30s
 go test ./internal/application -run '^(TestWorkflowRestartProcess|TestWorkflowHostContinuesPausedCheckpointAfterDatabaseReopen|TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen|TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt|TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart)' -skip '^TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline$' -count=1 -v -timeout=90s
 go test ./internal/application ./internal/store -run '^TestWorkflow' -skip '^TestWorkflow(Claim|RestartProcess)' -count=1 -timeout=240s
@@ -88,8 +99,16 @@ fencing test in 0.460s; process-boundary/scheduled recovery group in 6.586s. HTT
 workflow tests pass in 7.574s and Desktop in 0.802s; `go vet` exits zero.
 Existing workflow regressions pass in 129.057s for application and 5.328s for store.
 
+Independent review of the short-claim patch found no runtime finding in the
+renew/cancel/join path or the owner/checkpoint fences. The additional long-drain
+regression passes in 45.898s, including 35.348s after cancellation. The full
+claim-focused race run, including that new case, passes in 66.176s for application
+and 5.480s for store. Production code is unchanged by this review follow-up.
+
 Logs: [claim lifetime](claim-lifetime-output.txt), [process boundaries](test-output.txt),
 [existing workflows](workflow-regression-output.txt), [host/API](host-api-regression-output.txt).
+Independent review logs: [long drain](long-drain-review-output.txt),
+[claim race](claim-race-review-output.txt).
 The child-only entry point skips during
 direct enumeration; the parent test actually executes it five times and checks
 each exit code. Unknown attempts still fail as `worker_lost` without model replay.
