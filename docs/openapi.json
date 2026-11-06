@@ -60916,6 +60916,12 @@
       "RunConfigView": {
         "additionalProperties": false,
         "properties": {
+          "browser_origins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "continuity_context_fingerprint": {
             "type": "string"
           },
