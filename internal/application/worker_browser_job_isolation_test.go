@@ -17,6 +17,9 @@ import (
 
 func TestWorkerBrowserReadinessCannotBorrowSiblingCommandJob(t *testing.T) {
 	st, run, root, lease, caps := newCommandRuntimeTestRuntime(t, t.Context())
+	if _, err := ChangeBrowserNetworkAccess(t.Context(), st, nil, domain.ChangeBrowserNetworkAccessRequest{Version: domain.BrowserNetworkAccessVersion, RunID: run.ID, ExpectedRevision: 1, BrowserNetworkAccess: domain.BrowserNetworkInternet, OperationKey: "worker-browser-internet-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 	manager, err := runner.NewPlatformCommandRuntimeManager(st, "worker-browser-job-test")
 	if err != nil {
 		t.Fatal(err)

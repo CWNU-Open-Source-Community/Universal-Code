@@ -491,6 +491,18 @@ func (s *ThreadService) prepareSuccessor(ctx context.Context, threadRecord domai
 		predecessor.Config.ModelRoute)
 	linkedSession.CreatedAt, linkedSession.UpdatedAt = now, now
 	config := predecessor.Config
+	if reader, ok := s.store.(interface {
+		GetSuccessorBrowserNetworkPreference(context.Context, string) (domain.BrowserNetworkPreference, bool, error)
+	}); ok {
+		preference, found, err := reader.GetSuccessorBrowserNetworkPreference(ctx, predecessor.ID)
+		if err != nil {
+			return domain.Run{}, session.Session{}, domain.RunModeSnapshot{}, nil, apperror.Normalize(err)
+		}
+		if found {
+			config.BrowserNetworkAccess, config.BrowserOrigins = preference.BrowserNetworkAccess, preference.BrowserOrigins
+		}
+	}
+	config.BrowserNetworkRevision = 1
 	config.ContinuityContext, config.ContinuityContextFingerprint = nil, ""
 	if reader, ok := s.store.(threadModelRoutePreferenceReader); ok {
 		preference, found, preferenceErr := reader.GetThreadModelRoutePreference(

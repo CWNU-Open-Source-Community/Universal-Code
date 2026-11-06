@@ -1715,8 +1715,9 @@ func (a *App) runCreate(ctx context.Context, service *application.RunService, ar
 	fs.Var(&allowedTargets, "allow-target",
 		"public HTTPS host, wildcard suffix, or public_https; repeat for multiple values")
 	var browserOrigins stringListFlag
+	browserNetwork := fs.String("browser-network", "", "browser network access: off, internet or restricted; defaults to the remembered project choice")
 	fs.Var(&browserOrigins, "browser-origin",
-		"exact scheme+host+port origin for this Run's scoped agent browser sessions (ADR 0195); repeat for multiple values, 1..8; applies to ask/auto runs")
+		"exact origin for restricted browser access; repeat for multiple values, 1..8")
 	maxTurns := fs.Int("max-turns", domain.DefaultBudget().MaxTurns, "maximum agent turns")
 	maxTokens := fs.Int64("max-tokens", 0, "maximum model tokens; zero means unset")
 	maxToolCalls := fs.Int64("max-tool-calls", domain.DefaultBudget().MaxToolCalls, "maximum tool calls; zero means unlimited")
@@ -1739,6 +1740,7 @@ func (a *App) runCreate(ctx context.Context, service *application.RunService, ar
 		"network":                     true,
 		"allow-target":                true,
 		"browser-origin":              true,
+		"browser-network":             true,
 		"max-turns":                   true,
 		"max-tokens":                  true,
 		"max-tool-calls":              true,
@@ -1809,17 +1811,18 @@ func (a *App) runCreate(ctx context.Context, service *application.RunService, ar
 		projectInstructions = &discovered
 	}
 	mission, run, err := service.Create(ctx, application.CreateRunRequest{
-		Goal:           strings.Join(fs.Args(), " "),
-		Profile:        *profile,
-		Surface:        *surface,
-		Phase:          *phase,
-		WorkspaceID:    workspaceID,
-		SessionID:      *sessionID,
-		ModelRoute:     *route,
-		Interactive:    *interactive,
-		NetworkMode:    *networkMode,
-		AllowedTargets: append([]string(nil), allowedTargets.values...),
-		BrowserOrigins: append([]string(nil), browserOrigins.values...),
+		Goal:                 strings.Join(fs.Args(), " "),
+		Profile:              *profile,
+		Surface:              *surface,
+		Phase:                *phase,
+		WorkspaceID:          workspaceID,
+		SessionID:            *sessionID,
+		ModelRoute:           *route,
+		Interactive:          *interactive,
+		NetworkMode:          *networkMode,
+		AllowedTargets:       append([]string(nil), allowedTargets.values...),
+		BrowserOrigins:       append([]string(nil), browserOrigins.values...),
+		BrowserNetworkAccess: domain.BrowserNetworkAccess(*browserNetwork),
 		Budget: domain.Budget{
 			MaxTurns:       *maxTurns,
 			MaxTokens:      *maxTokens,

@@ -56,6 +56,7 @@ const (
 )
 
 type Store interface {
+	application.BrowserNetworkAccessStore
 	application.RunWebAccessStore
 	application.ControlledCommandHistoryStore
 	application.HostCommandHistoryStore
@@ -1349,6 +1350,10 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if runID, matched := matchRunLifecycleControlPath(request.URL.Path); matched {
 		a.serveRunLifecycleControl(tracked, request, requestID, runID)
+		return
+	}
+	if runID, workspaceID, matched := matchBrowserNetworkAccessPath(request.URL.Path); matched {
+		a.serveBrowserNetworkAccess(tracked, request, requestID, runID, workspaceID)
 		return
 	}
 	if runID, matched := matchRunWebAccessControlPath(request.URL.Path); matched {

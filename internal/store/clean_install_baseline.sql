@@ -995,6 +995,11 @@ CREATE TABLE browser_launch_reviews (
 		CHECK(json_extract(payload_json, '$.authority.artifact_commit') = 0)
 	);
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE browser_network_access_operations (
+ key_digest TEXT PRIMARY KEY CHECK(length(key_digest)=64), fingerprint TEXT NOT NULL CHECK(length(fingerprint)=64),
+ result_json TEXT NOT NULL CHECK(json_valid(result_json)), requested_by TEXT NOT NULL, created_at TEXT NOT NULL
+ );
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE browser_network_evidence_operations (
 		key_digest TEXT PRIMARY KEY,
 		request_fingerprint TEXT NOT NULL,
@@ -5249,6 +5254,12 @@ CREATE TABLE run_browser_cdp_permission_snapshots (
 		CHECK(reason = trim(reason) AND length(reason) BETWEEN 1 AND 1024
 			AND instr(reason, char(0)) = 0)
 	);
+-- traverse-board-clean-install-object-boundary --
+CREATE TABLE run_browser_network_preferences (
+ run_id TEXT PRIMARY KEY REFERENCES runs(id), revision INTEGER NOT NULL CHECK(revision>0),
+ mode TEXT NOT NULL CHECK(mode IN ('off','internet','restricted')),
+ origins_json TEXT NOT NULL CHECK(json_valid(origins_json)), requested_by TEXT NOT NULL, updated_at TEXT NOT NULL
+ );
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE run_creation_operations (
 		operation_key_digest TEXT PRIMARY KEY,
@@ -13229,6 +13240,12 @@ CREATE TABLE workflow_executions (id TEXT PRIMARY KEY, definition_id TEXT NOT NU
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE workflow_steps (id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES workflow_executions(id), step_id TEXT NOT NULL, agent_id TEXT NOT NULL, session_id TEXT NOT NULL, inputs_json TEXT NOT NULL CHECK(json_valid(inputs_json)), status TEXT NOT NULL CHECK(status IN ('pending','completed','failed')), output_json TEXT NOT NULL DEFAULT 'null' CHECK(json_valid(output_json)), reason TEXT NOT NULL DEFAULT '');
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE workspace_browser_network_preferences (
+ workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id), revision INTEGER NOT NULL CHECK(revision>0),
+ mode TEXT NOT NULL CHECK(mode IN ('off','internet','restricted')),
+ origins_json TEXT NOT NULL CHECK(json_valid(origins_json)), requested_by TEXT NOT NULL, updated_at TEXT NOT NULL
+ );
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE workspace_checkpoint_blobs (
 		sha256 TEXT PRIMARY KEY,
 		size_bytes INTEGER NOT NULL,
@@ -14561,6 +14578,10 @@ CREATE INDEX workflow_completion_notification_due ON workflow_completion_notific
 CREATE INDEX workflow_run ON workflow_executions(run_id, created_at);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX workflow_step_execution ON workflow_steps(execution_id);
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER browser_network_access_operations_no_delete BEFORE DELETE ON browser_network_access_operations BEGIN SELECT RAISE(ABORT,'browser network operations are immutable'); END;
+-- traverse-board-clean-install-object-boundary --
+CREATE TRIGGER browser_network_access_operations_no_update BEFORE UPDATE ON browser_network_access_operations BEGIN SELECT RAISE(ABORT,'browser network operations are immutable'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER skill_candidate_import_insert_guard
 		BEFORE INSERT ON skill_candidate_imports

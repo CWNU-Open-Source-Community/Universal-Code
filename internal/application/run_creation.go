@@ -145,7 +145,7 @@ func (s *ControlledRunCreationService) Create(ctx context.Context,
 		return ControlledRunCreationResult{}, apperror.New(apperror.CodeFailedPrecondition, "project instruction discovery failed closed")
 	}
 
-	prepared, err := prepareRun(ctx, CreateRunRequest{
+	creationRequest, err := inheritProjectBrowserNetworkAccess(ctx, s.store, CreateRunRequest{
 		Goal: normalized.Goal, Profile: string(normalized.Profile),
 		Surface: string(normalized.Surface), Phase: string(normalized.Phase),
 		WorkspaceID: normalized.WorkspaceID, ModelRoute: normalized.ModelRoute,
@@ -155,7 +155,11 @@ func (s *ControlledRunCreationService) Create(ctx context.Context,
 		Interactive:    true, Budget: normalized.Budget, RequestedBudget: &normalized.Budget, RequestedBy: normalized.RequestedBy,
 		ProjectConfig:       project,
 		ProjectInstructions: &instructions,
-	}, nil)
+	})
+	if err != nil {
+		return ControlledRunCreationResult{}, apperror.Normalize(err)
+	}
+	prepared, err := prepareRun(ctx, creationRequest, nil)
 	if err != nil {
 		return ControlledRunCreationResult{}, apperror.Normalize(err)
 	}

@@ -32,7 +32,7 @@ func (s *AgentBrowserService) reviewNetworkWrite(a toolgateway.AgentBrowserCallA
 		if !ok {
 			return agentBrowserUnavailable("browser request approval store unavailable")
 		}
-		if request.Authority.RunID != a.RunID || request.Authority.SessionID != a.BrowserSessionID || request.Authority.Generation != a.SessionGeneration || request.Authority.ManagerBootID != a.ManagerBootID || request.Authority.PermissionRevision != a.PermissionRevision || request.Authority.RunAuthorizationFence != a.RunAuthorizationFence || request.Authority.PermissionSnapshotID != a.PermissionSnapshotID || request.Authority.PermissionMode != string(a.PermissionMode) || len(a.DeclaredOrigins) == 0 {
+		if request.Authority.RunID != a.RunID || request.Authority.SessionID != a.BrowserSessionID || request.Authority.Generation != a.SessionGeneration || request.Authority.ManagerBootID != a.ManagerBootID || request.Authority.PermissionRevision != a.PermissionRevision || request.Authority.RunAuthorizationFence != a.RunAuthorizationFence || request.Authority.PermissionSnapshotID != a.PermissionSnapshotID || request.Authority.PermissionMode != string(a.PermissionMode) || (len(a.DeclaredOrigins) == 0 && a.BrowserNetworkAccess != domain.BrowserNetworkInternet) {
 			return agentBrowserUnavailable("browser request authority changed")
 		}
 		if err := s.checkResource(ctx, a); err != nil {

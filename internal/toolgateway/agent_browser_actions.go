@@ -221,8 +221,10 @@ type AgentBrowserCallAuthority struct {
 	// DeclaredOrigins carries the operator-declared, default-deny origin set of
 	// a scoped session (ADR 0195); omitempty keeps every existing unscoped
 	// authority fingerprint byte-identical. Full activation stays unscoped.
-	DeclaredOrigins  []string `json:"declared_origins,omitempty"`
-	ScopeFingerprint string   `json:"scope_fingerprint,omitempty"`
+	DeclaredOrigins        []string                    `json:"declared_origins,omitempty"`
+	ScopeFingerprint       string                      `json:"scope_fingerprint,omitempty"`
+	BrowserNetworkAccess   domain.BrowserNetworkAccess `json:"browser_network_access,omitempty"`
+	BrowserNetworkRevision int64                       `json:"browser_network_revision,omitempty"`
 }
 
 // Equal reports whether two authorities bind the identical session, actor,
@@ -258,7 +260,23 @@ func (a AgentBrowserCallAuthority) Validate() error {
 	root := a.Role == domain.AgentRoleRoot && a.AgentID == "" && a.AgentAttemptID == "" && a.WorkspaceFingerprint == ""
 	scoped := len(a.DeclaredOrigins) > 0 || a.ScopeFingerprint != ""
 	modeOK := a.PermissionMode.IncludesFullAccess()
-	if scoped {
+	if a.BrowserNetworkAccess != "" {
+		if !a.BrowserNetworkAccess.Valid() || a.BrowserNetworkAccess == domain.BrowserNetworkOff || a.BrowserNetworkRevision < 1 ||
+			(a.PermissionMode != domain.RunExecutionPermissionAsk && a.PermissionMode != domain.RunExecutionPermissionAuto && !modeOK) {
+			return errors.New("invalid Agent browser network access")
+		}
+		if (a.BrowserNetworkAccess == domain.BrowserNetworkRestricted) != scoped {
+			return errors.New("invalid Agent browser network scope")
+		}
+		if scoped {
+			scope, err := browserruntime.NewAgentBrowserOriginScope(a.DeclaredOrigins)
+			if err != nil || len(a.DeclaredOrigins) == 0 || scope.Fingerprint != a.ScopeFingerprint {
+				return errors.New("invalid Agent browser declared origins")
+			}
+		}
+	} else if a.BrowserNetworkRevision != 0 {
+		return errors.New("invalid legacy browser network revision")
+	} else if scoped {
 		// A scoped authority (ADR 0195) is an ask/auto session confined to its
 		// operator-declared origins; a Full activation never carries a scope.
 		if modeOK || len(a.DeclaredOrigins) == 0 || a.ScopeFingerprint == "" ||

@@ -213,7 +213,7 @@ func publicAgentBrowserStatus(value application.AgentBrowserView, runID string) 
 	if !value.Capabilities.Available {
 		view.FailureCode = "browser_unavailable"
 		switch value.Capabilities.UnavailableCode {
-		case "platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable":
+		case "platform_unsupported", "full_access_required", "browser_network_off", "runtime_unavailable", "run_unavailable", "session_unavailable":
 			view.UnavailableCode = value.Capabilities.UnavailableCode
 		}
 	}
