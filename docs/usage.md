@@ -997,6 +997,20 @@ every DNS answer, rechecks up to three redirects, checks robots, uses a 15-secon
 conservative partial PDF text. Missing SearXNG configuration makes Search unavailable
 without a fallback, while a network-disabled Run publishes no Web tools.
 
+The agent browser has its own operator-declared boundary, independent of the web
+network mode: `cyberagent run create --browser-origin <scheme+host+port>` (repeat
+for up to eight exact origins) pins a scoped browser session for the Run. On ask and
+auto runs the model-driven browser then works inside exactly those origins — local
+dev servers (`http://localhost:3000`) and public pages — without global Full
+activation, navigation outside the set fails with the missing origin named, and a
+declared public name is re-checked at dispatch so it cannot resolve into a private
+or metadata address. Full runs keep their unscoped browser and ignore the
+declarations. Origins are trusted operator input pinned at Run creation; the
+untrusted `.prayu` project snapshot can never widen them. Thread successor runs
+inherit the declaration so a multi-turn conversation keeps its boundary; fork,
+resume, and branch never recreate one from continuity data, and moving the
+thread's project carries the declaration to the recreated Run.
+
 Thread source cards and `GET /api/v1/runs/{run_id}/web-evidence` use the same public
 projection as the CLI: canonical link, bounded title, status, fetch/stale time, digest,
 and partial/stale facts. They omit snippets, page bodies, citation claims, operation

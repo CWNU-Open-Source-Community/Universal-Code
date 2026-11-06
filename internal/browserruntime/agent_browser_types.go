@@ -37,6 +37,24 @@ type AgentBrowserStartRequest struct {
 	Product         BrowserProduct
 	Headless        bool
 	RuntimeDeadline time.Time
+	// ScopedOrigins declares the operator-approved, default-deny origin set of
+	// a scoped session (ADR 0195). Empty keeps the unscoped Full-activation
+	// session; a non-empty set requires an ask/auto permission mode and is
+	// enforced on every dispatched navigation and its landing URL.
+	ScopedOrigins []string
+	// ReviewNetworkWrite keeps one page request paused until the operator has
+	// approved its exact method, destination and complete body. The callback
+	// must consume that decision once before calling dispatch.
+	ReviewNetworkWrite func(context.Context, AgentBrowserNetworkRequest, func() error) error
+}
+
+type AgentBrowserNetworkRequest struct {
+	ID, RuntimeID, RequestID, FrameID, DocumentURL string
+	DocumentEpoch                                  uint64
+	Authority                                      AgentBrowserAuthority
+	Method, URL, BodySHA256                        string
+	BodyBytes                                      int
+	ExpiresAt                                      time.Time
 }
 
 type AgentBrowserStatus struct {

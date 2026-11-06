@@ -12,7 +12,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 93 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 57 | true |
-| [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 25 | false |
+| [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 26 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
 | [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
 | [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
@@ -382,8 +382,9 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `browser-cdp-process-session-reader` (`v1`, active) at `internal/browserruntime`
 
-<details><summary>25 active identifiers</summary>
+<details><summary>26 active identifiers</summary>
 
+- `agent_browser_origin_scope.v1`
 - `browser-action-tools.v1`
 - `browser_cdp_outcome.v1`
 - `browser_cdp_request.v1`

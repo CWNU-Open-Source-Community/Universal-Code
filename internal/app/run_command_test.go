@@ -1712,3 +1712,28 @@ func TestRunCLIExecuteAndFinalize(t *testing.T) {
 		t.Fatalf("unexpected fail output=%s stderr=%s code=%d", failed, stderr, code)
 	}
 }
+
+func TestRunCreateAcceptsBrowserOriginsAndFailsClosed(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	created, stderr, code := executeTestCommand(t, "run", "create",
+		"scoped browser preview", "--profile", "code", "--surface", "code",
+		"--phase", "plan", "--browser-origin", "HTTPS://Example.com",
+		"--browser-origin", "http://localhost:3000")
+	if code != 0 || stderr != "" {
+		t.Fatalf("scoped create stdout=%s stderr=%s code=%d", created, stderr, code)
+	}
+	if _, stderr, code = executeTestCommand(t, "run", "create",
+		"out of policy", "--profile", "code", "--surface", "code",
+		"--phase", "plan", "--browser-origin", "http://192.168.1.5"); code == 0 || !strings.Contains(stderr, "browser origins fail-closed") {
+		t.Fatalf("private origin accepted: stderr=%s code=%d", stderr, code)
+	}
+	if _, stderr, code = executeTestCommand(t, "run", "create",
+		"over the ceiling", "--profile", "code", "--surface", "code",
+		"--phase", "plan", "--browser-origin", "https://a-aaaaaaaa.test",
+		"--browser-origin", "https://b-aaaaaaaa.test", "--browser-origin", "https://c-aaaaaaaa.test",
+		"--browser-origin", "https://d-aaaaaaaa.test", "--browser-origin", "https://e-aaaaaaaa.test",
+		"--browser-origin", "https://f-aaaaaaaa.test", "--browser-origin", "https://g-aaaaaaaa.test",
+		"--browser-origin", "https://h-aaaaaaaa.test", "--browser-origin", "https://i-aaaaaaaa.test"); code == 0 || !strings.Contains(stderr, "browser origins fail-closed") {
+		t.Fatalf("origin count above the ceiling accepted: stderr=%s code=%d", stderr, code)
+	}
+}

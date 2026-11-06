@@ -65,6 +65,14 @@ type RunConfig struct {
 	// guidance only and is never an authorization source.
 	ProjectInstructions            json.RawMessage `json:"project_instructions,omitempty"`
 	ProjectInstructionsFingerprint string          `json:"project_instructions_fingerprint,omitempty"`
+	// BrowserOrigins records the operator-declared, default-deny origin set of
+	// the Run's scoped agent browser sessions (ADR 0195), pinned at creation.
+	// This is trusted operator input, unlike the untrusted .prayu snapshot:
+	// ask/auto authorities are confined to exactly these origins, and Full
+	// activation keeps its unscoped behavior. Thread successor runs inherit
+	// the declaration; fork, resume and branch do not (they must never
+	// recreate an authorization from continuity data).
+	BrowserOrigins []string `json:"browser_origins,omitempty"`
 	// ContinuityContext is an immutable checkpoint/Fork/Resume snapshot. It is
 	// historical user data only: the embedded authority projection must remain
 	// all-false and can never recreate an approval, capability, process, lease,

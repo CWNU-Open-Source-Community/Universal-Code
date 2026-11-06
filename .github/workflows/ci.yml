@@ -578,6 +578,7 @@ jobs:
           TRAVERSE_TEST_AGENT_BROWSER: '1'
           TRAVERSE_TEST_AGENT_BROWSER_PRODUCT: chrome
           AGENT_BROWSER_HTTP_TEST: '1'
+          AGENT_BROWSER_PRODUCT_TEST: '1'
           TRAVERSE_DARWIN_CHROME_EVIDENCE: ${{ github.workspace }}/build/darwin-chrome-evidence
           AGENT_BROWSER_HTTP_EVIDENCE: ${{ github.workspace }}/build/darwin-chrome-evidence
         run: |
@@ -588,6 +589,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' '/Applications/Google Chrome.app/Contents/Info.plist' >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinPIDEnumerationErrorsPropagate|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$'
           go test -v -count=1 -timeout=5m ./internal/httpapi -run '^TestAgentBrowserHTTPProductApprovalAndScreenshot$'
+          go test -v -count=1 -timeout=15m ./internal/store -run '^TestBrowserNetworkRequestRealApprovalControl$'
           go test -v -count=1 -timeout=3m ./internal/app ./internal/desktop -run '^(TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests|TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests|TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser|TestCLIWakeConsumeWiresOrdinaryAgentBrowser|TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser|TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess)$'
       - name: Capture actual Agent Browser workbench before and after on macOS
         run: bash scripts/ci/verify-macos-agent-browser-ui.sh 3341c0e3a35b9f84a38b913465c0252e10f95649

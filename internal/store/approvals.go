@@ -99,6 +99,11 @@ func decideApprovalTx(ctx context.Context, tx *sql.Tx,
 	if record.ToolName == "host_command_propose" {
 		return approval.DecisionResult{}, errors.New("historical host approvals are read-only; use Command Runtime for a new command")
 	}
+	if desired == approval.StatusApproved && strings.HasPrefix(record.ProposalID, domain.BrowserNetworkRequestPrefix) {
+		if err := validateBrowserNetworkApprovalTx(ctx, tx, record); err != nil {
+			return approval.DecisionResult{}, err
+		}
+	}
 
 	changed := false
 	if record.Status == approval.StatusPending {
@@ -176,6 +181,11 @@ func (s *SQLiteStore) ListApprovals(ctx context.Context, filter approval.ListFil
 	}
 	if filter.Limit == 0 {
 		filter.Limit = defaultApprovalListLimit
+	}
+	if filter.Status == "" || filter.Status == approval.StatusPending {
+		if err := s.invalidateExpiredBrowserNetworkRequests(ctx); err != nil {
+			return nil, err
+		}
 	}
 	query := approvalSelect + ` WHERE 1=1`
 	var args []any
@@ -509,7 +519,7 @@ func ensureApprovalTx(ctx context.Context, tx *sql.Tx, proposal approval.Proposa
 	if err != nil {
 		return approval.Record{}, false, err
 	}
-	if !bound && (proposal.RequestedBy == "specialist_runner" || proposal.RequestedBy == "specialist_fileedit") {
+	if !bound && (proposal.RequestedBy == "specialist_runner" || proposal.RequestedBy == "specialist_fileedit" || proposal.RequestedBy == "agent_browser_network") {
 		binding, bound, err = specialistApprovalRunBindingTx(ctx, tx, proposal.SessionID)
 		if err != nil {
 			return approval.Record{}, false, err

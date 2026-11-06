@@ -104,6 +104,9 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 	if err != nil {
 		return AgentBrowserNavigation{}, err
 	}
+	if err := r.authorizeSessionNavigation(ctx, canonical); err != nil {
+		return AgentBrowserNavigation{}, err
+	}
 	op, end, err := r.begin(ctx)
 	if err != nil {
 		return AgentBrowserNavigation{}, err
@@ -112,6 +115,8 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 	defer r.releaseObjects(op)
 	r.mu.Lock()
 	r.invalidateLocked()
+	r.networkDocumentError = nil
+	r.invalidateNetworkLocked()
 	r.mu.Unlock()
 	if viewport != nil {
 		if err := r.call(op, "Emulation.setDeviceMetricsOverride", map[string]any{"width": viewport.Width, "height": viewport.Height, "deviceScaleFactor": 1, "mobile": false}, nil); err != nil {
@@ -126,6 +131,12 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 		return AgentBrowserNavigation{}, r.unknown(err)
 	}
 	if result.ErrorText != "" || result.IsDownload {
+		r.mu.Lock()
+		scopeErr := r.networkDocumentError
+		r.mu.Unlock()
+		if scopeErr != nil {
+			return AgentBrowserNavigation{}, scopeErr
+		}
 		return AgentBrowserNavigation{}, errors.New("browser navigation failed or attempted a download")
 	}
 	// Waiting observes the one dispatched navigation; it never dispatches it again.
@@ -135,7 +146,11 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 		r.mu.Lock()
 		loaded := r.loaded
 		currentLoader := r.loader
+		scopeErr := r.networkDocumentError
 		r.mu.Unlock()
+		if scopeErr != nil {
+			return AgentBrowserNavigation{}, scopeErr
+		}
 		if result.LoaderID != "" && (loaded != result.LoaderID || currentLoader != result.LoaderID) {
 			select {
 			case <-op.Done():
@@ -167,6 +182,13 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 			if page.Layout != nil {
 				v := page.Layout.Viewport
 				observed = &v
+			}
+			if err := r.authorizeSessionNavigation(ctx, doc.url); err != nil {
+				var scopeErr *AgentBrowserScopeError
+				if errors.As(err, &scopeErr) && scopeErr.Code == AgentBrowserScopeOriginNotDeclared {
+					return AgentBrowserNavigation{}, &AgentBrowserScopeError{Code: AgentBrowserScopeLeftOrigins, Origin: doc.url}
+				}
+				return AgentBrowserNavigation{}, err
 			}
 			return AgentBrowserNavigation{SessionID: r.request.Authority.SessionID, CanonicalURL: doc.url, DocumentEpoch: doc.epoch, CompletedAt: time.Now().UTC(), Viewport: observed}, nil
 		}

@@ -10,11 +10,13 @@ import (
 	"io"
 	"math"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/runner"
@@ -216,6 +218,28 @@ type AgentBrowserCallAuthority struct {
 	BrowserSessionID      string                            `json:"browser_session_id"`
 	SessionGeneration     uint64                            `json:"session_generation"`
 	Generation            string                            `json:"generation"`
+	// DeclaredOrigins carries the operator-declared, default-deny origin set of
+	// a scoped session (ADR 0195); omitempty keeps every existing unscoped
+	// authority fingerprint byte-identical. Full activation stays unscoped.
+	DeclaredOrigins  []string `json:"declared_origins,omitempty"`
+	ScopeFingerprint string   `json:"scope_fingerprint,omitempty"`
+}
+
+// Equal reports whether two authorities bind the identical session, actor,
+// permission state, and declared scope. reflect.DeepEqual keeps the
+// comparison complete as authority fields evolve; the declared origin set is
+// normalized (nil and empty are the same unscoped state) so construction
+// style cannot flip an equality verdict. Scope construction must
+// canonicalize DeclaredOrigins (NewAgentBrowserOriginScope output) so the raw
+// strings and the fingerprint-bound canonical set agree.
+func (a AgentBrowserCallAuthority) Equal(other AgentBrowserCallAuthority) bool {
+	if len(a.DeclaredOrigins) == 0 {
+		a.DeclaredOrigins = nil
+	}
+	if len(other.DeclaredOrigins) == 0 {
+		other.DeclaredOrigins = nil
+	}
+	return reflect.DeepEqual(a, other)
 }
 
 func (a AgentBrowserCallAuthority) Fingerprint() string {
@@ -232,7 +256,23 @@ func (a AgentBrowserCallAuthority) Validate() error {
 	}
 	worker := a.Role == domain.AgentRoleSpecialist && validMCPIdentity(a.AgentID) && a.AgentID != a.RootAgentID && validMCPIdentity(a.AgentAttemptID) && validAgentCodeDigest(a.WorkspaceFingerprint, false)
 	root := a.Role == domain.AgentRoleRoot && a.AgentID == "" && a.AgentAttemptID == "" && a.WorkspaceFingerprint == ""
-	if (a.WorkspaceID != "" && !validMCPIdentity(a.WorkspaceID)) || a.ProtocolVersion != AgentBrowserAuthorityVersion || (!root && !worker) || !a.Surface.Valid() || !a.Phase.Valid() || !a.PermissionMode.IncludesFullAccess() || a.ModeRevision < 1 || a.PermissionRevision < 1 || a.RunAuthorizationFence == 0 || a.SessionGeneration == 0 || a.Generation != a.Fingerprint() {
+	scoped := len(a.DeclaredOrigins) > 0 || a.ScopeFingerprint != ""
+	modeOK := a.PermissionMode.IncludesFullAccess()
+	if scoped {
+		// A scoped authority (ADR 0195) is an ask/auto session confined to its
+		// operator-declared origins; a Full activation never carries a scope.
+		if modeOK || len(a.DeclaredOrigins) == 0 || a.ScopeFingerprint == "" ||
+			(a.PermissionMode != domain.RunExecutionPermissionAsk && a.PermissionMode != domain.RunExecutionPermissionAuto) {
+			return errors.New("invalid Agent browser scope binding")
+		}
+		scope, err := browserruntime.NewAgentBrowserOriginScope(a.DeclaredOrigins)
+		if err != nil || scope.Fingerprint != a.ScopeFingerprint {
+			return errors.New("invalid Agent browser declared origins")
+		}
+	} else if !modeOK {
+		return errors.New("invalid Agent browser authority")
+	}
+	if (a.WorkspaceID != "" && !validMCPIdentity(a.WorkspaceID)) || a.ProtocolVersion != AgentBrowserAuthorityVersion || (!root && !worker) || !a.Surface.Valid() || !a.Phase.Valid() || a.ModeRevision < 1 || a.PermissionRevision < 1 || a.RunAuthorizationFence == 0 || a.SessionGeneration == 0 || a.Generation != a.Fingerprint() {
 		return errors.New("invalid Agent browser authority")
 	}
 	_, e := domain.ParseProfile(string(a.Profile))

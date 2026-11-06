@@ -39,8 +39,12 @@ type AgentBrowserCapabilities struct {
 	Available        bool     `json:"available"`
 	CanStart         bool     `json:"can_start"`
 	SupportedActions []string `json:"supported_actions"`
-	RefusalReason    string   `json:"refusal_reason,omitempty"`
-	UnavailableCode  string   `json:"unavailable_code,omitempty"`
+	// DeclaredOrigins carries the Run's operator-declared scoped-session origin
+	// set (ADR 0195), reserved for the live view boundary display; the httpapi
+	// projection of this field lands with the Desktop surface work.
+	DeclaredOrigins []string `json:"declared_origins,omitempty"`
+	RefusalReason   string   `json:"refusal_reason,omitempty"`
+	UnavailableCode string   `json:"unavailable_code,omitempty"`
 }
 type AgentBrowserView struct {
 	Version          string                              `json:"version"`
@@ -134,6 +138,13 @@ func NewAgentBrowserService(st AgentBrowserStore, options AgentBrowserOptions) *
 		return value, nil
 	}
 	s.available = browserruntime.AgentBrowserPlatformAvailable() && filepath.IsAbs(options.HomePath) && options.Capabilities.Validate() == nil
+	if st, ok := st.(browserNetworkRequestStore); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := st.InvalidateOldBrowserNetworkRequests(ctx, s.boot); err != nil {
+			s.available = false
+		}
+		cancel()
+	}
 	return s
 }
 func agentBrowserUnavailable(message string) error {
@@ -171,8 +182,28 @@ func (s *AgentBrowserService) currentAuthority(ctx context.Context, runID string
 		return a, e
 	}
 	generation, live := s.options.Capabilities.FullAccessGeneration(permission)
-	if permission.Mode != domain.RunExecutionPermissionFull || !live || s.options.Capabilities.RuntimeAuthority == nil {
+	if !live || s.options.Capabilities.RuntimeAuthority == nil {
 		return a, agentBrowserUnavailable("Agent browser requires live Full activation")
+	}
+	if permission.Mode != domain.RunExecutionPermissionFull {
+		// Scoped ask/auto sessions (ADR 0195): the Run's operator-declared
+		// origins confine the browser to them. Without a declaration, or under
+		// any other non-Full mode, availability is exactly as before. Full
+		// activation keeps its unscoped authority and ignores declarations.
+		if len(run.Config.BrowserOrigins) == 0 ||
+			(permission.Mode != domain.RunExecutionPermissionAsk && permission.Mode != domain.RunExecutionPermissionAuto) {
+			return a, agentBrowserUnavailable("Agent browser requires live Full activation")
+		}
+		scope, e := browserruntime.NewAgentBrowserOriginScope(run.Config.BrowserOrigins)
+		if e != nil {
+			return a, agentBrowserUnavailable("Agent browser declared origins are invalid")
+		}
+		declared := make([]string, 0, len(scope.Origins))
+		for _, origin := range scope.Origins {
+			declared = append(declared, origin.String())
+		}
+		a = toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID, RootAgentID: root.ID, WorkspaceID: mission.WorkspaceID, Surface: mode.Surface, Phase: mode.Phase, Role: root.Role, Profile: mode.Profile, ModeRevision: mode.Revision, PermissionMode: permission.Mode, PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionActivation: generation, DeclaredOrigins: declared, ScopeFingerprint: scope.Fingerprint}
+		return a, nil
 	}
 	a = toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID, RootAgentID: root.ID, WorkspaceID: mission.WorkspaceID, Surface: mode.Surface, Phase: mode.Phase, Role: root.Role, Profile: mode.Profile, ModeRevision: mode.Revision, PermissionMode: permission.Mode, PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionActivation: generation}
 	return a, nil
@@ -248,7 +279,7 @@ func (s *AgentBrowserService) check(ctx context.Context, a toolgateway.AgentBrow
 	if e != nil {
 		return e
 	}
-	if current != a {
+	if !current.Equal(a) {
 		return agentBrowserUnavailable("Agent browser authority changed")
 	}
 	return nil
@@ -299,11 +330,13 @@ func (s *AgentBrowserService) Capabilities(ctx context.Context, runID string) (A
 	if e == nil && slot != nil {
 		c.Available = true
 		c.CanStart = slot.runtime == nil
+		c.DeclaredOrigins = append([]string(nil), a.DeclaredOrigins...)
 		return c, nil
 	}
 	if !s.closed && slot != nil && (agentBrowserCleanupComplete(slot) || agentBrowserUnusedColdSlot(slot)) {
 		c.Available = true
 		c.CanStart = true
+		c.DeclaredOrigins = append([]string(nil), a.DeclaredOrigins...)
 		return c, nil
 	}
 	if e != nil {

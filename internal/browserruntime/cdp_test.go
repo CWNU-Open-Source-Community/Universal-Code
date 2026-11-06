@@ -287,7 +287,7 @@ func TestBrowserRuntimeProductionPrimitivesStayInAuditedAdapters(t *testing.T) {
 	}
 	allowed := map[string]map[string]bool{
 		`"github.com/gorilla/websocket"`: {"restricted_cdp_transport.go": true},
-		`"net/http"`:                     {"network_probe_windows.go": true},
+		`"net/http"`:                     {"network_probe_windows.go": true, "restricted_cdp_transport.go": true},
 		"websocket.Dialer":               {"restricted_cdp_transport.go": true},
 		"windows.CreateProcess":          {"browser_process_windows.go": true},
 		"os.Remove": {

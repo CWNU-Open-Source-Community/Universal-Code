@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
@@ -42,6 +43,24 @@ type RunService struct {
 	runtimeAuthority *domain.ExecutionPermissionRuntimeAuthority
 }
 
+// normalizeBrowserOrigins canonicalizes the operator-declared agent browser
+// origin set (ADR 0195) through the shared scope grammar, so the Run carries
+// exactly the strings the scoped authorities and the runtime scope bind.
+func normalizeBrowserOrigins(raw []string) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	scope, err := browserruntime.NewAgentBrowserOriginScope(raw)
+	if err != nil {
+		return nil, fmt.Errorf("browser origins fail-closed: %w", err)
+	}
+	origins := make([]string, 0, len(scope.Origins))
+	for _, origin := range scope.Origins {
+		origins = append(origins, origin.String())
+	}
+	return origins, nil
+}
+
 type CreateRunRequest struct {
 	Goal              string
 	Profile           string
@@ -53,6 +72,7 @@ type CreateRunRequest struct {
 	Interactive       bool
 	NetworkMode       string
 	AllowedTargets    []string
+	BrowserOrigins    []string
 	WebAccessMode     string
 	WebAllowedTargets []string
 	Budget            domain.Budget
@@ -324,6 +344,10 @@ func prepareRun(ctx context.Context, req CreateRunRequest,
 	if err != nil {
 		return preparedRun{}, err
 	}
+	browserOrigins, err := normalizeBrowserOrigins(req.BrowserOrigins)
+	if err != nil {
+		return preparedRun{}, err
+	}
 	mission := domain.Mission{
 		ID:          idgen.New("mission"),
 		Goal:        goal,
@@ -342,6 +366,7 @@ func prepareRun(ctx context.Context, req CreateRunRequest,
 		Config: domain.RunConfig{
 			ModelRoute:                     route,
 			Interactive:                    req.Interactive,
+			BrowserOrigins:                 browserOrigins,
 			RequestedBudget:                req.RequestedBudget,
 			ProjectConfig:                  projectSnapshot,
 			ProjectConfigFingerprint:       projectFingerprintOf(req.ProjectConfig),

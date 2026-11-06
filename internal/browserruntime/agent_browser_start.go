@@ -31,9 +31,20 @@ func validateAgentBrowserRequest(request AgentBrowserStartRequest) error {
 	}
 	if request.CheckAuthority == nil || a.Generation == 0 || a.PermissionRevision < 1 ||
 		a.PermissionActivation == 0 || a.RunAuthorizationFence == 0 ||
-		a.PermissionMode != "full" ||
 		request.RuntimeDeadline.IsZero() || !request.RuntimeDeadline.After(time.Now()) ||
 		request.RuntimeDeadline.After(time.Now().Add(24*time.Hour)) {
+		return ErrBrowserRuntimeBoundary
+	}
+	if len(request.ScopedOrigins) > 0 {
+		// A scoped session (ADR 0195) is an ask/auto authority confined to its
+		// declared origins; a Full activation never carries a scope.
+		if _, err := NewAgentBrowserOriginScope(request.ScopedOrigins); err != nil {
+			return ErrBrowserRuntimeBoundary
+		}
+		if a.PermissionMode != "ask" && a.PermissionMode != "auto" {
+			return ErrBrowserRuntimeBoundary
+		}
+	} else if a.PermissionMode != "full" {
 		return ErrBrowserRuntimeBoundary
 	}
 	return nil
@@ -119,8 +130,12 @@ func launchPEAgentBrowser(ctx context.Context, request AgentBrowserStartRequest)
 		return nil, err
 	}
 	cleanupReceipt.ProfileRemoved = false
+	scope, scopeErr := agentBrowserScopeForRequest(request)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
 	life, cancel := context.WithDeadline(context.Background(), request.RuntimeDeadline)
-	r := &AgentBrowserRuntime{request: request, profile: profile, product: identity.Product, life: life, cancel: cancel,
+	r := &AgentBrowserRuntime{request: request, profile: profile, product: identity.Product, life: life, cancel: cancel, scope: scope,
 		done: make(chan struct{}), operation: make(chan struct{}, 1), refs: map[string]agentBrowserRef{}, state: "starting", epoch: 1}
 	r.operation <- struct{}{}
 	defer func() {
@@ -176,6 +191,11 @@ func (r *AgentBrowserRuntime) connect(ctx context.Context, profilePath string, s
 		return err
 	}
 	r.cdp = newAgentBrowserCDP(conn, r.onEvent)
+	if r.scope != nil {
+		if err := agentBrowserScopedNetworkSupported(startCtx, endpoint); err != nil {
+			return err
+		}
+	}
 	if err := r.initialize(startCtx); err != nil {
 		return err
 	}
