@@ -32,9 +32,11 @@
 .v2-queue-toggle svg { flex-shrink: 0; }
 .v2-queued-messages .v2-queue-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 28px; padding: 0; color: var(--v2-muted); }
 .v2-queued-messages .v2-queue-promote { display: inline-flex; align-items: center; justify-content: center; gap: 3px; height: 28px; flex: 0 0 auto; padding: 0 5px; color: var(--v2-muted); font-size: 11px; white-space: nowrap; }
-.v2-queued-messages > ol { list-style: none; padding: 0; margin: 0; max-height: min(120px, 24dvh); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--v2-border-strong) transparent; }
-.v2-queued-messages > ol[hidden] { display: none; }
-.v2-queued-messages > ol > li { min-width: 0; padding: 0; }
+.v2-queue-content { max-height: min(120px, 24dvh); overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--v2-border-strong) transparent; }
+.v2-queue-content:has(.v2-queue-editor, .v2-queued-message-pending) { max-height: min(220px, 26dvh); }
+.v2-queue-content > ol { list-style: none; padding: 0; margin: 0; }
+.v2-queue-content > ol[hidden] { display: none; }
+.v2-queue-content > ol > li { min-width: 0; padding: 0; }
 .v2-queue-row { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 3px 4px; }
 .v2-queue-row-icon { flex-shrink: 0; color: var(--v2-muted); }
 .v2-queued-messages .v2-queue-preview { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; min-height: 32px; padding: 3px; text-align: left; }
