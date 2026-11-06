@@ -71,6 +71,74 @@ func TestWorkflowRestartProcessChild(t *testing.T) {
 	t.Fatalf("did not reach %s process exit: %v", boundary, err)
 }
 
+func TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline(t *testing.T) {
+	p := &specialistTestProvider{responses: []llm.ChatResponse{workflowResponse(t, domain.CompletionSucceeded)}}
+	st, run, svc, path := newWorkflowFixture(t, p)
+	spec := workflowSpec(workflowWorker("one"))
+	spec.Limits.TimeoutMillis = (2 * time.Minute).Milliseconds()
+	e := startHostWorkflow(t, svc, run.ID, "short-workflow-crash", spec)
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := exec.CommandContext(t.Context(), binary, "-test.run=^TestWorkflowRestartProcessChild$", "-test.v")
+	child.Env = append(os.Environ(), "UC_WORKFLOW_RESTART_DB="+path, "UC_WORKFLOW_RESTART_BOUNDARY=prepared")
+	output, err := child.CombinedOutput()
+	exit, ok := err.(*exec.ExitError)
+	if !ok || exit.ExitCode() != workflowRestartExit || !strings.Contains(string(output), "workflow crash after committed prepared") {
+		t.Fatalf("wrong crash boundary: err=%v output=%s", err, output)
+	}
+	st, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	svc = newWorkflowService(st, p)
+	e, err = svc.Get(t.Context(), e.ID)
+	if err != nil || len(e.State.Maps) != 1 {
+		t.Fatalf("prepared task missing: %+v err=%v", e, err)
+	}
+	var stepID string
+	for _, group := range e.State.Maps {
+		stepID = group.Items[0].StepExecutionID
+	}
+	before, found, err := st.GetWorkflowStep(t.Context(), stepID)
+	if err != nil || !found || before.Status != "pending" {
+		t.Fatalf("prepared step missing: %+v found=%t err=%v", before, found, err)
+	}
+	// No timestamp injection: poll the real clock and the production claim.
+	started := time.Now()
+	deadline := started.Add(40 * time.Second)
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := svc.RunDue(t.Context(), "restarted-short-workflow-host", time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+		e, err = svc.Get(t.Context(), e.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Status == "completed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("prepared 2-minute workflow did not recover within 40s: status=%s jobs=%d model_calls=%d", e.Status, e.State.Jobs, p.calls)
+		}
+		<-ticker.C
+	}
+	after, _, err := st.GetWorkflowStep(t.Context(), stepID)
+	attempts, attemptErr := st.ListAgentAttempts(t.Context(), before.AgentID)
+	usage, usageErr := st.GetRunAgentUsage(t.Context(), run.ID)
+	if err != nil || attemptErr != nil || usageErr != nil || after.ID != before.ID || after.AgentID != before.AgentID || after.SessionID != before.SessionID || after.Status != "completed" || len(attempts) != 1 || attempts[0].Turn != 1 || p.calls != 1 || usage.TotalTokens != 5 || e.State.Jobs != 1 {
+		t.Fatalf("short workflow recovery changed or duplicated work: before=%+v after=%+v attempts=%+v calls=%d usage=%+v errs=%v/%v/%v", before, after, attempts, p.calls, usage, err, attemptErr, usageErr)
+	}
+	t.Logf("actual process exit and wall-clock recovery in %s; original step=%s attempt=%s model_calls=%d tokens=%d", time.Since(started).Round(time.Millisecond), after.ID, attempts[0].ID, p.calls, usage.TotalTokens)
+}
+
 func TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt(t *testing.T) {
 	for _, test := range []struct{ boundary, control string }{
 		{boundary: "prepared"}, {boundary: "leased"}, {boundary: "attempt"},
@@ -81,8 +149,8 @@ func TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt(t *te
 			p := &specialistTestProvider{responses: []llm.ChatResponse{workflowResponse(t, domain.CompletionSucceeded)}}
 			st, run, svc, path := newWorkflowFixture(t, p)
 			spec := workflowSpec(workflowWorker("one"))
-			// Leave enough overall time for the existing 15-minute claim to
-			// expire. The timestamp shift below represents 16 minutes elapsed.
+			// The consistent timestamp shift below represents 16 minutes elapsed
+			// and leaves this workflow enough overall budget to continue.
 			spec.Limits.TimeoutMillis = int64((time.Hour).Milliseconds())
 			e := startHostWorkflow(t, svc, run.ID, "process-restart-"+boundary, spec)
 			if err := st.Close(); err != nil {

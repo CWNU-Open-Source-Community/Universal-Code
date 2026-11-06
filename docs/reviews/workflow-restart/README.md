@@ -1,10 +1,40 @@
-# Workflow process restart experiments
+# Workflow process restart recovery
 
 2026-11-07, Windows amd64. Base: `cfeee05a8724a23c673b0ed9971f2ef6e8de9674`.
 
-The new tests add actual process-exit coverage to the existing workflow recovery
-tests. They pass on the unchanged production implementation. This commit changes
-tests and this report only.
+The original experiments were added in test-only commit `efc99242`. The follow-up
+fix gives newly acquired workflow claims a 30-second lifetime and renews them every
+10 seconds while the existing interpreter runs. This lets prepared short workflows
+recover after a process crash while retaining their original execution identity.
+
+## Before and after
+
+The same regression starts a workflow with a two-minute overall budget, exits the
+actual subprocess immediately after `PrepareWorkflowStep` commits, reopens the
+same SQLite database, and polls the production scheduler with the real clock.
+No timestamps are changed in this regression.
+
+| Version | Observed result |
+| --- | --- |
+| Before: fixed 15-minute claim | After 40 seconds: `running`, zero jobs completed, zero model calls. The regression fails. |
+| After: 30-second claim, renewed every 10 seconds | Recovers in 30.253 seconds with the original step/child/session, turn 1, one model call and 5 tokens. |
+
+Logs: [before](short-workflow-before.txt), [after](short-workflow-after.txt).
+
+Renewal changes only `claim_until`, preserving checkpoint version and `updated_at`.
+It requires the same owner and an unexpired claim. A renewal failure cancels the
+current interpreter context; exit stops and joins the renewer before releasing
+the original owner's claim. Renewal and release errors are returned. Claim,
+renewal and release store calls use two-second context deadlines.
+
+The independent Run execution lease still fences worker execution and side
+effects. An old worker keeps that lease until it drains. A new interpreter claim
+does not permit overlapping execution. A paused accepted wave retains ownership
+while settling; renewal neither resumes it nor permits a new dispatch. Claims
+already persisted by older versions retain their original expiry until released
+or renewed by their owner.
+
+## Process exit boundaries
 
 Each subprocess calls the real workflow scheduler and SQLite store, then exits
 with code 87 immediately after one committed operation. `Close`, test cleanup,
@@ -24,27 +54,42 @@ claim. Frozen step inputs and execution identities are created through productio
 APIs; no status or result is seeded into SQLite. The provider is deterministic,
 so these tests do not contact a remote model or exercise external side effects.
 
-## Time boundary
+## Simulation boundaries
 
-The process termination and SQLite reopen are real. Lease expiry is simulated by
+In the five boundary cases above, process termination and SQLite reopen are real.
+Lease expiry is simulated by
 shifting workflow `created_at` and `claim_until`, plus any Run lease's acquired,
 renewed and expiry times, back together by 16 minutes. The test workflow has an
 overall one-hour budget. It does not wait 16 wall-clock minutes or claim to prove
 recovery before the existing claim expires.
 
-Production currently grants a fixed 15-minute workflow claim without renewal.
-A restarted host waits for that claim even after the Run lease expires. A workflow
-whose remaining overall timeout is shorter than that wait reaches timeout cleanup
-instead of resuming its prepared work. This report records that existing timing
-boundary; this commit does not change the claim policy.
+The short-workflow regression and the 35-second long-worker test use actual
+elapsed time. The long-worker test observes three successful renewals and proves
+that a second SQLite owner cannot steal the claim past its original expiry.
+Renewal storage failure, owner replacement and renewal-call timeout each cancel
+the model fixture. A drain gate verifies that a second worker cannot acquire the
+Run lease until the first worker exits. Owner replacement uses one explicit
+expiry-time injection; replacement, fencing and release use the production store.
 
 ## Verification
 
 ```powershell
-go test ./internal/application -run '^(TestWorkflowRestartProcess|TestWorkflowHostContinuesPausedCheckpointAfterDatabaseReopen|TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen|TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt|TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart)' -count=1 -v -timeout=90s
+go test ./internal/application -run '^TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline$' -count=1 -v -timeout=65s
+go test ./internal/application -run '^TestWorkflowClaim' -count=1 -v -timeout=90s
+go test ./internal/store -run '^TestWorkflowClaimRenewal' -count=1 -v -timeout=30s
+go test ./internal/application -run '^(TestWorkflowRestartProcess|TestWorkflowHostContinuesPausedCheckpointAfterDatabaseReopen|TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen|TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt|TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart)' -skip '^TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline$' -count=1 -v -timeout=90s
+go test ./internal/application ./internal/store -run '^TestWorkflow' -skip '^TestWorkflow(Claim|RestartProcess)' -count=1 -timeout=240s
+go test ./internal/httpapi ./internal/desktop -run Workflow -count=1 -timeout=120s
+go vet ./internal/application ./internal/store ./internal/httpapi ./internal/desktop
 ```
 
-Passed in 6.159s. The child-only entry point skips during direct enumeration;
-the parent test actually executes it five times and checks each exit code. Full
-output: [test-output.txt](test-output.txt). Existing scheduled execution recovery
-tests in this command also retain the original occurrence and attempt.
+The short recovery test passes in 31.060s; claim lifetime tests in 49.213s; store
+fencing test in 0.460s; process-boundary/scheduled recovery group in 6.586s. HTTP
+workflow tests pass in 7.574s and Desktop in 0.802s; `go vet` exits zero.
+Existing workflow regressions pass in 129.057s for application and 5.328s for store.
+
+Logs: [claim lifetime](claim-lifetime-output.txt), [process boundaries](test-output.txt),
+[existing workflows](workflow-regression-output.txt), [host/API](host-api-regression-output.txt).
+The child-only entry point skips during
+direct enumeration; the parent test actually executes it five times and checks
+each exit code. Unknown attempts still fail as `worker_lost` without model replay.
