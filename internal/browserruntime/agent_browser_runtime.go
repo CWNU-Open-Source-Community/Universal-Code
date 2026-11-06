@@ -44,6 +44,7 @@ type AgentBrowserRuntime struct {
 	networkRuntimeID                          string
 	networkPending                            map[string]context.CancelFunc
 	networkDocumentError                      error
+	networkEpoch                              uint64
 }
 
 func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
@@ -113,6 +114,10 @@ func (r *AgentBrowserRuntime) call(ctx context.Context, method string, params an
 func (r *AgentBrowserRuntime) invalidateLocked() {
 	r.epoch++
 	r.refs = map[string]agentBrowserRef{}
+}
+
+func (r *AgentBrowserRuntime) invalidateNetworkLocked() {
+	r.networkEpoch++
 	for _, cancel := range r.networkPending {
 		cancel()
 	}
@@ -148,6 +153,7 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		var e struct{ FrameID string }
 		if json.Unmarshal(event.Params, &e) == nil && e.FrameID == r.frame {
 			r.loading = true
+			r.invalidateNetworkLocked()
 			r.invalidateLocked()
 		}
 	case "Page.frameStoppedLoading":
@@ -171,18 +177,27 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		r.frame = e.Frame.ID
 		r.loader = e.Frame.LoaderID
 		r.currentURL = e.Frame.URL
+		r.invalidateNetworkLocked()
 		r.invalidateLocked()
 		if e.Frame.URL != "about:blank" && !validAgentBrowserURL(e.Frame.URL) {
-			r.cancel()
+			// Chromium displays this internal error document after a refused
+			// navigation. The operator may still navigate this session back.
+			if r.scope == nil || r.networkDocumentError == nil || e.Frame.URL != "chrome-error://chromewebdata/" {
+				r.cancel()
+			}
 		}
 	case "Page.navigatedWithinDocument":
 		var e struct{ FrameID, URL string }
 		if json.Unmarshal(event.Params, &e) == nil && e.FrameID == r.frame {
 			r.currentURL = e.URL
+			r.invalidateNetworkLocked()
 			r.loading = false
 			r.invalidateLocked()
 		}
 	case "DOM.documentUpdated":
+		if !r.loading {
+			r.invalidateNetworkLocked()
+		}
 		r.invalidateLocked()
 	case "Page.screencastFrame":
 		r.deliverScreencastLocked(event)

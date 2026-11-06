@@ -116,6 +116,7 @@ func (r *AgentBrowserRuntime) navigate(ctx context.Context, rawURL string, viewp
 	r.mu.Lock()
 	r.invalidateLocked()
 	r.networkDocumentError = nil
+	r.invalidateNetworkLocked()
 	r.mu.Unlock()
 	if viewport != nil {
 		if err := r.call(op, "Emulation.setDeviceMetricsOverride", map[string]any{"width": viewport.Width, "height": viewport.Height, "deviceScaleFactor": 1, "mobile": false}, nil); err != nil {

@@ -191,6 +191,11 @@ func (r *AgentBrowserRuntime) connect(ctx context.Context, profilePath string, s
 		return err
 	}
 	r.cdp = newAgentBrowserCDP(conn, r.onEvent)
+	if r.scope != nil {
+		if err := agentBrowserScopedNetworkSupported(startCtx, endpoint); err != nil {
+			return err
+		}
+	}
 	if err := r.initialize(startCtx); err != nil {
 		return err
 	}

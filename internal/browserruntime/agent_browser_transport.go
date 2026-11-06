@@ -92,30 +92,52 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.startScreencast": true, "Page.stopScreencast": true, "Page.screencastFrameAck": true,
 }
 
-// send is used under the document invalidation fence. Replies are discarded
-// by ID so the reader can process a navigation without waiting on that fence.
-func (c *agentBrowserCDP) send(ctx context.Context, session, method string, params any) error {
+// send writes under the document invalidation fence. Its returned waiter must
+// run after releasing that fence so the reader can process events and replies.
+func (c *agentBrowserCDP) send(ctx context.Context, session, method string, params any) (func() error, error) {
 	if target, ok := agentBrowserCDPMethods[method]; !ok || !target || session == "" {
-		return ErrBrowserRuntimeBoundary
+		return nil, ErrBrowserRuntimeBoundary
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	c.mu.Lock()
 	c.nextID++
 	id := c.nextID
+	reply := make(chan cdpWireMessage, 1)
+	c.pending[id] = agentBrowserPending{session, reply}
 	c.mu.Unlock()
+	remove := func() { c.mu.Lock(); delete(c.pending, id); c.mu.Unlock() }
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return err
+		remove()
+		return nil, err
 	}
 	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := c.conn.WriteJSON(map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
 	if err != nil {
 		c.close()
+		remove()
+		return nil, err
 	}
-	return err
+	return func() error {
+		defer remove()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.done:
+			return ErrAgentBrowserClosed
+		case message := <-reply:
+			if message.Error != nil {
+				return fmt.Errorf("browser protocol %s failed (%d)", method, message.Error.Code)
+			}
+			if len(message.Result) == 0 {
+				return errors.New("browser protocol reply has no result")
+			}
+			return nil
+		}
+	}, nil
 }
 
 func (c *agentBrowserCDP) call(ctx context.Context, session, method string, params any, out any) error {
