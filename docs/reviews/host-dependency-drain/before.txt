@@ -1,0 +1,7 @@
+=== RUN   TestAppCloseKeepsRuntimeDependenciesUntilTurnDrain
+    host_dependency_drain_test.go:175: code intelligence closed while still borrowed by draining host operations: code-intel manager is shutting down
+    host_dependency_drain_test.go:182: shutdown replaced MCP cancellation with dependency failure: MCP tools/call operation draining-host-mcp was not dispatched; connection or discovery may have occurred cause=MCP manager is closed (turn=This turn was stopped. Your input and completed work are preserved; send a new message to continue this conversation)
+--- FAIL: TestAppCloseKeepsRuntimeDependenciesUntilTurnDrain (5.48s)
+FAIL
+FAIL	cyberagent-workbench/internal/app	5.646s
+FAIL

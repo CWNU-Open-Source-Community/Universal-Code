@@ -1,0 +1,2 @@
+ok  	cyberagent-workbench/internal/app	6.159s
+ok  	cyberagent-workbench/internal/application	1.274s

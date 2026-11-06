@@ -246,32 +246,35 @@ func DefaultHome() string {
 }
 
 func (a *App) Close() {
-	var turnDrainPending bool
-	if a.threadTurns != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		turnDrainPending = a.threadTurns.Shutdown(ctx) != nil
-		cancel()
-	}
-	if a.mcpClient != nil {
-		_ = a.mcpClient.Close()
-	}
-	if a.codeIntel != nil {
-		ctx, cancel := context.WithTimeout(context.Background(),
-			codeintel.MaximumShutdownGracePeriod)
-		_ = a.codeIntel.Close(ctx)
-		cancel()
-	}
-	if a.store != nil {
-		if turnDrainPending {
-			turns, state := a.threadTurns, a.store
-			go func() {
-				_ = turns.Shutdown(context.Background())
-				_ = state.Close()
-			}()
-		} else {
-			_ = a.store.Close()
+	turns, client, intel, state := a.threadTurns, a.mcpClient, a.codeIntel, a.store
+	closeResources := func() {
+		if client != nil {
+			_ = client.Close()
+		}
+		if intel != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), codeintel.MaximumShutdownGracePeriod)
+			_ = intel.Close(ctx)
+			cancel()
+		}
+		if state != nil {
+			_ = state.Close()
 		}
 	}
+	if turns != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := turns.Shutdown(ctx)
+		cancel()
+		if err != nil {
+			// A cancelled turn can still borrow its runtime managers and write
+			// deferred receipts. Retain all dependencies until that work drains.
+			go func() {
+				_ = turns.Shutdown(context.Background())
+				closeResources()
+			}()
+			return
+		}
+	}
+	closeResources()
 }
 
 func (a *App) dispatch(ctx context.Context, args []string) error {
