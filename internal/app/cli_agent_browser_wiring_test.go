@@ -116,33 +116,37 @@ func TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser(t *testing.T) {
 		name          string
 		command       string
 		permission    domain.RunExecutionPermissionMode
+		network       domain.BrowserNetworkAccess
 		flags         []string
 		browserWanted bool
 		denied        bool
 	}{
-		{name: "step confirmed Full", command: "step", permission: domain.RunExecutionPermissionFull,
+		{name: "step confirmed Full", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, browserWanted: true},
-		{name: "execute confirmed Full", command: "execute", permission: domain.RunExecutionPermissionFull,
+		{name: "execute confirmed Full", command: "execute", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
 			flags: []string{"--max-steps", "1", "--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, browserWanted: true},
-		{name: "step without process gates", command: "step", permission: domain.RunExecutionPermissionFull},
-		{name: "step cold Full", command: "step", permission: domain.RunExecutionPermissionFull,
+		{name: "step confirmed Full network off", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkOff,
+			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}},
+		{name: "step without process gates", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet},
+		{name: "step cold Full", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
-		{name: "execute cold Full", command: "execute", permission: domain.RunExecutionPermissionFull,
+		{name: "execute cold Full", command: "execute", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
-		{name: "step Ask", command: "step", permission: domain.RunExecutionPermissionAsk,
-			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
-		{name: "step Auto", command: "step", permission: domain.RunExecutionPermissionAuto,
-			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
-		{name: "confirm without process gates", command: "step", permission: domain.RunExecutionPermissionFull,
+		{name: "step Ask without Full gates", command: "step", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkInternet, browserWanted: true},
+		{name: "step Auto without Full gates", command: "step", permission: domain.RunExecutionPermissionAuto, network: domain.BrowserNetworkInternet, browserWanted: true},
+		{name: "execute Ask without Full gates", command: "execute", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkInternet,
+			flags: []string{"--max-steps", "1"}, browserWanted: true},
+		{name: "step Ask network off", command: "step", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkOff},
+		{name: "confirm without process gates", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
 			flags: []string{"--confirm-full"}, denied: true},
-		{name: "confirm without Full preference", command: "execute", permission: domain.RunExecutionPermissionAsk,
+		{name: "confirm without Full preference", command: "execute", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkInternet,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, denied: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			home := newCanonicalCLIHome(t)
 			t.Setenv("CYBERAGENT_HOME", home)
-			runID := createCLIAgentBrowserRun(t, home, test.permission)
+			runID := createCLIAgentBrowserRun(t, home, test.permission, test.network)
 			wantBrowser := test.browserWanted && browserruntime.AgentBrowserPlatformAvailable()
 			provider := &cliAgentBrowserProvider{expectBrowser: wantBrowser}
 			router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
@@ -182,7 +186,7 @@ func TestCLIWakeConsumeWiresOrdinaryAgentBrowser(t *testing.T) {
 		t.Run(fmt.Sprintf("confirm-full=%t", confirmFull), func(t *testing.T) {
 			home := newCanonicalCLIHome(t)
 			t.Setenv("CYBERAGENT_HOME", home)
-			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull)
+			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull, domain.BrowserNetworkInternet)
 			state, err := store.Open(filepath.Join(home, "cyberagent.db"))
 			if err != nil {
 				t.Fatal(err)
@@ -262,7 +266,7 @@ func TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			home := newCanonicalCLIHome(t)
-			runID := createCLIAgentBrowserRun(t, home, test.permission)
+			runID := createCLIAgentBrowserRun(t, home, test.permission, domain.BrowserNetworkInternet)
 			state, err := store.Open(filepath.Join(home, "cyberagent.db"))
 			if err != nil {
 				t.Fatal(err)
@@ -343,7 +347,7 @@ func TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser(t *testing.T) {
 }
 
 func createCLIAgentBrowserRun(t *testing.T, home string,
-	permission domain.RunExecutionPermissionMode,
+	permission domain.RunExecutionPermissionMode, network domain.BrowserNetworkAccess,
 ) string {
 	t.Helper()
 	state, err := store.Open(filepath.Join(home, "cyberagent.db"))
@@ -359,7 +363,8 @@ func createCLIAgentBrowserRun(t *testing.T, home string,
 	_, run, err := application.NewRunService(state).Create(t.Context(), application.CreateRunRequest{
 		Goal: "verify CLI Agent browser runtime wiring", Profile: "code", Surface: "code",
 		Phase: "deliver", WorkspaceID: workspace.ID, ModelRoute: "cli-agent-browser-test/model",
-		Interactive: true, Budget: domain.Budget{MaxTurns: 4, MaxToolCalls: 4},
+		BrowserNetworkAccess: network,
+		Interactive:          true, Budget: domain.Budget{MaxTurns: 4, MaxToolCalls: 4},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -478,7 +483,7 @@ func TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess
 		t.Skip("ordinary Agent browser adapter is unavailable")
 	}
 	home := newCanonicalCLIHome(t)
-	runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull)
+	runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull, domain.BrowserNetworkInternet)
 	state, err := store.Open(filepath.Join(home, "cyberagent.db"))
 	if err != nil {
 		t.Fatal(err)

@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/approval"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/llm"
@@ -355,6 +355,12 @@ func TestCLIApprovalContinuationRequiresInvocationFullConfirmation(t *testing.T)
 			fixture := newCLIApprovalFixtureWithPermission(t, home,
 				cliApprovalTextResponse(t, "exact denial observed"), test.permission)
 			defer fixture.state.Close()
+			if _, err := application.ChangeBrowserNetworkAccess(t.Context(), fixture.state, nil, domain.ChangeBrowserNetworkAccessRequest{
+				Version: domain.BrowserNetworkAccessVersion, RunID: fixture.run.ID, ExpectedRevision: 1,
+				BrowserNetworkAccess: domain.BrowserNetworkInternet, OperationKey: "cli-continuation-browser-network", RequestedBy: "test_operator",
+			}); err != nil {
+				t.Fatal(err)
+			}
 			stdout, stderr, code := executeCLIApproval(t, fixture.router, "deny", fixture.approvalID, test.flags...)
 			decision, err := fixture.state.GetApproval(t.Context(), fixture.approvalID)
 			if err != nil || decision.Status != approval.StatusDenied || !strings.Contains(stdout, "decision_saved: true") {
@@ -372,7 +378,7 @@ func TestCLIApprovalContinuationRequiresInvocationFullConfirmation(t *testing.T)
 			if code != 0 || stderr != "" || !strings.Contains(stdout, "continuation: completed") || fixture.provider.requestCount() != 2 {
 				t.Fatalf("continuation: code=%d stdout=%s stderr=%s models=%d", code, stdout, stderr, fixture.provider.requestCount())
 			}
-			if got, want := fixture.provider.lastRequestHasTool("browser_status"), test.full && runtime.GOOS == "windows"; got != want {
+			if got, want := fixture.provider.lastRequestHasTool("browser_status"), test.full && browserruntime.AgentBrowserPlatformAvailable(); got != want {
 				t.Fatalf("continuation browser advertised=%t want=%t", got, want)
 			}
 			permission, err := fixture.state.GetRunExecutionPermission(t.Context(), fixture.run.ID)
@@ -442,7 +448,7 @@ func TestCLIFileReviewKeepsExactDecisionSeparateFromContinuationFull(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			home := newCanonicalCLIHome(t)
 			t.Setenv("CYBERAGENT_HOME", home)
-			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull)
+			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull, domain.BrowserNetworkOff)
 			state, err := store.Open(filepath.Join(home, "cyberagent.db"))
 			if err != nil {
 				t.Fatal(err)

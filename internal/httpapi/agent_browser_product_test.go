@@ -159,9 +159,13 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	caps := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
-	if _, err = application.NewRunExecutionPermissionService(st, caps).Change(ctx, application.ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: "full", OperationKey: "http-browser-full-access", RequestedBy: "test_operator", Reason: "owned local browser HTTP test", ConfirmFull: true}); err != nil {
-		t.Fatal(err)
+	permission, err := st.GetRunExecutionPermission(ctx, run.ID)
+	if err != nil || permission.Mode != domain.RunExecutionPermissionAsk {
+		t.Fatalf("initial permission=%+v %v", permission, err)
+	}
+	caps := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
+	if caps.Allows(domain.RunExecutionPermissionFull) {
+		t.Fatal("browser fixture unexpectedly allows Full execution")
 	}
 	browser := application.NewAgentBrowserService(st, application.AgentBrowserOptions{HomePath: home, Capabilities: caps, Headless: true, SessionLifetime: browserLifetime})
 	defer browser.Shutdown(context.Background())
@@ -175,9 +179,19 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 	lifecycle := application.NewRunLifecycleControlService(st)
 	threads := application.NewThreadTurnServiceWithExecutionCapabilities(st, lifecycle, execution, caps)
 	controller := application.NewApprovalControlService(st, toolgateway.New(st, checker), checker)
-	api, err := New(st, Config{AccessToken: testAccessToken, ControlToken: testControlToken, RunCreationEnabled: true, SessionMessageEnabled: true, RunLifecycleEnabled: true, RunLifecycleController: lifecycle, RunExecutionEnabled: true, RunExecutionController: execution, ThreadTurnController: threads, ApprovalControlEnabled: true, ApprovalController: controller, AgentBrowserController: browser})
+	api, err := New(st, Config{AccessToken: testAccessToken, ControlToken: testControlToken, RunCreationEnabled: true, RunControlEnabled: true, SessionMessageEnabled: true, RunLifecycleEnabled: true, RunLifecycleController: lifecycle, RunExecutionEnabled: true, RunExecutionController: execution, ThreadTurnController: threads, ApprovalControlEnabled: true, ApprovalController: controller, AgentBrowserController: browser})
 	if err != nil {
 		t.Fatal(err)
+	}
+	base := "/api/v1/runs/" + run.ID
+	var selection domain.BrowserNetworkAccessSelection
+	decodeDataStatus(t, performControlMethodPathRequest(t, api, http.MethodPut, base+"/browser-network", "http-browser-network-internet", strings.NewReader(`{"version":"browser_network_access.v1","expected_revision":1,"browser_network_access":"internet"}`)), http.StatusOK, &selection)
+	if selection.BrowserNetworkAccess != domain.BrowserNetworkInternet || len(selection.BrowserOrigins) != 0 {
+		t.Fatalf("operator network selection=%+v", selection)
+	}
+	afterPermission, err := st.GetRunExecutionPermission(ctx, run.ID)
+	if err != nil || afterPermission.ID != permission.ID || afterPermission.Mode != domain.RunExecutionPermissionAsk {
+		t.Fatalf("network selection changed execution permission: %+v %v", afterPermission, err)
 	}
 	if _, err = application.NewRunService(st).Start(ctx, run.ID); err != nil {
 		t.Fatal(err)
@@ -200,7 +214,6 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 		t.Fatalf("approvals %v %+v", err, approvals)
 	}
 	record := approvals[0]
-	base := "/api/v1/runs/" + run.ID
 	previewResponse := performRequest(t, api, http.MethodGet, base+"/approvals/"+record.ID+"/preview", testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
 	var preview ApprovalPreviewView
 	decodeDataStatus(t, previewResponse, http.StatusOK, &preview)
@@ -211,11 +224,65 @@ func TestAgentBrowserHTTPProductApprovalAndScreenshot(t *testing.T) {
 	for n := 0; n < 2; n++ {
 		response := performControlPathRequest(t, api, base+"/approvals/"+record.ID+"/decision", "http-browser-approve-once", strings.NewReader(`{"version":"approval_control.v1","action":"approve_once"}`))
 		decodeDataStatus(t, response, http.StatusAccepted, &decision)
-		if decision.Continuation == nil || decision.Continuation.State != "completed" || writes.Load() != 1 || len(provider.requests) != 4 || !provider.pixels {
+		if decision.Continuation == nil || decision.Continuation.State != "completed" || writes.Load() != 0 || len(provider.requests) != 4 || !provider.pixels {
 			t.Fatalf("HTTP continuation %+v writes=%d requests=%d pixels=%t", decision, writes.Load(), len(provider.requests), provider.pixels)
 		}
 		if n == 1 && (!decision.Replayed || !decision.Continuation.Replayed) {
 			t.Fatal("decision replay was not observed")
+		}
+	}
+	// The approved input can propose a POST, but only the separate exact HTTP
+	// request approval may release that request to the server.
+	var networkApproval approval.Record
+	for networkApproval.ID == "" {
+		pending, err := st.ListApprovals(ctx, approval.ListFilter{RunID: run.ID, ToolName: toolgateway.AgentBrowserApprovalTool})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range pending {
+			if strings.HasPrefix(candidate.ProposalID, domain.BrowserNetworkRequestPrefix) {
+				networkApproval = candidate
+			}
+		}
+		if networkApproval.ID == "" {
+			select {
+			case <-ctx.Done():
+				t.Fatal("page POST approval was not created: ", ctx.Err())
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	}
+	request, err := st.GetBrowserNetworkRequest(ctx, networkApproval.ProposalID)
+	if err != nil || request.Method != http.MethodPost || request.DisplayURL != site.URL+"/publish" || request.BodyBytes != 0 || request.Status != "paused" || writes.Load() != 0 {
+		t.Fatalf("paused POST binding=%+v writes=%d err=%v", request, writes.Load(), err)
+	}
+	var networkPreview ApprovalPreviewView
+	decodeDataStatus(t, performRequest(t, api, http.MethodGet, base+"/approvals/"+networkApproval.ID+"/preview", testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil), http.StatusOK, &networkPreview)
+	if !networkPreview.SourceCurrent || networkPreview.Effect != "browser_sensitive_action" {
+		t.Fatalf("POST preview=%+v", networkPreview)
+	}
+	var networkDecision ApprovalDecisionControlView
+	for n := 0; n < 2; n++ {
+		decodeDataStatus(t, performControlPathRequest(t, api, base+"/approvals/"+networkApproval.ID+"/decision", "http-browser-post-approve-once", strings.NewReader(`{"version":"approval_control.v1","action":"approve_once"}`)), http.StatusAccepted, &networkDecision)
+		if networkDecision.Continuation != nil || (n == 1 && !networkDecision.Replayed) {
+			t.Fatalf("POST decision=%+v", networkDecision)
+		}
+	}
+	for {
+		request, err = st.GetBrowserNetworkRequest(ctx, networkApproval.ProposalID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Status == "dispatched" && writes.Load() == 1 {
+			break
+		}
+		if request.Status == "failed" || writes.Load() > 1 {
+			t.Fatalf("POST dispatch status=%s writes=%d", request.Status, writes.Load())
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("POST dispatch status=%s writes=%d: %v", request.Status, writes.Load(), ctx.Err())
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 	statusResponse := performRequest(t, api, http.MethodGet, base+"/agent-browser", testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
