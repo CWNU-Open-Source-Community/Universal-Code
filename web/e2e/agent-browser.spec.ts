@@ -76,6 +76,8 @@ test("native Agent Browser uses the production API and visible workbench", async
     await page.getByRole("button", { name: "查看浏览器", exact: true }).click();
   }
   await expect(card).toBeVisible();
+  // The view renders its loading state before its first status response arrives.
+  await expect.poll(() => statusURL, { message: "the opened browser view must finish its initial status request" }).not.toBe("");
   if (before) {
     await expect(page.getByText(/JOURNEY_BROWSER_UNAVAILABLE/u)).toBeVisible();
     await expect.poll(async () => (await readStatus()).unavailable_code).toBe("platform_unsupported");
