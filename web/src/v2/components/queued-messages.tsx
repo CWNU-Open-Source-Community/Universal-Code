@@ -26,13 +26,28 @@ const promotionInput = (operation: QueueOperation, t: LocaleText): QueuePromotio
 
 export function useV2QueuedMessagesQuery(client: APIClient, binding: QueueBinding | null, running: boolean) {
   const { t } = useLocale();
-  return useQuery({ queryKey: [...v2QueryKeys.thread(binding?.threadID ?? ""), "queued-messages", client.baseURL,
+  const queryClient = useQueryClient();
+  const wasRunning = useRef(running);
+  const queryKey = useMemo(() => [...v2QueryKeys.thread(binding?.threadID ?? ""), "queued-messages", client.baseURL,
     binding?.runID ?? "", binding?.sessionID ?? "", binding?.workspaceID ?? ""],
+    [client.baseURL, binding?.threadID, binding?.runID, binding?.sessionID, binding?.workspaceID]);
+  const query = useQuery({ queryKey,
     queryFn: ({ signal }) => {
       if (!binding) throw new Error(t("尚未确认队列所属的任务。", "The queue's task has not been confirmed."));
       return readQueuedMessages(client, binding, signal);
     }, enabled: Boolean(binding), retry: false,
     refetchInterval: (current) => running && !current.state.error ? 2000 : false });
+  const enabled = Boolean(binding);
+  useEffect(() => {
+    // A reconnected turn has no local POST completion to invalidate its queue.
+    if (wasRunning.current && !running && enabled) {
+      // Even the first in-flight GET may describe the still-running turn.
+      void queryClient.cancelQueries({ queryKey, exact: true }).then(() =>
+        queryClient.invalidateQueries({ queryKey, exact: true }));
+    }
+    wasRunning.current = running;
+  }, [running, enabled, queryClient, queryKey]);
+  return query;
 }
 
 export function V2QueuedMessages(props: QueueBinding & { client: APIClient; running: boolean; canPromote?: boolean }) {

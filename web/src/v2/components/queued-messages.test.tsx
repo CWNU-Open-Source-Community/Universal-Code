@@ -451,6 +451,30 @@ it("persists one immutable promotion before posting and displays the replacement
   expect(within(screen.getByRole("listitem", { name: "消息 3" })).queryByRole("button", { name: "引导当前任务" })).not.toBeInTheDocument();
 });
 
+it("replaces an unfinished first queue read when the reconnected execution ends", async () => {
+  const f = fixture();
+  let release!: () => void;
+  f.get.mockImplementationOnce(async () => { await new Promise<void>((resolve) => { release = resolve; }); return {} as never; });
+  const ui = mount(f.client, binding, false, true);
+  await waitFor(() => expect(f.get).toHaveBeenCalledTimes(1));
+  f.setItems([]);
+  ui.rerender(ui.view(binding, false, false));
+  try {
+    await waitFor(() => expect(f.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "待处理消息" })).not.toBeInTheDocument());
+  } finally { release(); }
+});
+
+it("refreshes the final queue when a reconnected execution ends without a local mutation", async () => {
+  const f = fixture([message(1, { prepared: true, can_edit: false, can_cancel: false })]);
+  const ui = mount(f.client, binding, false, true);
+  await screen.findByRole("button", { name: "待处理 0 条 · 正在处理 1 条" });
+  f.setItems([]);
+  ui.rerender(ui.view(binding, false, false));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "待处理消息" })).not.toBeInTheDocument());
+  expect(f.get).toHaveBeenCalledTimes(2);
+});
+
 it("removes a successful empty queue after execution finishes without retaining a waiting notice", async () => {
   const f = promotionFixture(); const ui = mount(f.client, binding, true, true); const user = userEvent.setup();
   await promoteFirst(user); await screen.findByText("已转为引导。");

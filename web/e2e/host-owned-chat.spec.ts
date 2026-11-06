@@ -76,6 +76,7 @@ for (const boundary of ["complete", "stop"] as const) {
     await expect.poll(async () => (await readAPI<Execution>(page, `/threads/${threadID}/execution`)).state).toBe("idle");
     await expect(page.getByRole("button", { name: "停止当前执行", exact: true })).toBeHidden();
     await expect(page.getByText("正在工作", { exact: true })).toBeHidden();
+    await expect(page.getByRole("button", { name: "待处理 0 条 · 正在处理 1 条", exact: true })).toBeHidden();
     const messages = await readAPI<Message[]>(page, `/threads/${threadID}/messages?limit=100`);
     expect(messages.filter((message) => message.role === "user" && message.content === content)).toHaveLength(1);
     expect(await readMarker(token, "requests")).toBe("started\n");
