@@ -45,6 +45,22 @@ type Config struct {
 	TestCommandID    string        `yaml:"test_command_id,omitempty"`
 	FormatCommandID  string        `yaml:"format_command_id,omitempty"`
 	Hooks            *CommandHooks `yaml:"hooks,omitempty"`
+
+	BrowserLimits *BrowserLimitsConfig `yaml:"browser_limits,omitempty"`
+}
+
+// BrowserLimitsConfig is the operator-narrowed browser session budget. Every
+// field is optional; zero keeps the builtin profile value. The narrowing
+// against the profile ceiling happens when the session plan is built, so a
+// value that would widen the profile is a silent no-op here and a named
+// error at plan construction.
+type BrowserLimitsConfig struct {
+	MaxOrigins       int `yaml:"max_origins,omitempty"`
+	MaxURLBytes      int `yaml:"max_url_bytes,omitempty"`
+	MaxRequests      int `yaml:"max_requests,omitempty"`
+	MaxResponseBytes int `yaml:"max_response_bytes,omitempty"`
+	MaxDownloadBytes int `yaml:"max_download_bytes,omitempty"`
+	TimeoutMS        int `yaml:"timeout_ms,omitempty"`
 }
 
 type Budget struct {
@@ -64,6 +80,8 @@ type Effective struct {
 	TestCommandID    string        `json:"test_command_id,omitempty"`
 	FormatCommandID  string        `json:"format_command_id,omitempty"`
 	Hooks            *CommandHooks `json:"hooks,omitempty"`
+
+	BrowserLimits *BrowserLimitsConfig `json:"browser_limits,omitempty"`
 }
 
 // Rejection names one fail-closed field with its reason.
@@ -233,6 +251,23 @@ func (c Config) validate() error {
 			return errors.New("project budget must narrow at least one positive bound")
 		}
 	}
+	if c.BrowserLimits != nil {
+		fields := []int{c.BrowserLimits.MaxOrigins, c.BrowserLimits.MaxURLBytes,
+			c.BrowserLimits.MaxRequests, c.BrowserLimits.MaxResponseBytes,
+			c.BrowserLimits.MaxDownloadBytes, c.BrowserLimits.TimeoutMS}
+		narrowed := 0
+		for _, value := range fields {
+			if value < 0 {
+				return errors.New("project browser_limits values cannot be negative")
+			}
+			if value > 0 {
+				narrowed++
+			}
+		}
+		if narrowed == 0 {
+			return errors.New("project browser_limits must narrow at least one positive bound")
+		}
+	}
 	if len(c.ExcludePaths) > MaxExcludePaths {
 		return fmt.Errorf("exclude_paths exceeds %d entries", MaxExcludePaths)
 	}
@@ -322,6 +357,11 @@ func (c Config) Narrow(ceiling Ceiling) (Effective, []Rejection, error) {
 			effective.AllowedProfiles = append([]string{}, c.AllowedProfiles...)
 		}
 	}
+	// Browser limits are operator ceilings over the builtin profile; the
+	// profile-level narrowing (and any widening attempt) is enforced when the
+	// session plan is built, where the builtin profile is looked up.
+	effective.BrowserLimits = c.BrowserLimits
+
 	// Budget bounds may only decrease.
 	effective.MaxTurns = ceiling.MaxTurns
 	effective.MaxToolCalls = ceiling.MaxToolCalls

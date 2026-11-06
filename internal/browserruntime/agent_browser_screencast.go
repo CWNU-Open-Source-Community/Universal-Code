@@ -76,7 +76,9 @@ func (p *agentBrowserScreencastPump) drainAcks(r *AgentBrowserRuntime) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = r.call(ctx, "Page.screencastFrameAck", map[string]any{"sessionId": sessionID}, nil)
+		// The raw token is echoed verbatim: string and numeric screencast
+		// session ids must both round-trip with their original JSON type.
+		_ = r.call(ctx, "Page.screencastFrameAck", map[string]any{"sessionId": json.RawMessage(sessionID)}, nil)
 		cancel()
 	}
 }
@@ -157,14 +159,20 @@ func (r *AgentBrowserRuntime) deliverScreencastLocked(event cdpWireMessage) {
 		return
 	}
 	var frame struct {
-		SessionID string `json:"sessionId"`
-		Data      string `json:"data"`
+		// SessionID is kept as the raw JSON token: Chromium has moved
+		// screencastFrame's params.sessionId between string, number, and
+		// absent across versions, and typing it as a string failed the whole
+		// unmarshal and silently dropped every real frame. Attribution comes
+		// from the wire envelope (onEvent already bound this event to the
+		// owning target session); the raw token is only echoed back to acks.
+		SessionID json.RawMessage `json:"sessionId"`
+		Data      string          `json:"data"`
 		Metadata  struct {
 			DeviceWidth  int `json:"deviceWidth"`
 			DeviceHeight int `json:"deviceHeight"`
 		} `json:"metadata"`
 	}
-	if json.Unmarshal(event.Params, &frame) != nil || frame.SessionID == "" {
+	if json.Unmarshal(event.Params, &frame) != nil {
 		return
 	}
 	if now := pump.now(); pump.admit(now) {
@@ -187,8 +195,12 @@ func (r *AgentBrowserRuntime) deliverScreencastLocked(event cdpWireMessage) {
 			}
 		}
 	}
-	select {
-	case pump.acks <- frame.SessionID:
-	default:
+	// A literal null token is treated as absent: acking it would only earn a
+	// parameter error from Chromium.
+	if len(frame.SessionID) != 0 && string(frame.SessionID) != "null" {
+		select {
+		case pump.acks <- string(frame.SessionID):
+		default:
+		}
 	}
 }

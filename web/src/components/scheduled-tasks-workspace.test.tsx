@@ -231,6 +231,7 @@ describe("ScheduledTasksWorkspace", () => {
         run_id: "run-1", result: "Approve the pending tool request in the task" }] } })), transitionScheduledJob });
     await user.click(await screen.findByRole("button", { name: /scheduled-job-1/ }));
     expect(await screen.findByText("Waiting for approval")).toBeVisible();
+    expect(screen.getByRole("link", { name: "View run record" })).toHaveAttribute("href", "#/runs/run-1");
     expect(screen.getByRole("link", { name: "Open execution task" })).toHaveAttribute("href", "#/threads/thread-1");
     await user.click(screen.getByRole("button", { name: "Pause" }));
     await user.click(await screen.findByRole("button", { name: "Resume" }));

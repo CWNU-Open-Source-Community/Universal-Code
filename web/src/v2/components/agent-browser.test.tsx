@@ -241,7 +241,7 @@ it("keeps a dismissed notice hidden across refreshes and shows a new browser ses
 });
 
 it.each([
-  [{ state: "waiting_user" }, "网页需要人工处理；当前版本暂不支持人工接管"],
+  [{ state: "waiting_user" }, "网页需要人工处理；以接管模式（CYBERAGENT_BROWSER_HEADED=1）启动后可在可见窗口人工处理"],
   [{ state: "ready", failure_code: "action_failed" }, "最近一次页面操作失败，请让 Agent 重新读取页面后再试。"],
 ])("dismisses routine activity without stopping it and resurfaces for %o", async (attention, text) => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),

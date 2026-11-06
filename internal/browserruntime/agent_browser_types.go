@@ -49,6 +49,9 @@ type AgentBrowserStatus struct {
 	DocumentEpoch uint64         `json:"document_epoch"`
 	// Unsupported features are explicit; adapters must not advertise them.
 	SupportedActions []string `json:"supported_actions"`
+	// Downloads are bounded quarantine receipts for bytes the page pushed at
+	// the browser. They never carry a path and never reach tool results.
+	Downloads []AgentBrowserDownloadReceipt `json:"downloads,omitempty"`
 }
 
 type AgentBrowserNavigation struct {

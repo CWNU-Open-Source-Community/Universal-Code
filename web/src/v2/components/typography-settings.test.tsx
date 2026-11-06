@@ -48,7 +48,7 @@ it("reports storage failure and leaves the previous control value intact", () =>
 
 it("mounts the reading controls in the production Appearance settings", () => {
   render(<QueryClientProvider client={new QueryClient()}><V2Settings client={{} as APIClient}
-    section="appearance" threadID="" workspaces={[]} onSelectSection={vi.fn()} onOpenInspector={vi.fn()} /></QueryClientProvider>,
+    section="appearance" threadID="" workspaces={[]} onSelectSection={vi.fn()} onOpenHistory={vi.fn()} /></QueryClientProvider>,
   { wrapper: LocaleProvider });
   expect(screen.getByRole("region", { name: "阅读字号" })).toBeInTheDocument();
   expect(screen.getByRole("slider", { name: "消息文字字号" })).toBeInTheDocument();

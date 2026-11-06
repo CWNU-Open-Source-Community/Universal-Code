@@ -2273,7 +2273,7 @@ func supervisorToolRoundView(value domain.SupervisorToolRound, threadID string,
 			StreamResponseID: call.StreamResponseID, StreamItemID: call.StreamItemID,
 			StreamCallID: call.StreamCallID,
 			ToolName:     call.ToolName, Status: string(call.Status),
-			ErrorCode:       publicInspectorErrorCode(call.ErrorCode),
+			ErrorCode:       publicRecordErrorCode(call.ErrorCode),
 			DetailAvailable: detail != nil, Detail: detail,
 			CreatedAt: call.CreatedAt, CompletedAt: call.CompletedAt,
 		}

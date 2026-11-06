@@ -68,7 +68,7 @@ function connectionForm(connection: GitHubReviewConnectionView | null): Connecti
 }
 
 export function GitHubReviewPanel(props: GitHubReviewPanelProps) {
-  // A reviewed write and pending mutations belong to the original Run, even when the inspector changes Runs.
+  // A reviewed write and pending mutations belong to the original Run, even when the selected Run changes.
   const clientContext = useRef({ client: props.client, version: 0 });
   if (clientContext.current.client !== props.client) {
     clientContext.current = { client: props.client, version: clientContext.current.version + 1 };

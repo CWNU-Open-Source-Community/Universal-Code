@@ -174,7 +174,7 @@ func TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	}
 	fullTools := apiAgentBrowserToolsByName(captured[0].Tools)
 	restrictedTools := apiAgentBrowserToolsByName(captured[1].Tools)
-	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key"} {
+	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key", "browser_upload"} {
 		_, fullFound := fullTools[name]
 		_, restrictedFound := restrictedTools[name]
 		if browserruntime.AgentBrowserPlatformAvailable() && !fullFound {

@@ -201,8 +201,9 @@ test("an approved child runs continuously and the main conversation receives its
     await page.getByRole("button", { name: "发送消息", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "继续对话" })).toBeVisible();
     const conversationURL = page.url();
-    await page.getByRole("button", { name: "观察执行", exact: true }).click();
-    await page.getByRole("button", { name: "运行与工具", exact: true }).click();
+    await page.getByRole("button", { name: "执行记录", exact: true }).click();
+    await page.getByRole("button", { name: "执行记录选项", exact: true }).click();
+    await page.getByRole("menuitem", { name: "运行与工具", exact: true }).click();
     await page.getByRole("button", { name: "高级诊断", exact: true }).click();
     await page.getByRole("tab", { name: "子任务与交付", exact: true }).click();
     await page.getByRole("button", { name: "批准", exact: true }).click();
@@ -217,7 +218,8 @@ test("an approved child runs continuously and the main conversation receives its
     await expect(page.getByText("2 轮子代理执行", { exact: true })).toBeVisible();
     await page.getByRole("link", { name: "查看主会话", exact: true }).click();
     await expect(page).toHaveURL(conversationURL);
-    await expect(page.getByText("Child completed; main conversation summary: JOURNEY_CHILD_PROOF_2026", { exact: true })).toBeVisible();
+    await expect(page.locator(".v2-conversation-scroll").getByText(
+      "Child completed; main conversation summary: JOURNEY_CHILD_PROOF_2026", { exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "继续对话" })).toBeEnabled();
     await info.attach("main-conversation-child-summary", { body: await page.screenshot(), contentType: "image/png" });
   } finally { await record(timings, info); }

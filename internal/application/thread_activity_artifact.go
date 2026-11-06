@@ -20,7 +20,7 @@ const (
 )
 
 // ThreadActivityArtifactReference is an actionable, Thread-scoped reference.
-// It is intentionally not a link to the generic Inspector artifact endpoint.
+// It is intentionally not a link to the generic record artifact endpoint.
 type ThreadActivityArtifactReference struct {
 	ArtifactRef string
 	Stream      string

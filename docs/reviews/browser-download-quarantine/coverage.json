@@ -1,0 +1,34 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "b58f8981db87dd983e221839283e43f145b92b03",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-download-quarantine/README.md",
+    "docs/reviews/browser-download-quarantine/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：下载隔离捕获实现、审计适配器接线、测试（含 opt-in 真浏览器 E2E）",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含终态迁移与路径安全专项",
+    "external_review：外部代码复审发现会话级累计下载字节无上限且回执驱逐遗留隔离文件（F7，P1）；已修复：新增 AgentBrowserMaxDownloadTotalBytes 会话总字节上限（单文件上限的 4 倍整数倍，按存活回执字节计账、在进度流上 fail-closed 强制为 rejected_budget 并取消浏览器侧下载），回执驱逐同步 best-effort 删除捕获文件并停止计账，补连续下载越界、预算耗尽持续 fail-closed、驱逐删除文件三项回归测试",
+    "external_review_round2：外部代码复审发现超限下载的 Browser.cancelDownload 未携带 browserContextId（F8，P1）——隔离装在自建 context，取消却在默认 context 查 GUID，取消失败按既有策略关闭整个会话；已在真实 Edge 上复现（旧实现：会话被拆除、后续下载不可用），修复为取消携带同源 context id 并由持锁调用点传参，补 mock CDP 契约回归与 opt-in 真浏览器回归各一条",
+    "coderabbit_ai：CodeRabbit 在 d005b49f 上复核后唯一的 actionable（Minor/Functional Correctness）指出 64MB 被写成「可观测的硬上限」、常量注释写成 bounds the bytes one session may keep，口径强于实现（F9，P3）——实为对存活回执上报字节的计账上限，检查发生在进度流到达之后，被拒/被驱逐捕获删除失败的残留不再计账。已按文档与注释口径修正处理（常量注释新增 accounting ceiling 一段，README 与 PR 正文同步），未改行为；其第四条前提「测试在检查预算前先建好下一个捕获」经核对是 mock 夹具的模拟顺序，非缺陷，故未改测试"
+  ],
+  "summary": {
+    "total_git_changed_files": 8,
+    "review_scope_files": 6,
+    "ocr_selected_production": 5,
+    "manually_added_tests": 1,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/browserruntime/agent_browser_download.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_runtime.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_transport.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_types.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/profile_materializer.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}

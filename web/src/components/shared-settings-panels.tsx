@@ -75,7 +75,7 @@ export function ShortcutSettings() {
   return <section className="settings-page-section">
     <h1>{t("键盘快捷键", "Keyboard shortcuts")}</h1>
     <dl className="shortcut-list">
-      <div><dt>{t("Inspector 命令面板", "Inspector command palette")}</dt><dd><kbd>Ctrl</kbd><kbd>K</kbd></dd></div>
+      <div><dt>{t("命令面板", "Command palette")}</dt><dd><kbd>Ctrl</kbd><kbd>K</kbd></dd></div>
       <div><dt>{t("关闭对话框或预览", "Close dialog or preview")}</dt><dd><kbd>Esc</kbd></dd></div>
       <div><dt>{t("选择上一项", "Select previous item")}</dt><dd><kbd>↑</kbd></dd></div>
       <div><dt>{t("选择下一项", "Select next item")}</dt><dd><kbd>↓</kbd></dd></div>

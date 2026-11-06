@@ -11,7 +11,7 @@ import { useConnectionStore } from "../state/connection";
 import { V2Workbench } from "./app";
 import { v2QueryKeys } from "./query-keys";
 
-// Keep the recovery callback chain real: Workbench -> InspectorTools ->
+// Keep the recovery callback chain real: Workbench -> RunDetailsPage ->
 // RunWorkspace -> ContextContinuityPanel / WorkspaceCheckpointPanel.
 vi.mock("../components/workbench-frame", () => ({
   WorkbenchFrame: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -36,13 +36,13 @@ beforeAll(async () => {
   // real lazy modules during setup so Vite's first transformation is not part
   // of the first mutation/navigation deadline. First-use loading and errors
   // have separate coverage in app-lazy and app-lazy-error tests.
-  await Promise.all([import("./components/inspector-tools"), import("./components/settings")]);
+  await Promise.all([import("./components/run-details-page"), import("./components/settings")]);
 });
 
 const timestamp = "2026-10-09T00:00:00Z";
 const sourceRunID = "run-source";
 const sourceThreadID = "thread-source";
-const sourceHash = `#/threads/${sourceThreadID}/inspector/runs/${sourceRunID}`;
+const sourceHash = `#/threads/${sourceThreadID}/runs/${sourceRunID}`;
 const sourceWorkspace: WorkspaceView = { id: "workspace-source", name: "Source project", created_at: timestamp };
 const forkWorkspace: WorkspaceView = { id: "workspace-checkpoint-fork", name: "Recovered project", created_at: timestamp };
 const operations = ["fork", "resume", "checkpoint-fork"] as const;
@@ -155,7 +155,7 @@ function harness(operation: Operation) {
     queries: { retry: false, staleTime: Infinity }, mutations: { retry: false },
   } });
   queryClients.push(queryClient);
-  const recordKeys = [[...v2QueryKeys.inspectorRecords, "run"], [...v2QueryKeys.inspectorRecords, "session"]];
+  const recordKeys = [[...v2QueryKeys.historyRecords, "run"], [...v2QueryKeys.historyRecords, "session"]];
   const searchKey = v2QueryKeys.threadSearch("active", "recovered search");
   for (const key of [...recordKeys, ["runs"], ["sessions"], searchKey]) {
     queryClient.setQueryData(key, { pages: [{ items: [], page: { limit: 50 } }], pageParams: [""] });
@@ -246,9 +246,9 @@ describe("recovery navigation through the real V2 workbench", () => {
     expectRequest(operation, h.postControl);
     await h.complete();
     await screen.findByRole("heading", { name: `Goal for ${h.returnedRunID}` });
-    expect(window.location.hash).toBe(`#/new/inspector/runs/${h.returnedRunID}`);
+    expect(window.location.hash).toBe(`#/runs/${h.returnedRunID}`);
     expect(screen.getByLabelText("Activity Run")).toHaveTextContent(h.returnedRunID);
-    expect(screen.getByText(/此记录尚未绑定对话，请返回任务观察选择来源任务后设置权限/u)).toBeInTheDocument();
+    expect(screen.getByText(/此记录尚未绑定来源对话/u)).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "来源任务的 Agent 活动" })).not.toBeInTheDocument();
     expect(useConnectionStore.getState().selectedThreadID).toBe("");
     expect(h.get).toHaveBeenCalledWith(`/runs/${h.returnedRunID}`, {}, expect.any(AbortSignal));
@@ -258,7 +258,7 @@ describe("recovery navigation through the real V2 workbench", () => {
         v2QueryKeys.workspaces)?.pages.flatMap((page) => page.items)).toContainEqual(forkWorkspace));
     }
     expectNoExecution(h.client);
-    await user.click(screen.getByRole("button", { name: "返回" }));
+    await act(async () => { window.history.back(); });
     await waitFor(() => expect(window.location.hash).toBe(sourceHash));
     await screen.findByRole("heading", { name: `Goal for ${sourceRunID}` });
     expect(useConnectionStore.getState().selectedThreadID).toBe(sourceThreadID);
@@ -286,8 +286,8 @@ describe("recovery navigation through the real V2 workbench", () => {
         await user.click(screen.getByRole("button", { name: "返回应用" }));
         await waitFor(() => expect(window.location.hash).toBe(sourceHash));
       } else {
-        await visitHash(detour === "record" ? `#/threads/${sourceThreadID}/inspector/runs/run-other`
-          : `#/threads/thread-other/inspector/runs/${sourceRunID}`);
+        await visitHash(detour === "record" ? `#/threads/${sourceThreadID}/runs/run-other`
+          : `#/threads/thread-other/runs/${sourceRunID}`);
         if (detour === "record") await screen.findByRole("heading", { name: "Goal for run-other" });
         else await waitFor(() => expect(useConnectionStore.getState().selectedThreadID).toBe("thread-other"));
         await visitHash(sourceHash);

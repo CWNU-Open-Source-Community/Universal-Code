@@ -1,0 +1,33 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base_branch": "Qiyuanqiii/browser-takeover-mode",
+  "base": "aa83acb0",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-session-lifetime/README.md",
+    "docs/reviews/browser-session-lifetime/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：会话时长运维项实现（env helper + 三组合根接线 + banner 回显 + 文档）",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 24h 双守卫衔接的确定性推理"
+  ],
+  "summary": {
+    "total_git_changed_files": 8,
+    "review_scope_files": 6,
+    "ocr_selected_production": 4,
+    "manually_added_tests": 1,
+    "docs_verified_by_primary": 1,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/application/agent_browser_service.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/app/api_command.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/app/run_runtime.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/desktop/control_plane.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "docs/usage.md", "coverage": "full", "reviewer": "primary" }
+  ]
+}
