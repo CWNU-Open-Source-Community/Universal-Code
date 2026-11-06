@@ -118,6 +118,10 @@ test("normal entry reads a real project file and retains the task after reload",
 });
 
 test("queued message edits retain the composer and conversation after reload", async ({ page }, info) => {
+  const browserNotice = page.getByRole("button", { name: "关闭浏览器提示", exact: true });
+  // Older workbenches show this optional notice in the conversation. The queue
+  // journey must also work when browser viewing is opened explicitly elsewhere.
+  await page.addLocatorHandler(browserNotice, async () => { await browserNotice.click(); });
   await connect(page);
   await importProject(page);
   await page.getByRole("textbox", { name: "开始新对话" }).fill("JOURNEY_STOP: Hold while I revise queued instructions.");
@@ -133,7 +137,6 @@ test("queued message edits retain the composer and conversation after reload", a
   const stop = page.getByRole("button", { name: "停止当前执行", exact: true });
   if (await stop.isVisible()) await stop.click();
   await expect(stop).toBeHidden();
-  const browserNotice = page.getByRole("button", { name: "关闭浏览器提示", exact: true });
   if (await browserNotice.isVisible()) await browserNotice.click();
   for (let sequence = 2; sequence <= 4; sequence++) {
     await page.getByRole("button", { name: `消息 ${sequence} 的更多操作`, exact: true }).click();
@@ -143,8 +146,8 @@ test("queued message edits retain the composer and conversation after reload", a
   await composer.fill("Keep this ordinary draft too");
   await page.reload();
   await reconnect(page);
-  await expect(browserNotice).toBeVisible();
-  await browserNotice.click();
+  await expect(composer).toHaveValue("Keep this ordinary draft too");
+  await composer.focus();
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(composer).toHaveValue("Keep this ordinary draft too");
