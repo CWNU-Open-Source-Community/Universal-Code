@@ -213,7 +213,7 @@ func (s *ThreadTurnService) prepareThreadPlanOnly(ctx context.Context, request T
 		return apperror.New(apperror.CodeFailedPrecondition, "Plan control requires an idle task")
 	}
 	prepareCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: request.OperationKey, cancel: cancel, preparingPlan: true}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: request.OperationKey, cancel: cancel, preparingPlan: true, context: prepareCtx}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}

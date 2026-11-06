@@ -78,7 +78,7 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return ApprovalContinuationResult{State: "queued"}
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel, context: turnCtx}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}

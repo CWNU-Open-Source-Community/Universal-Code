@@ -39,6 +39,7 @@ type activeThreadTurn struct {
 	stopping      bool
 	queue         []queuedThreadTurn
 	approvals     []ApprovalContinuationRequest
+	context       context.Context
 }
 
 // Execute retains the caller's lifetime unless the host opts into owning
@@ -203,6 +204,9 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		if prepare != nil || active.preparingPlan {
 			return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition, "Plan preparation requires an idle task; keep this input and retry after preparation")
 		}
+		if s.hostContext != nil {
+			ctx = context.WithValue(ctx, acceptedThreadTurnContextKey{}, active.context)
+		}
 		if len(normalized.Files) > 0 || len(normalized.MCPReferences) > 0 {
 			if intent.MessageID != "" {
 				submission, _, err := s.threads.prepareMessage(ctx, normalized, intent)
@@ -268,7 +272,7 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		parent = s.hostContext
 	}
 	turnCtx, cancel := context.WithCancel(parent)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil, context: turnCtx}
 	preparationCtx := turnCtx
 	if !request.automatic && s.hostContext != nil {
 		var cancelPreparation context.CancelFunc
