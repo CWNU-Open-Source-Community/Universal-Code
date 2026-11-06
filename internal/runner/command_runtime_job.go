@@ -932,12 +932,33 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 	updated, err := m.store.UpdateCommandRuntimeJob(handoffCtx, running, stored.Version)
 	cancelHandoff()
 	if err != nil {
+		// The atomic handoff did not advance the durable version. Keep live
+		// ownership until the existing waiter can save a failed, reaped receipt.
+		entry.mu.Lock()
+		entry.record.Version = stored.Version
+		entry.record.State = CommandRuntimeJobStopping
+		entry.desired = CommandRuntimeJobFailed
+		entry.mu.Unlock()
+		m.mu.Lock()
+		m.entries[jobID] = entry
+		m.mu.Unlock()
+		go m.wait(entry)
+		// Cleanup can outlive this request. Shutdown must be able to join this
+		// same entry, including retrying a Kill that failed on the first attempt.
+		m.startMu.Unlock()
+		startLocked = false
 		killErr := process.Kill()
-		<-entry.processDone
-		closeErr := process.Close()
-		<-entry.stdoutDone
-		<-entry.stderrDone
-		return CommandRuntimeJobSnapshot{}, false, errors.Join(err, killErr, closeErr)
+		if killErr != nil {
+			return entry.snapshot(), false, errors.Join(err, killErr, ErrCommandRuntimeUncertain)
+		}
+		cleanupCtx, cancelCleanup := context.WithTimeout(ctx, MaxCommandRuntimeCancelGrace)
+		defer cancelCleanup()
+		select {
+		case <-entry.done:
+			return entry.snapshot(), false, errors.Join(err, entry.persistError())
+		case <-cleanupCtx.Done():
+			return entry.snapshot(), false, errors.Join(err, cleanupCtx.Err(), ErrCommandRuntimeUncertain)
+		}
 	}
 	entry.mu.Lock()
 	// Keep output and stopping state captured during the handoff.
@@ -1256,7 +1277,7 @@ func (m *CommandRuntimeManager) Shutdown(ctx context.Context) (result error) {
 	m.startMu.Unlock()
 	defer func() { result = errors.Join(result, m.hostProxy.close()) }()
 	for _, entry := range entries {
-		if entry.setDesired(CommandRuntimeJobInterrupted) {
+		if entry.setDesired(CommandRuntimeJobInterrupted) || entry.snapshot().State == CommandRuntimeJobStopping {
 			result = errors.Join(result, entry.process.Kill())
 		}
 	}

@@ -24,6 +24,11 @@ type commandRuntimeSlowHandoffStore struct {
 	err         error
 }
 
+type commandRuntimeHandoffResult struct {
+	result OperatorCommandResult
+	err    error
+}
+
 func (s commandRuntimeSlowHandoffStore) unblock() { s.releaseOnce.Do(func() { close(s.release) }) }
 
 func (s commandRuntimeSlowHandoffStore) UpdateCommandRuntimeJob(ctx context.Context, job runner.CommandRuntimeJob, previous int64) (runner.CommandRuntimeJob, error) {
@@ -66,16 +71,12 @@ func TestCommandRuntimeTimeoutIncludesDurableHandoff(t *testing.T) {
 	request := f.request(t, true)
 	request.Command.TimeoutMilliseconds = 500
 	request.Command.Arguments = []string{"-e", `const fs=require('fs');fs.writeFileSync('ready','ready');setInterval(()=>{if(fs.existsSync('proceed')){fs.writeFileSync('after-timeout.txt','executed');process.exit(0);}},10);`}
-	type outcome struct {
-		result OperatorCommandResult
-		err    error
-	}
-	done := make(chan outcome, 1)
+	done := make(chan commandRuntimeHandoffResult, 1)
 	go func() {
 		result, err := f.service.RunOperatorCommand(t.Context(), request)
-		done <- outcome{result, err}
+		done <- commandRuntimeHandoffResult{result, err}
 	}()
-	<-gate.entered
+	waitCommandRuntimeHandoffEntered(t, gate, done)
 	waitCommandRuntimeHandoffFile(t, filepath.Join(f.root, "ready"))
 	// The handoff is held, and the real native deadline has elapsed before
 	// allowing the child to attempt any observable side effect.
@@ -85,7 +86,7 @@ func TestCommandRuntimeTimeoutIncludesDurableHandoff(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	gate.unblock()
-	value := <-done
+	value := waitCommandRuntimeHandoffResult(t, done)
 	result, err := value.result, value.err
 	if err != nil {
 		t.Fatal(err)
@@ -103,20 +104,16 @@ func TestCommandRuntimeNaturalExitDuringDurableHandoff(t *testing.T) {
 	request := f.request(t, true)
 	request.Command.TimeoutMilliseconds = 500
 	request.Command.Arguments = []string{"-e", `process.stdout.write('fast-handoff-output');require('fs').writeFileSync('ready','ready');`}
-	type outcome struct {
-		result OperatorCommandResult
-		err    error
-	}
-	done := make(chan outcome, 1)
+	done := make(chan commandRuntimeHandoffResult, 1)
 	go func() {
 		result, err := f.service.RunOperatorCommand(t.Context(), request)
-		done <- outcome{result, err}
+		done <- commandRuntimeHandoffResult{result, err}
 	}()
-	<-gate.entered
+	waitCommandRuntimeHandoffEntered(t, gate, done)
 	waitCommandRuntimeHandoffFile(t, filepath.Join(f.root, "ready"))
 	time.Sleep(time.Duration(request.Command.TimeoutMilliseconds)*time.Millisecond + 200*time.Millisecond)
 	gate.unblock()
-	value := <-done
+	value := waitCommandRuntimeHandoffResult(t, done)
 	job, err := f.st.GetCommandRuntimeJob(t.Context(), value.result.Job.ID)
 	if value.err != nil || err != nil || job.State != runner.CommandRuntimeJobCompleted || job.ExitCode == nil || *job.ExitCode != 0 || !job.TreeReaped || job.Stdout != "fast-handoff-output" || job.StdoutObservedBytes != int64(len(job.Stdout)) {
 		t.Fatalf("fast native exit lost its success or output during SQL handoff: %+v %v/%v", job, value.err, err)
@@ -128,13 +125,16 @@ func TestCommandRuntimeFailedDurableHandoffReapsNativeProcess(t *testing.T) {
 	f, gate := newCommandRuntimeHandoffFixture(t, failure)
 	request := f.request(t, true)
 	request.Command.Arguments = []string{"-e", `const fs=require('fs');fs.writeFileSync('ready','ready');setInterval(()=>fs.appendFileSync('ticks','1'),10);`}
-	done := make(chan error, 1)
-	go func() { _, err := f.service.RunOperatorCommand(t.Context(), request); done <- err }()
-	<-gate.entered
+	done := make(chan commandRuntimeHandoffResult, 1)
+	go func() {
+		result, err := f.service.RunOperatorCommand(t.Context(), request)
+		done <- commandRuntimeHandoffResult{result, err}
+	}()
+	waitCommandRuntimeHandoffEntered(t, gate, done)
 	waitCommandRuntimeHandoffFile(t, filepath.Join(f.root, "ticks"))
 	gate.unblock()
-	if err := <-done; !errors.Is(err, failure) {
-		t.Fatalf("handoff failure lost: %v", err)
+	if value := waitCommandRuntimeHandoffResult(t, done); !errors.Is(value.err, failure) {
+		t.Fatalf("handoff failure lost: %v", value.err)
 	}
 	before, err := os.ReadFile(filepath.Join(f.root, "ticks"))
 	if err != nil {
@@ -146,11 +146,33 @@ func TestCommandRuntimeFailedDurableHandoffReapsNativeProcess(t *testing.T) {
 		t.Fatalf("failed handoff left native process writing: %q -> %q %v", before, after, err)
 	}
 	jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.run.ID})
-	if err != nil || len(jobs) != 1 || jobs[0].State != runner.CommandRuntimeJobPrepared {
-		t.Fatalf("unknown handoff receipt changed: %+v %v", jobs, err)
+	if err != nil || len(jobs) != 1 || jobs[0].State != runner.CommandRuntimeJobFailed || !jobs[0].TreeReaped {
+		t.Fatalf("failed handoff lost its reaped failure receipt: %+v %v", jobs, err)
 	}
 	if f.manager.OwnsActiveJob(jobs[0]) {
 		t.Fatal("failed handoff registered a live Job")
+	}
+}
+
+func waitCommandRuntimeHandoffEntered(t *testing.T, gate commandRuntimeSlowHandoffStore, done <-chan commandRuntimeHandoffResult) {
+	t.Helper()
+	select {
+	case <-gate.entered:
+	case value := <-done:
+		t.Fatalf("command exited before reaching the durable handoff: %v", value.err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("command did not reach the durable handoff")
+	}
+}
+
+func waitCommandRuntimeHandoffResult(t *testing.T, done <-chan commandRuntimeHandoffResult) commandRuntimeHandoffResult {
+	t.Helper()
+	select {
+	case value := <-done:
+		return value
+	case <-time.After(5 * time.Second):
+		t.Fatal("command did not finish after releasing the durable handoff")
+		return commandRuntimeHandoffResult{}
 	}
 }
 
