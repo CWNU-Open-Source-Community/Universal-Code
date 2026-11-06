@@ -1,0 +1,28 @@
+=== RUN   TestFileEditReviewRecordsApprovalIntentWithoutApply
+--- PASS: TestFileEditReviewRecordsApprovalIntentWithoutApply (0.00s)
+=== RUN   TestFileEditReviewRecoversApprovalCommittedBeforeEditState
+--- PASS: TestFileEditReviewRecoversApprovalCommittedBeforeEditState (0.00s)
+=== RUN   TestFileEditReviewRejectsCrossRunAndTerminalMutation
+--- PASS: TestFileEditReviewRejectsCrossRunAndTerminalMutation (0.00s)
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent/
+    workflow_approval_restart_review_test.go:216: atomic_commits=1 model_calls=3 tokens=10->15 workflow=completed original_step=workflowstep-54fb8abfdd265dc3b39649f9aeabfc8ee429e1597c496e92baae7f992bae7064 original_attempt=attempt-dc02311fd52fa3eaf4a4a3c9ab6b36c95e2043306402e3db0e9d242377b59bea
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny/
+    workflow_approval_restart_review_test.go:216: atomic_commits=1 model_calls=3 tokens=10->15 workflow=completed original_step=workflowstep-78286e7fae8ca092aed6ade060c6a7e0ed7d1b24d983e4b7947aff815c1f8438 original_attempt=attempt-749c454b783b827083a892f604583a3de33b8ffea5cbfc7d2d2473f1375903b6
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent/workflow_pause
+    workflow_approval_restart_review_test.go:216: atomic_commits=1 model_calls=3 tokens=10->15 workflow=completed original_step=workflowstep-09906e538385e8e5dff1e841b0dee46f01ffaaedc11384dc2e076b65b4e63b14 original_attempt=attempt-748b84c2abbe03d1c8fed33b61c673faf71f24fdc6b1d488bb29b722dab95b09
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny/workflow_pause
+    workflow_approval_restart_review_test.go:216: atomic_commits=1 model_calls=3 tokens=10->15 workflow=completed original_step=workflowstep-52231ee34210739ad3c7336a9cff85b12cb209474e7de3a465fcc4ef17964090 original_attempt=attempt-74df346bcaf4df2de0988afc60357f6cbc1d6248ba23c8a630d5d8af05043d74
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent/run_cancel
+    workflow_approval_restart_review_test.go:216: atomic_commits=1 model_calls=2 tokens=10->10 workflow=failed original_step=workflowstep-1f7340303ba6ca80ed9c30cf199b3f8d1bedec0090955953f65bb54ebad3fd95 original_attempt=attempt-e4a0a9623825c7efb1f25ec241c78fa70e5e4de812712a771aaa19574a5b5f36
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny/run_cancel
+    workflow_approval_restart_review_test.go:216: atomic_commits=1 model_calls=2 tokens=10->10 workflow=failed original_step=workflowstep-eece7a9d1fe6b2282df453a7e96f6a0bda34f80a5a759382c0adda5abb136ee7 original_attempt=attempt-3b620b5521225cc5b8098eef6bce0ef433754ba7ec62c5180e79f81ae36ffca9
+--- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen (28.79s)
+    --- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent/ (4.78s)
+    --- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny/ (5.94s)
+    --- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent/workflow_pause (5.11s)
+    --- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny/workflow_pause (4.52s)
+    --- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent/run_cancel (4.17s)
+    --- PASS: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny/run_cancel (4.28s)
+PASS
+ok  	cyberagent-workbench/internal/application	29.999s
