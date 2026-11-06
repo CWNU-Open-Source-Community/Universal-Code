@@ -86,7 +86,10 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
     retry: false,
   });
   const webFetch = item.tool_name === "web_fetch";
+  const browserRequest = item.tool_name === "agent_browser_sensitive" && item.proposal_id.startsWith("browser-network-");
   const computerUse = item.tool_name === "mcp_tool_call" && preview.data?.effect === "computer_use_app";
+  const requestDetails = browserRequest ? preview.data?.fields.filter(({ name }) => name === "body_sha256" || name === "expires_at") ?? [] : [];
+  const visibleFields = browserRequest ? preview.data?.fields.filter(({ name }) => name !== "body_sha256" && name !== "expires_at") : preview.data?.fields;
   const recovering = item.status === "approved" || item.status === "denied";
   const existingTTL = Number(preview.data?.fields.find((field) => field.name === "grant_ttl_seconds")?.value);
   const existingUses = Number(preview.data?.fields.find((field) => field.name === "grant_max_uses")?.value);
@@ -108,6 +111,10 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
         ...(action === "approve_for_run" ? { grant_ttl_seconds: grantTTL, grant_max_uses: grantUses } : {}) }, key);
     },
     onSuccess: (result, action) => {
+      if (browserRequest) {
+        onDecided(action === "deny" ? t("已拒绝这次网页请求。", "This web request was denied.") : t("已批准这次网页请求。", "This web request was approved."));
+        return;
+      }
       const continuation = result.continuation;
       const next = ["agent_browser_sensitive", "mcp_tool_call", "command_runtime"].includes(item.tool_name) ? continuation?.state === "queued"
         ? t("Agent 已接收继续处理的请求。", "The agent received the request to continue.")
@@ -136,25 +143,30 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
   return <article className="v2-approval-card">
     <header><span>{webFetch ? <Globe2 aria-hidden="true" size={17} />
       : <ShieldAlert aria-hidden="true" size={17} />}</span>
-      <div><strong>{recovering ? webFetch ? t("恢复上次网页读取", "Resume previous web read") : t("恢复上次审批决定", "Resume previous approval decision") : webFetch ? t("允许读取这个网站？", "Allow reading this website?")
+      <div><strong>{browserRequest ? t("网页请求", "Web request") : recovering ? webFetch ? t("恢复上次网页读取", "Resume previous web read") : t("恢复上次审批决定", "Resume previous approval decision") : webFetch ? t("允许读取这个网站？", "Allow reading this website?")
         : computerUse ? t("允许操作这个应用？", "Allow controlling this app?") : dryRun ? t("批准这次模拟执行？", "Approve this simulated execution?") : t("需要你的批准", "Approval required")}</strong>
-        <small>{recovering ? item.status === "approved" ? t("已允许，等待恢复", "Allowed; waiting to resume") : t("已拒绝，等待恢复", "Denied; waiting to resume")
-          : webFetch ? item.exact_target : computerUse ? "Computer Use" : item.tool_name}</small></div></header>
+        {!browserRequest && <small>{recovering ? item.status === "approved" ? t("已允许，等待恢复", "Allowed; waiting to resume") : t("已拒绝，等待恢复", "Denied; waiting to resume")
+          : webFetch ? item.exact_target : computerUse ? "Computer Use" : item.tool_name}</small>}</div></header>
     {preview.isLoading && <p role="status">{t("正在读取这次操作的精确预览…", "Loading the exact action preview…")}</p>}
     {preview.isError && <div role="alert"><p>{t("操作预览读取失败，请重新读取后确认批准范围。", "Could not load the action preview. Reload it before confirming the approval scope.")}</p>
       <button onClick={() => void preview.refetch()} type="button">{t("重试操作预览", "Retry action preview")}</button></div>}
     {preview.data && <>
       {computerUse ? <ComputerUsePreview preview={preview.data} /> : <dl className="v2-approval-facts">
         {preview.data.working_directory && <div><dt>{t("工作目录", "Working directory")}</dt><dd>{t("提案绑定目录内", "Within the proposal's bound directory ")}<code>{preview.data.working_directory}</code></dd></div>}
-        {preview.data.fields.map((field, index) => <div key={`${field.name}:${index}`}>
+        {visibleFields?.map((field, index) => <div key={`${field.name}:${index}`}>
           <dt>{fieldLabels(t)[field.name] ?? field.name}</dt><dd><pre>{field.value}</pre></dd>
         </div>)}
       </dl>}
+      {requestDetails.length > 0 && <details><summary>{t("请求详情", "Request details")}</summary><dl className="v2-approval-facts">
+        {requestDetails.map((field, index) => <div key={`${field.name}:${index}`}>
+          <dt>{fieldLabels(t)[field.name] ?? field.name}</dt><dd><pre>{field.value}</pre></dd>
+        </div>)}
+      </dl></details>}
       {preview.data.workspace_id && <details><summary>{t("查看操作目录身份", "View action directory identity")}</summary><code>{preview.data.workspace_id}</code></details>}
-      <p>{preview.data.effect === "file_review_required" && onReviewFile
+      {!browserRequest && <p>{preview.data.effect === "file_review_required" && onReviewFile
         ? t("先查看这份编辑的差异，再决定是否批准和应用。", "Review this edit's diff before approving and applying it.")
         : computerUse && !item.allowed_actions.includes("approve_for_run_app")
-          ? t("本次允许仅批准当前操作；后续需要授权的操作将再次询问。", "Allow once approves only this action. Later actions requiring permission will ask again.") : effectText(t)[preview.data.effect]}</p>
+          ? t("本次允许仅批准当前操作；后续需要授权的操作将再次询问。", "Allow once approves only this action. Later actions requiring permission will ask again.") : effectText(t)[preview.data.effect]}</p>}
       {preview.data.redacted && <p>{t("敏感内容已脱敏，请按可见内容核对操作。", "Sensitive content is redacted. Review the action using the visible information.")}</p>}
       {(!preview.data.source_current || preview.data.truncated) && <p role="alert">
         {preview.data.truncated ? t("预览超过显示上限，需读取完整内容后再批准。", "The preview exceeds the display limit. Read the full content before approving.") : t("操作已变化或审批已处理，请刷新最新状态。", "The action changed or was already decided. Refresh its status.")}
@@ -162,7 +174,7 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
     </>}
     {recovering && <p>{t("上次决定已经保存。点击“继续恢复”会沿用原决定和授权范围完成后续处理。", "The previous decision is saved. Resume uses the same decision and permission scope to finish processing.")}</p>}
     {client.hasApprovalControl && !recovering && item.allowed_actions.includes("deny") && <input
-      aria-label={t(`${item.tool_name} 的拒绝原因`, `Reason for denying ${item.tool_name}`)} disabled={mutation.isPending} maxLength={2048}
+      aria-label={browserRequest ? t("网页请求的拒绝原因", "Reason for denying the web request") : t(`${item.tool_name} 的拒绝原因`, `Reason for denying ${item.tool_name}`)} disabled={mutation.isPending} maxLength={2048}
       onChange={(event) => setReason(event.target.value)} placeholder={t("拒绝原因（可选）", "Reason for denial (optional)")} value={reason} />}
     {client.hasApprovalControl && item.allowed_actions.includes("approve_for_run") && <fieldset disabled={mutation.isPending}>
       <legend>{t("本次执行的限时、限次审批", "Time and usage limits for this run")}</legend>

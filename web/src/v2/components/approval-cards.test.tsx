@@ -202,6 +202,57 @@ describe("V2ApprovalCards", () => {
     expect(onReviewFile).not.toHaveBeenCalled(); expect(decideApproval).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["approve_once", "批准一次", "approved", "已批准这次网页请求。"],
+    ["deny", "拒绝", "denied", "已拒绝这次网页请求。"],
+  ] as const)("records a page-request %s without suggesting tool continuation", async (action, button, status, message) => {
+    const item = pending({ tool_name: "agent_browser_sensitive", action_class: "browser_external_write", mode: "per_call",
+      proposal_id: "browser-network-request-1", allowed_actions: ["approve_once", "deny"], canonical_url: undefined, exact_target: undefined });
+    const hash = "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8";
+    const preview = { protocol_version: "approval_queue.v1", run_id: "run-1", approval_id: item.id,
+      proposal_id: item.proposal_id, tool_name: item.tool_name, workspace_id: item.workspace_id,
+      effect: "browser_sensitive_action", working_directory: "", fields: [
+        { name: "operation", value: "POST" }, { name: "url", value: "http://127.0.0.1:51234/write" },
+        { name: "body_bytes", value: "19" }, { name: "body_sha256", value: hash },
+        { name: "expires_at", value: "2026-11-06T14:32:00Z" }], source_current: true, redacted: false, truncated: false };
+    const decision = { version: "approval_control.v1", run_id: "run-1", approval_id: item.id, proposal_id: item.proposal_id,
+      tool_name: item.tool_name, action, status, replayed: false, process_execution_enabled: false,
+      shell_execution_enabled: false, docker_execution_enabled: false, workspace_write_applied: false,
+      session_grant_created: false, capability_grant: false, execution_resumed: false, retry_completed: false, retry_scheduled: false };
+    let decided = false;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const path = String(url);
+      if (init?.method === "POST") decided = true;
+      const queue = { protocol_version: "approval_queue.v1", run_id: "run-1", items: decided ? [] : [item],
+        truncated: false, process_execution_enabled: false, session_grant_created: false, capability_grant: false };
+      return new Response(JSON.stringify({ version: "api.v1", request_id: "browser-request-decision", data:
+        path.endsWith("/decision") ? decision : path.endsWith("/preview") ? preview : queue }),
+      { status: path.endsWith("/decision") ? 202 : 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new APIClient("test-read", "/api/v1", "test-control");
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+      <V2ApprovalCards client={client} runID="run-1" threadID="thread-1" />
+    </QueryClientProvider>);
+    expect(await screen.findByText("网页请求")).toBeVisible();
+    expect(screen.queryByText("agent_browser_sensitive")).not.toBeInTheDocument();
+    expect(await screen.findByText("POST")).toBeVisible();
+    expect(screen.getByText("http://127.0.0.1:51234/write")).toBeVisible();
+    expect(screen.getByText("19")).toBeVisible();
+    expect(screen.getByText(hash)).not.toBeVisible();
+    expect(screen.getByText("2026-11-06T14:32:00Z")).not.toBeVisible();
+    const user = userEvent.setup();
+    await user.click(screen.getByText("请求详情"));
+    expect(screen.getByText(hash)).toBeVisible();
+    expect(screen.getByText("2026-11-06T14:32:00Z")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: button }));
+    expect(await screen.findByText(message, { exact: true })).toBeVisible();
+    expect(screen.queryByText(/后续执行尚未完成|Agent 已继续处理/)).not.toBeInTheDocument();
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0][1]?.body))).toEqual({ version: "approval_control.v1", action });
+  });
+
   it("approves a browser action through the strict client and accepts same-checkpoint continuation", async () => {
     const item = pending({ tool_name: "agent_browser_sensitive", action_class: "browser_external_write", mode: "per_call",
       allowed_actions: ["approve_once", "deny"], canonical_url: undefined, exact_target: undefined });
