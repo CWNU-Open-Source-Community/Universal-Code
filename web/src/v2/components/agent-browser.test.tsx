@@ -291,6 +291,7 @@ function render(ui: ReactElement, options?: RenderOptions) {
 
 it("streams the live view for the active headless session", async () => {
   vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 1280, height: 900, close: vi.fn() })));
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
   const stream = vi.fn(async (_runID: string, options: { onOpen?: () => void; onFrame: (frame: unknown) => void }) => {
     options.onOpen?.();
     options.onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
@@ -307,11 +308,59 @@ it("streams the live view for the active headless session", async () => {
   expect(createImageBitmap).toHaveBeenCalled();
 });
 
+it("shows the verified screenshot until a frame is drawn, keeps its original available, and restores it on stream failure", async () => {
+  let resolveBitmap!: (bitmap: ImageBitmap) => void;
+  vi.stubGlobal("createImageBitmap", vi.fn(() => new Promise<ImageBitmap>((resolve) => { resolveBitmap = resolve; })));
+  const drawImage = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+  let onFrame!: Parameters<APIClient["streamAgentBrowserScreencast"]>[1]["onFrame"];
+  let failStream!: (error: Error) => void;
+  const stream = vi.fn<APIClient["streamAgentBrowserScreencast"]>((_runID, options) => {
+    onFrame = options.onFrame;
+    return new Promise<void>((_resolve, reject) => { failStream = reject; });
+  });
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })),
+    streamAgentBrowserScreencast: stream } as unknown as APIClient;
+  const view = draw(client);
+  const original = await decodeScreenshot();
+  const screenshot = original.querySelector("img")!;
+  const canvas = view.container.querySelector("canvas")!;
+  expect(canvas).not.toBeVisible(); expect(screenshot).toBeVisible();
+  expect(screen.getByText("正在连接实时画面…")).toBeInTheDocument();
+  act(() => onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
+    generation: 1, media_type: "image/jpeg", width: 1280, height: 900, data: btoa("frame"), captured_at: "2026-10-28T00:00:00Z" }));
+  expect(canvas).not.toBeVisible(); expect(screenshot).toBeVisible();
+  const close = vi.fn();
+  await act(async () => { resolveBitmap({ width: 1280, height: 900, close } as unknown as ImageBitmap); });
+  expect(drawImage).toHaveBeenCalledOnce(); expect(close).toHaveBeenCalledOnce();
+  expect(canvas).toBeVisible(); expect(screenshot).not.toBeVisible(); expect(original).toBeEnabled();
+  fireEvent.click(original);
+  expect(screen.getByRole("dialog", { name: "图片预览 agent-browser-aaaaaaaaaaaa.png" })).toBeInTheDocument();
+  await act(async () => { failStream(new Error("stream interrupted")); });
+  expect(canvas).not.toBeVisible(); expect(screenshot).toBeVisible();
+  expect(screen.getByText("实时画面暂不可用，已回退到截图。")).toBeInTheDocument();
+});
+
+it("keeps the canvas hidden when a frame cannot be decoded", async () => {
+  vi.stubGlobal("createImageBitmap", vi.fn(async () => { throw new Error("invalid image"); }));
+  const stream = vi.fn<APIClient["streamAgentBrowserScreencast"]>(async (_runID, options) => {
+    options.onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
+      generation: 1, media_type: "image/jpeg", width: 1280, height: 900, data: btoa("invalid"), captured_at: "2026-10-28T00:00:00Z" });
+  });
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn(), streamAgentBrowserScreencast: stream } as unknown as APIClient;
+  const view = draw(client);
+  await waitFor(() => expect(createImageBitmap).toHaveBeenCalledOnce());
+  expect(view.container.querySelector("canvas")).not.toBeVisible();
+  expect(screen.getByText("正在连接实时画面…")).toBeInTheDocument();
+});
+
 it("falls back to screenshots when the live stream is unavailable", async () => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
     postControl: vi.fn(), downloadVerifiedImage: vi.fn(),
     streamAgentBrowserScreencast: vi.fn(async () => { throw new TypeError("stream down"); }) } as unknown as APIClient;
   draw(client);
   expect(await screen.findByText("实时画面暂不可用，已回退到截图。")).toBeInTheDocument();
-  expect(screen.getByRole("img", { name: "Agent 浏览器实时画面" })).not.toHaveClass("is-live");
+  expect(screen.queryByRole("img", { name: "Agent 浏览器实时画面" })).not.toBeInTheDocument();
 });
