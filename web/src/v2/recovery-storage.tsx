@@ -23,6 +23,7 @@ export interface V2RecoveryStore {
   write<T>(key: string, value: T): void;
   remove(key: string): void;
   entries<T>(prefix: string): Array<[string, T]>;
+  invalidKeys(prefix: string): string[];
   assertReadable(prefix?: string): void;
   reject(key: string): void;
   markUnsaved(key: string, message: string): void;
@@ -152,6 +153,18 @@ class RecoveryStorage implements V2RecoveryStore {
       } catch { /* Retain malformed records, warning already recorded. */ }
     }
     return result;
+  }
+
+  invalidKeys(prefix: string): string[] {
+    // Only records with a known malformed format may be explicitly discarded.
+    // Denied storage access and unassignable storage keys have no such proof.
+    const keys = new Set<string>();
+    for (const [operation, message] of this.failures) {
+      if (!(operation.startsWith("invalid:") || operation.startsWith("read:") && message === INVALID_RECORD)) continue;
+      const key = operation.slice(operation.indexOf(":") + 1);
+      if (key.startsWith(prefix)) keys.add(key);
+    }
+    return [...keys].sort();
   }
 
   assertReadable(prefix?: string): void {
