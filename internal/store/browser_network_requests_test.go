@@ -85,6 +85,13 @@ func TestListApprovalsInvalidatesExpiredBrowserRequestsWithoutRuntime(t *testing
 	if err != nil || unrelated.Status != approval.StatusPending || unrelated.Version != 1 {
 		t.Fatalf("unrelated approval=%+v err=%v", unrelated, err)
 	}
+	if _, err = application.ChangeBrowserNetworkAccess(ctx, st, nil, domain.ChangeBrowserNetworkAccessRequest{Version: domain.BrowserNetworkAccessVersion, RunID: run.ID, ExpectedRevision: 2, BrowserNetworkAccess: domain.BrowserNetworkOff, OperationKey: "expiry-browser-policy-off-0002", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := st.GetApprovalByProposal(ctx, domain.BrowserNetworkRequestPrefix+"live")
+	if err != nil || revoked.Status != approval.StatusDenied {
+		t.Fatalf("revoked approval stayed pending: %+v %v", revoked, err)
+	}
 }
 
 func TestSchemaV222BrowserRequestsMigrateAndNeverReplayAfterRestart(t *testing.T) {

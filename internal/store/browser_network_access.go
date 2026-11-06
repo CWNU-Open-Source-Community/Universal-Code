@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/runmutation"
 )
@@ -43,10 +44,6 @@ func readSuccessorBrowserNetworkPreference(ctx context.Context, q runControlQuer
 	}
 	err = json.Unmarshal([]byte(origins), &p.BrowserOrigins)
 	return p, true, err
-}
-
-func (s *SQLiteStore) GetSuccessorBrowserNetworkPreference(ctx context.Context, runID string) (domain.BrowserNetworkPreference, bool, error) {
-	return readSuccessorBrowserNetworkPreference(ctx, s.db, runID)
 }
 
 func readBrowserNetworkSelection(ctx context.Context, q runControlQueryer, runID, workspaceID string) (domain.BrowserNetworkAccessSelection, error) {
@@ -179,7 +176,7 @@ func (s *SQLiteStore) ChangeBrowserNetworkAccess(ctx context.Context, r domain.C
 			}
 			// A paused outbound write and its approval must not survive a changed
 			// browser policy, even if the replacement later selects the same mode.
-			if _, err = tx.ExecContext(ctx, `UPDATE browser_network_requests SET status='invalidated' WHERE run_id=? AND status='paused'`, run.ID); err != nil {
+			if err = invalidateBrowserNetworkPolicyRequestsTx(ctx, tx, run.ID, run.Config.BrowserNetworkRevision); err != nil {
 				return empty, err
 			}
 		}
@@ -217,4 +214,35 @@ func (s *SQLiteStore) ChangeBrowserNetworkAccess(ctx context.Context, r domain.C
 		return empty, fmt.Errorf("record browser selection: %w", err)
 	}
 	return v, tx.Commit()
+}
+
+func invalidateBrowserNetworkPolicyRequestsTx(ctx context.Context, tx *sql.Tx, runID string, revision int64) error {
+	rows, err := tx.QueryContext(ctx, `SELECT b.id FROM browser_network_requests b JOIN tool_approvals a ON a.proposal_id=b.id WHERE b.run_id=? AND b.status='paused' AND a.status='pending'`, runID)
+	if err != nil {
+		return err
+	}
+	var pending []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE browser_network_requests SET status='invalidated' WHERE run_id=? AND status='paused'`, runID); err != nil {
+		return err
+	}
+	for _, id := range pending {
+		key := "browser-policy-" + runmutation.Fingerprint("browser_network_access_operation.v1", runID, fmt.Sprint(revision), id)
+		if _, err = decideApprovalTx(ctx, tx, approval.DecisionRequest{ProposalID: id, IdempotencyKey: key, Action: approval.ActionDeny, Reason: "Browser network access changed before dispatch.", ReviewedBy: "browser_network_policy"}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

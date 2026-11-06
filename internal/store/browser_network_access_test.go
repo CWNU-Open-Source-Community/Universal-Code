@@ -77,3 +77,34 @@ func TestSchemaV223PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.
 		t.Fatalf("version=%d %v", version, err)
 	}
 }
+
+func TestBrowserNetworkProjectPreferenceSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "remember-browser.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := WorkspaceRecord{ID: "browser-project", Name: "Browser Project", RootPath: t.TempDir()}
+	if err = st.SaveWorkspace(t.Context(), workspace); err != nil {
+		t.Fatal(err)
+	}
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{Goal: "remember internet", WorkspaceID: workspace.ID, Profile: "review"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = application.ChangeBrowserNetworkAccess(t.Context(), st, nil, domain.ChangeBrowserNetworkAccessRequest{Version: domain.BrowserNetworkAccessVersion, RunID: run.ID, ExpectedRevision: 1, BrowserNetworkAccess: domain.BrowserNetworkInternet, RememberForProject: true, OperationKey: "browser-remember-restart-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, next, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{Goal: "next project chat", WorkspaceID: workspace.ID, Profile: "review"})
+	if err != nil || next.Config.BrowserNetworkAccess != domain.BrowserNetworkInternet {
+		t.Fatalf("remembered preference lost: %+v %v", next.Config, err)
+	}
+}
