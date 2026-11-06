@@ -268,16 +268,18 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		}
 	}
 	parent := ctx
-	if !request.automatic && s.hostContext != nil {
+	if s.hostContext != nil {
 		parent = s.hostContext
 	}
 	turnCtx, cancel := context.WithCancel(parent)
 	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil, context: turnCtx}
 	preparationCtx := turnCtx
-	if !request.automatic && s.hostContext != nil {
+	if s.hostContext != nil {
 		var cancelPreparation context.CancelFunc
 		preparationCtx, cancelPreparation = context.WithCancel(ctx)
-		preparationCtx = context.WithValue(preparationCtx, acceptedThreadTurnContextKey{}, turnCtx)
+		if !request.automatic {
+			preparationCtx = context.WithValue(preparationCtx, acceptedThreadTurnContextKey{}, turnCtx)
+		}
 		stopHostCancellation := context.AfterFunc(turnCtx, cancelPreparation)
 		defer func() { stopHostCancellation(); cancelPreparation() }()
 	}
@@ -286,14 +288,11 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	}
 	s.activeTurns[request.ThreadID] = active
 	s.turnMu.Unlock()
+	handedOff := false
 	defer func() {
-		cancel()
-		s.turnMu.Lock()
-		if s.activeTurns[request.ThreadID] == active {
-			active.stopping = true
-			delete(s.activeTurns, request.ThreadID)
+		if !handedOff {
+			s.finishThreadTurnOwner(request.ThreadID, active)
 		}
-		s.turnMu.Unlock()
 	}()
 	if prepare != nil {
 		if err := prepare(preparationCtx); err != nil {
@@ -309,30 +308,72 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 
 	var executionErr error
 	if request.queued != nil {
-		result, executionErr = s.executeSubmissionMode(turnCtx, normalized, ExecuteThreadTurnResult{Submission: *request.queued}, true)
+		result, executionErr = s.executeSubmissionMode(preparationCtx, normalized, ExecuteThreadTurnResult{Submission: *request.queued}, true)
 	} else {
 		result, executionErr = s.execute(preparationCtx, request)
 	}
+	drainCtx := turnCtx
+	if request.automatic {
+		// Automatic work retains its caller; accepted ordinary inputs use the
+		// separate host control context, with the same Stop identity.
+		drainCtx = preparationCtx
+	}
+	result, executionErr, handedOff = s.drainThreadTurnQueue(drainCtx, request.ThreadID, active, request.automatic, result, executionErr)
+	return result, executionErr
+}
+
+func (s *ThreadTurnService) finishThreadTurnOwner(threadID string, active *activeThreadTurn) {
+	s.turnMu.Lock()
+	if s.activeTurns[threadID] == active {
+		active.stopping = true
+		delete(s.activeTurns, threadID)
+	}
+	s.turnMu.Unlock()
+	active.cancel()
+}
+
+func (s *ThreadTurnService) drainThreadTurnQueue(ctx context.Context, threadID string, active *activeThreadTurn, automaticOwner bool,
+	result ExecuteThreadTurnResult, executionErr error,
+) (ExecuteThreadTurnResult, error, bool) {
 	for {
 		s.turnMu.Lock()
-		if executionErr == nil && turnCtx.Err() == nil && len(active.queue) == 0 && len(active.approvals) > 0 {
+		if automaticOwner && s.hostContext != nil && !active.stopping && active.context.Err() == nil && (executionErr == nil || ctx.Err() != nil) {
+			for _, next := range active.queue {
+				if next.automatic {
+					continue
+				}
+				// Register the host's full drain before releasing the automatic
+				// call. Keep the owner and FIFO intact across this lifetime handoff.
+				if hostCtx, finish, err := s.beginHostOperation(active.context); err == nil {
+					go func() {
+						defer finish()
+						defer s.finishThreadTurnOwner(threadID, active)
+						_, _, _ = s.drainThreadTurnQueue(hostCtx, threadID, active, false, result, nil)
+					}()
+					s.turnMu.Unlock()
+					return result, executionErr, true
+				}
+				break
+			}
+		}
+		if executionErr == nil && ctx.Err() == nil && !active.stopping && active.context.Err() == nil && len(active.queue) == 0 && len(active.approvals) > 0 {
 			next := active.approvals[0]
 			active.approvals = active.approvals[1:]
 			s.turnMu.Unlock()
-			if resumed := s.resumeApprovalWithOwner(turnCtx, next); resumed.State == "failed" {
+			if resumed := s.resumeApprovalWithOwner(ctx, next); resumed.State == "failed" {
 				s.turnMu.Lock()
 				active.stopping = true
 				s.turnMu.Unlock()
-				return result, executionErr
+				return result, executionErr, false
 			}
 			continue
 		}
-		if executionErr != nil || turnCtx.Err() != nil || len(active.queue) == 0 {
+		if executionErr != nil || ctx.Err() != nil || active.stopping || active.context.Err() != nil || len(active.queue) == 0 {
 			// Accepted inputs belong to the Thread, not this request owner.
 			// Stop draining on failure/cancellation, retaining unconsumed messages.
 			active.stopping = true
 			s.turnMu.Unlock()
-			return result, executionErr
+			return result, executionErr, false
 		}
 		next := active.queue[0]
 		active.queue = active.queue[1:]
@@ -340,16 +381,16 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		// The queued input keeps its accepted Run binding even if a preference
 		// changes while the previous turn is in flight.
 		next.result.Submission.Message, executionErr = s.execution.store.GetOperatorSteering(
-			turnCtx, next.result.Submission.Message.ID)
+			ctx, next.result.Submission.Message.ID)
 		if executionErr == nil && next.result.Submission.Message.Status != domain.OperatorSteeringPending {
 			continue
 		}
 		if executionErr == nil {
-			next.result.Submission.Run, executionErr = s.threads.store.GetRun(turnCtx,
+			next.result.Submission.Run, executionErr = s.threads.store.GetRun(ctx,
 				next.result.Submission.Run.ID)
 		}
 		if executionErr == nil {
-			_, executionErr = s.executeSubmissionMode(turnCtx, next.request, next.result, next.automatic)
+			_, executionErr = s.executeSubmissionMode(ctx, next.request, next.result, next.automatic)
 		}
 		if executionErr != nil {
 			s.turnMu.Lock()
