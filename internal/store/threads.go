@@ -657,6 +657,18 @@ func (s *SQLiteStore) ensureThreadSuccessor(ctx context.Context, threadID,
 		}
 		if found {
 			candidate.Config.BrowserNetworkAccess, candidate.Config.BrowserOrigins = preference.BrowserNetworkAccess, preference.BrowserOrigins
+		} else {
+			permission, err := getCurrentRunExecutionPermissionSnapshot(ctx, tx, predecessor.ID)
+			if err != nil {
+				return domain.Thread{}, domain.Run{}, false, err
+			}
+			// Freeze the predecessor's effective choice before the successor gets
+			// the Thread's current execution permission, which may have changed.
+			candidate.Config.BrowserNetworkAccess = predecessor.Config.EffectiveBrowserNetworkAccess(permission.Mode)
+			candidate.Config.BrowserOrigins = append([]string(nil), predecessor.Config.BrowserOrigins...)
+			if candidate.Config.BrowserNetworkAccess == domain.BrowserNetworkInternet {
+				candidate.Config.BrowserOrigins = nil
+			}
 		}
 	}
 	if err := createRunGraphTx(ctx, tx, mission, candidate, mode, linkedSession, true,
