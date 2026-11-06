@@ -36,3 +36,15 @@ func TestReconnectMarkerBelongsToLatestUserTurn(t *testing.T) {
 		})
 	}
 }
+
+func TestReconnectMarkerAfterStoppedTurn(t *testing.T) {
+	var request modelRequest
+	body := []byte(`{"messages":[{"role":"user","content":"JOURNEY_STOP: previous turn"},{"role":"assistant","content":"Stopped"},{"role":"user","content":"JOURNEY_RECONNECT: new-turn"}]}`)
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	block, err := nextResponse(request)
+	if err != nil || block.Type != "journey_reconnect_hold" || block.Text != "new-turn" {
+		t.Fatalf("new reconnect turn inherited the earlier Stop hold: %+v err=%v", block, err)
+	}
+}

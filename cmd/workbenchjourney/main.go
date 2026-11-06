@@ -330,11 +330,11 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	if strings.Contains(history, "JOURNEY_BROWSER:") {
 		return nextBrowserJourneyResponse(request, results, tool, text)
 	}
-	if strings.Contains(history, "JOURNEY_STOP:") {
-		return contentBlock{Type: "journey_stop_hold"}, nil
-	}
 	if match := journeyReconnectPattern.FindStringSubmatch(string(latestUser)); len(match) == 2 {
 		return contentBlock{Type: "journey_reconnect_hold", Text: match[1]}, nil
+	}
+	if strings.Contains(history, "JOURNEY_STOP:") {
+		return contentBlock{Type: "journey_stop_hold"}, nil
 	}
 	if strings.Contains(history, "JOURNEY_CONTEXT:") {
 		if strings.Contains(history, "JOURNEY_PIN_QUESTION_SHOWN") {
