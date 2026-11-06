@@ -116,10 +116,16 @@ the viewport and that its center is not covered by another element.
 
 [After discarding](../images/image-upload-recovery/corrupt-record/after-discarded.png),
 the text remains and sending is enabled.
-The existing creation-recovery warning can remain until the next reload because
-that separate reader checks the entire recovery store on mount. This screenshot
-retains that observed warning; the journey verifies that reloading clears it
-and that the preserved draft can be sent.
+The creation-recovery reader retains its global storage check. If its initial
+read fails, it listens for storage changes until that check succeeds, then
+stops listening before inspecting the original creation requests. Discarding
+the last damaged image record clears that load warning immediately. Other
+damaged records and invalid creation records still block creation; unrelated
+draft writes do not repeat successful inspections or clear an explicit handoff
+failure. The real journey asserts zero alerts immediately after discard and
+then verifies the preserved draft after reload and a successful text send.
+[The previous stale-warning screenshot](../images/image-upload-recovery/corrupt-record/before-discarded-warning.png)
+is retained alongside the updated after-discard image.
 
 Verification: production build and strict TypeScript passed; focused recovery,
 image-input, draft-context and workspace-tabs tests passed (five files, 71
@@ -130,3 +136,10 @@ misbound operation keys, Workspace/Thread isolation, and two damaged records
 alongside a healthy pending image. OCR delegate resolved the changed production
 files; image input and recovery storage were read in full, composer around the
 move, registry and generated document by diff, and the changed tests in full.
+The creation-warning follow-up passed its three focused files (55 tests),
+including unknown-creation retention, a second damaged record, invalid-creation
+refusal and preservation of explicit operation errors. Both real image journeys
+and the production build passed again. The new unit assertion and real-browser
+zero-alert assertion both failed before this follow-up. OCR delegate selected
+the creation-recovery source; the effect and its load/prepare/handoff callers
+and changed tests were reviewed.

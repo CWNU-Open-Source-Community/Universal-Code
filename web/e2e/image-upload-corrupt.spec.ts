@@ -66,6 +66,7 @@ test("a damaged image upload record can be left out without deleting another dra
   await expect(page.getByRole("button", { name: "丢弃记录", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "丢弃记录", exact: true }).click();
   await expect(page.getByRole("button", { name: "发送消息", exact: true })).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
   expect(await page.evaluate((key) => localStorage.getItem(key), injected.key)).toBeNull();
   expect(await page.evaluate((key) => localStorage.getItem(key), injected.goodKey)).toBe(injected.good);
   await expect(composer).toHaveValue(text);
