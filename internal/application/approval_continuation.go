@@ -44,6 +44,17 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 	if !validControlIdentity(request.RunID) || !validControlIdentity(request.ProposalID) || (request.Kind != "file_edit" && request.Kind != "host_command" && request.Kind != "agent_browser" && request.Kind != "mcp" && request.Kind != "command_runtime") {
 		return approvalContinuationFailed(apperror.New(apperror.CodeInvalidArgument, "Approval continuation identity is invalid"))
 	}
+	ctx, finish, beginErr := s.beginHostOperation(ctx)
+	if beginErr != nil {
+		return approvalContinuationFailed(beginErr)
+	}
+	defer finish()
+	// Review handlers call this only after the exact decision/effect commits.
+	// The continuation still proves that decision through its durable handoff;
+	// the HTTP client no longer owns this already-authorized follow-up.
+	if s.hostContext != nil {
+		ctx = s.hostContext
+	}
 	thread, err := s.threads.store.GetThreadByRun(ctx, request.RunID)
 	if err != nil {
 		return approvalContinuationFailed(err)
@@ -52,6 +63,10 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return ApprovalContinuationResult{State: "not_started"}
 	}
 	s.turnMu.Lock()
+	if s.hostContext != nil && s.hostContext.Err() != nil {
+		s.turnMu.Unlock()
+		return approvalContinuationFailed(apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down"))
+	}
 	if active := s.activeTurns[thread.ID]; active != nil {
 		defer s.turnMu.Unlock()
 		if active.stopping {
@@ -69,7 +84,7 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return ApprovalContinuationResult{State: "queued"}
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel, context: turnCtx}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}

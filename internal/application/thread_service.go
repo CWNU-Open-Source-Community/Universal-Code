@@ -216,6 +216,9 @@ func (s *ThreadService) Submit(ctx context.Context,
 func (s *ThreadService) prepareMessage(ctx context.Context, request SubmitThreadMessageRequest,
 	intent domain.ThreadMessageIntent,
 ) (SubmitThreadMessageResult, domain.ThreadMessageIntent, error) {
+	if intent.MessageID != "" {
+		ctx = acceptedThreadTurnContext(ctx)
+	}
 	result, err := s.prepareRun(ctx, request, intent)
 	if err != nil {
 		return result, intent, err
@@ -232,6 +235,7 @@ func (s *ThreadService) prepareMessage(ctx context.Context, request SubmitThread
 			}
 		}
 		if intent.MessageID != "" {
+			ctx = acceptedThreadTurnContext(ctx)
 			result.Message, err = store.GetOperatorSteering(ctx, intent.MessageID)
 			result.Replayed = true
 			if err == nil {
@@ -373,6 +377,7 @@ func (s *ThreadService) commitMessage(ctx context.Context, request SubmitThreadM
 	if err != nil {
 		return SubmitThreadMessageResult{}, apperror.Normalize(err)
 	}
+	ctx = acceptedThreadTurnContext(ctx)
 	result.Message, result.Replayed = queued.Message, queued.Replayed
 	if queued.Message.RunID != result.Run.ID {
 		// Another process completed this exact intent while this caller was

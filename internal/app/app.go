@@ -60,6 +60,7 @@ type App struct {
 	credentials           credential.Store
 	checker               policy.Checker
 	calls                 *application.ActiveCallRegistry
+	threadTurns           *application.ThreadTurnService
 	dockerObserver        sandbox.DockerProductionObserver
 	dockerWriteTransport  sandbox.DockerContainerWriteTransport
 	dockerReadinessProbe  sandbox.ReadinessProbe
@@ -245,18 +246,35 @@ func DefaultHome() string {
 }
 
 func (a *App) Close() {
-	if a.mcpClient != nil {
-		_ = a.mcpClient.Close()
+	turns, client, intel, state := a.threadTurns, a.mcpClient, a.codeIntel, a.store
+	closeResources := func() {
+		if client != nil {
+			_ = client.Close()
+		}
+		if intel != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), codeintel.MaximumShutdownGracePeriod)
+			_ = intel.Close(ctx)
+			cancel()
+		}
+		if state != nil {
+			_ = state.Close()
+		}
 	}
-	if a.codeIntel != nil {
-		ctx, cancel := context.WithTimeout(context.Background(),
-			codeintel.MaximumShutdownGracePeriod)
-		_ = a.codeIntel.Close(ctx)
+	if turns != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := turns.Shutdown(ctx)
 		cancel()
+		if err != nil {
+			// A cancelled turn can still borrow its runtime managers and write
+			// deferred receipts. Retain all dependencies until that work drains.
+			go func() {
+				_ = turns.Shutdown(context.Background())
+				closeResources()
+			}()
+			return
+		}
 	}
-	if a.store != nil {
-		_ = a.store.Close()
-	}
+	closeResources()
 }
 
 func (a *App) dispatch(ctx context.Context, args []string) error {

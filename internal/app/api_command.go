@@ -593,8 +593,15 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	localReadinessRuntime = &readinessRuntime
 	threadTurnControl := application.NewThreadTurnServiceWithExecutionCapabilities(
 		a.store, lifecycleControl, executionControl, permissionCapabilities).
+		WithHostLifetime(ctx).
 		WithModelRouteRegistry(a.models).
 		WithLifecycleHooks(hookEngine)
+	a.threadTurns = threadTurnControl
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resultErr = errors.Join(resultErr, threadTurnControl.Shutdown(shutdownCtx))
+	}()
 	var threadPeerMessages *application.ThreadPeerMessageService
 	if controlToken != "" {
 		threadPeerMessages = application.NewThreadPeerMessageService(a.store, threadTurnControl)

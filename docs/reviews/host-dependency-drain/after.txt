@@ -1,0 +1,5 @@
+=== RUN   TestAppCloseKeepsRuntimeDependenciesUntilTurnDrain
+    host_dependency_drain_test.go:188: MCP retained cancellation through drain: MCP tools/call operation draining-host-mcp was not dispatched; connection or discovery may have occurred
+--- PASS: TestAppCloseKeepsRuntimeDependenciesUntilTurnDrain (5.42s)
+PASS
+ok  	cyberagent-workbench/internal/app	5.516s

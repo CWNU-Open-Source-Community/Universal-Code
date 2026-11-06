@@ -36,6 +36,11 @@ type ThreadTurnService struct {
 	evidence         *EvidenceAttachmentService
 	turnMu           sync.Mutex
 	activeTurns      map[string]*activeThreadTurn
+	hostContext      context.Context
+	hostCancel       context.CancelFunc
+	hostMu           sync.Mutex
+	hostOperations   int
+	hostDrained      chan struct{}
 }
 
 type threadEpochTransitionStore interface {
@@ -225,6 +230,7 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
 	}
+	ctx = acceptedThreadTurnContext(ctx)
 	result := ExecuteThreadTurnResult{Submission: submission, Replayed: submission.Replayed}
 	// Ordinary steering may queue only after the confirmation message itself
 	// has passed its atomic plan/input binding and entered the existing journal.
