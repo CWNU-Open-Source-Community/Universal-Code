@@ -64,7 +64,8 @@ jobs:
     name: Go checks
     needs: classify
     if: ${{ !cancelled() && needs.classify.result == 'success' }}
-    runs-on: ubuntu-latest
+    # Keep Python 3.9 packaging checks on a runner with published binaries.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
