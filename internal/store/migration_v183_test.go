@@ -250,7 +250,7 @@ func seedReviewedCandidateV183(t *testing.T, st *SQLiteStore, name string) (skil
 	if err := st.SaveWorkspace(ctx, workspace); err != nil {
 		t.Fatal(err)
 	}
-	service := application.NewRunService(st)
+	service := newMigrationFixtureRunService(t, st)
 	_, run, err := service.Create(ctx, application.CreateRunRequest{Goal: "review reusable instructions", Profile: "code",
 		Surface: "code", Phase: "deliver", WorkspaceID: workspace.ID, Budget: domain.Budget{MaxTurns: 8, MaxTokens: 8192}})
 	if err != nil {
