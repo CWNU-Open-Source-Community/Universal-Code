@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"cyberagent-workbench/internal/app"
 )
@@ -31,6 +32,10 @@ const (
 	model     = "journey-model"
 	childGoal = "Read notes.txt and report its exact proof after a second review turn."
 )
+
+var journeyReconnectDirectory string
+
+var journeyReconnectPattern = regexp.MustCompile(`JOURNEY_RECONNECT: ([a-z0-9-]{1,40})`)
 
 func main() {
 	if err := run(); err != nil {
@@ -65,6 +70,10 @@ func run() error {
 			fmt.Fprintln(os.Stderr, "remove journey directory:", err)
 		}
 	}()
+	journeyReconnectDirectory = filepath.Join(temp, "reconnect")
+	if err := os.MkdirAll(journeyReconnectDirectory, 0700); err != nil {
+		return err
+	}
 	workspace := filepath.Join(temp, "journey-project")
 	if err := os.MkdirAll(workspace, 0700); err != nil {
 		return err
@@ -97,7 +106,7 @@ func run() error {
 	}
 	readToken, controlToken := randomID(), randomID()
 	providerTimeout := "10"
-	if browserJourney {
+	if browserJourney || os.Getenv("WORKBENCH_JOURNEY_RECONNECT") == "1" {
 		providerTimeout = "90"
 	}
 	// Explicit empty credentials prevent inheriting a developer's paid providers.
@@ -200,6 +209,17 @@ func serveModel(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		return
 	}
+	if block.Type == "journey_reconnect_hold" {
+		if err := waitJourneyReconnect(r.Context(), block.Text); err != nil {
+			if r.Context().Err() == nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		reply, _ := json.Marshal(map[string]string{"version": "root_lifecycle.v1", "action": "finish",
+			"message": "JOURNEY_RECONNECT_COMPLETE " + block.Text, "summary": "Accepted turn completed after reconnect"})
+		block = contentBlock{Type: "text", Text: string(reply)}
+	}
 	stopReason := "end_turn"
 	if block.Type == "tool_use" {
 		stopReason = "tool_use"
@@ -232,6 +252,34 @@ func serveModel(w http.ResponseWriter, r *http.Request) {
 	emit(map[string]any{"type": "content_block_stop", "index": 0})
 	emit(map[string]any{"type": "message_delta", "delta": map[string]string{"stop_reason": stopReason}, "usage": map[string]int{"output_tokens": 16}})
 	emit(map[string]string{"type": "message_stop"})
+}
+
+// The browser journey releases this offline HTTP response through its own temp
+// marker. It exercises the production request lifetime without a control API.
+func waitJourneyReconnect(ctx context.Context, token string) error {
+	path := filepath.Join(journeyReconnectDirectory, token)
+	requests, err := os.OpenFile(path+".requests", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := requests.WriteString("started\n")
+	if err := errors.Join(writeErr, requests.Close()); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(path + ".release"); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(ctx.Err(), os.WriteFile(path+".cancelled", []byte("cancelled\n"), 0600))
+		case <-ticker.C:
+		}
+	}
 }
 
 var noncePattern = regexp.MustCompile(`nonce ([0-9a-f]{32})`)
@@ -280,6 +328,9 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	}
 	if strings.Contains(history, "JOURNEY_STOP:") {
 		return contentBlock{Type: "journey_stop_hold"}, nil
+	}
+	if match := journeyReconnectPattern.FindStringSubmatch(history); len(match) == 2 {
+		return contentBlock{Type: "journey_reconnect_hold", Text: match[1]}, nil
 	}
 	if strings.Contains(history, "JOURNEY_CONTEXT:") {
 		if strings.Contains(history, "JOURNEY_PIN_QUESTION_SHOWN") {
