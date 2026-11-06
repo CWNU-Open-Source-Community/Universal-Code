@@ -997,13 +997,17 @@ every DNS answer, rechecks up to three redirects, checks robots, uses a 15-secon
 conservative partial PDF text. Missing SearXNG configuration makes Search unavailable
 without a fallback, while a network-disabled Run publishes no Web tools.
 
-The agent browser has an independent **Allow internet** switch in its conversation
-card and in Settings > Permissions > Browser. It works in Ask, Auto and Full, and
+The agent browser has an independent **Allow internet** switch in
+Settings > Permissions > Browser. It works in Ask, Auto and Full, and
 remembers the choice for new conversations in the project. New projects start
 with browser access off. Enabling it allows ordinary HTTP(S) pages, local dev
 servers, redirects and cross-origin page resources without a site list; file and
 command permissions stay unchanged. A completed task stores the choice for its
 next execution without rewriting the completed run's configuration.
+
+The conversation has no persistent browser card. To inspect the agent's browser
+or stop its session, open App preview and select **View browser**. Closing that
+view stops display polling and streaming; it does not stop the browser session.
 
 Advanced settings optionally restrict the browser to specified websites. The
 list uses exact scheme, hostname and port, with up to eight entries. Turning
