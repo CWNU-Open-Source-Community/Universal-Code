@@ -41,6 +41,9 @@ type AgentBrowserRuntime struct {
 	downloadPath                              string
 	downloads                                 map[string]*AgentBrowserDownloadReceipt
 	downloadOrder                             []string
+	networkRuntimeID                          string
+	networkPending                            map[string]context.CancelFunc
+	networkDocumentError                      error
 }
 
 func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
@@ -80,7 +83,14 @@ func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	r.session = attached.ID
+	r.networkRuntimeID = agentBrowserToken()
+	r.networkPending = map[string]context.CancelFunc{}
 	r.mu.Unlock()
+	if r.scope != nil {
+		if err := r.initializeScopedNetwork(ctx); err != nil {
+			return err
+		}
+	}
 	for _, method := range []string{"Page.enable", "DOM.enable", "Runtime.enable", "Accessibility.enable"} {
 		if err := r.call(ctx, method, map[string]any{}, nil); err != nil {
 			return err
@@ -100,7 +110,13 @@ func (r *AgentBrowserRuntime) call(ctx context.Context, method string, params an
 	return r.cdp.call(ctx, session, method, params, out)
 }
 
-func (r *AgentBrowserRuntime) invalidateLocked() { r.epoch++; r.refs = map[string]agentBrowserRef{} }
+func (r *AgentBrowserRuntime) invalidateLocked() {
+	r.epoch++
+	r.refs = map[string]agentBrowserRef{}
+	for _, cancel := range r.networkPending {
+		cancel()
+	}
+}
 func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -124,6 +140,10 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		return
 	}
 	switch event.Method {
+	case "Fetch.requestPaused":
+		if r.scope != nil {
+			r.handleScopedRequestLocked(event)
+		}
 	case "Page.frameStartedLoading":
 		var e struct{ FrameID string }
 		if json.Unmarshal(event.Params, &e) == nil && e.FrameID == r.frame {

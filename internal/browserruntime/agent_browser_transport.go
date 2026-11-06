@@ -74,6 +74,8 @@ var agentBrowserCDPMethods = map[string]bool{
 	// the byte budget. It reads nothing and touches no other download.
 	"Browser.cancelDownload": false,
 	"Page.enable":            true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
+	"Network.enable": true, "Network.setBlockedURLs": true, "Network.setBypassServiceWorker": true,
+	"Fetch.enable": true, "Fetch.continueRequest": true, "Fetch.failRequest": true,
 	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
@@ -88,6 +90,32 @@ var agentBrowserCDPMethods = map[string]bool{
 	// the ack is pure flow control. None of them navigates, evaluates, or reads
 	// anything the agent could not already capture as hashed screenshot evidence.
 	"Page.startScreencast": true, "Page.stopScreencast": true, "Page.screencastFrameAck": true,
+}
+
+// send is used under the document invalidation fence. Replies are discarded
+// by ID so the reader can process a navigation without waiting on that fence.
+func (c *agentBrowserCDP) send(ctx context.Context, session, method string, params any) error {
+	if target, ok := agentBrowserCDPMethods[method]; !ok || !target || session == "" {
+		return ErrBrowserRuntimeBoundary
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.nextID++
+	id := c.nextID
+	c.mu.Unlock()
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := c.conn.WriteJSON(map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
+	if err != nil {
+		c.close()
+	}
+	return err
 }
 
 func (c *agentBrowserCDP) call(ctx context.Context, session, method string, params any, out any) error {
