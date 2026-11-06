@@ -150,7 +150,24 @@ func (s *SQLiteStore) FinishBrowserNetworkRequest(ctx context.Context, id string
 	return nil
 }
 func (s *SQLiteStore) InvalidateOldBrowserNetworkRequests(ctx context.Context, boot string) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM browser_network_requests WHERE status='paused' AND manager_boot_id<>?`, boot)
+	return s.invalidateBrowserNetworkRequests(ctx, `SELECT id FROM browser_network_requests WHERE status='paused' AND manager_boot_id<>?`, boot)
+}
+
+func (s *SQLiteStore) invalidateExpiredBrowserNetworkRequests(ctx context.Context) error {
+	// Only page-request approvals need the v222 source table. Older approval
+	// ledgers can still be inspected without that browser-specific schema.
+	var pending bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM tool_approvals WHERE status='pending' AND tool_name=? AND requested_by='agent_browser_network')`, toolgateway.AgentBrowserApprovalTool).Scan(&pending); err != nil {
+		return err
+	}
+	if !pending {
+		return nil
+	}
+	return s.invalidateBrowserNetworkRequests(ctx, `SELECT id FROM browser_network_requests WHERE status='paused' AND julianday(expires_at)<=julianday(?)`, ts(time.Now()))
+}
+
+func (s *SQLiteStore) invalidateBrowserNetworkRequests(ctx context.Context, query string, args ...any) error {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}

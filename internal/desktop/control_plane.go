@@ -359,6 +359,17 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !config.RunExecutionEnabled {
+		// No browser service will be created to invalidate the previous process'
+		// paused page requests. They cannot be resumed by this Desktop instance.
+		recoveryContext, cancelRecovery := context.WithTimeout(context.Background(), 5*time.Second)
+		err = stateStore.InvalidateOldBrowserNetworkRequests(recoveryContext, "")
+		cancelRecovery()
+		if err != nil {
+			_ = stateStore.Close()
+			return nil, apperror.Wrap(apperror.CodeUnavailable, "desktop browser request startup reconciliation failed", err)
+		}
+	}
 	home := strings.TrimSpace(config.HomePath)
 	if home == "" {
 		home = filepath.Dir(config.DatabasePath)

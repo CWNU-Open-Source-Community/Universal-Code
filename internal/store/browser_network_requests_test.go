@@ -21,6 +21,7 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/toolgateway"
+	"cyberagent-workbench/internal/toolrun"
 )
 
 type networkApprovalProvider struct {
@@ -28,6 +29,58 @@ type networkApprovalProvider struct {
 	url    string
 	resume chan struct{}
 	calls  int
+}
+
+func TestListApprovalsInvalidatesExpiredBrowserRequestsWithoutRuntime(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(filepath.Join(t.TempDir(), "expired-browser-queue.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	mission, run := createStructuredToolTestRun(t, ctx, st, "browser approval expiry")
+	now := time.Now().UTC()
+	if _, err = st.SaveToolRun(ctx, toolrun.ToolRun{ID: "unrelated-shell-approval", SessionID: run.SessionID, WorkspaceID: mission.WorkspaceID, ToolName: toolrun.ShellTool, Command: "echo pending", Status: toolrun.StatusProposed, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := browserruntime.NewAgentBrowserOriginScope([]string{"http://127.0.0.1:4321"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: run.MissionID, SessionID: run.SessionID, WorkspaceID: mission.WorkspaceID, RootAgentID: "root", Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhaseDeliver, Role: domain.AgentRoleRoot, Profile: domain.ProfileCode, PermissionMode: domain.RunExecutionPermissionAsk, ModeRevision: 1, PermissionSnapshotID: "snapshot", PermissionRevision: 1, RunAuthorizationFence: 1, ManagerBootID: "current-boot", BrowserSessionID: "browser-session", SessionGeneration: 1, DeclaredOrigins: []string{"http://127.0.0.1:4321"}, ScopeFingerprint: scope.Fingerprint}
+	a.Generation = a.Fingerprint()
+	raw, _ := json.Marshal(a)
+	for _, name := range []string{"live", "expired"} {
+		v := domain.BrowserNetworkRequest{ID: domain.BrowserNetworkRequestPrefix + name, RunID: run.ID, SessionID: run.SessionID, WorkspaceID: mission.WorkspaceID, ManagerBootID: a.ManagerBootID, RuntimeID: "paused-runtime", Fingerprint: strings.Repeat("a", 64), AuthorityJSON: string(raw), Method: "POST", DisplayURL: "http://127.0.0.1:4321/write", BodySHA256: strings.Repeat("b", 64), ExpiresAt: time.Now().Add(time.Minute)}
+		if err = st.CreateBrowserNetworkRequest(ctx, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = st.db.Exec(`UPDATE browser_network_requests SET expires_at=? WHERE id=?`, ts(time.Now().Add(-time.Second)), domain.BrowserNetworkRequestPrefix+"expired"); err != nil {
+		t.Fatal(err)
+	}
+	filter := approval.ListFilter{RunID: run.ID, Status: approval.StatusPending, Limit: 1}
+	for i := 0; i < 2; i++ {
+		pending, e := st.ListApprovals(ctx, filter)
+		if e != nil || len(pending) != 1 || pending[0].ProposalID != domain.BrowserNetworkRequestPrefix+"live" {
+			t.Fatalf("pending queue=%+v err=%v", pending, e)
+		}
+	}
+	source, err := st.GetBrowserNetworkRequest(ctx, domain.BrowserNetworkRequestPrefix+"expired")
+	if err != nil || source.Status != "invalidated" {
+		t.Fatalf("expired source=%+v err=%v", source, err)
+	}
+	record, err := st.GetApprovalByProposal(ctx, source.ID)
+	if err != nil || record.Status != approval.StatusDenied || record.Version != 2 {
+		t.Fatalf("expired approval=%+v err=%v", record, err)
+	}
+	if err = st.ConsumeBrowserNetworkRequest(ctx, source.ID, source.Fingerprint); err == nil {
+		t.Fatal("expired request consumed")
+	}
+	unrelated, err := st.GetApprovalByProposal(ctx, "unrelated-shell-approval")
+	if err != nil || unrelated.Status != approval.StatusPending || unrelated.Version != 1 {
+		t.Fatalf("unrelated approval=%+v err=%v", unrelated, err)
+	}
 }
 
 func TestSchemaV222BrowserRequestsMigrateAndNeverReplayAfterRestart(t *testing.T) {

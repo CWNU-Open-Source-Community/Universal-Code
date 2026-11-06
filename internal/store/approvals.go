@@ -182,6 +182,11 @@ func (s *SQLiteStore) ListApprovals(ctx context.Context, filter approval.ListFil
 	if filter.Limit == 0 {
 		filter.Limit = defaultApprovalListLimit
 	}
+	if filter.Status == "" || filter.Status == approval.StatusPending {
+		if err := s.invalidateExpiredBrowserNetworkRequests(ctx); err != nil {
+			return nil, err
+		}
+	}
 	query := approvalSelect + ` WHERE 1=1`
 	var args []any
 	if filter.RunID != "" {
