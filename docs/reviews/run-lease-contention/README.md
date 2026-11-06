@@ -61,6 +61,13 @@ Final Windows results:
   failure. The independent run above completed all three new-test iterations.
 - `go vet ./internal/application ./internal/store` and `git diff --check`: passed.
 
+The publishing branch was rebuilt on `main` at
+`cfeee05a8724a23c673b0ed9971f2ef6e8de9674`, without other overnight fixes.
+An independent race run of the new expiry and SQLite contention tests passed:
+application **1.611s**, store **21.467s**. The real temporary-contention case
+retained the same lease and completed its one model call; expiry, caller Stop,
+and replacement-owner cases still cancelled and drained.
+
 OCR delegate rules were resolved for the production file and both test files;
 tests excluded by OCR's default filter were read manually. The changed production
 file, its new tests, store acquire/renew/release and identity fencing were read in
