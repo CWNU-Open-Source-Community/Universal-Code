@@ -1,15 +1,16 @@
 {
-  "captured_at_utc": "2026-11-06T12:36:52.367Z",
+  "captured_at_utc": "2026-11-06T12:44:49.236Z",
   "frontend_base": "0d57dd73d9c31aca4a8331ab6988df17b1c08bda",
-  "frontend_revision": "3620b5f521e5dd2a27bd444af3727b1668c79e77",
+  "frontend_revision": "7f2d6c3cb3df96c7e2972caebf888c6f0ba0bb6b",
   "component_blobs": {
     "base": "fe7fb701648c24ecfdc69c7c6a166ee4e8333ce6",
-    "after": "7a116bb3f021382589ae6f6bd8f76441ff2131ea"
+    "after": "211f45dae1a8376d883f2702214d7e6127fb99d4"
   },
   "environment": "Windows; Edge 156.0.0.0; device scale 1; light theme",
-  "fixture": "Empty queue before; one page-request approval after. API-client fixture; no backend operation or decision execution.",
+  "fixture": "Empty queue before; one page-request approval after. API-client fixture with no-continuation decision responses; actual UI clicks; no backend operation or decision execution.",
   "verification": {
-    "component_tests": "22 passed",
+    "component_tests": "24 passed",
+    "typecheck": "passed",
     "diff_check": "passed"
   },
   "captures": [
@@ -41,6 +42,7 @@
       "fields": [
         {
           "value": "POST",
+          "visible": true,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -48,6 +50,7 @@
         },
         {
           "value": "http://127.0.0.1:51234/write",
+          "visible": true,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -55,6 +58,7 @@
         },
         {
           "value": "19",
+          "visible": true,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -62,13 +66,15 @@
         },
         {
           "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
-          "width": 610,
+          "visible": false,
+          "width": 0,
           "scrollWidth": 610,
           "height": 16,
           "lineHeight": null
         },
         {
           "value": "2026-11-06T14:32:00Z",
+          "visible": false,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -80,20 +86,62 @@
           "label": "拒绝",
           "x": 669,
           "right": 748,
-          "top": 339,
-          "bottom": 372
+          "top": 262,
+          "bottom": 295
         },
         {
           "label": "批准一次",
           "x": 755,
           "right": 866,
-          "top": 339,
-          "bottom": 372
+          "top": 262,
+          "bottom": 295
         }
       ],
-      "cardBottom": 387,
+      "cardBottom": 310,
       "composerTop": 587,
-      "composerBottom": 696
+      "composerBottom": 696,
+      "expanded": {
+        "fields": [
+          {
+            "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
+            "width": 610,
+            "scrollWidth": 610,
+            "height": 16
+          },
+          {
+            "value": "2026-11-06T14:32:00Z",
+            "width": 610,
+            "scrollWidth": 610,
+            "height": 16
+          }
+        ],
+        "buttons": [
+          {
+            "label": "拒绝",
+            "x": 669,
+            "right": 748,
+            "bottom": 359
+          },
+          {
+            "label": "批准一次",
+            "x": 755,
+            "right": 866,
+            "bottom": 359
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "action": "approve_once",
+          "message": "已批准这次网页请求。",
+          "response_continuation": "absent"
+        },
+        {
+          "action": "deny",
+          "message": "已拒绝这次网页请求。",
+          "response_continuation": "absent"
+        }
+      ]
     },
     {
       "phase": "before",
@@ -123,6 +171,7 @@
       "fields": [
         {
           "value": "POST",
+          "visible": true,
           "width": 328,
           "scrollWidth": 328,
           "height": 16,
@@ -130,6 +179,7 @@
         },
         {
           "value": "http://127.0.0.1:51234/write",
+          "visible": true,
           "width": 328,
           "scrollWidth": 328,
           "height": 16,
@@ -137,6 +187,7 @@
         },
         {
           "value": "19",
+          "visible": true,
           "width": 328,
           "scrollWidth": 328,
           "height": 16,
@@ -144,13 +195,15 @@
         },
         {
           "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
-          "width": 328,
+          "visible": false,
+          "width": 0,
           "scrollWidth": 328,
           "height": 32,
           "lineHeight": null
         },
         {
           "value": "2026-11-06T14:32:00Z",
+          "visible": false,
           "width": 328,
           "scrollWidth": 328,
           "height": 16,
@@ -162,20 +215,50 @@
           "label": "拒绝",
           "x": 162,
           "right": 241,
-          "top": 501,
-          "bottom": 534
+          "top": 318,
+          "bottom": 351
         },
         {
           "label": "批准一次",
           "x": 248,
           "right": 359,
-          "top": 501,
-          "bottom": 534
+          "top": 318,
+          "bottom": 351
         }
       ],
-      "cardBottom": 549,
+      "cardBottom": 366,
       "composerTop": 636,
-      "composerBottom": 776
+      "composerBottom": 776,
+      "expanded": {
+        "fields": [
+          {
+            "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
+            "width": 328,
+            "scrollWidth": 328,
+            "height": 32
+          },
+          {
+            "value": "2026-11-06T14:32:00Z",
+            "width": 328,
+            "scrollWidth": 328,
+            "height": 16
+          }
+        ],
+        "buttons": [
+          {
+            "label": "拒绝",
+            "x": 162,
+            "right": 241,
+            "bottom": 479
+          },
+          {
+            "label": "批准一次",
+            "x": 248,
+            "right": 359,
+            "bottom": 479
+          }
+        ]
+      }
     },
     {
       "phase": "after",
@@ -190,6 +273,7 @@
       "fields": [
         {
           "value": "POST",
+          "visible": true,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -197,6 +281,7 @@
         },
         {
           "value": "http://127.0.0.1:51234/write",
+          "visible": true,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -204,6 +289,7 @@
         },
         {
           "value": "19",
+          "visible": true,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -211,13 +297,15 @@
         },
         {
           "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
-          "width": 610,
+          "visible": false,
+          "width": 0,
           "scrollWidth": 610,
           "height": 16,
           "lineHeight": null
         },
         {
           "value": "2026-11-06T14:32:00Z",
+          "visible": false,
           "width": 610,
           "scrollWidth": 610,
           "height": 16,
@@ -229,20 +317,50 @@
           "label": "Deny",
           "x": 629.9375,
           "right": 713.328125,
-          "top": 376,
-          "bottom": 409
+          "top": 262,
+          "bottom": 295
         },
         {
           "label": "Approve once",
           "x": 720.328125,
           "right": 866,
-          "top": 376,
-          "bottom": 409
+          "top": 262,
+          "bottom": 295
         }
       ],
-      "cardBottom": 424,
+      "cardBottom": 310,
       "composerTop": 587,
-      "composerBottom": 696
+      "composerBottom": 696,
+      "expanded": {
+        "fields": [
+          {
+            "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
+            "width": 610,
+            "scrollWidth": 610,
+            "height": 16
+          },
+          {
+            "value": "2026-11-06T14:32:00Z",
+            "width": 610,
+            "scrollWidth": 610,
+            "height": 16
+          }
+        ],
+        "buttons": [
+          {
+            "label": "Deny",
+            "x": 629.9375,
+            "right": 713.328125,
+            "bottom": 375
+          },
+          {
+            "label": "Approve once",
+            "x": 720.328125,
+            "right": 866,
+            "bottom": 375
+          }
+        ]
+      }
     }
   ]
 }

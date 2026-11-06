@@ -23,11 +23,20 @@ const preview={protocol_version:"approval_queue.v1",run_id:item.run_id,approval_
   fields:[{name:"operation",value:"POST"},{name:"url",value:"http://127.0.0.1:51234/write"},
     {name:"body_bytes",value:"19"},{name:"body_sha256",value:"91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8"},
     {name:"expires_at",value:"2026-11-06T14:32:00Z"}],source_current:true,redacted:false,truncated:false};
+let decided=false;
+Object.assign(window,{reviewFixture:{decisions:[]}});
 const client={baseURL:"/local-approval-review",hasApprovalControl:true,
-  approvalQueue:async()=>({protocol_version:"approval_queue.v1",run_id:item.run_id,items:phase==="before"?[]:[item],truncated:false,
+  approvalQueue:async()=>({protocol_version:"approval_queue.v1",run_id:item.run_id,items:phase==="before"||decided?[]:[item],truncated:false,
     process_execution_enabled:false,session_grant_created:false,capability_grant:false}),
   approvalPreview:async()=>preview,
-  decideApproval:async()=>{throw new Error("This review fixture does not execute approval decisions");},
+  decideApproval:async(_runID:string,_approvalID:string,body:{action:string})=>{
+    decided=true;
+    (window as any).reviewFixture.decisions.push(body.action);
+    return {version:"approval_control.v1",run_id:item.run_id,approval_id:item.id,proposal_id:item.proposal_id,
+      tool_name:item.tool_name,action:body.action,status:body.action==="deny"?"denied":"approved",replayed:false,
+      process_execution_enabled:false,shell_execution_enabled:false,docker_execution_enabled:false,workspace_write_applied:false,
+      session_grant_created:false,capability_grant:false,execution_resumed:false,retry_completed:false,retry_scheduled:false};
+  },
 } as unknown as APIClient;
 const queryClient=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false},mutations:{retry:false}}});
 document.body.style.cssText="margin:0;min-height:100dvh;box-sizing:border-box;padding:24px 16px;background:var(--prayu-panel);";
