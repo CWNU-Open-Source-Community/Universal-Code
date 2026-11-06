@@ -49,12 +49,47 @@ func (s *SQLiteStore) ListDueRunWakeIntents(ctx context.Context, now time.Time,
 	if now.IsZero() || limit < 1 || limit > 64 {
 		return nil, errors.New("run wake due query is invalid")
 	}
+	// The worker consumes one candidate per tick. Apply admission before LIMIT so
+	// a paused, busy, or drained Run cannot occupy that slot indefinitely. Durable
+	// handoff results and exhausted, unprepared wakes still need settlement even
+	// when their Run can no longer execute.
 	rows, err := s.db.QueryContext(ctx, runWakeIntentSelect+`
-		WHERE (status = 'queued' AND julianday(next_wake_at) <= julianday(?))
+		WHERE ((status = 'queued' AND julianday(next_wake_at) <= julianday(?1))
 			OR (status = 'leased' AND EXISTS (SELECT 1 FROM run_wake_leases lease
 				WHERE lease.id = run_wake_intents.active_lease_id AND lease.status = 'active'
-					AND julianday(lease.expires_at) <= julianday(?)))
-		ORDER BY next_wake_at, created_at, id LIMIT ?`, ts(now), ts(now), limit)
+					AND julianday(lease.expires_at) <= julianday(?1))))
+			AND (
+				EXISTS (SELECT 1 FROM runs run JOIN sessions session_record
+					ON session_record.id = run.session_id
+					WHERE run.id = run_wake_intents.run_id
+						AND run.session_id = run_wake_intents.session_id
+						AND run.status = 'running' AND session_record.status = 'active'
+						AND NOT EXISTS (SELECT 1 FROM run_execution_leases execution_lease
+							WHERE execution_lease.run_id = run.id AND execution_lease.status = 'active'
+								AND julianday(execution_lease.expires_at) > julianday(?1))
+						AND (EXISTS (SELECT 1 FROM operator_steering_messages message
+							WHERE message.run_id = run.id AND message.session_id = run.session_id
+								AND message.status = 'pending')
+							OR EXISTS (SELECT 1 FROM run_wake_consumptions consumption
+								WHERE consumption.intent_id = run_wake_intents.id
+									AND consumption.generation = run_wake_intents.attempt_count
+									AND consumption.lease_id = run_wake_intents.active_lease_id
+									AND consumption.status = 'prepared')))
+				OR EXISTS (SELECT 1 FROM run_wake_consumptions consumption
+					JOIN run_execution_handoff_operations handoff
+						ON handoff.operation_key_digest = consumption.handoff_operation_key_digest
+					JOIN run_execution_handoff_results result ON result.operation_id = handoff.id
+					WHERE consumption.intent_id = run_wake_intents.id
+						AND consumption.generation = run_wake_intents.attempt_count
+						AND consumption.lease_id = run_wake_intents.active_lease_id
+						AND consumption.status = 'prepared')
+				OR ((attempt_count >= max_attempts OR julianday(deadline_at) <= julianday(?1))
+					AND NOT EXISTS (SELECT 1 FROM run_wake_consumptions consumption
+						WHERE consumption.intent_id = run_wake_intents.id
+							AND consumption.generation = run_wake_intents.attempt_count
+							AND consumption.status = 'prepared'))
+			)
+		ORDER BY next_wake_at, created_at, id LIMIT ?2`, ts(now), limit)
 	if err != nil {
 		return nil, err
 	}

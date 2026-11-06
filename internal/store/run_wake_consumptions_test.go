@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/idgen"
@@ -96,6 +97,18 @@ func TestPreparedRunWakeConsumptionPreventsExpiredLeaseReclaim(t *testing.T) {
 	if err := state.db.QueryRowContext(ctx,
 		`SELECT status FROM run_wake_leases WHERE id = ?`, lease.ID).Scan(&leaseStatus); err != nil || leaseStatus != string(domain.RunWakeLeaseActive) {
 		t.Fatalf("prepared lease was mutated: status=%q err=%v", leaseStatus, err)
+	}
+	if _, err := application.NewRunService(state).Pause(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := state.ListDueRunWakeIntents(ctx, afterExpiry, 1); err != nil || len(due) != 0 {
+		t.Fatalf("paused unresolved handoff remained runnable: due=%#v err=%v", due, err)
+	}
+	if _, err := application.NewRunService(state).Resume(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := state.ListDueRunWakeIntents(ctx, afterExpiry, 1); err != nil || len(due) != 1 || due[0].ID != intent.ID || due[0].AttemptCount != lease.Generation {
+		t.Fatalf("resumed prepared generation was hidden or replaced: due=%#v err=%v", due, err)
 	}
 }
 
