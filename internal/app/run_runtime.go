@@ -96,6 +96,7 @@ func (a *App) newCLIExecutionRuntime(ctx context.Context,
 		HomePath: a.home, Capabilities: capabilities,
 		Headless:        !application.BrowserHeadedFromEnvironment(),
 		SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: r.commands,
+		SkipForeignNetworkRequestRecovery: true,
 	})
 	return r, nil
 }

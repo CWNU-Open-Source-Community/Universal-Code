@@ -33,6 +33,10 @@ type AgentBrowserOptions struct {
 	Product          browserruntime.BrowserProduct
 	Headless         bool
 	SessionLifetime  time.Duration
+	// Nonexclusive CLI managers can share a database with another live browser
+	// owner. Their startup must preserve that owner's paused request approvals.
+	// The default retains Desktop/API startup recovery of previous boot IDs.
+	SkipForeignNetworkRequestRecovery bool
 }
 type AgentBrowserCapabilities struct {
 	ProtocolVersion  string   `json:"protocol_version"`
@@ -138,7 +142,7 @@ func NewAgentBrowserService(st AgentBrowserStore, options AgentBrowserOptions) *
 		return value, nil
 	}
 	s.available = browserruntime.AgentBrowserPlatformAvailable() && filepath.IsAbs(options.HomePath) && options.Capabilities.Validate() == nil
-	if st, ok := st.(browserNetworkRequestStore); ok {
+	if st, ok := st.(browserNetworkRequestStore); ok && !options.SkipForeignNetworkRequestRecovery {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := st.InvalidateOldBrowserNetworkRequests(ctx, s.boot); err != nil {
 			s.available = false
