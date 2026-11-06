@@ -1238,7 +1238,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
         <p className="v2-composer-caption" role="status">{t("上次执行已中断。可以发送新消息继续，已完成的修改会保留。", "The previous execution was interrupted. Send a new message to continue; completed changes are kept.")}</p>}
-      <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive}
+      <V2AgentBrowser client={client} runID={currentRun.id} runStatus={currentRun.status} running={working || runActive}
         onDismiss={() => setComposerFocusRequest({ threadID })} />
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
         paused={working || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}

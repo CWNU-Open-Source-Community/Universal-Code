@@ -7,6 +7,14 @@ import { APIRequestError, type APIClient } from "../../api/client";
 import { V2AgentBrowser } from "./agent-browser";
 import { agentBrowserQueryKey } from "../../api/agent-browser";
 
+vi.mock("../../api/browser-network", async (original) => ({
+  ...await original<typeof import("../../api/browser-network")>(),
+  readBrowserNetwork: vi.fn(async (_client, target) => ({
+    version: "browser_network_access.v1", run_id: target.id, workspace_id: "workspace-browser",
+    revision: 1, browser_network_access: "off", browser_origins: [],
+  })),
+}));
+
 const status = (runID = "run-browser", sessionID = "agent-browser-one") => ({
   version: "agent_browser_status.v1", run_id: runID, session_id: sessionID, generation: 1,
   state: "ready", available: true, can_start: true, product: "edge", headless: true,
@@ -219,6 +227,19 @@ it.each([
   expect(await screen.findByText(message)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "停止浏览器" })).not.toBeInTheDocument();
   expect(client.postControl).not.toHaveBeenCalled();
+});
+
+it("offers the network switch when offline without requiring Full access", async () => {
+  const client = { baseURL: "/api/v1", hasControl: true, get: vi.fn(async () => ({ ...status(),
+    available: false, can_start: false, session_id: undefined, screenshot: undefined,
+    state: "unavailable", unavailable_code: "browser_network_off" })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
+  draw(client);
+  const toggle = await screen.findByRole("switch", { name: "允许联网" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(screen.queryByText(/完全访问|Full access|当前环境无法使用/u)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "停止浏览器" })).not.toBeInTheDocument();
 });
 
 it("keeps a dismissed notice hidden across refreshes and shows a new browser session", async () => {

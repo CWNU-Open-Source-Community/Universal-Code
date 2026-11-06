@@ -6,10 +6,12 @@ import type { APIClient } from "../../api/client";
 import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser,
   type AgentBrowserScreencastFrame, type AgentBrowserStatus } from "../../api/agent-browser";
 import { V2ImageViewer } from "./image-viewer";
+import type { RunView } from "../../api/types";
+import { browserNetworkRunFinished, V2BrowserNetworkControl } from "./browser-network-control";
 import "./image-input.css";
 import "./agent-browser.css";
 
-export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
+export function V2AgentBrowser(props: { client: APIClient; runID: string; runStatus?: RunView["status"]; running: boolean; onDismiss?: () => void }) {
   return <AgentBrowserCard key={JSON.stringify([props.client.baseURL, props.runID])} {...props} />;
 }
 
@@ -38,6 +40,7 @@ function actionText(action: string | undefined, t: LocaleText): string {
 
 function unavailableText(code: AgentBrowserStatus["unavailable_code"], t: LocaleText): string {
   switch (code) {
+    case "browser_network_off": return "";
     case "platform_unsupported": return t("当前系统尚未提供可用的 Agent 浏览器适配器。你可以自行打开应用页面检查，Agent 不会把它记为已完成浏览器验收。", "No agent browser adapter is available on this system. You can inspect the app manually; the agent will not record that as completed browser verification.");
     case "full_access_required": return t("Agent 浏览器需要当前任务启用完全访问（Full）。启用后，Agent 可打开独立浏览器检查页面。", "The agent browser requires Full access for the current task. Once enabled, the agent can inspect pages in a separate browser.");
     case "run_unavailable": return t("当前任务已暂停、结束或权限已变更，浏览器暂不可用。", "The task paused, ended or changed permissions. Its browser is unavailable.");
@@ -53,7 +56,7 @@ function screenshotPath(runID: string, status: AgentBrowserStatus): string {
   })}`;
 }
 
-function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APIClient; runID: string; running: boolean; onDismiss?: () => void }) {
+function AgentBrowserCard({ client, runID, runStatus, running, onDismiss }: { client: APIClient; runID: string; runStatus?: RunView["status"]; running: boolean; onDismiss?: () => void }) {
   const { t, locale } = useLocale();
   const queries = useQueryClient();
   const key = agentBrowserQueryKey(client.baseURL, runID);
@@ -102,10 +105,12 @@ function AgentBrowserCard({ client, runID, running, onDismiss }: { client: APICl
   const canClose = Boolean(current.session_id) && ["starting", "ready", "loading", "busy", "waiting_user", "failed"].includes(current.state);
   const active = canClose || current.state === "closing" || current.state === "cleanup_pending";
   return <section className="v2-composer-card v2-agent-browser" aria-label={t("Agent 浏览器", "Agent browser")}>
-    <header><div className="v2-agent-browser-heading"><strong>{t("Agent 浏览器", "Agent browser")}</strong><span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current, t)}</span></div>
+    <header><div className="v2-agent-browser-heading"><strong>{t("Agent 浏览器", "Agent browser")}</strong>
+      {current.unavailable_code !== "browser_network_off" && <span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current, t)}</span>}</div>
       <div className="v2-agent-browser-actions">{canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>{t("停止浏览器", "Stop browser")}</button>}{dismissButton}</div></header>
     <div className="v2-agent-browser-body">
-    {!current.available && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
+    <V2BrowserNetworkControl client={client} target={{ kind: "runs", id: runID }} finished={browserNetworkRunFinished(runStatus)} />
+    {!current.available && unavailableText(current.unavailable_code, t) && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
     {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过实时画面和截图查看。", "Pages open in a separate background browser and are shown as a live view and screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
     {current.headless && active && current.session_id && <AgentBrowserLiveView client={client} runID={runID} sessionID={current.session_id} />}
     {current.headless && active && <p className="v2-agent-browser-note">{t("浏览器在后台运行，上方为实时画面；已验证的截图仍会作为证据保存。需要结束网页操作时可停止浏览器；整个任务可在对话中停止。", "The browser runs in the background with the live view above; verified screenshots are still kept as evidence. Stop the browser to end web actions, or stop the whole task in the conversation.")}</p>}
