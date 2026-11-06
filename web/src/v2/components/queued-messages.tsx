@@ -226,6 +226,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
           version: "queue_operation.v1", kind: "cancel", operationKey: crypto.randomUUID(), messageID: message.id,
           expectedRevision: message.revision, oldSHA256: message.content_sha256, content: "" })} />)}</ol>
     {/* Recovery controls stay reachable even when the queue preview is collapsed. */}
+    <div className="v2-queue-recovery">
     {document && store && edits.map((edit) => <QueueEditor key={queueEditKey(edit)} edit={edit} document={document} store={store}
       client={client} current={edit.runID === binding.runID && edit.sessionID === binding.sessionID ? items.find((message) => message.id === edit.message.id) : undefined} refresh={refresh}
       previousRun={edit.runID !== binding.runID || edit.sessionID !== binding.sessionID}
@@ -237,6 +238,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
       <button type="button" disabled={busy.includes(operation.messageID) || !client.hasSessionSteeringControl}
         onClick={() => void perform(operation)}>{operation.kind === "revise" ? t("重试原保存", "Retry original save") : operation.kind === "promote" ? t("重试原引导", "Retry original guidance") : t("继续撤回", "Continue withdrawal")}</button>
     </div>)}
+    </div>
     {details && <V2QueueMessageDetails client={client} snapshot={details.message} detailsID={detailsID}
       current={query.isSuccess ? items.find((message) => message.id === details.message.id) : undefined} queueKnown={query.isSuccess}
       trigger={details.trigger} fallbackFocus={toggleRef} onClose={() => setDetails(null)} />}

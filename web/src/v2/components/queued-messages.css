@@ -67,6 +67,7 @@
 .v2-queue-menu { position: fixed; z-index: 100; width: 196px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--v2-border-strong); border-radius: 13px; background: var(--prayu-surface-solid); color: var(--v2-ink); font: 13px/1.5 var(--prayu-font-ui, system-ui); box-shadow: 0 8px 28px var(--prayu-glass-shadow); }
 .v2-queue-menu button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 6px 9px; text-align: left; }
 .v2-queue-menu svg { flex-shrink: 0; }
+.v2-queue-recovery { max-height: min(220px, 26dvh); overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--v2-border-strong) transparent; }
 .v2-queue-editor, .v2-queued-message-pending { margin-top: 6px; padding: 10px 6px 6px; border-top: 1px solid var(--v2-border); overflow-wrap: anywhere; }
 .v2-queue-editor textarea { display: block; box-sizing: border-box; width: 100%; min-height: 88px; padding: 9px; margin: 6px 0; resize: vertical; font: inherit; color: var(--v2-ink); background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; }
 .v2-queued-message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
