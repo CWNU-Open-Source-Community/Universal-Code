@@ -288,7 +288,11 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	all, _ := json.Marshal(request.Messages)
 	history := string(all)
 	var results []contentBlock
+	var latestUser json.RawMessage
 	for _, message := range request.Messages {
+		if message.Role == "user" {
+			latestUser = message.Content
+		}
 		var blocks []contentBlock
 		if json.Unmarshal(message.Content, &blocks) != nil {
 			continue
@@ -329,7 +333,7 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	if strings.Contains(history, "JOURNEY_STOP:") {
 		return contentBlock{Type: "journey_stop_hold"}, nil
 	}
-	if match := journeyReconnectPattern.FindStringSubmatch(history); len(match) == 2 {
+	if match := journeyReconnectPattern.FindStringSubmatch(string(latestUser)); len(match) == 2 {
 		return contentBlock{Type: "journey_reconnect_hold", Text: match[1]}, nil
 	}
 	if strings.Contains(history, "JOURNEY_CONTEXT:") {
