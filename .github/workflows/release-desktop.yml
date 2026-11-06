@@ -215,7 +215,7 @@ jobs:
           cache: true
 
       - name: Set up pinned Node 24.22.1
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
           cache: npm
@@ -276,7 +276,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Set up pinned Node 24.22.1
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
           cache: npm
@@ -299,14 +299,14 @@ jobs:
           RELEASE_ARCH: ${{ matrix.arch }}
         run: python3 scripts/package-desktop-dmg.py "$RELEASE_VERSION" "$RELEASE_REVISION" "$RELEASE_ARCH"
       - name: Upload exact Mac preview archive and verification sidecars
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: TraverseBoard-macos-${{ matrix.arch }}-${{ needs.dependency-boundaries.outputs.revision }}
           path: build/macos-public/*
           if-no-files-found: error
           retention-days: 30
       - name: Upload exact Mac preview disk image and checksum
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: TraverseBoard-macos-dmg-${{ matrix.arch }}-${{ needs.dependency-boundaries.outputs.revision }}
           path: build/macos-dmg/*
@@ -355,7 +355,7 @@ jobs:
           cache: true
 
       - name: Set up pinned Node 24.22.1
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
           cache: npm
@@ -445,7 +445,7 @@ jobs:
 
       - name: Upload isolated direct-EXE signing request
         if: ${{ needs.dependency-boundaries.outputs.signing_prepare == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ needs.dependency-boundaries.outputs.artifact_name }}-direct-exe-signing-request
           if-no-files-found: error
@@ -664,7 +664,7 @@ jobs:
 
       - name: Upload exact Desktop verification and direct-EXE candidate
         if: ${{ needs.dependency-boundaries.outputs.signing_prepare != 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ needs.dependency-boundaries.outputs.artifact_name }}
           if-no-files-found: error
@@ -690,7 +690,7 @@ jobs:
 
       - name: Preserve failed packaged validation diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-packaged-validation-${{ github.run_id }}
           path: build/desktop/standard-code-packaged-e2e.json
@@ -699,7 +699,7 @@ jobs:
 
       - name: Upload isolated development MSIX validation artifact
         if: ${{ needs.dependency-boundaries.outputs.signing_prepare != 'true' && (github.event_name == 'pull_request' || needs.dependency-boundaries.outputs.prerelease == 'true' || vars.STORE_PACKAGE_IDENTITY_NAME == '' || vars.STORE_PACKAGE_PUBLISHER == '' || vars.STORE_PUBLISHER_DISPLAY_NAME == '' || vars.STORE_PACKAGE_VERSION == '') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ needs.dependency-boundaries.outputs.artifact_name }}-development-msix
           if-no-files-found: error
@@ -714,7 +714,7 @@ jobs:
 
       - name: Upload isolated Partner Center submission artifact
         if: ${{ github.event_name != 'pull_request' && needs.dependency-boundaries.outputs.signing_prepare != 'true' && needs.dependency-boundaries.outputs.prerelease == 'false' && vars.STORE_PACKAGE_IDENTITY_NAME != '' && vars.STORE_PACKAGE_PUBLISHER != '' && vars.STORE_PUBLISHER_DISPLAY_NAME != '' && vars.STORE_PACKAGE_VERSION != '' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ needs.dependency-boundaries.outputs.artifact_name }}-partner-center
           if-no-files-found: error
@@ -1023,7 +1023,7 @@ jobs:
             [System.Text.UTF8Encoding]::new($false))
 
       - name: Upload exact attestation bundles and index
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ needs.portable-zip.outputs.artifact_name }}-attestations
           if-no-files-found: error
