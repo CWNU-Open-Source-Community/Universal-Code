@@ -338,10 +338,14 @@ func (s *ThreadTurnService) drainThreadTurnQueue(ctx context.Context, threadID s
 	for {
 		s.turnMu.Lock()
 		if automaticOwner && s.hostContext != nil && !active.stopping && active.context.Err() == nil && (executionErr == nil || ctx.Err() != nil) {
+			hostWork := len(active.approvals) > 0
 			for _, next := range active.queue {
-				if next.automatic {
-					continue
+				if !next.automatic {
+					hostWork = true
+					break
 				}
+			}
+			if hostWork {
 				// Register the host's full drain before releasing the automatic
 				// call. Keep the owner and FIFO intact across this lifetime handoff.
 				if hostCtx, finish, err := s.beginHostOperation(active.context); err == nil {
@@ -353,7 +357,6 @@ func (s *ThreadTurnService) drainThreadTurnQueue(ctx context.Context, threadID s
 					s.turnMu.Unlock()
 					return result, executionErr, true
 				}
-				break
 			}
 		}
 		if executionErr == nil && ctx.Err() == nil && !active.stopping && active.context.Err() == nil && len(active.queue) == 0 && len(active.approvals) > 0 {

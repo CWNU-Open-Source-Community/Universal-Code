@@ -50,3 +50,28 @@ git diff --check
 OCR Delegate 选择了 1 个生产文件并解析 Go 规则。生产文件阅读覆盖变更区域、完整
 execute/drain/Stop 路径及 host operation/drain 锁序；automatic、peer delivery、失败封存和
 提交 context 选择按相关调用路径部分阅读。新增回归文件完整阅读；没有扩大为全应用审计。
+
+## 已保存审批续行的相同交接窗口
+
+在 `afda73eeb61113c4f482c3cc362906345730cd29` 上另行复现：automatic 已完成精确
+`root_wait`，Run 已暂停、执行 lease 已释放，末次 SQLite handoff 读回被 channel 延迟。
+公共 FileEditReview `approve_intent` 已保存；公共 ResumeApproval 返回 queued。
+取消 automatic caller 后，原调用返回取消、owner 归零，模型仍停在 proposal/wait 两次调用。
+再次显式 ResumeApproval 同一个审批立即完成并正常 apply，达到四次模型调用，证明原审批具备
+续行资格。原回归失败 0.72s。
+
+补充修复只把 `active.approvals` 纳入已有宿主交接条件，保留同 owner/id、FIFO、Stop 和
+host operation drain。资格、精确 proposal、wait、scope、新输入、lease 和既有 handoff 回执
+继续由 `resumeApprovalWithOwner` 的原路径检查。
+
+真实 SQLite、公共 Review/Resume API 和实际本地文件 apply 的专项 race 三次通过（45.371s）：
+完成时 apply 一次；交接前 Stop/shutdown 阻止本次续行；交接后取消 continuation，后续调用
+不重复执行；不同 proposal 不启动模型。只有模型 provider 与 handoff 读回时点由测试控制。
+
+```powershell
+go test -race ./internal/application -run '^TestHostOwnedQueuedApprovalSurvivesAutomaticCallerCancel$' -count=3 -v -timeout=90s
+go test -race ./internal/application -run '^(TestHostOwnedQueuedApprovalSurvivesAutomaticCallerCancel|TestHostOwnedApproval.*|TestApprovalContinuation.*|TestHostLifetimeDoesNotDetachAutomaticThreadTurn|TestHostOwnedQueuedOrdinaryTurnSurvivesAutomaticCallerCancel|TestHostOwnedAutomatic.*|TestThreadPeerMessages.*)$' -count=1 -timeout=180s
+```
+
+最终 focused race 通过 103.478s，覆盖既有审批 scope/新输入/晚到重放保护、真实 HTTP 断开、
+ordinary 队列、automatic caller 取消和 peer；`go vet ./internal/application` 与 diff check 通过。
