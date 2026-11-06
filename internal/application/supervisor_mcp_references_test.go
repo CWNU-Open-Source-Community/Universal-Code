@@ -202,6 +202,10 @@ func TestThreadMCPSelectionsReachModelThroughRealTLSAndReplayOnce(t *testing.T) 
 	if result.Submission.Message.Status != domain.OperatorSteeringCommitted || f.calls.Load() != 3 || len(p.requests) != 1 {
 		t.Fatalf("calls=%d model=%d result=%+v", f.calls.Load(), len(p.requests), result)
 	}
+	observation, err := f.st.InspectThreadTurnRequest(t.Context(), f.request.ThreadID, f.request.OperationKey, f.request.RequestedBy)
+	if err != nil || observation.State != "completed" || !observation.Settled || observation.MessageID != result.Submission.Message.ID {
+		t.Fatalf("completed MCP turn cannot be confirmed after reconnect: observation=%#v err=%v", observation, err)
+	}
 	joined := ""
 	for _, message := range p.requests[0].Messages {
 		if strings.Contains(message.Content, "Selected Prompt content") && message.Role != "user" {
