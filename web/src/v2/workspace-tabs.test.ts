@@ -288,6 +288,7 @@ describe("workspace-tabs store", () => {
       }),
       remove: vi.fn(),
       entries: vi.fn().mockReturnValue([]),
+      invalidKeys: vi.fn().mockReturnValue([]),
       assertReadable: vi.fn(),
       reject: vi.fn(),
       markUnsaved: vi.fn(),

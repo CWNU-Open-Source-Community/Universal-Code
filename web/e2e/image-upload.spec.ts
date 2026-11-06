@@ -43,6 +43,7 @@ test("a stored image upload recovers its original receipt after response loss an
   };
   try {
     await page.goto(address); await reconnect();
+    await page.getByRole("button", { name: "新对话", exact: true }).click();
     await page.getByRole("button", { name: "接入项目", exact: true }).click();
     await page.getByRole("button", { name: "添加", exact: true }).click();
     await page.getByRole("textbox", { name: "项目文件夹路径", exact: true }).fill(metadata.workspace);

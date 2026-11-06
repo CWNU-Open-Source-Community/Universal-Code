@@ -409,6 +409,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     const files = clipboardFiles(event.dataTransfer);
     if (files.length) { event.preventDefault(); event.stopPropagation(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
+    {images.notice}
     <div className="v2-composer-surface">
       <button className="v2-composer-compact-trigger" type="button" aria-label={t("展开消息编辑器", "Expand message editor")} disabled={disabled}
         onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{inputPlaceholder}</button>
@@ -525,7 +526,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
       {draftSavedLocally && t("草稿与附件保存在此设备", "Draft and attachments saved on this device")}
     </p>}
     {images.error && <p className="v2-composer-error" role="alert">{images.error}</p>}
-    {images.notice}
     {attachments.notice}
     {nativeClipboard.notice}
     {(attachments.error || importStatus.error) && <p className="v2-composer-error" role="alert">{attachments.error || importStatus.error}</p>}

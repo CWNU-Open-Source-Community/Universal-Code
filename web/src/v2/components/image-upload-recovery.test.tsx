@@ -115,16 +115,62 @@ it("keeps an absent original result pending without polling and retries only its
   expect(f.client.uploadWorkspaceImage).toHaveBeenCalledTimes(1); second.queries.clear();
 });
 
-it("blocks sending when the original upload journal cannot be read", async () => {
+it.each(["payload", "json", "envelope", "unknown version", "wrong operation key"])("keeps a damaged %s until explicit scoped discard", async (damage) => {
   const f = await fixture(); const first = f.mount(); choose(f.imageFile);
   await screen.findByText("response lost"); first.unmount(); first.queries.clear();
   const key = Object.keys(localStorage).find((key) => decodeURIComponent(key).includes("image-upload:"))!;
-  const record = JSON.parse(localStorage.getItem(key)!); record.value.sha256 = "malformed";
-  localStorage.setItem(key, JSON.stringify(record));
+  const record = JSON.parse(localStorage.getItem(key)!);
+  const prefix = key.slice(0, key.lastIndexOf(":") + 1);
+  const otherThreadKey = prefix + encodeURIComponent(`image-upload:${JSON.stringify([workspaceID, "other-thread"])}:v2-image-upload-other`);
+  const otherWorkspaceKey = prefix + encodeURIComponent(`image-upload:${JSON.stringify(["other-workspace", ""])}:v2-image-upload-other`);
+  const otherRecord = JSON.stringify({ ...record, value: { ...record.value, operationKey: "v2-image-upload-other" } });
+  localStorage.setItem(otherThreadKey, otherRecord); localStorage.setItem(otherWorkspaceKey, otherRecord);
+  if (damage === "payload") record.value.sha256 = "malformed";
+  if (damage === "envelope") record.version = "v2_recovery.v99";
+  if (damage === "unknown version") record.value.version = "v2_image_upload.v99";
+  if (damage === "wrong operation key") record.value.operationKey = "v2-image-upload-other";
+  const raw = damage === "json" ? "{broken" : JSON.stringify(record);
+  localStorage.setItem(key, raw);
   const second = f.mount();
-  await screen.findByText(/原图片上传记录无法读取/u);
+  await screen.findByText(/丢弃后无法恢复这张图片/u);
   fireEvent.change(input(), { target: { value: "Keep this draft until the original record is available" } });
   expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   expect(f.client.inspectWorkspaceImageUpload).not.toHaveBeenCalled();
-  expect(localStorage.getItem(key)).toBe(JSON.stringify(record)); second.queries.clear();
+  expect(localStorage.getItem(key)).toBe(raw);
+  expect(screen.getByText(/丢弃后无法恢复这张图片/u)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "丢弃记录" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled());
+  expect(localStorage.getItem(key)).toBeNull();
+  expect(localStorage.getItem(otherThreadKey)).toBe(otherRecord);
+  expect(localStorage.getItem(otherWorkspaceKey)).toBe(otherRecord);
+  expect(input()).toHaveValue("Keep this draft until the original record is available");
+  expect(f.client.inspectWorkspaceImageUpload).not.toHaveBeenCalled(); second.queries.clear();
+});
+
+it("retains the other damaged record and valid pending image when discarding one record", async () => {
+  const f = await fixture(); const first = f.mount(); choose(f.imageFile);
+  await screen.findByText("response lost"); first.unmount(); first.queries.clear();
+  const key = Object.keys(localStorage).find((key) => decodeURIComponent(key).includes("image-upload:"))!;
+  const record = JSON.parse(localStorage.getItem(key)!);
+  const goodRaw = localStorage.getItem(key)!;
+  const badKeys = ["a-damaged", "b-damaged"].map((suffix) => key + suffix);
+  for (const badKey of badKeys) localStorage.setItem(badKey, JSON.stringify({ ...record, value: { ...record.value, operationKey: record.value.operationKey } }));
+  f.client.inspectWorkspaceImageUpload.mockImplementation(() => new Promise(() => {}));
+  const second = f.mount();
+  await screen.findAllByRole("button", { name: "丢弃记录" });
+  expect(screen.getAllByRole("button", { name: "丢弃记录" })).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "核对原图片上传" })).toBeVisible();
+  expect(f.client.inspectWorkspaceImageUpload).not.toHaveBeenCalled();
+  fireEvent.click(screen.getAllByRole("button", { name: "丢弃记录" })[0]);
+  expect(localStorage.getItem(badKeys[0])).toBeNull();
+  expect(localStorage.getItem(badKeys[1])).not.toBeNull();
+  expect(localStorage.getItem(key)).toBe(goodRaw);
+  expect(screen.getAllByRole("button", { name: "丢弃记录" })).toHaveLength(1);
+  fireEvent.change(input(), { target: { value: "Preserve the valid pending upload" } });
+  expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "丢弃记录" }));
+  await waitFor(() => expect(f.client.inspectWorkspaceImageUpload).toHaveBeenCalledTimes(1));
+  expect(localStorage.getItem(key)).toBe(goodRaw);
+  expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  second.queries.clear();
 });

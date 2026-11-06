@@ -106,7 +106,7 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
   const references = useV2ImageReferences(workspaceID, threadID);
   const store = useV2RecoveryStore();
   const prefix = `image-upload:${JSON.stringify([workspaceID, threadID])}:`;
-  const status = useMemo(() => ({ busy: false, error: "", unreadable: false, attempts: new Map<string, ImageUploadAttempt>(), observed: new Set<string>() }), [prefix, store]);
+  const status = useMemo(() => ({ busy: false, error: "", unreadable: false, invalidKeys: [] as string[], attempts: new Map<string, ImageUploadAttempt>(), observed: new Set<string>() }), [prefix, store]);
   const [, refresh] = useReducer((count: number) => count + 1, 0);
   const setError = (error: string) => { status.error = error; refresh(); };
   const setUploading = (busy: boolean) => { status.busy = busy; refresh(); };
@@ -114,19 +114,24 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
   const error = status.error;
   const reload = () => {
     if (!store) return;
-    const entries = store.entries<unknown>(prefix); store.assertReadable(prefix);
+    const entries = store.entries<unknown>(prefix);
     const recovered = new Map<string, ImageUploadAttempt>();
     for (const [key, value] of entries) {
       if (!validAttempt(value) || key !== prefix + value.operationKey) {
-        store.reject(key); throw new Error(t("原图片上传记录无法读取，已保留原记录。", "The original image upload record cannot be read. Its record is kept."));
+        store.reject(key); continue;
       }
       recovered.set(value.operationKey, value);
     }
     status.attempts.clear();
     recovered.forEach((attempt, key) => status.attempts.set(key, attempt));
+    status.invalidKeys = store.invalidKeys(prefix);
+    if (status.invalidKeys.length) throw new Error(t("原图片上传记录无法读取，已保留原记录。", "The original image upload record cannot be read. Its record is kept."));
+    store.assertReadable(prefix);
   };
   useEffect(() => {
-    const changed = () => { try { reload(); status.unreadable = false; } catch (failure) { status.error = String(failure); status.unreadable = true; } refresh(); };
+    const changed = () => { try { reload(); status.unreadable = false; } catch (failure) {
+      status.error = status.invalidKeys.length ? "" : String(failure); status.unreadable = true;
+    } refresh(); };
     changed(); return store?.subscribePrefix?.(prefix, changed);
   }, [prefix, store]);
   const remember = (attempt: ImageUploadAttempt) => {
@@ -135,6 +140,11 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
   };
   const forget = (operationKey: string) => {
     try { store?.remove(prefix + operationKey); status.attempts.delete(operationKey); refresh(); }
+    catch (failure) { setError(String(failure)); }
+  };
+  const discardInvalid = (key: string) => {
+    if (!store || !status.invalidKeys.includes(key) || !key.startsWith(prefix)) return;
+    try { store.remove(key); status.error = ""; refresh(); }
     catch (failure) { setError(String(failure)); }
   };
   const stillPending = (attempt: ImageUploadAttempt) => {
@@ -207,7 +217,7 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
     if (attempt) { status.observed.add(attempt.operationKey); void inspect(attempt); }
     // One read per recovered key and mount. Never re-upload or poll an absent result.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, pendingKeys, uploading, disabled]);
+  }, [status, pendingKeys, uploading, disabled, status.unreadable]);
   const onPaste = (event: ClipboardEvent<HTMLFormElement>) => {
     const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
     if (files.length) { event.preventDefault(); void add(files); }
@@ -224,10 +234,14 @@ export function useV2ImageInput({ client, workspaceID, threadID, disabled }: {
       onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void add(files); }} />
   </>;
   return { ...references, add, uploading, error, button, onPaste, onDrop, pending: status.unreadable || status.attempts.size > 0,
-    notice: status.attempts.size > 0 && <div className="v2-attachment-pending" role="status">
+    notice: (status.attempts.size > 0 || status.invalidKeys.length > 0) && <div className="v2-attachment-pending" role="status">
+      {status.invalidKeys.map((key) => <div key={key}>
+        <span>{t("图片上传记录无法读取；丢弃后无法恢复这张图片。", "This image upload record cannot be read. Discarding it prevents recovery of this image.")}</span>
+        <button type="button" disabled={status.busy} onClick={() => discardInvalid(key)}>{t("丢弃记录", "Discard record")}</button>
+      </div>)}
       {[...status.attempts.values()].map((attempt) => <div key={attempt.operationKey}>
         <span>{attempt.name} · {status.busy ? t("正在保存或核对", "Saving or checking") : t("图片上传结果待核对", "Image upload awaiting confirmation")}</span>
-        <button type="button" disabled={status.busy || disabled} onClick={() => void inspect(attempt)}>{t("核对原图片上传", "Check original image upload")}</button>
+        <button type="button" disabled={status.busy || disabled || status.unreadable} onClick={() => void inspect(attempt)}>{t("核对原图片上传", "Check original image upload")}</button>
         <button type="button" disabled={status.busy} onClick={() => forget(attempt.operationKey)}>{t("不加入本条消息", "Leave out of this message")}</button>
       </div>)}
     </div>,

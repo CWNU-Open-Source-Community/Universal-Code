@@ -77,3 +77,56 @@ path rules. `workspace_images.go` and `image-input.tsx` were read in full;
 the generator, API facade/domain client and composer were read around their
 changed paths. Generated diffs and the new tests were read in full. No finding
 remains in the patch; unrelated repository files were not exhaustively read.
+
+## Explicitly discard a damaged local image record
+
+A damaged image-upload journal previously blocked sending permanently. An
+invalid payload stopped the reload loop before it populated the pending list;
+invalid JSON or an unknown recovery envelope was omitted by the storage reader.
+Both paths preserved the original record but offered no removal control.
+
+The image input now retains the actual scoped storage key for each invalid
+record. A compact recovery row above the input offers **Discard record** and
+states that the image cannot be recovered after discarding. Only that captured
+Workspace/Thread record is removed. Other valid attempts remain visible and
+resume their original lookup after the damaged records are resolved. Storage
+access failures and undecodable storage keys are kept as errors without a
+discard control. Unknown versions remain untouched until an explicit discard.
+
+The new real Go/Chromium journey inserts a damaged record into actual
+localStorage, along with a structurally valid pending record in another Thread.
+Before the fix, the send button stays disabled and no removal action exists.
+After the fix, explicit discard removes only the damaged key, preserves the
+other record byte-for-byte and keeps the text through another reload. The user
+can then send a text request that reads the real fixture README successfully.
+The original HTTP response-loss image journey also passes alongside this test.
+Both journeys explicitly open a new conversation after connecting, so retained
+server conversations from an earlier journey do not change their entry screen.
+
+These are unmodified viewport screenshots. Light/Dark desktop is 1280 × 800;
+narrow is 390 × 844. The new journey verifies that the discard button is inside
+the viewport and that its center is not covered by another element.
+
+| Theme / viewport | Before | After |
+| --- | --- | --- |
+| Light / desktop | [Before](../images/image-upload-recovery/corrupt-record/before-light-1280.png) | [After](../images/image-upload-recovery/corrupt-record/after-light-1280.png) |
+| Dark / desktop | [Before](../images/image-upload-recovery/corrupt-record/before-dark-1280.png) | [After](../images/image-upload-recovery/corrupt-record/after-dark-1280.png) |
+| Light / narrow | [Before](../images/image-upload-recovery/corrupt-record/before-light-390.png) | [After](../images/image-upload-recovery/corrupt-record/after-light-390.png) |
+| Dark / narrow | [Before](../images/image-upload-recovery/corrupt-record/before-dark-390.png) | [After](../images/image-upload-recovery/corrupt-record/after-dark-390.png) |
+
+[After discarding](../images/image-upload-recovery/corrupt-record/after-discarded.png),
+the text remains and sending is enabled.
+The existing creation-recovery warning can remain until the next reload because
+that separate reader checks the entire recovery store on mount. This screenshot
+retains that observed warning; the journey verifies that reloading clears it
+and that the preserved draft can be sent.
+
+Verification: production build and strict TypeScript passed; focused recovery,
+image-input, draft-context and workspace-tabs tests passed (five files, 71
+tests); both real image-upload journeys passed. The protocol registry check,
+including evolution against `cfeee05a8724a23c673b0ed9971f2ef6e8de9674`, passed.
+Unit cases cover malformed payload/JSON, unknown envelope/payload versions,
+misbound operation keys, Workspace/Thread isolation, and two damaged records
+alongside a healthy pending image. OCR delegate resolved the changed production
+files; image input and recovery storage were read in full, composer around the
+move, registry and generated document by diff, and the changed tests in full.
