@@ -1861,7 +1861,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			}},
 		{Path: AgentBrowserStatusPathTemplate, Method: http.MethodGet,
 			OperationID: "getRunAgentBrowser", Summary: "Read the Agent browser state", Tag: "Runs",
-			Description: "Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles.",
+			Description: "Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles. Scoped sessions surface their operator-declared origins in declared_origins.",
 			DataType:    reflect.TypeOf(AgentBrowserStatusView{}), NotFound: true, Parameters: []openAPIParameter{runID}},
 		{Path: AgentBrowserClosePathTemplate, Method: http.MethodPost,
 			OperationID: "closeRunAgentBrowser", Summary: "Stop one exact Agent browser session", Tag: "Control", Control: true,
