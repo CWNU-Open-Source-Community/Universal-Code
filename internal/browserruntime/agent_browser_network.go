@@ -57,28 +57,27 @@ func validateAgentBrowserNetworkProtocol(raw []byte) error {
 	return nil
 }
 
-func (r *AgentBrowserRuntime) initializeScopedNetwork(ctx context.Context) error {
+func (r *AgentBrowserRuntime) interceptsNetwork() bool {
+	return r.scope != nil || r.request.NetworkMode == AgentBrowserNetworkInternet
+}
 
-	// Network's ordered allow patterns run before Chromium creates a CORS
-	// preflight. Fetch alone does not see all browser-generated OPTIONS traffic.
-	patterns := make([]map[string]any, 0, len(r.scope.Origins)+1)
-	for _, origin := range r.scope.Origins {
-		patterns = append(patterns, map[string]any{"urlPattern": origin.String() + "/*", "block": false})
+func (r *AgentBrowserRuntime) initializeNetwork(ctx context.Context) error {
+	if err := r.call(ctx, "Network.enable", map[string]any{}, nil); err != nil {
+		return err
 	}
-	patterns = append(patterns, map[string]any{"urlPattern": "*://*:*/*", "block": true})
-	for _, command := range []struct {
-		method string
-		params any
-	}{
-		{"Network.enable", map[string]any{}},
-		{"Network.setBlockedURLs", map[string]any{"urlPatterns": patterns}},
-		{"Network.setBypassServiceWorker", map[string]any{"bypass": true}},
-	} {
-		if err := r.cdp.call(ctx, r.session, command.method, command.params, nil); err != nil {
+	if r.scope != nil {
+		// Ordered origin rules also cover browser-generated CORS preflights,
+		// which Fetch does not always intercept. Internet mode needs no rules.
+		patterns := make([]map[string]any, 0, len(r.scope.Origins)+1)
+		for _, origin := range r.scope.Origins {
+			patterns = append(patterns, map[string]any{"urlPattern": origin.String() + "/*", "block": false})
+		}
+		patterns = append(patterns, map[string]any{"urlPattern": "*://*:*/*", "block": true})
+		if err := r.call(ctx, "Network.setBlockedURLs", map[string]any{"urlPatterns": patterns}, nil); err != nil {
 			return err
 		}
 	}
-	return nil
+	return r.call(ctx, "Network.setBypassServiceWorker", map[string]any{"bypass": true}, nil)
 }
 
 type agentBrowserPausedRequest struct {
@@ -90,7 +89,7 @@ type agentBrowserPausedRequest struct {
 	}
 }
 
-func (r *AgentBrowserRuntime) handleScopedRequestLocked(event cdpWireMessage) {
+func (r *AgentBrowserRuntime) handleNetworkRequestLocked(event cdpWireMessage) {
 	var paused agentBrowserPausedRequest
 	if json.Unmarshal(event.Params, &paused) != nil || !validRestrictedCDPToken(paused.RequestID) {
 		r.cancel()
@@ -102,17 +101,17 @@ func (r *AgentBrowserRuntime) handleScopedRequestLocked(event cdpWireMessage) {
 	request := AgentBrowserNetworkRequest{ID: id, RuntimeID: r.networkRuntimeID, RequestID: paused.RequestID,
 		FrameID: paused.FrameID, DocumentURL: r.currentURL, DocumentEpoch: r.networkEpoch, Authority: r.request.Authority,
 		Method: paused.Request.Method, URL: paused.Request.URL, ExpiresAt: time.Now().Add(2 * time.Minute)}
-	go r.reviewScopedRequest(ctx, cancel, request, paused)
+	go r.reviewNetworkRequest(ctx, cancel, request, paused)
 }
 
-func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel context.CancelFunc, request AgentBrowserNetworkRequest, paused agentBrowserPausedRequest) {
+func (r *AgentBrowserRuntime) reviewNetworkRequest(ctx context.Context, cancel context.CancelFunc, request AgentBrowserNetworkRequest, paused agentBrowserPausedRequest) {
 	defer cancel()
 	defer func() {
 		r.mu.Lock()
 		delete(r.networkPending, request.ID)
 		r.mu.Unlock()
 	}()
-	continued := false
+	continued, consumed := false, false
 	defer func() {
 		if !continued {
 			abortCtx, stop := context.WithTimeout(r.life, time.Second)
@@ -122,7 +121,7 @@ func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel co
 			_ = r.cdp.call(abortCtx, "", "Fetch.failRequest", map[string]any{"requestId": request.RequestID, "errorReason": "BlockedByClient"}, nil)
 		}
 	}()
-	if err := r.scope.AuthorizeNavigation(ctx, request.URL); err != nil {
+	if err := r.authorizeSessionNavigation(ctx, request.URL); err != nil {
 		if paused.ResourceType == "Document" {
 			r.mu.Lock()
 			if request.FrameID == r.frame {
@@ -134,6 +133,7 @@ func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel co
 	}
 	dispatch := func() error {
 		if err := r.request.CheckAuthority(ctx, r.request.Authority); err != nil {
+			r.Cancel()
 			return err
 		}
 		r.mu.Lock()
@@ -141,10 +141,13 @@ func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel co
 			r.mu.Unlock()
 			return ErrAgentBrowserStaleReference
 		}
-		if continued {
+		if consumed {
 			r.mu.Unlock()
 			return errors.New("browser network request already consumed")
 		}
+		// Consume before writing: a concurrent callback or a lost protocol
+		// reply must never dispatch the same request a second time.
+		consumed = true
 		await, err := r.cdp.send(ctx, "", "Fetch.continueRequest", map[string]any{"requestId": request.RequestID})
 		r.mu.Unlock()
 		if err != nil {
