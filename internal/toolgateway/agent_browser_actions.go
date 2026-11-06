@@ -218,9 +218,9 @@ type AgentBrowserCallAuthority struct {
 	BrowserSessionID      string                            `json:"browser_session_id"`
 	SessionGeneration     uint64                            `json:"session_generation"`
 	Generation            string                            `json:"generation"`
-	// DeclaredOrigins carries the operator-declared, default-deny origin set of
-	// a scoped session (ADR 0195); omitempty keeps every existing unscoped
-	// authority fingerprint byte-identical. Full activation stays unscoped.
+	// DeclaredOrigins confines restricted sessions. Omitting the new policy
+	// fields preserves legacy fingerprints; explicit network selections apply
+	// independently of the task's approval mode.
 	DeclaredOrigins        []string                    `json:"declared_origins,omitempty"`
 	ScopeFingerprint       string                      `json:"scope_fingerprint,omitempty"`
 	BrowserNetworkAccess   domain.BrowserNetworkAccess `json:"browser_network_access,omitempty"`
