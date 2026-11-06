@@ -234,8 +234,15 @@ that path remains unavailable.
    no browser action is in flight) and takes `s.mu` inside it. Before publishing the
    new scope, it checks under `s.mu` that the service and slot remain open and that
    the slot is still current, and holds that lock through publication. Close or
-   replacement aborts the transition. The monitor reads the holder and flag without
-   the action lock. Slot-side authority reads and writes
+   replacement aborts the transition. Publication must also be serialized with
+   effective current-Run permission changes and fence invalidation through the
+   existing runtime-authority/permission-writer path. At that boundary, recheck the
+   exact durable permission snapshot/revision and Run fence; `s.mu` alone cannot
+   order revocation. Preserve the writers' existing ordering: Run changes revoke
+   before their durable write, including failed writes; Thread changes retain
+   their pre-revocation/applied-current-Run behavior, including the existing
+   treatment of deferred changes and exact retries. The monitor reads the holder
+   and flag without the action lock. Slot-side authority reads and writes
    stay under `s.mu` everywhere, including the `CloseWorker` session-id snapshot.
 3. Fencing old generations. The durable call row binds the exact pre-mutation
    `AuthorityJSON`, and the dispatch fence is `s.agentBrowser.check` — at
@@ -261,6 +268,11 @@ that path remains unavailable.
    revocation semantics for every other action. A
    failed mutation (bound exceeded, malformed origin) consumes the call and returns
    a named error; retrying requires a new call, consistent with existing actions.
+   An addition remains ineligible for inheritance until both rechecks succeed.
+   Before finalization, permission/fence invalidation or either failed recheck
+   discards the pending addition and transition exemption under the publication
+   serialization, and retires any slot/runtime already using it before a successor
+   can be advertised. The call remains consumed.
 5. Cold-session preflight and payload. The operation's payload is
    `{version, origin, sensitive_intent}` where `origin` is the canonical new origin
    (the normalizer canonicalizes and rejects action fields — url, snapshot,
@@ -287,10 +299,12 @@ that path remains unavailable.
    the same call ("no changes were made" wording — a replay must never read as the
    origin having been added); a second, new origin-add call for an already-declared
    origin is a set-membership no-op receipt under the post-mutation authority.
-   A cold-slot rotation for a mode or permission change inherits the slot's declared
-   set into the successor slot. Explicit session close ends that inheritance: a new
-   session starts from the run's declared origins and needs fresh approval for any
-   additional origin. The service
+   A cold-slot rotation for a mode or permission change inherits only the last
+   committed declared set, after establishing the successor's current permission
+   snapshot and Run fence; provisional or failed additions and their transition
+   exemptions are never inherited. Explicit session close ends that inheritance:
+   a new session starts from the run's declared origins and needs fresh approval
+   for any additional origin. The service
    `Capabilities.SupportedActions` gains the operation; the runtime `Status`
    action table does not (it lists runtime-executed actions only). The desktop
    approval panel gains a label mapping for the new action class.
@@ -336,6 +350,11 @@ that path remains unavailable.
   runtime and takeover state while invalidating old-generation calls and approvals.
   Origin-add intent on any existing action is rejected; approval of the dedicated
   operation changes the set without navigation, clicks or other browser effects.
+- Revocation during origin-add: interleave a permission change or fence invalidation
+  after the pre-action check and at publication, including a failed permission write
+  and either failed post-action/result-persistence recheck. No failed addition may
+  appear in a cold-slot successor; successful additions retain the rotation and
+  explicit-close behavior above.
 - Real-browser E2E: declared-origin navigation works, and a form write with exact
   operator request approval dispatches once; an unapproved or invalidated form
   request never dispatches. Out-of-scope navigation and addition flows produce the
