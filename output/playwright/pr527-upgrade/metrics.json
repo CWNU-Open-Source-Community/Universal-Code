@@ -1,0 +1,271 @@
+{
+  "captured_at_utc": "2026-11-06T12:28:18.582Z",
+  "before_revision": "964ce97ce640610dab79f5d339f7f14c9e6dea8a",
+  "after_revision": "19a01a39f425d94f1098974c2177f09516af86b9",
+  "environment": "Windows; Edge 156.0.0.0; scale 1",
+  "source_blobs": {
+    "web/src/v2/components/composer.tsx": "bffaf01dfe1bbfd41d30d13a156c68d74d995d43",
+    "web/src/v2/components/markdown-input.tsx": "54d109f080b45322daf1010997d25125644645fb",
+    "web/src/v2/components/markdown-input.css": "ae9c13627679250dcdd21a4f996621948f2ce270"
+  },
+  "checks": [
+    {
+      "phase": "before",
+      "size": "desktop",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "theme": "light",
+      "documentScrollWidth": 1024,
+      "inputWidth": 736,
+      "inputScrollWidth": 736,
+      "image": {
+        "width": 480,
+        "height": 48
+      },
+      "icons": [
+        {
+          "name": "lucide lucide-folder-open",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "name": "lucide lucide-plus",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "name": "lucide lucide-square-pen lucide-pen-box lucide-edit lucide-pen-square",
+          "width": 15,
+          "height": 15
+        },
+        {
+          "name": "lucide lucide-arrow-up",
+          "width": 19,
+          "height": 19
+        }
+      ],
+      "modeRoundTrip": "source preserved",
+      "paste": "system clipboard Ctrl+V",
+      "tableEdit": "中文输入",
+      "submitted": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项    | 值   |\n| ---- | --- |\n| 中文输入 | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)",
+      "plainPaste": "literal punctuation preserved"
+    },
+    {
+      "phase": "before",
+      "size": "narrow",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "theme": "light",
+      "documentScrollWidth": 390,
+      "inputWidth": 356,
+      "inputScrollWidth": 356,
+      "image": {
+        "width": 480,
+        "height": 48
+      },
+      "icons": [
+        {
+          "name": "lucide lucide-folder-open",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "name": "lucide lucide-plus",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "name": "lucide lucide-square-pen lucide-pen-box lucide-edit lucide-pen-square",
+          "width": 0,
+          "height": 0
+        },
+        {
+          "name": "lucide lucide-arrow-up",
+          "width": 19,
+          "height": 19
+        }
+      ],
+      "modeRoundTrip": "source preserved",
+      "paste": "system clipboard Ctrl+V",
+      "tableEdit": "中文输入",
+      "submitted": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项    | 值   |\n| ---- | --- |\n| 中文输入 | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)",
+      "plainPaste": "literal punctuation preserved"
+    },
+    {
+      "phase": "before",
+      "size": "desktop-dark",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "theme": "dark",
+      "documentScrollWidth": 1024,
+      "inputWidth": 736,
+      "inputScrollWidth": 736,
+      "image": {
+        "width": 480,
+        "height": 48
+      },
+      "icons": [
+        {
+          "name": "lucide lucide-folder-open",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "name": "lucide lucide-plus",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "name": "lucide lucide-square-pen lucide-pen-box lucide-edit lucide-pen-square",
+          "width": 15,
+          "height": 15
+        },
+        {
+          "name": "lucide lucide-arrow-up",
+          "width": 19,
+          "height": 19
+        }
+      ],
+      "modeRoundTrip": "source preserved",
+      "paste": "system clipboard Ctrl+V",
+      "tableEdit": "中文输入",
+      "submitted": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项    | 值   |\n| ---- | --- |\n| 中文输入 | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)",
+      "plainPaste": "literal punctuation preserved"
+    },
+    {
+      "phase": "after",
+      "size": "desktop",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "theme": "light",
+      "documentScrollWidth": 1024,
+      "inputWidth": 736,
+      "inputScrollWidth": 736,
+      "image": {
+        "width": 480,
+        "height": 48
+      },
+      "icons": [
+        {
+          "name": "lucide lucide-folder-open",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "name": "lucide lucide-plus",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "name": "lucide lucide-square-pen lucide-pen-box lucide-edit lucide-pen-square",
+          "width": 15,
+          "height": 15
+        },
+        {
+          "name": "lucide lucide-arrow-up",
+          "width": 19,
+          "height": 19
+        }
+      ],
+      "modeRoundTrip": "source preserved",
+      "paste": "system clipboard Ctrl+V",
+      "tableEdit": "中文输入",
+      "submitted": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项    | 值   |\n| ---- | --- |\n| 中文输入 | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)",
+      "plainPaste": "literal punctuation preserved"
+    },
+    {
+      "phase": "after",
+      "size": "narrow",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "theme": "light",
+      "documentScrollWidth": 390,
+      "inputWidth": 356,
+      "inputScrollWidth": 356,
+      "image": {
+        "width": 480,
+        "height": 48
+      },
+      "icons": [
+        {
+          "name": "lucide lucide-folder-open",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "name": "lucide lucide-plus",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "name": "lucide lucide-square-pen lucide-pen-box lucide-edit lucide-pen-square",
+          "width": 0,
+          "height": 0
+        },
+        {
+          "name": "lucide lucide-arrow-up",
+          "width": 19,
+          "height": 19
+        }
+      ],
+      "modeRoundTrip": "source preserved",
+      "paste": "system clipboard Ctrl+V",
+      "tableEdit": "中文输入",
+      "submitted": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项    | 值   |\n| ---- | --- |\n| 中文输入 | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)",
+      "plainPaste": "literal punctuation preserved"
+    },
+    {
+      "phase": "after",
+      "size": "desktop-dark",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "theme": "dark",
+      "documentScrollWidth": 1024,
+      "inputWidth": 736,
+      "inputScrollWidth": 736,
+      "image": {
+        "width": 480,
+        "height": 48
+      },
+      "icons": [
+        {
+          "name": "lucide lucide-folder-open",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "name": "lucide lucide-plus",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "name": "lucide lucide-square-pen lucide-pen-box lucide-edit lucide-pen-square",
+          "width": 15,
+          "height": 15
+        },
+        {
+          "name": "lucide lucide-arrow-up",
+          "width": 19,
+          "height": 19
+        }
+      ],
+      "modeRoundTrip": "source preserved",
+      "paste": "system clipboard Ctrl+V",
+      "tableEdit": "中文输入",
+      "submitted": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项    | 值   |\n| ---- | --- |\n| 中文输入 | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)",
+      "plainPaste": "literal punctuation preserved"
+    }
+  ]
+}

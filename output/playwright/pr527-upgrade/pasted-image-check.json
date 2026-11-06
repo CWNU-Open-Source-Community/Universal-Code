@@ -1,0 +1,26 @@
+[
+  {
+    "phase": "before",
+    "standalone": true,
+    "imageCount": 0,
+    "draft": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项   | 值   |\n| --- | --- |\n| 中文  | 1   |\n"
+  },
+  {
+    "phase": "before",
+    "standalone": false,
+    "imageCount": 1,
+    "draft": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项   | 值   |\n| --- | --- |\n| 中文  | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)"
+  },
+  {
+    "phase": "after",
+    "standalone": true,
+    "imageCount": 0,
+    "draft": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项   | 值   |\n| --- | --- |\n| 中文  | 1   |\n"
+  },
+  {
+    "phase": "after",
+    "standalone": false,
+    "imageCount": 1,
+    "draft": "## 粘贴草稿\n\n**保留格式**与 `inline`\n\n\n| 项   | 值   |\n| --- | --- |\n| 中文  | 1   |\n\n\n预览：![编辑器图像](/.tmp/editor-image.svg)"
+  }
+]
