@@ -2854,6 +2854,14 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 	if len(required) != 0 {
 		schema["required"] = required
 	}
+	if browserNetworkAccessSchema(metadataTypeName) {
+		schema["if"] = map[string]any{"properties": map[string]any{"browser_network_access": map[string]any{"const": "restricted"}}, "required": []string{"browser_network_access"}}
+		schema["then"] = map[string]any{"required": []string{"browser_origins"}, "properties": map[string]any{"browser_origins": map[string]any{"minItems": 1}}}
+		schema["else"] = map[string]any{
+			"if":   map[string]any{"properties": map[string]any{"browser_network_access": map[string]any{"const": "internet"}}, "required": []string{"browser_network_access"}},
+			"then": map[string]any{"properties": map[string]any{"browser_origins": map[string]any{"maxItems": 0}}},
+		}
+	}
 	if metadataTypeName == "ThreadTurnControlRequestView" {
 		alternatives := []any{
 			map[string]any{"required": []string{"content"}, "properties": map[string]any{"content": map[string]any{"type": "string", "minLength": 1}}},
@@ -2864,6 +2872,15 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 		return map[string]any{"allOf": []any{schema, map[string]any{"anyOf": alternatives}}}
 	}
 	return schema
+}
+
+func browserNetworkAccessSchema(typeName string) bool {
+	switch typeName {
+	case "BrowserNetworkAccessRequestView", "WorkspaceBrowserNetworkAccessRequestView", "BrowserNetworkAccessSelection", "BrowserNetworkPreference":
+		return true
+	default:
+		return false
+	}
 }
 
 func threadActivityTypedDetailSchema(properties map[string]any) map[string]any {
@@ -2915,6 +2932,13 @@ func jsonField(field reflect.StructField) (string, bool, bool) {
 }
 
 func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[string]any) {
+	if browserNetworkAccessSchema(typeName) && fieldName == "browser_origins" {
+		schema["maxItems"] = browserruntime.MaxAgentBrowserScopeOrigins
+		schema["description"] = "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength."
+		if items, ok := schema["items"].(map[string]any); ok {
+			items["minLength"] = 1
+		}
+	}
 	if typeName == "ThreadReplyUpdatesView" {
 		switch fieldName {
 		case "data_store_id":
