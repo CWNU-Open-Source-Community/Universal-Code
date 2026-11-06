@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1045,4 +1046,40 @@ func contextError(ctx context.Context) error {
 		return context.Canceled
 	}
 	return ctx.Err()
+}
+
+// Chromium silently ignores unknown command parameters. Read the owned
+// browser's protocol before relying on the ordered URL allow patterns.
+func agentBrowserScopedNetworkSupported(ctx context.Context, endpoint *url.URL) error {
+	if endpoint == nil || endpoint.Hostname() != "127.0.0.1" {
+		return ErrBrowserRuntimeBoundary
+	}
+	address := endpoint.Host
+	transport := &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if network != "tcp" || addr != address {
+			return nil, ErrBrowserRuntimeBoundary
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}}
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://"+address+"/json/protocol", nil)
+	if err != nil {
+		return err
+	}
+	response, err := transport.RoundTrip(req)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errors.New("browser scoped network protocol unavailable")
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 8*1024*1024+1))
+	if err != nil {
+		return err
+	}
+	if len(raw) > 8*1024*1024 {
+		return ErrBrowserRuntimeBoundary
+	}
+	return validateAgentBrowserNetworkProtocol(raw)
 }

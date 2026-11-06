@@ -41,9 +41,25 @@ type AgentBrowserRuntime struct {
 	downloadPath                              string
 	downloads                                 map[string]*AgentBrowserDownloadReceipt
 	downloadOrder                             []string
+	networkRuntimeID                          string
+	networkPending                            map[string]context.CancelFunc
+	networkDocumentError                      error
+	networkEpoch                              uint64
 }
 
 func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
+	r.mu.Lock()
+	r.networkRuntimeID = agentBrowserToken()
+	r.networkPending = map[string]context.CancelFunc{}
+	r.mu.Unlock()
+	if r.scope != nil {
+		// A browser-level Fetch handler is installed before any owned page or
+		// worker creates its URLLoaderFactory. Attaching after a SharedWorker
+		// starts cannot update its already-created factory.
+		if err := r.cdp.call(ctx, "", "Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err != nil {
+			return err
+		}
+	}
 	var bc struct {
 		ID string `json:"browserContextId"`
 	}
@@ -81,6 +97,11 @@ func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
 	r.mu.Lock()
 	r.session = attached.ID
 	r.mu.Unlock()
+	if r.scope != nil {
+		if err := r.initializeScopedNetwork(ctx); err != nil {
+			return err
+		}
+	}
 	for _, method := range []string{"Page.enable", "DOM.enable", "Runtime.enable", "Accessibility.enable"} {
 		if err := r.call(ctx, method, map[string]any{}, nil); err != nil {
 			return err
@@ -100,10 +121,24 @@ func (r *AgentBrowserRuntime) call(ctx context.Context, method string, params an
 	return r.cdp.call(ctx, session, method, params, out)
 }
 
-func (r *AgentBrowserRuntime) invalidateLocked() { r.epoch++; r.refs = map[string]agentBrowserRef{} }
+func (r *AgentBrowserRuntime) invalidateLocked() {
+	r.epoch++
+	r.refs = map[string]agentBrowserRef{}
+}
+
+func (r *AgentBrowserRuntime) invalidateNetworkLocked() {
+	r.networkEpoch++
+	for _, cancel := range r.networkPending {
+		cancel()
+	}
+}
 func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if event.Method == "Fetch.requestPaused" && event.SessionID == "" && r.scope != nil {
+		r.handleScopedRequestLocked(event)
+		return
+	}
 	if event.Method == "Target.detachedFromTarget" {
 		var detached struct{ SessionID string }
 		if json.Unmarshal(event.Params, &detached) == nil && detached.SessionID == r.session && r.session != "" {
@@ -124,10 +159,15 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		return
 	}
 	switch event.Method {
+	case "Fetch.requestPaused":
+		if r.scope != nil {
+			r.handleScopedRequestLocked(event)
+		}
 	case "Page.frameStartedLoading":
 		var e struct{ FrameID string }
 		if json.Unmarshal(event.Params, &e) == nil && e.FrameID == r.frame {
 			r.loading = true
+			r.invalidateNetworkLocked()
 			r.invalidateLocked()
 		}
 	case "Page.frameStoppedLoading":
@@ -151,18 +191,27 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		r.frame = e.Frame.ID
 		r.loader = e.Frame.LoaderID
 		r.currentURL = e.Frame.URL
+		r.invalidateNetworkLocked()
 		r.invalidateLocked()
 		if e.Frame.URL != "about:blank" && !validAgentBrowserURL(e.Frame.URL) {
-			r.cancel()
+			// Chromium displays this internal error document after a refused
+			// navigation. The operator may still navigate this session back.
+			if r.scope == nil || r.networkDocumentError == nil || e.Frame.URL != "chrome-error://chromewebdata/" {
+				r.cancel()
+			}
 		}
 	case "Page.navigatedWithinDocument":
 		var e struct{ FrameID, URL string }
 		if json.Unmarshal(event.Params, &e) == nil && e.FrameID == r.frame {
 			r.currentURL = e.URL
+			r.invalidateNetworkLocked()
 			r.loading = false
 			r.invalidateLocked()
 		}
 	case "DOM.documentUpdated":
+		if !r.loading {
+			r.invalidateNetworkLocked()
+		}
 		r.invalidateLocked()
 	case "Page.screencastFrame":
 		r.deliverScreencastLocked(event)
