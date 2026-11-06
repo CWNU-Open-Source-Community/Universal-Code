@@ -6210,7 +6210,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key')),
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')),
 		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 			'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
 			'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
@@ -6219,7 +6219,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key')
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')
 			AND length(authority_json) BETWEEN 2 AND 4096 AND json_valid(authority_json) = 1)
 			OR (tool_name NOT IN ('mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 				'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
@@ -6229,7 +6229,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key')
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')
 				AND authority_json = '')),
 		CHECK(status IN ('pending', 'completed', 'denied', 'failed')),
 		CHECK((status = 'pending' AND result_json = '' AND error_code = '' AND completed_at IS NULL)
@@ -13206,6 +13206,13 @@ CREATE TABLE worker_parent_history_snapshots (
  created_at TEXT NOT NULL
 );
 -- traverse-board-clean-install-object-boundary --
+CREATE TABLE workflow_completion_notifications (
+     execution_id TEXT PRIMARY KEY REFERENCES workflow_executions(id),
+     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','delivered','cancelled')),
+     reason TEXT NOT NULL DEFAULT '', next_attempt_at TEXT NOT NULL,
+     wake_generation INTEGER NOT NULL DEFAULT 0 CHECK(wake_generation>=0),
+     claim_owner TEXT NOT NULL DEFAULT '', claim_until TEXT NOT NULL DEFAULT '');
+-- traverse-board-clean-install-object-boundary --
 CREATE TABLE workflow_definitions (id TEXT PRIMARY KEY, digest TEXT NOT NULL UNIQUE, spec_json TEXT NOT NULL CHECK(json_valid(spec_json)), created_at TEXT NOT NULL);
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE workflow_executions (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL REFERENCES workflow_definitions(id), run_id TEXT NOT NULL REFERENCES runs(id), inputs_json TEXT NOT NULL CHECK(json_valid(inputs_json)), status TEXT NOT NULL CHECK(status IN ('running','waiting','waiting_approval','paused','completed','failed')), reason TEXT NOT NULL DEFAULT '', state_json TEXT NOT NULL CHECK(json_valid(state_json)), usage_before_json TEXT NOT NULL CHECK(json_valid(usage_before_json)), version INTEGER NOT NULL DEFAULT 1, claim_owner TEXT NOT NULL DEFAULT '', claim_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, turns_before INTEGER NOT NULL DEFAULT 0);
@@ -14536,6 +14543,8 @@ CREATE UNIQUE INDEX thread_context_compaction_active ON thread_context_compactio
 CREATE INDEX thread_context_pin_proposals_pending ON thread_context_pin_proposals(thread_id,status,created_at);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX thread_context_pins_active ON thread_context_pins(thread_id,status,id);
+-- traverse-board-clean-install-object-boundary --
+CREATE INDEX workflow_completion_notification_due ON workflow_completion_notifications(status,next_attempt_at,execution_id);
 -- traverse-board-clean-install-object-boundary --
 CREATE INDEX workflow_run ON workflow_executions(run_id, created_at);
 -- traverse-board-clean-install-object-boundary --

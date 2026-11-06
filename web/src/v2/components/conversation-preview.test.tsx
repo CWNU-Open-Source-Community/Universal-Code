@@ -39,7 +39,7 @@ function fixture(submitThreadTurn = vi.fn<APIClient["submitThreadTurn"]>().mockR
     return <QueryClientProvider client={queries}>
       <button onClick={() => setThreadID((current) => current === "thread-a" ? "thread-b" : "thread-a")} type="button">切换任务</button>
       <V2Conversation client={client} threadID={threadID} workspaces={[{ id: "workspace-1", name: "Workspace" }] as WorkspaceView[]}
-        onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={vi.fn()}
+        onArchive={vi.fn()} onManageModels={vi.fn()}
         draft={drafts[threadID] ?? ""} onDraftChange={(next, expected) => setDrafts((current) =>
           expected === undefined || current[threadID] === expected ? { ...current, [threadID]: next } : current)} />
     </QueryClientProvider>;

@@ -25,6 +25,9 @@ func (a *App) contextCommand(ctx context.Context, args []string) error {
 	case "show":
 		return a.contextShow(ctx, args[1:])
 	case "instructions":
+		if len(args) > 1 && args[1] == "scaffold" {
+			return a.contextInstructionsScaffold(ctx, args[2:])
+		}
 		return a.contextInstructions(ctx, args[1:])
 	case "memory":
 		return a.contextMemory(ctx, args[1:])
@@ -122,6 +125,57 @@ func (a *App) contextInstructions(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.out, "conflict: %s -> %s\n  resolution: %s\n",
 			conflict.LowerPrecedencePath, conflict.HigherPrecedencePath,
 			conflict.Resolution)
+	}
+	return nil
+}
+
+func (a *App) contextInstructionsScaffold(ctx context.Context, args []string) error {
+	if err := a.ensureStore(); err != nil {
+		return err
+	}
+	fs := newFlagSet("context instructions scaffold", a.errOut)
+	workspaceName := fs.String("workspace", "", "workspace name")
+	target := fs.String("target", "", "workspace-relative directory to scaffold")
+	printOnly := fs.Bool("print", false, "render the draft to stdout without writing")
+	jsonOutput := fs.Bool("json", false, "emit the full machine-readable result")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{
+		"workspace": true, "target": true, "print": false, "json": false,
+	})); err != nil {
+		return err
+	}
+	workspaceValue := strings.TrimSpace(*workspaceName)
+	if workspaceValue == "" || fs.NArg() != 0 {
+		return errors.New("usage: cyberagent context instructions scaffold --workspace <name> [--target <dir>] [--print] [--json]")
+	}
+	record, err := a.store.GetWorkspaceByName(ctx, workspace.Slug(workspaceValue))
+	if err != nil {
+		return err
+	}
+	result, err := projectconfig.ScaffoldProjectInstructions(ctx, record.RootPath, *target, !*printOnly)
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return writeContextJSON(a, result)
+	}
+	status := "preview"
+	if result.Written {
+		status = "written"
+	}
+	fmt.Fprintf(a.out, "protocol: %s\nworkspace: %s\nfile: %s\nstatus: %s\nsha256: %s\nbytes: %d\ncapability_grant: false\n",
+		result.ProtocolVersion, record.ID, result.FilePath, status,
+		result.ContentSHA256, result.ContentBytes)
+	if len(result.Detected) > 0 {
+		labels := make([]string, 0, len(result.Detected))
+		for _, detection := range result.Detected {
+			labels = append(labels, fmt.Sprintf("%s (%s)", detection.Path, detection.Label))
+		}
+		fmt.Fprintf(a.out, "detected: %s\n", strings.Join(labels, ", "))
+	} else {
+		fmt.Fprint(a.out, "detected: none\n")
+	}
+	if !result.Written {
+		fmt.Fprint(a.out, result.Content)
 	}
 	return nil
 }

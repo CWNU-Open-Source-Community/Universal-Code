@@ -58,6 +58,18 @@ it("allows background windows and settings, and localizes notification text", ()
   expect(notifications[1].title).toBe("Universal-Code · Reply ready");
 });
 
+it("treats task records as the visible conversation, while bound resource pages notify", () => {
+  saveTurnNotificationMode("background");
+  window.history.replaceState(null, "", "#/threads/thread-one/records");
+  notifyTurnReply(reply());
+  expect(notifications).toHaveLength(0);
+  for (const page of ["runs/run-one", "sessions/session-one", "automations"]) {
+    window.history.replaceState(null, "", `#/threads/thread-one/${page}`);
+    notifyTurnReply(reply());
+  }
+  expect(notifications).toHaveLength(3);
+});
+
 it("never labels queued, replayed, approval-waiting or non-model requests as replies", () => {
   saveTurnNotificationMode("always");
   const cases = [ { replayed: true }, { execution_started: false }, { model_called: false },

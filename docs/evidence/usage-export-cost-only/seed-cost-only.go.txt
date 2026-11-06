@@ -1,0 +1,43 @@
+package main
+
+import (
+	"context"
+	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/store"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func main() {
+	raw, err := os.ReadFile(os.Args[1])
+	must(err)
+	var state struct {
+		Temp string `json:"temp_root"`
+	}
+	must(json.Unmarshal(raw, &state))
+	st, err := store.Open(filepath.Join(state.Temp, "home", "cyberagent.db"))
+	must(err)
+	defer st.Close()
+	ctx := context.Background()
+	_, run, err := application.NewRunService(st).Create(ctx, application.CreateRunRequest{
+		Goal: "CSV cost-only settlement evidence", Profile: "code", Budget: domain.Budget{MaxTurns: 10, MaxToolCalls: 100, MaxCostUSD: 2},
+	})
+	must(err)
+	_, _, err = st.ReserveModelCost(ctx, domain.MonetaryReserveRequest{RunID: run.ID, Scope: domain.MonetaryScopeRoot,
+		Provider: "evidence-provider", Model: "evidence-model", AttemptNumber: 1, ReservedMicros: 250000,
+		PriceFingerprint: strings.Repeat("a", 64), EstimateSource: "deterministic-local-evidence"})
+	must(err)
+	_, _, err = st.SettleModelCost(ctx, domain.MonetarySettleRequest{RunID: run.ID, Scope: domain.MonetaryScopeRoot,
+		AttemptNumber: 1, ActualMicros: 125000, PricingStatus: domain.MonetaryPricingPriced})
+	must(err)
+	fmt.Println("Persisted one priced USD 0.125 settlement with no terminal model receipt")
+}
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}

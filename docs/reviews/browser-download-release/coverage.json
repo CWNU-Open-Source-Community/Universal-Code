@@ -1,0 +1,36 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base_branch": "Qiyuanqiii/browser-download-quarantine",
+  "base": "2a20c5a83c366ac9f42edd40003ac64bb3449ea1",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-download-release/README.md",
+    "docs/reviews/browser-download-release/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：释放链三层实现、OpenAPI 再生成与端到端测试",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 TOCTOU 路径泄露的脱敏专项",
+    "external_review_round2：第二轮外部复审（OCR delegate preview 工作树模式检出 2 个生产文件、default_path 排除 2 个测试文件，排除项连同 #520 的测试文件一并人工全文核验；独立评审子代理复核 7 个疑点并发现失败注入钩子未用 t.Cleanup 恢复）。发现 F6 重复释放响应回显请求方而非落盘审批、F7 工件写失败遗留半截文件导致该 GUID 永久无法释放（旧实现实测：重试固定报 browser artifact already contains different bytes），均已修复并补三条先红后绿回归"
+  ],
+  "summary": {
+    "total_git_changed_files": 11,
+    "review_scope_files": 9,
+    "ocr_selected_production": 5,
+    "manually_added_tests": 3,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/browserruntime/agent_browser_download.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/agent_browser_download.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/httpapi/agent_browser.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/httpapi/server.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/httpapi/openapi.go", "coverage": "quick", "reviewer": "primary" },
+    { "path": "docs/openapi.json", "coverage": "quick", "reviewer": "primary" },
+    { "path": "internal/application/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/agent_browser_download_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/httpapi/agent_browser_test.go", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}

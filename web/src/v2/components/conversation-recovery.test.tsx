@@ -39,7 +39,7 @@ function renderRecovery(submitThreadTurn: ReturnType<typeof vi.fn>, overrides: P
     return <QueryClientProvider client={queryClient}>
       <button onClick={() => setThreadID("thread-b")} type="button">Open other task</button>
       <V2Conversation client={client} threadID={threadID} workspaces={workspaces}
-        onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={vi.fn()}
+        onArchive={vi.fn()} onManageModels={vi.fn()}
         draft={drafts[threadID] ?? ""} onDraftChange={(next, expected) => setDrafts((current) =>
           expected === undefined || current[threadID] === expected ? { ...current, [threadID]: next } : current)} />
     </QueryClientProvider>;

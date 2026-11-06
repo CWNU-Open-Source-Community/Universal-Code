@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -562,5 +563,82 @@ func TestAgentBrowserLaunchFailurePreservesCleanupEvidence(t *testing.T) {
 				t.Fatalf("profile cleanup receipt checks=%d %+v %v", checks, failure, e)
 			}
 		})
+	}
+}
+
+// TestAgentBrowserRealUploadRequiresFileInputAndDeliversBytes requires the
+// opt-in real installed browser (TRAVERSE_TEST_AGENT_BROWSER=1): it proves the
+// upload action only accepts file inputs and that the workspace file the
+// application layer validated actually reaches the form target.
+func TestAgentBrowserRealUploadRequiresFileInputAndDeliversBytes(t *testing.T) {
+	r, _ := agentBrowserTestRuntime(t)
+	const payload = "agent browser upload probe"
+	received := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/submit" && req.Method == http.MethodPost {
+			file, _, err := req.FormFile("attachment")
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer file.Close()
+			data, _ := io.ReadAll(file)
+			received <- data
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><title>Upload</title><form method="post" action="/submit" enctype="multipart/form-data">`+
+			`<input type="file" name="attachment" aria-label="Attachment file">`+
+			`<input type="text" aria-label="Plain text field"><button type="submit" aria-label="Send upload">Send upload</button></form>`)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := r.Navigate(ctx, server.URL); err != nil {
+		t.Fatal(err)
+	}
+	uploadPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(uploadPath, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := r.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := map[string]string{}
+	for _, element := range snapshot.Elements {
+		refs[element.Name] = element.Ref
+	}
+	// A non-file input must be refused before any state-changing browser call.
+	if _, err := r.Upload(ctx, snapshot.SnapshotID, refs["Plain text field"], uploadPath); err == nil {
+		t.Fatal("upload accepted a non-file input")
+	}
+	if _, err := r.Upload(ctx, snapshot.SnapshotID, refs["Attachment file"], uploadPath); err != nil {
+		t.Fatalf("file input upload: %v", err)
+	}
+	submit, err := r.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submitRef := ""
+	for _, element := range submit.Elements {
+		if element.Name == "Send upload" {
+			submitRef = element.Ref
+		}
+	}
+	if submitRef == "" {
+		t.Fatal("submit button missing after upload")
+	}
+	if _, err := r.Click(ctx, submit.SnapshotID, submitRef); err != nil {
+		t.Fatalf("submit click: %v", err)
+	}
+	select {
+	case data := <-received:
+		if string(data) != payload {
+			t.Fatalf("received bytes mismatch: %q", string(data))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("form submission never reached the server")
 	}
 }

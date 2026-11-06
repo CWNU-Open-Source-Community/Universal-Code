@@ -159,7 +159,7 @@ function renderConversation(client: APIClient, initialThreadID = "thread-a", ext
   const props = (threadID: string) => <QueryClientProvider client={queryClient}>
     {extras}
     <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()}
-      onOpenInspector={vi.fn()} threadID={threadID} workspaces={workspaces} {...draftProps} />
+      threadID={threadID} workspaces={workspaces} {...draftProps} />
   </QueryClientProvider>;
   const view = render(props(initialThreadID));
   return { ...view, queryClient,
@@ -410,7 +410,7 @@ describe("V2Conversation", () => {
     } as unknown as Partial<APIClient>);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } } });
     render(<V2RecoveryProvider client={client} scopeID="conversation-queue-owner-test"><QueryClientProvider client={queryClient}>
-      <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()} onOpenInspector={vi.fn()}
+      <V2Conversation client={client} onArchive={vi.fn()} onManageModels={vi.fn()}
         threadID="thread-a" workspaces={workspaces} />
     </QueryClientProvider></V2RecoveryProvider>);
     const action = await screen.findByRole("button", { name: "引导当前任务" });
@@ -1071,6 +1071,34 @@ describe("V2Conversation", () => {
     expect(screen.queryByRole("button", { name: "加载更早记录" })).not.toBeInTheDocument();
   });
 
+  it("preserves the chat reading position when earlier records load from the dock", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+    const middle = transcriptItem("middle-dock", "middle dock message", 2);
+    const getPage = vi.fn((_path: string, _query: unknown, cursor: string) => Promise.resolve(
+      cursor === "older-dock-cursor" ? page([transcriptItem("oldest-dock", "oldest dock message", 1), middle])
+        : page([middle, transcriptItem("newest-dock", "newest dock message", 3)], "older-dock-cursor"),
+    ));
+    try {
+      const view = renderConversation(baseClient({ getPage } as Partial<APIClient>));
+      const user = userEvent.setup();
+      await screen.findByText("newest dock message");
+      const chat = view.container.querySelector<HTMLDivElement>(".v2-conversation-scroll")!;
+      Object.defineProperties(chat, {
+        scrollHeight: { get: () => chat.querySelectorAll(".v2-narrative > li").length * 200, configurable: true },
+        clientHeight: { value: 100, configurable: true },
+      });
+      chat.scrollTop = 80;
+      fireEvent.scroll(chat);
+      await user.click(screen.getByRole("button", { name: "执行记录" }));
+      const dock = await screen.findByRole("complementary", { name: "执行记录" });
+      await user.click(await within(dock).findByRole("button", { name: "加载较早记录" }));
+      await waitFor(() => expect(chat).toHaveTextContent("oldest dock message"));
+      expect(chat.scrollTop).toBe(280);
+      expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 280, following: false });
+      expect(within(dock).queryByRole("button", { name: "加载较早记录" })).not.toBeInTheDocument();
+    } finally { vi.restoreAllMocks(); }
+  });
+
   it("closes the title menu with Escape or an outside click and restores focus predictably", async () => {
     const onArchive = vi.fn();
     const client = baseClient();
@@ -1078,7 +1106,7 @@ describe("V2Conversation", () => {
     const user = userEvent.setup();
     render(<><button type="button">Outside</button><QueryClientProvider client={queryClient}>
       <V2Conversation client={client} onArchive={onArchive} onManageModels={vi.fn()}
-        onOpenInspector={vi.fn()} threadID="thread-a" workspaces={workspaces} />
+        threadID="thread-a" workspaces={workspaces} />
     </QueryClientProvider></>);
     await screen.findByText("Title thread-a");
     const trigger = screen.getByRole("button", { name: "对话操作" });
@@ -1572,7 +1600,7 @@ it("switches the mounted task navigation and open conversation menu while preser
   expect(within(navigation).getByRole("button", { name: "Review changes" })).toHaveTextContent("Changes and delivery");
   expect(within(navigation).getByRole("button", { name: "View context" })).toHaveTextContent("Context and recovery");
   expect(screen.getByRole("menuitem", { name: "Archive conversation" })).toBeInTheDocument();
-  expect(screen.getByRole("menuitem", { name: "Open Inspector" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Execution records" })).toBeInTheDocument();
   expect(screen.getByText("用户消息和工具输出保持原文")).toBeInTheDocument();
   expect(screen.getByText("Title thread-a")).toBeInTheDocument();
 

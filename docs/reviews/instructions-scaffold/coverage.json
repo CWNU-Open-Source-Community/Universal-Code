@@ -1,0 +1,32 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "b58f8981db87dd983e221839283e43f145b92b03",
+  "reviewed_head": "f75b1e6bc9b284321904b1c168b5882586681f5a",
+  "review_metadata_excluded": [
+    "docs/reviews/instructions-scaffold/README.md",
+    "docs/reviews/instructions-scaffold/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：脚手架实现、CLI 接线、文档、全部测试与端到端冒烟",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 F1 的 Windows 实证复现"
+  ],
+  "summary": {
+    "total_git_changed_files": 8,
+    "review_scope_files": 6,
+    "ocr_selected_production": 3,
+    "manually_added_tests": 1,
+    "docs_verified_by_primary": 2,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/projectconfig/instructions_scaffold.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/app/context_command.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/app/app.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/projectconfig/instructions_scaffold_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "docs/usage.md", "coverage": "full", "reviewer": "primary" },
+    { "path": "docs/context-continuity.md", "coverage": "full", "reviewer": "primary" }
+  ]
+}

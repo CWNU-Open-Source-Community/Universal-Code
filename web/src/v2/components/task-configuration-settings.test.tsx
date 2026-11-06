@@ -48,7 +48,7 @@ it("leaves a snapshot read failure explicit without falling back to the current 
   expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
 });
 
-it("reads an unbound Inspector Run only after checking that Run's own mission and workspace", async () => {
+it("reads an unbound historical Run only after checking that Run's own mission and workspace", async () => {
   const client = fixture();
   client.get.mockResolvedValue({ run: { id: "run-history", mission_id: "mission-source" }, mission: { id: "mission-source", workspace_id: "workspace-source" } } as never);
   mount(client, "run-history", "");

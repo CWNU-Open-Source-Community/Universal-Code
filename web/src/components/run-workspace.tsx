@@ -104,7 +104,7 @@ import { WorkspaceCheckpointPanel } from "./workspace-checkpoint-panel";
 import { UIEvidencePanel } from "./ui-evidence-panel";
 import { ThreadActivityToolDetailPanel } from "../v2/components/activity-detail";
 import { StandardCodeDeliveryPanel } from "./standard-code-delivery-panel";
-import "./inspector-workspace-navigation.css";
+import "./resource-workspace-navigation.css";
 import { ModelUsagePanel } from "./model-usage-panel";
 
 export type RunTab = "activity" | "overview" | "journey" | "actions" | "approvals" | "diffs" | "repository" | "files" | "evidence" | "verify" | "delivery" | "handoff" |
@@ -208,12 +208,12 @@ export function RunWorkspaceTabs({ activeTab, ariaLabel, children, items, onSele
         </button>
       );
   return <>
-    <nav aria-label={ariaLabel} aria-orientation="horizontal" className={`workspace-tabs${grouped ? " inspector-workspace-navigation" : ""}`} role="tablist">
+    <nav aria-label={ariaLabel} aria-orientation="horizontal" className={`workspace-tabs${grouped ? " resource-workspace-navigation" : ""}`} role="tablist">
       {grouped ? <>
-        <div className="inspector-workspace-common">{items.filter(({ id }) => commonTabs.has(id)).map(renderTab)}</div>
-        <button type="button" className="inspector-workspace-expand" aria-expanded={expanded} aria-controls={`${tabSetID}-diagnostics`}
+        <div className="resource-workspace-common">{items.filter(({ id }) => commonTabs.has(id)).map(renderTab)}</div>
+        <button type="button" className="resource-workspace-expand" aria-expanded={expanded} aria-controls={`${tabSetID}-diagnostics`}
           onClick={() => setExpanded((value) => !value)}>{t("高级诊断", "Advanced diagnostics")}{!commonTabs.has(activeTab) ? ` · ${items.find(({ id }) => id === activeTab)?.label ?? ""}` : ""}</button>
-        <div className="inspector-workspace-groups" id={`${tabSetID}-diagnostics`} hidden={!expanded}>
+        <div className="resource-workspace-groups" id={`${tabSetID}-diagnostics`} hidden={!expanded}>
           {diagnosticGroups.map((group) => <div key={group.label[1]} role="group" aria-label={t(...group.label)}>
             <span>{t(...group.label)}</span>
             {group.tabs.flatMap((id) => items.filter((item) => item.id === id)).map(renderTab)}
@@ -422,24 +422,24 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
         {tab === "approvals" && <ApprovalPanel client={client} runID={runID} />}
         {tab === "diffs" && <FileEditPanel client={client} runID={runID} runStatus={detail.run.status} />}
         {tab === "repository" && <div className="projection-stack">
-          <div className="inspector-repository-heading"><h2>{t("当前运行的仓库工具", "Repository tools for this Run")}</h2>
+          <div className="resource-repository-heading"><h2>{t("当前运行的仓库工具", "Repository tools for this Run")}</h2>
             <p>{t("操作范围：本次执行绑定的仓库。任务提交和 PR 请从对话的审阅入口进入；此处可使用独立执行的高级工具。", "Scope: the repository bound to this execution. Use conversation review for task commits and PRs; advanced tools for independent executions are available here.")}</p></div>
           <RepositoryStatePanel client={client} workspaceID={detail.mission.workspace_id ?? ""} />
-          <details className="inspector-workspace-section" open={Boolean(gitAdvancedReview)}><summary>{t("Git 操作（高级）", "Git operations (advanced)")}</summary>
+          <details className="resource-workspace-section" open={Boolean(gitAdvancedReview)}><summary>{t("Git 操作（高级）", "Git operations (advanced)")}</summary>
           <GitAdvancedPanel client={client} onOpenApprovals={() => setTab("approvals")}
             onRetainedReviewChange={setGitAdvancedReview} retainedReview={gitAdvancedReview}
             runID={runID} />
           </details>
-          <details className="inspector-workspace-section" open={Boolean(gitHubReview)}><summary>{t("GitHub 操作（高级）", "GitHub operations (advanced)")}</summary>
+          <details className="resource-workspace-section" open={Boolean(gitHubReview)}><summary>{t("GitHub 操作（高级）", "GitHub operations (advanced)")}</summary>
           <GitHubReviewPanel client={client} onOpenApprovals={() => setTab("approvals")}
             onOpenDelivery={() => setTab("delivery")}
             onRetainedReviewChange={setGitHubReview} retainedReview={gitHubReview}
             runID={runID} />
           </details>
-          <details className="inspector-workspace-section"><summary>{t("仓库历史", "Repository history")}</summary>
+          <details className="resource-workspace-section"><summary>{t("仓库历史", "Repository history")}</summary>
           <RepositoryHistoryPanel client={client} workspaceID={detail.mission.workspace_id ?? ""} />
           </details>
-          <details className="inspector-workspace-section"><summary>{t("当前目录差异", "Current directory diff")}</summary>
+          <details className="resource-workspace-section"><summary>{t("当前目录差异", "Current directory diff")}</summary>
           <RepositoryDiffPanel client={client} workspaceID={detail.mission.workspace_id ?? ""} />
           </details>
         </div>}
@@ -517,7 +517,7 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
         {tab === "analyzer" && client.hasEmbeddedAnalyzerExecution &&
           <EmbeddedAnalyzerPanel client={client} runID={runID} />}
       </RunWorkspaceTabs>
-      {detail.run.session_id && client.hasSessionMessages && <details className="inspector-workspace-input" open={inputOpen}
+      {detail.run.session_id && client.hasSessionMessages && <details className="resource-workspace-input" open={inputOpen}
         onToggle={(event) => setInputOpen(event.currentTarget.open)}><summary><span>{t("向此运行补充输入（高级）", "Add input to this Run (advanced)")}</span>
           <span role="status">{inputStatus.pending ? t(" · 输入请求处理中", " · Input in progress") : inputStatus.error ? t(" · 输入未完成，请查看原因", " · Input needs attention") : ""}</span></summary>
         <p>{t("输入目标：本次执行。发送时会核对执行状态与权限；继续整个任务请返回对话。", "Input target: this execution. Sending checks its state and permissions. Return to the conversation to continue the whole task.")}</p>

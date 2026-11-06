@@ -294,6 +294,8 @@
   z-index: 35;
 }
 
+.v2-workspace-records-menu { left: auto; right: 0; }
+
 .v2-workspace-add-menu > button {
   display: flex;
   align-items: center;

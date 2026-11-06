@@ -114,7 +114,7 @@ func (s *AgentRunner) workerToolCatalogue(ctx context.Context, ref domain.AgentA
 		if err != nil {
 			return c, err
 		}
-		for _, name := range []toolgateway.ToolName{toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool, toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool} {
+		for _, name := range []toolgateway.ToolName{toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool, toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool} {
 			if d, ok := toolgateway.AgentBrowserToolDefinition(name); ok {
 				add(d, authority)
 			}

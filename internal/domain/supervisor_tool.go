@@ -232,7 +232,7 @@ func isWebEvidenceSupervisorTool(name string) bool {
 func isBrowserActionSupervisorTool(name string) bool {
 	switch name {
 	case "browser_status", "browser_navigate", "browser_snapshot",
-		"browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key":
+		"browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload":
 		return true
 	default:
 		return false

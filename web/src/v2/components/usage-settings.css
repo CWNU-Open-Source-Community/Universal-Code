@@ -10,6 +10,7 @@
 .v2-usage-refresh { align-items: center; display: flex; justify-content: center; background: none; color: var(--v2-muted); border: 1px solid transparent; border-radius: 8px; padding: 8px; cursor: pointer; }
 .v2-usage-refresh:hover { background: var(--v2-control-hover); color: var(--v2-ink); }
 .v2-usage-refresh:disabled { opacity: .45; cursor: wait; }
+.v2-usage-export:disabled { cursor: not-allowed; }
 .v2-usage-overview { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 24px 40px; }
 .v2-usage-total, .v2-usage-cost { display: grid; gap: 10px; min-width: 0; }
 .v2-usage-total > span, .v2-usage-cost > span { color: var(--v2-muted); font-size: 13px; }

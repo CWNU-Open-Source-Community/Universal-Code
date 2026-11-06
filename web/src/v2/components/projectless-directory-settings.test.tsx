@@ -27,7 +27,7 @@ function fixture(overrides: Partial<APIClient> = {}, general = false) {
     getProjectlessDirectory, importWorkspace, setProjectlessDirectory, ...overrides } as unknown as APIClient;
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<LocaleProvider><QueryClientProvider client={queries}>{general
-    ? <V2Settings client={client} section="general" threadID="" workspaces={[]} onOpenInspector={vi.fn()} onSelectSection={vi.fn()} />
+    ? <V2Settings client={client} section="general" threadID="" workspaces={[]} onOpenHistory={vi.fn()} onSelectSection={vi.fn()} />
     : <V2ProjectlessDirectorySettings client={client} />}</QueryClientProvider></LocaleProvider>);
   return { getProjectlessDirectory, importWorkspace, setProjectlessDirectory, queries };
 }

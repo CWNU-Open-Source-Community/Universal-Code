@@ -3,6 +3,7 @@ package skills
 import (
 	"encoding/json"
 	"io/fs"
+	"path"
 	"reflect"
 	"strings"
 	"testing"
@@ -31,7 +32,7 @@ func TestBuiltinRegistryIsDeterministicBoundedAndReadOnly(t *testing.T) {
 		}
 	}
 	if want := []string{
-		"code", "debug", "doctor", "focused-checks", "frontend-design", "learn", "loop-monitor", "plan-delivery",
+		"code", "debug", "doctor", "focused-checks", "frontend-design", "init", "learn", "loop-monitor", "plan-delivery",
 		"review", "run-skill-generator", "run-verify", "script", "security-review", "simplify",
 	}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("built-in order = %v, want %v", names, want)
@@ -51,6 +52,36 @@ func TestBuiltinRegistryIsDeterministicBoundedAndReadOnly(t *testing.T) {
 	}
 	if _, ok := registry.Get("Code"); ok {
 		t.Fatal("registry normalized an invalid skill name")
+	}
+}
+
+// Built-in skill bodies are prompts for the model, so they may only name tools
+// the model can actually call. read_file, list_workspace, replace_file and
+// script_process are gateway/permission labels: the gateway registers them as
+// operator tools and keeps them out of every model catalog. Naming one as the
+// delivery mechanism sends the model looking for a tool it will never be
+// offered, which is how the init skill once told the model to file a
+// "replace_file" proposal.
+func TestBuiltinSkillContentNeverNamesAnOperatorTool(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := toolgateway.OperatorToolLabels()
+	for _, manifest := range registry.List("") {
+		content, err := fs.ReadFile(builtinFiles, path.Join("builtins", manifest.Name, manifest.ContentPath))
+		if err != nil {
+			t.Fatalf("built-in %s content: %v", manifest.Name, err)
+		}
+		for _, label := range labels {
+			if toolgateway.IsSupervisorTool(toolgateway.ToolName(label)) {
+				continue
+			}
+			if strings.Contains(string(content), label) {
+				t.Fatalf("built-in %s names %q, an operator tool no model catalog offers",
+					manifest.Name, label)
+			}
+		}
 	}
 }
 

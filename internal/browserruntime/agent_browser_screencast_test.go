@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -310,4 +313,78 @@ func TestAgentBrowserScreencastRejectsViewerWithoutSession(t *testing.T) {
 	if _, err := runtime.StartScreencast(context.Background()); !errors.Is(err, ErrAgentBrowserClosed) {
 		t.Fatalf("viewer started without an owned session: %v", err)
 	}
+}
+
+// TestAgentBrowserRealScreencastLiveFrames requires the opt-in real installed
+// browser (TRAVERSE_TEST_AGENT_BROWSER=1): it verifies the P0 live view end to
+// end — Page.startScreencast against real Chromium yields decoded JPEG frames
+// for an animated page, and Stop tears the tap down without killing the run.
+func TestAgentBrowserRealScreencastLiveFrames(t *testing.T) {
+	r, _ := agentBrowserTestRuntime(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><title>Live</title><style>@keyframes spin{to{transform:rotate(360deg)}}`+
+			`#d{width:80px;height:80px;background:#246;animation:spin .05s linear infinite}</style><div id="d"></div>`)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := r.Navigate(ctx, server.URL); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := r.StartScreencast(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Headless compositors only run when something demands frames; keep
+	// demanding them while the live view is open, exactly like a concurrent
+	// operator view plus agent screenshots.
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(300 * time.Millisecond):
+			}
+			captureCtx, captureCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, _ = r.Screenshot(captureCtx)
+			captureCancel()
+		}
+	}()
+	frames := 0
+	var last AgentBrowserScreencastFrame
+	deadline := time.After(15 * time.Second)
+	for frames < 5 {
+		select {
+		case frame, ok := <-stream.Frames():
+			if !ok {
+				t.Fatal("live view stream closed before enough frames")
+			}
+			if len(frame.JPEG) < 2 || frame.JPEG[0] != 0xFF || frame.JPEG[1] != 0xD8 {
+				t.Fatalf("non-JPEG frame delivered: %d bytes", len(frame.JPEG))
+			}
+			if frame.Width <= 0 || frame.Height <= 0 || frame.Width > AgentBrowserScreencastMaxWidth ||
+				frame.Height > AgentBrowserScreencastMaxHeight {
+				t.Fatalf("frame outside viewport bounds: %+v", frame)
+			}
+			frames++
+			last = frame
+		case <-deadline:
+			t.Fatalf("live view produced only %d frames", frames)
+		}
+	}
+	stream.Stop()
+	// Frames already buffered when Stop landed may still drain; the contract
+	// is that the channel closes, not that no buffered frame remains.
+	closed := false
+	drainDeadline := time.After(2 * time.Second)
+	for !closed {
+		select {
+		case _, ok := <-stream.Frames():
+			closed = !ok
+		case <-drainDeadline:
+			t.Fatal("live view stream never closed after Stop")
+		}
+	}
+	t.Logf("live view verified: %d frames, last %dx%d jpeg=%d bytes", frames, last.Width, last.Height, len(last.JPEG))
 }

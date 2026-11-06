@@ -70,10 +70,17 @@ func (c *agentBrowserCDP) read() {
 var agentBrowserCDPMethods = map[string]bool{
 	"Target.createBrowserContext": false, "Target.createTarget": false, "Target.attachToTarget": false,
 	"Browser.setDownloadBehavior": false,
-	"Page.enable":                 true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
+	// Quarantine capture only: cancels one GUID-named download that exceeded
+	// the byte budget. It reads nothing and touches no other download.
+	"Browser.cancelDownload": false,
+	"Page.enable":            true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
 	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
+	// Upload sets file paths on one snapshot-resolved file input; the
+	// application layer proves the path is a real file inside the workspace
+	// before this method is ever reachable.
+	"DOM.setFileInputFiles":  true,
 	"Runtime.callFunctionOn": true, "Runtime.releaseObjectGroup": true, "Accessibility.getFullAXTree": true,
 	"Input.dispatchMouseEvent": true, "Input.dispatchKeyEvent": true, "Input.insertText": true,
 	"Emulation.setDeviceMetricsOverride": true,

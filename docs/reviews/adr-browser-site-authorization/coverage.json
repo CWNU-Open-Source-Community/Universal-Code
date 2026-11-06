@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "6a10b7c8",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/adr-browser-site-authorization/README.md",
+    "docs/reviews/adr-browser-site-authorization/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：ADR 0195 草案撰写（基于 #520/#523/#524/#531/#532 的实现事实与 issue #491 的差距分析）",
+    "review_delegate：独立复审——六项技术声明逐条对照源码核验（含行号），发现子资源授权点与 origin 变更世代语义两处设计缺口并并入 ADR"
+  ],
+  "summary": {
+    "total_git_changed_files": 3,
+    "review_scope_files": 1,
+    "ocr_selected_production": 0,
+    "manually_added_review_files": 1,
+    "docs_only": true,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "docs/adr/0195-agent-browser-site-level-authorization.md", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}

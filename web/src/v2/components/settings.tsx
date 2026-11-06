@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveRestore, ArrowRight, BookOpen, Monitor, Search, Trash2, X } from "lucide-react";
+import { ArchiveRestore, ArrowRight, BookOpen, Search, Trash2, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadView, WebAccessMode, WorkspaceView } from "../../api/types";
 import {
@@ -46,7 +46,7 @@ import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
 import { ModelAvailabilitySettings } from "../../components/model-availability-dialog";
-import { V2AboutSettings, V2ExtensionSettings, V2InspectorPreferences, V2SkillSettings } from "./advanced-settings";
+import { V2AboutSettings, V2ExtensionSettings, V2RecordPreferences, V2SkillSettings } from "./advanced-settings";
 import "./settings.css";
 
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
@@ -483,26 +483,8 @@ function ArchivedSettings({ client, onOpenThread }: { client: APIClient; onOpenT
   </>;
 }
 
-function PlaceholderSettings({ section, onOpenLegacy }: {
-  section: V2SettingsSection;
-  onOpenLegacy: (returnFocus: HTMLElement) => void;
-}) {
-  const { t } = useLocale();
-  const titles: Partial<Record<V2SettingsSection, string>> = {
-    voice: t("语音", "Voice"), keyboard: t("键盘快捷键", "Keyboard shortcuts"), plugins: t("插件", "Plugins"),
-    browser: t("浏览器", "Browser"), hooks: t("钩子", "Hooks"), git: "Git", environment: t("环境", "Environment"), worktrees: "Worktrees",
-  };
-  return <><h1>{titles[section] ?? t("设置", "Settings")}</h1><section className="v2-settings-section">
-    <div className="v2-settings-card v2-settings-placeholder"><Monitor aria-hidden="true" size={22} />
-      <strong>{t(`打开${titles[section] ?? "高级"}工具`, `Open ${titles[section] ?? "advanced"} tools`)}</strong>
-      <p>{t("进入 Inspector，查看详细设置和运行记录。", "Open Inspector to view detailed settings and run records.")}</p>
-      <button onClick={(event) => onOpenLegacy(event.currentTarget)}
-        type="button">{t("在 Inspector 中打开", "Open in Inspector")}</button></div>
-  </section></>;
-}
-
 export function V2Settings({ client, section, threadID, workspaces, onSelectSection,
-  onOpenInspector, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
+  onOpenHistory, onOpenThread, prepareModelForDraft = false, modelSetupToken = "",
   onModelReady, onOpenTask, sourceRunID, onOpenGithubReview, draftWorkspaceID, draftPhase, draftBudget,
   onDraftBudgetChange, onDraftValidityChange, draftProjectSkills, onDraftProjectSkillsChange,
   defaultWebAccessMode = "rules", defaultWebAccessTargets = [], onDefaultWebAccessChange,
@@ -526,7 +508,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   defaultWebAccessMode?: WebAccessMode;
   defaultWebAccessTargets?: string[];
   onDefaultWebAccessChange?: (mode: WebAccessMode, targets: string[]) => void;
-  onOpenInspector: (returnFocus?: HTMLElement | null) => void;
+  onOpenHistory: (returnFocus?: HTMLElement | null) => void;
   prepareModelForDraft?: boolean;
   modelSetupToken?: string;
   onModelReady?: (token: string, definition: Pick<ProviderDefinitionView, "id" | "default_model">) => void;
@@ -576,10 +558,10 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {(section === "shortcuts" || section === "keyboard") && <div className="v2-shared-settings">
         <V2KeyboardSettings />
       </div>}
-      {section === "inspector" && <V2InspectorPreferences onOpenInspector={onOpenInspector} />}
-      {!(["general", "permissions", "appearance", "archived", "models", "inspector", "extensions", "plugins",
+      {section === "records" && <V2RecordPreferences onOpenHistory={onOpenHistory} />}
+      {!(["general", "permissions", "appearance", "archived", "models", "records", "extensions", "plugins",
         "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration", "usage"] as V2SettingsSection[])
-        .includes(section) && <PlaceholderSettings onOpenLegacy={onOpenInspector} section={section} />}
+        .includes(section) && <p role="alert">{t("设置项不可用。", "This setting is unavailable.")}</p>}
     </div></div>
   </main>;
 }

@@ -188,10 +188,14 @@ and Run limits. State, revision, outputs and worker identity survive database re
 
 The host uses the existing scheduler and advances one worker round per tick. Each
 round holds the existing database claim, preventing another host or a manual API
-request from executing the same workflow concurrently. Paused executions stay
-paused; waiting executions are revisited when their dependencies change. A
-deadline can still expire while paused or waiting, and resume never resets the
-saved time, token or turn limits.
+request from executing the same workflow concurrently. Paused executions do not
+dispatch workers; waiting executions are revisited when their dependencies change.
+The host still settles an expired execution while either the workflow or its Run
+is paused. Cancelling or otherwise ending the Run also settles its unfinished
+workflows and steps. This cleanup preserves completed child reports, retires
+unfinished children and releases unused reservations without resuming the Run.
+An unverified code-delivery step remains failed even if its child saved a report.
+Resume never resets the saved deadline, token or turn limits.
 
 After the host restarts, it can continue from committed checkpoints and approval
 stops. A clean shutdown releases the workflow claim; after an abnormal exit, the
@@ -200,6 +204,16 @@ If the process ended during a model/tool attempt whose result is unknown,
 the existing recovery marks that attempt interrupted and the workflow reports the
 failure rather than repeating its possible side effects. A fresh rerun remains an
 explicit operator action. The computer and host must be running to make progress.
+
+The completed checkpoint and its pending summary notification commit in one
+database transaction. The host retries notification failures independently of
+worker execution, including after a restart, using the same inbox identity. It
+marks delivery only after the summary response is saved in the main conversation;
+an enqueued or committed input alone is not a delivery receipt. Retrying a lost
+acknowledgement does not repeat a saved response or rerun completed workers.
+Paused Runs wait for resume; terminal Runs cancel pending notification delivery
+while retaining workflow outputs. A failed notification does not prevent the
+same host tick from advancing another workflow.
 
 API entry points:
 
