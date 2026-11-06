@@ -158,6 +158,11 @@ func TestApprovalContinuationChainedReviewsReuseUserWithoutReplayingWrites(t *te
 }
 
 func TestApprovalContinuationStopPreventsLateApprovalRevival(t *testing.T) {
+	testApprovalContinuationStopPreventsLateApprovalRevival(t, false)
+}
+
+func testApprovalContinuationStopPreventsLateApprovalRevival(t *testing.T, hostOwned bool) {
+	t.Helper()
 	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
 	started := make(chan struct{})
 	p := &boundaryJourneyProvider{}
@@ -178,6 +183,9 @@ func TestApprovalContinuationStopPreventsLateApprovalRevival(t *testing.T) {
 		}
 	}
 	turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true})
+	if hostOwned {
+		turns.WithHostLifetime(t.Context())
+	}
 	if _, err := turns.Execute(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
@@ -385,6 +393,11 @@ func TestApprovalContinuationProposalBeforeBoundaryWaitsForExactLaterSegment(t *
 }
 
 func TestApprovalContinuationDoesNotWakeManualReviewOrOverrideNewInput(t *testing.T) {
+	testApprovalContinuationDoesNotWakeManualReviewOrOverrideNewInput(t, false)
+}
+
+func testApprovalContinuationDoesNotWakeManualReviewOrOverrideNewInput(t *testing.T, hostOwned bool) {
+	t.Helper()
 	for _, manual := range []bool{true, false} {
 		t.Run(fmt.Sprintf("manual_%t", manual), func(t *testing.T) {
 			st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
@@ -399,6 +412,9 @@ func TestApprovalContinuationDoesNotWakeManualReviewOrOverrideNewInput(t *testin
 				return nil, fmt.Errorf("unrelated approval started model call %d", index)
 			}
 			turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true})
+			if hostOwned {
+				turns.WithHostLifetime(t.Context())
+			}
 			if _, err := turns.Execute(t.Context(), input); err != nil {
 				t.Fatal(err)
 			}

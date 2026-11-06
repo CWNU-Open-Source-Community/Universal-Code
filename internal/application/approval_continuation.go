@@ -49,6 +49,12 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return approvalContinuationFailed(beginErr)
 	}
 	defer finish()
+	// Review handlers call this only after the exact decision/effect commits.
+	// The continuation still proves that decision through its durable handoff;
+	// the HTTP client no longer owns this already-authorized follow-up.
+	if s.hostContext != nil {
+		ctx = s.hostContext
+	}
 	thread, err := s.threads.store.GetThreadByRun(ctx, request.RunID)
 	if err != nil {
 		return approvalContinuationFailed(err)
