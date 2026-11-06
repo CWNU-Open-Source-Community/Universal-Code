@@ -141,6 +141,7 @@ test("queued message edits retain the composer and conversation after reload", a
   for (let sequence = 2; sequence <= 4; sequence++) {
     await page.getByRole("button", { name: `消息 ${sequence} 的更多操作`, exact: true }).click();
     await page.getByRole("menuitem", { name: "编辑消息", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: `编辑消息 ${sequence}`, exact: true })).toBeFocused();
     await page.getByRole("textbox", { name: `编辑消息 ${sequence}`, exact: true }).fill(`Unsent edit ${sequence}`);
   }
   await composer.fill("Keep this ordinary draft too");
@@ -148,21 +149,26 @@ test("queued message edits retain the composer and conversation after reload", a
   await reconnect(page);
   await expect(composer).toHaveValue("Keep this ordinary draft too");
   await composer.focus();
-  for (const width of [1280, 390]) {
-    await page.setViewportSize({ width, height: 844 });
+  for (const { width, height } of [
+    { width: 1280, height: 844 }, { width: 390, height: 844 },
+    { width: 1280, height: 600 }, { width: 480, height: 600 }, { width: 390, height: 500 },
+  ]) {
+    await page.setViewportSize({ width, height });
     await expect(composer).toHaveValue("Keep this ordinary draft too");
     await withinViewport(composer, page);
     const send = page.getByRole("button", { name: "发送消息", exact: true });
     await withinViewport(send, page);
-    expect((await send.boundingBox())!.y + (await send.boundingBox())!.height).toBeLessThanOrEqual(844);
-    expect((await page.locator(".v2-conversation-scroll").boundingBox())!.height).toBeGreaterThan(80);
+    expect((await send.boundingBox())!.y + (await send.boundingBox())!.height).toBeLessThanOrEqual(height);
+    const composerBounds = (await page.locator(".v2-shared-composer").boundingBox())!;
+    expect(composerBounds.y + composerBounds.height).toBeLessThanOrEqual(height);
+    expect((await page.locator(".v2-conversation-scroll").boundingBox())!.height).toBeGreaterThan(height >= 600 ? 80 : 32);
     for (let sequence = 2; sequence <= 4; sequence++) {
       const edit = page.getByRole("textbox", { name: `编辑消息 ${sequence}`, exact: true });
       await expect(edit).toHaveValue(`Unsent edit ${sequence}`);
       await edit.focus();
       await expect(edit).toBeInViewport();
     }
-    await info.attach(`queued-edits-${width}`, { body: await page.screenshot(), contentType: "image/png" });
+    await info.attach(`queued-edits-${width}x${height}`, { body: await page.screenshot(), contentType: "image/png" });
   }
   await page.getByRole("button", { name: /^待处理 5 条/u }).click();
   const edit = page.getByRole("textbox", { name: "编辑消息 2", exact: true });

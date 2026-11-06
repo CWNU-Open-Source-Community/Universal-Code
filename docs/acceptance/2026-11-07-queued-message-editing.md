@@ -7,12 +7,14 @@ height limit. At 1280 × 800, the transcript shrank to zero height and the ordin
 composer started at y=871.8, below the viewport. Reloading restored the editors
 and the same obstruction.
 
-The editors and unconfirmed queue operations now share a scroll area bounded by
-220px or 26% of the viewport height. The existing message list, editor controls,
-collapsed-list recovery access and stored draft identities are preserved.
+The message list, editors and unconfirmed operations now share one scroll area,
+bounded by 220px or 26% of the viewport height while edits are open. The composer
+stays outside it. Editor controls, collapsed-list recovery access and stored
+draft identities are preserved. Opening an editor focuses it and scrolls it
+into the shared area.
 
-In the reproduced paused-task scenario, the patched 1280 × 800 layout keeps
-105px of transcript visible and the composer ends at y=787. At 390 × 844 the
+In the reproduced stopped-task scenario, the patched 1280 × 800 layout keeps
+231px of transcript visible and the composer ends at y=787. At 390 × 844 the
 composer ends at y=834, with no horizontal page overflow. All three local edits
 remain available by scrolling, and survive reload alongside the ordinary draft.
 
@@ -43,15 +45,36 @@ directly through Go.
 | Light / narrow | [Before](../images/queued-message-editing/before-light-390.png) | [After](../images/queued-message-editing/after-light-390.png) |
 | Dark / narrow | [Before](../images/queued-message-editing/before-dark-390.png) | [After](../images/queued-message-editing/after-dark-390.png) |
 
+## Short-window follow-up
+
+The first fix capped the message list and recovery editors separately. That
+still exhausted the chat height in short windows. The desktop's declared
+minimum is 480 × 600 (`cmd/cyberagent-desktop/main.go`); the 390 × 500 case below
+also checks the browser layout at a shorter height.
+
+| Viewport | Transcript before → after | Composer bottom before → after | Screenshots |
+| --- | --- | --- | --- |
+| 1280 × 600 | 0 → 83px | 614 → 587px | [Before](../images/queued-message-editing/short-before-1280x600.png), [After](../images/queued-message-editing/short-after-1280x600.png) |
+| 480 × 600 | 3 → 123px | 590 → 590px | [Before](../images/queued-message-editing/short-before-480x600.png), [After](../images/queued-message-editing/short-after-480x600.png) |
+| 390 × 500 | 0 → 49px | 561 → 490px | [Before](../images/queued-message-editing/short-before-390x500.png), [After](../images/queued-message-editing/short-after-390x500.png) |
+
+The earlier two-region layout is shown in these short-window Before captures.
+The After captures use the same actual Thread and queued messages, with editors
+opened through the patched UI. All three editors remain reachable by keyboard
+focus and scrolling. The queue menu ignores a deferred scroll event when its
+anchor has already been positioned at that location, and still closes when the
+anchor moves.
+
 ## Verification
 
 - `npm run build`: passed strict TypeScript and the production bundle.
 - `npm test -- --maxWorkers=2 src/v2/components/queued-messages.test.tsx src/v2/queue-recovery.test.ts`:
-  39 tests passed.
+  40 tests passed.
 - `WORKBENCH_JOURNEY_SKIP_BUILD=1 npm run test:journeys -- --grep "queued message edits"`:
   one production Go/Chromium journey passed. It queues five messages, stops the
-  current turn, edits three messages, reloads, checks both viewport sizes, focuses
-  every retained editor, and saves one edit while the message list is collapsed.
+  current turn, edits three messages, reloads, checks five viewport sizes through
+  the desktop minimum and shorter browser height, focuses every retained editor,
+  and saves one edit while the message list is collapsed.
   The ordinary composer draft stays intact.
 - `git diff --check`: passed.
 
@@ -61,8 +84,9 @@ changing active-turn layout and the existing browser notice reappearing after
 reconnect. The final journey stops the turn and waits for and closes that notice
 before measuring the queue. It retains the original transcript-height assertion.
 
-OCR delegate selected both production files and excluded the browser spec by
-its default path rule. CSS was read in full; the TSX and browser spec were read
-partially, covering the changed QueuePanel/QueueEditor paths, new journey and
-surrounding helpers. No finding remains in this patch. Unrelated application
-files were read only as needed for the flow.
+OCR delegate selected the three production files and excluded tests by its
+default path rules. CSS was read in full; the TSX and browser spec were read
+around the changed QueuePanel/QueueEditor/QueueMessageMenu paths, journey and
+surrounding helpers. The new scroll-event regression was read in full. No finding
+remains in this patch. Unrelated application files were read only as needed for
+the flow.
