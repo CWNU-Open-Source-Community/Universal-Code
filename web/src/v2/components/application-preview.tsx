@@ -9,6 +9,7 @@ import { localPreviewURL, parseApplicationPreview, type ApplicationPreview, type
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { browserCDPQueryKey, fullCDPSessionQueryKey } from "./browser-cdp-control";
 import { V2PermissionControl } from "./permission-control";
+import { V2AgentBrowser } from "./agent-browser";
 import { ThreadActivityToolDetailPanel } from "./activity-detail";
 import { applicationPreviewRequestCopy, applicationServicesQueryKey, type ApplicationPreviewRequest } from "../application-preview-request";
 import "./application-preview.css";
@@ -24,6 +25,9 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
   const closeButton = useRef<HTMLButtonElement>(null);
   const dialog = useModalFocusTrap<HTMLElement>(!embedded, onClose, false, closeButton, { isolateBackground: !embedded, trapFocus: !embedded, returnFocusRef });
   const [selectedJobID, setSelectedJobID] = useState<string | null>(null);
+  const [browserViewRunID, setBrowserViewRunID] = useState<string | null>(null);
+  const browserViewTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setBrowserViewRunID(null); }, [runID]);
   const stopping = useRef(false);
   const servicesReadable = typeof client.listThreadApplicationServices === "function";
   const services = useQuery({ queryKey: applicationServicesQueryKey(threadID),
@@ -101,9 +105,13 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
             client={client} threadID={threadID} source={source} />}
         </div>}
       </section>
+      {browserViewRunID === runID ? <V2AgentBrowser client={client} runID={runID} running
+        onClose={() => { setBrowserViewRunID(null); requestAnimationFrame(() => browserViewTrigger.current?.focus()); }} /> : <>
+      <button className="v2-preview-view-browser" ref={browserViewTrigger} type="button" onClick={() => setBrowserViewRunID(runID)}>{t("查看浏览器", "View browser")}</button>
       {(!selectedJobID || selected) && <V2PreviewBrowser key={JSON.stringify([browserRunID, source?.job_id ?? "manual"])} client={client} runID={browserRunID} threadID={threadID}
         currentRunID={runID} sourceService={source} sourceReadable={serviceReadable}
         candidates={serviceReadable ? serviceDetail.data?.candidate_urls : undefined} />}
+      </>}
   </>;
   if (embedded) return <div className="v2-app-preview is-embedded">{previewBody}</div>;
   return createPortal(<div className="v2-preview-overlay">

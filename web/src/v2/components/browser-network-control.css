@@ -13,6 +13,3 @@
 .v2-browser-network-control button:disabled { cursor:default; opacity:.5; }
 .v2-browser-network-control button:focus-visible, .v2-browser-network-control input:focus-visible,
 .v2-browser-network-control textarea:focus-visible, .v2-browser-network-control summary:focus-visible { outline:2px solid var(--prayu-focus); outline-offset:2px; }
-.v2-agent-browser .v2-browser-network-control { padding:4px 0; }
-.v2-agent-browser .v2-cdp-switch { border:0; border-radius:999px; flex-shrink:0; height:24px; min-height:24px; padding:3px; width:40px; background:color-mix(in srgb, var(--v2-muted) 30%, var(--v2-control)); }
-.v2-agent-browser .v2-cdp-switch[aria-checked="true"] { background:var(--v2-accent); }
