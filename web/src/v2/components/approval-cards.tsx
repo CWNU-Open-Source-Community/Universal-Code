@@ -12,7 +12,8 @@ type Action = ApprovalDecisionControlRequestView["action"];
 const fieldLabels = (t: LocaleText): Record<string, string> => ({ command: t("命令", "Command"), executable: t("可执行文件", "Executable"),
   arguments: t("参数（按顺序）", "Arguments (in order)"), requested_backend: t("提案环境", "Proposed environment"), operation: t("操作", "Operation "),
   parameters: t("精确参数", "Exact parameters"), summary: t("影响", "Impact"), path: t("文件", "File"), destination_path: t("目标文件", "Destination file"),
-  url: t("网址", "URL"), host: t("主机", "Host"), effect: t("操作类型", "Action type"), review_scope: t("用途与风险范围", "Purpose and risk scope"), bounded_review: t("有界审批说明", "Bounded approval details"),
+  url: t("网址", "URL"), body_bytes: t("请求体大小（字节）", "Request body size (bytes)"), body_sha256: t("请求体 SHA-256", "Request body SHA-256"), expires_at: t("有效期至", "Expires at"),
+  host: t("主机", "Host"), effect: t("操作类型", "Action type"), review_scope: t("用途与风险范围", "Purpose and risk scope"), bounded_review: t("有界审批说明", "Bounded approval details"),
   app_id: t("目标应用", "Target app"), app_path: t("应用路径", "App path"), window_id: t("目标窗口", "Target window"), tool_name: t("操作工具", "Tool"), authorization_scope: t("授权范围", "Permission scope"),
   grant_ttl_seconds: t("原定有效秒数", "Original duration in seconds"), grant_max_uses: t("原定命令次数", "Original command limit"), grant_uses_remaining: t("剩余次数", "Uses remaining"), grant_expires_at: t("到期时间", "Expires at") });
 const effectText = (t: LocaleText): Record<ApprovalPreviewView["effect"], string> => ({
