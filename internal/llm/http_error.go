@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 )
 
@@ -25,7 +26,10 @@ func providerHTTPReadError(ctx context.Context, provider, message string, source
 		return err
 	}
 	var network net.Error
-	if errors.As(source, &network) {
+	if errors.As(source, &network) || errors.Is(source, io.ErrUnexpectedEOF) {
+		// net/http reports an interrupted Content-Length or chunked transfer
+		// as unexpected EOF. It is a transport failure, not malformed JSON or
+		// a cleanly ended stream missing its provider completion marker.
 		// A client/transport deadline is not the caller's deadline. Keeping its
 		// raw cause would make downstream errors.Is checks confuse the two.
 		err := NewProviderError(OutcomeRetryable, provider, message, nil)
