@@ -182,3 +182,33 @@ func TestCommandRuntimeFailedHandoffShutdownRetriesFailedKill(t *testing.T) {
 		t.Fatalf("retry lost failed handoff receipt: %+v %v", stored, err)
 	}
 }
+
+func TestCommandRuntimeFailedHandoffDeadlineRetriesFailedKill(t *testing.T) {
+	starter := &commandRuntimeFakeStarter{}
+	failure := errors.New("injected running handoff failure")
+	state := &commandRuntimeFailedHandoffStore{newCommandRuntimeMemoryStore(), starter, make(chan struct{}), failure, 1}
+	manager, err := NewCommandRuntimeManager(state, starter, "failed-handoff-deadline-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := commandRuntimeTestRequest(manager, 100)
+	job, _, err := manager.Start(t.Context(), request)
+	if !errors.Is(err, failure) || job.State != CommandRuntimeJobStopping {
+		t.Fatalf("initial failed Kill: %+v %v", job, err)
+	}
+	t.Cleanup(func() {
+		starter.last().finish(125)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := manager.Shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	})
+	// No Stop or Shutdown assists cleanup: only the original command deadline
+	// may retry the transient Kill failure and release this owned process.
+	terminal, _ := waitCommandRuntimeTerminal(t, manager, job.ID)
+	stored, err := state.GetCommandRuntimeJob(t.Context(), job.ID)
+	if err != nil || terminal.State != CommandRuntimeJobFailed || stored.State != CommandRuntimeJobFailed || !stored.TreeReaped {
+		t.Fatalf("deadline retry lost failed handoff ownership or its final reason: terminal=%+v stored=%+v err=%v", terminal, stored, err)
+	}
+}

@@ -1617,7 +1617,9 @@ func (m *CommandRuntimeManager) enforceTimeout(entry *commandRuntimeEntry,
 			return
 		default:
 		}
-		if entry.setDesired(CommandRuntimeJobTimedOut) {
+		// A previous stop may have failed. Keep its original reason while
+		// enforcing the command deadline with another Kill attempt.
+		if entry.setDesired(CommandRuntimeJobTimedOut) || entry.snapshot().State == CommandRuntimeJobStopping {
 			_ = entry.process.Kill()
 		}
 	}
