@@ -1,0 +1,248 @@
+{
+  "captured_at_utc": "2026-11-06T12:36:52.367Z",
+  "frontend_base": "0d57dd73d9c31aca4a8331ab6988df17b1c08bda",
+  "frontend_revision": "3620b5f521e5dd2a27bd444af3727b1668c79e77",
+  "component_blobs": {
+    "base": "fe7fb701648c24ecfdc69c7c6a166ee4e8333ce6",
+    "after": "7a116bb3f021382589ae6f6bd8f76441ff2131ea"
+  },
+  "environment": "Windows; Edge 156.0.0.0; device scale 1; light theme",
+  "fixture": "Empty queue before; one page-request approval after. API-client fixture; no backend operation or decision execution.",
+  "verification": {
+    "component_tests": "22 passed",
+    "diff_check": "passed"
+  },
+  "captures": [
+    {
+      "phase": "before",
+      "size": "desktop",
+      "viewport": {
+        "width": 1024,
+        "height": 720
+      },
+      "locale": "zh-CN",
+      "theme": "light",
+      "documentScrollWidth": 1024,
+      "fields": [],
+      "controls": [],
+      "composerTop": 587,
+      "composerBottom": 696
+    },
+    {
+      "phase": "after",
+      "size": "desktop",
+      "viewport": {
+        "width": 1024,
+        "height": 720
+      },
+      "locale": "zh-CN",
+      "theme": "light",
+      "documentScrollWidth": 1024,
+      "fields": [
+        {
+          "value": "POST",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "http://127.0.0.1:51234/write",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "19",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "2026-11-06T14:32:00Z",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        }
+      ],
+      "controls": [
+        {
+          "label": "拒绝",
+          "x": 669,
+          "right": 748,
+          "top": 339,
+          "bottom": 372
+        },
+        {
+          "label": "批准一次",
+          "x": 755,
+          "right": 866,
+          "top": 339,
+          "bottom": 372
+        }
+      ],
+      "cardBottom": 387,
+      "composerTop": 587,
+      "composerBottom": 696
+    },
+    {
+      "phase": "before",
+      "size": "narrow",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "locale": "zh-CN",
+      "theme": "light",
+      "documentScrollWidth": 390,
+      "fields": [],
+      "controls": [],
+      "composerTop": 636,
+      "composerBottom": 776
+    },
+    {
+      "phase": "after",
+      "size": "narrow",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "locale": "zh-CN",
+      "theme": "light",
+      "documentScrollWidth": 390,
+      "fields": [
+        {
+          "value": "POST",
+          "width": 328,
+          "scrollWidth": 328,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "http://127.0.0.1:51234/write",
+          "width": 328,
+          "scrollWidth": 328,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "19",
+          "width": 328,
+          "scrollWidth": 328,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
+          "width": 328,
+          "scrollWidth": 328,
+          "height": 32,
+          "lineHeight": null
+        },
+        {
+          "value": "2026-11-06T14:32:00Z",
+          "width": 328,
+          "scrollWidth": 328,
+          "height": 16,
+          "lineHeight": null
+        }
+      ],
+      "controls": [
+        {
+          "label": "拒绝",
+          "x": 162,
+          "right": 241,
+          "top": 501,
+          "bottom": 534
+        },
+        {
+          "label": "批准一次",
+          "x": 248,
+          "right": 359,
+          "top": 501,
+          "bottom": 534
+        }
+      ],
+      "cardBottom": 549,
+      "composerTop": 636,
+      "composerBottom": 776
+    },
+    {
+      "phase": "after",
+      "size": "desktop-english",
+      "viewport": {
+        "width": 1024,
+        "height": 720
+      },
+      "locale": "en-US",
+      "theme": "light",
+      "documentScrollWidth": 1024,
+      "fields": [
+        {
+          "value": "POST",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "http://127.0.0.1:51234/write",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "19",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "91d28b1e660fca8e5a54e5f00e2756024be094bc718ce7fd660d1415f1a3922c8",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        },
+        {
+          "value": "2026-11-06T14:32:00Z",
+          "width": 610,
+          "scrollWidth": 610,
+          "height": 16,
+          "lineHeight": null
+        }
+      ],
+      "controls": [
+        {
+          "label": "Deny",
+          "x": 629.9375,
+          "right": 713.328125,
+          "top": 376,
+          "bottom": 409
+        },
+        {
+          "label": "Approve once",
+          "x": 720.328125,
+          "right": 866,
+          "top": 376,
+          "bottom": 409
+        }
+      ],
+      "cardBottom": 424,
+      "composerTop": 587,
+      "composerBottom": 696
+    }
+  ]
+}
