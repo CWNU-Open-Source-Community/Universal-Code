@@ -14,7 +14,6 @@ vi.mock("../../hooks/use-public-model-stream", () => ({ usePublicModelStream: ()
 vi.mock("./permission-control", () => ({ V2PermissionControl: () => null }));
 vi.mock("./run-network-authority-control", () => ({ V2RunNetworkAuthorityControl: () => null }));
 vi.mock("./model-route-control", () => ({ V2ModelRouteControl: () => null }));
-vi.mock("./agent-browser", () => ({ V2AgentBrowser: () => null }));
 
 afterEach(cleanup);
 
@@ -45,7 +44,7 @@ function fixture(submitThreadTurn = vi.fn<APIClient["submitThreadTurn"]>().mockR
     </QueryClientProvider>;
   }
   render(<Harness />);
-  return { queries, submitThreadTurn };
+  return { client, queries, submitThreadTurn };
 }
 
 async function requestStart() {
@@ -53,6 +52,14 @@ async function requestStart() {
   fireEvent.click(await screen.findByRole("button", { name: "把启动要求放回草稿" }));
   return screen.findByRole("textbox", { name: "继续对话" });
 }
+
+it("keeps browser settings and status requests out of ordinary chatting", async () => {
+  const { client } = fixture();
+  await screen.findByRole("textbox", { name: "继续对话" });
+  expect(screen.queryByRole("region", { name: "浏览器画面" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "允许联网" })).not.toBeInTheDocument();
+  expect(vi.mocked(client.get).mock.calls.some(([path]) => /agent-browser|browser-network/u.test(path))).toBe(false);
+});
 
 it("returns the complete startup requirement to the existing draft without submitting or claiming startup", async () => {
   const { submitThreadTurn, queries } = fixture();

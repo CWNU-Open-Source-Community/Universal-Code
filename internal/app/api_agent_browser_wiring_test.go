@@ -158,6 +158,16 @@ func TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 		"api-agent-browser-full-permission-0001",
 		[]byte(`{"mode":"full","reason":"inspect ordinary browser tools","confirm_full":true}`),
 		http.StatusAccepted, nil)
+	networkRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		baseURL+"/runs/"+fullThread.Run.ID+"/browser-network",
+		strings.NewReader(`{"version":"browser_network_access.v1","expected_revision":1,"browser_network_access":"internet"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	networkRequest.Header.Set("Authorization", "Bearer "+controlToken)
+	networkRequest.Header.Set("Content-Type", "application/json")
+	networkRequest.Header.Set("Idempotency-Key", "api-agent-browser-network-0001")
+	apiAgentBrowserDoJSON(t, client, networkRequest, http.StatusOK, nil)
 	apiAgentBrowserCompleteTurn(t, client, baseURL, controlToken, fullThread,
 		"Inspect the ordinary browser tools available to this Run", "api-agent-browser-full-turn-0001")
 

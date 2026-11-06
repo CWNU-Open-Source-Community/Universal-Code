@@ -105,7 +105,7 @@ func testCLISpecialistWorkerRuntime(t *testing.T, largeResult bool) {
 		t.Run(name, func(t *testing.T) {
 			home := newCanonicalCLIHome(t)
 			t.Setenv("CYBERAGENT_HOME", home)
-			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull)
+			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull, domain.BrowserNetworkOff)
 			st, err := store.Open(filepath.Join(home, "cyberagent.db"))
 			if err != nil {
 				t.Fatal(err)

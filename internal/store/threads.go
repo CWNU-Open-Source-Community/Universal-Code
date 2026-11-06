@@ -643,6 +643,34 @@ func (s *SQLiteStore) ensureThreadSuccessor(ctx context.Context, threadID,
 			return domain.Thread{}, domain.Run{}, false, apperror.New(apperror.CodeFailedPrecondition, "Thread successor requires its current isolated workspace preparation")
 		}
 	}
+	// Read the trusted next-execution browser choice while holding the same
+	// transaction that installs thread_runs. A toggle racing preparation either
+	// precedes this selection or sees the successor and rejects its stale Run.
+	var schemaVersion int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&schemaVersion); err != nil {
+		return domain.Thread{}, domain.Run{}, false, err
+	}
+	if schemaVersion >= 223 {
+		preference, found, err := readSuccessorBrowserNetworkPreference(ctx, tx, predecessor.ID)
+		if err != nil {
+			return domain.Thread{}, domain.Run{}, false, err
+		}
+		if found {
+			candidate.Config.BrowserNetworkAccess, candidate.Config.BrowserOrigins = preference.BrowserNetworkAccess, preference.BrowserOrigins
+		} else {
+			permission, err := getCurrentRunExecutionPermissionSnapshot(ctx, tx, predecessor.ID)
+			if err != nil {
+				return domain.Thread{}, domain.Run{}, false, err
+			}
+			// Freeze the predecessor's effective choice before the successor gets
+			// the Thread's current execution permission, which may have changed.
+			candidate.Config.BrowserNetworkAccess = predecessor.Config.EffectiveBrowserNetworkAccess(permission.Mode)
+			candidate.Config.BrowserOrigins = append([]string(nil), predecessor.Config.BrowserOrigins...)
+			if candidate.Config.BrowserNetworkAccess == domain.BrowserNetworkInternet {
+				candidate.Config.BrowserOrigins = nil
+			}
+		}
+	}
 	if err := createRunGraphTx(ctx, tx, mission, candidate, mode, linkedSession, true,
 		false, initialEvents); err != nil {
 		return domain.Thread{}, domain.Run{}, false, err

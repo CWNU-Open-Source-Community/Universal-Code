@@ -5,6 +5,7 @@
 .v2-app-preview h2 { font-size:19px; margin:0; }
 .v2-app-preview h3 { font-size:16px; margin:0 0 12px; }
 .v2-preview-services { padding-bottom:20px; margin-bottom:20px; border-bottom:1px solid var(--v2-border); }
+.v2-preview-view-browser { margin-bottom:16px; }
 .v2-preview-identity { line-height:1.7; overflow-wrap:anywhere; color:var(--v2-muted); }
 .v2-preview-identity > summary { cursor:pointer; }
 .v2-app-preview summary:focus-visible { outline:2px solid var(--v2-accent); outline-offset:3px; }

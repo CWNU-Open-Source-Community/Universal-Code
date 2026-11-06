@@ -10766,6 +10766,211 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/runs/{run_id}/browser-network": {
+      "get": {
+        "operationId": "getRunBrowserNetworkAccess",
+        "summary": "Read Run browser internet access",
+        "description": "Reads browser network selection independently of execution permission. Reading never starts a browser.",
+        "tags": [
+          "Runs"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BrowserNetworkAccessSelection"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "put": {
+        "operationId": "changeRunBrowserNetworkAccess",
+        "summary": "Select Run browser internet access",
+        "description": "Selects off, internet, or restricted browser access independently of Ask, Auto and Full execution permission. Changes retire owned browser sessions and pending browser network requests. Explicit remember_for_project saves the choice for future chats. A terminal current Run stores a next-execution selection (for_next_run=true), preserving its historical config; terminal Runs with an existing successor reject changes.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque revision-bound operation key",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BrowserNetworkAccessSelection"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserNetworkAccessRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/runs/{run_id}/capability-readiness": {
       "get": {
         "operationId": "getRunCapabilityReadiness",
@@ -35762,6 +35967,211 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/workspaces/{workspace_id}/browser-network": {
+      "get": {
+        "operationId": "getWorkspaceBrowserNetworkAccess",
+        "summary": "Read remembered project browser access",
+        "description": "Returns the trusted local project preference used by new chats. An unset preference has revision zero and access off.",
+        "tags": [
+          "Workspaces"
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "description": "Workspace identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BrowserNetworkAccessSelection"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      },
+      "put": {
+        "operationId": "changeWorkspaceBrowserNetworkAccess",
+        "summary": "Remember project browser internet access",
+        "description": "Stores a trusted local browser preference for new chats without changing existing Runs. Repository configuration cannot grant this access.",
+        "tags": [
+          "Control"
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "description": "Workspace identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque revision-bound operation key",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Control request accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BrowserNetworkAccessSelection"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/FailedPrecondition"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestEntityTooLarge"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "security": [
+          {
+            "ControlBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceBrowserNetworkAccessRequestView"
+              }
+            }
+          }
+        },
+        "x-cyberagent-read-only": false
+      }
+    },
     "/api/v1/workspaces/{workspace_id}/explore": {
       "get": {
         "operationId": "exploreWorkspace",
@@ -37952,6 +38362,7 @@
             "enum": [
               "platform_unsupported",
               "full_access_required",
+              "browser_network_off",
               "runtime_unavailable",
               "run_unavailable",
               "session_unavailable"
@@ -40466,6 +40877,264 @@
           "full_debug_enabled",
           "execution_debug_selected"
         ],
+        "type": "object"
+      },
+      "BrowserNetworkAccessRequestView": {
+        "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
+        "properties": {
+          "browser_network_access": {
+            "enum": [
+              "off",
+              "internet",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "expected_revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "remember_for_project": {
+            "type": "boolean"
+          },
+          "version": {
+            "enum": [
+              "browser_network_access.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "expected_revision",
+          "browser_network_access"
+        ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
+        "type": "object"
+      },
+      "BrowserNetworkAccessSelection": {
+        "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
+        "properties": {
+          "browser_network_access": {
+            "enum": [
+              "off",
+              "internet",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "for_next_run": {
+            "type": "boolean"
+          },
+          "project_preference": {
+            "$ref": "#/components/schemas/BrowserNetworkPreference"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              "browser_network_access.v1"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "workspace_id",
+          "revision",
+          "browser_network_access",
+          "replayed",
+          "for_next_run"
+        ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
+        "type": "object"
+      },
+      "BrowserNetworkPreference": {
+        "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
+        "properties": {
+          "browser_network_access": {
+            "enum": [
+              "off",
+              "internet",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "revision",
+          "browser_network_access"
+        ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
         "type": "object"
       },
       "BrowserSafeWebReadiness": {
@@ -78879,6 +79548,84 @@
           "tree_reaped",
           "checked_at"
         ],
+        "type": "object"
+      },
+      "WorkspaceBrowserNetworkAccessRequestView": {
+        "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
+        "properties": {
+          "browser_network_access": {
+            "enum": [
+              "off",
+              "internet",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "expected_revision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "version": {
+            "enum": [
+              "browser_network_access.v1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "expected_revision",
+          "browser_network_access"
+        ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
         "type": "object"
       },
       "WorkspaceCheckpointTimeline": {

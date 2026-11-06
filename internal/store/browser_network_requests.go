@@ -19,7 +19,7 @@ func (s *SQLiteStore) CreateBrowserNetworkRequest(ctx context.Context, v domain.
 	if err != nil {
 		return err
 	}
-	if !strings.HasPrefix(v.ID, domain.BrowserNetworkRequestPrefix) || len(v.ID) > 256 || v.RunID != a.RunID || v.SessionID != a.SessionID || v.WorkspaceID != a.WorkspaceID || v.ManagerBootID != a.ManagerBootID || len(a.DeclaredOrigins) == 0 || len(v.Fingerprint) != 64 || len(v.BodySHA256) != 64 || v.BodyBytes < 0 || v.BodyBytes > 1048576 || v.RuntimeID == "" || !v.ExpiresAt.After(time.Now()) || v.ExpiresAt.After(time.Now().Add(3*time.Minute)) {
+	if !strings.HasPrefix(v.ID, domain.BrowserNetworkRequestPrefix) || len(v.ID) > 256 || v.RunID != a.RunID || v.SessionID != a.SessionID || v.WorkspaceID != a.WorkspaceID || v.ManagerBootID != a.ManagerBootID || (len(a.DeclaredOrigins) == 0 && a.BrowserNetworkAccess != domain.BrowserNetworkInternet) || len(v.Fingerprint) != 64 || len(v.BodySHA256) != 64 || v.BodyBytes < 0 || v.BodyBytes > 1048576 || v.RuntimeID == "" || !v.ExpiresAt.After(time.Now()) || v.ExpiresAt.After(time.Now().Add(3*time.Minute)) {
 		return errors.New("invalid paused browser network request")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -27,6 +27,9 @@ func (s *SQLiteStore) CreateBrowserNetworkRequest(ctx context.Context, v domain.
 		return err
 	}
 	defer tx.Rollback()
+	if err := browserNetworkPolicyCurrentTx(ctx, tx, a); err != nil {
+		return err
+	}
 	var sessionID, workspaceID string
 	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(r.session_id,''),COALESCE(m.workspace_id,'') FROM runs r JOIN missions m ON m.id=r.mission_id WHERE r.id=?`, v.RunID).Scan(&sessionID, &workspaceID); err != nil {
 		return err
@@ -80,6 +83,24 @@ func validateBrowserNetworkApprovalTx(ctx context.Context, tx *sql.Tx, record ap
 	}
 	if v.Status != "paused" || !v.ExpiresAt.After(time.Now()) || v.RunID != record.RunID || v.SessionID != record.SessionID || v.WorkspaceID != record.WorkspaceID || v.Fingerprint != record.RequestFingerprint || record.GrantID != "" || record.Mode != "per_call" || record.ToolName != toolgateway.AgentBrowserApprovalTool || record.ActionClass != "browser_external_write" {
 		return errors.New("browser network request is no longer live")
+	}
+	a, err := toolgateway.DecodeAgentBrowserAuthority(json.RawMessage(v.AuthorityJSON))
+	if err != nil {
+		return err
+	}
+	if err := browserNetworkPolicyCurrentTx(ctx, tx, a); err != nil {
+		return err
+	}
+	return nil
+}
+
+func browserNetworkPolicyCurrentTx(ctx context.Context, tx *sql.Tx, a toolgateway.AgentBrowserCallAuthority) error {
+	run, err := getRunControlRunTx(ctx, tx, a.RunID)
+	if err != nil {
+		return err
+	}
+	if run.Config.BrowserNetworkAccess != a.BrowserNetworkAccess || (a.BrowserNetworkAccess != "" && run.Config.EffectiveBrowserNetworkRevision() != a.BrowserNetworkRevision) {
+		return errors.New("browser network access changed")
 	}
 	return nil
 }

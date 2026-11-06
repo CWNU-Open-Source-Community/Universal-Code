@@ -19,13 +19,13 @@ func (s *CommandRuntimeService) CheckAgentBrowserService(ctx context.Context, a 
 		return runner.CommandServiceReadiness{}, runner.ErrCommandRuntimeBoundary
 	}
 	scoped := len(a.DeclaredOrigins) > 0 &&
-		(a.PermissionMode == domain.RunExecutionPermissionAsk || a.PermissionMode == domain.RunExecutionPermissionAuto)
-	if !scoped {
+		(a.BrowserNetworkAccess == domain.BrowserNetworkRestricted || a.PermissionMode == domain.RunExecutionPermissionAsk || a.PermissionMode == domain.RunExecutionPermissionAuto)
+	if !scoped && a.BrowserNetworkAccess == "" {
 		// Unscoped service previews keep their Full-activation gate.
 		if a.PermissionMode != domain.RunExecutionPermissionFull {
 			return runner.CommandServiceReadiness{}, runner.ErrCommandRuntimeBoundary
 		}
-	} else {
+	} else if scoped {
 		// A scoped session may only preview a service inside its declared
 		// origins (ADR 0195); membership needs no resolution or live document.
 		scope, err := browserruntime.NewAgentBrowserOriginScope(a.DeclaredOrigins)

@@ -129,6 +129,9 @@ func TestWorkerCommandResourceSurvivesContinueAndClosesWhileIdle(t *testing.T) {
 
 func TestWorkerBrowserResourceKeepsSessionAndRejectsOldAttempt(t *testing.T) {
 	st, run, root, lease, caps := newCommandRuntimeTestRuntime(t, t.Context())
+	if _, err := ChangeBrowserNetworkAccess(t.Context(), st, nil, domain.ChangeBrowserNetworkAccessRequest{Version: domain.BrowserNetworkAccessVersion, RunID: run.ID, ExpectedRevision: 1, BrowserNetworkAccess: domain.BrowserNetworkInternet, OperationKey: "worker-resource-internet-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 	service := &CommandRuntimeService{}
 	a := newWorkerCommandTestActorTurns(t, st, service, run, root, lease, &domain.WorkerProfile{}, 3)
 	browser := NewAgentBrowserService(st, AgentBrowserOptions{HomePath: t.TempDir(), Capabilities: caps})

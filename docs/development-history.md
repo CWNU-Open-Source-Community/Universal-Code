@@ -291,5 +291,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v220 | 将工作区文件上传接入 Agent 浏览器工具账本，保留已有调用行、执行身份和授权约束 | admit workspace file uploads to the Agent browser tool ledger while preserving existing call rows, execution identities and authority constraints |
 | v221 | 将工作流完成与待通知义务同事务保存，支持宿主重试和独立租约，保留已交付历史与完成输出 | atomically persist workflow completion notifications for host retries and independent claims, preserving delivered history and completed outputs |
 | v222 | 保存暂停的浏览器网页请求及审批来源，记录摘要、有效期和发送状态，支持过期与重启清理 | persist paused browser page requests and their approval source, including digests, expiry and dispatch state for expiry and restart cleanup |
+| v223 | 保存独立的项目浏览器联网偏好、已结束任务的下次执行选择及不可变操作记录，支持浏览器策略修订与继承 | persist independent project browser network preferences, next-execution selections for terminal Runs and immutable operation records for browser policy revision and inheritance |
 
 </details>

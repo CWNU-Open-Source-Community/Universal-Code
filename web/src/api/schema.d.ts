@@ -1938,6 +1938,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/browser-network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Run browser internet access
+         * @description Reads browser network selection independently of execution permission. Reading never starts a browser.
+         */
+        get: operations["getRunBrowserNetworkAccess"];
+        /**
+         * Select Run browser internet access
+         * @description Selects off, internet, or restricted browser access independently of Ask, Auto and Full execution permission. Changes retire owned browser sessions and pending browser network requests. Explicit remember_for_project saves the choice for future chats. A terminal current Run stores a next-execution selection (for_next_run=true), preserving its historical config; terminal Runs with an existing successor reject changes.
+         */
+        put: operations["changeRunBrowserNetworkAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/capability-readiness": {
         parameters: {
             query?: never;
@@ -6084,6 +6108,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/browser-network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read remembered project browser access
+         * @description Returns the trusted local project preference used by new chats. An unset preference has revision zero and access off.
+         */
+        get: operations["getWorkspaceBrowserNetworkAccess"];
+        /**
+         * Remember project browser internet access
+         * @description Stores a trusted local browser preference for new chats without changing existing Runs. Repository configuration cannot grant this access.
+         */
+        put: operations["changeWorkspaceBrowserNetworkAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/explore": {
         parameters: {
             query?: never;
@@ -6576,7 +6624,7 @@ export interface components {
             title?: string;
             tree_reaped: boolean;
             /** @enum {string} */
-            unavailable_code?: "platform_unsupported" | "full_access_required" | "runtime_unavailable" | "run_unavailable" | "session_unavailable";
+            unavailable_code?: "platform_unsupported" | "full_access_required" | "browser_network_off" | "runtime_unavailable" | "run_unavailable" | "session_unavailable";
             /** Format: date-time */
             updated_at: string;
             url?: string;
@@ -7199,6 +7247,41 @@ export interface components {
             control_enabled: boolean;
             execution_debug_selected: boolean;
             full_debug_enabled: boolean;
+        };
+        BrowserNetworkAccessRequestView: {
+            /** @enum {string} */
+            browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
+            browser_origins?: string[];
+            /** Format: int64 */
+            expected_revision: number;
+            remember_for_project?: boolean;
+            /** @enum {string} */
+            version: "browser_network_access.v1";
+        };
+        BrowserNetworkAccessSelection: {
+            /** @enum {string} */
+            browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
+            browser_origins?: string[];
+            for_next_run: boolean;
+            project_preference?: components["schemas"]["BrowserNetworkPreference"];
+            replayed: boolean;
+            /** Format: int64 */
+            revision: number;
+            run_id?: string;
+            /** @enum {string} */
+            version: "browser_network_access.v1";
+            workspace_id: string;
+        };
+        BrowserNetworkPreference: {
+            /** @enum {string} */
+            browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
+            browser_origins?: string[];
+            /** Format: int64 */
+            revision: number;
+            workspace_id: string;
         };
         BrowserSafeWebReadiness: {
             acceptance_fingerprint: string;
@@ -16841,6 +16924,16 @@ export interface components {
             test_fingerprint?: string;
             tree_reaped: boolean;
         };
+        WorkspaceBrowserNetworkAccessRequestView: {
+            /** @enum {string} */
+            browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
+            browser_origins?: string[];
+            /** Format: int64 */
+            expected_revision: number;
+            /** @enum {string} */
+            version: "browser_network_access.v1";
+        };
         WorkspaceCheckpointTimeline: {
             checkpoints: components["schemas"]["Checkpoint"][];
             current?: components["schemas"]["RunState"];
@@ -21695,6 +21788,91 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["RunBrowserCDPPermissionControlView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getRunBrowserNetworkAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BrowserNetworkAccessSelection"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    changeRunBrowserNetworkAccess: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque revision-bound operation key */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run identity */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserNetworkAccessRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BrowserNetworkAccessSelection"];
                         request_id: string;
                         /** @constant */
                         version: "api.v1";
@@ -31693,6 +31871,91 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["FailedPrecondition"];
+            413: components["responses"]["RequestEntityTooLarge"];
+            414: components["responses"]["RequestTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    getWorkspaceBrowserNetworkAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace identity */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BrowserNetworkAccessSelection"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    changeWorkspaceBrowserNetworkAccess: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque revision-bound operation key */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Workspace identity */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceBrowserNetworkAccessRequestView"];
+            };
+        };
+        responses: {
+            /** @description Control request accepted or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BrowserNetworkAccessSelection"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             412: components["responses"]["FailedPrecondition"];
             413: components["responses"]["RequestEntityTooLarge"];

@@ -145,9 +145,17 @@ func TestAgentBrowserRealScopedNetworkOrigins(t *testing.T) {
 }
 
 func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
+	testAgentBrowserRealWriteExactApproval(t, AgentBrowserNetworkRestricted)
+}
+
+func TestAgentBrowserRealInternetWriteExactApproval(t *testing.T) {
+	testAgentBrowserRealWriteExactApproval(t, AgentBrowserNetworkInternet)
+}
+
+func testAgentBrowserRealWriteExactApproval(t *testing.T, networkMode AgentBrowserNetworkMode) {
 	const body = "exact approved page body"
 	expected := sha256.Sum256([]byte(body))
-	for _, outcome := range []string{"approve", "approve_worker", "approve_shared_worker", "deny", "navigate", "close"} {
+	for _, outcome := range []string{"approve", "approve_worker", "approve_shared_worker", "deny", "navigate", "revoke", "close"} {
 		t.Run(outcome, func(t *testing.T) {
 			received := make(chan string, 4)
 			proposals := make(chan AgentBrowserNetworkRequest, 4)
@@ -179,9 +187,12 @@ func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 				}
 			}))
 			defer site.Close()
-			r, _ := agentBrowserTestRuntimeWithCheck(t, nil, func(req *AgentBrowserStartRequest) {
+			r, active := agentBrowserTestRuntimeWithCheck(t, nil, func(req *AgentBrowserStartRequest) {
 				req.Authority.PermissionMode = "auto"
-				req.ScopedOrigins = []string{site.URL}
+				req.NetworkMode = networkMode
+				if networkMode == AgentBrowserNetworkRestricted {
+					req.ScopedOrigins = []string{site.URL}
+				}
 				req.ReviewNetworkWrite = func(ctx context.Context, v AgentBrowserNetworkRequest, dispatch func() error) error {
 					proposals <- v
 					select {
@@ -237,6 +248,9 @@ func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 				decide <- true
 			case "close":
 				r.Cancel()
+				decide <- true
+			case "revoke":
+				active.Store(false)
 				decide <- true
 			}
 			select {

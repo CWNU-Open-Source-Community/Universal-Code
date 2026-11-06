@@ -303,7 +303,7 @@ func nextResponse(request modelRequest) (contentBlock, error) {
 	}
 	if strings.Contains(history, "JOURNEY_BROWSER_SETUP:") {
 		if observed("JOURNEY_FILE_PROOF_2026") {
-			return text(map[string]string{"version": "root_lifecycle.v1", "action": "wait", "message": "JOURNEY_BROWSER_SETUP_READY: 已读取项目文件，等待操作员启用 Full 并检查浏览器。", "reason": "Operator will confirm Full access"})
+			return text(map[string]string{"version": "root_lifecycle.v1", "action": "wait", "message": "JOURNEY_BROWSER_SETUP_READY: 已读取项目文件，等待操作员确认浏览器访问。", "reason": "Operator will confirm browser access"})
 		}
 		return read("README.md")
 	}

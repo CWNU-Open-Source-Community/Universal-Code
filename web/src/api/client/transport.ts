@@ -54,6 +54,16 @@ export class APITransport {
     return this.sendControlRequest<T>(path, body, signal, "", "PATCH");
   }
 
+  async putControl<T>(path: string, body: unknown, idempotencyKey: string, signal?: AbortSignal): Promise<T> {
+    if (!this.features.hasControl) {
+      throw new Error("A control bearer token is required for this operation");
+    }
+    if (idempotencyKey.trim() !== idempotencyKey || idempotencyKey.length < 16) {
+      throw new Error("A normalized idempotency key is required");
+    }
+    return this.sendControlRequest<T>(path, body, signal, idempotencyKey, "PUT");
+  }
+
   async deleteControl<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
     if (!this.features.hasControl) {
       throw new Error("A control bearer token is required for this operation");

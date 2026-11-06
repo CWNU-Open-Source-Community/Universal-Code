@@ -65,13 +65,11 @@ type RunConfig struct {
 	// guidance only and is never an authorization source.
 	ProjectInstructions            json.RawMessage `json:"project_instructions,omitempty"`
 	ProjectInstructionsFingerprint string          `json:"project_instructions_fingerprint,omitempty"`
-	// BrowserOrigins records the operator-declared, default-deny origin set of
-	// the Run's scoped agent browser sessions (ADR 0195), pinned at creation.
-	// This is trusted operator input, unlike the untrusted .prayu snapshot:
-	// ask/auto authorities are confined to exactly these origins, and Full
-	// activation keeps its unscoped behavior. Thread successor runs inherit
-	// the declaration; fork, resume and branch do not (they must never
-	// recreate an authorization from continuity data).
+	// Browser network access is a trusted operator selection, independent from
+	// execution permission and from the narrowing-only repository config.
+	BrowserNetworkAccess   BrowserNetworkAccess `json:"browser_network_access,omitempty"`
+	BrowserNetworkRevision int64                `json:"browser_network_revision,omitempty"`
+	// BrowserOrigins confines restricted browser sessions to these origins.
 	BrowserOrigins []string `json:"browser_origins,omitempty"`
 	// ContinuityContext is an immutable checkpoint/Fork/Resume snapshot. It is
 	// historical user data only: the embedded authority projection must remain
@@ -82,6 +80,9 @@ type RunConfig struct {
 }
 
 func (c RunConfig) Validate() error {
+	if err := c.ValidateBrowserNetworkAccess(); err != nil {
+		return err
+	}
 	if c.RequestedBudget != nil {
 		if err := ValidateTaskBudget(*c.RequestedBudget); err != nil {
 			return err

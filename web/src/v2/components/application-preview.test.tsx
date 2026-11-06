@@ -48,6 +48,43 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it("opens the browser view explicitly and stops its polling and stream when closed", async () => {
+  const browserStatus = { version: "agent_browser_status.v1", run_id: "run-preview", session_id: "agent-browser-preview",
+    generation: 1, state: "ready", available: true, can_start: true, product: "edge", headless: true,
+    url: "https://example.com/report", title: "Report", document_epoch: 1, updated_at: "2026-11-06T12:00:00Z",
+    cleanup_pending: false, tree_reaped: false, profile_removed: false };
+  const get = vi.fn(async () => browserStatus);
+  const stream = vi.fn<APIClient["streamAgentBrowserScreencast"]>(async (_runID, options) => {
+    await new Promise<void>((resolve) => options.signal?.addEventListener("abort", () => resolve(), { once: true }));
+  });
+  const { client, view } = fixture(false, { hasFullCDPSessionControl: false, get: get as APIClient["get"],
+    streamAgentBrowserScreencast: stream });
+  expect(get).not.toHaveBeenCalled(); expect(stream).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "查看浏览器" }));
+  const browser = await screen.findByRole("region", { name: "浏览器画面" });
+  expect(await within(browser).findByRole("button", { name: "停止浏览器" })).toBeEnabled();
+  expect(screen.queryByRole("region", { name: "预览浏览器控制" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "允许联网" })).not.toBeInTheDocument();
+  await waitFor(() => expect(stream).toHaveBeenCalledOnce());
+  expect(get).toHaveBeenCalledWith("/runs/run-preview/agent-browser", {}, expect.any(AbortSignal));
+  const streamSignal = stream.mock.calls[0][1].signal!;
+  expect(streamSignal.aborted).toBe(false);
+  fireEvent.click(within(browser).getByRole("button", { name: "收起浏览器" }));
+  await waitFor(() => expect(streamSignal.aborted).toBe(true));
+  expect(screen.queryByRole("region", { name: "浏览器画面" })).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "预览浏览器控制" })).toBeInTheDocument();
+  expect(client.postControl).not.toHaveBeenCalled(); expect(client.closeFullCDPSession).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "查看浏览器" })).toHaveFocus());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 3_100)); });
+  expect(get).toHaveBeenCalledOnce(); expect(stream).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "查看浏览器" }));
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
+  view.unmount();
+  expect(stream.mock.calls[1][1].signal!.aborted).toBe(true);
+  expect(client.postControl).not.toHaveBeenCalled();
+});
+
 it("requires a fresh observation after an unknown click and never automatically repeats the action", async () => {
   const { post } = fixture();
   await screen.findByRole("img", { name: "应用页面：独立项目应用" });

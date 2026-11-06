@@ -1815,6 +1815,24 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 						"minLength": domain.MinAgentOperationKeyBytes,
 						"maxLength": domain.MaxAgentOperationKeyBytes, "pattern": `^\S+$`}},
 			}},
+		{Path: RunBrowserNetworkAccessPathTemplate, Method: http.MethodGet,
+			OperationID: "getRunBrowserNetworkAccess", Summary: "Read Run browser internet access", Tag: "Runs",
+			Description: "Reads browser network selection independently of execution permission. Reading never starts a browser.",
+			DataType:    reflect.TypeOf(domain.BrowserNetworkAccessSelection{}), NotFound: true, Parameters: []openAPIParameter{runID}},
+		{Path: WorkspaceBrowserNetworkAccessPathTemplate, Method: http.MethodGet,
+			OperationID: "getWorkspaceBrowserNetworkAccess", Summary: "Read remembered project browser access", Tag: "Workspaces",
+			Description: "Returns the trusted local project preference used by new chats. An unset preference has revision zero and access off.",
+			DataType:    reflect.TypeOf(domain.BrowserNetworkAccessSelection{}), NotFound: true, Parameters: []openAPIParameter{workspaceID}},
+		{Path: RunBrowserNetworkAccessPathTemplate, Method: http.MethodPut,
+			OperationID: "changeRunBrowserNetworkAccess", Summary: "Select Run browser internet access", Tag: "Control",
+			Description: "Selects off, internet, or restricted browser access independently of Ask, Auto and Full execution permission. Changes retire owned browser sessions and pending browser network requests. Explicit remember_for_project saves the choice for future chats. A terminal current Run stores a next-execution selection (for_next_run=true), preserving its historical config; terminal Runs with an existing successor reject changes.",
+			DataType:    reflect.TypeOf(domain.BrowserNetworkAccessSelection{}), RequestType: reflect.TypeOf(BrowserNetworkAccessRequestView{}), Control: true, NotFound: true, SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{runID,
+				{Name: "Idempotency-Key", In: "header", Required: true, Description: "Opaque revision-bound operation key", Schema: map[string]any{"type": "string", "minLength": domain.MinAgentOperationKeyBytes, "maxLength": domain.MaxAgentOperationKeyBytes, "pattern": `^\S+$`}}}},
+		{Path: WorkspaceBrowserNetworkAccessPathTemplate, Method: http.MethodPut,
+			OperationID: "changeWorkspaceBrowserNetworkAccess", Summary: "Remember project browser internet access", Tag: "Control",
+			Description: "Stores a trusted local browser preference for new chats without changing existing Runs. Repository configuration cannot grant this access.",
+			DataType:    reflect.TypeOf(domain.BrowserNetworkAccessSelection{}), RequestType: reflect.TypeOf(WorkspaceBrowserNetworkAccessRequestView{}), Control: true, NotFound: true, SuccessStatus: http.StatusOK, Parameters: []openAPIParameter{workspaceID,
+				{Name: "Idempotency-Key", In: "header", Required: true, Description: "Opaque revision-bound operation key", Schema: map[string]any{"type": "string", "minLength": domain.MinAgentOperationKeyBytes, "maxLength": domain.MaxAgentOperationKeyBytes, "pattern": `^\S+$`}}}},
 		{Path: RunWebAccessControlPathTemplate, Method: http.MethodPost,
 			OperationID: "changeRunWebAccess", Summary: "Select a quiescent Run web access mode", Tag: "Control",
 			Description: "Selects disabled, exact-host rules, or full anonymous public HTTPS access independently of command, filesystem and sandbox permissions. Requires created or paused status, no active lease, exact current mode revision and Idempotency-Key. Appends an audited revision and fences stale tool calls. Saved snapshots remain readable when disabled. Rules control direct fetch hosts; configured search provider policy remains independent.",
@@ -2836,6 +2854,14 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 	if len(required) != 0 {
 		schema["required"] = required
 	}
+	if browserNetworkAccessSchema(metadataTypeName) {
+		schema["if"] = map[string]any{"properties": map[string]any{"browser_network_access": map[string]any{"const": "restricted"}}, "required": []string{"browser_network_access"}}
+		schema["then"] = map[string]any{"required": []string{"browser_origins"}, "properties": map[string]any{"browser_origins": map[string]any{"minItems": 1}}}
+		schema["else"] = map[string]any{
+			"if":   map[string]any{"properties": map[string]any{"browser_network_access": map[string]any{"const": "internet"}}, "required": []string{"browser_network_access"}},
+			"then": map[string]any{"properties": map[string]any{"browser_origins": map[string]any{"maxItems": 0}}},
+		}
+	}
 	if metadataTypeName == "ThreadTurnControlRequestView" {
 		alternatives := []any{
 			map[string]any{"required": []string{"content"}, "properties": map[string]any{"content": map[string]any{"type": "string", "minLength": 1}}},
@@ -2846,6 +2872,15 @@ func (r *openAPISchemaRegistry) objectSchema(valueType reflect.Type) map[string]
 		return map[string]any{"allOf": []any{schema, map[string]any{"anyOf": alternatives}}}
 	}
 	return schema
+}
+
+func browserNetworkAccessSchema(typeName string) bool {
+	switch typeName {
+	case "BrowserNetworkAccessRequestView", "WorkspaceBrowserNetworkAccessRequestView", "BrowserNetworkAccessSelection", "BrowserNetworkPreference":
+		return true
+	default:
+		return false
+	}
 }
 
 func threadActivityTypedDetailSchema(properties map[string]any) map[string]any {
@@ -2897,6 +2932,13 @@ func jsonField(field reflect.StructField) (string, bool, bool) {
 }
 
 func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[string]any) {
+	if browserNetworkAccessSchema(typeName) && fieldName == "browser_origins" {
+		schema["maxItems"] = browserruntime.MaxAgentBrowserScopeOrigins
+		schema["description"] = "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength."
+		if items, ok := schema["items"].(map[string]any); ok {
+			items["minLength"] = 1
+		}
+	}
 	if typeName == "ThreadReplyUpdatesView" {
 		switch fieldName {
 		case "data_store_id":
@@ -3479,24 +3521,31 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 }
 
 var openAPIFieldEnums = map[string][]string{
-	"WorkflowCompletion.mode":                                   {"report", "verified_code"},
-	"MemoryCandidate.protocol_version":                          {contextmgr.MemoryCandidateProtocolVersion},
-	"MemoryCandidate.status":                                    {"pending", "confirmed", "rejected", "stale"},
-	"MemoryCandidate.confidence":                                {"operator_review_required"},
-	"MemoryCandidateSource.category":                            {"decision", "summary"},
-	"MemoryCandidateSource.completion_kind":                     {"completed_run", "thread_reply", "delivery_checkpoint", "delivery_receipt"},
-	"SpecialistContinuationRequestView.version":                 {application.SpecialistContinuationVersion},
-	"SpecialistContinuationView.version":                        {application.SpecialistContinuationVersion},
-	"SpecialistContinuationView.status":                         {"running", "completed", "failed", "cancelled", "abandoned"},
-	"SpecialistContinuationView.summary_status":                 {"not_requested", "queued", "completed", "failed", "cancelled"},
-	"SandboxEnvironmentControlRequestView.version":              {application.SandboxEnvironmentVersion},
-	"SandboxEnvironmentView.protocol_version":                   {application.SandboxEnvironmentVersion},
-	"SandboxEnvironmentSettingsView.default_backend":            {"local", "docker", "sbx"},
-	"SandboxEnvironmentBackendView.backend":                     {"local", "docker", "sbx"},
-	"SandboxEnvironmentBackendView.status":                      {"ready", "disabled", "unavailable", "configuration_required", "not_checked"},
-	"SandboxEnvironmentView.probe_status":                       {"checked", "not_checked"},
-	"StandardCodeDeliveryVerification.executable_identity_kind": {runner.CommandRuntimeExecutableTemplatePathSHA256},
-	"CommandRuntimeJobSnapshot.executable_identity_kind":        {runner.CommandRuntimeExecutableTemplatePathSHA256},
+	"BrowserNetworkAccessRequestView.version":                         {domain.BrowserNetworkAccessVersion},
+	"WorkspaceBrowserNetworkAccessRequestView.version":                {domain.BrowserNetworkAccessVersion},
+	"BrowserNetworkAccessSelection.version":                           {domain.BrowserNetworkAccessVersion},
+	"BrowserNetworkAccessRequestView.browser_network_access":          {"off", "internet", "restricted"},
+	"WorkspaceBrowserNetworkAccessRequestView.browser_network_access": {"off", "internet", "restricted"},
+	"BrowserNetworkAccessSelection.browser_network_access":            {"off", "internet", "restricted"},
+	"BrowserNetworkPreference.browser_network_access":                 {"off", "internet", "restricted"},
+	"WorkflowCompletion.mode":                                         {"report", "verified_code"},
+	"MemoryCandidate.protocol_version":                                {contextmgr.MemoryCandidateProtocolVersion},
+	"MemoryCandidate.status":                                          {"pending", "confirmed", "rejected", "stale"},
+	"MemoryCandidate.confidence":                                      {"operator_review_required"},
+	"MemoryCandidateSource.category":                                  {"decision", "summary"},
+	"MemoryCandidateSource.completion_kind":                           {"completed_run", "thread_reply", "delivery_checkpoint", "delivery_receipt"},
+	"SpecialistContinuationRequestView.version":                       {application.SpecialistContinuationVersion},
+	"SpecialistContinuationView.version":                              {application.SpecialistContinuationVersion},
+	"SpecialistContinuationView.status":                               {"running", "completed", "failed", "cancelled", "abandoned"},
+	"SpecialistContinuationView.summary_status":                       {"not_requested", "queued", "completed", "failed", "cancelled"},
+	"SandboxEnvironmentControlRequestView.version":                    {application.SandboxEnvironmentVersion},
+	"SandboxEnvironmentView.protocol_version":                         {application.SandboxEnvironmentVersion},
+	"SandboxEnvironmentSettingsView.default_backend":                  {"local", "docker", "sbx"},
+	"SandboxEnvironmentBackendView.backend":                           {"local", "docker", "sbx"},
+	"SandboxEnvironmentBackendView.status":                            {"ready", "disabled", "unavailable", "configuration_required", "not_checked"},
+	"SandboxEnvironmentView.probe_status":                             {"checked", "not_checked"},
+	"StandardCodeDeliveryVerification.executable_identity_kind":       {runner.CommandRuntimeExecutableTemplatePathSHA256},
+	"CommandRuntimeJobSnapshot.executable_identity_kind":              {runner.CommandRuntimeExecutableTemplatePathSHA256},
 
 	"WorkspaceImageUploadRequestView.version":     {WorkspaceImageUploadVersion},
 	"WorkspaceFileUploadRequestView.version":      {WorkspaceFileUploadVersion},
@@ -4054,7 +4103,7 @@ var openAPIFieldEnums = map[string][]string{
 	"ApprovalPreviewView.effect":                               {"dry_run", "record_git_approval", "file_review_required", "fetch_public_https", "browser_sensitive_action", "mcp_server_and_tool", "computer_use_app", "command_process", "unavailable"},
 	"AgentBrowserStatusView.version":                           {"agent_browser_status.v1"},
 	"AgentBrowserStatusView.state":                             {"unavailable", "idle", "starting", "ready", "loading", "busy", "waiting_user", "failed", "closing", "closed", "cleanup_pending"},
-	"AgentBrowserStatusView.unavailable_code":                  {"platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable"},
+	"AgentBrowserStatusView.unavailable_code":                  {"platform_unsupported", "full_access_required", "browser_network_off", "runtime_unavailable", "run_unavailable", "session_unavailable"},
 	"AgentBrowserStatusView.process_scope":                     {"no_owned_process_resources", browserruntime.DarwinAgentBrowserProcessScope},
 	"AgentBrowserCloseRequestView.version":                     {"agent_browser_close.v1"},
 	"AgentBrowserScreenshotView.mime_type":                     {"image/png"},
@@ -4135,6 +4184,10 @@ var openAPIFieldEnums = map[string][]string{
 }
 
 var openAPIFieldMinimums = map[string]float64{
+	"BrowserNetworkAccessRequestView.expected_revision":                      1,
+	"WorkspaceBrowserNetworkAccessRequestView.expected_revision":             0,
+	"BrowserNetworkAccessSelection.revision":                                 0,
+	"BrowserNetworkPreference.revision":                                      0,
 	"ApprovalDecisionControlRequestView.grant_ttl_seconds":                   1,
 	"ApprovalDecisionControlRequestView.grant_max_uses":                      1,
 	"BoundedCommandGrantView.ttl_seconds":                                    1,

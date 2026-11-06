@@ -82,7 +82,7 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	plane, err := OpenControlPlane(ControlPlaneConfig{
 		DatabasePath: filepath.Join(t.TempDir(), "agent-browser-wiring.db"),
 		ReadToken:    desktopControlPlaneTestToken, ControlToken: desktopControlPlaneControlToken,
-		RunCreationEnabled: true, SessionMessageEnabled: true,
+		RunCreationEnabled: true, RunControlEnabled: true, SessionMessageEnabled: true,
 		RunLifecycleEnabled: true, RunExecutionEnabled: true, ModelControlEnabled: true,
 		ExecutionPermissionControlEnabled: true,
 		ExecutionPermissionCapabilities:   permissionCapabilities,
@@ -128,6 +128,12 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 		t.Fatalf("Full selection status=%d body=%s", permission.Code, permission.Body.String())
 	}
 	assertDesktopCurrentApproval(t, plane, permissionCapabilities, fullThread.Run.ID, domain.RunExecutionPermissionFull)
+	network := desktopControlRequest(plane.Handler(), http.MethodPut,
+		"/api/v1/runs/"+fullThread.Run.ID+"/browser-network", "desktop-agent-browser-network-0001",
+		`{"version":"browser_network_access.v1","expected_revision":1,"browser_network_access":"internet"}`)
+	if network.Code != http.StatusOK {
+		t.Fatalf("browser network selection status=%d body=%s", network.Code, network.Body.String())
+	}
 	completeDesktopSourceWiringTurn(t, plane, fullThread,
 		"Inspect the ordinary browser tools available to this Run",
 		"desktop-agent-browser-full-turn-0001")

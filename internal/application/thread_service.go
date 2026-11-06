@@ -491,6 +491,9 @@ func (s *ThreadService) prepareSuccessor(ctx context.Context, threadRecord domai
 		predecessor.Config.ModelRoute)
 	linkedSession.CreatedAt, linkedSession.UpdatedAt = now, now
 	config := predecessor.Config
+	// The store materializes an explicit next-run browser preference inside the
+	// successor transaction so a concurrent toggle cannot be lost here.
+	config.BrowserNetworkRevision = 1
 	config.ContinuityContext, config.ContinuityContextFingerprint = nil, ""
 	if reader, ok := s.store.(threadModelRoutePreferenceReader); ok {
 		preference, found, preferenceErr := reader.GetThreadModelRoutePreference(

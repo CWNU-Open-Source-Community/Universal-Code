@@ -27,7 +27,6 @@ import { fileAttachmentIdentities, type WorkspaceFileAttachment } from "../../ap
 import { mcpReferenceIdentities, type MCPDraftReference } from "../../api/mcp-references";
 import { v2MCPReferenceKey } from "./mcp-reference-picker";
 import { useV2QueuedMessagesQuery, V2QueuedMessages } from "./queued-messages";
-import { V2AgentBrowser } from "./agent-browser";
 import { v2AttachmentReferenceKey } from "../attachment-keys";
 import { v2ImageReferenceKey } from "./image-input";
 import { applicationPreviewStartRequest, applicationPreviewRequestCopy, applicationPreviewRequestKey, applicationServicesQueryKey,
@@ -1238,8 +1237,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
         <p className="v2-composer-caption" role="status">{t("上次执行已中断。可以发送新消息继续，已完成的修改会保留。", "The previous execution was interrupted. Send a new message to continue; completed changes are kept.")}</p>}
-      <V2AgentBrowser client={client} runID={currentRun.id} running={working || runActive}
-        onDismiss={() => setComposerFocusRequest({ threadID })} />
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
         paused={working || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}

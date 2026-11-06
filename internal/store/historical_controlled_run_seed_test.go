@@ -19,6 +19,10 @@ import (
 // old graph writer. Current-schema tests must use SQLiteStore directly.
 type legacyControlledRunSeedStore struct{ *SQLiteStore }
 
+func (s legacyControlledRunSeedStore) GetBrowserNetworkPreference(ctx context.Context, workspaceID string) (domain.BrowserNetworkPreference, error) {
+	return (historicalBrowserPreferenceStore{s.SQLiteStore}).GetBrowserNetworkPreference(ctx, workspaceID)
+}
+
 func (s legacyControlledRunSeedStore) CreateMissionRunWithOperation(ctx context.Context,
 	mission domain.Mission, run domain.Run, mode domain.RunModeSnapshot,
 	linkedSession session.Session, initialEvents []events.Event,
@@ -103,7 +107,11 @@ func TestHistoricalControlledRunSeedRejectsCurrentSchema(t *testing.T) {
 			if after := runSeedBoundaryRows(t, state); !reflect.DeepEqual(before, after) {
 				t.Fatalf("rejected fixture left partial rows: before=%v after=%v", before, after)
 			}
-			created, err := application.NewControlledRunCreationService(state).Create(t.Context(), request)
+			var currentWriter application.ControlledRunCreationStore = state
+			if version == 178 {
+				currentWriter = historicalBrowserPreferenceStore{state}
+			}
+			created, err := application.NewControlledRunCreationService(currentWriter).Create(t.Context(), request)
 			if err != nil {
 				t.Fatal(err)
 			}
