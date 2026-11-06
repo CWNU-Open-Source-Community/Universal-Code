@@ -1,0 +1,7 @@
+=== RUN   TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+=== PAUSE TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+=== CONT  TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+    workflow_claim_drain_review_test.go:103: actual cancelled drain=35.348s; replacement model_calls=0; one crashed/worker_lost attempt; old owner retained replacement checkpoint version=3
+--- PASS: TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt (45.77s)
+PASS
+ok  	cyberagent-workbench/internal/application	45.898s

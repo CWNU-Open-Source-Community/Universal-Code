@@ -1,0 +1,5 @@
+=== RUN   TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline
+    workflow_restart_process_test.go:139: actual process exit and wall-clock recovery in 30.253s; original step=workflowstep-32dbdf4ff5a1d68e43940c0d48c8defb53532717b50e3d1b7e393b37851c646b attempt=attempt-146d03e07fe4bd2283219ee8d00d225cd44b91c492508206fa5cff968230f04f model_calls=1 tokens=5
+--- PASS: TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline (30.93s)
+PASS
+ok  	cyberagent-workbench/internal/application	31.060s

@@ -1,0 +1,6 @@
+=== RUN   TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline
+    workflow_restart_process_test.go:129: prepared 2-minute workflow did not recover within 40s: status=running jobs=0 model_calls=0
+--- FAIL: TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline (40.58s)
+FAIL
+FAIL	cyberagent-workbench/internal/application	40.663s
+FAIL

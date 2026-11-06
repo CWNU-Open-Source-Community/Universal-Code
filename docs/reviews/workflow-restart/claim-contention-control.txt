@@ -1,0 +1,8 @@
+=== RUN   TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:150: model entered at 3.036s; three-second prepare offset applies equally to both revisions
+    workflow_claim_contention_review_test.go:168: real sole SQLite connection occupied from 9s for 3.5s; SELECT proof=1
+    workflow_claim_contention_review_test.go:175: claim renewal events=[]; Run lease renewal events=[start=13.016s elapsed=1ms err=<nil>]
+    workflow_claim_contention_review_test.go:177: model calls=1 cancelled=false jobs=1 err=<nil>
+--- PASS: TestWorkflowClaimContentionReviewHealthyCall (15.41s)
+PASS
+ok  	cyberagent-workbench/internal/store	15.573s

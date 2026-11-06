@@ -87,6 +87,7 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 			// Each acquisition has a fresh fencing identity, even when the host's
 			// scheduler owner stays the same after an earlier claim expires.
 			claimOwner := owner + "-" + idgen.New("workflowclaim")
+			claimStarted := time.Now()
 			claimed, acquired, err := s.store.ClaimWorkflowExecution(ctx, execution.ID, claimOwner)
 			if err != nil {
 				failures = errors.Join(failures, err)
@@ -95,7 +96,7 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 			if !acquired {
 				continue
 			}
-			advanced, err := s.runClaimed(ctx, claimed, claimOwner, execution.Version)
+			advanced, err := s.runClaimed(ctx, claimed, claimOwner, execution.Version, claimStarted)
 			attempted = true
 			if err == nil && advanced.Version != claimed.Version || ctx.Err() != nil {
 				return true, errors.Join(failures, err)

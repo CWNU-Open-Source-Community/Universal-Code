@@ -1,0 +1,86 @@
+=== RUN   TestWorkflowClaimInitialExpiryUsesAcquisitionStart
+=== RUN   TestWorkflowClaimInitialExpiryUsesAcquisitionStart/expires_after_entry
+=== RUN   TestWorkflowClaimInitialExpiryUsesAcquisitionStart/expired_before_entry
+--- PASS: TestWorkflowClaimInitialExpiryUsesAcquisitionStart (0.10s)
+    --- PASS: TestWorkflowClaimInitialExpiryUsesAcquisitionStart/expires_after_entry (0.10s)
+    --- PASS: TestWorkflowClaimInitialExpiryUsesAcquisitionStart/expired_before_entry (0.00s)
+=== RUN   TestWorkflowClaimOwnerHasInterpreterDeadlineBeforeReadingWake
+=== RUN   TestWorkflowClaimOwnerHasInterpreterDeadlineBeforeReadingWake/0s
+=== RUN   TestWorkflowClaimOwnerHasInterpreterDeadlineBeforeReadingWake/1m0s
+--- PASS: TestWorkflowClaimOwnerHasInterpreterDeadlineBeforeReadingWake (0.66s)
+    --- PASS: TestWorkflowClaimOwnerHasInterpreterDeadlineBeforeReadingWake/0s (0.34s)
+    --- PASS: TestWorkflowClaimOwnerHasInterpreterDeadlineBeforeReadingWake/1m0s (0.32s)
+=== RUN   TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+=== PAUSE TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+=== RUN   TestWorkflowClaimRenewsDuringLongWorker
+=== PAUSE TestWorkflowClaimRenewsDuringLongWorker
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+=== PAUSE TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+=== PAUSE TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+=== PAUSE TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+=== CONT  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+=== CONT  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+=== CONT  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+=== NAME  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+    workflow_claim_test.go:251: storage_failure cancelled provider, retained Run exclusion through drain, returned error and released Run lease
+=== NAME  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+    workflow_claim_test.go:251: owner_replaced cancelled provider, retained Run exclusion through drain, returned error and released Run lease
+=== NAME  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+    workflow_claim_test.go:251: renewal_timeout cancelled provider, retained Run exclusion through drain, returned error and released Run lease
+--- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease (0.00s)
+    --- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure (10.63s)
+    --- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced (10.64s)
+    --- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout (29.38s)
+=== RUN   TestWorkflowClaimReleaseErrorIsReturned
+--- PASS: TestWorkflowClaimReleaseErrorIsReturned (0.46s)
+=== CONT  TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+=== CONT  TestWorkflowClaimRenewsDuringLongWorker
+    workflow_claim_test.go:158: worker remained exclusively owned past 35s; successful renewals=3 model_calls=1
+--- PASS: TestWorkflowClaimRenewsDuringLongWorker (35.71s)
+=== NAME  TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt
+    workflow_claim_drain_review_test.go:103: actual cancelled drain=35.135s; replacement model_calls=0; one crashed/worker_lost attempt; old owner retained replacement checkpoint version=3
+--- PASS: TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt (45.64s)
+PASS
+ok  	cyberagent-workbench/internal/application	76.338s
+=== RUN   TestWorkflowClaimContentionReviewHealthyCall
+=== PAUSE TestWorkflowClaimContentionReviewHealthyCall
+=== RUN   TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== PAUSE TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== RUN   TestWorkflowClaimContentionRetryStopsWithParent
+=== PAUSE TestWorkflowClaimContentionRetryStopsWithParent
+=== RUN   TestWorkflowClaimRenewalPreservesCheckpointAndFencesOldOwner
+--- PASS: TestWorkflowClaimRenewalPreservesCheckpointAndFencesOldOwner (0.38s)
+=== RUN   TestWorkflowClaimsPauseAndStableStartProtectDispatch
+--- PASS: TestWorkflowClaimsPauseAndStableStartProtectDispatch (0.35s)
+=== CONT  TestWorkflowClaimContentionReviewHealthyCall
+=== CONT  TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:197: model entered at 3.037s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:197: model entered at 3.027s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:197: model entered at 3.03s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.001s for 3s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-369µs]; Run lease renewal events=[]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+--- PASS: TestWorkflowClaimContentionRetryStopsWithParent (12.62s)
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9s for 3.5s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.001s elapsed=2s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-133µs start=12.102s elapsed=399ms renewed=true err=<nil> outer_err=<nil> deadline_left=1.60126s]; Run lease renewal events=[start=13.006s elapsed=1ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=false jobs=1 err=<nil>
+--- PASS: TestWorkflowClaimContentionReviewHealthyCall (15.67s)
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.001s for 19.807s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-595µs start=12.102s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-875µs start=14.203s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-134µs start=16.303s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-7µs start=18.403s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-534µs start=20.504s elapsed=2s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-346µs start=22.605s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-589µs start=24.706s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-394µs start=26.807s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-768µs]; Run lease renewal events=[start=13.017s elapsed=1ms err=<nil> start=23.017s elapsed=1ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+    workflow_claim_contention_review_test.go:259: persistent contention cancelled at 28.808s, before conservative initial expiry=30s
+--- PASS: TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry (29.59s)
+PASS
+ok  	cyberagent-workbench/internal/store	30.382s
