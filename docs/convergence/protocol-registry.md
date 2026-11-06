@@ -9,7 +9,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 6 | true |
 | [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 12 | true |
-| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 92 | true |
+| [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 93 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 57 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 25 | false |
@@ -114,7 +114,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Class: `internal-durable`
 - Owner: Agent graph, scheduler, and batch-delivery maintainers
 - Source of truth: `internal/application`, `internal/domain`, `internal/store`
-- Persistence/export boundary: SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.
+- Persistence/export boundary: SQLite retains agent ownership, attempts, dependencies, wakes, mailboxes, and delivery decisions. workflow_item.v1 binds frozen map/worker retry identities to their occurrence, index and generation in workflow_steps and workflow_executions.state_json; workflow_retry.v1 binds explicit retry request keys to their execution in state_json.retry_operations. workflow-summary-wake-retry.v1 binds replacement wake identities to the execution and persisted notification generation while retaining its original inbox identity. Optional CompletionReport data is retained in the existing completion message and checked against the completion projection.
 - Compatibility rule: Add versions without reinterpreting generations or exactly-once keys; retain old readers until migration or indefinite support is proven. Original first-attempt worker identities and reports without data remain readable. Dynamic map/retry states and structured completion data require the upgraded readers; rollback must retain these readers or preserve those records without replaying them through older decoders.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
@@ -122,7 +122,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `agent-scheduling-delivery-ledgers-reader` (`v1, v2`, active) at `internal/store`
 
-<details><summary>92 active identifiers</summary>
+<details><summary>93 active identifiers</summary>
 
 - `agent-code-edit.v1`
 - `agent_admission_operation.v1`
@@ -209,6 +209,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `worker-history.v1`
 - `worker_resource.v1`
 - `worker_skill_read.v1`
+- `workflow-summary-wake-retry.v1`
 - `workflow-summary.v1`
 - `workflow.v1`
 - `workflow_control.v1`

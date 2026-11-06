@@ -134,7 +134,7 @@ func (s *SQLiteStore) ListWorkflowExecutions(ctx context.Context, runID string) 
 // lease acquired by the real worker runner. One Advance is bounded to 10 minutes.
 func (s *SQLiteStore) ClaimWorkflowExecution(ctx context.Context, id, owner string) (domain.WorkflowExecution, bool, error) {
 	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner=?,claim_until=? WHERE id=? AND status IN ('running','waiting','waiting_approval') AND (claim_owner='' OR claim_until<=?)`, owner, ts(now.Add(15*time.Minute)), id, ts(now))
+	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner=?,claim_until=? WHERE id=? AND (status IN ('running','waiting','waiting_approval') OR (status='paused' AND (`+workflowLifecycleDueSQL+`))) AND (claim_owner='' OR claim_until<=?)`, owner, ts(now.Add(15*time.Minute)), id, ts(now), ts(now))
 	if err != nil {
 		return domain.WorkflowExecution{}, false, err
 	}
@@ -157,7 +157,13 @@ func (s *SQLiteStore) CheckpointWorkflowExecution(ctx context.Context, e domain.
 	if len(state) > 2*1024*1024 {
 		return e, apperror.New(apperror.CodeResourceExhausted, "workflow checkpoint exceeds 2 MiB")
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET status=?,reason=?,state_json=?,version=version+1,updated_at=? WHERE id=? AND version=? AND claim_owner=? AND claim_until>? AND status IN ('running','waiting','waiting_approval')`, e.Status, e.Reason, string(state), ts(time.Now().UTC()), e.ID, e.Version, owner, ts(time.Now().UTC()))
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return e, err
+	}
+	defer tx.Rollback()
+	now := ts(time.Now().UTC())
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_executions SET status=?,reason=?,state_json=?,version=version+1,updated_at=? WHERE id=? AND version=? AND claim_owner=? AND claim_until>? AND status IN ('running','waiting','waiting_approval')`, e.Status, e.Reason, string(state), now, e.ID, e.Version, owner, now)
 	if err != nil {
 		return e, err
 	}
@@ -167,6 +173,16 @@ func (s *SQLiteStore) CheckpointWorkflowExecution(ctx context.Context, e domain.
 	}
 	if n != 1 {
 		return e, apperror.New(apperror.CodeConflict, "workflow checkpoint was superseded or paused")
+	}
+	// The host must be able to recover a completion even if the process exits
+	// immediately after this commit, before touching the conversation inbox.
+	if e.Status == "completed" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_completion_notifications(execution_id,next_attempt_at) VALUES(?,?) ON CONFLICT(execution_id) DO NOTHING`, e.ID, now); err != nil {
+			return e, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return e, err
 	}
 	return s.GetWorkflowExecution(ctx, e.ID)
 }
