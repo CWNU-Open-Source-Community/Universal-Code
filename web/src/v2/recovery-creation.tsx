@@ -9,7 +9,7 @@ import { normalizedTaskBudget } from "../api/task-configuration";
 import type { V2FileReference } from "./components/file-context";
 import { inspectV2CreationRequest } from "./recovery-api";
 import { recoveryTurnKey, validRecoveryFiles, validRecoveryTurn } from "./recovery-session";
-import { useV2RecoveryStore, V2PersistenceError } from "./recovery-storage";
+import { useV2PersistenceWarning, useV2RecoveryStore, V2PersistenceError } from "./recovery-storage";
 import type { V2TurnInput } from "./use-thread-turn";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validV2DraftVersion, type V2DraftVersion } from "./draft-version";
@@ -127,6 +127,8 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
 } {
   const { t } = useLocale();
   const store = useV2RecoveryStore();
+  const unhandledStorageWarning = useV2PersistenceWarning(workspaceID
+    ? `image-upload:${JSON.stringify([workspaceID, ""])}:` : undefined);
   const [intents, setIntents] = useState<CreationIntent[]>([]);
   const [observations, setObservations] = useState<Record<string, Observation>>({});
   const [loadError, setLoadError] = useState("");
@@ -138,9 +140,15 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     if (!store) throw new V2PersistenceError(t("当前连接不支持可靠保存创建请求，请先完成连接。", "This connection cannot reliably save creation requests. Complete the connection first."));
     const entries = store.entries<unknown>("creation:");
     const turns = store.entries<unknown>("turn:");
-    store.assertReadable();
-    if (entries.some(([key, value]) => !validIntent(value) || key !== creationKey(value)) ||
-      turns.some(([key, value]) => !validRecoveryTurn(value) || key !== recoveryTurnKey(value))) throw invalid();
+    const malformed = entries.some(([key, value]) => !validIntent(value) || key !== creationKey(value)) ||
+      turns.some(([key, value]) => !validRecoveryTurn(value) || key !== recoveryTurnKey(value));
+    try { store.assertReadable(); } catch (failure) {
+      // Preserve the global guard and its warning while identifying this
+      // journal's own failure ahead of an unrelated image-record error.
+      if (malformed) throw invalid();
+      throw failure;
+    }
+    if (malformed) throw invalid();
     return entries.map(([, value]) => value as CreationIntent);
   };
   const requireSaved = (intent: CreationIntent): CreationIntent => {
@@ -253,8 +261,11 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     return input;
   };
 
+  // NewConversation always mounts the current draft's image recovery actions.
+  // Only a storage load warning represented by those actions is projected out.
+  const visibleLoadError = loadError && loadError === store?.getWarning() ? unhandledStorageWarning : loadError;
   const notice = !store ? null : <>
-    {(loadError || error) && <p className="v2-notice tone-warning" role="alert">{localUIMessage(loadError || error, t)}</p>}
+    {(visibleLoadError || error) && <p className="v2-notice tone-warning" role="alert">{localUIMessage(visibleLoadError || error, t)}</p>}
     {intents.map((intent) => <section key={intent.operationID} className="v2-notice" aria-label={t("上次创建的对话", "Previously created conversation")}>
       <p>{intent.request.goal.slice(0, 120)}</p>
       <p role="status">{observations[intent.operationID]?.message ?? t("原创建请求已保存，结果尚待确认。可点击“重新核对”查看记录。", "The original creation request is saved and its result is unconfirmed. Select Check again to read the record.")}</p>
