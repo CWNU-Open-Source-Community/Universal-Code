@@ -12,8 +12,14 @@ import (
 )
 
 func (s *SQLiteStore) GetFileEditReviewSnapshot(ctx context.Context, runID, editID string) (fileedit.Edit, bool, error) {
+	return getFileEditReviewSnapshot(ctx, s.db, runID, editID)
+}
+
+func getFileEditReviewSnapshot(ctx context.Context, queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, runID, editID string) (fileedit.Edit, bool, error) {
 	var payload string
-	err := s.db.QueryRowContext(ctx, `SELECT json_extract(payload_json,'$.review_snapshot') FROM run_events
+	err := queryer.QueryRowContext(ctx, `SELECT json_extract(payload_json,'$.review_snapshot') FROM run_events
 		WHERE run_id=? AND subject_id=? AND source='fileedit_store' AND type IN (?,?)
 		AND json_type(payload_json,'$.review_snapshot')='object' ORDER BY sequence LIMIT 1`, runID, editID, events.FileEditApprovedEvent, events.FileEditDeniedEvent).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -26,7 +32,7 @@ func (s *SQLiteStore) GetFileEditReviewSnapshot(ctx context.Context, runID, edit
 	if err := json.Unmarshal([]byte(payload), &snapshot); err != nil {
 		return snapshot, false, err
 	}
-	current, err := s.GetFileEdit(ctx, editID)
+	current, err := scanFileEdit(queryer.QueryRowContext(ctx, `SELECT id,session_id,workspace_id,path,operation_kind,destination_path,status,original_text,proposed_text,diff_text,original_hash,proposed_hash,destination_original_hash,destination_proposed_hash,reason,secrets_redacted,created_at,updated_at FROM file_edits WHERE id=?`, editID))
 	if err != nil {
 		return snapshot, false, err
 	}

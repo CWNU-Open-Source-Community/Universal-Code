@@ -57,6 +57,23 @@ func (s *fileEditReviewMemoryStore) DecideApproval(_ context.Context,
 	return approval.DecisionResult{Approval: record}, nil
 }
 
+func (s *fileEditReviewMemoryStore) CommitFileEditReview(ctx context.Context, expected fileedit.Edit, observed approval.Record, request approval.DecisionRequest) (fileedit.Edit, bool, error) {
+	current, found := s.edits[expected.ID]
+	if !found || current != expected || s.approvals[expected.ID].Version != observed.Version {
+		return fileedit.Edit{}, false, errors.New("review changed")
+	}
+	prepared, err := fileedit.PrepareReview(current, request.Action == approval.ActionApprove, request.Reason, time.Now().UTC())
+	if err != nil {
+		return fileedit.Edit{}, false, err
+	}
+	decision, err := s.DecideApproval(ctx, request)
+	if err != nil {
+		return fileedit.Edit{}, false, err
+	}
+	s.edits[prepared.ID] = prepared
+	return prepared, decision.Replayed, nil
+}
+
 func fileEditReviewApproval(run domain.Run, mission domain.Mission,
 	edit fileedit.Edit,
 ) approval.Record {

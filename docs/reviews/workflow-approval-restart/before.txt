@@ -1,0 +1,11 @@
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent
+    workflow_approval_restart_review_test.go:150: approved intent did not recover: edit_status=proposed content="" read_err=open C:\Users\22977\AppData\Local\Temp\TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvive3572757268\001\output.txt: The system cannot find the file specified. store_err=<nil> receipt={"error_code":"FAILED_PRECONDITION","message":"new FileEdit apply requires a running Run, active Session, and approved edit","status":"failed"}
+=== RUN   TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny
+    workflow_approval_restart_review_test.go:153: denied intent did not recover: edit_status=proposed content="" read_err=open C:\Users\22977\AppData\Local\Temp\TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvive563598187\001\output.txt: The system cannot find the file specified. store_err=<nil> receipt={"edit_id":"edit-f84d25e51e5400973f7cbf9f5f639ea2","error_code":"policy_denied","message":"The file proposal was denied.","status":"denied"}
+--- FAIL: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen (1.38s)
+    --- FAIL: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/approve_intent (0.73s)
+    --- FAIL: TestWorkflowReviewDecisionCommitDisconnectBeforeEditStateSurvivesReopen/deny (0.65s)
+FAIL
+FAIL	cyberagent-workbench/internal/application	1.500s
+FAIL
